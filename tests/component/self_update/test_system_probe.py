@@ -157,7 +157,8 @@ def test_empty_or_incomplete_doctor_is_not_success(live, monkeypatch, empty):
         probe_system(record)
 
 
-@pytest.mark.parametrize("scenario", ["success", "rollback", "wrong_restored", "goal_pass", "goal_fail", "forged_evidence"])
+@pytest.mark.parametrize("scenario", ["success", "rollback", "wrong_restored", "goal_pass", "goal_fail", "forged_evidence",
+                                      "resume_ready", "resume_activating", "resume_verifying", "resume_committed"])
 @pytest.mark.parametrize("native_install", [False, pytest.param(True, marks=[pytest.mark.macos, MACOS_DESKTOP_INSTALL])])
 def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypatch, scenario, native_install, request):
     """Actual controller -> HTTP/WS -> durable receipt -> startup -> real Job."""
@@ -171,7 +172,8 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     from openprogram.webui.routes import misc
 
     fixtures = request
-    goal_case = scenario in {"goal_pass", "goal_fail", "forged_evidence"}
+    resume = scenario.removeprefix("resume_") if scenario.startswith("resume_") else None
+    goal_case = scenario in {"goal_pass", "goal_fail", "forged_evidence"} or resume in {"ready", "verifying", "committed"}
     doctor_ok = scenario == "success" or goal_case
     record, flags, _ = live
     monkeypatch.setattr(misc, "_HEAD_SHA", "3" * 40)  # Old live SHA differs from source base.
@@ -204,6 +206,11 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     transaction.mkdir()
     if native_install:
         _, artifact, target, native_tmp = fixtures.getfixturevalue("installation")
+        if resume == "ready":
+            import shutil
+            canonical = update_dir / "artifact/OpenProgram.app"
+            shutil.copytree(artifact, canonical, dirs_exist_ok=True)
+            artifact = canonical
         installer.write_bytes(INSTALLER.read_bytes())
         digest = hashlib.sha256(installer.read_bytes()).hexdigest()
         native_run = supervisor.subprocess.run
@@ -223,7 +230,8 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
         monkeypatch.setattr(supervisor, "_prepare_install", lambda *_: str(transaction))
         monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
     artifact_digest = supervisor._tree_digest(artifact)
-    monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: supervisor.Artifact(artifact, artifact_digest))
+    builds = []
+    monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: builds.append(1) or supervisor.Artifact(artifact, artifact_digest))
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_: True)
     if not goal_case:
         monkeypatch.setattr(supervisor, "_finish_verification", lambda *_: 0)  # System-gate tests only.
@@ -257,8 +265,20 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     old_startup_result = []
     old_thread = threading.Thread(target=lambda: old_startup_result.append(recovery.recover_pending_updates()))
     native_activate = supervisor._activate
+    interrupted = False
+    original_transition = SelfUpdateStore.transition
+    def transition(self, update_id, target_phase, **kwargs):
+        nonlocal interrupted
+        state = original_transition(self, update_id, target_phase, **kwargs)
+        if (update_id == request.update_id and not interrupted
+            and ((resume == "ready" and target_phase is UpdatePhase.READY)
+                 or (resume == "verifying" and target_phase is UpdatePhase.VERIFYING))):
+            interrupted = True
+            raise SystemExit("controller interrupted")
+        return state
+    monkeypatch.setattr(SelfUpdateStore, "transition", transition)
     def activate(*args):
-        nonlocal transaction
+        nonlocal transaction, interrupted
         transaction = Path(args[0])
         assert store.load(request.update_id).state.phase is UpdatePhase.ACTIVATING
         if native_install:
@@ -267,12 +287,20 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
         flags["doctor"] = doctor_ok
         monkeypatch.setattr(misc, "_HEAD_SHA", "2" * 40)
         thread.start()  # As with installation, Web is serving before recovery.
+        if resume == "activating" and not interrupted:
+            interrupted = True
+            raise SystemExit("controller interrupted")
         return str(transaction)
     monkeypatch.setattr(supervisor, "_activate", activate)
     native_installer = supervisor._installer_command
     def installer_command(argument, directory, sha, mode):
-        if mode == "--commit" and not native_install:
-            return str(transaction)
+        nonlocal interrupted
+        if mode == "--commit":
+            reported = native_installer(argument, directory, sha, mode) if native_install else str(transaction)
+            if resume == "committed" and not interrupted:
+                interrupted = True
+                raise SystemExit("controller interrupted")
+            return reported
         if mode != "--rollback":
             return native_installer(argument, directory, sha, mode)
         assert (update_dir / "rollback-1.json").is_file()
@@ -285,13 +313,24 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
         return str(transaction)
     monkeypatch.setattr(supervisor, "_installer_command", installer_command)
     try:
+        if resume:
+            with pytest.raises(SystemExit, match="controller interrupted"):
+                supervisor.run_supervisor(request.update_id, state_root=store.root, installer_sha256=digest)
+            assert interrupted
+            assert store.load(request.update_id).state.phase is {
+                "ready": UpdatePhase.READY, "activating": UpdatePhase.ACTIVATING,
+                "verifying": UpdatePhase.VERIFYING, "committed": UpdatePhase.VERIFYING,
+            }[resume]
         result = supervisor.run_supervisor(request.update_id, state_root=store.root, installer_sha256=digest)
+        if resume:
+            assert store.load(request.update_id).state.phase is (UpdatePhase.ROLLED_BACK if resume == "activating" else UpdatePhase.SUCCEEDED)
+            assert builds == [1]
         thread.join(timeout=5)
         assert not thread.is_alive()
         assert startup_result == [scenario != "wrong_restored"]
         current = store.load(request.update_id)
         assert current.state.detail["transaction_dir"] == str(transaction)
-        if scenario in {"success", "goal_pass"}:
+        if scenario in {"success", "goal_pass"} or resume in {"ready", "verifying", "committed"}:
             assert result == 0 and current.state.phase is (UpdatePhase.SUCCEEDED if goal_case else UpdatePhase.VERIFYING)
             recovery._check_gate(current)
             job_id = f"self-update:{request.update_id}:verify:1"
@@ -318,7 +357,8 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
                 assert current.state.detail["verifier_verdict"] == verdict
                 assert current.state.detail["error"] == f"verifier result: {verdict}"
             else:
-                assert current.state.detail["error"] == "system probe failed: doctor"
+                expected_error = "controller interrupted during activation" if resume == "activating" else "system probe failed: doctor"
+                assert current.state.detail["error"] == expected_error
             assert current.state.detail["previous_system_gate"]["candidate_sha"] == "3" * 40
             if scenario == "wrong_restored":
                 assert "recovery_error" in current.state.detail

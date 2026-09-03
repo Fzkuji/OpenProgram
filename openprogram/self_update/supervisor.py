@@ -424,6 +424,36 @@ def _finish_verification(store: SelfUpdateStore, update_id: str, installer_sha25
         return 1
 
 
+def _resume_activated(store: SelfUpdateStore, update_id: str, installer_sha256: str) -> int:
+    from .verification_channel import load_grant
+    from .system_probe import probe_system
+
+    try:
+        with store._locked():
+            record = store._load_unlocked(update_id)
+            if record.state.phase is UpdatePhase.ACTIVATING:
+                raise RuntimeError("controller interrupted during activation")
+            grant = load_grant(store, record)
+        gate = probe_system(record)
+        if gate["worker_pid"] != grant["worker_pid"]:
+            raise RuntimeError("candidate worker changed during controller interruption")
+        return _finish_verification(store, update_id, installer_sha256, grant)
+    except Exception as exc:
+        _rollback(store, update_id, installer_sha256, exc)
+        if store.load(update_id).state.phase is UpdatePhase.ROLLED_BACK:
+            leave_maintenance(update_id)
+        return 1
+
+
+def _ready_artifact(record: UpdateRecord, update_dir: Path) -> Artifact:
+    path = update_dir / "artifact" / "OpenProgram.app"
+    if (record.state.detail.get("artifact_path") != str(path)
+        or path.parent.is_symlink() or path.is_symlink() or not path.is_dir()
+        or _tree_digest(path) != record.state.detail.get("artifact_sha256")):
+        raise RuntimeError("prepared candidate artifact changed during interruption")
+    return Artifact(path, record.state.detail["artifact_sha256"])
+
+
 def run_supervisor(
     update_id: str,
     *,
@@ -461,34 +491,43 @@ def run_supervisor(
             ) + "\n",
         )
         record = store.load(update_id)
-        if record.state.phase in TERMINAL_PHASES or record.state.phase is UpdatePhase.VERIFYING:
+        if record.state.phase in TERMINAL_PHASES:
             return 0
+        if record.state.phase in {UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING}:
+            return _resume_activated(store, update_id, installer_sha256)
         if record.state.phase is UpdatePhase.PREPARING:
             record = _wait_for_staging(store, update_id)
             if record is None:
                 current = store.load(update_id)
                 _abort(store, update_id, current.state.phase, "turn release timed out")
                 return 1
-        if record.state.phase is not UpdatePhase.STAGING:
+        if record.state.phase not in {UpdatePhase.STAGING, UpdatePhase.READY}:
             return 1
 
         try:
-            artifact = _build_candidate(record, update_dir)
-            transaction = _validate_transaction_path(
-                Path(_prepare_install(artifact, update_dir, installer_sha256))
-            )
-            state = store.transition(
-                update_id,
-                UpdatePhase.READY,
-                expected_phase=UpdatePhase.STAGING,
-                detail={
-                    "artifact_path": str(artifact.path),
-                    "artifact_sha256": artifact.sha256,
-                    "transaction_dir": str(transaction),
-                },
-            )
+            if record.state.phase is UpdatePhase.READY:
+                artifact = _ready_artifact(record, update_dir)
+                transaction = _validate_transaction_path(Path(record.state.detail["transaction_dir"]))
+                state = record.state
+            else:
+                artifact = _build_candidate(record, update_dir)
+                transaction = _validate_transaction_path(
+                    Path(_prepare_install(artifact, update_dir, installer_sha256))
+                )
+                state = store.transition(
+                    update_id,
+                    UpdatePhase.READY,
+                    expected_phase=UpdatePhase.STAGING,
+                    detail={
+                        "artifact_path": str(artifact.path),
+                        "artifact_sha256": artifact.sha256,
+                        "transaction_dir": str(transaction),
+                    },
+                )
         except Exception as exc:
-            _abort(store, update_id, UpdatePhase.STAGING, exc)
+            _abort(store, update_id, record.state.phase, exc)
+            if record.state.phase is UpdatePhase.READY:
+                leave_maintenance(update_id)
             return 1
 
         maintenance_entered = False
@@ -497,7 +536,7 @@ def run_supervisor(
             maintenance_entered = True
             deadline = min(
                 record.request.created_at + record.request.timeout_seconds,
-                time.time() + 600,
+                state.updated_at + 600,
             )
             if not _wait_for_quiescence(deadline):
                 _abort(store, update_id, state.phase, "quiescence timed out")
