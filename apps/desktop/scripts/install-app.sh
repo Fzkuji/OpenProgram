@@ -251,16 +251,13 @@ validate_transaction_dir() {
   [[ -O "$candidate" ]] || return 1
   [[ -f "$candidate/deferred" && ! -L "$candidate/deferred" ]] || return 1
   [[ -f "$candidate/active.sha256" && ! -L "$candidate/active.sha256" ]] || return 1
-  if [[ -f "$candidate/had-previous" && ! -L "$candidate/had-previous" ]]; then
-    [[ -d "$candidate/previous.app" && ! -L "$candidate/previous.app" ]] || return 1
-    [[ -f "$candidate/previous.sha256" && ! -L "$candidate/previous.sha256" ]] || return 1
-    expected="$(sed -n '1p' "$candidate/previous.sha256")"
-    [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || return 1
-    actual="$(app_identity "$candidate/previous.app")" || return 1
-    [[ "$actual" == "$expected" ]] || return 1
-  elif [[ -e "$candidate/previous.app" || -e "$candidate/previous.sha256" ]]; then
-    return 1
-  fi
+  [[ -f "$candidate/had-previous" && ! -L "$candidate/had-previous" ]] || return 1
+  [[ -d "$candidate/previous.app" && ! -L "$candidate/previous.app" ]] || return 1
+  [[ -f "$candidate/previous.sha256" && ! -L "$candidate/previous.sha256" ]] || return 1
+  expected="$(sed -n '1p' "$candidate/previous.sha256")"
+  [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || return 1
+  actual="$(app_identity "$candidate/previous.app")" || return 1
+  [[ "$actual" == "$expected" ]]
 }
 
 active_app_matches_transaction() {

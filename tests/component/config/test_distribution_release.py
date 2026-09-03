@@ -850,6 +850,60 @@ def test_deferred_rollback_preserves_candidate_when_previous_is_missing(
 
 @pytest.mark.macos
 @MACOS_DESKTOP_INSTALL
+@pytest.mark.parametrize("marker_kind", ["missing", "symlink"])
+def test_deferred_rollback_rejects_invalid_previous_marker(
+    tmp_path: Path,
+    marker_kind: str,
+) -> None:
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.1")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+    activated = subprocess.run(
+        ["bash", str(installer), "--defer-commit", str(candidate)],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    transaction = Path(
+        next(
+            line.removeprefix("OPENPROGRAM_TRANSACTION_DIR=")
+            for line in activated.stdout.splitlines()
+            if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
+        )
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    marker = transaction / "had-previous"
+    marker.unlink()
+    if marker_kind == "symlink":
+        subprocess.run(["/bin/rm", "-rf", str(transaction / "previous.app")], check=True)
+        (transaction / "previous.sha256").unlink()
+        marker.symlink_to(target)
+
+    rejected = subprocess.run(
+        ["bash", str(installer), "--rollback", str(transaction)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "invalid OpenProgram App transaction" in rejected.stderr
+    assert transaction.is_dir()
+    assert target.is_dir()
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
 def test_packager_rejects_canonical_aliases_and_cleanup_owned_outputs(
     tmp_path: Path,
 ) -> None:
