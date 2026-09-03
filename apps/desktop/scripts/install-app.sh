@@ -63,7 +63,7 @@ launch_services_register="/System/Library/Frameworks/CoreServices.framework/Fram
 validate_app_metadata() {
   local app_path="$1"
   local plist="$app_path/Contents/Info.plist"
-  local identifier version executable runtime_manifest runtime_python
+  local identifier version executable runtime_manifest runtime_python package_version
   [[ -d "$app_path" && -f "$plist" ]] || return 1
   identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null)" || return 1
   version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null)" || return 1
@@ -84,6 +84,8 @@ if (manifest.schema !== 2 || manifest.openprogram !== process.argv[3]) {
 NODE
   runtime_python="$(app_runtime_python "$app_path")" || return 1
   [[ -x "$runtime_python" ]] || return 1
+  package_version="$(app_package_version "$app_path")" || return 1
+  [[ "$package_version" == "$version" ]]
 }
 
 validate_app() {
@@ -132,6 +134,50 @@ wait_for_worker_health() {
 
 register_app() {
   "$launch_services_register" -f "$1"
+}
+
+app_package_version() {
+  local app_path="$1"
+  node - "$app_path/Contents/Resources/runtime" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+const root = fs.realpathSync(process.argv[2]);
+const manifest = JSON.parse(
+  fs.readFileSync(path.join(root, "runtime-manifest.json"), "utf8"),
+);
+const python = path.resolve(root, manifest.python);
+if (!python.startsWith(`${root}${path.sep}`)) process.exit(1);
+const prefix = path.dirname(path.dirname(python));
+const lib = path.join(prefix, "lib");
+const metadata = [];
+for (const pythonDir of fs.readdirSync(lib)) {
+  if (!pythonDir.startsWith("python")) continue;
+  const sitePackages = path.join(lib, pythonDir, "site-packages");
+  if (!fs.existsSync(sitePackages)) continue;
+  for (const entry of fs.readdirSync(sitePackages)) {
+    if (/^openprogram-[0-9][A-Za-z0-9.]*\.dist-info$/.test(entry)) {
+      metadata.push(path.join(sitePackages, entry, "METADATA"));
+    }
+  }
+}
+if (metadata.length !== 1) process.exit(1);
+const metadataPath = fs.realpathSync(metadata[0]);
+if (!metadataPath.startsWith(`${root}${path.sep}`)) process.exit(1);
+const fields = Object.fromEntries(
+  fs.readFileSync(metadataPath, "utf8")
+    .split(/\r?\n/)
+    .filter((line) => line.includes(":"))
+    .map((line) => {
+      const index = line.indexOf(":");
+      return [line.slice(0, index).toLowerCase(), line.slice(index + 1).trim()];
+    }),
+);
+if (fields.name?.toLowerCase().replaceAll("_", "-") !== "openprogram") {
+  process.exit(1);
+}
+if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(fields.version ?? "")) process.exit(1);
+process.stdout.write(fields.version);
+NODE
 }
 
 app_identity() {
