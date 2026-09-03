@@ -751,8 +751,10 @@ def test_deferred_install_rejects_commit_after_active_app_changes(
 
 @pytest.mark.macos
 @MACOS_DESKTOP_INSTALL
-def test_deferred_terminal_action_does_not_execute_candidate_runtime(
+@pytest.mark.parametrize("terminal_action", ["commit", "rollback"])
+def test_deferred_actions_do_not_execute_candidate_runtime(
     tmp_path: Path,
+    terminal_action: str,
 ) -> None:
     installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
     env = {
@@ -768,7 +770,10 @@ def test_deferred_terminal_action_does_not_execute_candidate_runtime(
     marker = tmp_path / "candidate-executed"
     runtime_python = candidate / "Contents/Resources/runtime/python/bin/python3"
     runtime_python.write_text(
-        f"#!/bin/sh\ntouch {marker!s}\nprintf '%s\\n' '0.6.2'\n",
+        "#!/bin/sh\n"
+        f"rm -rf {env['DESTDIR']}/Applications/.openprogram-app-install.*/previous.app\n"
+        f"touch {marker!s}\n"
+        "printf '%s\\n' '0.6.2'\n",
         encoding="utf-8",
     )
     runtime_python.chmod(0o755)
@@ -786,11 +791,11 @@ def test_deferred_terminal_action_does_not_execute_candidate_runtime(
             if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
         )
     )
-    assert marker.exists()
-    marker.unlink()
+    assert not marker.exists()
+    assert (transaction / "previous.app").is_dir()
 
     subprocess.run(
-        ["bash", str(installer), "--commit", str(transaction)],
+        ["bash", str(installer), f"--{terminal_action}", str(transaction)],
         check=True,
         env=env,
     )

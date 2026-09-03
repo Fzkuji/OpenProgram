@@ -172,7 +172,7 @@ NODE
 }
 
 if [[ "$action" == "install" ]]; then
-  validate_app "$source_app" || {
+  validate_app_metadata "$source_app" || {
     printf 'invalid OpenProgram app bundle: %s\n' "$source_app" >&2
     exit 1
   }
@@ -408,7 +408,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 ditto "$source_app" "$staged_app"
-validate_app "$staged_app" || {
+validate_app_metadata "$staged_app" || {
   printf 'staged OpenProgram app failed validation\n' >&2
   exit 1
 }
@@ -473,7 +473,7 @@ if ! mv "$staged_app" "$target_app"; then
 fi
 activated=1
 
-if ! validate_app "$target_app"; then
+if ! validate_app_metadata "$target_app"; then
   if mv "$target_app" "$transaction_dir/invalid.app"; then
     activated=0
   fi
