@@ -18,6 +18,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`recovery.py`** — Dispatch one frozen verifier Job after the supervisor releases system gates
 - **`store.py`** — Crash-safe file store for conversational self-update state
 - **`supervisor.py`** — External controller for one durable conversational self-update
+- **`system_probe.py`** — Observe the default worker before releasing post-update verification
 - **`types.py`** — Durable data contract for conversational self-update
 - **`verification.py`** — Validate identity-bound, timestamped self-update acceptance evidence
 - **`verifier_config.py`** — Freeze verifier inputs and bind their digest to an immutable update request

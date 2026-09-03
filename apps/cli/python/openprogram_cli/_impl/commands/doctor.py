@@ -324,7 +324,7 @@ def run_checks() -> list[dict]:
             ok, label, detail = fn()
         except Exception as e:  # never let a buggy check kill /doctor
             ok, label, detail = False, fn.__name__, f"{type(e).__name__}: {e}"
-        results.append({"ok": ok, "label": label, "detail": detail})
+        results.append({"id": fn.__name__, "ok": ok, "label": label, "detail": detail})
     return results
 
 

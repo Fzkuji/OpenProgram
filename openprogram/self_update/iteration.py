@@ -20,6 +20,7 @@ _PROTECTED_PATHS = (
     "openprogram/protected_paths.py", "openprogram/programs/_runtime/*",
     "openprogram/programs/_runtime.py",
     "apps/desktop/scripts/*", "scripts/release/*", "scripts/refresh-local-app.sh",
+    "setup.py",
 )
 _DEPENDENCY_FILES = (
     "pyproject.toml", "uv.lock", "package.json", "package-lock.json",
