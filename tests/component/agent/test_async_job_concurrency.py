@@ -431,8 +431,26 @@ def test_idle_activity_is_tracked_per_same_session_job(
     from openprogram.agent.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
+    from openprogram.agent.job import runner as runner_mod
+    from openprogram.execution import control as control_mod
+    from openprogram.execution import store as execution_store_mod
     from openprogram.agent.job.runner import JobRunner
     from openprogram.usage.ledger import UsageLedger
+
+    # This suite runs in one process.  A preceding component test can leave
+    # non-terminal canonical executions in the profile-default database;
+    # JobRunner reconciles those during construction and they can consume the
+    # fake worker signals used below.  Give this test its own execution store
+    # and control-service registry, as well as the already-isolated session
+    # store from ``store_fixture``.
+    runner_mod.shutdown_runner()
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path",
+        lambda: tmp_path / "executions.db",
+    )
+    with control_mod._default_control_services_lock:
+        control_mod._default_control_services.clear()
+    execution_store_mod._store_for_path.cache_clear()
 
     clock = _FakeMonotonic()
     resolved = resolve_resource_limits(
@@ -456,33 +474,15 @@ def test_idle_activity_is_tracked_per_same_session_job(
         budget_poll_seconds=60,
     )
     try:
-        submitted = threading.Event()
-        submit_count = 0
-        submit_lock = threading.Lock()
-        original_submit = runner._pool.submit
-
-        def submit_with_lifecycle_signal(*args, **kwargs):
-            nonlocal submit_count
-            future = original_submit(*args, **kwargs)
-            with submit_lock:
-                submit_count += 1
-                if submit_count >= 2:
-                    submitted.set()
-            return future
-
-        # JobRunner writes monitor metadata before handing the future to the
-        # executor. Synchronize on that lifecycle boundary instead of
-        # inferring it from the fake provider thread's scheduling.
-        monkeypatch.setattr(runner._pool, "submit", submit_with_lifecycle_signal)
         active = runner.spawn_job(
             session_id="p1", prompt="active", agent_id="main",
         )
         idle = runner.spawn_job(
             session_id="p1", prompt="idle", agent_id="main",
         )
-        assert submitted.wait(10.0)
         assert wait_until(lambda: len(fake_worker[0]) >= 2, timeout=10.0)
         assert len(fake_worker[0]) == 2
+        assert {call["prompt"] for call in fake_worker[0]} == {"active", "idle"}
         with runner._lock:
             entries = [runner._jobs[job_id] for job_id in (active, idle)]
             assert all(
@@ -512,6 +512,9 @@ def test_idle_activity_is_tracked_per_same_session_job(
     finally:
         fake_worker[1].set()
         runner.shutdown()
+        with control_mod._default_control_services_lock:
+            control_mod._default_control_services.clear()
+        execution_store_mod._store_for_path.cache_clear()
 
 def test_runner_job_coexists_with_mcp_foreground_token(
     store_fixture, fake_worker, monkeypatch, tmp_path,
