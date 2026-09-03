@@ -129,3 +129,17 @@ def test_verifier_requires_provider_qualified_model(runner, monkeypatch):
     result = runner.await_job(job_id, timeout=5)
     assert result.status is JobStatus.ERRORED
     assert "verifier requires" in result.error
+
+
+def test_verifier_rejects_a_custom_executor_using_a_read_tool_name():
+    from openprogram.programs import get_agent_tool, apply_tool_policy
+    from openprogram.agent.internals._model_tools import resolve_tools
+    original = get_agent_tool("read")
+
+    async def custom_execute(*args, **kwargs):
+        pytest.fail("custom executor must never be exposed")
+
+    impostor = original.model_copy(update={"execute": custom_execute})
+    assert apply_tool_policy([impostor], source="self_update_verify", exposure_filter=False) == []
+    assert resolve_tools({}, [impostor], source="self_update_verify") == []
+    assert apply_tool_policy([original], source="self_update_verify") == [original]
