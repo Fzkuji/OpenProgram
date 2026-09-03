@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 import subprocess
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -11,7 +12,7 @@ from openprogram.self_update import SelfUpdateStore, UpdatePhase, UpdateRequest
 from openprogram.self_update.supervisor import Artifact, run_supervisor
 
 
-def _staging(root: Path) -> SelfUpdateStore:
+def _staging(root: Path, *, timeout_seconds: int = 1800) -> SelfUpdateStore:
     store = SelfUpdateStore(root)
     store.create(
         UpdateRequest(
@@ -28,6 +29,7 @@ def _staging(root: Path) -> SelfUpdateStore:
             pre_update_evidence=("git-status:clean",),
             goal="Add behavior",
             assertions=("Behavior works",),
+            timeout_seconds=timeout_seconds,
         )
     )
     store.transition("su_supervisor", UpdatePhase.STAGING)
@@ -100,6 +102,8 @@ def test_success_persists_transaction_before_verifying(
         return str(transaction)
     monkeypatch.setattr(supervisor, "_activate", activate)
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+    monkeypatch.setattr("openprogram.self_update.system_probe.probe_current_system",
+                        lambda *_: {"candidate_sha": "3" * 40})
     gate = {"receipt": "real-probe-boundary"}
     observations = []
     def probe(record):
@@ -154,6 +158,76 @@ def test_quiescence_timeout_aborts_without_activation(
     assert store.load("su_supervisor").state.phase is UpdatePhase.ABORTED
     assert store.load("su_supervisor").state.detail["transaction_dir"] == str(transaction)
     assert (root / "maintenance.json").exists() is False
+
+
+@pytest.mark.parametrize(("failed_stage", "restoration"), [
+    (stage, restore) for stage in ("activate", "system") for restore in ("ok", "installer_failed", "probe_failed")
+] + [("preflight", "ok"), ("expired", "ok")])
+def test_activation_failure_restores_before_reporting_rollback(tmp_path, monkeypatch, failed_stage, restoration):
+    from openprogram import paths
+    from openprogram.self_update import supervisor, system_probe
+
+    profile = tmp_path / "profile"
+    store = _staging(profile / "self-updates", timeout_seconds=1 if failed_stage == "expired" else 1800)
+    digest = _installer(store.root)
+    update_dir = store.root / "su_supervisor"
+    tx = update_dir / "transaction"
+    tx.mkdir()
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: Artifact(update_dir, "a" * 64))
+    monkeypatch.setattr(supervisor, "_prepare_install", lambda *_: str(tx))
+    monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+    monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_: True)
+    old = {"candidate_sha": "3" * 40, "worker_pid": 1234}
+    restored = {**old, "worker_pid": 5678}
+    def old_probe(*_):
+        if failed_stage == "preflight":
+            raise system_probe.SystemProbeError("system probe failed: identity")
+        return old
+    monkeypatch.setattr(system_probe, "probe_current_system", old_probe)
+    calls = []
+    def activate(*_):
+        calls.append("activate")
+        if failed_stage == "expired":
+            time.sleep(1.1)
+            raise RuntimeError("activation timed out")
+        if failed_stage == "activate":
+            raise RuntimeError("activation failed")
+        return str(tx)
+    monkeypatch.setattr(supervisor, "_activate", activate)
+    def probe(*_):
+        raise system_probe.SystemProbeError("system probe failed: doctor")
+    monkeypatch.setattr(system_probe, "probe_system", probe)
+    def installer(argument, directory, sha, mode):
+        assert mode == "--rollback" and argument == tx and directory == update_dir and sha == digest
+        assert (update_dir / "rollback-1.json").is_file()
+        calls.append("rollback")
+        if restoration == "installer_failed":
+            raise RuntimeError("installer refused")
+        return str(tx)
+    monkeypatch.setattr(supervisor, "_installer_command", installer)
+    def restored_probe(record, revision):
+        assert revision == "3" * 40 != record.request.base_sha
+        calls.append("restored_probe")
+        if restoration == "probe_failed":
+            raise system_probe.SystemProbeError("system probe failed: identity")
+        return restored
+    monkeypatch.setattr(system_probe, "probe_restored_system", restored_probe, raising=False)
+    assert run_supervisor("su_supervisor", state_root=store.root, installer_sha256=digest) == 1
+    state = store.load("su_supervisor").state
+    if failed_stage == "preflight":
+        assert state.phase is UpdatePhase.ABORTED and calls == []
+        assert not (store.root / "maintenance.json").exists()
+        return
+    assert calls[:2] == ["activate", "rollback"]
+    assert state.detail["transaction_dir"] == str(tx)
+    if restoration == "ok":
+        assert state.phase is UpdatePhase.ROLLED_BACK
+        assert state.detail["restored_system_gate"] == restored
+    else:
+        assert state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY
+        assert "recovery_error" in state.detail
+    assert (store.root / "maintenance.json").exists() is (restoration != "ok")
 
 
 def test_quiescence_waits_without_cancelling_sessions_or_jobs(monkeypatch) -> None:

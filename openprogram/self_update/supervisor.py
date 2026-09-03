@@ -356,6 +356,31 @@ def _validate_transaction_path(path: Path) -> Path:
     return path
 
 
+def _rollback(store: SelfUpdateStore, update_id: str, installer_sha256: str, error: Exception) -> None:
+    from openprogram.self_update.rollback_intent import begin_rollback
+    from openprogram.self_update.system_probe import probe_restored_system
+
+    record = store.load(update_id)
+    detail = {**record.state.detail, "error": str(error)[:2000]}
+    target = UpdatePhase.NEEDS_MANUAL_RECOVERY
+    try:
+        intent = begin_rollback(store, update_id, str(error))
+        if time.time() >= intent["deadline"]:
+            raise RuntimeError("rollback deadline expired")
+        transaction = _validate_transaction_path(Path(detail["transaction_dir"]))
+        reported = _installer_command(transaction, store.root / update_id, installer_sha256, "--rollback")
+        if reported != str(transaction):
+            raise RuntimeError("installer rolled back a different transaction")
+        restored = probe_restored_system(store.load(update_id), intent["previous_revision"])
+        if time.time() >= intent["deadline"]:
+            raise RuntimeError("rollback verification deadline expired")
+        detail.update(restored_system_gate=restored, rollback_available=False)
+        target = UpdatePhase.ROLLED_BACK
+    except Exception as exc:
+        detail["recovery_error"] = str(exc)[:2000]
+    store.transition(update_id, target, expected_phase=record.state.phase, detail=detail)
+
+
 def run_supervisor(
     update_id: str,
     *,
@@ -363,7 +388,7 @@ def run_supervisor(
     installer_sha256: str,
 ) -> int:
     """Build and activate a candidate, then release system-gated verification."""
-    from openprogram.self_update.system_probe import probe_system
+    from openprogram.self_update.system_probe import probe_system, probe_current_system
 
     if (
         len(installer_sha256) != 64
@@ -434,6 +459,9 @@ def run_supervisor(
                 _abort(store, update_id, state.phase, "quiescence timed out")
                 leave_maintenance(update_id)
                 return 1
+            previous_system_gate = probe_current_system(store.load(update_id))
+            if previous_system_gate["candidate_sha"] == record.request.candidate_sha:
+                raise RuntimeError("candidate is already the running revision")
             store.transition(
                 update_id,
                 UpdatePhase.ACTIVATING,
@@ -442,6 +470,7 @@ def run_supervisor(
                     "artifact_path": str(artifact.path),
                     "artifact_sha256": artifact.sha256,
                     "transaction_dir": str(transaction),
+                    "previous_system_gate": previous_system_gate,
                 },
             )
             _activate(transaction, update_dir, installer_sha256)
@@ -457,6 +486,7 @@ def run_supervisor(
                     "transaction_dir": str(transaction),
                     "rollback_available": True,
                     "system_gate": system_gate,
+                    "previous_system_gate": previous_system_gate,
                 },
             )
             return 0
@@ -464,14 +494,9 @@ def run_supervisor(
             current = store.load(update_id).state.phase
             if current is UpdatePhase.READY:
                 _abort(store, update_id, current, exc)
-            elif current is UpdatePhase.ACTIVATING:
-                store.transition(
-                    update_id,
-                    UpdatePhase.NEEDS_MANUAL_RECOVERY,
-                    expected_phase=current,
-                    detail={**store.load(update_id).state.detail, "error": str(exc)[:2000]},
-                )
-            if maintenance_entered:
+            elif current in {UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING}:
+                _rollback(store, update_id, installer_sha256, exc)
+            if maintenance_entered and store.load(update_id).state.phase is not UpdatePhase.NEEDS_MANUAL_RECOVERY:
                 leave_maintenance(update_id)
             return 1
 

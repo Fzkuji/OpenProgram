@@ -2,6 +2,7 @@
 from dataclasses import replace
 import json
 import os
+from pathlib import Path
 import threading
 from types import SimpleNamespace
 
@@ -11,6 +12,8 @@ from fastapi.responses import HTMLResponse
 
 from openprogram.self_update import SelfUpdateStore, UpdateRequest, UpdatePhase
 from tests.component.agent.async_job_support import store_fixture  # noqa: F401
+from tests.component.self_update.test_install_transaction import installation, INSTALLER, version, phase  # noqa: F401
+from tests.component.config.test_distribution_release import MACOS_DESKTOP_INSTALL
 
 
 @pytest.fixture
@@ -89,6 +92,30 @@ def test_wrong_candidate_is_rejected_by_real_hmac_challenge(live):
         probe_system(replace(record, request=replace(record.request, candidate_sha="3" * 40)))
 
 
+@pytest.mark.parametrize("revision", ["3" * 40, "3" * 40 + "-dirty"])
+def test_current_and_restored_probes_use_observed_revision_even_after_timeout(live, monkeypatch, revision):
+    from openprogram.self_update.system_probe import probe_current_system, probe_restored_system, probe_system, SystemProbeError
+    from openprogram.webui.routes import misc
+    record, _, _ = live
+    monkeypatch.setattr(misc, "_HEAD_SHA", revision)
+    assert probe_current_system(record)["candidate_sha"] == revision != record.request.base_sha
+    expired = replace(record, request=replace(record.request, created_at=0, timeout_seconds=1))
+    assert probe_restored_system(expired, revision)["candidate_sha"] == revision
+    with pytest.raises(SystemProbeError):
+        probe_system(expired)
+    with pytest.raises(SystemProbeError):
+        probe_restored_system(record, "4" * 40)
+
+
+def test_old_worker_with_unknown_revision_cannot_pass_preflight(live, monkeypatch):
+    from openprogram.self_update.system_probe import probe_current_system, SystemProbeError
+    from openprogram.webui.routes import misc
+    record, _, _ = live
+    monkeypatch.setattr(misc, "_HEAD_SHA", "unknown")
+    with pytest.raises(SystemProbeError, match="identity"):
+        probe_current_system(record)
+
+
 def test_instance_switch_during_doctor_is_rejected(live, monkeypatch):
     from openprogram.self_update.system_probe import probe_system, SystemProbeError
     from openprogram.cli.commands import doctor
@@ -113,8 +140,9 @@ def test_empty_or_incomplete_doctor_is_not_success(live, monkeypatch, empty):
         probe_system(record)
 
 
-@pytest.mark.parametrize("doctor_ok", [True, False])
-def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypatch, doctor_ok):
+@pytest.mark.parametrize("scenario", ["success", "rollback", "wrong_restored"])
+@pytest.mark.parametrize("native_install", [False, pytest.param(True, marks=[pytest.mark.macos, MACOS_DESKTOP_INSTALL])])
+def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypatch, scenario, native_install, request):
     """Actual controller -> HTTP/WS -> durable receipt -> startup -> real Job."""
     import hashlib
     from openprogram.agent import authority
@@ -123,9 +151,12 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     from openprogram.agent.job.types import JobStatus
     from openprogram.self_update import supervisor, recovery
     from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
+    from openprogram.webui.routes import misc
 
+    fixtures = request
+    doctor_ok = scenario == "success"
     record, flags, _ = live
-    flags["doctor"] = doctor_ok
+    monkeypatch.setattr(misc, "_HEAD_SHA", "3" * 40)  # Old live SHA differs from source base.
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store_fixture)
     store = SelfUpdateStore()
     # The listener fixture has no worker or session side effects. Replace its
@@ -151,9 +182,28 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     artifact.mkdir(parents=True)
     transaction = update_dir / "transaction"
     transaction.mkdir()
-    monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: supervisor.Artifact(artifact, "a" * 64))
-    monkeypatch.setattr(supervisor, "_prepare_install", lambda *_: str(transaction))
-    monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+    if native_install:
+        _, artifact, target, native_tmp = fixtures.getfixturevalue("installation")
+        installer.write_bytes(INSTALLER.read_bytes())
+        digest = hashlib.sha256(installer.read_bytes()).hexdigest()
+        native_run = supervisor.subprocess.run
+        def run(args, **kwargs):
+            if args[:2] == ["/bin/bash", str(installer)]:
+                kwargs["env"] = {**kwargs["env"], "DESTDIR": str(target.parent.parent),
+                                 "HOME": str(native_tmp / "home"), "TMPDIR": str(native_tmp / "tmp"),
+                                 "PATH": os.environ["PATH"]}
+            return native_run(args, **kwargs)
+        monkeypatch.setattr(supervisor.subprocess, "run", run)
+        def validate(path):
+            assert path.parent == target.parent and path.name.startswith(".openprogram-app-install.")
+            assert path.is_dir() and not path.is_symlink()
+            return path
+        monkeypatch.setattr(supervisor, "_validate_transaction_path", validate)
+    else:
+        monkeypatch.setattr(supervisor, "_prepare_install", lambda *_: str(transaction))
+        monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+    artifact_digest = supervisor._tree_digest(artifact)
+    monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: supervisor.Artifact(artifact, artifact_digest))
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_: True)
     monkeypatch.setattr("openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
     calls = []
@@ -165,16 +215,39 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
     startup_result = []
     thread = threading.Thread(target=lambda: startup_result.append(recovery.recover_pending_updates()))
-    def activate(*_):
+    old_startup_result = []
+    old_thread = threading.Thread(target=lambda: old_startup_result.append(recovery.recover_pending_updates()))
+    native_activate = supervisor._activate
+    def activate(*args):
+        nonlocal transaction
+        transaction = Path(args[0])
         assert store.load(request.update_id).state.phase is UpdatePhase.ACTIVATING
+        if native_install:
+            native_activate(*args)
+            assert version(target) == "0.6.2"
+        flags["doctor"] = doctor_ok
+        monkeypatch.setattr(misc, "_HEAD_SHA", "2" * 40)
         thread.start()  # As with installation, Web is serving before recovery.
         return str(transaction)
     monkeypatch.setattr(supervisor, "_activate", activate)
+    native_installer = supervisor._installer_command
+    def installer_command(argument, directory, sha, mode):
+        if mode != "--rollback":
+            return native_installer(argument, directory, sha, mode)
+        assert (update_dir / "rollback-1.json").is_file()
+        if native_install:
+            native_installer(argument, directory, sha, mode)
+            assert version(target) == "0.6.1" and phase(transaction) == "rolled_back"
+        flags["doctor"] = True
+        monkeypatch.setattr(misc, "_HEAD_SHA", ("4" if scenario == "wrong_restored" else "3") * 40)
+        old_thread.start()
+        return str(transaction)
+    monkeypatch.setattr(supervisor, "_installer_command", installer_command)
     try:
         result = supervisor.run_supervisor(request.update_id, state_root=store.root, installer_sha256=digest)
         thread.join(timeout=5)
         assert not thread.is_alive()
-        assert startup_result == [True]
+        assert startup_result == [scenario != "wrong_restored"]
         current = store.load(request.update_id)
         assert current.state.detail["transaction_dir"] == str(transaction)
         if doctor_ok:
@@ -189,12 +262,24 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
             assert calls[0].model_override == "fake/fixed"
             assert calls[0].branch_from is None and calls[0].advance_head is False
         else:
-            assert result == 1 and current.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY
+            old_thread.join(timeout=5)
+            assert not old_thread.is_alive() and old_startup_result == [scenario != "wrong_restored"]
+            expected_phase = UpdatePhase.NEEDS_MANUAL_RECOVERY if scenario == "wrong_restored" else UpdatePhase.ROLLED_BACK
+            assert result == 1 and current.state.phase is expected_phase
             assert current.state.detail["error"] == "system probe failed: doctor"
+            assert current.state.detail["previous_system_gate"]["candidate_sha"] == "3" * 40
+            if scenario == "wrong_restored":
+                assert "recovery_error" in current.state.detail
+                assert "restored_system_gate" not in current.state.detail
+            else:
+                assert current.state.detail["restored_system_gate"]["candidate_sha"] == "3" * 40
+            assert (store.root / "maintenance.json").exists() is (scenario == "wrong_restored")
             assert "system_gate" not in current.state.detail
             assert runner.list_jobs("p1") == [] and calls == []
     finally:
-        if thread.is_alive():
+        if thread.is_alive() or old_thread.is_alive():
             store.transition(request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
-            thread.join(timeout=5)
+            for started in (thread, old_thread):
+                if started.ident is not None:
+                    started.join(timeout=5)
         runner.shutdown()

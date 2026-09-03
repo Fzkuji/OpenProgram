@@ -535,6 +535,7 @@ if [[ "$action" != "install" ]] && \
       printf 'prepared App transaction could not be finalized; recovery files preserved\n' >&2; exit 1;
     }
     printf 'OpenProgram prepared transaction %s finished\n' "$action"
+    printf 'OPENPROGRAM_TRANSACTION_DIR=%s\n' "$transaction_dir"
     exit 0
   fi
 elif [[ "$action" != "install" ]]; then

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
 import secrets
 import socket
 import time
@@ -23,6 +24,24 @@ def probe_system(record: UpdateRecord) -> dict:
     This does not transition update state or commit an installation. The
     external supervisor owns persistence, failure recovery and finalization.
     """
+    return _probe_system(record, record.request.candidate_sha,
+                         min(60, record.request.created_at + record.request.timeout_seconds - time.time()))
+
+
+def probe_current_system(record: UpdateRecord) -> dict:
+    """Observe the old live revision; the source base is not its identity."""
+    return _probe_system(record, None,
+                         min(60, record.request.created_at + record.request.timeout_seconds - time.time()))
+
+
+def probe_restored_system(record: UpdateRecord, revision: str) -> dict:
+    """Recovery has its own bounded window even if the update timed out."""
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}(?:-dirty)?", revision):
+        raise SystemProbeError("system probe failed: expected revision")
+    return _probe_system(record, revision, 60)
+
+
+def _probe_system(record: UpdateRecord, revision: str | None, timeout: float) -> dict:
     from openprogram.agent.authority import owner_principal_id
     from openprogram.backend_endpoint import read_active_web_access, read_web_token, create_owner_challenge_proof
     from openprogram.paths import get_active_profile
@@ -32,8 +51,7 @@ def probe_system(record: UpdateRecord) -> dict:
     from openprogram.cli.commands.doctor import CHECKS
     from websockets.sync.client import connect
 
-    started = time.time()
-    deadline = time.monotonic() + min(60, record.request.created_at + record.request.timeout_seconds - started)
+    deadline = time.monotonic() + timeout
     stage = "owner_auth"
     origin = f"http://127.0.0.1:{_PORT}"
 
@@ -56,9 +74,12 @@ def probe_system(record: UpdateRecord) -> dict:
                          timeout=min(20, remaining()), overall_timeout=remaining()) as client:
             headers = {"Authorization": f"Bearer {token}", "Origin": origin}
             nonce = secrets.token_urlsafe(32)
-            proof = client.get(origin + "/api/auth/challenge", params={"nonce": nonce, "revision": record.request.candidate_sha}, timeout=min(5, remaining()))
+            # Legacy/dirty old revisions use the same owner proof followed by
+            # strict authenticated diagnostics. Candidate proof stays SHA-bound.
+            challenge_revision = revision if revision and re.fullmatch(r"[0-9a-f]{40}", revision) else ""
+            proof = client.get(origin + "/api/auth/challenge", params={"nonce": nonce, "revision": challenge_revision}, timeout=min(5, remaining()))
             proof.raise_for_status()
-            expected = create_owner_challenge_proof(token=token, nonce=nonce, revision=record.request.candidate_sha)
+            expected = create_owner_challenge_proof(token=token, nonce=nonce, revision=challenge_revision)
             value = proof.json().get("proof")
             if not isinstance(value, str) or not hmac.compare_digest(value, expected) or read_active_web_access() != access:
                 raise ValueError
@@ -74,9 +95,12 @@ def probe_system(record: UpdateRecord) -> dict:
                 data = get("/api/diagnostics").json()
                 pid = data.get("worker_pid")
                 observed = data.get("checked_at")
+                observed_revision = data.get("revision")
                 if (
                     data.get("status") != "ok" or data.get("database_ok") is not True
-                    or data.get("revision") != record.request.candidate_sha
+                    or not isinstance(observed_revision, str)
+                    or not re.fullmatch(r"[0-9a-f]{40}(?:-dirty)?", observed_revision)
+                    or (revision is not None and observed_revision != revision)
                     or data.get("principal_id") != owner_principal_id()
                     or type(pid) is not int or pid <= 0 or pid != current_worker_pid()
                     or type(data.get("registered_tool_count")) is not int or data["registered_tool_count"] <= 0
@@ -84,10 +108,10 @@ def probe_system(record: UpdateRecord) -> dict:
                     or not before <= observed <= time.time()
                 ):
                     raise ValueError
-                return pid
+                return pid, observed_revision
 
             stage = "identity"
-            pid = identity()
+            pid, observed_revision = identity()
             stage = "health"
             if get("/healthz").json() != {"status": "ok"}:
                 raise ValueError
@@ -118,10 +142,10 @@ def probe_system(record: UpdateRecord) -> dict:
                     while json.loads(ws.recv(timeout=min(5, remaining()))).get("type") != "pong":
                         remaining()
             stage = "identity"
-            if identity() != pid or read_active_web_access() != access:
+            if identity() != (pid, observed_revision) or read_active_web_access() != access:
                 raise ValueError
             remaining()
-        return {"schema": 1, "candidate_sha": record.request.candidate_sha, "attempt": record.state.attempt,
+        return {"schema": 1, "candidate_sha": observed_revision, "attempt": record.state.attempt,
                 "worker_pid": pid, "verified_at": time.time(), "checks": {name: True for name in SYSTEM_CHECKS}}
     except Exception:
         raise SystemProbeError(f"system probe failed: {stage}") from None

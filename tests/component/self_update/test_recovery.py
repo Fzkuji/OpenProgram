@@ -47,7 +47,9 @@ def environment(tmp_path, monkeypatch, store_fixture):
         gate = dict(schema=1, candidate_sha=request.candidate_sha, attempt=1,
                     verified_at=time.time(), worker_pid=os.getpid(), checks={key: True for key in SYSTEM_CHECKS})
         gate.update(changes)
-        store.transition(request.update_id, UpdatePhase.VERIFYING, detail={"system_gate": gate})
+        store.transition(request.update_id, UpdatePhase.VERIFYING, detail={
+            "system_gate": gate, "previous_system_gate": {"candidate_sha": "3" * 40},
+        })
     yield store, runner, calls, request, release
     runner.shutdown()
     authority._reset_owner_cache_for_tests()
@@ -112,7 +114,7 @@ def test_terminal_orphan_job_is_not_reexecuted(environment):
     assert calls == []
 
 
-@pytest.mark.parametrize("gate", ["missing", "old_worker", "rolled_back", "valid"])
+@pytest.mark.parametrize("gate", ["missing", "old_worker", "rolled_back", "rolling_back", "valid"])
 def test_persisted_queue_checks_gate_before_model_execution(environment, monkeypatch, gate):
     from openprogram.agent.job.runner import JobRunner
     from openprogram.agent.job.types import JobStatus
@@ -140,6 +142,9 @@ def test_persisted_queue_checks_gate_before_model_execution(environment, monkeyp
         conn.execute("UPDATE job_admissions SET dispatch_ready = 1 WHERE job_id = ?", (claim.job_id,))
     if gate == "rolled_back":
         store.transition(request.update_id, UpdatePhase.ROLLED_BACK)
+    if gate == "rolling_back":
+        from openprogram.self_update.rollback_intent import begin_rollback
+        begin_rollback(store, request.update_id, "failure")
     recovered = JobRunner(max_workers=1, governor=runner._governor)
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: recovered)
     try:
@@ -152,7 +157,8 @@ def test_persisted_queue_checks_gate_before_model_execution(environment, monkeyp
         else:
             assert result.status is JobStatus.ERRORED, result.error
             assert calls == []
-        recover_pending_updates()
+        if gate != "rolling_back":
+            recover_pending_updates()
         assert len(recovered.list_jobs("p1")) == 1  # Never retry a rejected Job.
     finally:
         recovered.shutdown()
@@ -238,4 +244,51 @@ def test_rollback_after_claim_prevents_late_admission(environment, monkeypatch):
         return claim
     monkeypatch.setattr(SelfUpdateStore, "claim_verifier", claim_then_rollback)
     assert recover_pending_updates() is True
+    assert calls == [] and runner.list_jobs("p1") == []
+
+
+def test_expired_update_and_candidate_error_do_not_block_restored_startup(environment, monkeypatch):
+    from openprogram.self_update import recovery
+    from openprogram.self_update.rollback_intent import begin_rollback
+    store, runner, calls, original, _ = environment
+    store.transition(original.update_id, UpdatePhase.ROLLED_BACK)
+    request = replace(original, update_id="su_expired", created_at=time.time() - 3600, timeout_seconds=1)
+    store.create(request)
+    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING):
+        store.transition(request.update_id, phase, detail={"previous_system_gate": {"candidate_sha": "3" * 40}})
+    intent = begin_rollback(store, request.update_id, "update timed out")
+    assert begin_rollback(store, request.update_id, "retry") == intent
+    store._write_json(store.root / request.update_id / "startup-error-1.json", {"error": "candidate failed"})
+    waits = []
+    def pause(_):
+        waits.append(True)
+        assert calls == []
+        store.transition(request.update_id, UpdatePhase.ROLLED_BACK)
+    monkeypatch.setattr(recovery, "time", SimpleNamespace(time=time.time, monotonic=time.monotonic, sleep=pause))
+    assert recover_pending_updates() is True
+    assert waits == [True] and calls == [] and runner.list_jobs("p1") == []
+
+
+def test_rollback_intent_after_claim_prevents_late_admission(environment, monkeypatch):
+    from openprogram.self_update import recovery
+    from openprogram.self_update.rollback_intent import begin_rollback
+    store, runner, calls, request, release = environment
+    release()
+    original = SelfUpdateStore.claim_verifier
+    def claim_then_restore(self, *args, **kwargs):
+        claim = original(self, *args, **kwargs)
+        begin_rollback(self, request.update_id, "failure")
+        return claim
+    monkeypatch.setattr(SelfUpdateStore, "claim_verifier", claim_then_restore)
+    monkeypatch.setattr(recovery, "time", SimpleNamespace(time=time.time, monotonic=time.monotonic,
+                        sleep=lambda _: store.transition(request.update_id, UpdatePhase.ROLLED_BACK)))
+    assert recover_pending_updates() is True
+    assert calls == [] and runner.list_jobs("p1") == []
+
+
+def test_invalid_rollback_intent_cannot_dispatch(environment):
+    store, runner, calls, request, release = environment
+    release()
+    store._write_json(store.root / request.update_id / "rollback-1.json", {"schema": 1})
+    assert recover_pending_updates() is False
     assert calls == [] and runner.list_jobs("p1") == []

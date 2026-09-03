@@ -10,6 +10,7 @@ import time
 from .store import SelfUpdateStore
 from .types import TERMINAL_PHASES, UpdatePhase
 from .verifier_config import load_verifier_config, verifier_prompt
+from .rollback_intent import load_rollback_intent
 
 
 SYSTEM_CHECKS = frozenset({"runtime_revision", "owner_auth", "health", "web", "websocket", "doctor"})
@@ -48,6 +49,8 @@ def require_verifier_execution(*, session_id, spawn_caller, **inputs) -> None:
         record = store._load_active_unlocked()
         if record is None or record.state.phase is not UpdatePhase.VERIFYING:
             raise ValueError("verifier execution requires an active verifying update")
+        if load_rollback_intent(store, record) is not None:
+            raise ValueError("verifier execution is forbidden during rollback")
         _check_gate(record)
         dispatch = record.state.dispatch
         job_id = f"self-update:{record.request.update_id}:verify:{record.state.attempt}"
@@ -96,10 +99,23 @@ def recover_pending_updates() -> bool:
             _STARTUP_SECONDS,
             max(0, record.request.created_at + record.request.timeout_seconds - time.time()),
         )
-        while time.monotonic() < deadline:
+        rollback_deadline = None
+        while True:
             record = store.load(record.request.update_id)
             if record.state.phase in TERMINAL_PHASES:
-                return True
+                return record.state.phase is not UpdatePhase.NEEDS_MANUAL_RECOVERY
+            intent = load_rollback_intent(store, record)
+            if intent is not None:
+                if rollback_deadline is None:
+                    rollback_deadline = time.monotonic() + max(0, intent["deadline"] - time.time())
+                if time.monotonic() >= rollback_deadline:
+                    raise ValueError("startup rollback handoff timed out")
+                # Both candidate and restored workers wait for the controller's
+                # fresh old-version checks, even after a candidate startup error.
+                time.sleep(0.1)
+                continue
+            if time.monotonic() >= deadline:
+                raise ValueError("startup verification handoff timed out")
             error_path = store.root / record.request.update_id / f"startup-error-{record.state.attempt}.json"
             if error_path.exists() or error_path.is_symlink():
                 return False
@@ -127,7 +143,9 @@ def recover_pending_updates() -> bool:
             with store._locked():
                 current = store._load_unlocked(record.request.update_id)
                 if current.state.phase in TERMINAL_PHASES:
-                    return True
+                    return current.state.phase is not UpdatePhase.NEEDS_MANUAL_RECOVERY
+                if load_rollback_intent(store, current) is not None:
+                    continue
                 dispatch = current.state.dispatch
                 if current.state.phase is not UpdatePhase.VERIFYING or dispatch is None:
                     raise ValueError("verification phase changed before admission")
@@ -148,7 +166,6 @@ def recover_pending_updates() -> bool:
                     authority=config["authority"],
                 )
             return True
-        raise ValueError("startup verification handoff timed out")
     except Exception as exc:
         _log.error("Self-update startup verification failed: %s", type(exc).__name__)
         if record is not None:

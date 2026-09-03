@@ -16,6 +16,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`launcher.py`** — Submit one trusted, one-shot self-update supervisor through launchd
 - **`maintenance.py`** — Durable admission gate while an approved update waits for quiescence
 - **`recovery.py`** — Dispatch one frozen verifier Job after the supervisor releases system gates
+- **`rollback_intent.py`** — Durable rollback intent shared by the controller and worker admission
 - **`store.py`** — Crash-safe file store for conversational self-update state
 - **`supervisor.py`** — External controller for one durable conversational self-update
 - **`system_probe.py`** — Observe the default worker before releasing post-update verification
