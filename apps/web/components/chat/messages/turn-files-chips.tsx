@@ -1,7 +1,7 @@
 "use client";
 
 /** Compact per-turn file card. Diffs live in the center Review tab. */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import {
   FeatherIcon,
@@ -28,6 +28,12 @@ import {
   type TurnHistoryOperation,
   type TurnHistoryState,
 } from "./turn-files-history-state";
+import {
+  fileWriteState,
+  initialLegacyTurnFilesLoadState,
+  legacyTurnFilesLoadReducer,
+  type FileWriteState,
+} from "./turn-files-presentation";
 
 const COLLAPSE_AFTER = 3;
 const MAX_CARD_FILES = 20;
@@ -41,17 +47,6 @@ interface TurnFile {
   binary?: boolean;
   diff_state?: string;
   recoverability?: string;
-}
-
-const FILE_WRITING_TOOLS = new Set(["write", "edit", "apply_patch"]);
-
-function allFileWritesFailed(blocks?: AssistantBlock[]): boolean {
-  if (!blocks) return false;
-  const writes = blocks.filter(
-    (block) => block.type === "tool"
-      && FILE_WRITING_TOOLS.has((block.tool || "").toLowerCase()),
-  );
-  return writes.length > 0 && writes.every((block) => block.is_error === true);
 }
 
 function basename(path: string): string {
@@ -78,12 +73,14 @@ export function TurnFilesChips({
   summary,
   initiallyReverted = false,
   sessionIdOverride,
+  writeState,
 }: {
   assistantMsgId: string;
   blocks?: AssistantBlock[];
   summary?: TurnFileSummary;
   initiallyReverted?: boolean;
   sessionIdOverride?: string;
+  writeState?: FileWriteState;
 }) {
   const { text } = useTranslation();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -94,7 +91,10 @@ export function TurnFilesChips({
     () => summaryFiles(summary, project?.path),
     [project?.path, summary],
   );
-  const [files, setFiles] = useState<TurnFile[] | null>(embedded);
+  const writesFailed = (writeState ?? fileWriteState(blocks)) === "failed";
+  const [files, setFiles] = useState<TurnFile[] | null>(
+    embedded ?? (writesFailed ? [] : null),
+  );
   const [fileCount, setFileCount] = useState(summary?.file_count ?? embedded?.length ?? 0);
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<"undo" | "redo" | null>(null);
@@ -103,6 +103,10 @@ export function TurnFilesChips({
   const [visible, setVisible] = useState(false);
   const [historyNonce, setHistoryNonce] = useState(0);
   const [historyState, setHistoryState] = useState<TurnHistoryState | null>(null);
+  const [legacyLoad, dispatchLegacyLoad] = useReducer(
+    legacyTurnFilesLoadReducer,
+    initialLegacyTurnFilesLoadState,
+  );
   const historyControllerRef = useRef<AbortController | null>(null);
   const probeRef = useRef<HTMLDivElement>(null);
   const openReviewTab = useCenterTabs((state) => state.openReviewTab);
@@ -153,8 +157,41 @@ export function TurnFilesChips({
   }, [assistantMsgId, historyNonce, sessionId, visible]);
 
   useEffect(() => {
-    if (embedded) setFiles(embedded);
+    if (embedded) {
+      setFiles(embedded);
+    }
   }, [embedded]);
+
+  useEffect(() => {
+    if (embedded || writesFailed || !visible || !sessionId || !assistantMsgId) return;
+    const controller = new AbortController();
+    void wsRequest<{
+      files?: TurnFile[];
+      file_count?: number;
+      reverted?: boolean;
+      error?: string;
+      session_id?: string;
+      assistant_msg_id?: string;
+    }>(
+      "review_scope",
+      { session_id: sessionId, assistant_msg_id: assistantMsgId, scope: "turn" },
+      "review_scope_result",
+      (data) => data.session_id === sessionId && data.assistant_msg_id === assistantMsgId,
+      4000,
+      { signal: controller.signal, requestId: true },
+    ).then((data) => {
+      if (controller.signal.aborted) return;
+      if (!data || data.error) {
+        dispatchLegacyLoad({ type: "resolved", ok: false });
+        return;
+      }
+      setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
+      setFileCount(data.file_count ?? data.files?.length ?? 0);
+      setReverted(Boolean(data.reverted));
+      dispatchLegacyLoad({ type: "resolved", ok: true });
+    });
+    return () => controller.abort();
+  }, [assistantMsgId, embedded, legacyLoad.attempt, sessionId, visible, writesFailed]);
 
   function historyAction(direction: "undo" | "redo") {
     if (!sessionId || busy) return;
@@ -235,23 +272,25 @@ export function TurnFilesChips({
   }
 
   if (!files) {
-    return (
-      <div ref={probeRef} className="turn-files-card turn-files-summary-unavailable">
-        <span>{text("File summary unavailable.", "文件摘要不可用。")}</span>
-        {sessionId ? (
+    if (legacyLoad.status === "error") {
+      return (
+        <div className="turn-files-load-error" role="status">
+          <span>{text("Could not load file changes.", "无法加载文件修改。")}</span>
           <button
             type="button"
-            className="turn-files-review"
-            onClick={() => openReviewTab(sessionId, assistantMsgId, "turn")}
+            onClick={() => dispatchLegacyLoad({ type: "retry" })}
           >
-            {text("Open Review", "打开审阅")}
+            {text("Retry", "重试")}
           </button>
-        ) : null}
-      </div>
+        </div>
+      );
+    }
+    return (
+      <div ref={probeRef} className="turn-files-probe" aria-hidden="true" />
     );
   }
   if (files.length === 0) {
-    if (allFileWritesFailed(blocks)) {
+    if (writesFailed) {
       return (
         <div className="turn-files-failed-note">
           {text("File changes in this turn did not go through.", "本轮文件操作未成功执行。")}

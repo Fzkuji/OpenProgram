@@ -16,7 +16,17 @@ const reviewLayout = read("lib/state/review-tab-layout.ts");
 const cardCss = read("app/styles/chat/turn-files-card.css");
 const design = read("../../docs/reference/design/ui/chat-turn-visual-spec.html");
 
-assert.match(card, /if \(embedded\) setFiles\(embedded\);/);
+assert.match(card, /if \(embedded\) \{\s*setFiles\(embedded\);/);
+assert.match(card, /"review_scope"/);
+assert.doesNotMatch(card, /"list_turn_files"/);
+assert.match(card, /dispatchLegacyLoad\(\{ type: "resolved", ok: false \}\)/);
+assert.match(card, /Could not load file changes\./);
+assert.match(card, /Retry/);
+assert.doesNotMatch(card, /File summary unavailable\./);
+assert.match(bubble, /shouldRenderTurnFiles\(msg\.turnFiles, msg\.blocks\)/);
+assert.match(rail, /shouldRenderTurnFiles\(/);
+assert.match(bubble, /<TurnFilesChips\s+key=\{msg\.id\}/);
+assert.match(rail, /<TurnFilesChips\s+key=\{assistantId\}/);
 assert.match(bubble, /summary=\{msg\.turnFiles\}/);
 assert.match(rail, /summary=\{assistantTurnFiles\}/);
 assert.doesNotMatch(card, /turn_file_diff|UnifiedDiff|aria-expanded/);

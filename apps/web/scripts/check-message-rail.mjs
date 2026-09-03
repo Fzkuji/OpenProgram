@@ -3,15 +3,18 @@
  *
  * The rail subscribes to the session store through `useShallow`, which
  * only compares one level deep — so each row is flattened to a single
- * string and split back apart on the way out. Message text can contain
- * any ordinary character (spaces, tabs, newlines, quotes), so the only
- * thing keeping the round-trip honest is a separator that cannot appear
- * in the payload. This asserts that, and that the whole-map subscription
- * the packing exists to avoid has not crept back in.
+ * string and parsed back on the way out. Message text and file paths can
+ * contain separators, spaces, tabs, newlines, quotes, and Unicode, so the
+ * row uses a JSON tuple. This asserts that round-trip and that the whole-map
+ * subscription the packing exists to avoid has not crept back in.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import {
+  packRailRow,
+  unpackRailRow,
+} from "../components/chat/messages/message-rail-row.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(
@@ -44,27 +47,6 @@ if (/react-virtuoso|react-window|@tanstack\/react-virtual/.test(src)) {
   throw new Error("message-rail must not depend on a virtual list");
 }
 
-// Mirror of packRow / unpackRow (kept in lockstep with the component).
-const RAIL_SEP = "␟";
-const packRow = (r) =>
-  [r.id, r.content, r.preview, r.assistantId ?? "", r.assistantSummary ?? ""]
-    .join(RAIL_SEP);
-const unpackRow = (packed) => {
-  const [id, content, preview, assistantId, assistantSummary] =
-    packed.split(RAIL_SEP);
-  return {
-    id,
-    content,
-    preview,
-    assistantId: assistantId || undefined,
-    assistantSummary: assistantSummary || undefined,
-  };
-};
-
-if (!src.includes(`const RAIL_SEP = "\\u241f"`)) {
-  throw new Error("message-rail RAIL_SEP changed — update this check too");
-}
-
 const cases = [
   {
     id: "m1",
@@ -72,6 +54,9 @@ const cases = [
     preview: "hello world with spaces",
     assistantId: "a1",
     assistantSummary: "sure thing",
+    assistantTurnFiles: undefined,
+    assistantFileWriteState: "attempted",
+    assistantReverted: false,
   },
   // Newlines, tabs, quotes and markdown fences all have to survive.
   {
@@ -80,6 +65,9 @@ const cases = [
     preview: "line one line two tabbed",
     assistantId: undefined,
     assistantSummary: undefined,
+    assistantTurnFiles: undefined,
+    assistantFileWriteState: "none",
+    assistantReverted: false,
   },
   // Empty optional fields must come back as undefined, not "".
   {
@@ -88,6 +76,9 @@ const cases = [
     preview: "x",
     assistantId: undefined,
     assistantSummary: undefined,
+    assistantTurnFiles: undefined,
+    assistantFileWriteState: "failed",
+    assistantReverted: false,
   },
   // CJK + emoji payload.
   {
@@ -96,12 +87,21 @@ const cases = [
     preview: "中文内容，带标点。🎯",
     assistantId: "a4",
     assistantSummary: "回复摘要",
+    assistantTurnFiles: {
+      version: 2,
+      files: [{ path: "src/a␟b\n\"文.ts", op: "modify", added: 1, removed: 0 }],
+      file_count: 1,
+      added: 1,
+      removed: 0,
+    },
+    assistantFileWriteState: "none",
+    assistantReverted: true,
   },
 ];
 
 for (const want of cases) {
-  const got = unpackRow(packRow(want));
-  for (const key of ["id", "content", "preview", "assistantId", "assistantSummary"]) {
+  const got = unpackRailRow(packRailRow(want));
+  for (const key of ["id", "content", "preview", "assistantId", "assistantSummary", "assistantFileWriteState", "assistantReverted"]) {
     if (got[key] !== want[key]) {
       throw new Error(
         `round-trip lost ${key} for ${want.id}: `
@@ -109,13 +109,37 @@ for (const want of cases) {
       );
     }
   }
+  if (JSON.stringify(got.assistantTurnFiles) !== JSON.stringify(want.assistantTurnFiles)) {
+    throw new Error(`round-trip lost assistantTurnFiles for ${want.id}`);
+  }
+}
+
+const shouldRenderTurnFiles = (summary, writeState) =>
+  Boolean(summary) || writeState !== "none";
+if (!shouldRenderTurnFiles(undefined, "attempted")) {
+  throw new Error("legacy attempted writes must mount the file-change surface");
+}
+if (!shouldRenderTurnFiles(undefined, "failed")) {
+  throw new Error("failed writes must retain their failure note");
+}
+if (shouldRenderTurnFiles(undefined, "none")) {
+  throw new Error("plain replies must not mount the file-change surface");
+}
+if (!src.includes("shouldRenderTurnFiles(") || !src.includes("writeState={assistantFileWriteState}")) {
+  throw new Error("message rail must pass its file-write state into TurnFilesChips");
+}
+
+const legacy = unpackRailRow(["old", "text", "preview", "assistant", "reply"].join("␟"));
+if (legacy.id !== "old" || legacy.assistantId !== "assistant"
+  || legacy.assistantFileWriteState !== "none") {
+  throw new Error("legacy five-field rows must remain readable");
 }
 
 // A row count change must be visible to the shallow compare, and an
 // unchanged transcript must produce identical strings (that equality is
 // exactly what makes streaming deltas free).
-const a = cases.map(packRow);
-const b = cases.map(packRow);
+const a = cases.map(packRailRow);
+const b = cases.map(packRailRow);
 if (a.length !== b.length || a.some((v, i) => v !== b[i])) {
   throw new Error("packRow is not deterministic — the shallow compare would thrash");
 }

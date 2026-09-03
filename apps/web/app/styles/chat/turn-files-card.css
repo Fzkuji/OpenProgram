@@ -1,6 +1,7 @@
 /* Compact file-change summary. Diff content lives in the center Review tab. */
 .turn-files-card{container:turn-files/inline-size;margin-top:9px;border:1px solid var(--border);border-radius:10px;background:var(--bg-tertiary);overflow:hidden;color:var(--text-secondary);font-family:var(--font-sans)}
 .turn-files-failed-note{margin-top:6px;font-size:12px;color:var(--text-tertiary,var(--text-secondary));opacity:.85}
+.turn-files-load-error{display:flex;align-items:center;gap:7px;margin-top:6px;color:var(--text-tertiary,var(--text-secondary));font-size:12px;line-height:1.3}.turn-files-load-error button{border:0;padding:1px 2px;background:transparent;color:var(--text-secondary);font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}.turn-files-load-error button:hover{color:var(--text-primary)}.turn-files-load-error button:focus-visible{border-radius:3px;outline:2px solid var(--accent-blue);outline-offset:2px}
 .turn-files-probe{height:1px;margin-top:1px}
 .turn-files-card[data-reverting="1"]{opacity:.68}.turn-files-card[data-reverted="1"] .turn-files-list{opacity:.55}.turn-files-card[data-reverted="1"] .turn-files-name{text-decoration:line-through}
 .turn-files-summary{height:40px;min-height:40px;display:flex;align-items:center;gap:12px;padding:4px 10px 4px 12px;border-bottom:1px solid var(--border);background:var(--bg-tertiary)}
