@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import time
+from typing import Iterator
 
 from openprogram.self_update.store import SelfUpdateStore
 from openprogram.store.session.git_session import atomic_write_text
@@ -55,6 +57,14 @@ def leave_maintenance(update_id: str) -> None:
         path.unlink()
 
 
+@contextmanager
+def turn_admission(source: str) -> Iterator[bool]:
+    """Keep maintenance entry atomic with persistence of a running turn."""
+    store = SelfUpdateStore()
+    with store._locked():
+        yield not maintenance_blocks(source)
+
+
 def maintenance_blocks(source: str) -> bool:
     if source == _ALLOWED_SOURCE:
         return False
@@ -79,4 +89,6 @@ def maintenance_blocks(source: str) -> bool:
         return True
 
 
-__all__ = ["enter_maintenance", "leave_maintenance", "maintenance_blocks"]
+__all__ = [
+    "enter_maintenance", "leave_maintenance", "maintenance_blocks", "turn_admission",
+]

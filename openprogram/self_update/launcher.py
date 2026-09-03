@@ -122,12 +122,9 @@ def _wait_ready(
     return False
 
 
-def launch_supervisor(update_id: str) -> LaunchResult:
-    """Create the fixed controller script and submit its launchd job once."""
-    store = SelfUpdateStore()
-    record = store.load(update_id)
-    if record.request.update_id != update_id:
-        raise LaunchError("self-update request identity mismatch")
+def _submit_supervisor(
+    store: SelfUpdateStore, update_id: str
+) -> tuple[LaunchResult, str]:
     update_dir = store.root / update_id
     _installer, installer_sha256 = _snapshot_installer(update_dir)
     controller = update_dir / "supervisor.sh"
@@ -145,12 +142,24 @@ def launch_supervisor(update_id: str) -> LaunchResult:
     controller.chmod(0o700)
 
     label = f"ai.openprogram.self-update.{update_id}"
+    receipt = update_dir / "launch.json"
+    submitted_record = {
+        "schema": 1,
+        "label": label,
+        "installer_sha256": installer_sha256,
+    }
+    if receipt.exists() or receipt.is_symlink():
+        if (
+            receipt.is_symlink()
+            or not receipt.is_file()
+            or json.loads(receipt.read_text(encoding="utf-8")) != submitted_record
+        ):
+            raise LaunchError("supervisor submission receipt does not match")
+        return LaunchResult(label, submitted=False, already_running=True), installer_sha256
     domain = f"gui/{os.getuid()}/{label}"
     rc, message = _launchctl("print", domain)
     if rc == 0:
-        if not _wait_ready(update_dir, update_id, installer_sha256):
-            raise LaunchError("submitted supervisor did not become ready")
-        return LaunchResult(label, submitted=False, already_running=True)
+        return LaunchResult(label, submitted=False, already_running=True), installer_sha256
     if rc != 113 and "could not find service" not in message.lower() and "not found" not in message.lower():
         raise LaunchError(f"launchctl status failed ({rc}): {message}")
     ready = update_dir / "supervisor.ready"
@@ -169,10 +178,23 @@ def launch_supervisor(update_id: str) -> LaunchResult:
     )
     if rc != 0:
         raise LaunchError(f"launchctl submit failed ({rc}): {message}")
-    if not _wait_ready(update_dir, update_id, installer_sha256):
-        _launchctl("remove", label)
+    atomic_write_text(receipt, json.dumps(submitted_record, sort_keys=True) + "\n")
+    return LaunchResult(label, submitted=True, already_running=False), installer_sha256
+
+
+def launch_supervisor(update_id: str) -> LaunchResult:
+    """Create the fixed controller script and submit its launchd job once."""
+    store = SelfUpdateStore()
+    record = store.load(update_id)
+    if record.request.update_id != update_id:
+        raise LaunchError("self-update request identity mismatch")
+    with store._locked():
+        result, installer_sha256 = _submit_supervisor(store, update_id)
+    if not _wait_ready(store.root / update_id, update_id, installer_sha256):
+        if result.submitted:
+            _launchctl("remove", result.label)
         raise LaunchError("submitted supervisor did not become ready")
-    return LaunchResult(label, submitted=True, already_running=False)
+    return result
 
 
 __all__ = ["LaunchError", "LaunchResult", "launch_supervisor"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -234,3 +235,30 @@ def test_launch_rejects_log_symlink(tmp_path: Path, monkeypatch) -> None:
     with pytest.raises(LaunchError, match="log path"):
         launch_supervisor("su_launch")
     assert outside.exists() is False
+
+
+def test_concurrent_launch_submits_only_once(tmp_path: Path, monkeypatch) -> None:
+    from openprogram import paths
+    from openprogram.self_update import launcher
+
+    profile = tmp_path / "profile"
+    _request(profile)
+    _source, installer_sha256 = _trusted_installer(tmp_path, monkeypatch)
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    calls: list[tuple[str, ...]] = []
+
+    def launchctl(*args: str) -> tuple[int, str]:
+        calls.append(args)
+        if args[0] == "submit":
+            (profile / "self-updates" / "su_launch" / "supervisor.ready").write_text(
+                _ready("su_launch", installer_sha256), encoding="utf-8"
+            )
+            return 0, ""
+        return 113, "not found"
+
+    monkeypatch.setattr(launcher, "_launchctl", launchctl)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(launch_supervisor, ["su_launch", "su_launch"]))
+
+    assert sum(call[0] == "submit" for call in calls) == 1
+    assert sorted(result.submitted for result in results) == [False, True]

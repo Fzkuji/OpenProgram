@@ -298,30 +298,7 @@ def _process_turn_once(
     on_event = on_event or _noop
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
     req.user_msg_id = user_msg_id
-    from openprogram.self_update.maintenance import maintenance_blocks
-
-    if maintenance_blocks(req.source):
-        assistant_msg_id = user_msg_id + "_reply"
-        message = "OpenProgram is entering an approved update; new turns are temporarily disabled."
-        on_event({
-            "type": "chat_response",
-            "data": {
-                "type": "error",
-                "session_id": req.session_id,
-                "msg_id": user_msg_id,
-                "content": message,
-                "reason_code": "SELF_UPDATE_MAINTENANCE",
-            },
-        })
-        return TurnResult(
-            final_text="",
-            user_msg_id=user_msg_id,
-            assistant_msg_id=assistant_msg_id,
-            failed=True,
-            error=message,
-            error_reason="SELF_UPDATE_MAINTENANCE",
-            error_retryable=True,
-        )
+    from openprogram.self_update.maintenance import turn_admission
 
     # Usage metering: label every LLM call in this turn with its source.
     # Default to "chat", but DON'T clobber a source an outer scope already
@@ -375,10 +352,34 @@ def _process_turn_once(
 
     # 1-2. Session ensure + history resolution + user-message persist
     #      (prep.py). Head movement stays inside the TurnWriter.
-    session, history = prepare_turn(
-        db=db, req=req, writer=_writer,
-        user_msg_id=user_msg_id, on_event=on_event,
-    )
+    with turn_admission(req.source) as admitted:
+        if not admitted:
+            message = "OpenProgram is entering an approved update; new turns are temporarily disabled."
+            on_event({
+                "type": "chat_response",
+                "data": {
+                    "type": "error",
+                    "session_id": req.session_id,
+                    "msg_id": user_msg_id,
+                    "content": message,
+                    "reason_code": "SELF_UPDATE_MAINTENANCE",
+                },
+            })
+            return TurnResult(
+                final_text="",
+                user_msg_id=user_msg_id,
+                assistant_msg_id=assistant_msg_id,
+                failed=True,
+                error=message,
+                error_reason="SELF_UPDATE_MAINTENANCE",
+                error_retryable=True,
+            )
+        session, history = prepare_turn(
+            db=db, req=req, writer=_writer,
+            user_msg_id=user_msg_id, on_event=on_event,
+        )
+        # The admission lock is released only after quiescence can observe us.
+        db.update_session(req.session_id, status="running")
 
     # 事件层：用户轮已落盘，agent loop 即将启动。
     from openprogram.events import emit_safe as _emit_safe
@@ -410,14 +411,6 @@ def _process_turn_once(
     _placeholder_inserted = _writer.open_placeholder(
         assistant_msg_id, user_msg_id,
     )
-
-    # Mark session as running before agent loop starts.
-    try:
-        db.update_session(req.session_id, status="running")
-    except Exception:
-        _log.warning(
-            "failed to mark session %s running", req.session_id, exc_info=True,
-        )
 
     # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck

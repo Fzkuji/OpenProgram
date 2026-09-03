@@ -318,6 +318,37 @@ def test_controller_lock_does_not_follow_symlink(tmp_path: Path) -> None:
     assert outside.read_text(encoding="utf-8") == "unchanged"
 
 
+def test_supervisor_rejects_update_id_before_using_path(tmp_path, monkeypatch) -> None:
+    from openprogram import paths
+
+    profile = tmp_path / "profile"
+    root = profile / "self-updates"
+    root.mkdir(parents=True)
+    outside = profile / "evil"
+    outside.mkdir()
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+
+    with pytest.raises(ValueError, match="update_id"):
+        run_supervisor("../evil", state_root=root, installer_sha256="a" * 64)
+    assert not (outside / "supervisor.lock").exists()
+
+
+def test_supervisor_rejects_symlink_update_directory(tmp_path, monkeypatch) -> None:
+    from openprogram import paths
+
+    profile = tmp_path / "profile"
+    root = profile / "self-updates"
+    root.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "su_alias").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+
+    with pytest.raises(ValueError, match="real private directory"):
+        run_supervisor("su_alias", state_root=root, installer_sha256="a" * 64)
+    assert not (outside / "supervisor.lock").exists()
+
+
 def test_activate_uses_hash_pinned_snapshot_and_deferred_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

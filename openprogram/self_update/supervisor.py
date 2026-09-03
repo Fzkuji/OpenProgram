@@ -22,6 +22,7 @@ from openprogram.self_update.types import (
     ConcurrentUpdateError,
     UpdatePhase,
     UpdateRecord,
+    _validate_update_id,
 )
 from openprogram.store.session.git_session import atomic_write_text
 
@@ -356,7 +357,10 @@ def run_supervisor(
     ):
         raise ValueError("installer_sha256 must be a lowercase SHA-256 digest")
     store = _canonical_store(state_root)
-    update_dir = store.root / update_id
+    update_dir = store.root / _validate_update_id(update_id)
+    if update_dir.is_symlink() or not update_dir.is_dir():
+        raise ValueError("update directory must be a real private directory")
+    record = store.load(update_id)
     with _controller_lock(update_dir) as acquired:
         if not acquired:
             return 0
