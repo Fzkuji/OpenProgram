@@ -343,6 +343,9 @@ def _resolve_folder_toolset(folder_name: str) -> list[str] | None:
 
 # ---------------------------------------------------------------------------
 
+_VERIFIER_READ_TOOLS = frozenset({"read", "glob", "grep", "list"})
+
+
 def agent_tools(
     names: list[str] | None = None,
     *,
@@ -390,6 +393,8 @@ def agent_tools(
     if names is None and toolset is None:
         names = DEFAULT_TOOLS
     picked = _filter_agent_tools(names=names, toolset=toolset, source=source)
+    if source == "self_update_verify":
+        picked = [t for t in picked if t.name in _VERIFIER_READ_TOOLS]
     # Layer 2 — exposure. Anything registered with ``expose=False``
     # never reaches the LLM, no matter what preset, allow, or check_fn
     # says. This is the cascade's foundation: every later filter
@@ -452,6 +457,8 @@ def apply_tool_policy(
     # ``list`` builtin is shadowed by the ``.list`` subpackage import
     # above; use slice copy instead of ``list(...)``.
     out = [t for t in tools]
+    if source == "self_update_verify":
+        out = [t for t in out if t.name in _VERIFIER_READ_TOOLS]
     # Layer 2 — same exposure whitelist that :func:`agent_tools`
     # applies. Anything not on the list never reaches the LLM.
     # Skipped for caller-supplied ad-hoc tools (exposure_filter=False).

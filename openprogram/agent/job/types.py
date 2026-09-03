@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import json
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Literal, Optional
@@ -203,6 +204,20 @@ class Job:
     effective_limits: Optional[dict[str, Any]] = None
     resolved_limits_snapshot: Optional[dict[str, Any]] = None
     reason_code: Optional[str] = None
+    source: str = "agent_spawn"
+    profile_snapshot: Optional[dict[str, Any]] = None
+    response_format: Optional[dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        # These execution inputs must survive jobs.json and must not retain
+        # mutable containers owned by the submitting thread.
+        for name in ("profile_snapshot", "response_format", "tools_override"):
+            value = getattr(self, name)
+            if value is not None:
+                expected = list if name == "tools_override" else dict
+                if not isinstance(value, expected):
+                    raise ValueError(f"{name} must be a {expected.__name__}")
+                setattr(self, name, json.loads(json.dumps(value, allow_nan=False)))
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

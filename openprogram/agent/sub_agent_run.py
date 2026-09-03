@@ -53,6 +53,9 @@ def _execute_agent_turn(
     thinking_effort: Optional[str] = None,
     authority: Optional[dict[str, Any]] = None,
     creates_agent: bool = True,
+    source: str = "agent_spawn",
+    profile_snapshot: Optional[dict[str, Any]] = None,
+    response_format: Optional[dict[str, Any]] = None,
 ) -> AgentTurnResult:
     """Run one agent turn inside ``session_id``.
 
@@ -68,6 +71,18 @@ def _execute_agent_turn(
     from openprogram.agent.session_db import default_db
     from openprogram.agent.dispatcher import TurnRequest, process_user_turn
 
+    if source == "self_update_verify" and (
+        profile_snapshot is None or not isinstance(model_override, str)
+        or "/" not in model_override or not all(model_override.split("/", 1))
+        or tools_override is None or not spawn_caller
+        or response_format is None or branch_from is not None or advance_head
+    ):
+        return AgentTurnResult(
+            failed=True,
+            error="verifier requires frozen profile/model/tools/schema and a clean non-head branch",
+        )
+    from openprogram.providers.structured_output import normalize_response_format
+    output_format = normalize_response_format(response_format) if response_format is not None else None
     store = default_db()
     if store._open(session_id) is None:
         return AgentTurnResult(
@@ -113,7 +128,7 @@ def _execute_agent_turn(
         session_id=session_id,
         user_text=prompt,
         agent_id=agent_id,
-        source="agent_spawn",
+        source=source,
         branch_from=branch_from,
         history_override=[] if branch_from is None else None,
         permission_mode="bypass",
@@ -131,7 +146,9 @@ def _execute_agent_turn(
         render_range=render_range,
         model_override=model_override,
         thinking_effort=thinking_effort,
-        **runtime_authority(authority or {}, "agent_spawn"),
+        profile_snapshot=profile_snapshot,
+        response_format=output_format,
+        **runtime_authority(authority or {}, source),
     )
     try:
         turn = process_user_turn(req)
@@ -182,6 +199,9 @@ def run_agent_turn(
     on_accepted=None,
     model_override: Optional[str] = None,
     thinking_effort: Optional[str] = None,
+    source: str = "agent_spawn",
+    profile_snapshot: Optional[dict[str, Any]] = None,
+    response_format: Optional[dict[str, Any]] = None,
 ) -> AgentTurnResult:
     """Durably admit one agent turn and wait for its Job result."""
     from openprogram.agent.session_db import default_db
@@ -232,6 +252,9 @@ def run_agent_turn(
             render_range=render_range,
             model_override=model_override,
             thinking_effort=thinking_effort,
+            source=source,
+            profile_snapshot=profile_snapshot,
+            response_format=response_format,
             authority=authority,
             creates_agent=creates_agent,
             on_accepted=on_accepted,

@@ -151,6 +151,46 @@ def stub_agent_profile(monkeypatch: pytest.MonkeyPatch):
 # Tests
 # ---------------------------------------------------------------------------
 
+def test_frozen_verifier_profile_reaches_real_loop_and_blocks_injected_browser(tmp_db, monkeypatch):
+    from openprogram.agent.dispatcher import loop_runner
+    from openprogram.programs import get_agent_tool
+    tmp_db.create_session("verifier", "main")
+    tmp_db.append_message("verifier", {"id": "origin_u", "role": "user", "content": "update"})
+    tmp_db.append_message("verifier", {
+        "id": "origin_a", "role": "assistant", "content": "prepared", "predecessor": "origin_u",
+    })
+    tmp_db.update_session("verifier", head_id="origin_a")
+    profile = {"id": "main", "system_prompt": "Frozen verifier", "tools": []}
+    req = D.TurnRequest(
+        session_id="verifier", user_text="check", agent_id="main", source="self_update_verify",
+        profile_snapshot=profile, tools_override=[], model_override="frozen/model",
+        branch_from=None, spawn_caller="origin_a", advance_head=False,
+    )
+    profile["system_prompt"] = "mutated"
+    monkeypatch.setattr(D, "_load_agent_profile", lambda _: pytest.fail("loaded mutable profile"))
+    original_model = D._resolve_model
+    def resolve(profile, override=None):
+        assert profile["system_prompt"] == "Frozen verifier"
+        return original_model(profile, override)
+    monkeypatch.setattr(D, "_resolve_model", resolve)
+    monkeypatch.setattr(loop_runner, "_configure_web_use_tools", lambda *_: ([get_agent_tool("bash")], True))
+    text_stream = make_text_stream_fn(["verified"])
+    async def stream(model, context, options):
+        assert not context.tools
+        async for event in text_stream(model, context, options):
+            yield event
+    original_loop = D._run_loop_blocking
+    monkeypatch.setattr(D, "_run_loop_blocking", lambda **kwargs: original_loop(**kwargs, stream_fn=stream))
+    result = D.process_user_turn(req)
+    assert not result.failed, result.error
+    assert result.final_text == "verified"
+    assert tmp_db.get_session("verifier")["head_id"] == "origin_a"
+    messages = {row["id"]: row for row in tmp_db.get_messages("verifier")}
+    assert not messages[result.user_msg_id]["predecessor"]
+    assert messages[result.user_msg_id]["caller"] == "origin_a"
+    assert messages[result.user_msg_id]["source"] == "self_update_verify"
+
+
 def test_real_loop_text_only(tmp_db: SessionDB, captured, collector) -> None:
     """One full turn with a streaming text reply, no tools.
 

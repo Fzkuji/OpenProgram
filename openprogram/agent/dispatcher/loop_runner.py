@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from copy import deepcopy
 import json
 import logging
 import threading
@@ -113,12 +114,19 @@ def run_loop_blocking(
     from openprogram.agent import dispatcher as _dispatcher
 
     # Resolve agent profile → tools, system_prompt, model.
-    agent_profile = _dispatcher._load_agent_profile(req.agent_id)
+    agent_profile = (
+        deepcopy(req.profile_snapshot) if req.profile_snapshot is not None
+        else _dispatcher._load_agent_profile(req.agent_id)
+    )
     from openprogram.agent.surface_context import (
         render_for_model as _render_surface_context,
     )
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
     tools, web_use_enabled = _configure_web_use_tools(tools, req.surface_context)
+    if req.source == "self_update_verify":
+        from openprogram.programs import apply_tool_policy
+        tools = apply_tool_policy(tools or [], source=req.source)
+        web_use_enabled = False
     # Plan mode: hide write/mutate tools when the session is currently
     # in plan mode. ``apply_tool_policy(source="plan", ...)`` filters
     # out every tool that lists "plan" in its ``unsafe_in`` set — see

@@ -463,7 +463,11 @@ def _process_turn_once(
         except Exception as _loop_exc:
             from openprogram.context.reactive import is_overflow_error, reactive_compact
             if is_overflow_error(_loop_exc):
-                _agent_profile = _load_agent_profile(req.agent_id)
+                from copy import deepcopy
+                _agent_profile = (
+                    deepcopy(req.profile_snapshot) if req.profile_snapshot is not None
+                    else _load_agent_profile(req.agent_id)
+                )
                 _compacted = reactive_compact(
                     agent_profile=_agent_profile,
                     session_id=req.session_id,
@@ -565,7 +569,11 @@ def _process_turn_once(
     _fin_ctx_win = None
     try:
         from openprogram.context.tokens import real_context_window as _rcw
-        _fin_profile = _load_agent_profile(req.agent_id)
+        from copy import deepcopy
+        _fin_profile = (
+            deepcopy(req.profile_snapshot) if req.profile_snapshot is not None
+            else _load_agent_profile(req.agent_id)
+        )
         _fin_ctx_win = _rcw(_resolve_model(_fin_profile, req.model_override))
     except Exception:
         _fin_profile = None
