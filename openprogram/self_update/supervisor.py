@@ -270,17 +270,15 @@ def _wait_for_quiescence(deadline: float) -> bool:
     return False
 
 
-def _activate(
-    _artifact: Artifact,
+def _installer_command(
+    argument: Path,
     update_dir: Path,
     installer_sha256: str,
+    mode: str,
 ) -> str:
-    artifact = _artifact
-    if _tree_digest(artifact.path) != artifact.sha256:
-        raise RuntimeError("candidate artifact changed after validation")
     installer = _installer_snapshot(update_dir, installer_sha256)
     result = subprocess.run(
-        ["/bin/bash", str(installer), "--defer-commit", str(artifact.path)],
+        ["/bin/bash", str(installer), mode, str(argument)],
         capture_output=True,
         text=True,
         timeout=300,
@@ -291,7 +289,7 @@ def _activate(
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"deferred installation failed: {(result.stderr or result.stdout)[-1000:]}"
+            f"installer {mode} failed: {(result.stderr or result.stdout)[-1000:]}"
         )
     values = [
         line.partition("=")[2]
@@ -299,8 +297,22 @@ def _activate(
         if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
     ]
     if len(values) != 1:
-        raise RuntimeError("deferred installer did not report one transaction")
+        raise RuntimeError("installer did not report one transaction")
     return values[0]
+
+
+def _prepare_install(artifact: Artifact, update_dir: Path, installer_sha256: str) -> str:
+    if _tree_digest(artifact.path) != artifact.sha256:
+        raise RuntimeError("candidate artifact changed after validation")
+    return _installer_command(artifact.path, update_dir, installer_sha256, "--prepare")
+
+
+def _activate(transaction: Path, update_dir: Path, installer_sha256: str) -> str:
+    transaction = _validate_transaction_path(transaction)
+    reported = _installer_command(transaction, update_dir, installer_sha256, "--activate")
+    if reported != str(transaction):
+        raise RuntimeError("installer activated a different transaction")
+    return reported
 
 
 def _installer_snapshot(update_dir: Path, installer_sha256: str) -> Path:
@@ -324,7 +336,7 @@ def _abort(
                 update_id,
                 UpdatePhase.ABORTED,
                 expected_phase=phase,
-                detail={"error": str(error)[:2000]},
+                detail={**store.load(update_id).state.detail, "error": str(error)[:2000]},
             )
         except ConcurrentUpdateError:
             if store.load(update_id).state.phase not in TERMINAL_PHASES:
@@ -391,6 +403,9 @@ def run_supervisor(
 
         try:
             artifact = _build_candidate(record, update_dir)
+            transaction = _validate_transaction_path(
+                Path(_prepare_install(artifact, update_dir, installer_sha256))
+            )
             state = store.transition(
                 update_id,
                 UpdatePhase.READY,
@@ -398,6 +413,7 @@ def run_supervisor(
                 detail={
                     "artifact_path": str(artifact.path),
                     "artifact_sha256": artifact.sha256,
+                    "transaction_dir": str(transaction),
                 },
             )
         except Exception as exc:
@@ -423,11 +439,10 @@ def run_supervisor(
                 detail={
                     "artifact_path": str(artifact.path),
                     "artifact_sha256": artifact.sha256,
+                    "transaction_dir": str(transaction),
                 },
             )
-            transaction = _validate_transaction_path(
-                Path(_activate(artifact, update_dir, installer_sha256))
-            )
+            _activate(transaction, update_dir, installer_sha256)
             store.transition(
                 update_id,
                 UpdatePhase.VERIFYING,
@@ -448,7 +463,7 @@ def run_supervisor(
                     update_id,
                     UpdatePhase.NEEDS_MANUAL_RECOVERY,
                     expected_phase=current,
-                    detail={"error": str(exc)[:2000]},
+                    detail={**store.load(update_id).state.detail, "error": str(exc)[:2000]},
                 )
             if maintenance_entered:
                 leave_maintenance(update_id)

@@ -92,7 +92,13 @@ def test_success_persists_transaction_before_verifying(
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
     monkeypatch.setattr(supervisor, "_build_candidate", lambda *_args: artifact)
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_args: True)
-    monkeypatch.setattr(supervisor, "_activate", lambda *_args: str(transaction))
+    monkeypatch.setattr(supervisor, "_prepare_install", lambda *_args: str(transaction))
+    def activate(*_args):
+        current = store.load("su_supervisor")
+        assert current.state.phase is UpdatePhase.ACTIVATING
+        assert current.state.detail["transaction_dir"] == str(transaction)
+        return str(transaction)
+    monkeypatch.setattr(supervisor, "_activate", activate)
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
 
     assert run_supervisor(
@@ -122,6 +128,10 @@ def test_quiescence_timeout_aborts_without_activation(
         supervisor, "_build_candidate", lambda *_args: Artifact(app, "a" * 64)
     )
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_args: False)
+    transaction = root / "su_supervisor" / "transaction"
+    transaction.mkdir()
+    monkeypatch.setattr(supervisor, "_prepare_install", lambda *_args: str(transaction))
+    monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
     monkeypatch.setattr(
         supervisor,
         "_activate",
@@ -132,6 +142,7 @@ def test_quiescence_timeout_aborts_without_activation(
         "su_supervisor", state_root=root, installer_sha256=installer_sha256
     ) == 1
     assert store.load("su_supervisor").state.phase is UpdatePhase.ABORTED
+    assert store.load("su_supervisor").state.detail["transaction_dir"] == str(transaction)
     assert (root / "maintenance.json").exists() is False
 
 
@@ -350,7 +361,7 @@ def test_supervisor_rejects_symlink_update_directory(tmp_path, monkeypatch) -> N
     assert not (outside / "supervisor.lock").exists()
 
 
-def test_activate_uses_hash_pinned_snapshot_and_deferred_mode(
+def test_prepare_uses_hash_pinned_snapshot_and_prepare_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from openprogram.self_update import supervisor
@@ -375,17 +386,17 @@ def test_activate_uses_hash_pinned_snapshot_and_deferred_mode(
 
     monkeypatch.setattr(supervisor.subprocess, "run", run)
 
-    assert supervisor._activate(artifact, update_dir, installer_sha256) == transaction
+    assert supervisor._prepare_install(artifact, update_dir, installer_sha256) == transaction
     assert calls[0][0] == [
         "/bin/bash",
         str(update_dir / "controller" / "install-app.sh"),
-        "--defer-commit",
+        "--prepare",
         str(app),
     ]
     assert set(calls[0][1]["env"]) == {"PATH", "HOME"}
 
 
-def test_activate_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:
+def test_prepare_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:
     from openprogram.self_update import supervisor
 
     update_dir = tmp_path / "update"
@@ -397,12 +408,29 @@ def test_activate_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:
     installer_sha256 = _installer_at(update_dir)
     (update_dir / "controller" / "install-app.sh").write_text("changed", encoding="utf-8")
     with pytest.raises(RuntimeError, match="installer snapshot changed"):
-        supervisor._activate(artifact, update_dir, installer_sha256)
+        supervisor._prepare_install(artifact, update_dir, installer_sha256)
 
     _installer_at(update_dir)
     content.write_text("changed", encoding="utf-8")
     with pytest.raises(RuntimeError, match="artifact changed"):
-        supervisor._activate(artifact, update_dir, installer_sha256)
+        supervisor._prepare_install(artifact, update_dir, installer_sha256)
+
+
+def test_activate_uses_only_the_prepared_transaction(tmp_path, monkeypatch):
+    from openprogram.self_update import supervisor
+    update_dir = tmp_path / "update"
+    digest = _installer_at(update_dir)
+    tx = tmp_path / "transaction"
+    tx.mkdir()
+    monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, f"OPENPROGRAM_TRANSACTION_DIR={tx}\n", "")
+    monkeypatch.setattr(supervisor.subprocess, "run", run)
+    assert supervisor._activate(tx, update_dir, digest) == str(tx)
+    assert calls[0][0] == ["/bin/bash", str(update_dir / "controller/install-app.sh"), "--activate", str(tx)]
+    assert set(calls[0][1]["env"]) == {"PATH", "HOME"}
 
 
 def _installer_at(update_dir: Path) -> str:
