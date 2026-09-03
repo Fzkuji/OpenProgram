@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+output_app=""
+if [[ "${1:-}" == "--output" ]]; then
+  output_app="${2:-}"
+  [[ $# == 2 && "$output_app" == /* && "$output_app" == *.app ]] || {
+    printf 'usage: %s [--output /absolute/path/OpenProgram.app]\n' "$0" >&2
+    exit 2
+  }
+  [[ "$output_app" != "/Applications/OpenProgram.app" ]] || {
+    printf 'build output must not be the canonical installed App\n' >&2
+    exit 2
+  }
+elif [[ $# != 0 ]]; then
+  printf 'usage: %s [--output /absolute/path/OpenProgram.app]\n' "$0" >&2
+  exit 2
+fi
+
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 desktop_dir="$(cd -- "$script_dir/.." && pwd)"
 repo_root="$(cd -- "$desktop_dir/../.." && pwd)"
@@ -82,4 +98,18 @@ app_count="$(wc -l <"$app_list" | tr -d ' ')"
 }
 built_app="$(sed -n '1p' "$app_list")"
 bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"
-env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"
+if [[ -n "$output_app" ]]; then
+  [[ ! -e "$output_app" && ! -L "$output_app" ]] || {
+    printf 'build output already exists: %s\n' "$output_app" >&2
+    exit 1
+  }
+  mkdir -p "$(dirname -- "$output_app")"
+  if ! ditto "$built_app" "$output_app"; then
+    rm -rf "$output_app" || :
+    printf 'failed to copy OpenProgram App artifact to %s\n' "$output_app" >&2
+    exit 1
+  fi
+  printf 'OpenProgram App artifact written to %s\n' "$output_app"
+else
+  env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"
+fi
