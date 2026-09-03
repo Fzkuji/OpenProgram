@@ -24,6 +24,7 @@ SAFE_AUTO_ALLOWLIST = frozenset({
     "ask_user_question", "send_message", "sleep",
     "enter_plan_mode", "exit_plan_mode",
     "memory_status", "memory_update",
+    "self_update_status",
 })
 
 # 明显危险的代码执行工具——auto 档直接拒，永不调 LLM。

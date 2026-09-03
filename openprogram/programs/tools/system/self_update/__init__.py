@@ -1,0 +1,395 @@
+"""Owner-only conversational self-update request tools.
+
+These tools only validate and persist an immutable candidate request. App
+building, activation, restart, verification, and rollback are owned by the
+external supervisor rather than this worker process.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import os
+from pathlib import Path
+import subprocess
+import time
+import tomllib
+from typing import Any, Mapping
+
+from openprogram.agent.authority import normalize_authority, owner_principal_id
+from openprogram.agent.turn_request_context import get_turn_request
+from openprogram.programs._runtime import function
+from openprogram.self_update import (
+    ActiveUpdateError,
+    IterationMode,
+    IterationPolicy,
+    SelfUpdateError,
+    SelfUpdateStore,
+    UpdatePhase,
+    UpdateRequest,
+    mint_update_id,
+)
+from openprogram.worktree.manager import get_manager
+from openprogram.worktree.types import WorktreeStatus
+
+
+_NON_INTERACTIVE_SOURCES = frozenset({"agent_spawn", "cron", "scheduler", "mcp"})
+_GIT_TIMEOUT_SECONDS = 10
+
+
+class SelfUpdateToolError(RuntimeError):
+    """A stable validation error safe to return through the tool runtime."""
+
+
+def _require_local_owner(req: Any) -> dict[str, str]:
+    authority = normalize_authority(req)
+    try:
+        installed_owner = owner_principal_id()
+    except Exception as exc:
+        raise SelfUpdateToolError("interactive local owner identity is unavailable") from exc
+    if (
+        not authority
+        or authority.get("principal_id") != installed_owner
+        or authority.get("authority_tier") != "owner"
+        or authority.get("speaker_kind") != "owner"
+        or authority.get("interaction") != "interactive"
+        or getattr(req, "source", None) in _NON_INTERACTIVE_SOURCES
+    ):
+        raise SelfUpdateToolError("self-update requires an interactive local owner")
+    return authority
+
+
+def _git(cwd: Path, *args: str) -> str:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
+        raise SelfUpdateToolError(f"git validation failed: {type(exc).__name__}") from exc
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout).strip()[:500]
+        raise SelfUpdateToolError(f"git validation failed: {message or result.returncode}")
+    return result.stdout.rstrip("\n")
+
+
+def _iteration_policy(value: Mapping[str, Any] | None) -> IterationPolicy:
+    if value is None:
+        return IterationPolicy()
+    if not isinstance(value, Mapping):
+        raise SelfUpdateToolError("iteration_policy must be an object")
+    allowed = {"mode", "max_attempts", "deadline", "allowed_paths", "required_tests"}
+    unknown = set(value) - allowed
+    if unknown:
+        raise SelfUpdateToolError(
+            "iteration_policy contains unsupported fields: " + ", ".join(sorted(unknown))
+        )
+    for field in ("allowed_paths", "required_tests"):
+        raw = value.get(field)
+        if raw is not None and not isinstance(raw, list):
+            raise SelfUpdateToolError(f"iteration_policy {field} must be an array")
+    try:
+        policy = IterationPolicy(
+            mode=IterationMode(
+                value.get("mode", IterationMode.APPROVE_EACH_ACTIVATION.value)
+            ),
+            max_attempts=value.get("max_attempts", 3),
+            deadline=value.get("deadline"),
+            allowed_paths=tuple(value.get("allowed_paths") or ()),
+            required_tests=tuple(value.get("required_tests") or ()),
+        )
+    except (TypeError, ValueError) as exc:
+        raise SelfUpdateToolError(f"invalid iteration_policy: {exc}") from exc
+    if policy.deadline is not None and policy.deadline <= time.time():
+        raise SelfUpdateToolError("iteration_policy deadline must be in the future")
+    return policy
+
+
+def _validate_openprogram_repo(source: Path, worktree: Path) -> None:
+    if source == worktree:
+        raise SelfUpdateToolError("candidate must be an isolated linked worktree")
+    try:
+        metadata = tomllib.loads((worktree / "pyproject.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise SelfUpdateToolError("candidate does not contain readable project metadata") from exc
+    project = metadata.get("project")
+    if not isinstance(project, dict) or project.get("name") != "openprogram":
+        raise SelfUpdateToolError("candidate is not an OpenProgram source checkout")
+
+
+def _git_directory(cwd: Path) -> Path:
+    value = Path(_git(cwd, "rev-parse", "--absolute-git-dir"))
+    return value.resolve()
+
+
+def _prepare_update(
+    *,
+    worktree_id: str,
+    candidate_sha: str,
+    goal: str,
+    assertions: list[str],
+    iteration_policy: Mapping[str, Any] | None,
+    req: Any,
+    assistant_id: str,
+    manager: Any,
+    store: SelfUpdateStore,
+) -> dict[str, Any]:
+    _require_local_owner(req)
+    if not isinstance(assistant_id, str) or not assistant_id.strip():
+        raise SelfUpdateToolError("self-update must run inside a persisted chat turn")
+    if not isinstance(worktree_id, str) or not worktree_id.strip():
+        raise SelfUpdateToolError("worktree_id is required")
+    if (
+        not isinstance(candidate_sha, str)
+        or len(candidate_sha) != 40
+        or candidate_sha.lower() != candidate_sha
+        or any(ch not in "0123456789abcdef" for ch in candidate_sha)
+    ):
+        raise SelfUpdateToolError("candidate_sha must be a full lowercase Git SHA")
+    if not isinstance(goal, str) or not goal.strip():
+        raise SelfUpdateToolError("goal is required")
+    if (
+        not isinstance(assertions, list)
+        or not assertions
+        or any(not isinstance(value, str) or not value.strip() for value in assertions)
+    ):
+        raise SelfUpdateToolError("assertions must be a non-empty list of strings")
+
+    worktree = manager.get_worktree(worktree_id)
+    if worktree is None:
+        raise SelfUpdateToolError(f"worktree does not exist: {worktree_id}")
+    if worktree.status is not WorktreeStatus.ACTIVE:
+        raise SelfUpdateToolError("candidate worktree must be active")
+    if worktree.parent_session != req.session_id:
+        raise SelfUpdateToolError("candidate worktree is not owned by this session")
+
+    source = Path(worktree.source_repo).expanduser().resolve()
+    candidate = Path(worktree.worktree_path).expanduser().resolve()
+    _validate_openprogram_repo(source, candidate)
+    candidate_common = Path(_git(candidate, "rev-parse", "--git-common-dir"))
+    if not candidate_common.is_absolute():
+        candidate_common = candidate / candidate_common
+    if candidate_common.resolve() != _git_directory(source):
+        raise SelfUpdateToolError("candidate worktree is not linked to its source repo")
+    if Path(_git(candidate, "rev-parse", "--show-toplevel")).resolve() != candidate:
+        raise SelfUpdateToolError("candidate path is not the worktree root")
+    if _git(candidate, "status", "--porcelain=v1", "--untracked-files=all"):
+        raise SelfUpdateToolError("candidate worktree is dirty")
+    actual_sha = _git(candidate, "rev-parse", "HEAD")
+    if actual_sha != candidate_sha:
+        raise SelfUpdateToolError("candidate_sha is not the worktree HEAD")
+
+    base_sha = _git(source, "rev-parse", "HEAD")
+    if base_sha == candidate_sha:
+        raise SelfUpdateToolError("candidate must differ from the source checkout HEAD")
+    if _git(candidate, "merge-base", base_sha, candidate_sha) != base_sha:
+        raise SelfUpdateToolError("candidate is not based on the source checkout HEAD")
+    changed = tuple(
+        path
+        for path in _git(
+            candidate,
+            "diff",
+            "--name-only",
+            "--diff-filter=ACDMRTUXB",
+            "-z",
+            f"{base_sha}..{candidate_sha}",
+        ).split("\0")
+        if path
+    )
+    if not changed:
+        raise SelfUpdateToolError("candidate commit contains no changes")
+    if any(any(ord(char) < 32 for char in path) for path in changed):
+        raise SelfUpdateToolError("candidate contains unsupported control characters in paths")
+
+    policy = _iteration_policy(iteration_policy)
+    if policy.mode is IterationMode.BOUNDED_AUTO:
+        outside = [
+            path
+            for path in changed
+            if not any(fnmatch.fnmatchcase(path, pattern) for pattern in policy.allowed_paths)
+        ]
+        if outside:
+            raise SelfUpdateToolError(
+                "candidate changes paths outside iteration_policy: " + ", ".join(outside)
+            )
+
+    origin_turn_id = getattr(req, "user_msg_id", None)
+    if not origin_turn_id and assistant_id.endswith("_reply"):
+        origin_turn_id = assistant_id[: -len("_reply")]
+    request = UpdateRequest(
+        update_id=mint_update_id(),
+        session_id=req.session_id,
+        origin_turn_id=origin_turn_id or assistant_id,
+        origin_assistant_id=assistant_id,
+        agent_id=req.agent_id,
+        repo=os.path.normpath(str(source)),
+        worktree_id=worktree.id,
+        base_sha=base_sha,
+        candidate_sha=candidate_sha,
+        changed_paths=changed,
+        pre_update_evidence=(
+            "git-status:clean",
+            f"source-head:{base_sha}",
+            f"candidate-head:{candidate_sha}",
+        ),
+        goal=goal.strip(),
+        assertions=tuple(value.strip() for value in assertions),
+        iteration_policy=policy,
+    )
+    try:
+        state = store.create(request)
+    except ActiveUpdateError as exc:
+        raise SelfUpdateToolError(str(exc)) from exc
+    except (SelfUpdateError, ValueError) as exc:
+        raise SelfUpdateToolError(str(exc)) from exc
+    return {
+        "update_id": request.update_id,
+        "phase": state.phase.value,
+        "candidate_sha": candidate_sha,
+        "base_sha": base_sha,
+        "changed_paths": list(changed),
+        "turn_release_pending": True,
+    }
+
+
+def _resolve_record(update_id: str | None, store: SelfUpdateStore):
+    if update_id:
+        return store.load(update_id)
+    record = store.load_active()
+    if record is None:
+        raise SelfUpdateToolError("no active self-update")
+    return record
+
+
+def _status_update(
+    *, update_id: str | None, req: Any, store: SelfUpdateStore
+) -> dict[str, Any]:
+    _require_local_owner(req)
+    try:
+        record = _resolve_record(update_id, store)
+    except SelfUpdateError as exc:
+        raise SelfUpdateToolError(str(exc)) from exc
+    if record.request.session_id != req.session_id:
+        raise SelfUpdateToolError("self-update belongs to another origin session")
+    detail = record.state.detail
+    return {
+        "update_id": record.request.update_id,
+        "phase": record.state.phase.value,
+        "attempt": record.state.attempt,
+        "current_revision": detail.get("current_revision"),
+        "candidate_revision": record.request.candidate_sha,
+        "active_app": record.request.app_path,
+        "rollback_available": bool(detail.get("rollback_available", False)),
+        "verifier_verdict": detail.get("verifier_verdict"),
+        "changed_paths": list(record.request.changed_paths),
+        "updated_at": record.state.updated_at,
+    }
+
+
+def _cancel_update(
+    *, update_id: str | None, reason: str, req: Any, store: SelfUpdateStore
+) -> dict[str, Any]:
+    _require_local_owner(req)
+    try:
+        record = _resolve_record(update_id, store)
+    except SelfUpdateError as exc:
+        raise SelfUpdateToolError(str(exc)) from exc
+    if record.request.session_id != req.session_id:
+        raise SelfUpdateToolError("self-update belongs to another origin session")
+    if record.state.phase not in {
+        UpdatePhase.PREPARING,
+        UpdatePhase.STAGING,
+        UpdatePhase.READY,
+    }:
+        raise SelfUpdateToolError(
+            f"cannot cancel self-update in {record.state.phase.value}"
+        )
+    try:
+        state = store.transition(
+            record.request.update_id,
+            UpdatePhase.ABORTED,
+            expected_phase=record.state.phase,
+            detail={
+                "reason": str(reason or "owner requested cancellation").strip()[:1000],
+                "cancelled_by_session": req.session_id,
+            },
+        )
+    except SelfUpdateError as exc:
+        raise SelfUpdateToolError(str(exc)) from exc
+    return {"update_id": record.request.update_id, "phase": state.phase.value}
+
+
+def _turn_context() -> tuple[Any, str]:
+    req = get_turn_request()
+    if req is None:
+        raise SelfUpdateToolError("self-update tool requires an active chat turn")
+    from openprogram.store import _current_turn_id
+
+    assistant_id = _current_turn_id.get()
+    if not assistant_id:
+        raise SelfUpdateToolError("self-update tool requires an active assistant turn")
+    return req, assistant_id
+
+
+@function(
+    name="self_update_prepare",
+    description=(
+        "Prepare an owner-approved OpenProgram self-update from the exact clean HEAD "
+        "of this session's active linked worktree. This persists intent only; it does "
+        "not build, install, stop, or restart the App."
+    ),
+    toolset=["core"],
+    requires_approval=True,
+    path_params={},
+)
+def self_update_prepare(
+    worktree_id: str,
+    candidate_sha: str,
+    goal: str,
+    assertions: list[str],
+    iteration_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    req, assistant_id = _turn_context()
+    return _prepare_update(
+        worktree_id=worktree_id,
+        candidate_sha=candidate_sha,
+        goal=goal,
+        assertions=assertions,
+        iteration_policy=iteration_policy,
+        req=req,
+        assistant_id=assistant_id,
+        manager=get_manager(),
+        store=SelfUpdateStore(),
+    )
+
+
+@function(
+    name="self_update_status",
+    description="Read the durable status of this session's current or named self-update.",
+    toolset=["core"],
+    path_params={},
+)
+def self_update_status(update_id: str | None = None) -> dict[str, Any]:
+    req, _assistant_id = _turn_context()
+    return _status_update(update_id=update_id, req=req, store=SelfUpdateStore())
+
+
+@function(
+    name="self_update_cancel",
+    description="Cancel this session's self-update before activation begins.",
+    toolset=["core"],
+    requires_approval=True,
+    path_params={},
+)
+def self_update_cancel(
+    update_id: str | None = None, reason: str = "owner requested cancellation"
+) -> dict[str, Any]:
+    req, _assistant_id = _turn_context()
+    return _cancel_update(
+        update_id=update_id, reason=reason, req=req, store=SelfUpdateStore()
+    )
+
+
+__all__ = ["self_update_prepare", "self_update_status", "self_update_cancel"]

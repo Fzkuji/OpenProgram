@@ -77,6 +77,7 @@ from openprogram.agent.dispatcher.stream_tap import make_stream_tap
 from openprogram.agent.dispatcher.error_path import handle_turn_error
 from openprogram.agent.dispatcher.finalize import finalize_error_turn, finalize_turn
 from openprogram.agent.dispatcher.persistence import persist_assistant_message
+from openprogram.self_update.handoff import release_prepared_update
 
 # The agent-loop run stage. Bound as a package attribute named
 # ``_run_loop_blocking`` — the seam tests patch (patch.object(D,
@@ -552,7 +553,7 @@ def _process_turn_once(
     except Exception:
         _fin_profile = None
         _fin_ctx_win = None
-    finalize_turn(
+    turn_committed = finalize_turn(
         db=db,
         req=req,
         session=session,
@@ -575,16 +576,33 @@ def _process_turn_once(
                {"session": req.session_id})
 
     # Mark session idle/done now that the turn completed successfully.
+    session_finished = False
     try:
         if req.source in {"wechat", "telegram", "discord", "slack"}:
             db.update_session(req.session_id, status="done", unread=True)
         else:
             db.update_session(req.session_id, status="idle")
+        session_finished = True
     except Exception:
         # A stuck "running" status is visible in the UI, so log it.
         _log.warning(
             "failed to mark session %s finished", req.session_id, exc_info=True,
         )
+
+    # A self-update may stop this worker in a later phase. Release it only
+    # after the final assistant node, session Git commit, and finished status
+    # are all durable. A mismatch is a no-op; a storage error leaves the
+    # request in PREPARING for explicit inspection/cancellation.
+    if turn_committed and session_finished:
+        try:
+            release_prepared_update(req.session_id, assistant_msg_id)
+        except Exception:
+            _log.warning(
+                "self-update turn release failed for %s turn %s",
+                req.session_id,
+                assistant_msg_id,
+                exc_info=True,
+            )
 
     # 6.99. Deliver cross-branch messages queued while this turn ran
     #       (send_message busy-queueing) — the turn is over, the session

@@ -1,10 +1,11 @@
 """Conversational self-update state protocol.
 
-App activation and rollback deliberately live outside the worker process.  This
-package currently exposes only the durable request/state contract used by that
-future controller.
+App activation and rollback deliberately live outside the worker process. This
+package exposes the durable request/state contract and the dispatcher handoff
+that releases a prepared request only after its origin turn is durable.
 """
 
+from .handoff import release_prepared_update
 from .store import SelfUpdateStore
 from .types import (
     SCHEMA_VERSION,
@@ -49,4 +50,5 @@ __all__ = [
     "can_transition",
     "is_terminal",
     "mint_update_id",
+    "release_prepared_update",
 ]
