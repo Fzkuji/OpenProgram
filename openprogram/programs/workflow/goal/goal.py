@@ -9,6 +9,7 @@ from copy import deepcopy
 
 from openprogram.agentic_programming.function import agentic_function
 from .ownership import exclusive_goal
+from .roles import role_lifetime
 
 
 def _positive_int(value, *, name: str) -> int | None:
@@ -41,6 +42,9 @@ def _positive_float(value, *, name: str) -> float | None:
         "prompt": {"multiline": True},
         "model": {"hidden": True},
         "effort": {"hidden": True},
+        "judge_model": {"hidden": True},
+        "judge_effort": {"hidden": True},
+        "judge_timeout_s": {"hidden": True},
         "max_rounds": {"hidden": True},
         "max_tokens": {"hidden": True},
         "max_elapsed_s": {"hidden": True},
@@ -64,11 +68,15 @@ def _positive_float(value, *, name: str) -> float | None:
     },
 )
 @exclusive_goal
+@role_lifetime()
 def goal(
     prompt: str,
     *,
     model: str = "",
     effort: str = "",
+    judge_model: str = "",
+    judge_effort: str = "",
+    judge_timeout_s: float | None = None,
     max_rounds: int | None = None,
     max_tokens: int | None = None,
     max_elapsed_s: float | None = None,
@@ -256,11 +264,55 @@ def goal(
         return "\n\n".join(part for part in [result, notice, *questions] if part)
 
     persist("resuming" if stored else "refining")
+    from .roles import identity, prepare_roles, use_role
+    try:
+        if not goal_state.get("roles") and not goal_state.get("role_requests"):
+            current_identity = identity(runtime)
+            work_request = model or f"{current_identity['provider']}:{current_identity['model']}"
+            if not any(separator in work_request for separator in (":", "/")):
+                work_request = f"{current_identity['provider']}:{work_request}"
+            judge_request = judge_model or _goal.judge_model()
+            if judge_request and not any(separator in judge_request for separator in (":", "/")):
+                separator = min((char for char in (":", "/") if char in work_request),
+                                key=work_request.index)
+                judge_request = f"{work_request.split(separator, 1)[0]}:{judge_request}"
+            goal_state["role_requests"] = {
+                "model": work_request,
+                "effort": effort,
+                "timeout_s": turn_timeout,
+                "judge_model": judge_request,
+                "judge_effort": judge_effort,
+                "judge_timeout_s": (_positive_float(judge_timeout_s, name="judge_timeout_s")
+                                    or _goal.DEFAULT_PHASE_TIMEOUT_S),
+            }
+            persist()
+        requested = goal_state.get("role_requests") or {}
+        roles, role_runtimes = prepare_roles(
+            goal_state.get("roles"), runtime,
+            model=requested.get("model", model), effort=requested.get("effort", effort),
+            timeout_s=requested.get("timeout_s", turn_timeout),
+            judge_model=requested.get("judge_model", judge_model),
+            judge_effort=requested.get("judge_effort", judge_effort),
+            judge_timeout_s=requested.get("judge_timeout_s", _goal.DEFAULT_PHASE_TIMEOUT_S),
+        )
+        goal_state["roles"] = roles
+        if stored and not stored.get("roles") and not stored.get("role_requests"):
+            goal_state["roles_origin"] = "legacy-resolved"
+        persist()
+    except Exception as exc:
+        goal_state.update({
+            "status": "paused_recoverable", "recoverable": True,
+            "pause_reason": "role_unavailable",
+            "last_reason": f"Goal role unavailable: {type(exc).__name__}: {exc}",
+        })
+        persist("paused")
+        raise
     if not goal_state.get("spec"):
         try:
-            spec, items = _goal.refine_goal_spec_candidate(
-                prompt, session_id=sid, spawn_caller=caller, context=session_view,
-            )
+            with use_role(role_runtimes["work"], roles["work"]):
+                spec, items = _goal.refine_goal_spec_candidate(
+                    prompt, session_id=sid, spawn_caller=caller, context=session_view,
+                )
         except CancelledError:
             cancel()
             raise
@@ -378,13 +430,14 @@ def goal(
             answers = confirmed_answers()
             if answers:
                 recovery_context += "\n\nConfirmed user answers for this Goal:\n" + answers
-            last_result = agent(
-                prompt=work_prompt + recovery_context + async_question_policy,
-                model=model,
-                effort=effort,
-                timeout_s=turn_timeout,
-                tools_deny=["ask_user_question"],
-            )
+            with use_role(role_runtimes["work"], roles["work"]):
+                last_result = agent(
+                    prompt=work_prompt + recovery_context + async_question_policy,
+                    model="",
+                    effort=roles["work"]["effort"],
+                    timeout_s=roles["work"]["timeout_s"],
+                    tools_deny=["ask_user_question"],
+                )
         except CancelledError:
             cancel()
             raise
@@ -415,9 +468,10 @@ def goal(
         goal_state["status"] = "evaluating"
         persist("evaluating")
         try:
-            decision = _goal.evaluate_goal(
-                sid, goal_state, agent_id="main", spawn_caller=caller, session_view=session_evidence,
-            )
+            with use_role(role_runtimes["judge"], roles["judge"]):
+                decision = _goal.evaluate_goal(
+                    sid, goal_state, agent_id="main", spawn_caller=caller, session_view=session_evidence,
+                )
         except CancelledError:
             cancel()
             raise

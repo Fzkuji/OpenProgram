@@ -27,11 +27,12 @@ def _run_refine_turn(session_id: str, prompt: str, *, agent_id: str,
     if _current_runtime.get(None) is not None or not session_id:
         from openprogram.agentic_programming.agent import agent
         from openprogram.programs import agent_tools
+        from .roles import inspection_options
 
         return agent(
             prompt=prompt,
             tools=agent_tools(names=list(REFINE_TOOLS)),
-            timeout_s=_goal.DEFAULT_PHASE_TIMEOUT_S,
+            **inspection_options(default_timeout=_goal.DEFAULT_PHASE_TIMEOUT_S),
             execution_kind="goal_refiner",
         )
     from openprogram.agent.sub_agent_run import run_agent_turn

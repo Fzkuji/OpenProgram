@@ -292,6 +292,13 @@ def _status_text(goal: Optional[dict]) -> str:
         + (f"/{int(cap)}" if cap else ""),
     ]
     usage = goal.get("usage") or {}
+    for name, role in (goal.get("roles") or {}).items():
+        lines.append(
+            f"  {name}: {role.get('provider')}/{role.get('model')} · "
+            f"effort {role.get('effort')} · timeout {role.get('timeout_s')}s"
+        )
+    if goal.get("roles_origin") == "legacy-resolved":
+        lines.append("  roles: resolved on first resume of a legacy Goal")
     if usage:
         lines.append(
             f"  usage: {int(usage.get('total_tokens') or 0)} tokens · "

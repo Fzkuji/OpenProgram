@@ -17,6 +17,10 @@ Programs 和 Python 调用默认使用隔离上下文。`/goal` 会把当前会�
 可选限制包括 `max_rounds`、`max_tokens`、`max_elapsed_s` 和 `max_cost_usd`。Goal 恢复后继续累计限制与用量。
 单个工作轮次默认限时 300 秒，Python 和 CLI 调用可以通过 `timeout_s` 覆盖。累计预算在 controller 边界检查，因此当前阶段可能先超出累计上限，再由该上限阻止后续阶段。
 
+Python 调用可用 `model`、`effort` 选择工作角色，用 `judge_model`、`judge_effort`、`judge_timeout_s` 选择判定角色。未指定判定模型时使用已配置的 `goal.judge_model`，否则使用已解析的工作模型。带 provider 的名称接受 `provider:model` 或 `provider/model`。Goal 保存两个角色的实际模型身份、认证路由、推理设置和超时，不保存凭证。恢复时沿用保存值，不随当前会话默认设置改变。角色不可用时，目标进入可恢复暂停且不开始工作；重试保留原选择，不自动换 provider。旧 Goal 没有角色配置时，在首次恢复时解析并标注迁移。自定义 callable Runtime 必须由 Python 调用者再次提供，不会被还原为托管 provider。
+
+详情弹窗和 `/goal` 状态显示保存的工作、判定角色设置。
+
 ## 查看与控制
 
 composer 中的 Goal 状态条会打开详情弹窗。弹窗显示目标、状态、checklist、资源用量、最近判定原因和全部待答问题，并支持编辑、暂停、继续、逐项回答、调整执行限制和终止。

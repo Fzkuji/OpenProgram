@@ -9,6 +9,7 @@ import pytest
 
 import openprogram.programs.workflow.goal as G
 from openprogram.agent.session_db import SessionDB
+from openprogram.agentic_programming.runtime import Runtime
 
 
 @pytest.fixture
@@ -20,8 +21,9 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     return store
 
 
-class _Runtime:
+class _Runtime(Runtime):
     def __init__(self, answers: list[str] | None = None) -> None:
+        super().__init__(call=lambda **_kwargs: "unused fixture provider")
         self.answers = iter(answers or [])
         self.questions: list[tuple[str, object]] = []
 
@@ -111,10 +113,8 @@ def _run_goal(
     prompts: list[str] = []
 
     # 模拟 ambient Runtime 的 last_blocks（零工具轮 → 空列表）。
-    class _RuntimeStub:
-        last_blocks: list = []
-
-    stub = _RuntimeStub()
+    stub = runtime or _Runtime()
+    stub.last_blocks = [] if tools_per_round is not None else None
     tool_flags = iter(tools_per_round or [])
     token = None
     if tools_per_round is not None:
@@ -127,6 +127,9 @@ def _run_goal(
                 [{"type": "tool", "tool": "bash"}]
                 if next(tool_flags, True) else []
             )
+        else:
+            # These scenarios exercise verdict/budget behavior, not idle turns.
+            stub.last_blocks = [{"type": "tool", "tool": "read"}]
         return next(outputs)
 
     decisions = iter(verdicts)
@@ -141,7 +144,7 @@ def _run_goal(
             "do work",
             max_rounds=max_rounds,
             context_mode=context_mode,
-            runtime=runtime or _Runtime(),
+            runtime=stub,
             resume=resume,
         )
     finally:

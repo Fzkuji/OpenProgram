@@ -31,6 +31,21 @@ override it with `timeout_s`. Cumulative budgets are checked at controller
 boundaries, so the current phase can consume resources beyond a total limit
 before that limit stops the next phase.
 
+Python callers can select the working role with `model` and `effort`, and
+the judging role with `judge_model`, `judge_effort`, and `judge_timeout_s`.
+An omitted judge model uses `goal.judge_model` if configured, otherwise the
+resolved working model. Provider-qualified names accept `provider:model` or
+`provider/model`. The Goal saves both roles' resolved model identity,
+authentication route, reasoning setting, and timeout, but never credentials.
+Resume retains these settings even if the current session defaults change.
+An unavailable role leaves the Goal recoverably paused without starting work;
+retry keeps the requested roles rather than selecting another provider.
+Legacy Goals without saved roles resolve them once on their first resume and
+show this migration in their details. Custom callable runtimes must be supplied
+again by the Python caller; they are not reconstructed as hosted providers.
+
+The details dialog and `/goal` status show the saved work and judge settings.
+
 ## Inspect and control it
 
 The Goal chip in the composer opens a detail dialog. It shows the objective,

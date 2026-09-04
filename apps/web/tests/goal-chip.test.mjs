@@ -92,6 +92,24 @@ function reset() {
   useSessionStore.setState({ currentSessionId: "s1" });
 }
 
+test("saved work and judge identities remain visible after remount", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(2, "paused"), roles: {
+    work: { provider: "worker", model: "writer", model_provider: "worker", effort: "high", timeout_s: 17 },
+    judge: { provider: "judge", model: "reviewer", model_provider: "judge", effort: "low", timeout_s: 23 },
+  }};
+  for (let i = 0; i < 2; i++) {
+    const view = await mount();
+    try {
+      await view.open();
+      assert.match(view.host.textContent, /worker\/writer/);
+      assert.match(view.host.textContent, /judge\/reviewer/);
+      assert.match(view.host.textContent, /high · 17s/);
+      assert.match(view.host.textContent, /low · 23s/);
+    } finally { await view.close(); }
+  }
+});
+
 test("successful pause updates the visible Goal without a websocket and survives remount", async () => {
   reset();
   const original = api.mutateGoal;

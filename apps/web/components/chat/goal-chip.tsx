@@ -22,6 +22,14 @@ import styles from "./goal-chip.module.css";
 
 export interface GoalState {
   schema_version?: number;
+  roles?: Record<"work" | "judge", {
+    provider: string;
+    model: string;
+    model_provider: string;
+    effort: string;
+    timeout_s: number;
+  }>;
+  roles_origin?: string;
   goal_id?: string;
   run_id?: string;
   revision?: number;
@@ -223,6 +231,19 @@ export function GoalChip() {
             <div><span>{text("Cost", "成本")}</span><strong>${(goal.usage?.cost_usd ?? 0).toFixed(4)}</strong></div>
             <div><span>{text("Active time", "执行时间")}</span><strong>{formatElapsed(goal.usage?.active_elapsed_s)}</strong></div>
           </div>
+
+          {goal.roles ? <section className={styles.metrics} aria-label={text("Goal roles", "Goal 角色")}>
+            {(["work", "judge"] as const).map((name) => {
+              const role = goal.roles![name];
+              if (!role) return <div key={name}>{name}: {text("Unavailable", "不可用")}</div>;
+              return <div key={name}>
+                <span>{name === "work" ? text("Working agent", "工作 Agent") : text("Judge", "判定 Agent")}</span>
+                <strong>{role.provider}/{role.model}</strong>
+                <span>{role.effort} · {role.timeout_s}s</span>
+              </div>;
+            })}
+            {goal.roles_origin === "legacy-resolved" ? <p>{text("Roles resolved on first resume of this legacy Goal.", "旧目标在首次恢复时解析角色配置。")}</p> : null}
+          </section> : null}
 
           <details className={styles.budget}>
             <summary>{text("Execution limits", "执行限制")}</summary>
