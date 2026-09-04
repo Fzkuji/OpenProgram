@@ -53,27 +53,25 @@ def test_job_snapshot_survives_json_reload_without_caller_aliases(runner):
 def test_normal_and_borrowed_jobs_preserve_verifier_request(runner, store_fixture, monkeypatch, borrowed):
     from openprogram.agent import dispatcher
     from openprogram.agent.job.types import JobStatus
-    from openprogram.agent import sub_agent_run
     captured = []
-    execute = sub_agent_run._execute_agent_turn
     # This test isolates Job option transport. Startup authorization is covered
     # with real durable update/Job state in test_recovery.py.
     monkeypatch.setattr("openprogram.self_update.recovery.require_verifier_execution", lambda **_: None)
 
     def dispatch(req):
+        if req.user_text == "parent":
+            child = runner.spawn_job(
+                "p1", "verify", "main",
+                borrow_current_claim=True,
+                **_options(),
+            )
+            result = runner.await_job(child, timeout=2)
+            assert result.status is JobStatus.COMPLETED, result.error
+            return dispatcher.TurnResult(result.result_text or "", "parent_u", "parent_a")
         captured.append(req)
         return dispatcher.TurnResult('{"ok":true}', "verify_u", "verify_a")
 
-    def outer(**kwargs):
-        if kwargs["prompt"] == "parent":
-            child = runner.spawn_job("p1", "verify", "main", borrow_current_claim=True, **_options())
-            result = runner.await_job(child, timeout=2)
-            assert result.status is JobStatus.COMPLETED, result.error
-            return sub_agent_run.AgentTurnResult(final_text=result.result_text)
-        return execute(**kwargs)
-
     monkeypatch.setattr(dispatcher, "process_user_turn", dispatch)
-    monkeypatch.setattr(sub_agent_run, "_execute_agent_turn", outer)
     store_fixture.update_session("p1", extra_meta={"provider_override": "wrong", "model_override": "live"})
     if borrowed:
         job_id = runner.spawn_job("p1", "parent", "main")

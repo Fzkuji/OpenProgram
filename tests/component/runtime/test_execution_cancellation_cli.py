@@ -121,10 +121,10 @@ def test_cli_execution_cancel_is_idempotent(store, monkeypatch):
     server, origin = _serve_cancel(store)
     try:
         code1, out1 = _run_cli(
-            monkeypatch, ["execution", "cancel", "cli-exec"], origin,
+            monkeypatch, ["execution", "cancel", "cli-exec", "--expected-version", "0", "--command-id", "cancel-cli-1"], origin,
         )
         code2, out2 = _run_cli(
-            monkeypatch, ["execution", "cancel", "cli-exec"], origin,
+            monkeypatch, ["execution", "cancel", "cli-exec", "--expected-version", "0", "--command-id", "cancel-cli-1"], origin,
         )
     finally:
         server.shutdown()
@@ -221,7 +221,7 @@ def test_cli_cancel_signals_owner_in_worker_process(tmp_path, monkeypatch):
         origin = f"http://127.0.0.1:{port}"
         local_before = "remote-exec" in run_control._owners
         code, out = _run_cli(
-            monkeypatch, ["execution", "cancel", "remote-exec"], origin,
+            monkeypatch, ["execution", "cancel", "remote-exec", "--expected-version", "0"], origin,
         )
         persisted = ready.get(timeout=20)
         token_tripped = ready.get(timeout=5)

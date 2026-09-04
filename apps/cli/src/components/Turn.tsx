@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text } from '../runtime/index';
+import { Box, Text, useTerminalSize } from '../runtime/index';
 import { useColors } from '../theme/ThemeProvider.js';
 import { renderMarkdown } from '../utils/markdown.js';
 
@@ -122,7 +122,11 @@ const UserRow: React.FC<{ turn: Turn }> = ({ turn }) => {
 const TextSegment: React.FC<{ text: string; streaming?: boolean; showGlyph: boolean }>
   = ({ text, streaming, showGlyph }) => {
   const colors = useColors();
-  const rendered = streaming ? text : renderMarkdown(text);
+  const { columns } = useTerminalSize();
+  const rendered = React.useMemo(
+    () => streaming ? text : renderMarkdown(text),
+    [streaming, text, columns],
+  );
   const lines = rendered.split('\n');
   return (
     <Box paddingX={1} flexDirection="column">

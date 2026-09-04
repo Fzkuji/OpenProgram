@@ -133,6 +133,28 @@ def test_store_update_status_legal_transition(store_fixture):
     assert updated.queued_at is not None
 
 
+def test_store_terminal_retry_preserves_first_outcome(store_fixture):
+    from openprogram.agent.job.store import save_job, update_job_status
+    from openprogram.agent.job.types import Job, JobStatus
+
+    save_job(
+        "p1",
+        Job(id="terminal", parent_session_id="p1", prompt="x", agent_id="main"),
+    )
+    first = update_job_status(
+        "p1", "terminal", JobStatus.CANCELLED,
+        error="budget expired", reason_code="budget.runtime_exhausted",
+    )
+    retried = update_job_status(
+        "p1", "terminal", JobStatus.CANCELLED,
+        error="user requested", reason_code="cancel.user",
+    )
+
+    assert retried.to_dict() == first.to_dict()
+    assert retried.reason_code == "budget.runtime_exhausted"
+    assert retried.error == "budget expired"
+
+
 def test_reciprocal_linked_idempotent_updates_do_not_deadlock(
     store_fixture, monkeypatch,
 ):

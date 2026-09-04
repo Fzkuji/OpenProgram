@@ -67,9 +67,12 @@ def _finish(session_id: str, goal: dict, on_event: Optional[Callable],
             goal.update(latest)
             _goal._emit_goal_update(on_event, session_id, goal)
         return
-    except Exception:
+    except Exception as exc:
         _log.warning("goal terminal write failed for session %s",
                      session_id, exc_info=True)
+        raise _goal.GoalStateUnavailable(
+            "Goal state unavailable; completion was not saved."
+        ) from exc
     _goal._emit_goal_update(on_event, session_id, goal)
     # The chip alone leaves a stopped run looking like the assistant went
     # silent mid-conversation — the reason is already written to the goal

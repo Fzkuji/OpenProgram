@@ -690,8 +690,63 @@ async def handle_chat(ws, cmd: dict):
                 from openprogram.webui.routes.chat import (
                     run_agentic_function_call,
                 )
+                _validated_surface = None
+                if surface_ref is not None:
+                    _surface_window = surface_ref.get("window_id")
+                    _surface_tab = surface_ref.get("tab_id")
+                    from openprogram.webui.ws_actions import webtab
+                    _surface_version_valid = (
+                        type(surface_ref.get("version")) is int
+                        and surface_ref.get("version") == 1
+                    )
+                    _surface_tab_valid = (
+                        _surface_tab is None
+                        or (
+                            isinstance(_surface_tab, str)
+                            and bool(_surface_tab)
+                        )
+                    )
+                    _surface_window_owned = (
+                        isinstance(_surface_window, str)
+                        and bool(_surface_window)
+                        and any(
+                            owner is ws and window_id == _surface_window
+                            for owner, window_id, _revision
+                            in webtab.registered_desktop_windows()
+                        )
+                    )
+                    if not (
+                        _surface_version_valid
+                        and _surface_tab_valid
+                        and _surface_window_owned
+                    ):
+                        await ws.send_text(json.dumps({
+                            "type": "chat_response",
+                            "data": {
+                                "type": "error",
+                                "session_id": session_id,
+                                "code": "page_context_stale",
+                                "content": (
+                                    "The submitted Page context is stale or "
+                                    "belongs to another desktop window."
+                                ),
+                            },
+                        }))
+                        return
+                    _validated_surface = {
+                        "version": 1,
+                        "window_id": _surface_window,
+                    }
+                    if _surface_tab:
+                        _validated_surface["tab_id"] = _surface_tab
+                _run_options = {}
+                if _validated_surface:
+                    _run_options["origin_window_id"] = _validated_surface[
+                        "window_id"
+                    ]
+                    _run_options["surface_ref"] = _validated_surface
                 _run = run_agentic_function_call(
-                    _name, _kwargs, session_id,
+                    _name, _kwargs, session_id, **_run_options,
                 )
                 if "error" in _run:
                     await ws.send_text(json.dumps({
@@ -704,14 +759,23 @@ async def handle_chat(ws, cmd: dict):
                         },
                     }))
                     return
+                if not _run.get("execution_id"):
+                    await ws.send_text(json.dumps({
+                        "type": "chat_response",
+                        "data": {
+                            "type": "error",
+                            "session_id": session_id,
+                            "code": "execution_admission_failed",
+                            "content": "Function execution was not admitted.",
+                        },
+                    }))
+                    return
                 await ws.send_text(json.dumps({
                     "type": "chat_ack",
                     "data": {
                         "session_id": _run.get("session_id", session_id),
                         "msg_id": _run.get("msg_id", ""),
-                        "execution_id": (
-                            _run.get("execution_id") or _run.get("msg_id", "")
-                        ),
+                        "execution_id": _run["execution_id"],
                         "function_run": True,
                     },
                 }))
@@ -863,12 +927,29 @@ async def handle_chat(ws, cmd: dict):
         _s._release_run_reservation(session_id, msg_id)
         raise
 
+    # The renderer's surface reference is only a hint. Resolve it against
+    # this authenticated websocket and capture a server-owned binding before
+    # durable admission; client-supplied capability fields are never stored.
+    from openprogram.agent.surface_context import (
+        capture as _capture_surface,
+        release_bindings as _release_surface_bindings,
+    )
+    try:
+        surface_context = _capture_surface(surface_ref, ws)
+    except BaseException:
+        _s._release_run_reservation(session_id, msg_id)
+        raise
+
     user_msg = {
         "role": "user",
         "id": msg_id,
         "content": text,
         "timestamp": time.time(),
         "source": "web",
+        "interaction": (
+            "spawn" if parsed.get("action") == "spawn"
+            else "merge" if parsed.get("action") == "merge" else None
+        ),
         **_local_authority,
     }
     if parsed["action"] == "spawn":
@@ -891,32 +972,80 @@ async def handle_chat(ws, cmd: dict):
             for a in attachments
         ]
         user_msg["extra"] = json.dumps({"attachments": manifest}, default=str)
+    # Admission is the sole source of execution identity. The message id is
+    # retained only as transport/DAG provenance and never becomes ownership.
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.production_driver import CanonicalAgentAdapter
+    _adapter = CanonicalAgentAdapter(
+        event_sink=(
+            lambda env: _s._broadcast_envelope(env)
+            if hasattr(_s, "_broadcast_envelope")
+            else _s._broadcast(json.dumps(env, default=str))
+        ),
+    )
+    from openprogram.agent.session_config import tools_override_from_config
+    _response_format_payload = (
+        response_format.model_dump(mode="json")
+        if hasattr(response_format, "model_dump") else response_format
+    )
+    _request_payload = {
+        "session_id": session_id,
+        "user_text": parsed.get("raw") or text,
+        "agent_id": _db_agent_id(session_id),
+        "source": "web",
+        "permission_mode": run_cfg.permission_mode or "ask",
+        "thinking_effort": run_cfg.thinking_effort,
+        "service_tier": service_tier,
+        "response_format": _response_format_payload,
+        "tools_override": tools_override_from_config(run_cfg),
+        "attachments": attachments,
+        "user_msg_id": msg_id,
+        "user_already_persisted": True,
+        "surface_context": surface_context,
+        "structured_output": (
+            {
+                "prompt": parsed.get("prompt") or "",
+                "label": parsed.get("label") or "",
+                "context": parsed.get("context") or "inherit",
+                "wait": parsed.get("wait", True),
+            }
+            if parsed.get("action") == "spawn" else {
+                "sub_sessions": parsed.get("sub_sessions") or [],
+                "message": parsed.get("message") or "",
+            }
+            if parsed.get("action") == "merge" else None
+        ),
+        "additional_working_dirs": getattr(run_cfg, "additional_working_dirs", []),
+    }
+    try:
+        _request = TurnRequest(**_request_payload)
+        _admission = _adapter.admit(
+            _request,
+            trusted_actor=_local_authority,
+            user_message_id=msg_id,
+            # The dispatcher writes this deterministic placeholder before
+            # provider/tool callbacks.  Persist the same anchor at admission
+            # so a resumed Agent checkpoint can fence it against immutable
+            # execution input and finalize it exactly once.
+            assistant_message_id=f"{msg_id}_reply",
+            config_snapshot_ref=f"session:{session_id}",
+        )
+    except BaseException:
+        _release_surface_bindings(surface_context)
+        _s._release_run_reservation(session_id, msg_id)
+        raise
+    execution_id = _admission.execution_id
+
+    # User/DAG content is committed only after the bounded canonical payload
+    # has been admitted. If admission rejects an oversized or malformed
+    # request, no user node is left behind without an execution record.
     try:
         _s._append_msg(conv, user_msg)
     except BaseException:
+        _adapter.fail_admission(_admission, reason_code="user_persist_failed")
+        _release_surface_bindings(surface_context)
         _s._release_run_reservation(session_id, msg_id)
         raise
-
-    execution_id = f"{msg_id}_reply"
-    from openprogram.agent.internals._turn_lifecycle import insert_placeholder
-    from openprogram.agent.session_db import default_db
-    if not insert_placeholder(
-        default_db(),
-        session_id,
-        execution_id,
-        msg_id,
-        "web",
-        authority=_local_authority,
-    ):
-        # insert_placeholder documents a False return as "fall back to
-        # the legacy append-on-finish path". Blocking dispatch here
-        # dropped structured-output chat on a store that could not
-        # write the placeholder (tests, headless hosts).
-        pass
-
-    def _mark_setup_interrupted() -> None:
-        from openprogram.agent.run_control import mark_execution_terminal
-        mark_execution_terminal(execution_id, "interrupted")
 
     # chat.before_send on the bus — plugin subscribers observe the
     # message about to enter the runtime. emit_safe swallows failures
@@ -931,7 +1060,8 @@ async def handle_chat(ws, cmd: dict):
             "attachments": bool(attachments),
         }, {"session": session_id})
     except BaseException:
-        _mark_setup_interrupted()
+        _adapter.fail_admission(_admission, reason_code="chat_event_failed")
+        _release_surface_bindings(surface_context)
         _s._release_run_reservation(session_id, msg_id)
         raise
 
@@ -949,6 +1079,7 @@ async def handle_chat(ws, cmd: dict):
                 "msg_id": msg_id,
                 "text": text,
                 "execution_id": execution_id,
+                "status_version": _admission.status_version,
                 "permission_mode": effective_permission,
             },
         }))
@@ -965,126 +1096,133 @@ async def handle_chat(ws, cmd: dict):
     # _running_tasks[...] = {...} overwrite stays the single source of
     # the task entry (no double running_task with a different started_at).
     import time as _t
-    with _s._running_tasks_lock:
-        _s._running_tasks.setdefault(session_id, {
-            "msg_id": msg_id, "func_name": "_chat",
-            "started_at": _t.time(), "last_event_at": _t.time(),
-            "display_params": "", "loaded_func_ref": None,
-            "stream_events": [],
-            "execution_id": execution_id,
-        })
-    _s._emit_running_task_event(session_id)
+    try:
+        with _s._running_tasks_lock:
+            _running_task = _s._running_tasks.setdefault(session_id, {
+                "msg_id": msg_id, "func_name": "_chat",
+                "started_at": _t.time(), "last_event_at": _t.time(),
+                "display_params": "", "loaded_func_ref": None,
+                "stream_events": [],
+                "execution_id": execution_id,
+                "status_version": _admission.status_version,
+            })
+            # The reservation is created before the admission has an execution
+            # id. Fill that exact id into the owned task rather than relying on
+            # setdefault, which would leave a provisional value unable to
+            # match the admitted execution.
+            if _running_task.get("msg_id") == msg_id:
+                _running_task["execution_id"] = execution_id
+                _running_task["status_version"] = _admission.status_version
+        _s._emit_running_task_event(session_id)
+    except BaseException:
+        with _s._running_tasks_lock:
+            if (_s._running_tasks.get(session_id) or {}).get("msg_id") == msg_id:
+                _s._running_tasks.pop(session_id, None)
+        _adapter.fail_admission(_admission, reason_code="chat_handoff_failed")
+        _release_surface_bindings(surface_context)
+        _s._release_run_reservation(session_id, msg_id)
+        raise
     try:
         from openprogram.webui.ws_actions.session import broadcast_sessions_list
         broadcast_sessions_list()
     except Exception:
         pass
 
+    def _clear_running_task():
+        try:
+            _s._emit_running_task_event(
+                session_id,
+                cleared_msg_id=msg_id,
+                cleared_execution_id=execution_id,
+            )
+        except Exception:
+            pass
+
     def _make_run_thread(**kwargs):
         try:
             return threading.Thread(**kwargs)
         except BaseException:
-            _mark_setup_interrupted()
+            _release_surface_bindings(surface_context)
+            _adapter.fail_admission(
+                _admission, reason_code="agent_runner_error",
+            )
             _s._release_run_reservation(session_id, msg_id)
+            _clear_running_task()
             raise
 
-    if parsed["action"] in ("query", "chat", "run"):
-        run_thread = _make_run_thread(
-            target=_s._execute_in_context,
-            args=(session_id, msg_id, "query"),
-            kwargs={"query": parsed["raw"],
-                    "thinking_effort": run_cfg.thinking_effort,
-                    "tools_flag": tools_flag,
-                    "permission_mode": run_cfg.permission_mode,
-                    "service_tier": service_tier,
-                    "response_format": response_format,
-                    "attachments": attachments,
-                    "surface_ref": surface_ref,
-                    "surface_ws": ws},
-            daemon=True,
-        )
-    elif parsed["action"] == "spawn":
-        run_thread = _make_run_thread(
-            target=_s._execute_in_context,
-            args=(session_id, msg_id, "spawn"),
-            kwargs={"kwargs": {
-                "prompt": parsed.get("prompt") or "",
-                "label": parsed.get("label") or "",
-                # New same-session multi-agent: "inherit" (default,
-                # fork off this turn) or "clean" (new root in the
-                # same session). Slash parser strips --clean /
-                # --inherit and surfaces them here.
-                "context": parsed.get("context") or "inherit",
-                # wait=False (default for /task --async): submit to
-                # JobRunner, return immediately. wait=True (default)
-                # blocks like the historical /task path.
-                "wait": parsed.get("wait", True),
-            }},
-            daemon=True,
-        )
-    elif parsed["action"] == "merge":
-        run_thread = _make_run_thread(
-            target=_s._execute_in_context,
-            args=(session_id, msg_id, "merge"),
-            kwargs={"kwargs": {
-                "sub_sessions": parsed.get("sub_sessions") or [],
-                "message": parsed.get("message") or "",
-            }},
-            daemon=True,
-        )
-    else:
-        _mark_setup_interrupted()
+    def _run_canonical(**_thread_options):
+        def _publish_activation(active):
+            with _s._running_tasks_lock:
+                task = _s._running_tasks.get(session_id)
+                if task and task.get("execution_id") == active.admission.execution_id:
+                    task["status_version"] = active.status_version
+            _s._emit_running_task_event(session_id)
+
+        async def _activate():
+            return await _adapter.activate(_admission, on_activated=_publish_activation)
+
+        try:
+            asyncio.run(_activate())
+        finally:
+            _release_surface_bindings(surface_context)
+            try:
+                if _s._finish_owned_run(session_id, msg_id):
+                    _s._emit_running_task_event(
+                        session_id,
+                        cleared_msg_id=msg_id,
+                        cleared_execution_id=execution_id,
+                    )
+            except Exception:
+                pass
+
+    run_thread = _make_run_thread(
+        target=_run_canonical,
+        args=(),
+        kwargs={"response_format": response_format},
+        daemon=True,
+    )
+
+    if not _s._activate_run_reservation(session_id, msg_id, run_thread):
+        _release_surface_bindings(surface_context)
+        _adapter.fail_admission(_admission, reason_code="agent_runner_error")
         _s._release_run_reservation(session_id, msg_id)
-        raise RuntimeError(f"unsupported chat action: {parsed['action']}")
+        _clear_running_task()
+        raise RuntimeError("chat execution reservation was lost before startup")
 
     try:
         run_thread.start()
     except BaseException:
-        _mark_setup_interrupted()
+        _release_surface_bindings(surface_context)
+        _adapter.fail_admission(
+            _admission, reason_code="agent_runner_error",
+        )
+        if _s._finish_owned_run(session_id, msg_id):
+            _clear_running_task()
         _s._release_run_reservation(session_id, msg_id)
         raise
 
 
-def _last_call_node(session_id: str, func_name: str):
-    """The most recent TOP-LEVEL ``func_name`` code node in the session,
-    or ``None`` if the function was never called there.
-
-    Top-level = a code node whose caller is NOT itself a code node
-    (fn-form / manual retry → caller "ROOT"; LLM-issued → an llm reply).
-    Nested sub-calls of the same name (a function that calls itself) are
-    excluded so a retry re-runs the OUTER invocation, not an internal
-    step.
-    """
+def _retry_call_node(session_id: str, node_id: str, func_name: str):
+    """Return the exact persisted top-level code node named by Retry."""
+    if not all(
+        isinstance(value, str) and value
+        for value in (session_id, node_id, func_name)
+    ):
+        return None
     from openprogram.agent.session_db import default_db
     try:
         nodes = default_db().get_nodes(session_id)
     except Exception:
         return None
     code_ids = {n.id for n in nodes if n.is_code()}
-    latest = None
-    for n in sorted(nodes, key=lambda x: x.seq):
-        if (n.is_code() and n.name == func_name
-                and isinstance(n.input, dict)
-                and n.caller not in code_ids):
-            latest = n
-    return latest
-
-
-def _last_call_kwargs(session_id: str, func_name: str):
-    """Kwargs of the most recent ``func_name`` code node in the session,
-    or ``None`` if the function was never called there.
-
-    Reads the authoritative persisted DAG node (``Call.input``) rather
-    than reconstructing kwargs from the rendered execution tree — the
-    tree stringifies / truncates params for display, so re-dispatching
-    from it could silently run the wrong arguments. ``runtime`` /
-    ``callback`` injected params are dropped (not real user args).
-    """
-    latest = _last_call_node(session_id, func_name)
-    if latest is None:
-        return None
-    return {k: v for k, v in latest.input.items()
-            if k not in ("runtime", "callback")}
+    return next((
+        node for node in nodes
+        if node.id == node_id
+        and node.is_code()
+        and node.name == func_name
+        and isinstance(node.input, dict)
+        and node.caller not in code_ids
+    ), None)
 
 
 def _call_predecessor(node) -> str:
@@ -1110,8 +1248,7 @@ def _call_predecessor(node) -> str:
 
 
 async def handle_retry_function(ws, cmd: dict):
-    """Re-run a function call's LAST invocation with the SAME kwargs, in
-    the SAME session, as a SIBLING BRANCH of the original call.
+    """Re-run the exact function code node selected by the user.
 
     Wired to the runtime-block Retry button. Mirrors chat-message retry
     (``_fork_user_turn_and_run``): the re-run is anchored at the original
@@ -1130,17 +1267,17 @@ async def handle_retry_function(ws, cmd: dict):
     if not session_id or not func_name:
         return
 
-    node = _last_call_node(session_id, func_name)
-    if node is None:
+    def _fail(message: str) -> None:
         _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {
             "type": "error",
-            "content": (
-                f"Retry failed: no prior {func_name!r} call found in this "
-                "session to re-run."
-            ),
+            "content": f"Retry failed: {message}",
             "function": func_name,
             "display": "runtime",
         })
+
+    node = _retry_call_node(session_id, cmd.get("node_id"), func_name)
+    if node is None:
+        _fail(f"no matching {func_name!r} call node found in this session.")
         return
 
     kwargs = {k: v for k, v in node.input.items()
@@ -1149,17 +1286,85 @@ async def handle_retry_function(ws, cmd: dict):
     # a sibling branch (same fork model as chat retry), not a stacked run.
     anchor = _call_predecessor(node)
 
+    from openprogram.webui.ws_actions import webtab
+    registered_window_id = next((
+        window_id for owner, window_id, _revision
+        in webtab.registered_desktop_windows()
+        if owner is ws
+    ), None)
+    clicked_surface = (
+        cmd.get("surface_ref")
+        if isinstance(cmd.get("surface_ref"), dict) else None
+    )
+    metadata = node.metadata if isinstance(node.metadata, dict) else {}
+    if "surface_origin" in metadata:
+        stored_origin = metadata["surface_origin"]
+        stored_version = (
+            stored_origin.get("version")
+            if isinstance(stored_origin, dict) else None
+        )
+        stored_window = (
+            stored_origin.get("window_id")
+            if isinstance(stored_origin, dict) else None
+        )
+        stored_tab = (
+            stored_origin.get("tab_id")
+            if isinstance(stored_origin, dict)
+            and "tab_id" in stored_origin else None
+        )
+        stored_version_valid = (
+            type(stored_version) is int and stored_version == 1
+        )
+        stored_window_valid = (
+            isinstance(stored_window, str) and bool(stored_window)
+        )
+        stored_tab_valid = (
+            stored_tab is None
+            or (isinstance(stored_tab, str) and bool(stored_tab))
+        )
+        if not (
+            stored_version_valid and stored_window_valid and stored_tab_valid
+        ):
+            _fail("the selected call has an invalid stored Page origin.")
+            return
+        if registered_window_id != stored_window:
+            _fail("the original desktop window is no longer connected here.")
+            return
+        origin_window_id = stored_window
+        surface_ref = (
+            {
+                "version": 1,
+                "window_id": stored_window,
+                "tab_id": stored_tab,
+            }
+            if stored_tab else None
+        )
+    else:
+        # Nodes created before surface_origin was persisted may use the
+        # exact Page reported by the desktop at click time.
+        origin_window_id = registered_window_id
+        surface_ref = clicked_surface
+        surface_window_id = (
+            surface_ref.get("window_id")
+            if isinstance(surface_ref, dict)
+            and isinstance(surface_ref.get("window_id"), str)
+            else None
+        )
+        if surface_ref and (
+            not origin_window_id or surface_window_id != origin_window_id
+        ):
+            _fail("surface belongs to another desktop window.")
+            return
+    options = {"anchor_msg_id": anchor}
+    if origin_window_id:
+        options["origin_window_id"] = origin_window_id
+    if surface_ref:
+        options["surface_ref"] = surface_ref
     result = run_agentic_function_call(
-        func_name, kwargs, session_id, anchor_msg_id=anchor,
-        retry_of=node.id,
+        func_name, kwargs, session_id, **options,
     )
     if "error" in result:
-        _s._broadcast_chat_response(session_id, str(uuid.uuid4())[:8], {
-            "type": "error",
-            "content": f"Retry failed: {result['error']}",
-            "function": func_name,
-            "display": "runtime",
-        })
+        _fail(result["error"])
         return
     await ws.send_text(json.dumps({
         "type": "chat_ack",
@@ -1170,7 +1375,11 @@ async def handle_retry_function(ws, cmd: dict):
         # after the spawned child's import finishes). See wsHandleChatAck.
         "data": {"session_id": result.get("session_id", session_id),
                  "msg_id": result.get("msg_id", ""),
-                 "execution_id": result.get("msg_id") or result.get("execution_id") or "",
+                 "execution_id": (
+                     result.get("execution_id")
+                     or result.get("msg_id")
+                     or ""
+                 ),
                  "function_run": True},
     }))
 

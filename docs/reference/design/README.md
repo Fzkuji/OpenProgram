@@ -58,8 +58,7 @@ Proactivity applications (built on the base):
 |---|---|
 | [`runtime/overview.md`](runtime/overview.md) | Runtime API behaviour (see also [`../api/runtime.md`](../api/runtime.md)) |
 | [`runtime/operations/user-input-requests.md`](runtime/operations/user-input-requests.md) | User input via runtime.ask/confirm |
-| [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | Attended/unattended toggle, mid-run intervention, graceful stop, three-surface sync |
-| [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 three-surface sync implementation detail |
+| [`runtime/execution/execution-control.html`](runtime/execution/execution-control.html) | **Authoritative** unified execution control: pause, continue, step, steering, cancellation, checkpoint, revision, recovery, and surface synchronization |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | Unified session context |
 | [`runtime/agent-configuration-ui.html`](runtime/agent-configuration-ui.html) | Agent configuration framework: identity, model, instructions, Programs, Skills, MCP, and Sessions ([core settings](runtime/agent-core-configuration-ui.html), [capabilities](runtime/agent-capability-configuration-ui.html), [Programs picker](runtime/agent-tool-configuration-ui.html)) |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree behaviour |
@@ -75,8 +74,8 @@ Proactivity applications (built on the base):
 | [`runtime/execution/agentic-self-recursion.md`](runtime/execution/agentic-self-recursion.md) | Agentic self-recursion ([rendered](runtime/execution/agentic-self-recursion.html)) |
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | Branch naming ([rendered](runtime/operations/branch-naming.html)) |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session subsystem: data model, storage, naming, listing, lifecycle |
+| [`runtime/self-update.md`](runtime/self-update.md) | Source-checkout upgrades: gated Git flow, channel semantics, verification, and manual recovery |
 | [`runtime/goal-framework-implementation-comparison.html`](runtime/goal-framework-implementation-comparison.html) | **Authoritative Goal design**: native implementation comparison, controller and state flow, async questions, hard-task stopping, restart recovery, Web/TUI surfaces, and implementation evidence |
-| [`runtime/self-update.html`](runtime/self-update.html) | Conversational self-update: isolated code changes, external App activation, restart handoff, automatic goal verification, and rollback |
 | [`runtime/sandbox-architecture.html`](runtime/sandbox-architecture.html) | Canonical execution-security design: authority tiers, permission modes and approval, host sandbox boundaries, framework comparison, and implementation evidence |
 | [`runtime/permission-model.md`](runtime/permission-model.md) / [`runtime/sandbox.md`](runtime/sandbox.md) | Stable link targets that point to the canonical execution-security design |
 | [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | Outbound URL and SSRF design: current gaps, Hermes/OpenClaw/OWASP comparison, scoped trust policy, transport requirements, and full acceptance gates |

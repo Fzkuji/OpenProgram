@@ -221,6 +221,41 @@ def test_headless_decision_uses_an_independent_read_only_turn(monkeypatch) -> No
     assert captured["tools"] is resolved_tools
 
 
+@pytest.mark.parametrize("phase", ["refine", "judge"])
+def test_session_goal_inspects_in_current_runtime_without_starting_jobs(monkeypatch, phase):
+    from openprogram.agentic_programming.function import _current_runtime
+    captured = {}
+    runtime = SimpleNamespace(last_blocks=[])
+    reply = '{"verdict":"met","reason":"verified"}'
+
+    def unexpected_spawn(**_kwargs):
+        pytest.fail("Goal inspection must not initialize a JobRunner")
+
+    def fake_agent(**kwargs):
+        captured.update(kwargs)
+        runtime.last_blocks = [{"type": "tool", "tool": "read", "is_error": False}]
+        return reply
+
+    monkeypatch.setattr("openprogram.agent.sub_agent_run.run_agent_turn", unexpected_spawn)
+    monkeypatch.setattr(importlib.import_module("openprogram.agentic_programming.agent"), "agent", fake_agent)
+    monkeypatch.setattr("openprogram.programs.agent_tools", lambda *, names: names)
+    monkeypatch.setattr("openprogram.programs.workflow.goal.judge_model", lambda: "judge/model")
+    token = _current_runtime.set(runtime)
+    try:
+        if phase == "judge":
+            result = GJ._run_decision_turn("s1", "inspect", agent_id="main", spawn_caller="goal")
+            assert captured["model"] == "judge/model"
+            assert captured["tools"] == list(GJ.DECISION_TOOLS)
+        else:
+            result = GR._run_refine_turn("s1", "inspect", agent_id="main", spawn_caller="goal")
+            assert captured["tools"] == list(GR.REFINE_TOOLS)
+        assert result == reply
+        assert captured["execution_kind"] == ("goal_judge" if phase == "judge" else "goal_refiner")
+        assert captured["timeout_s"] > 0
+    finally:
+        _current_runtime.reset(token)
+
+
 # ---------------------------------------------------------------------------
 # Spec refinement — the internal `refine` entry
 # ---------------------------------------------------------------------------

@@ -429,17 +429,50 @@ def build_parser() -> argparse.ArgumentParser:
     # ---- execution --------------------------------------------------------
     p_execution = sub.add_parser(
         "execution",
-        help="Inspect or cancel a single execution",
+        help="Control a single execution",
     )
     execution_sub = p_execution.add_subparsers(
         dest="execution_verb", metavar="verb",
     )
-    p_execution_cancel = execution_sub.add_parser(
-        "cancel", help="Cancel one execution by id",
-    )
-    p_execution_cancel.add_argument(
-        "execution_id", help="Execution id to cancel",
-    )
+    for _verb, _help in (
+        ("pause", "Pause at the next safe point"),
+        ("continue", "Continue a paused execution"),
+        ("step", "Apply exactly one managed action"),
+        ("steer", "Apply a bounded instruction at the next safe point"),
+        ("cancel", "Cancel one execution"),
+        ("fork", "Create a child execution from a checkpoint and revision"),
+        ("retry", "Create a same-revision child from a legal checkpoint"),
+    ):
+        _parser = execution_sub.add_parser(_verb, help=_help)
+        _parser.add_argument("execution_id", help="Execution id")
+        _parser.add_argument(
+            "--expected-version", required=True, type=int,
+            help="Exact execution status_version observed by the caller",
+        )
+        _parser.add_argument(
+            "--command-id", default=None,
+            help="Caller command id for idempotent retry",
+        )
+        if _verb == "steer":
+            _parser.add_argument("--message", required=True, help="Bounded steering instruction")
+        elif _verb == "fork":
+            _parser.add_argument("--checkpoint-id", required=True, help="Published source checkpoint id")
+            _parser.add_argument("--manifest-id", required=True, help="Published revision manifest id")
+            _parser.add_argument("--proof-hash", required=True, help="Validated revision frontier proof hash")
+        elif _verb == "retry":
+            _parser.add_argument("--checkpoint-id", default=None, help="Optional published source checkpoint id")
+
+    for _verb, _help in (
+        ("wait-answer", "Answer one durable question or approval"),
+        ("wait-decline", "Decline one durable question or approval"),
+    ):
+        _parser = execution_sub.add_parser(_verb, help=_help)
+        _parser.add_argument("execution_id", help="Execution id")
+        _parser.add_argument("wait_id", help="Exact durable wait id")
+        _parser.add_argument("generation", type=int, help="Observed wait generation")
+        _parser.add_argument("--expected-version", required=True, type=int, help="Exact execution status_version observed by the caller")
+        _parser.add_argument("--command-id", default=None, help="Caller command id for idempotent retry")
+        _parser.add_argument("--answer-json" if _verb == "wait-answer" else "--reason", dest="wait_value", default=None, help="JSON answer" if _verb == "wait-answer" else "Optional decline reason")
 
     # ---- jobs -------------------------------------------------------------
     p_jobs = sub.add_parser(
@@ -461,7 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
     # and ``openprogram/agent/_merge.py`` for the model. These commands run
     # against the in-process SessionStore singleton — no WS, no webui.
     p_subagent = sub.add_parser("subagent",
-        help="Spawn, inspect, cancel, or merge subagent sessions.")
+        help="Spawn, inspect, or merge subagent sessions.")
     subagent_sub = p_subagent.add_subparsers(
         dest="subagent_verb", metavar="verb",
     )
@@ -512,22 +545,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print human-readable summary instead of JSON")
 
     p_sa_list = subagent_sub.add_parser("list",
-        help="List resource views for jobs in a session.")
+        help="List canonical resource views for jobs in a session.")
     p_sa_list.add_argument("--session", required=True,
         help="Session id whose jobs should be listed")
     p_sa_list.add_argument("--json", action="store_true",
         help="Print the canonical job resource views as JSON")
 
     p_sa_show = subagent_sub.add_parser("show",
-        help="Show one job's resource view.")
-    p_sa_show.add_argument("job_id", help="Job id to inspect")
+        help="Show one job's canonical resource view.")
+    p_sa_show.add_argument("job_id", help="Execution id to inspect")
     p_sa_show.add_argument("--json", action="store_true",
-        help="Print the canonical job resource view as JSON")
-
-    p_sa_cancel = subagent_sub.add_parser("cancel",
-        help="Cancel one job and show its updated resource view.")
-    p_sa_cancel.add_argument("job_id", help="Job id to cancel")
-    p_sa_cancel.add_argument("--json", action="store_true",
         help="Print the canonical job resource view as JSON")
 
     # ---- web --------------------------------------------------------------

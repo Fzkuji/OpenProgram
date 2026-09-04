@@ -2,7 +2,8 @@
 
 **harness**（一个 *agentic program*）是一个自包含的、由 agentic
 function 组成的 git 仓库。每个受支持的 release 已经包含 GUI、Research、Wiki
-三项第一方 Programs、依赖和默认 runtime 资产。`openprogram programs install`
+三项第一方 Program package 与受支持的 runtime 资产。GUI package 不包含
+PyTorch、OpenCV 或 EasyOCR，具体边界见下文。`openprogram programs install`
 用于额外第三方 Program 或开发者 source overlay，不是补齐 release 安装的步骤。
 immutable product runtime 拒绝原地安装、升级和卸载 Program。
 
@@ -61,8 +62,8 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 
 | Program | Release 状态 | 说明 |
 |---|---|---|
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | 已包含 | 固定 source commit 和依赖记录在 product manifest 中。 |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | 已包含 | 固定 source commit 和依赖记录在 product manifest 中。 |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | 已包含 | product manifest 记录固定 source commit；builder 安装声明的 PDF 依赖，runtime manifest 记录解析后的 distributions。 |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | 已包含 | product manifest 记录固定 source commit；builder 安装声明的依赖，runtime manifest 记录解析后的 distributions。 |
 | [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | 已包含 | Program 会注册，并附带 GPA detector 权重。产品 runtime 不含 PyTorch、OpenCV 或 EasyOCR。 |
 
 release 用户不执行 `programs install all`、首次启动 Program wizard 或 GUI

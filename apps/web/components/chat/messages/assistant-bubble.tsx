@@ -41,6 +41,7 @@ import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { RuntimeBlock } from "./runtime-block";
 import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
+import { shouldRenderTurnFiles } from "./turn-files-presentation";
 import { AttachmentChips, parseAttachments } from "./user-attachments";
 
 /** Categorized, actionable headline for a failed turn, by error reason
@@ -544,8 +545,9 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
           {!streaming && outboundFiles.length > 0 ? (
             <AttachmentChips items={outboundFiles} />
           ) : null}
-          {!streaming && msg.id ? (
+          {!streaming && msg.id && shouldRenderTurnFiles(msg.turnFiles, msg.blocks) ? (
             <TurnFilesChips
+              key={msg.id}
               assistantMsgId={msg.id}
               blocks={msg.blocks}
               summary={msg.turnFiles}

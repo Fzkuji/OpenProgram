@@ -18,8 +18,10 @@ Covers the wire contract:
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
+import resource
 import types
 from pathlib import Path
 
@@ -107,6 +109,409 @@ def test_tree_unknown_project(project_root):
     assert "unknown project" in data["error"]
 
 
+def test_tree_pages_use_opaque_stable_cursor(project_root):
+    for index in range(105):
+        (project_root / f"item-{index:03d}.txt").write_text("x", encoding="utf-8")
+
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 100,
+    })["data"]
+    assert len(first["entries"]) == 100
+    assert first["snapshot_id"]
+    assert isinstance(first["next_cursor"], str)
+    assert not first["next_cursor"].isdigit()
+
+    second = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": first["next_cursor"],
+        "page_size": 100,
+    })["data"]
+    assert second["snapshot_id"] == first["snapshot_id"]
+    assert [e["name"] for e in second["entries"]] == [
+        "item-096.txt", "item-097.txt", "item-098.txt", "item-099.txt",
+        "item-100.txt", "item-101.txt", "item-102.txt",
+        "item-103.txt", "item-104.txt", "sneaky_link", "zeta.txt",
+    ]
+    assert second["next_cursor"] is None
+
+
+def test_tree_cursor_rejects_directory_version_change(project_root):
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    (project_root / "changed.txt").write_text("changed", encoding="utf-8")
+    stale = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": first["next_cursor"],
+        "page_size": 1,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert stale["status"] == "stale"
+    assert stale["entries"] == []
+
+
+@pytest.mark.parametrize("code", ["STALE_SNAPSHOT", "STALE_CURSOR", "CURSOR"])
+def test_query_stale_errors_use_canonical_status(code):
+    result = ws_files._query_error("p1", "src", code=code)
+    assert result["status"] == "stale"
+    assert result["error_code"] == code
+
+
+def test_tree_cursor_is_bound_to_project_and_path(project_root, monkeypatch):
+    other = project_root.parent / "other"
+    other.mkdir()
+    (other / "same.txt").write_text("other", encoding="utf-8")
+    original = project_store.get_project
+
+    def get_project(project_id):
+        if project_id == "p2":
+            return types.SimpleNamespace(id="p2", path=str(other), name="Other")
+        return original(project_id)
+
+    monkeypatch.setattr(project_store, "get_project", get_project)
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    stale = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p2", "path": "", "cursor": first["next_cursor"],
+        "page_size": 1,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert stale["entries"] == []
+
+
+def test_project_search_finds_unexpanded_nested_paths_and_ignores_build_dirs(project_root):
+    deep = project_root / "unexpanded" / "nested"
+    deep.mkdir(parents=True)
+    (deep / "needle.py").write_text("x", encoding="utf-8")
+    ignored = project_root / "node_modules" / "needle.js"
+    ignored.parent.mkdir()
+    ignored.write_text("x", encoding="utf-8")
+
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+        "page_size": 100,
+    })["data"]
+    assert data["error_code"] is None
+    assert [row["path"] for row in data["results"]] == [
+        "unexpanded/nested/needle.py",
+    ]
+    assert data["snapshot_id"]
+
+
+def test_project_search_cursor_is_stable_and_invalidated(project_root):
+    search_dir = project_root / "search"
+    search_dir.mkdir()
+    for index in range(3):
+        (search_dir / f"needle-{index}.txt").write_text("x", encoding="utf-8")
+    first = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+        "page_size": 1,
+    })["data"]
+    assert first["next_cursor"]
+    (search_dir / "needle-new.txt").write_text("x", encoding="utf-8")
+    stale = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+        "cursor": first["next_cursor"], "page_size": 1,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert stale["results"] == []
+
+
+def test_project_queries_reject_arbitrary_root(project_root):
+    tree = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "root": "/etc",
+    })["data"]
+    search = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "passwd", "root": "/etc",
+    })["data"]
+    assert tree["error_code"] == search["error_code"] == "INVALID_REQUEST"
+    assert tree["entries"] == [] and search["results"] == []
+
+
+def test_project_search_does_not_follow_symlink(project_root):
+    external = project_root.parent / "external-search"
+    external.mkdir()
+    (external / "needle.txt").write_text("secret", encoding="utf-8")
+    (project_root / "linked-dir").symlink_to(external, target_is_directory=True)
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+    })["data"]
+    assert data["results"] == []
+
+
+@pytest.mark.parametrize("field,value", [
+    ("query", {"needle": True}),
+    ("mode", {"contains": True}),
+    ("type", ["file"]),
+    ("sort", ["rank_path"]),
+    ("page_size", "100"),
+    ("page_size", 0),
+    ("page_size", 101),
+])
+def test_project_search_rejects_malformed_query_fields(project_root, field, value):
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle", field: value,
+    })["data"]
+    assert data["error_code"] == "INVALID_REQUEST"
+    assert data["results"] == []
+
+
+def test_project_search_rejects_empty_query_explicitly(project_root):
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "",
+    })["data"]
+    assert data["error_code"] == "INVALID_REQUEST"
+    assert data["results"] == []
+
+
+def test_project_query_reports_permission_without_partial_snapshot(project_root, monkeypatch):
+    original_scandir = ws_files.os.scandir
+
+    def denied(path):
+        if isinstance(path, int):
+            raise PermissionError(errno.EACCES, "permission denied")
+        return original_scandir(path)
+
+    monkeypatch.setattr(ws_files.os, "scandir", denied)
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+    })["data"]
+    assert data["error_code"] == "PERMISSION"
+    assert data["results"] == []
+    assert data["snapshot_id"] is None
+
+
+def test_project_query_rejects_symlink_path_even_when_inside_project(project_root):
+    target = project_root / "real-dir"
+    target.mkdir()
+    (target / "needle.txt").write_text("x", encoding="utf-8")
+    (project_root / "inside-link").symlink_to(target, target_is_directory=True)
+    for handler, field in ((ws_files.handle_project_file_tree, "entries"),
+                           (ws_files.handle_project_file_search, "results")):
+        command = {"project_id": "p1", "path": "inside-link"}
+        if field == "results":
+            command["query"] = "needle"
+        data = _run(handler, command)["data"]
+        assert data["error_code"] == "INVALID_REQUEST"
+        assert data[field] == []
+
+
+def test_project_search_does_not_follow_directory_replaced_by_symlink(project_root, monkeypatch):
+    nested = project_root / "nested"
+    nested.mkdir()
+    external = project_root.parent / "raced-external"
+    external.mkdir()
+    (external / "needle.txt").write_text("secret", encoding="utf-8")
+    original_open = ws_files.os.open
+
+    def racing_open(path, flags, *args, **kwargs):
+        if kwargs.get("dir_fd") is not None and path == "nested":
+            nested.rmdir()
+            nested.symlink_to(external, target_is_directory=True)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(ws_files.os, "open", racing_open)
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+    })["data"]
+    assert data["error_code"] in {"IO_ERROR", "PERMISSION"}
+    assert data["results"] == []
+    assert data["snapshot_id"] is None
+
+
+def test_project_queries_reject_ignored_path(project_root):
+    ignored = project_root / "node_modules"
+    ignored.mkdir()
+    (ignored / "needle.js").write_text("x", encoding="utf-8")
+    tree = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "node_modules",
+    })["data"]
+    search = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "node_modules", "query": "needle",
+    })["data"]
+    assert tree["error_code"] == search["error_code"] == "INVALID_REQUEST"
+    assert tree["entries"] == [] and search["results"] == []
+
+
+def test_repeated_cursor_requests_reuse_bounded_token(project_root):
+    for index in range(105):
+        (project_root / f"bounded-{index:03d}.txt").write_text("x", encoding="utf-8")
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    cursor = first["next_cursor"]
+    expected_next = None
+    for _ in range(1000):
+        data = _run(ws_files.handle_project_file_tree, {
+            "project_id": "p1", "path": "", "page_size": 1, "cursor": cursor,
+        })["data"]
+        assert data["error_code"] is None
+        expected_next = expected_next or data["next_cursor"]
+        assert data["next_cursor"] == expected_next
+
+
+def test_snapshot_eviction_removes_all_cursors_and_returns_stale(project_root, monkeypatch):
+    with ws_files._QUERY_LOCK:
+        ws_files._QUERY_SNAPSHOTS.clear()
+        ws_files._QUERY_CURSORS.clear()
+        ws_files._QUERY_CURSOR_TOKENS.clear()
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_SNAPSHOTS", 1)
+    for index in range(4):
+        (project_root / f"evict-{index}.txt").write_text("x", encoding="utf-8")
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    cursor_one = first["next_cursor"]
+    second = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+        "cursor": cursor_one,
+    })["data"]
+    cursor_two = second["next_cursor"]
+    _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "src", "page_size": 1,
+    })
+    assert cursor_one not in ws_files._QUERY_CURSORS
+    assert cursor_two not in ws_files._QUERY_CURSORS
+    stale = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": cursor_one,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+
+
+def test_expired_snapshot_removes_cursor_and_returns_stale(project_root, monkeypatch):
+    with ws_files._QUERY_LOCK:
+        ws_files._QUERY_SNAPSHOTS.clear()
+        ws_files._QUERY_CURSORS.clear()
+        ws_files._QUERY_CURSOR_TOKENS.clear()
+    monkeypatch.setattr(ws_files, "_QUERY_SNAPSHOT_TTL", 0.0)
+    (project_root / "ttl.txt").write_text("x", encoding="utf-8")
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    cursor = first["next_cursor"]
+    stale = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": cursor,
+    })["data"]
+    assert stale["error_code"] == "STALE_SNAPSHOT"
+    assert cursor not in ws_files._QUERY_CURSORS
+
+
+def test_tree_limit_stops_after_maximum_entry_probe(project_root):
+    for index in range(ws_files._QUERY_MAX_SNAPSHOT_ITEMS + 1):
+        (project_root / f"large-{index:05d}.txt").write_text("x", encoding="utf-8")
+    data = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 100,
+    })["data"]
+    assert data["error_code"] == "LIMIT_EXCEEDED"
+    assert data["entries"] == []
+    assert data["snapshot_id"] is None
+
+
+def test_cursor_basis_enforces_snapshot_item_limit(project_root, monkeypatch):
+    for index in range(3):
+        (project_root / f"cursor-limit-{index}.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_SNAPSHOT_ITEMS", 10)
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    assert first["next_cursor"]
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_SNAPSHOT_ITEMS", 2)
+    second = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "cursor": first["next_cursor"],
+        "page_size": 1,
+    })["data"]
+    assert second["error_code"] == "LIMIT_EXCEEDED"
+
+
+def test_search_closes_sibling_directory_fds_under_low_nofile_limit(project_root):
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if hard < 256 or soft <= 256:
+        pytest.skip("host file-descriptor limit cannot be lowered to 256")
+    for index in range(300):
+        (project_root / f"sibling-{index:03d}").mkdir()
+    resource.setrlimit(resource.RLIMIT_NOFILE, (256, hard))
+    try:
+        data = _run(ws_files.handle_project_file_search, {
+            "project_id": "p1", "path": "", "query": "needle",
+        })["data"]
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+    assert data["error_code"] is None
+
+
+def test_global_snapshot_quota_bounds_items_bytes_and_cursors(project_root, monkeypatch):
+    with ws_files._QUERY_LOCK:
+        ws_files._QUERY_SNAPSHOTS.clear()
+        ws_files._QUERY_CURSORS.clear()
+        ws_files._QUERY_CURSOR_TOKENS.clear()
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_ITEMS", 30)
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_BYTES", 10_000)
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_CURSORS", 2)
+    for index in range(4):
+        (project_root / f"quota-{index}.txt").write_text("x", encoding="utf-8")
+    for _ in range(5):
+        _run(ws_files.handle_project_file_tree, {
+            "project_id": "p1", "path": "", "page_size": 1,
+        })
+        items, bytes_used, cursors = ws_files._snapshot_usage()
+        assert items <= 30
+        assert bytes_used <= 10_000
+        assert cursors <= 2
+
+
+def test_query_page_barrier_does_not_return_cursor_for_evicted_snapshot(project_root, monkeypatch):
+    from openprogram.webui.ws_actions import files_query
+
+    first = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "", "page_size": 1,
+    })["data"]
+    snapshot = ws_files._QUERY_SNAPSHOTS[first["snapshot_id"]]
+    original_new_cursor = files_query._new_cursor
+
+    def evict_before_return(snapshot_id, offset):
+        files_query._evict_snapshot(snapshot_id)
+        return original_new_cursor(snapshot_id, offset)
+
+    monkeypatch.setattr(files_query, "_new_cursor", evict_before_return)
+    page = ws_files._query_page(snapshot, 0, 1, "entries")
+    assert page["error_code"] == "STALE_SNAPSHOT"
+
+
+def test_query_path_nul_is_invalid_request(project_root):
+    for handler, field in ((ws_files.handle_project_file_tree, "entries"),
+                           (ws_files.handle_project_file_search, "results")):
+        command = {"project_id": "p1", "path": "bad\x00path"}
+        if field == "results":
+            command["query"] = "needle"
+        data = _run(handler, command)["data"]
+        assert data["error_code"] == "INVALID_REQUEST"
+        assert data[field] == []
+
+
+def test_zero_match_search_counts_full_candidate_basis_and_evicts_old_snapshot(
+    project_root, monkeypatch,
+):
+    with ws_files._QUERY_LOCK:
+        ws_files._QUERY_SNAPSHOTS.clear()
+        ws_files._QUERY_CURSORS.clear()
+        ws_files._QUERY_CURSOR_TOKENS.clear()
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_ITEMS", 15_000)
+    monkeypatch.setattr(ws_files, "_QUERY_MAX_TOTAL_BYTES", 8 * 1024 * 1024)
+    for index in range(ws_files._QUERY_MAX_SNAPSHOT_ITEMS - 6):
+        (project_root / f"candidate-{index:05d}.txt").write_text(
+            "x", encoding="utf-8",
+        )
+    for query in ("zero-match-a", "zero-match-b"):
+        data = _run(ws_files.handle_project_file_search, {
+            "project_id": "p1", "path": "", "query": query,
+        })["data"]
+        assert data["error_code"] is None
+        assert data["results"] == []
+        items, bytes_used, _cursors = ws_files._snapshot_usage()
+        assert items > 0
+        assert items <= 15_000
+        assert bytes_used <= 8 * 1024 * 1024
+
+
 def test_tree_path_traversal_rejected(project_root):
     for bad in ("../outside", "src/../../outside", "/etc"):
         data = _run(ws_files.handle_project_file_tree,
@@ -125,6 +530,7 @@ def test_read_text_file(project_root):
     assert data["content"] == "print('hi')\n"
     assert data["size"] == len("print('hi')\n")
     assert data["mtime"] > 0
+    assert len(data["revision"]) == 64
     assert "binary" not in data and "too_large" not in data
 
 
@@ -144,6 +550,42 @@ def test_read_too_large_flag(project_root):
     assert data["too_large"] is True
     assert "content" not in data
     assert data["size"] == 1_000_001
+
+
+def test_read_growth_is_bounded_after_initial_stat(project_root, monkeypatch):
+    target = project_root / "growing.txt"
+    target.write_bytes(b"a" * 8_192)
+    original_open = open
+
+    class GrowingReader:
+        def __init__(self, stream):
+            self.stream = stream
+            self.did_grow = False
+
+        def __enter__(self):
+            self.stream.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def read(self, size=-1):
+            data = self.stream.read(size)
+            if not self.did_grow:
+                self.did_grow = True
+                target.write_bytes(b"a" * (ws_files._READ_MAX_BYTES + 1))
+            return data
+
+    def growing_open(path, *args, **kwargs):
+        stream = original_open(path, *args, **kwargs)
+        return GrowingReader(stream) if os.fspath(path) == os.fspath(target) else stream
+
+    monkeypatch.setattr(ws_files, "open", growing_open, raising=False)
+    data = _run(ws_files.handle_project_file_read, {
+        "project_id": "p1", "path": "growing.txt",
+    })["data"]
+    assert data["too_large"] is True
+    assert "content" not in data
 
 
 def test_read_unknown_project(project_root):
@@ -199,11 +641,43 @@ def test_write_roundtrip(project_root):
                    "content": "fresh\n", "expected_mtime": read["mtime"]})
     assert data["ok"] is True
     assert data["mtime"] > 0
+    assert len(data["revision"]) == 64
     assert "conflict" not in data and "error" not in data
     again = _run(ws_files.handle_project_file_read,
                  {"project_id": "p1", "path": "apple.txt"})["data"]
     assert again["content"] == "fresh\n"
     assert again["mtime"] == data["mtime"]
+
+
+def test_write_rejects_content_drift_when_mtime_is_restored(project_root):
+    read = _run(ws_files.handle_project_file_read, {
+        "project_id": "p1", "path": "apple.txt",
+    })["data"]
+    target = project_root / "apple.txt"
+    target.write_text("external\n", encoding="utf-8")
+    os.utime(target, (read["mtime"], read["mtime"]))
+    result = _run(ws_files.handle_project_file_write, {
+        "project_id": "p1", "path": "apple.txt", "content": "local\n",
+        "expected_mtime": read["mtime"],
+        "baseline_revision": read["revision"],
+    })["data"]
+    assert result["conflict"] is True
+    assert target.read_text(encoding="utf-8") == "external\n"
+
+
+def test_write_revision_covers_the_full_editable_read_limit(project_root):
+    target = project_root / "large-text.txt"
+    target.write_bytes(b"x" * (ws_files._IDENTITY_DIGEST_MAX_BYTES + 1))
+    read = _run(ws_files.handle_project_file_read, {
+        "project_id": "p1", "path": "large-text.txt",
+    })["data"]
+    assert read["size"] < ws_files._READ_MAX_BYTES
+    assert len(read["revision"]) == 64
+    result = _write({
+        "project_id": "p1", "path": "large-text.txt", "content": "y" * read["size"],
+        "expected_mtime": read["mtime"], "baseline_revision": read["revision"],
+    })
+    assert result["ok"] is True
 
 
 def test_write_conflict_does_not_write(project_root):

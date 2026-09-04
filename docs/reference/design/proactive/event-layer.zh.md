@@ -146,7 +146,7 @@ worker 启动时 `openprogram.events.install_config_hooks()`（`shell_hooks.py`�
 
 ## 6. 事件日志
 
-进程级总线把每个类型化事件追加为一行 JSON，常开：
+进程级总线把每个完成派发的类型化事件追加为一行 JSON，常开：
 
 - 事件带 session 且该会话目录存在时：`~/.openprogram/sessions/<sid>/events.jsonl`；
 - 否则：`~/.openprogram/logs/events.jsonl`。
@@ -154,6 +154,12 @@ worker 启动时 `openprogram.events.install_config_hooks()`（`shell_hooks.py`�
 单文件超 5 MB 轮转为 `.1`（覆盖旧 `.1`）。gate 结论作为同一日志行的 `gate` 字段记录——
 `{allowed, reasons, duration_ms, subscribers}`——不二次 emit。这就是这一层的可观测性：跑一个真实
 轮后读日志，事件流与每次闸门裁决尽在其中。
+
+已注册的 gate event 先通过 `emit(event)` 通知 typed observer 时，notify 阶段延迟磁盘写入；同一个
+Event 随后必须进入 `emit_gate(event)`，由它写入唯一一条包含 verdict 的记录。gate 类型只调用
+`emit` 属于未完成的派发：observer 仍能收到事件，但 verdict 产生前不写 event log。
+`emit_gate(event)` 也可以单独完成一次 gate-only 派发；当前 `turn.stop` 就直接使用该路径，它会写一条
+verdict 记录且不触发 typed observer。notify 类型仍在 `emit` 阶段记录。
 
 ## 7. 落位：进程级单例总线
 
@@ -180,7 +186,7 @@ webui 的存在。
 | 消费者侧表面 | 背后 |
 |---|---|
 | `tool_gate.register_tool_gate` / `decide_tool_gate` / `ToolGateDenied` | `subscribe_gate("tool.before", ...)` / `emit_gate` 的薄壳（`openprogram/events/tool_gate.py`）——公开签名不变，agent_loop 与 proactive engine 照用 |
-| 插件 `hooks` entrypoint | `plugins/hooks.register_plugin_hooks` 把每个 handler 按总线事件名订阅到总线——notify 事件走 `subscribe`，gate 事件（`tool.before`）走 `subscribe_gate` 并参与否决（返回 falsy 放行，返回理由字符串或抛 `ToolGateDenied` 否决，其他异常记 warning 后 fail-open） |
+| 插件 `hooks` entrypoint | `plugins/hooks.register_plugin_hooks` 把每个 handler 按总线事件名订阅到总线——notify 事件走 `subscribe`，gate 事件（`tool.before` 和 `turn.stop`）走 `subscribe_gate` 并参与否决（返回 falsy 放行，返回理由字符串或抛 `ToolGateDenied` 否决，其他异常记 warning 后 fail-open） |
 | `/goal` 状态变化 | `goal._emit_goal_update` 顺带 emit `goal.update` |
 | config.json `hooks` | worker 启动时 `openprogram.events.install_config_hooks()` |
 | B 类源（auth、context、channels、memory） | `openprogram/events/bridges.py` 桥 + 各源头 `emit_safe` tap |

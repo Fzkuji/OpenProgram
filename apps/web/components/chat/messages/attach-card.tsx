@@ -122,6 +122,8 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const attach = msg.attach || {};
   const jobId = attach.job_id;
+  const executionId = attach.execution_id;
+  const expectedVersion = attach.status_version;
   const [resource, setResource] = useState<JobResourceView>();
   const followupNotice = useFollowupNotice(msg.id);
   const followupMsgId = useFollowupMsgId(msg.id);
@@ -359,7 +361,7 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
         </div>
       ) : null}
       {/* Live-job footer: cancel button for in-flight jobs. */}
-      {attach.job_id
+      {executionId && typeof expectedVersion === "number"
         && (attach.status === "running" || attach.status === "pending"
             || attach.status === "queued") ? (
         <div className="attach-card-footer">
@@ -372,7 +374,9 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             onClick={() => {
               wsSend({
                 action: "execution.cancel",
-                execution_id: attach.job_id,
+                command_id: crypto.randomUUID(),
+                execution_id: executionId,
+                expected_version: expectedVersion,
               });
             }}
             title={text("Cancel execution", "取消运行")}

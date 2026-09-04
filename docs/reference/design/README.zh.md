@@ -54,8 +54,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 |---|---|
 | [`runtime/overview.md`](runtime/overview.md) | Runtime API 行为（另见 [`../api/runtime.md`](../api/runtime.md)） |
 | [`runtime/operations/user-input-requests.md`](runtime/operations/user-input-requests.md) | runtime.ask/confirm 等用户输入 |
-| [`runtime/controllability-and-three-surface-sync.md`](runtime/controllability-and-three-surface-sync.md) | 值守/无人值守开关 + 中途干预 + 优雅停 + 三端同步 |
-| [`runtime/p3-three-surface-sync.md`](runtime/p3-three-surface-sync.md) | P3 三端同步实施细节 |
+| [`runtime/execution/execution-control.html`](runtime/execution/execution-control.html) | **权威设计**：统一暂停、继续、单步、调整、取消、检查点、revision、恢复与多端同步 |
 | [`runtime/unified-session-context.md`](runtime/unified-session-context.md) | 统一 session context |
 | [`runtime/agent-configuration-ui.html`](runtime/agent-configuration-ui.html) | Agent 配置整体框架：身份、模型、指令、Programs、Skills、MCP、Sessions（[基础配置](runtime/agent-core-configuration-ui.html)、[能力配置](runtime/agent-capability-configuration-ui.html)、[Programs 选择器](runtime/agent-tool-configuration-ui.html)） |
 | [`runtime/execution/agent-worktree.md`](runtime/execution/agent-worktree.md) | Agent worktree 行为 |
@@ -70,8 +69,8 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/execution/agentic-self-recursion.md`](runtime/execution/agentic-self-recursion.md) | Agentic 自递归（[已渲染](runtime/execution/agentic-self-recursion.html)） |
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | 分支命名（[已渲染](runtime/operations/branch-naming.html)） |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session 子系统：数据模型、存储、命名、列表、生命周期 |
+| [`runtime/self-update.md`](runtime/self-update.zh.md) | Source checkout 升级：Git 门禁、channel 语义、验证与手动恢复 |
 | [`runtime/goal-framework-implementation-comparison.html`](runtime/goal-framework-implementation-comparison.html) | **Goal 权威设计**：原生实现对比、controller 与状态流程、异步问题、困难任务停止、重启恢复、Web/TUI 界面和实现证据 |
-| [`runtime/self-update.html`](runtime/self-update.html) | 对话内自主更新：隔离修改、外部 App 激活、重启交接、自动目标验收与失败恢复 |
 | [`runtime/sandbox-architecture.html`](runtime/sandbox-architecture.html) | 唯一权威执行安全设计：Authority 权限档、Permission 模式与审批、宿主沙箱边界、框架对照和实现证据 |
 | [`runtime/permission-model.md`](runtime/permission-model.md) / [`runtime/sandbox.md`](runtime/sandbox.md) | 指向权威执行安全设计的稳定旧链接入口 |
 | [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | 出站 URL 与 SSRF：当前缺口、Hermes/OpenClaw/OWASP 对照、分 scope 信任策略、transport 要求与完整验收门槛 |

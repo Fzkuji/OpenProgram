@@ -48,8 +48,9 @@ def _sorted_by_created_at(items: Iterable[MessageLike]) -> list[MessageLike]:
     """Stable sort by ``created_at``; missing timestamps sort last in
     insertion order. We preserve insertion order as the tiebreaker so
     legacy messages without timestamps still render deterministically."""
-    listed = list(items)
-    return sorted(listed, key=lambda m: (m.get("created_at") or 0, listed.index(m)))
+    positioned = list(enumerate(items))
+    positioned.sort(key=lambda row: (row[1].get("created_at") or 0, row[0]))
+    return [message for _position, message in positioned]
 
 
 def _sibling_key(m: MessageLike) -> tuple:
@@ -117,6 +118,125 @@ def sibling_index(msgs: list[MessageLike], msg_id: str) -> tuple[int, int]:
     if msg_id not in ids:
         return (0, 0)
     return (ids.index(msg_id) + 1, len(ids))
+
+
+def sibling_navigation_index(
+    msgs: list[MessageLike],
+    *,
+    target_ids: Optional[Iterable[str]] = None,
+) -> dict[str, tuple[int, int, Optional[str], Optional[str]]]:
+    """Build chat sibling navigation fields with one message scan.
+
+    The tuple values are ``(index, total, previous_leaf, next_leaf)``.
+    ``target_ids`` limits sorting and result materialization to nodes the
+    caller will render; all messages are still grouped once so totals and
+    neighboring leaves remain authoritative. Non-chat targets retain the
+    existing singleton result.
+    """
+    by_id = _index_by_id(msgs)
+    targets = (
+        set(by_id)
+        if target_ids is None
+        else {message_id for message_id in target_ids if message_id in by_id}
+    )
+    navigation = {
+        message_id: (1, 1, None, None)
+        for message_id in targets
+    }
+    targets_by_group: dict[tuple, list[str]] = {}
+    for message_id in targets:
+        target = by_id[message_id]
+        if _is_chat_lane(target):
+            targets_by_group.setdefault(
+                _sibling_key(target), [],
+            ).append(message_id)
+    if not targets_by_group:
+        return navigation
+
+    groups = {key: [] for key in targets_by_group}
+    for message in msgs:
+        if not _is_chat_lane(message):
+            continue
+        key = _sibling_key(message)
+        if key in groups:
+            groups[key].append(message)
+
+    pending: list[
+        tuple[str, int, int, Optional[str], Optional[str]]
+    ] = []
+    needs_deepest_leaf = False
+    for key, requested_ids in targets_by_group.items():
+        ordered_ids = [
+            message.get("id") for message in _sorted_by_created_at(groups[key])
+        ]
+        first_position: dict[str, int] = {}
+        for position, message_id in enumerate(ordered_ids):
+            if message_id:
+                first_position.setdefault(message_id, position)
+        total = len(ordered_ids)
+        for message_id in requested_ids:
+            position = first_position.get(message_id)
+            if position is None:
+                continue
+            previous_id = ordered_ids[position - 1] if position > 0 else None
+            following_id = (
+                ordered_ids[position + 1] if position < total - 1 else None
+            )
+            needs_deepest_leaf |= previous_id is not None or following_id is not None
+            pending.append(
+                (message_id, position + 1, total, previous_id, following_id)
+            )
+
+    latest_child: dict[str, tuple[tuple[object, int], Optional[str]]] = {}
+    if needs_deepest_leaf:
+        for position, message in enumerate(msgs):
+            parent = _parent_of(message)
+            if parent is None:
+                continue
+            score = (message.get("created_at") or 0, position)
+            current = latest_child.get(parent)
+            if current is None or score >= current[0]:
+                latest_child[parent] = (score, message.get("id"))
+
+    deepest_cache: dict[str, str] = {}
+
+    def indexed_deepest_leaf(message_id: Optional[str]) -> Optional[str]:
+        if message_id is None:
+            return None
+        if message_id in deepest_cache:
+            return deepest_cache[message_id]
+
+        start = message_id
+        current: Optional[str] = message_id
+        path: list[str] = []
+        seen: set[str] = set()
+        while current and current in by_id and current not in seen:
+            if current in deepest_cache:
+                leaf = deepest_cache[current]
+                for path_id in path:
+                    deepest_cache[path_id] = leaf
+                return leaf
+            seen.add(current)
+            path.append(current)
+            child = latest_child.get(current)
+            if child is None:
+                for path_id in path:
+                    deepest_cache[path_id] = current
+                return current
+            current = child[1]
+
+        # Preserve ``deepest_leaf`` for malformed cycles or missing child ids:
+        # it terminates and returns the original query id.
+        return start
+
+    for message_id, index, total, previous_id, following_id in pending:
+        navigation[message_id] = (
+            index,
+            total,
+            indexed_deepest_leaf(previous_id),
+            indexed_deepest_leaf(following_id),
+        )
+    return navigation
 
 
 def children(msgs: list[MessageLike], msg_id: str) -> list[MessageLike]:

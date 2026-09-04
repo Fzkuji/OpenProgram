@@ -11,11 +11,12 @@
  */
 import { useEffect } from "react";
 
+import { consumeCommandErrorFrame } from "@/lib/net/action-error";
 import type {
   PermissionRulesDetail,
   JobStatusDetail,
 } from "@/lib/net/ws-events";
-import type { PendingDecision } from "@/lib/session-store";
+import { useSessionStore, type PendingDecision } from "@/lib/session-store";
 import {
   loadSessionData,
   onBranchCheckedOut,
@@ -27,6 +28,7 @@ import {
   clearHydratedTreePaths,
   handleRunningTask,
   handleRunningTaskClear,
+  handleExecutionCommandUpdated,
   handleSessionsList,
   handleSessionUpdated,
   initChatPage,
@@ -41,7 +43,6 @@ import { applyChatWsMessage, clearSessionByMsgId } from "@/lib/net/chat-stream";
 import { waitForOwnerAuthBootstrap } from "@/lib/net/owner-auth-bootstrap";
 import { notifyDesktopSessionLoaded } from "@/lib/self-update-reopen";
 import { translateText } from "@/lib/i18n";
-import { externalLibsReady } from "@/lib/external-libs";
 import { getQueryClient } from "@/lib/query-client";
 import {
   loadAgentSettings,
@@ -54,8 +55,10 @@ import {
   loadProgramsMeta,
   renderFunctions,
 } from "@/lib/runtime-bridge/functions-panel";
-import { refreshStatusSource, updateStatus } from "@/lib/runtime-bridge/ui";
+import { refreshStatusSource, setRunning, updateStatus } from "@/lib/runtime-bridge/ui";
 import { refreshChannelBadge } from "@/lib/runtime-bridge/conversations";
+import { loadExecutionCursors, recordExecutionCursor } from "@/lib/net/execution-cursor";
+import { pushStatusBadge } from "@/lib/top-bar-sync";
 
 export function useWS(): void {
   useEffect(() => {
@@ -70,6 +73,20 @@ export function useWS(): void {
       type?: string;
       data?: Record<string, unknown>;
     }): boolean {
+      if (msg.type !== "execution.replay") {
+        const frame = msg as { execution?: { event_cursor?: unknown }; event_cursor?: unknown; data?: { event_cursor?: unknown } };
+        const observed = recordExecutionCursor(
+          frame.event_cursor ?? frame.execution?.event_cursor ?? frame.data?.event_cursor,
+        );
+        if (observed.replayAfter !== undefined) {
+          socket?.send(JSON.stringify({
+            action: "execution.replay", execution_id: observed.cursor?.execution_id,
+            after_sequence: observed.replayAfter,
+          }));
+          return true;
+        }
+      }
+      if (consumeCommandErrorFrame(msg, translateText)) return true;
       const d = msg.data;
       switch (msg.type) {
         case "pong":
@@ -170,24 +187,6 @@ export function useWS(): void {
           }).catch(() => { /* best-effort UI line */ });
           return true;
         }
-        case "action_error": {
-          // The backend had no handler for an action we sent. Always a
-          // frontend/backend contract break, never a user error — say so
-          // loudly instead of leaving the caller waiting on a frame that
-          // will never arrive.
-          const act = d?.action as string | undefined;
-          console.error("[useWS] backend rejected action:", act, d?.error);
-          void import("@/lib/format-utils/toast").then(({ showToast }) => {
-            showToast(
-              translateText(
-                `Unknown action ${act ?? "?"} — no backend handler`,
-                `未知操作 ${act ?? "?"} — 后端没有对应处理器`,
-              ),
-              { tone: "error" },
-            );
-          });
-          return true;
-        }
         case "attach_branch_result": {
           // Failure surface for the Branches panel's "Attach to" action.
           // On success (including duplicate re-attach) the backend
@@ -281,13 +280,37 @@ export function useWS(): void {
             execution_id?: string;
             session_id?: string;
             status?: string;
+            status_version?: number;
             reason_code?: string;
+            event_sequence?: number;
           } }).execution || d;
           if (!execution?.execution_id) return true;
+          const eventCursor = (msg as { event_cursor?: unknown }).event_cursor
+            ?? (d as { event_cursor?: unknown } | undefined)?.event_cursor;
+          window.dispatchEvent(new CustomEvent("op:execution-update", {
+            detail: { execution, event_cursor: eventCursor },
+          }));
+          const eid = String(execution.execution_id);
+          const eventSequence = (d as { event_sequence?: number } | undefined)?.event_sequence
+            ?? execution.event_sequence;
+          const input = (d as { input?: {
+            user_message_id?: unknown;
+            assistant_message_id?: unknown;
+          } } | undefined)?.input;
+          const messageIds = [input?.user_message_id, input?.assistant_message_id]
+            .filter((messageId): messageId is string => (
+              typeof messageId === "string" && Boolean(messageId)
+            ));
+          if (!useSessionStore.getState().acceptExecutionUpdate(
+            eid,
+            eventSequence,
+            execution.status,
+            execution.session_id,
+            messageIds,
+          )) return true;
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const store = useSessionStore.getState();
             const sid = String(execution.session_id || "");
-            const eid = String(execution.execution_id);
             if (sid) {
               const current = store.messagesById[eid];
               // 终态不可回退：stopSession 已乐观把消息标 cancelled，服务端
@@ -303,10 +326,19 @@ export function useWS(): void {
               }
             }
             const task = sid ? store.runningTasks[sid] : undefined;
+            if (
+              task
+              && task.execution_id === eid
+              && typeof execution.status_version === "number"
+            ) {
+              store.setRunningTaskFor(sid, {
+                ...task,
+                status_version: execution.status_version,
+              }, "never");
+            }
             const matches = Boolean(
               task && (
                 task.execution_id === eid
-                || (task.msg_id && `${task.msg_id}_reply` === eid)
               ),
             );
             // cancelling 中间态不写回 runningTask（不许留 cancelling:true，
@@ -320,9 +352,51 @@ export function useWS(): void {
             ) {
               store.setRunningTaskFor(sid, null, "always");
             }
+            const terminal = new Set(
+              ["cancelled", "completed", "failed", "interrupted", "error", "done"],
+            );
+            if (terminal.has(String(execution.status))) {
+              for (const [commandId, pendingCancel] of Object.entries(
+                runtimeState._optimisticCancels,
+              )) {
+                if (
+                  pendingCancel.sessionId === sid
+                  && pendingCancel.task.execution_id === eid
+                ) delete runtimeState._optimisticCancels[commandId];
+              }
+            }
+            // Stop releases the task optimistically. If the command was
+            // applied, the terminal execution frame is still responsible for
+            // the final legacy/UI cleanup; do not let an old execution clear
+            // a newer task that already occupies this session.
+            if (
+              sid === runtimeState.currentSessionId
+              && terminal.has(String(execution.status))
+              && (!store.runningTasks[sid]
+                || store.runningTasks[sid]?.execution_id === eid)
+            ) {
+              setRunning(false);
+            }
           });
           return true;
         }
+        case "execution.replay": {
+          const replay = d as { snapshot?: Record<string, unknown>; event_cursor?: unknown; recovery?: string } | undefined;
+          const snapshot = replay?.snapshot;
+          if (snapshot && typeof snapshot.execution_id === "string") {
+            recordExecutionCursor(replay?.event_cursor);
+            window.dispatchEvent(new CustomEvent("op:execution-update", {
+              detail: { execution: snapshot, event_cursor: replay?.event_cursor },
+            }));
+            return dispatch({ type: "execution.updated", execution: snapshot, data: snapshot } as never);
+          }
+          return true;
+        }
+        case "execution.command.updated":
+          // Canonical command frames carry `command` at the envelope root.
+          // Do not fall back to the removed legacy nested payload.
+          handleExecutionCommandUpdated(msg);
+          return true;
         case "running_task":
           handleRunningTask(d);
           return true;
@@ -355,8 +429,8 @@ export function useWS(): void {
         case "spawn_job_result":
         case "jobs_list":
         case "job":
-        case "cancel_job_result": {
-          // Replies to the four job WS actions. We let the
+        {
+          // Replies to resource actions. We let the
           // requester correlate via the original send/await pattern
           // (no global handler needed). Surface as a window event
           // so a panel that did issue the request can match by
@@ -426,6 +500,9 @@ export function useWS(): void {
             useSessionStore.getState().enqueueDecision({
               id: String(dd.id),
               sessionId: String(dd.session_id || ""),
+              executionId: String(dd.execution_id || ""),
+              waitGeneration: Number(dd.wait_generation || 0),
+              expectedVersion: Number(dd.expected_version || 0),
               kind: (dd.kind as "ask" | "confirm" | "approval" | "form" | "ask_many") || "ask",
               prompt: String(dd.prompt || ""),
               options: Array.isArray(dd.options) ? (dd.options as string[]) : [],
@@ -589,6 +666,9 @@ export function useWS(): void {
                       store.enqueueDecision({
                         id: String(dd.id),
                         sessionId: String(dd.session_id || sid),
+                        executionId: String(dd.execution_id || ""),
+                        waitGeneration: Number(dd.wait_generation || 0),
+                        expectedVersion: Number(dd.expected_version || 0),
                         kind: (dd.kind as PendingDecision["kind"]) || "ask",
                         prompt: String(dd.prompt || ""),
                         options: Array.isArray(dd.options) ? (dd.options as string[]) : [],
@@ -686,6 +766,7 @@ export function useWS(): void {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       socket = new WebSocket(proto + "//" + location.host + "/ws");
       setSocket(socket);
+      pushStatusBadge();
 
       socket.onopen = () => {
         updateStatus("connected");
@@ -706,6 +787,12 @@ export function useWS(): void {
           }));
         }
         socket?.send(JSON.stringify({ action: "list_sessions" }));
+        for (const cursor of loadExecutionCursors()) {
+          socket?.send(JSON.stringify({
+            action: "execution.replay", execution_id: cursor.execution_id,
+            after_sequence: cursor.next_sequence - 1,
+          }));
+        }
         if (runtimeState.currentSessionId) {
           socket?.send(
             JSON.stringify({
@@ -754,19 +841,11 @@ export function useWS(): void {
       socket.onerror = () => socket?.close();
     }
 
-    // Chat rendering needs the CDN libs (marked / KaTeX) on the page, so
-    // wait for them before the first transcript paint. A load failure is
-    // not fatal — connect anyway and let markdown fall back.
     async function start(): Promise<void> {
       try {
         await waitForOwnerAuthBootstrap();
       } catch {
         return;
-      }
-      try {
-        await externalLibsReady();
-      } catch {
-        /* ignore — connect anyway */
       }
       if (stopped) return;
       initChatPage();
@@ -786,7 +865,10 @@ export function useWS(): void {
         socket.onclose = null;
         socket.close();
       }
-      if (runtimeState.ws === socket) setSocket(null);
+      if (runtimeState.ws === socket) {
+        setSocket(null);
+        pushStatusBadge();
+      }
     };
   }, []);
 }

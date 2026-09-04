@@ -22,6 +22,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+import json
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -103,12 +104,6 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
         if new_content is None and not has_assistant_child:
             new_msg_id = src_user.get("id")
             new_user = src_user
-            conv["head_id"] = new_msg_id
-            try:
-                from openprogram.agent.session_db import default_db
-                default_db().set_head(session_id, new_msg_id)
-            except Exception:
-                pass
         else:
             new_msg_id = str(uuid.uuid4())[:8]
             new_user = {
@@ -131,35 +126,137 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
             if new_content is not None:
                 new_user["edit_of"] = src_user.get("id")
 
-            # Node first, head second. _append_msg writes the sibling
-            # user node into SessionDB and only then moves HEAD (plus
-            # refreshes the in-memory mirror and invalidates the
-            # message cache). The old pure-in-memory advance_head left
-            # persistence to _save_session, which writes meta (head)
-            # before messages (node) — a concurrent reader in that
-            # window resolved a head pointing at a node that didn't
-            # exist yet and rendered an empty transcript.
+    # Reserve before any DAG/HEAD mutation. Admission and persistence both
+    # remain inside this ownership window.
+    if not _srv._try_reserve_run(session_id, new_msg_id):
+        return {"__error__": (
+            "a run is currently active — wait for it to finish or stop it first",
+            409,
+        )}
+
+    # Retry/edit uses the same durable Agent admission as WS chat. The
+    # forked message id is transport/DAG provenance only; execution_id is
+    # minted by the canonical store and returned after admission.
+    try:
+        from openprogram.agent.authority import local_owner_authority
+        from openprogram.agent.production_driver import CanonicalAgentAdapter
+        from openprogram.agent.dispatcher.types import TurnRequest
+
+        adapter = CanonicalAgentAdapter(
+            event_sink=lambda env: _srv._broadcast(json.dumps(env, default=str)),
+        )
+        request = TurnRequest(
+            session_id=session_id,
+            user_text=str(new_user.get("content") or ""),
+            agent_id=(new_user.get("agent_id") or "main"),
+            source="web",
+            user_msg_id=new_msg_id,
+            user_already_persisted=True,
+        )
+        admission = adapter.admit(
+            request,
+            trusted_actor=local_owner_authority(),
+            user_message_id=new_msg_id,
+            assistant_message_id=None,
+            config_snapshot_ref=f"session:{session_id}",
+        )
+    except Exception as exc:
+        _srv._release_run_reservation(session_id, new_msg_id)
+        return {"__error__": (f"retry admission failed: {type(exc).__name__}: {exc}", 500)}
+
+    try:
+        if new_content is not None or has_assistant_child:
             _srv._append_msg(conv, new_user)
+        _srv._save_session(session_id)
+    except BaseException as exc:
+        adapter.fail_admission(admission, reason_code="user_persist_failed")
+        _srv._release_run_reservation(session_id, new_msg_id)
+        return {"__error__": (f"retry persistence failed: {type(exc).__name__}: {exc}", 500)}
 
-    _srv._save_session(session_id)
+    with _srv._running_tasks_lock:
+        task = _srv._running_tasks.get(session_id)
+        if task and task.get("msg_id") == new_msg_id:
+            task["execution_id"] = admission.execution_id
+            task["status_version"] = admission.status_version
 
-    # Kick off the run against the new user message. Same dispatch
-    # logic as the WS ``chat`` action.
-    parsed = _srv._parse_chat_input(new_user["content"] or "")
-    # @agentic_function dispatch left the chat parser — retries always
-    # route through the LLM ``query`` path now. Direct function calls
-    # use POST /api/function/{name} explicitly.
-    threading.Thread(
-        target=_srv._execute_in_context,
-        args=(session_id, new_msg_id, "query"),
-        kwargs={"query": parsed["raw"]},
-        daemon=True,
-    ).start()
+    def _run_canonical():
+        def _publish_activation(active):
+            with _srv._running_tasks_lock:
+                task = _srv._running_tasks.get(session_id)
+                if task and task.get("execution_id") == active.admission.execution_id:
+                    task["status_version"] = active.status_version
+            _srv._emit_running_task_event(session_id)
+
+        async def _activate():
+            _active, result = await adapter.activate(
+                admission, on_activated=_publish_activation,
+            )
+            return result
+
+        import asyncio
+        try:
+            asyncio.run(_activate())
+        finally:
+            if _srv._finish_owned_run(session_id, new_msg_id):
+                _srv._emit_running_task_event(
+                    session_id,
+                    cleared_msg_id=new_msg_id,
+                    cleared_execution_id=admission.execution_id,
+                )
+
+    try:
+        worker = threading.Thread(target=_run_canonical, args=(), kwargs={}, daemon=True)
+    except BaseException as exc:
+        adapter.fail_admission(admission, reason_code="agent_runner_error")
+        _srv._release_run_reservation(session_id, new_msg_id)
+        try:
+            _srv._emit_running_task_event(
+                session_id,
+                cleared_msg_id=new_msg_id,
+                cleared_execution_id=admission.execution_id,
+            )
+        except Exception:
+            pass
+        return {"__error__": (f"retry activation failed: {type(exc).__name__}: {exc}", 500)}
+    with _srv._running_tasks_lock:
+        task = _srv._running_tasks.get(session_id)
+        if task and task.get("msg_id") == new_msg_id:
+            task["execution_id"] = admission.execution_id
+            task["status_version"] = admission.status_version
+    if not _srv._activate_run_reservation(session_id, new_msg_id, worker):
+        adapter.fail_admission(admission, reason_code="agent_runner_error")
+        _srv._release_run_reservation(session_id, new_msg_id)
+        try:
+            _srv._emit_running_task_event(
+                session_id,
+                cleared_msg_id=new_msg_id,
+                cleared_execution_id=admission.execution_id,
+            )
+        except Exception:
+            pass
+        return {"__error__": ("retry execution reservation was lost before startup", 500)}
+    _srv._emit_running_task_event(session_id)
+    try:
+        worker.start()
+    except BaseException as exc:
+        adapter.fail_admission(admission, reason_code="agent_runner_error")
+        if _srv._finish_owned_run(session_id, new_msg_id):
+            try:
+                _srv._emit_running_task_event(
+                    session_id,
+                    cleared_msg_id=new_msg_id,
+                    cleared_execution_id=admission.execution_id,
+                )
+            except Exception:
+                pass
+        _srv._release_run_reservation(session_id, new_msg_id)
+        return {"__error__": (f"retry activation failed: {type(exc).__name__}: {exc}", 500)}
 
     return {
         "session_id": session_id,
         "msg_id": new_msg_id,
         "forked_from": src_user.get("id"),
+        "execution_id": admission.execution_id,
     }
 
 

@@ -59,3 +59,38 @@ def test_reasoning_effort_requires_reasoning_model(monkeypatch, reasoning, expec
         assert "reasoning_effort" not in captured
     else:
         assert captured["reasoning_effort"] == expected
+
+
+@pytest.mark.parametrize("supports_key", [True, False])
+def test_idempotency_key_is_sent_only_with_provider_capability(monkeypatch, supports_key):
+    captured = {}
+
+    class Completions:
+        async def create(self, **params):
+            return _EmptyStream()
+
+    class Client:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.chat = SimpleNamespace(completions=Completions())
+
+    monkeypatch.setattr(openai_completions._openai, "AsyncOpenAI", Client)
+    model = Model(
+        id="gpt-test", name="GPT test", api="openai-completions",
+        provider="openai", base_url="https://api.openai.com/v1",
+    )
+
+    async def consume():
+        return [event async for event in openai_completions.stream_simple(
+            model, Context(), SimpleStreamOptions(
+                api_key="test-key", supports_idempotency_key=supports_key,
+                idempotency_key="stable-effect-key",
+            ),
+        )]
+
+    asyncio.run(consume())
+    headers = captured.get("default_headers") or {}
+    if supports_key:
+        assert headers["Idempotency-Key"] == "stable-effect-key"
+    else:
+        assert "Idempotency-Key" not in headers

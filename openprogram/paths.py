@@ -21,6 +21,7 @@ Do NOT cache the returned paths in module-level constants — tests
 switch profiles via env var and the ``--profile`` flag changes the
 active profile after import.
 """
+
 from __future__ import annotations
 
 import os
@@ -133,6 +134,7 @@ def _maybe_migrate_legacy_state(legacy: Path, canonical: Path) -> None:
             return
         canonical.mkdir(parents=True, exist_ok=True)
         import shutil
+
         _skip = {"worker.lock", "worker.pid", "worker.port"}
         for item in legacy.iterdir():
             if item.name in _skip:
@@ -174,7 +176,9 @@ def get_recordings_dir() -> Path:
     """Owner-private directory for managed provider recordings."""
     directory = get_state_dir() / "recordings"
     if directory.is_symlink():
-        raise PermissionError(f"recordings directory must not be a symlink: {directory}")
+        raise PermissionError(
+            f"recordings directory must not be a symlink: {directory}"
+        )
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     _restrict_to_owner(directory, 0o700)
     if sys.platform != "win32" and stat.S_IMODE(directory.stat().st_mode) != 0o700:
@@ -194,6 +198,16 @@ def get_usage_db_path() -> Path:
     a subdir — it's a single global file, not a per-entity tree.
     """
     return get_state_dir() / "usage.db"
+
+
+def get_execution_db_path() -> Path:
+    """Canonical execution lifecycle and control-command database."""
+    return get_state_dir() / "executions.db"
+
+
+def get_user_errors_db_path() -> Path:
+    """Bounded operational error records for the active profile."""
+    return get_state_dir() / "user_errors.db"
 
 
 def ensure_state_dir() -> Path:
@@ -255,6 +269,7 @@ def get_default_workdir() -> str:
     point at the real project root.
     """
     import json
+
     env_v = os.environ.get("OPENPROGRAM_WORKDIR")
     if env_v and env_v.strip() and os.path.isdir(env_v):
         return env_v

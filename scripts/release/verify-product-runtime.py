@@ -69,24 +69,31 @@ def _probe_pdf_tools() -> None:
             raise RuntimeError("built-in read PDF support is unavailable")
 
 
-_FORBIDDEN_RUNTIME_DISTS = frozenset({
-    "torch",
-    "torchvision",
-    "sentence-transformers",
-    "triton",
-})
+_FORBIDDEN_RUNTIME_DISTS = frozenset(
+    {
+        "easyocr",
+        "opencv-contrib-python",
+        "opencv-contrib-python-headless",
+        "opencv-python",
+        "opencv-python-headless",
+        "torch",
+        "torchvision",
+        "sentence-transformers",
+        "triton",
+    }
+)
 
 
-def _reject_torch_wheels() -> None:
+def _reject_excluded_runtime_wheels() -> None:
     leftover = []
     for dist in importlib.metadata.distributions():
         name = dist.metadata["Name"] or ""
-        key = name.lower()
+        key = name.lower().replace("_", "-").replace(".", "-")
         if key in _FORBIDDEN_RUNTIME_DISTS or key.startswith(("nvidia-", "cuda-")):
             leftover.append(name)
     if leftover:
         raise RuntimeError(
-            "product runtime must not ship torch or CUDA wheels: "
+            "product runtime must not ship excluded distributions or wheels: "
             + ", ".join(sorted(leftover))
         )
 
@@ -131,7 +138,7 @@ def _probe(
 
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_root)
     os.environ["GPA_MODEL_PATH"] = str(gpa_model)
-    _reject_torch_wheels()
+    _reject_excluded_runtime_wheels()
 
     importlib.import_module("openprogram")
     frontend = importlib.import_module("openprogram.webui.frontend")

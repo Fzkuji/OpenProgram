@@ -93,6 +93,28 @@ def register(app):
             "dropped": sum(int(row["dropped"]) for row in delivery),
             "send_failures": sum(int(row["send_failures"]) for row in delivery),
         }
+        with _s._ws_lock:
+            connections = list(_s._ws_connections)
+        delivery = [
+            metrics
+            for connection in connections
+            if isinstance(
+                metrics := getattr(connection, "delivery_metrics", None),
+                dict,
+            )
+        ]
+        info["websocket_delivery"] = {
+            "connections": len(connections),
+            "managed_connections": len(delivery),
+            "queue_frames": sum(int(row["queue_frames"]) for row in delivery),
+            "queue_bytes": sum(int(row["queue_bytes"]) for row in delivery),
+            "oldest_age": max(
+                (float(row["oldest_age"]) for row in delivery), default=0.0
+            ),
+            "coalesced": sum(int(row["coalesced"]) for row in delivery),
+            "dropped": sum(int(row["dropped"]) for row in delivery),
+            "send_failures": sum(int(row["send_failures"]) for row in delivery),
+        }
         try:
             from openprogram.agent.session_db import default_db
 

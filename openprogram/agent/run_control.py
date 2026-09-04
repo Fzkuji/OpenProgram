@@ -1,5 +1,5 @@
 """
-Run control for turn execution: pause / cancel / session binding /
+Run control for turn execution: cancel / session binding /
 active-runtime registry.
 
 This is turn-execution state, not a UI concern — the web UI, the job
@@ -26,29 +26,6 @@ from openprogram.agentic_programming.function import (
     set_cancellation_check,
     set_session_id_provider,
 )
-
-
-# ---------------------------------------------------------------------------
-# Pause/resume — cooperative: only blocks at `node_created` event hooks.
-# ---------------------------------------------------------------------------
-
-_pause_event = threading.Event()
-_pause_event.set()  # starts un-paused
-
-
-def pause_execution() -> None:
-    """Block agentic functions from proceeding (cooperative)."""
-    _pause_event.clear()
-
-
-def resume_execution() -> None:
-    """Resume blocked agentic functions."""
-    _pause_event.set()
-
-
-def wait_if_paused() -> None:
-    """Called by the event hook; blocks until resumed."""
-    _pause_event.wait()
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +91,7 @@ class CancellationToken:
             return self._retired
 
 
-# Compatibility during the execution-cancellation migration.
+# Internal token alias retained for code that imports the cancellation type.
 CancelToken = CancellationToken
 
 
@@ -225,6 +202,25 @@ _current_execution_id: ContextVar = ContextVar(
 # session id so nested agentic frames check the same object even when a
 # turn for another session is running elsewhere in the process.
 _current_token: ContextVar = ContextVar("_current_token", default=None)
+
+# A resumed tool call receives the durable approval identity selected by the
+# Agent safe-point transaction.  It is scoped to one tool invocation and
+# contains no answer or lifecycle state; those remain in execution_waits.
+_preapproved_wait_id: ContextVar[str | None] = ContextVar(
+    "_preapproved_wait_id", default=None,
+)
+
+
+def set_preapproved_wait_id(wait_id: str):
+    return _preapproved_wait_id.set(wait_id)
+
+
+def reset_preapproved_wait_id(token) -> None:
+    _preapproved_wait_id.reset(token)
+
+
+def get_preapproved_wait_id() -> str | None:
+    return _preapproved_wait_id.get()
 
 
 def begin_turn(
@@ -387,8 +383,8 @@ def unregister_cancel_event(
     registration is removed; a mismatch means a newer turn already
     replaced (and retired) ours via register_cancel_event, so there is
     nothing left to do. ``ev=None`` keeps the unconditional force-clear
-    for callers that explicitly want to tear down whatever is current
-    (the /api/stop handler).
+    for internal cleanup callers that explicitly want to tear down whatever
+    is current.
     """
     if ev is None:
         end_turn(session_id)
@@ -431,34 +427,40 @@ def is_turn_running(session_id: str) -> bool:
         return any(key[0] == session_id for key in _current_tokens)
 
 
-def mark_cancelled(session_id: str, *, execution_id: str | None = None) -> None:
-    """Compatibility: trip the live token, then cancel through the service.
+def mark_cancelled(session_id: str, *, execution_id: str) -> None:
+    """Cancel one exact execution through the canonical control path.
 
-    MCP/ACP still call this session-scoped helper. The token is tripped
-    first so waiters unblock even when no DAG record exists. When an
-    execution id or in-process owner is known, the call continues into
-    ``cancel_execution``.
+    ``session_id`` remains in the internal call signature so callers can
+    retain their session context, but it is never used to infer a foreground
+    token or to cancel another execution. A missing execution id is a caller
+    error; session-scoped cancellation belongs to the canonical session
+    control command and is not implemented by this helper.
     """
+    if not execution_id:
+        raise ValueError("execution_id is required for exact cancellation")
     with _cancel_flags_lock:
         token = _current_tokens.get((session_id, execution_id))
-        if token is None and execution_id is None:
-            token = _current_tokens.get((session_id, None))
-    if token is not None:
-        token.cancel()
-    target = execution_id or (token.execution_id if token is not None else None)
-    if target:
-        try:
-            cancel_execution(target)
-        except (ExecutionNotFound, ExecutionNotCancellable):
-            pass
-        except Exception:
-            pass
+    try:
+        result = cancel_execution(execution_id)
+    except ExecutionNotCancellable:
         return
-    if _session_index.get(session_id):
-        try:
-            cancel_session_executions(session_id)
-        except Exception:
-            pass
+    except ExecutionNotFound:
+        # The execution may be registered before its durable record is
+        # visible. Signal only the exact registered execution token; never
+        # infer or touch a session foreground token.
+        if token is not None:
+            token.cancel()
+        return
+    except Exception:
+        if token is not None:
+            token.cancel()
+        return
+    status = (
+        result.get("status") if isinstance(result, dict)
+        else getattr(result, "status", None)
+    )
+    if token is not None and status not in _TERMINAL_STATUSES:
+        token.cancel()
 
 
 def _execution_dto(session_id: str, node: Any) -> dict[str, Any]:
@@ -909,11 +911,6 @@ def _request_cancel_signals(session_id: str, execution_id: str) -> None:
         request_graceful_stop(session_id, execution_id=execution_id)
     except Exception:
         pass
-    try:
-        from openprogram.agent.questions import get_question_registry
-        get_question_registry().cancel_execution(session_id, execution_id)
-    except Exception:
-        pass
 
 
 def _default_terminate(owner: _OwnerEntry) -> bool:
@@ -1049,7 +1046,7 @@ def _finalize_projections(
         if runner is not None:
             job = runner.get_job(execution_id)
             if job is not None and not is_terminal(job.status):
-                cancelled = runner.cancel_job(
+                cancelled = runner.cancel_execution(
                     execution_id, reason="execution cancelled",
                 )
                 if cancelled is None or not is_terminal(cancelled.status):
@@ -1063,11 +1060,6 @@ def _finalize_projections(
                         )
                     except Exception:
                         pass
-    except Exception:
-        pass
-    try:
-        from openprogram.agent.questions import get_question_registry
-        get_question_registry().cancel_execution(session_id, execution_id)
     except Exception:
         pass
 
@@ -1097,8 +1089,16 @@ def _ensure_grace_watch(execution_id: str) -> None:
 def _grace_then_terminate(execution_id: str, generation: int) -> None:
     def finalize_or_retry() -> bool:
         try:
-            _try_finalize(execution_id)
-            return True
+            if _try_finalize(execution_id):
+                return True
+            # A false result can be a transient ownership/finalizer race.
+            # Stop only when the durable record no longer needs cancellation;
+            # otherwise keep the bounded retry loop alive.
+            from openprogram.agent.session_db import default_db
+
+            found = _find_execution(default_db(), execution_id)
+            if found is None or _node_status(found[1]) != "cancelling":
+                return True
         except Exception:
             owner = _owners.get(execution_id)
             if owner is not None and owner.generation == generation:
@@ -1329,6 +1329,15 @@ def cancel_session_executions(session_id: str) -> list[dict[str, Any]]:
 
 def cancel_execution(execution_id: str):
     """Cancel exactly one execution and its active ``caller`` descendants."""
+    canonical = _canonical_execution(execution_id)
+    if canonical is not None:
+        return _cancel_canonical_execution(canonical)
+    # A JobStore row is only a read projection after the Job cutover.  Never
+    # interpret it as an executable legacy record when its canonical identity
+    # is absent; callers receive the same stable not-found result as any
+    # unavailable execution.
+    if _find_job(execution_id) is not None:
+        raise ExecutionNotFound(execution_id)
     from openprogram.agent.session_db import default_db
 
     store = default_db()
@@ -1467,6 +1476,151 @@ def cancel_execution(execution_id: str):
     return result
 
 
+def _canonical_execution(execution_id: str):
+    """Return the canonical record when this id belongs to the new runtime."""
+    from openprogram.execution import default_store
+
+    return default_store().get_execution(execution_id)
+
+
+def _run_control_awaitable(awaitable):
+    """Bridge canonical async control from both sync and event-loop callers."""
+    import asyncio
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+    result: list[Any] = []
+    failure: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            result.append(asyncio.run(awaitable))
+        except BaseException as exc:  # noqa: BLE001
+            failure.append(exc)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join()
+    if failure:
+        raise failure[0]
+    return result[0]
+
+
+def _cancel_canonical_execution(execution, *, reason_code: str | None = None):
+    """Submit one canonical cancel command for every canonical public surface."""
+    from openprogram.execution.model import TERMINAL_EXECUTION_STATUSES
+    from openprogram.execution.control import ProjectionRecoveryRequired
+
+    if execution.status in TERMINAL_EXECUTION_STATUSES:
+        if execution.status.value == "cancelled":
+            current = execution
+            try:
+                command = _canonical_control_service(
+                    execution.execution_id,
+                ).executions.get_command(
+                    f"execution-cancel:{execution.execution_id}",
+                )
+            except Exception:
+                command = None
+            if (
+                command is not None
+                and command.rejection_code == ProjectionRecoveryRequired.code
+            ):
+                result = current.to_dict()
+                result["issue_code"] = ProjectionRecoveryRequired.code
+                result["recovery_required"] = True
+                return result
+            return current.to_dict()
+        raise ExecutionNotCancellable(execution.execution_id, execution.to_dict())
+    reason_code = reason_code or _cancel_reason.get() or "cancel.user"
+    try:
+        from openprogram.execution import default_store
+
+        descendants = [
+            item for item in default_store().list_nonterminal()
+            if item.parent_execution_id == execution.execution_id
+        ]
+    except Exception:
+        descendants = []
+    for child in descendants:
+        _cancel_canonical_execution(child, reason_code="cancel.parent")
+    service = _canonical_control_service(execution.execution_id)
+    try:
+        dispatch = None
+        # Retry the existing durable command against its exact current owner;
+        # submitting its id again with a newer version would be a collision.
+        if (
+            execution.status.value == "cancelling"
+            and execution.current_attempt_id
+            and isinstance(execution.owner_lease.get("generation"), int)
+        ):
+            dispatch = _run_control_awaitable(service.deliver_pending_cancel(
+                execution_id=execution.execution_id,
+                attempt_id=execution.current_attempt_id,
+                generation=execution.owner_lease["generation"],
+            ))
+        if dispatch is None:
+            dispatch = _run_control_awaitable(service.request_cancel(
+                command_id=f"execution-cancel:{execution.execution_id}",
+                execution_id=execution.execution_id,
+                expected_version=execution.status_version,
+                actor={"source": "run_control"},
+                reason_code=reason_code,
+            ))
+    except Exception as exc:
+        from openprogram.execution.store import ExecutionConflict
+
+        current = _canonical_execution(execution.execution_id)
+        if isinstance(exc, ProjectionRecoveryRequired):
+            result = (current or execution).to_dict()
+            result["issue_code"] = ProjectionRecoveryRequired.code
+            result["recovery_required"] = True
+            return result
+        if current is not None and current.status.value == "cancelled":
+            return current.to_dict()
+        if current is not None and current.status.value == "cancelling":
+            result = current.to_dict()
+            result["issue_code"] = "cancel_delivery_unconfirmed"
+            return result
+        if isinstance(exc, ExecutionConflict) and current is not None:
+            raise ExecutionNotCancellable(
+                execution.execution_id, current.to_dict(),
+            ) from exc
+        raise
+    result = dispatch.execution.to_dict()
+    if dispatch.issue_code:
+        result["issue_code"] = dispatch.issue_code
+    if dispatch.command.rejection_code == ProjectionRecoveryRequired.code:
+        result["issue_code"] = ProjectionRecoveryRequired.code
+        result["recovery_required"] = True
+    return result
+
+
+def _canonical_control_service(execution_id: str):
+    """Use the JobRunner's live registry when this is a public Job."""
+    from openprogram.execution import default_control_service
+
+    try:
+        from openprogram.agent.job.runner import _runner, runner_for_execution_store
+        from openprogram.execution import default_store
+
+        runner = _runner or runner_for_execution_store(default_store())
+        if runner is not None:
+            canonical = runner._execution_store.get_execution(execution_id)
+            input_record = runner._execution_store.get_execution_input(execution_id)
+            if (
+                canonical is not None
+                and input_record is not None
+                and input_record.input_ref.startswith("job-input-v1:")
+            ):
+                return runner._execution_control
+    except Exception:
+        pass
+    return default_control_service()
+
+
 def is_cancelled(
     session_id: str, *, execution_id: str | None = None,
 ) -> bool:
@@ -1500,6 +1654,7 @@ def set_current_execution_id(execution_id: str | None):
 
 def clear_turn_context() -> None:
     """Drop context-bound session/execution/token (test teardown)."""
+    _current_session_id.set(None)
     _current_execution_id.set(None)
     _current_token.set(None)
 
@@ -1585,7 +1740,8 @@ set_session_id_provider(get_current_session_id)
 
 
 # ---------------------------------------------------------------------------
-# Active exec runtimes — keep track so /api/stop can kill the CLI subprocess.
+# Active exec runtimes — keep track so canonical execution cancellation can
+# kill the CLI subprocess.
 # ---------------------------------------------------------------------------
 
 _active_exec_runtimes: dict[tuple[str, str | None], Any] = {}

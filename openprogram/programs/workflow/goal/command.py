@@ -3,6 +3,7 @@ the commands registry: set / status / clear against a session."""
 from __future__ import annotations
 
 import math
+import shlex
 import time
 from typing import Optional
 
@@ -14,23 +15,20 @@ import openprogram.programs.workflow.goal as _goal
 
 
 def _cancel_execution(session_id: str, goal: dict) -> None:
-    try:
-        from openprogram.agent.run_control import mark_cancelled
-        mark_cancelled(
-            session_id,
-            execution_id=str(goal.get("execution_id") or "") or None,
-        )
-    except Exception:
-        pass
+    _goal.request_goal_stop(goal, session_id)
 
 
-def _resume_invocation(goal: dict) -> dict:
+def _resume_invocation(goal: dict, session_id: str = "") -> dict:
+    _goal.require_goal_execution_finished(goal, session_id)
     return {
         "name": "goal",
         "kwargs": {
             "prompt": goal.get("text") or "",
             "context_mode": "session",
             "resume": True,
+            "expected_goal": {key: goal.get(key) for key in (
+                "goal_id", "revision", "run_id", "version",
+            )},
         },
     }
 
@@ -40,6 +38,7 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
     goal = _goal.load_goal(session_id)
     if not goal:
         raise ValueError("No Goal exists for this session")
+    _goal.check_goal_preconditions(goal, values.get("expected"))
     action = action.strip().lower()
     if action == "pause":
         if goal.get("status") not in _goal.RUNNING_STATUSES:
@@ -49,16 +48,15 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
             "phase": "paused",
             "recoverable": True,
             "pause_reason": "user",
+            "stop_requested": True,
             "last_reason": "Goal paused by the user.",
         })
         _goal.checkpoint_active_elapsed(goal, stop=True)
         _goal.save_goal(session_id, goal)
-        _cancel_execution(session_id, goal)
     elif action == "edit":
         prompt = str(values.get("prompt") or "").strip()
         if not prompt:
             raise ValueError("Goal prompt cannot be empty")
-        _cancel_execution(session_id, goal)
         goal.update({
             "text": prompt,
             "revision": int(goal.get("revision") or 1) + 1,
@@ -66,15 +64,18 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
             "phase": "paused",
             "recoverable": True,
             "pause_reason": "edited",
+            "stop_requested": True,
             "last_reason": "Goal was edited; resume to refine the new revision.",
         })
         goal.pop("spec", None)
+        goal.pop("evidence_window", None)
         goal.pop("checklist", None)
         goal.pop("pending_answer", None)
         goal["pending_answers"] = []
         goal["questions"] = [
             {
                 **item,
+                "revision": item.get("revision", int(goal["revision"]) - 1),
                 "status": (
                     "superseded"
                     if item.get("status") == "pending"
@@ -111,12 +112,6 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
         if question is None:
             raise ValueError("No matching pending Goal question")
         question_id = str(question.get("id") or "")
-        if question_id:
-            try:
-                from openprogram.agent.questions import resolve_question_and_broadcast
-                resolve_question_and_broadcast(question_id, "answered", answer)
-            except Exception:
-                pass
         question.update({
             "status": "answered",
             "answer": answer,
@@ -153,6 +148,16 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
             })
         goal["last_reason"] = "User answer saved for the next Goal boundary."
         _goal.save_goal(session_id, goal)
+    elif action == "roles":
+        if goal.get("status") not in _goal.RESUMABLE_STATUSES:
+            raise ValueError("Pause the Goal before changing its roles")
+        from .roles import edit_role_requests
+        requests = edit_role_requests(goal, values.get("roles"))
+        goal["role_requests"] = requests
+        goal.pop("roles", None)
+        goal["roles_origin"] = "user-configured"
+        goal["last_reason"] = "Role settings saved; models will be validated on resume."
+        _goal.save_goal(session_id, goal)
     elif action == "budget":
         budget = dict(goal.get("budget") or {})
         for key in ("max_turns", "max_tokens", "max_elapsed_s", "max_cost_usd"):
@@ -171,27 +176,40 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
                     raise ValueError(f"{key} must be a positive number or zero") from exc
                 if not math.isfinite(float(parsed)) or parsed < 0:
                     raise ValueError(f"{key} must be a positive number or zero")
-                budget[key] = parsed
+                budget[key] = parsed or None
         goal["budget"] = budget
         goal["max_turns"] = budget.get("max_turns")
         _goal.save_goal(session_id, goal)
     elif action in {"clear", "cancel"}:
-        _cancel_execution(session_id, goal)
         goal.update({
             "status": "cancelled",
             "phase": "terminal",
             "recoverable": False,
+            "stop_requested": True,
             "last_reason": "Goal cancelled by the user.",
         })
         _goal.checkpoint_active_elapsed(goal, stop=True)
         _goal.save_goal(session_id, goal)
+    elif action == "stop":
+        if not goal.get("stop_requested"):
+            raise ValueError("No saved Goal stop request to retry")
     else:
         raise ValueError(f"Unknown Goal action: {action}")
     _goal._emit_goal_update(None, session_id, goal)
+    if action in {"pause", "edit", "cancel", "clear", "stop"}:
+        _cancel_execution(session_id, goal)
     return goal
 
 
 def handle_goal_command(session_id: str, raw_args: str) -> dict:
+    """Report unavailable storage without interpreting it as an absent Goal."""
+    try:
+        return _handle_goal_command(session_id, raw_args)
+    except (_goal.GoalStateUnavailable, _goal.GoalConflictError, _goal.GoalStopUnconfirmed) as exc:
+        return {"text": str(exc), "send_text": None}
+
+
+def _handle_goal_command(session_id: str, raw_args: str) -> dict:
     """Execute ``/goal <args>`` against a session.
 
     Set returns one invocation descriptor for the public ``goal()`` Workflow.
@@ -202,22 +220,55 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
     args = (raw_args or "").strip()
 
     if not args:
-        return {"text": _goal._status_text(_goal.load_goal(session_id)),
+        return {"text": _goal._status_text(_goal.load_goal(session_id), session_id),
                 "send_text": None}
 
     head = args.split()[0].lower()
+    if args.lower() == "help":
+        return {"text": (
+            "/goal — show objective, roles, usage, checkpoint and questions\n"
+            "/goal pause | resume | clear | stop (retry saved stop)\n/goal edit <objective>\n"
+            "/goal answer [question-id] <answer>\n"
+            "/goal role <work|judge> <provider> <model> [effort=high] [timeout_s=300]\n"
+            "/goal budget max_turns=10 max_tokens=10000 max_elapsed_s=3600 max_cost_usd=5\n"
+            "Role edits require a paused Goal. Zero removes a limit."
+        ), "send_text": None}
+    if head in {"role", "budget"}:
+        try:
+            parts = shlex.split(args)
+            if head == "role":
+                if len(parts) < 4 or parts[1] not in {"work", "judge"}:
+                    raise ValueError("Usage: /goal role <work|judge> <provider> <model> [effort=high] [timeout_s=300]")
+                options = _command_options(parts[4:], {"effort", "timeout_s"})
+                apply_goal_action(session_id, "roles", roles={parts[1]: {
+                    "provider": parts[2], "model": parts[3], **options,
+                }})
+                return {"text": "Goal role settings saved. Resume to validate and use them.", "send_text": None}
+            options = _command_options(parts[1:], {"max_turns", "max_tokens", "max_elapsed_s", "max_cost_usd"})
+            if not options:
+                raise ValueError("Usage: /goal budget max_turns=10 max_tokens=10000 (zero removes a limit)")
+            apply_goal_action(session_id, "budget", **options)
+            return {"text": "Goal limits saved.", "send_text": None}
+        except ValueError as exc:
+            return {"text": str(exc), "send_text": None}
     if head in _goal._CLEAR_VERBS:
         try:
             apply_goal_action(session_id, "cancel")
         except ValueError:
             return {"text": "No Goal to cancel.", "send_text": None}
-        return {"text": "Goal cancelled.", "send_text": None}
+        return {"text": "Goal cancellation saved. " + _goal._status_text(_goal.load_goal(session_id), session_id), "send_text": None}
+    if head == "stop":
+        try:
+            stopped = apply_goal_action(session_id, "stop")
+        except ValueError as exc:
+            return {"text": str(exc), "send_text": None}
+        return {"text": _goal._status_text(stopped, session_id), "send_text": None}
     if head == "pause":
         try:
             apply_goal_action(session_id, "pause")
         except ValueError as exc:
             return {"text": str(exc), "send_text": None}
-        return {"text": "Goal paused.", "send_text": None}
+        return {"text": "Goal pause saved. " + _goal._status_text(_goal.load_goal(session_id), session_id), "send_text": None}
     if head == "resume":
         goal = _goal.load_goal(session_id)
         if not goal or goal.get("status") not in _goal.RESUMABLE_STATUSES:
@@ -225,7 +276,7 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
         return {
             "text": "Resuming Goal from its latest checkpoint.",
             "send_text": None,
-            "invoke": _resume_invocation(goal),
+            "invoke": _resume_invocation(goal, session_id),
         }
     if head == "answer":
         answer_args = args[len(args.split()[0]):].strip()
@@ -249,7 +300,10 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
             "send_text": None,
         }
         if answered.get("status") == "paused" and answered.get("phase") == "answer_received":
-            result["invoke"] = _resume_invocation(answered)
+            try:
+                result["invoke"] = _resume_invocation(answered, session_id)
+            except _goal.GoalConflictError as exc:
+                result["text"] = f"Goal answer saved. {exc}"
         elif answered.get("status") == "paused":
             result["text"] = "Goal answer saved; the user-paused Goal remains paused."
         else:
@@ -276,7 +330,17 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
     }
 
 
-def _status_text(goal: Optional[dict]) -> str:
+def _command_options(parts, allowed):
+    options = {}
+    for part in parts:
+        key, separator, value = part.partition("=")
+        if not separator or key not in allowed or key in options:
+            raise ValueError("Invalid or duplicate Goal setting: " + part)
+        options[key] = value
+    return options
+
+
+def _status_text(goal: Optional[dict], session_id: str = "") -> str:
     if not goal:
         return "No goal set. /goal <prompt> to set one."
     cap = goal.get("max_turns")
@@ -287,11 +351,37 @@ def _status_text(goal: Optional[dict]) -> str:
         + (f"/{int(cap)}" if cap else ""),
     ]
     usage = goal.get("usage") or {}
+    observed = _goal.goal_execution_state(goal, session_id)
+    lines.append(
+        "  execution: untracked; controller ownership is checked on entry"
+        if observed["status"] == "untracked" else
+        f"  execution: {observed['status']} · stop confirmed: {observed['finished'] is True}"
+    )
+    budget = goal.get("budget") or {}
+    lines.append("  limits: " + ", ".join(
+        f"{key}={budget.get(key) if budget.get(key) is not None else 'unlimited'}"
+        for key in ("max_turns", "max_tokens", "max_elapsed_s", "max_cost_usd")
+    ))
+    for name, role in (goal.get("roles") or {}).items():
+        lines.append(
+            f"  {name}: {role.get('provider')}/{role.get('model')} · "
+            f"effort {role.get('effort')} · timeout {role.get('timeout_s')}s"
+        )
+    if goal.get("roles_origin") == "legacy-resolved":
+        lines.append("  roles: resolved on first resume of a legacy Goal")
+    if not goal.get("roles") and goal.get("role_requests"):
+        requested = goal["role_requests"]
+        for role, prefix in (("work", ""), ("judge", "judge_")):
+            lines.append(f"  {role}: {requested.get(prefix + 'model') or 'same as work'} (validate on resume) · "
+                         f"effort {requested.get(prefix + 'effort')} · timeout {requested.get(prefix + 'timeout_s')}s")
     if usage:
         lines.append(
             f"  usage: {int(usage.get('total_tokens') or 0)} tokens · "
-            f"${float(usage.get('cost_usd') or 0):.4f}"
+            + (f"${float(usage['cost_usd']):.4f}" if usage.get("cost_known") is True
+               and isinstance(usage.get("cost_usd"), (int, float)) and math.isfinite(usage["cost_usd"])
+               else "cost unknown")
         )
+        lines.append(f"  active time: {float(usage.get('active_elapsed_s') or 0):.1f}s")
     if goal.get("spec"):
         spec = str(goal["spec"])
         lines.append("  spec: " + (spec[:300] + "…" if len(spec) > 300

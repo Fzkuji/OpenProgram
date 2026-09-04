@@ -938,6 +938,7 @@ class CheckpointStore:
             ] if committed else [],
             "conflicts": intent.get("conflicts", []),
             "unavailable": intent.get("unavailable", []),
+            "error_code": intent.get("error_code"),
             "error": intent.get("error"),
         }
 
@@ -953,6 +954,9 @@ class CheckpointStore:
             ] if committed else [],
             "conflicts": intent.get("conflicts", []),
             "unavailable": intent.get("unavailable", []),
+            "error_code": intent.get("error_code") or (
+                "RECOVERY_REQUIRED" if intent.get("status") == "recovery_required" else None
+            ),
             "error": intent.get("error"),
             "new_head_id": intent.get("target_head_id") if committed else None,
             "source_head_id": intent.get("expected_head_id"),
@@ -966,12 +970,31 @@ class CheckpointStore:
         }
 
     def read_rewind_intent(self, key: str) -> dict | None:
-        path = self._rewind_intent_path(key)
+        return self._read_intent(self._rewind_intent_path(key))
+
+    @staticmethod
+    def _read_intent(path: Path) -> dict | None:
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError, json.JSONDecodeError):
             return None
-        return value if isinstance(value, dict) else None
+        if not isinstance(value, dict):
+            return None
+        if value.get("status") == "recovery_required" and not value.get("error_code"):
+            value["error_code"] = "RECOVERY_REQUIRED"
+            try:
+                manifest.save(path, value)
+            except OSError:
+                # The normalized result remains actionable even if a read-only
+                # or damaged profile prevents the migration write.
+                pass
+        return value
+
+    def read_history_intent(
+        self, turn_id: str, direction: str, key: str,
+    ) -> dict | None:
+        """Read one single-turn history receipt without applying it."""
+        return self._read_intent(self._intent_path(turn_id, direction, key))
 
     def _recover_rewind_intent(
         self,
@@ -1012,6 +1035,7 @@ class CheckpointStore:
                     intent, expected_head, target_head,
                 ):
                     intent["status"] = "recovery_required"
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                     intent["error"] = "same-head transaction finalization failed"
                     manifest.save(intent_path, intent)
                     return self._rewind_intent_result(intent, replayed=True)
@@ -1021,6 +1045,7 @@ class CheckpointStore:
                 return self._rewind_intent_result(intent, replayed=True)
             if head not in {expected_head, target_head} or "external" in states:
                 intent["status"] = "recovery_required"
+                intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = "external state prevents deterministic recovery"
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent, replayed=True)
@@ -1054,6 +1079,8 @@ class CheckpointStore:
             intent["status"] = (
                 "recovery_required" if recovery_required else "rolled_back"
             )
+            if recovery_required:
+                intent["error_code"] = "RECOVERY_REQUIRED"
             intent["error"] = (
                 "automatic rollback could not complete"
                 if recovery_required else "interrupted rewind rolled back"
@@ -1077,6 +1104,33 @@ class CheckpointStore:
                     get_head=get_head,
                     compare_and_set_head=compare_and_set_head,
                 ))
+        return results
+
+    def recover_history_intents(self) -> list[dict]:
+        """Terminalize ordinary history intents left during a crash.
+
+        A single-turn intent has no separate recovery coordinator.  Startup
+        therefore preserves its manifest and records an explicit recovery
+        state instead of exposing it forever as an in-progress operation.
+        """
+        results = []
+        roots = (
+            session_backup_root(self.session_dir),
+            Path(self.session_dir) / "file_backups",
+        )
+        paths = sorted({path for root in roots for path in root.glob("*/intents/*.json")})
+        for path in paths:
+            try:
+                intent = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(intent, dict) or intent.get("status") not in {"prepared", "applying"}:
+                continue
+            intent["status"] = "recovery_required"
+            intent["error_code"] = "RECOVERY_REQUIRED"
+            intent["error"] = "incomplete history intent requires explicit recovery"
+            manifest.save(path, intent)
+            results.append(self._intent_result(intent))
         return results
 
     def _validate_custom_history_actions(self, actions: list[dict]) -> dict:
@@ -1155,6 +1209,7 @@ class CheckpointStore:
                 return self._intent_result({
                     **existing,
                     "status": "recovery_required",
+                    "error_code": "RECOVERY_REQUIRED",
                     "error": "incomplete durable intent requires recovery",
                 })
             except (OSError, json.JSONDecodeError):
@@ -1257,6 +1312,8 @@ class CheckpointStore:
                 intent["status"] = (
                     "recovery_required" if recovery_required else "rolled_back"
                 )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = str(exc)
                 manifest.save(intent_path, intent)
                 return self._intent_result(intent)
@@ -1530,6 +1587,8 @@ class CheckpointStore:
                 intent["status"] = (
                     "recovery_required" if recovery_required else "rolled_back"
                 )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = str(exc)
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent)

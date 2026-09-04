@@ -157,7 +157,7 @@ def test_running_diagnosis_is_cancelled_without_changing_update(diagnosis_enviro
     assert recover_pending_updates() is True
     assert entered.wait(5)
     if stop == "owner":
-        runner.cancel_job(f"self-update:{update_id}:diagnose:1", reason="owner stopped diagnosis")
+        runner.cancel_execution(f"self-update:{update_id}:diagnose:1", reason="owner stopped diagnosis")
     elif stop == "new_update":
         request = store.load(update_id).request
         store.create(replace(request, update_id="su_next", pre_update_evidence=("new owner request",)))

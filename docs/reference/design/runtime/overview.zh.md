@@ -114,13 +114,13 @@ id,以便函数体内 LLM 调用有 frame 可参照)。
 
 | 接缝 | 核心默认值 | 平台注册方 |
 |---|---|---|
-| `set_cancellation_check` | 空实现——没有任何东西会取消 | `webui/_pause_stop.py` 在 import 时注册暂停/取消检查 |
-| `set_session_id_provider` | `None`——`runtime.can_ask()` 为 `False` | 同一模块提供当前会话 id |
+| `set_cancellation_check` | 空实现——没有任何东西会取消 | `openprogram.agent.run_control` 在 import 时注册精确 execution 检查 |
+| `set_session_id_provider` | `None`——`runtime.can_ask()` 为 `False` | `openprogram.agent.run_control` 提供当前会话 id |
 | `session_scope(store, id)` | 未绑定——不持久化 | dispatcher 自己绑定每 turn 的 store |
 
-**为什么用钩子而不是原来的懒 `import webui._pause_stop`？** 那个 import 让核心
-依赖 Web UI，且构成循环（`webui/_pause_stop` 反过来 import `function.py`），仅靠
-双方恰好都懒加载才没炸。钩子让依赖保持单向：平台 → 核心。
+**为什么用钩子而不是 Web UI 取消模块？** 原来的 session 级模块重复维护取消状态，
+并让核心依赖 Web UI。现在由 `run_control` 检查精确 execution token，同时保持依赖
+方向为平台 → 核心。
 
 **`exec()` 里的 `ImportError` 按永久错误处理，不算瞬态。** retry 循环把它归为不可
 重试：缺失的子系统不会因为重试而出现，烧完整个退避表只是把 0 秒的失败拖成约 52 秒。

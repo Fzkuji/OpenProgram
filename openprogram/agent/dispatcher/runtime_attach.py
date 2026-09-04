@@ -20,11 +20,16 @@ See docs/design/runtime/dispatcher-split.md.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
 
-from openprogram.agent.dispatcher.types import EventCallback, TurnRequest
+from openprogram.agent.dispatcher.types import (
+    EventCallback,
+    TurnRequest,
+    _subprocess_terminal_status,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -136,7 +141,8 @@ def _wrap_agentic_runtime_block(
                 "OPENPROGRAM_IN_AGENTIC_SUBPROCESS"
             ) == "1"
             if _is_agentic_tool and not _run_in_worker and not _in_subproc:
-                # Route through a fork()'d subprocess so handle_stop's
+                # Route through a fork()'d subprocess so canonical
+                # execution cancellation's
                 # SIGKILL kills the tool in milliseconds. The child
                 # re-installs the wrapper itself and bridges events
                 # back, but to keep the runtime-block we already
@@ -183,7 +189,10 @@ def _wrap_agentic_runtime_block(
                     if surface_snapshot is None and browser_surface:
                         from openprogram.agent import surface_context
 
-                        captured_surface = surface_context.capture_pages()
+                        try:
+                            captured_surface = surface_context.capture_pages()
+                        except RuntimeError:
+                            captured_surface = surface_context.window_context()
                         surface_snapshot = captured_surface
                     timeout_seconds = agentic_subprocess_timeout_seconds(
                         tool_name, subprocess_args,
@@ -220,11 +229,87 @@ def _wrap_agentic_runtime_block(
 
                             release_bindings(captured_surface)
 
+                subprocess_started_at = time.time()
                 out = await loop.run_in_executor(
                     None,
                     _run_subprocess,
                 )
-                if out.get("error"):
+                cleanup_result = out.get("page_cleanup_result")
+                if out.get("page_cleanup_failed") and isinstance(
+                    cleanup_result, dict,
+                ):
+                    try:
+                        db.invalidate_cache(req.session_id)
+                        cleanup_node_id = out.get("runtime_msg_id")
+                        if not cleanup_node_id:
+                            candidates = [
+                                node for node in db.get_nodes(req.session_id)
+                                if node.is_code()
+                                and node.name == tool_name
+                                and node.caller == _real_caller
+                                and node.created_at >= subprocess_started_at
+                            ]
+                            running = [
+                                node for node in candidates
+                                if (node.metadata or {}).get("status") == "running"
+                            ]
+                            matches = running or candidates
+                            if len(matches) == 1:
+                                cleanup_node_id = matches[0].id
+                        if cleanup_node_id:
+                            from openprogram.agent.run_control import (
+                                mark_execution_terminal,
+                                resume_cancel,
+                            )
+
+                            cleanup_node = next(
+                                (
+                                    node for node in db.get_nodes(req.session_id)
+                                    if node.id == cleanup_node_id
+                                ),
+                                None,
+                            )
+                            cleanup_metadata = (
+                                (cleanup_node.metadata or {})
+                                if cleanup_node is not None else {}
+                            )
+                            if cleanup_metadata.get("status") == "cancelling":
+                                resume_cancel(cleanup_node_id)
+                            else:
+                                mark_execution_terminal(
+                                    cleanup_node_id,
+                                    _subprocess_terminal_status(
+                                        out,
+                                        cleanup_metadata,
+                                    ),
+                                    store=db,
+                                )
+                            SessionNodeWriter(db, req.session_id).update(
+                                cleanup_node_id,
+                                output=cleanup_result,
+                                metadata={"last_update_at": time.time()},
+                            )
+                    except Exception:
+                        _log.warning(
+                            "failed to persist Page cleanup handoff for %s",
+                            out.get("runtime_msg_id") or call_id,
+                            exc_info=True,
+                        )
+                    from openprogram.agent.types import (
+                        AgentToolResult as _TR,
+                    )
+                    from openprogram.providers.types import (
+                        TextContent as _CB,
+                    )
+                    result = _TR(
+                        content=[_CB(text=json.dumps(
+                            cleanup_result,
+                            ensure_ascii=False,
+                        ))],
+                        details=cleanup_result,
+                        is_error=False,
+                    )
+                elif out.get("error"):
                     from openprogram.agent.types import (
                         AgentToolResult as _TR,
                     )
@@ -378,7 +463,10 @@ def _wrap_agentic_runtime_block(
         label=getattr(agent_tool, "label", agent_tool.name) or agent_tool.name,
         execute=_runtime_block_execute,
     )
-    for _attr in ("_is_agentic", "_defer", "_run_in_worker"):
+    for _attr in (
+        "_is_agentic", "_defer", "_run_in_worker", "_mcp_server",
+        "_runtime_implementation", "_requires_approval", "_accept_edits_safe",
+    ):
         # A frozen/slotted tool object rejects the copy; the wrapper just
         # loses an optional marker attribute.
         try:

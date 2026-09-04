@@ -416,7 +416,7 @@ def test_packaged_ui_capability_is_bound_to_actual_files(package_factory):
 @pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
 def test_cancelled_verifier_cannot_upload_capture(verifier, ui_install):
     from openprogram.self_update import ui_checks
-    ui_install["mutation"] = lambda _: verifier.runner.cancel_job(verifier.grant["job_id"], reason="owner stop")
+    ui_install["mutation"] = lambda _: verifier.runner.cancel_execution(verifier.grant["job_id"], reason="owner stop")
     verifier.run()
     assert consume(verifier)["verdict"] == "inconclusive"
     assert ui_install["post_status"] == 409

@@ -6,8 +6,28 @@ gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$repo_root/openprogram/program
 app_path="${OPENPROGRAM_APP_PATH:-/Applications/OpenProgram.app}"
 runtime_root="$app_path/Contents/Resources/runtime"
 manifest="$runtime_root/runtime-manifest.json"
+product_runtime_config="$repo_root/scripts/release/product-runtime.json"
+installed_product_runtime="$runtime_root/product-runtime.json"
 installed_asar="$app_path/Contents/Resources/app.asar"
 uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
+
+# The default App is shared by every worktree. Refuse to replace it from a
+# checkout that predates the latest locally fetched main: otherwise an older
+# feature branch can silently restore already-fixed server or UI behavior.
+# A caller deliberately validating historical code must use a separate
+# OPENPROGRAM_APP_PATH, not replace the user's normal App.
+if test "$app_path" = "/Applications/OpenProgram.app" && \
+  git -C "$repo_root" rev-parse --verify --quiet refs/remotes/origin/main \
+    >/dev/null; then
+  if ! git -C "$repo_root" merge-base --is-ancestor \
+    refs/remotes/origin/main HEAD; then
+    printf '%s\n' \
+      'refusing to refresh the default App from a checkout behind origin/main' \
+      'fetch/rebase the branch, or set OPENPROGRAM_APP_PATH to a separate App' \
+      >&2
+    exit 1
+  fi
+fi
 
 if test -n "${OPENPROGRAM_LOCAL_PYTHON:-}"; then
   local_python="$OPENPROGRAM_LOCAL_PYTHON"
@@ -148,10 +168,25 @@ while true; do
   gui_harness_revision=""
   attempt_dir="$wheel_dir/attempt-$attempt"
   mkdir -p "$attempt_dir"
+  product_runtime_stage="$attempt_dir/product-runtime.json"
 
   gui_harness_stage="$attempt_dir/gui-harness"
   if test "$sync_gui_harness" = 1; then
+    cp "$product_runtime_config" "$product_runtime_stage"
     gui_harness_revision="$(git -C "$gui_harness_repo" rev-parse HEAD)"
+    gui_harness_pin="$("$local_python" - "$product_runtime_stage" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    print(json.load(stream)["programs"]["gui"]["commit"])
+PY
+)"
+    test "$gui_harness_revision" = "$gui_harness_pin" || {
+      printf 'GUI Harness checkout %s does not match product runtime pin %s\n' \
+        "$gui_harness_revision" "$gui_harness_pin" >&2
+      exit 1
+    }
     gui_harness_archive="$attempt_dir/gui-harness.tar"
     mkdir -p "$gui_harness_stage"
     git -C "$gui_harness_repo" archive --format=tar \
@@ -198,6 +233,7 @@ PY
   desktop_asar="$attempt_dir/app.asar"
   node "$asar_cli" extract "$installed_asar" "$desktop_stage"
   while IFS= read -r desktop_file; do
+    test -n "$desktop_file" || continue
     source_file="$repo_root/apps/desktop/$desktop_file"
     test -f "$source_file" || {
       printf 'desktop module listed in build.files is missing: %s\n' \
@@ -298,6 +334,9 @@ if test "$(uname -s)" = Darwin; then
     "$app_python" -I -c \
       'from gui_harness.adapters.mac_window import window_support'
   fi
+fi
+if test "$sync_gui_harness" = 1; then
+  cp "$product_runtime_stage" "$installed_product_runtime"
 fi
 cp "$desktop_asar" "$installed_asar"
 if test -d "$desktop_asar.unpacked"; then

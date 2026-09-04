@@ -2107,6 +2107,16 @@ assert.match(desktopBridgeSource, /revealAgentWebTab\(d\.tab_id\)/);
 assert.match(desktopBridgeSource, /state\.ensureWebTab\(d\.url\)/);
 assert.match(desktopBridgeSource, /pipOpenMustFork\(d\.url, active\.id\)/);
 assert.match(desktopBridgeSource, /ensureExclusiveWebTab\(d\.url\)/);
+assert.match(
+  desktopBridgeSource,
+  /if \(d\.background\)[\s\S]*?ensureExclusiveWebTab\(d\.url\)[\s\S]*?ensureWebView\(bridge, id, d\.url\)[\s\S]*?bridge\.webTab\.resolve\?\.\(id\)/,
+  "a background agent open must create and resolve a hidden exclusive Page without activating it",
+);
+assert.match(
+  desktopBridgeSource,
+  /if \(d\.op === "close"\)[\s\S]*?d\.window_id !== bridge\.windowId[\s\S]*?closeAgentWebTabResult/,
+  "an exact background Page close must reject another desktop window",
+);
 assert.match(desktopBridgeSource, /useWebTabPip\.getState\(\)\.show\(id, active\.id\)/);
 assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
 assert.match(desktopBridgeSource, /subscribeWebTabPopups\(bridge\)/);
@@ -3490,6 +3500,10 @@ plainTabsModule.replaceCenterTabsPayload({
   splitRatio: 0.5,
 }, { persist: false });
 assert.equal(bridgeModule.surfaceRefForChat("surface-chat", true), null);
+assert.deepEqual(
+  bridgeModule.surfaceOriginForChat("surface-chat", true),
+  { version: 1, window_id: "main", access: "enabled" },
+);
 const hiddenLegacyPreview = bridgeModule.finalizeWebTabPreview(
   "w:surface-page",
   0,

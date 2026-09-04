@@ -1,6 +1,8 @@
 """webui/frontend.py — static-export serving + build gate (single-port)."""
 from __future__ import annotations
 
+import gzip
+
 import pytest
 
 from openprogram.webui import frontend
@@ -13,6 +15,12 @@ def out_tree(tmp_path, monkeypatch):
     out = wd / "out"
     (out / "_next" / "static" / "chunks").mkdir(parents=True)
     (out / "_next" / "static" / "chunks" / "app.js").write_text("js")
+    (out / "_next" / "static" / "app.css").write_text("css")
+    (out / "icons").mkdir()
+    (out / "icons" / "mark.svg").write_text("<svg></svg>")
+    (out / "icons" / "icon-512.png").write_bytes(b"png")
+    (out / "fonts").mkdir()
+    (out / "fonts" / "inter.woff2").write_bytes(b"woff2")
     (out / "index.html").write_text("<html>index</html>")
     (out / "chat.html").write_text("<html>chat</html>")
     (out / "skills.html").write_text("<html>skills</html>")
@@ -26,6 +34,7 @@ def out_tree(tmp_path, monkeypatch):
 @pytest.fixture()
 def client(out_tree):
     from fastapi import FastAPI
+    from fastapi.responses import Response, StreamingResponse
     from fastapi.testclient import TestClient
 
     app = FastAPI()
@@ -33,6 +42,29 @@ def client(out_tree):
     @app.get("/api/ping")
     async def ping():
         return {"pong": True}
+
+    @app.get("/api/events")
+    async def events():
+        return StreamingResponse(
+            iter(["data: " + ("event" * 200) + "\n\n"]),
+            media_type="text/event-stream",
+        )
+
+    @app.get("/api/precompressed")
+    async def precompressed():
+        return Response(
+            gzip.compress(b"already encoded" * 100),
+            media_type="text/plain",
+            headers={"Content-Encoding": "gzip"},
+        )
+
+    @app.get("/api/file-raw")
+    async def file_raw():
+        return Response(b"\x89PNG\r\n\x1a\n" + b"png" * 400, media_type="image/png")
+
+    @app.get("/files/raw")
+    async def files_raw():
+        return Response(b"wOF2" + b"font" * 400, media_type="font/woff2")
 
     frontend.mount_frontend(app)
     return TestClient(app)
@@ -55,6 +87,118 @@ def test_next_static_immutable_cache(client):
     r = client.get("/_next/static/chunks/app.js")
     assert r.status_code == 200
     assert "immutable" in r.headers["cache-control"]
+
+
+@pytest.mark.parametrize(
+    ("path", "source"),
+    [
+        ("/_next/static/chunks/app.js", b"const payload = 'compressible';\n" * 400),
+        ("/_next/static/app.css", b".row { color: var(--text); }\n" * 400),
+        ("/icons/mark.svg", b'<svg><path d="M0 0h10v10"/></svg>' * 400),
+    ],
+)
+def test_large_static_text_negotiates_gzip(client, out_tree, path, source):
+    _wd, out = out_tree
+    (out / path.lstrip("/")).write_bytes(source)
+
+    compressed = client.get(
+        path,
+        headers={"Accept-Encoding": "gzip"},
+    )
+    assert compressed.status_code == 200
+    assert compressed.headers["content-encoding"] == "gzip"
+    assert "Accept-Encoding" in compressed.headers["vary"]
+    assert compressed.content == source
+
+    identity = client.get(
+        path,
+        headers={"Accept-Encoding": "identity"},
+    )
+    assert "content-encoding" not in identity.headers
+    assert identity.content == source
+
+
+@pytest.mark.parametrize(
+    ("path", "source"),
+    [
+        ("/icons/icon-512.png", b"\x89PNG\r\n\x1a\n" + b"compressed-png" * 400),
+        ("/fonts/inter.woff2", b"wOF2" + b"compressed-font" * 400),
+    ],
+)
+def test_precompressed_static_formats_are_not_gzipped(client, out_tree, path, source):
+    _wd, out = out_tree
+    (out / path.lstrip("/")).write_bytes(source)
+
+    response = client.get(path, headers={"Accept-Encoding": "gzip"})
+
+    assert response.status_code == 200
+    assert "content-encoding" not in response.headers
+    assert response.content == source
+
+
+@pytest.mark.parametrize(
+    ("path", "query"),
+    [
+        ("/api/file-raw", {"path": "image.png"}),
+        ("/files/raw", {"path": "font.woff2"}),
+    ],
+)
+def test_precompressed_response_mime_is_not_gzipped(client, path, query):
+    response = client.get(
+        path,
+        params=query,
+        headers={"Accept-Encoding": "gzip"},
+    )
+
+    assert response.status_code == 200
+    assert "content-encoding" not in response.headers
+
+
+@pytest.mark.parametrize(
+    ("accept_encoding", "compressed"),
+    [
+        ("gzip;q=0", False),
+        ("GZip", True),
+        ("gzip;q=0, *;q=1", False),
+        ("gzip;q=0.5, *;q=0", True),
+        ("br;q=1, *;q=0.5", True),
+    ],
+)
+def test_gzip_accept_encoding_quality(client, out_tree, accept_encoding, compressed):
+    _wd, out = out_tree
+    source = b"const payload = 'compressible';\n" * 400
+    (out / "_next" / "static" / "chunks" / "app.js").write_bytes(source)
+
+    response = client.get(
+        "/_next/static/chunks/app.js",
+        headers={"Accept-Encoding": accept_encoding},
+    )
+
+    assert response.status_code == 200
+    assert (response.headers.get("content-encoding") == "gzip") is compressed
+    assert response.content == source
+
+
+def test_small_static_text_is_not_compressed(client):
+    r = client.get(
+        "/_next/static/chunks/app.js",
+        headers={"Accept-Encoding": "gzip"},
+    )
+    assert "content-encoding" not in r.headers
+
+
+def test_gzip_excludes_sse_and_preserves_existing_encoding(client):
+    events = client.get("/api/events", headers={"Accept-Encoding": "gzip"})
+    assert events.status_code == 200
+    assert "content-encoding" not in events.headers
+
+    encoded = client.get(
+        "/api/precompressed",
+        headers={"Accept-Encoding": "gzip"},
+    )
+    assert encoded.status_code == 200
+    assert encoded.headers["content-encoding"] == "gzip"
+    assert encoded.content == b"already encoded" * 100
 
 
 def test_spa_fallback_nearest_ancestor_page(client):

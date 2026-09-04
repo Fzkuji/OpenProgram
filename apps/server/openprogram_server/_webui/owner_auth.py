@@ -450,7 +450,7 @@ def _replace_header(
 
 
 def _shell_content_security_policy(
-    body: bytes = b"", *, allow_same_origin_frame: bool = False
+    body: bytes = b"", *, frame_ancestors: str = "'none'"
 ) -> bytes:
     hashes = []
     for match in _INLINE_SCRIPT_RE.finditer(body):
@@ -461,16 +461,13 @@ def _shell_content_security_policy(
         )
         hashes.append(f"'sha256-{digest}'")
     script_sources = " ".join(("'self'", *hashes))
-    frame_ancestors = "'self'" if allow_same_origin_frame else "'none'"
     return (
         f"object-src 'none'; base-uri 'none'; frame-ancestors {frame_ancestors}; "
         f"script-src {script_sources}; connect-src 'self'"
     ).encode("ascii")
 
 
-def _response_sender(
-    send, *, no_store: bool, shell: bool, allow_same_origin_frame: bool = False
-):
+def _response_sender(send, *, no_store: bool, shell: bool, frameable: bool = False):
     pending_start = None
     html_body = bytearray()
 
@@ -484,7 +481,7 @@ def _response_sender(
                 _replace_header(
                     headers,
                     b"x-frame-options",
-                    b"SAMEORIGIN" if allow_same_origin_frame else b"DENY",
+                    b"SAMEORIGIN" if frameable else b"DENY",
                 )
                 _replace_header(headers, b"referrer-policy", b"no-referrer")
                 _replace_header(headers, b"x-content-type-options", b"nosniff")
@@ -503,7 +500,7 @@ def _response_sender(
                     headers,
                     b"content-security-policy",
                     _shell_content_security_policy(
-                        allow_same_origin_frame=allow_same_origin_frame
+                        frame_ancestors="'self'" if frameable else "'none'"
                     ),
                 )
             message = {**message, "headers": headers}
@@ -517,7 +514,7 @@ def _response_sender(
                 b"content-security-policy",
                 _shell_content_security_policy(
                     bytes(html_body),
-                    allow_same_origin_frame=allow_same_origin_frame,
+                    frame_ancestors="'self'" if frameable else "'none'",
                 ),
             )
             await send({**pending_start, "headers": headers})
@@ -566,9 +563,6 @@ class OwnerAuthMiddleware:
             path == "/healthz" or _public_shell(scope)
         )
         if public:
-            embeddable_docs_html = path.startswith("/docs/") and path.endswith(
-                ".raw.html"
-            )
             await self.app(
                 scope,
                 receive,
@@ -576,7 +570,7 @@ class OwnerAuthMiddleware:
                     send,
                     no_store=path == "/healthz",
                     shell=path != "/healthz",
-                    allow_same_origin_frame=embeddable_docs_html,
+                    frameable=path.startswith("/docs/") and path.endswith(".raw.html"),
                 ),
             )
             return

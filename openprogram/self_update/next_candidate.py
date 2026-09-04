@@ -498,5 +498,5 @@ def cancel(update_id, req):
                 raise ValueError("reserved child belongs to another iteration")
             current = child
     for job_id in jobs:
-        get_runner().cancel_job(job_id, reason="owner cancelled self-update iteration")
+        get_runner().cancel_execution(job_id, reason="owner cancelled self-update iteration")
     return dict(root_id=root.request.update_id, status="stopped")

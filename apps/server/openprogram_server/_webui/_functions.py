@@ -88,7 +88,7 @@ def _discover_workflow_functions(seen: set[str]) -> list[dict]:
     for name, registered in _registry.items():
         if name in seen or name.startswith("_"):
             continue
-        fn = getattr(registered, "_fn", None) or registered
+        fn = inspect.unwrap(getattr(registered, "_fn", None) or registered)
         module = str(getattr(fn, "__module__", "") or "")
         if not (
             module.startswith("openprogram.programs.workflow.")

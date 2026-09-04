@@ -382,14 +382,14 @@ class Program:
                 else:
                     if is_owner_controlled_program_path(pkg_dir):
                         return True
-        if _has_installed_distribution(self.package):
-            return True
         try:
             spec = importlib.util.find_spec(self.package)
         except (ImportError, ValueError):
             return False
         if spec is None:
             return False
+        if _has_installed_distribution(self.package):
+            return True
         origin = getattr(spec, "origin", None)
         if origin and is_owner_controlled_program_path(origin):
             return True

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import time
 from pathlib import Path
 from typing import Optional
@@ -885,6 +886,168 @@ def test_gui_agent_browser_surface_is_captured_for_subprocess(monkeypatch) -> No
     assert seen["timeout_seconds"] == 300
     assert released == [captured]
 
+    fallback = surface_context.window_context()
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages",
+        lambda: (_ for _ in ()).throw(RuntimeError("desktop unavailable")),
+    )
+    monkeypatch.setattr(surface_context, "window_context", lambda: fallback)
+    seen.clear()
+    released.clear()
+    result = _run(wrapped.execute(
+        "call-2",
+        {"task": "read title", "surface": "browser"},
+        None,
+        None,
+    ))
+    assert result.content[0].text == "browser result"
+    assert seen["surface_context_snapshot"] is fallback
+    assert released == [fallback]
+
+
+@pytest.mark.parametrize("reports_runtime_id", [True, False])
+@pytest.mark.parametrize(
+    ("initial_status", "subprocess_out", "expected_status"),
+    [
+        ("running", {}, "completed"),
+        ("running", {"error": "child failed"}, "error"),
+        ("running", {"killed": True}, "interrupted"),
+        ("cancelling", {"killed": True}, "cancelled"),
+        ("completed", {"error": "late failure"}, "completed"),
+        ("error", {}, "error"),
+        ("interrupted", {}, "interrupted"),
+        ("cancelled", {}, "cancelled"),
+    ],
+)
+def test_gui_agent_parent_cleanup_failure_reaches_message_result(
+    monkeypatch,
+    tmp_path,
+    reports_runtime_id,
+    initial_status,
+    subprocess_out,
+    expected_status,
+) -> None:
+    from contextlib import nullcontext
+
+    import openprogram.agent.process_runner as process_runner
+    import openprogram.agent.session_db as session_db
+    import openprogram.webui._exec_dag as exec_dag
+    from openprogram.agent.dispatcher.runtime_attach import (
+        _wrap_agentic_runtime_block,
+    )
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.types import AgentTool
+    from openprogram.agentic_programming.function import create_pending_call_node
+    from openprogram.store import SessionNodeWriter, SessionStore
+
+    store = SessionStore(tmp_path / "sessions-git")
+    store.create_session("gui-cleanup", "main", title="t")
+    writer = SessionNodeWriter(store, "gui-cleanup")
+
+    async def original_execute(call_id, args, cancel, on_update):
+        raise AssertionError("gui_agent should run in the subprocess")
+
+    tool = AgentTool(
+        name="gui_agent",
+        description="probe",
+        parameters={"type": "object", "properties": {}},
+        label="probe",
+        execute=original_execute,
+    )
+    setattr(tool, "_is_agentic", True)
+    cleanup_result = {
+        "status": "infeasible",
+        "success": False,
+        "infeasible_declared": True,
+        "reason_code": "page_cleanup_failed",
+        "summary": (
+            "The agent-created background Page could not be confirmed closed."
+        ),
+        "handoff_instruction": "Close the remaining background Page.",
+    }
+
+    def run_subprocess(**kwargs):
+        node = create_pending_call_node(
+            pending_id="gui-call",
+            function_name="gui_agent",
+            arguments={"task": "inspect", "surface": "browser"},
+            expose="io",
+            caller="assistant-1",
+            store=writer,
+        )
+        assert node is not None
+        writer.append(node)
+        original_result = {"status": "succeeded", "success": True}
+        original_metadata = {"status": initial_status}
+        if initial_status in {"cancelling", "cancelled"}:
+            original_metadata["reason_code"] = "cancel.user"
+        if initial_status == "error":
+            original_metadata["error"] = "original failure"
+        if initial_status in {"completed", "error", "interrupted", "cancelled"}:
+            original_metadata["finished_at"] = 123.0
+        writer.update(
+            "gui-call",
+            output=original_result,
+            metadata=original_metadata,
+        )
+        child_result = {
+            "page_cleanup_failed": True,
+            "page_cleanup_result": cleanup_result,
+            **subprocess_out,
+        }
+        if reports_runtime_id:
+            child_result.update({
+                "ok": True,
+                "runtime_msg_id": "gui-call",
+                "text": json.dumps({"status": "succeeded", "success": True}),
+            })
+        return child_result
+
+    monkeypatch.setattr(
+        process_runner,
+        "run_agentic_in_subprocess",
+        run_subprocess,
+    )
+    monkeypatch.setattr(session_db, "default_db", lambda: store)
+    monkeypatch.setattr(exec_dag, "live_progress", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(exec_dag, "build_exec_dag", lambda *a, **kw: None)
+
+    wrapped = _wrap_agentic_runtime_block(
+        tool,
+        TurnRequest(
+            session_id="gui-cleanup",
+            user_text="",
+            agent_id="main",
+            source="web",
+        ),
+        lambda event: None,
+        "assistant-1",
+    )
+    result = _run(wrapped.execute(
+        "call-1",
+        {"task": "inspect", "surface": "browser"},
+        None,
+        None,
+    ))
+
+    assert json.loads(result.content[0].text) == cleanup_result
+    assert result.details == cleanup_result
+    assert result.is_error is False
+    persisted = next(
+        item for item in store.get_nodes("gui-cleanup") if item.id == "gui-call"
+    )
+    assert persisted.metadata["status"] == expected_status
+    assert persisted.output == cleanup_result
+    if initial_status in {"cancelling", "cancelled"}:
+        assert persisted.metadata["reason_code"] == "cancel.user"
+    if initial_status == "error":
+        assert persisted.metadata["error"] == "original failure"
+    if initial_status in {"completed", "error", "interrupted", "cancelled"}:
+        assert persisted.metadata["finished_at"] == 123.0
+    else:
+        assert persisted.metadata["finished_at"] > 0
+
 
 def test_gui_agent_max_seconds_bounds_the_subprocess(monkeypatch) -> None:
     from contextlib import nullcontext
@@ -1319,13 +1482,20 @@ def test_full_preset_is_exactly_the_exposed_universe() -> None:
     assert "full_preset_probe" in resolved
 
 
-def test_full_preset_leaks_no_private_helper() -> None:
+def test_full_preset_leaks_no_private_helper(monkeypatch) -> None:
     """Private helpers stay out of ``full``: leaf tools opt out with
     ``expose=False``, and internal @agentic_functions with
     ``as_tool=False`` never enter the shared registry at all. Deleting
     the hand-written whitelist must not let either reach the LLM."""
     import openprogram.programs as F
-    from openprogram.agentic_programming.function import _registry as _agentics
+    module = importlib.import_module("openprogram.agentic_programming.function")
+    # This invariant must not depend on another test having registered a
+    # private helper in the same xdist worker.
+    monkeypatch.setattr(module, "_registry", dict(module._registry))
+
+    @module.agentic_function(as_tool=False)
+    def full_preset_agentic_private_probe() -> str:
+        return "private"
 
     @function(name="full_preset_private_probe", expose=False)
     def p() -> str:
@@ -1334,7 +1504,7 @@ def test_full_preset_leaks_no_private_helper() -> None:
     resolved = {t.name for t in F.agent_tools(toolset="full",
                                               include_disabled=True)}
     assert "full_preset_private_probe" not in resolved
-    internal = {n for n, f in _agentics.items() if not f.as_tool}
+    internal = {n for n, f in module._registry.items() if not f.as_tool}
     assert internal, "expected at least one as_tool=False agentic helper"
     assert not (internal & resolved)
 

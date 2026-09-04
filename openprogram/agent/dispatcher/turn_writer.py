@@ -63,7 +63,7 @@ class TurnWriter:
             user_meta = {
                 k: v for k, v in user_msg.items()
                 if k not in {"id", "role", "content", "timestamp", "extra",
-                             "predecessor"}
+                             "predecessor", "caller"}
                 and v is not None
             }
             raw_extra = user_msg.get("extra")
@@ -94,7 +94,11 @@ class TurnWriter:
                     created_at=user_msg.get("timestamp") or time.time(),
                     role=ROLE_USER,
                     output=req.user_text,
-                    caller=_ROOT_ID,
+                    # A cross-session exact-node fork keeps its target-side
+                    # predecessor and records the source-side spawning node as
+                    # caller.  Same-session inherit/retry turns leave
+                    # spawn_caller unset and retain the historical ROOT edge.
+                    caller=req.spawn_caller or _ROOT_ID,
                     # Explicit root-level fork (branch_from=None) and
                     # the session's first turn both anchor at ROOT
                     # explicitly — same convention as @agentic_function

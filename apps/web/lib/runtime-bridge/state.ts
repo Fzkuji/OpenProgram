@@ -94,6 +94,29 @@ export interface RuntimeState {
   /** Session ids whose transcripts must be reloaded when their running tasks
    *  clear (dispatched function runs whose cards are already on disk). */
   __reloadOnTaskClear: Set<string>;
+  /** Optimistic exact-cancel entries awaiting their command acknowledgement.
+   *  The command frame is the only response that can distinguish a stale
+   *  rejection from the terminal execution update that follows it. */
+  _optimisticCancels: Record<string, {
+    sessionId: string;
+    task: {
+      session_id: string;
+      msg_id: string;
+      func_name?: string;
+      started_at?: number;
+      execution_id?: string;
+      status_version?: number;
+      cancelling?: boolean;
+    };
+    messageId?: string;
+    previousMessageStatus?: string;
+  }>;
+  /** Stops issued while a chat turn still has only its local placeholder.
+   *  `chat_ack` upgrades these to an exact execution cancel command. */
+  _optimisticStops: Record<string, {
+    messageId?: string;
+    previousMessageStatus?: string;
+  }>;
 }
 
 function initialSessionId(): string | null {
@@ -148,6 +171,8 @@ export const runtimeState: RuntimeState = {
   _postCheckoutScrollTo: null,
   _pendingExpandAttach: null,
   __reloadOnTaskClear: new Set<string>(),
+  _optimisticCancels: {},
+  _optimisticStops: {},
 };
 
 /** The shared app socket, or undefined when not connected yet. */

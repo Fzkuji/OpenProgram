@@ -19,8 +19,9 @@ export const formatJobResourceMessage = (
     : (d.job ? [d.job] : []);
   if (jobs.length === 0) return 'No jobs.';
   return jobs.map((job) => [
-    `${job.id ?? '?'}  ${job.status ?? '?'}  `
-      + `resource=${job.resource?.resource_state ?? 'unmetered'}`,
+    `${job.execution_id ?? job.resource?.execution_id ?? job.id ?? '?'}  ${job.status ?? '?'}  `
+      + `resource=${job.resource?.resource?.resource_state ?? 'unmetered'}`,
+    `  event_cursor=${JSON.stringify(job.resource?.event_cursor ?? {})}`,
     ...formatJobResource(job.resource).map((line) => `  ${line}`),
   ].join('\n')).join('\n\n');
 };

@@ -128,6 +128,23 @@ def test_followup_same_session_spawn_uses_attach(monkeypatch):
     assert "B's answer" not in seen["text"]    # context carries it, not the notice
 
 
+def test_followup_cross_session_spawn_uses_source_attach(monkeypatch):
+    """A cross-session spawn writes its pointer in the caller session.
+
+    The target commit is resolved through the pointer, so carrying the same
+    result inline would duplicate the child transcript in the next request.
+    """
+    job = _make_job(
+        caller_session_id="A",
+        caller_msg_id="cm1",
+        attach_pointer_id="ap1",
+    )
+    seen = _run_followup_inline(monkeypatch, job)
+    assert seen["session_id"] == "A"
+    assert "嵌在上面" in seen["text"]
+    assert "B's answer" not in seen["text"]
+
+
 def test_followup_same_session_delivery_carries_reply_inline(monkeypatch):
     """Same-session delivery to an EXISTING branch (agent(to=…) /
     send_message) writes no attach pointer, so the reply must travel

@@ -3,7 +3,7 @@
  *  `_handle_ws_command` looks the action up in `WS_ACTIONS` — the union
  *  of the `ACTIONS` dicts in
  *  `apps/server/openprogram_server/_webui/ws_actions/*.py`. An
- *  action with no entry there now gets an `action_error` frame back, but
+ *  action with no entry there now gets an `operation_error` frame back, but
  *  for a long time it was dropped in total silence: no handler, no error,
  *  no log. `/branch` shipped that way, sending `create_branch` to a
  *  backend that never had such a handler, and the command simply did
@@ -55,7 +55,7 @@ assert.ok(
     + "shape changed and this check is no longer reading it",
 );
 
-/* ---- frontend side: every `action: "…"` literal --------------------- */
+/* ---- frontend side: action literals in actual WS envelopes ------------ */
 
 // Actions assembled at runtime rather than written as a literal. Each
 // entry must name the reason it can't be checked statically.
@@ -63,55 +63,136 @@ const DYNAMIC = new Set([
   // none today — add here with a justification, don't widen the regex
 ]);
 
-/** True when this `action:` belongs to an HTTP request body rather than a
- *  WS frame — REST routes have their own `action` vocabulary
- *  (`/api/skills/discovery/sources` takes `{action: "add"}`) which has
- *  nothing to do with the socket registry. Detected by a `body:` on the
- *  same line or the two above it — that is how every fetch call here is
- *  written. Deliberately NOT keyed on `JSON.stringify`, which also wraps
- *  genuine `socket.send(JSON.stringify({action: …}))` frames. */
-function isHttpBody(lines, i) {
-  return lines
-    .slice(Math.max(0, i - 2), i + 1)
-    .some((l) => /\bbody:/.test(l));
+/** Find the end of an object literal without treating braces in strings or
+ * comments as structure. This is intentionally a small lexical scanner:
+ * the check only needs to inspect the top-level fields of send envelopes,
+ * not parse TypeScript. */
+function objectEnd(text, open) {
+  let depth = 0;
+  let quote = null;
+  let lineComment = false;
+  let blockComment = false;
+  for (let i = open; i < text.length; i += 1) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (lineComment) {
+      if (ch === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (ch === "*" && next === "/") {
+        blockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (ch === "\\") i += 1;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      lineComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      blockComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    if (ch === "}" && --depth === 0) return i;
+  }
+  return -1;
 }
 
-/** TypeScript method parameter types can also contain `action: "…"`.
- * They describe a local bridge argument, not a WebSocket frame field. */
-function isMethodParameterType(line) {
-  return /^\s*\w+\??\([^)]*\baction:\s*["'][^;]+\)\s*:/.test(line);
+function topLevelActions(text, open, close) {
+  const actions = [];
+  let depth = 0;
+  let quote = null;
+  let lineComment = false;
+  let blockComment = false;
+  for (let i = open + 1; i < close; i += 1) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (lineComment) {
+      if (ch === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (ch === "*" && next === "/") {
+        blockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (ch === "\\") i += 1;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      lineComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      blockComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "{") {
+      depth += 1;
+      continue;
+    }
+    if (ch === "}") {
+      depth -= 1;
+      continue;
+    }
+    if (depth === 0) {
+      const match = text.slice(i).match(/^action\s*:\s*(["'])([\w.:-]+)\1/);
+      if (match) {
+        actions.push({ action: match[2], offset: i });
+        i += match[0].length - 1;
+      }
+    }
+  }
+  return actions;
 }
 
-/** `wsRequest("action", …)` / `filesWsRequest<T>("action", …)` pass the
- *  action as a positional first argument, usually on its own line — the
- *  per-line `action:` regex above never sees those. The generic parameter
- *  (`<TreeResult>`, `<{ … }>`) never contains a paren, so `[^(]*?` skips
- *  it safely; the opener and the string may sit on different lines, so
- *  this runs over the whole file text. Template-literal actions
- *  (`` `project_file_${op}` ``) stay invisible — list them in DYNAMIC. */
-const WS_REQUEST_RE =
-  /\b(?:files)?[wW]sRequest(?:<[^(]*?>)?\(\s*["']([\w.:-]+)["']/g;
+/** Return literal action fields from actual WS send calls. Plain object
+ * fields elsewhere are intentionally ignored: they include local callback
+ * types, REST bodies, revision commands, and other non-WS vocabularies. */
+function sentActions(text) {
+  const actions = [];
+  const sender =
+    /\b(?:wsSend|send|[A-Za-z_$][\w$]*\.send)\s*\(\s*(?:JSON\.stringify\s*\(\s*)?\{/g;
+  for (const call of text.matchAll(sender)) {
+    const open = call.index + call[0].lastIndexOf("{");
+    const close = objectEnd(text, open);
+    if (close < 0) continue;
+    actions.push(...topLevelActions(text, open, close));
+  }
+  return actions;
+}
 
 const hits = [];
 for (const path of sources(webRoot)) {
   // This file lists action names on purpose.
   if (path.endsWith("check-ws-actions.mjs")) continue;
   const text = readFileSync(path, "utf8");
-  const lines = text.split("\n");
-  lines.forEach((line, i) => {
-    if (/^\s*(\*|\/\/)/.test(line)) return;
-    if (isMethodParameterType(line)) return;
-    for (const m of line.matchAll(/\baction:\s*["']([\w.:-]+)["']/g)) {
-      const act = m[1];
-      if (registered.has(act) || DYNAMIC.has(act)) continue;
-      if (isHttpBody(lines, i)) continue;
-      hits.push(`${path.slice(webRoot.length)}:${i + 1}: action "${act}"`);
-    }
-  });
-  for (const m of text.matchAll(WS_REQUEST_RE)) {
-    const act = m[1];
+  for (const { action: act, offset } of sentActions(text)) {
     if (registered.has(act) || DYNAMIC.has(act)) continue;
-    const lineNo = text.slice(0, m.index).split("\n").length;
+    const lineNo = text.slice(0, offset).split("\n").length;
     hits.push(`${path.slice(webRoot.length)}:${lineNo}: action "${act}"`);
   }
 }
@@ -121,7 +202,7 @@ assert.deepEqual(
   [],
   "these actions have no handler in "
     + "apps/server/openprogram_server/_webui/ws_actions/*.py "
-    + `ACTIONS — the backend will answer with action_error:\n${hits.join("\n")}`,
+    + `ACTIONS — the backend will answer with operation_error:\n${hits.join("\n")}`,
 );
 
 console.log(`check-ws-actions: ok (${registered.size} backend actions)`);

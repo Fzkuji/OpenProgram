@@ -234,6 +234,29 @@ def _compaction_exec_at(
     return at
 
 
+def _ordered_fn_run_siblings(
+    by_id_all: dict,
+    siblings_by_pred: dict,
+    mid_,
+    norm_pred,
+) -> list:
+    """Return fn-run sibling ids in timestamp and source order."""
+    try:
+        src = by_id_all.get(mid_)
+    except TypeError:
+        return []
+    if not isinstance(src, dict):
+        return []
+    try:
+        sibs = siblings_by_pred.get(norm_pred(src), ())
+    except TypeError:
+        return []
+    ordered = sorted(
+        sibs, key=lambda item: (item[0].get("created_at") or 0, item[1])
+    )
+    return [item[0].get("id") for item in ordered]
+
+
 def splice_compaction_event_rows(
     shown: list[dict],
     graph: list[dict],
@@ -702,8 +725,7 @@ async def handle_load_session(ws, cmd: dict):
             active_branch_chain,
             deepest_leaf,
             head_or_tip,
-            sibling_index,
-            siblings as _siblings,
+            sibling_navigation_index,
         )
         from openprogram.agent.session_db import default_db as _db_for_load
         from openprogram.webui.persistence import aggregate_tool_messages
@@ -850,7 +872,14 @@ async def handle_load_session(ws, cmd: dict):
         # all root-level calls AND their predecessor-less sub-calls (the
         # "1/12" the user saw). Restrict the sibling set to fn-run entry
         # nodes so a fresh, model-anchored session shows exactly 2/2.
-        by_id_all = {mm.get("id"): mm for mm in all_msgs}
+        by_id_all = {}
+        for mm in all_msgs:
+            if not isinstance(mm, dict):
+                continue
+            try:
+                by_id_all[mm.get("id")] = mm
+            except TypeError:
+                continue
 
         def _norm_pred(mm):
             """The fork-point id of a run: its conversation predecessor,
@@ -860,26 +889,35 @@ async def handle_load_session(ws, cmd: dict):
             p = mm.get("predecessor") or mm.get("caller") or None
             return None if p == "ROOT" else p
 
-        _fn_run_ids = {
-            mm.get("id") for mm in all_msgs
-            if mm.get("role") in ("tool", "code")
-            and _is_top_function_run(mm, by_id_all)
-        }
+        _fn_run_ids = set()
+        _fn_run_siblings_by_pred = {}
+        for position, mm in enumerate(all_msgs):
+            if not isinstance(mm, dict):
+                continue
+            message_id = mm.get("id")
+            try:
+                if (
+                    mm.get("role") in ("tool", "code")
+                    and _is_top_function_run(mm, by_id_all)
+                ):
+                    _fn_run_ids.add(message_id)
+                    _fn_run_siblings_by_pred.setdefault(
+                        _norm_pred(mm), []
+                    ).append((mm, position))
+            except TypeError:
+                continue
 
         def _fn_run_siblings(mid_):
             """Ordered ids of the fn-run entries sharing ``mid_``'s
             predecessor (self included), by created_at then insertion."""
-            src = by_id_all.get(mid_)
-            if src is None:
-                return []
-            pred = _norm_pred(src)
-            sibs = [
-                mm for mm in all_msgs
-                if mm.get("id") in _fn_run_ids and _norm_pred(mm) == pred
-            ]
-            sibs.sort(key=lambda x: (x.get("created_at") or 0, all_msgs.index(x)))
-            return [mm.get("id") for mm in sibs]
+            return _ordered_fn_run_siblings(
+                by_id_all, _fn_run_siblings_by_pred, mid_, _norm_pred,
+            )
 
+        _chat_navigation = sibling_navigation_index(
+            all_msgs,
+            target_ids={m.get("id") for m in chain if m.get("id")},
+        )
         shown = []
         for m in chain:
             mid = m.get("id")
@@ -890,19 +928,15 @@ async def handle_load_session(ws, cmd: dict):
                 i = ids.index(mid) if mid in ids else -1
                 idx = (i + 1) if i >= 0 else 0
                 total = len(ids)
-            else:
-                idx, total = sibling_index(all_msgs, mid)
-                ids = None
-            prev_id = next_id = None
-            if total > 1:
-                if ids is None:
-                    sibs = _siblings(all_msgs, mid)
-                    ids = [s.get("id") for s in sibs]
-                i = ids.index(mid) if mid in ids else -1
+                prev_id = next_id = None
                 if i > 0:
                     prev_id = deepest_leaf(all_msgs, ids[i - 1])
-                if 0 <= i < len(ids) - 1:
+                if 0 <= i < total - 1:
                     next_id = deepest_leaf(all_msgs, ids[i + 1])
+            else:
+                idx, total, prev_id, next_id = _chat_navigation.get(
+                    mid, (0, 0, None, None),
+                )
             # Enrich attach pointer rows with embed stats so the
             # AttachCard can render "EMBEDS N messages · M tokens"
             # without a follow-up round trip. Cost = one O(1)
@@ -1075,16 +1109,22 @@ async def handle_load_session(ws, cmd: dict):
         # questions for this session as the SAME frame the live path sends,
         # so the frontend's existing card logic redraws with no extra round trip.
         try:
-            from openprogram.agent.questions import get_question_registry
-            for q in get_question_registry().list_pending(session_id):
+            from openprogram.execution import default_store
+            from openprogram.execution.waits import DurableWaitStore
+            for q in DurableWaitStore(default_store()).list_open(session_id=session_id):
+                request = dict(q.request)
+                execution = default_store().get_execution(q.execution_id)
                 await ws.send_text(json.dumps({
                     "type": "question.asked",
                     "data": {
-                        "id": q.id, "session_id": q.session_id, "kind": q.kind,
-                        "prompt": q.prompt, "options": q.options, "multi": q.multi,
-                        "allow_custom": q.allow_custom, "detail": q.detail,
-                        "schema": q.schema,        # kind="form": replay fields
-                        "questions": q.questions,  # kind="ask_many": replay too
+                        "id": q.wait_id, "session_id": session_id, "kind": q.kind,
+                        "execution_id": q.execution_id,
+                        "wait_generation": q.claim_generation,
+                        "expected_version": execution.status_version if execution is not None else 0,
+                        "prompt": request.get("prompt", ""), "options": request.get("options", []), "multi": request.get("multi", False),
+                        "allow_custom": request.get("allow_custom", True), "detail": request.get("detail", ""),
+                        "schema": request.get("schema", {}),
+                        "questions": request.get("questions", []),
                         "expires_at": q.expires_at,
                     },
                 }, default=str))
@@ -1162,35 +1202,6 @@ async def handle_follow_up_answer(ws, cmd: dict):
         fq = _s._follow_up_queues.get(fq_session_id)
     if fq is not None:
         fq.put(answer)
-
-
-def _resolve_question(qid: str, outcome: str, value=None) -> None:
-    """收口：resolve registry + 广播收回别处 UI。共享实现在 questions.py
-    （channel 的 /answer 也走它），这里保留薄封装供 WS handler 调用。"""
-    from openprogram.agent.questions import resolve_question_and_broadcast
-    resolve_question_and_broadcast(qid, outcome, value)
-
-
-async def handle_question_reply(ws, cmd: dict):
-    """用户回答了 runtime.ask 的问题（user-input-requests.md Phase 1）。
-    approval 的"总是允许"带 scope="always"——打包进 value，await_user_approval
-    会拆出 scope 决定是否写回持久 allow 规则（permission-model.md §6.3）。"""
-    qid = cmd.get("id") or ""
-    answer = cmd.get("answer")
-    scope = cmd.get("scope")
-    if qid:
-        value = {"answer": answer, "scope": scope} if scope else answer
-        _resolve_question(qid, "answered", value)
-
-
-async def handle_question_reject(ws, cmd: dict):
-    """用户拒绝回答（runtime.ask 抛 UserDeclined / confirm 返回 False）。
-    approval 的拒绝可带 reason —— 作为 declined 值，让工具批准把它变成回给
-    模型的错误文本（opencode 做法）。"""
-    qid = cmd.get("id") or ""
-    reason = cmd.get("reason")
-    if qid:
-        _resolve_question(qid, "declined", reason)
 
 
 # 权限规则跟着**项目**走（见 permission-model.md §2.3）。请求可直接带
@@ -1502,8 +1513,6 @@ ACTIONS = {
     "get_full_tool_output": handle_get_full_tool_output,
     "get_run_state": handle_get_run_state,
     "follow_up_answer": handle_follow_up_answer,
-    "question_reply": handle_question_reply,
-    "question_reject": handle_question_reject,
     "set_working_dirs": handle_set_working_dirs,
     "set_sandbox": handle_set_sandbox,
     "search_messages": handle_search_messages,

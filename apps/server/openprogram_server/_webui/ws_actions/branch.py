@@ -47,6 +47,39 @@ def _attach_ref(m: dict) -> Optional[str]:
     return src
 
 
+def _extract_attach_session_id(m: dict) -> Optional[str]:
+    """Return the session namespace referenced by an attach pointer."""
+    if m.get("function") != "attach":
+        return None
+    raw = m.get("attach") or m.get("extra")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    if isinstance(raw, dict) and isinstance(raw.get("attach"), dict):
+        raw = raw["attach"]
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get("session_id")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _is_merge_temp_attach(m: dict) -> bool:
+    """Whether an attach row is transient merge input, not a spawn."""
+    if m.get("function") != "attach":
+        return False
+    raw = m.get("attach") or m.get("extra")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return False
+    if isinstance(raw, dict) and isinstance(raw.get("attach"), dict):
+        raw = raw["attach"]
+    return bool(isinstance(raw, dict) and raw.get("merge_temp"))
+
+
 def _extract_attach_label(m: dict) -> Optional[str]:
     """``attach.label`` from an attach pointer row, if present."""
     if m.get("function") != "attach":

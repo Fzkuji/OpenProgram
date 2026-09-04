@@ -131,31 +131,21 @@ export const api = {
     sessionId: string,
     body: { action: string; prompt?: string; [key: string]: unknown },
   ) =>
-    jsonFetch<{ goal: Record<string, unknown>; invoke?: { name: string; kwargs: Record<string, unknown> } }>(
+    jsonFetch<{ goal: Record<string, unknown>; invoke?: { name: string; kwargs: Record<string, unknown> }; resume_error?: string; stop_error?: string }>(
       `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
       { method: "POST", body: JSON.stringify(body) },
     ),
 
+  getGoal: (sessionId: string, signal?: AbortSignal) => jsonFetch<{
+    goal: Record<string, unknown>;
+    execution?: { execution_id?: string | null; status?: string; finished?: boolean | null };
+  }>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
+    { signal },
+  ),
+
   listHistory: () =>
     jsonFetch<{ id: string; title: string; created_at?: number }[]>("/api/history"),
-
-  pause: (session_id: string) =>
-    jsonFetch<{ ok: true }>("/api/pause", {
-      method: "POST",
-      body: JSON.stringify({ session_id }),
-    }),
-
-  resume: (session_id: string) =>
-    jsonFetch<{ ok: true }>("/api/resume", {
-      method: "POST",
-      body: JSON.stringify({ session_id }),
-    }),
-
-  stop: (session_id: string) =>
-    jsonFetch<{ ok: true }>("/api/stop", {
-      method: "POST",
-      body: JSON.stringify({ session_id }),
-    }),
 
   // Pin a (provider, model) for this conversation. ``session_id`` is
   // required — without it the backend only updates the global default

@@ -467,6 +467,7 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
   actions?: React.ReactNode;
   defaultKidsOpen?: boolean;
 }) {
+  const { text } = useTranslation();
   const kids = node.children || [];
   const running = node.status === "running"
     && !(node.duration_ms || node.end_time);
@@ -478,7 +479,7 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
     : undefined;
   if (params && Object.keys(params).length) noteParts.push(short(params, 70));
   if (node.duration_ms) noteParts.push(`${Math.round(node.duration_ms)}ms`);
-  const outRaw = node.error || node.output;
+  const outRaw = node.error || (node.output ?? node.raw_reply);
   const out = (outRaw === undefined || outRaw === null
     || String(outRaw).trim() === "" || String(outRaw).trim() === "null")
     ? undefined : decodeEscapes(String(outRaw));
@@ -495,6 +496,9 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
   };
   const isLlm = node.node_type === "exec" || node.name === "LLM";
   if (out && !node.error) noteParts.push("→ " + short(out, 60));
+  if (isLlm && !out && !running && !isError) {
+    noteParts.push(text("No text output", "无文本输出"));
+  }
   return (
     <StepRow
       icon={isLlm ? "llm" : "function"}
@@ -504,7 +508,7 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
       running={running}
       actions={actions}
       copyText={JSON.stringify(
-        { name: node.name, params: node.params, output: node.output, error: node.error },
+        { name: node.name, params: node.params, output: node.output ?? node.raw_reply, error: node.error },
         null, 2)}
       detail={detail}
       subSteps={kids.length > 0
@@ -551,9 +555,15 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
   }
   function cancel(e: React.MouseEvent) {
     e.stopPropagation();
-    const executionId = attach.job_id || card.id;
-    if (executionId) {
-      wsSend({ action: "execution.cancel", execution_id: executionId });
+    const executionId = attach.execution_id;
+    const expectedVersion = attach.status_version;
+    if (executionId && typeof expectedVersion === "number") {
+      wsSend({
+        action: "execution.cancel",
+        command_id: crypto.randomUUID(),
+        execution_id: executionId,
+        expected_version: expectedVersion,
+      });
     }
   }
   const preview = card.content || "";
@@ -577,7 +587,9 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
       actions={
         <>
           <MessageTimestamp timestamp={card.timestamp} />
-          {(running || cancelling) && (attach.job_id || card.id) ? (
+          {(running || cancelling)
+            && attach.execution_id
+            && typeof attach.status_version === "number" ? (
             <button
               type="button"
               className="tl-btn"

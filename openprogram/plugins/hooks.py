@@ -12,8 +12,9 @@ Dispatch kind follows the registry (``openprogram/events/registry.py``):
 * **notify** events — ``bus.subscribe``; the handler observes, its return
   value is ignored, and any exception is logged as a warning (a bad plugin
   never breaks the emitting code path).
-* **gate** events (``tool.before``) — ``bus.subscribe_gate``; the handler
-  participates in the veto: return ``None``/falsy to allow, a reason
+* **gate** events (``tool.before`` and ``turn.stop``) —
+  ``bus.subscribe_gate``; the handler participates in the veto: return
+  ``None``/falsy to allow, a reason
   string to deny; raising :class:`ToolGateDenied` denies with its message;
   any other exception is logged as a warning and allows (fail-open).
 

@@ -94,7 +94,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp", "trash", "backup",
         "recordings", "stop", "status", "restart", "upgrade", "help",
-        "execution", "jobs", "self-update",
+        "execution", "jobs", "scheduler-worker", "cron-worker", "self-update",
     }
     bypass_flags = {
         "--print", "-p", "--help", "-h", "--version", "--print-prompt",
@@ -682,11 +682,35 @@ def main():
         return
 
     if args.command == "execution":
-        from openprogram.cli.commands.execution import _cmd_execution_cancel
+        from openprogram.cli.commands.execution import _cmd_execution_control, _cmd_execution_wait
 
         verb = getattr(args, "execution_verb", None)
-        if verb == "cancel":
-            sys.exit(_cmd_execution_cancel(args.execution_id))
+        if verb in {"pause", "continue", "step", "steer", "cancel", "fork", "retry"}:
+            payload = {}
+            if verb == "steer":
+                payload = {"message": args.message}
+            elif verb == "retry" and args.checkpoint_id:
+                payload = {"checkpoint_id": args.checkpoint_id}
+            elif verb == "fork":
+                payload = {
+                    "manifest_id": args.manifest_id,
+                    "checkpoint_id": args.checkpoint_id,
+                    "proof_hash": args.proof_hash,
+                }
+            sys.exit(_cmd_execution_control(
+                verb,
+                args.execution_id,
+                expected_version=args.expected_version,
+                command_id=args.command_id,
+                payload=payload,
+            ))
+        if verb in {"wait-answer", "wait-decline"}:
+            sys.exit(_cmd_execution_wait(
+                verb.replace("-", "_"), args.execution_id,
+                expected_version=args.expected_version, command_id=args.command_id,
+                wait_id=args.wait_id, generation=args.generation,
+                value=args.wait_value,
+            ))
         _need_subcommand(args._cmd_parser)
 
     if args.command == "jobs":
@@ -1029,11 +1053,15 @@ def main():
                 as_json=as_json,
             ))
         if verb == "list":
-            sys.exit(_cmd_subagent_list(args.session, as_json=args.json))
+            sys.exit(_cmd_subagent_list(
+                session=args.session,
+                as_json=getattr(args, "json", False),
+            ))
         if verb == "show":
-            sys.exit(_cmd_subagent_show(args.job_id, as_json=args.json))
-        if verb == "cancel":
-            sys.exit(_cmd_subagent_cancel(args.job_id, as_json=args.json))
+            sys.exit(_cmd_subagent_show(
+                job_id=args.job_id,
+                as_json=getattr(args, "json", False),
+            ))
         _need_subcommand(args._cmd_parser)
 
     if args.command in ("scheduler-worker", "cron-worker"):
@@ -1119,11 +1147,10 @@ from openprogram.cli.commands.browser import (  # noqa: E402,F401
     _cmd_browser_rm,
 )
 from openprogram.cli.commands.subagent import (  # noqa: E402,F401
-    _cmd_subagent_cancel,
-    _cmd_subagent_list,
     _cmd_subagent_spawn,
-    _cmd_subagent_show,
     _cmd_subagent_merge,
+    _cmd_subagent_list,
+    _cmd_subagent_show,
 )
 
 from openprogram.cli.commands.sessions import (  # noqa: E402,F401

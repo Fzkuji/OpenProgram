@@ -1,4 +1,4 @@
-"""Runtime / misc WS actions: list_models, switch_model, browser, stop,
+"""Runtime / misc WS actions: list_models, switch_model, browser,
 stats, sync. Mirrors several REST endpoints for ws-only clients (the
 Ink CLI) plus the reconnect-sync handshake.
 """
@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from typing import Any
 
 # WELCOME_STATS_SESSION_LIMIT lives on the server module — we read it lazily.
 
@@ -199,92 +201,605 @@ async def handle_browser(ws, cmd: dict):
     }, default=str))
 
 
-# Compatibility: WS ``stop`` resolves the current execution and calls
-# cancel_execution. ``mode="force"`` is ignored as a distinct user action.
-
-
-def _broadcast_execution(execution: dict) -> None:
+def _broadcast_execution(execution: dict, event_cursor: dict) -> None:
+    from openprogram.execution.public import execution_update_frame
     from openprogram.webui import server as _s
-    _s._broadcast(json.dumps({
-        "type": "execution.updated",
-        "execution": execution,
-    }, default=str))
+    _s._broadcast(json.dumps(
+        execution_update_frame(execution, event_cursor), default=str,
+    ))
 
 
-async def handle_stop(ws, cmd: dict):
-    """Compatibility session stop: resolve the active execution and cancel it.
+def trusted_runtime_actor(scope, *, surface: str | None = None) -> dict | None:
+    """Resolve runtime-control authority from authenticated transport state."""
+    from openprogram.agent.authority import normalize_authority
 
-    ``mode="force"`` and a second click are the same cancel operation.
+    state = scope.get("state") if isinstance(scope, dict) else None
+    authority = state.get("authority") if isinstance(state, dict) else None
+    actor = normalize_authority(authority)
+    if not actor or actor.get("authority_tier") != "owner":
+        return None
+    if isinstance(authority, dict):
+        for field in ("project_ids", "session_ids", "execution_actions"):
+            value = authority.get(field)
+            if isinstance(value, (list, tuple, frozenset, set)):
+                actor[field] = tuple(str(item) for item in value)
+    if surface is not None:
+        actor["surface"] = surface
+    return actor
+
+
+def _trusted_runtime_actor(ws) -> dict | None:
+    return trusted_runtime_actor(getattr(ws, "scope", None), surface="ws")
+
+
+_PUBLIC_COMMAND_ACTIONS = {
+    "pause": "execution.pause",
+    "continue": "execution.continue",
+    "step": "execution.step",
+    "steer": "execution.steer",
+    "cancel": "execution.cancel",
+    "fork": "execution.fork",
+    "retry": "execution.retry",
+    "wait_answer": "execution.wait.answer",
+    "wait_decline": "execution.wait.decline",
+}
+
+
+def validate_execution_command_request(cmd: dict, operation: str) -> str | None:
+    """Validate the one public command envelope before touching a runtime.
+
+    Target identity, actor, session, project, lease, and capability data are
+    server-owned.  A transport cannot supply any of them as a second control
+    path.
     """
-    from openprogram.agent import run_control
-    run_control.set_execution_update_hook(_broadcast_execution)
+    if operation not in _PUBLIC_COMMAND_ACTIONS or not isinstance(cmd, dict):
+        return "invalid_command"
+    if set(cmd) - {"type", "action", "command_id", "execution_id", "expected_version", "payload"}:
+        return "invalid_command"
+    if cmd.get("type") != "execution.command" or cmd.get("action") != _PUBLIC_COMMAND_ACTIONS[operation]:
+        return "invalid_command"
+    command_id = cmd.get("command_id")
+    execution_id = cmd.get("execution_id")
+    expected_version = cmd.get("expected_version")
+    payload = cmd.get("payload", {})
+    if (
+        not isinstance(command_id, str) or not command_id or len(command_id) > 256
+        or not isinstance(execution_id, str) or not execution_id or len(execution_id) > 256
+        or type(expected_version) is not int or expected_version < 0
+        or not isinstance(payload, dict)
+    ):
+        return "invalid_command"
+    if operation in {"pause", "continue", "step", "cancel"}:
+        return None if not payload else "invalid_payload"
+    if operation == "steer":
+        message = payload.get("message")
+        return (
+            None
+            if set(payload) == {"message"} and isinstance(message, str)
+            and message.strip() and len(message) <= 4096
+            else "invalid_payload"
+        )
+    if operation == "retry":
+        checkpoint_id = payload.get("checkpoint_id")
+        return (
+            None
+            if set(payload).issubset({"checkpoint_id"})
+            and (checkpoint_id is None or isinstance(checkpoint_id, str) and checkpoint_id)
+            else "invalid_payload"
+        )
+    if operation == "fork":
+        return (
+            None
+            if set(payload) == {"manifest_id", "checkpoint_id", "proof_hash"}
+            and isinstance(payload.get("manifest_id"), str) and payload["manifest_id"]
+            and isinstance(payload.get("checkpoint_id"), str) and payload["checkpoint_id"]
+            and isinstance(payload.get("proof_hash"), str) and payload["proof_hash"]
+            else "invalid_payload"
+        )
+    if operation == "wait_answer":
+        return (
+            None
+            if set(payload) == {"wait_id", "generation", "answer"}
+            and isinstance(payload.get("wait_id"), str) and payload["wait_id"]
+            and type(payload.get("generation")) is int
+            else "invalid_payload"
+        )
+    if operation == "wait_decline":
+        return (
+            None
+            if set(payload).issubset({"wait_id", "generation", "reason"})
+            and {"wait_id", "generation"}.issubset(payload)
+            and isinstance(payload.get("wait_id"), str) and payload["wait_id"]
+            and type(payload.get("generation")) is int
+            and (payload.get("reason") is None or isinstance(payload.get("reason"), str))
+            else "invalid_payload"
+        )
+    return "invalid_command"
 
-    session_id = cmd.get("session_id") or cmd.get("conv_id")
-    execution_id = (cmd.get("execution_id") or "").strip()
-    if not execution_id and session_id:
-        execution_id = run_control.resolve_foreground_execution(session_id) or ""
-    if not execution_id:
-        # 静默吞掉会让"点了停止没反应"无迹可查（HTTP 对应入口回 404）。
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {
-                "code": "ExecutionNotFound",
-                "message": "stop: no active execution for session "
-                           f"{session_id or '(none)'}",
-            },
-        }))
-        return
+
+def _authorize_execution(
+    actor: dict | None,
+    action: str,
+    execution,
+    *,
+    bound_session: str | None = None,
+) -> Any:
+    """Authorize one exact target without exposing cross-scope existence."""
+    from openprogram.execution.authorization import authorize_execution_action
+    from openprogram.execution.public import project_id_for_session
+
+    if bound_session is not None and bound_session != execution.session_id:
+        from openprogram.execution.authorization import ExecutionAuthorizationError
+        raise ExecutionAuthorizationError("execution is not visible")
+    return authorize_execution_action(
+        actor or {}, action, execution,
+        {"project_id": project_id_for_session(execution.session_id),
+         "session_id": execution.session_id},
+    )
+
+
+def _public_event(event) -> dict:
+    """The reconnect transport never exposes raw prompt/output payloads."""
+    from openprogram.execution.audit import redact_audit_payload
+
+    return {
+        "sequence": event.execution_sequence,
+        "execution_id": event.execution_id,
+        "kind": event.kind,
+        "payload": redact_audit_payload(event.payload),
+        "execution_version": event.execution_version,
+        "command_id": event.command_id,
+    }
+
+
+def _public_execution_snapshot(execution) -> tuple[dict, dict]:
+    """Return the one snapshot shape shared by command and reconnect paths."""
+    from openprogram.execution import default_store
+    from openprogram.execution.public import execution_snapshot
+
+    execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
+    resource = None
+    job = None
     try:
-        execution = run_control.cancel_execution(execution_id)
-    except (
-        run_control.ExecutionNotFound,
-        run_control.ExecutionNotCancellable,
-    ) as exc:
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {
-                "code": type(exc).__name__,
-                "message": str(exc),
-            },
-        }))
+        from openprogram.agent.job.runner import runner_for_execution_store
+
+        runner = runner_for_execution_store(default_store())
+        view = runner.get_job_resource_view(execution_data["execution_id"]) if runner else None
+        if view is not None:
+            # ExecutionSnapshot.resource contains only the resource
+            # projection.  JobResourceDTO remains the enclosing job view on
+            # dedicated job surfaces.
+            resource = view.resource
+            job = runner.get_job(execution_data["execution_id"])
+    except Exception:
+        pass
+    # Dict inputs are rejection placeholders, not authorized records.  Never
+    # resolve them through the store here: doing so would turn an unauthorized
+    # command into a readable execution snapshot.
+    record = execution if hasattr(execution, "execution_id") else None
+    if record is not None:
+        execution_data = execution_snapshot(
+            record, store=default_store(), resource=resource,
+            job_id=getattr(job, "id", None), job=job,
+        ).to_dict()
+    cursor = {
+        "execution_id": execution_data.get("execution_id"),
+        "next_sequence": int(execution_data.get("event_sequence") or 0) + 1,
+        "snapshot_status_version": execution_data.get("status_version"),
+    }
+    return execution_data, cursor
+
+
+async def _send_command_update(ws, command, execution) -> None:
+    # Job activation is asynchronous and may finish between command acceptance
+    # and transport serialization.  Refresh the command and execution together
+    # until the command status is stable, so a response never combines an old
+    # accepted command with a newer terminal resource snapshot.
+    command_data = command.to_dict() if hasattr(command, "to_dict") else dict(command)
+    has_public_snapshot = hasattr(execution, "execution_id")
+    execution_data: dict = {}
+    cursor: dict = {}
+    if has_public_snapshot:
+        execution_data, cursor = _public_execution_snapshot(execution)
+        for _ in range(3):
+            try:
+                from openprogram.execution import default_store
+
+                store = default_store()
+                latest_command = store.get_command(command_data.get("command_id", ""))
+                latest_execution = store.get_execution(command_data.get("execution_id", ""))
+                if latest_command is not None and command_data.get("status") != "rejected":
+                    command = latest_command
+                    command_data = latest_command.to_dict()
+                if latest_execution is not None:
+                    execution = latest_execution
+            except Exception:
+                break
+            execution_data, cursor = _public_execution_snapshot(execution)
+            current = store.get_command(command_data.get("command_id", ""))
+            if current is None or current.to_dict() == command_data:
+                break
+            command = current
+        else:
+            execution_data, cursor = _public_execution_snapshot(execution)
+    if command_data.get("kind") == "execution.step":
+        checkpoint_id = getattr(execution, "checkpoint_head_id", None)
+        if checkpoint_id:
+            try:
+                from openprogram.execution import ExecutionCheckpointStore, default_store
+
+                checkpoint = ExecutionCheckpointStore(default_store()).get(checkpoint_id)
+                command_data["managed_action_count"] = len(
+                    checkpoint.completed_actions if checkpoint is not None else (),
+                )
+            except Exception:
+                command_data["managed_action_count"] = 0
+        else:
+            command_data["managed_action_count"] = 0
+    update = {
+        "type": "execution.command.updated", "command": command_data,
+    }
+    if has_public_snapshot:
+        update.update({"execution": execution_data, "event_cursor": cursor})
+    update["data"] = {
+        key: value for key, value in update.items() if key != "type"
+    }
+    await ws.send_text(json.dumps(update, default=str))
+    if not has_public_snapshot:
         return
-    _broadcast_execution(execution)
-    from openprogram.webui import server as _s
-    _s._release_session_occupancy_for_execution(execution)
+    from openprogram.execution.public import execution_update_frame
+    await ws.send_text(json.dumps(
+        execution_update_frame(execution_data, cursor), default=str,
+    ))
+    _broadcast_execution(execution_data, cursor)
+
+
+def _rejected_command(cmd: dict, code: str, latest_snapshot: dict | None = None) -> dict:
+    value = {
+        "command_id": str(cmd.get("command_id") or ""),
+        "execution_id": str(cmd.get("execution_id") or ""),
+        "status": "rejected", "result_version": None,
+        "rejection_code": code,
+    }
+    if latest_snapshot is not None:
+        value["latest_snapshot"] = latest_snapshot
+    return value
+
+
+async def submit_execution_control(
+    cmd: dict,
+    operation: str,
+    *,
+    actor: dict | None,
+    bound_session: str | None = None,
+    surface: str | None = None,
+):
+    """Submit one authenticated exact command through RuntimeControlService."""
+    from openprogram.execution import default_control_service, default_store
+    from openprogram.execution.store import ExecutionConflict, CommandConflict
+    from openprogram.execution.attempts import AttemptConflict
+    from openprogram.execution.state_machine import InvalidCommand
+
+    from openprogram.agent.authority import has_capability, normalize_authority
+
+    raw_actor = dict(actor) if isinstance(actor, dict) else {}
+    actor = normalize_authority(raw_actor)
+    validation_error = validate_execution_command_request(cmd, operation)
+    execution_id = cmd.get("execution_id")
+    command_id = cmd.get("command_id")
+    expected_version = cmd.get("expected_version")
+    if not actor or not has_capability(actor, "runtime.control") or validation_error is not None:
+        return _rejected_command(cmd, validation_error or "unauthorized"), {
+            "execution_id": execution_id or "", "status_version": None,
+        }
+    store = default_store()
+    service = default_control_service()
+    execution = store.get_execution(execution_id)
+    if execution is None:
+        return _rejected_command(cmd, "not_found"), {
+            "execution_id": execution_id, "status_version": None,
+        }
+    try:
+        authorization = _authorize_execution(
+            raw_actor, _PUBLIC_COMMAND_ACTIONS[operation], execution,
+            bound_session=bound_session,
+        )
+        # Command and audit records retain only transport-trusted control
+        # metadata.  The execution binding is resolved by the server and is
+        # stored explicitly so later audit readers can reconstruct the exact
+        # authorization decision without trusting command input.
+        if actor:
+            for field in ("project_ids", "session_ids", "execution_actions"):
+                value = raw_actor.get(field)
+                if isinstance(value, (list, tuple, frozenset, set)):
+                    actor[field] = tuple(str(item) for item in value)
+            actor["resolved_project_id"] = authorization.project_binding["project_id"]
+            actor["resolved_session_id"] = authorization.project_binding["session_id"]
+            actor["surface"] = surface if surface is not None else str(raw_actor.get("surface") or "runtime")
+    except Exception:
+        return _rejected_command(cmd, "not_found"), {
+            "execution_id": execution_id, "status_version": None,
+        }
+    try:
+        from openprogram.agent.job.runner import runner_for_execution_store
+
+        job_runner = runner_for_execution_store(store)
+        is_job = job_runner is not None and store.get_job_agent_input(execution_id) is not None
+        if is_job:
+            # The Job runner owns its resource saga and canonical control
+            # hooks, including transport-neutral resource release.
+            service = job_runner._execution_control
+        if operation in {"wait_answer", "wait_decline"}:
+            payload = cmd.get("payload")
+            if not isinstance(payload, dict):
+                raise ExecutionConflict("invalid_wait", "wait command requires a payload")
+            allowed = (
+                {"wait_id", "generation", "answer"}
+                if operation == "wait_answer" else {"wait_id", "generation", "reason"}
+            )
+            if set(payload) - allowed or not isinstance(payload.get("wait_id"), str) or not payload["wait_id"] or type(payload.get("generation")) is not int:
+                raise ExecutionConflict("invalid_wait", "wait command payload is invalid")
+            request = service.request_wait_answer if operation == "wait_answer" else service.request_wait_decline
+            dispatch = await request(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                wait_id=payload["wait_id"], generation=payload["generation"],
+                **({"answer": payload.get("answer")} if operation == "wait_answer" else {"reason": payload.get("reason")}),
+            )
+            return dispatch.command, dispatch.execution
+        if operation in {"pause", "continue", "step", "steer", "fork", "retry"}:
+            from openprogram.execution.model import CommandKind
+            required = {
+                "pause": CommandKind.PAUSE,
+                "continue": CommandKind.CONTINUE,
+                "step": CommandKind.STEP,
+                "steer": CommandKind.STEER,
+                "fork": CommandKind.FORK,
+                "retry": CommandKind.RETRY,
+            }[operation]
+            if not getattr(execution.capabilities, {
+                "pause": "pause", "continue": "pause", "step": "step",
+                "steer": "steer", "fork": "fork", "retry": "retry",
+            }[operation]):
+                raise ExecutionConflict("unsupported", "execution does not support this control command")
+        # A retry of an already persisted resume command must remain a pure
+        # idempotent read.  During a step, its tool effect is legitimately
+        # ``dispatched`` before the safe point commits it.  Recovering the
+        # owner for the duplicate transport request would fence the live
+        # attempt while it is still executing, so its safe-point commit would
+        # fail with ``stale_attempt`` and force reconciliation.
+        existing_resume = (
+            store.get_command(command_id)
+            if operation in {"continue", "step"}
+            else None
+        )
+        if (
+            operation in {"continue", "step"}
+            and existing_resume is None
+            and service.effects.list_unresolved(execution_id)
+        ):
+            if execution.current_attempt_id is not None:
+                generation = execution.owner_lease.get("generation")
+                if isinstance(generation, int):
+                    service.recover_owner_loss(
+                        execution_id, attempt_id=execution.current_attempt_id,
+                        generation=generation,
+                    )
+            raise ExecutionConflict("unresolved_effect", "execution has an unresolved external effect")
+        if is_job and operation in {"continue", "step"}:
+            command, latest = job_runner.queue_job_resume(
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                actor=actor,
+                step=operation == "step",
+            )
+            return command, latest
+        if operation == "pause":
+            dispatch = await service.request_pause(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+            )
+        elif operation == "cancel":
+            # ``reason_code`` is server policy, not caller-controlled input.
+            # The first accepted cancel command retains this exact reason if
+            # another cancellation races with it.
+            dispatch = await service.request_cancel(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                reason_code="cancel.user",
+            )
+        elif operation == "steer":
+            dispatch = service.request_steer(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                payload=dict(cmd["payload"]),
+            )
+        elif operation == "fork":
+            branch = service.request_fork(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                manifest_id=cmd["payload"]["manifest_id"],
+                checkpoint_id=cmd["payload"]["checkpoint_id"],
+                proof_hash=cmd["payload"]["proof_hash"],
+            )
+            return branch.command, branch.execution
+        elif operation == "retry":
+            branch = service.request_retry(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+                checkpoint_id=cmd["payload"].get("checkpoint_id"),
+            )
+            return branch.command, branch.execution
+        else:
+            request = (
+                service.request_continue if operation == "continue"
+                else service.request_step
+            )
+            dispatch = await request(
+                command_id=command_id, execution_id=execution_id,
+                expected_version=expected_version, actor=actor,
+            )
+        return dispatch.command, dispatch.execution
+    except (ExecutionConflict, CommandConflict, AttemptConflict, InvalidCommand) as exc:
+        current = store.get_execution(execution_id)
+        return _rejected_command(
+            cmd,
+            "unsupported_capability" if getattr(exc, "code", None) == "unsupported" else getattr(exc, "code", "command_rejected"),
+            current.to_dict() if current is not None else None,
+        ), current if current is not None else {
+            "execution_id": execution_id, "status_version": None,
+        }
+
+
+async def _handle_execution_control(ws, cmd: dict, operation: str) -> None:
+    """Submit an exact durable runtime command; drivers never see WS input."""
+    scope = getattr(ws, "scope", None)
+    state = scope.get("state") if isinstance(scope, dict) else None
+    bound_session = state.get("session_id") if isinstance(state, dict) else None
+    command, execution = await submit_execution_control(
+        cmd,
+        operation,
+        actor=_trusted_runtime_actor(ws),
+        bound_session=bound_session if isinstance(bound_session, str) else None,
+        surface="ws",
+    )
+    await _send_command_update(ws, command, execution)
+    execution_data = execution.to_dict() if hasattr(execution, "to_dict") else dict(execution)
+    if operation == "cancel" and execution_data.get("status") in {"cancelling", "cancelled"}:
+        from openprogram.webui import server as _s
+        _s._release_session_occupancy_for_execution(execution_data)
+
+
+async def handle_execution_pause(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "pause")
+
+
+async def handle_execution_continue(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "continue")
+
+
+async def handle_execution_step(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "step")
+
+
+async def handle_execution_steer(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "steer")
+
+
+async def handle_execution_fork(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "fork")
+
+
+async def handle_execution_retry(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "retry")
 
 
 async def handle_execution_cancel(ws, cmd: dict):
-    """Cancel one execution and broadcast its canonical record."""
-    from openprogram.agent import run_control
-    from openprogram.webui import server as _s
-    run_control.set_execution_update_hook(_broadcast_execution)
+    """Submit an exact durable cancellation command."""
+    await _handle_execution_control(ws, cmd, "cancel")
 
-    execution_id = (cmd.get("execution_id") or "").strip()
-    if not execution_id:
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {"message": "Missing execution_id"},
-        }))
+
+async def handle_execution_replay(ws, cmd: dict) -> None:
+    """Replay one authorized execution after a persisted local cursor."""
+    from openprogram.execution import default_store
+    from openprogram.execution.store import ExecutionConflict
+
+    execution_id = cmd.get("execution_id")
+    after_sequence = cmd.get("after_sequence")
+    if not isinstance(execution_id, str) or not execution_id or type(after_sequence) is not int:
+        await ws.send_text(json.dumps({"type": "execution.replay", "error": "invalid_command"}))
         return
+    store = default_store()
+    execution = store.get_execution(execution_id)
+    scope = getattr(ws, "scope", None)
+    state = scope.get("state") if isinstance(scope, dict) else None
+    bound_session = state.get("session_id") if isinstance(state, dict) else None
     try:
-        execution = run_control.cancel_execution(execution_id)
-    except (
-        run_control.ExecutionNotFound,
-        run_control.ExecutionNotCancellable,
-    ) as exc:
-        await ws.send_text(json.dumps({
-            "type": "error",
-            "data": {
-                "code": type(exc).__name__,
-                "message": str(exc),
-            },
-        }))
+        if execution is None:
+            raise ExecutionConflict("not_found", "execution is not visible")
+        _authorize_execution(
+            _trusted_runtime_actor(ws), "execution.events", execution,
+            bound_session=bound_session if isinstance(bound_session, str) else None,
+        )
+        replay = store.read_event_replay(execution_id, after_sequence=after_sequence)
+    except Exception:
+        await ws.send_text(json.dumps({"type": "execution.replay", "error": "not_found", "execution_id": execution_id}))
         return
-    _s._broadcast(json.dumps({
-        "type": "execution.updated",
-        "execution": execution,
+    snapshot, cursor = _public_execution_snapshot(execution)
+    await ws.send_text(json.dumps({
+        "type": "execution.replay",
+        "execution_id": execution_id,
+        "events": [_public_event(event) for event in replay.events],
+        "event_cursor": replay.cursor.to_dict(),
+        "recovery": replay.recovery,
+        "snapshot": snapshot,
+        "data": {
+            "execution_id": execution_id,
+            "events": [_public_event(event) for event in replay.events],
+            "event_cursor": cursor,
+            "recovery": replay.recovery,
+            "snapshot": snapshot,
+        },
     }, default=str))
-    _s._release_session_occupancy_for_execution(execution)
+
+
+async def handle_execution_wait_answer(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "wait_answer")
+
+
+async def handle_execution_wait_decline(ws, cmd: dict):
+    await _handle_execution_control(ws, cmd, "wait_decline")
+
+
+async def _handle_revision_control(ws, cmd: dict, action: str) -> None:
+    """Serve revision editor actions without granting a second control path."""
+    from openprogram.execution import default_store
+    from openprogram.execution.revision_public import (
+        RevisionPublicError,
+        submit_revision_request,
+    )
+
+    scope = getattr(ws, "scope", None)
+    state = scope.get("state") if isinstance(scope, dict) else None
+    bound_session = state.get("session_id") if isinstance(state, dict) else None
+    try:
+        result = submit_revision_request(
+            default_store(), cmd, action, actor=_trusted_runtime_actor(ws),
+            bound_session=bound_session if isinstance(bound_session, str) else None,
+            surface="ws",
+        )
+    except RevisionPublicError as exc:
+        result = {"type": "revision.draft.rejected", "error": exc.code}
+    await ws.send_text(json.dumps({**result, "data": result}, default=str))
+
+
+async def handle_revision_draft_create(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.draft.create")
+
+
+async def handle_revision_draft_get(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.draft.get")
+
+
+async def handle_revision_draft_replace(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.draft.replace")
+
+
+async def handle_revision_draft_discard(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.draft.discard")
+
+
+async def handle_revision_validate(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.validate")
+
+
+async def handle_revision_approve(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.approve")
+
+
+async def handle_revision_publish(ws, cmd: dict):
+    await _handle_revision_control(ws, cmd, "revision.publish")
 
 
 async def handle_stats(ws, cmd: dict):
@@ -433,49 +948,6 @@ async def handle_stats(ws, cmd: dict):
     }, default=str))
 
 
-async def handle_steer(ws, cmd: dict):
-    """Mid-run steering from TUI/web: drop a course-correction into a live run.
-
-    Writes to the per-session steering inbox (a file dir under the session),
-    which normal chat and program loops drain at their own checkpoints. It is
-    the same inbox the CLI ``steer`` subcommand uses, so it works across
-    processes."""
-    session_id = cmd.get("session_id") or cmd.get("conv_id")
-    message = cmd.get("message") or ""
-    if not session_id or not message.strip():
-        return
-    from openprogram.webui import server as _s
-    result = "not_running"
-    if _s._is_run_active(session_id):
-        try:
-            from openprogram.agent import steering
-            accepted = steering.push_if_accepting(session_id, message)
-            if accepted is None:
-                # A normal web chat between its final sweep and server-side
-                # occupancy release is no longer injectable. Other programs
-                # (research/goal) have their own file-inbox consumers.
-                with _s._running_tasks_lock:
-                    task = _s._running_tasks.get(session_id) or {}
-                if task.get("func_name") != "_chat":
-                    accepted = steering.push(session_id, message)
-            result = "accepted" if accepted else "not_running"
-        except Exception:
-            result = "not_running"
-    try:
-        await ws.send_text(json.dumps({
-            "type": "steer_ack",
-            "data": {
-                "session_id": session_id,
-                "request_id": cmd.get("request_id"),
-                "result": result,
-                "queued": result == "accepted",
-                "message": message.strip()[:200],
-            },
-        }, default=str))
-    except Exception:
-        pass
-
-
 async def handle_set_attended(ws, cmd: dict):
     """Set whether the agent may ask the user, for this session (TUI/web
     toggle). Broadcasts the new mode so all surfaces show it in sync."""
@@ -502,9 +974,23 @@ ACTIONS = {
     "list_models": handle_list_models,
     "switch_model": handle_switch_model,
     "browser": handle_browser,
-    "stop": handle_stop,
     "execution.cancel": handle_execution_cancel,
+    "execution.pause": handle_execution_pause,
+    "execution.continue": handle_execution_continue,
+    "execution.step": handle_execution_step,
+    "execution.steer": handle_execution_steer,
+    "execution.fork": handle_execution_fork,
+    "execution.retry": handle_execution_retry,
+    "execution.replay": handle_execution_replay,
+    "execution.wait.answer": handle_execution_wait_answer,
+    "execution.wait.decline": handle_execution_wait_decline,
+    "revision.draft.create": handle_revision_draft_create,
+    "revision.draft.get": handle_revision_draft_get,
+    "revision.draft.replace": handle_revision_draft_replace,
+    "revision.draft.discard": handle_revision_draft_discard,
+    "revision.validate": handle_revision_validate,
+    "revision.approve": handle_revision_approve,
+    "revision.publish": handle_revision_publish,
     "stats": handle_stats,
-    "steer": handle_steer,
     "set_attended": handle_set_attended,
 }

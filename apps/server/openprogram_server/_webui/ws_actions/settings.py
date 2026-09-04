@@ -13,13 +13,7 @@ import json
 
 async def handle_get_settings(ws, cmd: dict):
     from openprogram.config_schema import get_settings
-    try:
-        rows = get_settings((cmd.get("session_id") or "").strip() or None)
-    except Exception as e:  # noqa: BLE001
-        await ws.send_text(json.dumps({
-            "type": "error", "data": {"message": f"get_settings: {e}"},
-        }))
-        return
+    rows = get_settings((cmd.get("session_id") or "").strip() or None)
     await ws.send_text(json.dumps({"type": "settings", "data": rows}, default=str))
 
 
@@ -27,10 +21,7 @@ async def handle_set_setting(ws, cmd: dict):
     from openprogram.config_schema import set_setting
     key = cmd.get("key") or ""
     value = cmd.get("value")
-    try:
-        res = set_setting(key, value)
-    except Exception as e:  # noqa: BLE001
-        res = {"error": str(e)}
+    res = set_setting(key, value)
     await ws.send_text(json.dumps({
         "type": "setting_result", "data": {"key": key, **res},
     }, default=str))

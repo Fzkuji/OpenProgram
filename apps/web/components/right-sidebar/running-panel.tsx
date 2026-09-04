@@ -16,7 +16,7 @@ import type { SelfUpdate } from "@/lib/self-update";
 import { SelfUpdateCard } from "@/components/chat/messages/self-update-card";
 
 type RunningItem = {
-  kind: "tool" | "job" | "process" | "run" | "self_update";
+  kind: "execution" | "tool" | "job" | "process" | "run" | "self_update";
   update?: SelfUpdate;
   id: string;
   session_id?: string | null;
@@ -25,6 +25,9 @@ type RunningItem = {
   status: string;
   started_at: number | null;
   pid?: number;
+  capabilities?: { pause?: boolean; step?: boolean };
+  event_cursor?: { next_sequence?: number };
+  snapshot?: Record<string, unknown>;
 };
 
 const POLL_MS = 3000;
@@ -36,7 +39,13 @@ function formatElapsed(seconds: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-export function RunningPanel({ active }: { active: boolean }) {
+export function RunningPanel({
+  active,
+  onOpenExecution,
+}: {
+  active: boolean;
+  onOpenExecution?: (executionId: string) => void;
+}) {
   const { text } = useTranslation();
   const conversations = useSessionStore((s) => s.conversations);
   const [items, setItems] = useState<RunningItem[]>([]);
@@ -107,7 +116,9 @@ export function RunningPanel({ active }: { active: boolean }) {
   };
 
   const kindLabel = (kind: RunningItem["kind"]) =>
-    kind === "tool"
+    kind === "execution"
+      ? text("Execution", "执行")
+      : kind === "tool"
       ? text("Tool", "工具")
       : kind === "job"
         ? text("Job", "任务")
@@ -214,6 +225,28 @@ export function RunningPanel({ active }: { active: boolean }) {
               : elapsed || ""}
           </span>
         </div>
+        {item.execution_id && onOpenExecution ? (
+          <button
+            type="button"
+            onClick={() => onOpenExecution(item.execution_id as string)}
+            style={{
+              width: "100%",
+              minHeight: 28,
+              marginTop: 5,
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--bg-tertiary)",
+              color: "var(--text)",
+              cursor: "pointer",
+              font: "inherit",
+              fontSize: 11,
+              textAlign: "left",
+            }}
+            aria-label={text("Open execution debugger", "打开执行调试器")}
+          >
+            {text("Open debugger", "打开调试器")}
+          </button>
+        ) : null}
       </div>
     );
   };

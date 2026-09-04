@@ -284,16 +284,50 @@ def process_merge_turn(
     if base_peer is not None and 0 <= base_peer < len(peers):
         base_idx = base_peer
 
-    # Pre-merge attach injection (D1/D7 of scenario D, see
-    # docs/design/context/overview.md). Instead of bundling peer
-    # final-texts into the prompt, write one attach pointer per peer
-    # on the target session. The next process_user_turn call will pick
-    # them up through ensure_latest_commit → generator, which expands
-    # each into a delimited [Attached from "label"] block. The
-    # ``is_base`` flag tells the generator to lock the base peer's
-    # items so summarize/aging can't drop them.
     target_sess = store.get_session(target_session_id) or {}
     target_head = target_sess.get("head_id")
+    merge_prompt = _build_prompt(peers, message, base_peer=base_idx)
+    import asyncio
+    from openprogram.agent.dispatcher import TurnRequest
+    from openprogram.agent.production_driver import CanonicalAgentAdapter
+
+    # ``history_override=None`` lets the dispatcher load the active
+    # branch — the attach pointers we just wrote get spliced in via
+    # the predecessor chain and reach ensure_latest_commit. With
+    # history_override=[] (legacy behaviour) the generator wouldn't
+    # see them and the attach expansion path would be a no-op.
+    from openprogram.agent.authority import authority_from_message, runtime_authority
+    _parent_authority = authority_from_message(
+        target_session_id, target_head or "",
+    )
+    req = TurnRequest(
+        session_id=target_session_id,
+        user_text=merge_prompt,
+        agent_id=agent_id,
+        source="merge_turn",
+        history_override=None,
+        **runtime_authority(_parent_authority, "merge_turn"),
+    )
+    try:
+        adapter = CanonicalAgentAdapter()
+        admission = adapter.admit(
+            req,
+            trusted_actor=_parent_authority,
+            user_message_id=req.user_msg_id,
+            config_snapshot_ref=f"merge:{target_session_id}",
+        )
+    except Exception as e:  # noqa: BLE001
+        return MergeTurnResult(
+            target_session_id=target_session_id,
+            failed=True,
+            error=f"{type(e).__name__}: {e}",
+        )
+
+    # Pre-merge attach injection (D1/D7 of scenario D, see
+    # docs/design/context/overview.md). The bounded merge payload has now
+    # been admitted; only then persist these content pointers. The active
+    # branch remains target_head while the pointers are consumed by the
+    # canonical merge turn's context generator.
     attach_node_ids: list[str] = []
     for i, p in enumerate(peers):
         attach_node_id = _attach_id()
@@ -321,40 +355,35 @@ def process_merge_turn(
         try:
             store.append_message(target_session_id, attach_msg)
             attach_node_ids.append(attach_node_id)
-            # Keep head pointed at the target head, not the attach
-            # pointer (attach uses predecessor, not caller, so the
-            # branch tip shouldn't move — but append_message has a
-            # guard that updates head when the node has no caller. We
-            # set predecessor above so this is a no-op; defensive
-            # restoration covers any future regression.)
             if target_head:
                 store.set_head(target_session_id, target_head)
         except Exception:
             pass
 
-    merge_prompt = _build_prompt(peers, message, base_peer=base_idx)
-    from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+    def _terminalize_attach_nodes(reason: str, detail: str = "") -> None:
+        if not attach_node_ids:
+            return
+        try:
+            from openprogram.store import SessionNodeWriter
 
-    # ``history_override=None`` lets the dispatcher load the active
-    # branch — the attach pointers we just wrote get spliced in via
-    # the predecessor chain and reach ensure_latest_commit. With
-    # history_override=[] (legacy behaviour) the generator wouldn't
-    # see them and the attach expansion path would be a no-op.
-    from openprogram.agent.authority import authority_from_message, runtime_authority
-    _parent_authority = authority_from_message(
-        target_session_id, target_head or "",
-    )
-    req = TurnRequest(
-        session_id=target_session_id,
-        user_text=merge_prompt,
-        agent_id=agent_id,
-        source="merge_turn",
-        history_override=None,
-        **runtime_authority(_parent_authority, "merge_turn"),
-    )
+            writer = SessionNodeWriter(store, target_session_id)
+            for node_id in attach_node_ids:
+                writer.update(
+                    node_id,
+                    output={"error": detail or reason},
+                    metadata={"status": "failed", "reason_code": reason},
+                )
+        except Exception:
+            pass
+
     try:
-        turn = process_user_turn(req)
+        _active, turn = asyncio.run(adapter.activate(admission))
     except Exception as e:  # noqa: BLE001
+        try:
+            adapter.fail_admission(admission, reason_code="agent_runner_error")
+        except Exception:
+            pass
+        _terminalize_attach_nodes("agent_runner_error", str(e))
         return MergeTurnResult(
             target_session_id=target_session_id,
             failed=True,

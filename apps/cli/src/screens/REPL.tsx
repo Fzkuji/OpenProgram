@@ -6,6 +6,7 @@ import type { ScrollBoxHandle } from '../runtime/index';
 import { Shell, ModalHost, ToastHost } from '../ui/index.js';
 import { StatsEnvelope, ConnectionState } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
+import { GoalStatus } from '../components/GoalStatus.js';
 import { Messages } from '../components/Messages.js';
 import { Spinner } from '../components/Spinner.js';
 import { Turn } from '../components/Turn.js';
@@ -199,12 +200,14 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setActivity({ verb, startedAt: Date.now() });
 
   const executionIdRef = useRef<string | undefined>(undefined);
+  const executionVersionRef = useRef<number | undefined>(undefined);
   const stopStageRef = useRef<0 | 1 | 2>(0);
 
   const finishTurn = () => {
     setActivity(null);
     stopStageRef.current = 0;  // reset three-stage stop for the next turn
     executionIdRef.current = undefined;
+    executionVersionRef.current = undefined;
   };
 
 
@@ -225,7 +228,25 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setChannelActivityByConv,
     agentSetRef, sessionAliasesPrintRef, sessionAliasesRef,
     executionIdRef,
+    executionVersionRef,
   });
+
+  const cancelCurrentExecution = () => {
+    const executionId = executionIdRef.current || streaming?.executionId;
+    const expectedVersion = executionVersionRef.current;
+    if (executionId && typeof expectedVersion === 'number') {
+      client.send({
+        type: 'execution.command',
+        action: 'execution.cancel',
+        command_id: randomLocalId(),
+        execution_id: executionId,
+        expected_version: expectedVersion,
+      });
+      return true;
+    }
+    pushSystem('Cancel unavailable: no current execution version');
+    return false;
+  };
 
 
   // Double-press Ctrl+C to exit (Claude Code / Hermes pattern).
@@ -260,13 +281,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           }, 1500);
         } else {
           stopStageRef.current = 2;
-          const executionId = executionIdRef.current || streaming.executionId;
-          if (executionId) {
-            client.send({ action: 'execution.cancel', execution_id: executionId });
-          } else {
-            client.send({ action: 'stop', session_id: conversationId });
-          }
-          pushSystem('Cancel execution');
+          if (cancelCurrentExecution()) pushSystem('Cancel execution');
           exitTimerRef.current = setTimeout(() => {
             exitTimerRef.current = null;
             stopStageRef.current = 0;
@@ -461,6 +476,20 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         currentAgent: agent,
         currentModel: model,
         currentConversation: conversationId,
+        submitExecutionCommand: (operation, payload) => {
+          const executionId = executionIdRef.current || streaming?.executionId;
+          const expectedVersion = executionVersionRef.current;
+          if (!executionId || typeof expectedVersion !== 'number') return false;
+          client.send({
+            type: 'execution.command',
+            action: `execution.${operation}` as 'execution.steer' | 'execution.fork' | 'execution.retry',
+            command_id: randomLocalId(),
+            execution_id: executionId,
+            expected_version: expectedVersion,
+            payload,
+          });
+          return true;
+        },
         setTheme: (name: string) => {
           if (!isThemeSetting(name)) return false;
           setThemeSetting(name);
@@ -492,13 +521,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
 
   const onCancel = () => {
     if (!conversationId) return;
-    const executionId = executionIdRef.current || streaming?.executionId;
-    if (executionId) {
-      client.send({ action: 'execution.cancel', execution_id: executionId });
-    } else {
-      client.send({ action: 'stop', session_id: conversationId });
-    }
-    pushSystem('Cancel execution');
+    if (cancelCurrentExecution()) pushSystem('Cancel execution');
   };
 
   const elapsed = activity ? (Date.now() - activity.startedAt) / 1000 : undefined;
@@ -569,6 +592,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       {/* Toasts overlay any open modal — shown above PromptInput so
           they don't get clipped by the bottom-anchored chrome. */}
       <ToastHost />
+      <GoalStatus client={client} sessionId={conversationId} />
       {pickerNode ? (
         pickerNode
       ) : (

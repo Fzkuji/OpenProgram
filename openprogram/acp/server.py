@@ -22,8 +22,8 @@ than as the user's words. ``resource_link`` becomes a bare path mention.
 **Permissions.** OpenProgram's approval gate registers a ``kind="approval"``
 question on the shared QuestionRegistry and blocks. Subscribing to
 ``question.asked`` on the event bus catches those, forwards them as ACP
-``session/request_permission``, and answers with
-``resolve_question_and_broadcast``. Nothing about the gate itself changes,
+``session/request_permission``, and answers with the canonical execution wait
+command. Nothing about the gate itself changes,
 so authority checks, hard constraints, permission rules and the
 ``allow_always`` rule-persistence path all behave exactly as in the web UI.
 
@@ -34,6 +34,7 @@ authority would auto-deny every gated tool.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -49,6 +50,7 @@ from openprogram.acp.jsonrpc import (
     Connection,
     RPCError,
 )
+from openprogram.execution.control import ObservedCancelSubmission, submit_observed_cancel
 
 _log = logging.getLogger(__name__)
 
@@ -127,11 +129,19 @@ class _Session:
         self.id = session_id
         self.cwd = cwd
         self.cancel_event = threading.Event()
-        self.cancelled = False
+        self.execution_id: str | None = None
+        self.execution_status_version: int | None = None
+        # Cancellation may arrive while durable admission is in progress,
+        # before the execution identity can be published to the session.
+        self.prompt_pending = False
+        self.cancel_requested = False
+        self.cancel_reason = ""
+        self.cancel_command_id = ""
+        self.cancel_in_flight = False
         # Question ids forwarded to the client and still unanswered — a
         # cancel must resolve them or the tool gate sits on its Event for
         # the full 300s timeout.
-        self.open_questions: set[str] = set()
+        self.open_questions: dict[str, str] = {}
         self.lock = threading.Lock()
 
 
@@ -247,27 +257,69 @@ class ACPServer:
         sess = self._sessions.get(params.get("sessionId") or "")
         if sess is None:
             return None
-        sess.cancelled = True
-        sess.cancel_event.set()
-        from openprogram.agent.run_control import mark_cancelled
-
-        try:
-            mark_cancelled(sess.id)
-        except Exception:
-            _log.debug("ACP session cancellation bridge failed", exc_info=True)
-        # Every permission request still in flight must be answered — the
-        # spec requires the "cancelled" outcome, and the tool gate is
-        # blocked on the matching question's Event.
-        from openprogram.agent.questions import resolve_question_and_broadcast
-
         with sess.lock:
-            qids = list(sess.open_questions)
-            sess.open_questions.clear()
-        for qid in qids:
-            try:
-                resolve_question_and_broadcast(qid, "declined", None)
-            except Exception:
-                _log.debug("ACP question cancellation failed", exc_info=True)
+            execution_id = sess.execution_id
+            if execution_id is None:
+                if not sess.prompt_pending:
+                    return None
+                sess.cancel_requested = True
+                if not sess.cancel_reason:
+                    sess.cancel_reason = "prompt_cancel"
+                if not sess.cancel_command_id:
+                    sess.cancel_command_id = f"acp-cancel:{uuid.uuid4().hex}"
+                return None
+            if sess.cancel_in_flight:
+                return None
+            sess.cancel_requested = True
+            sess.cancel_reason = sess.cancel_reason or "prompt_cancel"
+            if not sess.cancel_command_id:
+                sess.cancel_command_id = f"acp-cancel:{uuid.uuid4().hex}"
+            expected_version = sess.execution_status_version
+            command_id = sess.cancel_command_id
+            reason_code = sess.cancel_reason
+            sess.cancel_in_flight = True
+        try:
+            if expected_version is None:
+                return None
+            from openprogram.agent.authority import local_owner_authority
+            from openprogram.execution import default_control_service
+
+            submitted = asyncio.run(submit_observed_cancel(
+                default_control_service(),
+                command_id=command_id,
+                execution_id=execution_id,
+                expected_version=expected_version,
+                actor=local_owner_authority(),
+                reason_code=reason_code,
+            ))
+        except Exception:
+            # Notifications have no error response; leave the live prompt
+            # untouched and surface infrastructure failures in the log.
+            _log.warning("ACP execution cancellation failed for %s",
+                         execution_id, exc_info=True)
+            return None
+        finally:
+            with sess.lock:
+                sess.cancel_in_flight = False
+        if not isinstance(submitted, ObservedCancelSubmission) or not submitted.accepted:
+            return None
+        # The service call can race prompt teardown and a successor prompt.
+        # Revalidate the identity before touching local event/question state.
+        with sess.lock:
+            if (
+                sess.execution_id != execution_id
+                or sess.cancel_command_id != command_id
+            ):
+                return None
+            sess.cancel_event.set()
+            qids = [
+                qid for qid, question_execution_id in sess.open_questions.items()
+                if question_execution_id == execution_id
+            ]
+            for qid in qids:
+                sess.open_questions.pop(qid, None)
+        # request_cancel already closes every wait for this exact execution
+        # in the same durable transaction.
         return None
 
     # -- the turn ---------------------------------------------------------
@@ -283,38 +335,66 @@ class ACPServer:
             raise RPCError(INVALID_PARAMS, "prompt has no text content")
 
         from openprogram.agent.authority import local_owner_authority
-        from openprogram.agent.dispatcher import TurnRequest, process_user_turn
-        from openprogram.agent.run_control import (
-            claim_cancel_event,
-            unregister_cancel_event,
+        from openprogram.agent.dispatcher import TurnRequest
+        from openprogram.agent.production_driver import CanonicalAgentAdapter
+
+        user_msg_id = uuid.uuid4().hex[:12]
+        request = TurnRequest(
+            session_id=sess.id,
+            user_text=text,
+            agent_id=self._agent_id,
+            source="acp",
+            permission_mode=self._permission_mode,
+            attachments=_blocks_to_attachments(blocks) or None,
+            additional_working_dirs=[sess.cwd],
+            user_msg_id=user_msg_id,
+            **local_owner_authority(),
         )
-
-        cancel_event = threading.Event()
-        if not claim_cancel_event(sess.id, cancel_event):
-            raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
-        sess.cancelled = False
-        sess.cancel_event = cancel_event
+        adapter = CanonicalAgentAdapter(
+            event_sink=lambda env: self._on_event(sess, env),
+        )
+        with sess.lock:
+            if sess.execution_id is not None or sess.prompt_pending:
+                raise RPCError(INTERNAL_ERROR, "a prompt turn is already active")
+            sess.prompt_pending = True
+            sess.cancel_requested = False
+            sess.cancel_reason = ""
+            sess.cancel_command_id = ""
+            sess.cancel_event.clear()
         try:
-            result = process_user_turn(
-                TurnRequest(
-                    session_id=sess.id,
-                    user_text=text,
-                    agent_id=self._agent_id,
-                    source="acp",
-                    permission_mode=self._permission_mode,
-                    attachments=_blocks_to_attachments(blocks) or None,
-                    additional_working_dirs=[sess.cwd],
-                    **local_owner_authority(),
-                ),
-                on_event=lambda env: self._on_event(sess, env),
-                cancel_event=sess.cancel_event,
+            admission = adapter.admit(
+                request,
+                trusted_actor=local_owner_authority(),
+                user_message_id=user_msg_id,
+                config_snapshot_ref=f"acp:{sess.id}",
             )
+        except Exception as exc:
+            with sess.lock:
+                sess.prompt_pending = False
+            raise RPCError(INTERNAL_ERROR, f"prompt admission failed: {exc}") from exc
+        execution_id = admission.execution_id
+        with sess.lock:
+            cancelled_before_activation = sess.cancel_requested
+            sess.prompt_pending = False
+            sess.execution_id = execution_id
+            sess.execution_status_version = admission.status_version
+        if cancelled_before_activation:
+            self._session_cancel({"sessionId": sess.id})
+            if sess.cancel_event.is_set():
+                with sess.lock:
+                    if sess.execution_id == execution_id:
+                        sess.execution_id = None
+                        sess.execution_status_version = None
+                return {"stopReason": "cancelled"}
+        try:
+            _active, result = asyncio.run(adapter.activate(admission))
         finally:
-            # Pass the event back: popping by session id alone would retire a
-            # newer turn's token (see agent/run_control.py).
-            unregister_cancel_event(sess.id, sess.cancel_event)
+            with sess.lock:
+                if sess.execution_id == execution_id:
+                    sess.execution_id = None
+                    sess.execution_status_version = None
 
-        if sess.cancelled:
+        if sess.cancel_event.is_set():
             return {"stopReason": "cancelled"}
         if result.failed:
             return {"stopReason": "refusal"}
@@ -389,18 +469,59 @@ class ACPServer:
         sess = self._sessions.get(data.get("session_id") or "")
         if sess is None:
             return
-        threading.Thread(target=self._ask_permission, args=(sess, data),
-                         daemon=True).start()
-
-    def _ask_permission(self, sess: _Session, data: dict) -> None:
-        from openprogram.agent.questions import resolve_question_and_broadcast
-
         qid = data.get("id")
         if not qid:
             return
-        tool = data.get("tool") or "?"
+        execution_id = data.get("execution_id") or ""
+        if not execution_id:
+            try:
+                from openprogram.agent.questions import get_question_registry
+
+                pending = next(
+                    (
+                        q for q in get_question_registry().list_pending(sess.id)
+                        if q.id == qid
+                    ),
+                    None,
+                )
+                execution_id = getattr(pending, "execution_id", "") or ""
+            except Exception:
+                execution_id = ""
         with sess.lock:
-            sess.open_questions.add(qid)
+            # Events from older question producers may omit execution_id. Keep
+            # those ownerless instead of assigning the current foreground
+            # turn, which could make cancellation resolve a sibling question.
+            if (
+                execution_id
+                and execution_id == sess.execution_id
+                and sess.cancel_event.is_set()
+            ):
+                return
+            sess.open_questions[qid] = execution_id
+        threading.Thread(
+            target=self._ask_permission, args=(sess, data, execution_id),
+            daemon=True,
+        ).start()
+
+    def _ask_permission(
+        self, sess: _Session, data: dict,
+        expected_execution_id: str | None = None,
+    ) -> None:
+        qid = data.get("id")
+        if not qid:
+            return
+        if expected_execution_id is None:
+            expected_execution_id = data.get("execution_id") or ""
+        with sess.lock:
+            if sess.open_questions.get(qid) != expected_execution_id:
+                return
+            if (
+                expected_execution_id
+                and expected_execution_id == sess.execution_id
+                and sess.cancel_event.is_set()
+            ):
+                return
+        tool = data.get("tool") or "?"
         try:
             resp = self._conn.request("session/request_permission", {
                 "sessionId": sess.id,
@@ -425,24 +546,40 @@ class ACPServer:
             return
         finally:
             with sess.lock:
-                sess.open_questions.discard(qid)
+                sess.open_questions.pop(qid, None)
 
-        outcome = (resp or {}).get("outcome") or {}
-        if outcome.get("outcome") != "selected":
-            # "cancelled" — the client dropped the request; decline so the
-            # gate stops waiting.
-            resolve_question_and_broadcast(qid, "declined", None)
+        if not expected_execution_id:
             return
+        outcome = (resp or {}).get("outcome") or {}
         choice = outcome.get("optionId")
-        if choice in (_ALLOW_ONCE, _ALLOW_ALWAYS):
-            # The gate reads {"answer", "scope"}; scope="always" is what
-            # writes the persistent allow rule.
-            resolve_question_and_broadcast(qid, "answered", {
-                "answer": "允许",
-                "scope": "always" if choice == _ALLOW_ALWAYS else "once",
-            })
-        else:
-            resolve_question_and_broadcast(qid, "declined", None)
+        action = (
+            "execution.wait.answer"
+            if outcome.get("outcome") == "selected"
+            and choice in (_ALLOW_ONCE, _ALLOW_ALWAYS)
+            else "execution.wait.decline"
+        )
+        value = (
+            {"answer": "允许", "scope": "always" if choice == _ALLOW_ALWAYS else "once"}
+            if action == "execution.wait.answer" else None
+        )
+        try:
+            from openprogram.agent.authority import local_owner_authority
+            from openprogram.execution import (
+                default_control_service, default_store, submit_wait_command,
+            )
+            execution = default_store().get_execution(expected_execution_id)
+            if execution is None:
+                return
+            asyncio.run(submit_wait_command(
+                default_control_service(), action=action,
+                command_id=f"acp-wait:{uuid.uuid4().hex}",
+                execution_id=expected_execution_id,
+                expected_version=execution.status_version,
+                actor=local_owner_authority(), wait_id=qid,
+                generation=int(data.get("wait_generation") or 0), value=value,
+            ))
+        except Exception:
+            _log.debug("ACP question resolution failed", exc_info=True)
 
 
 def _locations(raw_input) -> list[dict]:

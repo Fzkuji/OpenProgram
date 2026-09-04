@@ -442,6 +442,8 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   let printPdfResult = Buffer.from("%PDF-openprogram-test");
   let delayPrintPdf = false;
   let pendingPrintPdfResolve = null;
+  let delayCapture = false;
+  let pendingCaptureResolve = null;
   let webContentsDestroyed = false;
   let canGoBack = false;
   let canGoForward = false;
@@ -533,10 +535,14 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     },
     capturePage() {
       nativeCalls.capturePage += 1;
-      return Promise.resolve({
+      const image = {
         isEmpty: () => false,
         toDataURL: () => "data:image/png;base64,TEST",
-      });
+      };
+      if (delayCapture) {
+        return new Promise((resolve) => { pendingCaptureResolve = resolve; });
+      }
+      return Promise.resolve(image);
     },
     isDestroyed() { return webContentsDestroyed; },
     close() { closeCalls += 1; },
@@ -605,6 +611,16 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     },
     setPrintPdfResult(value) { printPdfResult = value; },
     delayPrintPdf() { delayPrintPdf = true; },
+    delayCapturePage() { delayCapture = true; },
+    completeCapturePage() {
+      delayCapture = false;
+      const resolve = pendingCaptureResolve;
+      pendingCaptureResolve = null;
+      resolve?.({
+        isEmpty: () => false,
+        toDataURL: () => "data:image/png;base64,TEST",
+      });
+    },
     completePrintPdf() {
       delayPrintPdf = false;
       const resolve = pendingPrintPdfResolve;
@@ -1417,6 +1433,21 @@ async function checkSenderOwnership() {
     "data:image/png;base64,TEST",
   );
   assert.equal(a.nativeCalls.capturePage, 1);
+  const staleCapture = controlledRecord("stale-capture");
+  addRecord(ctxA, staleCapture);
+  staleCapture.delayCapturePage();
+  const pendingCapture = ipcHandlers.get("webtab:capture")(
+    eventA, "stale-capture",
+  );
+  ctxA.views.delete("stale-capture");
+  addRecord(ctxA, controlledRecord("stale-capture"));
+  staleCapture.completeCapturePage();
+  assert.equal(
+    await pendingCapture,
+    null,
+    "capture completion must reject pixels from a replaced native Page",
+  );
+  ctxA.views.delete("stale-capture");
   assert.deepEqual(plain(a.nativeCalls.find), [
     ["needle", { forward: false, findNext: true }],
     ["needle", { forward: true, findNext: false }],

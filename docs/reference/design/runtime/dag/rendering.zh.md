@@ -295,7 +295,7 @@ lane 色；**绝不给某类线固定颜色**。类型只靠线型：
 | 徽标 | 含义 |
 |---|---|
 | 折叠数（右上肩，注文灰） | 节点折叠的调用线程的大小——第十二节。数字贴着字形，没有任何包裹形状：带轮廓的东西会被读成节点。展开后消失——调用都在屏上，数得出来 |
-| `↗`（右上角） | 跨会话 spawn 的**两侧都标**：目标会话里的分支根（caller 在另一个会话的图里，本会话内挂 ROOT，tooltip "spawn 自 <源会话>"）；源会话里发起 spawn 的那个节点（tooltip "派往 <目标会话>"——否则这轮派了活在自己图里毫无痕迹）。点击跳转对端会话（实现可后置）。**只在跨会话时出现**：同会话 spawn 两端都在图内、头在线程上的位置已表达关系，不加 ↗ |
+| `↗`（右上角） | 跨会话 spawn 的**两侧都标**：目标 session 的第一个 user 节点标 `spawn_remote`，源 session 的发起节点标 `spawn_out`。目标投影把外部 caller 归到 ROOT；源 attach 卡片保留目标 session 和分支 head。跨会话 attach 的终点属于另一个图，因此不生成本图内 `attach_returns` 边。当前字形只标识跨会话关系，点击不会跳转。**只在跨会话时出现**：同会话 spawn 的两端在同一个图内，保留普通回流边，不加 ↗ |
 
 ---
 
@@ -529,7 +529,7 @@ tooltip 和检查器里。
 离开 HEAD 会把每一条兄弟分支都刷灰。节点必须**既是失败、又已被放弃**。
 
 `status` 是存储自己的终态标记，由轮次机制写入（取消的情形见
-[运行取消](../execution/turn-cancellation.html)，它保持 `cancelled`、沿用自己的 50%
+[统一运行控制](../execution/execution-control.html)，它保持 `cancelled`、沿用自己的 50%
 灰化）。图读它，从不自己判定它。
 
 ## 十一、悬停、单击、右键、双击
@@ -637,7 +637,7 @@ checkout 成活动分支——接管这个 agent 的对话。徽章永不压住�
 | 第五节 badge 锚定 | `render/badges.ts`：锚对话层末节点、锚位有竖线左偏半格、实测像素盒碰撞下移一行 |
 | 场景 8 merge 形状与连线 | `render/shapes.ts` `merge_dot`（◉）；`edges.ts` 汇入线 peer 色 2.4px 实线 |
 | 场景 8/10 attach 指针 | 后端 display=runtime 过滤 + `graph_builder` 把 ref 戳到嵌入位置（`attach_returns`），`edges.ts` 画回流长虚线 |
-| 第四节 跨会话 ↗ | `graph_builder` 打 `spawn_remote` 标（目标侧）；`nodes.ts` 画 ↗（源侧 `spawn_out` 渲染就绪，等数据源打标） |
+| 第四节 跨会话 ↗ | `graph_builder` 根据目标根 provenance 打 `spawn_remote`，根据源 attach 的目标 session 打 `spawn_out`；`nodes.ts` 在两侧画 ↗。跨会话徽标点击跳转尚未实现 |
 | 第一节 spawn 根 tier | `graph_layout`：tier=1 / depth 同行 / lane 开新分支；`task_followup` 无 attach 时挂回接收轮（`filter.py` 兜底） |
 | 两个视角共用输入框 | `styles/chat/center-pane.css` 隐藏 `#chatArea` 而非 `#chatView`；由 `apps/web/scripts/check-center-tabs.mjs` 断言 |
 | 图内分支标签（checkout 按钮） | `render/badges.ts`；hover 样式在 `styles/dag/badges.css` 的 `.history-branch-tag` |

@@ -25,13 +25,18 @@ Design notes:
   macros. ``@reboot`` fires once when the worker starts.
 - When day-of-month and day-of-week are both restricted (not ``*``),
   they combine with OR, matching Vixie/ISC cron semantics.
+- The daemon logs an ordinary tick failure and waits for the next minute.
+  ``--once`` remains fail-fast, and process-control ``BaseException`` values
+  are never converted into daemon retries.
 """
 
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+import asyncio
 import datetime as dt
 import json
+import logging
 import multiprocessing
 import os
 import signal
@@ -47,6 +52,8 @@ from openprogram import sandbox as _sandbox
 
 from .cron import _load, _resolve_path, _store_lock, _verify_execution_spec
 
+
+_LOG = logging.getLogger(__name__)
 
 _MACRO_EXPANSIONS = {
     "@yearly":   "0 0 1 1 *",
@@ -231,10 +238,11 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
                     context = render_context(memory_refs)
                     if context:
                         prompt = f"{prompt}\n\n{context}"
-                from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+                from openprogram.agent.dispatcher import TurnRequest
+                from openprogram.agent.production_driver import CanonicalAgentAdapter
                 from openprogram.programs.permission_rule import load_merged_rules
 
-                result = process_user_turn(TurnRequest(
+                request = TurnRequest(
                     session_id=spec["session_id"],
                     user_text=prompt,
                     agent_id=spec["agent_id"],
@@ -248,11 +256,21 @@ def _run_prompt_job(spec: dict[str, Any], log_path: str) -> None:
                     authority_tier=job_authority["authority_tier"],
                     interaction="non-interactive",
                     permission_rules=load_merged_rules(spec["session_id"]),
-                ))
-                if result.final_text:
+                )
+                adapter = CanonicalAgentAdapter()
+                admission = adapter.admit(
+                    request,
+                    trusted_actor=job_authority,
+                    user_message_id=None,
+                    config_snapshot_ref=f"scheduler:{spec['session_id']}",
+                )
+                _active, result = asyncio.run(adapter.activate(admission))
+                if result is None:
+                    print("# failed: Agent runner returned no result")
+                elif getattr(result, "final_text", None):
                     print(result.final_text)
-                if result.failed:
-                    print(f"# failed: {result.error or 'unknown turn failure'}")
+                if result is not None and getattr(result, "failed", False):
+                    print(f"# failed: {getattr(result, 'error', None) or 'unknown turn failure'}")
             except Exception as exc:
                 print(f"# failed: {type(exc).__name__}: {exc}")
 
@@ -509,19 +527,31 @@ def run_forever(stop_event: threading.Event | None = None) -> None:
     print("press Ctrl+C to stop.")
 
     state = _load_state()
-    _tick(state, reboot=True)
+    reboot = True
 
-    while not stop["flag"] and not (stop_event and stop_event.is_set()):
+    while True:
+        try:
+            _tick(state, reboot=reboot)
+        except Exception as exc:  # noqa: BLE001 — retry at the next minute
+            _LOG.warning(
+                "scheduler tick failed: %s: %s",
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+        reboot = False
+        if stop["flag"] or (stop_event and stop_event.is_set()):
+            break
         now = dt.datetime.now()
         remain = 60 - now.second - now.microsecond / 1_000_000
+        deadline = time.monotonic() + remain
         # Break sleep into 1s chunks so signals are responsive
         while remain > 0 and not stop["flag"] and not (stop_event and stop_event.is_set()):
             chunk = min(1.0, remain)
             time.sleep(chunk)
-            remain -= chunk
+            remain = deadline - time.monotonic()
         if stop["flag"] or (stop_event and stop_event.is_set()):
             break
-        _tick(state)
 
     print("\nscheduler-worker stopped.")
 

@@ -18,8 +18,72 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 
+def _canonical_snapshot(execution_id: str) -> dict | None:
+    """Read the complete public snapshot for one running item."""
+    from openprogram.execution import default_store
+    from openprogram.execution.public import execution_snapshot
+
+    store = default_store()
+    execution = store.get_execution(execution_id)
+    if execution is None:
+        return None
+    resource = None
+    job = None
+    try:
+        from openprogram.agent.job.runner import runner_for_execution_store
+
+        runner = runner_for_execution_store(store)
+        if runner is not None:
+            view = runner.get_job_resource_view(execution_id)
+            resource = view.resource if view is not None else None
+            job = runner.get_job(execution_id)
+    except Exception:
+        pass
+    return execution_snapshot(
+        execution,
+        store=store,
+        resource=resource,
+        job_id=getattr(job, "id", None),
+        job=job,
+    ).to_dict()
+
+
 def _collect() -> list[dict]:
     items: list[dict] = []
+
+    try:
+        from openprogram.execution.projections import list_running_execution_projections
+
+        for projection in list_running_execution_projections():
+            payload = projection.payload
+            execution = payload.get("execution") or {}
+            snapshot = payload.get("snapshot") or _canonical_snapshot(
+                projection.execution_id,
+            )
+            ui = payload.get("ui") or {}
+            item = {
+                "kind": "execution",
+                "id": projection.execution_id,
+                "execution_id": projection.execution_id,
+                "session_id": projection.session_id,
+                "label": ui.get("label") or "execution",
+                "status": projection.status,
+                "started_at": execution.get("created_at"),
+            }
+            if snapshot is not None:
+                item.update({
+                    "snapshot": snapshot,
+                    "capabilities": snapshot.get("capabilities") or {},
+                    "resource": snapshot.get("resource"),
+                    "event_cursor": payload.get("event_cursor") or {
+                        "execution_id": projection.execution_id,
+                        "next_sequence": projection.event_sequence + 1,
+                        "snapshot_status_version": snapshot.get("status_version"),
+                    },
+                })
+            items.append(item)
+    except Exception:
+        pass
 
     try:
         # 进行中的 chat 轮次（含每个会话分支的后台 execution）。这是
@@ -28,9 +92,12 @@ def _collect() -> list[dict]:
         with _srv._running_tasks_lock:
             tasks = {sid: dict(t) for sid, t in _srv._running_tasks.items()}
         for sid, task in tasks.items():
+            execution_id = task.get("execution_id")
+            if execution_id and any(i.get("execution_id") == execution_id for i in items):
+                continue
             items.append({
                 "kind": "run",
-                "id": task.get("execution_id") or task.get("msg_id") or sid,
+                "id": task.get("execution_id") or "",
                 "session_id": sid,
                 "execution_id": task.get("execution_id"),
                 "label": task.get("func_name") or "chat",
@@ -68,8 +135,46 @@ def _collect() -> list[dict]:
             JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING,
         })
         for job in jobs:
+            if any(i.get("execution_id") == job.id for i in items):
+                continue
+            canonical = None
+            try:
+                from openprogram.execution import default_store
+                from openprogram.execution.public import execution_snapshot
+
+                execution = default_store().get_execution(job.id)
+                if execution is not None:
+                    view = get_runner().get_job_resource_view(job.id)
+                    canonical = execution_snapshot(
+                        execution,
+                        store=default_store(),
+                        resource=view.resource if view is not None else None,
+                        job_id=job.id,
+                        job=job,
+                    ).to_dict()
+            except Exception:
+                canonical = None
+            if canonical is not None:
+                items.append({
+                    "kind": "execution",
+                    "id": job.id,
+                    "execution_id": job.id,
+                    "session_id": job.parent_session_id,
+                    "label": job.label or job.subject or (job.prompt or "")[:80],
+                    "status": canonical.get("status", job.status.value),
+                    "started_at": job.started_at or job.queued_at or job.created_at,
+                    "snapshot": canonical,
+                    "capabilities": canonical.get("capabilities") or {},
+                    "resource": canonical.get("resource"),
+                    "event_cursor": {
+                        "execution_id": job.id,
+                        "next_sequence": int(canonical.get("event_sequence") or 0) + 1,
+                        "snapshot_status_version": canonical.get("status_version"),
+                    },
+                })
+                continue
             items.append({
-                "kind": "job",
+                "kind": "execution",
                 "id": job.id,
                 "session_id": job.parent_session_id,
                 "label": job.label or job.subject or (job.prompt or "")[:80],

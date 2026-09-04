@@ -14,9 +14,10 @@ from openprogram.providers.structured_output import StructuredOutputCapabilities
 class _StreamFnProvider:
     """Adapt module-level stream functions to the provider interface."""
 
-    def __init__(self, stream_fn, stream_simple_fn):
+    def __init__(self, stream_fn, stream_simple_fn, *, supports_idempotency_key=False):
         self._stream = stream_fn
         self._stream_simple = stream_simple_fn
+        self.supports_idempotency_key = supports_idempotency_key
 
     def stream(self, model, context, options=None):
         return self._stream(model, context, options)
@@ -59,12 +60,14 @@ def _load_builtin_providers() -> dict[str, _StreamFnProvider]:
         ),
         "openai-completions": _StreamFnProvider(
             openai_completions.stream_simple, openai_completions.stream_simple,
+            supports_idempotency_key=True,
         ),
         "google-generative-ai": _StreamFnProvider(
             google.stream_simple, google.stream_simple,
         ),
         "openai-responses": _StreamFnProvider(
             stream_openai_responses, stream_simple_openai_responses,
+            supports_idempotency_key=True,
         ),
         "openai-codex": _StreamFnProvider(
             stream_openai_codex_responses, stream_simple_openai_codex_responses,
@@ -178,7 +181,10 @@ def register_builtins() -> None:
         _register_builtin_api_providers(
             {
                 api: (
-                    ApiProviderSnapshot(provider, capabilities[api])
+                    ApiProviderSnapshot(
+                        provider, capabilities[api],
+                        bool(getattr(provider, "supports_idempotency_key", False)),
+                    )
                     if api in capabilities
                     else provider
                 )

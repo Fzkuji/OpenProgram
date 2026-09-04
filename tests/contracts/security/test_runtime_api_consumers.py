@@ -16,6 +16,28 @@ from openprogram.security import safe_http
 from openprogram.security.safe_http import OutboundSecurityConfig
 
 
+def _reset_models_dev_cache(models_dev) -> None:
+    with models_dev._cache_lock:
+        models_dev._cache.update({
+            "data": None,
+            "fetched_at": 0.0,
+            "last_attempt_at": 0.0,
+            "refreshing": False,
+        })
+
+
+@pytest.fixture
+def _isolated_models_dev_cache(monkeypatch, tmp_path):
+    from openprogram.providers.sources import models_dev
+
+    monkeypatch.setattr(
+        models_dev, "_disk_cache_path", lambda: tmp_path / "models_dev.json"
+    )
+    _reset_models_dev_cache(models_dev)
+    yield models_dev
+    _reset_models_dev_cache(models_dev)
+
+
 class _Response:
     status_code = 200
     reason_phrase = "OK"
@@ -480,16 +502,19 @@ def test_codex_probe_hides_4xx_peer_body(monkeypatch, server):
 
 
 def test_models_dev_public_loader_real_managed_success(
-    monkeypatch, server, real_managed_http
+    monkeypatch, server, real_managed_http, _isolated_models_dev_cache
 ):
-    from openprogram.providers.sources import models_dev
+    models_dev = _isolated_models_dev_cache
 
     origin = f"http://public.test:{server.port}"
     monkeypatch.setattr(models_dev, "_CATALOGUE_URL", origin + "/api.json")
     monkeypatch.setattr(models_dev, "_read_disk_cache", lambda: {})
     monkeypatch.setattr(models_dev, "_write_disk_cache", lambda _data: None)
     monkeypatch.setattr(models_dev, "_cache", {
-        "data": None, "fetched_at": 0.0, "last_attempt_at": 0.0, "refreshing": False,
+        "data": None,
+        "fetched_at": 0.0,
+        "last_attempt_at": 0.0,
+        "refreshing": False,
     })
     registry = dict(safe_http.CONSUMER_REGISTRY)
     spec = registry["webui.model_listing.fixed"]

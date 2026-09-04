@@ -8,6 +8,7 @@ import types
 
 import pytest
 
+from openprogram.agent.authority import owner_authority
 from openprogram.store.project import project_store
 from openprogram.webui.ws_actions import project as ws_project
 
@@ -15,6 +16,11 @@ from openprogram.webui.ws_actions import project as ws_project
 class _FakeWS:
     def __init__(self):
         self.sent = []
+        self.scope = {
+            "state": {
+                "authority": owner_authority("owner/install/0123456789abcdef"),
+            },
+        }
 
     async def send_text(self, text):
         self.sent.append(json.loads(text))
@@ -51,6 +57,22 @@ def test_projects_list_session_ids_alive_filtered(fake_registry):
     assert by_id["default"]["is_default"] is True
 
 
+def test_projects_list_registry_error_is_not_authoritative_empty(monkeypatch):
+    monkeypatch.setattr(
+        project_store, "get_default_project",
+        lambda: (_ for _ in ()).throw(RuntimeError("registry unavailable")),
+    )
+    ws = _FakeWS()
+
+    asyncio.run(ws_project.handle_list_projects(ws, {"session_id": "s1"}))
+
+    data = ws.sent[0]["data"]
+    assert data["status"] == "error"
+    assert data["error_code"] == "PROJECT_REGISTRY_UNAVAILABLE"
+    assert data["session_id"] == "s1"
+    assert data["projects"] is None
+
+
 def test_remove_project_action_is_unavailable_and_registry_unchanged(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ):
@@ -70,11 +92,12 @@ def test_remove_project_action_is_unavailable_and_registry_unchanged(
         "project_id": "proj_remove",
     }))
 
-    # An action with no handler answers `action_error` — it used to be
+    # An action with no handler answers `operation_error` — it used to be
     # dropped in silence, which made a deliberately-removed action
     # indistinguishable from a backend that never replied.
-    assert [f["type"] for f in ws.sent] == ["action_error"]
+    assert [f["type"] for f in ws.sent] == ["operation_error"]
     assert ws.sent[0]["data"]["action"] == "remove_project"
+    assert ws.sent[0]["data"]["code"] == "unknown_action"
     assert json.loads(registry_path.read_text(encoding="utf-8")) == before
     assert "remove_project" not in ws_project.ACTIONS
     assert "remove_project" not in server.WS_ACTIONS

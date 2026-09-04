@@ -345,6 +345,28 @@ def test_attach_branch_invalidates_message_cache(store, srv):
                for m in store.get_messages("s1"))
 
 
+def test_manual_cross_session_attach_has_no_spawn_marker(store, srv):
+    """A user-authored cross-session embed is not an agent spawn."""
+    from openprogram.webui.graph_builder import build_session_graph
+    from openprogram.webui.ws_actions import branch as branch_actions
+
+    source_ids = _two_turns(store, "source")
+    anchor_ids = _two_turns(store, "anchor")
+    ws = FakeWS()
+    _run(branch_actions.handle_attach_branch(ws, {
+        "session_id": "source",
+        "target_head_msg_id": source_ids[-1],
+        "anchor_session_id": "anchor",
+        "anchor_head_msg_id": anchor_ids[-1],
+    }))
+    result = ws.of_type("attach_branch_result")[0]
+    assert result["ok"], result.get("error")
+
+    graph = build_session_graph("anchor", anchor_ids[-1])
+    anchor_row = next(row for row in graph if row["id"] == anchor_ids[-1])
+    assert "spawn_out" not in anchor_row
+
+
 def test_delete_branch_drops_deleted_rows_from_mirror(store, srv):
     from openprogram.webui.ws_actions import branch as branch_actions
 

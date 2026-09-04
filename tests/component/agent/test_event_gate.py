@@ -220,18 +220,55 @@ def test_event_log_routes_to_existing_session_dir(_home):
     assert (sess / "events.jsonl").exists()
 
 
-def test_gate_verdict_lands_on_the_log_line(_home):
+def test_observed_gate_event_logs_once_after_verdict(_home):
+    session = _home / ".openprogram" / "sessions" / "s1"
+    session.mkdir(parents=True)
     bus = create_event_bus()
     bus.log_events = True
-    bus.subscribe_gate("turn.stop", lambda ev: "再跑一轮")
-    out = bus.emit_gate(make_event("turn.stop", "system"))
-    assert out.reasons == ["再跑一轮"]
-    log = _home / ".openprogram" / "logs" / "events.jsonl"
-    rec = json.loads(log.read_text().splitlines()[-1])
+    observed = []
+    bus.subscribe(observed.append, types={"tool.before"})
+    bus.subscribe_gate("tool.before", lambda ev: "危险命令")
+    event = make_event(
+        "tool.before", "agent", {"tool": "bash"}, {"session": "s1"},
+    )
+
+    bus.emit(event)
+
+    session_log = session / "events.jsonl"
+    global_log = _home / ".openprogram" / "logs" / "events.jsonl"
+    assert observed == [event]
+    assert not session_log.exists()
+    assert not global_log.exists()
+
+    out = bus.emit_gate(event)
+    assert out.reasons == ["危险命令"]
+    assert observed == [event]
+    assert not global_log.exists()
+    records = [json.loads(line) for line in session_log.read_text().splitlines()]
+    assert [record["id"] for record in records] == [event.id]
+    rec = records[0]
     assert rec["gate"]["allowed"] is False
-    assert rec["gate"]["reasons"] == ["再跑一轮"]
+    assert rec["gate"]["reasons"] == ["危险命令"]
     assert rec["gate"]["subscribers"] == 1
     assert isinstance(rec["gate"]["duration_ms"], int)
+
+
+def test_gate_only_dispatch_logs_verdict_without_notifying_observers(_home):
+    bus = create_event_bus()
+    bus.log_events = True
+    observed = []
+    bus.subscribe(observed.append, types={"turn.stop"})
+    bus.subscribe_gate("turn.stop", lambda ev: "再跑一轮")
+    event = make_event("turn.stop", "system")
+
+    out = bus.emit_gate(event)
+
+    assert out.reasons == ["再跑一轮"]
+    assert observed == []
+    log = _home / ".openprogram" / "logs" / "events.jsonl"
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [record["id"] for record in records] == [event.id]
+    assert records[0]["gate"]["allowed"] is False
 
 
 def test_event_log_rotates_past_5mb(_home):

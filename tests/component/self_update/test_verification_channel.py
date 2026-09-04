@@ -68,7 +68,7 @@ def verifier(store_fixture, live, monkeypatch, request):
                 control["read_result"] = asyncio.run(get_agent_tool(name).execute("read-grant", args, None, None))
                 return TurnResult("inconclusive", "verify_u", "verify_a")
             if control.get("cancel"):
-                runner.cancel_job(grant["job_id"], reason="test cancellation")
+                runner.cancel_execution(grant["job_id"], reason="test cancellation")
             tool = get_agent_tool("self_update_observe")
             args = control.get("args", {"check_id": plan["checks"][0]["id"]} if plan else {"entry": control["entry"]})
             output = asyncio.run(tool.execute("observe-call", args, None, None))
@@ -101,6 +101,16 @@ def verifier(store_fixture, live, monkeypatch, request):
 
 def consume(v, token=None):
     return channel.consume_result(v.store, v.request.update_id, token if token is not None else v.grant["token"])
+
+
+def tamper_job(job_id, **fields):
+    """Modify persisted bytes to exercise verifier corruption detection."""
+    from openprogram.store import default_store
+
+    path = default_store()._session_dir("p1") / "jobs.json"  # noqa: SLF001
+    body = json.loads(path.read_text(encoding="utf-8"))
+    body["jobs"][job_id].update(fields)
+    path.write_text(json.dumps(body), encoding="utf-8")
 
 
 @pytest.mark.parametrize("verdict", ["pass", "fail", "inconclusive"])
@@ -185,14 +195,12 @@ def test_unresolved_or_changed_evidence_cannot_pass(verifier, mutation):
 
 
 def test_wrong_token_and_changed_terminal_result_cannot_reuse_authorization(verifier):
-    from openprogram.agent.job.store import update_job_status
-    from openprogram.agent.job.types import JobStatus
     v = verifier
     v.run()
     with pytest.raises(ValueError, match="authorization"):
         consume(v, "wrong")
     assert consume(v)["verdict"] == "pass"
-    update_job_status("p1", v.grant["job_id"], JobStatus.COMPLETED, result_text="changed")
+    tamper_job(v.grant["job_id"], result_text="changed")
     with pytest.raises(ValueError, match="already consumed"):
         consume(v)
 
@@ -303,11 +311,9 @@ def test_expired_grant_is_not_consumable(verifier, monkeypatch):
 
 
 def test_changed_job_identity_is_not_consumable(verifier):
-    from openprogram.agent.job.store import update_job_status
-    from openprogram.agent.job.types import JobStatus
     v = verifier
     v.run()
-    update_job_status("p1", v.grant["job_id"], JobStatus.COMPLETED, source="agent_spawn")
+    tamper_job(v.grant["job_id"], source="agent_spawn")
     with pytest.raises(ValueError, match="frozen execution"):
         consume(v)
 

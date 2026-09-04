@@ -112,7 +112,7 @@ def build_server(context: MCPClientContext) -> Server:
                     request_id=request_id,
                 )
             elif name == "prompt_cancel":
-                result = service.prompt_cancel(arguments["session_id"])
+                result = await service.prompt_cancel(arguments["session_id"])
             elif name == "tools_list":
                 result = service.tools_list()
             elif name == "web_use":
@@ -190,7 +190,7 @@ async def serve_stdio(context: MCPClientContext) -> None:
                 server.create_initialization_options(),
             )
     finally:
-        service.close()
+        await service.aclose()
 
 
 def serve() -> int:

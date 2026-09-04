@@ -17,8 +17,11 @@ import logging
 from typing import Optional, TYPE_CHECKING
 
 from openprogram.agent.run_control import (
+    get_current_execution_id as _get_execution_id,
     get_current_session_id as _get_session_id,
+    reset_current_execution_id as _reset_execution_id,
     reset_current_session_id as _reset_session_id,
+    set_current_execution_id as _set_execution_id,
     set_current_session_id as _set_session_id,
 )
 
@@ -44,11 +47,18 @@ class TurnBindings:
         self._web_use_owner_id = None
         self._sandbox_token = None
         self._req_session_id: Optional[str] = None
+        self._execution_id_token = None
 
     @classmethod
     def bind(cls, *, req: "TurnRequest", assistant_msg_id: str, db) -> "TurnBindings":
         self = cls()
         self._req_session_id = req.session_id
+        # A normal foreground turn has no outer execution owner. Bind its
+        # assistant reply id so every question emitted during this turn is
+        # cancellable by exact execution identity. An outer job/subprocess
+        # already owns the context and must remain authoritative.
+        if not _get_execution_id():
+            self._execution_id_token = _set_execution_id(assistant_msg_id)
         # Critical: we use ``create_runtime()`` (real provider) instead
         # of a stub. @agentic_function's _inject_runtime would otherwise
         # pick up our stub and any ``runtime.exec`` inside the function
@@ -224,6 +234,8 @@ class TurnBindings:
                 _render_range_var.reset(self._render_range_token)
             if self._session_id_token is not None:
                 _reset_session_id(self._session_id_token)
+            if self._execution_id_token is not None:
+                _reset_execution_id(self._execution_id_token)
             if self._worktree_token is not None:
                 from openprogram.worktree.context import reset_worktree
                 reset_worktree(self._worktree_token)

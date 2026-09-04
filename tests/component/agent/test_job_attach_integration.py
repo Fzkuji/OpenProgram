@@ -5,8 +5,8 @@ attach card created by ``_run_spawn_async`` so its
 ``extra.attach.status`` flips from ``running`` to a terminal value
 and ``source_commit_id`` is populated when a ContextCommit exists.
 
-Tests the round-trip without spinning up a real LLM by faking
-``run_agent_turn`` to write a deterministic assistant reply +
+Tests the round-trip without spinning up a real LLM by faking the canonical
+Agent turn runner to write a deterministic assistant reply +
 ContextCommit.
 """
 from __future__ import annotations
@@ -88,23 +88,24 @@ def test_runner_updates_attach_card_on_completion(isolated_store, monkeypatch):
     })
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
-    # 2. Fake run_agent_turn so the worker finishes in milliseconds.
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    # 2. Fake the canonical Agent turn runner so the worker finishes in milliseconds.
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         # Write the assistant_msg the dispatcher would have written.
-        isolated_store.append_message(session_id, {
+        isolated_store.append_message(request.session_id, {
             "id": "head_alpha", "role": "assistant",
             "content": "final answer",
-            "predecessor": branch_from, "timestamp": time.time(),
+            "predecessor": request.branch_from, "timestamp": time.time(),
         })
-        isolated_store.commit_turn(session_id, "fake turn")
+        isolated_store.commit_turn(request.session_id, "fake turn")
         return AgentTurnResult(
             head_id="head_alpha", final_text="final answer",
             failed=False, error=None,
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
 
     # 3. Submit through the runner with attach_pointer_id wired in.
@@ -164,18 +165,18 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
     })
     isolated_store.commit_turn("p1", "spawn async placeholder")
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        isolated_store.append_message(session_id, {
+        isolated_store.append_message(request.session_id, {
             "id": "head_named", "role": "assistant", "content": "done",
-            "predecessor": branch_from, "timestamp": time.time(),
+            "predecessor": request.branch_from, "timestamp": time.time(),
         })
-        isolated_store.commit_turn(session_id, "fake turn")
+        isolated_store.commit_turn(request.session_id, "fake turn")
         return AgentTurnResult(head_id="head_named", final_text="done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
 
     from openprogram.agent.job import get_runner
@@ -187,10 +188,23 @@ def test_attach_card_carries_the_subagent_name(isolated_store, monkeypatch):
         subject="后端架构", description="read the backend",
         parent_msg_id="a1", attach_pointer_id=attach_node_id,
     )
-    assert runner.await_job(tid, timeout=5.0) is not None
+    final = runner.await_job(tid, timeout=5.0)
+    assert final is not None
 
-    _, idx = isolated_store._open("p1")
-    md = (idx.nodes_by_id[attach_node_id].metadata or {})
+    # The runner persists the terminal Job before its best-effort attach-card
+    # write.  On a fast worker, await_job can observe the terminal projection
+    # in that short interval, so wait for the public card state instead of
+    # assuming both writes become visible in one operation.
+    deadline = time.monotonic() + 5.0
+    while True:
+        _, idx = isolated_store._open("p1")
+        md = (idx.nodes_by_id[attach_node_id].metadata or {})
+        if (md.get("attach") or {}).get("label") == "后端架构":
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(0.01, remaining))
     assert (md.get("attach") or {}).get("label") == "后端架构"
     extra = json.loads(md["extra"])
     assert extra["attach"]["label"] == "后端架构"

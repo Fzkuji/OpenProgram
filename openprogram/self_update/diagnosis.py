@@ -270,7 +270,7 @@ def _cancel_owned_job(runner, record, request, config):
         job = load_job(record.request.session_id, request["job_id"])
         if job is not None:
             _check_job(record, request, config, job)
-            runner.cancel_job(job.id, reason="self-update diagnosis stopped")
+            runner.cancel_execution(job.id, reason="self-update diagnosis stopped")
     except Exception:
         _log.warning("Could not cancel the original diagnostic Job", exc_info=True)
 

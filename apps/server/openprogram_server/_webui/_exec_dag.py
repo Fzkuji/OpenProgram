@@ -70,13 +70,27 @@ def _exec_tnode(n, kids: dict[str, list]) -> dict:
     elif status == "interrupted":
         tn["error"] = str(meta.get("error") or n.output or "")
     if n.is_llm():
-        # exec rows render params._content (prompt) + raw_reply.
+        # Runtime stores the prompt preview separately from system input.
+        # Both tree summaries and details consume output; keep raw_reply for
+        # older clients and preserve structured content with JSON encoding.
         tn["node_type"] = "exec"
         inp = n.input
-        if isinstance(inp, (list, dict)):
-            inp = json.dumps(inp, default=str, ensure_ascii=False)
-        tn["params"] = {"_content": str(inp or "")}
-        tn["raw_reply"] = str(n.output or "")
+        params = dict(inp) if isinstance(inp, dict) else {}
+        content = meta.get("prompt_text")
+        if content is None:
+            content = (
+                json.dumps(inp, default=str, ensure_ascii=False)
+                if isinstance(inp, (list, dict)) else str(inp or "")
+            )
+        if content:
+            params["_content"] = content
+        tn["params"] = params
+        out = n.output
+        tn["output"] = (
+            "" if out is None else out if isinstance(out, str)
+            else json.dumps(out, default=str, ensure_ascii=False)
+        )
+        tn["raw_reply"] = tn["output"]
     else:
         if isinstance(n.input, dict):
             tn["params"] = {k: v for k, v in n.input.items()
@@ -233,6 +247,12 @@ def _graph_push_signature(graph, head=None) -> str:
             _graph_push_val(n, "attach_ref"),
             _graph_push_val(n, "attach_label"),
             (spawned.get("label") or "") if isinstance(spawned, dict) else "",
+            bool(n.get("spawn_remote")),
+            _graph_push_val(n, "spawn_remote_session"),
+            _graph_push_val(n, "spawn_remote_id"),
+            bool(n.get("spawn_out")),
+            _graph_push_val(n, "spawn_out_session"),
+            _graph_push_val(n, "spawn_out_head"),
         ))
     return json.dumps(
         (len(graph), tail, rows, head or ""),
@@ -449,97 +469,100 @@ def reconcile_interrupted_runs() -> int:
     # "interrupted" via SessionNodeWriter.update which rewrites the
     # on-disk JSON.
     for sess in store.list_sessions(limit=10**9, include_archived=True):
-        sid = sess["id"]
-        shim = SessionNodeWriter(store, sid)
-        for node in store.get_nodes(sid):
-            meta = node.metadata or {}
-            status = meta.get("status")
-            if status not in {"running", "cancelling"}:
+        from openprogram.programs.workflow.goal.ownership import goal_owner
+        with goal_owner(store, sess["id"]) as acquired:
+            if not acquired:
                 continue
-            if status == "cancelling":
-                try:
-                    from openprogram.agent import run_control
-                    if run_control.owner_is_alive(node.id):
-                        run_control.resume_cancel(node.id)
+            sid = sess["id"]
+            shim = SessionNodeWriter(store, sid)
+            for node in store.get_nodes(sid):
+                meta = node.metadata or {}
+                status = meta.get("status")
+                if status not in {"running", "cancelling"}:
+                    continue
+                if status == "cancelling":
+                    try:
+                        from openprogram.agent import run_control
+                        if run_control.owner_is_alive(node.id):
+                            run_control.resume_cancel(node.id)
+                            continue
+                    except Exception:
+                        pass
+                    new_meta = dict(meta)
+                    new_meta["status"] = "cancelled"
+                    new_meta.setdefault("finished_at", time.time())
+                    output = node.output
+                    try:
+                        shim.update(node.id, output=output, metadata=new_meta)
+                        fixed += 1
+                    except Exception:
                         continue
-                except Exception:
-                    pass
+                    continue
                 new_meta = dict(meta)
-                new_meta["status"] = "cancelled"
-                new_meta.setdefault("finished_at", time.time())
+                new_meta["status"] = "interrupted"
+                new_meta.setdefault(
+                    "error", "Worker restarted before this turn finished",
+                )
+                new_meta["interrupted_at"] = time.time()
                 output = node.output
+                if not output:
+                    output = "[interrupted] worker restarted mid-turn"
                 try:
                     shim.update(node.id, output=output, metadata=new_meta)
                     fixed += 1
                 except Exception:
                     continue
-                continue
-            new_meta = dict(meta)
-            new_meta["status"] = "interrupted"
-            new_meta.setdefault(
-                "error", "Worker restarted before this turn finished",
-            )
-            new_meta["interrupted_at"] = time.time()
-            output = node.output
-            if not output:
-                output = "[interrupted] worker restarted mid-turn"
+            # The SESSION ROW carries its own status, stamped "running" by
+            # the dispatcher (dispatcher/__init__.py step 3b) and cleared at
+            # turn end. A killed worker never runs that clear, so the row
+            # stays "running" forever and session_loaded.data.status pins
+            # the chat container at data-run-active="true" — the composer
+            # stays locked with no way back short of editing state on disk.
+            # Reset it independently of the node loop: a worker killed
+            # between the status write and the placeholder insert leaves a
+            # running ROW with no running NODE.
+            # A Goal whose execution lease belonged to the previous worker is
+            # recoverable state, not a terminal error. Persist an explicit pause;
+            # hydration then shows the Goal content and a resume action instead of
+            # leaving a false running indicator or discarding the checkpoint.
+            # The session Goal owner lock above excludes a live sibling
+            # controller throughout reconciliation, including node/row writes.
             try:
-                shim.update(node.id, output=output, metadata=new_meta)
-                fixed += 1
-            except Exception:
-                continue
-        # The SESSION ROW carries its own status, stamped "running" by
-        # the dispatcher (dispatcher/__init__.py step 3b) and cleared at
-        # turn end. A killed worker never runs that clear, so the row
-        # stays "running" forever and session_loaded.data.status pins
-        # the chat container at data-run-active="true" — the composer
-        # stays locked with no way back short of editing state on disk.
-        # Reset it independently of the node loop: a worker killed
-        # between the status write and the placeholder insert leaves a
-        # running ROW with no running NODE.
-        # A Goal whose execution lease belonged to the previous worker is
-        # recoverable state, not a terminal error. Persist an explicit pause;
-        # hydration then shows the Goal content and a resume action instead of
-        # leaving a false running indicator or discarding the checkpoint.
-        # Premise: this runs at worker startup, so this process has no
-        # live goal loop. Shared-state-dir multi-worker is not handled:
-        # an active Goal owned by a live sibling could be paused here.
-        try:
-            full = store.get_session(sid) or {}
-            goal_meta = (full.get("extra_meta") or {}).get("goal")
-            if (isinstance(goal_meta, dict)
-                    and goal_meta.get("status") in {
-                        "refining", "active", "running", "evaluating",
-                    }):
-                goal_meta = dict(goal_meta)
-                goal_meta["status"] = "paused_recoverable"
-                goal_meta["phase"] = "paused"
-                goal_meta["recoverable"] = True
-                goal_meta["pause_reason"] = "worker_restart"
-                goal_meta["active_started_at"] = None
-                goal_meta["last_reason"] = (
-                    "worker restarted during Goal execution; resume from the latest checkpoint"
-                )
-                import openprogram.programs.workflow.goal as goal_module
-                goal_module.save_goal(sid, goal_meta)
-                goal_module._emit_goal_update(None, sid, goal_meta)
-                fixed += 1
-        except Exception:
-            pass
-        session_status = sess.get("status") or ""
-        if session_status in {"running", "cancelling"}:
-            try:
-                store.update_session(
-                    sid,
-                    status=(
-                        "cancelled"
-                        if session_status == "cancelling"
-                        else "interrupted"
-                    ),
-                )
-                fixed += 1
+                full = store.get_session(sid) or {}
+                goal_meta = (full.get("extra_meta") or {}).get("goal")
+                if (isinstance(goal_meta, dict)
+                        and goal_meta.get("status") in {
+                            "refining", "active", "running", "evaluating",
+                        }):
+                    goal_meta = dict(goal_meta)
+                    goal_meta["status"] = "paused_recoverable"
+                    goal_meta["phase"] = "paused"
+                    goal_meta["recoverable"] = True
+                    goal_meta["pause_reason"] = "worker_restart"
+                    goal_meta["active_started_at"] = None
+                    goal_meta["last_reason"] = (
+                        "worker restarted during Goal execution; resume from the latest checkpoint"
+                    )
+                    import openprogram.programs.workflow.goal as goal_module
+                    goal_module.save_goal(sid, goal_meta)
+                    goal_module._emit_goal_update(None, sid, goal_meta)
+                    fixed += 1
             except Exception:
                 pass
+            session_status = sess.get("status") or ""
+            if session_status in {"running", "cancelling"}:
+                try:
+                    store.update_session(
+                        sid,
+                        status=(
+                            "cancelled"
+                            if session_status == "cancelling"
+                            else "interrupted"
+                        ),
+                    )
+                    fixed += 1
+                except Exception:
+                    pass
     return fixed
 
 

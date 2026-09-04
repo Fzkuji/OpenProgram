@@ -7,6 +7,32 @@ from openprogram.webui._functions import (
 )
 
 
+def test_goal_launcher_keeps_original_prompt_schema_through_ownership_wrapper():
+    import openprogram.programs.workflow.goal  # register the public entry
+
+    row = next(row for row in _discover_workflow_functions(set()) if row["name"] == "goal")
+    assert "prompt" in row["params"]
+    assert row["filepath"].endswith("/goal/goal.py")
+
+
+def test_goal_source_endpoint_returns_goal_instead_of_ownership_wrapper(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from openprogram.programs.workflow.goal.goal import goal
+    from openprogram.webui import server
+    from openprogram.webui.routes import functions
+
+    monkeypatch.setattr(server, "_load_function", lambda _name: goal)
+    app = FastAPI()
+    functions.register(app)
+    response = TestClient(app).get("/api/function/goal/source")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["filepath"].endswith("/goal/goal.py")
+    assert "def goal(" in data["source"]
+    assert "def run(" not in data["source"]
+
+
 def test_workflow_category_exports_only_named_public_entries() -> None:
     workflow_dir = (
         Path(__file__).parents[3]
@@ -169,7 +195,7 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert not old_source.exists()
 
 
-def test_goal_form_exposes_only_prompt() -> None:
+def test_goal_form_keeps_prompt_primary_and_preserves_explicit_controls() -> None:
     source = (
         Path(__file__).parents[3]
         / "openprogram/programs/workflow/goal/goal.py"
@@ -180,6 +206,13 @@ def test_goal_form_exposes_only_prompt() -> None:
     )
     visible = [p["name"] for p in goal["params_detail"] if not p.get("hidden")]
     assert visible == ["prompt"]
+    advanced = {p["name"] for p in goal["params_detail"] if p.get("advanced")}
+    assert advanced == {
+        "model", "effort", "judge_model", "judge_effort", "judge_timeout_s",
+        "max_rounds", "max_tokens", "max_elapsed_s", "max_cost_usd",
+        "timeout_s", "context_mode",
+    }
+    assert not advanced.intersection({"runtime", "resume", "expected_goal"})
 
 
 def test_gui_agent_form_exposes_primary_and_advanced_parameters() -> None:

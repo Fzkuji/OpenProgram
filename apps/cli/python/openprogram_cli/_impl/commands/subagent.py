@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import sys
-from decimal import Decimal
 from typing import Any
 
 
@@ -36,55 +35,11 @@ def _least_remaining(local: Any, shared: Any) -> str:
 
 
 def _print_resource(payload: dict[str, Any]) -> None:
-    print(f"Job: {payload.get('job_id', '-')}")
+    resource = payload.get("resource") or {}
+    print(f"Execution: {payload.get('execution_id', payload.get('job_id', '-'))}")
     print(f"Status: {payload.get('status', '-')}")
-    if payload.get("resource_state") == "legacy/unmetered":
-        print("Resources: Unmetered")
-    else:
-        capacity = payload["capacity"]
-        live = capacity["session_live"]
-        queued = capacity["session_queued"]
-        jobs = capacity["session_jobs"]
-        print(
-            f"Session {live['used']}/{live['limit'] or '∞'} live · "
-            f"{queued['used']}/{queued['limit'] or '∞'} queued · "
-            f"{jobs['used']}/{jobs['limit'] or '∞'} jobs · "
-            f"Scheduler {capacity['scheduler_capacity']}"
-        )
-        budget = payload["budget"]
-        tokens = budget["tokens"]
-        shared = budget["shared_remaining"]
-        print("Tokens: " + _least_remaining(
-            _remaining(tokens["limit"], tokens["actual"], tokens["reserved"]),
-            shared["tokens"],
-        ))
-        cost = budget["cost_usd"]
-        unknown = max(
-            cost["unknown_events"] or 0,
-            shared["cost_unknown_events"] or 0,
-        )
-        if cost["known"] is not True or unknown:
-            suffix = f" ({unknown} event{'s' if unknown != 1 else ''})" if unknown else ""
-            print("Cost: Unknown" + suffix)
-        else:
-            local_cost = _remaining(
-                Decimal(cost["limit"]) if cost["limit"] is not None else None,
-                Decimal(cost["actual"]),
-                Decimal(cost["reserved"]),
-            )
-            shared_cost = (
-                Decimal(shared["cost_usd"])
-                if shared["cost_usd"] is not None else None
-            )
-            print(f"Cost: {_least_remaining(local_cost, shared_cost)}")
-        for label, key in (("Runtime", "runtime_seconds"), ("Idle", "idle_seconds")):
-            item = budget[key]
-            value = _remaining(item["limit"], item["used"])
-            print(f"{label}: {_least_remaining(value, None)}" + (
-                "s" if isinstance(value, (int, float)) else ""
-            ))
-    if payload.get("reason_code"):
-        print(f"Reason: {payload['reason_code']}")
+    print(f"Resource state: {resource.get('resource_state', 'untracked')}")
+    print("Resource: " + json.dumps(resource, ensure_ascii=False, default=str))
 
 
 def _print(payload: Any, *, as_json: bool) -> None:
@@ -97,9 +52,7 @@ def _print(payload: Any, *, as_json: bool) -> None:
                 print()
             _print(item, as_json=False)
         return
-    if payload.get("job_id") and (
-        "budget" in payload or payload.get("resource_state") == "legacy/unmetered"
-    ):
+    if isinstance(payload, dict) and payload.get("job_id") and "resource" in payload:
         _print_resource(payload)
         return
     if payload.get("error"):
@@ -119,17 +72,14 @@ def _resource_payload(runner: Any, job_id: str) -> dict[str, Any] | None:
     view = runner.get_job_resource_view(job_id)
     if view is not None:
         return view.to_dict()
-    get_job = getattr(runner, "get_job", None)
-    job = get_job(job_id) if get_job is not None else None
-    if get_job is not None and job is None:
+    job = runner.get_job(job_id)
+    if job is None:
         return None
     return {
         "job_id": job_id,
+        "execution_id": job_id,
         "status": getattr(job, "status", None) or "unknown",
-        "resource_state": "legacy/unmetered",
-        "reason_code": getattr(job, "reason_code", None),
-        "reason_key": None,
-        "retryable": False,
+        "resource": None,
     }
 
 
@@ -150,22 +100,6 @@ def _cmd_subagent_show(job_id: str, *, as_json: bool = False) -> int:
     from openprogram.agent.job import get_runner
 
     payload = _resource_payload(get_runner(), job_id)
-    if payload is None:
-        _print({"error": f"unknown job: {job_id}"}, as_json=as_json)
-        return 2
-    _print(payload, as_json=as_json)
-    return 0
-
-
-def _cmd_subagent_cancel(job_id: str, *, as_json: bool = False) -> int:
-    from openprogram.agent.job import get_runner
-
-    runner = get_runner()
-    job = runner.cancel_job(job_id, reason="cancel.user")
-    if job is None:
-        _print({"error": f"unknown job: {job_id}"}, as_json=as_json)
-        return 2
-    payload = _resource_payload(runner, job_id)
     if payload is None:
         _print({"error": f"unknown job: {job_id}"}, as_json=as_json)
         return 2

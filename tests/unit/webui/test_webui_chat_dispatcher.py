@@ -361,7 +361,7 @@ def test_write_tool_checkpoints_when_dag_runtime_unavailable(
     exhausted auth pool — routine when the chat runtime is a different
     provider) left it unbound for the whole turn. ``checkpoint_before_edit``
     needs ``_store`` AND ``_current_turn_id``, so it silently no-op'd and
-    no ``file_backups/`` was ever written — which made list_turn_files
+    no ``file_backups/`` was ever written — which made review scope
     empty and the whole per-turn file review UI dark.
 
     Forcing create_runtime to raise reproduces the real failure exactly.
@@ -434,7 +434,7 @@ def test_write_tool_checkpoints_when_dag_runtime_unavailable(
     assert target.read_text() == "hello from the agent\n"
 
     # The checkpoint exists and is keyed to THIS turn — that manifest is
-    # what list_turn_files / turn_file_diff / revert_turn all read.
+    # what review scope and history actions read.
     session_dir = db._session_dir("c1")
     manifest = turn_manifest_path(Path(session_dir), assistant_msg_id)
     assert manifest.exists(), "no file_backups manifest — checkpoint no-op'd"
@@ -443,10 +443,10 @@ def test_write_tool_checkpoints_when_dag_runtime_unavailable(
     backed = CheckpointStore(Path(session_dir)).list_backed_paths(assistant_msg_id)
     assert str(target) in backed
 
-    # ...and the WS action the UI actually calls now returns that file,
-    # which is the symptom the user reported (empty list → no card).
+    # ...and the canonical review scope reads that file from the journal.
     from openprogram.webui.ws_actions import turn_files as tf
-    listed = tf._list_files("c1", assistant_msg_id)
+    _, index = db._open("c1")
+    listed = tf._turn_summary(index, db._session_dir("c1"), assistant_msg_id, None)
     assert [f["path"] for f in listed["files"]] == [str(target)]
     assert listed["files"][0]["op"] == "add"
 
@@ -456,7 +456,7 @@ def test_shadow_git_commits_on_webui_turn(
 ) -> None:
     """finalize_turn runs on the WebUI path, so the shadow-git commit
     (and its before/after stamp) happens for web chats too — that stamp
-    is what makes turn_file_diff exact rather than approximate."""
+    is what makes review diffs exact rather than approximate."""
     from types import SimpleNamespace
     from openprogram.programs.tools.files.write import write as write_tool
 

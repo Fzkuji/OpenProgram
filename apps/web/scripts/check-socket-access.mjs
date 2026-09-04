@@ -52,18 +52,14 @@ function* sources(dir) {
   }
 }
 
-/** Globals the PLATFORM or a third-party script provides, so the absence of
- *  an assignment in our source is expected rather than a bug.
+/** Globals the PLATFORM provides, so the absence of an assignment in our
+ *  source is expected rather than a bug.
  *
  *  - Standard `window` members (DOM API surface).
- *  - `marked` / `renderMathInElement`: loaded from CDN <script> tags, so the
- *    assignment lives in the HTML, not here.
  *  Anything NOT listed must be assigned somewhere in web/ — including the
  *  debug hooks `__centerTabs` / `__desktopTransfer`, which app-shell.tsx
  *  really does assign and therefore pass on their own merit. */
 const PLATFORM_GLOBALS = new Set([
-  // Third-party globals injected via CDN <script>, never assigned by us.
-  "marked", "renderMathInElement",
   // Injected by the Electron preload via `contextBridge.exposeInMainWorld`
   // (apps/desktop/preload.js), so the write is outside web/ by design. Reads are
   // all null-guarded — in a browser tab the bridge is legitimately absent.

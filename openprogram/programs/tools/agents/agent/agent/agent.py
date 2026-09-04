@@ -267,8 +267,7 @@ def _dispatch_to_existing(
     No branch is created: the task runs as the target branch's next
     turn (send_message's addressing + delivery path), but unlike a
     message it is a formal task — a Task entity is created, the
-    dispatcher gets a job_id (``job_output`` waits, ``job_stop``
-    withdraws/cancels), and the result flows back like a spawn's.
+    dispatcher gets an execution id, and the result flows back like a spawn's.
     Busy target → the task queues in the target's inbox and runs when
     its current turn ends. Always asynchronous.
     """
@@ -347,7 +346,7 @@ def _dispatch_to_existing(
     delivery_message = job_header(sid, aid) + prompt
 
     # Busy target → pre-create the Task (so the dispatcher holds a real
-    # job_id while the work waits) and queue the dispatch in the
+    # execution id while the work waits) and queue the dispatch in the
     # target's inbox; drain runs it, reusing the id. Same cross-session-
     # only reasoning as send_message: a same-session dispatch runs
     # inside the dispatcher's own turn, whose token is the one the busy
@@ -358,7 +357,6 @@ def _dispatch_to_existing(
             from openprogram.agent import inbox
             from openprogram.agent.job.runner import _current_job_id
             from openprogram.agent.job import get_runner
-            from openprogram.agent.job.store import update_job_status
             from openprogram.agent.job.types import Job, JobStatus, mint_job_id
             job = Job(
                 id=mint_job_id(),
@@ -407,23 +405,35 @@ def _dispatch_to_existing(
                 )
             except Exception as e:  # noqa: BLE001
                 try:
-                    update_job_status(
-                        run_session, job.id, JobStatus.ERRORED,
-                        error=f"enqueue failed: {e}",
+                    # The Job was admitted canonically before touching the
+                    # session inbox. If delivery fails, cancel that exact
+                    # execution through RuntimeControlService so the command
+                    # log, Job projection, owner signal, and resource
+                    # admission converge on one outcome.
+                    runner.cancel_execution(
+                        job.id, reason=f"inbox enqueue failed: {e}",
                     )
-                    runner._governor.release_job(job.id, "error.inbox_enqueue")
-                except Exception:
-                    pass
+                except Exception as cancel_error:  # noqa: BLE001
+                    return (
+                        f"[agent error] {type(e).__name__}: {e}; "
+                        "canonical cleanup failed: "
+                        f"{type(cancel_error).__name__}: {cancel_error}"
+                    )
                 return f"[agent error] {type(e).__name__}: {e}"
             if q == "duplicate":
                 try:
-                    update_job_status(
-                        run_session, job.id, JobStatus.CANCELLED,
-                        error="duplicate dispatch",
+                    # Duplicate admission is also an exact canonical
+                    # cancellation. Do not terminalize only the projection;
+                    # otherwise the accepted execution and its resource
+                    # admission remain authoritative and can be picked up.
+                    runner.cancel_execution(
+                        job.id, reason="duplicate dispatch",
                     )
-                    runner._governor.release_job(job.id, "cancel.duplicate")
-                except Exception:
-                    pass
+                except Exception as cancel_error:  # noqa: BLE001
+                    return (
+                        "[agent error] duplicate dispatch cleanup failed: "
+                        f"{type(cancel_error).__name__}: {cancel_error}"
+                    )
                 return (
                     "[agent] duplicate dispatch ignored — an identical "
                     "task from you is already queued for this target "
@@ -437,11 +447,12 @@ def _dispatch_to_existing(
                 except Exception:
                     pass
             return (
-                f"[job dispatched, queued] job_id={job.id} "
+                f"[job dispatched, queued] execution_id={job.id} "
                 f"target={run_session}:{target_tip} — the target is busy "
                 "running a turn; your task runs when it ends and the "
-                "result comes back automatically. job_output(job_id) "
-                "waits for it; job_stop(job_id) withdraws it."
+        "result comes back automatically; use job_output for the reply and "
+        "the canonical execution resource and control surfaces to inspect "
+        "or manage it."
             )
 
     from openprogram.events import emit_safe
@@ -475,11 +486,12 @@ def _dispatch_to_existing(
     except Exception as e:  # noqa: BLE001
         return f"[agent error] {type(e).__name__}: {e}"
     return (
-        f"[job dispatched] job_id={job_id} "
+        f"[job dispatched] execution_id={job_id} "
         f"target={run_session}:{target_tip}\n"
         "The target branch is running your task as its next turn; the "
-        "result comes back to you automatically. job_output(job_id) "
-        "waits for it; job_stop(job_id) cancels it."
+        "result comes back to you automatically. Use job_output for the reply "
+        "and the canonical execution resource and control surfaces to inspect "
+        "or manage it."
     )
 
 
@@ -508,7 +520,7 @@ def _agent_impl(
                 "later with archive_agent."
             )
         # Dispatch to an EXISTING agent — always async, returns a
-        # job_id immediately; run_in_background is meaningless here
+        # execution id immediately; run_in_background is meaningless here
         # and ignored.
         return _dispatch_to_existing(
             prompt=prompt,
@@ -606,11 +618,18 @@ def _agent_impl(
                 "both parts: 'SID:MSG_ID'."
             )
         from openprogram.agent.session_db import default_db
-        if default_db().get_session(fork_sid) is None:
+        store = default_db()
+        if store.get_session(fork_sid) is None:
             release_fanout_slot(sid, aid)
             return (
                 f"[agent error] start_from {start_from!r} — session "
                 f"{fork_sid!r} not found (see list_agents)."
+            )
+        if not store.message_exists(fork_sid, fork_msg):
+            release_fanout_slot(sid, aid)
+            return (
+                f"[agent error] start_from {start_from!r} — message "
+                f"{fork_msg!r} not found in session {fork_sid!r}."
             )
         run_session = fork_sid
         branch_from = fork_msg
@@ -625,26 +644,53 @@ def _agent_impl(
         )
 
     if run_in_background:
-        # Background path: submit and return the job_id. Caller can
-        # invoke job_output / job_stop / get_task. The runner is
-        # responsible for state transitions + attach card update.
+        # Background path: submit and return the execution id. The runner is
+        # responsible for state transitions and attach card updates.
         try:
-            from openprogram.agent.sub_agent_run import run_agent_turn_async
             from openprogram.agent.sub_agent_run import (
+                emit_spawn_event,
+                run_agent_turn_async,
                 write_attach_placeholder_for_spawn,
             )
-            # Drop a "running" placeholder attach card first, anchored on
-            # the calling turn — the card shows up where it was invoked;
-            # the runner fills in the result in place at terminal state.
-            # Without this card, a background result could only drift
-            # back via job_followup with nowhere to anchor.
-            attach_id = write_attach_placeholder_for_spawn(
-                session_id=sid,
-                caller_msg_id=aid,
-                label=label or None,
-                prompt=prompt,
-                chosen_agent=chosen_agent,
-            )
+            from openprogram.agent.job.types import mint_job_id
+            from openprogram.programs._runtime import current_tool_call_id
+            import uuid as _uuid
+
+            job_id = mint_job_id()
+            attach_id = _uuid.uuid4().hex[:12]
+            tool_call_id = current_tool_call_id()
+
+            # Admission owns the first external side effect. Persist the
+            # placeholder, including its durable job id, and publish the live
+            # running card before the runner is allowed to dispatch the job.
+            def _on_accepted(job) -> None:
+                written_id = write_attach_placeholder_for_spawn(
+                    session_id=sid,
+                    caller_msg_id=aid,
+                    label=label or None,
+                    prompt=prompt,
+                    chosen_agent=chosen_agent,
+                    node_id=attach_id,
+                    job_id=job.id,
+                    target_session_id=run_session,
+                )
+                if written_id != attach_id:
+                    raise RuntimeError("failed to persist agent attach placeholder")
+                try:
+                    emit_spawn_event(
+                        session_id=sid,
+                        status="running",
+                        label=label or None,
+                        prompt=prompt,
+                        chosen_agent=chosen_agent,
+                        card_id=attach_id,
+                        target_session_id=run_session,
+                        tool_call_id=tool_call_id,
+                        job_id=job.id,
+                    )
+                except Exception:
+                    pass
+
             job_id = run_agent_turn_async(
                 session_id=run_session,
                 prompt=prompt,
@@ -671,32 +717,19 @@ def _agent_impl(
                 # it at terminal state if the spawn asked for that.
                 archive_when_done=archive_when_done,
                 attach_pointer_id=attach_id,
+                job_id=job_id,
+                spawn_caller=aid,
+                on_accepted=_on_accepted,
                 authority=caller_authority,
             )
-            # Live counterpart of the placeholder row above, so the card
-            # appears without a reload. Terminal state still arrives via
-            # the runner's session_reload — see the sync/async note in
-            # emit_spawn_event's callers.
-            if attach_id:
-                from openprogram.agent.sub_agent_run import emit_spawn_event
-                from openprogram.programs._runtime import current_tool_call_id
-                emit_spawn_event(
-                    session_id=sid,
-                    status="running",
-                    label=label or None,
-                    prompt=prompt,
-                    chosen_agent=chosen_agent,
-                    card_id=attach_id,
-                    tool_call_id=current_tool_call_id(),
-                    job_id=job_id,
-                )
         except Exception as e:  # noqa: BLE001
             _release_after_spawn_failure(sid, aid, e)
             return f"[agent error] {type(e).__name__}: {e}"
         return (
-            f"[agent spawned async] job_id={job_id}\n"
-            f"Call job_output(job_id={job_id!r}) to retrieve result, "
-            f"or job_stop(job_id={job_id!r}) to stop it."
+            f"[agent spawned async] execution_id={job_id}\n"
+            f"Use job_output({job_id!r}) for the final reply, and the "
+            f"canonical execution resource and control surfaces for execution "
+            f"{job_id!r}."
         )
 
     # Announce the spawn BEFORE running it: a synchronous spawn blocks
@@ -721,6 +754,7 @@ def _agent_impl(
             prompt=prompt,
             chosen_agent=chosen_agent,
             card_id=_card_id,
+            target_session_id=run_session,
             tool_call_id=_tool_call_id,
         )
         # Bind both counts + 1 for the child turn (same-context
@@ -742,7 +776,11 @@ def _agent_impl(
                 # forking it from ROOT (dag/overview.md §2.3). The async path
                 # (runner.py) already does this; without it here the sync
                 # path's sub-branch rendered as an unrelated root-level fork.
-                spawn_caller=aid if branch_from is None else None,
+                spawn_caller=(
+                    aid if branch_from is None or run_session != sid else None
+                ),
+                caller_msg_id=aid,
+                caller_session_id=sid if run_session != sid else None,
                 advance_head=False,  # same-session spawn never steals head
                 authority=caller_authority,
             )
@@ -756,6 +794,7 @@ def _agent_impl(
             emit_spawn_event(
                 session_id=sid, status="errored", label=label or None,
                 prompt=prompt, chosen_agent=chosen_agent, card_id=_card_id,
+                target_session_id=run_session,
                 tool_call_id=_tool_call_id,
                 content=f"{type(e).__name__}: {e}",
             )
@@ -778,6 +817,7 @@ def _agent_impl(
             prompt=prompt,
             chosen_agent=chosen_agent,
             node_id=_card_id,
+            target_session_id=run_session,
         )
     except Exception:
         pass
@@ -790,6 +830,7 @@ def _agent_impl(
             prompt=prompt,
             chosen_agent=chosen_agent,
             card_id=_card_id,
+            target_session_id=run_session,
             tool_call_id=_tool_call_id,
             head_id=result.head_id,
             content=(result.final_text or result.error or "").strip(),
@@ -848,13 +889,12 @@ def agent(
 
     Without ``to``: spawns a new agent. ``run_in_background=False``
     (default) blocks until it finishes and returns its final reply;
-    ``run_in_background=True`` returns immediately with a job_id;
-    call :func:`job_output` to retrieve the result, or
-    :func:`job_stop` to stop it.
+    ``run_in_background=True`` returns immediately with an execution id;
+    use the canonical execution resource and control surfaces.
 
     With ``to``: no agent is created — the task is dispatched to the
     named EXISTING branch and runs as its next turn. Always
-    asynchronous: returns a job_id immediately (``run_in_background``
+    asynchronous: returns an execution id immediately (``run_in_background``
     is ignored); the result comes back automatically.
 
     Args:
@@ -869,7 +909,7 @@ def agent(
             ``"SID:MSG_ID"`` ⇒ forks off that exact node. Mutually
             exclusive with ``to``.
         run_in_background: False (default) blocks for the final
-            reply. True returns ``job_id`` immediately for parallel
+            reply. True returns an execution id immediately for parallel
             execution; completion notifies the caller automatically.
             Ignored when ``to`` is set (always async).
         to: dispatch target — an existing branch, addressed as

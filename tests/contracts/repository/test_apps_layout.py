@@ -294,7 +294,7 @@ assert stale.STALE is True
 """
 
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", code, str(tmp_path)],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -335,7 +335,7 @@ assert stale.STALE is True
 """
 
     result = subprocess.run(
-        [sys.executable, "-c", code, str(tmp_path)],
+        [sys.executable, "-S", "-c", code, str(tmp_path)],
         cwd=ROOT,
         env=env,
         capture_output=True,

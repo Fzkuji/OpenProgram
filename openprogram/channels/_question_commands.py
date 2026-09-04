@@ -17,17 +17,20 @@ other's questions; a DM is one user; a Telegram group deliberately shares
 one session (peer_id = chat_id, group-wide bot), so any member answering
 is the group semantics, not a leak.
 
-Resolve funnels through `resolve_question_and_broadcast` — the same
-claim-once collapse point the web UI uses — so the first answer across
-surfaces wins and the others' cards/messages retract.
+Each answer is submitted through the canonical execution wait command with
+the channel actor and exact execution identity. The durable wait store keeps
+the claim-once rule shared with the web UI.
 """
 from __future__ import annotations
 
+import asyncio
+import uuid
+from collections.abc import Mapping
 from typing import Optional
 
 
 def try_handle_question_command(
-    user_text: str, session_key: str,
+    user_text: str, session_key: str, *, actor: Mapping[str, object],
 ) -> Optional[str]:
     """If ``user_text`` is a /answer or /decline command for a question in
     ``session_key``, resolve it and return a receipt string. Otherwise
@@ -42,9 +45,7 @@ def try_handle_question_command(
     if not (low.startswith("/answer") or low.startswith("/decline")):
         return None
 
-    from openprogram.agent.questions import (
-        get_question_registry, resolve_question_and_broadcast,
-    )
+    from openprogram.agent.questions import get_question_registry
 
     parts = text.split(maxsplit=2)
     verb = parts[0].lower()
@@ -60,17 +61,40 @@ def try_handle_question_command(
         # wrong id, or just a coincidental message. Don't swallow it.
         return None
 
+    from openprogram.execution import (
+        AttemptStore, DriverRegistry, RuntimeControlService,
+        default_control_service, default_store, submit_wait_command,
+    )
+
+    store = default_store()
+    service = default_control_service()
+    if service.executions.path != store.path:
+        service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    action = "execution.wait.decline" if verb == "/decline" else "execution.wait.answer"
+    value = None
+    if verb != "/decline":
+        raw = parts[2].strip() if len(parts) > 2 else ""
+        if not raw:
+            return "请在 /answer 后给出你的回答，例如 /answer " + qid + " 1"
+        value = _map_choice(q, raw)
+    try:
+        dispatch = asyncio.run(submit_wait_command(
+            service,
+            action=action,
+            command_id=f"channel-wait:{uuid.uuid4().hex}",
+            execution_id=q.execution_id,
+            expected_version=q.execution_version,
+            actor=actor,
+            wait_id=q.id,
+            generation=q.wait_generation,
+            value=value,
+        ))
+        ok = dispatch.command.status.value in {"accepted", "applying", "applied"}
+    except Exception:
+        ok = False
+    get_question_registry().wake(qid)
     if verb == "/decline":
-        ok = resolve_question_and_broadcast(qid, "declined", None)
         return "✓ 已拒绝该问题。" if ok else "该问题已失效。"
-
-    # /answer — map the raw choice text to the question's answer shape.
-    raw = parts[2].strip() if len(parts) > 2 else ""
-    if not raw:
-        return "请在 /answer 后给出你的回答，例如 /answer " + qid + " 1"
-
-    value = _map_choice(q, raw)
-    ok = resolve_question_and_broadcast(qid, "answered", value)
     return "✓ 已记录你的回答。" if ok else "该问题已失效（可能已被回答）。"
 
 

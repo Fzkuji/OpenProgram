@@ -289,7 +289,7 @@ def _run(store, update_id, runner):
                 try:
                     job = load_job(record.request.session_id, request["job_id"])
                     _check_job(store, record, request, config, job)
-                    runner.cancel_job(job.id, reason="source repair stopped")
+                    runner.cancel_execution(job.id, reason="source repair stopped")
                 except Exception:
                     _log.warning("Could not cancel original source repair Job", exc_info=True)
     finally:

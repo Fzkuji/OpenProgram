@@ -1,10 +1,10 @@
 "use client";
 
-import { useSessionStore } from "@/lib/session-store";
-import { surfaceRefForChat } from "@/lib/desktop-bridge";
+import { surfaceOriginForChat } from "@/lib/desktop-bridge";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
 import { setRunning } from "@/lib/runtime-bridge/ui";
+import { useSessionStore } from "@/lib/session-store";
 import {
   registerChatSender,
   rememberSendSettings,
@@ -199,7 +199,7 @@ export function sendChatMessage({
   if (toolsProfile && toolsProfile !== "__agent__") {
     payload.tools_profile = toolsProfile;
   }
-  const surface = surfaceRefForChat(sessionId, toolsEnabled);
+  const surface = surfaceOriginForChat(sessionId, toolsEnabled);
   if (surface) payload.surface = surface;
   if (serviceTier) {
     payload.service_tier = serviceTier;

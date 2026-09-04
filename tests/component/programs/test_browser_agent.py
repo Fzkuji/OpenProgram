@@ -64,8 +64,14 @@ class _FakeElementHandle:
         except ValueError:
             return None
 
-    def evaluate(self, _script: str):
+    def evaluate(self, script: str):
         index = self._index()
+        if "element.click()" in script:
+            if self.page.agent_cursor_armed:
+                self.page.agent_cursor_events.append((120, 80))
+            self.page.calls.append(("click", index))
+            self.page.body_text = "Saved"
+            return None
         if index is None:
             return {
                 "connected": False,
@@ -75,9 +81,14 @@ class _FakeElementHandle:
                 "name": "Save",
                 "disabled": False,
             }
-        return {"connected": True, "visible": True, **self.page.element_snapshot(index)}
+        return {
+            "connected": True,
+            "visible": self.page.element_visible,
+            **self.page.element_snapshot(index),
+        }
 
     def click(self):
+        self.page.native_handle_clicks += 1
         if self.page.agent_cursor_armed:
             self.page.agent_cursor_events.append((120, 80))
         self.page.calls.append(("click", self._index()))
@@ -137,6 +148,8 @@ class _FakePage:
         self.url = "http://127.0.0.1:18100/fixture"
         self.body_text = "Name Save"
         self.button_name = "Save"
+        self.button_disabled = False
+        self.element_visible = True
         self.navigation_time_origin = 1
         self.viewport_width = 960
         self.viewport_height = 640
@@ -147,6 +160,7 @@ class _FakePage:
         self.agent_cursor_states = []
         self.agent_cursor_events = []
         self.agent_cursor_script = ""
+        self.native_handle_clicks = 0
         self.node_order = ["save", "name"]
         self.mutate_after_handle_capture = False
         self.mutate_during_screenshot = False
@@ -194,7 +208,7 @@ class _FakePage:
             "tag": "button",
             "role": "button",
             "name": self.button_name,
-            "disabled": False,
+            "disabled": self.button_disabled,
         }
 
     def element_snapshot(self, index: int):
@@ -296,6 +310,43 @@ def test_screenshot_is_one_current_viewport_image_on_the_same_frame():
     }
 
 
+def test_bound_screenshot_uses_hidden_desktop_capture(monkeypatch):
+    from openprogram.programs import ToolReturn
+    from openprogram.webui.ws_actions import webtab
+
+    controller, api = _controller()
+    controller.binding_id = "surface-background"
+    controller.page_revision = 3
+    controller.access_revision = 4
+    controller.geometry_revision = 5
+    calls = []
+    monkeypatch.setattr(
+        webtab,
+        "request_bound_screenshot",
+        lambda binding_id, **kwargs: calls.append((binding_id, kwargs)) or {
+            "ok": True,
+            "image_data_url": "data:image/png;base64," + base64.b64encode(
+                b"\x89PNG hidden"
+            ).decode("ascii"),
+        },
+    )
+
+    observation = controller.execute(action="observe")
+    result = controller.execute(
+        action="screenshot", expected_frame_id=observation["frame_id"],
+    )
+
+    assert isinstance(result, ToolReturn)
+    assert result.images == [b"\x89PNG hidden"]
+    assert not any(call[0] == "screenshot" for call in api.page.calls)
+    assert calls == [("surface-background", {
+        "timeout": 5.0,
+        "expected_page_revision": 3,
+        "expected_access_revision": 4,
+        "expected_geometry_revision": 5,
+    })]
+
+
 def test_planner_screenshot_tool_result_is_metadata_only_and_dag_safe():
     from openprogram.agentic_programming.runtime import Runtime
     from openprogram.programs import ToolReturn
@@ -375,12 +426,46 @@ def test_write_requires_fresh_frame_and_invalidates_old_refs():
 
     assert result["ok"] is True
     assert api.page.calls[-1] == ("click", 0)
+    assert api.page.native_handle_clicks == 1
     stale = controller.execute(
         action="click",
         expected_frame_id=observation["frame_id"],
         ref="e1",
     )
     assert stale == {"ok": False, "reason_code": "stale_observation"}
+
+
+def test_bound_ref_click_uses_background_dom_click():
+    controller, api = _controller()
+    controller.binding_id = "surface-background"
+    observation = controller.execute(action="observe")
+
+    result = controller.execute(
+        action="click",
+        expected_frame_id=observation["frame_id"],
+        ref="e1",
+    )
+
+    assert result["ok"] is True
+    assert api.page.calls[-1] == ("click", 0)
+    assert api.page.native_handle_clicks == 0
+
+
+def test_ref_hidden_after_observe_is_stale_and_is_not_clicked():
+    controller, api = _controller()
+    observation = controller.execute(action="observe")
+    api.page.element_visible = False
+
+    result = controller.execute(
+        action="click",
+        expected_frame_id=observation["frame_id"],
+        ref="e1",
+    )
+
+    assert result == {"ok": False, "reason_code": "stale_observation"}
+    assert api.page.body_text == "Name Save"
+    assert not any(call[0] == "click" for call in api.page.calls)
+    assert api.page.native_handle_clicks == 0
 
 
 def test_agent_click_cursor_is_internal_and_only_armed_for_agent_clicks():
@@ -443,6 +528,19 @@ def test_changed_element_identity_invalidates_the_ref_before_click():
     )
 
     assert result == {"ok": False, "reason_code": "stale_observation"}
+    assert not any(call[0] == "click" for call in api.page.calls)
+
+
+def test_observed_disabled_ref_is_not_clicked():
+    controller, api = _controller()
+    api.page.button_disabled = True
+    observation = controller.execute(action="observe")
+
+    result = controller.execute(
+        action="click", expected_frame_id=observation["frame_id"], ref="e1",
+    )
+
+    assert result == {"ok": False, "reason_code": "target_disabled"}
     assert not any(call[0] == "click" for call in api.page.calls)
 
 

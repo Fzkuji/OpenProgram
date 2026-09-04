@@ -66,9 +66,21 @@ def _wire_matrix_registry(monkeypatch):
     the invariants run over a controlled, wire-complete set of rows instead
     of the (now enabled-only) runtime registry. Patched at every binding so
     ``get_providers()`` and the test-module import both see the same dict."""
+    from openprogram.providers.sources import models_dev
+
     # The wire matrix uses shipped metadata, not the external catalogue.
-    monkeypatch.setattr(cat, "_models_dev_info", lambda pid: {})
+    monkeypatch.setattr(cat, "_models_dev_info", lambda _pid: {})
     monkeypatch.setattr(cr, "read_providers_config", lambda: _WIRE_MATRIX_CFG)
+    # The matrix is intentionally self-contained: provider.json supplies its
+    # wire endpoints, so metadata fallback must not consult models.dev here.
+    monkeypatch.setattr(cat, "_models_dev_info", lambda _pid: {})
+    monkeypatch.setattr(
+        models_dev,
+        "_start_background_refresh",
+        lambda: pytest.fail(
+            "wire-matrix tests must not start a models.dev refresh"
+        ),
+    )
     reg = mg._load()
     assert reg, "fixture must build a non-empty registry"
     monkeypatch.setattr(mg, "ENABLED_MODELS", reg)

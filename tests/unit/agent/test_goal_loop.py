@@ -9,6 +9,7 @@ import pytest
 
 import openprogram.programs.workflow.goal as G
 from openprogram.agent.session_db import SessionDB
+from openprogram.agentic_programming.runtime import Runtime
 
 
 @pytest.fixture
@@ -20,8 +21,9 @@ def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionDB:
     return store
 
 
-class _Runtime:
+class _Runtime(Runtime):
     def __init__(self, answers: list[str] | None = None) -> None:
+        super().__init__(call=lambda **_kwargs: "unused fixture provider")
         self.answers = iter(answers or [])
         self.questions: list[tuple[str, object]] = []
 
@@ -111,10 +113,8 @@ def _run_goal(
     prompts: list[str] = []
 
     # 模拟 ambient Runtime 的 last_blocks（零工具轮 → 空列表）。
-    class _RuntimeStub:
-        last_blocks: list = []
-
-    stub = _RuntimeStub()
+    stub = runtime or _Runtime()
+    stub.last_blocks = [] if tools_per_round is not None else None
     tool_flags = iter(tools_per_round or [])
     token = None
     if tools_per_round is not None:
@@ -127,6 +127,9 @@ def _run_goal(
                 [{"type": "tool", "tool": "bash"}]
                 if next(tool_flags, True) else []
             )
+        else:
+            # These scenarios exercise verdict/budget behavior, not idle turns.
+            stub.last_blocks = [{"type": "tool", "tool": "read"}]
         return next(outputs)
 
     decisions = iter(verdicts)
@@ -141,7 +144,7 @@ def _run_goal(
             "do work",
             max_rounds=max_rounds,
             context_mode=context_mode,
-            runtime=runtime or _Runtime(),
+            runtime=stub,
             resume=resume,
         )
     finally:
@@ -159,8 +162,8 @@ def test_command_set_status_and_clear_use_the_workflow_state(
 
     cancelled: list[tuple[str, str | None]] = []
     monkeypatch.setattr(
-        "openprogram.agent.run_control.mark_cancelled",
-        lambda sid, *, execution_id=None: cancelled.append((sid, execution_id)),
+        G, "request_goal_stop",
+        lambda goal, sid: cancelled.append((sid, goal.get("execution_id"))),
     )
     G.save_goal("s1", {
         "text": "tests pass",
@@ -279,6 +282,42 @@ def test_needs_user_persists_and_stops_before_another_work_round(
     assert stored["questions"][0]["options"] == [
         {"label": "A", "description": "first"},
     ]
+
+
+def test_second_resume_preserves_consumed_answers_and_work_evidence(db, monkeypatch, tmp_path):
+    G.save_goal("s1", {
+        "text": "survey", "status": "waiting_user", "version": 0,
+        "questions": [{"id": "scope", "prompt": "Scope?", "status": "pending"}],
+    })
+    G.apply_goal_action("s1", "answer", question_id="scope", answer="RAG_ONLY_482")
+    _run_goal(
+        monkeypatch, db, resume=True, agent_outputs=["draft saved at artifact-482.md"],
+        verdicts=[("waiting_external", "waiting for job", "", [], False)],
+    )
+    # Reopen persistence so the second invocation cannot rely on run-local state.
+    reopened = SessionDB(tmp_path / "sessions-git")
+    monkeypatch.setattr(G, "_db", lambda: reopened)
+    views = []
+    def capture(*args, **kwargs):
+        views.append(kwargs.get("session_view", ""))
+        return "met", "done", "", [], False
+    # _run_goal installs a verdict stub; capture the arguments at its prompt seam
+    # instead in a standalone invocation using the already-installed work stub.
+    module = importlib.import_module("openprogram.programs.workflow.goal.goal")
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    prompts = []
+    monkeypatch.setattr(agent_module, "agent", lambda **kw: prompts.append(kw["prompt"]) or "done")
+    monkeypatch.setattr(G, "evaluate_goal", capture)
+    module.goal("survey", resume=True)
+    assert "RAG_ONLY_482" in prompts[0]
+    assert "RAG_ONLY_482" in views[0]
+    assert "artifact-482.md" in prompts[0]
+    assert "artifact-482.md" in views[0]
+    G.apply_goal_action("s1", "edit", prompt="new independent task")
+    module.goal("new independent task", resume=True)
+    assert "RAG_ONLY_482" not in prompts[-1]
+    assert "artifact-482.md" not in prompts[-1]
+    assert "RAG_ONLY_482" not in views[-1]
 
 
 def test_resume_without_answer_remains_waiting_and_does_not_run_agent(
@@ -794,7 +833,7 @@ def test_goal_clear_during_judge_does_not_get_overwritten(
     monkeypatch.setattr(agent_module, "agent", lambda **_kwargs: "finished")
 
     def clear_then_accept(*_args, **_kwargs):
-        assert G.handle_goal_command("s1", "clear")["text"] == "Goal cancelled."
+        assert G.handle_goal_command("s1", "clear")["text"].startswith("Goal cancellation saved.")
         return "met", "done", "", []
 
     monkeypatch.setattr(G, "evaluate_goal", clear_then_accept)
@@ -820,7 +859,7 @@ def test_goal_is_active_and_clearable_during_refinement(
 
     def clear_during_refinement(*_args, **_kwargs):
         assert G.load_goal("s1")["status"] == "active"
-        assert G.handle_goal_command("s1", "clear")["text"] == "Goal cancelled."
+        assert G.handle_goal_command("s1", "clear")["text"].startswith("Goal cancellation saved.")
         return "SPEC", ["item"]
 
     monkeypatch.setattr(G, "refine_goal_spec_candidate", clear_during_refinement)

@@ -26,9 +26,19 @@ def _reset_cache(tmp_path, monkeypatch):
     # deliberately serves it — which would mask the fail-TTL behaviour
     # these tests pin down.
     monkeypatch.setattr(md, "_disk_cache_path", lambda: tmp_path / "models_dev.json")
-    md._cache.update({"data": None, "fetched_at": 0.0})
+    md._cache.update({
+        "data": None,
+        "fetched_at": 0.0,
+        "last_attempt_at": 0.0,
+        "refreshing": False,
+    })
     yield
-    md._cache.update({"data": None, "fetched_at": 0.0})
+    md._cache.update({
+        "data": None,
+        "fetched_at": 0.0,
+        "last_attempt_at": 0.0,
+        "refreshing": False,
+    })
 
 
 class _Resp:

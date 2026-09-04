@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from scripts.docs_site import checklang
@@ -18,6 +17,52 @@ def test_internal_plans_are_not_part_of_the_public_docs_build() -> None:
     assert any(path.startswith("reference/design/plans/") for path in paths)
     assert "reference/design/repository-structure.html" in paths
     assert "reference/design/repository-structure-implementation.md" in paths
+
+
+def test_gui_agent_design_covers_flow_boundaries_and_file_ownership() -> None:
+    source = (ROOT / "docs/reference/design/ui/gui-agent.html").read_text(
+        encoding="utf-8"
+    )
+
+    for section_id in (
+        "current-api",
+        "target-api",
+        "architecture",
+        "invocation",
+        "comparison",
+        "runner",
+        "lifecycle",
+        "results",
+        "boundaries",
+        "ownership",
+        "migration",
+        "evidence",
+    ):
+        assert f'id="{section_id}"' in source
+    for path in (
+        "openprogram/programs/gui_harness_bridge.py",
+        "openprogram/agent/process_runner.py",
+        "openprogram/agent/surface_context.py",
+        "openprogram/programs/workflow/browser/__init__.py",
+        "apps/server/openprogram_server/_webui/ws_actions/webtab.py",
+        "apps/web/lib/desktop-bridge.ts",
+        "apps/desktop/main.js",
+    ):
+        assert path in source
+    assert "padding: clamp(20px,3vw,36px)" in source
+    assert "@media (max-width:1120px)" in source
+    for contract_term in (
+        "browser_control",
+        "plan_next_capability",
+        "call_capability",
+        "computer_use",
+        "browser_use",
+        "vm_use",
+        "browser_agent",
+        "web_use",
+        "Internal capabilities create traceable child nodes",
+    ):
+        assert contract_term in source
 
 
 def test_language_check_uses_the_same_public_docs_boundary(
@@ -69,35 +114,35 @@ def test_editorial_navigation_does_not_list_a_page_twice() -> None:
 
 
 def test_gui_agent_design_keeps_the_capability_loop_and_context_contract() -> None:
-    for suffix, title in (
-        ("", "GUI Agent autonomous capability loop"),
-        (".zh", "GUI Agent 自主能力调用循环"),
-    ):
-        design_dir = ROOT / "docs" / "reference" / "design" / "ui"
-        source = design_dir / f"gui-agent{suffix}.archify.json"
-        artifact = design_dir / f"gui-agent{suffix}.html"
-        specification = json.loads(source.read_text(encoding="utf-8"))
+    design_dir = ROOT / "docs/reference/design/ui"
+    english = (design_dir / "gui-agent.html").read_text(encoding="utf-8")
+    chinese = (design_dir / "gui-agent.zh.html").read_text(encoding="utf-8")
 
-        node_ids = {node["id"] for node in specification["nodes"]}
-        edge_ids = {edge["id"] for edge in specification["edges"]}
-        assert {
-            "computer_use",
-            "browser_use",
-            "vm_use",
-            "record_result",
-            "terminal_decision",
-            "normalized_result",
-            "runtime_stop",
-        } <= node_ids
-        assert {"next_iteration", "decision_terminal", "runtime_boundary"} <= edge_ids
-        assert title in artifact.read_text(encoding="utf-8")
+    for required in (
+        "computer_use",
+        "browser_use",
+        "vm_use",
+        "plan_next_capability",
+        "call_capability",
+        "capability history",
+        "adapters/mac_indicator.py",
+    ):
+        assert required in english
+    for required in (
+        "computer_use",
+        "browser_use",
+        "vm_use",
+        "plan_next_capability",
+        "call_capability",
+        "上下文如何保证连续",
+        "adapters/mac_indicator.py",
+    ):
+        assert required in chinese
 
     gui_page = next(
         page
         for page in discover(ROOT / "docs")
         if page.rel.as_posix() == "reference/design/ui/gui-agent.html"
     )
-    assert gui_page.zh_src == (
-        ROOT / "docs" / "reference" / "design" / "ui" / "gui-agent.zh.html"
-    )
+    assert gui_page.zh_src == design_dir / "gui-agent.zh.html"
     assert gui_page.zh_out == Path("reference/design/ui/gui-agent.zh.html")

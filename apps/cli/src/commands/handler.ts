@@ -53,6 +53,10 @@ export interface SlashContext {
   currentAgent?: string;
   currentModel?: string;
   currentConversation?: string;
+  submitExecutionCommand?: (
+    operation: 'steer' | 'fork' | 'retry',
+    payload: Record<string, unknown>,
+  ) => boolean;
   /**
    * Tell the REPL that the *next* ``session_aliases`` envelope should
    * be printed to the system area. Used by /aliases — picker
@@ -185,13 +189,33 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     }
 
     case 'steer': {
-      // Mid-run course-correction: inject a new instruction into the live run
-      // for this session. The running loop picks it up at its next step.
-      const conv = ctx.currentConversation;
       const message = args.join(' ').trim();
-      if (!conv) { ctx.pushSystem('No active session to steer.'); return true; }
-      if (!message) { ctx.pushSystem('Usage: /steer <new instruction>'); return true; }
-      ctx.client.send({ action: 'steer', session_id: conv, message });
+      if (!message) {
+        ctx.pushSystem('Usage: /steer <instruction>');
+      } else if (!ctx.submitExecutionCommand?.('steer', { message })) {
+        ctx.pushSystem('Steer unavailable: no current execution version.');
+      }
+      return true;
+    }
+
+    case 'retry': {
+      const checkpoint_id = args[0];
+      if (!ctx.submitExecutionCommand?.('retry', checkpoint_id ? { checkpoint_id } : {})) {
+        ctx.pushSystem('Retry unavailable: no current execution version.');
+      }
+      return true;
+    }
+
+    case 'fork': {
+      if (args.length !== 3) {
+        ctx.pushSystem('Usage: /fork <checkpoint-id> <manifest-id> <proof-hash>');
+        return true;
+      }
+      if (!ctx.submitExecutionCommand?.('fork', {
+        checkpoint_id: args[0]!, manifest_id: args[1]!, proof_hash: args[2]!,
+      })) {
+        ctx.pushSystem('Fork unavailable: no current execution version.');
+      }
       return true;
     }
 

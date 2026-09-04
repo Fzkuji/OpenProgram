@@ -1095,6 +1095,9 @@ class Runtime:
                     "detail": q.detail,
                     "schema": q.schema,  # kind="form" 时非空
                     "questions": q.questions,  # kind="ask_many" 时非空
+                    "execution_id": q.execution_id,
+                    "wait_generation": q.wait_generation,
+                    "expected_version": q.execution_version,
                     "expires_at": q.expires_at,
                 },
                 transport,
@@ -2251,7 +2254,7 @@ class Runtime:
             # inside some agentic function body. Recover that function's
             # name from the recursion-depth tracker (innermost = deepest)
             # so the situational/self-recursion guidance is injected here
-            # too — otherwise standalone calls get no steering.
+            # too — otherwise standalone calls receive no situational guidance.
             standalone_prefix: list = []
             try:
                 from openprogram.agentic_programming.function import (

@@ -26,20 +26,21 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 - **`agent_loop.py`** — Agent loop
 - **`attended.py`** — Attended / unattended mode
 - **`authority.py`** — Runtime-owned speaker attribution and two-tier authorization
+- **`continuation.py`** — Durable Agent checkpoint payloads and resumable loop input
 - **`exec.py`** — Shared subprocess execution utilities
 - **`history_ownership.py`** — Resolve owned child change sets for file-history operations
 - **`inbox.py`** — Per-session send_message inbox
 - **`messages.py`** — Custom message types and LLM converters for the agent layer
 - **`plan_mode.py`** — Plan-mode session flag
 - **`process_runner.py`** — Run @agentic_function tools in an isolated subprocess so the stop
+- **`production_driver.py`** — Internal production driver for canonical Agent executions
 - **`questions.py`** — User-input requests
 - **`resource_governance.py`** — Resource-limit parsing, inheritance, and read-only job diagnostics
 - **`retry.py`** — Retry logic for agent errors
-- **`run_control.py`** — Run control for turn execution: pause / cancel / session binding /
+- **`run_control.py`** — Run control for turn execution: cancel / session binding /
 - **`session.py`** — AgentSession
 - **`session_config.py`** — Per-session run configuration shared by TUI, web, and channels
 - **`session_db.py`** — session_db
-- **`steering.py`** — Cross-process steering inbox shared by normal chat and programs
 - **`sub_agent_run.py`** — Run an agent turn that can be inherited (sibling branch) or clean
 - **`surface_context.py`** — Turn-scoped awareness of a visible OpenProgram desktop surface
 - **`turn_request_context.py`** — The TurnRequest in force for the current execution context

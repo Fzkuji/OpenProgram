@@ -41,6 +41,24 @@ function wsSend(payload: unknown): void {
   }
 }
 
+function waitCommand(
+  decision: PendingDecision,
+  action: "execution.wait.answer" | "execution.wait.decline",
+  value?: unknown,
+): void {
+  if (!decision.executionId || !Number.isInteger(decision.expectedVersion)) return;
+  wsSend({
+    type: "execution.command",
+    action,
+    command_id: `web-wait-${crypto.randomUUID()}`,
+    execution_id: decision.executionId,
+    expected_version: decision.expectedVersion,
+    payload: action === "execution.wait.answer"
+      ? { wait_id: decision.id, generation: decision.waitGeneration, answer: value }
+      : { wait_id: decision.id, generation: decision.waitGeneration, reason: value },
+  });
+}
+
 /** 提示语收尾：已是问号/冒号/句号等终止符就原样；否则补一个中文冒号「：」，
  *  让「请填写名字」这类祈使句读起来像在等你输入。 */
 function withColon(s: string): string {
@@ -178,7 +196,7 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
           answer[name] = v;
         }
       }
-      wsSend({ action: "question_reply", id: q.id, answer });
+      waitCommand(q, "execution.wait.answer", answer);
       onResolve(q.id);
       return;
     }
@@ -188,10 +206,10 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
       // follow the user's locale. ``_approval.await_user_approval`` accepts
       // it verbatim; a localized string would fail the comparison in every
       // language it doesn't happen to list.
-      if (pick === "once") wsSend({ action: "question_reply", id: q.id, answer: APPROVE_ANSWER, scope: "once" });
-      else if (pick === "always") wsSend({ action: "question_reply", id: q.id, answer: APPROVE_ANSWER, scope: "always" });
-      else if (pick === "always_path") wsSend({ action: "question_reply", id: q.id, answer: APPROVE_ANSWER, scope: "always_path" });
-      else if (pick === "deny") wsSend({ action: "question_reject", id: q.id });
+      if (pick === "once") waitCommand(q, "execution.wait.answer", { answer: APPROVE_ANSWER, scope: "once" });
+      else if (pick === "always") waitCommand(q, "execution.wait.answer", { answer: APPROVE_ANSWER, scope: "always" });
+      else if (pick === "always_path") waitCommand(q, "execution.wait.answer", { answer: APPROVE_ANSWER, scope: "always_path" });
+      else if (pick === "deny") waitCommand(q, "execution.wait.decline");
       else return;
       onResolve(q.id);
       return;
@@ -204,7 +222,7 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
         const sc = s as Extract<Step, { kind: "choice" }>;
         return sc.multi ? arr : (arr[0] ?? "");
       });
-      wsSend({ action: "question_reply", id: q.id, answer: value });
+      waitCommand(q, "execution.wait.answer", value);
       onResolve(q.id);
       return;
     }
@@ -213,7 +231,7 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
     const arr = Array.from(aa.picked);
     if (aa.custom.trim()) arr.push(aa.custom.trim());
     const answer: string | string[] = q.multi ? arr : (arr[0] ?? "");
-    wsSend({ action: "question_reply", id: q.id, answer });
+    waitCommand(q, "execution.wait.answer", answer);
     onResolve(q.id);
   }
 

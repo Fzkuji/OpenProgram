@@ -10,6 +10,7 @@ import sys
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import anyio
 import mcp.types as mcp_types
@@ -34,11 +35,16 @@ def _stdio_subprocess_environment(tmp_path, *, client: str = "a"):
     (fixture_path / "sitecustomize.py").write_text(
         """
 import json
+import hashlib
 import os
 import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from openprogram.agent.dispatcher import TurnResult
+from openprogram.agent.authority import mcp_client_authority
+from openprogram.agent.questions import get_question_registry
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.events import get_event_bus, make_event
 from openprogram.programs._runtime import register
@@ -56,6 +62,7 @@ def web_use_dispatch(arguments, *, owner_id):
     return {"ok": True, "owner_bound": owner_id.startswith("mcp:")}
 
 mcp_service_module._default_web_use_dispatch = web_use_dispatch
+mcp_service_module._default_question_registry = get_question_registry
 
 async def execute(call_id, arguments, cancel_event, on_update):
     record("execute", call_id=call_id, arguments=arguments,
@@ -85,30 +92,90 @@ permission_module.load_merged_rules = lambda _session_id: PermissionRules(
 )
 
 from openprogram.agent import dispatcher
+from openprogram.agent.run_control import get_current_execution_id
+from openprogram.execution import default_store
+from openprogram.execution.waits import DurableWaitStore
+
+wait_expectation = {}
+
 def process_user_turn(request, *, cancel_event):
     record("turn", session_id=request.session_id, prompt=request.user_text,
            speaker_id=request.speaker_id)
-    get_event_bus().emit(make_event("question.asked", "agent", {
-        "id": "fixture-question", "session_id": request.session_id,
-    }))
+    execution_id = get_current_execution_id()
+    execution = default_store().get_execution(execution_id)
+    if execution is None or not execution.current_attempt_id:
+        raise RuntimeError("fixture execution is not active")
     if request.user_text == "wait-for-cancel":
         record("entered", session_id=request.session_id)
         while not cancel_event.is_set():
             threading.Event().wait(0.01)
         record("late-worker-finished", session_id=request.session_id)
+        return TurnResult("fixture-result", "fixture-user", "fixture-assistant")
+    generation = int(execution.owner_lease["generation"])
+    wait = DurableWaitStore(default_store()).open_wait(
+            execution_id=execution_id,
+            attempt_id=execution.current_attempt_id,
+            generation=generation,
+            kind="ask",
+            request={
+                "prompt": "fixture-question",
+                "options": [],
+                "multi": False,
+                "allow_custom": True,
+                "detail": "",
+                "schema": {},
+                "questions": [],
+            },
+            policy_snapshot={
+                "version": 1,
+                "on_answer": "continue",
+                "on_decline": "fail",
+                "on_timeout": "fail",
+            },
+            expires_at=time.time() + 60,
+            wait_id="fixture-question",
+    )
+    wait_expectation.update({
+        "execution_id": execution_id,
+        "wait_id": wait.wait_id,
+        "generation": wait.claim_generation,
+    })
+    get_event_bus().emit(make_event("question.asked", "agent", {
+        "id": wait.wait_id, "session_id": request.session_id,
+        "execution_id": execution_id,
+        "kind": wait.kind, "prompt": wait.request["prompt"],
+        "options": wait.request["options"], "multi": False,
+        "allow_custom": True, "detail": "", "schema": {},
+        "questions": [], "wait_generation": wait.claim_generation,
+        "expected_version": execution.status_version,
+        "expires_at": wait.expires_at,
+    }))
     return TurnResult("fixture-result", "fixture-user", "fixture-assistant")
 dispatcher.process_user_turn = process_user_turn
 
-class Questions:
-    def resolve(self, question_id, outcome, value=None):
-        record("question", question_id=question_id, outcome=outcome, value=value)
-        return True
-    def cancel_session(self, session_id):
-        record("question_cancel", session_id=session_id)
-
-questions = Questions()
-import openprogram.agent.questions as question_module
-question_module.get_question_registry = lambda: questions
+import openprogram.execution as execution_module
+async def submit_wait_command(service, **kwargs):
+    del service
+    expected_execution_id = wait_expectation.get("execution_id")
+    expected_actor = dict(mcp_client_authority(
+        hashlib.sha256(os.environ["OPENPROGRAM_MCP_TOKEN"].encode("ascii"))
+        .hexdigest()[:16]
+    ))
+    expected_actor.update({
+        "project_ids": ["default"],
+        "session_ids": ["fixture-session"],
+        "execution_actions": ["execution.wait.decline"],
+    })
+    assert kwargs["action"] == "execution.wait.decline"
+    assert kwargs["execution_id"] == expected_execution_id
+    assert kwargs["wait_id"] == wait_expectation["wait_id"]
+    assert kwargs["generation"] == wait_expectation["generation"]
+    assert kwargs["actor"] == expected_actor
+    record("question", question_id=kwargs["wait_id"], outcome="declined",
+           action=kwargs["action"], execution_id=kwargs["execution_id"],
+           generation=kwargs["generation"], actor=dict(kwargs["actor"]))
+    return SimpleNamespace(command=SimpleNamespace(status="applied"))
+execution_module.submit_wait_command = submit_wait_command
 def audit(event):
     from openprogram.agent.run_control import current_token
     record("audit", payload=event.payload,
@@ -358,7 +425,10 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
     environment_b = _stdio_subprocess_environment(tmp_path / "b", client="b")
 
     async def wait_for_evidence(path, kind):
-        deadline = asyncio.get_running_loop().time() + 3
+        # Starting two isolated Python/MCP processes can exceed three seconds
+        # on a saturated CI host. The evidence condition, not startup speed,
+        # is the contract under test.
+        deadline = asyncio.get_running_loop().time() + 10
         while asyncio.get_running_loop().time() < deadline:
             if path.exists() and any(
                 json.loads(line)["kind"] == kind
@@ -395,7 +465,7 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
         return foreign, same, cancellation.value, completed
 
     foreign, same, cancellation, completed = asyncio.run(
-        asyncio.wait_for(scenario(), 15)
+        asyncio.wait_for(scenario(), 30)
     )
     assert foreign.content[0].text == (
         '{"cancelled":false,"session_id":"fixture-session"}'
@@ -411,10 +481,10 @@ def test_real_stdio_subprocess_prompt_cancel_cleanup_and_foreign_ownership(tmp_p
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert [item["outcome"] for item in evidence if item["kind"] == "question"] == [
-        "declined"
-    ]
-    assert len([item for item in evidence if item["kind"] == "question_cancel"]) == 1
+    # Cancellation closes the durable wait in the canonical cancel
+    # transaction; no registry-level answer or cancellation callback runs.
+    assert [item for item in evidence if item["kind"] == "question"] == []
+    assert [item for item in evidence if item["kind"] == "question_cancel"] == []
     audits = [item for item in evidence if item["kind"] == "audit"]
     assert len(audits) == 1
     assert audits[0]["payload"]["reason"] == "prompt_cancel"
@@ -672,9 +742,10 @@ def test_real_sdk_in_memory_maps_all_six_wrappers_and_method_errors():
         return json_result({"prompt": prompt, "session_id": kwargs["session_id"]})
 
     service.prompt_send = prompt_send
-    service.prompt_cancel = lambda session_id: json_result(
-        {"session_id": session_id, "cancelled": False}
-    )
+    async def prompt_cancel(session_id):
+        return json_result({"session_id": session_id, "cancelled": False})
+
+    service.prompt_cancel = prompt_cancel
     service.tools_list = lambda: json_result([])
 
     async def tool_call(name, arguments, **kwargs):
@@ -757,17 +828,17 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
         def create_session(self, session_id, agent_id, **_kwargs):
             self.rows[session_id] = {"id": session_id, "agent_id": agent_id}
 
+        def get_nodes(self, session_id):
+            return []
+
     class Questions:
         def __init__(self):
-            self.cancelled = []
-            self.resolved = []
+            self.pending = {}
 
-        def cancel_session(self, session_id):
-            self.cancelled.append(session_id)
+        def list_pending(self, session_id):
+            return [SimpleNamespace(id=qid, execution_id=execution_id)
+                    for qid, execution_id in self.pending.items()]
 
-        def resolve(self, question_id, outcome, value=None):
-            self.resolved.append((question_id, outcome, value))
-            return True
 
     questions = Questions()
     bus = create_event_bus()
@@ -807,14 +878,19 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                 await asyncio.to_thread(entered.wait, 1)
                 record = tuple(service._active_by_request.values())[0]
                 session_id = record.session_id
+                questions.pending["general-question"] = record.execution_id
                 bus.emit(
                     make_event(
                         "question.asked",
                         "agent",
-                        {"id": "general-question", "session_id": session_id},
+                        {
+                            "id": "general-question",
+                            "session_id": session_id,
+                            "execution_id": record.execution_id,
+                        },
                     )
                 )
-                assert questions.resolved == [("general-question", "declined", None)]
+                assert questions.pending["general-question"] == record.execution_id
                 await session.send_notification(
                     mcp_types.CancelledNotification(
                         params=mcp_types.CancelledNotificationParams(requestId=1)
@@ -825,7 +901,6 @@ def test_sdk_cancellation_reaches_prompt_handler_without_application_result():
                 assert "cancel" in str(caught.value).lower()
                 assert service._active_by_request == {}
                 assert current_token(session_id) is None
-                assert questions.cancelled == [session_id]
                 assert len(audit) == 1
             await client_to_server_send.aclose()
             group.cancel_scope.cancel()
@@ -1173,6 +1248,9 @@ def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false()
         def get_session(self, session_id):
             return {"id": session_id, "agent_id": "main"}
 
+        def get_nodes(self, session_id):
+            return []
+
     def process(*_args, **_kwargs):
         entered.set()
         release.wait(2)
@@ -1210,7 +1288,7 @@ def test_protocol_prompt_cancel_is_same_connection_only_and_completed_is_false()
 
     try:
         same = asyncio.run(asyncio.wait_for(scenario(), 5))
-        completed = service.prompt_cancel("shared")
+        completed = asyncio.run(service.prompt_cancel("shared"))
     finally:
         release.set()
         service.close()

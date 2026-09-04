@@ -5,7 +5,8 @@
 > TaskList / TaskGet / TaskUpdate / TaskStop。
 >
 > 它所依托的底盘 WebUI 已经具备：每个 session 一个 worker thread
-> （`_execute_in_context`）、一个 `_cancel_events` dict（`_pause_stop.py`），
+> （`_execute_in_context`），以及 `openprogram.agent.run_control` 中按 execution
+> 精确登记的 token，
 > 一个供 UI spinner 用的 `_running_tasks` dict。`run_agent_turn`
 > （`openprogram/agent/sub_agent_run.py`）是那条同步路径，`/task` tool、
 > `/spawn` WS action、`_merge.process_merge_turn` 都复用它；task 抽象在其之上
@@ -91,22 +92,29 @@ task 在 startup 时一律标记 `errored`（error="worker died before completio
 Cancel API 触发时：
 
 1. 写 `cancel_requested_at` 到 entity，状态转 `cancelled`（如果还在 queued / pending），或保持 `running` 等 worker 自然退出。
-2. `cancel_event.set()` — 通过 `_pause_stop.register_cancel_event` 已经定义的 contract，传到 `process_user_turn(cancel_event=...)`。
+2. `cancel_event.set()` — 通过 `openprogram.agent.run_control` 的精确 execution 登记，
+   传到 `process_user_turn(cancel_event=...)`。
 3. `process_user_turn` 已经把 cancel_event bridge 进 asyncio.Event（`agent_loop` 调用），LLM provider stream 会在下一个 chunk 检查到 cancel 然后中断。
-4. BashTool / 其他 subprocess：复用 `_pause_stop.kill_active_runtime`（已有）。Tool 层的 cancel 是合作式：每个 `@agentic_function` 的 pre-invocation hook 检查 `is_cancelled`（已有），下一个 tool call 入口会 raise `CancelledError`。
+4. BashTool / 其他 subprocess 使用精确 execution id 调用
+   `process_runner.kill_active_subprocess`。Tool 层的 cancel 是合作式：每个
+   `@agentic_function` 的 pre-invocation hook 检查 `is_cancelled`，下一个 tool call
+   入口会 raise `CancelledError`。
 5. 兜底 timeout：cancel 后 30 秒 worker 还没退出，runner 把 entity 标 `cancelled`（error="cancel timed out, worker may be stuck"），然后 detach worker thread（不强杀，等 GC）。
 
 工具自身原子操作（比如一个 `Write` 写一半）不中断，等当前 atomic 完成再退出。
 
 ### D6. Task ↔ session 的关系
 
-一个 task 永远跑在**一个** parent session 上。跨 session 在概念上等于 merge /
-attach（已有），不在 task 范畴。
+一个 task 永远只在**一个**目标 session 执行。caller 可以位于另一个 session，
+但执行并不会因此跨多个 session：canonical entity 保持
+`parent_session_id=<target>`，两者不同时再记录
+`caller_session_id=<source>`。
 
 `task.parent_session_id` 就是 sub-agent `process_user_turn(session_id=...)`
 用的那个——与 `run_agent_turn` 的行为一致。sub-agent 的输出落地为该 session 的
-一个 branch（或新 root，看 `context_mode`），所以 session repo 既存了 task
-entity 又存了 task 产出，自洽。
+一个 branch（或新 root，看 `context_mode`），所以目标 session repo 同时存 task
+entity 和 task 产出。源 session 的 linked mirror 只负责可见性和 ownership 检查，
+不是第二个执行身份。
 
 ### D7. Task ↔ sub-agent 的关系
 
@@ -123,7 +131,7 @@ caller 是 WS handler 而非 LLM。
 
 attach pointer（`function="attach"` 节点）由 `_run_spawn` / `_task_impl` 写入：
 
-- spawn 时立刻写一个 **placeholder attach card**（`function="attach"`，`extra.attach.job_id = <job_id>`，`extra.attach.status = "running"`），content="(running)"，`source_commit_id` 留空。
+- admission 成功后、dispatch 开始前写一个 **placeholder attach card**（`function="attach"`，`extra.attach.job_id = <job_id>`，`extra.attach.status = "running"`），content="(running)"，`source_commit_id` 留空。跨 session spawn 的卡片存在源 session，但 `attach.session_id` 指向目标 session。
 - task 完成时 runner update 同一个 attach card 节点：填 `head_id` / `source_commit_id` / 替换 content 为 `final_text`，`status` 改 `completed` / `cancelled` / `errored`。
 - generator 看到 `status="running"` 的 attach 节点：跳过展开（不进 commit items），只在 UI 显示卡片占位。看到 `status="completed"` 走现有 attach 展开路径（见 `context.md` 场景 B）。
 
@@ -329,7 +337,7 @@ agent 自己想撤。
 - **Task 优先级 / SLA**：FIFO 即可，没有高优先级抢占。后续按需加 priority queue。
 - **Resume / 续跑**：cancelled / errored task 不能"接着跑"。用户 retry 等于新 spawn 一个 task。
 - **Task 重试策略**：runner 不自动 retry；上层 agent / plan 自己决定。
-- **跨 session task**：一个 task 只绑一个 session。跨 session 用 attach / merge。
+- **多目标 task**：一个 task 只有一个不可变的执行 session。跨 session caller 通过 `caller_session_id` 与源侧 attach 支持，但同一 entity 不会在多个目标 session 执行。
 - **DAG-shaped task 依赖**：`await_tasks(mode="all"|"any")` 已经够 plan mode；显式 DAG / pipeline 留给后续。
 - **Task 输出流式订阅**：初版只在 task 完成时拿 final_text。中途订阅 stream（让父 agent 看到 sub-agent 边想边说）留给后续。
 - **资源配额**：单 user 同时 task 数 / token 上限不在本设计，需要先有 multi-tenant 模型。

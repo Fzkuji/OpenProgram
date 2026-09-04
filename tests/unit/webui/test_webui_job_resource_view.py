@@ -10,6 +10,7 @@ from openprogram.cli.commands.jobs import job_resource_payload
 from openprogram.programs.tools.agents.agent.list_jobs.list_jobs import _list_jobs_impl
 from openprogram.agent.run_control import _current_session_id
 from openprogram.agent.job.types import JobStatus
+from openprogram.execution import EventCursor, JobResourceDTO
 from openprogram.webui.ws_actions import job as ws_job
 
 
@@ -26,12 +27,54 @@ class _View:
         self.job_id = job_id
 
     def to_dict(self) -> dict:
-        return {
-            "job_id": self.job_id,
-            "status": "running",
+        resource = {
+            "admission_id": self.job_id,
             "resource_state": "active",
-            "reason_code": None,
+            "queue_wait": None,
+            "resource_lease_generation": 1,
+            "owner_instance_id": "worker-1",
+            "limits": {},
+            "usage": {},
+            "reservation": None,
         }
+        return JobResourceDTO(
+            job_id=self.job_id,
+            execution_id=self.job_id,
+            project_id="default",
+            session_id="s1",
+            parent_execution_id=None,
+            label="subject",
+            subject="subject",
+            prompt_summary="prompt",
+            relation="owned",
+            origin_turn_id=None,
+            status="running",
+            status_version=0,
+            capabilities={
+                "pause": True,
+                "step": True,
+                "steer": False,
+                "fork": False,
+                "retry": False,
+                "safe_point_kinds": [],
+                "state_schema_version": 1,
+            },
+            checkpoint_head_id=None,
+            resource=resource,
+            event_cursor=EventCursor(
+                execution_id=self.job_id,
+                next_sequence=1,
+                snapshot_status_version=0,
+            ),
+            execution={
+                "execution_id": self.job_id,
+                "job_id": self.job_id,
+                "session_id": "s1",
+                "status": "running",
+                "status_version": 0,
+                "resource": resource,
+            },
+        ).to_dict()
 
 
 class _Runner:
@@ -50,9 +93,6 @@ class _Runner:
     def get_job(self, job_id):
         return self.job if job_id == "t1" else None
 
-    def cancel_job(self, job_id, reason=None):
-        return self.job if job_id == "t1" else None
-
     def get_job_resource_view(self, job_id):
         return _View(job_id)
 
@@ -62,12 +102,6 @@ class _Runner:
     [
         (ws_job.handle_list_jobs, {"session_id": "s1"}, "jobs_list", ("jobs", 0)),
         (ws_job.handle_get_job, {"job_id": "t1"}, "job", ("job",)),
-        (
-            ws_job.handle_cancel_job,
-            {"job_id": "t1"},
-            "cancel_job_result",
-            (),
-        ),
     ],
 )
 def test_web_job_surfaces_embed_canonical_resource_view(
@@ -83,7 +117,9 @@ def test_web_job_surfaces_embed_canonical_resource_view(
     payload = frame["data"]
     for key in resource_path:
         payload = payload[key]
-    assert payload["resource"] == runner.get_job_resource_view("t1").to_dict()
+    expected = runner.get_job_resource_view("t1").to_dict()
+    assert payload["resource"] == expected["resource"]
+    assert payload["event_cursor"] == expected["event_cursor"]
 
 
 def test_web_model_and_cli_share_the_same_resource_dto(monkeypatch) -> None:
@@ -93,7 +129,7 @@ def test_web_model_and_cli_share_the_same_resource_dto(monkeypatch) -> None:
 
     ws = _WS()
     asyncio.run(ws_job.handle_list_jobs(ws, {"session_id": "s1"}))
-    web_resource = ws.frames[0]["data"]["jobs"][0]["resource"]
+    web_resource = ws.frames[0]["data"]["jobs"][0]
 
     token = _current_session_id.set("s1")
     try:
@@ -102,4 +138,13 @@ def test_web_model_and_cli_share_the_same_resource_dto(monkeypatch) -> None:
         _current_session_id.reset(token)
 
     cli_resource = job_resource_payload(session_id="s1")["jobs"][0]
-    assert web_resource == model_resource == cli_resource == expected
+    for key in (
+        "job_id", "execution_id", "status", "capabilities", "resource",
+        "event_cursor", "execution",
+    ):
+        assert (
+            web_resource[key]
+            == model_resource[key]
+            == cli_resource[key]
+            == expected[key]
+        )

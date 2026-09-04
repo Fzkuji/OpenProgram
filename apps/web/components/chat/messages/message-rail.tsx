@@ -18,6 +18,16 @@ import type { TurnFileSummary } from "@/lib/session-store/types";
 import { Markdown } from "@/lib/format-utils/markdown";
 import { parseAttachments, AttachmentChips } from "./user-attachments";
 import { TurnFilesChips } from "./turn-files-chips";
+import {
+  fileWriteState,
+  shouldRenderTurnFiles,
+  type FileWriteState,
+} from "./turn-files-presentation";
+import {
+  packRailRow,
+  unpackRailRow,
+  type RailMsg,
+} from "./message-rail-row";
 
 const EMPTY_ORDER: string[] = [];
 
@@ -26,53 +36,9 @@ const BASE_W = 9; // 静息宽度 px
 const MAX_EXTRA_W = 26; // 放大最多再加的宽度 px
 const GAP = 10; // 刻度间距 px（固定，不随消息数压缩；超长时 rail 内部滚动）
 
-type RailMsg = {
-  id: string;
-  content: string;
-  preview: string;
-  assistantId?: string;
-  assistantSummary?: string;
-  assistantTurnFiles?: TurnFileSummary;
-  assistantReverted?: boolean;
-};
-
-/** Delimiter for the packed form below. Message text can contain any
- *  ordinary character including tabs and newlines, so the separator
- *  has to be one that cannot appear in it: U+241F SYMBOL FOR UNIT
- *  SEPARATOR. */
-const RAIL_SEP = "\u241f";
-
 /** Flatten one rail row into scalars so the subscription can compare
  *  shallowly — `useShallow` only looks one level deep, and fresh row
  *  OBJECTS would defeat it on every read. */
-function packRow(r: RailMsg): string {
-  return [
-    r.id,
-    r.content,
-    r.preview,
-    r.assistantId ?? "",
-    r.assistantSummary ?? "",
-    r.assistantTurnFiles ? JSON.stringify(r.assistantTurnFiles) : "",
-    r.assistantReverted ? "1" : "",
-  ]
-    .join(RAIL_SEP);
-}
-
-function unpackRow(packed: string): RailMsg {
-  const [id, content, preview, assistantId, assistantSummary, turnFiles, reverted] =
-    packed.split(RAIL_SEP);
-  return {
-    id,
-    content,
-    preview,
-    assistantId: assistantId || undefined,
-    assistantSummary: assistantSummary || undefined,
-    assistantTurnFiles: turnFiles
-      ? JSON.parse(turnFiles) as TurnFileSummary
-      : undefined,
-    assistantReverted: reverted === "1",
-  };
-}
 
 function useUserMessages(): RailMsg[] {
   // Derived in the selector and shallow-compared as flat strings. The
@@ -96,7 +62,8 @@ function useUserMessages(): RailMsg[] {
         // 紧随其后的第一条非-runtime 助手回复：取它的 id + 开头摘要。
         let assistantId: string | undefined;
         let assistantSummary: string | undefined;
-        let assistantTurnFiles: TurnFileSummary | undefined;
+      let assistantTurnFiles: TurnFileSummary | undefined;
+      let assistantFileWriteState: FileWriteState = "none";
         let assistantReverted = false;
         for (let j = i + 1; j < order.length; j++) {
           const a = s.messagesById[order[j]];
@@ -115,17 +82,19 @@ function useUserMessages(): RailMsg[] {
             assistantSummary = t.trim().slice(0, 200);
           }
           assistantTurnFiles = a.turnFiles;
+          assistantFileWriteState = fileWriteState(a.blocks);
           assistantReverted = Boolean(a.reverted);
           break;
         }
         out.push(
-          packRow({
+          packRailRow({
             id: order[i],
             content: m.content || "",
             preview: preview.slice(0, 60),
             assistantId,
             assistantSummary: assistantSummary || undefined,
             assistantTurnFiles,
+            assistantFileWriteState,
             assistantReverted,
           }),
         );
@@ -133,7 +102,7 @@ function useUserMessages(): RailMsg[] {
       return out;
     }),
   );
-  return useMemo(() => packed.map(unpackRow), [packed]);
+  return useMemo(() => packed.map(unpackRailRow), [packed]);
 }
 
 function scrollToMsg(id: string, onSeek?: (id: string) => void): void {
@@ -174,6 +143,7 @@ function PreviewCard({
   assistantSummary,
   assistantId,
   assistantTurnFiles,
+  assistantFileWriteState = "none",
   assistantReverted,
 }: {
   content: string;
@@ -182,6 +152,7 @@ function PreviewCard({
   assistantSummary?: string;
   assistantId?: string;
   assistantTurnFiles?: TurnFileSummary;
+  assistantFileWriteState?: FileWriteState;
   assistantReverted?: boolean;
 }) {
   const { attachments, text } = useMemo(
@@ -201,10 +172,16 @@ function PreviewCard({
           <Markdown source={assistantSummary} />
         </div>
       ) : null}
-      {assistantId ? (
+      {assistantId && shouldRenderTurnFiles(
+        assistantTurnFiles,
+        undefined,
+        assistantFileWriteState,
+      ) ? (
         <TurnFilesChips
+          key={assistantId}
           assistantMsgId={assistantId}
           summary={assistantTurnFiles}
+          writeState={assistantFileWriteState}
           initiallyReverted={assistantReverted}
         />
       ) : null}

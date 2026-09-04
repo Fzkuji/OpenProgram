@@ -55,7 +55,7 @@
 
 以下文档经审计与代码完全一致，无需修改：
 
-- `runtime/controllability-and-three-surface-sync.md` — attended/unattended、graceful stop、三端同步均已实现
+- `runtime/execution/execution-control.html` — 实现状态附录区分已经存在的 cancellation/steering 基础与尚未实现的统一运行控制架构
 - `runtime/operations/user-input-requests.md` — Phase 1+2 已落地（QuestionRegistry、三种 Transport 含新增的 TTYTransport）
 - `function/calling-unification.md` — 已使用 "profiles" 术语，与代码一致
 - `extension-gating/implementation.md` — 路径已正确

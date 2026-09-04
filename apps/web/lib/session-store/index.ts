@@ -2,6 +2,11 @@ import { useShallow } from "zustand/react/shallow";
 import { createWithEqualityFn } from "zustand/traditional";
 
 import {
+  decideExecutionUpdateOrder,
+  removeExecutionUpdateOrders,
+  type ExecutionUpdateOrder,
+} from "@/lib/net/execution-update-order";
+import {
   readSessionDraftState,
   replaceSessionDraftState,
   updateSessionDraftState,
@@ -108,6 +113,9 @@ interface ConvState {
   conversations: Record<string, ConvSummary>;
   /** Every message ever loaded, keyed by id. */
   messagesById: Record<string, ChatMsg>;
+  /** Canonical execution sequence and terminal fence, released only when
+   * the corresponding transcript state is removed. */
+  executionUpdateOrders: Record<string, ExecutionUpdateOrder>;
   /** Ordered id list per conversation. */
   messageOrder: Record<string, string[]>;
   /** Currently active conversation id. */
@@ -198,6 +206,13 @@ interface ConvState {
   additionalWorkingDirsBySession: Record<string, string[]>;
   setAdditionalWorkingDirs: (sessionKey: string, dirs: string[]) => void;
   setMessages: (sessionId: string, msgs: ChatMsg[]) => void;
+  acceptExecutionUpdate: (
+    executionId: string,
+    eventSequence: unknown,
+    status: unknown,
+    sessionId?: unknown,
+    messageIds?: Iterable<unknown>,
+  ) => boolean;
   appendMessage: (sessionId: string, msg: ChatMsg) => void;
   updateMessage: (sessionId: string, msgId: string, patch: Partial<ChatMsg>) => void;
   /** Truncate messages at and after msgId. Used by retry to drop the
@@ -486,6 +501,7 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
   setStatusBadge: (b) => set({ statusBadge: b }),
   conversations: {},
   messagesById: {},
+  executionUpdateOrders: {},
   messageOrder: {},
   currentSessionId: null,
   activeChatKey: null,
@@ -555,6 +571,12 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       delete rest[id];
       const order = { ...s.messageOrder };
       const doomed = order[id] ?? [];
+      const doomedExecutionIds = [
+        ...doomed,
+        ...Object.entries(s.executionUpdateOrders)
+          .filter(([, execution]) => execution.sessionId === id)
+          .map(([executionId]) => executionId),
+      ];
       delete order[id];
       const byId = { ...s.messagesById };
       for (const mid of doomed) delete byId[mid];
@@ -577,6 +599,10 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
         conversations: rest,
         messageOrder: order,
         messagesById: byId,
+        executionUpdateOrders: removeExecutionUpdateOrders(
+          s.executionUpdateOrders,
+          doomedExecutionIds,
+        ),
         currentSessionId: s.currentSessionId === id ? null : s.currentSessionId,
         activeChatKey: s.activeChatKey === id ? null : s.activeChatKey,
         composerDrafts: nextDrafts,
@@ -605,6 +631,7 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       return {
         conversations: {},
         messagesById: {},
+        executionUpdateOrders: {},
         messageOrder: {},
         currentSessionId: null,
         activeChatKey:
@@ -688,6 +715,10 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       const timedMessages = msgs.map((msg) => withMessageTimestamp(msg));
       // Drop any old ids for this conv so stale entries don't leak.
       const byId = { ...s.messagesById };
+      const incomingIds = new Set(timedMessages.map((message) => message.id));
+      const removedIds = (s.messageOrder[sessionId] ?? []).filter(
+        (oldId) => !incomingIds.has(oldId),
+      );
       for (const oldId of s.messageOrder[sessionId] ?? []) delete byId[oldId];
       for (const [index, m] of timedMessages.entries()) {
         // A load_session reply can land mid-turn (WS reconnect,
@@ -715,8 +746,35 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
           ...s.messageOrder,
           [sessionId]: timedMessages.map((m) => m.id),
         },
+        executionUpdateOrders: removeExecutionUpdateOrders(
+          s.executionUpdateOrders,
+          removedIds,
+        ),
       };
     }),
+
+  acceptExecutionUpdate: (executionId, eventSequence, status, sessionId, messageIds) => {
+    let accepted = false;
+    set((s) => {
+      const decision = decideExecutionUpdateOrder(
+        s.executionUpdateOrders[executionId],
+        eventSequence,
+        status,
+        sessionId,
+        messageIds,
+      );
+      if (!decision.accepted) return {};
+      accepted = true;
+      if (!decision.next) return {};
+      return {
+        executionUpdateOrders: {
+          ...s.executionUpdateOrders,
+          [executionId]: decision.next,
+        },
+      };
+    });
+    return accepted;
+  },
 
   appendMessage: (sessionId, msg) =>
     set((s) => {
@@ -756,6 +814,10 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
       return {
         messagesById: byId,
         messageOrder: { ...s.messageOrder, [sessionId]: nextOrder },
+        executionUpdateOrders: removeExecutionUpdateOrders(
+          s.executionUpdateOrders,
+          dropped,
+        ),
       };
     }),
 

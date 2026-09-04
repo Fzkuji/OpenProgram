@@ -1,4 +1,4 @@
-"""agent(to=…) tracked-job dispatch + job_output/job_stop ownership.
+"""agent(to=…) tracked-job dispatch.
 
 All fake — no real LLM, no live task pool run (deliveries are captured
 at run_agent_turn_async, same technique as test_send_message.py):
@@ -8,12 +8,8 @@ at run_agent_turn_async, same technique as test_send_message.py):
     routing + depth inheritance
   * to + start_from mutual exclusion, self-dispatch guard, depth guard
   * busy target → pending Job pre-created + inbox entry carrying its id
-  * job_stop three states: queued → withdrawn from the inbox;
-    running → per-turn cancel on the target; terminal → idempotent no-op
   * drain: tracked entries deliver with the task header and reuse the
     task id; withdrawn entries are dropped without delivering
-  * ownership checks on job_output / job_stop: foreign session
-    refused; dispatcher, ancestor chain, and no-session (user/UI) allowed
 
 See docs/reference/design/runtime/agent-collaboration.md.
 """
@@ -24,7 +20,6 @@ from types import SimpleNamespace
 import pytest
 
 from openprogram.programs.tools.agents.agent.agent.agent import _agent_impl
-from openprogram.programs.tools.agents.agent._ownership import check_job_ownership
 
 
 @pytest.fixture
@@ -95,8 +90,8 @@ def parent_turn(tmp_path, monkeypatch):
 def test_to_dispatch_runs_immediately_on_target_tip(parent_turn):
     out = _agent_impl("summarize the log", to="p1:a0")
     assert "[job dispatched]" in out
-    assert "job_id=" in out
-    assert "job_id=t_fake" in out
+    assert "execution_id=" in out
+    assert "execution_id=t_fake" in out
     kw = parent_turn.async_calls[-1]
     assert kw["session_id"] == "p1"
     assert kw["branch_from"] == "a0"
@@ -238,7 +233,7 @@ def _dispatch_queued(parent_turn, monkeypatch, prompt="audit the config"):
     )
     out = _agent_impl(prompt, to="p2:a9", description="audit")
     assert "[job dispatched, queued]" in out
-    tid = out.split("job_id=")[1].split()[0]
+    tid = out.split("execution_id=")[1].split()[0]
     return tid, out
 
 
@@ -266,59 +261,64 @@ def test_to_busy_target_precreates_task_and_queues(parent_turn, monkeypatch):
     assert not parent_turn.async_calls
 
 
-def test_job_stop_withdraws_queued_dispatch(parent_turn, monkeypatch):
-    from openprogram.agent import inbox
-    from openprogram.agent.job import get_runner, JobStatus
-    tid, _ = _dispatch_queued(parent_turn, monkeypatch)
-    # The target session must NOT receive a session-level cancel: it is
-    # busy with someone else's turn.
-    killed = []
+def test_busy_inbox_failure_cancels_canonical_admission(
+    parent_turn, monkeypatch,
+):
+    """A failed inbox write must cancel the admitted execution itself."""
+    calls: list[tuple[str, str | None]] = []
+
+    class _Runner:
+        def admit_job_entity(self, *args, **kwargs):
+            return None
+
+        def cancel_execution(self, execution_id, *, reason=None):
+            calls.append((execution_id, reason))
+            return None
+
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: _Runner())
     monkeypatch.setattr(
-        "openprogram.agent.run_control.mark_cancelled",
-        lambda sid: killed.append(sid))
-    res = get_runner().cancel_job(tid)
-    assert res is not None
-    assert res.status == JobStatus.CANCELLED
-    assert inbox.pending_count("p2") == 0
-    assert killed == []
+        "openprogram.agent.run_control.is_turn_running",
+        lambda sid: sid == "p2",
+    )
+
+    def fail_enqueue(*args, **kwargs):
+        raise OSError("inbox unavailable")
+
+    monkeypatch.setattr("openprogram.agent.inbox.enqueue", fail_enqueue)
+    out = _agent_impl("audit", to="p2:a9")
+
+    assert "inbox unavailable" in out
+    assert len(calls) == 1
+    assert calls[0][0]
+    assert "inbox enqueue failed" in (calls[0][1] or "")
 
 
-def test_job_stop_terminal_is_noop(parent_turn):
-    from openprogram.agent.job import get_runner, JobStatus
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job
-    save_job("p2", Job(id="t_done1", parent_session_id="p2", prompt="x",
-                         agent_id="main", status=JobStatus.COMPLETED))
-    res = get_runner().cancel_job("t_done1")
-    assert res is not None
-    assert res.status == JobStatus.COMPLETED  # unchanged, idempotent
+def test_busy_duplicate_cancels_duplicate_admission(
+    parent_turn, monkeypatch,
+):
+    """A duplicate inbox result must not leave its admission runnable."""
+    calls: list[tuple[str, str | None]] = []
 
+    class _Runner:
+        def admit_job_entity(self, *args, **kwargs):
+            return None
 
-def test_job_stop_running_cancels_target_turn(parent_turn, monkeypatch):
-    """A running to= task cancels THAT turn on the target (session-level
-    cancel event + runtime kill), not the queued-withdraw path."""
-    import threading
-    from openprogram.agent.job import get_runner, JobStatus
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job
-    runner = get_runner()
-    save_job("p2", Job(id="t_run1", parent_session_id="p2", prompt="x",
-                         agent_id="main", status=JobStatus.RUNNING,
-                         caller_session_id="p1"))
-    ev = threading.Event()
-    runner._jobs["t_run1"] = {"event": ev, "future": None, "session_id": "p2"}
-    marked = []
+        def cancel_execution(self, execution_id, *, reason=None):
+            calls.append((execution_id, reason))
+            return None
+
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: _Runner())
     monkeypatch.setattr(
-        "openprogram.agent.run_control.mark_cancelled",
-        lambda sid, *, execution_id=None: marked.append((sid, execution_id)))
-    monkeypatch.setattr(
-        "openprogram.agent.run_control.kill_active_runtime",
-        lambda sid, *, execution_id=None: None)
-    res = runner.cancel_job("t_run1")
-    assert res is not None
-    assert ev.is_set()
-    assert marked == [("p2", "t_run1")]
-    runner._jobs.pop("t_run1", None)
+        "openprogram.agent.run_control.is_turn_running",
+        lambda sid: sid == "p2",
+    )
+    monkeypatch.setattr("openprogram.agent.inbox.enqueue", lambda *a, **k: "duplicate")
+    out = _agent_impl("audit", to="p2:a9")
+
+    assert "duplicate dispatch ignored" in out
+    assert len(calls) == 1
+    assert calls[0][0]
+    assert calls[0][1] == "duplicate dispatch"
 
 
 # --- inbox drain of tracked entries ---
@@ -343,7 +343,7 @@ def test_drain_skips_withdrawn_tracked_entry(parent_turn, monkeypatch):
     tid, _ = _dispatch_queued(parent_turn, monkeypatch)
     # Withdraw... but re-add the inbox entry to simulate the race where
     # drain sees an entry whose task is already terminal.
-    get_runner().cancel_job(tid)
+    get_runner().cancel_execution(tid)
     inbox.enqueue("p2", message="audit the config", sender_session_id="p1",
                   sender_msg_id="a1", sender_agent_id="main", agent_id="main",
                   chain_messages=0, target_head_id="a9", job_id=tid)
@@ -365,71 +365,3 @@ def test_spawn_job_does_not_resurrect_terminal_precreated(parent_turn):
         session_id="p2", prompt="x", agent_id="main", job_id="t_gone1")
     assert tid == "t_gone1"
     assert load_job("p2", "t_gone1").status == JobStatus.CANCELLED
-
-
-# --- ownership checks on job_output / job_stop ---
-
-def test_ownership_rejects_foreign_session(parent_turn):
-    """p2's task ids are readable via read_conversation — a foreign
-    session must not be able to wait on or stop them."""
-    from openprogram.agent import run_control
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job, JobStatus
-    from openprogram.programs.tools.agents.agent.job_output.job_output import (
-        _job_output_impl,
-    )
-    save_job("p2", Job(id="t_theirs", parent_session_id="p2", prompt="x",
-                         agent_id="main", status=JobStatus.RUNNING))
-    # Current session is p1 (fixture); the task belongs to p2 only.
-    assert run_control._current_session_id.get(None) == "p1"
-    out = check_job_ownership("t_theirs", "job_stop")
-    assert "was not dispatched by this session" in out
-    out2 = _job_output_impl("t_theirs", block=False)
-    assert "was not dispatched by this session" in out2
-
-
-def test_ownership_allows_dispatcher_session(parent_turn):
-    """The dispatcher (caller_session_id) may manage a task running in
-    another session — that is the whole point of to= dispatch."""
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job, JobStatus
-    save_job("p2", Job(id="t_mine", parent_session_id="p2", prompt="x",
-                         agent_id="main", status=JobStatus.RUNNING,
-                         caller_session_id="p1"))
-    assert check_job_ownership("t_mine", "job_stop") is None
-
-
-def test_ownership_allows_ancestor_chain(parent_turn):
-    """A task chain ancestor (cascading-cancel lineage) may manage its
-    descendants even across sessions."""
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job, JobStatus
-    # px dispatched t_root; t_root spawned t_child in p2.
-    save_job("p2", Job(id="t_root2", parent_session_id="p2", prompt="x",
-                         agent_id="main", status=JobStatus.RUNNING,
-                         caller_session_id="p1"))
-    save_job("p2", Job(id="t_child2", parent_session_id="p2", prompt="x",
-                         agent_id="main", status=JobStatus.RUNNING,
-                         parent_job_id="t_root2"))
-    # Current session p1 dispatched the ancestor → child is manageable.
-    assert check_job_ownership("t_child2", "job_stop") is None
-
-
-def test_ownership_allows_without_session_context(parent_turn, monkeypatch):
-    """User / UI calls carry no session ContextVar — never gated."""
-    from openprogram.agent import run_control
-    from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job, JobStatus
-    save_job("p2", Job(id="t_ui", parent_session_id="p2", prompt="x",
-                         agent_id="main", status=JobStatus.RUNNING))
-    tok = run_control._current_session_id.set(None)
-    try:
-        assert check_job_ownership("t_ui", "job_stop") is None
-    finally:
-        run_control._current_session_id.reset(tok)
-
-
-def test_ownership_unknown_task_passes_through(parent_turn):
-    """Unknown ids are not the ownership check's problem — the tool
-    reports them itself."""
-    assert check_job_ownership("t_nope", "job_stop") is None

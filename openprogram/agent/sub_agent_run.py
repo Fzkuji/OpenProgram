@@ -24,6 +24,7 @@ referencing all of them.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -38,6 +39,64 @@ class AgentTurnResult:
     error: Optional[str] = None
 
 
+def validate_self_update_turn_request(request: Any) -> None:
+    """Validate the frozen unattended verifier contract before dispatch."""
+    source = getattr(request, "source", None)
+    if source not in {
+        "self_update_verify",
+        "self_update_diagnose",
+        "self_update_repair",
+    }:
+        return
+    model_override = getattr(request, "model_override", None)
+    profile_snapshot = getattr(request, "profile_snapshot", None)
+    tools_override = getattr(request, "tools_override", None)
+    spawn_caller = getattr(request, "spawn_caller", None)
+    response_format = getattr(request, "response_format", None)
+    branch_from = getattr(request, "branch_from", None)
+    advance_head = getattr(request, "advance_head", True)
+    if (
+        profile_snapshot is None
+        or not isinstance(model_override, str)
+        or "/" not in model_override
+        or not all(model_override.split("/", 1))
+        or tools_override is None
+        or not spawn_caller
+        or response_format is None
+        or branch_from is not None
+        or advance_head
+    ):
+        raise ValueError(
+            "verifier requires frozen profile/model/tools/schema "
+            "and a clean non-head branch"
+        )
+    from dataclasses import asdict
+    from openprogram.agent.authority import normalize_authority
+    from openprogram.providers.structured_output import normalize_response_format
+
+    normalized_format = normalize_response_format(response_format)
+    request.response_format = normalized_format
+    if source == "self_update_verify":
+        from openprogram.self_update.recovery import (
+            require_verifier_execution as require_execution,
+        )
+    elif source == "self_update_diagnose":
+        from openprogram.self_update.diagnosis import require_execution
+    else:
+        from openprogram.self_update.source_repair import require_execution
+    require_execution(
+        session_id=request.session_id,
+        spawn_caller=spawn_caller,
+        prompt=request.user_text,
+        agent_id=request.agent_id,
+        profile_snapshot=profile_snapshot,
+        model_override=model_override,
+        tools_override=tools_override,
+        response_format=asdict(normalized_format),
+        authority=normalize_authority(request),
+    )
+
+
 def _execute_agent_turn(
     session_id: str,
     prompt: str,
@@ -46,6 +105,7 @@ def _execute_agent_turn(
     branch_from: Optional[str] = None,
     label: Optional[str] = None,
     spawn_caller: Optional[str] = None,
+    spawned_from_session: Optional[str] = None,
     advance_head: bool = True,
     tools_override: Optional[list[str]] = None,
     render_range: Optional[dict[str, int]] = None,
@@ -69,7 +129,8 @@ def _execute_agent_turn(
     (write an attach indicator, surface in chat, kick off a merge).
     """
     from openprogram.agent.session_db import default_db
-    from openprogram.agent.dispatcher import TurnRequest, process_user_turn
+    from openprogram.agent.dispatcher import TurnRequest
+    from openprogram.agent.production_driver import CanonicalAgentAdapter
 
     if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"} and (
         profile_snapshot is None or not isinstance(model_override, str)
@@ -82,26 +143,42 @@ def _execute_agent_turn(
             error="verifier requires frozen profile/model/tools/schema and a clean non-head branch",
         )
     from openprogram.providers.structured_output import normalize_response_format
-    output_format = normalize_response_format(response_format) if response_format is not None else None
+
+    output_format = (
+        normalize_response_format(response_format)
+        if response_format is not None else None
+    )
     if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
         from dataclasses import asdict
         from openprogram.agent.authority import normalize_authority
+
         if source == "self_update_verify":
-            from openprogram.self_update.recovery import require_verifier_execution as require_execution
+            from openprogram.self_update.recovery import (
+                require_verifier_execution as require_execution,
+            )
         elif source == "self_update_diagnose":
             from openprogram.self_update.diagnosis import require_execution
         else:
             from openprogram.self_update.source_repair import require_execution
         try:
             require_execution(
-                session_id=session_id, spawn_caller=spawn_caller,
-                prompt=prompt, agent_id=agent_id, profile_snapshot=profile_snapshot,
-                model_override=model_override, tools_override=tools_override,
-                response_format=asdict(output_format), authority=normalize_authority(authority or {}),
+                session_id=session_id,
+                spawn_caller=spawn_caller,
+                prompt=prompt,
+                agent_id=agent_id,
+                profile_snapshot=profile_snapshot,
+                model_override=model_override,
+                tools_override=tools_override,
+                response_format=asdict(output_format),
+                authority=normalize_authority(authority or {}),
             )
         except Exception as exc:
             return AgentTurnResult(
-                failed=True, error=str(exc) if isinstance(exc, ValueError) else type(exc).__name__,
+                failed=True,
+                error=(
+                    str(exc) if isinstance(exc, ValueError)
+                    else type(exc).__name__
+                ),
             )
     store = default_db()
     if store._open(session_id) is None:
@@ -144,6 +221,7 @@ def _execute_agent_turn(
     # sub-agent is itself an explicit user act, so the user has
     # already consented to tool use within that turn.
     from openprogram.agent.authority import runtime_authority
+    _authority = runtime_authority(authority or {}, source)
     req = TurnRequest(
         session_id=session_id,
         user_text=prompt,
@@ -156,6 +234,7 @@ def _execute_agent_turn(
         # spawning node, so the branch is an explicit spawn (see
         # dag/overview.md §2.3). No-op for inherit forks.
         spawn_caller=spawn_caller,
+        spawned_from_session=spawned_from_session,
         # Same-session sub-agent turns pass False: the spawned branch
         # must not steal the session head mid-run (HEAD single-writer,
         # context/compaction.md §5) — the transcript follows the head,
@@ -168,31 +247,43 @@ def _execute_agent_turn(
         thinking_effort=thinking_effort,
         profile_snapshot=profile_snapshot,
         response_format=output_format,
-        **runtime_authority(authority or {}, source),
+        **_authority,
     )
     try:
-        turn = process_user_turn(req)
+        adapter = CanonicalAgentAdapter()
+        admission = adapter.admit(
+            req,
+            trusted_actor=_authority,
+            user_message_id=req.user_msg_id,
+            config_snapshot_ref=f"agent-spawn:{session_id}",
+        )
+        _active, turn = asyncio.run(adapter.activate(admission))
     except Exception as e:  # noqa: BLE001
         return AgentTurnResult(
             failed=True,
             error=f"{type(e).__name__}: {e}",
+        )
+    if turn is None:
+        return AgentTurnResult(
+            failed=True,
+            error="Agent runner failed before returning a turn result",
         )
 
     # dispatcher already stamped ``agent_id`` on the user + assistant
     # rows via ``req.agent_id``. If a label was provided, attach it as
     # a named branch so the right-rail "Branches" panel and the DAG
     # use the human label instead of the bare commit hash.
-    if turn.assistant_msg_id and label:
+    if getattr(turn, "assistant_msg_id", None) and label:
         try:
             store.set_branch_name(session_id, turn.assistant_msg_id, label)
         except Exception:  # noqa: BLE001
             pass
 
     return AgentTurnResult(
-        head_id=turn.assistant_msg_id,
-        final_text=turn.final_text or "",
-        failed=bool(turn.failed),
-        error=turn.error,
+        head_id=getattr(turn, "assistant_msg_id", None),
+        final_text=getattr(turn, "final_text", "") or "",
+        failed=bool(getattr(turn, "failed", False)),
+        error=getattr(turn, "error", None),
     )
 
 
@@ -329,6 +420,7 @@ def emit_spawn_event(
     prompt: str,
     chosen_agent: str,
     card_id: str,
+    target_session_id: Optional[str] = None,
     tool_call_id: Optional[str] = None,
     head_id: Optional[str] = None,
     content: str = "",
@@ -362,7 +454,7 @@ def emit_spawn_event(
                 "card_id": card_id,
                 "content": content,
                 "attach": {
-                    "session_id": session_id,
+                    "session_id": target_session_id or session_id,
                     "head_id": head_id,
                     "label": label or "",
                     "prompt": (prompt or "")[:500],
@@ -384,6 +476,7 @@ def write_attach_pointer_for_spawn(
     prompt: str,
     chosen_agent: str,
     node_id: Optional[str] = None,
+    target_session_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write an `attach`-function pointer node for a synchronous
     agent() spawn (LLM tool call, foreground). Mirrors the body of
@@ -400,6 +493,7 @@ def write_attach_pointer_for_spawn(
     try:
         from openprogram.agent.session_db import default_db
         store = default_db()
+        target_session = target_session_id or session_id
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
         # Anchor the attach pointer DIRECTLY to the caller turn (the
@@ -413,9 +507,12 @@ def write_attach_pointer_for_spawn(
         fork_anchor = caller_msg_id
 
         source_commit_id = None
+        terminal_status = (
+            "errored" if result.failed or result.error else "completed"
+        )
         try:
             from openprogram.context.commit.store import load_commit_for_head
-            _src = load_commit_for_head(store, session_id, result.head_id)
+            _src = load_commit_for_head(store, target_session, result.head_id)
             if _src is not None:
                 source_commit_id = _src.id
         except Exception:
@@ -443,12 +540,12 @@ def write_attach_pointer_for_spawn(
             "agent_id": chosen_agent,
             "extra": _json.dumps({
                 "attach": {
-                    "session_id": session_id,
+                    "session_id": target_session,
                     "head_id": result.head_id,
                     "label": label or "",
                     "prompt": prompt[:500],
                     "source_commit_id": source_commit_id,
-                    "status": "completed",
+                    "status": terminal_status,
                 },
             }, default=str),
         }
@@ -463,10 +560,11 @@ def write_attach_pointer_for_spawn(
         # content is now reachable from main via the attach pointer.
         # Same retirement the async runner does on completion (see
         # job/runner.py::_update_attach_card).
-        try:
-            store.mark_merged(session_id, [result.head_id])
-        except Exception:
-            pass
+        if terminal_status == "completed":
+            try:
+                store.mark_merged(target_session, [result.head_id])
+            except Exception:
+                pass
         # Broadcast session_reload so the UI re-renders the DAG with
         # the new attach pointer + reference edge.
         # 步 4：走总线（ws.frame 事件），不再 import webui；帧内容不变。
@@ -497,6 +595,7 @@ def write_attach_placeholder_for_spawn(
     chosen_agent: str,
     node_id: Optional[str] = None,
     job_id: Optional[str] = None,
+    target_session_id: Optional[str] = None,
 ) -> Optional[str]:
     """Write a ``status=running`` placeholder attach card for an async
     spawn, anchored at the CALLING node（在哪调用就锚在哪）. The runner
@@ -511,6 +610,7 @@ def write_attach_placeholder_for_spawn(
     try:
         from openprogram.agent.session_db import default_db
         store = default_db()
+        target_session = target_session_id or session_id
         sess_row = store.get_session(session_id) or {}
         head_before = sess_row.get("head_id")
         attach_node_id = node_id or _uuid.uuid4().hex[:12]
@@ -526,7 +626,7 @@ def write_attach_placeholder_for_spawn(
             "agent_id": chosen_agent,
             "extra": _json.dumps({
                 "attach": {
-                    "session_id": session_id,
+                    "session_id": target_session,
                     "head_id": None,
                     "label": label or "",
                     "prompt": prompt[:500],

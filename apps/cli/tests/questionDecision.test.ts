@@ -7,14 +7,20 @@ import {
 } from '../src/screens/repl/questionDecision.js';
 import type { PendingDecision } from '../src/screens/repl/types.js';
 
+const mk = (id: string): PendingDecision => ({
+  id, executionId: 'exec_1', waitGeneration: 0, expectedVersion: 1,
+  kind: 'ask', prompt: '', options: [], multi: false, allow_custom: true,
+});
+
 describe('decisionFromFrame', () => {
   it('maps a full ask frame', () => {
     const d = decisionFromFrame({
       id: 'q1', kind: 'ask', prompt: 'Pick one',
+      execution_id: 'exec_1', wait_generation: 3, expected_version: 8,
       options: ['a', 'b'], multi: false, allow_custom: true,
     });
     expect(d).toEqual({
-      id: 'q1', kind: 'ask', prompt: 'Pick one',
+      id: 'q1', executionId: 'exec_1', waitGeneration: 3, expectedVersion: 8, kind: 'ask', prompt: 'Pick one',
       options: ['a', 'b'], multi: false, allow_custom: true,
       detail: undefined, tool: undefined, args: undefined,
     });
@@ -55,10 +61,6 @@ describe('decisionFromFrame', () => {
 });
 
 describe('enqueueDecision', () => {
-  const mk = (id: string): PendingDecision => ({
-    id, kind: 'ask', prompt: '', options: [], multi: false, allow_custom: true,
-  });
-
   it('appends a new decision', () => {
     expect(enqueueDecision([], mk('a'))).toHaveLength(1);
     expect(enqueueDecision([mk('a')], mk('b')).map((d) => d.id)).toEqual(['a', 'b']);
@@ -71,25 +73,29 @@ describe('enqueueDecision', () => {
 });
 
 describe('replyAction / rejectAction', () => {
-  it('reply carries id + answer (string)', () => {
-    expect(replyAction('q1', 'luxon')).toEqual({
-      action: 'question_reply', id: 'q1', answer: 'luxon',
+  it('reply carries the canonical execution envelope', () => {
+    expect(replyAction(mk('q1'), 'luxon')).toMatchObject({
+      type: 'execution.command', action: 'execution.wait.answer',
+      execution_id: 'exec_1', expected_version: 1,
+      payload: { wait_id: 'q1', generation: 0, answer: 'luxon' },
     });
   });
 
   it('reply carries an array answer for multi', () => {
-    expect(replyAction('q1', ['a', 'b'])).toEqual({
-      action: 'question_reply', id: 'q1', answer: ['a', 'b'],
+    expect(replyAction(mk('q1'), ['a', 'b'])).toMatchObject({
+      action: 'execution.wait.answer', payload: { wait_id: 'q1', generation: 0, answer: ['a', 'b'] },
     });
   });
 
   it('reject omits reason when none given', () => {
-    expect(rejectAction('q1')).toEqual({ action: 'question_reject', id: 'q1' });
+    expect(rejectAction(mk('q1'))).toMatchObject({
+      action: 'execution.wait.decline', payload: { wait_id: 'q1', generation: 0 },
+    });
   });
 
   it('reject carries a reason when given', () => {
-    expect(rejectAction('q1', 'too risky')).toEqual({
-      action: 'question_reject', id: 'q1', reason: 'too risky',
+    expect(rejectAction(mk('q1'), 'too risky')).toMatchObject({
+      action: 'execution.wait.decline', payload: { wait_id: 'q1', generation: 0, reason: 'too risky' },
     });
   });
 });

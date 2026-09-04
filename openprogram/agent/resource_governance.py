@@ -34,6 +34,7 @@ SQLITE_INT64_MAX = 9_223_372_036_854_775_807
 TERMINAL_FIELD_NAMES = frozenset({
     "status", "head_id", "result_text", "error", "reason_code",
 })
+_CANONICAL_PROJECTION_OWNER = "canonical-projection"
 _RETRYABLE_RESOURCE_REASONS = frozenset({
     "quota.accounting_unavailable",
     "quota.parent_claim_unavailable",
@@ -76,6 +77,7 @@ _RESOURCE_REASON_CODES = (
     "error.dispatch_failed",
     "error.runtime_registration",
     "error.job_missing",
+    "error.canonical_unavailable",
     "completed",
 )
 RESOURCE_REASON_METADATA = {
@@ -292,9 +294,29 @@ class JobResourceView:
     limits: dict[str, Any]
     capacity: dict[str, Any]
     budget: dict[str, Any]
+    execution_id: str | None = None
+    capabilities: dict[str, Any] | None = None
+    checkpoint_head_id: str | None = None
+    event_cursor: dict[str, Any] | None = None
+    resource: dict[str, Any] | None = None
+    admission_id: str | None = None
+    resource_lease_generation: int | None = None
+    owner_instance_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        value = asdict(self)
+        if self.resource is None:
+            value["resource"] = {
+                "admission_id": self.admission_id,
+                "resource_state": self.resource_state,
+                "queue_wait": None,
+                "resource_lease_generation": self.resource_lease_generation,
+                "owner_instance_id": self.owner_instance_id,
+                "limits": self.limits,
+                "usage": self.budget,
+                "reservation": None,
+            }
+        return value
 
 
 @dataclass(frozen=True)
@@ -425,25 +447,27 @@ class ReconcileResult:
     released_worker_lost: int = 0
     finalization_conflicts: int = 0
     completed_pending: tuple[tuple[str, str], ...] = ()
+    worker_lost: tuple[tuple[str, str], ...] = ()
 
 
 def _durable_job_time_limits(
     ledger: UsageLedger, job_id: str,
 ) -> tuple[int | None, int | None]:
-    row = ledger.connection().execute(
-        """WITH RECURSIVE ancestors AS (
-               SELECT b.* FROM job_admissions a
-               JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
-               WHERE a.job_id = ?
-               UNION ALL
-               SELECT parent.* FROM budget_scopes parent
-               JOIN ancestors child
-                 ON child.parent_scope_id = parent.budget_scope_id
-           )
-           SELECT MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
-           FROM ancestors WHERE scope_kind = 'job'""",
-        (job_id,),
-    ).fetchone()
+    with ledger.read() as conn:
+        row = conn.execute(
+            """WITH RECURSIVE ancestors AS (
+                   SELECT b.* FROM job_admissions a
+                   JOIN budget_scopes b ON b.budget_scope_id = a.budget_scope_id
+                   WHERE a.job_id = ?
+                   UNION ALL
+                   SELECT parent.* FROM budget_scopes parent
+                   JOIN ancestors child
+                     ON child.parent_scope_id = parent.budget_scope_id
+               )
+               SELECT MIN(max_runtime_seconds), MIN(idle_timeout_seconds)
+               FROM ancestors WHERE scope_kind = 'job'""",
+            (job_id,),
+        ).fetchone()
     return (None, None) if row is None else (row[0], row[1])
 
 
@@ -713,9 +737,8 @@ class ResourceGovernor:
         except ResourceLimitError:
             fallback = resolve_resource_limits(ResourceLimits())
             try:
-                usage = self._session_usage(
-                    self.ledger.connection(), job.parent_session_id,
-                )
+                with self.ledger.read() as conn:
+                    usage = self._session_usage(conn, job.parent_session_id)
             except Exception:
                 return self._denied(
                     "quota.accounting_unavailable",
@@ -730,7 +753,7 @@ class ResourceGovernor:
                 usage=usage,
             )
         fingerprint = _job_fingerprint(job)
-        admission_id = "adm_" + uuid.uuid4().hex
+        admission_id = job.admission_id or "adm_" + uuid.uuid4().hex
         scope_id = "budget_" + uuid.uuid4().hex
         session_scope_id = "session_" + hashlib.sha256(
             job.parent_session_id.encode("utf-8")
@@ -1008,7 +1031,12 @@ class ResourceGovernor:
                        last_activity_at = ?, lease_expires_at = ?,
                        lease_generation = lease_generation + 1
                    WHERE job_id = ? AND state = 'queued'
-                     AND dispatch_ready = 1""",
+                     AND dispatch_ready = 1 AND terminal_blocked = 0
+                     AND NOT EXISTS (
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
+                     )""",
                 (owner_instance_id, now, now, now + 30.0, job_id),
             ).rowcount
             return changed == 1
@@ -1028,6 +1056,12 @@ class ResourceGovernor:
             queued = conn.execute(
                 """SELECT job_id, session_id FROM job_admissions
                    WHERE state = 'queued' AND dispatch_ready = 1
+                     AND terminal_blocked = 0
+                     AND NOT EXISTS (
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
+                     )
                    ORDER BY admitted_seq"""
             ).fetchall()
             for candidate in queued:
@@ -1056,7 +1090,8 @@ class ResourceGovernor:
                        SET state = 'live', owner_instance_id = ?, started_at = ?,
                            last_activity_at = ?, lease_expires_at = ?,
                            lease_generation = lease_generation + 1
-                       WHERE job_id = ? AND state = 'queued'""",
+                       WHERE job_id = ? AND state = 'queued'
+                         AND dispatch_ready = 1 AND terminal_blocked = 0""",
                     (
                         owner_instance_id, now, now, now + 30.0,
                         candidate["job_id"],
@@ -1071,6 +1106,112 @@ class ResourceGovernor:
                         candidate["job_id"], candidate["session_id"], generation,
                     )
             return None
+
+    def reserve_admission(
+        self,
+        job: Job,
+        *,
+        persist: Callable[[Job], Any],
+        creates_agent: bool = True,
+        caller_session_id: str | None = None,
+        caller_turn_id: str | None = None,
+        dispatch_ready: bool = True,
+    ) -> AdmissionDecision:
+        """Idempotently consume an execution admission intent in this ledger."""
+        return self.admit_job(
+            job,
+            persist=persist,
+            creates_agent=creates_agent,
+            caller_session_id=caller_session_id,
+            caller_turn_id=caller_turn_id,
+            dispatch_ready=dispatch_ready,
+        )
+
+    def queue_resume(
+        self,
+        job_id: str,
+        *,
+        admission_id: str,
+        command_id: str,
+        paused: bool = True,
+    ) -> bool:
+        """Idempotently put an existing admission back in the claim queue."""
+        queue_state = "paused_waiting_claim" if paused else "queued_resume"
+        with self.ledger.immediate() as conn:
+            row = conn.execute(
+                "SELECT state, queue_state, resume_command_id FROM job_admissions WHERE job_id = ? AND admission_id = ?",
+                (job_id, admission_id),
+            ).fetchone()
+            if row is None:
+                return False
+            if row["state"] == "live":
+                return row["resume_command_id"] == command_id
+            if row["state"] == "queued" and row["resume_command_id"] not in (None, command_id):
+                return False
+            return conn.execute(
+                "UPDATE job_admissions SET state = 'queued', queue_state = ?, resume_command_id = ?, dispatch_ready = 1, owner_instance_id = NULL, lease_expires_at = NULL WHERE job_id = ? AND admission_id = ? AND state IN ('queued', 'released')",
+                (queue_state, command_id, job_id, admission_id),
+            ).rowcount == 1
+
+    def reclaim_paused(self, job_id: str, *, admission_id: str, command_id: str) -> bool:
+        """Public name for the paused continuation claim queue transition."""
+        return self.queue_resume(
+            job_id, admission_id=admission_id, command_id=command_id, paused=True,
+        )
+
+    def claim_execution(
+        self,
+        job_id: str,
+        *,
+        owner_instance_id: str,
+        admission_id: str,
+        command_id: str | None = None,
+    ) -> DispatchClaim | None:
+        """Claim exactly one admission, returning an existing same-owner claim."""
+        with self.ledger.read() as conn:
+            row = conn.execute(
+                "SELECT session_id, state, owner_instance_id, lease_generation, admission_id FROM job_admissions WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None or row["admission_id"] != admission_id:
+            return None
+        if row["state"] == "live" and row["owner_instance_id"] == owner_instance_id:
+            return DispatchClaim(job_id, str(row["session_id"]), int(row["lease_generation"]))
+        claim = self.claim_next(owner_instance_id=owner_instance_id, only_job_id=job_id)
+        if claim is None:
+            return None
+        with self.ledger.immediate() as conn:
+            conn.execute(
+                "UPDATE job_admissions SET queue_state = 'live', resume_command_id = ? WHERE job_id = ? AND owner_instance_id = ? AND lease_generation = ?",
+                (command_id, job_id, owner_instance_id, claim.lease_generation),
+            )
+        return claim
+
+    def release_execution(
+        self,
+        job_id: str,
+        reason_code: str,
+        *,
+        admission_id: str,
+        owner_instance_id: str | None = None,
+        resource_lease_generation: int | None = None,
+    ) -> bool:
+        """Fenced, idempotent resource release for a canonical execution."""
+        with self.ledger.read() as conn:
+            row = conn.execute(
+                "SELECT state, admission_id, owner_instance_id, lease_generation FROM job_admissions WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None or row["admission_id"] != admission_id:
+            return False
+        if row["state"] == "released":
+            return True
+        return self.release_job(
+            job_id,
+            reason_code,
+            owner_instance_id=owner_instance_id,
+            lease_generation=resource_lease_generation,
+        )
 
     def stage_deferred_resume(
         self,
@@ -1112,12 +1253,97 @@ class ResourceGovernor:
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions
-                   SET dispatch_ready = 1, resume_parent_msg_id = NULL
+                   SET dispatch_ready = 1
                    WHERE job_id = ? AND admission_id = ?
                      AND state = 'queued' AND dispatch_ready = 0
+                     AND terminal_blocked = 0
                      AND resume_parent_msg_id = ?
                      AND borrowed_parent_job_id IS NULL""",
                 (job_id, admission_id, parent_msg_id),
+            ).rowcount == 1
+
+    def continuation_parent_msg_id(self, job_id: str) -> str | None:
+        """Return the durable deferred-resume target for canonical input."""
+        with self.ledger.read() as conn:
+            row = conn.execute(
+                "SELECT resume_parent_msg_id FROM job_admissions "
+                "WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return row[0] if row is not None else None
+
+    def admission_exists(self, job_id: str) -> bool:
+        """Check whether the resource ledger owns an admission for a Job."""
+        with self.ledger.read() as conn:
+            return conn.execute(
+                "SELECT 1 FROM job_admissions WHERE job_id = ? LIMIT 1",
+                (job_id,),
+            ).fetchone() is not None
+
+    def budget_scope_id(self, job_id: str) -> str | None:
+        """Return the authoritative budget scope for a canonical Job."""
+        with self.ledger.read() as conn:
+            row = conn.execute(
+                "SELECT budget_scope_id FROM job_admissions WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return str(row[0]) if row is not None and row[0] else None
+
+    def canonical_limits(self, job_id: str) -> dict[str, int | float | None]:
+        """Read the active Job budget from the authoritative ledger row."""
+        with self.ledger.read() as conn:
+            rows = conn.execute(
+                """WITH RECURSIVE ancestors AS (
+                       SELECT b.*, 0 AS depth
+                       FROM budget_scopes b
+                       JOIN job_admissions a
+                         ON a.budget_scope_id = b.budget_scope_id
+                       WHERE a.job_id = ?
+                       UNION ALL
+                       SELECT parent.*, ancestors.depth + 1
+                       FROM budget_scopes parent
+                       JOIN ancestors
+                         ON ancestors.parent_scope_id = parent.budget_scope_id
+                   )
+                   SELECT max_total_tokens, max_cost_microusd,
+                          max_runtime_seconds, idle_timeout_seconds
+                   FROM ancestors ORDER BY depth""",
+                (job_id,),
+            ).fetchall()
+        if not rows:
+            return {}
+        values = [
+            next((row[index] for row in rows if row[index] is not None), None)
+            for index in range(4)
+        ]
+        return {
+            "max_total_tokens": values[0],
+            "max_cost_microusd": values[1],
+            "max_runtime_seconds": values[2],
+            "idle_timeout_seconds": values[3],
+        }
+
+    def publish_accepted_job(
+        self,
+        job_id: str,
+        *,
+        admission_id: str,
+    ) -> bool:
+        """Make a newly admitted Job claimable after caller side effects.
+
+        Unlike ``mark_dispatch_ready``, this path has no mutable resume head
+        to stage.  Its fence is the immutable admission id plus the queued,
+        undispatched state.
+        """
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE job_admissions SET dispatch_ready = 1
+                   WHERE job_id = ? AND admission_id = ?
+                     AND state = 'queued' AND dispatch_ready = 0
+                     AND terminal_blocked = 0
+                     AND resume_parent_msg_id IS NULL
+                     AND borrowed_parent_job_id IS NULL""",
+                (job_id, admission_id),
             ).rowcount == 1
 
     def reset_deferred_resume(
@@ -1189,8 +1415,13 @@ class ResourceGovernor:
                 return False
             return conn.execute(
                 """UPDATE job_admissions
-                   SET state = 'released', released_at = ?, reason_code = ?,
-                       lease_expires_at = NULL
+                   SET state = 'released', terminal_blocked = 0,
+                       terminal_block_command_id = NULL,
+                       terminal_block_phase = NULL,
+                       terminal_block_expires_at = NULL,
+                       terminal_block_prior_dispatch_ready = NULL,
+                       released_at = ?, reason_code = ?,
+                       lease_expires_at = NULL, resume_parent_msg_id = NULL
                    WHERE job_id = ? AND state = 'queued'
                      AND borrowed_parent_job_id = ?
                      AND NOT EXISTS (
@@ -1226,6 +1457,7 @@ class ResourceGovernor:
                        started_at = ?, last_activity_at = ?, lease_expires_at = ?
                    WHERE job_id = ? AND state = 'queued'
                      AND dispatch_ready = 0
+                     AND terminal_blocked = 0
                      AND borrowed_parent_job_id = ?
                      AND owner_instance_id IS NULL""",
                 (
@@ -1310,7 +1542,13 @@ class ResourceGovernor:
             for row in rows:
                 conn.execute(
                     """UPDATE job_admissions
-                       SET state = 'released', released_at = ?,
+                       SET state = 'released', terminal_blocked = 0,
+                           terminal_block_command_id = NULL,
+                           terminal_block_phase = NULL,
+                           terminal_block_expires_at = NULL,
+                           terminal_block_prior_dispatch_ready = NULL,
+                           released_at = ?,
+                           resume_parent_msg_id = NULL,
                            reason_code = 'error.borrowed_parent_lost'
                        WHERE job_id = ? AND state = 'queued'
                          AND NOT EXISTS (
@@ -1342,7 +1580,7 @@ class ResourceGovernor:
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions
-                   SET state = 'queued', owner_instance_id = NULL,
+                   SET state = 'queued', queue_state = 'queued', owner_instance_id = NULL,
                        lease_expires_at = NULL, started_at = NULL,
                        last_activity_at = NULL
                    WHERE job_id = ? AND state = 'live'
@@ -1409,6 +1647,21 @@ class ResourceGovernor:
                             AND owner_instance_id IS NOT NULL THEN state
                        WHEN state IN ('preparing','queued') THEN 'released'
                        ELSE state END,
+                       terminal_blocked = CASE
+                           WHEN state IN ('preparing','queued') THEN 0
+                           ELSE terminal_blocked END,
+                       terminal_block_command_id = CASE
+                           WHEN state IN ('preparing','queued') THEN NULL
+                           ELSE terminal_block_command_id END,
+                       terminal_block_phase = CASE
+                           WHEN state IN ('preparing','queued') THEN NULL
+                           ELSE terminal_block_phase END,
+                       terminal_block_expires_at = CASE
+                           WHEN state IN ('preparing','queued') THEN NULL
+                           ELSE terminal_block_expires_at END,
+                       terminal_block_prior_dispatch_ready = CASE
+                           WHEN state IN ('preparing','queued') THEN NULL
+                           ELSE terminal_block_prior_dispatch_ready END,
                        reason_code = ?,
                        released_at = CASE
                            WHEN state IN ('preparing','queued')
@@ -1417,7 +1670,8 @@ class ResourceGovernor:
                                     AND borrowed_parent_job_id IS NOT NULL
                                     AND owner_instance_id IS NOT NULL
                                 ) THEN ? ELSE released_at END
-                   WHERE job_id = ?""",
+                   WHERE job_id = ?
+                     AND state IN ('preparing','queued','live','stopping')""",
                 (reason_code, time.time(), job_id),
             )
 
@@ -1432,7 +1686,13 @@ class ResourceGovernor:
         with self.ledger.immediate() as conn:
             return conn.execute(
                 """UPDATE job_admissions
-                   SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                   SET state = 'released', queue_state = 'released', terminal_blocked = 0,
+                       terminal_block_command_id = NULL,
+                       terminal_block_phase = NULL,
+                       terminal_block_expires_at = NULL,
+                       terminal_block_prior_dispatch_ready = NULL,
+                       released_at = ?, lease_expires_at = NULL,
+                       resume_parent_msg_id = NULL,
                        reason_code = COALESCE(?, reason_code)
                    WHERE job_id = ? AND state != 'released'
                      AND (state IN ('preparing','queued')
@@ -1583,7 +1843,13 @@ class ResourceGovernor:
             placeholders = ",".join("?" for _ in eligible_states)
             changed = conn.execute(
                 f"""UPDATE job_admissions
-                    SET state = 'released', released_at = ?, lease_expires_at = NULL,
+                    SET state = 'released', terminal_blocked = 0,
+                        terminal_block_command_id = NULL,
+                        terminal_block_phase = NULL,
+                        terminal_block_expires_at = NULL,
+                        terminal_block_prior_dispatch_ready = NULL,
+                        released_at = ?, lease_expires_at = NULL,
+                        resume_parent_msg_id = NULL,
                         reason_code = COALESCE(?, reason_code)
                     WHERE job_id = ? AND owner_instance_id = ?
                       AND lease_generation = ? AND state IN ({placeholders})""",
@@ -1601,6 +1867,397 @@ class ResourceGovernor:
                 (time.time(), job_id),
             )
             return True
+
+    def enqueue_terminal_projection(
+        self, job_id: str, terminal_fields: Mapping[str, Any],
+    ) -> bool:
+        """Durably queue a canonical terminal projection for retry.
+
+        This ownerless intent is used only when the JobStore write is
+        temporarily unavailable.  It preserves the exact terminal fields;
+        reconciliation performs the projection and admission release later.
+        """
+        fields_json = self._terminal_fields_json(terminal_fields)
+        with self.ledger.immediate() as conn:
+            admission = conn.execute(
+                "SELECT session_id, lease_generation FROM job_admissions "
+                "WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if admission is None:
+                return False
+            # The dispatch fence and the projection intent must commit
+            # together.  This closes the queued-admission race with
+            # claim_next while the canonical database remains separate.
+            conn.execute(
+                """UPDATE job_admissions
+                   SET dispatch_ready = 0, terminal_blocked = 1,
+                       terminal_block_phase = COALESCE(
+                           terminal_block_phase, 'projection'
+                       ),
+                       terminal_block_expires_at = COALESCE(
+                           terminal_block_expires_at, ?
+                       ),
+                       terminal_block_prior_dispatch_ready = COALESCE(
+                           terminal_block_prior_dispatch_ready, dispatch_ready
+                       )
+                   WHERE job_id = ? AND state != 'released'""",
+                (time.time() + 30.0, job_id),
+            )
+            existing = conn.execute(
+                "SELECT fields_json, state FROM job_finalizations "
+                "WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if existing is not None:
+                return existing[0] == fields_json
+            conn.execute(
+                """INSERT INTO job_finalizations (
+                       job_id, session_id, owner_instance_id, lease_generation,
+                       fields_json, state, created_at
+                   ) VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+                (
+                    job_id, admission["session_id"],
+                    _CANONICAL_PROJECTION_OWNER,
+                    admission["lease_generation"], fields_json, time.time(),
+                ),
+            )
+        return True
+
+    def block_dispatch(
+        self,
+        job_id: str,
+        *,
+        command_id: str | None = None,
+        phase: str = "recovery",
+    ) -> bool:
+        """Fence an admission before canonical terminal transition."""
+        if phase not in {"prepared", "recovery", "projection"}:
+            raise ValueError("invalid terminal barrier phase")
+        now = time.time()
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE job_admissions
+                   SET dispatch_ready = 0, terminal_blocked = 1,
+                       terminal_block_command_id = COALESCE(
+                           terminal_block_command_id, ?
+                       ),
+                       terminal_block_phase = CASE
+                           WHEN terminal_blocked = 1
+                           THEN COALESCE(terminal_block_phase, ?)
+                           ELSE ? END,
+                       terminal_block_expires_at = CASE
+                           WHEN terminal_blocked = 1
+                           THEN COALESCE(terminal_block_expires_at, ?)
+                           ELSE ? END,
+                       terminal_block_prior_dispatch_ready = COALESCE(
+                           terminal_block_prior_dispatch_ready,
+                           CASE WHEN terminal_blocked = 1 THEN 0
+                                ELSE dispatch_ready END
+                       )
+                   WHERE job_id = ? AND state != 'released'""",
+                (
+                    command_id, phase, phase, now + 30.0, now + 30.0, job_id,
+                ),
+            ).rowcount == 1
+
+    def mark_terminal_dispatch_recovery(
+        self, job_id: str, *, command_id: str,
+    ) -> bool:
+        """Record that the canonical cancel CAS failed after preparation."""
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                """UPDATE job_admissions
+                   SET terminal_block_phase = 'recovery',
+                       terminal_block_expires_at = ?
+                   WHERE job_id = ? AND terminal_blocked = 1
+                     AND terminal_block_command_id = ?""",
+                (time.time() + 30.0, job_id, command_id),
+            ).rowcount == 1
+
+    def unblock_terminal_dispatch(
+        self,
+        job_id: str,
+        *,
+        expected_state: str = "queued",
+        expected_owner_instance_id: str | None = None,
+        expected_lease_generation: int | None = None,
+    ) -> bool:
+        """Restore a queued admission under an exact recovery fence."""
+        owner_clause = (
+            "owner_instance_id IS NULL"
+            if expected_owner_instance_id is None
+            else "owner_instance_id = ?"
+        )
+        generation_clause = (
+            ""
+            if expected_lease_generation is None
+            else " AND lease_generation = ?"
+        )
+        params: list[Any] = [job_id, expected_state]
+        if expected_owner_instance_id is not None:
+            params.append(expected_owner_instance_id)
+        if expected_lease_generation is not None:
+            params.append(expected_lease_generation)
+        params.append(time.time())
+        with self.ledger.immediate() as conn:
+            return conn.execute(
+                f"""UPDATE job_admissions
+                   SET dispatch_ready = COALESCE(
+                           terminal_block_prior_dispatch_ready, dispatch_ready
+                       ),
+                       terminal_blocked = 0,
+                       terminal_block_command_id = NULL,
+                       terminal_block_phase = NULL,
+                       terminal_block_expires_at = NULL,
+                       terminal_block_prior_dispatch_ready = NULL
+                   WHERE job_id = ? AND state = ?
+                     AND terminal_blocked = 1
+                     AND {owner_clause}{generation_clause}
+                     AND (
+                         terminal_block_phase = 'recovery'
+                         OR (
+                             terminal_block_phase = 'prepared'
+                             AND terminal_block_expires_at <= ?
+                         )
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM job_finalizations
+                         WHERE job_finalizations.job_id = job_admissions.job_id
+                           AND job_finalizations.state = 'pending'
+                     )""",
+                params,
+            ).rowcount == 1
+
+    def restore_terminal_dispatch_claim(
+        self,
+        job_id: str,
+        *,
+        expected_state: str,
+        expected_owner_instance_id: str | None,
+        expected_lease_generation: int,
+        target_state: str,
+        owner_instance_id: str | None = None,
+        lease_generation: int | None = None,
+        reason_code: str | None = None,
+    ) -> bool:
+        """Reconcile a pre-cancel fence to a canonical owner/state exactly."""
+        if target_state not in {"live", "stopping", "released"}:
+            raise ValueError("target_state must be live, stopping, or released")
+        if target_state != "released" and (
+            owner_instance_id is None or lease_generation is None
+        ):
+            raise ValueError("an active target requires an owner fence")
+        owner_clause = (
+            "owner_instance_id IS NULL"
+            if expected_owner_instance_id is None
+            else "owner_instance_id = ?"
+        )
+        params: list[Any] = [job_id, expected_state]
+        if expected_owner_instance_id is not None:
+            params.append(expected_owner_instance_id)
+        params.append(expected_lease_generation)
+        params.append(time.time())
+        with self.ledger.immediate() as conn:
+            if target_state == "released":
+                sql = f"""UPDATE job_admissions
+                           SET state = 'released', terminal_blocked = 0,
+                               dispatch_ready = 0, owner_instance_id = NULL,
+                               lease_expires_at = NULL, released_at = ?,
+                               resume_parent_msg_id = NULL,
+                               terminal_block_command_id = NULL,
+                               terminal_block_phase = NULL,
+                               terminal_block_expires_at = NULL,
+                               terminal_block_prior_dispatch_ready = NULL,
+                               reason_code = COALESCE(?, reason_code)
+                           WHERE job_id = ? AND state = ?
+                             AND terminal_blocked = 1
+                             AND {owner_clause}
+                             AND lease_generation = ?
+                             AND (
+                                 terminal_block_phase = 'recovery'
+                                 OR (
+                                     terminal_block_phase = 'prepared'
+                                     AND terminal_block_expires_at <= ?
+                                 )
+                             )
+                             AND NOT EXISTS (
+                                 SELECT 1 FROM job_finalizations
+                                 WHERE job_finalizations.job_id = job_admissions.job_id
+                                   AND job_finalizations.state = 'pending'
+                             )"""
+                release_params = [time.time(), reason_code, *params]
+                return conn.execute(sql, release_params).rowcount == 1
+            now = time.time()
+            sql = f"""UPDATE job_admissions
+                       SET state = ?, terminal_blocked = 0,
+                           dispatch_ready = 0, owner_instance_id = ?,
+                           lease_generation = ?, started_at = COALESCE(started_at, ?),
+                           last_activity_at = ?, lease_expires_at = ?,
+                           terminal_block_command_id = NULL,
+                           terminal_block_phase = NULL,
+                           terminal_block_expires_at = NULL,
+                           terminal_block_prior_dispatch_ready = NULL,
+                           reason_code = COALESCE(?, reason_code)
+                       WHERE job_id = ? AND state = ?
+                         AND terminal_blocked = 1
+                         AND {owner_clause}
+                         AND lease_generation = ?
+                         AND (
+                             terminal_block_phase = 'recovery'
+                             OR (
+                                 terminal_block_phase = 'prepared'
+                                 AND terminal_block_expires_at <= ?
+                             )
+                         )
+                         AND NOT EXISTS (
+                             SELECT 1 FROM job_finalizations
+                             WHERE job_finalizations.job_id = job_admissions.job_id
+                               AND job_finalizations.state = 'pending'
+                         )"""
+            active_params = [
+                target_state, owner_instance_id, lease_generation, now, now,
+                now + 30.0, reason_code, *params,
+            ]
+            return conn.execute(sql, active_params).rowcount == 1
+
+    def _complete_ownerless_projection(
+        self, job_id: str, *, lease_generation: int,
+        fields_json: str, reason_code: str | None,
+    ) -> bool:
+        """Complete an ownerless projection intent under its admission fence."""
+        with self.ledger.immediate() as conn:
+            intent = conn.execute(
+                """SELECT state FROM job_finalizations
+                   WHERE job_id = ? AND owner_instance_id = ?
+                     AND lease_generation = ? AND fields_json = ?""",
+                (
+                    job_id, _CANONICAL_PROJECTION_OWNER,
+                    lease_generation, fields_json,
+                ),
+            ).fetchone()
+            if intent is None:
+                return False
+            if intent["state"] == "completed":
+                return True
+            admission = conn.execute(
+                "SELECT state, lease_generation FROM job_admissions "
+                "WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if admission is None:
+                return False
+            if admission["state"] != "released":
+                changed = conn.execute(
+                    """UPDATE job_admissions
+                           SET state = 'released', terminal_blocked = 0,
+                               terminal_block_command_id = NULL,
+                               terminal_block_phase = NULL,
+                               terminal_block_expires_at = NULL,
+                               terminal_block_prior_dispatch_ready = NULL,
+                               released_at = ?,
+                           lease_expires_at = NULL,
+                           resume_parent_msg_id = NULL,
+                           reason_code = COALESCE(?, reason_code)
+                       WHERE job_id = ?
+                         AND state IN ('preparing','queued','live','stopping')
+                         AND lease_generation = ?""",
+                    (time.time(), reason_code, job_id, lease_generation),
+                ).rowcount
+                if changed != 1:
+                    return False
+            changed = conn.execute(
+                """UPDATE job_finalizations
+                   SET state = 'completed', completed_at = ?
+                   WHERE job_id = ? AND owner_instance_id = ?
+                     AND lease_generation = ? AND fields_json = ?
+                     AND state = 'pending'""",
+                (
+                    time.time(), job_id, _CANONICAL_PROJECTION_OWNER,
+                    lease_generation, fields_json,
+                ),
+            ).rowcount
+            return changed == 1
+
+    def pending_finalization(self, job_id: str):
+        """Return the immutable pending terminal intent, if one exists."""
+        with self.ledger.read() as conn:
+            row = conn.execute(
+                """SELECT job_id, session_id, owner_instance_id, lease_generation,
+                          fields_json, state
+                   FROM job_finalizations
+                   WHERE job_id = ? AND state = 'pending'""",
+                (job_id,),
+            ).fetchone()
+        return None if row is None else tuple(row)
+
+    def pending_finalizations(self) -> list[tuple[str, str, str, int, str, str]]:
+        """Return all pending terminal intents for projection recovery."""
+        with self.ledger.read() as conn:
+            rows = conn.execute(
+                """SELECT job_id, session_id, owner_instance_id,
+                          lease_generation, fields_json, state
+                   FROM job_finalizations
+                   WHERE state = 'pending'
+                   ORDER BY created_at"""
+            ).fetchall()
+        return [tuple(row) for row in rows]
+
+    def admission_fence(self, job_id: str) -> tuple[str | None, int] | None:
+        """Return the current admission owner fence for a projection."""
+        with self.ledger.read() as conn:
+            row = conn.execute(
+                """SELECT owner_instance_id, lease_generation
+                   FROM job_admissions WHERE job_id = ?""",
+                (job_id,),
+            ).fetchone()
+        return None if row is None else (row[0], int(row[1]))
+
+    def admission_state(
+        self, job_id: str,
+    ) -> tuple[str, str | None, int, bool, str | None, float | None, str | None, int | None] | None:
+        """Return state and fence fields needed for canonical recovery."""
+        with self.ledger.read() as conn:
+            row = conn.execute(
+                """SELECT state, owner_instance_id, lease_generation,
+                          terminal_blocked, terminal_block_phase,
+                          terminal_block_expires_at, terminal_block_command_id,
+                          terminal_block_prior_dispatch_ready
+                   FROM job_admissions WHERE job_id = ?""",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return (
+            str(row[0]), row[1], int(row[2]), bool(row[3]), row[4],
+            row[5], row[6], row[7],
+        )
+
+    def complete_pending_finalization(
+        self,
+        job_id: str,
+        *,
+        owner_instance_id: str,
+        lease_generation: int,
+        fields_json: str,
+        reason_code: str | None,
+    ) -> bool:
+        """Release exactly the admission fenced by a pending intent."""
+        if owner_instance_id == _CANONICAL_PROJECTION_OWNER:
+            return self._complete_ownerless_projection(
+                job_id,
+                lease_generation=lease_generation,
+                fields_json=fields_json,
+                reason_code=reason_code,
+            )
+        return self._complete_finalization(
+            job_id,
+            owner_instance_id=owner_instance_id,
+            lease_generation=lease_generation,
+            fields_json=fields_json,
+            reason_code=reason_code,
+            eligible_states=('preparing', 'queued', 'live', 'stopping'),
+        )
 
     def _finalize_with_intent(
         self,
@@ -1673,12 +2330,13 @@ class ResourceGovernor:
     ) -> ReconcileResult:
         """Reconcile durable admissions without spanning job-store I/O."""
         current_time = time.time() if now is None else now
-        pending = self.ledger.connection().execute(
-            """SELECT job_id, session_id, owner_instance_id, lease_generation,
-                      fields_json
-               FROM job_finalizations WHERE state = 'pending'
-               ORDER BY created_at"""
-        ).fetchall()
+        with self.ledger.read() as conn:
+            pending = conn.execute(
+                """SELECT job_id, session_id, owner_instance_id, lease_generation,
+                          fields_json
+                   FROM job_finalizations WHERE state = 'pending'
+                   ORDER BY created_at"""
+            ).fetchall()
         pending_job_ids = {str(row["job_id"]) for row in pending}
         finalization_conflicts = 0
         completed_pending: list[tuple[str, str]] = []
@@ -1710,6 +2368,16 @@ class ResourceGovernor:
             if actual_fields != fields:
                 finalization_conflicts += 1
                 continue
+            if intent["owner_instance_id"] == _CANONICAL_PROJECTION_OWNER:
+                completed = self._complete_ownerless_projection(
+                    intent["job_id"],
+                    lease_generation=intent["lease_generation"],
+                    fields_json=intent["fields_json"],
+                    reason_code=fields["reason_code"],
+                )
+                if completed:
+                    completed_pending.append((intent["job_id"], intent["session_id"]))
+                continue
             completed = self._complete_finalization(
                 intent["job_id"],
                 owner_instance_id=intent["owner_instance_id"],
@@ -1720,13 +2388,15 @@ class ResourceGovernor:
             )
             if completed:
                 completed_pending.append((intent["job_id"], intent["session_id"]))
-        rows = self.ledger.connection().execute(
-            """SELECT admission_id, job_id, session_id, budget_scope_id,
-                      state, owner_instance_id, lease_generation, lease_expires_at
-               FROM job_admissions WHERE state != 'released'
-               ORDER BY admitted_seq"""
-        ).fetchall()
+        with self.ledger.read() as conn:
+            rows = conn.execute(
+                """SELECT admission_id, job_id, session_id, budget_scope_id,
+                          state, owner_instance_id, lease_generation, lease_expires_at
+                   FROM job_admissions WHERE state != 'released'
+                   ORDER BY admitted_seq"""
+            ).fetchall()
         finalized = rolled_back = released_missing = released_lost = 0
+        worker_lost: list[tuple[str, str]] = []
         for row in rows:
             if row["job_id"] in pending_job_ids:
                 continue
@@ -1760,10 +2430,35 @@ class ResourceGovernor:
                     with self.ledger.immediate() as conn:
                         changed = conn.execute(
                             """UPDATE job_admissions
-                               SET state = 'released', reason_code = 'error.job_missing',
+                               SET state = 'released', terminal_blocked = 0,
+                                   terminal_block_command_id = NULL,
+                                   terminal_block_phase = NULL,
+                                   terminal_block_expires_at = NULL,
+                                   terminal_block_prior_dispatch_ready = NULL,
+                                   reason_code = 'error.job_missing',
+                                   resume_parent_msg_id = NULL,
                                    released_at = ?
                                WHERE admission_id = ? AND state = 'queued'""",
                             (current_time, row["admission_id"]),
+                        ).rowcount
+                    released_missing += int(changed == 1)
+                elif is_terminal(job.status):
+                    with self.ledger.immediate() as conn:
+                        changed = conn.execute(
+                            """UPDATE job_admissions
+                               SET state = 'released', terminal_blocked = 0,
+                                   terminal_block_command_id = NULL,
+                                   terminal_block_phase = NULL,
+                                   terminal_block_expires_at = NULL,
+                                   terminal_block_prior_dispatch_ready = NULL,
+                                   released_at = ?,
+                                   resume_parent_msg_id = NULL,
+                                   reason_code = COALESCE(?, reason_code)
+                               WHERE admission_id = ? AND state = 'queued'""",
+                            (
+                                current_time, job.reason_code,
+                                row["admission_id"],
+                            ),
                         ).rowcount
                     released_missing += int(changed == 1)
                 continue
@@ -1798,7 +2493,13 @@ class ResourceGovernor:
             with self.ledger.immediate() as conn:
                 changed = conn.execute(
                     """UPDATE job_admissions
-                       SET state = 'released', released_at = ?, lease_expires_at = NULL
+                       SET state = 'released', terminal_blocked = 0,
+                       terminal_block_command_id = NULL,
+                       terminal_block_phase = NULL,
+                       terminal_block_expires_at = NULL,
+                       terminal_block_prior_dispatch_ready = NULL,
+                           released_at = ?, lease_expires_at = NULL,
+                           resume_parent_msg_id = NULL
                        WHERE admission_id = ? AND state = 'stopping'
                          AND owner_instance_id IS NULL
                          AND lease_generation = ?
@@ -1809,6 +2510,8 @@ class ResourceGovernor:
                     ),
                 ).rowcount
             released_lost += int(changed == 1)
+            if changed == 1:
+                worker_lost.append((str(row["job_id"]), str(row["session_id"])))
         return ReconcileResult(
             finalized_preparing=finalized,
             rolled_back_preparing=rolled_back,
@@ -1816,6 +2519,7 @@ class ResourceGovernor:
             released_worker_lost=released_lost,
             finalization_conflicts=finalization_conflicts,
             completed_pending=tuple(completed_pending),
+            worker_lost=tuple(worker_lost),
         )
 
     def job_time_limits(self, job_id: str) -> tuple[int | None, int | None]:
@@ -2173,23 +2877,23 @@ class ResourceGovernor:
 
 
 def _shared_remaining(ledger: UsageLedger, job_id: str) -> dict[str, Any]:
-    conn = ledger.connection()
-    scopes = conn.execute(
-        """WITH RECURSIVE ancestors AS (
-               SELECT parent.* FROM job_admissions admission
-               JOIN budget_scopes current
-                 ON current.budget_scope_id = admission.budget_scope_id
-               JOIN budget_scopes parent
-                 ON parent.budget_scope_id = current.parent_scope_id
-               WHERE admission.job_id = ?
-               UNION ALL
-               SELECT parent.* FROM budget_scopes parent
-               JOIN ancestors child
-                 ON child.parent_scope_id = parent.budget_scope_id
-           )
-           SELECT * FROM ancestors""",
-        (job_id,),
-    ).fetchall()
+    with ledger.read() as conn:
+        scopes = conn.execute(
+            """WITH RECURSIVE ancestors AS (
+                   SELECT parent.* FROM job_admissions admission
+                   JOIN budget_scopes current
+                     ON current.budget_scope_id = admission.budget_scope_id
+                   JOIN budget_scopes parent
+                     ON parent.budget_scope_id = current.parent_scope_id
+                   WHERE admission.job_id = ?
+                   UNION ALL
+                   SELECT parent.* FROM budget_scopes parent
+                   JOIN ancestors child
+                     ON child.parent_scope_id = parent.budget_scope_id
+               )
+               SELECT * FROM ancestors""",
+            (job_id,),
+        ).fetchall()
     token_remaining: list[int] = []
     cost_remaining: list[int] = []
     unknown_cost_events = 0
@@ -2286,16 +2990,17 @@ def build_job_resource_view(
     local_token_limit: int | None = None
     local_cost_limit: str | None = None
     if not legacy:
-        timing = ledger.connection().execute(
-            """SELECT admission.state, admission.started_at,
-                      admission.last_activity_at, admission.released_at,
-                      scope.max_total_tokens, scope.max_cost_microusd
-               FROM job_admissions admission
-               JOIN budget_scopes scope
-                 ON scope.budget_scope_id = admission.budget_scope_id
-               WHERE admission.job_id = ?""",
-            (job.id,),
-        ).fetchone()
+        with ledger.read() as conn:
+            timing = conn.execute(
+                """SELECT admission.state, admission.started_at,
+                          admission.last_activity_at, admission.released_at,
+                          scope.max_total_tokens, scope.max_cost_microusd
+                   FROM job_admissions admission
+                   JOIN budget_scopes scope
+                     ON scope.budget_scope_id = admission.budget_scope_id
+                   WHERE admission.job_id = ?""",
+                (job.id,),
+            ).fetchone()
         if timing is not None:
             local_token_limit = timing["max_total_tokens"]
             if timing["max_cost_microusd"] is not None:

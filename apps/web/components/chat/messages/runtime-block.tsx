@@ -16,6 +16,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 
+import { surfaceOriginForChat } from "@/lib/desktop-bridge";
 import { formatUsageFooterLabel } from "@/lib/format-utils/format";
 import { renderMathIn } from "@/lib/format-utils/markdown";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
@@ -183,9 +184,9 @@ export function RuntimeBlock({
   });
   const answer = nested ? null : runtimeAnswer({ fnName, status: msg.status, tree });
 
-  // Re-run the SAME function with its LAST kwargs in the SAME session.
-  // The backend looks up the prior call's stored args and dispatches via
-  // the forced-tool-call path (fresh sibling run, not an overwrite).
+  // Re-run this exact code node with its persisted kwargs in the same
+  // session. The backend validates id + function name before dispatching
+  // a fresh sibling run through the forced-tool path.
   function doRetry() {
     if (!sessionId) return;
     // 0ms feedback (interaction-feedback policy): flip THIS card into the
@@ -219,7 +220,15 @@ export function RuntimeBlock({
       showToast,
     );
     runtimeState.__reloadOnTaskClear.add(sessionId);
-    wsSend({ action: "retry_function", session_id: sessionId, function: fnName });
+    const retryPayload: Record<string, unknown> = {
+      action: "retry_function",
+      session_id: sessionId,
+      function: fnName,
+      node_id: msg.id,
+    };
+    const surface = surfaceOriginForChat(sessionId, true);
+    if (surface) retryPayload.surface_ref = surface;
+    wsSend(retryPayload);
   }
 
   // 复制 = 根调用的返回值（用户关心的是结果，不是内部树结构）；

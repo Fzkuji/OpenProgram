@@ -1,10 +1,8 @@
 # GUI Agent
 
-macOS 14 及更新系统的 `computer_use` 使用单窗口截图和 Accessibility 控件操作。Agent 从窗口列表选择目标，用户仍只输入任务。支持控件按压、替换可写文本和控件提供的翻页滚动；不激活应用、不移动系统鼠标、不使用全局键盘或剪贴板。OpenProgram 桌面 App 在创建首个窗口前启用 Electron 原生辅助功能支持，因此同一后端也能操作其 HTML 控件。窗口不明确、最小化、权限不足、应用不提供控件树或动作不受支持时，返回接手说明，不自动切到前台。任意坐标点击、拖动、快捷键和鼠标提示覆盖层不属于该后端。同一应用内操作串行；切换窗口会清除旧窗口的单步验证反馈，保留完整任务历史。
+给它一个自然语言任务。根控制器重复选择一个有界能力：`computer_use` 操作本机桌面，`browser_use` 操作 OpenProgram 后台 Page，`vm_use` 操作已配置的远程虚拟机。每次能力调用中由规划器选择的参数和完整结果都会追加到下一轮模型决策的上下文。模型通过提交终态结束任务；动作数和时间限制只作为安全边界。
 
-给它一个自然语言任务。根控制器重复选择一个有界能力：`computer_use` 操作本机桌面，`browser_use` 操作 OpenProgram 后台 Page，`vm_use` 操作已配置的远程虚拟机。每次能力调用的输入和完整结果都会追加到下一轮模型决策的上下文。模型通过提交终态结束任务；动作数和时间限制只作为安全边界。
-
-macOS 窗口后端使用 ScreenCaptureKit 和 Accessibility，不依赖 YOLO 或 OCR。其他本机与 VM 感知使用 YOLO 组件检测、OCR 和模板匹配。浏览器操作使用 Page 的 DOM/CDP target，不使用桌面坐标。
+本机与 VM 感知使用 YOLO 组件检测（GPA-GUI-Detector）、OCR（macOS 用 Apple Vision，Linux / Windows 用 EasyOCR）和模板匹配。动作层覆盖鼠标、键盘和剪贴板。浏览器操作使用 Page 的 DOM/CDP target，不使用桌面坐标。
 
 ## 可用性
 
@@ -20,7 +18,7 @@ macOS 窗口后端使用 ScreenCaptureKit 和 Accessibility，不依赖 YOLO 或
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-Programs 卡片只填写 `task`，不要求用户选择 surface。控制器每一轮都会读取原始任务、此前能力函数的准确输入和完整输出，以及当前能力可用状态，再决定下一步调用。
+Programs 卡片只填写 `task`，不要求用户选择 surface。控制器每一轮都会读取原始任务、此前由规划器选择的能力参数和完整输出，以及当前能力可用状态，再决定下一步调用。
 
 任务适合由当前内置浏览器 Page 完成时，仍使用同一个入口：
 
@@ -35,7 +33,7 @@ openprogram programs run gui_agent -a task="在不置顶窗口的情况下检查
 1. `plan_next_capability` 接收任务、当前可用状态和完整的有序能力调用历史。
 2. 它选择 `computer_use`、`browser_use`、`vm_use`，或者提交一个终态。
 3. `call_capability` 绑定由控制器管理的 runtime 设置，并只调用本轮选中的函数。
-4. 该函数的准确输入和完整输出追加到 history，因此下一轮决策可以直接看到。
+4. 规划器选择的参数和函数完整输出追加到 history，因此下一轮决策可以直接看到。控制器从上一项输出的 `next_feedback` 取得下一次调用所需的 feedback，不把它重复写进下一项 history input。
 5. 提交的终态要经过校验；没有完成证据的 success 会被记录并继续规划。
 
 `computer_use` 和 `vm_use` 每次执行一个现有 Harness step：观察当前目标、在存在前序反馈时验证结果、规划一个动作、执行，并返回完整 step 和下一轮反馈。`browser_use` 每次执行一个有界的后台 Page 子任务，然后把控制权返回根循环。屏幕读取任务不走单独的预先分流。
@@ -44,9 +42,9 @@ openprogram programs run gui_agent -a task="在不置顶窗口的情况下检查
 
 `vm_use` 需要兼容 OSWorld 的 HTTP endpoint。截图通过 `GET /screenshot` 获取，输入命令通过 `POST /execute` 发送。Harness 进程内的 VM 目标切换会串行执行。无论调用成功还是抛错，下一种能力执行前都会恢复原来的输入目标和截图 backend。endpoint 中的凭据和 query 值不会写入规划器的可用状态上下文。
 
-macOS 窗口观察包含目标身份、单窗口截图和可用控件。窗口最小化或不可访问时，运行返回 infeasible 和接手说明，不执行 Window 菜单恢复、不创建额外窗口。
+桌面观察会包含当前前台应用和截图坐标范围。如果目标应用窗口被最小化或位于另一个 macOS Space，并且经过一次有界的 Window 菜单恢复后仍不可用，运行会以 infeasible 停止，并要求用户移动或取消最小化该窗口；它不会持续创建新窗口。
 
-其他平台的桌面坐标输入仍作用于前台 GUI。浏览器动作在选中的 Page 后台执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。根据已记录的结果，控制器可以在不同能力之间切换。
+桌面坐标输入始终作用于当前前台 GUI。控制器取得准确的 macOS 进程和窗口目标后，`computer_use` 也可以只截取该窗口，并通过 Accessibility 执行控件支持的按压、文本赋值或滚动动作，不激活目标。一个不激活应用、不接收鼠标事件的提示层会跟随该窗口并标记当前动作，不移动系统鼠标。浏览器动作在选中的 Page 后台执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。根据已记录的结果，控制器可以在不同能力之间切换。
 
 所有运行共用终态字段：`status`（`succeeded`、`infeasible` 或 `failed`）、`success`、`reason_code`、`summary` 和 `handoff_instruction`。成功与否由 runner 决定，不由 conclusion 模型决定。只有 `succeeded` 的 `success` 为 true；infeasible 和 failed 一律返回 `success=false`。infeasible 还保留 blocker、标记和用户接手说明。结果同时包含有序能力调用历史和耗时。
 

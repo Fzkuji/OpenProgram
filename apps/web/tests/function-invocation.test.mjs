@@ -225,6 +225,50 @@ function releaseChatReservation(sessionKey) {
 const exact =
   'gui_agent(task="Verify title", surface="browser", max_steps=3, max_seconds=90)';
 
+test("Goal explicit limits and role settings reach function dispatch unchanged", async () => {
+  const goal = {
+    name: "goal",
+    params_detail: [
+      { name: "prompt", type: "str", required: true },
+      ...["max_rounds", "max_tokens"].map(name => ({ name, type: "int | None", hidden: true, advanced: true })),
+      ...["max_elapsed_s", "max_cost_usd", "timeout_s", "judge_timeout_s"].map(name => ({ name, type: "float | None", hidden: true, advanced: true })),
+      ...["model", "effort", "judge_model", "judge_effort", "context_mode"].map(name => ({ name, type: "str", hidden: true, advanced: true })),
+      { name: "resume", type: "bool", hidden: true },
+      { name: "expected_goal", type: "dict | None", hidden: true },
+      { name: "runtime", type: "Runtime", hidden: true },
+    ],
+  };
+  const sessionKey = "local_goal_explicit_controls";
+  runtimeState.availableFunctions = [goal];
+  useFunctions.getState().setFunctions([goal]);
+  resetObservations();
+  nextHttpResponse = { ok: true, status: 200, payload: { session_id: sessionKey } };
+  try {
+    await submitThroughComposer(
+      'goal(prompt="write an article", max_rounds=5, max_elapsed_s=600, timeout_s=120, judge_model="reviewer:model", judge_timeout_s=90)',
+      sessionKey,
+    );
+    assert.equal(wsFrames.some(frame => frame.action === "chat"), false);
+    assert.equal(httpCalls.length, 1);
+    assert.equal(httpCalls[0].url, "/api/function/goal");
+    assert.deepEqual(JSON.parse(httpCalls[0].init.body).kwargs, {
+      prompt: "write an article", max_rounds: 5, max_elapsed_s: 600,
+      timeout_s: 120, judge_model: "reviewer:model", judge_timeout_s: 90,
+    });
+    assert.deepEqual(normalizeFunctionArguments(goal, { prompt: "write", max_rounds: "5", timeout_s: "120" }), {
+      ok: true, kwargs: { prompt: "write", max_rounds: 5, timeout_s: 120 },
+    });
+    for (const argument of ['resume=True', 'runtime="secret"', 'expected_goal=None', 'max_rounds="wrong"']) {
+      assert.equal(parseFunctionInvocation(`goal(prompt="write", ${argument})`, [goal]).kind, "invalid");
+    }
+  } finally {
+    runtimeState.availableFunctions = [guiAgent];
+    useFunctions.getState().setFunctions([guiAgent]);
+    releaseChatReservation(sessionKey);
+    useSessionStore.getState().closeFnForm();
+  }
+});
+
 test("an exact registered function expression dispatches as a function", async () => {
   const sessionKey = "local_fn_exact";
   resetObservations();

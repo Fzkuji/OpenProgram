@@ -30,7 +30,7 @@ import {
   type JobResourceView,
   type JobRow,
 } from '../../ws/client.js';
-import { tsToDate } from './helpers.js';
+import { randomLocalId, tsToDate } from './helpers.js';
 import { buildChannelPicker } from './pickers/channel.js';
 import { buildRegisterPicker } from './pickers/register.js';
 import { buildQuestionPicker } from './pickers/question.js';
@@ -127,9 +127,6 @@ export interface PickerCtx {
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
 }
 
-const count = ({ used, limit }: { used: number; limit: number | null }): string =>
-  `${used}/${limit ?? '∞'}`;
-
 const localRemaining = (limit: number | null, ...used: Array<number | null>): number | null | undefined => {
   if (limit == null) return null;
   if (used.some((value) => value == null)) return undefined;
@@ -143,41 +140,46 @@ const usd = (value: number | null | undefined): string =>
   value === undefined ? 'Unknown' : value === null ? 'Unlimited' : `$${value.toFixed(2)}`;
 
 export function formatJobResource(resource: JobResourceView | undefined): string[] {
-  if (!resource || resource.resource_state === 'legacy/unmetered') {
-    return ['Unmetered', ...(resource?.reason_code ? [`Reason: ${resource.reason_code}`] : [])];
+  const canonical = resource?.resource;
+  const reason = resource?.execution?.reason_code;
+  if (!resource || !canonical || canonical.resource_state === 'legacy/unmetered') {
+    return ['Unmetered', ...(typeof reason === 'string' ? [`Reason: ${reason}`] : [])];
   }
-  const { capacity, budget } = resource;
+  const { usage } = canonical;
   const unknownEvents = Math.max(
-    budget.cost_usd.unknown_events ?? 0,
-    budget.shared_remaining.cost_unknown_events ?? 0,
+    usage.cost_usd?.unknown_events ?? 0,
+    usage.shared_remaining?.cost_unknown_events ?? 0,
   );
-  const localCost = budget.cost_usd.limit == null
+  const localCost = usage.cost_usd?.limit == null
     ? null
-    : budget.cost_usd.actual == null || budget.cost_usd.reserved == null
+    : usage.cost_usd?.actual == null || usage.cost_usd?.reserved == null
       ? undefined
-      : Math.max(0, Number(budget.cost_usd.limit)
-        - Number(budget.cost_usd.actual) - Number(budget.cost_usd.reserved));
-  const cost = budget.cost_usd.known !== true || unknownEvents
+      : Math.max(0, Number(usage.cost_usd.limit)
+        - Number(usage.cost_usd.actual) - Number(usage.cost_usd.reserved));
+  const cost = usage.cost_usd?.known !== true || unknownEvents
     ? `Unknown${unknownEvents ? ` (${unknownEvents} event${unknownEvents === 1 ? '' : 's'})` : ''}`
     : `local ${usd(localCost)} · shared ${usd(
-        budget.shared_remaining.cost_usd == null
-          ? null : Number(budget.shared_remaining.cost_usd),
+        usage.shared_remaining?.cost_usd == null
+          ? null : Number(usage.shared_remaining.cost_usd),
       )}`;
   const lines = [
-    `Session ${count(capacity.session_live)} live · ${count(capacity.session_queued)} queued · `
-      + `${count(capacity.session_jobs)} jobs · Scheduler ${capacity.scheduler_capacity}`,
+    `State: ${canonical.resource_state}`,
     `Tokens: local ${displayRemaining(localRemaining(
-      budget.tokens.limit, budget.tokens.actual, budget.tokens.reserved,
-    ))} · shared ${displayRemaining(budget.shared_remaining.tokens)}`,
+      usage.tokens?.limit ?? null,
+      usage.tokens?.actual ?? null,
+      usage.tokens?.reserved ?? null,
+    ))} · shared ${displayRemaining(usage.shared_remaining?.tokens)}`,
     `Cost: ${cost}`,
     `Runtime: ${displayRemaining(localRemaining(
-      budget.runtime_seconds.limit, budget.runtime_seconds.used,
-    ))}${budget.runtime_seconds.limit == null ? '' : 's'}`,
+      usage.runtime_seconds?.limit ?? null,
+      usage.runtime_seconds?.used ?? null,
+    ))}${usage.runtime_seconds?.limit == null ? '' : 's'}`,
     `Idle: ${displayRemaining(localRemaining(
-      budget.idle_seconds.limit, budget.idle_seconds.used,
-    ))}${budget.idle_seconds.limit == null ? '' : 's'}`,
+      usage.idle_seconds?.limit ?? null,
+      usage.idle_seconds?.used ?? null,
+    ))}${usage.idle_seconds?.limit == null ? '' : 's'}`,
   ];
-  if (resource.reason_code) lines.push(`Reason: ${resource.reason_code}`);
+  if (typeof reason === 'string' && reason) lines.push(`Reason: ${reason}`);
   return lines;
 }
 
@@ -219,6 +221,9 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     if (!selectedJob) return null;
     const rows: PickerItem<string>[] = [
       { label: 'Status', description: selectedJob.status, value: 'info' },
+      ...(selectedJob.resource?.event_cursor
+        ? [{ label: 'Cursor', description: String(selectedJob.resource.event_cursor.next_sequence), value: 'info' }]
+        : []),
       ...formatJobResource(selectedJob.resource).map((line) => {
         const split = line.indexOf(':');
         return split < 0
@@ -236,7 +241,19 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
         items={rows}
         onSelect={(item) => {
           if (item.value === 'stop') {
-            client.send({ action: 'cancel_job', job_id: selectedJob.id, reason: 'cancel.user' });
+            const executionId = selectedJob.execution_id
+              ?? selectedJob.resource?.execution_id
+              ?? selectedJob.id;
+            client.send({
+              type: 'execution.command',
+              action: 'execution.cancel',
+              command_id: `tui-${randomLocalId()}`,
+              execution_id: executionId,
+              expected_version: selectedJob.status_version
+                ?? selectedJob.resource?.status_version
+                ?? 0,
+              payload: {},
+            });
           } else if (item.value === 'back') {
             setSelectedJob(null);
             setPickerKind('jobs');

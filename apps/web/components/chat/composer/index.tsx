@@ -176,6 +176,17 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       : null;
   const activeDecision = askDecision ? null : pendingDecision;
   const send = wsSend;
+  const sendWaitCommand = useCallback((decision: NonNullable<typeof pendingDecision>, action: "execution.wait.answer" | "execution.wait.decline", value?: unknown) => {
+    if (!decision.executionId || !Number.isInteger(decision.expectedVersion)) return;
+    send({
+      type: "execution.command", action,
+      command_id: `web-wait-${crypto.randomUUID()}`,
+      execution_id: decision.executionId, expected_version: decision.expectedVersion,
+      payload: action === "execution.wait.answer"
+        ? { wait_id: decision.id, generation: decision.waitGeneration, answer: value }
+        : { wait_id: decision.id, generation: decision.waitGeneration, reason: value },
+    });
+  }, [send]);
 
   const isRunning = runningTask !== null;
   const isCancelling = Boolean(runningTask?.cancelling);
@@ -396,11 +407,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const submitWithPanel = useCallback(async () => {
     const trimmed = input.trim();
     if (askDecision && trimmed && askDecision.allow_custom) {
-      send({
-        action: "question_reply",
-        id: askDecision.id,
-        answer: askDecision.multi ? [trimmed] : trimmed,
-      });
+      sendWaitCommand(askDecision, "execution.wait.answer", askDecision.multi ? [trimmed] : trimmed);
       dequeueDecision(askDecision.id);
       setComposerInputFor(activeChatKey ?? currentSessionId, "");
       return;
@@ -475,17 +482,13 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
   const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
 
-  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
-  // （后端 _resolve_question 收口 + 广播）。
+  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。提交 canonical wait decline 并即时出队。
   const rejectDecision = useCallback(() => {
     const d = activeDecision;
     if (!d) return;
-    const sock = getSocket();
-    if (sock && sock.readyState === WebSocket.OPEN) {
-      sock.send(JSON.stringify({ action: "question_reject", id: d.id }));
-    }
+    sendWaitCommand(d, "execution.wait.decline");
     dequeueDecision(d.id);
-  }, [activeDecision, dequeueDecision]);
+  }, [activeDecision, dequeueDecision, sendWaitCommand]);
 
   // 顶部提问面板的内容（真 ask 优先；morphed 时不叠面板 —— approval/form
   // 占着输入区，答完再出）。点 pill = 立即提交（点击即时反馈）。
@@ -501,11 +504,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         options: askDecision.options.map((label) => ({ label })),
         disabled: false,
         onPick: (label: string) => {
-          send({
-            action: "question_reply",
-            id: askDecision.id,
-            answer: askDecision.multi ? [label] : label,
-          });
+          sendWaitCommand(askDecision, "execution.wait.answer", askDecision.multi ? [label] : label);
           dequeueDecision(askDecision.id);
         },
       }

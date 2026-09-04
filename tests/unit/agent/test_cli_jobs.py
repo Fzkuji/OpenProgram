@@ -8,7 +8,15 @@ from openprogram.cli import build_parser
 
 def _runner():
     view = SimpleNamespace(to_dict=lambda: {
-        "job_id": "t1", "status": "running", "resource_state": "active",
+        "job_id": "t1", "execution_id": "t1", "status": "running",
+        "resource": {
+            "resource_state": "active",
+            "limits": {"scheduler_capacity": 4},
+            "usage": {"tokens": {"actual": 1, "limit": 10}},
+        },
+        "execution": {"reason_code": None},
+        "capabilities": {"pause": True},
+        "event_cursor": {"execution_id": "t1", "next_sequence": 1},
     })
     return SimpleNamespace(
         list_jobs=lambda session_id, limit=None: [SimpleNamespace(id="t1")],
@@ -42,4 +50,4 @@ def test_jobs_commands_print_canonical_resource_dto(monkeypatch, capsys) -> None
     assert jobs._cmd_jobs_get("t1") == 0
     text = capsys.readouterr().out
     assert "t1  running  resource=active" in text
-    assert "capacity=" in text and "budget=" in text
+    assert "limits=" in text and "usage=" in text

@@ -130,6 +130,30 @@ def _set_content(msg, value) -> None:
         msg.content = value
 
 
+def _durable_message(message: Any) -> dict[str, Any]:
+    """Return JSON data only; checkpoints never retain provider objects."""
+    if hasattr(message, "model_dump"):
+        try:
+            value = message.model_dump(mode="json")
+        except Exception:
+            # AgentTool contains its executable callback, which is not a
+            # durable value.  A checkpoint needs the resolved public schema,
+            # not a repr of that callback or a process-local object address.
+            if all(hasattr(message, field) for field in ("name", "description", "parameters")):
+                value = {
+                    "name": message.name,
+                    "description": message.description,
+                    "parameters": message.parameters,
+                }
+            else:
+                value = {"repr": str(message)}
+    elif isinstance(message, dict):
+        value = dict(message)
+    else:
+        value = {"repr": str(message)}
+    return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True, default=str))
+
+
 def _create_agent_stream() -> EventStream[AgentEvent, list[AgentMessage]]:
     return EventStream(
         is_done=lambda e: e.type == "agent_end",
@@ -171,6 +195,7 @@ def agent_loop(
                 messages=list(context.messages) + list(prompts),
                 tools=context.tools,
                 memory_prefetch=context.memory_prefetch,
+                runtime_contract=context.runtime_contract,
             )
 
             ev_stream.push(AgentEventAgentStart())
@@ -234,6 +259,7 @@ def agent_loop_continue(
                 messages=list(context.messages),
                 tools=context.tools,
                 memory_prefetch=context.memory_prefetch,
+                runtime_contract=context.runtime_contract,
             )
 
             ev_stream.push(AgentEventAgentStart())
@@ -248,6 +274,102 @@ def agent_loop_continue(
             if isinstance(e, ExecInterrupt):
                 if not ev_stream._result_event.is_set():
                     ev_stream.fail(e)
+            else:
+                raise
+
+    ev_stream.attach_producer(asyncio.ensure_future(_run()))
+    return ev_stream
+
+
+def agent_loop_resume(
+    continuation: Any,
+    context: AgentContext,
+    config: AgentLoopConfig,
+    cancel_event: asyncio.Event | None = None,
+    stream_fn: StreamFn | None = None,
+) -> EventStream[AgentEvent, list[AgentMessage]]:
+    """Resume one durable Agent frontier without a provider replay.
+
+    The provider response stored at ``after_provider`` is a completed action.
+    This producer restores that decision and executes only its remaining tools;
+    ``after_tool`` restores the completed result sequence then asks the next
+    provider decision.  It never receives a live stack or stream from the old
+    attempt.
+    """
+    ev_stream = _create_agent_stream()
+
+    async def _run() -> None:
+        new_messages: list[AgentMessage] = []
+        try:
+            current_context = AgentContext(
+                system_prompt=context.system_prompt,
+                messages=list(context.messages),
+                tools=context.tools,
+                memory_prefetch=context.memory_prefetch,
+                runtime_contract=context.runtime_contract,
+            )
+            assistant = continuation.assistant_message
+            current_context.messages.append(assistant)
+            ev_stream.push(AgentEventAgentStart())
+            ev_stream.push(AgentEventTurnStart())
+
+            tool_calls = [
+                call for call in assistant.content if isinstance(call, ToolCall)
+            ]
+            if continuation.phase == "after_tool":
+                current_context.messages.extend(continuation.tool_results)
+            elif continuation.phase != "after_provider":
+                raise ValueError("unsupported Agent continuation phase")
+
+            # A provider decision may contain several calls.  An after-tool
+            # checkpoint has committed only the prefix through
+            # ``next_tool_index``; resume that exact suffix instead of asking
+            # the provider again or replaying a completed tool.
+            start_index = continuation.next_tool_index
+            if start_index < len(tool_calls):
+                execution = await _execute_tool_calls(
+                    current_context.tools,
+                    assistant,
+                    cancel_event,
+                    ev_stream,
+                    config.get_steering_messages,
+                    continuation.repeat_failures,
+                    config.safe_point_hook,
+                    start_index=start_index,
+                )
+                tool_results = execution["tool_results"]
+                current_context.messages.extend(tool_results)
+                new_messages.extend(tool_results)
+                if execution.get("stop_at_safe_point"):
+                    ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                    ev_stream.end(new_messages)
+                    return
+
+            # A completed provider answer with no tool calls is itself the
+            # terminal assistant result.  It must be persisted/finalized by
+            # the continuation dispatcher, not sent through a second provider
+            # request.
+            if continuation.phase == "after_provider" and not tool_calls:
+                new_messages.append(assistant)
+                ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                ev_stream.end(new_messages)
+                return
+
+            # The restored provider decision is already durable.  Continue
+            # with the next decision only after all stored/remaining tool
+            # results have been installed in the rebuilt context.
+            await _run_loop(
+                current_context, new_messages, config, cancel_event, ev_stream,
+                stream_fn,
+            )
+        except Exception as exc:
+            if not ev_stream._result_event.is_set():
+                ev_stream.fail(exc)
+        except BaseException as exc:
+            from openprogram.providers.utils.errors import ExecInterrupt
+            if isinstance(exc, ExecInterrupt):
+                if not ev_stream._result_event.is_set():
+                    ev_stream.fail(exc)
             else:
                 raise
 
@@ -567,6 +689,27 @@ async def _run_loop(
 
             commit_assistant(message)
 
+            stop_at_safe_point = False
+            if config.safe_point_hook is not None:
+                stop_at_safe_point = bool(await config.safe_point_hook(
+                    "provider.after",
+                    {
+                        "message": _durable_message(message),
+                        "tool_call_ids": [
+                            str(call.id) for call in message.content
+                            if isinstance(call, ToolCall)
+                        ],
+                        "next_tool_index": 0,
+                        "usage": _durable_message(message.usage),
+                    },
+                ))
+
+            if stop_at_safe_point:
+                ev_stream.push(AgentEventTurnEnd(message=message, tool_results=[]))
+                ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                ev_stream.end(new_messages)
+                return
+
             tool_results: list[ToolResultMessage] = []
             if has_more_tool_calls:
                 execution = await _execute_tool_calls(
@@ -576,6 +719,7 @@ async def _run_loop(
                     ev_stream,
                     config.get_steering_messages,
                     repeat_failures,
+                    config.safe_point_hook,
                 )
                 tool_results.extend(execution["tool_results"])
                 steering_after_tools = execution.get("steering_messages")
@@ -583,6 +727,12 @@ async def _run_loop(
                 for result in tool_results:
                     current_context.messages.append(result)
                     new_messages.append(result)
+
+                if execution.get("stop_at_safe_point"):
+                    ev_stream.push(AgentEventTurnEnd(message=message, tool_results=tool_results))
+                    ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                    ev_stream.end(new_messages)
+                    return
 
             ev_stream.push(AgentEventTurnEnd(message=message, tool_results=tool_results))
 
@@ -694,6 +844,12 @@ async def _stream_assistant_response(
     )
 
     fn = stream_fn
+    from openprogram.providers.api_registry import resolve_api_provider_snapshot
+
+    if provider_snapshot is None:
+        provider_snapshot = resolve_api_provider_snapshot(config.model)
+    dispatch_snapshots = {id(config.model): provider_snapshot}
+    dispatch_models = [config.model]
 
     # Provider/model failover — ON by default, conservatively.
     # resolve_fallback_models() defaults to the user's other enabled models of
@@ -705,8 +861,6 @@ async def _stream_assistant_response(
     # wrapped in try/except so failover can never break the normal path.
     if stream_fn is None:
         from openprogram.providers.stream import stream_simple_with_provider
-
-        dispatch_snapshots = {id(config.model): provider_snapshot}
 
         def snapshot_stream(candidate, candidate_context, candidate_options):
             snapshot = dispatch_snapshots.get(id(candidate))
@@ -762,10 +916,26 @@ async def _stream_assistant_response(
                     available.append(fallback)
                     dispatch_snapshots[id(fallback)] = fallback_snapshot
                 _fallbacks = available
+            dispatch_models.extend(_fallbacks)
             if _fallbacks:
                 fn = failover_stream_fn(fn, _fallbacks)
         except Exception:
             pass
+
+    # The effect contract is established before the first provider dispatch.
+    # A stable key is safe only when every candidate that can actually receive
+    # this request advertises support for it. This remains conservative for an
+    # explicit cross-provider chain with mixed capabilities: no candidate gets
+    # a key, and the effect is recorded as nonrepeatable.
+    provider_supports_idempotency_key = bool(
+        dispatch_models
+        and all(
+            snapshot is not None and snapshot.supports_idempotency_key
+            for snapshot in (
+                dispatch_snapshots.get(id(candidate)) for candidate in dispatch_models
+            )
+        )
+    )
 
     assert fn is not None
 
@@ -808,11 +978,53 @@ async def _stream_assistant_response(
         ),
         web_search=config.web_search,
         response_format=provider_response_format,
+        supports_idempotency_key=provider_supports_idempotency_key,
     )
 
     partial_message: AssistantMessage | None = None
     added_partial = False
 
+    if config.safe_point_hook is not None:
+        from openprogram.agent.continuation import runtime_contract_snapshot
+
+        resolved_snapshot = context.runtime_contract
+        if resolved_snapshot is None:
+            # Direct agent_loop callers do not have a TurnRequest.  Keep this
+            # fallback only for non-durable callers; production continuation
+            # always supplies the resolved request contract from the driver.
+            resolved_snapshot = runtime_contract_snapshot(
+                model=config.model,
+                system_prompt=context.system_prompt,
+                tools=context.tools,
+                request=None,
+                structured_output=config.response_format,
+            )
+        provider_payload = {
+            "resolved_snapshot": resolved_snapshot,
+            "supports_idempotency_key": provider_supports_idempotency_key,
+            "dispatch_candidates": [
+                {
+                    "api": getattr(candidate, "api", None),
+                    "provider": getattr(candidate, "provider", None),
+                    "model": getattr(candidate, "id", None),
+                    "supports_idempotency_key": bool(
+                        snapshot is not None and snapshot.supports_idempotency_key
+                    ),
+                }
+                for candidate in dispatch_models
+                for snapshot in (dispatch_snapshots.get(id(candidate)),)
+            ],
+            "context": {
+                "system_prompt": llm_context.system_prompt,
+                "messages": [_durable_message(message) for message in llm_context.messages],
+                "tools": [_durable_message(tool) for tool in (llm_context.tools or [])],
+            },
+        }
+        await config.safe_point_hook("provider.before", provider_payload)
+        if provider_payload.get("supports_idempotency_key") is True:
+            stream_opts.idempotency_key = provider_payload.get("idempotency_key")
+        else:
+            stream_opts.idempotency_key = None
     _record_job_activity("operation_start")
     response_stream = fn(config.model, llm_context, stream_opts)
 
@@ -938,6 +1150,9 @@ async def _execute_tool_calls(
     ev_stream: EventStream[AgentEvent, list[AgentMessage]],
     get_steering_messages: Any | None = None,
     repeat_failures: dict[str, int] | None = None,
+    safe_point_hook: Any | None = None,
+    *,
+    start_index: int = 0,
 ) -> dict[str, Any]:
     """
     Execute tool calls from an assistant message.
@@ -946,13 +1161,14 @@ async def _execute_tool_calls(
     tool_calls = [c for c in assistant_message.content if isinstance(c, ToolCall)]
     results: list[ToolResultMessage] = []
     steering_messages: list[AgentMessage] | None = None
+    stop_at_safe_point = False
     if repeat_failures is None:
         repeat_failures = {}
 
     from openprogram.context.cache_aware_microcompact import increment_tool_calls
     increment_tool_calls(len(tool_calls))
 
-    for index, tool_call in enumerate(tool_calls):
+    for index, tool_call in enumerate(tool_calls[start_index:], start=start_index):
         tool = next((t for t in (tools or []) if t.name == tool_call.name), None)
         fail_key = _tool_repeat_key(tool_call.name, tool_call.arguments)
         streak = repeat_failures.get(fail_key, 0)
@@ -962,6 +1178,25 @@ async def _execute_tool_calls(
             tool_name=tool_call.name,
             args=tool_call.arguments,
         ))
+        if safe_point_hook is not None:
+            interaction_manifest = getattr(tool, "_interaction_manifest", None)
+            pre_wait = (
+                interaction_manifest(tool_call.id, tool_call.arguments)
+                if callable(interaction_manifest) else None
+            )
+            safe_payload = {
+                "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
+                "arguments": tool_call.arguments, "next_tool_index": index,
+                "pre_wait": pre_wait,
+            }
+            stop_at_safe_point = bool(await safe_point_hook("tool.before", safe_payload))
+            if stop_at_safe_point:
+                break
+            if tool is not None:
+                object.__setattr__(
+                    tool, "_preapproved_wait_id",
+                    safe_payload.get("preapproved_wait_id"),
+                )
 
         # 事件层：tool.before 一份事件，观察（异步总线）+ 问询（同步 gate）共用。
         # plugin 的 tool.before handler 就是 gate 订阅者（plugins/hooks.py）。
@@ -1033,14 +1268,32 @@ async def _execute_tool_calls(
 
             _record_job_activity("operation_start")
             timeout = _job_operation_timeout(None)
-            operation = tool.execute(
-                tool_call.id, validated_args, cancel_event, on_update,
-            )
-            result = (
-                await operation
-                if timeout is None
-                else await asyncio.wait_for(operation, timeout=timeout)
-            )
+            preapproved_wait_id = getattr(tool, "_preapproved_wait_id", None)
+            if preapproved_wait_id:
+                from openprogram.agent.run_control import (
+                    reset_preapproved_wait_id, set_preapproved_wait_id,
+                )
+                token = set_preapproved_wait_id(preapproved_wait_id)
+                try:
+                    operation = tool.execute(
+                        tool_call.id, validated_args, cancel_event, on_update,
+                    )
+                    result = (
+                        await operation
+                        if timeout is None
+                        else await asyncio.wait_for(operation, timeout=timeout)
+                    )
+                finally:
+                    reset_preapproved_wait_id(token)
+            else:
+                operation = tool.execute(
+                    tool_call.id, validated_args, cancel_event, on_update,
+                )
+                result = (
+                    await operation
+                    if timeout is None
+                    else await asyncio.wait_for(operation, timeout=timeout)
+                )
         except _SkipExecute:
             pass
         except Exception as e:
@@ -1107,9 +1360,21 @@ async def _execute_tool_calls(
             is_error=result.is_error,
             timestamp=int(time.time() * 1000),
         )
+        if safe_point_hook is not None:
+            stop_at_safe_point = bool(await safe_point_hook("tool.after", {
+                "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
+                "result": _durable_message(tool_result_msg),
+                "is_error": bool(result.is_error),
+                "next_tool_index": index + 1,
+                "repeat_failures": dict(repeat_failures),
+                "tool_call_ids": [str(call.id) for call in tool_calls],
+            }))
         results.append(tool_result_msg)
         ev_stream.push(AgentEventMessageStart(message=tool_result_msg))
         ev_stream.push(AgentEventMessageEnd(message=tool_result_msg))
+
+        if stop_at_safe_point:
+            break
 
         # Check for steering messages after each tool execution
         if get_steering_messages:
@@ -1122,7 +1387,10 @@ async def _execute_tool_calls(
                     results.append(_skip_tool_call(skipped, ev_stream))
                 break
 
-    return {"tool_results": results, "steering_messages": steering_messages}
+    return {
+        "tool_results": results, "steering_messages": steering_messages,
+        "stop_at_safe_point": stop_at_safe_point,
+    }
 
 
 def _skip_tool_call(

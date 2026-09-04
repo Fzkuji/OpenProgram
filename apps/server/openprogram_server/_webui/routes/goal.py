@@ -5,13 +5,21 @@ from fastapi.responses import JSONResponse
 
 
 def register(app):
+    from openprogram.programs.workflow.goal import GoalStateUnavailable
+
+    @app.exception_handler(GoalStateUnavailable)
+    async def goal_state_unavailable(_request, _error):
+        return JSONResponse(content={"error": "GoalStateUnavailable"}, status_code=503)
+
     @app.get("/api/sessions/{session_id}/goal")
     async def get_goal(session_id: str):
         import openprogram.programs.workflow.goal as goal_module
         goal = goal_module.load_goal(session_id)
         if not goal:
             return JSONResponse(content={"error": "GoalNotFound"}, status_code=404)
-        return JSONResponse(content={"goal": goal})
+        return JSONResponse(content={
+            "goal": goal, "execution": goal_module.goal_execution_state(goal, session_id),
+        })
 
     @app.post("/api/sessions/{session_id}/goal")
     async def mutate_goal(session_id: str, body: dict = None):
@@ -22,9 +30,14 @@ def register(app):
             goal = goal_module.load_goal(session_id)
             if not goal or goal.get("status") not in goal_module.RESUMABLE_STATUSES:
                 return JSONResponse(content={"error": "GoalNotResumable"}, status_code=409)
+            try:
+                goal_module.check_goal_preconditions(goal, payload.get("expected"))
+                invocation = goal_module._resume_invocation(goal, session_id)
+            except ValueError as exc:
+                return JSONResponse(content={"error": str(exc)}, status_code=409)
             return JSONResponse(content={
                 "goal": goal,
-                "invoke": goal_module._resume_invocation(goal),
+                "invoke": invocation,
             })
         try:
             goal = goal_module.apply_goal_action(
@@ -32,13 +45,21 @@ def register(app):
                 action,
                 **{key: value for key, value in payload.items() if key != "action"},
             )
+        except goal_module.GoalStopUnconfirmed as exc:
+            return JSONResponse(content={
+                "goal": exc.goal, "stop_error": str(exc),
+                "execution": goal_module.goal_execution_state(exc.goal, session_id),
+            })
         except ValueError as exc:
             return JSONResponse(content={"error": str(exc)}, status_code=409)
-        response = {"goal": goal}
+        response = {"goal": goal, "execution": goal_module.goal_execution_state(goal, session_id)}
         if (
             action == "answer"
             and goal.get("status") == "paused"
             and goal.get("phase") == "answer_received"
         ):
-            response["invoke"] = goal_module._resume_invocation(goal)
+            try:
+                response["invoke"] = goal_module._resume_invocation(goal, session_id)
+            except goal_module.GoalConflictError as exc:
+                response["resume_error"] = str(exc)
         return JSONResponse(content=response)

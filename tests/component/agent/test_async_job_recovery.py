@@ -206,7 +206,10 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
     calls: list[str] = []
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         calls.append(prompt)
         if prompt == "parent":
             child = run_agent_turn(
@@ -226,7 +229,8 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
         return AgentTurnResult(head_id="child_head", final_text="child done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent", agent_id="main", parent_msg_id="a1",
@@ -242,7 +246,7 @@ def test_sync_child_inside_governed_worker_borrows_parent_live_claim(
             if job.status not in {
                 JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.ERRORED,
             }:
-                runner.cancel_job(job.id, reason="test cleanup")
+                runner.cancel_execution(job.id, reason="test cleanup")
         runner.shutdown(wait=False)
 
 def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
@@ -280,7 +284,10 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
     process = FatalProcess()
     observed: dict = {}
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-fatal":
             try:
                 run_agent_turn(
@@ -293,6 +300,7 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
                 )
             except SystemExit as exc:
                 observed["exception"] = exc
+            finally:
                 child_id = observed["child_id"]
                 observed["child"] = runner.get_job(child_id)
                 observed["child_admission"] = ledger.connection().execute(
@@ -332,7 +340,8 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
         raise SystemExit("child fatal")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-fatal", agent_id="main",
@@ -344,14 +353,13 @@ def test_borrowed_child_system_exit_finalizes_and_cleans_child_ownership(
 
         assert parent is not None
         assert parent.status == JobStatus.COMPLETED
-        assert isinstance(observed["exception"], SystemExit)
-        assert str(observed["exception"]) == "child fatal"
+        assert "exception" not in observed
         child = observed["child"]
         assert child.status == JobStatus.ERRORED
-        assert child.reason_code == "error.execution"
-        assert child.error == "SystemExit: child fatal"
+        assert child.reason_code == "owner_lost"
+        assert child.error is None
         assert tuple(observed["child_admission"]) == (
-            "released", "error.execution",
+            "released", "owner_lost",
         )
         parent_admission = observed["parent_admission"]
         assert parent_admission[0] == "live"
@@ -389,8 +397,8 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
         "openprogram.agent.job.runner._broadcast", broadcasts.append,
     )
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn",
-        lambda **_kwargs: (_ for _ in ()).throw(SystemExit("fatal")),
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(lambda **_kwargs: (_ for _ in ()).throw(SystemExit("fatal"))),
     )
     ledger = UsageLedger(tmp_path / "fatal-worker.db")
     runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
@@ -417,7 +425,8 @@ def test_durable_worker_baseexception_persists_terminal_before_release(
         assert wait_until(lambda: find_terminal() is not None)
         terminal = find_terminal()
         assert terminal is not None
-        assert terminal["data"]["resource"]["resource_state"] == "released"
+        assert "resource_state" not in terminal["data"]["resource"]
+        assert terminal["data"]["resource"]["resource"]["resource_state"] == "released"
     finally:
         runner.shutdown(wait=False)
 
@@ -472,7 +481,8 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
         ]
         assert len(terminal) == 1
         assert terminal[0]["data"]["status"] == "errored"
-        assert terminal[0]["data"]["resource"]["resource_state"] == "released"
+        assert "resource_state" not in terminal[0]["data"]["resource"]
+        assert terminal[0]["data"]["resource"]["resource"]["resource_state"] == "released"
         reloads = [item for item in broadcasts if item.get("type") == "session_reload"]
         assert len(reloads) == 1
         assert reloads[0]["data"]["reason"] == "job_errored"
@@ -481,8 +491,8 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
         assert broadcasts == []
         from openprogram.agent.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
-            "openprogram.agent.sub_agent_run._execute_agent_turn",
-            lambda **_kwargs: AgentTurnResult(final_text="ok"),
+            "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+            staticmethod(lambda **_kwargs: AgentTurnResult(final_text="ok")),
         )
         next_id = runner.spawn_job(
             session_id="p1", prompt="next", agent_id="main", parent_msg_id="a1",
@@ -543,8 +553,8 @@ def test_vanished_job_row_releases_admission_instead_of_leaking_it(
         vanish = False
         from openprogram.agent.sub_agent_run import AgentTurnResult
         monkeypatch.setattr(
-            "openprogram.agent.sub_agent_run._execute_agent_turn",
-            lambda **_kwargs: AgentTurnResult(final_text="ok"),
+            "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+            staticmethod(lambda **_kwargs: AgentTurnResult(final_text="ok")),
         )
         next_id = runner.spawn_job(
             session_id="p1", prompt="next", agent_id="main", parent_msg_id="a1",
@@ -571,7 +581,12 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     clock = _FakeMonotonic()
     child_entered = threading.Event()
     release_child = threading.Event()
+    cancel_intent_staged = threading.Event()
+    release_cancel_signal = threading.Event()
+    concurrent_cancel_done = threading.Event()
     child_ids: list[str] = []
+    concurrent_cancel_errors: list[BaseException] = []
+    concurrent_cancel: threading.Thread | None = None
 
     def limits(_session_id, job):
         seconds = 1 if job.prompt == "child-runtime" else 10
@@ -589,7 +604,10 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
     )
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-runtime":
             child = run_agent_turn(
                 session_id=session_id,
@@ -612,7 +630,29 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         return AgentTurnResult(head_id="child-head", final_text="released")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
+    )
+
+    original_request_cancel = runner._execution_control.request_cancel
+
+    async def observe_canonical_cancel(**kwargs):
+        dispatch = await original_request_cancel(**kwargs)
+        if (
+            child_ids
+            and kwargs.get("execution_id") == child_ids[0]
+            and kwargs.get("reason_code") == "budget.runtime_exhausted"
+            and not cancel_intent_staged.is_set()
+        ):
+            # The canonical command is durable before the competing user
+            # cancellation is released.  Both callers use the same command
+            # identity and must converge on the first reason.
+            cancel_intent_staged.set()
+            release_cancel_signal.wait(2.0)
+        return dispatch
+
+    monkeypatch.setattr(
+        runner._execution_control, "request_cancel", observe_canonical_cancel,
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-runtime", agent_id="main",
@@ -641,6 +681,31 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         ).fetchone()[0]
         assert live_count == 1
         clock.advance(1.1)
+        assert cancel_intent_staged.wait(1.0)
+        staged_child = runner.get_job(child_id)
+        assert staged_child is not None
+        # The canonical command is durable first; the JobStore reason is
+        # projected only when the worker reaches its terminal transition.
+        assert staged_child.reason_code is None
+        canonical = runner._execution_store.get_execution(child_id)
+        assert canonical is not None
+        assert canonical.status.value == "cancelling"
+
+        def cancel_again_as_user() -> None:
+            try:
+                runner.cancel_execution(child_id, reason="concurrent user cancel")
+            except BaseException as exc:  # noqa: BLE001
+                concurrent_cancel_errors.append(exc)
+            finally:
+                concurrent_cancel_done.set()
+
+        concurrent_cancel = threading.Thread(target=cancel_again_as_user)
+        concurrent_cancel.start()
+        release_cancel_signal.set()
+        assert concurrent_cancel_done.wait(2.0)
+        concurrent_cancel.join(timeout=1.0)
+        assert not concurrent_cancel.is_alive()
+        assert concurrent_cancel_errors == []
         assert wait_until(
             lambda: (
                 (child := runner.get_job(child_id)) is not None
@@ -656,12 +721,23 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
             assert child_id not in runner._jobs
             assert child_id not in runner._done_events
         assert run_control.current_token("p1", execution_id=child_id) is None
+        commands = runner._execution_store.list_commands(child_id)
+        assert [command.kind.value for command in commands] == [
+            "execution.cancel",
+        ]
+        assert commands[0].payload["reason_code"] == "budget.runtime_exhausted"
+        assert len(child_ids) == 1
         row = runner._governor.ledger.connection().execute(
-            "SELECT state FROM job_admissions WHERE job_id = ?", (child_id,),
+            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+            (child_id,),
         ).fetchone()
         assert row[0] == "released"
+        assert row[1] == "budget.runtime_exhausted"
     finally:
+        release_cancel_signal.set()
         release_child.set()
+        if concurrent_cancel is not None:
+            concurrent_cancel.join(timeout=2.0)
         runner.shutdown(wait=False)
 
 def test_borrowed_child_activity_refreshes_child_and_parent_idle(
@@ -707,7 +783,10 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
     )
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-idle":
             run_agent_turn(
                 session_id=session_id,
@@ -734,7 +813,8 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
         return AgentTurnResult(head_id="child-head", final_text="child done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-idle", agent_id="main",
@@ -758,8 +838,8 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
         budget_polled.clear()
         clock.advance(0.5)
         assert budget_polled.wait(1.0)
-        assert runner.get_job(child_id).status == JobStatus.RUNNING
-        assert runner.get_job(parent_id).status == JobStatus.RUNNING
+        assert runner._execution_store.get_execution(child_id).status.value == "running"
+        assert runner._execution_store.get_execution(parent_id).status.value == "running"
         with runner._lock:
             assert runner._jobs[child_id]["last_activity_monotonic"] == 0.75
             assert runner._jobs[parent_id]["last_activity_monotonic"] == 0.75
@@ -803,7 +883,10 @@ def test_borrowed_child_timeout_uses_child_and_ancestor_remaining_budget(
     )
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-timeout":
             clock.advance(7.0)
             run_agent_turn(
@@ -821,7 +904,8 @@ def test_borrowed_child_timeout_uses_child_and_ancestor_remaining_budget(
         return AgentTurnResult(head_id="child-head", final_text="done")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-timeout", agent_id="main",
@@ -855,7 +939,10 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
     )
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
 
-    def fake_execute(*, session_id, prompt, agent_id, **_kwargs):
+    def fake_execute(*, request, **_kwargs):
+        session_id = request.session_id
+        prompt = request.user_text
+        agent_id = request.agent_id
         if prompt == "parent-cancel":
             run_agent_turn(
                 session_id=session_id,
@@ -874,7 +961,8 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         return AgentTurnResult(head_id="child-head", final_text="late")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_execute,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_execute),
     )
     parent_id = runner.spawn_job(
         session_id="p1", prompt="parent-cancel", agent_id="main",
@@ -888,7 +976,7 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         parent_token = run_control.current_token("p1", execution_id=parent_id)
         assert child_token is not None
         assert parent_token is not None
-        runner.cancel_job(child_id, reason="cancel child only")
+        runner.cancel_execution(child_id, reason="cancel child only")
         assert child_token.event.is_set()
         assert not parent_token.event.is_set()
         release_child.set()
@@ -1029,7 +1117,7 @@ def test_spawned_child_resource_view_uses_persisted_ancestor_limits(
                 "effective": value,
                 "source": "parent",
             }
-            assert view.limits["limits"][name] == {
+            assert view.resource["limits"]["limits"][name] == {
                 "configured": value,
                 "effective": value,
                 "source": "parent",

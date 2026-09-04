@@ -8,6 +8,8 @@ import uuid
 from copy import deepcopy
 
 from openprogram.agentic_programming.function import agentic_function
+from .ownership import exclusive_goal
+from .roles import role_lifetime
 
 
 def _positive_int(value, *, name: str) -> int | None:
@@ -38,15 +40,19 @@ def _positive_float(value, *, name: str) -> float | None:
     render_range={"callers": 0},
     input={
         "prompt": {"multiline": True},
-        "model": {"hidden": True},
-        "effort": {"hidden": True},
-        "max_rounds": {"hidden": True},
-        "max_tokens": {"hidden": True},
-        "max_elapsed_s": {"hidden": True},
-        "max_cost_usd": {"hidden": True},
-        "timeout_s": {"hidden": True},
-        "context_mode": {"hidden": True},
+        "model": {"hidden": True, "advanced": True},
+        "effort": {"hidden": True, "advanced": True},
+        "judge_model": {"hidden": True, "advanced": True},
+        "judge_effort": {"hidden": True, "advanced": True},
+        "judge_timeout_s": {"hidden": True, "advanced": True},
+        "max_rounds": {"hidden": True, "advanced": True},
+        "max_tokens": {"hidden": True, "advanced": True},
+        "max_elapsed_s": {"hidden": True, "advanced": True},
+        "max_cost_usd": {"hidden": True, "advanced": True},
+        "timeout_s": {"hidden": True, "advanced": True},
+        "context_mode": {"hidden": True, "advanced": True},
         "resume": {"hidden": True},
+        "expected_goal": {"hidden": True},
         "runtime": {"hidden": True},
     },
     parameters={
@@ -62,11 +68,16 @@ def _positive_float(value, *, name: str) -> float | None:
         "required": ["prompt"],
     },
 )
+@exclusive_goal
+@role_lifetime()
 def goal(
     prompt: str,
     *,
     model: str = "",
     effort: str = "",
+    judge_model: str = "",
+    judge_effort: str = "",
+    judge_timeout_s: float | None = None,
     max_rounds: int | None = None,
     max_tokens: int | None = None,
     max_elapsed_s: float | None = None,
@@ -74,6 +85,7 @@ def goal(
     timeout_s: float | None = None,
     context_mode: str = "isolated",
     resume: bool = False,
+    expected_goal: dict | None = None,
     runtime=None,
 ) -> str:
     """Run a working agent and an independent judge until the Goal settles.
@@ -86,17 +98,28 @@ def goal(
 
     from openprogram.agentic_programming.agent import agent
     from openprogram.agentic_programming.function import CancelledError, current_call_id, current_session_id
+    from openprogram.agent.run_control import get_current_execution_id
     import openprogram.programs.workflow.goal as _goal
 
     sid = current_session_id()
     caller = current_call_id() or None
+    # Canonical cancellation addresses the execution owner, not its DAG call.
+    execution_id = get_current_execution_id()
     now = time.time()
     previous = _goal.load_goal(sid) if sid else None
     stored = previous if resume else None
     if resume and not stored:
         raise ValueError("No persisted Goal is available to resume")
+    if expected_goal is not None:
+        if not resume:
+            raise ValueError("Goal preconditions require resume=True")
+        _goal.check_goal_preconditions(stored, expected_goal)
     if stored and stored.get("status") not in _goal.RESUMABLE_STATUSES:
         raise ValueError(f"Goal in status {stored.get('status')!r} cannot resume")
+    if stored or (previous and previous.get("stop_requested")):
+        _goal.require_goal_execution_finished(
+            previous, sid, current_execution_id=execution_id,
+        )
 
     configured_limit = _goal.default_max_turns() if max_rounds is None else max_rounds
     round_limit = _positive_int(configured_limit, name="max_rounds")
@@ -115,9 +138,10 @@ def goal(
             "run_id": uuid.uuid4().hex,
             "status": "active",
             "phase": "resuming",
-            "execution_id": caller,
+            "execution_id": execution_id,
             "recoverable": False,
             "pause_reason": "",
+            "stop_requested": False,
             "active_started_at": now,
         })
     else:
@@ -151,7 +175,7 @@ def goal(
             "judge_parse_failures": 0,
             "idle_rounds": 0,
             "context_mode": context_mode,
-            "execution_id": caller,
+            "execution_id": execution_id,
             "recoverable": True,
             "questions": [],
             "pending_answers": [],
@@ -251,11 +275,55 @@ def goal(
         return "\n\n".join(part for part in [result, notice, *questions] if part)
 
     persist("resuming" if stored else "refining")
+    from .roles import identity, prepare_roles, use_role
+    try:
+        if not goal_state.get("roles") and not goal_state.get("role_requests"):
+            current_identity = identity(runtime)
+            work_request = model or f"{current_identity['provider']}:{current_identity['model']}"
+            if not any(separator in work_request for separator in (":", "/")):
+                work_request = f"{current_identity['provider']}:{work_request}"
+            judge_request = judge_model or _goal.judge_model()
+            if judge_request and not any(separator in judge_request for separator in (":", "/")):
+                separator = min((char for char in (":", "/") if char in work_request),
+                                key=work_request.index)
+                judge_request = f"{work_request.split(separator, 1)[0]}:{judge_request}"
+            goal_state["role_requests"] = {
+                "model": work_request,
+                "effort": effort,
+                "timeout_s": turn_timeout,
+                "judge_model": judge_request,
+                "judge_effort": judge_effort,
+                "judge_timeout_s": (_positive_float(judge_timeout_s, name="judge_timeout_s")
+                                    or _goal.DEFAULT_PHASE_TIMEOUT_S),
+            }
+            persist()
+        requested = goal_state.get("role_requests") or {}
+        roles, role_runtimes = prepare_roles(
+            goal_state.get("roles"), runtime,
+            model=requested.get("model", model), effort=requested.get("effort", effort),
+            timeout_s=requested.get("timeout_s", turn_timeout),
+            judge_model=requested.get("judge_model", judge_model),
+            judge_effort=requested.get("judge_effort", judge_effort),
+            judge_timeout_s=requested.get("judge_timeout_s", _goal.DEFAULT_PHASE_TIMEOUT_S),
+        )
+        goal_state["roles"] = roles
+        if stored and not stored.get("roles") and not stored.get("role_requests"):
+            goal_state["roles_origin"] = "legacy-resolved"
+        persist()
+    except Exception as exc:
+        goal_state.update({
+            "status": "paused_recoverable", "recoverable": True,
+            "pause_reason": "role_unavailable",
+            "last_reason": f"Goal role unavailable: {type(exc).__name__}: {exc}",
+        })
+        persist("paused")
+        raise
     if not goal_state.get("spec"):
         try:
-            spec, items = _goal.refine_goal_spec_candidate(
-                prompt, session_id=sid, spawn_caller=caller, context=session_view,
-            )
+            with use_role(role_runtimes["work"], roles["work"]):
+                spec, items = _goal.refine_goal_spec_candidate(
+                    prompt, session_id=sid, spawn_caller=caller, context=session_view,
+                )
         except CancelledError:
             cancel()
             raise
@@ -285,7 +353,19 @@ def goal(
         "If no such work remains, return the blocker for the judge to record."
     )
     evidence_parts = [session_view] if session_view else []
+    saved_evidence = str(goal_state.get("evidence_window") or "")
+    if saved_evidence:
+        evidence_parts.append(saved_evidence)
     consumed_answers: list[str] = []
+
+    def confirmed_answers() -> str:
+        return "\n".join(
+            f"{item.get('prompt') or 'Question'}: {item.get('answer')}"
+            for item in goal_state.get("questions") or []
+            if isinstance(item, dict) and item.get("status") == "answered"
+            and item.get("revision", goal_state.get("revision", 1)) == goal_state.get("revision", 1)
+            and str(item.get("answer") or "").strip()
+        )
 
     def consume_queued_answers() -> str:
         queued = [
@@ -352,13 +432,23 @@ def goal(
                 finish()
             return terminal_result(last_result)
         try:
-            last_result = agent(
-                prompt=work_prompt + async_question_policy,
-                model=model,
-                effort=effort,
-                timeout_s=turn_timeout,
-                tools_deny=["ask_user_question"],
-            )
+            recovery_context = ""
+            if saved_evidence:
+                recovery_context += (
+                    "\n\nPrior Goal work evidence (verify before relying on it):\n"
+                    + saved_evidence
+                )
+            answers = confirmed_answers()
+            if answers:
+                recovery_context += "\n\nConfirmed user answers for this Goal:\n" + answers
+            with use_role(role_runtimes["work"], roles["work"]):
+                last_result = agent(
+                    prompt=work_prompt + recovery_context + async_question_policy,
+                    model="",
+                    effort=roles["work"]["effort"],
+                    timeout_s=roles["work"]["timeout_s"],
+                    tools_deny=["ask_user_question"],
+                )
         except CancelledError:
             cancel()
             raise
@@ -371,22 +461,28 @@ def goal(
 
         goal_state["turns_used"] = int(goal_state.get("turns_used") or 0) + 1
         evidence_parts.append(f"[goal work round {round_index + 1}]\n{last_result}")
-        if goal_state.get("pending_answers"):
-            goal_state["status"] = "active"
-            persist("answer_pending")
-            continue
         from openprogram.programs.workflow.goal.judge import VIEW_TAIL_MAX_CHARS
         session_evidence = "\n".join(evidence_parts)
         if len(session_evidence) > VIEW_TAIL_MAX_CHARS:
             prefix = "[earlier evidence truncated]\n"
             session_evidence = prefix + session_evidence[-(VIEW_TAIL_MAX_CHARS - len(prefix)):]
+        goal_state["evidence_window"] = session_evidence
+        evidence_parts = [session_evidence]
+        if goal_state.get("pending_answers"):
+            goal_state["status"] = "active"
+            persist("answer_pending")
+            continue
+        answers = confirmed_answers()
+        if answers:
+            session_evidence += "\n\nConfirmed user answers for this Goal:\n" + answers
 
         goal_state["status"] = "evaluating"
         persist("evaluating")
         try:
-            decision = _goal.evaluate_goal(
-                sid, goal_state, agent_id="main", spawn_caller=caller, session_view=session_evidence,
-            )
+            with use_role(role_runtimes["judge"], roles["judge"]):
+                decision = _goal.evaluate_goal(
+                    sid, goal_state, agent_id="main", spawn_caller=caller, session_view=session_evidence,
+                )
         except CancelledError:
             cancel()
             raise

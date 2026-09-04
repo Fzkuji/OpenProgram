@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   }
   const root = demo
     ? <ThemeProvider><Demo /></ThemeProvider>
-    : <ThemeProvider><REPL client={client} /></ThemeProvider>;
+    : <ThemeProvider><REPL client={client} initialConversation={process.env.OPENPROGRAM_CONV || undefined} /></ThemeProvider>;
   const instance = await render(root, { exitOnCtrlC: false });
   await instance.waitUntilExit();
   client.close();

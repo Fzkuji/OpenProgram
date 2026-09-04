@@ -1,3 +1,4 @@
+import renderMathInElement from "katex/contrib/auto-render";
 import { marked as npmMarked } from "marked";
 
 export function escHtml(s: unknown): string {
@@ -73,7 +74,6 @@ export function renderMd(s: unknown): string {
   const hit = mdCache.get(src);
   if (hit !== undefined) return hit;
   let str = src;
-  const markdown = window.marked ?? npmMarked;
   const mathBlocks: string[] = [];
   const stash = (m: string): string => {
     mathBlocks.push(m);
@@ -85,7 +85,7 @@ export function renderMd(s: unknown): string {
   str = str.replace(/\$([^$\n]+?)\$/g, stash);
   // Restore the formula delimiters as escaped text after sanitization. KaTeX
   // reads the resulting text nodes; embedded HTML cannot become DOM content.
-  let html = sanitizeHtml(markdown.parse(str, { breaks: true }) as string);
+  let html = sanitizeHtml(npmMarked.parse(str, { breaks: true }) as string);
   for (let i = 0; i < mathBlocks.length; i++) {
     html = html.replace("%%MATH" + i + "%%", () => escHtml(mathBlocks[i]));
   }
@@ -99,11 +99,9 @@ export function renderMd(s: unknown): string {
 }
 
 export function renderMathInChat(): void {
-  const renderMath = window.renderMathInElement;
-  if (typeof renderMath !== "function") return;
   document.querySelectorAll<HTMLElement>(".md-rendered").forEach((el) => {
     if (el.dataset.mathRendered) return;
-    renderMath(el, {
+    renderMathInElement(el, {
       delimiters: [
         { left: "$$", right: "$$", display: true },
         { left: "$", right: "$", display: false },

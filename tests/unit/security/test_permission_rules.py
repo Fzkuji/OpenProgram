@@ -610,9 +610,7 @@ def test_mcp_source_denies_approval_without_registering_question(
     monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path)
     authority._reset_owner_cache_for_tests()
     registry = get_question_registry()
-    registry._pending.clear()
     registry._events.clear()
-    registry._results.clear()
     events = []
     tool, ran = _make_tool("custom_owner_tool")
     req = TurnRequest(

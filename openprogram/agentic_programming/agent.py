@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from openprogram.providers.structured_output import JsonSchemaOutput
+
 
 def agent(
     prompt: str | list[dict],
@@ -11,6 +13,7 @@ def agent(
     effort: str = "",
     tools: list[Any] | None = None,
     tools_deny: list[str] | None = None,
+    response_format: dict[str, Any] | JsonSchemaOutput | None = None,
     max_iterations: int = 20,
     timeout_s: float | None = None,
     tool_choice: Any = None,
@@ -26,17 +29,14 @@ def agent(
         model: Model override (empty = use session default)
         effort: Reasoning effort override
         tools: Tool names to provide (None = all available tools)
+        response_format: JSON Schema or JsonSchemaOutput contract (None = return text)
         tools_deny: Tool names that must remain unavailable for this turn
+        execution_kind: Runtime execution label for this tool loop
         max_iterations: Max tool loop rounds
         timeout_s: Timeout in seconds
-        tool_choice: Optional provider tool-selection constraint
-        parallel_tool_calls: Whether the provider may call tools in parallel
-        execution_kind: Runtime execution label for this tool loop
-        runtime: Explicit Runtime for reusable internal loops; otherwise ambient
-        return_raw: Return the Runtime result instead of extracting final text
 
     Returns:
-        Final text result
+        Final text, or the validated JSON value when response_format is set
     """
     from openprogram.agentic_programming.function import _current_runtime
 
@@ -55,26 +55,31 @@ def agent(
     else:
         raise TypeError("agent() prompt must be a string or a list of content blocks")
 
-    exec_kwargs = dict(
-        content=content,
-        model=model or None,
-        tools=tools,  # None = use default tools; [] = no tools; [...] = specific tools
-        max_iterations=max_iterations,
-        timeout_s=timeout_s,
-        effort=effort or None,
-        execution_kind=execution_kind,
-    )
-    if tool_choice is not None:
-        exec_kwargs["tool_choice"] = tool_choice
+    exec_options: dict[str, Any] = {
+        "content": content,
+        "model": model or None,
+        "tools": tools,  # None = default tools; [] = no tools; [...] = named tools
+        "max_iterations": max_iterations,
+        "timeout_s": timeout_s,
+        "effort": effort or None,
+        "execution_kind": execution_kind,
+    }
+    if response_format is not None:
+        exec_options["response_format"] = response_format
     if tools_deny is not None:
-        exec_kwargs["tools_deny"] = tools_deny
+        exec_options["tools_deny"] = tools_deny
+    if tool_choice is not None:
+        exec_options["tool_choice"] = tool_choice
     if parallel_tool_calls is not None:
-        exec_kwargs["parallel_tool_calls"] = parallel_tool_calls
-    result = runtime.exec(**exec_kwargs)
+        exec_options["parallel_tool_calls"] = parallel_tool_calls
+    result = runtime.exec(**exec_options)
 
-    # runtime.exec returns dict with 'text' key for agent execution
+    if response_format is not None:
+        return result
     if return_raw:
         return result
+
+    # Preserve the legacy text result contract for unstructured calls.
     if isinstance(result, dict) and "text" in result:
         return result["text"]
     return str(result)

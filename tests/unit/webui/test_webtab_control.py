@@ -25,6 +25,7 @@ def _clean_pending():
 
 
 _ROUNDTRIP_WS = object()
+_PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgo="
 
 
 def _install_roundtrip(monkeypatch, reply: dict):
@@ -71,12 +72,60 @@ def test_open_tab_roundtrip_preserves_result_url(monkeypatch):
             "url": "https://example.com/",
             "tab_id": "w:https://example.com/",
             "target_id": "target-opened",
+            "created": False,
+            "reused": True,
         },
     )
     result = webtab.request_open_tab("https://example.com/", timeout=0.1)
     assert result["url"] == "https://example.com/"
     assert result["tab_id"] == "w:https://example.com/"
     assert result["target_id"] == "target-opened"
+    assert result["created"] is False
+    assert result["reused"] is True
+
+
+def test_webtab_reply_timeout_has_a_structured_reason_after_send():
+    sent = []
+
+    result = webtab._wait_for_reply(
+        {"op": "open", "url": "https://example.com/", "background": True},
+        0,
+        send=sent.append,
+    )
+
+    assert len(sent) == 1
+    assert result == {
+        "ok": False,
+        "reason_code": webtab.RESPONSE_TIMEOUT_REASON_CODE,
+        "error": "timeout: no desktop shell replied within 0s",
+    }
+    assert webtab._pending == {}
+
+
+@pytest.mark.parametrize("ownership", [
+    {"created": True},
+    {"reused": False},
+    {"created": True, "reused": True},
+    {"created": False, "reused": False},
+    {"created": 1, "reused": False},
+    {"created": True, "reused": 0},
+])
+def test_open_tab_roundtrip_drops_invalid_ownership(monkeypatch, ownership):
+    _install_roundtrip(
+        monkeypatch,
+        {
+            "ok": True,
+            "url": "https://example.com/",
+            "tab_id": "w:https://example.com/",
+            "target_id": "target-opened",
+            **ownership,
+        },
+    )
+
+    result = webtab.request_open_tab("https://example.com/", timeout=0.1)
+
+    assert "created" not in result
+    assert "reused" not in result
 
 
 class _Page:
@@ -172,7 +221,134 @@ def test_request_open_tab_registers_binding_on_success(monkeypatch):
     )
 
 
-def test_open_url_then_close_sends_request_close_tab(monkeypatch):
+def test_bound_screenshot_preserves_exact_page_without_activation(monkeypatch):
+    owner = object()
+    binding_id = webtab.register_binding(
+        owner,
+        "win-1",
+        "tab-1",
+        "target-1",
+        geometry_revision=9,
+        allow_background=True,
+    )
+    revisions = webtab.binding_revisions(binding_id)
+    sent = []
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=5.0: sent.append(
+            (ws, command, timeout)
+        ) or {
+            "ok": True,
+            "window_id": "win-1",
+            "tab_id": "tab-1",
+            "geometry_revision": 9,
+            "image_data_url": "data:image/png;base64,cG5n",
+        },
+    )
+
+    result = webtab.request_bound_screenshot(
+        binding_id,
+        expected_page_revision=revisions["page_revision"],
+        expected_access_revision=revisions["access_revision"],
+        expected_geometry_revision=9,
+    )
+
+    assert result["ok"] is True
+    assert result["image_data_url"] == "data:image/png;base64,cG5n"
+    assert sent == [(owner, {
+        "op": "screenshot",
+        "window_id": "win-1",
+        "tab_id": "tab-1",
+        "expected_geometry_revision": 9,
+    }, 5.0)]
+
+
+def test_bound_screenshot_roundtrip_preserves_validated_png(monkeypatch):
+    owner = object()
+    binding_id = webtab.register_binding(
+        owner,
+        "win-1",
+        "tab-1",
+        "target-1",
+        geometry_revision=9,
+        allow_background=True,
+    )
+    revisions = webtab.binding_revisions(binding_id)
+
+    def request_on_ws(ws, command, timeout=5.0):
+        def send(payload: str):
+            data = json.loads(payload)["data"]
+            asyncio.run(webtab.handle_webtab_result(ws, {
+                "req_id": data["req_id"],
+                "ok": True,
+                "window_id": "win-1",
+                "tab_id": "tab-1",
+                "geometry_revision": 9,
+                "image_data_url": _PNG_DATA_URL,
+            }))
+
+        return webtab._wait_for_reply(
+            command,
+            timeout,
+            expected_ws=ws,
+            send=send,
+        )
+
+    monkeypatch.setattr(webtab, "request_on_ws", request_on_ws)
+
+    result = webtab.request_bound_screenshot(
+        binding_id,
+        expected_page_revision=revisions["page_revision"],
+        expected_access_revision=revisions["access_revision"],
+        expected_geometry_revision=9,
+    )
+
+    assert result == {
+        "ok": True,
+        "error": None,
+        "window_id": "win-1",
+        "tab_id": "tab-1",
+        "image_data_url": _PNG_DATA_URL,
+        "geometry_revision": 9,
+    }
+
+
+@pytest.mark.parametrize("value", [
+    "data:image/jpeg;base64,iVBORw0KGgo=",
+    "data:image/png;base64,not-base64!",
+    "data:image/png;base64,cG5n",
+])
+def test_webtab_result_rejects_invalid_png_data_urls(value):
+    result = webtab._wait_for_reply(
+        {"op": "screenshot"},
+        0.1,
+        expected_ws=_ROUNDTRIP_WS,
+        send=lambda payload: asyncio.run(webtab.handle_webtab_result(
+            _ROUNDTRIP_WS,
+            {
+                "req_id": json.loads(payload)["data"]["req_id"],
+                "ok": True,
+                "image_data_url": value,
+            },
+        )),
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "invalid desktop web tab screenshot"
+    assert "image_data_url" not in result
+
+
+def test_png_data_url_size_is_bounded(monkeypatch):
+    monkeypatch.setattr(
+        webtab,
+        "_MAX_SCREENSHOT_DATA_URL_CHARS",
+        len(_PNG_DATA_URL) - 1,
+    )
+    assert webtab._validated_png_data_url(_PNG_DATA_URL) is None
+
+
+def test_open_url_close_respects_renderer_page_ownership(monkeypatch):
     from unittest.mock import MagicMock
     import sys
 
@@ -205,6 +381,7 @@ def test_open_url_then_close_sends_request_close_tab(monkeypatch):
     monkeypatch.setattr(boot, "desktop_app_ws_url", lambda: "ws://app")
 
     closed: list[str] = []
+    ownership = {"created": True, "reused": False}
     monkeypatch.setattr(
         webtab,
         "request_open_tab",
@@ -215,6 +392,7 @@ def test_open_url_then_close_sends_request_close_tab(monkeypatch):
             "target_id": "target-opened",
             "window_id": "win-1",
             "binding_id": "surface_from_open",
+            **ownership,
         },
     )
     monkeypatch.setattr(
@@ -239,6 +417,22 @@ def test_open_url_then_close_sends_request_close_tab(monkeypatch):
     assert closed == ["surface_from_open"]
     assert "Closed the desktop page" in close_out
     assert sid not in tool._sessions
+
+    ownership.update({"created": False, "reused": True})
+    reopened = open_action._open_app_session(
+        "http://cdp",
+        url="https://example.com/",
+        timeout_ms=1000,
+        strict=True,
+    )
+    assert reopened is not None and reopened.startswith("Opened")
+    reused_sid = reopened.split("`")[1]
+    assert tool._sessions[reused_sid]["app_agent_opened"] is False
+
+    closed.clear()
+    reuse_close = lifecycle._close(reused_sid)
+    assert closed == []
+    assert "stays open" in reuse_close
 
 
 def test_app_attach_matches_control_plane_target_across_all_electron_pages():
@@ -386,10 +580,16 @@ def test_close_app_reused_page_detaches_only(monkeypatch):
             self.stopped = True
 
     seen = []
+    released = []
     monkeypatch.setattr(
         webtab,
         "request_close_tab",
         lambda binding_id, timeout=5.0: seen.append(binding_id) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        webtab,
+        "release_binding",
+        lambda binding_id: released.append(binding_id),
     )
     tool._sessions["br_reuse"] = {
         "is_cdp": True,
@@ -402,6 +602,7 @@ def test_close_app_reused_page_detaches_only(monkeypatch):
     try:
         out = lifecycle._close("br_reuse")
         assert seen == []
+        assert released == ["surface_abc"]
         assert "stays open" in out
         assert "br_reuse" not in tool._sessions
     finally:

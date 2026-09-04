@@ -25,7 +25,7 @@
  * are registered on mount — see `setRightDockApi` below.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { ContextCommitTimeline } from "./context-commit-timeline";
@@ -46,6 +46,8 @@ import {
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
 import { RunningPanel } from "./running-panel";
+import { DebuggerPanel } from "./debugger-panel";
+import { useExecutionDebugger } from "@/lib/use-execution-debugger";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import { setRightDockApi } from "@/lib/right-dock";
@@ -62,6 +64,7 @@ import {
 // "detail" picks `<div data-view="detail">`.
 const VIEW_FILES = "files";
 const VIEW_RUNNING = "running";
+const VIEW_DEBUGGER = "debugger";
 
 export function RightSidebar() {
   const { t, text } = useTranslation();
@@ -69,6 +72,8 @@ export function RightSidebar() {
   const view = useSessionStore((s) => s.rightDock.view);
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
+  const [debuggerExecutionId, setDebuggerExecutionId] = useState<string | null>(null);
+  const debuggerState = useExecutionDebugger(open && view === VIEW_DEBUGGER, debuggerExecutionId);
   const { style: railStyle, resizeHandleProps } = useResizableRail({
     open,
     minWidth: 240,
@@ -81,6 +86,7 @@ export function RightSidebar() {
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
   const runningIconRef = useRef<AnimatedNavIconHandle>(null);
+  const debuggerIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
   const activeTab = useCenterTabs((s) =>
@@ -143,6 +149,12 @@ export function RightSidebar() {
     // History / Execution Detail nav buttons only switch view +
     // ensure the panel is open. Collapsing is the top toggle's job.
     setRightDockView(v);
+    if (!open) setRightDockOpen(true);
+  }
+
+  function openDebugger(executionId?: string) {
+    if (executionId) setDebuggerExecutionId(executionId);
+    setRightDockView(VIEW_DEBUGGER);
     if (!open) setRightDockOpen(true);
   }
 
@@ -250,6 +262,28 @@ export function RightSidebar() {
           className={
             sidebarNavItemClass +
             " right-nav-item" +
+            (view === VIEW_DEBUGGER ? " " + sidebarNavItemActiveClass : "")
+          }
+          data-view={VIEW_DEBUGGER}
+          onClick={() => onNavClick(VIEW_DEBUGGER)}
+          onMouseEnter={() => debuggerIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => debuggerIconRef.current?.stopAnimation?.()}
+          role="button"
+          tabIndex={0}
+          onKeyDown={activateOnKey(() => onNavClick(VIEW_DEBUGGER))}
+          title={text("Execution debugger", "执行调试器")}
+        >
+          <span className={sidebarNavIconClass}>
+            <ActivityIcon ref={debuggerIconRef} size={20} />
+          </span>
+          <span className={sidebarNavLabelClass}>
+            {text("Debugger", "调试器")}
+          </span>
+        </div>
+        <div
+          className={
+            sidebarNavItemClass +
+            " right-nav-item" +
             (view === VIEW_RUNNING ? " " + sidebarNavItemActiveClass : "")
           }
           data-view={VIEW_RUNNING}
@@ -285,7 +319,29 @@ export function RightSidebar() {
         </div>
         {/* Running view — global live-work list, polls /api/running. */}
         <div className="right-view" data-view={VIEW_RUNNING}>
-          <RunningPanel active={open && view === VIEW_RUNNING} />
+          <RunningPanel active={open && view === VIEW_RUNNING} onOpenExecution={openDebugger} />
+        </div>
+        <div className="right-view" data-view={VIEW_DEBUGGER}>
+          <DebuggerPanel
+            executions={debuggerState.executions}
+            selectedExecutionId={debuggerState.selectedExecutionId}
+            connection={debuggerState.connection}
+            checkpoints={debuggerState.checkpoints}
+            waits={debuggerState.waits}
+            drafts={debuggerState.drafts}
+            onSelectExecution={(executionId) => {
+              setDebuggerExecutionId(executionId);
+              debuggerState.selectExecution(executionId);
+            }}
+            onCommand={debuggerState.command}
+            onRespondWait={debuggerState.respondWait}
+            onCreateDraft={async (input) => {
+              await debuggerState.createDraft(input);
+            }}
+            onUpdateDraft={debuggerState.updateDraft}
+            onDraftAction={debuggerState.draftAction}
+            onRefresh={debuggerState.refresh}
+          />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template

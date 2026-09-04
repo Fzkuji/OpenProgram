@@ -259,6 +259,7 @@ namespaces = false
     "_webui/_frontend/*",
     "_webui/_frontend/**/*",
 ]
+"openprogram_cli" = ["dist/*.mjs"]
 
 [tool.setuptools.exclude-package-data]
 "openprogram.webui" = [

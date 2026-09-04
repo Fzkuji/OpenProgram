@@ -8,6 +8,7 @@ Agent 执行运行时 —— 运行循环、worktree、异步任务、流式传�
 - [`execution/agent-call-flow.md`](execution/agent-call-flow.md) — 调用流程骨架(turn / loop,跟节点模型正交)
 - [`execution/agent-worktree.md`](execution/agent-worktree.md)
 - [`execution/async-job-lifecycle.md`](execution/async-job-lifecycle.md)
+- [`execution/execution-control.html`](execution/execution-control.html) — **权威设计**：统一暂停、继续、单步、调整、取消、检查点、revision 与恢复合同
 - [`execution/dispatcher-split.md`](execution/dispatcher-split.md) — 将 `agent/dispatcher.py` 拆分为按职责划分的包(遵循「单文件不超过 1000 行」规则)
 - [`operations/file-management.html`](operations/file-management.html) — 文件归因、Review、Undo、Restore、分支对齐和多 agent 所有权的权威设计
 - [`overview.md`](overview.md)

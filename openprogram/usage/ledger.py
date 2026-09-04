@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,9 @@ _COLUMNS = [
     "cost_cache_read", "cost_cache_write", "cost_source", "token_source",
     "schema_version", "job_id", "budget_scope_id", "reservation_id",
 ]
+
+_BOOTSTRAP_BUSY_TIMEOUT_MS = 2_000
+_BOOTSTRAP_RETRIES = 8
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS usage_events (
@@ -79,9 +83,18 @@ CREATE TABLE IF NOT EXISTS job_admissions (
     budget_scope_id TEXT NOT NULL,
     dispatch_ready INTEGER NOT NULL DEFAULT 1
         CHECK (dispatch_ready IN (0, 1)),
+    terminal_blocked INTEGER NOT NULL DEFAULT 0
+        CHECK (terminal_blocked IN (0, 1)),
+    terminal_block_command_id TEXT,
+    terminal_block_phase TEXT,
+    terminal_block_expires_at REAL,
+    terminal_block_prior_dispatch_ready INTEGER
+        CHECK (terminal_block_prior_dispatch_ready IN (0, 1)),
     borrowed_parent_job_id TEXT,
     resume_parent_msg_id TEXT,
     state TEXT NOT NULL CHECK (state IN ('preparing','queued','live','stopping','released')),
+    queue_state TEXT NOT NULL DEFAULT 'queued',
+    resume_command_id TEXT,
     admitted_seq INTEGER NOT NULL,
     owner_instance_id TEXT,
     lease_generation INTEGER NOT NULL DEFAULT 0,
@@ -152,6 +165,17 @@ _GROUP_EXPR = {
 }
 
 
+def _is_sqlite_busy(error: sqlite3.Error) -> bool:
+    """Return whether SQLite reported a retryable lock contention."""
+    code = getattr(error, "sqlite_errorcode", None)
+    if isinstance(code, int) and code & 0xFF in {
+        sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED,
+    }:
+        return True
+    message = str(error).lower()
+    return "database is locked" in message or "database table is locked" in message
+
+
 @dataclass
 class AggregateRow:
     """One grouped aggregate. ``keys`` maps each requested group_by field to
@@ -191,17 +215,41 @@ class UsageLedger:
             return self._conn
         path = self._path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(path), timeout=5.0, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        self._migrate_legacy_job_schema(conn)
-        self._migrate_usage_columns(conn)
-        conn.executescript(_SCHEMA)
-        self._migrate_job_admission_columns(conn)
-        conn.row_factory = sqlite3.Row
-        self._conn = conn
-        self._conn_pid = os.getpid()
-        return conn
+        for attempt in range(_BOOTSTRAP_RETRIES):
+            conn = sqlite3.connect(
+                str(path), timeout=_BOOTSTRAP_BUSY_TIMEOUT_MS / 1000,
+                check_same_thread=False,
+            )
+            try:
+                # Set this before WAL/schema work.  journal_mode=WAL and
+                # BEGIN IMMEDIATE both acquire locks during bootstrap.
+                conn.execute(
+                    f"PRAGMA busy_timeout={_BOOTSTRAP_BUSY_TIMEOUT_MS}"
+                )
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                self._migrate_legacy_job_schema(conn)
+                self._migrate_usage_columns(conn)
+                conn.executescript(_SCHEMA)
+                self._migrate_job_admission_columns(conn)
+            except sqlite3.Error as exc:
+                try:
+                    conn.rollback()
+                finally:
+                    conn.close()
+                if not _is_sqlite_busy(exc) or attempt + 1 >= _BOOTSTRAP_RETRIES:
+                    raise
+                time.sleep(min(0.25, 0.01 * (2**attempt)))
+                continue
+            except Exception:
+                conn.rollback()
+                conn.close()
+                raise
+            conn.row_factory = sqlite3.Row
+            self._conn = conn
+            self._conn_pid = os.getpid()
+            return conn
+        raise RuntimeError("SQLite bootstrap retries exhausted")
 
     @staticmethod
     def _migrate_legacy_job_schema(conn: sqlite3.Connection) -> None:
@@ -318,44 +366,79 @@ class UsageLedger:
 
     @staticmethod
     def _migrate_job_admission_columns(conn: sqlite3.Connection) -> None:
-        existing = {
-            str(row[1]) for row in conn.execute("PRAGMA table_info(job_admissions)")
-        }
-        changed = False
-        if existing and "caller_session_id" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN caller_session_id TEXT"
-            )
-            changed = True
-        if existing and "dispatch_ready" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN "
-                "dispatch_ready INTEGER NOT NULL DEFAULT 1"
-            )
-            changed = True
-        if existing and "borrowed_parent_job_id" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN borrowed_parent_job_id TEXT"
-            )
-            changed = True
-        if existing and "resume_parent_msg_id" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN resume_parent_msg_id TEXT"
-            )
-            changed = True
-        if existing and "lease_generation" not in existing:
-            conn.execute(
-                "ALTER TABLE job_admissions ADD COLUMN "
-                "lease_generation INTEGER NOT NULL DEFAULT 0"
-            )
-            changed = True
-        if changed:
-            conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            existing = {
+                str(row[1])
+                for row in conn.execute("PRAGMA table_info(job_admissions)")
+            }
+            changed = False
+
+            def add_column(name: str, definition: str) -> None:
+                nonlocal changed
+                columns = {
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(job_admissions)")
+                }
+                if columns and name not in columns:
+                    conn.execute(
+                        f"ALTER TABLE job_admissions ADD COLUMN {name} {definition}"
+                    )
+                    changed = True
+
+            if existing:
+                add_column("caller_session_id", "TEXT")
+                add_column(
+                    "dispatch_ready", "INTEGER NOT NULL DEFAULT 1"
+                )
+                add_column(
+                    "terminal_blocked", "INTEGER NOT NULL DEFAULT 0"
+                )
+                for name, definition in (
+                    ("terminal_block_command_id", "TEXT"),
+                    ("terminal_block_phase", "TEXT"),
+                    ("terminal_block_expires_at", "REAL"),
+                    (
+                        "terminal_block_prior_dispatch_ready",
+                        "INTEGER CHECK (terminal_block_prior_dispatch_ready IN (0, 1))",
+                    ),
+                ):
+                    add_column(name, definition)
+                add_column("borrowed_parent_job_id", "TEXT")
+                add_column("resume_parent_msg_id", "TEXT")
+                add_column("queue_state", "TEXT NOT NULL DEFAULT 'queued'")
+                add_column("resume_command_id", "TEXT")
+                add_column(
+                    "lease_generation", "INTEGER NOT NULL DEFAULT 0"
+                )
+                migrated = conn.execute(
+                    """UPDATE job_admissions
+                       SET terminal_block_phase = 'recovery',
+                           terminal_block_expires_at = ?,
+                           terminal_block_prior_dispatch_ready = COALESCE(
+                               terminal_block_prior_dispatch_ready, 0
+                           )
+                       WHERE terminal_blocked = 1
+                         AND terminal_block_phase IS NULL""",
+                    (time.time() + 30.0,),
+                )
+                changed = changed or migrated.rowcount > 0
+            if changed or existing:
+                conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     def connection(self) -> sqlite3.Connection:
         """Return the process-local connection for governance transactions."""
         with self._lock:
             return self._connect()
+
+    @contextmanager
+    def read(self):
+        """Serialize a read without letting sqlite's context manager commit."""
+        with self._lock:
+            yield self._connect()
 
     @contextmanager
     def immediate(self):
@@ -499,7 +582,7 @@ class UsageLedger:
                 (session_id,),
             ).fetchone()
             row = conn.execute(
-                "SELECT state, admitted_seq FROM job_admissions WHERE job_id = ?",
+                "SELECT state, queue_state, resume_command_id, admitted_seq FROM job_admissions WHERE job_id = ?",
                 (job_id,),
             ).fetchone()
             queue_position = None
@@ -517,7 +600,11 @@ class UsageLedger:
                 (job_id,),
             ).fetchone()
         return {
-            "resource_state": row["state"] if row is not None else "untracked",
+            "resource_state": (
+                row["queue_state"] if row is not None and row["state"] == "queued"
+                else row["state"] if row is not None else "untracked"
+            ),
+            "resume_command_id": row["resume_command_id"] if row is not None else None,
             "session_live": {"used": int(counts[0] or 0), "limit": None},
             "session_queued": {"used": int(counts[1] or 0), "limit": None},
             "session_jobs": {"used": int(counts[2] or 0), "limit": None},

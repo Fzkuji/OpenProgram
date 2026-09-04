@@ -18,16 +18,16 @@ for (const required of [
 ]) {
   if (!panel.includes(required)) throw new Error(`job resource wiring missing: ${required}`);
 }
-for (const required of ["<details", "<summary aria-label=", "resource_state", "reason_code", "capacity", "budget"]) {
+for (const required of ["<details", "<summary aria-label=", "resource: jobResource.resource", "execution: jobResource.execution"]) {
   if (!item.includes(required)) throw new Error(`visible job resource field missing: ${required}`);
 }
 
 const terminal = { status: "completed", finalHead: "head", resource: { resource_state: "released" }, updatedAt: 1 };
 const running = { status: "running", targetHead: "head", resource: { resource_state: "live" }, updatedAt: 2 };
-const completed = { ...running, status: "completed", resource: { resource_state: "released", reason_code: "completed" }, updatedAt: 3 };
+const completed = { ...running, status: "completed", resource: { resource_state: "released", queue_wait: null }, updatedAt: 3 };
 if (selectResourceForHead({ old: terminal, current: running }, "head", "pending:")?.resource_state !== "live") {
   throw new Error("non-terminal job must win over stale terminal resource");
 }
-if (selectResourceForHead({ old: terminal, current: completed }, "head", "pending:")?.reason_code !== "completed") {
+if (selectResourceForHead({ old: terminal, current: completed }, "head", "pending:")?.resource_state !== "released") {
   throw new Error("latest terminal job must win and match refreshed ordering");
 }

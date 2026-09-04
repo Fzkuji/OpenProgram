@@ -106,6 +106,9 @@ export type PickerKind =
  */
 export interface PendingDecision {
   id: string;
+  executionId: string;
+  waitGeneration: number;
+  expectedVersion: number;
   kind: 'ask' | 'confirm' | 'approval' | 'form' | 'ask_many';
   prompt: string;
   options: string[];

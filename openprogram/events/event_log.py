@@ -1,4 +1,4 @@
-"""Event log — one JSON line per typed event, always on for the singleton bus.
+"""Event log — one JSON line per completed typed dispatch on the singleton.
 
 Routing: ``~/.openprogram/sessions/<sid>/events.jsonl`` when the event
 carries a session whose directory already exists (session directories are
@@ -6,7 +6,7 @@ created by the session store, never by the logger — a stray session id in
 metadata must not mint a phantom session directory); the shared
 ``~/.openprogram/logs/events.jsonl`` otherwise. Files rotate to ``.1``
 (replacing the previous ``.1``) past 5 MB. Gate verdicts land on the same
-line as a ``gate`` field; they are never emitted as a second event.
+line as a ``gate`` field; an observer-phase gate emit is not written first.
 """
 from __future__ import annotations
 

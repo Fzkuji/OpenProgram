@@ -53,6 +53,7 @@ from openprogram.programs.workflow.goal.state import (  # noqa: F401
     DEFAULT_PHASE_TIMEOUT_S,
     GOAL_SCHEMA_VERSION,
     GoalConflictError,
+    GoalStateUnavailable,
     IDLE_ROUND_LIMIT,
     JUDGE_PARSE_FAILURE_LIMIT,
     RESUMABLE_STATUSES,
@@ -66,6 +67,7 @@ from openprogram.programs.workflow.goal.state import (  # noqa: F401
     accumulate_goal_usage,
     budget_exhausted,
     checkpoint_active_elapsed,
+    check_goal_preconditions,
     default_max_turns,
     goal_usage,
     judge_model,
@@ -79,6 +81,12 @@ from openprogram.programs.workflow.goal.notices import (  # noqa: F401
     _TERMINAL_LABELS,
     _emit_goal_notice,
     _finish,
+)
+from openprogram.programs.workflow.goal.execution import (  # noqa: F401
+    GoalStopUnconfirmed,
+    goal_execution_state,
+    request_goal_stop,
+    require_goal_execution_finished,
 )
 from openprogram.programs.workflow.goal.refinement import (  # noqa: F401
     REFINE_TOOLS,

@@ -26,7 +26,7 @@ DEFAULT_MAX_TURNS = 150
 DEFAULT_PHASE_TIMEOUT_S = 300.0
 # 连续 N 轮零工具且仍 unmet → 判定为 idle spin 停机；第 1 次先警告。
 IDLE_ROUND_LIMIT = 2
-_CLEAR_VERBS = {"clear", "stop", "off", "cancel"}
+_CLEAR_VERBS = {"clear", "off", "cancel"}
 GOAL_SCHEMA_VERSION = 3
 RUNNING_STATUSES = {"refining", "active", "running", "evaluating"}
 WAITING_STATUSES = {"paused", "paused_recoverable", "waiting_user", "waiting_external"}
@@ -38,6 +38,21 @@ TERMINAL_STATUSES = {"achieved", "impossible", "failed", "cancelled", "cleared"}
 
 class GoalConflictError(ValueError):
     """A stale controller attempted to replace a newer Goal snapshot."""
+
+
+class GoalStateUnavailable(RuntimeError):
+    """Persistent Goal state could not be read or committed safely."""
+
+
+def check_goal_preconditions(goal: dict, expected: dict | None) -> None:
+    """Reject an action aimed at a different saved Goal or revision."""
+    if expected is None:
+        return
+    fields = {"goal_id", "revision", "run_id", "version"}
+    if not isinstance(expected, dict) or not expected or expected.keys() - fields:
+        raise ValueError("Invalid Goal preconditions")
+    if any(goal.get(key) != value for key, value in expected.items()):
+        raise GoalConflictError("Goal changed; reload its details before retrying")
 
 
 def _db():
@@ -55,10 +70,14 @@ def load_goal(session_id: str) -> Optional[dict]:
             invalidate(session_id)
         sess = db.get_session(session_id) or {}
         goal = (sess.get("extra_meta") or {}).get("goal")
-        return normalize_goal(goal) if isinstance(goal, dict) else None
-    except Exception:
+        if goal is None:
+            return None
+        if not isinstance(goal, dict):
+            raise ValueError("Invalid persisted Goal")
+        return normalize_goal(goal)
+    except Exception as exc:
         _log.debug("goal read failed for session %s", session_id, exc_info=True)
-        return None
+        raise GoalStateUnavailable("Goal state unavailable; retry after storage recovers.") from exc
 
 
 def normalize_goal(goal: dict) -> dict:
@@ -344,10 +363,10 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
             "schema_version", "goal_id", "run_id", "revision", "version",
             "text", "spec", "checklist", "status", "phase", "turns_used",
             "max_turns", "budget", "usage", "checkpoint", "execution_id",
-            "recoverable", "pause_reason", "last_reason", "last_question",
+            "recoverable", "pause_reason", "stop_requested", "last_reason", "last_question",
             "last_question_id", "last_question_at", "last_question_options",
             "questions", "pending_answers", "interaction_mode", "created_at",
-            "updated_at")},
+            "updated_at", "roles", "roles_origin", "role_requests")},
     }
     if on_event is not None:
         try:
