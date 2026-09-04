@@ -1945,7 +1945,7 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
             <tr><td>无人值守时不打断，继续独立工作</td><td>judge 的 <code>needs_user + can_continue</code>；持久 <code>questions[]</code></td><td>问题累积；依赖答案的事项不执行；安全独立工作继续；全部受阻后才等待</td><td class="yes">已实现，队列与续轮测试覆盖</td></tr>
             <tr><td>异步回答与并发安全</td><td>Goal Action API；SessionStore CAS version</td><td>active run 在边界消费答案；部分回答允许部分工作恢复；用户主动暂停保持暂停；旧 controller 不能覆盖新状态</td><td class="yes">已实现，竞争路径测试覆盖</td></tr>
             <tr><td>重载与 worker 重启可恢复</td><td>session hydration；startup reconciliation；<code>/goal resume</code></td><td>重载后恢复完整投影；重启中断状态变为 <code>paused_recoverable</code>；resume 创建新 run</td><td class="yes">组件测试通过；默认 App 已验证重启恢复状态、编辑重载及 Resume 实际执行</td></tr>
-            <tr><td>Web 与 TUI 控制一致</td><td>Goal dialog；<code>/goal</code> 命令；同一 Action API</td><td>查看目标、checklist、用量、问题；编辑、暂停、回答、预算、继续、终止</td><td class="partial">类型检查与自动测试通过；默认 App 已验证编辑、预算与继续，暂停的执行取消仍在复验</td></tr>
+            <tr><td>Web 与 TUI 控制一致</td><td>Goal dialog；<code>/goal</code> 命令；同一 Action API</td><td>查看目标、checklist、用量、问题；编辑、暂停、回答、预算、继续、终止</td><td class="partial">类型检查与自动测试通过；默认 App 已验证编辑、预算、暂停、恢复和完成判定；异步回答完整界面流程尚未验收</td></tr>
             <tr><td>外部事件自动唤醒</td><td>目标：持久 wait handle + scheduler event</td><td>CI/job/timer 完成后幂等恢复，无需用户 resume</td><td class="no">未实现</td></tr>
             <tr><td>共享状态目录多 worker ownership</td><td><code>ownership.goal_owner()</code>；独立非阻塞 OS 文件锁</td><td>同机同 store 独占 controller；startup reconciliation 跳过 live sibling；崩溃释放锁</td><td class="yes">跨进程与异常退出测试覆盖；不支持跨主机分布式 lease</td></tr>
             <tr><td>Deterministic gates 与独立证据仓库</td><td>目标：gate runner + evidence refs/repository</td><td>可复用命令检查先于 judge，完整证据不依赖 session 快照</td><td class="no">未实现</td></tr>
@@ -1958,16 +1958,18 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
         <li><code>python -m scripts.docs_site.build</code>，随后 <code>python -m scripts.docs_site.checklinks</code></li>
       </ul></details></div>
       <p>网页核查：judge 具有网页读取和检索工具，失败回执标记为 <code>is_error=true</code>。已有真实模型检查受到 arXiv 的 <code>NON_GLOBAL_ADDRESS</code> 拒绝与 Tavily 缺少凭据的限制；没有绕过网络策略，不能把这次研究产物视为来源已核验的综述。</p>
-      <p>集成代码执行 <code>python -m pytest -q -n 4</code>：7015 项通过、18 项跳过、1 项预期失败，包含暂停的执行身份和 Runtime 内检查路径修复。全量发现的 Goal 包装函数源码定位问题已修复；两组 agent 合同测试的执行数据库已按测试隔离，避免启动恢复读取其他测试的记录。TUI 测试 148 项通过、2 项跳过，类型检查通过。实际子进程取消仍需产品复验，身份选择测试不替代运行验收。</p>
+      <p>集成代码执行 <code>python -m pytest -q -n 4</code>：7015 项通过、18 项跳过、1 项预期失败，包含暂停的执行身份和 Runtime 内检查路径修复。全量发现的 Goal 包装函数源码定位问题已修复；两组 agent 合同测试的执行数据库已按测试隔离，避免启动恢复读取其他测试的记录。TUI 测试 148 项通过、2 项跳过，类型检查通过。默认 App 的实际运行证据与自动测试分开记录。</p>
       <p>真实模型验证：通过公开 <code>programs run goal</code> 入口，MiniMax-M3 完成约 300 字中文文章写作、文件读取核对与判定，命令正常退出；产物内容已另行读取检查确认。此例仅使用给定事实，不调用网络，不能替代来源核验。已有综述尝试受到外部来源访问和检索凭据限制，仍不能作为已核验的综述交付。失败回执防护会阻止包含错误检查回执的 <code>met</code>，不证明全部语义判定可靠。</p>
-      <p>默认 App 已验证测试 Goal 的重启恢复状态、编辑保存、页面重载、预算修改和恢复后实际模型调用。一次短文本验收返回了要求的文本，但判定阶段连续失败，最终按轮次预算停止；这证明预算停止生效，不能作为 <code>achieved</code> 验收。运行验收还发现判定阶段初始化 JobRunner 可能触发全局启动恢复，将活跃外层执行标成 <code>owner_lost</code>，使随后取消无法作用于物理进程。Goal 在已有 Runtime 中的 refiner/judge 现使用公共 <code>agent()</code>：各自保持工具、模型与阶段标签，共享当前执行所有者，不创建独立 Job。无 Runtime 的独立 session helper 保留原路径。该局部修复不解决其他进程调用全局恢复的风险，更新后暂停仍需实际复验。执行树摘要另有字段映射缺陷：已持久化的 LLM 回复位于 <code>raw_reply</code>，摘要却读取 <code>output</code>；空输入参数不代表回复丢失。</p>
+      <p>默认 App 已验证测试 Goal 的重启恢复状态、编辑保存、页面重载、预算修改、暂停和恢复。暂停使对应 canonical execution 进入 <code>cancelling</code>，随后以 <code>cancelled / cancel.user</code> 停止，Goal 保持可恢复的暂停状态。再次恢复后，判定先因多余输出拒绝达成，再接受修正后的输出；最终 Goal 显示 <code>achieved</code>、checklist 4/4，判定解析错误计数为 0。这是短文本任务的实际运行验收，不代表外部研究或全部任务类型均已验证。</p>
+      <p>Goal 在已有 Runtime 中的 refiner/judge 使用公共 <code>agent()</code>：各自保持工具、模型与阶段标签，共享当前执行所有者，不创建独立 Job，避免首次初始化 JobRunner 的全局启动恢复误判外层活跃执行。无 Runtime 的独立 session helper 保留原路径。该局部修复不解决其他进程调用全局恢复的风险。执行树摘要仍有字段映射缺陷：已持久化的 LLM 回复位于 <code>raw_reply</code>，摘要却读取 <code>output</code>；空输入参数不代表回复丢失。另有函数结果行显示 Completed、canonical execution 已 cancelled 的展示不一致，不能用该摘要标签证明执行成功。</p>
+      <p>完成验收还发现通用执行结束记录未一致收敛：Goal 为 <code>achieved</code>，但对应 canonical execution 的 completed 写入连续重试后留下 <code>finish_repair_stalled</code>，状态仍为 running。该未解决项不否定已生成的工作输出与 Goal 判定，但阻止“完整执行生命周期全部验收通过”的结论。</p>
     </section>
 
     <section id="status">
       <h2>实现状态与证据边界</h2>
       <div class="framework-grid">
         <div class="card"><h3>当前代码已经具备</h3><ul><li>单 prompt Goal、Working Agent 与独立 inspection judge。</li><li>schema v3 版本化 session 快照、goal/run ID、checkpoint、CAS 写入和旧数据规范化。</li><li>typed stop states、round/token/active-time/cost 预算、checklist stall 与 idle-spin 检测。</li><li>异步问题队列、逐项回答、边界消费、有人/无人值守判定策略。</li><li>Web Goal dialog、TUI 操作、页面重载 hydration 与 worker 重启后的可恢复暂停。</li><li>五张 Archify typed source 生成并以内联 SVG 写入本文档。</li></ul></div>
-        <div class="card"><h3>仍未实现或尚未验收</h3><ul><li>deterministic gate executor、外部事件自动 wake handle 和 append-only evidence repository。</li><li>跨主机分布式 lease；同机共享目录的 Goal ownership 已实现。</li><li>默认 App 的已验收范围见上文；异步回答的完整界面操作、无障碍树与暂停执行取消仍未全部验收。</li><li>Goal 主体与恢复启动修复已合入主分支并包含在默认 App；执行树摘要缺陷尚未修复。</li></ul></div>
+        <div class="card"><h3>仍未实现或尚未验收</h3><ul><li>deterministic gate executor、外部事件自动 wake handle 和 append-only evidence repository。</li><li>跨主机分布式 lease；同机共享目录的 Goal ownership 已实现。</li><li>默认 App 的已验收范围见上文；异步回答的完整界面操作与无障碍树尚未验收。</li><li>Goal 主体与运行修复已合入主分支并包含在默认 App；执行树摘要缺陷及通用跨进程启动恢复风险尚未修复。</li></ul></div>
       </div>
       <div class="callout warn"><strong>版本边界：</strong>本地参考仓库用于读取可复现的具体代码路径；官方在线文档与公开仓库 main 用于确认后续新增合同。Hermes 本地快照的基础 GoalManager 不含当前上游的 completion contract、quality gate 与 wait barrier，因此相关段落以公开上游源码为准。Claude Code 以官方文档为准。</div>
       <p class="footer">OpenProgram Goal 的权威工程设计与实现对比。产品使用说明见 <a href="../../../capabilities/goal.html">Goal Workflow</a>；本文中的未验收项不能作为已发布或已部署的证明。</p>
