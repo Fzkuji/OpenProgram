@@ -225,6 +225,15 @@ export function StepRow({
   const toggleable = !!subSteps || !!inlineBody;
   const expanded = subSteps ? kidsOpen : open;
   const copyValue = copyText ?? [title, note].filter(Boolean).join(" · ");
+  useEffect(() => {
+    // Update the selected snapshot without changing the dock or its active tab.
+    if (!detail || onOpenDetail) return;
+    const store = useSessionStore.getState();
+    if (store.detailNode?.path === detail.path
+        && JSON.stringify(store.detailNode) !== JSON.stringify(detail)) {
+      store.populateDetail(detail);
+    }
+  }, [detail, onOpenDetail]);
   function copy(e: React.MouseEvent) {
     e.stopPropagation();
     const done = () => {

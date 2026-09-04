@@ -32,7 +32,7 @@ import type { TNode } from "./tree-types";
 import { ExecutionStrip, StepRow, TreeStep, decodeEscapes } from "./execution-strip";
 import { ActionButton, MessageTimestamp, SVG } from "./message-actions";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
-import { runtimeConclusion, runtimeSummaryLabel } from "./runtime-summary";
+import { runtimeAnswer, runtimeConclusion, runtimeSummaryLabel } from "./runtime-summary";
 
 function wsSend(payload: unknown): boolean {
   const sock = getSocket();
@@ -181,6 +181,7 @@ export function RuntimeBlock({
     tree,
     text,
   });
+  const answer = nested ? null : runtimeAnswer({ fnName, status: msg.status, tree });
 
   // Re-run the SAME function with its LAST kwargs in the SAME session.
   // The backend looks up the prior call's stored args and dispatches via
@@ -388,6 +389,12 @@ export function RuntimeBlock({
         >
           {body}
         </ExecutionStrip>
+        {answer ? (
+          <section className="runtime-program-conclusion" aria-label={text("Function reply", "函数答复")} data-function-answer>
+            <div className="runtime-program-conclusion-summary message-content chat-text"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }} />
+          </section>
+        ) : null}
         {conclusion ? (
           <section
             className={`runtime-program-conclusion is-${conclusion.tone}`}
