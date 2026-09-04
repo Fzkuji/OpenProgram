@@ -2,6 +2,8 @@
 
 Goal 会反复运行 Working Agent，并由独立 completion judge 根据现有证据判定。目标、进度、资源用量和最近 checkpoint 保存在所属 session 中，因此重新加载页面不会删除 Goal。
 
+工作 Agent 在已有权限内修改产物、执行验证命令。判定和目标整理阶段只获得文件读取与检索工具，不获得 shell 或产物编辑工具。缺少验证命令结果时，判定要求工作 Agent 补充执行，不自行修改产物使检查通过。这是工具能力限制，不表示检索没有缓存写入或网络请求。
+
 ## 启动 Goal
 
 打开 **Programs → Workflow → goal → Use**，或输入：

@@ -5,6 +5,13 @@ evaluate the available evidence. The objective, progress, resource usage, and
 latest checkpoint are stored with the session, so reloading the page does not
 remove the Goal.
 
+The working agent performs changes and runs verification commands within its
+existing permissions. The judge and specification refinement only receive
+file-reading and search tools, not a shell or artifact-editing tools. When a
+verification command is missing, the judge requests another working turn;
+it does not modify the deliverable to make its own check pass. These are tool
+capability restrictions, not a claim that retrieval has no cache or network effects.
+
 ## Start a Goal
 
 Open **Programs → Workflow → goal → Use**, or enter:

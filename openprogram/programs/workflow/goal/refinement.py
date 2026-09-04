@@ -14,7 +14,7 @@ from openprogram.programs.workflow.json_parsing import parse_json
 import openprogram.programs.workflow.goal as _goal
 
 # Inspection plus search. Refining a goal must not change files.
-REFINE_TOOLS = ("read", "glob", "grep", "list", "bash", "web_search")
+REFINE_TOOLS = ("read", "glob", "grep", "list", "web_search")
 
 
 def _run_refine_turn(session_id: str, prompt: str, *, agent_id: str,
