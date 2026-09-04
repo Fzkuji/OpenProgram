@@ -22,12 +22,19 @@ def _agents_directory() -> Path:
     return Path.home() / "Library/LaunchAgents"
 
 
-def _directory(path: Path, *, create=False):
+def _directory(path: Path, *, create=False, private=False):
     if create:
         path.mkdir(mode=0o700, exist_ok=True)
     info = path.lstat()
-    if path.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
+    if (path.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or info.st_mode & (0o077 if private else 0o022)):
         raise ValueError("recovery directory is not safely owned by this user")
+
+
+def _existing_state(store, update_id):
+    # The general store lock creates/chmods its root; recovery must reject first.
+    for path in (store.root, store.root / _validate_update_id(update_id)):
+        _directory(path, private=True)
 
 
 def _bytes(path: Path, mode: int) -> bytes:
@@ -136,10 +143,11 @@ def validate_if_present(store, record, bundle):
 def _error(store, update_id, exc):
     update_id = _validate_update_id(update_id)
     try:
+        _existing_state(store, update_id)
         store._write_json(store.root / update_id / "bootstrap-error.json", {
             "schema": 1, "update_id": update_id, "at": time.time(), "error": (str(exc) or type(exc).__name__)[:1000],
         })
-    except OSError:
+    except (OSError, ValueError):
         print("Self-update bootstrap: unable to persist diagnostic", file=sys.stderr)
 
 
@@ -148,6 +156,7 @@ def cleanup_bootstrap(store, update_id):
     from .controller_bundle import _load_bundle
     update_id = _validate_update_id(update_id)
     try:
+        _existing_state(store, update_id)
         with store._locked():
             directory = store.root / update_id
             binding = directory / "bootstrap.json"
@@ -178,6 +187,7 @@ def main(argv=None) -> int:
     record = None
     try:
         store = _canonical_store(args.state_root)
+        _existing_state(store, args.update_id)
         with store._locked():
             record = store._load_unlocked(args.update_id)
             bundle = _load_bundle(store.root / args.update_id / "controller")

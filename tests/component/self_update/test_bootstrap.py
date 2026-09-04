@@ -269,3 +269,20 @@ def test_cleanup_diagnostic_failure_does_not_change_original_result(bootstrap_re
     assert "unable to persist diagnostic" in capsys.readouterr().err
     assert (v.directory / "state.json").read_bytes() == original
     assert v.plist.read_bytes() == b"changed login file"
+
+
+@pytest.mark.parametrize("mode", ["status", "repair", "resume", "cleanup"])
+def test_unsafe_state_root_is_rejected_before_store_normalizes_permissions(bootstrap_request, monkeypatch, mode):
+    from openprogram.self_update import bootstrap, supervisor, UpdatePhase
+    v = bootstrap_request
+    if mode == "cleanup":
+        v.store.transition(v.directory.name, UpdatePhase.ABORTED)
+    original = (v.directory / "state.json").read_bytes()
+    v.store.root.chmod(0o777)
+    monkeypatch.setattr(supervisor, "run_supervisor", lambda *a, **k: pytest.fail("unsafe root invoked supervisor"))
+    if mode == "cleanup":
+        bootstrap.cleanup_bootstrap(v.store, v.directory.name)
+    else:
+        assert invoke(v, mode) == 1
+    assert v.store.root.stat().st_mode & 0o777 == 0o777
+    assert (v.directory / "state.json").read_bytes() == original and v.plist.exists()
