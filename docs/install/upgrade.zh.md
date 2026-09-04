@@ -46,7 +46,7 @@ openprogram worker restart
 
 对话内打包离线执行。依赖基线必须与候选的 `uv.lock` 和
 `scripts/release/product-runtime.json` 完全一致；控制器使用保存 runtime 中固定版本的
-构建工具，以及既有 npm/uv/Electron 缓存的私有副本。候选的 Web、文档、wheel 和
+构建工具，以及既有 npm/uv/Electron/node-gyp 缓存的私有副本。候选的 Web、文档、wheel 和
 Desktop archive 仍重新构建。缓存缺失或依赖基线不匹配时，在激活前停止更新；
 不会因此允许联网下载或沿用不匹配依赖。该构建过程及真实已安装验收仍是发布条件。
 

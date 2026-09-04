@@ -20,7 +20,13 @@ def inputs(tmp_path, monkeypatch):
     for saved, requested in (("product-uv.lock", "uv.lock"), ("product-runtime.json", "scripts/release/product-runtime.json")):
         (runtime / saved).write_text("matching frozen input")
         (candidate / requested).write_text("matching frozen input")
-    for name in (".cache/uv", ".npm/_cacache", "Library/Caches/electron", "Library/Caches/electron-builder"):
+    for name in (
+        ".cache/uv",
+        ".npm/_cacache",
+        ".electron-gyp",
+        "Library/Caches/electron",
+        "Library/Caches/electron-builder",
+    ):
         path = home / name
         path.mkdir(parents=True)
         (path / "entry").write_text("original")
@@ -49,6 +55,7 @@ def test_matching_build_inputs_are_private_clones_with_closed_environment(inputs
     assert environment["PATH"].startswith(str(build_home / "runtime-base/bin") + ":")
     assert "OPENAI_API_KEY" not in environment
     assert "UV_CACHE_DIR" in environment
+    assert (build_home / ".electron-gyp/entry").read_text() == "original"
     assert (build_home / "runtime-base/product-uv.lock").read_bytes() == (candidate / "uv.lock").read_bytes()
     assert os.stat(build_home / "runtime-base").st_mode & 0o777 == 0o700
 

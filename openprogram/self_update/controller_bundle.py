@@ -159,7 +159,13 @@ def prepare_build_inputs(update_dir: Path, candidate: Path, build_home: Path, *,
 
     base = build_home / "runtime-base"
     copies = [(runtime, base)]
-    for relative in (".cache/uv", ".npm/_cacache", "Library/Caches/electron", "Library/Caches/electron-builder"):
+    for relative in (
+        ".cache/uv",
+        ".npm/_cacache",
+        ".electron-gyp",
+        "Library/Caches/electron",
+        "Library/Caches/electron-builder",
+    ):
         copies.append((Path.home() / relative, build_home / relative))
     for source, destination in copies:
         if source.is_symlink() or not source.is_dir() or source.stat().st_uid != os.getuid():
@@ -194,7 +200,10 @@ def prepare_build_inputs(update_dir: Path, candidate: Path, build_home: Path, *,
 @contextmanager
 def build_inputs(update_dir: Path, candidate: Path, build_home: Path, *, deadline: float):
     """Release only this build's private dependency copies, including partial copies."""
-    paths = [build_home / relative for relative in ("runtime-base", ".cache", ".npm", "Library")]
+    paths = [
+        build_home / relative
+        for relative in ("runtime-base", ".cache", ".npm", ".electron-gyp", "Library")
+    ]
     if build_home.is_symlink() or any(path.exists() or path.is_symlink() for path in paths):
         raise ValueError("private build input already exists")
     try:

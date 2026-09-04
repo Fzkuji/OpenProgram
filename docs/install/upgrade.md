@@ -47,7 +47,7 @@ openprogram worker restart
 Conversational packaging is offline. Its dependency base must have exactly the
 candidate's `uv.lock` and `scripts/release/product-runtime.json`; the controller
 uses the saved runtime's pinned build tools and private copies of existing
-npm/uv/Electron caches. It still builds the candidate's Web, docs, wheel and
+npm/uv/Electron/node-gyp caches. It still builds the candidate's Web, docs, wheel and
 Desktop archive. Missing caches or a different dependency base stop the update
 before activation; they do not authorize downloads or reuse of mismatched
 dependencies. This build path and real installed acceptance remain release gates.
