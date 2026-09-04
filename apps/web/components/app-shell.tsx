@@ -28,6 +28,7 @@ import {
 } from "@/lib/desktop-bridge";
 import { ToastHost } from "./ui/toast-host";
 import { SelfUpdateReopenNotice } from "./self-update-reopen-notice";
+import { SelfUpdateTestObject } from "./self-update-test-object";
 import { Composer } from "./chat/composer";
 import { LegacyTopbarBridge } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
@@ -506,6 +507,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       ) : null}
       {isDesktop ? <SelfUpdateReopenNotice /> : null}
+      {isDesktop ? <SelfUpdateTestObject /> : null}
       <div className="app">
       <Sidebar />
       {/* Center column: browser-style tab strip over the active tab's

@@ -19,6 +19,7 @@ import zlib
 UI_PROTOCOL = 1
 UI_INTERACTION_PROTOCOL = 1
 UI_VIEW_PROTOCOL = 1
+UI_TEST_OBJECT_PROTOCOL = 1
 MAX_CAPTURE_BYTES = 1572864
 _pending = {}
 _lock = threading.RLock()
@@ -164,6 +165,13 @@ def validate_capture(body, contract):
     if "interaction" in contract:
         step = body["interaction"]
         action = contract["interaction"]
+        if action["kind"] == "test_object":
+            if (not isinstance(step, dict) or set(step) != set(action) | {"before", "after", "restored"}
+                    or any(step[key] != value for key, value in action.items())
+                    or step["before"] != action["initial_title"] or step["after"] != action["title"]
+                    or step["restored"] != action["initial_title"]):
+                raise ValueError("isolated test object did not perform the approved change and restoration")
+            return
         if action["kind"] == "view":
             if (not isinstance(step, dict) or set(step) != {"kind", "target", "before", "after", "restored"}
                     or {key: step[key] for key in ("kind", "target")} != action
@@ -207,6 +215,8 @@ def exchange(store, *, update_id, nonce, principal_id, body=None):
         if not entry["claimed"] or entry["capture"] is not None:
             raise ValueError("UI request cannot accept another result")
         validate_capture(body, entry["contract"])
+        if "fixture" in entry and entry["fixture"] != {"phase": "restored", "title": entry["contract"]["interaction"]["initial_title"]}:
+            raise ValueError("isolated test object has no backend restoration evidence")
         encoded = json.dumps(body, allow_nan=False)
         if entry["grant"]["token"] in encoded:
             raise ValueError("capture contains a private credential")
@@ -215,12 +225,45 @@ def exchange(store, *, update_id, nonce, principal_id, body=None):
         return {"ok": True, "nonce": nonce}
 
 
+def _fixture_command(entry, command):
+    action = entry["contract"].get("interaction", {})
+    return ("fixture" in entry and isinstance(command, dict)
+            and set(command) == {"action", "nonce", "object_id", "op", "title"}
+            and command["action"] == "self_update_test_object" and command["nonce"] == entry["contract"]["nonce"]
+            and command["object_id"] == action["object_id"]
+            and (command["op"], command["title"]) in (("rename", action["title"]), ("restore", action["initial_title"])))
+
+
+async def handle_test_object(ws, command):
+    """Only mutate the active check's ephemeral object, never a session record."""
+    from .store import SelfUpdateStore
+    reply = {"ok": False}
+    try:
+        with _lock:
+            nonce = command.get("nonce") if isinstance(command, dict) else None
+            entry = _pending.get(nonce) if isinstance(nonce, str) else None
+            if (entry is None or entry["connection"] != _main_connection() or entry["connection"][0] is not ws
+                    or not entry["claimed"] or entry["capture"] is not None or time.monotonic() >= entry["end"]
+                    or not _fixture_command(entry, command)):
+                raise ValueError("test object unavailable")
+            _live(SelfUpdateStore(entry["root"]), entry["update_id"], entry["grant"])
+            fixture = entry["fixture"]
+            expected, phase = (("initial", "renamed") if command["op"] == "rename" else ("renamed", "restored"))
+            if fixture["phase"] != expected:
+                raise ValueError("test object operation already applied or out of order")
+            fixture.update(phase=phase, title=command["title"])
+            reply = {"ok": True, "nonce": nonce, "object_id": command["object_id"], **fixture}
+    except (ValueError, RuntimeError, OSError, KeyError, TypeError):
+        pass  # Never reflect arbitrary client text or private grant material.
+    await ws.send_text(json.dumps({"type": "self_update_test_object", "data": reply}))
+
+
 def permits_ws_command(ws, command):
     with _lock:
         for entry in _pending.values():
             if entry["connection"][0] is ws:
                 return isinstance(command, dict) and (
-                    command.get("action") == "webtab_result"
+                    command.get("action") == "webtab_result" or _fixture_command(entry, command)
                     or command.get("action") == "cancel_job" and command.get("job_id") == entry["grant"]["job_id"])
     return True
 
@@ -258,6 +301,8 @@ def observe_ui(store, record, check, grant):
         contract["interaction"] = deepcopy(check["interaction"])
     entry = dict(update_id=record.request.update_id, root=store.root, grant=grant, end=end,
                  connection=connection, contract=contract, claimed=False, capture=None)
+    if check.get("interaction", {}).get("kind") == "test_object":
+        entry["fixture"] = {"phase": "initial", "title": check["interaction"]["initial_title"]}
     with _lock:
         if _pending:
             raise ValueError("another main-window capture is active")

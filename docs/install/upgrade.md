@@ -140,8 +140,9 @@ restriction is released before evidence upload, including on failure, and does
 not apply to other windows. It does not revoke already running requests. The
 native adapter marks the main renderer's HTTP requests; the backend rejects
 marked requests, including authentication bootstrap and stale markers. During
-the check, that window's existing WebSocket accepts only observation replies
-and cancellation of the exact verifier Job, not ordinary application commands.
+the check, that window's existing WebSocket accepts only observation replies,
+cancellation of the exact verifier Job, and the exact approved test-object
+operations described below, not ordinary application commands.
 
 To capture the conversation after an approved scroll, add `interaction`:
 
@@ -182,10 +183,42 @@ Both candidate and rollback packages require UI protocol 3, which additionally
 binds the compiled perspective support. Protocols 1 and 2 keep their previous
 capture and scroll capabilities; they cannot accept perspective checks.
 
+To verify the real rename dialog without changing any actual session title,
+approve a temporary test object and both its change and cleanup:
+
+```json
+{"id":"rename-control","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576,"interaction":{"kind":"test_object","object_id":"rename-fixture","action":"rename","initial_title":"Before verification","title":"Approved rename","cleanup":"restore-and-remove"}}
+```
+
+`object_id` is a 1–64 character identifier using letters, digits, `_` and `-`,
+starting with a letter or digit. It identifies only this check's isolated object,
+not an existing session or path. The initial and new titles must be different,
+nonempty, trimmed strings of at most 120 characters without control characters.
+The object is scoped to the update, attempt, check and one-use operation nonce.
+It exists only in the active backend check's memory; it is never saved as user data.
+
+The adapter opens an instance of the actual rename dialog in the original main
+conversation, enters exactly the approved text and presses Save. The backend
+accepts only that exact object/value/operation from the bound socket and live Job.
+After acknowledgement, the adapter captures the image and accessibility tree,
+then presses Cancel to request the approved restoration. A successful result
+requires backend state transitions from initial to renamed to restored, the
+original title restored, and the owned dialog closed. The temporary object is
+removed when the check ends, including cancellation, timeout or worker exit.
+Interruption never permits a successful receipt; cleanup closes only this owned
+test dialog and does not rename a real conversation or restore over user input.
+
+Both packages require UI protocol 4, binding the native adapter, backend handler,
+fixture bridge and actual compiled rename control. Older protocols gain no new
+permissions. This check proves the bounded dialog operation against its temporary
+backend object; it does not prove persistent renaming of a real session or authorize
+other data changes. Missing objects, wrong input, unavailable controls, stale Jobs,
+failed backend acknowledgement or incomplete cleanup are inconclusive.
+
 The screenshot supports only assertions about the captured state; interactions
 that were not observed remain inconclusive. HTTP responses, including `/chat`
-HTML, do not prove rendered App behavior. Approved side-effect test-object actions, complete
-verification and actual installed-App acceptance remain pending.
+HTML, do not prove rendered App behavior. Other side-effect operations are not
+supported. Complete verification and actual installed-App acceptance remain pending.
 
 This source-checkout capability is separate from stable-release upgrades. On macOS,
 if a conversational self-update leaves the default App in maintenance, inspect it

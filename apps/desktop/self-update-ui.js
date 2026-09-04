@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const { runScroll } = require("./self-update-ui-scroll");
+const { runTestObject } = require("./self-update-ui-test-object");
 
 const APP = "/Applications/OpenProgram.app";
 const NONCE = /^[0-9a-f]{64}$/;
@@ -32,7 +33,12 @@ function validateContract(value, nonce) {
       Number.isInteger(step.delta_y) && step.delta_y !== 0 && Math.abs(step.delta_y) <= 1200;
     const view = step && Object.keys(step).sort().join() === "kind,target" && step.kind === "view" &&
       ["session", "dag"].includes(step.target);
-    if (!scroll && !view) {
+    const fixture = step && Object.keys(step).sort().join() === "action,cleanup,initial_title,kind,object_id,title" &&
+      step.kind === "test_object" && step.action === "rename" && step.cleanup === "restore-and-remove" &&
+      typeof step.object_id === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(step.object_id) &&
+      [step.initial_title, step.title].every(value => typeof value === "string" && value.length >= 1 &&
+        [...value].length <= 120 && value.trim() === value && !/[\u0000-\u001f]/.test(value)) && step.initial_title !== step.title;
+    if (!scroll && !view && !fixture) {
       throw new Error("invalid_capture_contract");
     }
   }
@@ -70,6 +76,7 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
     let attachedHere = false;
     let releaseGuard;
     let scrollCommand;
+    let runInteraction = runScroll;
     let bounded;
     const listeners = [];
     const stop = () => controller.abort(); // Never suppress the user's input.
@@ -120,9 +127,10 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
       if (typeof targetId !== "string" || !targetId || targetId.length > 128) throw new Error("target_unavailable");
       let interaction;
       if (contract.interaction) {
+        runInteraction = contract.interaction.kind === "test_object" ? runTestObject : runScroll;
         scrollCommand = { nonce, session_id: contract.session_id, deadline: contract.deadline,
           ...contract.interaction };
-        const moved = await bounded(runScroll(wc, { ...scrollCommand, mode: "start" }));
+        const moved = await bounded(runInteraction(wc, { ...scrollCommand, mode: "start" }));
         identity();
         interaction = { ...contract.interaction, ...moved };
       }
@@ -139,7 +147,7 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
         throw new Error("main_window_changed");
       }
       if (interaction) {
-        interaction.restored = await bounded(runScroll(wc, { ...scrollCommand, mode: "finish" }));
+        interaction.restored = await bounded(runInteraction(wc, { ...scrollCommand, mode: "finish" }));
         if (JSON.stringify(interaction.restored) !== JSON.stringify(interaction.before)) throw new Error("capture_cleanup_failed");
         identity();
         scrollCommand = null;
@@ -169,9 +177,9 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
         // Restore only while our operation still owns the view and its budget.
         // User interruption must not be overwritten by automated restoration.
         try {
-          if (!controller.signal.aborted) await bounded(runScroll(wc, { ...scrollCommand, mode: "finish" }));
+          if (!controller.signal.aborted) await bounded(runInteraction(wc, { ...scrollCommand, mode: "finish" }));
         } catch { /* failed cleanup cannot publish a successful receipt */ }
-        void runScroll(wc, { ...scrollCommand, mode: "abandon" }).catch(() => {});
+        void runInteraction(wc, { ...scrollCommand, mode: "abandon" }).catch(() => {});
       }
       clearTimeout(timer);
       controller.abort();

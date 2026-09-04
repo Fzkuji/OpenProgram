@@ -83,7 +83,7 @@ async function writeProtocol(resources) {
   const uiBackend = `${site}openprogram/self_update/ui_checks.py`;
   const uiFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("selfUpdateCapture"));
   const uiTarget = path.join(resources, "update/ui-verification-protocol.json");
-  const hasCapture = ["/self-update-ui.js", "/self-update-ui-guard.js", "/self-update-ui-scroll.js"]
+  const hasCapture = ["/self-update-ui.js", "/self-update-ui-guard.js", "/self-update-ui-scroll.js", "/self-update-ui-test-object.js"]
     .every(name => asar.listPackage(archive).includes(name));
   if (hasCapture && fs.existsSync(path.join(resources, uiBackend)) && uiFrontend &&
       /^UI_PROTOCOL = 1$/m.test(text(resources, uiBackend)) &&
@@ -118,6 +118,20 @@ async function writeProtocol(resources) {
         protocol = 3;
         uiBindings.view_frontend = await binding(resources, viewFrontend);
         uiBindings.view_controls = await binding(resources, viewControls);
+        const fixtureFrontend = chunks.map(name => chunkRoot + name).find(relative => {
+          const source = text(resources, relative);
+          return source.includes("op:self-update-test-object") && source.includes("self_update_test_object") && source.includes("selfUpdateTestObjectState");
+        });
+        const renameFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("data-rename-action"));
+        const fixtureWs = `${site}openprogram_server/_webui/ws_actions/self_update.py`;
+        if (/^UI_TEST_OBJECT_PROTOCOL = 1$/m.test(text(resources, uiBackend)) && fixtureFrontend && renameFrontend &&
+            text(resources, server).includes("_ws_self_update.ACTIONS") && fs.existsSync(path.join(resources, fixtureWs)) &&
+            text(resources, fixtureWs).includes('"self_update_test_object": handle_test_object')) {
+          protocol = 4;
+          uiBindings.test_object_frontend = await binding(resources, fixtureFrontend);
+          uiBindings.rename_frontend = await binding(resources, renameFrontend);
+          uiBindings.test_object_ws = await binding(resources, fixtureWs);
+        }
       }
     }
     const uiTemporary = `${uiTarget}.${crypto.randomUUID()}.tmp`;

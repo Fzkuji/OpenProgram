@@ -27,10 +27,14 @@ export function RenameDialog({
   initial,
   onSubmit,
   onCancel,
+  id,
+  preserveFocus = false,
 }: {
   initial: string;
   onSubmit: (title: string) => void;
   onCancel: () => void;
+  id?: string;
+  preserveFocus?: boolean;
 }) {
   const { t, text } = useTranslation();
   const [value, setValue] = useState(initial);
@@ -51,7 +55,8 @@ export function RenameDialog({
         if (!o) onCancel();
       }}
     >
-      <DialogContent className="max-w-[400px] border-0">
+      <DialogContent {...(id ? { id } : {})} className="max-w-[400px] border-0"
+        onCloseAutoFocus={preserveFocus ? (event) => event.preventDefault() : undefined}>
         <DialogHeader>
           <DialogTitle>{t("sidebar.rename")}</DialogTitle>
         </DialogHeader>
@@ -70,12 +75,13 @@ export function RenameDialog({
         <DialogFooter>
           <Button
             variant="secondary"
+            data-rename-action="cancel"
             onClick={onCancel}
             className="rounded-full bg-[var(--bg-selected)] text-[var(--text-bright)] transition-[filter] hover:bg-[var(--bg-selected)] hover:brightness-125"
           >
             {t("sidebar.cancel")}
           </Button>
-          <Button onClick={submit} className="rounded-full">
+          <Button onClick={submit} data-rename-action="save" className="rounded-full">
             {text("Save", "保存")}
           </Button>
         </DialogFooter>

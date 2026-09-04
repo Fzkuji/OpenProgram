@@ -1514,6 +1514,7 @@ def _build_ws_action_registry() -> dict:
         project as _ws_project,
         settings as _ws_settings,
         webtab as _ws_webtab,
+        self_update as _ws_self_update,
     )
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
@@ -1532,6 +1533,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_project.ACTIONS)
     table.update(_ws_settings.ACTIONS)
     table.update(_ws_webtab.ACTIONS)
+    table.update(_ws_self_update.ACTIONS)
     return table
 
 

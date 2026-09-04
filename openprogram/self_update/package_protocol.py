@@ -101,11 +101,12 @@ def validate_ui_package(app: Path) -> dict:
         data = json.loads(_read_or_hash(_file(resources, "update/ui-verification-protocol.json"), limit=16384, read=True))
         if (not isinstance(data, dict) or set(data) != {"schema", "protocol", "bindings"}
                 or type(data["schema"]) is not int or data["schema"] != 1
-                or type(data["protocol"]) is not int or data["protocol"] not in (1, 2, 3)
+                or type(data["protocol"]) is not int or data["protocol"] not in (1, 2, 3, 4)
                 or not isinstance(data["bindings"], dict)
                 or set(data["bindings"]) != ({"desktop", "backend", "routes", "frontend", "runtime_manifest"}
                     | ({"server", "owner_auth", "scroll_frontend"} if data["protocol"] >= 2 else set())
-                    | ({"view_frontend", "view_controls"} if data["protocol"] == 3 else set()))):
+                    | ({"view_frontend", "view_controls"} if data["protocol"] >= 3 else set())
+                    | ({"test_object_frontend", "rename_frontend", "test_object_ws"} if data["protocol"] == 4 else set()))):
             raise ValueError
         bindings = data["bindings"]
         for role in ("desktop", "routes", "runtime_manifest"):
@@ -119,9 +120,15 @@ def validate_ui_package(app: Path) -> dict:
                     or not re.fullmatch(re.escape(prefix) + r"openprogram_server/_webui/_frontend/_next/static/chunks/[A-Za-z0-9._-]+\.js",
                                         bindings["scroll_frontend"]["path"])):
                 raise ValueError
-        if data["protocol"] == 3 and any(not re.fullmatch(
+        if data["protocol"] >= 3 and any(not re.fullmatch(
                 re.escape(prefix) + r"openprogram_server/_webui/_frontend/_next/static/chunks/[A-Za-z0-9._-]+\.js",
                 bindings[role]["path"]) for role in ("view_frontend", "view_controls")):
+            raise ValueError
+        if data["protocol"] == 4 and any(not re.fullmatch(
+                re.escape(prefix) + r"openprogram_server/_webui/_frontend/_next/static/chunks/[A-Za-z0-9._-]+\.js",
+                bindings[role]["path"]) for role in ("test_object_frontend", "rename_frontend")):
+            raise ValueError
+        if data["protocol"] == 4 and bindings["test_object_ws"]["path"] != prefix + "openprogram_server/_webui/ws_actions/self_update.py":
             raise ValueError
         if (bindings["backend"]["path"] != backend or not re.fullmatch(
                 re.escape(prefix) + r"openprogram_server/_webui/_frontend/_next/static/chunks/[A-Za-z0-9._-]+\.js",

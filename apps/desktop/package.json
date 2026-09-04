@@ -52,6 +52,7 @@
       "self-update-ui.js",
       "self-update-ui-guard.js",
       "self-update-ui-scroll.js",
+      "self-update-ui-test-object.js",
       "tab-transfer-store.js",
       "window-state.js",
       "window-lifecycle.js",

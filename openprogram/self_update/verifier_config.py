@@ -181,7 +181,7 @@ def verifier_prompt(record: UpdateRecord, config: dict | None = None) -> str:
             observation_instruction += (
                 "ui:main returns an actual screenshot image and accessibility tree of the original session's main window. "
                 "Inspect the image for visual assertions; missing image or unobserved interaction behavior is inconclusive. "
-                "Capture does not grant permission to click, navigate, edit or submit data. "
+                "Capture alone does not grant permission to click, navigate, edit or submit data. "
             )
         if any(check.get("interaction", {}).get("kind") == "scroll" for check in config["verification_plan"]["checks"]):
             observation_instruction += (
@@ -193,6 +193,13 @@ def verifier_prompt(record: UpdateRecord, config: dict | None = None) -> str:
                 "An approved view check starts in the original conversation, captures its session/DAG perspective, "
                 "then restores the conversation and scroll position. It never navigates to another session or URL. "
                 "Missing switch or restoration evidence is inconclusive. "
+            )
+        if any(check.get("interaction", {}).get("kind") == "test_object" for check in config["verification_plan"]["checks"]):
+            observation_instruction += (
+                "The approved test_object rename uses the real dialog with an isolated backend object, never a real session title. "
+                "Its evidence requires the exact initial value, approved rename and restoration before removal. "
+                "It proves that bounded dialog operation, not persistence of a real session or unrelated UI behavior. "
+                "Cancellation, missing backend change or incomplete cleanup is inconclusive. "
             )
     return (
         "Verify the installed candidate against the frozen acceptance contract below. "

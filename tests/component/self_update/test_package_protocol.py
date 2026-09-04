@@ -17,7 +17,7 @@ WRITER = ROOT / "apps/desktop/scripts/write-reopen-protocol.cjs"
 
 @pytest.fixture
 def package_factory(tmp_path):
-    def build(name="fixture", version="0.6.2", *, app=None, ui=False, interaction=False, view=False):
+    def build(name="fixture", version="0.6.2", *, app=None, ui=False, interaction=False, view=False, test_object=False):
         if app is None:
             app = _fake_desktop_app(tmp_path / name, version)
         resources = app / "Contents/Resources"
@@ -29,6 +29,7 @@ def package_factory(tmp_path):
             shutil.copyfile(ROOT / "apps/desktop/self-update-ui.js", unpacked / "self-update-ui.js")
             shutil.copyfile(ROOT / "apps/desktop/self-update-ui-guard.js", unpacked / "self-update-ui-guard.js")
             shutil.copyfile(ROOT / "apps/desktop/self-update-ui-scroll.js", unpacked / "self-update-ui-scroll.js")
+            shutil.copyfile(ROOT / "apps/desktop/self-update-ui-test-object.js", unpacked / "self-update-ui-test-object.js")
         subprocess.run(["node", "-e", "require('@electron/asar').createPackage(process.argv[1],process.argv[2]).catch(e=>{console.error(e);process.exit(1)})",
                         str(unpacked), str(resources / "app.asar")], cwd=ROOT, check=True, capture_output=True, timeout=15)
         site = resources / "runtime/python/lib/python3.12/site-packages"
@@ -52,6 +53,12 @@ def package_factory(tmp_path):
         if view:
             chunk.write_text(chunk.read_text() + '\nconst toggle = "sessionPerspectiveToggle", lease = "data-self-update-view";')
             chunk.with_name("view-controls.js").write_text('const props = {id:"sessionPerspectiveToggle","data-tab-id":"s:p1","aria-pressed":false};')
+        if test_object:
+            handler = site / "openprogram_server/_webui/ws_actions/self_update.py"
+            handler.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / "apps/server/openprogram_server/_webui/ws_actions/self_update.py", handler)
+            chunk.with_name("test-object.js").write_text('const fixture = ["op:self-update-test-object","self_update_test_object","selfUpdateTestObjectState"];')
+            chunk.with_name("rename-dialog.js").write_text('const rename = "data-rename-action";')
         result = subprocess.run(["node", "-e", "require(process.argv[1]).default({electronPlatformName:'darwin',appOutDir:'fixture',packager:{getResourcesDir:()=>process.argv[2]}}).catch(e=>{console.error(e);process.exit(1)})",
                                  str(WRITER), str(resources)], cwd=ROOT, capture_output=True, text=True, timeout=15)
         assert result.returncode == 0, result.stderr

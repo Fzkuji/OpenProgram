@@ -42,8 +42,18 @@ def validate_plan(value, request) -> dict:
                       and interaction["delta_y"] != 0 and -1200 <= interaction["delta_y"] <= 1200)
             view = (isinstance(interaction, dict) and set(interaction) == {"kind", "target"}
                     and interaction["kind"] == "view" and interaction["target"] in ("session", "dag"))
-            if not (scroll or view):
-                raise ValueError("UI interaction requires a bounded scroll or original-session perspective")
+            fixture = (isinstance(interaction, dict) and set(interaction) == {
+                "kind", "object_id", "action", "initial_title", "title", "cleanup"}
+                and interaction["kind"] == "test_object" and interaction["action"] == "rename"
+                and interaction["cleanup"] == "restore-and-remove"
+                and isinstance(interaction["object_id"], str)
+                and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", interaction["object_id"])
+                and all(isinstance(interaction[key], str) and 1 <= len(interaction[key]) <= 120
+                        and interaction[key].strip() == interaction[key]
+                        and not any(ord(c) < 32 for c in interaction[key]) for key in ("initial_title", "title"))
+                and interaction["initial_title"] != interaction["title"])
+            if not (scroll or view or fixture):
+                raise ValueError("UI interaction requires an approved bounded scroll, perspective or isolated rename")
         if check["entry"] == "test:python":
             argv = check["argv"]
             if (not isinstance(argv, list) or not 1 <= len(argv) <= 32
@@ -60,7 +70,8 @@ def validate_plan(value, request) -> dict:
 
 def required_ui_protocol(checks) -> int:
     """Capability floor for an already validated frozen plan."""
-    return max((3 if check.get("interaction", {}).get("kind") == "view" else
+    return max((4 if check.get("interaction", {}).get("kind") == "test_object" else
+                3 if check.get("interaction", {}).get("kind") == "view" else
                 2 if "interaction" in check else 1 for check in checks), default=1)
 
 

@@ -119,7 +119,7 @@ PNG 必须为非交错的 8-bit RGB/RGBA，每个维度最多 16384，总像素�
 释放，不影响其他窗口。它不撤销已经执行中的请求。原生适配层为该主窗口的 HTTP
 请求添加验收标记；后端拒绝带标记的请求，
 包括认证 bootstrap 和过期标记。检查期间，该窗口已有的 WebSocket 只允许观察回执
-和取消确切的 verifier Job，不接受普通应用命令。
+和取消确切的 verifier Job，以及下述确切批准的测试对象操作，不接受普通应用命令。
 
 要在已批准的滚动之后截图，可添加 `interaction`：
 
@@ -151,9 +151,32 @@ PNG 必须为非交错的 8-bit RGB/RGBA，每个维度最多 16384，总像素�
 候选包和回退包都要求 UI protocol 3，额外绑定编译后的视图支持。Protocol 1 和 2
 保留原有截图、滚动能力，但不能接受视图检查。
 
+要验证实际重命名对话框而不修改真实会话名称，可批准临时测试对象、修改和清理动作：
+
+```json
+{"id":"rename-control","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576,"interaction":{"kind":"test_object","object_id":"rename-fixture","action":"rename","initial_title":"Before verification","title":"Approved rename","cleanup":"restore-and-remove"}}
+```
+
+`object_id` 为 1–64 个字母、数字、`_` 或 `-`，以字母或数字开头。它只标识本检查的
+隔离对象，不是已有会话或路径。初始名称和新名称必须不同，都是非空、两端无空白、
+不含控制字符且最多 120 个字符的字符串。对象绑定 update、attempt、check 和一次性
+操作 nonce，只存在于活动后端检查的内存中，不保存为用户数据。
+
+适配层在原主会话中打开实际重命名对话框，输入确切批准的文字并按 Save。后端只接受
+绑定 socket 和活动 Job 发出的确切对象、值和操作。收到确认后保存截图和可访问性树，
+再按 Cancel 请求批准的恢复。成功要求后端状态依次为 initial、renamed、restored，
+原名称恢复且自有对话框关闭。检查结束后删除临时对象；取消、超时或 worker 退出也会
+使其消失。中断不能生成成功回执；清理只关闭本次自有测试对话框，不重命名真实会话，
+也不恢复覆盖用户输入。
+
+候选包和回退包都要求 UI protocol 4，绑定原生适配层、后端 handler、测试对象桥接及
+编译后的实际重命名控件。旧协议不获得新权限。这项检查只证明对话框针对临时后端对象
+的有限操作，不证明真实会话名称的持久化，也不批准其他数据修改。对象缺失、输入不符、
+控件不可用、Job 失效、后端确认失败或清理不完整均为 inconclusive。
+
 截图只能支持对所捕获状态的断言；没有观察到的
 交互行为仍应判为 inconclusive。HTTP 响应（包括 `/chat` HTML）不能证明 App 界面
-实际行为。已批准的副作用测试对象操作、完整验收能力和实际已安装 App 验收仍待完成。
+实际行为。其他副作用操作不受支持；完整验收能力和实际已安装 App 验收仍待完成。
 
 这项源码 checkout 能力与 stable release 升级分开。macOS 上，对话内自更新使默认
 App 保持维护状态时，可以在本地终端检查，不需要启动 Agent：

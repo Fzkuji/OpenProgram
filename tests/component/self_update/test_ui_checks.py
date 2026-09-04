@@ -21,13 +21,20 @@ from tests.component.self_update.test_system_probe import live as http_live  # n
 from tests.component.self_update.test_verification_channel import consume, store_fixture, verifier  # noqa: F401
 
 
+def _png():
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress((b"\0" + b"\xff" * 48) * 16)) + chunk(b"IEND", b""))
+
+
 @pytest.fixture
 def ui_install(package_factory, installed_cli, monkeypatch):
     from openprogram.self_update import package_protocol, ui_checks
     from openprogram.webui import server
     from openprogram.webui.routes import misc, self_updates
     from openprogram.webui.ws_actions import webtab
-    app = package_factory(ui=True, interaction=True, view=True)
+    app = package_factory(ui=True, interaction=True, view=True, test_object=True)
     actual_package = package_protocol.validate_ui_package
     monkeypatch.setattr(package_protocol, "validate_ui_package", lambda _: actual_package(app))
     monkeypatch.setattr(ui_checks, "_process_identity", lambda identity: {"app_pid": identity["app_pid"], "renderer_pid": identity["renderer_pid"]})
@@ -39,12 +46,23 @@ def ui_install(package_factory, installed_cli, monkeypatch):
         def mutation():
             control["http_mutations"] = control.get("http_mutations", 0) + 1
             return {"ok": True}
+        @app.post("/api/test-ui-fixture")
+        async def fixture_command(body: dict):
+            control.pop("fixture_reply", None)
+            if control.get("corrupt_command"):
+                control["corrupt_command"](body)
+            await server._handle_ws_command(control["socket"], body)
+            result = control.get("fixture_reply", {"ok": False})
+            control.setdefault("fixture_trace", []).append(dict(result))
+            return result
     monkeypatch.setattr(misc, "register", routes)
     control = {"validate_package": actual_package}
     def capture():
         state = control["state"]
         url = f"http://127.0.0.1:{state.port}/api/self-updates/su_channel/desktop-verification/{control['nonce']}"
         headers = {"Authorization": f"Bearer {state.token}"}
+        if control.get("native_capture"):
+            return control["native_capture"](url, state.token, control["nonce"], _png())
         with httpx.Client(trust_env=False, timeout=5) as client:
             control["unauthorized"] = client.get(url).status_code
             response = client.get(url, headers=headers)
@@ -59,10 +77,7 @@ def ui_install(package_factory, installed_cli, monkeypatch):
                 f"http://127.0.0.1:{state.port}/api/auth/bootstrap", json={},
                 headers={**headers, "X-OpenProgram-UI-Check": control["nonce"]}).status_code
             control["duplicate_claim"] = client.get(url, headers=headers).status_code
-            def chunk(kind, data):
-                return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
-            raw = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
-                   + chunk(b"IDAT", zlib.compress((b"\0" + b"\xff" * 48) * 16)) + chunk(b"IEND", b""))
+            raw = _png()
             body = {k: contract[k] for k in ("schema", "nonce", "update_id", "attempt", "check_id", "worker_pid")}
             body.update(identity=dict(app_path="/Applications/OpenProgram.app", app_pid=55, renderer_pid=66,
                 candidate_sha=contract["candidate_sha"], window_id=1, web_contents_id=2, target_id="main-target",
@@ -85,6 +100,9 @@ def ui_install(package_factory, installed_cli, monkeypatch):
             return response.status_code == 200
     class Socket:
         async def send_text(self, payload):
+            if json.loads(payload).get("type") == "self_update_test_object":
+                control["fixture_reply"] = json.loads(payload)["data"]
+                return
             if json.loads(payload).get("type") == "action_error":
                 control["ws_guard_error"] = json.loads(payload)["data"]
                 return
@@ -160,6 +178,44 @@ def _view_plan():
     plan = _ui_plan()
     plan["checks"][0]["interaction"] = {"kind": "view", "target": "dag"}
     return plan
+
+
+def _test_object_plan():
+    plan = _ui_plan()
+    plan["checks"][0]["interaction"] = {
+        "kind": "test_object", "object_id": "rename-fixture", "action": "rename",
+        "initial_title": "Before verification", "title": "Approved rename", "cleanup": "restore-and-remove",
+    }
+    return plan
+
+
+def test_public_prepare_accepts_approved_isolated_test_object(tmp_path, monkeypatch, ui_install):
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
+    result, _ = _public_prepare(tmp_path, monkeypatch, _test_object_plan())
+    assert not result.is_error, result.content
+
+
+@pytest.mark.parametrize("field,value", [("object_id", "../p1"), ("action", "delete"),
+    ("title", ""), ("title", "not trimmed "), ("cleanup", "none")])
+def test_test_object_plan_rejects_unbounded_or_unrestorable_actions(tmp_path, monkeypatch, ui_install, field, value):
+    plan = _test_object_plan()
+    plan["checks"][0]["interaction"][field] = value
+    result, store = _public_prepare(tmp_path, monkeypatch, plan)
+    assert result.is_error
+    assert not store.root.exists()
+
+
+def test_test_object_requires_packaged_capability_four(tmp_path, monkeypatch, ui_install, package_factory):
+    old = package_factory("view-only", ui=True, interaction=True, view=True)
+    package = ui_install["validate_package"](old)
+    assert package["protocol"] == 3
+    monkeypatch.setattr("openprogram.self_update.package_protocol.validate_ui_package", lambda _: package)
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
+    result, store = _public_prepare(tmp_path, monkeypatch, _test_object_plan())
+    assert result.is_error and "guarded UI" in result.content[0].text
+    assert not store.root.exists()
 
 
 def test_public_prepare_accepts_approved_perspective(tmp_path, monkeypatch, ui_install):
