@@ -312,10 +312,16 @@ def test_legacy_server_rejects_an_already_loaded_namespace_package(tmp_path) -> 
     env = os.environ.copy()
     env["PYTHONPATH"] = str(tmp_path)
     code = """
+import importlib.machinery
+import importlib.util
 import sys
-import openprogram_server
+# Restrict namespace discovery to the fixture. A regular installed package
+# otherwise takes precedence over namespace portions on PYTHONPATH.
+spec = importlib.machinery.PathFinder.find_spec('openprogram_server', [sys.argv[1]])
+assert spec is not None and spec.loader is None
+parent = importlib.util.module_from_spec(spec)
+sys.modules['openprogram_server'] = parent
 import openprogram_server.server as stale
-parent = openprogram_server
 assert parent.__file__ is None
 try:
     import openprogram.webui.server
@@ -329,7 +335,7 @@ assert stale.STALE is True
 """
 
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", code, str(tmp_path)],
         cwd=ROOT,
         env=env,
         capture_output=True,
