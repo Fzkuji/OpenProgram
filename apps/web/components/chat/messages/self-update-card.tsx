@@ -113,11 +113,13 @@ export function SelfUpdateCard({ update }: { update: SelfUpdate }) {
     {update.phase === "needs_manual_recovery" && <p role="status">{text("Automatic recovery did not complete. Inspect recovery evidence before another update.", "自动恢复未完成。再次更新前请检查恢复证据。")}</p>}
     {update.diagnosis && <p>{text("Diagnosis", "诊断")}: {update.diagnosis.status}</p>}
     {update.source_repair_result && <p>{text("Source repair", "源码修复")}: {update.source_repair_result.status}</p>}
+    {update.source_repair_result?.candidate_sha && <p>{text("Repaired candidate revision", "修正候选版本")}: <code>{update.source_repair_result.candidate_sha}</code></p>}
     {iteration && <p>
       {text("Remaining attempts", "剩余尝试次数")}: {Math.max(0, iteration.max_attempts - iteration.attempt)} · {text("Deadline", "截止时间")}: {new Date(iteration.deadline * 1000).toLocaleString()}
       {iteration.stopped && <> · {text("Iteration stopped", "迭代已停止")}</>}
       {iteration.submission && <> · {text("Submission", "提交状态")}: {iteration.submission.status}</>}
     </p>}
+    {iteration?.submission?.child_id && <p>{text("Next update ID", "后继更新 ID")}: {iteration.submission.child_id}</p>}
     <details>
       <summary>{text("Update details and evidence", "更新详情与证据")}</summary>
       <p>{text("Update ID", "更新 ID")}: {update.update_id}</p>

@@ -252,3 +252,28 @@ test("Running retains the prior update on a partial self-update projection error
     assert.doesNotMatch(host.textContent, /Nothing is running/);
   });
 });
+
+test("repair and child identities stay distinct from the failed original target", async () => {
+  const repaired = "d".repeat(40);
+  const child = "submitted-child-two";
+  const item = { ...update, phase: "rolled_back", verifier_verdict: "fail",
+    source_repair_result: { status: "candidate_ready", at: 300, candidate_sha: repaired },
+    iteration: { root_id: update.root_id, parent_id: null, attempt: 1, max_attempts: 3,
+      deadline: 9999999999, stopped: false, submission: { status: "submitted", child_id: child, at: 310 } },
+  };
+  await mount(SelfUpdateCard, { update: item }, async (host, root) => {
+    assert.ok(host.textContent.includes(repaired));
+    assert.ok(host.textContent.includes(child));
+    assert.ok(host.textContent.includes(update.candidate_revision));
+    assert.match(host.textContent, /Verifier verdict: fail/);
+    assert.match(host.textContent, /Rolled back/);
+    assert.doesNotMatch(host.textContent, /Update committed/);
+    await act(async () => root.render(createElement(SelfUpdateCard, { update: {
+      ...item, source_repair_result: { status: "cancelled", at: 320 },
+      iteration: { ...item.iteration, submission: { status: "failed", child_id: null, at: 320 } },
+    } })));
+    assert.ok(!host.textContent.includes(repaired));
+    assert.ok(!host.textContent.includes(child));
+    assert.doesNotMatch(host.textContent, /Repaired candidate revision|Next update ID/);
+  });
+});
