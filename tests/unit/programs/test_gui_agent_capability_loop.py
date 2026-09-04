@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import builtins
 import sys
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -106,20 +106,35 @@ def test_gui_agent_replans_from_complete_capability_history(
     assert result["history"][1]["output"]["reason_code"] == "verified"
 
 
-def test_gui_controller_import_does_not_require_desktop_perception(harness_on_path):
-    script = f"""
-import sys
-sys.path.insert(0, {str(HARNESS_ROOT)!r})
-class NoPerception:
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {{'cv2', 'ultralytics'}}:
-            raise ModuleNotFoundError(fullname)
-sys.meta_path.insert(0, NoPerception())
-from gui_harness.tasks import capability_loop, result
-assert callable(capability_loop.browser_use)
-assert callable(result.conclusion)
-"""
-    subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
+def test_gui_controller_import_does_not_require_desktop_perception(
+    harness_on_path, monkeypatch,
+):
+    imported = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "gui_harness" or name.startswith("gui_harness.")
+    }
+    for name in imported:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    real_import = builtins.__import__
+
+    def reject_perception(name, *args, **kwargs):
+        if name.split(".")[0] in {"cv2", "ultralytics"}:
+            raise ModuleNotFoundError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_perception)
+    try:
+        from gui_harness.tasks import capability_loop, result
+
+        assert callable(capability_loop.browser_use)
+        assert callable(result.conclusion)
+    finally:
+        for name in tuple(sys.modules):
+            if name == "gui_harness" or name.startswith("gui_harness."):
+                sys.modules.pop(name)
+        sys.modules.update(imported)
 
 
 def test_capability_status_reports_missing_perception_dependencies(harness_on_path, monkeypatch):
