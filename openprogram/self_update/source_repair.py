@@ -338,5 +338,7 @@ def dispatch_pending():
                 with store._locked():
                     _finish(store, record, "expired" if isinstance(exc, TimeoutError) else "failed",
                             str(exc) if isinstance(exc, (ValueError, TimeoutError)) else type(exc).__name__)
+                from .next_candidate import dispatch_pending as dispatch_next
+                dispatch_next()
             except Exception:
                 _log.warning("Could not persist source repair error", exc_info=True)

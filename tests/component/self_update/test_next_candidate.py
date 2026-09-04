@@ -683,3 +683,72 @@ def test_valid_legacy_candidate_waits_for_explicit_new_approval(diagnosis_enviro
     assert store.load_active() is None and not launches
     assert next_candidate.status(store, root)["status"] == "awaiting_approval"
     assert not (store.root / update_id / "iteration-next.json").exists()
+
+
+@pytest.mark.parametrize("diagnosis_environment", [
+    {"required_tests": ["python -c 'assert True'"]},
+    {"mode": "bounded_auto", "max_attempts": 3, "deadline": time.time() + 3600,
+     "allowed_paths": ["feature.txt"], "required_tests": ["python -c 'assert True'"]},
+], indirect=True)
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+@native_sandbox
+def test_first_startup_resumes_durable_repair_result_without_retesting(diagnosis_environment, monkeypatch):
+    from openprogram.self_update import SelfUpdateStore, source_repair, next_candidate
+    from openprogram.self_update.handoff import release_prepared_update
+    from openprogram.agent.internals import _approval
+    from openprogram.programs.tools.system import self_update as tools
+    store, runner, _, uid = diagnosis_environment
+    root = store.load(uid)
+    write = SelfUpdateStore._write_json
+    class LostWorker(BaseException):
+        pass
+    def cut_after_result(self, path, value):
+        write(self, path, value)
+        if path.name == "source-repair-result-1.json" and value["status"] == "candidate_ready":
+            raise LostWorker()
+    monkeypatch.setattr(SelfUpdateStore, "_write_json", cut_after_result)
+    launches = []
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda child, **kw: launches.append(child))
+    _turn(diagnosis_environment, monkeypatch)
+    _start()
+    result = _result(diagnosis_environment)
+    assert result["status"] == "candidate_ready"
+    assert wait_until(lambda: (str(store.root), uid) not in source_repair._threads, timeout=5)
+    assert source_repair._pointer(store) == uid and next_candidate._pointer(store) is None
+    monkeypatch.setattr(SelfUpdateStore, "_write_json", write)
+    jobs = {job.id for job in runner.list_jobs("p1")}
+    log = Path(result["candidate"]["tests"][0]["log_path"])
+    log_before = (log.read_bytes(), log.stat().st_mtime_ns)
+    result_path = store.root / uid / "source-repair-result-1.json"
+    result_before = result_path.read_bytes()
+
+    _start()  # Exactly one recovery startup must perform the continuation.
+    if root.request.iteration_policy.mode.value == "approve_each_activation":
+        assert store.load_active() is None and not launches
+        assert next_candidate.status(store, root)["status"] == "awaiting_approval"
+        req = _request(session_id="p1", user_msg_id="retry_user", permission_mode="bypass")
+        monkeypatch.setattr(tools, "_turn_context", lambda: (req, "retry_reply"))
+        approvals = []
+        async def approve(**kwargs):
+            approvals.append(kwargs["args"])
+            return True, None, "once"
+        monkeypatch.setattr(_approval, "await_user_approval", approve)
+        wrapped = _approval.wrap_with_approval(tools.self_update_retry, req, lambda _: None)
+        outcome = asyncio.run(wrapped.execute("retry", dict(update_id=uid,
+            candidate_sha=result["candidate"]["candidate_sha"]), None, None))
+        assert not outcome.is_error and len(approvals) == 1, outcome
+        assert store.load_active().state.phase.value == "preparing"
+        assert release_prepared_update("p1", "another_reply", store=store) is None
+        assert release_prepared_update("p1", "retry_reply", store=store).phase.value == "staging"
+    child = store.load_active()
+    assert child is not None, next_candidate.status(store, root)
+    assert child.state.attempt == 2 and child.request.candidate_sha == result["candidate"]["candidate_sha"]
+    assert child.request.iteration_policy.deadline == root.request.iteration_policy.deadline
+    assert set(launches) == {child.request.update_id}
+    reservation = (store.root / uid / "iteration-next.json").read_bytes()
+    _start()
+    assert store.load_active().request == child.request
+    assert (store.root / uid / "iteration-next.json").read_bytes() == reservation
+    assert {job.id for job in runner.list_jobs("p1")} == jobs
+    assert result_path.read_bytes() == result_before
+    assert (log.read_bytes(), log.stat().st_mtime_ns) == log_before
