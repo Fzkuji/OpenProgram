@@ -437,6 +437,7 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
     from openprogram.agent.resource_governance import ResourceGovernor
     from openprogram.agent.job.runner import JobRunner
     from openprogram.agent.job.types import JobStatus
+    from openprogram.agent.production_driver import AgentProductionDriver
     from openprogram.usage.ledger import UsageLedger
 
     broadcasts = []
@@ -452,7 +453,18 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
 
     monkeypatch.setattr(runner_mod, "_store_update_status", fail_running)
     ledger = UsageLedger(tmp_path / "running-write.db")
-    runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
+    drivers = []
+
+    def make_driver(store, service):
+        driver = AgentProductionDriver(store, control_service=service)
+        drivers.append(driver)
+        return driver
+
+    runner = JobRunner(
+        max_workers=1,
+        governor=ResourceGovernor(ledger),
+        agent_driver_factory=make_driver,
+    )
     job_id = runner.spawn_job(
         session_id="p1", prompt="x", agent_id="main", parent_msg_id="a1",
     )
@@ -467,6 +479,9 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
         assert ledger.connection().execute(
             "SELECT state FROM job_finalizations WHERE job_id = ?", (job_id,),
         ).fetchone()[0] == "pending"
+        assert len(drivers) == 1
+        assert wait_until(lambda: not drivers[0]._handles, timeout=2)
+        assert not drivers[0]._continuation_start_gates
         failed = False
         broadcasts.clear()
         runner._reconcile_resources()

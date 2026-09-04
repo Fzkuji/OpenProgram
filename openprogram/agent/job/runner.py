@@ -2368,6 +2368,8 @@ class JobRunner:
         execution = self._execution_store.get_execution(execution_id)
         if execution is None or execution.status.value != "queued":
             return None
+        binding = None
+        abort_unbound = False
         try:
             leased, reserved = self._execution_attempts.lease(
                 execution_id,
@@ -2384,6 +2386,7 @@ class JobRunner:
             binding = self._run_control(
                 driver.activate(active, ActivationInput(checkpoint=None)),
             )
+            abort_unbound = True
             projected = _store_update_status(
                 execution.session_id,
                 execution_id,
@@ -2393,11 +2396,24 @@ class JobRunner:
             if projected is None:
                 raise RuntimeError(
                     f"job projection {execution_id!r} is unavailable after activation"
-                )
+            )
             _broadcast_job_status(projected)
+            # _bind_driver aborts its own failed bind. Only failures before
+            # this call need the explicit pre-bind cleanup below.
+            abort_unbound = False
             self._execution_control._bind_driver(binding)
             return active, running, binding
         except Exception:
+            if abort_unbound and binding is not None:
+                aborted = getattr(binding.driver, "activation_aborted", None)
+                if callable(aborted):
+                    try:
+                        aborted(binding)
+                    except Exception:
+                        _log.exception(
+                            "failed to abort unbound canonical job driver %s",
+                            execution_id,
+                        )
             # Canonical recovery is the only cleanup for an activated attempt;
             # it fences any partial owner before the resource claim is released.
             current = self._execution_store.get_execution(execution_id)
