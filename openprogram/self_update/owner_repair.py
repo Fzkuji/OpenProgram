@@ -212,7 +212,7 @@ def status(update_id: str | None = None) -> dict:
 def run_repair(store, record, installer_sha256: str) -> int | None:
     """Called only while the public supervisor owns its per-update lock."""
     from . import supervisor
-    from .system_probe import _probe_system
+    from .system_probe import _probe_system, SystemProbeError
     request = load_repair(store, record)
     if request is None:
         return None
@@ -257,7 +257,17 @@ def run_repair(store, record, installer_sha256: str) -> int | None:
             elif plan["action"] == "accepted-candidate":
                 command("--commit", 300)
             command("--restart-terminal:" + terminal, 180)
-        gate = _probe_system(record, plan["target_revision"], min(60, remaining()))
+        # WorkerLock publication precedes provider/Web/frontend readiness.
+        probe_deadline = time.monotonic() + min(60, remaining())
+        while True:
+            try:
+                gate = _probe_system(record, plan["target_revision"], min(remaining(), probe_deadline - time.monotonic()))
+                break
+            except SystemProbeError:
+                wait = min(remaining(), probe_deadline - time.monotonic())
+                if wait <= 0:
+                    raise
+                time.sleep(min(0.2, wait))
         if plan["action"] == "unchanged-old" and gate["candidate_sha"] == record.request.candidate_sha:
             raise ValueError("aborted update is running the candidate")
         command("--verify-terminal:" + terminal, 30)

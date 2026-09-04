@@ -2,6 +2,8 @@
 import json
 import os
 import sys
+import subprocess
+import threading
 import time
 from types import SimpleNamespace
 
@@ -105,6 +107,16 @@ def manual(v):
                          detail=v.v.store.load(v.v.request.update_id).state.detail)
 
 
+def advance_probe_waits(monkeypatch):
+    """Keep permanent-failure probes real; advance only the repair retry clock."""
+    from openprogram.self_update import owner_repair
+    elapsed = [0.0]
+    monkeypatch.setattr(owner_repair, "time", SimpleNamespace(
+        time=time.time, monotonic=lambda: time.monotonic() + elapsed[0],
+        sleep=lambda seconds: elapsed.__setitem__(0, elapsed[0] + max(seconds, 61)),
+    ))
+
+
 @pytest.mark.parametrize("confirmation", ["no", "changed", "eof"])
 def test_confirmation_refusal_or_stale_plan_does_not_authorize(recoverable, monkeypatch, confirmation):
     v = recoverable
@@ -143,6 +155,7 @@ def test_approved_repair_fails_closed_without_clearing_maintenance(recoverable, 
         (v.transaction / "previous.app/drift").write_text("changed")
     elif damage == "doctor":
         v.v.flags["doctor"] = False
+        advance_probe_waits(monkeypatch)
     else:
         (v.update / "controller/manifest.json").rename(v.update / "retained-manifest.json")
     assert run(v) == 1
@@ -227,6 +240,7 @@ def test_startup_waits_for_approved_repair_without_new_job(recoverable, monkeypa
         else:
             if outcome == "failed":
                 v.v.flags["doctor"] = False
+                advance_probe_waits(monkeypatch)
             assert run(v) == (0 if outcome == "recovered" else 1)
     monkeypatch.setattr(recovery, "time", SimpleNamespace(time=time.time, monotonic=lambda: clock[0], sleep=pause))
     assert recovery.recover_pending_updates() is (outcome == "recovered")
@@ -373,3 +387,69 @@ def test_deterministic_launch_failure_requires_new_consent_unless_controller_is_
     assert cli(monkeypatch, "repair", v.v.request.update_id) == 1
     assert prompts and v.commands == [] and repair.status(v.v.request.update_id)["maintenance"]
     assert repair.load_repair(v.v.store, v.v.store.load(v.v.request.update_id)) == request
+
+
+def test_public_repair_waits_for_restarted_worker_web_readiness(recoverable, monkeypatch):
+    from openprogram.self_update import owner_repair, system_probe
+    from openprogram.worker import lifecycle
+    from openprogram.webui.routes import misc
+    v = recoverable
+    manual(v)
+    lock_path, ready_path = v.tmp / "inert-child.lock", v.tmp / "inert-child.web-ready"
+    child_code = (
+        "from pathlib import Path; import sys,time; "
+        "from openprogram.worker.lock import WorkerLock; "
+        "lock=WorkerLock(); lock.path=Path(sys.argv[1]); assert lock.try_acquire(); "
+        "time.sleep(2); Path(sys.argv[2]).touch(); time.sleep(30)"
+    )
+    # Real restart lifecycle, but only an inert fixture child, never a worker/App.
+    monkeypatch.setattr(lifecycle, "_detached_worker_command", lambda: [
+        sys.executable, "-c", child_code, str(lock_path), str(ready_path)])
+    monkeypatch.setattr(lifecycle.paths, "log_path", lambda: v.tmp / "inert-child.log")
+    monkeypatch.setattr(lifecycle, "read_worker_port", lambda: None)
+    children, early_returns = [], []
+    native_popen = subprocess.Popen
+    def popen(*args, **kwargs):
+        proc = native_popen(*args, **kwargs)
+        if args[0][0:2] == [sys.executable, "-c"] and child_code in args[0]:
+            children.append(proc)
+        return proc
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    original_command = supervisor._installer_command
+    watcher = None
+    def command(argument, directory, sha, mode, **kwargs):
+        nonlocal watcher
+        result = original_command(argument, directory, sha, mode, **kwargs)
+        if mode.startswith("--restart-terminal:"):
+            v.v.flags["web"] = False
+            def fixture_pid():
+                return int(lock_path.read_text()) if lock_path.exists() else None
+            monkeypatch.setattr(lifecycle, "current_worker_pid", fixture_pid)
+            assert lifecycle.restart_worker() == 0
+            early_returns.append(not ready_path.exists())
+            v.v.flags["pid"] = fixture_pid()
+            monkeypatch.setattr(misc, "os", SimpleNamespace(getpid=lambda: v.v.flags["pid"]))
+            def become_ready():
+                until = time.monotonic() + 8
+                while not ready_path.exists() and time.monotonic() < until:
+                    time.sleep(0.02)
+                v.v.flags["web"] = ready_path.exists()
+            watcher = threading.Thread(target=become_ready)
+            watcher.start()
+        return result
+    monkeypatch.setattr(supervisor, "_installer_command", command)
+    try:
+        code = cli(monkeypatch, "repair", v.v.request.update_id)
+        if watcher:
+            watcher.join(timeout=10)
+        assert early_returns == [True] and ready_path.exists()
+        gate = system_probe._probe_system(v.v.store.load(v.v.request.update_id), "3" * 40, 10)
+        assert gate["worker_pid"] == children[0].pid
+        assert code == 0, owner_repair.status(v.v.request.update_id)
+        assert len(v.v.runner.list_jobs("p1")) == 1
+    finally:
+        for proc in children:
+            proc.terminate()
+            proc.wait(timeout=5)
+        if watcher:
+            watcher.join(timeout=10)
