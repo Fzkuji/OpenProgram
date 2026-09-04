@@ -334,6 +334,12 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
         ),
     )
     browser_probes: list[Path] = []
+    icon_probes: list[Path] = []
+    monkeypatch.setattr(
+        supervisor,
+        "_complete_icon_probe",
+        lambda candidate, *_args, **_kwargs: icon_probes.append(candidate),
+    )
     monkeypatch.setattr(
         supervisor, "_complete_browser_probe",
         lambda artifact, *_args, **_kwargs: browser_probes.append(artifact),
@@ -362,6 +368,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
         "NEXT_TELEMETRY_DISABLED",
         "NPM_CONFIG_AUDIT",
         "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER",
+        "OPENPROGRAM_SELF_UPDATE_DEFER_ICON_RENDER",
         "OPENPROGRAM_SMOKE_PORT",
         "OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE",
     }
@@ -370,6 +377,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     assert str(tmp_path / "profile") in profile
     assert validations == ["registered", "snapshot", "registered", "snapshot"]
     assert browser_probes == [artifact.path]
+    assert icon_probes == [candidate]
     assert (root / "su_supervisor" / "artifact.json").is_file()
 
 

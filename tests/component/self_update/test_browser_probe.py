@@ -167,3 +167,42 @@ def test_manifest_rebind_rejects_a_protocol_with_the_wrong_prior_hash(tmp_path):
             artifact / "Contents/Resources", "0" * 64
         )
     assert not (update / "browser-probe.json").exists()
+
+
+def test_trusted_icon_probe_uses_fixed_sources_and_records_hashes(tmp_path, monkeypatch):
+    from openprogram.self_update import supervisor
+
+    candidate = tmp_path / "candidate"
+    assets = candidate / "apps/desktop/build/AppIcon.icon/Assets"
+    assets.mkdir(parents=True)
+    names = (
+        "01-orbit.svg",
+        "02-node-blue.svg",
+        "03-node-purple.svg",
+        "04-node-indigo.svg",
+    )
+    for name in names:
+        (assets / name).write_text(f"<svg>{name}</svg>")
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if "--out" in argv:
+            Path(argv[-1]).write_bytes(b"png")
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            "pixelWidth: 1024\npixelHeight: 1024\nhasAlpha: yes\n",
+            "",
+        )
+
+    monkeypatch.setattr(supervisor.subprocess, "run", run)
+    supervisor._complete_icon_probe(
+        candidate, tmp_path, deadline=time.time() + 10
+    )
+    receipt = json.loads((tmp_path / "icon-probe.json").read_text())
+    assert set(receipt["sources"]) == set(names)
+    assert len(calls) == 8
+    assert all(call[0][0] == "/usr/bin/sips" for call in calls)
+    assert all(set(call[1]["env"]) == {"PATH", "HOME", "TMPDIR"} for call in calls)

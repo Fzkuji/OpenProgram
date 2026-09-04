@@ -56,6 +56,8 @@ The packaged worker smoke test uses one controller-selected private loopback
 port and never the default port 18100. Browser automation is checked separately
 by the saved trusted runtime against browser assets whose tree hash matches that
 runtime. Both checks must complete before activation.
+The fixed macOS icon render check also runs under the trusted controller instead
+of granting the candidate build access to host graphics services.
 
 The source-checkout `self_update_prepare` chat tool accepts an optional
 `verification_plan` argument. The plan is included in the mandatory owner

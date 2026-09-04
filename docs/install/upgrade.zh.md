@@ -53,6 +53,7 @@ Desktop archive 仍重新构建。缓存缺失或依赖基线不匹配时，在�
 packaged worker smoke 只使用控制器选择的单个私有 loopback 端口，且不会使用默认端口
 18100。浏览器自动化由保存的可信 runtime 单独检查，并要求候选浏览器资源树 hash 与该
 runtime 一致。两项检查都完成后才允许激活。
+固定的 macOS 图标渲染检查也由可信控制器执行，不向候选构建开放宿主图形服务。
 
 源码 checkout 的聊天工具 `self_update_prepare` 接受可选的 `verification_plan`
 参数。计划包含在强制 owner 审批中，并与不可变请求一起保存。例如：

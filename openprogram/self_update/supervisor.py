@@ -180,6 +180,72 @@ def _rebind_runtime_manifest(resources: Path, previous_sha256: str) -> None:
         atomic_write_text(path, json.dumps(document, sort_keys=True) + "\n")
 
 
+def _complete_icon_probe(
+    candidate: Path,
+    update_dir: Path,
+    *,
+    deadline: float,
+) -> None:
+    assets = candidate / "apps/desktop/build/AppIcon.icon/Assets"
+    names = (
+        "01-orbit.svg",
+        "02-node-blue.svg",
+        "03-node-purple.svg",
+        "04-node-indigo.svg",
+    )
+    sources = []
+    for name in names:
+        source = assets / name
+        if source.is_symlink() or not source.is_file() or source.stat().st_size > 1_048_576:
+            raise RuntimeError("candidate icon source is unavailable")
+        sources.append(source)
+    with tempfile.TemporaryDirectory(prefix="icon-probe-", dir=update_dir) as temporary:
+        probe_dir = Path(temporary)
+        for source in sources:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                raise RuntimeError("candidate icon probe deadline expired")
+            rendered = probe_dir / f"{source.name}.png"
+            converted = subprocess.run(
+                ["/usr/bin/sips", "-s", "format", "png", str(source), "--out", str(rendered)],
+                env={"PATH": "/usr/bin:/bin", "HOME": str(probe_dir), "TMPDIR": str(probe_dir)},
+                capture_output=True,
+                text=True,
+                timeout=min(20, remaining),
+            )
+            if converted.returncode != 0:
+                raise RuntimeError("trusted icon render probe failed")
+            inspected = subprocess.run(
+                ["/usr/bin/sips", "-g", "pixelWidth", "-g", "pixelHeight", "-g", "hasAlpha", str(rendered)],
+                env={"PATH": "/usr/bin:/bin", "HOME": str(probe_dir), "TMPDIR": str(probe_dir)},
+                capture_output=True,
+                text=True,
+                timeout=min(10, max(0.1, deadline - time.time())),
+            )
+            if (
+                inspected.returncode != 0
+                or "pixelWidth: 1024" not in inspected.stdout
+                or "pixelHeight: 1024" not in inspected.stdout
+                or "hasAlpha: yes" not in inspected.stdout
+            ):
+                raise RuntimeError("trusted icon metadata probe failed")
+    atomic_write_text(
+        update_dir / "icon-probe.json",
+        json.dumps(
+            {
+                "schema": 1,
+                "sources": {
+                    source.name: hashlib.sha256(source.read_bytes()).hexdigest()
+                    for source in sources
+                },
+                "verified_at": time.time(),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+    )
+
+
 def _complete_browser_probe(
     artifact: Path,
     runtime_base: Path,
@@ -323,6 +389,7 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         "NEXT_TELEMETRY_DISABLED": "1",
         "NPM_CONFIG_AUDIT": "false",
         "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER": "1",
+        "OPENPROGRAM_SELF_UPDATE_DEFER_ICON_RENDER": "1",
         "OPENPROGRAM_SMOKE_PORT": str(smoke_port),
     }
     from .controller_bundle import build_inputs
@@ -353,6 +420,11 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
             (result.stdout + result.stderr)[-200_000:],
         )
         if result.returncode == 0:
+            _complete_icon_probe(
+                candidate,
+                update_dir,
+                deadline=record.request.created_at + record.request.timeout_seconds,
+            )
             _complete_browser_probe(
                 artifact,
                 Path(inputs["OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE"]),

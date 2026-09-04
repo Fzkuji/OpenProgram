@@ -129,17 +129,19 @@ grep -q 'runner: macos-26$' "$release_workflow" \
 grep -q 'runner: macos-15-intel$' "$release_workflow" \
   || fail "x86_64 desktop releases must use the macos-15-intel runner"
 
-audit_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-icon-check.XXXXXX")"
-trap 'rm -rf "$audit_dir"' EXIT
-for modern_symbol_svg in "${modern_symbol_svgs[@]}"; do
-  rendered="$audit_dir/${modern_symbol_svg##*/}.png"
-  sips -s format png "$modern_symbol_svg" --out "$rendered" >/dev/null
-  dimensions="$(sips -g pixelWidth -g pixelHeight "$rendered" 2>/dev/null | awk '/pixelWidth:/ {w=$2} /pixelHeight:/ {h=$2} END {print w "x" h}')"
-  [[ "$dimensions" == "1024x1024" ]] \
-    || fail "Apple icon artwork must render at 1024 x 1024: ${modern_symbol_svg##*/}"
-  alpha="$(sips -g hasAlpha "$rendered" 2>/dev/null | awk '/hasAlpha:/ {print $2}')"
-  [[ "$alpha" == "yes" ]] \
-    || fail "Apple icon artwork must keep a transparent canvas: ${modern_symbol_svg##*/}"
-done
+if [[ "${OPENPROGRAM_SELF_UPDATE_DEFER_ICON_RENDER:-}" != 1 ]]; then
+  audit_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-icon-check.XXXXXX")"
+  trap 'rm -rf "$audit_dir"' EXIT
+  for modern_symbol_svg in "${modern_symbol_svgs[@]}"; do
+    rendered="$audit_dir/${modern_symbol_svg##*/}.png"
+    sips -s format png "$modern_symbol_svg" --out "$rendered" >/dev/null
+    dimensions="$(sips -g pixelWidth -g pixelHeight "$rendered" 2>/dev/null | awk '/pixelWidth:/ {w=$2} /pixelHeight:/ {h=$2} END {print w "x" h}')"
+    [[ "$dimensions" == "1024x1024" ]] \
+      || fail "Apple icon artwork must render at 1024 x 1024: ${modern_symbol_svg##*/}"
+    alpha="$(sips -g hasAlpha "$rendered" 2>/dev/null | awk '/hasAlpha:/ {print $2}')"
+    [[ "$alpha" == "yes" ]] \
+      || fail "Apple icon artwork must keep a transparent canvas: ${modern_symbol_svg##*/}"
+  done
+fi
 
 printf 'Apple icon source checks passed\n'
