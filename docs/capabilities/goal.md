@@ -1,60 +1,102 @@
 # Goal Workflow
 
-Goal repeatedly runs an agent and asks a separate completion judge whether a
-condition has been met. There is one Goal Workflow. How it is started decides
-whether the current conversation is included. The judge uses the session's
-picked model unless `goal.judge_model` is set to a `provider/model` or a bare
-model name.
+Goal repeatedly runs a working agent and asks a separate completion judge to
+evaluate the available evidence. The objective, progress, resource usage, and
+latest checkpoint are stored with the session, so reloading the page does not
+remove the Goal.
 
-## Start it yourself
+## Start a Goal
 
-A user-started run always includes the current conversation as initial
-evidence (`context_mode=session`): the Programs form, `/goal`, the welcome
-button, and Retry. Open **Programs → Workflow → goal → Use** and fill in the
-task (`prompt`); `condition` stays hidden and defaults to that text. Or type
-the condition after `/goal`:
+Open **Programs → Workflow → goal → Use**, or enter:
 
 ```text
 /goal all unit tests pass and the README documents the new flag
 ```
 
-The runtime card is recorded in the owning conversation. The Workflow then
-uses the same refinement, judge, round limit, question handling, progress
-state, and terminal statuses for every entry.
+Programs and Python calls default to isolated context. `/goal` includes a
+snapshot of the current conversation as initial evidence. The working agent
+and judge otherwise use the same implementation.
 
-## When the agent or Python starts it
+Optional limits are `max_rounds`, `max_tokens`, `max_elapsed_s`, and
+`max_cost_usd`. Limits and usage remain cumulative when a Goal is resumed.
+The default working-turn timeout is 300 seconds; Python and CLI callers can
+override it with `timeout_s`. Cumulative budgets are checked at controller
+boundaries, so the current phase can consume resources beyond a total limit
+before that limit stops the next phase.
 
-An agent-issued `goal` call can pass `context_mode`: `isolated` (no session
-view) or `session` (include the current conversation). Omitting it defaults
-to `isolated`. A direct Python `goal(...)` call also defaults to `isolated`.
+## Inspect and control it
 
-The active Goal appears in the composer GoalChip. A question from the judge
-uses the standard question panel and stays there while work continues. When
-you answer, the next work round receives that answer and restarts its round
-budget. If you decline or leave the answer empty, the Workflow continues on
-its own with the most reasonable plan instead of stopping.
+The Goal chip in the composer opens a detail dialog. It shows the objective,
+status, checklist, resource usage, last decision reason, and all pending
+questions. The dialog supports editing, pausing, resuming, answering individual
+questions, changing execution limits, and cancelling.
 
-## Status and control
+The same operations are available in the TUI:
 
 ```text
 /goal
+/goal pause
+/goal resume
+/goal edit focus the survey on knowledge editing
+/goal answer use papers published since 2023
+/goal answer <question-id> use papers published since 2023
 /goal clear
 ```
 
-`/goal` reports the Goal associated with the current session. `/goal clear`
-marks an active or waiting Goal as cleared; the Workflow checks that state
-between rounds and stops without replacing it.
+Editing creates a new objective revision and pauses the Goal until it is
+resumed. Pending questions from the old revision are retained as superseded
+audit records and no longer block the new revision. Answers are stored before
+they are consumed, so a worker restart cannot discard them. The short answer
+form targets the oldest pending question; include a question ID to answer
+another item in the queue.
 
-The ordinary Stop control cancels the current Goal function run. Clearing and
-cancelling are different: clear changes the Goal state, while Stop cancels the
-execution boundary.
+## Waiting and restart recovery
 
-## Terminal statuses
+Questions are asynchronous. The judge records a question when some required
+work needs information that cannot be established safely. If independent work
+remains, the Goal keeps running that work and leaves the question in the Goal
+dialog. It enters `waiting_user` only when every remaining required action
+depends on an answer. It never guesses or performs answer-dependent work.
+
+Several questions may accumulate. Answer them individually in the Goal dialog
+or with `/goal answer`. An answer submitted to an active Goal is consumed at
+the next controller boundary without starting a second execution. A waiting
+Goal resumes after any new answer to perform newly unblocked work; other
+questions remain pending. A Goal explicitly paused by the user stays paused.
+Goal questions never replace or disable the normal chat composer.
+
+In attended mode, the judge may record a question for a high-impact ambiguity,
+missing access, or required approval, but ordinary implementation choices stay
+autonomous. In unattended mode, questions never interrupt execution; the Goal
+finishes all safe independent work and then waits if necessary. The composer's
+Unattended control selects the mode for that session; reconnecting the page
+restores the selected mode to the worker.
+
+If the worker restarts while a Goal is refining, working, or evaluating, the
+stored status becomes `paused_recoverable`. The Goal dialog still displays its
+objective, checklist, usage, checkpoint, and reason. Use Resume or
+`/goal resume` to start a new execution from that saved state.
+
+`waiting_external` also stops work turns, but automatic external-event wakeup
+is not implemented. Resume it explicitly after the external dependency changes.
+
+## Statuses
 
 | Status | Meaning |
 | --- | --- |
-| `achieved` | The judge accepted the condition and every checklist item. |
-| `capped` | The round limit was reached (`goal.max_turns`, default 150; zero or negative in config = unlimited). |
-| `error` | Repeated judge failure, checklist stall, or consecutive tool-less rounds stopped the run. |
-| `waiting_user` | The judge asked a question and is waiting for an answer. |
-| `cleared` | The current session cleared the Goal. |
+| `refining`, `active`, `running`, `evaluating` | Goal execution is active. |
+| `waiting_user` | The Goal requires a user answer. |
+| `waiting_external` | An external dependency must change before resume. |
+| `paused`, `paused_recoverable` | Paused by the user or recovered after restart. |
+| `blocked` | A recoverable dependency or permission prevents progress. |
+| `impossible` | The current objective and constraints cannot be satisfied. |
+| `stalled` | Repeated rounds produced no accepted progress. |
+| `budget_exhausted` | A configured turn, token, time, or cost limit was reached. |
+| `failed` | Execution or repeated judge evaluation failed. |
+| `achieved` | The judge accepted the result and checklist. |
+| `cancelled` | The user ended the Goal. |
+
+Elapsed-time limits count active controller time. Time spent in
+`waiting_user`, `waiting_external`, `paused`, or `paused_recoverable` is not
+charged to the execution budget. Token and cost accounting uses an active-run
+cursor, so unrelated session activity while the Goal is waiting is excluded.

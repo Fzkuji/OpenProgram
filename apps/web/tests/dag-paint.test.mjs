@@ -89,6 +89,31 @@ test("Program internals are folded into the Program thread by default", async ()
   );
 });
 
+test("Program LLM leaves stay folded even when predecessor is stamped", async () => {
+  const { buildThreadModel, isChainNode } = await import(
+    "../lib/runtime-bridge/dag/passes/thread.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0, created_at: 0 },
+    { id: "program", role: "tool", function: "gui_agent", caller: "",
+      predecessor: "ROOT", _lane: 0, created_at: 1 },
+    { id: "internal-reply", role: "assistant", caller: "program",
+      predecessor: "program", _lane: 0, created_at: 2 },
+    { id: "internal-step", role: "tool", function: "inspect",
+      caller: "internal-reply", predecessor: "internal-reply",
+      _lane: 0, created_at: 3 },
+  ];
+  const byId = Object.fromEntries(graph.map((node) => [node.id, node]));
+
+  assert.equal(isChainNode(byId["internal-reply"], byId), false);
+  const model = buildThreadModel(graph, "program");
+  assert.deepEqual(model.visible.map((node) => node.id), ["ROOT", "program"]);
+  assert.deepEqual(
+    model.events.program.map((event) => event.id),
+    ["internal-reply", "internal-step"],
+  );
+});
+
 test("Program overview projection preserves semantic edges and real forks", async () => {
   const { projectTopPrograms } = await import(
     "../lib/runtime-bridge/dag/passes/project-programs.ts"

@@ -1,40 +1,64 @@
 # Goal Workflow
 
-Goal 反复执行 Agent，并由独立 completion judge 判断完成条件是否满足。产品里只有一个 Goal Workflow；是否带上当前会话，取决于怎么启动。judge 默认使用会话当前选中的模型；配置 `goal.judge_model` 为 `provider/model` 或裸模型名可覆盖。
+Goal 会反复运行 Working Agent，并由独立 completion judge 根据现有证据判定。目标、进度、资源用量和最近 checkpoint 保存在所属 session 中，因此重新加载页面不会删除 Goal。
 
-## 自己启动
+## 启动 Goal
 
-用户手动启动一律带上当前会话作为初始证据（`context_mode=session`）：Programs 表单、`/goal`、welcome 按钮、Retry。打开 **Programs → Workflow → goal → Use**，只填任务（`prompt`）；`condition` 保持隐藏，默认等于这段话。或在输入框键入：
+打开 **Programs → Workflow → goal → Use**，或输入：
 
 ```text
 /goal 所有单元测试通过，并且 README 说明了新参数
 ```
 
-runtime card 仍记录在所属会话中。此后 refinement、judge、轮次上限、用户提问、进度状态和终态对每种入口都相同。
+Programs 和 Python 调用默认使用隔离上下文。`/goal` 会把当前会话快照作为初始证据。除此以外，两种入口使用相同的 Working Agent 与 judge 实现。
 
-## Agent 或 Python 启动
+可选限制包括 `max_rounds`、`max_tokens`、`max_elapsed_s` 和 `max_cost_usd`。Goal 恢复后继续累计限制与用量。
+单个工作轮次默认限时 300 秒，Python 和 CLI 调用可以通过 `timeout_s` 覆盖。累计预算在 controller 边界检查，因此当前阶段可能先超出累计上限，再由该上限阻止后续阶段。
 
-Agent 自己调用 `goal` 时可传 `context_mode`：`isolated`（不带会话）或 `session`（带上当前会话）。不传则默认 `isolated`。Python 直接调用 `goal(...)` 同样默认 `isolated`。
+## 查看与控制
 
-active Goal 显示在 composer 的 GoalChip 中。judge 提问时使用标准问题面板；问题挂着，工作继续。答到后下一轮工作会注入该回答并重置轮次预算。拒绝回答或答案为空时，Workflow 不会停止，而是自行选择最合理方案继续。
+composer 中的 Goal 状态条会打开详情弹窗。弹窗显示目标、状态、checklist、资源用量、最近判定原因和全部待答问题，并支持编辑、暂停、继续、逐项回答、调整执行限制和终止。
 
-## 状态与控制
+TUI 提供相同操作：
 
 ```text
 /goal
+/goal pause
+/goal resume
+/goal edit 将综述范围收窄到知识编辑
+/goal answer 使用 2023 年之后发表的论文
+/goal answer <question-id> 使用 2023 年之后发表的论文
 /goal clear
 ```
 
-`/goal` 查询当前 session 关联的 Goal。`/goal clear` 将 active 或 waiting Goal 标为 cleared；Workflow 在工作轮次之间检查该状态，停止时不得覆盖它。
+编辑会创建新的目标 revision，并暂停 Goal，等待显式继续。旧 revision 的未答问题保留为 `superseded` 审计记录，不再阻塞新 revision。答案会在被消费前持久化，因此 worker 重启不会丢失答案。不指定问题 ID 时回答最早的待答问题；指定 ID 可以回答队列中的其他问题。
 
-普通 Stop 控件取消当前 Goal function run。clear 修改 Goal 状态，Stop 取消 execution boundary，两者含义不同。
+## 等待与重启恢复
 
-## 终态
+问题采用异步处理。某部分必需工作依赖无法安全确认的信息时，judge 会记录问题。如果仍有独立工作，Goal 会继续执行这些工作，问题保留在 Goal 弹窗中。只有所有剩余工作都依赖答案时，Goal 才进入 `waiting_user`。Goal 不会猜测或执行依赖未答问题的事项。
+
+多个问题可以累积。可以在 Goal 弹窗或通过 `/goal answer` 逐项回答。向正在执行的 Goal 提交答案时，controller 会在下一个边界消费答案，不会启动第二个 execution。等待中的 Goal 收到任意新答案后恢复，完成因此能够执行的工作；其他问题继续保持待答。用户主动暂停的 Goal 不会因收到答案自动恢复。Goal 问题不会替换或禁用普通聊天输入框。
+
+有人值守时，judge 可以针对影响目标方向的歧义、缺失访问权限或明确审批记录问题，但普通实现选择仍由 agent 自主完成。无人值守时，问题不会打断执行；Goal 会先完成全部安全且不依赖答案的工作，然后在必要时等待。composer 的“无人值守”控制项为当前 session 选择模式；页面重新连接后会把该选择重新同步给 worker。
+
+如果 worker 在 Goal 完善、工作或判定期间重启，持久化状态会变为 `paused_recoverable`。Goal 弹窗仍显示目标、checklist、用量、checkpoint 和原因。使用“继续”或 `/goal resume` 从该状态启动新的 execution。
+
+`waiting_external` 同样停止工作轮次，但目前没有实现外部事件自动唤醒。外部依赖发生变化后需要显式继续。
+
+## 状态
 
 | 状态 | 含义 |
 | --- | --- |
-| `achieved` | judge 接受条件，并且 checklist 全部完成。 |
-| `capped` | 达到轮次上限（`goal.max_turns`，默认 150；config 里配 0 或负数表示无限）。 |
-| `error` | 连续 judge 失败、checklist 停滞或连续零工具轮导致终止。 |
-| `waiting_user` | judge 提问，正在等待回答。 |
-| `cleared` | 当前 session 清除了 Goal。 |
+| `refining`、`active`、`running`、`evaluating` | Goal 正在执行。 |
+| `waiting_user` | Goal 需要用户回答。 |
+| `waiting_external` | 外部依赖变化后才能继续。 |
+| `paused`、`paused_recoverable` | 用户暂停，或 worker 重启后可恢复。 |
+| `blocked` | 依赖或权限阻止进展，发生变化后可以恢复。 |
+| `impossible` | 当前目标与约束无法同时满足。 |
+| `stalled` | 连续多轮没有被接受的进展。 |
+| `budget_exhausted` | 达到轮次、token、时间或成本限制。 |
+| `failed` | execution 或连续 judge 判定失败。 |
+| `achieved` | judge 接受结果与 checklist。 |
+| `cancelled` | 用户终止 Goal。 |
+
+执行时间限制只统计 controller 的 active time；处于 `waiting_user`、`waiting_external`、`paused` 或 `paused_recoverable` 的时间不计入执行预算。token 与成本使用 active-run cursor 增量核算，因此 Goal 等待期间同一 session 的其他操作不会计入 Goal。

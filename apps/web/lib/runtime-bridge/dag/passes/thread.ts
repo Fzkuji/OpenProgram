@@ -135,8 +135,10 @@ export function buildThreadModel(
     if (trimmed && !laneFirstName[n._lane || 0]) {
       laneFirstName[n._lane || 0] = { id: n.id, name: trimmed };
     }
+  });
+  graph.forEach((n) => {
     if (
-      isChainNode(n)
+      isChainNode(n, byId)
       && n.display !== "root"
       && (n.role === "tool" || n._runNode)
     ) {
@@ -146,7 +148,7 @@ export function buildThreadModel(
   composerFns.sort((a, b) => nodeTime(a) - nodeTime(b));
   const onHead = new Set(_headAncestors(byId, headId ?? null));
   const talkCuts = graph.filter((n) => {
-    if (!isChainNode(n) || n.display === "root") return false;
+    if (!isChainNode(n, byId) || n.display === "root") return false;
     if (n.role !== "user" && n.role !== "assistant") return false;
     if (isFollowup(n)) return false;
     if ((n as Record<string, unknown>).source === "agent_spawn") return false;
@@ -200,7 +202,7 @@ export function buildThreadModel(
         }
         return null;
       }
-      if (isChainNode(p) || isSpawnRoot(p)) return anchorOf(p.id);
+      if (isChainNode(p, byId) || isSpawnRoot(p)) return anchorOf(p.id);
       cur = p;
       hops++;
     }
@@ -222,7 +224,7 @@ export function buildThreadModel(
       nameOf[n.id] = _spawnName(n, laneFirstName);
       return;
     }
-    if (isChainNode(n)) {
+    if (isChainNode(n, byId)) {
       // An agent-internal turn (its lane merged into a spawn root) is
       // the agent's own activity: an event on the AGENT's thread. Once
       // the square opens, its replies come back as triangles in the
@@ -296,7 +298,7 @@ export function buildThreadModel(
   const visible = graph.filter((n) => {
     if (n.display === "root") return true;
     if (isSpawnRoot(n)) return spawnVisible(n.id);
-    if (isChainNode(n)) {
+    if (isChainNode(n, byId)) {
       const a = anchorOf(n.id);
       if (a === n.id) return true;
       // Agent-internal turn: a thread item while the agent is open.
@@ -311,7 +313,7 @@ export function buildThreadModel(
     // Stamp the surfaced agent turns so downstream passes lay them out
     // as thread items (isChainNode above keys on the stamp). View-only
     // clones — the graph rows themselves stay untouched.
-    if (!isChainNode(n) || n.display === "root") return n;
+    if (!isChainNode(n, byId) || n.display === "root") return n;
     const a = anchorOf(n.id);
     if (a !== n.id && byId[a] && isSpawnRoot(byId[a])) {
       return { ...n, _agentTurn: true } as GNode;

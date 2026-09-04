@@ -8,6 +8,8 @@ store is installed, it returns None (legacy path kicks in).
 
 from __future__ import annotations
 
+import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -232,3 +234,24 @@ def test_call_path_appears_in_situation(rt, store):
     assert "Call path:" in sit
     assert "research_agent" in sit
     assert "idea" in sit
+
+
+def test_sync_provider_bridge_enforces_silent_stream_deadline(
+    rt: Runtime, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider that emits no events must still respect exec's deadline."""
+    from openprogram.providers.utils import deadline
+
+    async def stalled(_content, _response_format=None):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(rt, "_async_call_via_providers", stalled)
+    token = deadline.set_deadline(time.monotonic() + 0.02)
+    started = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError):
+            rt._call_via_providers([{"type": "text", "text": "hello"}])
+    finally:
+        deadline.reset_deadline(token)
+
+    assert time.monotonic() - started < 1

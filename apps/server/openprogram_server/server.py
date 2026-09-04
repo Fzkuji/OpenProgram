@@ -635,15 +635,14 @@ def _load_agent_session_meta(session_key: str) -> Optional[dict]:
 
 def _broadcast(msg: str):
     """Send a message to all connected WebSocket clients."""
-    if not _ws_connections or _loop is None:
+    if not _ws_connections:
         return
+    from openprogram.webui.ws_delivery import send_to_connection
+
     with _ws_lock:
         conns = list(_ws_connections)
     for ws in conns:
-        try:
-            asyncio.run_coroutine_threadsafe(ws.send_text(msg), _loop)
-        except Exception:
-            pass
+        send_to_connection(ws, msg, _loop)
 
 
 def _log(text: str):
@@ -1401,6 +1400,11 @@ async def _websocket_handler(ws):
 
     await ws.accept()
 
+    from openprogram.webui.ws_delivery import QueuedWebSocket
+
+    ws = QueuedWebSocket(ws, asyncio.get_running_loop())
+    ws.start()
+
     with _ws_lock:
         _ws_connections.append(ws)
     try:
@@ -1483,6 +1487,7 @@ async def _websocket_handler(ws):
                     follow_up_queue.put_nowait(_FOLLOW_UP_DISCONNECTED)
                 except queue.Full:
                     pass
+        await ws.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -1860,6 +1865,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # Pause / Resume / Stop — routes.lifecycle
     from openprogram.webui.routes import lifecycle as _routes_lifecycle
     _routes_lifecycle.register(app)
+
+    # Durable Goal projection and pause/edit/resume/cancel actions.
+    from openprogram.webui.routes import goal as _routes_goal
+    _routes_goal.register(app)
 
     # Pending user-input questions list/reply/reject — routes.questions
     # (REST parity for runtime.ask; WS is the live path). Reconnect recovery.

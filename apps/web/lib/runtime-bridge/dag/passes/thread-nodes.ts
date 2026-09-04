@@ -33,12 +33,31 @@ export function isIndependentRootProgram(
   return isTopProgramRun(node) && parent?.display === "root" && !node.retry_of;
 }
 
-export function isChainNode(node: GNode): boolean {
+/** True when ``caller`` is a function / Program / spawn, not a chat turn. */
+function isExecutionCaller(
+  caller: string | null | undefined,
+  byId?: Record<string, GNode>,
+): boolean {
+  if (!byId || isRootRef(caller)) return false;
+  const parent = byId[String(caller)];
+  if (!parent) return false;
+  if (isSpawnRoot(parent) || isTopProgramRun(parent) || parent._runNode) {
+    return true;
+  }
+  if (parent.role === "tool" || parent.role === "code") return true;
+  return !!parent.function && parent.function !== "merge";
+}
+
+export function isChainNode(
+  node: GNode,
+  byId?: Record<string, GNode>,
+): boolean {
   if (node.display === "root") return true;
   if (isSpawnRoot(node)) return false;
   if ((node as Record<string, unknown>)._agentTurn) return false;
   if (node.function === "merge") return true;
   if (isTopProgramRun(node)) return true;
+  if (isExecutionCaller(node.caller, byId)) return false;
   return (
     (node.role === "user" || node.role === "assistant")
     && node.display !== "runtime"

@@ -2117,7 +2117,17 @@ class Runtime:
         content: list[dict],
         response_format: dict = None,
     ) -> Any:
-        return _run_async(self._async_call_via_providers(content, response_format))
+        call = self._async_call_via_providers(content, response_format)
+        # The lower transport layers consult the shared deadline before
+        # retrying, but a provider can remain silent after opening a stream.
+        # Bound the whole coroutine as well so Runtime.exec(timeout_s=...) is
+        # a real wall-clock limit rather than only a retry-boundary check.
+        from openprogram.providers.utils.deadline import remaining
+
+        time_left = remaining()
+        if time_left is not None:
+            call = asyncio.wait_for(call, timeout=max(0.0, time_left))
+        return _run_async(call)
 
     async def _async_call_via_providers(
         self,

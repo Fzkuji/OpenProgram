@@ -2262,17 +2262,17 @@ def test_parameterized_project_can_compose_llm_agent_and_goal(
             "def run(task):\n"
             "    plan = llm('plan ' + task)\n"
             "    result = agent('execute ' + plan)\n"
-            "    return goal('verify ' + result, 'complete')\n"
+            "    return goal('verify ' + result + ' until complete')\n"
         ),
         "entry.py": "def workflow(task):\n    return run(task)\n",
     })
     _planner(monkeypatch, json.dumps({"action": "create"}), project)
     llm_calls = _llm_executor(monkeypatch, lambda _prompt, _kwargs: "the plan")
     agent_calls = _executor(monkeypatch, lambda _prompt, _kwargs: "the result")
-    goal_calls: list[tuple[str, str]] = []
+    goal_calls: list[str] = []
 
-    def fake_goal(prompt: str, condition: str) -> str:
-        goal_calls.append((prompt, condition))
+    def fake_goal(prompt: str) -> str:
+        goal_calls.append(prompt)
         return "verified"
 
     monkeypatch.setattr(TL, "_goal_function", lambda: fake_goal)
@@ -2287,7 +2287,7 @@ def test_parameterized_project_can_compose_llm_agent_and_goal(
     assert result["status"] == "completed"
     assert [call["prompt"] for call in llm_calls] == ["plan recent papers"]
     assert [call["prompt"] for call in agent_calls] == ["execute the plan"]
-    assert goal_calls == [("verify the result", "complete")]
+    assert goal_calls == ["verify the result until complete"]
     assert [
         item["function"] for item in _state(session_repo, result["run_id"])["items"]
     ] == ["llm", "agent", "goal"]

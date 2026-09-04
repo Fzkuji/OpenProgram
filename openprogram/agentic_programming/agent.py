@@ -10,6 +10,7 @@ def agent(
     model: str = "",
     effort: str = "",
     tools: list[Any] | None = None,
+    tools_deny: list[str] | None = None,
     max_iterations: int = 20,
     timeout_s: float | None = None,
     tool_choice: Any = None,
@@ -25,6 +26,7 @@ def agent(
         model: Model override (empty = use session default)
         effort: Reasoning effort override
         tools: Tool names to provide (None = all available tools)
+        tools_deny: Tool names that must remain unavailable for this turn
         max_iterations: Max tool loop rounds
         timeout_s: Timeout in seconds
         tool_choice: Optional provider tool-selection constraint
@@ -64,6 +66,8 @@ def agent(
     )
     if tool_choice is not None:
         exec_kwargs["tool_choice"] = tool_choice
+    if tools_deny is not None:
+        exec_kwargs["tools_deny"] = tools_deny
     if parallel_tool_calls is not None:
         exec_kwargs["parallel_tool_calls"] = parallel_tool_calls
     result = runtime.exec(**exec_kwargs)

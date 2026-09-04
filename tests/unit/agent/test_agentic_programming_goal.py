@@ -18,7 +18,7 @@ def test_goal_workflow_reuses_the_session_judge(monkeypatch) -> None:
         pkg, "judge_goal", lambda **_kwargs: {"met": True, "reason": "done"},
     )
 
-    assert goal_module.goal("do work", "done", max_rounds=1) == "finished"
+    assert goal_module.goal("do work", max_rounds=1) == "finished"
 
 
 def test_callable_goal_stop_rules_match_session_limits() -> None:
@@ -30,8 +30,15 @@ def test_callable_goal_stop_rules_match_session_limits() -> None:
     assert achieved["judge_parse_failures"] == 0
 
     failing = {"turns_used": 1, "max_turns": 10, "judge_parse_failures": 2}
-    assert apply_goal_verdict(failing, "judge_failure", "bad json") == "error"
-    assert failing["status"] == "error"
+    assert apply_goal_verdict(failing, "judge_failure", "bad json") == "failed"
+    assert failing["status"] == "failed"
 
-    capped = {"turns_used": 2, "max_turns": 2, "judge_parse_failures": 0}
-    assert apply_goal_verdict(capped, "unmet", "not yet") == "capped"
+    capped = {
+        "turns_used": 2,
+        "max_turns": 2,
+        "budget": {"max_turns": 2},
+        "judge_parse_failures": 0,
+    }
+    assert apply_goal_verdict(capped, "unmet", "not yet") is None
+    from openprogram.programs.workflow.goal.state import budget_exhausted
+    assert budget_exhausted(capped) == "turns"

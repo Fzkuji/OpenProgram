@@ -20,6 +20,16 @@ REFINE_TOOLS = ("read", "glob", "grep", "list", "bash", "web_search")
 def _run_refine_turn(session_id: str, prompt: str, *, agent_id: str,
                      spawn_caller: Optional[str]) -> str:
     """One spawned inspection-only agent turn. Module-level so tests stub it."""
+    if not session_id:
+        from openprogram.agentic_programming.agent import agent
+        from openprogram.programs import agent_tools
+
+        return agent(
+            prompt=prompt,
+            tools=agent_tools(names=list(REFINE_TOOLS)),
+            timeout_s=_goal.DEFAULT_PHASE_TIMEOUT_S,
+            execution_kind="goal_refiner",
+        )
     from openprogram.agent.sub_agent_run import run_agent_turn
     res = run_agent_turn(
         session_id=session_id,
@@ -57,54 +67,37 @@ def refine_goal_spec_candidate(goal_text: str, session_id: str = "", *,
                                agent_id: str = "main",
                                spawn_caller: Optional[str] = None,
                                context: str = "") -> tuple[str, list[str]]:
-    """You expand a user's one-line session goal into a complete goal
-    SPECIFICATION. The user typed a single sentence; it cannot cover
-    everything, so you fill in what a completion judge will need. You
-    have inspection tools (read, glob, grep, list, bash) and may look
-    at the working directory to understand the task context.
+    """Translate the user's Goal into a concise completion SPECIFICATION.
+    Preserve the requested outcome, constraints, scope and verification
+    requirements. Every checklist item must be traceable to the user's
+    request or a necessary correctness check for that outcome.
 
-    Write the specification with:
+    Do not add requirements: no invented benchmark names, section counts,
+    citation counts, figure counts, style ratios, word limits or quality
+    comparisons. Preserve approximate constraints as approximate; do not
+    turn "about 600 words" into an invented hard acceptance interval.
+    Use as many checklist items as the task needs, including one for a
+    simple task. Do not manufacture items to reach a minimum count.
 
-    * Completion criteria — a checklist of verifiable items: formal,
-      checkable outcomes (files that must exist, tests that must pass,
-      outputs that must appear) AND process requirements (e.g. "read
-      sources X and Y before writing section Z", "verify every
-      citation individually").
-    * Reference anchor — when the goal names or implies a reference
-      (an example paper, an existing implementation, a competing
-      product, a prior version), or an established work of the same
-      kind is findable (use web_search), READ the reference and
-      translate it into countable criteria: structure and length,
-      coverage, feature list, depth of treatment — whatever the kind
-      of deliverable makes measurable. Record the reference's path or
-      source in the specification. The bar is MEET OR EXCEED the
-      reference on every extracted criterion — a reference is a floor,
-      not a style suggestion. No reference given or findable: skip
-      this part, do not invent one.
-    * Form anchor — countable structure is not enough: also extract
-      HOW the reference presents its content, and turn that into
-      checkable items. For prose deliverables that means e.g. "body
-      sections argue in connected paragraphs; list lines are under
-      10% of body lines", "every major section carries at least N
-      words of connected prose", "figure count meets the reference's".
-      A deliverable that matches the reference's chapter and citation
-      counts but reads as bullet-point notes has NOT met the
-      reference.
-    * Verification depth — for any "sources are real / verified"
-      criterion, spell out that acceptance requires SAMPLED
-      re-checking (open or search a random handful of the claimed
-      sources), not trusting the writer's own "verified" notes.
-    * Boundaries — what is explicitly OUT of scope, so the run does
-      not wander.
-    * Judge checklist — the items the completion judge checks one by
-      one before declaring the goal met. Emit them as the "checklist"
-      JSON field: 3 to 12 short sentences, each independently
-      verifiable on its own, written in the SAME LANGUAGE as the goal
-      text.
+    Inspect a reference only when the user provides one or explicitly
+    asks for comparison against one. Apply only its relevant requested
+    aspects, not every property of that reference. Do not search for a
+    reference merely to impose additional acceptance criteria.
 
-    Stay faithful to the user's intent: refine and sharpen it, never
-    replace it. Keep the specification concise enough to be checked
-    item by item.
+    Name the evidence needed to check each requested outcome. If the
+    user requires verified external sources, require actual source
+    inspection; model memory or a writer's claim of verification is not
+    a substitute. Missing access remains an unresolved verification
+    requirement, not permission to lower the acceptance standard.
+
+    Preserve explicit exclusions. Record material ambiguities in the
+    specification as unresolved questions, not guessed requirements;
+    the Goal's asynchronous question mechanism handles them. Keep
+    ordinary implementation choices separate from acceptance criteria.
+    Do not perform the task or modify files during refinement.
+
+    Write the specification and checklist in the SAME LANGUAGE as the
+    Goal. Keep both concise and faithful to the user's original request.
 
     End your reply with STRICT JSON only, no markdown fence, no prose
     after it:

@@ -1,0 +1,607 @@
+<div hidden>Web 运行时可靠性与性能设计。审计基线确认错误可见性、会话全量加载、WebSocket 无界广播和 EventBus notify 的 P0 问题，以及静态资源与 CSP 的 P1 问题。TASK 3 已实现每连接单一 sender、256 帧 / 4 MiB 的 queued + in-flight 上限、普通状态和文本合并、终态关键预留、发送失败与溢出状态恢复，规格和质量审查均为 PASS；最终集成状态为 baseline-failed。其余错误合同、Job 错误、Session projection、EventBus 执行模型、本地前端依赖与压缩、容量诊断仍待实现。</div>
+<style>
+    .doc-root {
+      --doc-bg: var(--bg);
+      --doc-panel: var(--bg-card);
+      --doc-panel-2: var(--bg-side);
+      --doc-code: var(--bg-code);
+      --doc-line: var(--bd);
+      --doc-text: var(--tx);
+      --doc-muted: var(--tx-soft);
+      --doc-muted-strong: color-mix(in srgb, var(--tx-soft) 85%, var(--tx));
+      --doc-faint: color-mix(in srgb, var(--tx-soft) 82%, var(--tx));
+      --doc-accent: color-mix(in srgb, var(--acc) 78%, var(--tx));
+      --doc-accent-soft: var(--acc-soft);
+      --doc-info: color-mix(in srgb, #2563a6 52%, var(--tx));
+      --doc-success: color-mix(in srgb, #18794e 58%, var(--tx));
+      --doc-warning: color-mix(in srgb, #9a5b13 58%, var(--tx));
+      --doc-danger: color-mix(in srgb, #b83a2c 58%, var(--tx));
+      --doc-violet: color-mix(in srgb, #6846b7 55%, var(--tx));
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+    }
+    .doc-root, .doc-root * { box-sizing: border-box; }
+    .doc-root { margin: 0; padding: 0; background: transparent; color: var(--doc-text); font: 15px/1.65 var(--sans); }
+    .doc-root a { color: var(--doc-accent); }
+    .doc-root code { padding: 1px 5px; border: 1px solid var(--doc-line); border-radius: 4px; background: var(--doc-code); color: var(--doc-accent); font: .89em var(--mono); }
+    .doc-root pre { margin: 0; overflow: auto; font: 12px/1.65 var(--mono); }
+    .shell { width: min(1180px, 100%); margin: auto; }
+    .rail { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 28px; }
+    .rail strong { display: block; margin-bottom: 12px; color: var(--doc-accent); font: 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .rail a { display: block; padding: 6px 9px; border: 1px solid var(--doc-line); border-radius: 6px; color: var(--doc-muted); text-decoration: none; font-size: 12px; }
+    .rail a:hover, .rail a:focus-visible { border-color: var(--doc-accent); color: var(--doc-text); background: var(--doc-accent-soft); outline: none; }
+    .doc-root main { min-width: 0; }
+    .doc-root header { padding-bottom: 32px; border-bottom: 1px solid var(--doc-line); }
+    .eyebrow { color: var(--doc-accent); font: 11px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+    .doc-root h1 { max-width: 900px; margin: 8px 0 14px; color: var(--doc-text); font-size: clamp(31px, 4vw, 52px); line-height: 1.08; letter-spacing: -.025em; }
+    .doc-root h2 { margin: 0 0 16px; padding: 0; border: 0; color: var(--doc-text); font-size: 25px; line-height: 1.25; }
+    .doc-root h3 { margin: 0 0 8px; color: var(--doc-text); font-size: 16px; }
+    .doc-root p { margin: 8px 0; }
+    .lead { max-width: 940px; color: var(--doc-muted); font-size: 17px; }
+    .meta, .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .tag, .status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--doc-line); border-radius: 999px; color: var(--doc-muted); font: 11px var(--mono); }
+    .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .status.gap { color: var(--doc-danger); }
+    .status.partial { color: var(--doc-warning); }
+    .status.done { color: var(--doc-success); }
+    .status.selected { color: var(--doc-violet); }
+    .doc-root section { margin: 0; padding: 38px 0; border-bottom: 1px solid var(--doc-line); }
+    .section-head { display: flex; align-items: baseline; gap: 12px; }
+    .num { color: var(--doc-accent); font: 11px var(--mono); }
+    .intro { max-width: 940px; color: var(--doc-muted); }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+    .metric { min-height: 126px; padding: 16px; border: 1px solid var(--doc-line); border-radius: 11px; background: var(--doc-panel); }
+    .metric .k { color: var(--doc-muted); font: 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+    .metric .v { margin: 8px 0 4px; color: var(--doc-text); font-size: 25px; font-weight: 700; }
+    .metric .d { color: var(--doc-muted); font-size: 12px; }
+    .doc-root .callout { margin-top: 18px; padding: 14px 16px; border: 1px solid var(--doc-line); border-left: 3px solid var(--doc-info); border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--doc-info) 8%, var(--doc-bg)); color: var(--doc-text); }
+    .doc-root .callout.warn { border-left-color: var(--doc-warning); background: color-mix(in srgb, var(--doc-warning) 9%, var(--doc-bg)); }
+    .doc-root .callout.bad { border-left-color: var(--doc-danger); background: color-mix(in srgb, var(--doc-danger) 8%, var(--doc-bg)); }
+    .table-wrap { margin-top: 18px; overflow: auto; border: 1px solid var(--doc-line); border-radius: 11px; }
+    .doc-root table { width: 100%; margin: 0; border-collapse: collapse; min-width: 820px; font-size: 13px; }
+    .doc-root th, .doc-root td { padding: 11px 12px; border: 0; border-bottom: 1px solid var(--doc-line); text-align: left; vertical-align: top; }
+    .doc-root th { background: var(--doc-panel-2); color: var(--doc-muted-strong); font: 11px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+    .doc-root tr:nth-child(even) td { background: color-mix(in srgb, var(--doc-panel-2) 42%, transparent); }
+    .doc-root tr:last-child td { border-bottom: 0; }
+    .doc-root td p:first-child { margin-top: 0; }
+    .doc-root td p:last-child { margin-bottom: 0; }
+    .p0 { color: var(--doc-danger); font-weight: 700; }
+    .p1 { color: var(--doc-warning); font-weight: 700; }
+    .p2 { color: var(--doc-info); font-weight: 700; }
+    .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-top: 20px; }
+    .card { padding: 17px; border: 1px solid var(--doc-line); border-radius: 11px; background: var(--doc-panel); }
+    .card p, .card li { color: var(--doc-muted); }
+    .card ul { margin: 8px 0 0; padding-left: 20px; }
+    .path { display: block; margin-bottom: 8px; color: var(--doc-accent); font: 11px var(--mono); word-break: break-all; }
+    .diagram { margin-top: 20px; padding: 20px; overflow: auto; border: 1px solid var(--doc-line); border-radius: 11px; background: var(--doc-panel); }
+    .diagram svg { display: block; min-width: 980px; width: 100%; }
+    .diagram text { font-family: var(--mono); }
+    .caption { margin-top: 10px; color: var(--doc-muted); font-size: 12px; }
+    .timeline { margin-top: 20px; }
+    .phase { display: grid; grid-template-columns: 96px 24px minmax(0, 1fr); }
+    .phase .id { padding-top: 3px; color: var(--doc-accent); font: 11px var(--mono); text-align: right; }
+    .phase .axis { display: flex; flex-direction: column; align-items: center; }
+    .phase .dot { width: 12px; height: 12px; margin-top: 5px; border: 3px solid var(--doc-accent); border-radius: 50%; background: var(--doc-bg); }
+    .phase .line { width: 1px; flex: 1; margin: 5px 0; background: var(--doc-line); }
+    .phase:last-child .line { display: none; }
+    .phase .body { padding: 0 0 28px 16px; }
+    .phase .body p { max-width: 900px; color: var(--doc-muted); }
+    .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .files a { padding: 3px 7px; border: 1px solid var(--doc-line); border-radius: 5px; text-decoration: none; font: 10px var(--mono); }
+    .doc-root details { border: 1px solid var(--doc-line); border-radius: 9px; background: var(--doc-panel); }
+    .doc-root details + details { margin-top: 9px; }
+    .doc-root summary { cursor: pointer; padding: 12px 14px; color: var(--doc-text); font-weight: 650; }
+    .doc-root details > div { padding: 0 14px 14px; color: var(--doc-muted); }
+    .schema { margin-top: 16px; padding: 16px; border: 1px solid var(--doc-line); border-radius: 10px; background: var(--doc-code); color: var(--doc-text); }
+    .schema .key { color: var(--doc-info); }
+    .schema .str { color: var(--doc-success); }
+    .schema .comment { color: var(--doc-faint); }
+    .refs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .ref { padding: 14px; border: 1px solid var(--doc-line); border-radius: 10px; background: var(--doc-panel); }
+    .ref b { display: block; margin-bottom: 5px; }
+    .ref p { color: var(--doc-muted); font-size: 12px; }
+    .related { columns: 2; column-gap: 28px; padding-left: 20px; }
+    .related li { margin: 6px 0; break-inside: avoid; }
+    .foot { padding-top: 24px; color: var(--doc-muted); font-size: 12px; }
+    @media (max-width: 1060px) {
+      .rail strong { width: 100%; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      .doc-root { padding: 20px 14px; }
+      .metric-grid, .cards, .refs { grid-template-columns: 1fr; }
+      .phase { grid-template-columns: 60px 18px minmax(0, 1fr); }
+      .related { columns: 1; }
+      .doc-root h1 { font-size: 34px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @media print {
+      .doc-root {
+        --doc-bg: #fff;
+        --doc-panel: #fff;
+        --doc-panel-2: #f3f4f6;
+        --doc-code: #f3f4f6;
+        --doc-line: #cfd4dc;
+        --doc-text: #111318;
+        --doc-muted: #4e5865;
+        --doc-muted-strong: #4e5865;
+        --doc-faint: #59636f;
+        --doc-accent: #7f3f0f;
+        --doc-info: #1e4f82;
+        --doc-success: #145c3b;
+        --doc-warning: #75420a;
+        --doc-danger: #8f2c21;
+        --doc-violet: #51348f;
+      }
+      .shell { display: block; width: 100%; }
+      .rail { display: none; }
+      .doc-root main { padding: 0; }
+      .doc-root section, .card, .metric, .table-wrap, .diagram { break-inside: avoid; }
+      .doc-root a { color: inherit; text-decoration: underline; }
+    }
+</style>
+<div class="doc-root">
+<div class="shell">
+  <nav class="rail" aria-label="本文目录">
+    <strong>Web runtime review</strong>
+    <a href="#scope">范围与结论</a>
+    <a href="#baseline">实测基线</a>
+    <a href="#current-flow">当前数据流</a>
+    <a href="#defects">问题清单</a>
+    <a href="#errors">错误合同</a>
+    <a href="#session-load">会话加载</a>
+    <a href="#websocket">WebSocket 可靠性</a>
+    <a href="#event-bus">EventBus</a>
+    <a href="#frontend">前端与资源</a>
+    <a href="#operations">运行数据</a>
+    <a href="#plan">实施任务</a>
+    <a href="#acceptance">验收矩阵</a>
+    <a href="#risks">风险与排除项</a>
+    <a href="#status">实现状态</a>
+  </nav>
+
+  <main>
+    <header id="scope">
+      <div class="eyebrow">OpenProgram · Runtime / WebUI · engineering design</div>
+      <h1>Web 运行时可靠性与性能设计</h1>
+      <p class="lead">本文统一记录 Web 页面刷新、会话加载、WebSocket 消息分发、后台错误展示、EventBus 通知、异步 Job 状态、静态资源加载和本地状态目录的已验证问题，并给出相互兼容的目标合同、任务边界和量化验收标准。</p>
+      <div class="meta">
+        <span class="tag">受众：Runtime / Server / Web 维护者</span>
+        <span class="tag">状态：TASK 3 审查通过，最终 gate 被已验证基线失败阻断；其余任务待执行</span>
+        <span class="tag">证据：源码审计、真实会话测量、浏览器测量、定向测试</span>
+      </div>
+      <div class="callout bad"><b>主结论：</b>错误事件缺少统一前端合同、刷新时重复发送完整会话，以及 EventBus notify 可能同步阻塞或丢失仍是 P0。WebSocket 广播无界问题已有审查通过的 TASK 3 实现，但最终集成 gate 仍是 <code>baseline-failed</code>。静态资源加载与 CSP 配置冲突属于 P1；React 单条消息更新不是当前首要限制。</div>
+      <div class="callout warn"><b>范围边界：</b>本文不修改 Agent 推理逻辑、DAG 存储语义、模型提供商协议、权限模型或多用户身份模型。已有专题文档继续负责各自的详细语义；本文只定义它们在 Web 运行时可靠性和性能方面必须共同满足的合同。</div>
+    </header>
+
+    <section id="baseline">
+      <div class="section-head"><span class="num">01</span><h2>实测基线</h2></div>
+      <p class="intro">以下数据来自当前默认状态目录、当前最大会话、直接执行会话加载处理器以及禁用浏览器缓存的本地页面加载。它们是后续前后对比的固定基线，不代表所有机器的绝对时间。</p>
+      <div class="metric-grid">
+        <article class="metric"><div class="k">Largest session_loaded</div><div class="v">11.66 MB</div><div class="d">单个未压缩 JSON 帧；消息约 9.75 MB，Graph 约 1.91 MB。</div></article>
+        <article class="metric"><div class="k">Hydration wall time</div><div class="v">≈313 ms</div><div class="d">单次直接执行 <code>handle_load_session</code>；不含网络、浏览器解析与 React 状态写入。</div></article>
+        <article class="metric"><div class="k">Visible / graph rows</div><div class="v">112 / 1,790</div><div class="d">页面只展示 112 条消息，但首次加载仍发送完整 Graph。</div></article>
+        <article class="metric"><div class="k">Cold static transfer</div><div class="v">3.42 MB</div><div class="d">66 个资源、43 个脚本；响应未使用 gzip 或 Brotli。</div></article>
+        <article class="metric"><div class="k">Cold navigation</div><div class="v">≈123 ms</div><div class="d">DOMContentLoaded 约 39 ms；本机 HTTP 本身不是主要等待项。</div></article>
+        <article class="metric"><div class="k">Worker resident memory</div><div class="v">≈437 MB</div><div class="d">短采样 CPU 从约 4.1% 降到 0.3%，未观察到持续 CPU 饱和。</div></article>
+        <article class="metric"><div class="k">State directory</div><div class="v">6.3 GB</div><div class="d"><code>chrome-profile</code> 约 6.1 GB；sessions 约 8.5 MB。</div></article>
+        <article class="metric"><div class="k">Verification baseline</div><div class="v">80 + 115</div><div class="d">Python 定向 80 项与 Web 115 项通过；现有测试未覆盖本文列出的关键缺口。</div></article>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>测量</th><th>方法</th><th>限制</th><th>后续使用</th></tr></thead>
+        <tbody>
+          <tr><td>会话载荷</td><td>使用真实 SessionDB 数据和只记录发送内容的 WebSocket 替身执行公开 handler。</td><td>关闭冷 context stats，避免把独立后台刷新计入首帧。</td><td>同一会话执行 before/after；记录总帧、messages、graph、context tree 各自字节。</td></tr>
+          <tr><td>浏览器加载</td><td>默认端口页面，缓存关闭，读取 Navigation/Resource Timing 和响应头。</td><td>内置诊断浏览器没有默认 App 的 owner credential，因此未执行已认证聊天操作。</td><td>用于静态资源体积、CSP、压缩和脚本数量验收；真实聊天由默认 App 验收。</td></tr>
+          <tr><td>EventBus 日志</td><td>统计全局与会话 <code>events.jsonl</code> 的类型和字节占用。</td><td>日志内容随真实使用变化。</td><td>后续比较事件行数、重复 ID、大型字段和写入延迟。</td></tr>
+          <tr><td>worker 资源</td><td>对默认 worker 进行短时间进程采样并统计状态目录。</td><td>不是长时间 workload profile。</td><td>用于排除持续 CPU 饱和；正式实现后增加事件循环延迟和队列指标。</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="current-flow">
+      <div class="section-head"><span class="num">02</span><h2>当前数据流与失效位置</h2></div>
+      <p class="intro">当前系统同时存在浏览器 WebSocket、原始 WS frame、EventBus、AgentEvent、SessionDB 和未接入生产的 MessageStore。下图标出用户操作从前端到持久化及后台事件返回前端的主要路径。</p>
+      <div class="diagram">
+        <svg viewBox="0 0 1120 520" role="img" aria-labelledby="flow-title flow-desc">
+          <title id="flow-title">当前 Web 运行时数据流</title>
+          <desc id="flow-desc">浏览器命令进入 WebSocket handler，调用 session、runtime 和 job action。后台事件通过 EventBus 的 ws.frame 订阅者广播。红色节点表示当前缺少错误展示、背压或增量恢复。</desc>
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--doc-faint)"/></marker>
+            <marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--doc-danger)"/></marker>
+          </defs>
+          <g font-size="12" fill="var(--doc-text)">
+            <rect x="25" y="55" width="180" height="72" rx="10" fill="var(--doc-panel)" stroke="var(--doc-accent)"/>
+            <text x="115" y="83" text-anchor="middle" font-weight="700">Web / Electron renderer</text>
+            <text x="115" y="104" text-anchor="middle" fill="var(--doc-muted)">use-ws · session store · UI</text>
+            <rect x="275" y="55" width="180" height="72" rx="10" fill="var(--doc-panel-2)" stroke="var(--doc-danger)"/>
+            <text x="365" y="83" text-anchor="middle" font-weight="700">WebSocket receive loop</text>
+            <text x="365" y="104" text-anchor="middle" fill="var(--doc-danger)">error contract 不完整</text>
+            <rect x="525" y="20" width="200" height="72" rx="10" fill="var(--doc-panel)" stroke="var(--doc-info)"/>
+            <text x="625" y="48" text-anchor="middle" font-weight="700">WS action handlers</text>
+            <text x="625" y="69" text-anchor="middle" fill="var(--doc-muted)">session · runtime · settings</text>
+            <rect x="525" y="130" width="200" height="72" rx="10" fill="var(--doc-panel)" stroke="var(--doc-violet)"/>
+            <text x="625" y="158" text-anchor="middle" font-weight="700">JobRunner / channels</text>
+            <text x="625" y="179" text-anchor="middle" fill="var(--doc-muted)">worker threads · status events</text>
+            <rect x="805" y="20" width="200" height="72" rx="10" fill="var(--doc-panel-2)" stroke="var(--doc-danger)"/>
+            <text x="905" y="48" text-anchor="middle" font-weight="700">Session hydration</text>
+            <text x="905" y="69" text-anchor="middle" fill="var(--doc-danger)">同步全量 messages + graph</text>
+            <rect x="805" y="130" width="200" height="72" rx="10" fill="var(--doc-panel-2)" stroke="var(--doc-warning)"/>
+            <text x="905" y="158" text-anchor="middle" font-weight="700">EventBus</text>
+            <text x="905" y="179" text-anchor="middle" fill="var(--doc-warning)">notify 同步 / async 可丢</text>
+            <rect x="525" y="285" width="200" height="72" rx="10" fill="var(--doc-panel)" stroke="var(--doc-info)"/>
+            <text x="625" y="313" text-anchor="middle" font-weight="700">SessionDB / event logs</text>
+            <text x="625" y="334" text-anchor="middle" fill="var(--doc-muted)">durable rows · JSONL</text>
+            <rect x="805" y="285" width="200" height="72" rx="10" fill="var(--doc-panel-2)" stroke="var(--doc-danger)"/>
+            <text x="905" y="313" text-anchor="middle" font-weight="700">Global broadcast</text>
+            <text x="905" y="334" text-anchor="middle" fill="var(--doc-danger)">无有界队列 / 不检查 Future</text>
+            <rect x="275" y="285" width="180" height="72" rx="10" fill="var(--doc-panel)" stroke="var(--doc-success)"/>
+            <text x="365" y="313" text-anchor="middle" font-weight="700">Chat streaming reducer</text>
+            <text x="365" y="334" text-anchor="middle" fill="var(--doc-muted)">rAF 合并 · 行回收</text>
+            <rect x="25" y="285" width="180" height="72" rx="10" fill="var(--doc-panel-2)" stroke="var(--doc-danger)"/>
+            <text x="115" y="313" text-anchor="middle" font-weight="700">Generic UI dispatch</text>
+            <text x="115" y="334" text-anchor="middle" fill="var(--doc-danger)">type=error 无统一消费者</text>
+            <rect x="805" y="420" width="200" height="64" rx="10" fill="var(--doc-panel-2)" stroke="var(--doc-faint)" stroke-dasharray="5 4"/>
+            <text x="905" y="446" text-anchor="middle" font-weight="700">MessageStore v2</text>
+            <text x="905" y="466" text-anchor="middle" fill="var(--doc-muted)">seq / delta 已存在但未接入</text>
+          </g>
+          <g fill="none" stroke="var(--doc-faint)" stroke-width="1.6" marker-end="url(#arr)">
+            <path d="M205 91H275"/><path d="M455 91L525 56"/><path d="M455 91L525 166"/>
+            <path d="M725 56H805"/><path d="M725 166H805"/><path d="M625 202V285"/>
+            <path d="M905 202V285"/><path d="M805 321H725"/><path d="M805 321H725"/>
+            <path d="M805 321H455"/><path d="M275 321H205"/><path d="M115 285V127"/>
+          </g>
+          <g fill="none" stroke="var(--doc-danger)" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arr-red)">
+            <path d="M905 357V420"/><path d="M805 452H625V357"/>
+          </g>
+          <g fill="var(--doc-muted)" font-size="10">
+            <text x="232" y="82">command</text><text x="476" y="60">dispatch</text><text x="471" y="146">spawn/status</text>
+            <text x="754" y="47">load_session</text><text x="748" y="157">emit</text><text x="918" y="246">ws.frame</text>
+            <text x="555" y="310">persist/log</text><text x="514" y="312">send_text</text><text x="225" y="312">chat frames</text>
+          </g>
+        </svg>
+        <p class="caption">红色表示已验证缺口；黄色表示设计与实现语义不一致；绿色表示当前已有合理优化。MessageStore v2 是可复用候选，不应再引入第三套增量协议。</p>
+      </div>
+    </section>
+
+    <section id="defects">
+      <div class="section-head"><span class="num">03</span><h2>问题清单与用户影响</h2></div>
+      <p class="intro">优先级依据数据丢失、错误不可见、事件循环阻塞、资源无界增长和普通用户触发概率确定。每项都指向当前源码，不把设计提案写成已经实现的事实。</p>
+      <div class="legend"><span class="tag"><b class="p0">P0</b> 会造成用户请求结果不可知、关键事件丢失、无界资源增长或跨会话阻塞</span><span class="tag"><b class="p1">P1</b> 稳定复现的性能、诊断或兼容缺陷</span><span class="tag"><b class="p2">P2</b> 容量和长期运维问题，不阻塞前两类修复</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>优先级</th><th>当前行为</th><th>用户可见影响</th><th>根因与证据</th><th>目标状态</th></tr></thead>
+        <tbody>
+          <tr><td>R1</td><td class="p0">P0</td><td>后端多个 action 发送顶层 <code>type="error"</code>，前端没有全局 error case。</td><td>停止、模型切换、设置或 Agent 操作失败后可能没有可见信息。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/use-ws.ts">use-ws.ts</a> 的 default 只发 <code>op:ws-message</code>。</td><td>所有用户相关失败进入统一错误合同，并按 scope 持久显示。</td></tr>
+          <tr><td>R2</td><td class="p0">P0</td><td><code>action_error(code=handler_error)</code> 被前端固定解释为 unknown action。</td><td>用户看到错误原因与真实原因不一致，开发者也无法区分协议缺失和处理器异常。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/server.py">server.py</a> 与 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/use-ws.ts">use-ws.ts</a> 对同一 envelope 的语义不同。</td><td>按 <code>code</code> 分类；未知 action、验证失败、处理器失败分别显示。</td></tr>
+          <tr><td>R3</td><td class="p0">P0</td><td>列表 action 在异常时返回空数组，删除 action 存在 <code>except Exception: pass</code>。</td><td>空状态与系统故障不可区分，删除失败后页面可能继续显示旧状态或误判成功。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/agent.py">agent.py</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/channel.py">channel.py</a>。</td><td>保留可用旧数据时标记 degraded；否则返回明确错误，日志含关联 ID。</td></tr>
+          <tr><td>R4</td><td class="p0">P0</td><td>Job broadcaster 已发送 <code>error</code>，Branches 状态和 AttachCard 没有保存/显示详情。</td><td>后台任务只显示 <code>errored</code>，刷新后无法知道原因和是否可重试。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/job/runner.py">runner.py</a> 与 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/right-sidebar/branches/index.tsx">branches/index.tsx</a> 字段不对称。</td><td>错误摘要随 Job 实体持久化；卡片显示安全原因、重试属性和日志关联 ID。</td></tr>
+          <tr><td>R5</td><td class="p0">P0</td><td>连接恢复和会话切换发送完整 <code>session_loaded</code>。</td><td>大会话刷新传输和解析超过 11 MB，页面响应时间随历史增长。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/session.py">session.py</a> 一次发送 messages、graph、context tree；客户端重连直接调用 <code>load_session</code>。</td><td>首屏 manifest + 当前链；Graph、上下文树和大字段按需；重连按 revision/seq 增量恢复。</td></tr>
+          <tr><td>R6</td><td class="p1">P1</td><td>会话加载在 WS event loop 内同步聚合、排序、建图和 JSON 序列化。</td><td>一个大会话的刷新可延迟同一 worker 上其他 socket 的命令处理。</td><td><code>_fn_run_siblings</code> 中反复 <code>all_msgs.index</code>，整体 handler 无计算/发送分离。</td><td>纯计算快照在线程执行；异步层只负责按序发送和状态校验。</td></tr>
+          <tr><td>R7</td><td class="p0">P0</td><td>TASK 3 候选实现已将生产连接收敛到单一 sender，并对 queued + in-flight 帧施加 256 帧 / 4 MiB 上限。</td><td>慢客户端的同时 <code>send_text</code> 从 RED 的 400 降为 1；普通更新可合并，终态使用关键预留。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_delivery.py">ws_delivery.py</a> 与公共 handler 慢客户端回归。</td><td><code>review-passed</code>；最终集成状态为 <code>baseline-failed</code>。</td></tr>
+          <tr><td>R8</td><td class="p1">P1</td><td>重连固定每 2 秒尝试，成功后重新加载整个会话。</td><td>服务重启或网络异常时多个页面会同步重试并重复传输完整状态。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/use-ws.ts">use-ws.ts</a>。</td><td>指数退避、随机抖动、在线恢复后发送已知 revision/seq；不重复生成 UI 错误。</td></tr>
+          <tr><td>R9</td><td class="p0">P0</td><td>EventBus notify 的普通 handler 在 emitter 线程同步执行；async handler 无 event loop 时被跳过。</td><td>慢插件阻塞 Agent；部分后台事件没有任何消费者收到。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/bus.py">events/bus.py</a>。</td><td>notify 总是进入专用队列；gate 保持同步并执行明确预算。</td></tr>
+          <tr><td>R10</td><td class="p1">P1</td><td>事件日志同步写；<code>tool.before</code> 可重复写；注册表测试漏掉跨行 emit。</td><td>高频工具输出增加同步 IO，日志统计不准确，未注册事件无法由测试发现。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/event_log.py">event_log.py</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/component/agent/test_event_gate.py">test_event_gate.py</a>。</td><td>异步批量日志、单事件单记录、AST 注册检查、大字段摘要化。</td></tr>
+          <tr><td>R11</td><td class="p1">P1</td><td>marked/KaTeX 运行时从 CDN 加载，但 CSP 只允许 <code>script-src 'self'</code>；静态资源未压缩。</td><td>每次加载产生可预期 CSP 错误，数学渲染可能降级；远程首次加载传输增加。</td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/external-libs.ts">external-libs.ts</a> 与 <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/owner_auth.py">owner_auth.py</a>。</td><td>依赖本地打包；保持严格 CSP；文本资源使用 gzip 或预压缩内容。</td></tr>
+          <tr><td>R12</td><td class="p2">P2</td><td>Chrome profile 没有容量展示和保留策略；当前约 6.1 GB。</td><td>长期使用后占用磁盘，用户无法从产品中判断来源或安全清理范围。</td><td>最大目录为浏览器 on-device model、Default profile 和 model store。</td><td>展示分类容量；只提供显式、可恢复的清理操作；不自动删除登录态。</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="errors">
+      <div class="section-head"><span class="num">04</span><h2>统一错误合同与前端展示</h2></div>
+      <p class="intro">“后台报错前端必须显示”定义为：所有影响用户请求、持久状态、后台任务或可恢复操作的失败都必须进入可观察错误记录。它不要求把每个内部降级或重试都显示成 Toast，也不允许把 traceback、文件内容或凭据发送到浏览器。</p>
+      <pre class="schema" aria-label="operation_error JSON schema"><span class="comment">// WebSocket envelope；nullable 字段使用 null，不省略语义必需字段</span>
+{
+  <span class="key">"type"</span>: <span class="str">"operation_error"</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"error_id"</span>: <span class="str">"err_opaque_unique_id"</span>,
+    <span class="key">"request_id"</span>: <span class="str">"client_request_id_or_null"</span>,
+    <span class="key">"scope"</span>: <span class="str">"session | job | settings | channel | transport | system"</span>,
+    <span class="key">"code"</span>: <span class="str">"stable_machine_code"</span>,
+    <span class="key">"message"</span>: <span class="str">"safe user-facing summary"</span>,
+    <span class="key">"session_id"</span>: <span class="str">"session_id_or_null"</span>,
+    <span class="key">"operation_id"</span>: <span class="str">"action_job_execution_id_or_null"</span>,
+    <span class="key">"retryable"</span>: false,
+    <span class="key">"severity"</span>: <span class="str">"info | warning | error | fatal"</span>,
+    <span class="key">"correlation_id"</span>: <span class="str">"opaque log lookup id"</span>,
+    <span class="key">"occurred_at"</span>: <span class="str">"ISO-8601 UTC"</span>
+  }
+}</pre>
+      <div class="table-wrap"><table>
+        <thead><tr><th>错误合同字段/状态</th><th>唯一语义</th></tr></thead>
+        <tbody>
+          <tr><td><code>request_id</code></td><td>由客户端为请求/响应 action 生成；成功或失败必须回传同一值并结束 pending。<code>operation_id</code> 标识服务端实体，不能代替 request ID。</td></tr>
+          <tr><td><code>error_id</code></td><td>每次失败唯一。Toast 去重键为 <code>scope + code + session_id + operation_id</code>，5 秒内相同键只显示一次；错误记录仍分别保留。</td></tr>
+          <tr><td>severity</td><td><code>info</code> 只进入诊断；<code>warning</code> 显示局部 degraded 状态；<code>error</code> 显示卡片和一次 Toast；<code>fatal</code> 显示持久阻断状态并停止自动重试。</td></tr>
+          <tr><td>生命周期</td><td>请求成功只结束对应 <code>request_id</code> 的 pending。恢复帧为 <code>{type:"operation_recovered", data:{error_ids:[...], scope, operation_id, occurred_at}}</code>；服务器必须列出要关闭的具体 <code>error_id</code>，前端不得按模糊 code 批量关闭。用户确认或实体删除也只关闭明确 ID；普通后续成功不能隐式清除不相关错误。</td></tr>
+          <tr><td>Job 失败</td><td><code>job_status(status=errored)</code> 是 Job 状态的唯一 wire 事件，前端由它生成 error-store 记录；不得再为同一失败发送第二个 <code>operation_error</code>。<code>operation_error</code> 只用于 Job action 请求本身失败。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>事件类别</th><th>前端行为</th><th>持久性</th><th>不得包含</th></tr></thead>
+        <tbody>
+          <tr><td>当前会话请求失败</td><td>对应卡片或控制项附近显示原因；首次接收显示一次 Toast。</td><td>写入会话错误记录；刷新后仍可见。</td><td>traceback、原始环境变量、未过滤 provider body。</td></tr>
+          <tr><td>后台 Job 失败</td><td>会话列表显示错误标记；AttachCard/Jobs 显示摘要和可重试状态。</td><td>跟随 Job 实体持久化。</td><td>子进程完整 stdout、文件全文。</td></tr>
+          <tr><td>设置或管理操作失败</td><td>保留上一个已知状态，显示操作失败；不把失败解释为空列表。</td><td>错误中心保留到用户确认或后续成功。</td><td>credential value、token、绝对 secret path。</td></tr>
+          <tr><td>可恢复内部降级</td><td>默认不 Toast；相关表面显示 degraded 状态，诊断面可查询。</td><td>结构化日志与指标。</td><td>面向用户的重复提示。</td></tr>
+          <tr><td>传输断开</td><td>显示连接状态；自动恢复期间不重复产生相同错误。</td><td>仅在超过恢复预算或有未确认操作时进入错误中心。</td><td>每次重连尝试对应一个 Toast。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="cards">
+        <article class="card"><span class="path">Server normalization</span><h3>单一安全 payload 构造器</h3><p>helper 只生成经过过滤的 error data，并负责字段校验、日志关联和 session routing。WS action/channels/system 将该 data 包装为 <code>operation_error</code>；JobRunner 把同一 data 嵌入唯一的 <code>job_status</code>，不生成第二个 error envelope。</p></article>
+        <article class="card"><span class="path">Frontend error store</span><h3>单一状态入口</h3><p><code>use-ws</code> 只解析并交给 error store；错误卡片、会话标记和 Toast 从同一记录派生，避免不同组件各自解释 code。</p></article>
+        <article class="card"><span class="path">Action correlation</span><h3>明确请求完成</h3><p>需要请求/响应的 action 使用 request ID。成功和失败都结束 pending 状态，任何按钮都不能无限保持 loading。</p></article>
+        <article class="card"><span class="path">Compatibility adapter</span><h3>旧帧逐步迁移</h3><p>迁移期间前端把现有 <code>error</code>、<code>action_error</code> 和 Job error 适配到统一记录；后端逐项切换后删除兼容分支。</p></article>
+      </div>
+    </section>
+
+    <section id="session-load">
+      <div class="section-head"><span class="num">05</span><h2>会话加载与刷新设计</h2></div>
+      <p class="intro">目标是让首屏成本由当前可见内容决定，而不是由整个会话历史决定。持久化仍以 SessionDB/DAG 为准；Web wire 只传页面当前需要的投影。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>阶段</th><th>返回内容</th><th>触发条件</th><th>缓存键</th></tr></thead>
+        <tbody>
+          <tr><td>Session manifest</td><td>标题、状态、head、revision、当前链 ID、计数、功能状态、错误摘要。</td><td>切换会话或无有效 manifest。</td><td><code>session_id + revision</code></td></tr>
+          <tr><td>Viewport messages</td><td>当前可见链尾部消息和必要的 compaction/attach 引用。</td><td>首屏或滚动到未加载范围。</td><td><code>session_id + head_id + cursor</code></td></tr>
+          <tr><td>Graph summary</td><td>节点 ID、边、角色、状态和最小标签，不包含消息正文与工具结果。</td><td>用户打开 DAG 或分支面板。</td><td><code>session_id + graph_revision</code></td></tr>
+          <tr><td>Node/detail</td><td>单节点上下文、完整工具输出、runtime tree、附件详情。</td><td>用户展开或导航到具体节点。</td><td><code>session_id + node_id + content_revision</code></td></tr>
+          <tr><td>Reconnect delta</td><td>已知 revision 后的持久提交，以及每个运行中实体已知 seq 后的状态和终态事件。</td><td>连接恢复且服务器仍保留连续增量。</td><td>客户端提交 <code>known_session_revision</code> 和 <code>known_stream_seqs: {entity_id: seq}</code></td></tr>
+          <tr><td>Full recovery</td><td>新的 manifest 和有限 viewport，不是完整历史。</td><td>revision 不兼容、delta 已淘汰或客户端状态无效。</td><td>重置本地 session projection</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><b>唯一来源：</b>SessionDB/DAG 是持久状态的唯一权威来源。现有 <code>MessageStore</code> 只复用 block、seq 和 delta 计算代码，不成为第二个持久 store；不能复用的独立持久化和 singleton 接口在 TASK 4 删除。所有 full recovery 都从 SessionDB projection 生成。</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>协议量</th><th>定义</th><th>保留与回退</th></tr></thead>
+        <tbody>
+          <tr><td><code>session_revision</code></td><td>每个 session 单调递增的整数。一次 SessionDB/DAG 原子提交只增加一次；manifest、message header、Graph summary 和持久错误都标记其读取 revision。</td><td>永久随 session 持久化。客户端 revision 高于服务端或 schema 不兼容时拒绝 delta 并返回新 manifest。</td></tr>
+          <tr><td><code>stream_seq</code></td><td>每个运行中 message/job 独立单调递增；只描述尚未形成持久提交的 text/tree/progress 增量。</td><td>当前 worker 每实体保留最近 256 个 delta 或 15 分钟，以先达到者为准。worker 重启把未完成实体持久标记 error/aborted，客户端随后执行 manifest recovery。</td></tr>
+          <tr><td>delta journal</td><td>由持久提交生成的 <code>from_revision → to_revision</code> projection change；不保存完整正文副本。</td><td>内存保留最近 512 次提交或 15 分钟。缺口超过保留范围时返回 manifest + 有限 viewport。</td></tr>
+          <tr><td>viewport cursor</td><td>稳定二元组 <code>(created_at, message_id)</code>，按当前 head 链逆序分页；首屏最多 100 条且未压缩 JSON 最多 512 KiB，以先达到者为准。</td><td>向历史方向分页；head 改变时 manifest 给出新 cursor。单条消息超过剩余预算时只返回 header、摘要和 detail marker。</td></tr>
+          <tr><td>detail cursor</td><td>单节点/工具结果每次最多 1 MiB 未压缩内容；更大结果按 UTF-8 安全边界分块并返回 next cursor。</td><td>每次读取都重新执行 session/node/caller 授权；不得通过 cursor 跨节点或跨 session。</td></tr>
+        </tbody>
+      </table></div>
+      <details><summary>计算与发送的分离边界</summary><div><p>同步线程读取不可变 SessionDB 快照、建立 ID 索引、计算当前链与 Graph summary，并返回普通数据对象。异步 handler 在发送前再次校验 session revision；若期间发生写入，发送 manifest 后追加 delta，或放弃旧快照重新读取。线程内不得直接操作 WebSocket。</p></div></details>
+      <details><summary>需要删除的重复计算</summary><div><p>预先创建 <code>id → insertion_index</code>，替代排序中的 <code>all_msgs.index</code>；兄弟分组按 predecessor 一次建立；同一请求只读取一次 session row；Graph summary 与消息正文分开序列化。</p></div></details>
+      <details><summary>大字段与兼容</summary><div><p>保留当前 32 KiB 工具结果 marker 和 <code>get_full_tool_output</code> 权限检查。进一步把 context tree、runtime blocks、Graph node content 和附件 metadata 纳入按需读取。旧客户端仍可请求旧 action，但服务端需要设置硬载荷上限并在超过时返回升级提示，而不是继续生成无界帧。</p></div></details>
+    </section>
+
+    <section id="websocket">
+      <div class="section-head"><span class="num">06</span><h2>WebSocket 队列、顺序与恢复</h2></div>
+      <p class="intro">浏览器标准 WebSocket API 不提供自动背压，因此服务器必须限制自己的发送队列。每个连接由一个 sender task 顺序发送，生产线程只执行线程安全的 enqueue。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>帧类别</th><th>示例</th><th>队列规则</th><th>溢出行为</th></tr></thead>
+        <tbody>
+          <tr><td>不可丢终态</td><td>error、question、chat final、job terminal、ack、permission result</td><td>保持顺序，不覆盖，不跨 session 合并。</td><td>无法在预算内排队时关闭连接并标记需要 state recovery；不得静默丢弃。</td></tr>
+          <tr><td>可合并增量</td><td>text/thinking delta、tree update、progress、context stats</td><td>按 <code>session + entity + type</code> 保留最新或合并相邻文本。</td><td>删除被更新取代的旧增量，并记录 coalesced 计数。</td></tr>
+          <tr><td>快照</td><td>sessions list、branches、settings、graph summary</td><td>同一 key 只保留最新未发送快照。</td><td>替换旧快照；不影响终态。</td></tr>
+          <tr><td>控制</td><td>pong、auth/status、reload required</td><td>小型独立预算，防止被大消息完全延迟。</td><td>认证或协议错误立即关闭；pong 可丢弃旧值。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="cards">
+        <article class="card"><h3>队列上限与关键预留</h3><p>每连接限制 256 帧或 4 MiB，以先达到者为准；其中 64 帧和 1 MiB 只供不可丢终态。关键帧入队前先清除可合并增量，不能占用普通快照的旧版本。</p></article>
+        <article class="card"><h3>发送所有权</h3><p>只有 sender task 调用 <code>ws.send_text</code>。断开时取消 sender、释放队列并注销 focused session；其他线程不保留 WebSocket Future。</p></article>
+        <article class="card"><h3>重连</h3><p>指数退避并加入随机抖动；页面重新可见或用户明确重试时可提前触发。成功后先恢复协议状态，再恢复会话投影。</p></article>
+        <article class="card"><h3>观测指标</h3><p>记录 queue_frames、queue_bytes、oldest_age、coalesced、send_failures、disconnect_reason 和 recovery_mode，不记录帧正文。</p></article>
+      </div>
+      <div class="callout warn"><b>关键帧恢复合同：</b>source 在 enqueue 前持久化 chat final、job terminal、用户可见 error、question 和 permission request。所有用户可见 error 同时写入有界 <code>UserErrorStore</code>，按 <code>error_id</code> 查询，最多保留 1,000 条或 7 天；session manifest 只携带相关未关闭 ID，重连通过 <code>list_user_errors(cursor)</code> 读取详情。transport close 由客户端根据 close/timeout 本地生成，不依赖服务端错误帧。chat ack 只在用户消息落盘后发送；其他 request ack 必须能通过 <code>request_id</code> 幂等查询或重放。若关键预留仍满，服务器关闭该连接并标记 <code>state_recovery_required</code>；客户端重连后从 manifest、UserErrorStore、pending-question registry、Job store 和 request result 查询恢复，不能依赖未发送的内存帧。</div>
+      <div class="refs">
+        <article class="ref"><b><a href="https://developer.mozilla.org/en-US/docs/Web/API/WebSocket">MDN WebSocket</a></b><p>标准 WebSocket API 不提供自动背压；继续使用兼容性最好的 WebSocket，但必须在应用层限制队列。</p></article>
+        <article class="ref"><b><a href="https://developer.mozilla.org/en-US/docs/Web/API/WebSocket/bufferedAmount">MDN bufferedAmount</a></b><p>客户端可用 <code>bufferedAmount</code> 监测未发送字节，但该值不能替代服务端每连接队列和恢复协议。</p></article>
+        <article class="ref"><b><a href="https://docs.python.org/3/library/asyncio-queue.html">Python asyncio.Queue</a></b><p>采用正数 <code>maxsize</code> 的 FIFO 队列；跨线程入口使用 event loop 的线程安全调度，不直接跨线程操作 Queue。</p></article>
+      </div>
+    </section>
+
+    <section id="event-bus">
+      <div class="section-head"><span class="num">07</span><h2>EventBus 执行模型与日志</h2></div>
+      <p class="intro">EventBus 保留两种明确语义：gate 是同步决策；notify 是异步观察。二者不能共用“当前线程直接调用 handler”的执行方式。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>属性</th><th>Gate</th><th>Notify</th></tr></thead>
+        <tbody>
+          <tr><td>用途</td><td>在动作发生前允许或拒绝。</td><td>记录、更新 UI、触发后续非阻塞工作。</td></tr>
+          <tr><td>执行位置</td><td>emitter 线程；默认总预算 <code>events.gate_timeout_ms=50</code>。</td><td>EventBus 自有 event loop；同步 consumer 在线程池执行，async consumer 在该 loop 执行。</td></tr>
+          <tr><td>失败</td><td>维持现有 fail-open，并写结构化警告和 gate 结果。</td><td>隔离消费者；重试只由消费者策略决定；不得静默跳过。</td></tr>
+          <tr><td>顺序</td><td>注册顺序。</td><td>同一 <code>session + entity</code> 有序；不同 key 可并发。</td></tr>
+          <tr><td>背压</td><td>不排队；超过预算时跳过剩余 gate 并记录。</td><td>有界队列；关键事件不能被普通遥测占满。</td></tr>
+          <tr><td>日志</td><td>事件和 gate verdict 合并成一条记录。</td><td>异步批量写；大型 payload 使用长度、摘要和受控片段。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Notify 队列合同</th><th>规则</th></tr></thead>
+        <tbody>
+          <tr><td>顺序键</td><td>优先使用 <code>session_id + entity_id</code>；只有 session 时使用 session；两者都没有时使用 <code>type + origin</code>。同一键严格 FIFO，不同键可并发。</td></tr>
+          <tr><td>容量</td><td>普通队列最多 4,096 事件；关键状态队列最多 512 事件。关键类型是 operation error/recovered、question、job terminal、turn end 和标记为 critical 的 ws.frame。</td></tr>
+          <tr><td>满队列</td><td>progress/context stats 等遥测按键合并或丢弃并增加明确指标；关键队列满时 source 的持久状态仍是恢复依据，bus 写入 emergency loss marker 并通知 Web 连接执行 state recovery。不得只打印 stderr 后继续假定已投递。</td></tr>
+          <tr><td>关闭与重启</td><td>正常关闭最多排空 2 秒；剩余 notify 记录 shutdown loss marker。关键业务状态在 emit 前持久化，重启后由各 store 的 recovery 扫描恢复，不把 EventBus 当 durable queue。</td></tr>
+          <tr><td>Gate 安全边界</td><td>EventBus gate 只承载插件/工作流的附加决策，维持 fail-open。权限、认证、sandbox 和凭据校验不使用该 fail-open gate，继续由各自强制边界拒绝。</td></tr>
+          <tr><td>日志唯一性</td><td>事件根据 session 是否存在只写 session log 或 global log 之一；同一目标文件中一个 event ID 一行。gate event 在 verdict 完成后写一次，不能先由 notify 写一行。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="cards">
+        <article class="card"><span class="path">Registry integrity</span><h3>AST 级注册检查</h3><p>测试解析 Python AST 中的 <code>emit_safe</code>、<code>make_event</code> 和常量事件名，覆盖跨行调用；动态名称必须显式登记例外和消费者。</p></article>
+        <article class="card"><span class="path">Single record</span><h3>事件只记录一次</h3><p><code>tool.before</code> 的观察与 gate 共享同一 Event；最终日志包含 gate 字段。不能先写普通行再写 verdict 行。</p></article>
+        <article class="card"><span class="path">Payload policy</span><h3>高体积字段摘要化</h3><p><code>tool.after.result_text</code> 默认记录字节数、错误状态、哈希和有限预览。完整结果仍在 SessionDB/工具结果存储，不复制到事件日志。</p></article>
+        <article class="card"><span class="path">UI bridge</span><h3>错误不是原样转发所有事件</h3><p>EventBus 到 Web 的桥只转发经过注册的用户相关 envelope。内部事件日志和用户错误流相关联，但不能直接暴露任意 payload。</p></article>
+      </div>
+    </section>
+
+    <section id="frontend">
+      <div class="section-head"><span class="num">08</span><h2>前端渲染、刷新与静态资源</h2></div>
+      <p class="intro">当前流式 reducer 已按 animation frame 合并更新，MessageRow 按 ID 订阅并对长列表执行行回收。这些机制继续保留。优化重点是减少进入 store 的数据、消除无效外部依赖和限制首次资源体积。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>区域</th><th>保留</th><th>修改</th><th>验证</th></tr></thead>
+        <tbody>
+          <tr><td>流式消息</td><td>每个 animation frame 合并 text/thinking；单消息 selector。</td><td>终态到达前先 flush 对应 pending delta；错误记录与回复状态原子更新。</td><td>高频 delta 下每帧最多一次相关 store update；终态内容不缺失。</td></tr>
+          <tr><td>长列表</td><td>MessageRow memo、viewport 行回收、稳定 ID 数组。</td><td>首屏只 hydrate viewport 数据；Graph 面板不再强迫 chat store 保存完整 Graph 正文。</td><td>1,000+ 节点会话首屏 DOM 和 React commit 不随完整历史线性增长。</td></tr>
+          <tr><td>错误 UI</td><td>现有 Toast 组件和会话 unread 状态。</td><td>增加 error store、持久错误卡片和后台会话错误标记；Toast 去重。</td><td>当前/后台/刷新后三种场景都有自动化断言。</td></tr>
+          <tr><td>marked / KaTeX</td><td>Markdown 和数学语法行为。</td><td>从前端 bundle 本地导入，删除 CDN loader 和 WS 初始化等待。</td><td>严格 <code>script-src 'self'</code> 下零 CSP violation；离线可渲染。</td></tr>
+          <tr><td>静态响应</td><td>同源静态 export 和缓存头。</td><td>为文本、JS、CSS、SVG 增加 gzip；后续可加入构建期 Brotli 预压缩。</td><td>Accept-Encoding 协商正确，已压缩内容不重复压缩，SSE 不压缩。</td></tr>
+          <tr><td>代码分割</td><td>Next.js 静态 export。</td><td>按 settings、DAG、browser、programs 等不在首屏的表面延迟加载。</td><td>首次传输与最大 chunk 进入预算；交互后加载有明确 pending 状态。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="refs">
+        <article class="ref"><b><a href="https://starlette.dev/middleware/">Starlette GZipMiddleware</a></b><p>采用官方 ASGI middleware 的最小体积和压缩级别配置；排除 SSE 和已经压缩的格式。</p></article>
+        <article class="ref"><b><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/script-src">MDN CSP script-src</a></b><p><code>'self'</code> 与 CDN runtime script 不兼容。选择本地依赖，不放宽 CSP，也不增加 <code>unsafe-inline</code>/<code>unsafe-eval</code>。</p></article>
+        <article class="ref"><b>拒绝 WebSocketStream 迁移</b><p>浏览器支持范围不足，而且不能解决服务端队列、持久状态、错误合同和增量恢复。保留标准 WebSocket 并补齐应用层控制。</p></article>
+      </div>
+    </section>
+
+    <section id="operations">
+      <div class="section-head"><span class="num">09</span><h2>运行指标、容量和状态目录</h2></div>
+      <p class="intro">性能改动必须能在默认 worker 上持续测量。指标只记录计数、耗时、字节和关联 ID，不记录提示词、模型回复、工具输出或凭据。</p>
+      <div class="cards">
+        <article class="card"><h3>WebSocket</h3><ul><li>活动连接数和每连接队列字节。</li><li>send latency、失败数、coalesced 数。</li><li>重连次数、恢复模式、全量恢复原因。</li></ul></article>
+        <article class="card"><h3>Session hydration</h3><ul><li>manifest/messages/graph 各自字节。</li><li>DB read、projection、serialize、send 耗时。</li><li>viewport hit、detail fetch、delta fallback 数。</li></ul></article>
+        <article class="card"><h3>EventBus</h3><ul><li>notify enqueue 与 handler duration。</li><li>队列深度、失败、重试和丢弃原因。</li><li>gate 总耗时与超过预算次数。</li></ul></article>
+        <article class="card"><h3>Storage</h3><ul><li>sessions、logs、chrome cache、models、IndexedDB 分类容量。</li><li>用户触发清理前展示目标和影响。</li><li>默认不删除 Cookie、登录态、扩展数据和会话。</li></ul></article>
+      </div>
+      <div class="callout warn"><b>清理边界：</b>浏览器 Profile 是用户状态，不得使用后台定时任务或启动钩子自动删除。可安全重建的 cache/model 与身份/扩展/IndexedDB 必须分开列出，并要求用户显式确认具体类别。</div>
+    </section>
+
+    <section id="plan">
+      <div class="section-head"><span class="num">10</span><h2>实施任务与依赖</h2></div>
+      <p class="intro">每个任务独立提交、独立规格审查和质量审查。TASK 3 已经通过两类审查，但在基线失败清除且最终 gate 完成前不标记为 complete。后一个任务不得依赖未审查的前一个工作区状态。</p>
+      <div class="timeline">
+        <article class="phase"><div class="id">TASK 1</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>统一错误 envelope 与前端错误状态</h3><p>新增安全错误构造器；适配现有 action <code>error/action_error</code>；禁止列表异常变空和删除异常静默；建立 error store、当前会话卡片、后台标记和 Toast 去重。保持聊天回复现有 error bubble 兼容。Job 实体错误由 TASK 2 处理。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/server.py">server.py</a><a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/server/openprogram_server/_webui/ws_actions">ws_actions/</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/use-ws.ts">use-ws.ts</a><a href="https://github.com/Fzkuji/OpenProgram/tree/main/apps/web/lib/session-store">session-store/</a></div></div></article>
+        <article class="phase"><div class="id">TASK 2</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>后台 Job 错误完整展示</h3><p>让 Job error 从实体、广播、列表加载到 AttachCard/Branches 全程保留；终态错误在刷新后仍存在。失败信息使用安全摘要，完整 traceback 只写日志。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/job/runner.py">runner.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/ws-events.ts">ws-events.ts</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/messages/attach-card.tsx">attach-card.tsx</a></div></div></article>
+        <article class="phase"><div class="id">TASK 3</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>每连接有界发送队列 <span class="status partial">review-passed</span></h3><p>在 server 层新增 <code>_webui/ws_delivery.py</code>，建立 sender 生命周期、帧分类、合并规则、终态保障和断连清理；所有广播路径只 enqueue。慢客户端、发送失败、跨线程并发、队列溢出、终态预留和 in-flight 容量回归已通过，未修改 <code>events/bus.py</code>。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/server.py">server.py</a><span class="tag">apps/server/.../_webui/ws_delivery.py</span></div></div></article>
+        <article class="phase"><div class="id">TASK 4</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>Session projection 与增量恢复</h3><p>先固定载荷测量和协议合同，再分离同步计算与异步发送；实现 manifest、viewport messages、Graph summary、detail fetch 和 reconnect delta。评估并复用或删除未接入的 MessageStore。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/session.py">session.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/messages.py">messages.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/use-ws.ts">use-ws.ts</a></div></div></article>
+        <article class="phase"><div class="id">TASK 5</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>EventBus notify 与日志执行模型</h3><p>notify 转移到专用执行环境；gate 保持同步；日志异步批量写；修复重复 gate 行和大型 payload；用 AST 验证事件注册完整性。兼容现有 plugin hook 公开签名。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/bus.py">bus.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/event_log.py">event_log.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/events/registry.py">registry.py</a></div></div></article>
+        <article class="phase"><div class="id">TASK 6</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>本地前端依赖、压缩与资源预算</h3><p>删除 CDN runtime loader，将 marked/KaTeX 纳入构建；增加安全的静态压缩；按不在首屏的表面切分资源；保持严格 CSP。验收同时覆盖默认 App 和远程服务器模式。</p><div class="files"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/external-libs.ts">external-libs.ts</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/frontend.py">frontend.py</a><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/owner_auth.py">owner_auth.py</a></div></div></article>
+        <article class="phase"><div class="id">TASK 7</div><div class="axis"><span class="dot"></span><span class="line"></span></div><div class="body"><h3>容量诊断与显式清理</h3><p>增加只读容量分类和诊断输出；设计 cache/model 的显式清理入口；身份和浏览器用户数据保持默认不清理。该任务不阻塞错误与刷新性能修复。</p></div></article>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>任务</th><th>depends_on</th><th>可并行关系</th><th>职责排除</th></tr></thead>
+        <tbody>
+          <tr><td>TASK 1</td><td>无</td><td>可与 TASK 3、6、7 并行</td><td>只定义通用 action error/error store；不实现 Job 实体状态。</td></tr>
+          <tr><td>TASK 2</td><td>TASK 1</td><td>完成 TASK 1 后可与 TASK 4 并行</td><td><code>job_status</code> 唯一承载 Job 终态；复用 error store，不再新增第二种 Job error frame。</td></tr>
+          <tr><td>TASK 3</td><td>无</td><td>可与 TASK 1、6、7 并行</td><td>只修改 server 的连接队列和 ws.frame enqueue adapter；不修改 <code>events/bus.py</code> 的 notify 调度。</td></tr>
+          <tr><td>TASK 4</td><td>TASK 3</td><td>可与 TASK 2、5 并行</td><td>SessionDB/DAG 是唯一持久来源；删除不能复用的 MessageStore 持久接口。</td></tr>
+          <tr><td>TASK 5</td><td>TASK 1、TASK 3</td><td>与 TASK 4 的代码文件不重叠</td><td>唯一拥有 <code>events/bus.py</code>、registry 和 event log；Web bridge 使用 TASK 1 envelope、TASK 3 enqueue。</td></tr>
+          <tr><td>TASK 6</td><td>无</td><td>可独立执行</td><td>不改变 CSP 信任边界，不修改 WebSocket 协议。</td></tr>
+          <tr><td>TASK 7</td><td>无</td><td>可独立执行</td><td>默认只读诊断；删除入口需要单独交互设计和明确确认。</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="acceptance">
+      <div class="section-head"><span class="num">11</span><h2>量化验收矩阵</h2></div>
+      <p class="intro">目标值是实现合同，不是当前已达成的数据。每项需要自动化测试或可重复测量命令，不能只靠人工观察。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>公共入口</th><th>场景</th><th>验收标准</th><th>证据类型</th></tr></thead>
+        <tbody>
+          <tr><td>任意已注册 WS action</td><td>handler 抛异常</td><td>同一 socket 收到安全 <code>operation_error</code>；连接继续；UI 在 250 ms 内显示；日志可按 correlation ID 定位。</td><td>服务端 receive-loop component test + Web reducer/UI test。</td></tr>
+          <tr><td>list/delete/settings/channel actions</td><td>底层存储异常</td><td>不得返回正常空集合或静默成功；旧数据保留并标 degraded，或显示明确失败。</td><td>逐 action 合同测试。</td></tr>
+          <tr><td>JobRunner</td><td>后台任务异常后刷新</td><td>Job、AttachCard 和会话错误标记显示同一安全原因；<code>retryable</code> 一致。</td><td>持久化 + WS + React 集成测试。</td></tr>
+          <tr><td>最大已知会话首次加载</td><td>无客户端缓存</td><td>首个未压缩 wire projection ≤ 1 MiB；服务端 event-loop 占用 ≤ 50 ms；其余计算在线程执行。</td><td>固定会话 fixture 的 payload/time budget test。</td></tr>
+          <tr><td>同一会话重连</td><td>客户端已知 revision，缺失不超过 64 个 delta</td><td>不发送完整 history；恢复帧 ≤ 256 KiB；终态、错误和问题均存在。</td><td>断连/恢复协议测试。</td></tr>
+          <tr><td>慢 WebSocket 客户端</td><td>持续产生 stream delta 与终态</td><td>队列不超过 256 帧或 4 MiB；增量可合并；终态不丢；无法恢复时明确关闭并要求重新同步。</td><td>受控慢 sender component test。</td></tr>
+          <tr><td>EventBus notify</td><td>慢同步 plugin + worker thread async subscriber</td><td>emitter 的 enqueue p99 ≤ 1 ms；async subscriber 不因缺少当前 loop 被跳过；失败不阻塞其他消费者。</td><td>并发 benchmark + 行为测试。</td></tr>
+          <tr><td>Event log</td><td>一次带 gate 的 tool.before</td><td>事件只选择 session 或 global 一个目标日志；该目标中同一 event ID 只出现一行，包含 gate verdict，大型结果不写入完整正文。</td><td>真实事件文件断言。</td></tr>
+          <tr><td>Web 首次加载</td><td>缓存关闭、接受 gzip</td><td>零 CSP violation；零 CDN runtime 请求；首次 transfer ≤ 2 MiB；最大压缩 JS chunk ≤ 350 KiB。</td><td>默认 App browser trace + HTTP headers test。</td></tr>
+          <tr><td>状态目录诊断</td><td>Profile 超过配置提醒值</td><td>准确分类容量；未获明确确认不执行删除；清理报告列出删除类别和可恢复性。</td><td>临时 profile 文件树测试。</td></tr>
+        </tbody>
+      </table></div>
+      <h3 style="margin-top:28px">测量口径与阈值依据</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>指标</th><th>起止点与环境</th><th>样本</th><th>阈值依据</th></tr></thead>
+        <tbody>
+          <tr><td>会话 wire bytes</td><td>后端 <code>json.dumps</code> 结果的 UTF-8 未压缩字节；默认 profile 的固定大型脱敏 fixture，关闭冷 context stats。</td><td>每个候选提交 5 次，报告中位数和最大值；消息/graph/detail 分项。</td><td>1 MiB 是当前 11.66 MB 的首阶段硬上限，并保证本地 JSON parse 和远程传输可控；单 detail 另有 1 MiB 分块上限。</td></tr>
+          <tr><td>event-loop 占用</td><td>从 async handler 进入到第一次 await send 前，仅统计 event-loop 线程 wall time；projection 在线程的时间单独报告。</td><td>固定 fixture 20 次，报告 p50/p95/max。</td><td>50 ms 对齐交互任务不长期占用主循环的预算；不是整个页面完成时间。</td></tr>
+          <tr><td>错误 UI 延迟</td><td>浏览器收到完整 WS frame 到错误卡片出现在 DOM；不含网络。</td><td>20 次，报告 p95。</td><td>250 ms 允许一次状态更新和渲染，同时明显低于现有 2 秒重连周期。</td></tr>
+          <tr><td>Notify enqueue</td><td><code>emit</code> 入口到事件成功进入 bus 自有队列，不含 consumer。</td><td>单线程和 8 worker 并发各 10,000 次，报告 p50/p95/p99。</td><td>p99 ≤ 1 ms 确保普通 notify 不显著增加工具和 turn 执行时间。</td></tr>
+          <tr><td>静态 transfer</td><td>默认 App、缓存关闭、无浏览器扩展注入；统计 document origin 资源的 encodedBodySize。</td><td>冷加载 5 次，报告中位数和最大值。</td><td>2 MiB 是当前 3.42 MB 的首阶段预算；350 KiB 约束单个压缩 JS chunk，防止一个延迟表面进入首包。</td></tr>
+          <tr><td>CSP</td><td>只统计 OpenProgram document origin 产生的 violation；浏览器扩展或开发工具注入单独报告。</td><td>冷加载、打开数学消息、进入设置和 DAG 各一次。</td><td>产品自身零 violation 是安全和功能合同。</td></tr>
+          <tr><td>容量分类</td><td>以文件系统实际 allocated/logical bytes 为准，并列出分类规则；符号链接不跨出 state root。</td><td>固定临时树和真实只读诊断。</td><td>分类合计与根目录差异不超过 1% 或 1 MiB，以较大者为准。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><b>基线可重复性：</b>本页的 11.66 MB、313 ms、123 ms、437 MB 和测试计数来自一次当前工作区审计，未绑定可提交 fixture，因此只能作为观察基线。TASK 1/3/4/5/6 的 RED 首先增加固定 fixture、脚本或浏览器 trace 配置；实现报告只能用这些新入口给出正式 before/after。</div>
+    </section>
+
+    <section id="risks">
+      <div class="section-head"><span class="num">12</span><h2>兼容风险、采用与排除</h2></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>选择</th><th>处理</th><th>理由与边界</th></tr></thead>
+        <tbody>
+          <tr><td>标准 WebSocket + 应用层有界队列</td><td><span class="status selected">已选设计</span></td><td>浏览器兼容性稳定；服务端仍需要明确队列、合并和恢复语义。</td></tr>
+          <tr><td>现有 MessageStore seq/delta</td><td><span class="status selected">部分复用</span></td><td>只复用 block/seq/delta 计算；SessionDB/DAG 已确定为唯一持久来源，独立 store 接口删除。</td></tr>
+          <tr><td>统一 operation_error</td><td><span class="status selected">已选设计</span></td><td>前端需要稳定 machine code 和安全文本；旧错误帧通过短期 adapter 兼容。</td></tr>
+          <tr><td>EventBus notify 专用执行环境</td><td><span class="status selected">已选设计</span></td><td>满足非阻塞观察合同；gate 不迁移，继续同步。</td></tr>
+          <tr><td>本地打包 marked/KaTeX</td><td><span class="status selected">已选设计</span></td><td>与严格 CSP、离线使用和可重复构建一致。</td></tr>
+          <tr><td>放宽 CSP 允许 CDN</td><td><span class="status gap">拒绝</span></td><td>增加远程脚本信任和可用性依赖，不能解决首次连接等待。</td></tr>
+          <tr><td>WebSocketStream / WebTransport 全面迁移</td><td><span class="status gap">拒绝</span></td><td>浏览器支持或复杂度不符合当前范围，也不能替代持久恢复和错误合同。</td></tr>
+          <tr><td>全局 React store/组件重写</td><td><span class="status gap">拒绝</span></td><td>当前已有 rAF 合并、单消息订阅和行回收；未证明它们是主要限制。</td></tr>
+          <tr><td>自动删除 Chrome Profile</td><td><span class="status gap">拒绝</span></td><td>可能移除登录态、IndexedDB、扩展或其他用户数据；只允许显式分类清理。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout warn"><b>迁移风险：</b>会话加载协议改变会影响刷新顺序、分支切换、运行中卡片、问题重放和 send queue。TASK 4 必须先记录所有现有 frame 顺序与 public-entry RED，再逐层替换；不能直接把整个 async handler 放入 <code>to_thread</code>。</div>
+    </section>
+
+    <section id="status">
+      <div class="section-head"><span class="num">13</span><h2>实现状态附录</h2></div>
+      <p class="intro">本节集中区分当前已有能力、部分能力和未实现设计。上文的目标合同不因当前状态而弱化。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>能力</th><th>状态</th><th>当前证据</th><th>剩余工作</th></tr></thead>
+        <tbody>
+          <tr><td>统一 operation_error 与 error store</td><td><span class="status gap">未实现</span></td><td>当前 action 使用多种 error/action_error shape，前端没有统一记录。</td><td>TASK 1。</td></tr>
+          <tr><td>聊天回复错误 bubble</td><td><span class="status done">已有</span></td><td>主 chat dispatcher 的 error turn 会终结 placeholder 并进入现有渲染路径。</td><td>与统一错误中心关联，避免重复 Toast。</td></tr>
+          <tr><td>WebSocket 命令级异常隔离</td><td><span class="status partial">部分</span></td><td>handler 异常返回低敏 <code>action_error</code> 并保持连接。</td><td>修复前端 code 分类和所有 action 的统一 envelope。</td></tr>
+          <tr><td>工具输出按需读取</td><td><span class="status done">已有</span></td><td>超过 32 KiB 的工具结果在 wire 中截断，展开时按 session/node/caller 授权读取。</td><td>把 Graph、context tree 和其他重复大字段纳入 projection。</td></tr>
+          <tr><td>流式渲染合并与长列表回收</td><td><span class="status done">已有</span></td><td>text/thinking delta 按 animation frame 合并；MessageRow 使用稳定 selector；长列表计算 live rows。</td><td>补性能预算，确保新的 error/delta store 不破坏这些性质。</td></tr>
+          <tr><td>后台 Job error 字段</td><td><span class="status partial">部分</span></td><td>Runner 广播和 TypeScript 类型包含 <code>error</code>。</td><td>状态存储、卡片渲染、刷新恢复和 Toast/错误中心关联。</td></tr>
+          <tr><td>会话增量恢复</td><td><span class="status gap">未接入</span></td><td>MessageStore 模块定义 seq/delta/full，但生产 server/web 没有使用。</td><td>按已确定的 SessionDB/DAG 单一来源实现 projection recovery，并删除独立 store 接口。</td></tr>
+          <tr><td>每连接 WebSocket 背压</td><td><span class="status partial">review-passed</span></td><td>每个生产连接使用单一 sender；queued + in-flight 总量不超过 256 帧 / 4 MiB；慢客户端并发发送峰值从 400 降为 1。规格审查和质量审查均为 PASS。</td><td>最终 Python gate 被两个已在任务基线复现的无关失败阻断；保持 <code>baseline-failed</code>。</td></tr>
+          <tr><td>EventBus 异步 notify 保证</td><td><span class="status gap">未实现</span></td><td>普通 handler 同步执行；无 loop 的 async handler 被跳过。</td><td>TASK 5。</td></tr>
+          <tr><td>本地 marked/KaTeX 与静态压缩</td><td><span class="status gap">未实现</span></td><td>CDN scripts 与当前 CSP 冲突；静态响应测量无 content encoding。</td><td>TASK 6。</td></tr>
+          <tr><td>Profile 容量诊断与清理</td><td><span class="status gap">未实现</span></td><td>只能通过文件系统检查容量。</td><td>TASK 7。</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 style="margin-top:28px">TASK 3 任务简报与实施证据</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>证据项</th><th>已核对内容</th></tr></thead>
+        <tbody>
+          <tr><td>批准来源</td><td>本页 WebSocket 队列、TASK 3 与量化验收条款；任务从当时的 <code>main</code> 基线启动。</td></tr>
+          <tr><td>生产文件</td><td><code>server.py</code>、<code>_webui/ws_delivery.py</code>、<code>ws_actions/webtab.py</code>、<code>routes/misc.py</code>。</td></tr>
+          <tr><td>测试文件</td><td><code>test_websocket_delivery.py</code>、<code>test_websocket_command_lifecycle.py</code>、<code>test_webtab_control.py</code>、<code>test_web_owner_auth.py</code>。</td></tr>
+          <tr><td>必须行为</td><td>单一 sender；跨线程只入队；queued + in-flight 有界；文本与状态合并；终态关键预留；溢出和发送失败要求 state recovery；断连完成所有 waiter。</td></tr>
+          <tr><td>兼容与排除</td><td>保留 <code>_ws_connections</code>、<code>await ws.send_text</code> 和精确 socket 控制的现有语义；不修改 EventBus、Session projection、前端重连或错误合同。</td></tr>
+          <tr><td>RED</td><td>通过真实 <code>_websocket_handler</code> 和 <code>_broadcast</code> 注入 400 个更新，旧实现的同时 <code>send_text</code> 峰值为 400，期望值为 1。</td></tr>
+          <tr><td>GREEN 与受影响验证</td><td>聚焦命令 37 项通过；WebUI 与 web-use 扩大验证 448 项通过、1 项跳过，另有 1 个已复现的基线失败。</td></tr>
+          <tr><td>审查</td><td>规格审查 PASS；质量审查 PASS。两轮确认的 waiter、失败语义、终态分类和 in-flight 容量 finding 都有定向回归。</td></tr>
+          <tr><td>完整 gate</td><td>Ruff PASS。Python 完整执行为 6,220 passed、22 skipped、1 xfailed、3 failed；其中生成 README 与 <code>gui_agent surface</code> 已在任务基线独立复现，models.dev 受管 HTTP 用例在候选工作区串行重跑通过。</td></tr>
+          <tr><td>交付状态</td><td><code>review-passed</code> / <code>baseline-failed</code>。未标记 complete，未进入下一个依赖任务。</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 style="margin-top:28px">当前审计验证入口</h3>
+      <pre class="schema" aria-label="Current audit verification commands">PYTHONPATH=apps/server:. .venv/bin/python -m pytest \
+  tests/component/agent/test_event_bus.py \
+  tests/component/agent/test_event_gate.py \
+  tests/unit/agent/test_event_bridges.py \
+  tests/unit/agent/test_error_turn_finalized.py \
+  tests/component/agent/test_async_job_recovery.py \
+  tests/component/webui/test_session_tool_output_transport.py \
+  tests/unit/webui/test_webui_chat_dispatcher.py -q
+
+cd apps/web &amp;&amp; npm test
+cd apps/web &amp;&amp; npx tsc --noEmit
+python3 -m scripts.docs_site.build
+python3 -m scripts.docs_site.checklinks</pre>
+      <p class="intro">这些入口证明当前受支持路径没有被文档改动破坏，不证明本文目标已经实现。各 TASK 必须先增加对应的错误 UI、慢客户端、projection、队列、EventBus 并发或资源预算 RED。</p>
+
+      <h3 style="margin-top:28px">相关权威文档</h3>
+      <ul class="related">
+        <li><a href="../error-handling.html">Error Handling — Discipline and Gate</a></li>
+        <li><a href="../proactive/event-layer.html">Event Layer</a></li>
+        <li><a href="../proactive/framework-evolution.html">Framework Signal Routing</a></li>
+        <li><a href="../ui/invariants.html">Cross-module UI invariants</a></li>
+        <li><a href="../ui/interaction-feedback.html">Interaction feedback</a></li>
+        <li><a href="../ui/websocket-command-lifecycle.html">WebSocket command lifecycle</a></li>
+        <li><a href="operations/streaming-resume.html">Persisting in-flight state / reconnect recovery</a></li>
+        <li><a href="execution/async-job-lifecycle.html">Async task lifecycle</a></li>
+        <li><a href="session/README.html">Session subsystem</a></li>
+      </ul>
+      <p class="foot">实现证据只在对应任务经过规格审查、质量审查和完整验证后更新。本文不记录日期或提交历史；演变过程由 Git 保存。</p>
+    </section>
+  </main>
+</div>
+</div>

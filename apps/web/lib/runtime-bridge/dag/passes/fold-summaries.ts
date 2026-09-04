@@ -79,7 +79,7 @@ export function _foldSummaries(
   const spineOf = (sid: string): string[] =>
     coversOf[sid].filter((id) => {
       const n = fullById[id];
-      return !!n && isChainNode(n);
+      return !!n && isChainNode(n, fullById);
     });
   const applies = (sid: string): boolean => {
     if (!chain.size) return false;
@@ -175,7 +175,7 @@ export function _foldSummaries(
     let lastCovered: string | undefined;
     for (let k = ids.length - 1; k >= 0; k--) {
       const c = fullById[ids[k]];
-      if (c && isChainNode(c)) { lastCovered = c.id; break; }
+      if (c && isChainNode(c, fullById)) { lastCovered = c.id; break; }
     }
     if (!lastCovered) continue;
     const j = visible.findIndex((v) => v.id !== m.id && !covered.has(v.id)

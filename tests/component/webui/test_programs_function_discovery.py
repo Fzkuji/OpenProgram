@@ -169,7 +169,7 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert not old_source.exists()
 
 
-def test_goal_form_exposes_only_prompt_and_condition() -> None:
+def test_goal_form_exposes_only_prompt() -> None:
     source = (
         Path(__file__).parents[3]
         / "openprogram/programs/workflow/goal/goal.py"

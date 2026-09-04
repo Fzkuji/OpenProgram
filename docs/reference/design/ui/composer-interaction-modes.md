@@ -42,7 +42,7 @@ standalone floating popup.
 
 A function invocation has two frontend inputs. Selecting a registered function
 opens `FunctionForm`; entering an exact, complete expression such as
-`gui_agent(task="Verify the title", surface="browser", max_steps=3)` in the idle
+`gui_agent(task="Verify the current built-in browser page title without changing it")` in the idle
 composer invokes the same function without opening the form. The expression is
 recognized only when the entire trimmed input is one registered
 `name(parameter=literal, ...)` call. Both inputs are normalized and schema-validated,

@@ -52,7 +52,7 @@ mode 容器，由它选一种变换来呈现。一个后端 registry（QuestionR
 
 函数调用有两种前端输入形式。选择一个已注册函数会打开 `FunctionForm`；在 idle
 composer 中输入完整且精确的表达式，例如
-`gui_agent(task="Verify the title", surface="browser", max_steps=3)`，则不打开表单，
+`gui_agent(task="查看当前内置浏览器页面标题，但不要修改页面")`，则不打开表单，
 直接调用同一个函数。只有去除首尾空白后的全部输入恰好是一个已注册的
 `name(parameter=literal, ...)` 调用时，才识别为函数表达式。两种输入都会经过同一套
 参数归一化和 schema 校验，再交给同一个 `FunctionInvocation` dispatcher。包含

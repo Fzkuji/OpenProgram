@@ -525,8 +525,7 @@ def test_reconcile_finishes_a_durable_cancellation_intent(store):
 
 
 def test_reconcile_settles_zombie_goal_state(store):
-    """A goal loop frozen at active/waiting_user by a dead worker must be
-    settled to error on startup — nobody else will ever finish it."""
+    """An executing Goal becomes explicitly recoverable after restart."""
     from openprogram.webui import _exec_dag
 
     _two_turns(store)
@@ -535,13 +534,13 @@ def test_reconcile_settles_zombie_goal_state(store):
     })
     _exec_dag.reconcile_interrupted_runs()
     goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
-    assert goal["status"] == "error"
+    assert goal["status"] == "paused_recoverable"
+    assert goal["recoverable"] is True
     assert "worker restarted" in goal["last_reason"]
 
 
 def test_reconcile_settles_waiting_user_zombie_goal(store):
-    """waiting_user is the same zombie class as active: the ask is
-    blocked in a dead worker, so startup must settle it."""
+    """A durable async question remains answerable across worker restart."""
     from openprogram.webui import _exec_dag
 
     _two_turns(store)
@@ -551,8 +550,8 @@ def test_reconcile_settles_waiting_user_zombie_goal(store):
     })
     _exec_dag.reconcile_interrupted_runs()
     goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
-    assert goal["status"] == "error"
-    assert "worker restarted" in goal["last_reason"]
+    assert goal["status"] == "waiting_user"
+    assert goal["last_question"] == "A or B?"
 
 
 def test_reconcile_leaves_terminal_goal_alone(store):

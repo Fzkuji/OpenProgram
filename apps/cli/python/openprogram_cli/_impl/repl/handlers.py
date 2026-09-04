@@ -45,7 +45,7 @@ _BUILTIN_SPECS: list[tuple[str, tuple[str, ...], str, str]] = [
      "remove the alias for a channel peer"),
     ("connections", ("conns",), "",
      "list every channel peer currently aliased to this session"),
-    ("goal", (), "[condition | clear]",
+    ("goal", (), "[prompt | clear]",
      "run the Goal Workflow with current session context "
      "(bare /goal shows status; clear/stop/off/cancel removes it)"),
     ("compact", (), "[hint]",

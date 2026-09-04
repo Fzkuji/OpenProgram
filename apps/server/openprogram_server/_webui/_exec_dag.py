@@ -497,24 +497,32 @@ def reconcile_interrupted_runs() -> int:
         # Reset it independently of the node loop: a worker killed
         # between the status write and the placeholder insert leaves a
         # running ROW with no running NODE.
-        # A goal loop frozen at active/waiting_user is the same kind of
-        # zombie: the worker that ran it is gone, nobody will ever flip
-        # it to a terminal status, and the GoalChip spins forever. A
-        # fresh worker has no goal loop running, so settle it here.
+        # A Goal whose execution lease belonged to the previous worker is
+        # recoverable state, not a terminal error. Persist an explicit pause;
+        # hydration then shows the Goal content and a resume action instead of
+        # leaving a false running indicator or discarding the checkpoint.
         # Premise: this runs at worker startup, so this process has no
-        # live goal loop. Shared-state-dir multi-worker is not handled
-        # — a sibling worker's waiting_user would be wrongly settled.
+        # live goal loop. Shared-state-dir multi-worker is not handled:
+        # an active Goal owned by a live sibling could be paused here.
         try:
             full = store.get_session(sid) or {}
             goal_meta = (full.get("extra_meta") or {}).get("goal")
             if (isinstance(goal_meta, dict)
-                    and goal_meta.get("status") in {"active", "waiting_user"}):
+                    and goal_meta.get("status") in {
+                        "refining", "active", "running", "evaluating",
+                    }):
                 goal_meta = dict(goal_meta)
-                goal_meta["status"] = "error"
+                goal_meta["status"] = "paused_recoverable"
+                goal_meta["phase"] = "paused"
+                goal_meta["recoverable"] = True
+                goal_meta["pause_reason"] = "worker_restart"
+                goal_meta["active_started_at"] = None
                 goal_meta["last_reason"] = (
-                    "worker restarted while the goal loop was running"
+                    "worker restarted during Goal execution; resume from the latest checkpoint"
                 )
-                store.update_session(sid, goal=goal_meta)
+                import openprogram.programs.workflow.goal as goal_module
+                goal_module.save_goal(sid, goal_meta)
+                goal_module._emit_goal_update(None, sid, goal_meta)
                 fixed += 1
         except Exception:
             pass

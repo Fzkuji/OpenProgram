@@ -29,7 +29,7 @@ below and:
         web_search=False, timeout_s=None) -> str | dict
     agent(prompt, description="", agent_id="", start_from="clean",
           run_in_background=False, to="", archive_when_done=False) -> str
-    goal(prompt, condition, model="", effort="", max_rounds=None,
+    goal(prompt, model="", effort="", max_rounds=None,
          timeout_s=None) -> str
     validate_and_retry(action: Callable, check: str, retry: Callable,
                        max_retries=2) -> str
@@ -40,7 +40,7 @@ below and:
 llm makes one model request without tools or a session branch. agent starts a
 free-form agent with a tool loop; select its model and tool set through agent_id,
 which names an agent profile. goal runs a judgment loop: repeatedly calls agent
-and uses llm to judge whether the condition is met.
+and uses llm to judge whether the prompt's requested outcome is complete.
 
 Control flow primitives use llm for judgment:
 - validate_and_retry: execute action, check result with llm, retry if failed

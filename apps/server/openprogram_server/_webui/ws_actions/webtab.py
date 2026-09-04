@@ -72,9 +72,10 @@ def request_on_ws(ws, command: dict, timeout: float = 5.0) -> dict:
         return {"ok": False, "error": "originating desktop connection is unavailable"}
 
     def send(payload: str) -> None:
-        import asyncio
-        future = asyncio.run_coroutine_threadsafe(ws.send_text(payload), _s._loop)
-        future.result(timeout=min(max(timeout, 0.1), 2.0))
+        from openprogram.webui.ws_delivery import send_to_connection
+
+        if not send_to_connection(ws, payload, _s._loop):
+            raise RuntimeError("originating desktop connection is unavailable")
 
     try:
         return _wait_for_reply(

@@ -56,7 +56,7 @@ export function drawEdges(
     // A spawn head hangs on its owner's thread; the thread line below
     // is its only edge. Execution nodes likewise — their ink is the
     // thread line, not a chain edge.
-    if (isSpawnRoot(node) || !isChainNode(node)) return;
+    if (isSpawnRoot(node) || !isChainNode(node, tree.byId)) return;
     let pid = node.predecessor || node.caller;
     if (pid && !tree.byId[pid]) {
       let cur = pid;
