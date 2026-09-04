@@ -57,6 +57,7 @@ import {
 import { refreshStatusSource, setRunning, updateStatus } from "@/lib/runtime-bridge/ui";
 import { refreshChannelBadge } from "@/lib/runtime-bridge/conversations";
 import { loadExecutionCursors, recordExecutionCursor } from "@/lib/net/execution-cursor";
+import { pushStatusBadge } from "@/lib/top-bar-sync";
 
 export function useWS(): void {
   useEffect(() => {
@@ -763,6 +764,7 @@ export function useWS(): void {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       socket = new WebSocket(proto + "//" + location.host + "/ws");
       setSocket(socket);
+      pushStatusBadge();
 
       socket.onopen = () => {
         updateStatus("connected");
@@ -861,7 +863,10 @@ export function useWS(): void {
         socket.onclose = null;
         socket.close();
       }
-      if (runtimeState.ws === socket) setSocket(null);
+      if (runtimeState.ws === socket) {
+        setSocket(null);
+        pushStatusBadge();
+      }
     };
   }, []);
 }

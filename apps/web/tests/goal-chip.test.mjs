@@ -60,7 +60,8 @@ window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventL
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { GoalChip } = await import("../components/chat/goal-chip.tsx");
-const { runtimeState } = await import("../lib/runtime-bridge/state.ts");
+const { runtimeState, setSocket } = await import("../lib/runtime-bridge/state.ts");
+const { updateStatus } = await import("../lib/runtime-bridge/ui.ts");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
 const { api } = await import("../lib/net/api.ts");
 
@@ -92,6 +93,48 @@ function reset() {
   runtimeState.conversations = { s1: { id: "s1", goal: snapshot(1) } };
   useSessionStore.setState({ currentSessionId: "s1" });
 }
+
+test("real connection updates enable Goal resume only after a fresh stop observation", async () => {
+  reset();
+  const previousWebSocket = globalThis.WebSocket;
+  globalThis.WebSocket = { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 };
+  const socket = { readyState: WebSocket.CONNECTING };
+  setSocket(socket);
+  updateStatus("connecting");
+  const goal = { ...snapshot(2, "paused"), execution_id: "exec-resume", stop_requested: true };
+  runtimeState.conversations.s1.goal = goal;
+  const original = api.getGoal;
+  let reads = 0;
+  api.getGoal = async () => {
+    reads++;
+    return { goal, execution: { execution_id: "exec-resume", status: "cancelled", finished: true } };
+  };
+  const view = await mount();
+  try {
+    await view.open();
+    const resume = () => [...view.host.querySelectorAll("button")].find(b => b.textContent === "Resume");
+    assert.equal(resume().disabled, true);
+    await act(async () => { socket.readyState = WebSocket.OPEN; updateStatus("connected"); });
+    assert.equal(useSessionStore.getState().wsStatus, "open");
+    assert.equal(resume().disabled, false);
+    const connectedReads = reads;
+    await act(async () => { socket.readyState = WebSocket.CLOSED; updateStatus("disconnected"); });
+    assert.equal(resume().disabled, true);
+    assert.match(view.host.textContent, /Execution status unknown/);
+    // A source/badge refresh must not report a disconnected socket as open.
+    await act(async () => updateStatus("connected", "Local"));
+    assert.equal(useSessionStore.getState().wsStatus, "closed");
+    await act(async () => { socket.readyState = WebSocket.OPEN; updateStatus("connected"); });
+    assert.ok(reads > connectedReads);
+    assert.equal(resume().disabled, false);
+  } finally {
+    await view.close();
+    api.getGoal = original;
+    setSocket(null);
+    updateStatus("disconnected");
+    globalThis.WebSocket = previousWebSocket;
+  }
+});
 
 test("a cancelled Goal keeps stop controls until canonical termination is confirmed", async () => {
   reset();

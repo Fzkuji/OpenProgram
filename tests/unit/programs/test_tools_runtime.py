@@ -1482,13 +1482,20 @@ def test_full_preset_is_exactly_the_exposed_universe() -> None:
     assert "full_preset_probe" in resolved
 
 
-def test_full_preset_leaks_no_private_helper() -> None:
+def test_full_preset_leaks_no_private_helper(monkeypatch) -> None:
     """Private helpers stay out of ``full``: leaf tools opt out with
     ``expose=False``, and internal @agentic_functions with
     ``as_tool=False`` never enter the shared registry at all. Deleting
     the hand-written whitelist must not let either reach the LLM."""
     import openprogram.programs as F
-    from openprogram.agentic_programming.function import _registry as _agentics
+    module = importlib.import_module("openprogram.agentic_programming.function")
+    # This invariant must not depend on another test having registered a
+    # private helper in the same xdist worker.
+    monkeypatch.setattr(module, "_registry", dict(module._registry))
+
+    @module.agentic_function(as_tool=False)
+    def full_preset_agentic_private_probe() -> str:
+        return "private"
 
     @function(name="full_preset_private_probe", expose=False)
     def p() -> str:
@@ -1497,7 +1504,7 @@ def test_full_preset_leaks_no_private_helper() -> None:
     resolved = {t.name for t in F.agent_tools(toolset="full",
                                               include_disabled=True)}
     assert "full_preset_private_probe" not in resolved
-    internal = {n for n, f in _agentics.items() if not f.as_tool}
+    internal = {n for n, f in module._registry.items() if not f.as_tool}
     assert internal, "expected at least one as_tool=False agentic helper"
     assert not (internal & resolved)
 
