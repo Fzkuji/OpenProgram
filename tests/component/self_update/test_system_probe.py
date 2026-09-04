@@ -158,7 +158,8 @@ def test_empty_or_incomplete_doctor_is_not_success(live, monkeypatch, empty):
 
 
 @pytest.mark.parametrize("scenario", ["success", "rollback", "wrong_restored", "goal_pass", "goal_fail", "forged_evidence",
-                                      "resume_ready", "resume_activating", "resume_verifying", "resume_committed"])
+                                      "resume_ready", "resume_activating", "resume_verifying", "resume_committed",
+                                      "resume_expired_commit", "resume_new_worker"])
 @pytest.mark.parametrize("native_install", [False, pytest.param(True, marks=[pytest.mark.macos, MACOS_DESKTOP_INSTALL])])
 def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypatch, scenario, native_install, request):
     """Actual controller -> HTTP/WS -> durable receipt -> startup -> real Job."""
@@ -176,7 +177,8 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda *_a, **_k: None)
     fixtures = request
     resume = scenario.removeprefix("resume_") if scenario.startswith("resume_") else None
-    goal_case = scenario in {"goal_pass", "goal_fail", "forged_evidence"} or resume in {"ready", "verifying", "committed"}
+    committed_resumes = {"committed", "expired_commit", "new_worker"}
+    goal_case = scenario in {"goal_pass", "goal_fail", "forged_evidence"} or resume in {"ready", "verifying", *committed_resumes}
     doctor_ok = scenario == "success" or goal_case
     record, flags, _ = live
     monkeypatch.setattr(misc, "_HEAD_SHA", "3" * 40)  # Old live SHA differs from source base.
@@ -287,6 +289,10 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
         if native_install:
             native_activate(*args)
             assert version(target) == "0.6.2"
+        else:
+            store._write_json(transaction / "transaction.json", dict(schema=1, phase="activated",
+                              active_sha256="a" * 64, previous_sha256="b" * 64,
+                              app=False, worker=False, launchd=False))
         flags["doctor"] = doctor_ok
         monkeypatch.setattr(misc, "_HEAD_SHA", "2" * 40)
         thread.start()  # As with installation, Web is serving before recovery.
@@ -300,7 +306,10 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
         nonlocal interrupted
         if mode == "--commit":
             reported = native_installer(argument, directory, sha, mode) if native_install else str(transaction)
-            if resume == "committed" and not interrupted:
+            if not native_install:
+                journal = json.loads((transaction / "transaction.json").read_text())
+                store._write_json(transaction / "transaction.json", {**journal, "phase": "committed"})
+            if resume in committed_resumes and not interrupted:
                 interrupted = True
                 raise SystemExit("controller interrupted")
             return reported
@@ -322,8 +331,15 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
             assert interrupted
             assert store.load(request.update_id).state.phase is {
                 "ready": UpdatePhase.READY, "activating": UpdatePhase.ACTIVATING,
-                "verifying": UpdatePhase.VERIFYING, "committed": UpdatePhase.VERIFYING,
+                "verifying": UpdatePhase.VERIFYING, **dict.fromkeys(committed_resumes, UpdatePhase.VERIFYING),
             }[resume]
+            if resume == "expired_commit":
+                import time
+                original_time = time.time
+                monkeypatch.setattr(time, "time", lambda: original_time() + 4000)
+            if resume == "new_worker":
+                flags["pid"] = os.getpid() + 1
+                monkeypatch.setattr(misc, "os", SimpleNamespace(getpid=lambda: flags["pid"]))
         result = supervisor.run_supervisor(request.update_id, state_root=store.root, installer_sha256=digest)
         if resume:
             assert store.load(request.update_id).state.phase is (UpdatePhase.ROLLED_BACK if resume == "activating" else UpdatePhase.SUCCEEDED)
@@ -333,9 +349,13 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
         assert startup_result == [scenario != "wrong_restored"]
         current = store.load(request.update_id)
         assert current.state.detail["transaction_dir"] == str(transaction)
-        if scenario in {"success", "goal_pass"} or resume in {"ready", "verifying", "committed"}:
+        if scenario in {"success", "goal_pass"} or resume in {"ready", "verifying", *committed_resumes}:
             assert result == 0 and current.state.phase is (UpdatePhase.SUCCEEDED if goal_case else UpdatePhase.VERIFYING)
-            recovery._check_gate(current)
+            if resume not in {"expired_commit", "new_worker"}:
+                recovery._check_gate(current)
+            else:
+                gate = current.state.detail["committed_system_gate"]
+                assert gate["candidate_sha"] == request.candidate_sha and gate["worker_pid"] == flags["pid"]
             job_id = f"self-update:{request.update_id}:verify:1"
             job = runner.await_job(job_id, timeout=5)
             assert job is not None and job.status is JobStatus.COMPLETED, job

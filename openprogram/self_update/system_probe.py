@@ -43,6 +43,11 @@ def probe_restored_system(record: UpdateRecord, revision: str) -> dict:
     return _probe_system(record, revision, 60)
 
 
+def probe_committed_system(record: UpdateRecord) -> dict:
+    """Verify a previously committed candidate after its acceptance window ended."""
+    return _probe_system(record, record.request.candidate_sha, 60)
+
+
 def observe_system(record: UpdateRecord, entry: str) -> dict:
     """Read a reviewed local entry with identity checks before and after I/O."""
     if entry not in OBSERVATION_ENTRIES:

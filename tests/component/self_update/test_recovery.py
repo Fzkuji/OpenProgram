@@ -117,7 +117,7 @@ def test_terminal_orphan_job_is_not_reexecuted(environment):
     assert calls == []
 
 
-@pytest.mark.parametrize("gate", ["missing", "old_worker", "rolled_back", "rolling_back", "valid"])
+@pytest.mark.parametrize("gate", ["missing", "old_worker", "rolled_back", "rolling_back", "committing", "valid"])
 def test_persisted_queue_checks_gate_before_model_execution(environment, monkeypatch, gate):
     from openprogram.agent.job.runner import JobRunner
     from openprogram.agent.job.types import JobStatus
@@ -148,6 +148,8 @@ def test_persisted_queue_checks_gate_before_model_execution(environment, monkeyp
     if gate == "rolling_back":
         from openprogram.self_update.rollback_intent import begin_rollback
         begin_rollback(store, request.update_id, "failure")
+    if gate == "committing":
+        store._write_json(store.root / request.update_id / "commit-1.json", {"schema": 1})
     recovered = JobRunner(max_workers=1, governor=runner._governor)
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: recovered)
     try:
@@ -160,7 +162,7 @@ def test_persisted_queue_checks_gate_before_model_execution(environment, monkeyp
         else:
             assert result.status is JobStatus.ERRORED, result.error
             assert calls == []
-        if gate != "rolling_back":
+        if gate not in {"rolling_back", "committing"}:
             recover_pending_updates()
         assert len(recovered.list_jobs("p1")) == 1  # Never retry a rejected Job.
     finally:
@@ -295,3 +297,33 @@ def test_invalid_rollback_intent_cannot_dispatch(environment):
     store._write_json(store.root / request.update_id / "rollback-1.json", {"schema": 1})
     assert recover_pending_updates() is False
     assert calls == [] and runner.list_jobs("p1") == []
+
+
+def test_commit_reconciliation_waits_before_stale_gate_and_error_checks(environment, monkeypatch):
+    from openprogram.self_update import recovery
+    store, runner, calls, request, release = environment
+    release(worker_pid=-1)
+    store._write_json(store.root / request.update_id / "commit-1.json", {"schema": 1})
+    store._write_json(store.root / request.update_id / "startup-error-1.json", {"error": "old startup"})
+    waits = []
+    def pause(_):
+        waits.append(True)
+        assert calls == []
+        store.transition(request.update_id, UpdatePhase.SUCCEEDED)
+    monkeypatch.setattr(recovery, "time", SimpleNamespace(time=time.time, monotonic=time.monotonic, sleep=pause))
+    assert recover_pending_updates() is True
+    assert waits == [True] and calls == [] and runner.list_jobs("p1") == []
+
+
+def test_commit_reconciliation_startup_wait_is_bounded(environment, monkeypatch):
+    from openprogram.self_update import recovery
+    store, runner, calls, request, release = environment
+    release()
+    store._write_json(store.root / request.update_id / "commit-1.json", {"schema": 1})
+    clock = [0.0]
+    def pause(_):
+        clock[0] += 400
+    monkeypatch.setattr(recovery, "time", SimpleNamespace(time=time.time, monotonic=lambda: clock[0], sleep=pause))
+    assert recover_pending_updates() is False
+    assert calls == [] and runner.list_jobs("p1") == []
+    assert "commit reconciliation timed out" in (store.root / request.update_id / "startup-error-1.json").read_text()

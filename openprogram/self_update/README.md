@@ -10,6 +10,7 @@ that releases a prepared request only after its origin turn is durable.
 
 ## Files in this directory
 
+- **`commit_intent.py`** — Preserve an accepted commit decision across irreversible App finalization
 - **`controller_bundle.py`** — Freeze the installed controller runtime outside the replaceable App
 - **`handoff.py`** — Durable release of a prepared update after its origin turn commits
 - **`iteration.py`** — Deterministic authorization checks for a proposed self-update iteration

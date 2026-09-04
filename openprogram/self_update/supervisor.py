@@ -384,6 +384,7 @@ def _rollback(store: SelfUpdateStore, update_id: str, installer_sha256: str, err
 
 
 def _finish_verification(store: SelfUpdateStore, update_id: str, installer_sha256: str, grant: dict) -> int:
+    from openprogram.self_update.commit_intent import begin_commit
     from openprogram.self_update.verification_channel import consume_result
     from openprogram.self_update.system_probe import probe_system
 
@@ -406,6 +407,9 @@ def _finish_verification(store: SelfUpdateStore, update_id: str, installer_sha25
         if consume_result(store, update_id, grant["token"]) != receipt:
             raise RuntimeError("accepted verifier result changed before commit")
         transaction = _validate_transaction_path(Path(record.state.detail["transaction_dir"]))
+        begin_commit(store, update_id, transaction, installer_sha256, receipt, gate)
+        if time.monotonic() >= deadline or time.time() >= grant["deadline"]:
+            raise RuntimeError("verification deadline expired before commit")
         reported = _installer_command(transaction, store.root / update_id, installer_sha256, "--commit")
         if reported != str(transaction):
             raise RuntimeError("installer committed a different transaction")
@@ -417,10 +421,54 @@ def _finish_verification(store: SelfUpdateStore, update_id: str, installer_sha25
     except Exception as exc:
         record = store.load(update_id)
         if record.state.phase is UpdatePhase.VERIFYING:
+            recovered = _resume_commit(store, update_id, installer_sha256)
+            if recovered is not None:
+                return recovered
             _rollback(store, update_id, installer_sha256, exc,
                       verdict=receipt["verdict"] if receipt is not None else "inconclusive")
         if store.load(update_id).state.phase is UpdatePhase.ROLLED_BACK:
             leave_maintenance(update_id)
+        return 1
+
+
+def _resume_commit(store: SelfUpdateStore, update_id: str, installer_sha256: str) -> int | None:
+    from .commit_intent import commit_pending, load_commit, read_journal
+    from .rollback_intent import load_rollback_intent
+    from .system_probe import probe_committed_system
+
+    record = store.load(update_id)
+    pending = commit_pending(store, record)
+    if not pending and (record.state.phase is not UpdatePhase.VERIFYING
+                        or not record.state.detail.get("transaction_dir")):
+        return None
+    try:
+        if load_rollback_intent(store, record) is not None:
+            return None
+        transaction = _validate_transaction_path(Path(record.state.detail["transaction_dir"]))
+        if not pending:
+            journal_path = transaction / "transaction.json"
+            if journal_path.exists() or journal_path.is_symlink():
+                if read_journal(transaction)["phase"] in {"committing", "committed"}:
+                    raise ValueError("irreversible commit is missing its accepted decision")
+            return None
+        _, journal = load_commit(store, record, transaction, installer_sha256)
+        if journal["phase"] == "activated":
+            return None  # A first commit still requires the live original grant.
+        reported = _installer_command(transaction, store.root / update_id, installer_sha256, "--commit")
+        if reported != str(transaction):
+            raise RuntimeError("installer committed a different transaction")
+        gate = probe_committed_system(record)
+        store.transition(update_id, UpdatePhase.SUCCEEDED, expected_phase=UpdatePhase.VERIFYING,
+                         detail={**record.state.detail, "verifier_verdict": "pass", "rollback_available": False,
+                                 "committed_system_gate": gate, "commit_recovered": True,
+                                 "verifier_result": f"verifier-result-{record.state.attempt}.json"})
+        leave_maintenance(update_id)
+        return 0
+    except Exception as exc:
+        # The previous App may already be deleted; do not invent a rollback.
+        if store.load(update_id).state.phase not in TERMINAL_PHASES:
+            store.transition(update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY, expected_phase=record.state.phase,
+                             detail={**record.state.detail, "recovery_error": str(exc)[:2000]})
         return 1
 
 
@@ -429,6 +477,9 @@ def _resume_activated(store: SelfUpdateStore, update_id: str, installer_sha256: 
     from .system_probe import probe_system
 
     try:
+        recovered = _resume_commit(store, update_id, installer_sha256)
+        if recovered is not None:
+            return recovered
         with store._locked():
             record = store._load_unlocked(update_id)
             if record.state.phase is UpdatePhase.ACTIVATING:

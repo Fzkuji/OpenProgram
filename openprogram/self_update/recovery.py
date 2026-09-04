@@ -43,6 +43,7 @@ def _check_gate(record) -> None:
 def require_verifier_execution(*, session_id, spawn_caller, **inputs) -> None:
     """Check restored Jobs at execution, not only at startup admission."""
     from openprogram.agent.run_control import get_current_execution_id
+    from .commit_intent import commit_pending
 
     store = SelfUpdateStore()
     with store._locked():
@@ -51,6 +52,8 @@ def require_verifier_execution(*, session_id, spawn_caller, **inputs) -> None:
             raise ValueError("verifier execution requires an active verifying update")
         if load_rollback_intent(store, record) is not None:
             raise ValueError("verifier execution is forbidden during rollback")
+        if commit_pending(store, record):
+            raise ValueError("verifier execution is forbidden during commit")
         _check_gate(record)
         dispatch = record.state.dispatch
         job_id = f"self-update:{record.request.update_id}:verify:{record.state.attempt}"
@@ -87,6 +90,8 @@ def recover_pending_updates() -> bool:
     from openprogram.agent.job.store import load_job
     from openprogram.agent.internals._model_tools import resolve_model
     from .launcher import launch_supervisor
+    from .commit_intent import commit_pending
+    from .rollback_intent import RECOVERY_SECONDS
 
     store = SelfUpdateStore()
     record = None
@@ -106,6 +111,7 @@ def recover_pending_updates() -> bool:
             max(0, record.request.created_at + record.request.timeout_seconds - time.time()),
         )
         rollback_deadline = None
+        commit_deadline = time.monotonic() + RECOVERY_SECONDS
         while True:
             record = store.load(record.request.update_id)
             if record.state.phase in TERMINAL_PHASES:
@@ -118,6 +124,11 @@ def recover_pending_updates() -> bool:
                     raise ValueError("startup rollback handoff timed out")
                 # Both candidate and restored workers wait for the controller's
                 # fresh old-version checks, even after a candidate startup error.
+                time.sleep(0.1)
+                continue
+            if commit_pending(store, record):
+                if time.monotonic() >= commit_deadline:
+                    raise ValueError("startup commit reconciliation timed out")
                 time.sleep(0.1)
                 continue
             if time.monotonic() >= deadline:
