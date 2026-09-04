@@ -119,3 +119,36 @@ def test_terminal_update_is_not_relaunched(tmp_path, monkeypatch):
     assert recover_pending_updates() is True
     result = launch_supervisor("su_launch", resume=True)
     assert not result.submitted and not result.already_running
+
+
+@pytest.mark.parametrize("phase", [UpdatePhase.PREPARING, UpdatePhase.STAGING, UpdatePhase.READY])
+def test_successful_redispatch_cannot_clear_durable_startup_failure(tmp_path, monkeypatch, phase):
+    from openprogram import paths
+    from openprogram.self_update import launcher
+    profile = tmp_path / "profile"
+    store = _request(profile)
+    _, digest = _trusted_installer(tmp_path, monkeypatch)
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    update = store.root / "su_launch"
+    fail = False
+    def launchctl(*args):
+        if args[0] == "print":
+            return 113, "not found"
+        if args[0] == "kickstart" and fail:
+            return 5, "temporary launch failure"
+        (update / "supervisor.ready").write_text(_ready("su_launch", digest))
+        return 0, str(os.getpid())
+    monkeypatch.setattr(launcher, "_launchctl", launchctl)
+    launch_supervisor("su_launch")
+    if phase is not UpdatePhase.PREPARING:
+        store.transition("su_launch", UpdatePhase.STAGING)
+    if phase is UpdatePhase.READY:
+        store.transition("su_launch", phase)
+    fail = True
+    assert recover_pending_updates() is False
+    error = update / "startup-error-1.json"
+    original = error.read_bytes()
+    fail = False
+    assert recover_pending_updates() is False
+    assert error.read_bytes() == original
+    assert store.load("su_launch").state.dispatch is None

@@ -99,7 +99,8 @@ def recover_pending_updates() -> bool:
         if record.state.phase in {
             UpdatePhase.PREPARING, UpdatePhase.STAGING, UpdatePhase.READY,
         }:
-            return True
+            error_path = store.root / record.request.update_id / f"startup-error-{record.state.attempt}.json"
+            return not (error_path.exists() or error_path.is_symlink())
         deadline = time.monotonic() + min(
             _STARTUP_SECONDS,
             max(0, record.request.created_at + record.request.timeout_seconds - time.time()),
