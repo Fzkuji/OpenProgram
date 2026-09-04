@@ -19,8 +19,12 @@ REFINE_TOOLS = ("read", "glob", "grep", "list", "bash", "web_search")
 
 def _run_refine_turn(session_id: str, prompt: str, *, agent_id: str,
                      spawn_caller: Optional[str]) -> str:
-    """One spawned inspection-only agent turn. Module-level so tests stub it."""
-    if not session_id:
+    """Inspect within the Goal runtime; standalone session helpers may spawn."""
+    from openprogram.agentic_programming.function import _current_runtime
+
+    # Reuse the current Goal owner instead of initializing a JobRunner whose
+    # startup recovery can incorrectly interrupt the outer execution.
+    if _current_runtime.get(None) is not None or not session_id:
         from openprogram.agentic_programming.agent import agent
         from openprogram.programs import agent_tools
 

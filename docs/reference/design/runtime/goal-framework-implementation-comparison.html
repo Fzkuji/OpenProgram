@@ -1958,9 +1958,9 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
         <li><code>python -m scripts.docs_site.build</code>，随后 <code>python -m scripts.docs_site.checklinks</code></li>
       </ul></details></div>
       <p>网页核查：judge 具有网页读取和检索工具，失败回执标记为 <code>is_error=true</code>。已有真实模型检查受到 arXiv 的 <code>NON_GLOBAL_ADDRESS</code> 拒绝与 Tavily 缺少凭据的限制；没有绕过网络策略，不能把这次研究产物视为来源已核验的综述。</p>
-      <p>集成代码执行 <code>python -m pytest -q -n 4</code>：7013 项通过、18 项跳过、1 项预期失败，包含暂停的执行身份修复。全量发现的 Goal 包装函数源码定位问题已修复；两组 agent 合同测试的执行数据库已按测试隔离，避免启动恢复读取其他测试的记录。TUI 测试 148 项通过、2 项跳过，类型检查通过。实际子进程取消仍需产品复验，身份选择测试不替代运行验收。</p>
+      <p>集成代码执行 <code>python -m pytest -q -n 4</code>：7015 项通过、18 项跳过、1 项预期失败，包含暂停的执行身份和 Runtime 内检查路径修复。全量发现的 Goal 包装函数源码定位问题已修复；两组 agent 合同测试的执行数据库已按测试隔离，避免启动恢复读取其他测试的记录。TUI 测试 148 项通过、2 项跳过，类型检查通过。实际子进程取消仍需产品复验，身份选择测试不替代运行验收。</p>
       <p>真实模型验证：通过公开 <code>programs run goal</code> 入口，MiniMax-M3 完成约 300 字中文文章写作、文件读取核对与判定，命令正常退出；产物内容已另行读取检查确认。此例仅使用给定事实，不调用网络，不能替代来源核验。已有综述尝试受到外部来源访问和检索凭据限制，仍不能作为已核验的综述交付。失败回执防护会阻止包含错误检查回执的 <code>met</code>，不证明全部语义判定可靠。</p>
-      <p>默认 App 已验证测试 Goal 的重启恢复状态、编辑保存、页面重载、预算修改和恢复后实际模型调用。一次短文本验收返回了要求的文本，但判定输出解析连续失败，最终按轮次预算停止；这证明预算停止生效，不能作为 <code>achieved</code> 验收。运行中暂停的状态更新已观察到，执行取消身份修复仍需更新 App 后复验。执行树摘要另有字段映射缺陷：已持久化的 LLM 回复位于 <code>raw_reply</code>，摘要却读取 <code>output</code>；空输入参数不代表回复丢失。</p>
+      <p>默认 App 已验证测试 Goal 的重启恢复状态、编辑保存、页面重载、预算修改和恢复后实际模型调用。一次短文本验收返回了要求的文本，但判定阶段连续失败，最终按轮次预算停止；这证明预算停止生效，不能作为 <code>achieved</code> 验收。运行验收还发现判定阶段初始化 JobRunner 可能触发全局启动恢复，将活跃外层执行标成 <code>owner_lost</code>，使随后取消无法作用于物理进程。Goal 在已有 Runtime 中的 refiner/judge 现使用公共 <code>agent()</code>：各自保持工具、模型与阶段标签，共享当前执行所有者，不创建独立 Job。无 Runtime 的独立 session helper 保留原路径。该局部修复不解决其他进程调用全局恢复的风险，更新后暂停仍需实际复验。执行树摘要另有字段映射缺陷：已持久化的 LLM 回复位于 <code>raw_reply</code>，摘要却读取 <code>output</code>；空输入参数不代表回复丢失。</p>
     </section>
 
     <section id="status">

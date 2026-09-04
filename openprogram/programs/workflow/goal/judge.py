@@ -80,8 +80,14 @@ def render_session_view(session_id: str, *,
 
 def _run_decision_turn(session_id: str, prompt: str, *, agent_id: str,
                        spawn_caller: Optional[str]) -> str:
-    """One spawned inspection-only agent turn. Module-level so tests stub it."""
-    if not session_id:
+    """Inspect within the Goal runtime; standalone session helpers may spawn."""
+    from openprogram.agentic_programming.function import _current_runtime
+
+    # A Goal already owns a Runtime and its canonical execution. Starting a
+    # JobRunner here can run startup recovery against that still-live owner.
+    # The current frame supplies caller/profile; explicit branch selection is
+    # only used by the standalone helper path below.
+    if _current_runtime.get(None) is not None or not session_id:
         from openprogram.agentic_programming.agent import agent
         from openprogram.programs import agent_tools
 
@@ -92,7 +98,6 @@ def _run_decision_turn(session_id: str, prompt: str, *, agent_id: str,
             timeout_s=_goal.DEFAULT_PHASE_TIMEOUT_S,
             execution_kind="goal_judge",
         )
-        from openprogram.agentic_programming.function import _current_runtime
         blocks = getattr(_current_runtime.get(None), "last_blocks", []) or []
         return _check_inspection_errors(text, blocks)
     from openprogram.agent.sub_agent_run import run_agent_turn
