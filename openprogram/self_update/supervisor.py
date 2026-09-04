@@ -140,6 +140,22 @@ def _sandbox_profile(
         '(deny file-read* (subpath "/Applications/OpenProgram.app"))',
         '(deny file-read* (regex #".*/\\.env($|/).*$"))',
     ]
+    protected_root = (Path.home() / ".openprogram").resolve()
+    metadata_paths: set[Path] = set()
+    readable_roots = [artifact_root, build_home, build_tmp]
+    if trusted_input is not None:
+        readable_roots.append(trusted_input.parent)
+    for root in readable_roots:
+        current = root.resolve()
+        if not current.is_relative_to(protected_root):
+            continue
+        while current.is_relative_to(protected_root):
+            metadata_paths.add(current)
+            if current == protected_root:
+                break
+            current = current.parent
+    for path in sorted(metadata_paths):
+        rules.append(f"(allow file-read-metadata (literal {quoted(path)}))")
     if trusted_input is not None:
         rules.append(f"(allow file-read* (literal {quoted(trusted_input)}))")
     if loopback_port is not None:

@@ -538,6 +538,13 @@ def test_candidate_sandbox_reads_but_cannot_modify_trusted_inputs_under_state_ho
         text=True,
         timeout=10,
     )
+    mkdir_result = subprocess.run(
+        [str(sandbox), "-p", profile, "/bin/mkdir", "-p", str(build_home / ".openprogram")],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
     write_result = subprocess.run(
         [str(sandbox), "-p", profile, "/bin/sh", "-c", f'printf changed > "{archive}"'],
         env=environment,
@@ -555,12 +562,22 @@ def test_candidate_sandbox_reads_but_cannot_modify_trusted_inputs_under_state_ho
         text=True,
         timeout=10,
     )
+    sibling_listing = subprocess.run(
+        [str(sandbox), "-p", profile, "/bin/ls", str(update)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
 
     assert read_result.returncode == 0, read_result.stderr
     assert read_result.stdout == "trusted archive"
+    assert mkdir_result.returncode == 0, mkdir_result.stderr
+    assert (build_home / ".openprogram").is_dir()
     assert write_result.returncode != 0
     assert archive.read_text(encoding="utf-8") == "trusted archive"
     assert sibling_read.returncode != 0
+    assert sibling_listing.returncode != 0
 
 
 @pytest.mark.macos
