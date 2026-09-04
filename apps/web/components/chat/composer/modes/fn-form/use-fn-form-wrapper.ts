@@ -392,7 +392,7 @@ function formChromeHeight(el: HTMLDivElement): number {
     }
   }
   const summaries = body ? Array.from(body.querySelectorAll("details > summary")) as HTMLElement[] : [];
-  const advancedChrome = summaries.reduce((sum, summary) => sum + summary.offsetHeight
+  const advancedChrome = summaries.reduce((sum, summary) => sum + (summary.parentElement?.offsetHeight || summary.offsetHeight)
     + (parseFloat(bcs?.gap || "0") || 0), 0);
   return headerH + pad + fields + advancedChrome + wrapPad;
 }
@@ -401,7 +401,7 @@ function targetFnFormHeight(el: HTMLDivElement): number {
   const host = hostViewHeight(el);
   const avail = availableComposerHeight(el);
   // Decision (question/approval/form): size to header + body content.
-  if (el.querySelector("[data-decision]")) {
+  if (el.querySelector("[data-decision], details[open]")) {
     return Math.min(measureDecisionHeight(el), avail);
   }
   const expanded = !!el.querySelector("[data-expanded]");
