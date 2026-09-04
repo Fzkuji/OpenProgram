@@ -7,6 +7,15 @@ prepare_only=0
 source_app=""
 transaction_dir=""
 verify_phase=""
+reopen_update_id=""
+if [[ "${1:-}" == --reopen-update=* ]]; then
+  reopen_update_id="${1#--reopen-update=}"
+  [[ "$reopen_update_id" =~ ^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ && "${2:-}" == "--prepare" && $# == 3 ]] || {
+    printf 'reopen update ID requires --prepare and a valid opaque ID\n' >&2
+    exit 2
+  }
+  shift
+fi
 case "${1:-}" in
   --verify-terminal:prepared|--verify-terminal:committed|--verify-terminal:rolled_back)
     action="verify"
@@ -63,6 +72,7 @@ if [[ "$action" == "install" && -z "$source_app" ]] || \
   printf '       %s --verify-terminal:prepared|committed|rolled_back /path/to/transaction\n' "$0" >&2
   printf '       %s --restart-terminal:prepared|committed|rolled_back /path/to/transaction\n' "$0" >&2
   printf '       %s --prepare /path/to/OpenProgram.app | --activate /path/to/transaction\n' "$0" >&2
+  printf '       %s --reopen-update=su_ID --prepare /path/to/OpenProgram.app\n' "$0" >&2
   exit 2
 fi
 if [[ -n "$source_app" && "$source_app" != /* ]]; then
@@ -360,6 +370,7 @@ const directory = fs.lstatSync(root);
 if (!directory.isDirectory() || directory.uid !== process.getuid() || (directory.mode & 0o077)) process.exit(1);
 const phases = ["prepared", "activating", "activated", "rolling_back", "rolled_back", "committing", "committed"];
 const hex = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+const updateId = value => typeof value === "string" && /^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value);
 function syncPath(file) {
   const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
@@ -377,6 +388,10 @@ if (command === "init") {
   if (fs.existsSync(file) || !hex(args[0]) || !hex(args[1])) process.exit(1);
   syncTree(path.join(root, "OpenProgram.app"));
   data = {schema: 1, phase: "prepared", previous_sha256: args[0], active_sha256: args[1], app: false, worker: false, launchd: false};
+  if (args[2]) {
+    if (!updateId(args[2])) process.exit(1);
+    data.reopen_update_id = args[2];
+  }
 } else {
   const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   try {
@@ -384,11 +399,16 @@ if (command === "init") {
     if (!stat.isFile() || stat.size > 4096 || stat.uid !== process.getuid() || (stat.mode & 0o077)) process.exit(1);
     data = JSON.parse(fs.readFileSync(fd, "utf8"));
   } finally { fs.closeSync(fd); }
-  if (Object.keys(data).sort().join() !== "active_sha256,app,launchd,phase,previous_sha256,schema,worker" ||
+  const hasReopen = Object.hasOwn(data, "reopen_update_id");
+  if (Object.keys(data).sort().join() !== (hasReopen
+        ? "active_sha256,app,launchd,phase,previous_sha256,reopen_update_id,schema,worker"
+        : "active_sha256,app,launchd,phase,previous_sha256,schema,worker") ||
+      (hasReopen && !updateId(data.reopen_update_id)) ||
       data.schema !== 1 || !phases.includes(data.phase) || !hex(data.previous_sha256) || !hex(data.active_sha256) ||
       ![data.app, data.worker, data.launchd].every(x => typeof x === "boolean")) process.exit(1);
   if (command === "read") {
-    process.stdout.write([data.phase, data.previous_sha256, data.active_sha256, +data.app, +data.worker, +data.launchd].join(" "));
+    process.stdout.write([data.phase, data.previous_sha256, data.active_sha256, +data.app, +data.worker, +data.launchd,
+      hasReopen ? data.reopen_update_id : "-"].join(" "));
     process.exit(0);
   }
   if (command === "sync") {
@@ -419,7 +439,8 @@ load_prepared_transaction() {
   validate_transaction_location "$transaction_dir" || return 1
   local snapshot
   snapshot="$(transaction_journal read)" || return 1
-  read -r transaction_phase previous_identity active_identity app_was_running worker_was_running launchd_was_installed <<< "$snapshot"
+  read -r transaction_phase previous_identity active_identity app_was_running worker_was_running launchd_was_installed reopen_update_id <<< "$snapshot"
+  [[ "$reopen_update_id" != "-" ]] || reopen_update_id=""
 }
 
 matches_identity() {
@@ -459,6 +480,14 @@ stop_active_runtime() {
   done
 }
 
+open_saved_app() {
+  if [[ -n "$reopen_update_id" ]]; then
+    open "$target_app" --args "--openprogram-self-update=$reopen_update_id"
+  else
+    open "$target_app"
+  fi
+}
+
 resume_previous_runtime() {
   local restored_python
   [[ -d "$target_app" ]] || return 0
@@ -470,7 +499,7 @@ resume_previous_runtime() {
     "$restored_python" -I -B -m openprogram worker start >/dev/null 2>&1 || return 1
   fi
   if [[ "${app_was_running:-0}" == 1 || -f "$transaction_dir/app-was-running" ]]; then
-    open "$target_app"
+    open_saved_app
   fi
 }
 
@@ -689,7 +718,7 @@ validate_app_metadata "$staged_app" || {
 reject_downgrade "$staged_app"
 
 if [[ "$prepare_only" == 1 ]]; then
-  transaction_journal init "$(app_identity "$target_app")" "$(app_identity "$staged_app")"
+  transaction_journal init "$(app_identity "$target_app")" "$(app_identity "$staged_app")" "$reopen_update_id"
   preserve_transaction=1
   printf 'OPENPROGRAM_TRANSACTION_DIR=%s\n' "$transaction_dir"
   exit 0
@@ -790,7 +819,7 @@ if [[ -z "$install_root" ]]; then
     }
   fi
   if [[ "$app_was_running" == 1 ]]; then
-    open "$target_app" || {
+    open_saved_app || {
       printf 'OpenProgram was installed but could not be reopened\n' >&2
       exit 1
     }

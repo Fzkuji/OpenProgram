@@ -47,6 +47,85 @@ def phase(transaction):
     return json.loads((transaction / "transaction.json").read_text())["phase"]
 
 
+def test_reopen_identity_is_frozen_before_activation_and_survives_rollback(installation):
+    run, candidate, target, _ = installation
+    result = run("--reopen-update=su_fixture", "--prepare", candidate)
+    tx = Path(next(line.partition("=")[2] for line in result.stdout.splitlines()
+                   if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")))
+    journal = tx / "transaction.json"
+    assert json.loads(journal.read_text())["reopen_update_id"] == "su_fixture"
+    assert journal.stat().st_mode & 0o777 == 0o600
+    assert version(target) == "0.6.1" and phase(tx) == "prepared"
+    run("--activate", tx)
+    assert json.loads(journal.read_text())["reopen_update_id"] == "su_fixture"
+    run("--rollback", tx)
+    assert json.loads(journal.read_text())["reopen_update_id"] == "su_fixture"
+    assert version(target) == "0.6.1" and phase(tx) == "rolled_back"
+    assert json.loads(journal.read_text())["app"] is False
+
+
+def test_reopen_arguments_cannot_supply_url_or_override_an_existing_transaction(installation):
+    from openprogram.self_update.supervisor import _tree_digest
+
+    run, candidate, target, _ = installation
+    tx = prepare(run, candidate)
+    before = _tree_digest(target), _tree_digest(tx)
+    for args in (
+        ("--reopen-update=https://example.com", "--prepare", candidate),
+        ("--reopen-update=file:///private/data", "--prepare", candidate),
+        ("--reopen-update=su_ok/../other", "--prepare", candidate),
+        ("--reopen-update=", "--prepare", candidate),
+        ("--reopen-update=su_ok", "--reopen-update=su_other", "--prepare", candidate),
+        ("--reopen-update=su_ok", "--activate", tx),
+        ("--reopen-update=su_ok", "--rollback", tx),
+    ):
+        assert run(*args, check=False).returncode == 2
+        assert (_tree_digest(target), _tree_digest(tx)) == before
+    assert "reopen_update_id" not in json.loads((tx / "transaction.json").read_text())
+
+
+@pytest.mark.parametrize("invalid", [None, True, "", "https://example.com", "su_a/../b"])
+def test_reopen_journal_rejects_invalid_identity_without_activation(installation, invalid):
+    from openprogram.self_update.supervisor import _tree_digest
+
+    run, candidate, target, _ = installation
+    tx = prepare(run, candidate)
+    journal = tx / "transaction.json"
+    journal.write_text(json.dumps({**json.loads(journal.read_text()), "reopen_update_id": invalid}))
+    before = _tree_digest(target), _tree_digest(tx)
+    assert run("--activate", tx, check=False).returncode != 0
+    assert (_tree_digest(target), _tree_digest(tx)) == before
+    assert phase(tx) == "prepared"
+
+
+@pytest.mark.parametrize("opened", [False, True])
+@pytest.mark.parametrize("update_id", ["", "su_fixture"])
+def test_reopen_uses_saved_app_state_and_only_opaque_argument(tmp_path, opened, update_id):
+    # Execute the production Bash functions with `open` shadowed by an in-process
+    # argv recorder. This never invokes Launch Services or creates a visible App.
+    source = INSTALLER.read_text()
+    start = source.index("open_saved_app() {")
+    end = source.index("finish_prepared_transaction() {", start)
+    target = tmp_path / "App with spaces.app"
+    target.mkdir()
+    script = source[start:end] + '''
+target_app="$1"
+reopen_update_id="$2"
+app_was_running="$3"
+worker_was_running=0
+launchd_was_installed=0
+transaction_dir="$1/transaction"
+app_runtime_python() { printf /usr/bin/true; }
+open() { printf '%s\\n' "$@"; }
+resume_previous_runtime
+'''
+    result = subprocess.run(["bash", "-c", script, "fixture", str(target), update_id, "1" if opened else "0"],
+                            capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    expected = [str(target)] + (["--args", f"--openprogram-self-update={update_id}"] if update_id else [])
+    assert result.stdout.splitlines() == (expected if opened else [])
+
+
 @pytest.mark.parametrize("action", ["commit", "rollback"])
 def test_prepare_activate_and_idempotent_terminal_action(installation, action):
     run, candidate, target, _ = installation
