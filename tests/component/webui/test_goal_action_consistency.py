@@ -109,6 +109,60 @@ def test_current_request_commits_before_cancel_delivery(action_goal, monkeypatch
     assert observed == ["cancelled"]
 
 
+def test_goal_read_failure_is_unavailable_not_absent(action_goal, monkeypatch):
+    package, client = action_goal
+    before = package.load_goal("actions")
+    def fail_read(*_args, **_kwargs):
+        raise OSError("private database path and details")
+    with monkeypatch.context() as patch:
+        patch.setattr(package._db(), "get_session", fail_read)
+        response = client.get("/api/sessions/actions/goal")
+        assert response.status_code == 503
+        assert "private" not in response.text
+        assert client.post("/api/sessions/actions/goal", json={"action": "cancel"}).status_code == 503
+        for args in ("", "resume", "clear", "pause", "answer scope yes"):
+            command = package.handle_goal_command("actions", args)
+            assert "unavailable" in command["text"].lower()
+            assert "private" not in command["text"]
+            assert "invoke" not in command
+    assert package.load_goal("actions") == before
+
+
+def test_public_goal_does_not_start_when_saved_state_is_unreadable(action_goal, monkeypatch):
+    package, _client = action_goal
+    function = importlib.import_module("openprogram.agentic_programming.function")
+    monkeypatch.setattr(function, "current_session_id", lambda: "actions")
+    monkeypatch.setattr(package, "reset_goal_usage_cursor", lambda *_a:
+                        pytest.fail("unreadable Goal started processing"))
+    def fail_read(*_a, **_kw):
+        raise OSError("private database detail")
+    monkeypatch.setattr(package._db(), "get_session", fail_read)
+    with pytest.raises(package.GoalStateUnavailable, match="unavailable"):
+        package.goal(prompt="original", resume=True)
+
+
+def test_goal_absence_and_corrupt_record_are_distinct(action_goal):
+    package, client = action_goal
+    assert client.get("/api/sessions/not-created/goal").status_code == 404
+    package._db().update_session("actions", goal="invalid stored object")
+    assert client.get("/api/sessions/actions/goal").status_code == 503
+
+
+def test_failed_goal_terminal_commit_does_not_publish_completion(action_goal, monkeypatch):
+    package, _client = action_goal
+    before = package.load_goal("actions")
+    candidate = {**before, "status": "achieved"}
+    events = []
+    monkeypatch.setattr(package, "_emit_goal_update", lambda *args: events.append(args))
+    monkeypatch.setattr(package, "_emit_goal_notice", lambda *args: events.append(args))
+    def fail_commit():
+        raise OSError("private database path and details")
+    with pytest.raises(RuntimeError, match="unavailable"):
+        package._finish("actions", candidate, None, persist=fail_commit)
+    assert events == []
+    assert package.load_goal("actions") == before
+
+
 def test_tui_role_and_budget_commands_update_the_existing_goal(action_goal):
     package, _client = action_goal
     result = package.handle_goal_command("actions", 'role work worker writer effort=high timeout_s=17')

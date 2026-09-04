@@ -136,6 +136,12 @@ request resume again from its current state.
 
 ## Waiting and restart recovery
 
+Storage errors are not treated as a missing Goal. If its saved state cannot
+be read, controls report that the state is unavailable and do not start or
+resume work. The Goal API returns HTTP 503, not 404. A failed final save does
+not publish a completion snapshot or completion notice; the last successfully
+saved state remains the recovery point.
+
 Startup recovery checks the recorded host, process ID, process start identity,
 and attempt lease before treating an execution as abandoned. A second local
 controller leaves a live owner alone; a confirmed exited process can be

@@ -53,6 +53,7 @@ from openprogram.programs.workflow.goal.state import (  # noqa: F401
     DEFAULT_PHASE_TIMEOUT_S,
     GOAL_SCHEMA_VERSION,
     GoalConflictError,
+    GoalStateUnavailable,
     IDLE_ROUND_LIMIT,
     JUDGE_PARSE_FAILURE_LIMIT,
     RESUMABLE_STATUSES,

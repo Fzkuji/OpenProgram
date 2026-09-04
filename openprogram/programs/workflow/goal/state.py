@@ -40,6 +40,10 @@ class GoalConflictError(ValueError):
     """A stale controller attempted to replace a newer Goal snapshot."""
 
 
+class GoalStateUnavailable(RuntimeError):
+    """Persistent Goal state could not be read or committed safely."""
+
+
 def check_goal_preconditions(goal: dict, expected: dict | None) -> None:
     """Reject an action aimed at a different saved Goal or revision."""
     if expected is None:
@@ -66,10 +70,14 @@ def load_goal(session_id: str) -> Optional[dict]:
             invalidate(session_id)
         sess = db.get_session(session_id) or {}
         goal = (sess.get("extra_meta") or {}).get("goal")
-        return normalize_goal(goal) if isinstance(goal, dict) else None
-    except Exception:
+        if goal is None:
+            return None
+        if not isinstance(goal, dict):
+            raise ValueError("Invalid persisted Goal")
+        return normalize_goal(goal)
+    except Exception as exc:
         _log.debug("goal read failed for session %s", session_id, exc_info=True)
-        return None
+        raise GoalStateUnavailable("Goal state unavailable; retry after storage recovers.") from exc
 
 
 def normalize_goal(goal: dict) -> dict:

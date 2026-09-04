@@ -5,6 +5,12 @@ from fastapi.responses import JSONResponse
 
 
 def register(app):
+    from openprogram.programs.workflow.goal import GoalStateUnavailable
+
+    @app.exception_handler(GoalStateUnavailable)
+    async def goal_state_unavailable(_request, _error):
+        return JSONResponse(content={"error": "GoalStateUnavailable"}, status_code=503)
+
     @app.get("/api/sessions/{session_id}/goal")
     async def get_goal(session_id: str):
         import openprogram.programs.workflow.goal as goal_module

@@ -206,6 +206,14 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
 
 
 def handle_goal_command(session_id: str, raw_args: str) -> dict:
+    """Report unavailable storage without interpreting it as an absent Goal."""
+    try:
+        return _handle_goal_command(session_id, raw_args)
+    except _goal.GoalStateUnavailable as exc:
+        return {"text": str(exc), "send_text": None}
+
+
+def _handle_goal_command(session_id: str, raw_args: str) -> dict:
     """Execute ``/goal <args>`` against a session.
 
     Set returns one invocation descriptor for the public ``goal()`` Workflow.
