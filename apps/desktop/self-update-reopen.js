@@ -182,7 +182,15 @@ function createSelfUpdateReopen({ argv, origin, fetchImpl = globalThis.fetch }) 
     await ackPending;
     return state();
   }
-  return { state, resolveStartUrl, observeNavigation, sessionLoaded };
+  async function requestVerification(nonce, body, signal) {
+    if (!token || !intent || intent.launch_kind !== "activation" || intent.status !== "acknowledged" ||
+        abandoned || !validResponse(intent) || typeof nonce !== "string" || !/^[0-9a-f]{64}$/.test(nonce)) {
+      throw new Error("verification_transport_unavailable");
+    }
+    return requestJson(fetchImpl, `${origin}/api/self-updates/${updateId}/desktop-verification/${nonce}`,
+      token, body, signal);
+  }
+  return { state, resolveStartUrl, observeNavigation, sessionLoaded, requestVerification };
 }
 
 function registerReopenIpc({ ipcMain, windows, recovery, origin }) {

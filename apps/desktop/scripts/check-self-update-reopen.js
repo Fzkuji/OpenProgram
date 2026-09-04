@@ -185,6 +185,34 @@ async function checkAckRetryAndIpc() {
   assert.deepEqual(invoked, [["self-update:session-loaded", "p1"], ["self-update:reopen-state"]]);
 }
 
-checkWindowEntry().then(checkProtocol).then(checkFallbacks).then(checkAckRetryAndIpc)
+async function checkVerificationTransport() {
+  const main = ctx();
+  const nonce = "c".repeat(64);
+  const calls = [];
+  const item = recovery(async (url, options) => {
+    calls.push([url, options]);
+    if (url.includes("desktop-verification")) return response({ ok: true, nonce });
+    return response({ ...intent(), status: options.method === "POST" ? "acknowledged" : "pending" });
+  });
+  const abort = new AbortController();
+  await assert.rejects(item.requestVerification(nonce, null, abort.signal), /unavailable/);
+  await item.resolveStartUrl(main, AUTH);
+  await assert.rejects(item.requestVerification(nonce, null, abort.signal), /unavailable/);
+  await item.sessionLoaded(main, "p1");
+  await assert.rejects(item.requestVerification("../../other", null, abort.signal), /unavailable/);
+  assert.deepEqual(await item.requestVerification(nonce, null, abort.signal), { ok: true, nonce });
+  await item.requestVerification(nonce, { screenshot: "private image" }, abort.signal);
+  const [url, options] = calls.at(-1);
+  assert.equal(url, `${ORIGIN}/api/self-updates/su_test/desktop-verification/${nonce}`);
+  assert.equal(options.signal, abort.signal);
+  assert.equal(options.redirect, "error");
+  assert.equal(options.headers.Authorization, `Bearer ${"a".repeat(43)}`);
+  assert.deepEqual(JSON.parse(options.body), { screenshot: "private image" });
+  item.observeNavigation(main, `${ORIGIN}/s/other`);
+  await assert.rejects(item.requestVerification(nonce, null, abort.signal), /unavailable/);
+  assert.equal(JSON.stringify(item.state()).includes("a".repeat(43)), false);
+}
+
+checkWindowEntry().then(checkProtocol).then(checkFallbacks).then(checkAckRetryAndIpc).then(checkVerificationTransport)
   .then(() => console.log("self-update reopen checks passed"))
   .catch((error) => { console.error(error); process.exitCode = 1; });

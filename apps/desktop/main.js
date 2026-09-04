@@ -20,6 +20,7 @@ const path = require("path");
 const { Buffer } = require("buffer");
 const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
 const { createSelfUpdateReopen, registerReopenIpc } = require("./self-update-reopen");
+const { registerUiVerificationIpc } = require("./self-update-ui");
 const { resolvePackagedWorker } = require("./packaged-runtime");
 const { DesktopUpdateService, desktopUpdateFetch } = require("./update-service");
 const {
@@ -3532,6 +3533,8 @@ const ensureMainWindow = createMainWindowGate({
   createWindow,
 });
 registerReopenIpc({ ipcMain, windows, recovery: selfUpdateReopen, origin: UI_ORIGIN });
+registerUiVerificationIpc({ ipcMain, windows, app, origin: UI_ORIGIN,
+  request: selfUpdateReopen.requestVerification });
 
 async function createWindow(options = {}) {
   const state = loadWindowState();
