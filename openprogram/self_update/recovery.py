@@ -98,6 +98,8 @@ def recover_pending_updates() -> bool:
     store = SelfUpdateStore()
     record = None
     try:
+        from .next_candidate import dispatch_pending as dispatch_next
+        dispatch_next()
         started = time.time()
         with store._locked():
             record = store._load_active_unlocked()

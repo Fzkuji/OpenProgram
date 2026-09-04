@@ -103,7 +103,7 @@ def test_failed_test_or_source_drift_is_not_candidate_ready(diagnosis_environmen
 
 @pytest.mark.parametrize("diagnosis_environment", [{"required_tests": ["python -c " + shlex.quote(
     "import os,time; from pathlib import Path; Path('test-pid').write_text(str(os.getpid())); time.sleep(30)")]}], indirect=True)
-@pytest.mark.parametrize("stop", ["owner", "new_update", "timeout"])
+@pytest.mark.parametrize("stop", ["owner", "iteration", "new_update", "timeout"])
 @native_sandbox
 def test_stopping_after_model_completion_reaps_test(diagnosis_environment, monkeypatch, stop):
     from dataclasses import replace
@@ -120,11 +120,12 @@ def test_stopping_after_model_completion_reaps_test(diagnosis_environment, monke
     pid_file = Path(candidate["worktree_path"]) / "test-pid"
     assert wait_until(pid_file.exists, timeout=5)
     pid = int(pid_file.read_text())
-    if stop == "owner":
+    if stop in {"owner", "iteration"}:
         monkeypatch.setattr(tool_module, "_turn_context", lambda: (_request(session_id="p1"), "a1"))
         # Execute the registered tool's ordinary wrapper, not a private cancel helper.
         import asyncio
-        asyncio.run(tool_module.self_update_repair_cancel.execute("cancel", {"update_id": update_id}, None, None))
+        tool = tool_module.self_update_repair_cancel if stop == "owner" else tool_module.self_update_iteration_cancel
+        asyncio.run(tool.execute("cancel", {"update_id": update_id}, None, None))
     elif stop == "new_update":
         store.create(replace(store.load(update_id).request, update_id="su_next", pre_update_evidence=("new request",)))
     else:

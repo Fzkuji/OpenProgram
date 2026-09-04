@@ -91,6 +91,8 @@ def _finish(store, record, status, reason, candidate=None):
     if read_result(store, record) is None:
         store._write_json(_path(store, record, "result"), dict(schema=1, update_id=record.request.update_id,
             attempt=record.state.attempt, status=status, reason=reason[:1000], candidate=candidate, at=time.time()))
+    from .next_candidate import prepare
+    prepare(store, record)
     if _pointer(store) == record.request.update_id:
         (store.root / "source-repair-pending.json").unlink()
         store._fsync_directory(store.root)
@@ -181,6 +183,8 @@ def _check_job(store, record, request, config, job):
 
 
 def _check(store, record, request):
+    from .next_candidate import ensure_not_cancelled
+    ensure_not_cancelled(store, record)
     from .maintenance import load_maintenance
     if (read_result(store, record) is not None or _pointer(store) != record.request.update_id
             or store._load_active_unlocked() is not None or load_maintenance(store) is not None):
@@ -283,8 +287,12 @@ def _run(store, update_id, runner):
                 except Exception:
                     _log.warning("Could not cancel original source repair Job", exc_info=True)
     finally:
-        with _thread_lock:
-            _threads.pop((str(store.root), update_id), None)
+        from .next_candidate import dispatch_pending
+        try:
+            dispatch_pending()
+        finally:
+            with _thread_lock:
+                _threads.pop((str(store.root), update_id), None)
 
 
 def dispatch_pending():

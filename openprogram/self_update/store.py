@@ -54,70 +54,84 @@ class SelfUpdateStore:
 
     def create(self, request: UpdateRequest, *, verifier_config: Mapping[str, Any] | None = None,
                diagnosis_config: Mapping[str, Any] | None = None,
-               source_repair_config: Mapping[str, Any] | None = None) -> UpdateState:
+               source_repair_config: Mapping[str, Any] | None = None,
+               iteration_config: Mapping[str, Any] | None = None) -> UpdateState:
         with self._locked():
-            maintenance = self.root / "maintenance.json"
-            if maintenance.exists() or maintenance.is_symlink():
-                raise ActiveUpdateError("self-update maintenance has not been cleared")
-            current = self._load_active_unlocked()
-            if current is not None and not is_terminal(current.state.phase):
-                raise ActiveUpdateError(
-                    f"active update {current.request.update_id} is {current.state.phase.value}"
-                )
-            target = self._update_dir(request.update_id)
-            if target.exists():
-                raise UpdateExistsError(f"update {request.update_id} already exists")
+            return self._create_unlocked(request, verifier_config=verifier_config,
+                diagnosis_config=diagnosis_config, source_repair_config=source_repair_config,
+                iteration_config=iteration_config)
 
-            now = time.time()
-            created_event = {
-                "schema": SCHEMA_VERSION,
-                "at": now,
-                "type": "created",
-                "update_id": request.update_id,
-                "phase": UpdatePhase.PREPARING.value,
-                "revision": 1,
-            }
-            state = UpdateState(
-                update_id=request.update_id,
-                phase=UpdatePhase.PREPARING,
-                revision=1,
-                updated_at=now,
-                last_event=created_event,
+    def _create_unlocked(self, request, *, verifier_config=None, diagnosis_config=None,
+                         source_repair_config=None, iteration_config=None):
+        """Caller holds the process/file lock, including child reservation."""
+        maintenance = self.root / "maintenance.json"
+        if maintenance.exists() or maintenance.is_symlink():
+            raise ActiveUpdateError("self-update maintenance has not been cleared")
+        current = self._load_active_unlocked()
+        if current is not None and not is_terminal(current.state.phase):
+            raise ActiveUpdateError(
+                f"active update {current.request.update_id} is {current.state.phase.value}"
             )
-            staged = self.root / f".{request.update_id}.{uuid.uuid4().hex}.tmp"
-            staged.mkdir(mode=0o700)
-            try:
-                self._write_json(staged / "request.json", request.to_dict())
-                if verifier_config is not None:
-                    self._write_json(staged / "verifier-config.json", verifier_config)
-                if diagnosis_config is not None:
-                    self._write_json(staged / "diagnosis-config.json", diagnosis_config)
-                if source_repair_config is not None:
-                    self._write_json(staged / "source-repair-config.json", source_repair_config)
-                self._write_json(staged / "state.json", state.to_dict())
-                self._write_events(staged / "events.jsonl", created_event)
-                os.replace(staged, target)
-                self._fsync_directory(self.root)
-            finally:
-                if staged.exists():
-                    shutil.rmtree(staged)
-            self._write_json(
-                self.root / "active.json",
-                {"schema": SCHEMA_VERSION, "update_id": request.update_id},
-            )
-            from .diagnosis import cancel_pending
-            try:
-                cancel_pending(self)
-            except Exception:
-                import logging
-                logging.getLogger(__name__).exception("Could not revoke superseded diagnosis")
-            from .source_repair import cancel_pending as cancel_repair
-            try:
-                cancel_repair(self)
-            except Exception:
-                import logging
-                logging.getLogger(__name__).exception("Could not revoke superseded source repair")
-            return state
+        target = self._update_dir(request.update_id)
+        if target.exists():
+            raise UpdateExistsError(f"update {request.update_id} already exists")
+        if iteration_config is None or iteration_config["parent_id"] is None:
+            from .next_candidate import supersede
+            supersede(self)
+
+        now = time.time()
+        created_event = {
+            "schema": SCHEMA_VERSION,
+            "at": now,
+            "type": "created",
+            "update_id": request.update_id,
+            "phase": UpdatePhase.PREPARING.value,
+            "revision": 1,
+        }
+        state = UpdateState(
+            update_id=request.update_id,
+            attempt=iteration_config["attempt"] if iteration_config else 1,
+            phase=UpdatePhase.PREPARING,
+            revision=1,
+            updated_at=now,
+            last_event=created_event,
+        )
+        staged = self.root / f".{request.update_id}.{uuid.uuid4().hex}.tmp"
+        staged.mkdir(mode=0o700)
+        try:
+            self._write_json(staged / "request.json", request.to_dict())
+            if verifier_config is not None:
+                self._write_json(staged / "verifier-config.json", verifier_config)
+            if diagnosis_config is not None:
+                self._write_json(staged / "diagnosis-config.json", diagnosis_config)
+            if source_repair_config is not None:
+                self._write_json(staged / "source-repair-config.json", source_repair_config)
+            if iteration_config is not None:
+                self._write_json(staged / "iteration-root.json", iteration_config)
+            self._write_json(staged / "state.json", state.to_dict())
+            self._write_events(staged / "events.jsonl", created_event)
+            os.replace(staged, target)
+            self._fsync_directory(self.root)
+        finally:
+            if staged.exists():
+                shutil.rmtree(staged)
+        self._write_json(
+            self.root / "active.json",
+            {"schema": SCHEMA_VERSION, "update_id": request.update_id},
+        )
+        from .diagnosis import cancel_pending
+        try:
+            cancel_pending(self)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Could not revoke superseded diagnosis")
+        from .source_repair import cancel_pending as cancel_repair
+        try:
+            cancel_repair(self)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Could not revoke superseded source repair")
+        return state
 
     def load(self, update_id: str) -> UpdateRecord:
         with self._locked():
@@ -147,40 +161,44 @@ class SelfUpdateStore:
         if expected_phase is not None and not isinstance(expected_phase, UpdatePhase):
             raise ValueError("expected_phase must be an UpdatePhase or None")
         with self._locked():
-            record = self._load_unlocked(update_id)
-            current = record.state
-            if expected_phase is not None and current.phase is not expected_phase:
-                raise ConcurrentUpdateError(
-                    f"expected {expected_phase.value}, found {current.phase.value}"
-                )
-            if not can_transition(current.phase, target):
-                raise InvalidTransitionError(
-                    f"illegal update transition {current.phase.value} -> {target.value}"
-                )
-            now = time.time()
-            event = {
-                "schema": SCHEMA_VERSION,
-                "at": now,
-                "type": "transition",
-                "update_id": update_id,
-                "from": current.phase.value,
-                "phase": target.value,
-                "revision": current.revision + 1,
-                "detail": dict(detail or {}),
-            }
-            updated = replace(
-                current,
-                phase=target,
-                revision=current.revision + 1,
-                updated_at=now,
-                detail=dict(detail or {}),
-                last_event=event,
+            return self._transition_unlocked(update_id, target, expected_phase=expected_phase, detail=detail)
+
+    def _transition_unlocked(self, update_id, target, *, expected_phase=None, detail=None):
+        """Caller holds the process/file lock."""
+        record = self._load_unlocked(update_id)
+        current = record.state
+        if expected_phase is not None and current.phase is not expected_phase:
+            raise ConcurrentUpdateError(
+                f"expected {expected_phase.value}, found {current.phase.value}"
             )
-            self._write_json(self._state_path(update_id), updated.to_dict())
-            self._write_events(self._events_path(update_id), event)
-            if is_terminal(target):
-                self._clear_active_unlocked(update_id)
-            return updated
+        if not can_transition(current.phase, target):
+            raise InvalidTransitionError(
+                f"illegal update transition {current.phase.value} -> {target.value}"
+            )
+        now = time.time()
+        event = {
+            "schema": SCHEMA_VERSION,
+            "at": now,
+            "type": "transition",
+            "update_id": update_id,
+            "from": current.phase.value,
+            "phase": target.value,
+            "revision": current.revision + 1,
+            "detail": dict(detail or {}),
+        }
+        updated = replace(
+            current,
+            phase=target,
+            revision=current.revision + 1,
+            updated_at=now,
+            detail=dict(detail or {}),
+            last_event=event,
+        )
+        self._write_json(self._state_path(update_id), updated.to_dict())
+        self._write_events(self._events_path(update_id), event)
+        if is_terminal(target):
+            self._clear_active_unlocked(update_id)
+        return updated
 
     def claim_verifier(
         self,

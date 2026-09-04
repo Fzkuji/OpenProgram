@@ -101,6 +101,8 @@ def _evidence(store, record):
 
 
 def _load_request(store, record):
+    from .next_candidate import ensure_not_cancelled
+    ensure_not_cancelled(store, record)
     from .owner_repair import _owner
     _owner(store, record)
     config = _config(store, record)

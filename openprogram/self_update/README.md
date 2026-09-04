@@ -18,6 +18,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`iteration.py`** — Deterministic authorization checks for a proposed self-update iteration
 - **`launcher.py`** — Submit one trusted, one-shot self-update supervisor through launchd
 - **`maintenance.py`** — Durable admission gate while an approved update waits for quiescence
+- **`next_candidate.py`** — Durable, evidence-bound submission of a repaired self-update candidate
 - **`owner_repair.py`** — Explicit, bounded owner recovery through the original trusted controller
 - **`recovery.py`** — Dispatch one frozen verifier Job after the supervisor releases system gates
 - **`repair_candidate.py`** — Apply bounded model edits and test a new isolated candidate without installing it

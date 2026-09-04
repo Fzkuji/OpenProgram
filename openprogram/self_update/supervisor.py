@@ -179,6 +179,9 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
     }
+    remaining = record.request.created_at + record.request.timeout_seconds - time.time()
+    if remaining <= 0:
+        raise RuntimeError("candidate build deadline expired")
     result = subprocess.run(
         [
             str(sandbox),
@@ -193,7 +196,7 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         env=environment,
         capture_output=True,
         text=True,
-        timeout=record.request.timeout_seconds,
+        timeout=remaining,
     )
     atomic_write_text(
         update_dir / "build.log",
@@ -671,6 +674,8 @@ def run_supervisor(
                 leave_maintenance(update_id)
                 return 1
             previous_system_gate = probe_current_system(store.load(update_id))
+            if time.time() >= deadline:
+                raise RuntimeError("activation deadline expired during preflight")
             if previous_system_gate["candidate_sha"] == record.request.candidate_sha:
                 raise RuntimeError("candidate is already the running revision")
             store.transition(

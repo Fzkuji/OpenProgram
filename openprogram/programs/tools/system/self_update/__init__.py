@@ -313,10 +313,18 @@ def _prepare_update(
         diagnosis_config = freeze_config(request, verifier_config)
         from openprogram.self_update.source_repair import freeze_config as freeze_repair, config_evidence as repair_evidence
         repair_config = freeze_repair(request, verifier_config, candidate_path=str(candidate), branch_name=worktree.branch_name)
+        from openprogram.self_update.next_candidate import root_config, config_evidence as iteration_evidence
+        iteration_config = root_config(request)
+        if policy.mode is IterationMode.BOUNDED_AUTO and (policy.deadline is None or policy.deadline <= time.time()
+                                                        or not policy.required_tests):
+            raise ValueError("bounded_auto requires a future total deadline and non-empty required_tests")
+        if policy.deadline is not None:
+            request = replace(request, timeout_seconds=min(request.timeout_seconds, int(policy.deadline - request.created_at)))
         request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(verifier_config),
-                                                       diagnosis_evidence(diagnosis_config), repair_evidence(repair_config)))
+                                                       diagnosis_evidence(diagnosis_config), repair_evidence(repair_config),
+                                                       iteration_evidence(iteration_config)))
         state = store.create(request, verifier_config=verifier_config, diagnosis_config=diagnosis_config,
-                             source_repair_config=repair_config)
+                             source_repair_config=repair_config, iteration_config=iteration_config)
     except ActiveUpdateError as exc:
         raise SelfUpdateToolError(str(exc)) from exc
     except (SelfUpdateError, ValueError) as exc:
@@ -385,6 +393,7 @@ def _status_update(
         raise SelfUpdateToolError("self-update belongs to another origin session")
     detail = record.state.detail
     from openprogram.self_update.source_repair import read_result
+    from openprogram.self_update.next_candidate import summary
     return {
         "update_id": record.request.update_id,
         "phase": record.state.phase.value,
@@ -397,6 +406,7 @@ def _status_update(
         "changed_paths": list(record.request.changed_paths),
         "updated_at": record.state.updated_at,
         "source_repair_result": read_result(store, record),
+        "iteration": summary(store, record),
     }
 
 
@@ -452,7 +462,8 @@ def _turn_context() -> tuple[Any, str]:
         "Prepare an owner-approved OpenProgram self-update from the exact clean HEAD "
         "of this session's active linked worktree. This persists intent only; it does "
         "not build, install, stop, or restart the App. Approval also permits isolated "
-        "source repair and the listed required tests after verified rollback, but not another installation."
+        "source repair and listed tests after verified rollback. Default mode requires approval for each new SHA; "
+        "bounded_auto explicitly permits further installations within the original attempt, deadline, path and test limits."
     ),
     toolset=["core"],
     requires_approval=True,
@@ -539,4 +550,25 @@ def self_update_observe(entry: str) -> dict[str, Any]:
     return observe(entry)
 
 
-__all__ = ["self_update_prepare", "self_update_status", "self_update_cancel", "self_update_repair_cancel", "self_update_observe"]
+@function(
+    name="self_update_retry", toolset=["core"], requires_approval=True, path_params={},
+    description="Approve this exact tested repair candidate in its original owner session. Preserves original goal, scope, model and iteration budget; returns a child request, not installation success.",
+)
+def self_update_retry(update_id: str, candidate_sha: str) -> dict[str, Any]:
+    from openprogram.self_update.next_candidate import submit
+    req, assistant_id = _turn_context()
+    return submit(update_id, candidate_sha, req=req, assistant_id=assistant_id)
+
+
+@function(
+    name="self_update_iteration_cancel", toolset=["core"], path_params={},
+    description="Stop this owner session's entire self-update iteration, including diagnosis, repair, tests and pending submission. An activated transaction still completes verification or safe rollback.",
+)
+def self_update_iteration_cancel(update_id: str) -> dict[str, Any]:
+    from openprogram.self_update.next_candidate import cancel
+    req, _ = _turn_context()
+    return cancel(update_id, req)
+
+
+__all__ = ["self_update_prepare", "self_update_status", "self_update_cancel", "self_update_repair_cancel", "self_update_observe",
+           "self_update_retry", "self_update_iteration_cancel"]

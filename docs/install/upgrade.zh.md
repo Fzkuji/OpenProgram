@@ -75,7 +75,8 @@ openprogram self-update repair UPDATE_ID
 缺少冻结诊断配置的旧请求保持原有行为。诊断报告本身不修改或安装代码。
 
 新请求独立冻结 **Post-rollback source repair** 阶段。首次授权包含隔离修正与所列
-`required_tests`，不包含再次安装。implementation/test 诊断可触发一个只读模型 Job
+`required_tests`。默认模式在再次安装前另行审批；显式批准的 `bounded_auto` 同时允许
+在原限制内再次安装。implementation/test 诊断可触发一个只读模型 Job
 提出文本编辑，由控制器逐项校验、新建 linked worktree 和 commit，并在无网络、无
 App 写权限的原生沙箱运行冻结测试。原 worktree 不变。默认只修改原 changed_paths；
 `bounded_auto` 使用原授权路径模式。受保护的 runtime、审批、安装器、依赖和 Git
@@ -89,8 +90,27 @@ App 写权限的原生沙箱运行冻结测试。原 worktree 不变。默认只
 `self_update_status` 和 `self-update status --json` 包含 `source_repair_result`。
 `candidate_ready` 表示新 commit 与全部已配置测试通过校验；未配置必需测试时为
 `awaiting_tests`。测试缺失、失败或源码漂移记录 `failed`；取消与超时分别为
-`cancelled`、`expired`。这些状态均不代表已安装。下一 candidate 的再次授权、
-有界自动提交及激活是独立的后续实现阶段，仍待完成。
+`cancelled`、`expired`。这些状态均不代表已安装。
+
+对已测试的修正版本，在原 owner 会话调用 `self_update_retry(update_id, candidate_sha)`。
+即使使用 bypass，也必须进行单次审批，显示精确 SHA、变更路径、测试和剩余预算。
+批准返回后重新检查 Git 内容和测试日志；任一内容变化都会拒绝提交。
+`awaiting_tests` 候选不能通过这个入口批准，需要 owner 发起明确测试的新请求。
+
+新的 `bounded_auto` 请求必须包含未来的总 `deadline`、允许路径和非空 `required_tests`。
+只有独立冻结了迭代授权的请求才可自动提交后继版本；旧请求仅有 mode 字段不会获得权限。
+每个 child 保留原目标、assertions、源码基线、model/profile 和 policy。
+首次更新计为 attempt=1，最多三次包含首次。预留 child 就消耗一次预算，提交失败也不退还。
+重启复用原 child 和期限，不重置预算。
+
+`self_update_iteration_cancel(update_id)` 停止整个序列，包括待批准操作、诊断、源码修正和
+候选测试。已进入激活或验收的 child 必须完成事务或安全回退，但不能再创建后续 attempt。
+其他普通 Job 不受影响。
+
+聊天工具 `self_update_status` 的 `iteration` 字段提供 root、parent、attempt 限制、总期限和
+提交状态。`submitted` 只表示请求已交给外部 supervisor，不代表安装成功。
+child 仍须完成打包、系统检查、新验证 Job，以及 commit 或 rollback。
+真实已安装 App 的验收是独立发布条件；fixture 测试不能证明当前 App 已更新。
 
 App 或普通 CLI 无法启动时，使用本次更新保存的独立入口：
 

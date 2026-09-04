@@ -87,8 +87,10 @@ exists. Older requests without frozen diagnostic configuration keep their prior
 behavior. A diagnostic report does not itself modify or install code.
 
 New requests separately freeze a **Post-rollback source repair** stage. Initial
-approval includes isolated repair and the listed `required_tests`, not another
-installation. An implementation/test diagnosis can trigger one read-only model
+approval includes isolated repair and the listed `required_tests`. Default mode
+requires a separate approval before another installation; explicitly approved
+`bounded_auto` also permits subsequent installations within its original limits.
+An implementation/test diagnosis can trigger one read-only model
 Job that proposes text edits. The controller validates each edit, creates a new
 linked worktree and commit, and runs the frozen tests in a native sandbox without
 network access or App write permission. Your original worktree is unchanged.
@@ -108,8 +110,35 @@ Old requests without frozen repair configuration do not gain this capability.
 `candidate_ready` means the new commit and all configured tests passed validation;
 `awaiting_tests` means no required tests were configured. Missing/failed tests or
 source drift produce `failed`; cancellation and expiry produce `cancelled` and
-`expired`. None means installed. Next-candidate approval, bounded automatic
-submission and activation are separate implementation stages and remain pending.
+`expired`. None means installed.
+
+For a tested repaired candidate, call `self_update_retry(update_id, candidate_sha)`
+in the original owner conversation. It always asks for one-shot approval, even
+in bypass mode. The approval displays the exact SHA, changed paths, tests and
+remaining budget. Git contents and test logs are checked again after approval;
+changing either invalidates submission. An `awaiting_tests` candidate cannot be
+approved through this entry: start a new owner request with explicit tests.
+
+New `bounded_auto` requests must include a future total `deadline`, allowed path
+patterns and non-empty `required_tests`. Only requests with the separately frozen
+iteration authorization can automatically submit another candidate. An old
+request's mode field alone never grants that permission. Each child preserves
+the original goal, assertions, source baseline, model/profile and policy. The
+first update counts as attempt 1; the maximum of three includes it. Reserving a
+child consumes one attempt, including failed submissions. Restart reuses the
+same child and deadline rather than resetting the budget.
+
+`self_update_iteration_cancel(update_id)` stops the whole sequence, including
+pending approval, diagnosis, source repair and candidate tests. A child already
+being activated or verified must finish its transaction or safe rollback; no
+subsequent attempt is allowed. This does not cancel unrelated jobs.
+
+The chat `self_update_status` result includes an `iteration` section with root,
+parent, attempt limits, deadline and submission status. `submitted` means the
+request was handed to the external supervisor, not that installation succeeded.
+The child still goes through packaging, system checks, a new verification Job
+and commit or rollback. Full installed-App acceptance remains a separate release
+requirement; fixture tests do not establish that the current App was updated.
 
 If the App or normal CLI cannot start, use the entry saved for that update:
 
