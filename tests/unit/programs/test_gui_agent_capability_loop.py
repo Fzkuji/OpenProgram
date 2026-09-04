@@ -125,6 +125,7 @@ assert callable(result.conclusion)
 def test_capability_status_reports_missing_perception_dependencies(harness_on_path, monkeypatch):
     from gui_harness.tasks import capability_loop as module
 
+    monkeypatch.setattr(module.platform, "system", lambda: "Linux")
     monkeypatch.setattr(module.importlib.util, "find_spec", lambda _name: None)
     status = module.capability_status(vm_url="http://localhost:5000")
     assert status["computer_use"]["available"] is False
