@@ -308,9 +308,12 @@ def _prepare_update(
     )
     try:
         from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
+        from openprogram.self_update.diagnosis import freeze_config, config_evidence as diagnosis_evidence
         verifier_config = freeze_verifier_config(request, req)
-        request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(verifier_config)))
-        state = store.create(request, verifier_config=verifier_config)
+        diagnosis_config = freeze_config(request, verifier_config)
+        request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(verifier_config),
+                                                       diagnosis_evidence(diagnosis_config)))
+        state = store.create(request, verifier_config=verifier_config, diagnosis_config=diagnosis_config)
     except ActiveUpdateError as exc:
         raise SelfUpdateToolError(str(exc)) from exc
     except (SelfUpdateError, ValueError) as exc:

@@ -547,7 +547,7 @@ def resolve_tools(
                 only_available=True,
             ))
         resolved = [t for t in wanted if hasattr(t, "name")]
-        if source == "self_update_verify":
+        if source in {"self_update_verify", "self_update_diagnose"}:
             from openprogram.programs import apply_tool_policy
             resolved = apply_tool_policy(resolved, source=source, exposure_filter=False)
         return _apply_mcp_gate(resolved)

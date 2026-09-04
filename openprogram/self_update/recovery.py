@@ -107,6 +107,8 @@ def recover_pending_updates() -> bool:
                     raise ValueError("maintenance conflicts with the active update")
                 record = store._load_unlocked(marker["update_id"])
         if record is None:
+            from .diagnosis import dispatch_pending
+            dispatch_pending()
             return True
         repair = load_repair(store, record)
         if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY and repair is None:
@@ -144,6 +146,8 @@ def recover_pending_updates() -> bool:
                     return False
                 marker = load_maintenance(store)
                 if marker is None:
+                    from .diagnosis import dispatch_pending
+                    dispatch_pending()
                     return True
                 if marker["update_id"] != record.request.update_id:
                     raise ValueError("terminal maintenance owner changed")

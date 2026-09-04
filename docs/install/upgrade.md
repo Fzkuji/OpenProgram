@@ -70,6 +70,23 @@ not change the original update verdict. The separate repair result records which
 version was recovered; service recovery is not proof that a failed feature meets
 its original goal.
 
+New conversational update requests also freeze a read-only diagnostic stage. After
+a verified rollback, the restored worker creates one **Post-rollback diagnosis**
+Job in the original session. It uses the approved model and profile, reads failure
+evidence, and reports a cause and proposed corrections. It cannot edit source,
+run shell commands, install software, or authorize another update. The original
+verification and rollback verdicts are retained.
+
+The Job has at most five minutes after rollback, shortened by any earlier approved
+iteration deadline. Restart does not reset that limit or repeat a terminal Job.
+Use the ordinary Job cancel action to stop diagnosis; `self_update_cancel` still
+only cancels a pre-activation update. A new update supersedes pending diagnosis.
+Unavailable models or invalid evidence stop diagnosis without restricting the
+restored service. `self-update status --json` includes `diagnosis_result` when one
+exists. Older requests without frozen diagnostic configuration keep their prior
+behavior. Automatic source repair, retesting and next-candidate activation remain
+separate implementation stages; a diagnostic report does not perform them.
+
 If the App or normal CLI cannot start, use the entry saved for that update:
 
 ```bash

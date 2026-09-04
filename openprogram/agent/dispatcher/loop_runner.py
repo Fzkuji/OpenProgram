@@ -123,7 +123,7 @@ def run_loop_blocking(
     )
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
     tools, web_use_enabled = _configure_web_use_tools(tools, req.surface_context)
-    if req.source == "self_update_verify":
+    if req.source in {"self_update_verify", "self_update_diagnose"}:
         from openprogram.programs import apply_tool_policy
         tools = apply_tool_policy(tools or [], source=req.source)
         web_use_enabled = False
