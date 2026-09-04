@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+import stat
 import threading
 import time
 import uuid
@@ -250,7 +251,7 @@ class SelfUpdateStore:
     def _events_path(self, update_id: str) -> Path:
         return self._update_dir(update_id) / "events.jsonl"
 
-    def _load_unlocked(self, update_id: str) -> UpdateRecord:
+    def _load_unlocked(self, update_id: str, *, read_only: bool = False) -> UpdateRecord:
         directory = self._update_dir(update_id)
         if not directory.is_dir():
             raise UpdateNotFoundError(f"update {update_id} does not exist")
@@ -259,7 +260,7 @@ class SelfUpdateStore:
         if request.update_id != update_id or state.update_id != update_id:
             raise CorruptUpdateStateError("update id does not match its directory")
         record = UpdateRecord(request, state)
-        self._reconcile_events_unlocked(record)
+        self._reconcile_events_unlocked(record, read_only=read_only)
         return record
 
     def _load_active_unlocked(self) -> UpdateRecord | None:
@@ -305,7 +306,7 @@ class SelfUpdateStore:
             raise CorruptUpdateStateError("multiple non-terminal self-updates exist")
         return records[0] if records else None
 
-    def _reconcile_events_unlocked(self, record: UpdateRecord) -> None:
+    def _reconcile_events_unlocked(self, record: UpdateRecord, *, read_only: bool = False) -> None:
         path = self._events_path(record.request.update_id)
         try:
             raw = path.read_text(encoding="utf-8")
@@ -352,6 +353,9 @@ class SelfUpdateStore:
         )
         if recovered_phase is not state.phase:
             raise CorruptUpdateStateError("recovery event does not match durable state")
+
+        if read_only:
+            return
 
         repaired = "".join(
             json.dumps(event, ensure_ascii=False, sort_keys=True, allow_nan=False)
@@ -509,13 +513,21 @@ class SelfUpdateStore:
         os.chmod(path, 0o600)
 
     @contextmanager
-    def _locked(self) -> Iterator[None]:
-        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self.root, 0o700)
+    def _locked(self, *, read_only: bool = False) -> Iterator[None]:
+        if not read_only:
+            self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            os.chmod(self.root, 0o700)
         lock_path = self.root / ".lock"
         with _process_lock:
-            descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+            flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK
+                     if read_only else os.O_RDWR | os.O_CREAT)
+            descriptor = os.open(lock_path, flags, 0o600)
             try:
+                if read_only:
+                    info = os.fstat(descriptor)
+                    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                            or stat.S_IMODE(info.st_mode) != 0o600):
+                        raise CorruptUpdateStateError("read-only update lock is not a private regular file")
                 file_lock.flock(descriptor, file_lock.LOCK_EX)
                 yield
             finally:

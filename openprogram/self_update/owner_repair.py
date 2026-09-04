@@ -199,17 +199,23 @@ def status(update_id: str | None = None) -> dict:
         if update_id is None:
             return {"update_id": None}
         record = store._load_unlocked(update_id)
-        _owner(store, record)
-        request = load_repair(store, record)
-        directory = store.root / update_id
-        script = directory / "recover.sh"
-        return dict(update_id=update_id, phase=record.state.phase.value,
-                    recovery_script=str(script) if script.is_file() and not script.is_symlink() else None,
-                    maintenance=marker is not None and marker["update_id"] == update_id,
-                    repair_id=request["repair_id"] if request else None,
-                    repair_deadline=request["deadline"] if request else None,
-                    repair_result=read_result(store, request) if request else None,
-                    repair_cleanup_error=cleanup_error(store, request) if request else None)
+        return _status_unlocked(store, record)
+
+
+def _status_unlocked(store, record) -> dict:
+    """Describe an already loaded record without reconciling the active pointer."""
+    _owner(store, record)
+    marker = load_maintenance(store)
+    request = load_repair(store, record)
+    update_id = record.request.update_id
+    script = store.root / update_id / "recover.sh"
+    return dict(update_id=update_id, phase=record.state.phase.value,
+                recovery_script=str(script) if script.is_file() and not script.is_symlink() else None,
+                maintenance=marker is not None and marker["update_id"] == update_id,
+                repair_id=request["repair_id"] if request else None,
+                repair_deadline=request["deadline"] if request else None,
+                repair_result=read_result(store, request) if request else None,
+                repair_cleanup_error=cleanup_error(store, request) if request else None)
 
 
 def run_repair(store, record, installer_sha256: str) -> int | None:

@@ -188,17 +188,18 @@ def main(argv=None) -> int:
     try:
         store = _canonical_store(args.state_root)
         _existing_state(store, args.update_id)
-        with store._locked():
-            record = store._load_unlocked(args.update_id)
+        read_only = args.mode == "status"
+        with store._locked(read_only=read_only):
+            record = store._load_unlocked(args.update_id, read_only=read_only)
             bundle = _load_bundle(store.root / args.update_id / "controller")
             if bundle.installer_sha256 != args.installer_sha256:
                 raise ValueError("recovery installer identity changed")
             validate_bootstrap(store, record, bundle)
             finished = _finished(store, record)
-        if args.mode == "status":
-            from .owner_repair import status
-            print(json.dumps(status(args.update_id), indent=2))
-            return 0
+            if read_only:
+                from .owner_repair import _status_unlocked
+                print(json.dumps(_status_unlocked(store, record), indent=2))
+                return 0
         if args.mode == "repair":
             from openprogram.cli.commands.self_update import _cmd_self_update
             result = _cmd_self_update(argparse.Namespace(self_update_verb="repair", update_id=args.update_id))

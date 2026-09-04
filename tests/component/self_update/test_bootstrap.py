@@ -286,3 +286,33 @@ def test_unsafe_state_root_is_rejected_before_store_normalizes_permissions(boots
         assert invoke(v, mode) == 1
     assert v.store.root.stat().st_mode & 0o777 == 0o777
     assert (v.directory / "state.json").read_bytes() == original and v.plist.exists()
+
+
+@pytest.mark.parametrize("interruption", ["journal", "active"])
+def test_status_preserves_interrupted_store_evidence(bootstrap_request, interruption):
+    from openprogram.self_update import UpdatePhase
+    v = bootstrap_request
+    journal = v.directory / "events.jsonl"
+    if interruption == "journal":
+        before_transition = journal.read_bytes()
+        v.store.transition(v.directory.name, UpdatePhase.STAGING)
+        journal.write_bytes(before_transition)
+    else:
+        (v.store.root / "active.json").unlink()
+    before = {path.relative_to(v.store.root): path.read_bytes()
+              for path in v.store.root.rglob("*") if path.is_file()}
+    assert invoke(v, "status") in (0, 1)
+    after = {path.relative_to(v.store.root): path.read_bytes()
+             for path in v.store.root.rglob("*") if path.is_file()}
+    assert after == before
+
+
+def test_status_does_not_chmod_root_or_create_missing_lock(bootstrap_request):
+    v = bootstrap_request
+    before = v.store.root.stat().st_ctime_ns
+    assert invoke(v, "status") == 0
+    assert v.store.root.stat().st_ctime_ns == before
+    lock = v.store.root / ".lock"
+    lock.unlink()
+    assert invoke(v, "status") == 1
+    assert not lock.exists()
