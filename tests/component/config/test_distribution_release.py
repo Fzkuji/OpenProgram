@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
+import platform
 import plistlib
 import re
 import runpy
@@ -1116,6 +1118,38 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
         in final_window
     )
     assert "worker stop >/dev/null 2>&1 || true" not in final_window
+
+
+def test_local_app_refresh_hydrates_embedded_runtime_dependencies() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    hydrate = refresh.index('hydrate_wheel_dependencies "$app_python"')
+    reinstall = refresh.index(
+        '"$app_python" -I -m pip install --disable-pip-version-check'
+    )
+    assert hydrate < reinstall
+    assert '--force-reinstall "$wheel"' in refresh[reinstall:]
+
+
+def test_product_runtime_verifier_probes_macos_window_dependencies(
+    monkeypatch,
+) -> None:
+    helper = runpy.run_path(
+        str(ROOT / "scripts/release/verify-product-runtime.py")
+    )
+    imported: list[str] = []
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(importlib, "import_module", imported.append)
+
+    helper["_probe_macos_window_control"]()
+
+    assert imported == [
+        "AppKit",
+        "ApplicationServices",
+        "Quartz",
+        "ScreenCaptureKit",
+    ]
 
 
 def test_local_app_refresh_removes_stale_package_layout_before_install() -> None:
