@@ -2,7 +2,7 @@
 
 Give it one natural-language task. Its root controller repeatedly chooses one bounded capability: `computer_use` for the local desktop, `browser_use` for an OpenProgram background Page, or `vm_use` for a configured remote virtual machine. Every capability input and full result is appended to the next model decision's context. The model ends the task by proposing a terminal result; action and time limits remain safety boundaries.
 
-Local and VM perception combines YOLO component detection (GPA-GUI-Detector), OCR (Apple Vision on macOS, EasyOCR on Linux / Windows), and template matching. The action layer covers mouse, keyboard, and clipboard. Browser operations use the Page's DOM/CDP target instead of desktop coordinates.
+On macOS 14 and newer, `computer_use` captures an application window with ScreenCaptureKit and operates its supported Accessibility controls. It does not activate the application, move the system pointer, type through the global keyboard, or use the clipboard. The OpenProgram desktop App enables Electron's native accessibility support before creating its first window, so the same backend can operate its HTML controls. Other local desktop and VM perception combines YOLO component detection, OCR, and template matching. Browser operations use the Page's DOM/CDP target instead of desktop coordinates.
 
 ## Availability
 
@@ -42,9 +42,9 @@ The implementation uses OpenProgram's high-level agentic programming calls. `pla
 
 `vm_use` requires an OSWorld-compatible HTTP endpoint. Screenshots are read from `GET /screenshot`, and input commands are sent to `POST /execute`. VM target selection is serialized within the Harness process. Whether the call succeeds or raises, the prior input target and screenshot backend are restored before another capability runs. Endpoint credentials and query values are not included in planner availability context.
 
-Desktop observations include the frontmost application and screenshot coordinate bounds. If the target application's windows are minimized or located in another macOS Space and remain unavailable after one bounded Window-menu recovery, the run stops as infeasible and asks the user to move or unminimize the window. It does not create additional windows indefinitely.
+The macOS capability inventory reports available application/window identifiers. The Agent chooses the target, so the public form still asks only for the task. Window observations contain the exact target identity, a window-only image, and supported controls. Screen Recording and Accessibility permissions are required. Missing permissions, ambiguous or minimized windows, unavailable Accessibility trees, and unsupported actions produce a takeover instruction without foreground recovery.
 
-Desktop coordinate input always applies to the current foreground GUI; it is not a background-window API. Browser actions use the selected Page in the background and do not activate its tab, raise the OpenProgram window, or move the system pointer. The controller may switch between these capabilities when the recorded results require it.
+The window backend supports accessible button presses, replacement of writable text values, and page-scroll actions advertised by controls. Arbitrary coordinate clicking, dragging, global shortcuts, and cursor overlays are not provided by this backend. Actions in one application process are serialized. Other desktop coordinate input remains foreground input. Browser actions use the selected Page in the background. The controller can switch capabilities or target windows; switching windows resets single-step verification feedback but retains the full task history.
 
 All runs share the same terminal fields: `status` (`succeeded`, `infeasible`, or `failed`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. `success` is true only for `succeeded`. Infeasible and failed results always return `success=false`; infeasible results retain the blocker, marker, and user handoff instruction. The result also contains the ordered capability history and timing.
 

@@ -1,8 +1,10 @@
 # GUI Agent
 
+macOS 14 及更新系统的 `computer_use` 使用单窗口截图和 Accessibility 控件操作。Agent 从窗口列表选择目标，用户仍只输入任务。支持控件按压、替换可写文本和控件提供的翻页滚动；不激活应用、不移动系统鼠标、不使用全局键盘或剪贴板。OpenProgram 桌面 App 在创建首个窗口前启用 Electron 原生辅助功能支持，因此同一后端也能操作其 HTML 控件。窗口不明确、最小化、权限不足、应用不提供控件树或动作不受支持时，返回接手说明，不自动切到前台。任意坐标点击、拖动、快捷键和鼠标提示覆盖层不属于该后端。同一应用内操作串行；切换窗口会清除旧窗口的单步验证反馈，保留完整任务历史。
+
 给它一个自然语言任务。根控制器重复选择一个有界能力：`computer_use` 操作本机桌面，`browser_use` 操作 OpenProgram 后台 Page，`vm_use` 操作已配置的远程虚拟机。每次能力调用的输入和完整结果都会追加到下一轮模型决策的上下文。模型通过提交终态结束任务；动作数和时间限制只作为安全边界。
 
-本机与 VM 感知使用 YOLO 组件检测（GPA-GUI-Detector）、OCR（macOS 用 Apple Vision，Linux / Windows 用 EasyOCR）和模板匹配。动作层覆盖鼠标、键盘和剪贴板。浏览器操作使用 Page 的 DOM/CDP target，不使用桌面坐标。
+macOS 窗口后端使用 ScreenCaptureKit 和 Accessibility，不依赖 YOLO 或 OCR。其他本机与 VM 感知使用 YOLO 组件检测、OCR 和模板匹配。浏览器操作使用 Page 的 DOM/CDP target，不使用桌面坐标。
 
 ## 可用性
 
@@ -42,9 +44,9 @@ openprogram programs run gui_agent -a task="在不置顶窗口的情况下检查
 
 `vm_use` 需要兼容 OSWorld 的 HTTP endpoint。截图通过 `GET /screenshot` 获取，输入命令通过 `POST /execute` 发送。Harness 进程内的 VM 目标切换会串行执行。无论调用成功还是抛错，下一种能力执行前都会恢复原来的输入目标和截图 backend。endpoint 中的凭据和 query 值不会写入规划器的可用状态上下文。
 
-桌面观察会包含当前前台应用和截图坐标范围。如果目标应用窗口被最小化或位于另一个 macOS Space，并且经过一次有界的 Window 菜单恢复后仍不可用，运行会以 infeasible 停止，并要求用户移动或取消最小化该窗口；它不会持续创建新窗口。
+macOS 窗口观察包含目标身份、单窗口截图和可用控件。窗口最小化或不可访问时，运行返回 infeasible 和接手说明，不执行 Window 菜单恢复、不创建额外窗口。
 
-桌面坐标输入始终作用于当前前台 GUI，不是后台窗口接口。浏览器动作在选中的 Page 后台执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。根据已记录的结果，控制器可以在不同能力之间切换。
+其他平台的桌面坐标输入仍作用于前台 GUI。浏览器动作在选中的 Page 后台执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。根据已记录的结果，控制器可以在不同能力之间切换。
 
 所有运行共用终态字段：`status`（`succeeded`、`infeasible` 或 `failed`）、`success`、`reason_code`、`summary` 和 `handoff_instruction`。成功与否由 runner 决定，不由 conclusion 模型决定。只有 `succeeded` 的 `success` 为 true；infeasible 和 failed 一律返回 `success=false`。infeasible 还保留 blocker、标记和用户接手说明。结果同时包含有序能力调用历史和耗时。
 
