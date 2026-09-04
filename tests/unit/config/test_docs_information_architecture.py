@@ -53,11 +53,14 @@ def test_gui_agent_design_covers_flow_boundaries_and_file_ownership() -> None:
     assert "@media (max-width:1120px)" in source
     for contract_term in (
         "browser_control",
-        "run_browser_task",
-        "run_computer_task",
+        "plan_next_capability",
+        "call_capability",
+        "computer_use",
+        "browser_use",
+        "vm_use",
         "browser_agent",
         "web_use",
-        "must not call a decorated task function",
+        "Internal capabilities create traceable child nodes",
     ):
         assert contract_term in source
 
@@ -111,15 +114,35 @@ def test_editorial_navigation_does_not_list_a_page_twice() -> None:
 
 
 def test_gui_agent_design_keeps_the_capability_loop_and_context_contract() -> None:
-    artifact = ROOT / "docs/reference/design/ui/gui-agent.html"
-    source = artifact.read_text(encoding="utf-8")
+    design_dir = ROOT / "docs/reference/design/ui"
+    english = (design_dir / "gui-agent.html").read_text(encoding="utf-8")
+    chinese = (design_dir / "gui-agent.zh.html").read_text(encoding="utf-8")
 
     for required in (
         "computer_use",
         "browser_use",
         "vm_use",
+        "plan_next_capability",
+        "call_capability",
         "capability history",
-        "Background application behavior",
         "adapters/mac_indicator.py",
     ):
-        assert required in source
+        assert required in english
+    for required in (
+        "computer_use",
+        "browser_use",
+        "vm_use",
+        "plan_next_capability",
+        "call_capability",
+        "上下文如何保证连续",
+        "adapters/mac_indicator.py",
+    ):
+        assert required in chinese
+
+    gui_page = next(
+        page
+        for page in discover(ROOT / "docs")
+        if page.rel.as_posix() == "reference/design/ui/gui-agent.html"
+    )
+    assert gui_page.zh_src == design_dir / "gui-agent.zh.html"
+    assert gui_page.zh_out == Path("reference/design/ui/gui-agent.zh.html")

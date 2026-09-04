@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GUI Agent 核心工程设计</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0f14; --panel:#121923; --line:#2b394a; --text:#edf3f8; --muted:#9bacbc; --blue:#70b7ff; --cyan:#54d6cc; --green:#6fda8b; --orange:#ffb66d; --red:#ff817a; --violet:#c3a6ff; --mono:ui-monospace,"SFMono-Regular",Menlo,monospace; --sans:Inter,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; overflow-x:hidden; background:radial-gradient(circle at 78% -10%,rgba(84,214,204,.09),transparent 34rem),var(--bg); color:var(--text); font:14px/1.65 var(--sans); }
+  a { color:var(--blue); text-underline-offset:3px; } code { padding:.12em .35em; border:1px solid rgba(112,183,255,.13); border-radius:5px; background:#0b121a; color:#d9eaff; font-family:var(--mono); font-size:.92em; }
+  .page { width:min(1460px,100%); margin:0 auto; padding:clamp(20px,3vw,36px) clamp(14px,2.4vw,28px) 80px; display:grid; grid-template-columns:224px minmax(0,1fr); gap:clamp(18px,2.4vw,34px); }
+  nav { position:sticky; top:22px; align-self:start; max-height:calc(100vh - 44px); overflow:auto; padding:16px 14px; border:1px solid var(--line); border-radius:14px; background:rgba(18,25,35,.94); }
+  nav strong { display:block; margin:0 10px 9px; color:var(--cyan); font:700 11px var(--mono); } nav a { display:block; padding:7px 10px; border-left:2px solid transparent; color:var(--muted); text-decoration:none; font-size:12.5px; } nav a:hover { color:var(--text); border-left-color:var(--blue); }
+  main,section,.diagram { min-width:0; max-width:100%; } header { padding:10px 4px 28px; } .eyebrow { color:var(--cyan); font:700 11px var(--mono); letter-spacing:.12em; text-transform:uppercase; } h1 { margin:12px 0 14px; max-width:980px; font-size:clamp(34px,5vw,62px); line-height:1.05; letter-spacing:-.04em; } .lead { max-width:960px; margin:0; color:#c7d3de; font-size:clamp(16px,2vw,20px); }
+  .status { display:flex; flex-wrap:wrap; gap:8px; margin-top:22px; } .pill { padding:6px 10px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font:600 11px var(--mono); background:rgba(18,25,35,.72); }
+  section { scroll-margin-top:22px; margin-top:24px; padding:26px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(145deg,rgba(24,34,48,.93),rgba(15,22,31,.96)); } h2 { margin:0 0 8px; font-size:23px; } h3 { margin:20px 0 8px; font-size:16px; } .intro { margin:0 0 20px; max-width:960px; color:var(--muted); }
+  .diagram { overflow-x:auto; padding:18px; border:1px solid var(--line); border-radius:14px; background:#0a1119; } svg { display:block; min-width:900px; width:100%; height:auto; } .box { fill:#121c27; stroke:#3a4d61; stroke-width:1.5; } .computer { fill:#16271f; stroke:#55b978; } .browser { fill:#252039; stroke:#9978dc; } .result { fill:#2a2117; stroke:#d79655; } .line { fill:none; stroke:#60758a; stroke-width:1.6; marker-end:url(#arrow); } .title { fill:#edf3f8; font:600 13px var(--mono); } .sub { fill:#9bacbc; font:11px var(--mono); } .label { fill:#9bacbc; font:10px var(--mono); }
+  .cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; } .card { padding:17px; border:1px solid var(--line); border-radius:12px; background:rgba(8,13,19,.42); } .card h3 { margin:0 0 7px; } .card p,.card li { color:var(--muted); } .card ul { margin:8px 0 0; padding-left:18px; }
+  .sequence { display:grid; grid-template-columns:repeat(6,minmax(130px,1fr)); gap:8px; overflow-x:auto; padding-bottom:8px; } .step { position:relative; min-height:116px; padding:13px; border:1px solid var(--line); border-radius:11px; background:#0c141d; } .step:not(:last-child)::after { content:"→"; position:absolute; right:-8px; top:42%; color:var(--blue); z-index:2; } .step b { display:block; margin-bottom:6px; font-size:12px; } .step span { color:var(--muted); font-size:11px; } .step i { display:block; margin-bottom:7px; color:var(--blue); font:700 10px var(--mono); font-style:normal; }
+  .contract { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; } .state { padding:15px; border:1px solid var(--line); border-radius:11px; background:#0c141d; } .state strong { display:block; margin-bottom:4px; font:700 12px var(--mono); } .state span { color:var(--muted); font-size:11.5px; } .ok strong { color:var(--green); } .takeover strong { color:var(--orange); } .fail strong { color:var(--red); } .cancel strong { color:var(--violet); }
+  .codebox { overflow:auto; padding:16px; border:1px solid var(--line); border-radius:12px; background:#081019; color:#cad8e4; font:12px/1.65 var(--mono); white-space:pre; } .callout { margin:14px 0; padding:14px 16px; border-left:3px solid var(--orange); border-radius:8px; background:rgba(255,182,109,.07); }
+  .files { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; } .file { padding:13px; border:1px solid var(--line); border-radius:10px; background:#0c141d; } .file a { display:block; overflow-wrap:anywhere; font:600 11.5px var(--mono); } .file span { display:block; margin-top:5px; color:var(--muted); font-size:11.5px; }
+  @media (max-width:1120px) { .page { display:block; } nav { position:static; max-height:none; margin-bottom:18px; display:flex; overflow-x:auto; white-space:nowrap; } nav strong { display:none; } nav a { border-left:0; border-bottom:2px solid transparent; } }
+  @media (max-width:760px) { .page { padding:20px 14px 70px; } section { padding:19px; } .cards,.contract,.files { grid-template-columns:1fr; } h1 { font-size:38px; } }
+  @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <nav aria-label="GUI Agent 设计目录"><strong>设计目录</strong><a href="#overview">整体流程</a><a href="#functions">函数职责</a><a href="#context">上下文连续性</a><a href="#capabilities">三种能力</a><a href="#window">后台窗口控制</a><a href="#browser">后台 Page 生命周期</a><a href="#results">结果契约</a><a href="#files">文件职责</a><a href="#evidence">实现证据</a></nav>
+  <main>
+    <header id="overview">
+      <div class="eyebrow">OpenProgram · GUI Agent · 当前已实现设计</div>
+      <h1>一个公开入口，一个能力控制器，一份连续上下文。</h1>
+      <p class="lead"><code>gui_agent(task)</code> 创建唯一的根函数节点。Harness 控制器根据原始任务、当前资源可用状态，以及之前每一次能力调用的准确输入和完整输出，反复选择 <code>computer_use</code>、<code>browser_use</code> 或 <code>vm_use</code>。没有按任务类型预先二分类，也不要求用户先选择 surface。</p>
+      <div class="status"><span class="pill">1 个公开入口</span><span class="pill">1 份根上下文</span><span class="pill">3 个内部能力</span><span class="pill">1 套终态契约</span></div>
+    </header>
+
+    <section>
+      <h2>完整调用架构</h2>
+      <p class="intro">函数表单、完整函数表达式和精确节点 Retry 都进入同一个 dispatcher。只有 Harness 控制器决定下一次能力调用；每次结果先写入上下文，再进入下一轮。</p>
+      <div class="diagram"><svg viewBox="0 0 1080 660" role="img" aria-labelledby="flow-title flow-desc"><title id="flow-title">GUI Agent 完整能力循环</title><desc id="flow-desc">三个输入入口进入一个 gui_agent 根控制器。控制器调用三种内部能力之一，记录完整输入输出，然后继续或验证终态。</desc><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#60758a"/></marker></defs>
+        <rect class="box" x="30" y="35" width="220" height="70" rx="11"/><text class="title" x="140" y="64" text-anchor="middle">函数表单</text><text class="sub" x="140" y="84" text-anchor="middle">task + 高级隐藏设置</text>
+        <rect class="box" x="30" y="135" width="220" height="70" rx="11"/><text class="title" x="140" y="164" text-anchor="middle">完整函数表达式</text><text class="sub" x="140" y="184" text-anchor="middle">发送前识别为函数调用</text>
+        <rect class="box" x="30" y="235" width="220" height="70" rx="11"/><text class="title" x="140" y="264" text-anchor="middle">精确节点 Retry</text><text class="sub" x="140" y="284" text-anchor="middle">复用保存的输入与来源窗口</text>
+        <rect class="box" x="330" y="120" width="240" height="100" rx="11"/><text class="title" x="450" y="154" text-anchor="middle">POST /api/function/gui_agent</text><text class="sub" x="450" y="176" text-anchor="middle">一个 ProgramRun</text><text class="sub" x="450" y="196" text-anchor="middle">一个根 FunctionInvocation</text>
+        <rect class="box" x="650" y="120" width="250" height="100" rx="11"/><text class="title" x="775" y="151" text-anchor="middle">gui_agent 控制器</text><text class="sub" x="775" y="174" text-anchor="middle">task + availability + history</text><text class="sub" x="775" y="194" text-anchor="middle">plan_next_capability</text>
+        <rect class="box computer" x="240" y="330" width="220" height="95" rx="11"/><text class="title" x="350" y="362" text-anchor="middle">computer_use</text><text class="sub" x="350" y="384" text-anchor="middle">一次 gui_step</text><text class="sub" x="350" y="403" text-anchor="middle">前台桌面或准确窗口</text>
+        <rect class="box browser" x="500" y="330" width="220" height="95" rx="11"/><text class="title" x="610" y="362" text-anchor="middle">browser_use</text><text class="sub" x="610" y="384" text-anchor="middle">一次有界 Page 子任务</text><text class="sub" x="610" y="403" text-anchor="middle">DOM / CDP 操作</text>
+        <rect class="box" x="760" y="330" width="220" height="95" rx="11"/><text class="title" x="870" y="362" text-anchor="middle">vm_use</text><text class="sub" x="870" y="384" text-anchor="middle">一次远端 gui_step</text><text class="sub" x="870" y="403" text-anchor="middle">OSWorld 兼容 endpoint</text>
+        <rect class="box" x="420" y="485" width="380" height="70" rx="11"/><text class="title" x="610" y="514" text-anchor="middle">追加本次准确输入和完整输出</text><text class="sub" x="610" y="535" text-anchor="middle">顺序 · 状态 · 证据 · 目标 · 耗时</text>
+        <rect class="box result" x="420" y="605" width="380" height="44" rx="20"/><text class="title" x="610" y="632" text-anchor="middle">校验后的 GUIResult → Function 卡片和消息</text>
+        <path class="line" d="M250 70C295 70 290 150 330 150"/><path class="line" d="M250 170H330"/><path class="line" d="M250 270C295 270 290 190 330 190"/><path class="line" d="M570 170H650"/><path class="line" d="M735 220C680 270 350 275 350 330"/><path class="line" d="M775 220C745 270 610 275 610 330"/><path class="line" d="M815 220C850 270 870 275 870 330"/><path class="line" d="M350 425C350 465 500 470 520 485"/><path class="line" d="M610 425V485"/><path class="line" d="M870 425C870 465 720 470 700 485"/><path class="line" d="M420 520C160 520 160 170 650 170"/><path class="line" d="M610 555V605"/><text class="label" x="175" y="502">继续或切换能力</text><text class="label" x="625" y="586">终态通过校验</text>
+      </svg></div>
+    </section>
+
+    <section id="functions"><h2>每个函数负责什么</h2><div class="cards">
+      <article class="card"><h3><code>gui_agent</code></h3><p>唯一公开入口。持有根上下文、可用状态、能力历史、安全上限、终态校验和最终结果。</p></article>
+      <article class="card"><h3><code>plan_next_capability</code></h3><p>读取完整上下文，选择一个内部能力，或者提出 succeeded、infeasible、failed 终态。</p></article>
+      <article class="card"><h3><code>call_capability</code></h3><p>绑定 runtime 和隐藏设置，只调用本轮选中的一个能力，并返回完整结果。</p></article>
+      <article class="card"><h3><code>computer_use</code></h3><p>执行一个 <code>gui_step</code>。该 step 自己完成观察、必要验证、计划和一次动作。</p></article>
+      <article class="card"><h3><code>browser_use</code></h3><p>对准确的 OpenProgram Page 执行一个有界子任务，完成后把结果交还根控制器。</p></article>
+      <article class="card"><h3><code>vm_use</code></h3><p>通过 OSWorld 兼容的截图与输入接口执行一个远端 <code>gui_step</code>。</p></article>
+    </div><div class="callout">三个 <code>*_use</code> 是内部可追踪函数节点，不是三个公开 Program，也不会再创建一个 <code>gui_agent</code>。</div></section>
+
+    <section id="context"><h2>上下文如何保证连续</h2><p class="intro">下一轮不是只看到摘要。它会看到原始任务、当前资源状态，以及之前每一次能力调用的准确输入和完整输出。某个 <code>computer_use</code> 的局部函数执行结束后，局部 Python 状态可以销毁；需要延续的信息已经写入根能力历史。</p>
+      <div class="sequence"><div class="step"><i>初始</i><b>User task</b><span>原始自然语言任务<br>当前窗口、Page、VM 可用状态</span></div><div class="step"><i>第 1 轮</i><b>computer_use</b><span>输入：观察桌面<br>输出：目标身份、截图、控件、状态</span></div><div class="step"><i>第 2 轮</i><b>computer_use</b><span>输入：点击保存<br>输出：applied、动作证据、反馈</span></div><div class="step"><i>第 3 轮</i><b>browser_use</b><span>输入：检查后台 Page<br>输出：Page 身份、验证结果、清理状态</span></div><div class="step"><i>第 4 轮</i><b>plan_next_capability</b><span>重新读取前面全部输入输出，不缩写为“已做三步”</span></div><div class="step"><i>结束</i><b>GUIResult</b><span>证据支持的 status、summary、handoff 和完整 history</span></div></div>
+      <div class="codebox">history = [
+  {"capability":"computer_use", "input":{"task":"观察桌面"},
+   "output":{"status":"observed", "target":{...}, "observation":{...}}},
+  {"capability":"computer_use", "input":{"task":"点击保存", "feedback":{...}},
+   "output":{"status":"applied", "action":{"type":"press", "control_id":"..."}, "evidence":{...}}},
+  {"capability":"browser_use", "input":{"task":"检查后台页面"},
+   "output":{"status":"succeeded", "page":{...}, "verification":{...}, "cleanup":{...}}}
+]</div>
+    </section>
+
+    <section id="capabilities"><h2>能力由 Agent 逐轮选择，不预先固定任务类别</h2><div class="cards">
+      <article class="card"><h3>Desktop / Window</h3><ul><li>前台坐标操作要求目标处于前台。</li><li>准确 macOS 窗口可使用单窗口截图和 Accessibility 控件操作。</li><li>目标不明确、最小化、其他 Space 或权限不足时返回限制，不回退到前台操作。</li></ul></article>
+      <article class="card"><h3>Browser Page</h3><ul><li>绑定提交请求的 OpenProgram 窗口中的准确 Page。</li><li>通过 DOM/CDP 操作，不激活标签页、不置顶窗口、不移动系统鼠标。</li><li>没有可用 Page 时创建一个后台 Page；只关闭 Agent 自己创建的 Page。</li></ul></article>
+      <article class="card"><h3>VM</h3><ul><li>需要 OSWorld 兼容 endpoint。</li><li><code>GET /screenshot</code> 读取画面，<code>POST /execute</code> 发送输入。</li><li>每次调用后恢复原输入目标和截图 backend，凭据不进入模型上下文。</li></ul></article>
+    </div></section>
+
+    <section id="window"><h2>指定应用窗口的后台控制与可见提示</h2><p class="intro"><code>computer_use</code> 可以选择准确的 macOS 进程和窗口。后端只截取这个窗口，只枚举该窗口的 Accessibility 子控件，并只执行控件声明支持的按压、文本赋值和滚动动作。</p><div class="cards">
+      <article class="card"><h3>目标身份</h3><p>同时校验进程 ID、窗口 ID、当前窗口几何和控件归属；每次动作前重新读取控件边界。</p></article>
+      <article class="card"><h3>不抢占前台</h3><p>不激活应用、不置顶窗口、不使用全局键盘、鼠标或剪贴板，也不移动系统指针。</p></article>
+      <article class="card"><h3>控制提示层</h3><p>不激活、不接收鼠标事件的原生提示层跟随准确窗口，并在当前控件边界显示动作图标。窗口被其他应用遮挡或离开当前 Space 时隐藏。</p></article>
+    </div><div class="callout">提示层创建或绘制失败不会改变 Accessibility 动作结果。会话退出时关闭标准输入，等待 helper，必要时 terminate、kill 并回收，不能留下孤立进程。</div></section>
+
+    <section id="browser"><h2>后台 Page 生命周期</h2><div class="sequence"><div class="step"><i>01</i><b>读取 Page inventory</b><span>只读取来源 OpenProgram 窗口</span></div><div class="step"><i>02</i><b>绑定或创建</b><span>复用准确 Page；空 inventory 才创建后台 Page</span></div><div class="step"><i>03</i><b>建立 WebSession</b><span>绑定 token、session、frame 和 revision</span></div><div class="step"><i>04</i><b>Observe / Act / Verify</b><span>写动作后必须重新观察</span></div><div class="step"><i>05</i><b>释放或关闭</b><span>借用 Page 只释放；自建 Page 精确关闭</span></div><div class="step"><i>06</i><b>清理校验</b><span>关闭失败返回 page_cleanup_failed 和接手说明</span></div></div></section>
+
+    <section id="results"><h2>统一结果契约</h2><p class="intro">worker 的 transport completed 只表示结构化结果已经返回和保存，不表示 GUI 任务成功。只有验证完成的 <code>succeeded</code> 才能得到 <code>success=true</code>。</p><div class="contract"><div class="state ok"><strong>succeeded · true</strong><span>任务完成已有验证证据。</span></div><div class="state takeover"><strong>infeasible · false</strong><span>存在需要用户处理的具体阻塞；保留 handoff。</span></div><div class="state fail"><strong>failed · false</strong><span>任务未满足，或超时、无进展、规划协议失败。</span></div><div class="state cancel"><strong>cancelled · false</strong><span>宿主取消已经传播，不能被 conclusion 改成成功。</span></div></div></section>
+
+    <section id="files"><h2>关键文件与职责</h2><div class="files">
+      <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/gui_harness_bridge.py">OpenProgram · gui_harness_bridge.py</a><span>注册唯一公开入口、转换隐藏兼容设置、调用原始 Harness、统一最终结果。</span></div>
+      <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/browser/__init__.py">OpenProgram · workflow/browser/__init__.py</a><span>当前后台 Page 子任务、DOM 控制、验证和准确清理。</span></div>
+      <div class="file"><a href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/gui_harness/main.py">Harness · main.py</a><span>公开 Python/CLI 入口，建立能力循环。</span></div>
+      <div class="file"><a href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/gui_harness/tasks/capability_loop.py">Harness · tasks/capability_loop.py</a><span>可用状态、完整 history、逐轮选择、能力调度、终态校验和结论。</span></div>
+      <div class="file"><a href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/gui_harness/tasks/execute_task.py">Harness · tasks/execute_task.py</a><span>单次 GUI step 的观察、验证、计划和动作。</span></div>
+      <div class="file"><a href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/gui_harness/adapters/mac_window.py">Harness · adapters/mac_window.py</a><span>准确窗口绑定、单窗口捕获、Accessibility 控件与后台动作。</span></div>
+      <div class="file"><a href="https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/gui_harness/adapters/mac_indicator.py">Harness · adapters/mac_indicator.py</a><span>不激活、忽略鼠标的窗口控制标志和动作图标。</span></div>
+      <div class="file"><a href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/product-runtime.json">OpenProgram · product-runtime.json</a><span>固定经过验证的独立 Harness commit，保证新安装和本机打包使用同一实现。</span></div>
+    </div></section>
+
+    <section id="evidence"><h2>实现证据</h2><div class="cards"><article class="card"><h3>结果契约</h3><p><code>tests/unit/programs/test_gui_agent_infeasible.py</code></p></article><article class="card"><h3>能力循环和 VM</h3><p><code>test_gui_agent_capability_loop.py</code><br><code>test_gui_agent_vm_protocol.py</code></p></article><article class="card"><h3>后台窗口</h3><p>Harness <code>tests/test_background_window.py</code></p></article><article class="card"><h3>后台 Page</h3><p><code>test_web_use_runtime.py</code><br><code>test_web_use_surface.py</code></p></article><article class="card"><h3>函数 UI</h3><p><code>runtime-answer.test.mjs</code><br><code>fn-form-height.test.mjs</code></p></article><article class="card"><h3>发布 runtime</h3><p><code>test_distribution_release.py</code><br><code>check-packaged-runtime.js</code></p></article></div></section>
+  </main>
+</div>
+</body>
+</html>
