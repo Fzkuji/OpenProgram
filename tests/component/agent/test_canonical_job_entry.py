@@ -47,6 +47,69 @@ def test_public_spawn_creates_job_id_bound_canonical_execution(
         runner.shutdown()
 
 
+def test_driver_starts_after_running_projection_and_preserves_early_cancel(
+    tmp_path, store_fixture, fake_worker, monkeypatch,
+):
+    import openprogram.agent.job.runner as runner_module
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import JobStatus
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.usage.ledger import UsageLedger
+
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path",
+        lambda: tmp_path / "execution.sqlite3",
+    )
+    projection_entered = threading.Event()
+    allow_projection = threading.Event()
+    original_update = runner_module._store_update_status
+
+    def hold_running_projection(session_id, job_id, status, **fields):
+        if status is JobStatus.RUNNING:
+            projection_entered.set()
+            assert allow_projection.wait(5)
+        return original_update(session_id, job_id, status, **fields)
+
+    monkeypatch.setattr(
+        runner_module, "_store_update_status", hold_running_projection,
+    )
+    runner = JobRunner(
+        max_workers=1,
+        governor=ResourceGovernor(UsageLedger(tmp_path / "usage.db")),
+    )
+    bound = threading.Event()
+    original_bind = runner._execution_control._bind_driver
+
+    def observe_bind(binding):
+        job = runner.get_job(binding.execution_id)
+        assert job is not None and job.status is JobStatus.RUNNING
+        assert job.cancel_requested_at is not None
+        bound.set()
+        return original_bind(binding)
+
+    monkeypatch.setattr(runner._execution_control, "_bind_driver", observe_bind)
+    try:
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="cancel during activation", agent_id="main",
+        )
+        assert projection_entered.wait(3)
+        assert not bound.is_set()
+        assert not fake_worker[3].is_set()
+
+        projected = runner.cancel_execution(job_id)
+        assert projected is not None and projected.status is JobStatus.QUEUED
+        assert projected.cancel_requested_at is not None
+
+        allow_projection.set()
+        assert bound.wait(3)
+        assert fake_worker[2].wait(3)
+        assert runner.await_job(job_id, timeout=3).status is JobStatus.CANCELLED
+    finally:
+        allow_projection.set()
+        fake_worker[1].set()
+        runner.shutdown()
+
+
 def test_public_cancel_persists_canonical_execution_command(
     tmp_path, store_fixture, fake_worker, monkeypatch,
 ):

@@ -31,6 +31,10 @@ def test_planned_repair_preserves_contract_in_jobs_and_child(diagnosis_environme
     from openprogram.self_update.verifier_config import load_verifier_config, verifier_prompt
     from openprogram.self_update.next_candidate import chain
     store, _, _, update_id = diagnosis_environment
+    monkeypatch.setattr(
+        "openprogram.self_update.launcher.launch_supervisor",
+        lambda *_args, **_kwargs: None,
+    )
     original = store.load(update_id)
     _turn(diagnosis_environment, monkeypatch)
     _start()

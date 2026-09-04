@@ -1782,11 +1782,11 @@ class JobRunner:
         # resource ledger.
         canonical_reason = self._canonical_cancel_reason(job_id)
         effective_reason = canonical_reason or effective_reason
-        if latest is not None and latest.status == JobStatus.RUNNING:
+        if latest is not None and not is_terminal(latest.status):
             latest = _store_update_status(
                 session_id,
                 job_id,
-                JobStatus.RUNNING,
+                latest.status,
                 cancel_requested_at=time.time(),
                 reason_code=effective_reason,
             ) or latest
@@ -2384,7 +2384,6 @@ class JobRunner:
             binding = self._run_control(
                 driver.activate(active, ActivationInput(checkpoint=None)),
             )
-            self._execution_control._bind_driver(binding)
             projected = _store_update_status(
                 execution.session_id,
                 execution_id,
@@ -2396,6 +2395,7 @@ class JobRunner:
                     f"job projection {execution_id!r} is unavailable after activation"
                 )
             _broadcast_job_status(projected)
+            self._execution_control._bind_driver(binding)
             return active, running, binding
         except Exception:
             # Canonical recovery is the only cleanup for an activated attempt;

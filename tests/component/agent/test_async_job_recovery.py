@@ -463,7 +463,7 @@ def test_running_status_write_failure_reconciles_terminal_and_releases(
             "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
         ).fetchone()
         assert job is not None and job.status == JobStatus.QUEUED
-        assert admission[0] == "live"
+        assert admission[0] == "released"
         assert ledger.connection().execute(
             "SELECT state FROM job_finalizations WHERE job_id = ?", (job_id,),
         ).fetchone()[0] == "pending"
