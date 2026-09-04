@@ -183,6 +183,11 @@ def verifier_prompt(record: UpdateRecord, config: dict | None = None) -> str:
                 "Inspect the image for visual assertions; missing image or unobserved interaction behavior is inconclusive. "
                 "Capture does not grant permission to click, navigate, edit or submit data. "
             )
+        if any("interaction" in check for check in config["verification_plan"]["checks"]):
+            observation_instruction += (
+                "An approved scroll check records before/after/restored metrics and captures the after-scroll image. "
+                "Use the saved action evidence; failed or missing restoration is inconclusive. "
+            )
     return (
         "Verify the installed candidate against the frozen acceptance contract below. "
         "This is a new verification task, not a continuation of the implementation turn. "

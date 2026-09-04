@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -305,7 +306,32 @@ def test_desktop_renderer_reload_discards_pending_native_navigations():
     # drops their pending-navigation records with them (destroyView
     # nulls record.navigation). runNativeNavigation likewise clears the
     # record before reload/history calls that bypass loadView.
-    assert 'win.webContents.on("did-navigate", () => clearOwnedViews(ctx))' in source
+    start = source.index('win.webContents.on("did-navigate",')
+    end = source.index("\n  });", start) + len("\n  });")
+    subprocess.run(
+        [
+            "node", "-e", """
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const { EventEmitter } = require('node:events');
+const contents = new EventEmitter();
+const ctx = {};
+const calls = [];
+vm.runInNewContext(process.argv[1], {
+  win: { webContents: contents }, ctx,
+  clearOwnedViews: (owner) => calls.push(['clear', owner]),
+  selfUpdateReopen: {
+    observeNavigation: (owner, url) => calls.push(['observe', owner, url]),
+  },
+});
+contents.emit('did-navigate', {}, 'http://localhost:18100/s/test-session');
+assert.deepEqual(calls, [
+  ['clear', ctx], ['observe', ctx, 'http://localhost:18100/s/test-session'],
+]);
+""", source[start:end],
+        ],
+        check=True, capture_output=True, text=True, timeout=10,
+    )
     start = source.index("function destroyView")
     end = source.index("function clearOwnedViews", start)
     assert "record.navigation = null" in source[start:end]

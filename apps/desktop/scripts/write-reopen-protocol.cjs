@@ -83,19 +83,32 @@ async function writeProtocol(resources) {
   const uiBackend = `${site}openprogram/self_update/ui_checks.py`;
   const uiFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("selfUpdateCapture"));
   const uiTarget = path.join(resources, "update/ui-verification-protocol.json");
-  const hasCapture = ["/self-update-ui.js", "/self-update-ui-guard.js"].every(name => asar.listPackage(archive).includes(name));
+  const hasCapture = ["/self-update-ui.js", "/self-update-ui-guard.js", "/self-update-ui-scroll.js"]
+    .every(name => asar.listPackage(archive).includes(name));
   if (hasCapture && fs.existsSync(path.join(resources, uiBackend)) && uiFrontend &&
       /^UI_PROTOCOL = 1$/m.test(text(resources, uiBackend)) &&
       archiveText("main.js").includes("registerUiVerificationIpc") &&
       archiveText("main.js").includes("guard: uiVerificationGuard") &&
-      archiveText("self-update-ui.js").includes("guard.acquire(wc)") &&
+      archiveText("self-update-ui.js").includes("guard.acquire(wc, nonce)") &&
       archiveText("preload.js").includes('"self-update:ui-capture"') &&
       text(resources, routes).includes("/desktop-verification/{nonce}")) {
     const uiBindings = { desktop: bindings.desktop, routes: bindings.routes, runtime_manifest: bindings.runtime_manifest,
       backend: await binding(resources, uiBackend), frontend: await binding(resources, uiFrontend) };
+    let protocol = 1;
+    const server = `${site}openprogram_server/server.py`;
+    const ownerAuth = `${site}openprogram_server/_webui/owner_auth.py`;
+    const scrollFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("data-self-update-verification"));
+    if (asar.listPackage(archive).includes("/self-update-ui-scroll.js") && scrollFrontend &&
+        /^UI_INTERACTION_PROTOCOL = 1$/m.test(text(resources, uiBackend)) &&
+        fs.existsSync(path.join(resources, server)) && text(resources, server).includes("permits_ws_command") &&
+        fs.existsSync(path.join(resources, ownerAuth)) && text(resources, ownerAuth).includes("x-openprogram-ui-check")) {
+      protocol = 2;
+      Object.assign(uiBindings, { server: await binding(resources, server), owner_auth: await binding(resources, ownerAuth),
+        scroll_frontend: await binding(resources, scrollFrontend) });
+    }
     const uiTemporary = `${uiTarget}.${crypto.randomUUID()}.tmp`;
     const uiFd = fs.openSync(uiTemporary, "wx", 0o600);
-    try { fs.writeFileSync(uiFd, JSON.stringify({ schema: 1, protocol: 1, bindings: uiBindings }) + "\n"); fs.fsyncSync(uiFd); }
+    try { fs.writeFileSync(uiFd, JSON.stringify({ schema: 1, protocol, bindings: uiBindings }) + "\n"); fs.fsyncSync(uiFd); }
     finally { fs.closeSync(uiFd); }
     fs.renameSync(uiTemporary, uiTarget);
   } else if (fs.existsSync(uiTarget)) {

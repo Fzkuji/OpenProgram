@@ -17,7 +17,7 @@ WRITER = ROOT / "apps/desktop/scripts/write-reopen-protocol.cjs"
 
 @pytest.fixture
 def package_factory(tmp_path):
-    def build(name="fixture", version="0.6.2", *, app=None, ui=False):
+    def build(name="fixture", version="0.6.2", *, app=None, ui=False, interaction=False):
         if app is None:
             app = _fake_desktop_app(tmp_path / name, version)
         resources = app / "Contents/Resources"
@@ -28,6 +28,7 @@ def package_factory(tmp_path):
         if ui:
             shutil.copyfile(ROOT / "apps/desktop/self-update-ui.js", unpacked / "self-update-ui.js")
             shutil.copyfile(ROOT / "apps/desktop/self-update-ui-guard.js", unpacked / "self-update-ui-guard.js")
+            shutil.copyfile(ROOT / "apps/desktop/self-update-ui-scroll.js", unpacked / "self-update-ui-scroll.js")
         subprocess.run(["node", "-e", "require('@electron/asar').createPackage(process.argv[1],process.argv[2]).catch(e=>{console.error(e);process.exit(1)})",
                         str(unpacked), str(resources / "app.asar")], cwd=ROOT, check=True, capture_output=True, timeout=15)
         site = resources / "runtime/python/lib/python3.12/site-packages"
@@ -44,6 +45,10 @@ def package_factory(tmp_path):
         if ui:
             shutil.copyfile(ROOT / "openprogram/self_update/ui_checks.py", site / "openprogram/self_update/ui_checks.py")
             chunk.write_text(chunk.read_text() + '\nwindow.openprogramDesktop.selfUpdateCapture("nonce");')
+        if interaction:
+            for relative in ("server.py", "_webui/owner_auth.py"):
+                shutil.copyfile(ROOT / "apps/server/openprogram_server" / relative, site / "openprogram_server" / relative)
+            chunk.write_text(chunk.read_text() + '\nconst marker = "data-self-update-verification";')
         result = subprocess.run(["node", "-e", "require(process.argv[1]).default({electronPlatformName:'darwin',appOutDir:'fixture',packager:{getResourcesDir:()=>process.argv[2]}}).catch(e=>{console.error(e);process.exit(1)})",
                                  str(WRITER), str(resources)], cwd=ROOT, capture_output=True, text=True, timeout=15)
         assert result.returncode == 0, result.stderr

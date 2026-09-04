@@ -17,6 +17,7 @@ import time
 import zlib
 
 UI_PROTOCOL = 1
+UI_INTERACTION_PROTOCOL = 1
 MAX_CAPTURE_BYTES = 1572864
 _pending = {}
 _lock = threading.RLock()
@@ -69,7 +70,9 @@ def admit_plan(plan, request):
     if any(check["entry"] == "ui:main" for check in plan["checks"]):
         from .package_protocol import validate_ui_package
         from .native_checks import runtime_identity
-        validate_ui_package(Path(request.app_path))
+        package = validate_ui_package(Path(request.app_path))
+        if any("interaction" in check for check in plan["checks"]) and package["protocol"] != 2:
+            raise ValueError("App does not support guarded UI interactions")
         runtime_identity(Path(request.app_path))
         _main_connection()
 
@@ -117,8 +120,11 @@ def _process_identity(identity):
 
 
 def validate_capture(body, contract):
-    if (not isinstance(body, dict) or set(body) != {"schema", "nonce", "update_id", "attempt", "check_id",
-            "worker_pid", "identity", "observed_at", "screenshot", "accessibility", "cleanup_complete"}
+    keys = {"schema", "nonce", "update_id", "attempt", "check_id", "worker_pid", "identity",
+            "observed_at", "screenshot", "accessibility", "cleanup_complete"}
+    if "interaction" in contract:
+        keys.add("interaction")
+    if (not isinstance(body, dict) or set(body) != keys
             or type(body["schema"]) is not int or body["schema"] != UI_PROTOCOL
             or any(body[k] != contract[k] for k in ("nonce", "update_id", "attempt", "check_id", "worker_pid"))
             or type(body["attempt"]) is not int or type(body["worker_pid"]) is not int
@@ -153,6 +159,23 @@ def validate_capture(body, contract):
     ax = body["accessibility"]
     if not isinstance(ax, dict) or not isinstance(ax.get("nodes"), list) or not 1 <= len(ax["nodes"]) <= 10000:
         raise ValueError("accessibility evidence is unavailable")
+    if "interaction" in contract:
+        step = body["interaction"]
+        if (not isinstance(step, dict) or set(step) != {"kind", "delta_y", "before", "after", "restored"}
+                or type(step["delta_y"]) is not int
+                or {key: step[key] for key in ("kind", "delta_y")} != contract["interaction"]):
+            raise ValueError("UI interaction differs from approved action")
+        for name in ("before", "after", "restored"):
+            metrics = step[name]
+            if (not isinstance(metrics, dict) or set(metrics) != {"top", "left", "height", "viewport"}
+                    or any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1e9 for v in metrics.values())
+                    or not 0 < metrics["viewport"] <= metrics["height"]
+                    or metrics["top"] > metrics["height"] - metrics["viewport"]):
+                raise ValueError("invalid UI scroll metrics")
+        before, after = step["before"], step["after"]
+        expected = {**before, "top": max(0, min(before["height"] - before["viewport"], before["top"] + step["delta_y"]))}
+        if after != expected or step["restored"] != before:
+            raise ValueError("UI scroll or restoration did not match the approved operation")
 
 
 def exchange(store, *, update_id, nonce, principal_id, body=None):
@@ -182,6 +205,16 @@ def exchange(store, *, update_id, nonce, principal_id, body=None):
         return {"ok": True, "nonce": nonce}
 
 
+def permits_ws_command(ws, command):
+    with _lock:
+        for entry in _pending.values():
+            if entry["connection"][0] is ws:
+                return isinstance(command, dict) and (
+                    command.get("action") == "webtab_result"
+                    or command.get("action") == "cancel_job" and command.get("job_id") == entry["grant"]["job_id"])
+    return True
+
+
 def observe_ui(store, record, check, grant):
     from .native_checks import runtime_identity
     from .package_protocol import validate_ui_package
@@ -201,6 +234,8 @@ def observe_ui(store, record, check, grant):
         return value
     app = Path(record.request.app_path)
     package = validate_ui_package(app)
+    if "interaction" in check and package["protocol"] != 2:
+        raise ValueError("App does not support guarded UI interactions")
     runtime = runtime_identity(app, expected_revision=record.request.candidate_sha)
     before = _probe_system(record, record.request.candidate_sha, remaining())
     nonce = secrets.token_hex(32)
@@ -208,6 +243,8 @@ def observe_ui(store, record, check, grant):
                     session_id=record.request.session_id, candidate_sha=record.request.candidate_sha,
                     worker_pid=grant["worker_pid"], check_id=check["id"], issued_at=now,
                     deadline=now + seconds, max_output_bytes=check["max_output_bytes"], action="capture")
+    if "interaction" in check:
+        contract["interaction"] = deepcopy(check["interaction"])
     entry = dict(update_id=record.request.update_id, root=store.root, grant=grant, end=end,
                  connection=connection, contract=contract, claimed=False, capture=None)
     with _lock:
@@ -242,6 +279,8 @@ def validate_observation(observation, record, check, grant):
                     check_id=check["id"], worker_pid=grant["worker_pid"], candidate_sha=record.request.candidate_sha,
                     session_id=record.request.session_id, issued_at=grant["issued_at"], deadline=grant["deadline"],
                     max_output_bytes=check["max_output_bytes"])
+    if "interaction" in check:
+        contract["interaction"] = check["interaction"]
     validate_capture(body, contract)
     if observation["status"] != 200 or observation["observed_at"] != body["observed_at"]:
         raise ValueError("capture observation changed")

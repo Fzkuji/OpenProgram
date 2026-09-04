@@ -1540,6 +1540,10 @@ WS_ACTIONS: dict = _build_ws_action_registry()
 
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
+    from openprogram.self_update.ui_checks import permits_ws_command
+    if not permits_ws_command(ws, cmd):
+        await ws.send_text(json.dumps({"type": "action_error", "data": {"code": "ui_verification_active"}}))
+        return
     raw_action = cmd.get("action") if isinstance(cmd, dict) else None
     raw_session_id = cmd.get("session_id") if isinstance(cmd, dict) else None
     action = raw_action if isinstance(raw_action, str) else None

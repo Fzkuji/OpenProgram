@@ -642,7 +642,7 @@ function useChatAreaStick(
       syncDetached();
       scrollTopRef.current = area.scrollTop;
       const key = activeKeyRef.current;
-      if (key) writeChatScroll(window.sessionStorage, key, area.scrollTop);
+      if (key && !area.hasAttribute("data-self-update-verification")) writeChatScroll(window.sessionStorage, key, area.scrollTop);
     };
     const pin = () => {
       // `window.renderMathInChat` was defined by the legacy public/js
@@ -659,7 +659,7 @@ function useChatAreaStick(
         area.scrollTop = area.scrollHeight;
         scrollTopRef.current = area.scrollTop;
         const key = activeKeyRef.current;
-        if (key) writeChatScroll(window.sessionStorage, key, area.scrollTop);
+        if (key && !area.hasAttribute("data-self-update-verification")) writeChatScroll(window.sessionStorage, key, area.scrollTop);
       }
       // Composer / pad growth must re-evaluate "at latest" even when
       // we do not pin — otherwise the button stays up after the last

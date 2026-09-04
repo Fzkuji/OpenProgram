@@ -23,9 +23,11 @@ function createUiVerificationGuard(nativeIpcMain) {
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  function acquire(contents) {
+  function acquire(contents, nonce) {
     if (!contents || contents.isDestroyed() || !Number.isInteger(contents.id) || contents.id <= 0 ||
-        typeof contents.session?.webRequest?.onBeforeRequest !== "function") {
+        typeof contents.session?.webRequest?.onBeforeRequest !== "function" ||
+        typeof contents.session?.webRequest?.onBeforeSendHeaders !== "function" ||
+        typeof nonce !== "string" || !/^[0-9a-f]{64}$/.test(nonce)) {
       throw new Error("main-window request guard unavailable");
     }
     if (active.has(contents.id)) throw new Error("main window already guarded");
@@ -37,9 +39,20 @@ function createUiVerificationGuard(nativeIpcMain) {
         const lease = active.get(details.webContentsId);
         callback({ cancel: Boolean(lease && lease.contents.session === session) });
       });
+      session.webRequest.onBeforeSendHeaders((details, callback) => {
+        const lease = active.get(details.webContentsId);
+        const headers = { ...details.requestHeaders };
+        if (lease && lease.contents.session === session) {
+          for (const name of Object.keys(headers)) {
+            if (name.toLowerCase() === "x-openprogram-ui-check") delete headers[name];
+          }
+          headers["X-OpenProgram-UI-Check"] = lease.nonce;
+        }
+        callback({ requestHeaders: headers });
+      });
       sessions.add(session);
     }
-    const lease = { contents };
+    const lease = { contents, nonce };
     active.set(contents.id, lease);
     return () => {
       if (active.get(contents.id) === lease) active.delete(contents.id);

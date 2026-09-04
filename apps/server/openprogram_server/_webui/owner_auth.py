@@ -550,6 +550,11 @@ class OwnerAuthMiddleware:
             return
 
         path = str(scope.get("path") or "")
+        if scope["type"] == "http" and "x-openprogram-ui-check" in headers:
+            # No API/bootstrap traffic is needed by current UI checks. This
+            # rejection precedes every handler, including cookie bootstrap.
+            await _http_response(send, 409, "ui_verification_active")
+            return
         if scope["type"] == "http" and path == "/api/auth/challenge":
             await self._challenge(scope, send)
             return

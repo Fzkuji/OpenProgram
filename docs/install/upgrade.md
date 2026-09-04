@@ -137,11 +137,33 @@ JavaScript, target window, click, navigation or data mutation is authorized.
 During capture, the current Desktop adapter rejects new page network requests,
 native IPC operations and external-link navigation from that main window. The
 restriction is released before evidence upload, including on failure, and does
-not apply to other windows. It does not revoke already running requests or
-replace backend authorization for future interactive checks.
+not apply to other windows. It does not revoke already running requests. The
+native adapter marks the main renderer's HTTP requests; the backend rejects
+marked requests, including authentication bootstrap and stale markers. During
+the check, that window's existing WebSocket accepts only observation replies
+and cancellation of the exact verifier Job, not ordinary application commands.
+
+To capture the conversation after an approved scroll, add `interaction`:
+
+```json
+{"id":"scroll-history","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576,"interaction":{"kind":"scroll","delta_y":-400}}
+```
+
+`delta_y` is a nonzero integer from -1200 to 1200 CSS pixels; the target is always
+the original main conversation. No selector or script is accepted. This requires
+UI protocol 2 in both candidate and rollback packages, binding the actual native
+scroll adapter, backend guards and compiled UI persistence guard. Protocol 1
+packages remain capture-only and are rejected for scroll plans before installation.
+The screenshot and accessibility tree show the after-scroll state; signed evidence
+also records before, after and restored scroll metrics. The position is restored
+before success without persisting the temporary position. Failed capture attempts
+restore their own scroll while the original target and deadline remain valid.
+User interruption cancels the check without restoring over the user's new position.
+Target changes or failed restoration cannot pass. At a scroll boundary the position
+may remain unchanged; this alone does not prove an assertion requiring movement.
 The screenshot supports only assertions about the captured state; interactions
 that were not observed remain inconclusive. HTTP responses, including `/chat`
-HTML, do not prove rendered App behavior. Approved UI interactions, complete
+HTML, do not prove rendered App behavior. Navigation, approved test-object actions, complete
 verification and actual installed-App acceptance remain pending.
 
 This source-checkout capability is separate from stable-release upgrades. On macOS,

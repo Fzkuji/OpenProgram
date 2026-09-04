@@ -101,9 +101,10 @@ def validate_ui_package(app: Path) -> dict:
         data = json.loads(_read_or_hash(_file(resources, "update/ui-verification-protocol.json"), limit=16384, read=True))
         if (not isinstance(data, dict) or set(data) != {"schema", "protocol", "bindings"}
                 or type(data["schema"]) is not int or data["schema"] != 1
-                or type(data["protocol"]) is not int or data["protocol"] != 1
+                or type(data["protocol"]) is not int or data["protocol"] not in (1, 2)
                 or not isinstance(data["bindings"], dict)
-                or set(data["bindings"]) != {"desktop", "backend", "routes", "frontend", "runtime_manifest"}):
+                or set(data["bindings"]) != ({"desktop", "backend", "routes", "frontend", "runtime_manifest"}
+                    | ({"server", "owner_auth", "scroll_frontend"} if data["protocol"] == 2 else set()))):
             raise ValueError
         bindings = data["bindings"]
         for role in ("desktop", "routes", "runtime_manifest"):
@@ -111,6 +112,12 @@ def validate_ui_package(app: Path) -> dict:
                 raise ValueError
         backend = reopen["bindings"]["backend"]["path"].removesuffix("reopen.py") + "ui_checks.py"
         prefix = backend.removesuffix("openprogram/self_update/ui_checks.py")
+        if data["protocol"] == 2:
+            if (bindings["server"]["path"] != prefix + "openprogram_server/server.py"
+                    or bindings["owner_auth"]["path"] != prefix + "openprogram_server/_webui/owner_auth.py"
+                    or not re.fullmatch(re.escape(prefix) + r"openprogram_server/_webui/_frontend/_next/static/chunks/[A-Za-z0-9._-]+\.js",
+                                        bindings["scroll_frontend"]["path"])):
+                raise ValueError
         if (bindings["backend"]["path"] != backend or not re.fullmatch(
                 re.escape(prefix) + r"openprogram_server/_webui/_frontend/_next/static/chunks/[A-Za-z0-9._-]+\.js",
                 bindings["frontend"]["path"])):

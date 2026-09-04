@@ -325,8 +325,10 @@ def _validate_reopen_packages(artifact: Artifact, update_dir: Path, installer_sh
         config = (load_verifier_config(store, record)
                   if any(item.startswith(CONFIG_EVIDENCE_PREFIX) for item in record.request.pre_update_evidence) else {})
         if any(check["entry"] == "ui:main" for check in config.get("verification_plan", {}).get("checks", [])):
-            validate_ui_package(artifact.path)
-            validate_ui_package(Path(DEFAULT_APP_PATH))
+            for app in (artifact.path, Path(DEFAULT_APP_PATH)):
+                package = validate_ui_package(app)
+                if any("interaction" in check for check in config["verification_plan"]["checks"]) and package["protocol"] != 2:
+                    raise ValueError("App does not support guarded UI interactions")
 
 
 def _prepare_install(artifact: Artifact, update_dir: Path, installer_sha256: str) -> str:

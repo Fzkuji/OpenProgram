@@ -27,7 +27,7 @@ def ui_install(package_factory, installed_cli, monkeypatch):
     from openprogram.webui import server
     from openprogram.webui.routes import misc, self_updates
     from openprogram.webui.ws_actions import webtab
-    app = package_factory(ui=True)
+    app = package_factory(ui=True, interaction=True)
     actual_package = package_protocol.validate_ui_package
     monkeypatch.setattr(package_protocol, "validate_ui_package", lambda _: actual_package(app))
     monkeypatch.setattr(ui_checks, "_process_identity", lambda identity: {"app_pid": identity["app_pid"], "renderer_pid": identity["renderer_pid"]})
@@ -35,8 +35,12 @@ def ui_install(package_factory, installed_cli, monkeypatch):
     def routes(app):
         register(app)
         self_updates.register(app)
+        @app.post("/api/test-ui-mutation")
+        def mutation():
+            control["http_mutations"] = control.get("http_mutations", 0) + 1
+            return {"ok": True}
     monkeypatch.setattr(misc, "register", routes)
-    control = {}
+    control = {"validate_package": actual_package}
     def capture():
         state = control["state"]
         url = f"http://127.0.0.1:{state.port}/api/self-updates/su_channel/desktop-verification/{control['nonce']}"
@@ -48,6 +52,12 @@ def ui_install(package_factory, installed_cli, monkeypatch):
             if response.status_code != 200:
                 return False
             contract = response.json()
+            control["http_guard_status"] = client.post(
+                f"http://127.0.0.1:{state.port}/api/test-ui-mutation",
+                headers={**headers, "X-OpenProgram-UI-Check": control["nonce"]}).status_code
+            control["bootstrap_guard_status"] = client.post(
+                f"http://127.0.0.1:{state.port}/api/auth/bootstrap", json={},
+                headers={**headers, "X-OpenProgram-UI-Check": control["nonce"]}).status_code
             control["duplicate_claim"] = client.get(url, headers=headers).status_code
             def chunk(kind, data):
                 return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
@@ -60,6 +70,10 @@ def ui_install(package_factory, installed_cli, monkeypatch):
                 screenshot=dict(mime_type="image/png", width=16, height=16, sha256=hashlib.sha256(raw).hexdigest(),
                     data=base64.b64encode(raw).decode()), accessibility={"nodes": [{"nodeId": "1", "role": {"value": "RootWebArea"}}]},
                 cleanup_complete=True)
+            if "interaction" in contract:
+                before = dict(top=500, left=0, height=2000, viewport=600)
+                body["interaction"] = {**contract["interaction"], "before": before,
+                    "after": {**before, "top": 500 + contract["interaction"]["delta_y"]}, "restored": dict(before)}
             if control.get("mutation"):
                 control["mutation"](body)
             response = client.post(url, headers=headers, json=body)
@@ -68,13 +82,21 @@ def ui_install(package_factory, installed_cli, monkeypatch):
             return response.status_code == 200
     class Socket:
         async def send_text(self, payload):
+            if json.loads(payload).get("type") == "action_error":
+                control["ws_guard_error"] = json.loads(payload)["data"]
+                return
             data = json.loads(payload)["data"]
             assert data["op"] == "self_update_capture" and data["window_id"] == "main"
             assert set(data) == {"op", "window_id", "nonce", "req_id"}
             control["nonce"] = data["nonce"]
+            await server._handle_ws_command(self, {"action": "test_ui_mutation"})
             ok = await asyncio.to_thread(capture)
             await webtab.handle_webtab_result(self, {"req_id": data["req_id"], "ok": ok, "window_id": "main"})
     ws = Socket()
+    control["socket"] = ws
+    async def ws_mutation(_ws, _cmd):
+        control["ws_mutations"] = control.get("ws_mutations", 0) + 1
+    monkeypatch.setitem(server.WS_ACTIONS, "test_ui_mutation", ws_mutation)
     loop = asyncio.new_event_loop()
     thread = threading.Thread(target=loop.run_forever)
     thread.start()
@@ -103,6 +125,76 @@ def _ui_plan():
     plan = _plan()
     plan["checks"][0].update(entry="ui:main", max_output_bytes=1048576)
     return plan
+
+
+@pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
+def test_capture_blocks_scoped_backend_mutations(verifier, ui_install):
+    verifier.run()
+    assert not verifier.control["tool_result"].is_error
+    assert ui_install["http_guard_status"] == 409
+    assert ui_install["bootstrap_guard_status"] == 409
+    assert ui_install["ws_guard_error"]["code"] == "ui_verification_active"
+    assert not ui_install.get("http_mutations") and not ui_install.get("ws_mutations")
+    from openprogram.webui import server
+    asyncio.run(server._handle_ws_command(ui_install["socket"], {"action": "test_ui_mutation"}))
+    assert ui_install["ws_mutations"] == 1, "ordinary dispatch resumes after capture"
+    state = ui_install["state"]
+    url = f"http://127.0.0.1:{state.port}/api/test-ui-mutation"
+    headers = {"Authorization": f"Bearer {state.token}"}
+    with httpx.Client(trust_env=False) as client:
+        assert client.post(url, headers=headers).status_code == 200
+        assert client.post(url, headers={**headers, "X-OpenProgram-UI-Check": ui_install["nonce"]}).status_code == 409
+    assert ui_install["http_mutations"] == 1
+
+
+def _scroll_plan():
+    plan = _ui_plan()
+    plan["checks"][0]["interaction"] = {"kind": "scroll", "delta_y": -400}
+    return plan
+
+
+def test_public_prepare_accepts_approved_scroll(tmp_path, monkeypatch, ui_install):
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
+    result, _ = _public_prepare(tmp_path, monkeypatch, _scroll_plan())
+    assert not result.is_error, result.content
+
+
+@pytest.mark.parametrize("verifier", [_scroll_plan()], indirect=True)
+def test_approved_scroll_has_bound_action_and_restoration_evidence(verifier):
+    verifier.run()
+    result = verifier.control["tool_result"]
+    assert not result.is_error, result.content
+    body = json.loads(json.loads(result.content[0].text)["body"])
+    assert body["interaction"]["after"]["top"] == 100
+    assert body["interaction"]["restored"] == body["interaction"]["before"]
+    assert consume(verifier)["verdict"] == "pass"
+
+
+@pytest.mark.parametrize("verifier", [_scroll_plan()], indirect=True)
+@pytest.mark.parametrize("damage", ["delta", "after", "restored"])
+def test_scroll_action_or_cleanup_mismatch_cannot_pass(verifier, ui_install, damage):
+    def change(body):
+        if damage == "delta":
+            body["interaction"]["delta_y"] += 1
+        else:
+            body["interaction"][damage]["top"] += 1
+    ui_install["mutation"] = change
+    verifier.run()
+    assert verifier.control["tool_result"].is_error
+    assert consume(verifier)["verdict"] == "inconclusive"
+
+
+def test_scroll_plan_requires_packaged_interaction_capability(tmp_path, monkeypatch, ui_install, package_factory):
+    old = package_factory("capture-only", ui=True)
+    package = ui_install["validate_package"](old)
+    assert package["protocol"] == 1
+    monkeypatch.setattr("openprogram.self_update.package_protocol.validate_ui_package", lambda _: package)
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
+    result, store = _public_prepare(tmp_path, monkeypatch, _scroll_plan())
+    assert result.is_error and "guarded UI" in result.content[0].text
+    assert not store.root.exists()
 
 
 def test_public_prepare_accepts_main_window_capture_plan(tmp_path, monkeypatch, ui_install):

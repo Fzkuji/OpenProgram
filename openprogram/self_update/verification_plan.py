@@ -22,6 +22,8 @@ def validate_plan(value, request) -> dict:
         keys = {"id", "assertion_id", "entry", "timeout_seconds", "max_output_bytes"}
         if check.get("entry") == "test:python":
             keys.add("argv")
+        if check.get("entry") == "ui:main" and "interaction" in check:
+            keys.add("interaction")
         if set(check) != keys:
             raise ValueError("unsupported verification check")
         if (not isinstance(check["id"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", check["id"])
@@ -33,6 +35,12 @@ def validate_plan(value, request) -> dict:
                 or type(check["max_output_bytes"]) is not int
                 or not 1 <= check["max_output_bytes"] <= (1572864 if check["entry"] == "ui:main" else 262144)):
             raise ValueError("invalid verification check identity, entry or budget")
+        if "interaction" in check:
+            interaction = check["interaction"]
+            if (not isinstance(interaction, dict) or set(interaction) != {"kind", "delta_y"}
+                    or interaction["kind"] != "scroll" or type(interaction["delta_y"]) is not int
+                    or interaction["delta_y"] == 0 or not -1200 <= interaction["delta_y"] <= 1200):
+                raise ValueError("UI interaction requires a bounded conversation scroll")
         if check["entry"] == "test:python":
             argv = check["argv"]
             if (not isinstance(argv, list) or not 1 <= len(argv) <= 32

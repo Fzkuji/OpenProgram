@@ -20,7 +20,7 @@ async function main() {
   contents.getURL = () => contents.mainFrame.url;
   contents.getOSProcessId = () => 1234;
   let requestGuard;
-  contents.session = { webRequest: { onBeforeRequest(fn) { requestGuard = fn; } } };
+  contents.session = { webRequest: { onBeforeRequest(fn) { requestGuard = fn; }, onBeforeSendHeaders() {} } };
   const nativeIpc = new EventEmitter();
   nativeIpc.handle = (name, fn) => handlers.set(name, fn);
   const guard = createUiVerificationGuard(nativeIpc);
@@ -38,12 +38,30 @@ async function main() {
     },
   };
   let captures = 0;
+  const attributes = new Map();
+  const area = { scrollTop: 500, scrollLeft: 0, scrollHeight: 2000, clientHeight: 600,
+    isConnected: true, style: { scrollBehavior: "smooth" }, contains: () => true,
+    getBoundingClientRect: () => ({ width: 800 }), hasAttribute: (name) => attributes.has(name),
+    getAttribute: (name) => attributes.get(name), setAttribute: (name, value) => attributes.set(name, value),
+    removeAttribute: (name) => attributes.delete(name) };
+  const isolated = vm.createContext({ document: { getElementById: (id) => id === "chatArea" ? area : {},
+      querySelectorAll: () => [area] }, location: { pathname: "/s/p1" }, setTimeout, clearTimeout,
+      requestAnimationFrame: (fn) => setImmediate(fn) });
+  contents.executeJavaScriptInIsolatedWorld = async (world, scripts, gesture) => {
+    assert.equal(world, 18371);
+    assert.equal(gesture, false);
+    return vm.runInContext(scripts[0].code, isolated);
+  };
   contents.capturePage = async () => {
     let result;
     requestGuard({ webContentsId: contents.id }, (value) => { result = value; });
     assert.deepEqual(result, { cancel: true }, "capture has native network isolation");
     nativeIpc.emit("test:mutation", { sender: contents });
     assert.equal(nativeMutations, 0, "capture cannot invoke native mutation");
+    if (contract.interaction) {
+      assert.equal(area.scrollTop, 100, "screenshot observes approved post-scroll state");
+      assert.equal(attributes.get("data-self-update-verification"), nonce);
+    }
     captures++;
     return { isEmpty: () => false, getSize: () => ({ width: 800, height: 600 }), toPNG: () => Buffer.from("fixture-png") };
   };
@@ -133,6 +151,26 @@ async function main() {
     guard.acquire = acquire;
     attached = false;
   }
+  contract.interaction = { kind: "scroll", delta_y: -400 };
+  assert.deepEqual(await handler(event, nonce), { ok: true });
+  assert.equal(uploaded.interaction.before.top, 500);
+  assert.equal(uploaded.interaction.after.top, 100);
+  assert.equal(uploaded.interaction.restored.top, 500);
+  assert.equal(area.scrollTop, 500);
+  assert.equal(area.style.scrollBehavior, "smooth");
+  assert.equal(attributes.size, 0, "temporary persistence marker removed");
+  contents.capturePage = async () => { throw new Error("capture failed after scroll"); };
+  assert.equal((await handler(event, nonce)).ok, false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(area.scrollTop, 500, "failed capture restores own scroll");
+  assert.equal(attributes.size, 0);
+  contents.capturePage = async () => { area.scrollTop = 250; contents.emit("before-input-event", {}); throw new Error("capture aborted"); };
+  assert.equal((await handler(event, nonce)).ok, false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(area.scrollTop, 250, "user scroll must not be overwritten by cleanup");
+  assert.equal(attributes.size, 0);
+  contents.capturePage = capture;
+  delete contract.interaction;
   // Exercise the production preload entry and main registration, not a copied
   // renderer shim. Electron itself is not launched by this component test.
   let bridge;

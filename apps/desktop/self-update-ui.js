@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const crypto = require("node:crypto");
+const { runScroll } = require("./self-update-ui-scroll");
 
 const APP = "/Applications/OpenProgram.app";
 const NONCE = /^[0-9a-f]{64}$/;
@@ -23,8 +24,16 @@ function installedIdentity(app) {
 
 function validateContract(value, nonce) {
   const keys = ["schema", "nonce", "update_id", "attempt", "session_id", "candidate_sha",
-    "worker_pid", "check_id", "deadline", "max_output_bytes", "action"].sort().join();
-  if (!value || Object.keys(value).sort().join() !== keys || value.schema !== 1 || value.nonce !== nonce ||
+    "worker_pid", "check_id", "deadline", "max_output_bytes", "action"];
+  if (value && Object.hasOwn(value, "interaction")) {
+    keys.push("interaction");
+    const step = value.interaction;
+    if (!step || Object.keys(step).sort().join() !== "delta_y,kind" || step.kind !== "scroll" ||
+        !Number.isInteger(step.delta_y) || step.delta_y === 0 || Math.abs(step.delta_y) > 1200) {
+      throw new Error("invalid_capture_contract");
+    }
+  }
+  if (!value || Object.keys(value).sort().join() !== keys.sort().join() || value.schema !== 1 || value.nonce !== nonce ||
       ["update_id", "session_id", "candidate_sha", "check_id"].some((key) => typeof value[key] !== "string") ||
       !/^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value.update_id) ||
       !/^[A-Za-z0-9_-]{1,256}$/.test(value.session_id) || !/^[0-9a-f]{40}$/.test(value.candidate_sha) ||
@@ -57,6 +66,8 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
     let timer = setTimeout(() => controller.abort(), 5000);
     let attachedHere = false;
     let releaseGuard;
+    let scrollCommand;
+    let bounded;
     const listeners = [];
     const stop = () => controller.abort(); // Never suppress the user's input.
     const listen = (emitter, name) => { emitter.on(name, stop); listeners.push([emitter, name]); };
@@ -90,29 +101,45 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
       }
       const before = identity();
       if (typeof guard?.acquire !== "function") throw new Error("installation_unavailable");
-      releaseGuard = guard.acquire(wc);
+      releaseGuard = guard.acquire(wc, nonce);
       if (wc.debugger.isAttached()) throw new Error("debugger_in_use");
       wc.debugger.attach("1.3");
       attachedHere = true;
-      const bounded = (promise) => new Promise((resolve, reject) => {
+      bounded = (promise) => new Promise((resolve, reject) => {
         const abort = () => reject(new Error("capture_interrupted"));
+        // Observe rejection even when cancellation arrived before this call.
+        promise.then(resolve, reject).finally(() => controller.signal.removeEventListener("abort", abort));
         if (controller.signal.aborted) return abort();
         controller.signal.addEventListener("abort", abort, { once: true });
-        promise.then(resolve, reject).finally(() => controller.signal.removeEventListener("abort", abort));
       });
       const target = await bounded(wc.debugger.sendCommand("Target.getTargetInfo"));
       const targetId = target?.targetInfo?.targetId;
       if (typeof targetId !== "string" || !targetId || targetId.length > 128) throw new Error("target_unavailable");
+      let interaction;
+      if (contract.interaction) {
+        scrollCommand = { nonce, session_id: contract.session_id, deadline: contract.deadline,
+          delta_y: contract.interaction.delta_y };
+        const moved = await bounded(runScroll(wc, { ...scrollCommand, mode: "start" }));
+        identity();
+        interaction = { ...contract.interaction, ...moved };
+      }
       const accessibility = await bounded(wc.debugger.sendCommand("Accessibility.getFullAXTree"));
       if (!Array.isArray(accessibility?.nodes) || !accessibility.nodes.length) throw new Error("accessibility_unavailable");
       const image = await bounded(wc.capturePage());
       if (image.isEmpty()) throw new Error("screenshot_unavailable");
       const png = image.toPNG();
       const size = image.getSize();
+      const observedAt = Date.now() / 1000;
       if (!png.length || size.width < 1 || size.height < 1) throw new Error("screenshot_unavailable");
       const afterTarget = await bounded(wc.debugger.sendCommand("Target.getTargetInfo"));
       if (JSON.stringify(identity()) !== JSON.stringify(before) || afterTarget?.targetInfo?.targetId !== targetId) {
         throw new Error("main_window_changed");
+      }
+      if (interaction) {
+        interaction.restored = await bounded(runScroll(wc, { ...scrollCommand, mode: "finish" }));
+        if (JSON.stringify(interaction.restored) !== JSON.stringify(interaction.before)) throw new Error("capture_cleanup_failed");
+        identity();
+        scrollCommand = null;
       }
       // Detach and release listeners before publishing evidence; failure is not pass.
       try { wc.debugger.detach(); } catch { throw new Error("capture_cleanup_failed"); }
@@ -123,10 +150,11 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
       releaseGuard = null;
       const body = { schema: 1, nonce, update_id: contract.update_id, attempt: contract.attempt,
         check_id: contract.check_id, worker_pid: contract.worker_pid,
-        identity: { ...before, target_id: targetId }, observed_at: Date.now() / 1000,
+        identity: { ...before, target_id: targetId }, observed_at: observedAt,
         screenshot: { mime_type: "image/png", width: size.width, height: size.height,
           sha256: crypto.createHash("sha256").update(png).digest("hex"), data: png.toString("base64") },
         accessibility, cleanup_complete: true };
+      if (interaction) body.interaction = interaction;
       if (Buffer.byteLength(JSON.stringify(body)) > contract.max_output_bytes) throw new Error("capture_output_limit");
       identity();
       const ack = await request(nonce, body, controller.signal);
@@ -134,6 +162,14 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
       return { ok: true }; // Image, AX tree and credentials never cross into the renderer.
     } catch (error) { return { ok: false, reason: REASONS.has(error?.message) ? error.message : "capture_unavailable" }; }
     finally {
+      if (scrollCommand && !wc.isDestroyed()) {
+        // Restore only while our operation still owns the view and its budget.
+        // User interruption must not be overwritten by automated restoration.
+        try {
+          if (!controller.signal.aborted) await bounded(runScroll(wc, { ...scrollCommand, mode: "finish" }));
+        } catch { /* failed cleanup cannot publish a successful receipt */ }
+        void runScroll(wc, { ...scrollCommand, mode: "abandon" }).catch(() => {});
+      }
       clearTimeout(timer);
       controller.abort();
       for (const [emitter, name] of listeners) emitter.removeListener(name, stop);
