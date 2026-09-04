@@ -149,7 +149,7 @@ export function UserMenuFooter() {
             (existing users with no avatar config) the Avatar
             component defaults to DiceBear ``shapes``, which is the
             visual upgrade. The outer CSS-module ``avatar`` class
-            still owns sizing / ring / hover state. */}
+            still owns sizing and hover state. */}
         <Avatar
           className={`${styles.avatar} user-menu-footer-avatar`}
           size={36}
