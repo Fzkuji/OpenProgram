@@ -154,6 +154,16 @@ The child still goes through packaging, system checks, a new verification Job
 and commit or rollback. Full installed-App acceptance remains a separate release
 requirement; fixture tests do not establish that the current App was updated.
 
+The worker also persists finite update results in the original session, even if
+the window is closed or the update stops before a verification Job is created.
+Repeated worker reconciliation reuses the same update, attempt and result-type
+identity; it does not start another model turn or move the conversation's HEAD.
+An interrupted write is retried. If the original session or initiating assistant
+node no longer exists, delivery remains pending without recreating the session
+or sending the result elsewhere. Persisting a result does not reopen the App or
+prove that installation succeeded; the update phase and verified runtime evidence
+remain the source of that conclusion.
+
 If the App or normal CLI cannot start, use the entry saved for that update:
 
 ```bash

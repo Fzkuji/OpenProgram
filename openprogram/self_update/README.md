@@ -13,6 +13,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`bootstrap.py`** — Recover an existing update from its saved runtime, independently of the App
 - **`commit_intent.py`** — Preserve an accepted commit decision across irreversible App finalization
 - **`controller_bundle.py`** — Freeze the installed controller runtime outside the replaceable App
+- **`delivery.py`** — Deterministic original-session notifications from durable update results
 - **`diagnosis.py`** — One bounded, read-only diagnostic Job after a verified rollback
 - **`handoff.py`** — Durable release of a prepared update after its origin turn commits
 - **`iteration.py`** — Deterministic authorization checks for a proposed self-update iteration

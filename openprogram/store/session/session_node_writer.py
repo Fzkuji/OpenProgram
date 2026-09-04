@@ -41,18 +41,24 @@ class SessionNodeWriter:
         # so its conversation nodes never steal the session head.
         self.advance_head = advance_head
 
-    def append(self, node: Call) -> None:
+    def append(self, node: Call, *, create_if_missing: bool = True) -> None:
         """Persist a Call directly into the per-session index + history.
 
         Writes the Call as-is (no lossy chat-msg round trip), assigns
         a seq, and bumps head for conversation nodes. Idempotent on id.
+        With create_if_missing=False, a removed session is never initialized.
+        Replaying an existing ID completes any interrupted history write.
         """
         import time as _time
-        pair = self.store._open(self.session_id, create_if_missing=True)
+        pair = self.store._open(self.session_id, create_if_missing=create_if_missing)
         if pair is None:
             return
         git, idx = pair
         if node.id in idx.nodes_by_id:
+            # A previous append may have updated the index before its history
+            # write failed. Replaying the same ID must complete persistence.
+            existing = idx.nodes_by_id[node.id]
+            git.write_history(existing.seq, existing.role, existing.id, existing.to_dict())
             return
         meta = node.metadata or {}
         # The conv edge lives ONLY on the top-level field.

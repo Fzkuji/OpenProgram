@@ -2136,6 +2136,11 @@ class JobRunner:
                 pass
         self._recover_deferred_resumes()
         self._recover_deferred_inboxes()
+        try:
+            from openprogram.self_update.delivery import deliver_pending
+            deliver_pending()
+        except Exception as exc:
+            _log.warning("self-update result delivery unavailable: %s", type(exc).__name__)
         if (
             result.finalized_preparing
             or result.released_missing
