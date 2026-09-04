@@ -349,6 +349,35 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
 
 
 @pytest.mark.macos
+def test_candidate_sandbox_reads_platform_without_allowing_external_writes(tmp_path: Path) -> None:
+    from openprogram.self_update import supervisor
+
+    sandbox = Path("/usr/bin/sandbox-exec")
+    if not sandbox.is_file():
+        pytest.skip("requires macOS sandbox-exec")
+    candidate, artifact, build_home, build_tmp = (
+        tmp_path / name for name in ("candidate", "artifact", "home", "tmp")
+    )
+    for directory in (candidate, artifact, build_home, build_tmp):
+        directory.mkdir()
+    prefix = [str(sandbox), "-p", supervisor._sandbox_profile(candidate, artifact, build_home, build_tmp)]
+    environment = {"PATH": "/usr/bin:/bin", "HOME": str(build_home), "TMPDIR": str(build_tmp)}
+    platform = subprocess.run(
+        [*prefix, "/usr/bin/uname", "-s"], env=environment,
+        capture_output=True, text=True, timeout=10,
+    )
+    assert platform.returncode == 0, platform.stderr
+    assert platform.stdout.strip() == "Darwin"
+    for target, allowed in ((artifact / "own-output", True), (tmp_path / "outside-output", False)):
+        result = subprocess.run(
+            [*prefix, "/usr/bin/touch", str(target)], env=environment,
+            capture_output=True, text=True, timeout=10,
+        )
+        assert (result.returncode == 0) is allowed, result.stderr
+        assert target.exists() is allowed
+
+
+@pytest.mark.macos
 def test_candidate_sandbox_cannot_read_installed_app(tmp_path: Path) -> None:
     from openprogram.self_update import supervisor
 

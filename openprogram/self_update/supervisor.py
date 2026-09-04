@@ -106,6 +106,9 @@ def _sandbox_profile(
         "(allow signal (target same-sandbox))",
         "(allow ipc-posix-sem ipc-posix-shm)",
         "(allow sysctl-read (sysctl-name-prefix \"hw.\"))",
+        # uname reads all four fields even when the caller only requests -s.
+        '(allow sysctl-read (sysctl-name "kern.ostype") (sysctl-name "kern.osrelease") '
+        '(sysctl-name "kern.version") (sysctl-name "kern.hostname"))',
         "(deny network*)",
         f"(deny file-read* (subpath {quoted(Path.home() / '.openprogram')}))",
         f"(deny file-read* (subpath {quoted(Path.home() / '.ssh')}))",
