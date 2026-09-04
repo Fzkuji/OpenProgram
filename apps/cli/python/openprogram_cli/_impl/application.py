@@ -94,7 +94,7 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
         "providers", "web", "resume", "init", "doctor", "browser",
         "worker", "update", "memory", "mcp", "trash", "backup",
         "recordings", "stop", "status", "restart", "upgrade", "help",
-        "execution", "jobs",
+        "execution", "jobs", "self-update",
     }
     bypass_flags = {
         "--print", "-p", "--help", "-h", "--version", "--print-prompt",
@@ -368,6 +368,10 @@ def main():
     if args.command == "rescue":
         from openprogram.cli.commands.rescue import _cmd_rescue
         sys.exit(_cmd_rescue())
+
+    if args.command == "self-update":
+        from openprogram.cli.commands.self_update import _cmd_self_update
+        sys.exit(_cmd_self_update(args))
 
     if args.command == "logs":
         from openprogram.cli.commands.logs import (

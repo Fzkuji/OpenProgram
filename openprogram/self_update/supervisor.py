@@ -275,13 +275,15 @@ def _installer_command(
     update_dir: Path,
     installer_sha256: str,
     mode: str,
+    *,
+    timeout_seconds: float | None = None,
 ) -> str:
     installer = _installer_snapshot(update_dir, installer_sha256)
     result = subprocess.run(
         ["/bin/bash", str(installer), mode, str(argument)],
         capture_output=True,
         text=True,
-        timeout=30 if mode.startswith("--verify-terminal:") else 300,
+        timeout=timeout_seconds if timeout_seconds is not None else 30 if mode.startswith("--verify-terminal:") else 300,
         env={
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": str(Path.home()),
@@ -614,6 +616,10 @@ def run_supervisor(
         )
         record = store.load(update_id)
         if record.state.phase in TERMINAL_PHASES:
+            from .owner_repair import run_repair
+            repaired = run_repair(store, record, installer_sha256)
+            if repaired is not None:
+                return repaired
             return _resume_terminal(store, update_id, installer_sha256)
         if record.state.phase in {UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING}:
             return _resume_activated(store, update_id, installer_sha256)

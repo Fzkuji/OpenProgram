@@ -42,6 +42,34 @@ Restart a login service after upgrading:
 openprogram worker restart
 ```
 
+## Recovering a conversational self-update
+
+This source-checkout capability is separate from stable-release upgrades. On macOS,
+if a conversational self-update leaves the default App in maintenance, inspect it
+from your local terminal without starting an Agent:
+
+```bash
+openprogram self-update status --json
+openprogram self-update status UPDATE_ID --json
+openprogram self-update repair UPDATE_ID
+```
+
+Replace `UPDATE_ID` with the ID reported by `status`. Repair requires an interactive
+terminal and the exact confirmation displayed with the action, revision and plan
+digest. There is no `--yes` or force-clear option. An existing approved attempt can
+resume only within its original ten-minute window; a failed or expired attempt
+requires fresh confirmation.
+
+Repair uses the controller saved before the update. It restores the previous App
+when rollback remains possible, or completes an already-started irreversible
+commit only with the original accepted verification evidence. An aborted,
+unactivated transaction retains the old App. Missing or changed evidence leaves
+maintenance enabled. Repair restarts the default worker, checks the App identity
+and live service, then clears maintenance. It creates no new verifier Job and does
+not change the original update verdict. The separate repair result records which
+version was recovered; service recovery is not proof that a failed feature meets
+its original goal.
+
 ## Development checkout
 
 In a source checkout, the same command uses the development pipeline instead of the release installer. It validates a Git target, updates dependencies and built assets when their source files changed, probes the new checkout, and restarts the worker only after the probe succeeds:

@@ -24,7 +24,7 @@ def read_journal(transaction: Path) -> dict:
     value = _read(transaction / "transaction.json")
     if (set(value) != {"schema", "phase", "previous_sha256", "active_sha256", "app", "worker", "launchd"}
         or type(value["schema"]) is not int or value["schema"] != 1
-        or value["phase"] not in {"prepared", "activated", "committing", "committed", "rolled_back"}
+        or value["phase"] not in {"prepared", "activating", "activated", "rolling_back", "committing", "committed", "rolled_back"}
         or any(not isinstance(value[k], str) or not re.fullmatch(r"[0-9a-f]{64}", value[k])
                for k in ("previous_sha256", "active_sha256"))
         or any(type(value[k]) is not bool for k in ("app", "worker", "launchd"))):
@@ -47,7 +47,7 @@ def load_commit(store, record, transaction: Path, installer_sha256: str) -> tupl
                     grant_sha256=_digest(grant), result_sha256=_digest(receipt))
     if (set(value) != {*expected, "transaction_identity", "system_gate", "decided_at", "signature"}
         or any(value[k] != v for k, v in expected.items())
-        or record.state.phase not in {UpdatePhase.VERIFYING, UpdatePhase.SUCCEEDED}
+        or record.state.phase not in {UpdatePhase.VERIFYING, UpdatePhase.SUCCEEDED, UpdatePhase.NEEDS_MANUAL_RECOVERY}
         or record.state.detail.get("transaction_dir") != str(transaction)
         or receipt.get("verdict") != "pass"
         or receipt.get("grant_sha256") != _digest(grant)

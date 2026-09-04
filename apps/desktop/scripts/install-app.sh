@@ -14,6 +14,12 @@ case "${1:-}" in
     transaction_dir="${2:-}"
     [[ $# == 2 ]] || transaction_dir=""
     ;;
+  --restart-terminal:prepared|--restart-terminal:committed|--restart-terminal:rolled_back)
+    action="restart-verified"
+    verify_phase="${1#*:}"
+    transaction_dir="${2:-}"
+    [[ $# == 2 ]] || transaction_dir=""
+    ;;
   --prepare)
     prepare_only=1
     defer_commit=1
@@ -55,6 +61,7 @@ if [[ "$action" == "install" && -z "$source_app" ]] || \
   printf 'usage: %s [--defer-commit] /path/to/OpenProgram.app\n' "$0" >&2
   printf '       %s --commit|--rollback /path/to/transaction\n' "$0" >&2
   printf '       %s --verify-terminal:prepared|committed|rolled_back /path/to/transaction\n' "$0" >&2
+  printf '       %s --restart-terminal:prepared|committed|rolled_back /path/to/transaction\n' "$0" >&2
   printf '       %s --prepare /path/to/OpenProgram.app | --activate /path/to/transaction\n' "$0" >&2
   exit 2
 fi
@@ -528,7 +535,7 @@ finish_prepared_transaction() {
   transaction_journal phase rolled_back
 }
 
-if [[ "$action" == "verify" ]]; then
+if [[ "$action" == "verify" || "$action" == "restart-verified" ]]; then
   load_prepared_transaction && [[ "$transaction_phase" == "$verify_phase" ]] || {
     printf 'terminal transaction phase does not match\n' >&2; exit 1;
   }
@@ -537,6 +544,12 @@ if [[ "$action" == "verify" ]]; then
   matches_identity "$target_app" "$expected_identity" || {
     printf 'terminal canonical App identity does not match\n' >&2; exit 1;
   }
+  if [[ "$action" == "restart-verified" && -z "$install_root" ]]; then
+    validate_app_metadata "$target_app" || exit 1
+    verified_python="$(app_runtime_python "$target_app")" || exit 1
+    "$verified_python" -I -B -m openprogram worker restart || exit 1
+    matches_identity "$target_app" "$expected_identity" || exit 1
+  fi
   printf 'OPENPROGRAM_TRANSACTION_DIR=%s\n' "$transaction_dir"
   exit 0
 fi

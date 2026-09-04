@@ -93,6 +93,7 @@ def recover_pending_updates() -> bool:
     from .commit_intent import commit_pending
     from .rollback_intent import RECOVERY_SECONDS
     from .maintenance import load_maintenance
+    from .owner_repair import load_repair, read_result, cleanup_error
 
     store = SelfUpdateStore()
     record = None
@@ -107,7 +108,8 @@ def recover_pending_updates() -> bool:
                 record = store._load_unlocked(marker["update_id"])
         if record is None:
             return True
-        if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY:
+        repair = load_repair(store, record)
+        if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY and repair is None:
             return False
         launch_supervisor(record.request.update_id, resume=True)
         record = store.load(record.request.update_id)
@@ -122,8 +124,21 @@ def recover_pending_updates() -> bool:
         )
         rollback_deadline = None
         commit_deadline = time.monotonic() + RECOVERY_SECONDS
+        repair_deadline = time.monotonic() + max(0, repair["deadline"] - time.time()) if repair else None
         while True:
             record = store.load(record.request.update_id)
+            if repair is not None:
+                if load_repair(store, record) != repair:
+                    raise ValueError("owner repair changed during startup")
+                result = read_result(store, repair)
+                if cleanup_error(store, repair) is not None or (result is not None and result["status"] == "failed"):
+                    return False
+                if result is not None and load_maintenance(store) is None:
+                    return True
+                if time.monotonic() >= repair_deadline:
+                    raise ValueError("owner repair startup handoff timed out")
+                time.sleep(0.1)
+                continue
             if record.state.phase in TERMINAL_PHASES:
                 if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY:
                     return False

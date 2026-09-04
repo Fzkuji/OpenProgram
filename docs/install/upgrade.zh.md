@@ -42,6 +42,27 @@ curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=X.Y.Z sh
 openprogram worker restart
 ```
 
+## 恢复对话内自更新
+
+这项源码 checkout 能力与 stable release 升级分开。macOS 上，对话内自更新使默认
+App 保持维护状态时，可以在本地终端检查，不需要启动 Agent：
+
+```bash
+openprogram self-update status --json
+openprogram self-update status UPDATE_ID --json
+openprogram self-update repair UPDATE_ID
+```
+
+将 `UPDATE_ID` 替换为 `status` 返回的 ID。恢复要求交互式终端，并准确输入与操作、
+版本和计划摘要一起显示的确认内容。没有 `--yes` 或强制解除维护选项。已授权的操作
+只能在原来的十分钟期限内恢复执行；失败或过期后需要重新确认。
+
+恢复使用更新前保存的控制程序。仍可回退时恢复旧 App；已经开始不可逆提交时，
+只有原始验收通过证据完整才能完成提交。已取消且尚未激活的事务保持旧 App。
+证据缺失或变化时继续保持维护状态。恢复会重启默认 worker，检查 App 身份和实际
+服务，然后解除维护。它不会新建验收 Job，也不会改变原更新结论。独立的恢复结果
+记录恢复了哪个版本；服务恢复不代表失败的功能已达到原始目标。
+
 ## 开发 checkout
 
 在 source checkout 中，同一命令执行开发升级流程，而不是 release installer。它验证 Git 目标，仅在相关源文件变化时更新依赖与构建产物，probe 新 checkout，并且只在 probe 成功后重启 worker：

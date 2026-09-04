@@ -105,7 +105,7 @@ def _wait_ready(
 
 
 def _submit_supervisor(
-    store: SelfUpdateStore, update_id: str, *, resume: bool
+    store: SelfUpdateStore, update_id: str, *, resume: bool, repair_id: str | None = None
 ) -> tuple[LaunchResult, str, int]:
     update_dir = store.root / update_id
     from .controller_bundle import prepare_controller, _load_bundle
@@ -132,6 +132,8 @@ def _submit_supervisor(
         controller.chmod(0o700)
 
     label = f"ai.openprogram.self-update.{update_id}"
+    if repair_id is not None:
+        label += f".repair.{repair_id}"
     domain = f"gui/{os.getuid()}/{label}"
     rc, message = _launchctl("print", domain)
     if rc != 0 and rc != 113 and "could not find service" not in message.lower() and "not found" not in message.lower():
@@ -166,15 +168,21 @@ def launch_supervisor(update_id: str, *, resume: bool = False) -> LaunchResult:
         raise LaunchError("self-update request identity mismatch")
     with store._locked():
         from .maintenance import load_maintenance
+        from .owner_repair import load_repair, read_result, cleanup_error
         record = store._load_unlocked(update_id)
+        repair_id = None
         if record.state.phase in TERMINAL_PHASES:
             marker = load_maintenance(store)
-            if (not resume or record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY
+            repair = load_repair(store, record) if resume else None
+            result = read_result(store, repair) if repair else None
+            if repair is not None and cleanup_error(store, repair) is None and (result is None or result["status"] == "recovered"):
+                repair_id = repair["repair_id"]
+            if (not resume or (record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY and repair_id is None)
                 or marker is None or marker["update_id"] != update_id):
                 return LaunchResult(f"ai.openprogram.self-update.{update_id}", False, False)
             if store._load_active_unlocked() is not None:
                 raise LaunchError("terminal maintenance conflicts with an active update")
-        result, installer_sha256, pid = _submit_supervisor(store, update_id, resume=resume)
+        result, installer_sha256, pid = _submit_supervisor(store, update_id, resume=resume, repair_id=repair_id)
     if not _wait_ready(store.root / update_id, update_id, installer_sha256, pid):
         if resume and store.load(update_id).state.phase in TERMINAL_PHASES:
             return result

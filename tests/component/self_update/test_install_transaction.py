@@ -160,7 +160,8 @@ def test_live_installer_lock_is_not_removed(installation):
 
 
 @pytest.mark.parametrize("terminal", ["prepared", "committed", "rolled_back"])
-def test_terminal_identity_check_is_read_only_and_phase_bound(installation, terminal):
+@pytest.mark.parametrize("mode", ["--verify-terminal:", "--restart-terminal:"])
+def test_terminal_identity_check_is_read_only_and_phase_bound(installation, terminal, mode):
     from openprogram.self_update.supervisor import _tree_digest
     run, candidate, target, _ = installation
     tx = prepare(run, candidate)
@@ -169,11 +170,11 @@ def test_terminal_identity_check_is_read_only_and_phase_bound(installation, term
         run("--commit" if terminal == "committed" else "--rollback", tx)
     before = _tree_digest(target), _tree_digest(tx)
     for _ in range(2):
-        result = run("--verify-terminal:" + terminal, tx)
+        result = run(mode + terminal, tx)
         assert f"OPENPROGRAM_TRANSACTION_DIR={tx}" in result.stdout
         assert (_tree_digest(target), _tree_digest(tx)) == before
     other = "prepared" if terminal != "prepared" else "committed"
-    assert run("--verify-terminal:" + other, tx, check=False).returncode != 0
+    assert run(mode + other, tx, check=False).returncode != 0
     (target / "drift").write_text("changed")
-    assert run("--verify-terminal:" + terminal, tx, check=False).returncode != 0
+    assert run(mode + terminal, tx, check=False).returncode != 0
     assert _tree_digest(tx) == before[1]
