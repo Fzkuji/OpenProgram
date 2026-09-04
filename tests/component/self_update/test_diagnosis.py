@@ -12,7 +12,7 @@ from tests.support.waiting import wait_until
 
 
 @pytest.fixture
-def diagnosis_environment(tmp_path, monkeypatch, store_fixture):
+def diagnosis_environment(tmp_path, monkeypatch, store_fixture, request):
     from openprogram.agent.job.runner import JobRunner
     from openprogram.agent.dispatcher import TurnResult
     from openprogram.self_update import SelfUpdateStore, UpdatePhase
@@ -24,7 +24,7 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture):
     worktree = replace(worktree, parent_session="p1")
     store = SelfUpdateStore()
     result = _prepare_update(worktree_id=worktree.id, candidate_sha=sha, goal="Fix behavior",
-                             assertions=["Expected behavior is observable"], iteration_policy=None,
+                             assertions=["Expected behavior is observable"], iteration_policy=getattr(request, "param", None),
                              req=_request(session_id="p1", user_msg_id="u1"), assistant_id="a1",
                              manager=_Manager(worktree), store=store)
     update_id = result["update_id"]
@@ -39,6 +39,8 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture):
     store._write_json(store.root / "maintenance.json", dict(schema=1, update_id=update_id, entered_at=time.time()))
     calls = []
     def execute(req):
+        if req.source == "self_update_repair":
+            return TurnResult("{}", "ru", "ra")
         calls.append(vars(req))
         return TurnResult(json.dumps(dict(schema=1, update_id=update_id, candidate_sha=sha, attempt=1,
                                          category="implementation", cause="The changed branch returns the wrong value",
@@ -57,6 +59,14 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture):
             diagnosis.cancel_pending(store, reason="fixture teardown")
         monitor.join(timeout=5)
         assert not monitor.is_alive()
+    from openprogram.self_update import source_repair
+    with source_repair._thread_lock:
+        repair = source_repair._threads.get((str(store.root), update_id))
+    if repair is not None:
+        with store._locked():
+            source_repair.cancel_pending(store, reason="fixture teardown")
+        repair.join(timeout=5)
+        assert not repair.is_alive()
     runner.shutdown()
 
 
@@ -83,7 +93,7 @@ def test_concurrent_startup_keeps_one_diagnostic_job(diagnosis_environment):
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert list(pool.map(lambda _: recover_pending_updates(), range(2))) == [True, True]
     runner.await_job(f"self-update:{update_id}:diagnose:1", timeout=5)
-    assert len(calls) == 1 and len(runner.list_jobs("p1")) == 1
+    assert len(calls) == 1 and len([job for job in runner.list_jobs("p1") if job.source == "self_update_diagnose"]) == 1
 
 
 @pytest.mark.parametrize("damage", ["config", "request", "pointer", "evidence"])

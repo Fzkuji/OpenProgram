@@ -311,9 +311,12 @@ def _prepare_update(
         from openprogram.self_update.diagnosis import freeze_config, config_evidence as diagnosis_evidence
         verifier_config = freeze_verifier_config(request, req)
         diagnosis_config = freeze_config(request, verifier_config)
+        from openprogram.self_update.source_repair import freeze_config as freeze_repair, config_evidence as repair_evidence
+        repair_config = freeze_repair(request, verifier_config, candidate_path=str(candidate), branch_name=worktree.branch_name)
         request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(verifier_config),
-                                                       diagnosis_evidence(diagnosis_config)))
-        state = store.create(request, verifier_config=verifier_config, diagnosis_config=diagnosis_config)
+                                                       diagnosis_evidence(diagnosis_config), repair_evidence(repair_config)))
+        state = store.create(request, verifier_config=verifier_config, diagnosis_config=diagnosis_config,
+                             source_repair_config=repair_config)
     except ActiveUpdateError as exc:
         raise SelfUpdateToolError(str(exc)) from exc
     except (SelfUpdateError, ValueError) as exc:
@@ -381,6 +384,7 @@ def _status_update(
     if record.request.session_id != req.session_id:
         raise SelfUpdateToolError("self-update belongs to another origin session")
     detail = record.state.detail
+    from openprogram.self_update.source_repair import read_result
     return {
         "update_id": record.request.update_id,
         "phase": record.state.phase.value,
@@ -392,6 +396,7 @@ def _status_update(
         "verifier_verdict": detail.get("verifier_verdict"),
         "changed_paths": list(record.request.changed_paths),
         "updated_at": record.state.updated_at,
+        "source_repair_result": read_result(store, record),
     }
 
 
@@ -446,7 +451,8 @@ def _turn_context() -> tuple[Any, str]:
     description=(
         "Prepare an owner-approved OpenProgram self-update from the exact clean HEAD "
         "of this session's active linked worktree. This persists intent only; it does "
-        "not build, install, stop, or restart the App."
+        "not build, install, stop, or restart the App. Approval also permits isolated "
+        "source repair and the listed required tests after verified rollback, but not another installation."
     ),
     toolset=["core"],
     requires_approval=True,
@@ -501,6 +507,26 @@ def self_update_cancel(
 
 
 @function(
+    name="self_update_repair_cancel",
+    description="Cancel source repair or candidate tests for this session's rolled-back update; never installs or changes its verdict.",
+    toolset=["core"], path_params={},
+)
+def self_update_repair_cancel(update_id: str) -> dict[str, Any]:
+    from openprogram.self_update.source_repair import _finish, read_result
+    req, _assistant_id = _turn_context()
+    _require_local_owner(req)
+    store = SelfUpdateStore()
+    with store._locked():
+        record = store._load_unlocked(update_id)
+        if record.request.session_id != req.session_id:
+            raise SelfUpdateToolError("source repair belongs to another origin session")
+        if record.state.phase is not UpdatePhase.ROLLED_BACK:
+            raise SelfUpdateToolError("source repair cancellation requires a rolled-back update")
+        _finish(store, record, "cancelled", "owner cancelled source repair")
+        return read_result(store, record)
+
+
+@function(
     name="self_update_observe",
     description=("For the active post-update verifier only: observe a read-only local HTTP entry "
                  "and save identity-bound evidence. Entries: /api/commands, /api/diagnostics, "
@@ -513,4 +539,4 @@ def self_update_observe(entry: str) -> dict[str, Any]:
     return observe(entry)
 
 
-__all__ = ["self_update_prepare", "self_update_status", "self_update_cancel", "self_update_observe"]
+__all__ = ["self_update_prepare", "self_update_status", "self_update_cancel", "self_update_repair_cancel", "self_update_observe"]

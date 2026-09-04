@@ -72,8 +72,25 @@ openprogram self-update repair UPDATE_ID
 已终止的 Job 不重跑。通过普通 Job 取消入口停止诊断；`self_update_cancel` 仍只取消
 激活前的更新。新更新会取代待处理诊断。模型不可用或证据无效只终止诊断，不重新
 限制已经恢复的服务。`self-update status --json` 在有结果时包含 `diagnosis_result`。
-缺少冻结诊断配置的旧请求保持原有行为。自动修改源码、重新测试和激活下一 candidate
-仍是独立的后续实现阶段，诊断报告本身不会执行这些动作。
+缺少冻结诊断配置的旧请求保持原有行为。诊断报告本身不修改或安装代码。
+
+新请求独立冻结 **Post-rollback source repair** 阶段。首次授权包含隔离修正与所列
+`required_tests`，不包含再次安装。implementation/test 诊断可触发一个只读模型 Job
+提出文本编辑，由控制器逐项校验、新建 linked worktree 和 commit，并在无网络、无
+App 写权限的原生沙箱运行冻结测试。原 worktree 不变。默认只修改原 changed_paths；
+`bounded_auto` 使用原授权路径模式。受保护的 runtime、审批、安装器、依赖和 Git
+文件不会自动修改。无效路径或 old_text 无法唯一匹配会停止修正。
+
+修正和测试共用回退后的十分钟期限，原授权期限更早时取更早值。新更新、取消或
+超时停止本阶段及测试进程。模型运行时可使用普通 Job 取消；模型结束后，在原会话
+调用 `self_update_repair_cancel(update_id)` 取消仍运行的测试。重启不重放部分编辑、
+提交或测试。失败 worktree 和证据保留供检查。缺少冻结修正配置的旧请求不获得此能力。
+
+`self_update_status` 和 `self-update status --json` 包含 `source_repair_result`。
+`candidate_ready` 表示新 commit 与全部已配置测试通过校验；未配置必需测试时为
+`awaiting_tests`。测试缺失、失败或源码漂移记录 `failed`；取消与超时分别为
+`cancelled`、`expired`。这些状态均不代表已安装。下一 candidate 的再次授权、
+有界自动提交及激活是独立的后续实现阶段，仍待完成。
 
 App 或普通 CLI 无法启动时，使用本次更新保存的独立入口：
 

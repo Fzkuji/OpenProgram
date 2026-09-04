@@ -53,7 +53,8 @@ class SelfUpdateStore:
         self.root = Path(root)
 
     def create(self, request: UpdateRequest, *, verifier_config: Mapping[str, Any] | None = None,
-               diagnosis_config: Mapping[str, Any] | None = None) -> UpdateState:
+               diagnosis_config: Mapping[str, Any] | None = None,
+               source_repair_config: Mapping[str, Any] | None = None) -> UpdateState:
         with self._locked():
             maintenance = self.root / "maintenance.json"
             if maintenance.exists() or maintenance.is_symlink():
@@ -91,6 +92,8 @@ class SelfUpdateStore:
                     self._write_json(staged / "verifier-config.json", verifier_config)
                 if diagnosis_config is not None:
                     self._write_json(staged / "diagnosis-config.json", diagnosis_config)
+                if source_repair_config is not None:
+                    self._write_json(staged / "source-repair-config.json", source_repair_config)
                 self._write_json(staged / "state.json", state.to_dict())
                 self._write_events(staged / "events.jsonl", created_event)
                 os.replace(staged, target)
@@ -108,6 +111,12 @@ class SelfUpdateStore:
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception("Could not revoke superseded diagnosis")
+            from .source_repair import cancel_pending as cancel_repair
+            try:
+                cancel_repair(self)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("Could not revoke superseded source repair")
             return state
 
     def load(self, update_id: str) -> UpdateRecord:

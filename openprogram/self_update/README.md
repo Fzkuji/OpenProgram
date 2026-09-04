@@ -20,7 +20,9 @@ that releases a prepared request only after its origin turn is durable.
 - **`maintenance.py`** — Durable admission gate while an approved update waits for quiescence
 - **`owner_repair.py`** — Explicit, bounded owner recovery through the original trusted controller
 - **`recovery.py`** — Dispatch one frozen verifier Job after the supervisor releases system gates
+- **`repair_candidate.py`** — Apply bounded model edits and test a new isolated candidate without installing it
 - **`rollback_intent.py`** — Durable rollback intent shared by the controller and worker admission
+- **`source_repair.py`** — Continue a verified rollback with one bounded source-repair Job and candidate
 - **`store.py`** — Crash-safe file store for conversational self-update state
 - **`supervisor.py`** — External controller for one durable conversational self-update
 - **`system_probe.py`** — Observe the default worker before releasing post-update verification

@@ -208,6 +208,7 @@ def _status_unlocked(store, record) -> dict:
     marker = load_maintenance(store)
     request = load_repair(store, record)
     from .diagnosis import _result
+    from .source_repair import read_result as source_repair_result
     update_id = record.request.update_id
     script = store.root / update_id / "recover.sh"
     return dict(update_id=update_id, phase=record.state.phase.value,
@@ -217,7 +218,7 @@ def _status_unlocked(store, record) -> dict:
                 repair_deadline=request["deadline"] if request else None,
                 repair_result=read_result(store, request) if request else None,
                 repair_cleanup_error=cleanup_error(store, request) if request else None,
-                diagnosis_result=_result(store, record))
+                diagnosis_result=_result(store, record), source_repair_result=source_repair_result(store, record))
 
 
 def run_repair(store, record, installer_sha256: str) -> int | None:

@@ -71,7 +71,7 @@ def _execute_agent_turn(
     from openprogram.agent.session_db import default_db
     from openprogram.agent.dispatcher import TurnRequest, process_user_turn
 
-    if source in {"self_update_verify", "self_update_diagnose"} and (
+    if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"} and (
         profile_snapshot is None or not isinstance(model_override, str)
         or "/" not in model_override or not all(model_override.split("/", 1))
         or tools_override is None or not spawn_caller
@@ -83,13 +83,15 @@ def _execute_agent_turn(
         )
     from openprogram.providers.structured_output import normalize_response_format
     output_format = normalize_response_format(response_format) if response_format is not None else None
-    if source in {"self_update_verify", "self_update_diagnose"}:
+    if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
         from dataclasses import asdict
         from openprogram.agent.authority import normalize_authority
         if source == "self_update_verify":
             from openprogram.self_update.recovery import require_verifier_execution as require_execution
-        else:
+        elif source == "self_update_diagnose":
             from openprogram.self_update.diagnosis import require_execution
+        else:
+            from openprogram.self_update.source_repair import require_execution
         try:
             require_execution(
                 session_id=session_id, spawn_caller=spawn_caller,

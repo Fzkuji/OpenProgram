@@ -109,6 +109,8 @@ def recover_pending_updates() -> bool:
         if record is None:
             from .diagnosis import dispatch_pending
             dispatch_pending()
+            from .source_repair import dispatch_pending as dispatch_repair
+            dispatch_repair()
             return True
         repair = load_repair(store, record)
         if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY and repair is None:
@@ -148,6 +150,8 @@ def recover_pending_updates() -> bool:
                 if marker is None:
                     from .diagnosis import dispatch_pending
                     dispatch_pending()
+                    from .source_repair import dispatch_pending as dispatch_repair
+                    dispatch_repair()
                     return True
                 if marker["update_id"] != record.request.update_id:
                     raise ValueError("terminal maintenance owner changed")

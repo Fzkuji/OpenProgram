@@ -142,6 +142,12 @@ def _finish(store, record, status, reason, *, diagnosis=None, job=None):
             attempt=record.state.attempt, status=status, reason=reason, at=time.time(),
             diagnosis=diagnosis, job_sha256=_digest(job.to_dict()) if job is not None else None,
         ))
+    if status == "completed":
+        from .source_repair import prepare_after_diagnosis
+        try:
+            prepare_after_diagnosis(store, record)
+        except Exception:
+            _log.warning("Could not prepare source repair", exc_info=True)
     if _pointer(store) == record.request.update_id:
         (store.root / "diagnosis-pending.json").unlink()
         store._fsync_directory(store.root)
@@ -319,6 +325,8 @@ def _monitor(store, update_id, runner):
             _failure(store, record, exc)
             _cancel_owned_job(runner, record, request, config)
     finally:
+        from .source_repair import dispatch_pending
+        dispatch_pending()
         with _monitor_lock:
             _monitors.pop((str(store.root), update_id), None)
 

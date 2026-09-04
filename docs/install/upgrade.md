@@ -84,8 +84,32 @@ only cancels a pre-activation update. A new update supersedes pending diagnosis.
 Unavailable models or invalid evidence stop diagnosis without restricting the
 restored service. `self-update status --json` includes `diagnosis_result` when one
 exists. Older requests without frozen diagnostic configuration keep their prior
-behavior. Automatic source repair, retesting and next-candidate activation remain
-separate implementation stages; a diagnostic report does not perform them.
+behavior. A diagnostic report does not itself modify or install code.
+
+New requests separately freeze a **Post-rollback source repair** stage. Initial
+approval includes isolated repair and the listed `required_tests`, not another
+installation. An implementation/test diagnosis can trigger one read-only model
+Job that proposes text edits. The controller validates each edit, creates a new
+linked worktree and commit, and runs the frozen tests in a native sandbox without
+network access or App write permission. Your original worktree is unchanged.
+Default scope is the original changed files; `bounded_auto` uses its approved
+path patterns. Protected runtime, approval, installer, dependency and Git files
+are not automatically modified. Invalid paths or non-unique old text stop repair.
+
+Repair and tests share at most ten minutes after rollback, shortened by an
+earlier approved deadline. A new update, cancellation or expiry stops this stage
+and its test processes. Use the ordinary Job cancel action while the model runs;
+after the model finishes, call `self_update_repair_cancel(update_id)` in the
+original conversation to cancel tests. Restart does not replay partial edits,
+commits or tests. Failed worktrees and evidence remain available for inspection.
+Old requests without frozen repair configuration do not gain this capability.
+
+`self_update_status` and `self-update status --json` expose `source_repair_result`.
+`candidate_ready` means the new commit and all configured tests passed validation;
+`awaiting_tests` means no required tests were configured. Missing/failed tests or
+source drift produce `failed`; cancellation and expiry produce `cancelled` and
+`expired`. None means installed. Next-candidate approval, bounded automatic
+submission and activation are separate implementation stages and remain pending.
 
 If the App or normal CLI cannot start, use the entry saved for that update:
 

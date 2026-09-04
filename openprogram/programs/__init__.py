@@ -406,9 +406,9 @@ def agent_tools(
     if names is None and toolset is None:
         names = DEFAULT_TOOLS
     picked = _filter_agent_tools(names=names, toolset=toolset, source=source)
-    if source in {"self_update_verify", "self_update_diagnose"}:
+    if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
         picked = [t for t in picked if _is_verifier_read_tool(t)
-                  and (source != "self_update_diagnose" or t.name != "self_update_observe")]
+                  and (source == "self_update_verify" or t.name != "self_update_observe")]
     # Layer 2 — exposure. Anything registered with ``expose=False``
     # never reaches the LLM, no matter what preset, allow, or check_fn
     # says. This is the cascade's foundation: every later filter
@@ -471,10 +471,10 @@ def apply_tool_policy(
     # ``list`` builtin is shadowed by the ``.list`` subpackage import
     # above; use slice copy instead of ``list(...)``.
     out = [t for t in tools]
-    if source in {"self_update_verify", "self_update_diagnose"}:
+    if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
         # Ad-hoc tools are not trusted just because they reuse a read name.
         out = [t for t in out if _is_verifier_read_tool(t)
-               and (source != "self_update_diagnose" or t.name != "self_update_observe")]
+               and (source == "self_update_verify" or t.name != "self_update_observe")]
     # Layer 2 — same exposure whitelist that :func:`agent_tools`
     # applies. Anything not on the list never reaches the LLM.
     # Skipped for caller-supplied ad-hoc tools (exposure_filter=False).
