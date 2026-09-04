@@ -59,7 +59,7 @@ def test_bounded_repair_submits_new_child_with_original_budget(diagnosis_environ
 
 
 @pytest.mark.parametrize("diagnosis_environment", [{"required_tests": ["python -c 'assert True'"]}], indirect=True)
-@pytest.mark.parametrize("decision", ["allow", "deny", "dirty", "log"])
+@pytest.mark.parametrize("decision", ["allow", "deny", "dirty", "log", "log_link_race"])
 @native_sandbox
 def test_default_retry_requires_fresh_exact_one_shot_approval(diagnosis_environment, monkeypatch, decision):
     from openprogram.agent.internals import _approval
@@ -85,6 +85,21 @@ def test_default_retry_requires_fresh_exact_one_shot_approval(diagnosis_environm
             (Path(repaired["candidate"]["worktree_path"]) / "feature.txt").write_text("changed after approval display")
         if decision == "log":
             Path(repaired["candidate"]["tests"][0]["log_path"]).write_text("changed after approval display")
+        if decision == "log_link_race":
+            log = Path(repaired["candidate"]["tests"][0]["log_path"])
+            replacement = log.with_name("replacement.log")
+            replacement.write_bytes(log.read_bytes())
+            resolve = Path.resolve
+            swapped = False
+            def swap_after_resolve(path, *args, **kwargs):
+                nonlocal swapped
+                result = resolve(path, *args, **kwargs)
+                if path == log and not swapped:
+                    swapped = True
+                    log.unlink()
+                    log.symlink_to(replacement)
+                return result
+            monkeypatch.setattr(Path, "resolve", swap_after_resolve)
         return decision != "deny", None, "always"
     monkeypatch.setattr(_approval, "await_user_approval", approve)
     wrapped = _approval.wrap_with_approval(tools.self_update_retry, req, lambda _: None)
@@ -124,14 +139,16 @@ def test_whole_iteration_cancel_stops_waiting_candidate(diagnosis_environment, m
     assert store.load_active() is None
 
 
-@pytest.mark.parametrize("diagnosis_environment", [{
-    "mode": "bounded_auto", "max_attempts": 3, "deadline": time.time() + 3600,
-    "allowed_paths": ["feature.txt"], "required_tests": ["python -c 'assert True'"],
-}], indirect=True)
+@pytest.mark.parametrize("diagnosis_environment", [
+    {"required_tests": ["python -c 'assert True'"]},
+    {"mode": "bounded_auto", "max_attempts": 3, "deadline": time.time() + 3600,
+     "allowed_paths": ["feature.txt"], "required_tests": ["python -c 'assert True'"]},
+], indirect=True)
 @pytest.mark.parametrize("cut", ["reservation", "active"])
 @native_sandbox
 def test_startup_resumes_one_reserved_child_without_refreshing_budget(diagnosis_environment, monkeypatch, cut):
     from openprogram.self_update import next_candidate, source_repair, SelfUpdateStore
+    from tests.component.programs.test_self_update_tools import _request
     store, _, _, update_id = diagnosis_environment
     dispatch = next_candidate.dispatch_pending
     monkeypatch.setattr(next_candidate, "dispatch_pending", lambda: None)
@@ -147,8 +164,11 @@ def test_startup_resumes_one_reserved_child_without_refreshing_budget(diagnosis_
         if path.name == ("iteration-next.json" if cut == "reservation" else "active.json"):
             raise LostWorker()
     monkeypatch.setattr(SelfUpdateStore, "_write_json", lose)
+    automatic = store.load(update_id).request.iteration_policy.mode.value == "bounded_auto"
     with pytest.raises(LostWorker):
-        next_candidate.submit(update_id, repaired["candidate"]["candidate_sha"])
+        next_candidate.submit(update_id, repaired["candidate"]["candidate_sha"],
+            **({} if automatic else dict(req=_request(session_id="p1", user_msg_id="retry_user"),
+                                       assistant_id="retry_reply")))
     reservation_path = store.root / update_id / "iteration-next.json"
     reservation_bytes = reservation_path.read_bytes()
     reservation = json.loads(reservation_bytes)
@@ -167,6 +187,123 @@ def test_startup_resumes_one_reserved_child_without_refreshing_budget(diagnosis_
     _start()
     assert store.load_active().request == child.request
     assert reservation_path.read_bytes() == reservation_bytes
+    if not automatic:
+        from openprogram.self_update.handoff import release_prepared_update
+        assert store.load_active().state.phase.value == "preparing"
+        assert release_prepared_update("p1", "another_reply", store=store) is None
+        assert release_prepared_update("p1", "retry_reply", store=store).phase.value == "staging"
+
+
+@pytest.mark.parametrize("diagnosis_environment", [{
+    "mode": "bounded_auto", "max_attempts": 3, "deadline": time.time() + 3600,
+    "allowed_paths": ["feature.txt"], "required_tests": ["python -c 'assert True'"],
+}], indirect=True)
+@native_sandbox
+def test_expired_pending_candidate_cannot_refresh_original_deadline(diagnosis_environment, monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.self_update import next_candidate, source_repair
+    store, _, _, update_id = diagnosis_environment
+    dispatch = next_candidate.dispatch_pending
+    monkeypatch.setattr(next_candidate, "dispatch_pending", lambda: None)
+    _turn(diagnosis_environment, monkeypatch)
+    _start()
+    assert _result(diagnosis_environment)["status"] == "candidate_ready"
+    assert wait_until(lambda: (str(store.root), update_id) not in source_repair._threads, timeout=5)
+    original_request = (store.root / update_id / "request.json").read_bytes()
+    deadline = store.load(update_id).request.iteration_policy.deadline
+    launches = []
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda uid, **kw: launches.append(uid))
+    monkeypatch.setattr(next_candidate, "time", SimpleNamespace(time=lambda: deadline + 1))
+    monkeypatch.setattr(next_candidate, "dispatch_pending", dispatch)
+    _start()
+    _start()
+    assert store.load_active() is None and not launches
+    assert not (store.root / update_id / "iteration-next.json").exists()
+    assert "deadline exhausted" in next_candidate.status(store, store.load(update_id))["reason"]
+    assert (store.root / update_id / "request.json").read_bytes() == original_request
+
+
+@pytest.mark.parametrize("diagnosis_environment", [
+    {"required_tests": ["python -c 'assert True'"]},
+    {"mode": "bounded_auto", "max_attempts": 3, "deadline": time.time() + 3600,
+     "allowed_paths": ["feature.txt"], "required_tests": ["python -c 'assert True'"]},
+], indirect=True)
+@native_sandbox
+def test_launch_failure_aborts_published_child_before_startup(diagnosis_environment, monkeypatch):
+    from openprogram.self_update import next_candidate, source_repair
+    from tests.component.programs.test_self_update_tools import _request
+    store, _, _, update_id = diagnosis_environment
+    dispatch = next_candidate.dispatch_pending
+    monkeypatch.setattr(next_candidate, "dispatch_pending", lambda: None)
+    _turn(diagnosis_environment, monkeypatch)
+    _start()
+    repaired = _result(diagnosis_environment)
+    assert wait_until(lambda: (str(store.root), update_id) not in source_repair._threads, timeout=5)
+    launches = []
+    def fail(child_id, **kwargs):
+        launches.append(child_id)
+        raise RuntimeError("supervisor launch failed")
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", fail)
+    automatic = store.load(update_id).request.iteration_policy.mode.value == "bounded_auto"
+    with pytest.raises(RuntimeError, match="supervisor launch failed"):
+        next_candidate.submit(update_id, repaired["candidate"]["candidate_sha"],
+                              **({} if automatic else dict(req=_request(session_id="p1", user_msg_id="retry_user"),
+                                                          assistant_id="retry_reply")))
+    reservation = (store.root / update_id / "iteration-next.json").read_bytes()
+    child_id = json.loads(reservation)["request"]["update_id"]
+    assert store.load(child_id).state.phase.value == "aborted"
+    assert store.load_active() is None
+    assert next_candidate.status(store, store.load(update_id))["status"] == "stopped"
+    monkeypatch.setattr(next_candidate, "dispatch_pending", dispatch)
+    _start()
+    assert launches == [child_id]
+    assert (store.root / update_id / "iteration-next.json").read_bytes() == reservation
+
+
+@pytest.mark.parametrize("diagnosis_environment", [{
+    "mode": "bounded_auto", "max_attempts": 3, "deadline": time.time() + 3600,
+    "allowed_paths": ["feature.txt"], "required_tests": ["python -c 'assert True'"],
+}], indirect=True)
+@native_sandbox
+def test_same_failure_on_child_stops_before_another_repair_job(diagnosis_environment, monkeypatch):
+    import os
+    from openprogram.agent.dispatcher import TurnResult
+    from openprogram.self_update import UpdatePhase, source_repair
+    from openprogram.self_update.maintenance import leave_maintenance
+    from openprogram.self_update.recovery import SYSTEM_CHECKS
+    from openprogram.self_update.rollback_intent import begin_rollback
+    store, runner, _, parent_id = diagnosis_environment
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda *a, **kw: None)
+    _turn(diagnosis_environment, monkeypatch)
+    _start()
+    assert _result(diagnosis_environment)["status"] == "candidate_ready"
+    assert wait_until(lambda: (str(store.root), parent_id) not in source_repair._threads, timeout=5)
+    child = store.load_active()
+    child_id = child.request.update_id
+    # Reuse the verified-rollback boundary from diagnosis_environment; no App is installed.
+    for state in (UpdatePhase.READY, UpdatePhase.ACTIVATING):
+        store.transition(child_id, state)
+    detail = {"previous_system_gate": {"candidate_sha": "3" * 40}, "error": "behavior failed"}
+    store.transition(child_id, UpdatePhase.VERIFYING, detail=detail)
+    begin_rollback(store, child_id, "behavior failed")
+    gate = dict(schema=1, candidate_sha="3" * 40, attempt=2, verified_at=time.time(),
+                worker_pid=os.getpid(), checks={key: True for key in SYSTEM_CHECKS})
+    store.transition(child_id, UpdatePhase.ROLLED_BACK, detail={**detail, "restored_system_gate": gate})
+    store._write_json(store.root / "maintenance.json", dict(schema=1, update_id=child_id, entered_at=time.time()))
+    def diagnose(req):
+        return TurnResult(json.dumps(dict(schema=1, update_id=child_id, candidate_sha=child.request.candidate_sha,
+            attempt=2, category="implementation", cause="The same behavior still fails",
+            evidence_refs=["failure"], corrections=["Correct the return value"])), "du2", "da2")
+    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", diagnose)
+    leave_maintenance(child_id)
+    _start()
+    result_path = store.root / child_id / "source-repair-result-2.json"
+    assert wait_until(result_path.exists, timeout=5)
+    result = json.loads(result_path.read_text())
+    assert not any(job.id == f"self-update:{child_id}:repair:2" for job in runner.list_jobs("p1"))
+    assert result["status"] == "failed" and "repeated failure" in result["reason"], result
+    assert not (store.root / child_id / "iteration-next.json").exists()
+    assert store.load_active() is None
 
 
 @pytest.mark.parametrize("diagnosis_environment", [{"required_tests": ["python -c 'assert True'"]}], indirect=True)

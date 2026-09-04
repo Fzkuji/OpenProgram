@@ -6,7 +6,7 @@ from dataclasses import asdict, replace
 import hashlib
 import logging
 import math
-from pathlib import Path
+import os
 import stat
 import time
 
@@ -156,6 +156,13 @@ def _failure(store, record):
     return _digest(dict(kind="assertions", failed=sorted(row["id"] for row in rows if row["status"] != "pass")))
 
 
+def check_failure_history(store, records):
+    fingerprints = [_failure(store, item) for item in records]
+    if len(fingerprints) >= 2 and fingerprints[-1] == fingerprints[-2]:
+        raise ValueError("repeated failure")
+    return fingerprints
+
+
 def _candidate(store, record):
     from openprogram.agent.job.store import load_job
     from openprogram.agent.job.types import JobStatus
@@ -214,10 +221,18 @@ def _candidate(store, record):
         if (test["command"] != command or test["candidate_sha"] != sha or type(test["exit_code"]) is not int
                 or test["exit_code"] != 0 or test["log_path"] != str(log) or log.resolve() != log):
             raise ValueError("required test binding changed")
-        info = log.stat()
-        if not stat.S_ISREG(info.st_mode) or info.st_size > 1_048_576 or info.st_nlink != 1:
-            raise ValueError("invalid required test log")
-        if hashlib.sha256(log.read_bytes()).hexdigest() != test["log_sha256"]:
+        fd = os.open(log, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 1_048_576 or info.st_nlink != 1:
+                raise ValueError("invalid required test log")
+            with os.fdopen(fd, "rb") as handle:
+                fd = -1
+                data = handle.read(1_048_577)
+        finally:
+            if fd >= 0:
+                os.close(fd)
+        if len(data) > 1_048_576 or hashlib.sha256(data).hexdigest() != test["log_sha256"]:
             raise ValueError("required test log changed")
     return manifest, result
 
@@ -241,9 +256,7 @@ def validate(store, record, sha, *, automatic):
     if automatic and (_config(store, root) is None or policy.mode is not IterationMode.BOUNDED_AUTO
                       or policy.deadline is None or not policy.allowed_paths or not policy.required_tests):
         raise ValueError("original bounded installation authorization missing")
-    fingerprints = [_failure(store, item) for item in records]
-    if len(fingerprints) >= 2 and fingerprints[-1] == fingerprints[-2]:
-        raise ValueError("repeated failure")
+    fingerprints = check_failure_history(store, records)
     manifest, result = _candidate(store, record)
     if manifest["candidate_sha"] != sha or sha in {item.request.candidate_sha for item in records} | {root.request.base_sha}:
         raise ValueError("candidate SHA is stale or not new")
@@ -364,7 +377,17 @@ def submit(update_id, candidate_sha, *, req=None, assistant_id=None, _resume=Fal
             store._transition_unlocked(child.update_id, UpdatePhase.STAGING, expected_phase=UpdatePhase.PREPARING,
                 detail={"iteration_release": True, "parent_id": update_id, "reservation_sha256": _digest(reservation)})
         _status(store, record, "submitting", "original child reserved", child.update_id)
-    launch_supervisor(child.update_id, resume=(store.root / child.update_id / "supervisor.sh").exists())
+    try:
+        launch_supervisor(child.update_id, resume=(store.root / child.update_id / "supervisor.sh").exists())
+    except Exception as exc:
+        with store._locked():
+            current = store._load_unlocked(child.update_id)
+            if current.state.phase in {UpdatePhase.PREPARING, UpdatePhase.STAGING, UpdatePhase.READY}:
+                store._transition_unlocked(child.update_id, UpdatePhase.ABORTED, expected_phase=current.state.phase,
+                    detail={**current.state.detail, "reason": "supervisor launch failed: " + str(exc)[:1000]})
+            _status(store, record, "stopped", "supervisor launch failed: " + str(exc), child.update_id)
+            _remove_pointer(store, update_id)
+        raise
     with store._locked():
         _status(store, record, "submitted", "child handed to external supervisor", child.update_id)
         _remove_pointer(store, update_id)

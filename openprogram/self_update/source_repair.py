@@ -118,6 +118,9 @@ def _request(store, record, config):
         raise ValueError("diagnosis does not permit automatic source repair")
     if record.state.attempt >= record.request.iteration_policy.max_attempts:
         raise ValueError("source repair attempt budget exhausted")
+    if record.state.attempt > 1:
+        from .next_candidate import chain, check_failure_history
+        check_failure_history(store, chain(store, record))
     deadline = record.state.updated_at + SECONDS
     if record.request.iteration_policy.deadline is not None:
         deadline = min(deadline, record.request.iteration_policy.deadline)
