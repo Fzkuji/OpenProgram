@@ -101,6 +101,11 @@ def test_registered_observer_and_durable_job_result_are_bound(verifier, verdict)
     assert v.grant["token"] not in job.result_text
     assert v.grant["token"] not in json.dumps(v.control["observed"])
     assert v.grant["token"] not in json.dumps(receipt)
+    from openprogram.self_update.projection import read_status
+    projected = read_status(v.store, session_id=v.request.session_id, update_id=v.request.update_id)
+    assert projected["verifier_verdict"] == verdict
+    assert projected["verifier"]["assertions"][0]["evidence_refs"] == [v.control["observed"]["evidence_ref"]]
+    assert v.grant["token"] not in json.dumps(projected)
 
 
 @pytest.mark.parametrize("mutation", ["foreign_ref", "stale_time", "wrong_entry", "changed_file"])

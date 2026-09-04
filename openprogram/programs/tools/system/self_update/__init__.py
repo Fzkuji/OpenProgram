@@ -385,29 +385,16 @@ def _status_update(
     *, update_id: str | None, req: Any, store: SelfUpdateStore
 ) -> dict[str, Any]:
     _require_local_owner(req)
+    from openprogram.self_update.projection import ProjectionAccessError, read_status
+    from openprogram.self_update.types import UpdateNotFoundError
     try:
-        record = _resolve_record(update_id, store)
-    except SelfUpdateError as exc:
-        raise SelfUpdateToolError(str(exc)) from exc
-    if record.request.session_id != req.session_id:
-        raise SelfUpdateToolError("self-update belongs to another origin session")
-    detail = record.state.detail
-    from openprogram.self_update.source_repair import read_result
-    from openprogram.self_update.next_candidate import summary
-    return {
-        "update_id": record.request.update_id,
-        "phase": record.state.phase.value,
-        "attempt": record.state.attempt,
-        "current_revision": detail.get("current_revision"),
-        "candidate_revision": record.request.candidate_sha,
-        "active_app": record.request.app_path,
-        "rollback_available": bool(detail.get("rollback_available", False)),
-        "verifier_verdict": detail.get("verifier_verdict"),
-        "changed_paths": list(record.request.changed_paths),
-        "updated_at": record.state.updated_at,
-        "source_repair_result": read_result(store, record),
-        "iteration": summary(store, record),
-    }
+        return read_status(store, session_id=req.session_id, update_id=update_id)
+    except ProjectionAccessError:
+        raise SelfUpdateToolError("self-update belongs to another origin session") from None
+    except UpdateNotFoundError:
+        raise SelfUpdateToolError("no matching self-update") from None
+    except (SelfUpdateError, ValueError, OSError, KeyError, TypeError):
+        raise SelfUpdateToolError("self-update state is unavailable or inconsistent") from None
 
 
 def _cancel_update(

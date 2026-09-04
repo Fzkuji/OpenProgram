@@ -58,6 +58,15 @@ def test_bounded_repair_submits_new_child_with_original_budget(diagnosis_environ
     assert child.request.iteration_policy == original.request.iteration_policy
     assert store.load(update_id) == original
     assert wait_until(lambda: child.request.update_id in launches, timeout=5)
+    from openprogram.self_update.projection import read_status
+    journal = store.root / update_id / "events.jsonl"
+    journal.write_bytes(b"".join(journal.read_bytes().splitlines(keepends=True)[:-1]))
+    before = journal.read_bytes(), journal.stat().st_mtime_ns
+    projected = read_status(store, session_id=child.request.session_id, update_id=child.request.update_id)
+    parent = read_status(store, session_id=original.request.session_id, update_id=update_id)
+    assert projected["root_id"] == update_id and projected["parent_id"] == update_id
+    assert parent["source_repair_result"]["candidate_sha"] == child.request.candidate_sha
+    assert (journal.read_bytes(), journal.stat().st_mtime_ns) == before
 
 
 @pytest.mark.parametrize("diagnosis_environment", [{"required_tests": ["python -c 'assert True'"]}], indirect=True)

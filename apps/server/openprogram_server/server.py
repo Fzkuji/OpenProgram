@@ -1881,6 +1881,9 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.webui.routes import running as _routes_running
     _routes_running.register(app)
 
+    from openprogram.webui.routes import self_updates as _routes_self_updates
+    _routes_self_updates.register(app)
+
     from openprogram.webui.routes import provider_login as _routes_provider_login
     _routes_provider_login.register(app)
 

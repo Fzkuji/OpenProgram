@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import asyncio
+import json
 from pathlib import Path
 import subprocess
 
@@ -114,6 +116,57 @@ def _prepare(
         manager=_Manager(worktree),
         store=store,
     )
+
+
+def test_public_status_does_not_create_an_absent_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = SelfUpdateStore(tmp_path / "absent")
+    request = _request()
+    monkeypatch.setattr(self_update_module, "_turn_context", lambda: (request, "turn-1_reply"))
+    monkeypatch.setattr(self_update_module, "SelfUpdateStore", lambda: store)
+
+    result = asyncio.run(self_update_module.self_update_status.execute(
+        "status-empty", {}, None, None,
+    ))
+
+    assert result.is_error
+    assert not store.root.exists(), "A status query must not create the update directory or lock"
+
+
+def test_public_status_projects_verified_runtime_not_unbound_detail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import time
+    from openprogram.self_update.recovery import SYSTEM_CHECKS
+
+    worktree, _base_sha, candidate_sha = _candidate(tmp_path)
+    store = SelfUpdateStore(tmp_path / "state")
+    prepared = _prepare(worktree, candidate_sha, store)
+    update_id = prepared["update_id"]
+    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+        store.transition(update_id, phase)
+    gate = dict(schema=1, candidate_sha=candidate_sha, attempt=1,
+                worker_pid=12345, verified_at=time.time(),
+                checks={name: True for name in SYSTEM_CHECKS})
+    state = store.transition(update_id, UpdatePhase.VERIFYING, detail={
+        "system_gate": gate, "current_revision": "3" * 40,
+    })
+    request = _request()
+    monkeypatch.setattr(self_update_module, "_turn_context", lambda: (request, "turn-1_reply"))
+    monkeypatch.setattr(self_update_module, "SelfUpdateStore", lambda: store)
+
+    result = asyncio.run(self_update_module.self_update_status.execute(
+        "status-verifying", {"update_id": update_id}, None, None,
+    ))
+    assert not result.is_error, result.content
+    status = json.loads(result.content[0].text)
+
+    assert status["candidate_revision"] == candidate_sha
+    assert status["last_verified_runtime"]["candidate_sha"] == candidate_sha
+    assert status["last_verified_runtime"]["verified_at"] == gate["verified_at"]
+    assert status["state_revision"] == state.revision
+    assert status["target_app"] == "/Applications/OpenProgram.app"
 
 
 def test_prepare_pins_git_derived_candidate_and_never_executes_it(tmp_path: Path) -> None:
@@ -335,7 +388,7 @@ def test_status_and_cancel_are_scoped_to_origin_session(tmp_path: Path) -> None:
     )
     assert status["phase"] == "preparing"
     assert status["candidate_revision"] == candidate_sha
-    assert status["active_app"] == "/Applications/OpenProgram.app"
+    assert status["target_app"] == "/Applications/OpenProgram.app"
     assert status["rollback_available"] is False
     assert status["verifier_verdict"] is None
 

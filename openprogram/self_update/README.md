@@ -20,6 +20,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`maintenance.py`** — Durable admission gate while an approved update waits for quiescence
 - **`next_candidate.py`** — Durable, evidence-bound submission of a repaired self-update candidate
 - **`owner_repair.py`** — Explicit, bounded owner recovery through the original trusted controller
+- **`projection.py`** — Read-only, session-scoped status shared by tools and user interfaces
 - **`recovery.py`** — Dispatch one frozen verifier Job after the supervisor releases system gates
 - **`repair_candidate.py`** — Apply bounded model edits and test a new isolated candidate without installing it
 - **`rollback_intent.py`** — Durable rollback intent shared by the controller and worker admission

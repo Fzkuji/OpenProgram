@@ -88,6 +88,18 @@ App 写权限的原生沙箱运行冻结测试。原 worktree 不变。默认只
 提交或测试。失败 worktree 和证据保留供检查。缺少冻结修正配置的旧请求不获得此能力。
 
 `self_update_status` 和 `self-update status --json` 包含 `source_repair_result`。
+聊天工具与需要 owner 认证的 Web 历史接口
+（`GET /api/self-updates?session_id=…`）和详情接口
+（`GET /api/self-updates/{update_id}?session_id=…`）使用同一份只读投影。
+历史包含已结束的 attempt，支持有上限的 `limit` 和 `cursor` 分页。
+`candidate_revision` 与 `target_app` 表示请求的安装目标；
+`last_verified_runtime` 包含最近一次匹配验证的 SHA、PID、时间和来源，
+没有对应证据时为 null，不表示 worker 仍在线。`state_revision` 是状态计数器，不是 Git revision。
+查询不初始化或修复更新状态，损坏状态返回错误，不显示为空历史。
+Running 无法读取更新快照时返回 `self_update_error`。
+投影不包含凭据、原始日志和配置；修正摘要包含状态及已生成的新 candidate SHA。
+这不替代 CLI 独立的恢复检查输出。
+
 `candidate_ready` 表示新 commit 与全部已配置测试通过校验；未配置必需测试时为
 `awaiting_tests`。测试缺失、失败或源码漂移记录 `failed`；取消与超时分别为
 `cancelled`、`expired`。这些状态均不代表已安装。

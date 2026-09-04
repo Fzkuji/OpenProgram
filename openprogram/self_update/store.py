@@ -40,6 +40,7 @@ from .types import (
 
 
 _process_lock = threading.RLock()
+READ_SCAN_LIMIT = 10_000
 
 
 class SelfUpdateStore:
@@ -291,49 +292,56 @@ class SelfUpdateStore:
         directory = self._update_dir(update_id)
         if not directory.is_dir():
             raise UpdateNotFoundError(f"update {update_id} does not exist")
-        request = UpdateRequest.from_dict(self._read_json(directory / "request.json"))
-        state = UpdateState.from_dict(self._read_json(directory / "state.json"))
+        if read_only:
+            self._private_directory(directory)
+        request = UpdateRequest.from_dict(self._read_json(directory / "request.json", read_only=read_only))
+        state = UpdateState.from_dict(self._read_json(directory / "state.json", read_only=read_only))
         if request.update_id != update_id or state.update_id != update_id:
             raise CorruptUpdateStateError("update id does not match its directory")
         record = UpdateRecord(request, state)
         self._reconcile_events_unlocked(record, read_only=read_only)
         return record
 
-    def _load_active_unlocked(self) -> UpdateRecord | None:
+    def _load_active_unlocked(self, *, read_only: bool = False) -> UpdateRecord | None:
         path = self.root / "active.json"
-        if not path.exists():
-            discovered = self._discover_nonterminal_unlocked()
+        if not path.exists() and not path.is_symlink():
+            discovered = self._discover_nonterminal_unlocked(read_only=read_only)
             if discovered is None:
                 return None
-            self._write_json(
-                path,
-                {"schema": SCHEMA_VERSION, "update_id": discovered.request.update_id},
-            )
+            if not read_only:
+                self._write_json(
+                    path,
+                    {"schema": SCHEMA_VERSION, "update_id": discovered.request.update_id},
+                )
             return discovered
-        data = self._read_json(path)
+        data = self._read_json(path, read_only=read_only)
         if set(data) != {"schema", "update_id"} or data.get("schema") != SCHEMA_VERSION:
             raise CorruptUpdateStateError("unsupported or malformed active schema")
         update_id = data.get("update_id")
         if not isinstance(update_id, str):
             raise CorruptUpdateStateError("active update_id must be a string")
         try:
-            record = self._load_unlocked(update_id)
+            record = self._load_unlocked(update_id, read_only=read_only)
         except (ValueError, UpdateNotFoundError) as exc:
             raise CorruptUpdateStateError(
                 "active.json points to an invalid or missing update"
             ) from exc
         if is_terminal(record.state.phase):
-            self._clear_active_unlocked(update_id)
+            if not read_only:
+                self._clear_active_unlocked(update_id)
             return None
         return record
 
-    def _discover_nonterminal_unlocked(self) -> UpdateRecord | None:
+    def _discover_nonterminal_unlocked(self, *, read_only: bool = False) -> UpdateRecord | None:
         records: list[UpdateRecord] = []
-        for directory in sorted(self.root.iterdir()):
+        entries = self.root.iterdir() if read_only else sorted(self.root.iterdir())
+        for index, directory in enumerate(entries):
+            if read_only and index >= READ_SCAN_LIMIT:
+                raise ConcurrentUpdateError("self-update history exceeds scan limit")
             if not directory.is_dir() or directory.name.startswith("."):
                 continue
             try:
-                record = self._load_unlocked(directory.name)
+                record = self._load_unlocked(directory.name, read_only=read_only)
             except UpdateNotFoundError:
                 continue
             if not is_terminal(record.state.phase):
@@ -345,7 +353,8 @@ class SelfUpdateStore:
     def _reconcile_events_unlocked(self, record: UpdateRecord, *, read_only: bool = False) -> None:
         path = self._events_path(record.request.update_id)
         try:
-            raw = path.read_text(encoding="utf-8")
+            raw = (self._read_private_text(path, limit=8_388_608) if read_only
+                   else path.read_text(encoding="utf-8"))
         except OSError as exc:
             raise CorruptUpdateStateError("cannot read events.jsonl") from exc
         lines = raw.splitlines()
@@ -508,9 +517,29 @@ class SelfUpdateStore:
         path.unlink()
         self._fsync_directory(self.root)
 
-    def _read_json(self, path: Path) -> dict[str, Any]:
+    @staticmethod
+    def _private_directory(path: Path) -> None:
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise CorruptUpdateStateError("self-update directory is not private")
+
+    @staticmethod
+    def _read_private_text(path: Path, *, limit: int = 2_097_152) -> str:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_mode & 0o077 or info.st_size > limit):
+                raise CorruptUpdateStateError("invalid private self-update file")
+            raw = handle.read(limit + 1)
+            if len(raw) > limit:
+                raise CorruptUpdateStateError("self-update file exceeds read limit")
+            return raw.decode("utf-8")
+
+    def _read_json(self, path: Path, *, read_only: bool = False) -> dict[str, Any]:
         try:
-            value = self._loads_json(path.read_text(encoding="utf-8"))
+            value = self._loads_json(self._read_private_text(path) if read_only
+                                     else path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise CorruptUpdateStateError(f"cannot read {path.name}") from exc
         if not isinstance(value, dict):
@@ -553,8 +582,12 @@ class SelfUpdateStore:
         if not read_only:
             self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
             os.chmod(self.root, 0o700)
+        else:
+            self._private_directory(self.root)
         lock_path = self.root / ".lock"
-        with _process_lock:
+        if not _process_lock.acquire(timeout=0.25 if read_only else -1):
+            raise ConcurrentUpdateError("self-update state is busy")
+        try:
             flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK
                      if read_only else os.O_RDWR | os.O_CREAT)
             descriptor = os.open(lock_path, flags, 0o600)
@@ -564,11 +597,16 @@ class SelfUpdateStore:
                     if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
                             or stat.S_IMODE(info.st_mode) != 0o600):
                         raise CorruptUpdateStateError("read-only update lock is not a private regular file")
-                file_lock.flock(descriptor, file_lock.LOCK_EX)
+                try:
+                    file_lock.flock(descriptor, file_lock.LOCK_EX | (file_lock.LOCK_NB if read_only else 0))
+                except BlockingIOError as exc:
+                    raise ConcurrentUpdateError("self-update state is busy") from exc
                 yield
             finally:
                 file_lock.flock(descriptor, file_lock.LOCK_UN)
                 os.close(descriptor)
+        finally:
+            _process_lock.release()
 
     @staticmethod
     def _fsync_directory(directory: Path) -> None:

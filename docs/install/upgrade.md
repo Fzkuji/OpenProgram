@@ -107,6 +107,20 @@ commits or tests. Failed worktrees and evidence remain available for inspection.
 Old requests without frozen repair configuration do not gain this capability.
 
 `self_update_status` and `self-update status --json` expose `source_repair_result`.
+The chat tool uses the same read-only projection as the owner-authenticated Web
+history (`GET /api/self-updates?session_id=…`) and detail
+(`GET /api/self-updates/{update_id}?session_id=…`) endpoints. History includes
+completed attempts and supports bounded `limit` and `cursor` pagination.
+`candidate_revision` and `target_app` describe the requested installation;
+`last_verified_runtime` contains the last matching verification's SHA, PID,
+timestamp and source, or is null when unknown. It does not prove the worker is
+still online. `state_revision` is a state counter, not a Git revision.
+Queries do not initialize or repair update state. Invalid state returns an
+error rather than an empty history. Running reports `self_update_error` if its
+update snapshot is unavailable. The projection excludes credentials, raw logs
+and configuration; repair summaries include status and the new candidate SHA
+when present. It does not replace the separate CLI recovery inspection output.
+
 `candidate_ready` means the new commit and all configured tests passed validation;
 `awaiting_tests` means no required tests were configured. Missing/failed tests or
 source drift produce `failed`; cancellation and expiry produce `cancelled` and

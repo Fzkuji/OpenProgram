@@ -53,7 +53,7 @@ def _config(store, record):
     return config
 
 
-def chain(store, record):
+def chain(store, record, *, read_only=False):
     """Read at most the three originally permitted attempts, root first."""
     records = [record]
     while True:
@@ -65,7 +65,7 @@ def chain(store, record):
             break
         if len(records) >= 3:
             raise ValueError("iteration ancestry exceeds budget")
-        parent = store._load_unlocked(_validate_update_id(config["parent_id"]))
+        parent = store._load_unlocked(_validate_update_id(config["parent_id"]), read_only=read_only)
         if config["parent_sha256"] != _digest(parent.request.to_dict()) or parent.state.attempt + 1 != current.state.attempt:
             raise ValueError("iteration parent changed")
         records.insert(0, parent)
@@ -435,10 +435,10 @@ def ensure_not_cancelled(store, record):
         raise ValueError("iteration was cancelled")
 
 
-def summary(store, record):
+def summary(store, record, *, read_only=False):
     if _config(store, record) is None:
         return None
-    records = chain(store, record)
+    records = chain(store, record, read_only=read_only)
     root = records[0]
     return dict(root_id=root.request.update_id, parent_id=_config(store, record)["parent_id"],
                 attempt=record.state.attempt, max_attempts=root.request.iteration_policy.max_attempts,

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import threading
+import time
+
+import pytest
 
 from openprogram.self_update import ActiveUpdateError, SelfUpdateStore, UpdateRequest
 
@@ -39,3 +43,29 @@ def test_concurrent_create_has_one_winner(tmp_path: Path) -> None:
     active = SelfUpdateStore(tmp_path).load_active()
     assert active is not None
     assert active.request.update_id in {"su_a", "su_b"}
+
+
+def test_reader_has_bounded_wait_for_writer(tmp_path):
+    from openprogram.self_update.projection import read_status
+    from openprogram.self_update.types import ConcurrentUpdateError
+
+    store = SelfUpdateStore(tmp_path / "updates")
+    store.create(_request("su_test"))
+    held, release = threading.Event(), threading.Event()
+
+    def writer():
+        with store._locked():
+            held.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    try:
+        assert held.wait(2)
+        started = time.monotonic()
+        with pytest.raises(ConcurrentUpdateError):
+            read_status(store, session_id="session-1")
+        assert time.monotonic() - started < 1
+    finally:
+        release.set()
+        thread.join(2)
