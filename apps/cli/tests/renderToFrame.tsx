@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Stream } from 'stream';
 import { renderSync } from '../src/runtime/index';
+import instances from '../src/runtime/ink/instances.js';
 
 /**
  * Minimal render harness for the vendored cell-grid runtime.
@@ -24,6 +25,7 @@ interface RenderResult {
 }
 
 interface UpdatingRenderResult extends RenderResult {
+  repaint: () => void;
   rerender: (node: ReactNode) => void;
   resize: (columns: number, rows?: number) => Promise<void>;
 }
@@ -122,6 +124,12 @@ const renderInternal = (node: ReactNode, keepMounted: boolean): UpdatingRenderRe
 
   return {
     frames,
+    repaint: () => withTerminalSize(columns, rows, () => {
+      const ink = instances.get(stdout);
+      ink?.pause();
+      ink?.repaint();
+      ink?.resume();
+    }),
     lastFrame: () => {
       const frame = frames.filter(hasContent).at(-1);
       return frame === undefined ? undefined : expandCursorForward(frame);

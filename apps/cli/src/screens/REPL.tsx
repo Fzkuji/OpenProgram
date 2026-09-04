@@ -6,6 +6,7 @@ import type { ScrollBoxHandle } from '../runtime/index';
 import { Shell, ModalHost, ToastHost } from '../ui/index.js';
 import { StatsEnvelope, ConnectionState } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
+import { GoalStatus } from '../components/GoalStatus.js';
 import { Messages } from '../components/Messages.js';
 import { Spinner } from '../components/Spinner.js';
 import { Turn } from '../components/Turn.js';
@@ -591,6 +592,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
       {/* Toasts overlay any open modal — shown above PromptInput so
           they don't get clipped by the bottom-anchored chrome. */}
       <ToastHost />
+      <GoalStatus client={client} sessionId={conversationId} />
       {pickerNode ? (
         pickerNode
       ) : (

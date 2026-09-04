@@ -96,6 +96,17 @@ Expand an execution record to inspect its LLM replies. The tree shows the
 stored prompt preview and actual output; an empty reply is labelled “No text
 output”. Copy includes the reply, including records using the older reply field.
 
+The TUI displays the current Goal above the prompt: status, phase, objective
+summary, checklist progress, and pending-question count. This read-only area
+does not replace the prompt or require an immediate answer. Use `/goal` for
+full details and controls. Completed Goals leave this area; their execution
+results remain in the conversation history.
+
+On session entry and reconnection, the TUI reads the saved Goal and applies
+live updates in version order. While offline, it retains the last confirmed
+snapshot and labels it as offline. A failed refresh is shown explicitly; it
+does not clear the Goal or resume execution.
+
 The same operations are available in the TUI:
 
 ```text
