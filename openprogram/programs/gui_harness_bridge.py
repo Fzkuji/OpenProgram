@@ -1,6 +1,7 @@
 """Optional adapter from the installed GUI Agent Harness to web_use."""
 from __future__ import annotations
 
+import inspect
 from typing import Callable
 
 DEFAULT_MAX_STEPS = 150
@@ -69,8 +70,9 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 "advanced": True,
             },
             "surface": {
-                "description": "Execute on the desktop or the selected built-in browser Page",
-                "options": ["desktop", "browser"],
+                "description": "Legacy capability preference",
+                "hidden": True,
+                "advanced": True,
             },
             "backend": {
                 "description": "Optional built-in Page web_use backend",
@@ -86,6 +88,11 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 "hidden": True,
                 "advanced": True,
             },
+            "vm_url": {
+                "description": "Optional OSWorld-compatible VM endpoint",
+                "hidden": True,
+                "advanced": True,
+            },
             "allow_general": {"hidden": True},
             "runtime": {"hidden": True},
         },
@@ -96,12 +103,6 @@ def install_gui_harness_web_use(original: Callable | None = None):
                     "type": "string",
                     "description": "What to do",
                 },
-                "surface": {
-                    "type": "string",
-                    "enum": ["desktop", "browser"],
-                    "description": "Use browser for OpenProgram's selected built-in Page",
-                    "default": "desktop",
-                },
             },
             "required": ["task"],
         },
@@ -110,13 +111,14 @@ def install_gui_harness_web_use(original: Callable | None = None):
         task: str,
         max_steps: int | None = None,
         app_name: str = "desktop",
-        surface: str = "desktop",
+        surface: str = "",
         backend: str = "",
         max_seconds: float | None = None,
+        vm_url: str = "",
         runtime=None,
         allow_general: bool = False,
     ) -> dict:
-        """Run the installed GUI harness or its exact-Page web_use mode."""
+        """Run the unified Harness capability loop."""
         if max_steps is None:
             steps: int | None = DEFAULT_MAX_STEPS
         else:
@@ -127,39 +129,42 @@ def install_gui_harness_web_use(original: Callable | None = None):
             if max_seconds is None or float(max_seconds) <= 0
             else float(max_seconds)
         )
-        selected_surface = str(surface or "desktop").strip().lower()
-        if selected_surface not in {"desktop", "browser"}:
+        selected_surface = str(surface or "").strip().lower()
+        if selected_surface not in {"", "desktop", "browser", "vm"}:
             return _normalize_gui_result({
                 "status": "failed",
                 "reason_code": "invalid_surface",
                 "summary": f"Unknown GUI surface: {surface}",
             })
-        # ``surface`` is the public routing key. An explicit backend keeps
-        # compatibility with callers that predate the surface parameter.
-        browser_mode = bool(backend) or selected_surface == "browser"
-        if not browser_mode:
-            result = original_impl(
-                task=task,
-                max_steps=steps if steps is not None else 0,
-                app_name=app_name,
-                runtime=runtime,
-                allow_general=allow_general,
-            )
-            return _normalize_gui_result(result)
-        from openprogram.programs.workflow.browser import (
-            _run_browser_task_commands,
-        )
-        from openprogram.programs.workflow.browser.web_use_runtime import (
-            DEFAULT_BACKEND,
-        )
-        selected_backend = backend or DEFAULT_BACKEND
-        return _normalize_gui_result(_run_browser_task_commands(
-            task=task,
-            backend=selected_backend,
-            max_steps=steps,
-            max_seconds=seconds,
-            runtime=runtime,
-        ))
+        preferred = {
+            "desktop": "computer_use",
+            "browser": "browser_use",
+            "vm": "vm_use",
+        }.get(selected_surface, "")
+        if backend and not preferred:
+            preferred = "browser_use"
+        call_args = {
+            "task": task,
+            "max_steps": steps if steps is not None else 0,
+            "app_name": app_name,
+            "max_seconds": seconds,
+            "runtime": runtime,
+            "allow_general": allow_general,
+            "browser_backend": backend,
+            "vm_url": vm_url,
+            "preferred_capability": preferred,
+        }
+        signature = inspect.signature(original_impl)
+        if not any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        ):
+            call_args = {
+                key: value
+                for key, value in call_args.items()
+                if key in signature.parameters
+            }
+        return _normalize_gui_result(original_impl(**call_args))
 
     # ``programs run`` resolves a registered function's module and then looks
     # up the public function name on that module.  The wrapper is defined here

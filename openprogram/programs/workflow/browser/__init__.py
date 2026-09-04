@@ -14,6 +14,7 @@ import uuid
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+from openprogram.agentic_programming import agent
 from openprogram.agentic_programming.function import CancelledError, agentic_function
 from openprogram.programs import ToolReturn
 from openprogram.programs._runtime import function
@@ -1490,16 +1491,16 @@ def _run_browser_task_commands(
                 pending_screenshot_result = None
             seq_before = last["seq"]
             try:
-                # Keep this deferred browser tool loop on Runtime until the
-                # agent() migration provides the same forced-call contract.
-                reply = runtime.exec(
-                    content=content,
+                reply = agent(
+                    content,
                     tools=[action_tool],
                     tool_choice="auto",
                     parallel_tool_calls=False,
                     max_iterations=1,
                     timeout_s=timeout_s,
                     execution_kind="browser_agent",
+                    runtime=runtime,
+                    return_raw=True,
                 )
             finally:
                 if sent_screenshot:
@@ -2087,16 +2088,16 @@ def _run_browser_task(
                     pending_screenshot_result = None
                 action_seq_before = getattr(controller, "_action_seq", 0)
                 try:
-                    # Keep this deferred browser tool loop on Runtime until the
-                    # agent() migration provides the same forced-call contract.
-                    reply = runtime.exec(
-                        content=content,
+                    reply = agent(
+                        content,
                         tools=[action_tool],
                         tool_choice={"type": "function", "name": "browser_page"},
                         parallel_tool_calls=False,
                         max_iterations=1,
                         timeout_s=max(1, remaining),
                         execution_kind="browser_agent",
+                        runtime=runtime,
+                        return_raw=True,
                     )
                 finally:
                     if image_was_sent:

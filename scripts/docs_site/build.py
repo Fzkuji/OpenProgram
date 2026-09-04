@@ -563,8 +563,25 @@ def _build_into_out_root() -> int:
         if p.zh_src is not None and p.zh_out is not None:
             _SLUG_DEDUP = {}
             zh_text = p.zh_src.read_text(encoding="utf-8", errors="replace")
-            zh_body = relink_internal(apply_callouts(md.render(zh_text)), p.zh_out.parent)
-            zh_toc = extract_toc(zh_body)
+            if p.zh_src.suffix == ".md":
+                zh_body = relink_internal(
+                    apply_callouts(md.render(zh_text)), p.zh_out.parent
+                )
+                zh_toc = extract_toc(zh_body)
+            elif is_full_page(zh_text):
+                zh_raw_rel = p.zh_out.with_suffix(".raw.html")
+                zh_raw_path = OUT_ROOT / zh_raw_rel
+                zh_raw_path.parent.mkdir(parents=True, exist_ok=True)
+                zh_raw_path.write_text(zh_text + _ESC_FORWARD, encoding="utf-8")
+                zh_body = embed_html(
+                    DEPLOY_BASE + str(zh_raw_rel).replace("\\", "/")
+                )
+                zh_toc = ""
+            else:
+                scope = re.sub(r"[^\w]+", "-", str(p.zh_out.with_suffix("")))
+                zh_body = render_html_fragment(zh_text, scope)
+                zh_body = relink_internal(zh_body, p.zh_out.parent)
+                zh_toc = extract_toc(zh_body)
             zh_back = DEPLOY_BASE + str(p.out).replace("\\", "/")
             zh_full = render_page(
                 title=p.title_zh or p.title, body_html=zh_body, nav_html=nav_html,

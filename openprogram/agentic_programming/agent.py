@@ -14,10 +14,14 @@ def agent(
     tools: list[Any] | None = None,
     tools_deny: list[str] | None = None,
     response_format: dict[str, Any] | JsonSchemaOutput | None = None,
-    execution_kind: str = "agent",
     max_iterations: int = 20,
     timeout_s: float | None = None,
-) -> str | dict[str, Any] | list[Any] | int | float | bool | None:
+    tool_choice: Any = None,
+    parallel_tool_calls: bool | None = None,
+    execution_kind: str = "agent",
+    runtime=None,
+    return_raw: bool = False,
+) -> Any:
     """Run a tool loop: model calls tools, sees results, continues until done.
 
     Args:
@@ -36,7 +40,8 @@ def agent(
     """
     from openprogram.agentic_programming.function import _current_runtime
 
-    runtime = _current_runtime.get(None)
+    if runtime is None:
+        runtime = _current_runtime.get(None)
     if runtime is None:
         raise RuntimeError(
             "agent() requires an ambient Runtime; call it inside an "
@@ -63,9 +68,15 @@ def agent(
         exec_options["response_format"] = response_format
     if tools_deny is not None:
         exec_options["tools_deny"] = tools_deny
+    if tool_choice is not None:
+        exec_options["tool_choice"] = tool_choice
+    if parallel_tool_calls is not None:
+        exec_options["parallel_tool_calls"] = parallel_tool_calls
     result = runtime.exec(**exec_options)
 
     if response_format is not None:
+        return result
+    if return_raw:
         return result
 
     # Preserve the legacy text result contract for unstructured calls.
