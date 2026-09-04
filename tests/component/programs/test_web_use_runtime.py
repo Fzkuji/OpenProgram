@@ -1163,7 +1163,6 @@ def test_sync_mcp_client_cleans_thread_when_start_fails(monkeypatch):
 
 def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     from openprogram.programs import _runtime
-    from openprogram.programs.workflow import browser as browser_module
     from openprogram.programs.gui_harness_bridge import (
         install_gui_harness_web_use,
     )
@@ -1172,16 +1171,7 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
 
     def original(**kwargs):
         calls.append(("original", kwargs))
-        return {"mode": "desktop"}
-
-    monkeypatch.setattr(
-        browser_module,
-        "_run_browser_task_commands",
-        lambda **kwargs: calls.append(("web_use", kwargs)) or {
-            "status": "succeeded", "mode": "web_use",
-            "backend": kwargs["backend"],
-        },
-    )
+        return {"status": "succeeded", "mode": "unified"}
     wrapped = install_gui_harness_web_use(original)
     tool = _runtime.get("gui_agent")
     assert tool is not None
@@ -1193,8 +1183,9 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     assert result["status"] == "succeeded"
     assert result["success"] is True
     assert result["infeasible_declared"] is False
-    assert result["backend"] == "chrome_devtools_mcp"
-    assert calls[0][0] == "web_use"
+    assert calls[0][0] == "original"
+    assert calls[0][1]["browser_backend"] == "chrome_devtools_mcp"
+    assert calls[0][1]["preferred_capability"] == "browser_use"
 
 
 def test_programs_cli_resolves_registered_gui_agent(monkeypatch, capsys):
@@ -1228,8 +1219,6 @@ def test_programs_cli_resolves_registered_gui_agent(monkeypatch, capsys):
 
 
 def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
-    from openprogram.programs.workflow import browser as browser_module
-    from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
     from openprogram.programs.gui_harness_bridge import (
         DEFAULT_MAX_STEPS,
         install_gui_harness_web_use,
@@ -1237,32 +1226,29 @@ def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
 
     calls = []
 
-    def original(**_kwargs):
-        raise AssertionError("browser surface must not call desktop harness")
-
-    monkeypatch.setattr(
-        browser_module,
-        "_run_browser_task_commands",
-        lambda **kwargs: calls.append(kwargs) or {
+    def original(**kwargs):
+        calls.append(kwargs)
+        return {
             "status": "succeeded",
             "reason_code": "verified",
             "summary": "done",
-            "backend": kwargs["backend"],
-        },
-    )
+        }
 
     runtime = object()
     wrapped = install_gui_harness_web_use(original)
     result = wrapped(task="inspect the page", surface="browser", runtime=runtime)
 
     assert result["success"] is True
-    assert result["backend"] == DEFAULT_BACKEND
     assert calls == [{
         "task": "inspect the page",
-        "backend": DEFAULT_BACKEND,
         "max_steps": DEFAULT_MAX_STEPS,
+        "app_name": "desktop",
         "max_seconds": None,
         "runtime": runtime,
+        "allow_general": False,
+        "browser_backend": "",
+        "vm_url": "",
+        "preferred_capability": "browser_use",
     }]
 
 
@@ -1361,7 +1347,7 @@ def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
         ({"ok": True}, "cancel", True, None, None),
     ],
 )
-def test_registered_gui_agent_without_page_opens_background_page(
+def test_browser_capability_without_page_opens_background_page(
     monkeypatch, close_result, runtime_behavior, teardown_raises,
     expected_status, expected_success,
 ):
@@ -1371,9 +1357,6 @@ def test_registered_gui_agent_without_page_opens_background_page(
     from openprogram.programs.workflow import browser as browser_module
     from openprogram.programs.workflow.browser import web_use_runtime
     from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
-    from openprogram.programs.gui_harness_bridge import (
-        install_gui_harness_web_use,
-    )
     from openprogram.providers.utils.errors import ExecInterrupt
 
     context = {
@@ -1479,14 +1462,11 @@ def test_registered_gui_agent_without_page_opens_background_page(
         lambda value: closed.append(value) or close_result,
     )
 
-    wrapped = install_gui_harness_web_use(
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("browser surface must not call desktop harness")
-        )
-    )
     call_kwargs = {
         "task": "inspect the page",
-        "surface": "browser",
+        "backend": DEFAULT_BACKEND,
+        "max_steps": 150,
+        "max_seconds": None,
         "runtime": _Runtime(),
     }
     if runtime_behavior in {"screenshot_timeout", "timeout"}:
@@ -1522,14 +1502,13 @@ def test_registered_gui_agent_without_page_opens_background_page(
             else RuntimeError
         )
         with pytest.raises(expected_error, match="cancelled|model transport"):
-            wrapped(**call_kwargs)
+            browser_module._run_browser_task_commands(**call_kwargs)
         result = None
     else:
-        result = wrapped(**call_kwargs)
+        result = browser_module._run_browser_task_commands(**call_kwargs)
 
     if result is not None:
         assert result["status"] == expected_status
-        assert result["success"] is expected_success
         assert result["backend"] == DEFAULT_BACKEND
     assert opens == [(
         "https://www.google.com/",
@@ -1539,7 +1518,6 @@ def test_registered_gui_agent_without_page_opens_background_page(
     assert context in released
     if expected_success is False:
         assert result["reason_code"] == "page_cleanup_failed"
-        assert result["infeasible_declared"] is True
         previous_reason = {
             "verify": "verified",
             "miss": "tool_not_executed",
@@ -1560,12 +1538,10 @@ def test_registered_gui_agent_without_page_opens_background_page(
         ]
 
 
-def test_registered_gui_agent_reuses_existing_origin_page(monkeypatch):
+def test_browser_capability_reuses_existing_origin_page(monkeypatch):
     from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as browser_module
     from openprogram.programs.workflow.browser import web_use_runtime
-    from openprogram.programs.gui_harness_bridge import (
-        install_gui_harness_web_use,
-    )
 
     window_context = surface_context.window_context("window-1")
     existing_context = {
@@ -1649,16 +1625,12 @@ def test_registered_gui_agent_reuses_existing_origin_page(monkeypatch):
         lambda *_args, **_kwargs: opened.append((_args, _kwargs)) or {},
     )
 
-    result = install_gui_harness_web_use(
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("browser surface must not call desktop harness")
-        )
-    )(
-        task="inspect the page", surface="browser", runtime=_Runtime(),
+    result = browser_module._run_browser_task_commands(
+        task="inspect the page", backend="playwright_mcp",
+        max_steps=150, max_seconds=None, runtime=_Runtime(),
     )
 
     assert result["status"] == "succeeded"
-    assert result["success"] is True
     assert captures[0] is window_context
     assert opened == []
 
@@ -1704,7 +1676,7 @@ def test_gui_agent_inventory_failure_does_not_open_another_page(monkeypatch):
 
 def test_gui_agent_preserves_background_open_timeout_handoff(monkeypatch):
     from openprogram.agent import surface_context
-    from openprogram.programs.gui_harness_bridge import install_gui_harness_web_use
+    from openprogram.programs.workflow import browser as browser_module
     from openprogram.programs.workflow.browser import web_use_runtime
     from openprogram.webui.ws_actions import webtab
 
@@ -1729,19 +1701,12 @@ def test_gui_agent_preserves_background_open_timeout_handoff(monkeypatch):
         "error": "timeout: no desktop shell replied within 15s",
     })
 
-    wrapped = install_gui_harness_web_use(
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("browser surface must not call desktop harness")
-        )
-    )
-    result = wrapped(
-        task="inspect", surface="browser", max_steps=1, max_seconds=10,
+    result = browser_module._run_browser_task_commands(
+        task="inspect", backend="playwright_mcp", max_steps=1, max_seconds=10,
         runtime=SimpleNamespace(),
     )
 
     assert result["status"] == "infeasible"
-    assert result["success"] is False
-    assert result["infeasible_declared"] is True
     assert result["reason_code"] == "page_cleanup_failed"
     assert "Close the remaining background Page" in result[
         "handoff_instruction"
@@ -1791,13 +1756,11 @@ def test_gui_agent_does_not_release_a_borrowed_empty_context(monkeypatch):
     assert released == []
 
 
-def test_registered_gui_agent_without_desktop_returns_infeasible_handoff(
+def test_browser_capability_without_desktop_returns_infeasible_handoff(
     monkeypatch,
 ):
     from openprogram.agent import surface_context
-    from openprogram.programs.gui_harness_bridge import (
-        install_gui_harness_web_use,
-    )
+    from openprogram.programs.workflow import browser as browser_module
 
     monkeypatch.setattr(
         surface_context,
@@ -1816,19 +1779,12 @@ def test_registered_gui_agent_without_desktop_returns_infeasible_handoff(
             "error": "OpenProgram desktop app is not connected.",
         },
     )
-    wrapped = install_gui_harness_web_use(
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("browser surface must not call desktop harness")
-        )
-    )
-
-    result = wrapped(
-        task="inspect the page", surface="browser", runtime=SimpleNamespace(),
+    result = browser_module._run_browser_task_commands(
+        task="inspect the page", backend="playwright_mcp",
+        max_steps=150, max_seconds=None, runtime=SimpleNamespace(),
     )
 
     assert result["status"] == "infeasible"
-    assert result["success"] is False
-    assert result["infeasible_declared"] is True
     assert result["reason_code"] == "desktop_unavailable"
     assert "Launch or reconnect" in result["handoff_instruction"]
     assert opens == []

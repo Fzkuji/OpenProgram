@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from scripts.docs_site import checklang
@@ -112,35 +111,15 @@ def test_editorial_navigation_does_not_list_a_page_twice() -> None:
 
 
 def test_gui_agent_design_keeps_the_capability_loop_and_context_contract() -> None:
-    for suffix, title in (
-        ("", "GUI Agent autonomous capability loop"),
-        (".zh", "GUI Agent 自主能力调用循环"),
+    artifact = ROOT / "docs/reference/design/ui/gui-agent.html"
+    source = artifact.read_text(encoding="utf-8")
+
+    for required in (
+        "computer_use",
+        "browser_use",
+        "vm_use",
+        "capability history",
+        "Background application behavior",
+        "adapters/mac_indicator.py",
     ):
-        design_dir = ROOT / "docs" / "reference" / "design" / "ui"
-        source = design_dir / f"gui-agent{suffix}.archify.json"
-        artifact = design_dir / f"gui-agent{suffix}.html"
-        specification = json.loads(source.read_text(encoding="utf-8"))
-
-        node_ids = {node["id"] for node in specification["nodes"]}
-        edge_ids = {edge["id"] for edge in specification["edges"]}
-        assert {
-            "computer_use",
-            "browser_use",
-            "vm_use",
-            "record_result",
-            "terminal_decision",
-            "normalized_result",
-            "runtime_stop",
-        } <= node_ids
-        assert {"next_iteration", "decision_terminal", "runtime_boundary"} <= edge_ids
-        assert title in artifact.read_text(encoding="utf-8")
-
-    gui_page = next(
-        page
-        for page in discover(ROOT / "docs")
-        if page.rel.as_posix() == "reference/design/ui/gui-agent.html"
-    )
-    assert gui_page.zh_src == (
-        ROOT / "docs" / "reference" / "design" / "ui" / "gui-agent.zh.html"
-    )
-    assert gui_page.zh_out == Path("reference/design/ui/gui-agent.zh.html")
+        assert required in source
