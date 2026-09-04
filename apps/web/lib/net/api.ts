@@ -131,7 +131,7 @@ export const api = {
     sessionId: string,
     body: { action: string; prompt?: string; [key: string]: unknown },
   ) =>
-    jsonFetch<{ goal: Record<string, unknown>; invoke?: { name: string; kwargs: Record<string, unknown> } }>(
+    jsonFetch<{ goal: Record<string, unknown>; invoke?: { name: string; kwargs: Record<string, unknown> }; resume_error?: string }>(
       `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
       { method: "POST", body: JSON.stringify(body) },
     ),

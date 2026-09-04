@@ -17,7 +17,9 @@ def register(app):
         goal = goal_module.load_goal(session_id)
         if not goal:
             return JSONResponse(content={"error": "GoalNotFound"}, status_code=404)
-        return JSONResponse(content={"goal": goal})
+        return JSONResponse(content={
+            "goal": goal, "execution": goal_module.goal_execution_state(goal, session_id),
+        })
 
     @app.post("/api/sessions/{session_id}/goal")
     async def mutate_goal(session_id: str, body: dict = None):
@@ -30,11 +32,12 @@ def register(app):
                 return JSONResponse(content={"error": "GoalNotResumable"}, status_code=409)
             try:
                 goal_module.check_goal_preconditions(goal, payload.get("expected"))
+                invocation = goal_module._resume_invocation(goal, session_id)
             except ValueError as exc:
                 return JSONResponse(content={"error": str(exc)}, status_code=409)
             return JSONResponse(content={
                 "goal": goal,
-                "invoke": goal_module._resume_invocation(goal),
+                "invoke": invocation,
             })
         try:
             goal = goal_module.apply_goal_action(
@@ -50,5 +53,8 @@ def register(app):
             and goal.get("status") == "paused"
             and goal.get("phase") == "answer_received"
         ):
-            response["invoke"] = goal_module._resume_invocation(goal)
+            try:
+                response["invoke"] = goal_module._resume_invocation(goal, session_id)
+            except goal_module.GoalConflictError as exc:
+                response["resume_error"] = str(exc)
         return JSONResponse(content=response)

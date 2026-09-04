@@ -255,6 +255,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
           const next = { ...current }; delete next[String(values.question_id)]; return next;
         });
       }
+      if (result.resume_error) throw new Error(`${text("Answer saved.", "回答已保存。 ")} ${result.resume_error}`);
       if ((action === "resume" || action === "answer") && result.invoke && !unsaved) {
         const response = await api.runFunction(result.invoke.name, { ...result.invoke.kwargs, session_id: sessionId });
         if (response.error) throw new Error(response.error);

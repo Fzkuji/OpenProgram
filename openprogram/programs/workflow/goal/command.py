@@ -28,7 +28,8 @@ def _cancel_execution(session_id: str, goal: dict) -> None:
         pass
 
 
-def _resume_invocation(goal: dict) -> dict:
+def _resume_invocation(goal: dict, session_id: str = "") -> dict:
+    _goal.require_goal_execution_finished(goal, session_id)
     return {
         "name": "goal",
         "kwargs": {
@@ -209,7 +210,7 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
     """Report unavailable storage without interpreting it as an absent Goal."""
     try:
         return _handle_goal_command(session_id, raw_args)
-    except _goal.GoalStateUnavailable as exc:
+    except (_goal.GoalStateUnavailable, _goal.GoalConflictError) as exc:
         return {"text": str(exc), "send_text": None}
 
 
@@ -224,7 +225,7 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
     args = (raw_args or "").strip()
 
     if not args:
-        return {"text": _goal._status_text(_goal.load_goal(session_id)),
+        return {"text": _goal._status_text(_goal.load_goal(session_id), session_id),
                 "send_text": None}
 
     head = args.split()[0].lower()
@@ -274,7 +275,7 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
         return {
             "text": "Resuming Goal from its latest checkpoint.",
             "send_text": None,
-            "invoke": _resume_invocation(goal),
+            "invoke": _resume_invocation(goal, session_id),
         }
     if head == "answer":
         answer_args = args[len(args.split()[0]):].strip()
@@ -298,7 +299,10 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
             "send_text": None,
         }
         if answered.get("status") == "paused" and answered.get("phase") == "answer_received":
-            result["invoke"] = _resume_invocation(answered)
+            try:
+                result["invoke"] = _resume_invocation(answered, session_id)
+            except _goal.GoalConflictError as exc:
+                result["text"] = f"Goal answer saved. {exc}"
         elif answered.get("status") == "paused":
             result["text"] = "Goal answer saved; the user-paused Goal remains paused."
         else:
@@ -335,7 +339,7 @@ def _command_options(parts, allowed):
     return options
 
 
-def _status_text(goal: Optional[dict]) -> str:
+def _status_text(goal: Optional[dict], session_id: str = "") -> str:
     if not goal:
         return "No goal set. /goal <prompt> to set one."
     cap = goal.get("max_turns")
@@ -346,6 +350,12 @@ def _status_text(goal: Optional[dict]) -> str:
         + (f"/{int(cap)}" if cap else ""),
     ]
     usage = goal.get("usage") or {}
+    observed = _goal.goal_execution_state(goal, session_id)
+    lines.append(
+        "  execution: untracked; controller ownership is checked on entry"
+        if observed["status"] == "untracked" else
+        f"  execution: {observed['status']} · stop confirmed: {observed['finished'] is True}"
+    )
     budget = goal.get("budget") or {}
     lines.append("  limits: " + ", ".join(
         f"{key}={budget.get(key) if budget.get(key) is not None else 'unlimited'}"

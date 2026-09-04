@@ -250,6 +250,27 @@ test("a conflict fetches the latest Goal without replacing the local draft", asy
   } finally { api.mutateGoal = mutate; api.getGoal = get; await view.close(); }
 });
 
+test("a saved answer reports an unfinished previous execution without starting work", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(1, "waiting_user"), questions: [
+    { id: "scope", prompt: "Scope?", status: "pending" },
+  ] };
+  const mutate = api.mutateGoal;
+  const run = api.runFunction;
+  let runs = 0;
+  api.mutateGoal = async () => ({ goal: snapshot(2, "paused"), resume_error: "Previous Goal execution is cancelling" });
+  api.runFunction = async () => { runs++; return {}; };
+  const view = await mount();
+  try {
+    await view.open();
+    await typeInto(view.host.querySelector('[aria-label="Answer: Scope?"]'), "Editing");
+    await view.click("Answer and resume");
+    assert.equal(runs, 0);
+    assert.match(view.host.textContent, /Answer saved.*Previous Goal execution is cancelling/);
+    assert.equal(runtimeState.conversations.s1.goal.status, "paused");
+  } finally { api.mutateGoal = mutate; api.runFunction = run; await view.close(); }
+});
+
 test("ending a Goal requires explicit confirmation", async () => {
   reset();
   const mutate = api.mutateGoal;

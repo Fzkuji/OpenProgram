@@ -82,6 +82,10 @@ from openprogram.programs.workflow.goal.notices import (  # noqa: F401
     _emit_goal_notice,
     _finish,
 )
+from openprogram.programs.workflow.goal.execution import (  # noqa: F401
+    goal_execution_state,
+    require_goal_execution_finished,
+)
 from openprogram.programs.workflow.goal.refinement import (  # noqa: F401
     REFINE_TOOLS,
     _parse_refinement,

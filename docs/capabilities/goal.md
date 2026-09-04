@@ -136,6 +136,19 @@ request resume again from its current state.
 
 ## Waiting and restart recovery
 
+Saving a Goal pause request does not prove that its current execution has
+stopped. Resume checks the linked execution before returning an invocation
+and checks again at the actual Goal entry. An unavailable execution record,
+a nonterminal execution, or an active descendant prevents a new run. `/goal`
+reports the execution observation separately from the Goal status.
+If an answer is saved while the old execution is still stopping, it remains
+saved; the interface explains why automatic resume did not start.
+
+Script-only calls without an execution record still use the cross-process
+Goal controller lock. Sequential calls inside the same running parent
+execution can resume after the previous Goal call returns, but this exception
+does not bypass a user pause or edit.
+
 Storage errors are not treated as a missing Goal. If its saved state cannot
 be read, controls report that the state is unavailable and do not start or
 resume work. The Goal API returns HTTP 503, not 404. A failed final save does

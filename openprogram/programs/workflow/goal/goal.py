@@ -116,6 +116,10 @@ def goal(
         _goal.check_goal_preconditions(stored, expected_goal)
     if stored and stored.get("status") not in _goal.RESUMABLE_STATUSES:
         raise ValueError(f"Goal in status {stored.get('status')!r} cannot resume")
+    if stored:
+        _goal.require_goal_execution_finished(
+            stored, sid, current_execution_id=execution_id,
+        )
 
     configured_limit = _goal.default_max_turns() if max_rounds is None else max_rounds
     round_limit = _positive_int(configured_limit, name="max_rounds")

@@ -13,6 +13,14 @@ def action_goal(tmp_path, monkeypatch):
     package = importlib.import_module("openprogram.programs.workflow.goal")
     db = SessionDB(tmp_path / "sessions")
     db.create_session("actions", "main")
+    from openprogram.execution.store import ExecutionStore
+    from openprogram.execution.model import ExecutionStatus
+    executions = ExecutionStore(tmp_path / "executions.db")
+    revision = executions.create_revision(manifest={"entrypoint": "goal"})
+    prior = executions.create_execution(execution_id="exec-a", session_id="actions", revision_id=revision.revision_id)
+    prior = executions.transition_execution(prior.execution_id, expected_version=prior.status_version, target=ExecutionStatus.CANCELLING)
+    executions.transition_execution(prior.execution_id, expected_version=prior.status_version, target=ExecutionStatus.CANCELLED)
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: executions)
     monkeypatch.setattr(package, "_db", lambda: db)
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
     monkeypatch.setattr(package, "_emit_goal_update", lambda *_a: None)

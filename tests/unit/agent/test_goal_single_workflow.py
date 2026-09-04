@@ -8,7 +8,7 @@ import pytest
 
 @pytest.mark.parametrize("resume", [False, True])
 @pytest.mark.parametrize("owner", ["exec_goal_owner", None])
-def test_goal_records_execution_owner_not_function_call(monkeypatch, resume, owner):
+def test_goal_records_execution_owner_not_function_call(tmp_path, monkeypatch, resume, owner):
     goal_pkg = importlib.import_module("openprogram.programs.workflow.goal")
     goal_module = importlib.import_module("openprogram.programs.workflow.goal.goal")
     function_module = importlib.import_module("openprogram.agentic_programming.function")
@@ -19,6 +19,16 @@ def test_goal_records_execution_owner_not_function_call(monkeypatch, resume, own
     monkeypatch.setattr(function_module, "current_call_id", lambda: "function-node")
     previous = {"status": "paused", "text": "test", "goal_id": "g", "run_id": "old",
                 "execution_id": "exec_old_owner"}
+    from openprogram.execution.store import ExecutionStore
+    from openprogram.execution.model import ExecutionStatus
+    from openprogram.agent.session_db import SessionDB
+    executions = ExecutionStore(tmp_path / "executions.db")
+    revision = executions.create_revision(manifest={"entrypoint": "goal"})
+    prior = executions.create_execution(execution_id="exec_old_owner", session_id="test-owner", revision_id=revision.revision_id)
+    prior = executions.transition_execution(prior.execution_id, expected_version=prior.status_version, target=ExecutionStatus.CANCELLING)
+    executions.transition_execution(prior.execution_id, expected_version=prior.status_version, target=ExecutionStatus.CANCELLED)
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: executions)
+    monkeypatch.setattr(goal_pkg, "_db", lambda: SessionDB(tmp_path / "sessions"))
     monkeypatch.setattr(goal_pkg, "load_goal", lambda _sid: previous)
     monkeypatch.setattr(function_module, "current_session_id", lambda: "test-owner")
     monkeypatch.setattr(goal_pkg, "reset_goal_usage_cursor", lambda *_a: None)
