@@ -7,10 +7,12 @@ import json
 import os
 from pathlib import Path
 import shlex
+import stat
 import subprocess
 import time
 
 from openprogram.self_update.store import SelfUpdateStore
+from openprogram.self_update.types import TERMINAL_PHASES
 from openprogram.store.session.git_session import atomic_write_text
 
 
@@ -64,42 +66,51 @@ def _controller_body(update_id: str, root: Path, installer_sha256: str, python: 
     return "#!/bin/sh\nset -eu\nexec " + " ".join(map(shlex.quote, arguments)) + "\n"
 
 
+def _ready_pid(update_dir: Path, update_id: str, installer_sha256: str) -> int | None:
+    try:
+        descriptor = os.open(update_dir / "supervisor.ready", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None
+            value = json.loads(handle.read(4097))
+        if (
+            isinstance(value, dict) and value.get("schema") == 1
+            and value.get("update_id") == update_id
+            and value.get("installer_sha256") == installer_sha256
+            and type(value.get("pid")) is int and value["pid"] > 0
+        ):
+            return value["pid"]
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
 def _wait_ready(
     update_dir: Path,
     update_id: str,
     installer_sha256: str,
+    expected_pid: int,
     timeout: float = 5.0,
 ) -> bool:
-    deadline = time.time() + timeout
-    marker = update_dir / "supervisor.ready"
-    while time.time() < deadline:
-        if marker.is_file() and not marker.is_symlink():
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _ready_pid(update_dir, update_id, installer_sha256) == expected_pid:
             try:
-                value = json.loads(marker.read_text(encoding="utf-8"))
-                pid = value.get("pid") if isinstance(value, dict) else None
-                if (
-                    isinstance(value, dict)
-                    and value.get("schema") == 1
-                    and value.get("update_id") == update_id
-                    and value.get("installer_sha256") == installer_sha256
-                    and isinstance(pid, int)
-                    and pid > 0
-                ):
-                    os.kill(pid, 0)
-                    return True
-            except (OSError, ValueError, TypeError):
+                os.kill(expected_pid, 0)
+                return True
+            except OSError:
                 pass
         time.sleep(0.05)
     return False
 
 
 def _submit_supervisor(
-    store: SelfUpdateStore, update_id: str
-) -> tuple[LaunchResult, str]:
+    store: SelfUpdateStore, update_id: str, *, resume: bool
+) -> tuple[LaunchResult, str, int]:
     update_dir = store.root / update_id
-    from .controller_bundle import prepare_controller
+    from .controller_bundle import prepare_controller, _load_bundle
     try:
-        bundle = prepare_controller(update_dir)
+        bundle = _load_bundle(update_dir / "controller") if resume else prepare_controller(update_dir)
     except Exception as exc:
         raise LaunchError(f"trusted controller bundle is unavailable: {exc}") from exc
     installer_sha256 = bundle.installer_sha256
@@ -110,49 +121,57 @@ def _submit_supervisor(
     body = _controller_body(update_id, store.root, installer_sha256, bundle.python)
     if controller.is_symlink() or (controller.exists() and not controller.is_file()):
         raise LaunchError("supervisor controller path is not a regular file")
+    if resume and not controller.is_file():
+        raise LaunchError("saved supervisor controller is missing")
     if controller.exists() and controller.read_text(encoding="utf-8") != body:
         raise LaunchError(
             "existing supervisor controller does not match trusted content"
         )
-    atomic_write_text(controller, body)
-    controller.chmod(0o700)
+    if not resume:
+        atomic_write_text(controller, body)
+        controller.chmod(0o700)
 
     label = f"ai.openprogram.self-update.{update_id}"
     domain = f"gui/{os.getuid()}/{label}"
     rc, message = _launchctl("print", domain)
-    if rc == 0:
-        return LaunchResult(label, submitted=False, already_running=True), installer_sha256
-    if rc != 113 and "could not find service" not in message.lower() and "not found" not in message.lower():
+    if rc != 0 and rc != 113 and "could not find service" not in message.lower() and "not found" not in message.lower():
         raise LaunchError(f"launchctl status failed ({rc}): {message}")
-    ready = update_dir / "supervisor.ready"
-    if ready.exists() and not ready.is_symlink():
-        ready.unlink()
-    rc, message = _launchctl(
-        "submit",
-        "-l",
-        label,
-        "-o",
-        str(log),
-        "-e",
-        str(log),
-        "--",
-        str(controller),
-    )
+    submitted = rc != 0
+    prior_pid = _ready_pid(update_dir, update_id, installer_sha256)
+    if submitted:
+        ready = update_dir / "supervisor.ready"
+        if ready.exists() and not ready.is_symlink():
+            ready.unlink()
+        rc, message = _launchctl(
+            "submit", "-l", label, "-o", str(log), "-e", str(log), "--", str(controller),
+        )
+        if rc != 0:
+            raise LaunchError(f"launchctl submit failed ({rc}): {message}")
+    # Without -k, launchd returns the existing PID or starts a stopped service.
+    # The documented -p output avoids parsing launchctl print's diagnostic text.
+    rc, message = _launchctl("kickstart", "-p", domain)
     if rc != 0:
-        raise LaunchError(f"launchctl submit failed ({rc}): {message}")
-    return LaunchResult(label, submitted=True, already_running=False), installer_sha256
+        raise LaunchError(f"launchctl kickstart failed ({rc}): {message}")
+    if not message.isascii() or not message.isdecimal() or int(message) <= 0:
+        raise LaunchError("launchctl did not return a valid controller PID")
+    pid = int(message)
+    return LaunchResult(label, submitted, not submitted and prior_pid == pid), installer_sha256, pid
 
 
-def launch_supervisor(update_id: str) -> LaunchResult:
-    """Create the fixed controller script and submit its launchd job once."""
+def launch_supervisor(update_id: str, *, resume: bool = False) -> LaunchResult:
+    """Launch once, or resume only the originally saved trusted controller."""
     store = SelfUpdateStore()
     record = store.load(update_id)
     if record.request.update_id != update_id:
         raise LaunchError("self-update request identity mismatch")
     with store._locked():
-        result, installer_sha256 = _submit_supervisor(store, update_id)
-    if not _wait_ready(store.root / update_id, update_id, installer_sha256):
-        if result.submitted:
+        if store._load_unlocked(update_id).state.phase in TERMINAL_PHASES:
+            return LaunchResult(f"ai.openprogram.self-update.{update_id}", False, False)
+        result, installer_sha256, pid = _submit_supervisor(store, update_id, resume=resume)
+    if not _wait_ready(store.root / update_id, update_id, installer_sha256, pid):
+        if resume and store.load(update_id).state.phase in TERMINAL_PHASES:
+            return result
+        if result.submitted and not resume:
             _launchctl("remove", result.label)
         raise LaunchError("submitted supervisor did not become ready")
     return result

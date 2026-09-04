@@ -171,6 +171,9 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
     from openprogram.webui.routes import misc
 
+    # This fixture drives the controller directly; do not also launch a native
+    # service. Startup-to-launcher integration has its own public-entry tests.
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda *_a, **_k: None)
     fixtures = request
     resume = scenario.removeprefix("resume_") if scenario.startswith("resume_") else None
     goal_case = scenario in {"goal_pass", "goal_fail", "forged_evidence"} or resume in {"ready", "verifying", "committed"}

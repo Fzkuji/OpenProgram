@@ -77,6 +77,8 @@ def test_launch_writes_private_fixed_controller_and_submits_once(
 
     def launchctl(*args: str) -> tuple[int, str]:
         calls.append(args)
+        if args[0] == "kickstart":
+            return 0, str(os.getpid())
         if args[0] == "submit":
             (root / "su_launch" / "supervisor.ready").write_text(
                 _ready("su_launch", installer_sha256)
@@ -120,7 +122,7 @@ def test_duplicate_launch_is_idempotent(tmp_path: Path, monkeypatch) -> None:
 
     def launchctl(*args: str) -> tuple[int, str]:
         calls.append(args)
-        return 0, "already loaded"
+        return 0, str(os.getpid()) if args[0] == "kickstart" else "already loaded"
 
     monkeypatch.setattr(launcher, "_launchctl", launchctl)
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
@@ -129,7 +131,8 @@ def test_duplicate_launch_is_idempotent(tmp_path: Path, monkeypatch) -> None:
 
     assert result.submitted is False
     assert result.already_running is True
-    assert len(calls) == 1
+    assert len(calls) == 2
+    assert calls[-1][0:2] == ("kickstart", "-p")
 
 
 def test_launch_removes_job_when_controller_never_becomes_ready(
@@ -147,6 +150,8 @@ def test_launch_removes_job_when_controller_never_becomes_ready(
 
     def launchctl(*args: str) -> tuple[int, str]:
         calls.append(args)
+        if args[0] == "kickstart":
+            return 0, str(os.getpid())
         return (113, "not found") if args[0] == "print" else (0, "")
 
     monkeypatch.setattr(launcher, "_launchctl", launchctl)
@@ -213,7 +218,7 @@ def test_loaded_job_rejects_stale_ready_marker(tmp_path: Path, monkeypatch) -> N
     marker = profile / "self-updates" / "su_launch" / "supervisor.ready"
     marker.write_text(_ready("su_other", installer_sha256), encoding="utf-8")
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
-    monkeypatch.setattr(launcher, "_launchctl", lambda *_args: (0, "loaded"))
+    monkeypatch.setattr(launcher, "_launchctl", lambda *args: (0, str(os.getpid()) if args[0] == "kickstart" else "loaded"))
 
     with pytest.raises(LaunchError, match="did not become ready"):
         launch_supervisor("su_launch")
@@ -260,6 +265,8 @@ def test_concurrent_launch_submits_only_once(tmp_path: Path, monkeypatch) -> Non
     def launchctl(*args: str) -> tuple[int, str]:
         nonlocal registered
         calls.append(args)
+        if args[0] == "kickstart":
+            return 0, str(os.getpid())
         if args[0] == "submit":
             registered = True
             (profile / "self-updates" / "su_launch" / "supervisor.ready").write_text(
@@ -289,6 +296,8 @@ def test_launch_resubmits_after_controller_and_service_exit(tmp_path, monkeypatc
 
     def launchctl(*args: str) -> tuple[int, str]:
         nonlocal submissions
+        if args[0] == "kickstart":
+            return 0, str(os.getpid())
         if args[0] == "submit":
             submissions += 1
             marker.write_text(_ready("su_launch", installer_sha256), encoding="utf-8")
@@ -323,3 +332,97 @@ def test_runtime_snapshot_failure_never_submits_launchd(tmp_path, monkeypatch):
         launch_supervisor("su_launch")
     assert store.load("su_launch").state.phase.value == "preparing"
     assert not (store.root / "su_launch/controller").exists()
+
+
+def test_loaded_stopped_controller_is_started_without_killing_it(tmp_path, monkeypatch):
+    from openprogram import paths
+    from openprogram.self_update import launcher
+
+    profile = tmp_path / "profile"
+    _request(profile)
+    _, digest = _trusted_installer(tmp_path, monkeypatch)
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    marker = profile / "self-updates/su_launch/supervisor.ready"
+    calls = []
+
+    def launchctl(*args):
+        calls.append(args)
+        if args[0] == "kickstart":
+            marker.write_text(_ready("su_launch", digest))
+            return 0, str(os.getpid())
+        return 0, "loaded but stopped"
+
+    monkeypatch.setattr(launcher, "_launchctl", launchctl)
+    result = launch_supervisor("su_launch")
+    assert result.submitted is False and result.already_running is False
+    assert calls == [
+        ("print", f"gui/{os.getuid()}/{result.label}"),
+        ("kickstart", "-p", f"gui/{os.getuid()}/{result.label}"),
+    ]
+
+
+def test_ready_marker_for_unrelated_live_process_is_rejected(tmp_path, monkeypatch):
+    from openprogram import paths
+    from openprogram.self_update import launcher
+    profile = tmp_path / "profile"
+    _request(profile)
+    _, digest = _trusted_installer(tmp_path, monkeypatch)
+    marker = profile / "self-updates/su_launch/supervisor.ready"
+    marker.write_text(_ready("su_launch", digest))  # This test process is alive.
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    monkeypatch.setattr(launcher, "_launchctl", lambda *args: (0, str(os.getpid() + 100000) if args[0] == "kickstart" else "loaded"))
+    with pytest.raises(LaunchError, match="did not become ready"):
+        launch_supervisor("su_launch")
+
+
+def test_native_launchd_reuses_running_process_and_restarts_after_death(tmp_path, monkeypatch):
+    import shlex
+    import sys
+    import time
+    import uuid
+    from openprogram import paths
+    from openprogram.self_update import launcher
+
+    if sys.platform != "darwin" or not Path("/bin/launchctl").is_file():
+        pytest.skip("requires native macOS launchd")
+    profile = tmp_path / "profile"
+    update_id = "su_native_" + uuid.uuid4().hex
+    store = _request(profile, update_id)
+    installed, digest = _trusted_installer(tmp_path, monkeypatch)
+    marker = store.root / update_id / "supervisor.ready"
+    # A bounded inert controller interpreter fixture. The real launcher still
+    # freezes it, generates the fixed script, and uses actual launchctl/PIDs.
+    fixture = (
+        "import os,json,time; from pathlib import Path; "
+        f"Path({str(marker)!r}).write_text(json.dumps(dict(schema=1,pid=os.getpid(),"
+        f"update_id={update_id!r},installer_sha256={digest!r}))); time.sleep(30)"
+    )
+    python = installed.parent.parent / "runtime/python"
+    python.write_text(f"#!/bin/sh\nexec {shlex.quote(sys.executable)} -I -c {shlex.quote(fixture)}\n")
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    label = f"ai.openprogram.self-update.{update_id}"
+    domain = f"gui/{os.getuid()}/{label}"
+    try:
+        first = launch_supervisor(update_id)
+        assert first.submitted
+        first_pid = json.loads(marker.read_text())["pid"]
+        assert first_pid != os.getpid()
+        again = launch_supervisor(update_id, resume=True)
+        assert not again.submitted and again.already_running
+        assert json.loads(marker.read_text())["pid"] == first_pid
+        rc, message = launcher._launchctl("kill", "SIGKILL", domain)
+        assert rc == 0, message
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(first_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("native fixture did not exit")
+        recovered = launch_supervisor(update_id, resume=True)
+        assert not recovered.already_running
+        assert json.loads(marker.read_text())["pid"] != first_pid
+    finally:
+        launcher._launchctl("remove", label)

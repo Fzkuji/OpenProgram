@@ -23,6 +23,8 @@ def verifier(store_fixture, live, monkeypatch):
     from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
     from openprogram.self_update.recovery import recover_pending_updates
 
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda *_a, **_k: None)
+
     original, flags, _ = live
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store_fixture)
     monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "verify"})

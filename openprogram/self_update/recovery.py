@@ -86,12 +86,17 @@ def recover_pending_updates() -> bool:
     from openprogram.agent.job import get_runner
     from openprogram.agent.job.store import load_job
     from openprogram.agent.internals._model_tools import resolve_model
+    from .launcher import launch_supervisor
 
     store = SelfUpdateStore()
     record = None
     try:
         record = store.load_active()
-        if record is None or record.state.phase in {
+        if record is None:
+            return True
+        launch_supervisor(record.request.update_id, resume=True)
+        record = store.load(record.request.update_id)
+        if record.state.phase in {
             UpdatePhase.PREPARING, UpdatePhase.STAGING, UpdatePhase.READY,
         }:
             return True

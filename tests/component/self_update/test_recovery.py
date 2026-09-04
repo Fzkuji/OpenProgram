@@ -19,6 +19,9 @@ def environment(tmp_path, monkeypatch, store_fixture):
     from openprogram.agent.job.runner import JobRunner
     from openprogram.agent.dispatcher import TurnResult
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "profile")
+    # These tests exercise verifier admission; launcher integration is covered
+    # separately by test_startup_redispatch, without this launch boundary stub.
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda *_a, **_k: None)
     authority._reset_owner_cache_for_tests()
     monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "frozen"})
     monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", lambda *a: SimpleNamespace(provider="fake", id="fixed"))
