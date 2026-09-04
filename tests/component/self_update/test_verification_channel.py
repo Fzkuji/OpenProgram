@@ -13,7 +13,7 @@ from openprogram.self_update import verification_channel as channel
 
 
 @pytest.fixture
-def verifier(store_fixture, live, monkeypatch):
+def verifier(store_fixture, live, monkeypatch, request):
     from openprogram.agent import authority
     from openprogram.agent.dispatcher import TurnResult
     from openprogram.agent.job.runner import JobRunner
@@ -25,6 +25,7 @@ def verifier(store_fixture, live, monkeypatch):
 
     monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda *_a, **_k: None)
 
+    plan = getattr(request, "param", None)
     original, flags, _ = live
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store_fixture)
     monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "verify"})
@@ -33,8 +34,10 @@ def verifier(store_fixture, live, monkeypatch):
     store = SelfUpdateStore()
     store.transition(original.request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)
     request = replace(original.request, update_id="su_channel", session_id="p1", origin_turn_id="u1", origin_assistant_id="a1",
-                      goal="Diagnostics should report a working database", assertions=("Diagnostics reports database_ok=true",))
-    config = freeze_verifier_config(request, SimpleNamespace(agent_id="main", **authority.local_owner_authority()))
+                      goal="Diagnostics should report a working database",
+                      assertions=("Diagnostics reports database_ok=true",) * (len(plan["checks"]) if plan else 1))
+    config = freeze_verifier_config(request, SimpleNamespace(agent_id="main", **authority.local_owner_authority()),
+                                    verification_plan=plan)
     request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(config)))
     store.create(request, verifier_config=config)
     for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
@@ -46,6 +49,7 @@ def verifier(store_fixture, live, monkeypatch):
                              "previous_system_gate": {"candidate_sha": "3" * 40}})
     control = {"status": "pass", "entry": "/api/diagnostics"}
     def dispatch(req):
+        control["prompt"] = req.user_text
         token = set_turn_request(req)
         try:
             if control.get("read_grant"):
@@ -58,7 +62,8 @@ def verifier(store_fixture, live, monkeypatch):
             if control.get("cancel"):
                 runner.cancel_job(grant["job_id"], reason="test cancellation")
             tool = get_agent_tool("self_update_observe")
-            output = asyncio.run(tool.execute("observe-call", {"entry": control["entry"]}, None, None))
+            args = control.get("args", {"check_id": plan["checks"][0]["id"]} if plan else {"entry": control["entry"]})
+            output = asyncio.run(tool.execute("observe-call", args, None, None))
             control["tool_result"] = output
             if output.is_error:
                 return TurnResult("inconclusive", "verify_u", "verify_a")

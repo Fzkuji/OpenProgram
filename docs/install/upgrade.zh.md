@@ -44,6 +44,27 @@ openprogram worker restart
 
 ## 恢复对话内自更新
 
+源码 checkout 的聊天工具 `self_update_prepare` 接受可选的 `verification_plan`
+参数。计划包含在强制 owner 审批中，并与不可变请求一起保存。例如：
+
+```json
+{"schema":1,"checks":[{"id":"diagnostics","assertion_id":"acceptance-1","entry":"/api/diagnostics","timeout_seconds":10,"max_output_bytes":65536}]}
+```
+
+每条 assertion（`acceptance-1`、`acceptance-2` 等）必须恰好对应一个 check，共 1–32 条。
+示例中的所有字段均必填，`schema` 必须是整数 `1`。
+check ID 唯一，最多 64 个字符，以字母或数字开头，只允许字母、数字、下划线和连字符。
+每项必须指定 1–60 秒的整数超时和 1–262144 字节的整数输出上限。
+目前支持 `/api/commands`、`/api/diagnostics`、`/api/doctor`、`/healthz`、`/chat`；
+任意 URL、查询参数及额外字段都会在创建更新前被拒绝。
+
+重启后的 verifier 收到相同计划，调用 `self_update_observe(check_id="diagnostics")`，
+不能另传 `entry` 或执行参数。执行层应用已批准的限制和原总期限；签名证据必须匹配
+对应 check 和 assertion，不能复用到另一验收项。省略计划时保留原有的 HTTP-only
+验收行为，不增加权限。此计划目前还不接受 UI、CLI 或候选测试类型；HTTP 响应
+（包括 `/chat` HTML）不能证明 App 界面实际行为。完整 UI/CLI/test 验收能力和实际
+已安装 App 验收仍待完成。
+
 这项源码 checkout 能力与 stable release 升级分开。macOS 上，对话内自更新使默认
 App 保持维护状态时，可以在本地终端检查，不需要启动 Agent：
 

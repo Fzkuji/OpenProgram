@@ -117,7 +117,7 @@ def _check_job(store, record, grant, job) -> None:
         job.id != grant["job_id"] or job.parent_session_id != record.request.session_id
         or job.source != "self_update_verify" or job.agent_id != config["agent_id"]
         or job.context_mode != "clean" or job.parent_msg_id is not None or job.advance_head
-        or job.spawn_caller != record.request.origin_assistant_id or job.prompt != verifier_prompt(record)
+        or job.spawn_caller != record.request.origin_assistant_id or job.prompt != verifier_prompt(record, config)
         or normalize_authority(job) != config["authority"]
         or any(getattr(job, key) != config[key] for key in ("profile_snapshot", "model_override", "tools_override", "response_format"))
         or record.state.dispatch is None or record.state.dispatch.job_id != job.id
@@ -149,14 +149,28 @@ def _observation_context(store):
     return record, grant
 
 
-def observe(entry: str) -> dict:
+def observe(entry: str = "", *, check_id: str | None = None) -> dict:
     from .system_probe import OBSERVATION_ENTRIES, observe_system
-    if not isinstance(entry, str) or entry not in OBSERVATION_ENTRIES:
+    from .verification_plan import resolve_check
+    if check_id is None and (not isinstance(entry, str) or entry not in OBSERVATION_ENTRIES):
         raise ValueError("unsupported read-only observation entry")
     store = SelfUpdateStore()
     with store._locked():
         record, grant = _observation_context(store)
-    observed = observe_system(record, entry)
+        config = load_verifier_config(store, record)
+        check = None
+        if config["schema"] == 2:
+            if entry != "":
+                raise ValueError("planned verification accepts only check_id")
+            check = resolve_check(config["verification_plan"], check_id)
+        elif check_id is not None:
+            raise ValueError("legacy verifier has no verification plan")
+    if check is None:
+        observed = observe_system(record, entry)
+    else:
+        observed = observe_system(record, check["entry"],
+                                  timeout_seconds=min(check["timeout_seconds"], grant["deadline"] - time.time()),
+                                  max_output_bytes=check["max_output_bytes"])
     if grant["token"] in json.dumps(observed, allow_nan=False):
         raise ValueError("observation contains a private verification credential")
     with store._locked():
@@ -172,6 +186,9 @@ def observe(entry: str) -> dict:
             raise ValueError("verifier observation budget exhausted")
         evidence = dict(schema=1, update_id=record.request.update_id, candidate_sha=record.request.candidate_sha,
                         attempt=record.state.attempt, job_id=grant["job_id"], grant_sha256=_digest(grant), **observed)
+        if check is not None:
+            evidence.update(check_id=check["id"], assertion_id=check["assertion_id"],
+                            plan_sha256=_digest(config["verification_plan"]))
         evidence["signature"] = _sign(evidence, grant["token"])
         identifier = uuid.uuid4().hex
         reference = f"observation:{identifier}:{_digest(evidence)}"
@@ -180,6 +197,8 @@ def observe(entry: str) -> dict:
 
 
 def _resolve_evidence(store, record, grant, result):
+    from .verification_plan import resolve_check
+    config = load_verifier_config(store, record)
     directory, _, _ = _paths(store, record)
     evidence_dir = directory / "observations"
     if evidence_dir.is_symlink() or not evidence_dir.is_dir():
@@ -195,6 +214,13 @@ def _resolve_evidence(store, record, grant, result):
             _check_signature(evidence, grant["token"])
             observed = evidence.get("observation", {})
             gate = evidence.get("system_gate", {})
+            if config["schema"] == 2:
+                check = resolve_check(config["verification_plan"], evidence.get("check_id"))
+                if (evidence.get("plan_sha256") != _digest(config["verification_plan"])
+                        or evidence.get("assertion_id") != assertion.id or check["assertion_id"] != assertion.id
+                        or observed.get("entry") != check["entry"]
+                        or len(observed.get("body", "").encode("utf-8")) > check["max_output_bytes"]):
+                    raise ValueError("observation differs from its frozen verification check")
             if (
                 evidence.get("schema") != 1 or evidence.get("update_id") != record.request.update_id
                 or evidence.get("candidate_sha") != record.request.candidate_sha or evidence.get("attempt") != record.state.attempt

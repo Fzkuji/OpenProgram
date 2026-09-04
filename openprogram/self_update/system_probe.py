@@ -56,15 +56,18 @@ def probe_unchanged_system(record: UpdateRecord) -> dict:
     return gate
 
 
-def observe_system(record: UpdateRecord, entry: str) -> dict:
+def observe_system(record: UpdateRecord, entry: str, *, timeout_seconds: float = 60,
+                   max_output_bytes: int = _OBSERVATION_BYTES) -> dict:
     """Read a reviewed local entry with identity checks before and after I/O."""
     if entry not in OBSERVATION_ENTRIES:
         raise ValueError("unsupported read-only observation entry")
     return _probe_system(record, record.request.candidate_sha,
-                         min(60, record.request.created_at + record.request.timeout_seconds - time.time()), entry)
+                         min(60, timeout_seconds, record.request.created_at + record.request.timeout_seconds - time.time()),
+                         entry, max_output_bytes)
 
 
-def _probe_system(record: UpdateRecord, revision: str | None, timeout: float, observation_entry: str | None = None) -> dict:
+def _probe_system(record: UpdateRecord, revision: str | None, timeout: float, observation_entry: str | None = None,
+                  observation_bytes: int = _OBSERVATION_BYTES) -> dict:
     import httpx
     from openprogram.agent.authority import owner_principal_id
     from openprogram.backend_endpoint import read_active_web_access, read_web_token, create_owner_challenge_proof
@@ -184,7 +187,7 @@ def _probe_system(record: UpdateRecord, revision: str | None, timeout: float, ob
             observation = None
             if observation_entry is not None:
                 stage = "observation"
-                response = bounded_get(observation_entry, limit=_OBSERVATION_BYTES)
+                response = bounded_get(observation_entry, limit=observation_bytes)
                 if str(response.url) != origin + observation_entry:
                     raise ValueError
                 observation = {"entry": observation_entry, "status": response.status_code,

@@ -204,6 +204,7 @@ def _prepare_update(
     assistant_id: str,
     manager: Any,
     store: SelfUpdateStore,
+    verification_plan: dict | None = None,
 ) -> dict[str, Any]:
     _require_local_owner(req)
     if not isinstance(assistant_id, str) or not assistant_id.strip():
@@ -309,7 +310,7 @@ def _prepare_update(
     try:
         from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
         from openprogram.self_update.diagnosis import freeze_config, config_evidence as diagnosis_evidence
-        verifier_config = freeze_verifier_config(request, req)
+        verifier_config = freeze_verifier_config(request, req, verification_plan=verification_plan)
         diagnosis_config = freeze_config(request, verifier_config)
         from openprogram.self_update.source_repair import freeze_config as freeze_repair, config_evidence as repair_evidence
         repair_config = freeze_repair(request, verifier_config, candidate_path=str(candidate), branch_name=worktree.branch_name)
@@ -462,6 +463,7 @@ def self_update_prepare(
     goal: str,
     assertions: list[str],
     iteration_policy: dict[str, Any] | None = None,
+    verification_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     req, assistant_id = _turn_context()
     return _prepare_update(
@@ -474,6 +476,7 @@ def self_update_prepare(
         assistant_id=assistant_id,
         manager=get_manager(),
         store=SelfUpdateStore(),
+        verification_plan=verification_plan,
     )
 
 
@@ -528,13 +531,14 @@ def self_update_repair_cancel(update_id: str) -> dict[str, Any]:
     name="self_update_observe",
     description=("For the active post-update verifier only: observe a read-only local HTTP entry "
                  "and save identity-bound evidence. Entries: /api/commands, /api/diagnostics, "
-                 "/api/doctor, /healthz, /chat. HTML is not rendered UI evidence."),
+                 "/api/doctor, /healthz, /chat. A frozen plan requires only check_id, not entry. "
+                 "HTML is not rendered UI evidence."),
     toolset=["core"],
     path_params={},
 )
-def self_update_observe(entry: str) -> dict[str, Any]:
+def self_update_observe(entry: str = "", check_id: str | None = None) -> dict[str, Any]:
     from openprogram.self_update.verification_channel import observe
-    return observe(entry)
+    return observe(entry, check_id=check_id)
 
 
 @function(

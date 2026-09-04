@@ -34,6 +34,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`types.py`** — Durable data contract for conversational self-update
 - **`verification.py`** — Validate identity-bound, timestamped self-update acceptance evidence
 - **`verification_channel.py`** — Bind live observations and durable Job results to one verifier authorization
+- **`verification_plan.py`** — Validate owner-approved checks without granting model-selected execution
 - **`verifier_config.py`** — Freeze verifier inputs and bind their digest to an immutable update request
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

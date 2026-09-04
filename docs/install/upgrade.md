@@ -44,6 +44,33 @@ openprogram worker restart
 
 ## Recovering a conversational self-update
 
+The source-checkout `self_update_prepare` chat tool accepts an optional
+`verification_plan` argument. The plan is included in the mandatory owner
+approval and stored with the immutable request. For example:
+
+```json
+{"schema":1,"checks":[{"id":"diagnostics","assertion_id":"acceptance-1","entry":"/api/diagnostics","timeout_seconds":10,"max_output_bytes":65536}]}
+```
+
+Provide exactly one check for each assertion (`acceptance-1`, `acceptance-2`,
+and so on), from 1 to 32 checks. All fields shown are required; `schema` must
+be the integer `1`. Check IDs must be unique alphanumeric/underscore/hyphen
+identifiers starting with an alphanumeric character, at most 64 characters.
+Each check requires an integer timeout of 1–60 seconds and an integer output limit of
+1–262144 bytes. Supported entries are `/api/commands`, `/api/diagnostics`,
+`/api/doctor`, `/healthz` and `/chat`; arbitrary URLs, query strings and extra
+fields are rejected before creating the update.
+
+The restarted verifier receives the same plan and calls
+`self_update_observe(check_id="diagnostics")`, without supplying `entry` or
+execution arguments. The execution layer applies the approved limits and the
+original overall deadline. Signed evidence must match that check and assertion;
+reusing evidence for another assertion does not pass. Omitting the plan preserves
+the previous HTTP-only verifier behavior and grants no new permissions.
+UI, CLI and candidate-test check kinds are not accepted by this plan yet. HTTP
+responses, including `/chat` HTML, do not prove rendered App behavior; complete
+UI/CLI/test verification and installed-App acceptance remain pending.
+
 This source-checkout capability is separate from stable-release upgrades. On macOS,
 if a conversational self-update leaves the default App in maintenance, inspect it
 from your local terminal without starting an Agent:

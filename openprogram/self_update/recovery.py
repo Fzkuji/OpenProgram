@@ -74,7 +74,7 @@ def require_verifier_execution(*, session_id, spawn_caller, **inputs) -> None:
         expected = {key: config[key] for key in (
             "agent_id", "profile_snapshot", "model_override", "tools_override", "response_format", "authority",
         )}
-        expected["prompt"] = verifier_prompt(record)
+        expected["prompt"] = verifier_prompt(record, config)
         if inputs != expected:
             raise ValueError("verifier execution inputs differ from the frozen request")
 
@@ -223,7 +223,7 @@ def recover_pending_updates() -> bool:
                 _check_gate(current)
                 runner.spawn_job(
                     job_id=claim.job_id, session_id=record.request.session_id,
-                    prompt=verifier_prompt(record), agent_id=config["agent_id"],
+                    prompt=verifier_prompt(record, config), agent_id=config["agent_id"],
                     source="self_update_verify", context_mode="clean", parent_msg_id=None,
                     caller_msg_id=record.request.origin_assistant_id,
                     spawn_caller=record.request.origin_assistant_id, advance_head=False,
