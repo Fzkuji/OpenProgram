@@ -472,6 +472,11 @@ def test_prepare_uses_hash_pinned_snapshot_and_prepare_mode(
 
     monkeypatch.setattr(supervisor.subprocess, "run", run)
 
+    # This existing test isolates command/hash pinning. Real package admission
+    # is exercised by test_package_protocol with staged ASAR/runtime fixtures.
+    monkeypatch.setattr(supervisor, "validate_reopen_package", lambda _app: {
+        "bindings": {"installer": {"sha256": installer_sha256}},
+    })
     assert supervisor._prepare_install(artifact, update_dir, installer_sha256) == transaction
     assert calls[0][0] == [
         "/bin/bash",
@@ -480,6 +485,24 @@ def test_prepare_uses_hash_pinned_snapshot_and_prepare_mode(
         str(app),
     ]
     assert set(calls[0][1]["env"]) == {"PATH", "HOME"}
+
+
+def test_prepare_rejects_missing_reopen_protocol_before_installer(tmp_path, monkeypatch):
+    from openprogram.self_update import supervisor
+
+    update_dir = tmp_path / "su_protocol"
+    app = update_dir / "artifact" / "OpenProgram.app"
+    app.mkdir(parents=True)
+    artifact = Artifact(app, supervisor._tree_digest(app))
+    digest = _installer_at(update_dir)
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "OPENPROGRAM_TRANSACTION_DIR=/Applications/.openprogram-app-install.fixture\n", "")
+    monkeypatch.setattr(supervisor.subprocess, "run", run)
+    with pytest.raises(ValueError, match="reopen protocol"):
+        supervisor._prepare_install(artifact, update_dir, digest)
+    assert calls == []
 
 
 def test_prepare_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:

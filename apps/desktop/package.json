@@ -38,6 +38,7 @@
   "build": {
     "appId": "ai.openprogram.desktop",
     "productName": "OpenProgram",
+    "afterPack": "scripts/write-reopen-protocol.cjs",
     "files": [
       "main.js",
       "menu-geometry.js",

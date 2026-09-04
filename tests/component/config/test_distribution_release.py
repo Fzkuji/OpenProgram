@@ -1739,6 +1739,10 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     desktop = repo / "apps" / "desktop"
     release_scripts.mkdir(parents=True)
     desktop.mkdir(parents=True)
+    (desktop / "scripts").mkdir()
+    (desktop / "scripts/install-app.sh").write_bytes(
+        (ROOT / "apps/desktop/scripts/install-app.sh").read_bytes()
+    )
     (scripts / "refresh-local-app.sh").write_text(
         (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8"),
         encoding="utf-8",
@@ -1817,6 +1821,9 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         'test -f "$3/tab-transfer-validation.js" || exit 94; '
         'test -f "$3/window-state.js" || exit 95; '
         'test -f "$3/theme-chrome.js" || exit 96; : > "$4" ;;\n'
+        # The real descriptor writer is covered by test_package_protocol;
+        # this fixture isolates refresh version/lock/signal behavior.
+        '  --resources) exit 0 ;;\n'
         '  *) printf "unexpected node call: %s\\n" "$*" >&2; exit 91 ;;\n'
         "esac\n",
         encoding="utf-8",

@@ -17,9 +17,11 @@ from typing import Iterator
 from openprogram import _compat as file_lock
 from openprogram.self_update.maintenance import enter_maintenance, leave_maintenance
 from openprogram.self_update.store import SelfUpdateStore
+from openprogram.self_update.package_protocol import validate_reopen_package
 from openprogram.self_update.types import (
     TERMINAL_PHASES,
     ConcurrentUpdateError,
+    DEFAULT_APP_PATH,
     UpdatePhase,
     UpdateRecord,
     _validate_update_id,
@@ -309,6 +311,11 @@ def _installer_command(
 def _prepare_install(artifact: Artifact, update_dir: Path, installer_sha256: str) -> str:
     if _tree_digest(artifact.path) != artifact.sha256:
         raise RuntimeError("candidate artifact changed after validation")
+    _installer_snapshot(update_dir, installer_sha256)
+    validate_reopen_package(artifact.path)
+    previous = validate_reopen_package(Path(DEFAULT_APP_PATH))
+    if previous["bindings"]["installer"]["sha256"] != installer_sha256:
+        raise ValueError("frozen installer does not match the installed reopen protocol")
     return _installer_command(artifact.path, update_dir, installer_sha256, "--prepare")
 
 

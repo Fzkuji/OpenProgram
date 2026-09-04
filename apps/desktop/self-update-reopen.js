@@ -1,6 +1,7 @@
 "use strict";
 
 const FLAG = "--openprogram-self-update=";
+const REOPEN_PROTOCOL = 1;
 const UPDATE_ID = /^su_[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,256}$/;
 const MAX_BYTES = 8192;
@@ -81,7 +82,7 @@ function createSelfUpdateReopen({ argv, origin, fetchImpl = globalThis.fetch }) 
   function validResponse(value) {
     return value && Object.keys(value).sort().join() ===
       "attempt,expires_at,launch_kind,reopen_id,schema,session_id,status,update_id" &&
-      value.schema === 1 && value.update_id === updateId &&
+      value.schema === REOPEN_PROTOCOL && value.update_id === updateId &&
       Number.isInteger(value.attempt) && value.attempt >= 1 && value.attempt <= 3 &&
       typeof value.session_id === "string" && SESSION_ID.test(value.session_id) &&
       typeof value.reopen_id === "string" && /^[0-9a-f]{64}$/.test(value.reopen_id) &&
@@ -202,4 +203,4 @@ function registerReopenIpc({ ipcMain, windows, recovery, origin }) {
   });
 }
 
-module.exports = { createSelfUpdateReopen, launchUpdateId, registerReopenIpc };
+module.exports = { REOPEN_PROTOCOL, createSelfUpdateReopen, launchUpdateId, registerReopenIpc };
