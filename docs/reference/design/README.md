@@ -75,7 +75,7 @@ Proactivity applications (built on the base):
 | [`runtime/execution/agentic-self-recursion.md`](runtime/execution/agentic-self-recursion.md) | Agentic self-recursion ([rendered](runtime/execution/agentic-self-recursion.html)) |
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | Branch naming ([rendered](runtime/operations/branch-naming.html)) |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session subsystem: data model, storage, naming, listing, lifecycle |
-| [`runtime/self-update.md`](runtime/self-update.md) | Source-checkout upgrades: gated Git flow, channel semantics, verification, and manual recovery |
+| [`runtime/self-update.html`](runtime/self-update.html) | Conversational self-update: isolated code changes, external App activation, restart handoff, automatic goal verification, and rollback |
 | [`runtime/sandbox-architecture.html`](runtime/sandbox-architecture.html) | Canonical execution-security design: authority tiers, permission modes and approval, host sandbox boundaries, framework comparison, and implementation evidence |
 | [`runtime/permission-model.md`](runtime/permission-model.md) / [`runtime/sandbox.md`](runtime/sandbox.md) | Stable link targets that point to the canonical execution-security design |
 | [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | Outbound URL and SSRF design: current gaps, Hermes/OpenClaw/OWASP comparison, scoped trust policy, transport requirements, and full acceptance gates |

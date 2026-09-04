@@ -301,6 +301,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("Overview", "概览", ["reference/design/README.md"]),
         ("Runtime · Operations", "运行时 · 操作", [
             "reference/design/runtime/operations/file-management.html",
+            "reference/design/runtime/self-update.html",
         ]),
         ("UI · Foundations", "界面 · 基础", [
             "reference/design/ui/README.md",
@@ -456,6 +457,7 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/runtime/agent-collaboration.md": 1002,
     "reference/design/runtime/agent-collab-architecture.html": 1003,
     "reference/design/runtime/agent-collab-comparison.html": 1004,
+    "reference/design/runtime/self-update.html": 1006,
     # Center tabs: authoritative tab/group/view state and split-layout design.
     "reference/design/ui/center-tabs-and-split-layout.html": 1009,
     "reference/design/ui/built-in-browser.html": 1010,
