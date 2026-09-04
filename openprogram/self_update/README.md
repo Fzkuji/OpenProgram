@@ -23,6 +23,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`owner_repair.py`** — Explicit, bounded owner recovery through the original trusted controller
 - **`projection.py`** — Read-only, session-scoped status shared by tools and user interfaces
 - **`recovery.py`** — Dispatch one frozen verifier Job after the supervisor releases system gates
+- **`reopen.py`** — Controller-owned Desktop recovery intent; never update/verifier authority
 - **`repair_candidate.py`** — Apply bounded model edits and test a new isolated candidate without installing it
 - **`rollback_intent.py`** — Durable rollback intent shared by the controller and worker admission
 - **`source_repair.py`** — Continue a verified rollback with one bounded source-repair Job and candidate

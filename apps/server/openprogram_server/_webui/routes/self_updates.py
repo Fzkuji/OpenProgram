@@ -1,12 +1,14 @@
-"""Owner-authenticated, read-only self-update history and status."""
+"""Owner-authenticated self-update projections and Desktop location ACKs."""
 from __future__ import annotations
 
 from types import SimpleNamespace
 
 from fastapi import Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from openprogram.self_update.projection import ProjectionAccessError, list_status, read_evidence, read_status
+from openprogram.self_update.reopen import ReopenUnavailable, acknowledge_reopen, resolve_reopen
 from openprogram.self_update.store import SelfUpdateStore
 from openprogram.self_update.types import ConcurrentUpdateError, SelfUpdateError, UpdateNotFoundError
 
@@ -39,7 +41,41 @@ def _response(request, session_id, reader, **kwargs):
     return JSONResponse({"error": error}, status_code=code, headers={"Cache-Control": "no-store"})
 
 
+class ReopenAck(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    session_id: str = Field(min_length=1, max_length=256)
+    reopen_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def _reopen_response(request, update_id, ack=None):
+    try:
+        require_owner(request)
+        kwargs = dict(update_id=update_id, principal_id=request.state.authority["principal_id"])
+        result = (resolve_reopen(SelfUpdateStore(), **kwargs) if ack is None
+                  else acknowledge_reopen(SelfUpdateStore(), **kwargs, **ack.model_dump()))
+        return JSONResponse(result, headers={"Cache-Control": "no-store"})
+    except ProjectionAccessError:
+        code, reason = 403, "owner_mismatch"
+    except UpdateNotFoundError:
+        code, reason = 404, "update_missing"
+    except ConcurrentUpdateError:
+        code, reason = 503, "temporarily_unavailable"
+    except ReopenUnavailable as exc:
+        code, reason = 409, str(exc)
+    except (SelfUpdateError, OSError, ValueError, KeyError, TypeError):
+        code, reason = 409, "state_invalid"
+    return JSONResponse({"reason": reason}, status_code=code, headers={"Cache-Control": "no-store"})
+
+
 def register(app):
+    @app.get("/api/self-updates/{update_id}/desktop-reopen")
+    def api_self_update_reopen(request: Request, update_id: str):
+        return _reopen_response(request, update_id)
+
+    @app.post("/api/self-updates/{update_id}/desktop-reopen/ack")
+    def api_self_update_reopen_ack(request: Request, update_id: str, ack: ReopenAck):
+        return _reopen_response(request, update_id, ack)
+
     @app.get("/api/self-updates/{update_id}/evidence")
     def api_self_update_evidence(request: Request, update_id: str,
                                 session_id: str = Query(min_length=1, max_length=256),
