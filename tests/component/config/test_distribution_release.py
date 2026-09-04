@@ -1631,6 +1631,9 @@ if [ "$1" = "run" ] && [ "$2" = "build" ]; then
   mkdir -p "$PWD/apps/web/out"
   printf '<html>web</html>\\n' > "$PWD/apps/web/out/index.html"
   printf '<body><div id="sidebar"></div></body>\\n' > "$PWD/apps/web/out/chat.html"
+elif [ "$1" = "run" ] && [ "$2" = "build:release" ]; then
+  mkdir -p "$PWD/apps/cli/python/openprogram_cli/dist"
+  printf '// terminal bundle\\n' > "$PWD/apps/cli/python/openprogram_cli/dist/index.mjs"
 fi
 """,
         encoding="utf-8",
@@ -1669,6 +1672,7 @@ printf '<html>docs</html>\\n' > "$PWD/docs/_site/index.html"
         repo / "apps" / "server" / "openprogram_server" / "_webui" / "_frontend" / "chat.html"
     )
     assert 'id="sidebar"' in staged_chat.read_text(encoding="utf-8")
+    assert (repo / "apps/cli/python/openprogram_cli/dist/index.mjs").is_file()
 
     fake_npm.write_text(
         """#!/bin/sh
@@ -1769,6 +1773,22 @@ def test_immutable_runtime_doctor_does_not_require_node_or_npm(
         "not required in immutable product runtime",
     )
     assert doctor._check_git() == (False, "git available", "not on PATH")
+
+
+def test_packaged_cli_resolves_bundled_tui_without_source(tmp_path, monkeypatch) -> None:
+    import tomllib
+    import openprogram
+    from openprogram.cli import ink as cli_ink
+
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "dist/*.mjs" in config["tool"]["setuptools"]["package-data"]["openprogram_cli"]
+    package = tmp_path / "openprogram_cli"
+    entry = package / "dist" / "index.mjs"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("// bundled terminal entry\n", encoding="utf-8")
+    monkeypatch.setattr(openprogram, "__file__", str(tmp_path / "openprogram" / "__init__.py"))
+    monkeypatch.setattr(cli_ink, "__file__", str(package / "_impl" / "ink.py"))
+    assert cli_ink._resolve_cli_entry() == entry
 
 
 def test_packaged_cli_falls_back_when_ink_runtime_is_absent(

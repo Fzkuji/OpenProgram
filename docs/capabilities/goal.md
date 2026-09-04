@@ -56,7 +56,11 @@ evidence, questions, and cumulative usage unchanged; the selected models are
 validated on resume. If a model is unavailable, correct the saved selection
 and resume again. Running Goals must be paused before role changes.
 
-The TUI exposes the same settings without opening a browser:
+The TUI exposes the same settings without opening a browser.
+
+Use `openprogram --resume <session-id>` to reopen an existing session and its
+saved Goal. Release packages include the terminal interface; Node.js is still
+required, but a source checkout and npm installation are not.
 
 ```text
 /goal help

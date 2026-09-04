@@ -602,7 +602,14 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         c.finishTurn();
       }
     });
-    const offState = client.onState((s) => ctxRef.current.setConnState(s));
+    const onConnection = (state: ConnectionState) => {
+      const current = ctxRef.current;
+      current.setConnState(state);
+      if (state === 'connected' && current.conversationId) {
+        client.send({ action: 'load_session', session_id: current.conversationId });
+      }
+    };
+    const offState = client.onState(onConnection);
     client.send({ action: 'stats' });
     client.send({ action: 'list_agents' });
     // Boot-time prefetch of alias rows into sessionAliasesRef.
