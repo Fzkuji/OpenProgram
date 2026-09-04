@@ -77,6 +77,17 @@ stored status becomes `paused_recoverable`. The Goal dialog still displays its
 objective, checklist, usage, checkpoint, and reason. Use Resume or
 `/goal resume` to start a new execution from that saved state.
 
+Resume restores confirmed answers for the current objective revision and a
+bounded window of prior work evidence for both the working agent and judge.
+Editing the objective starts a new revision; earlier decisions remain in the
+history but are not applied to the new objective automatically.
+
+On one host, workers sharing the same session store use an exclusive Goal
+controller lock. A second controller is rejected before model work, and a
+starting worker leaves another worker's live Goal untouched. The OS releases
+ownership when the controller exits, including a process crash. This does not
+provide distributed ownership across hosts or network filesystems.
+
 `waiting_external` also stops work turns, but automatic external-event wakeup
 is not implemented. Resume it explicitly after the external dependency changes.
 

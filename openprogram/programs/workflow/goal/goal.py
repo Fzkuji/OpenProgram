@@ -8,6 +8,7 @@ import uuid
 from copy import deepcopy
 
 from openprogram.agentic_programming.function import agentic_function
+from .ownership import exclusive_goal
 
 
 def _positive_int(value, *, name: str) -> int | None:
@@ -62,6 +63,7 @@ def _positive_float(value, *, name: str) -> float | None:
         "required": ["prompt"],
     },
 )
+@exclusive_goal
 def goal(
     prompt: str,
     *,

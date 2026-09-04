@@ -43,6 +43,10 @@ TUI 提供相同操作：
 
 如果 worker 在 Goal 完善、工作或判定期间重启，持久化状态会变为 `paused_recoverable`。Goal 弹窗仍显示目标、checklist、用量、checkpoint 和原因。使用“继续”或 `/goal resume` 从该状态启动新的 execution。
 
+恢复时会向工作 agent 和 judge 重新提供当前 revision 已确认的答案，以及有长度上限的历史工作证据。编辑目标后创建新 revision；旧决定保留在历史记录中，但不会自动用于新目标。
+
+同一主机、共享同一 session store 的 worker 使用独占 Goal controller 锁。第二个 controller 在调用模型前被拒绝，启动中的 worker 不会修改其他 worker 正在执行的 Goal。controller 退出或进程崩溃后，由操作系统释放锁。这不提供跨主机或网络文件系统的分布式 ownership。
+
 `waiting_external` 同样停止工作轮次，但目前没有实现外部事件自动唤醒。外部依赖发生变化后需要显式继续。
 
 ## 状态

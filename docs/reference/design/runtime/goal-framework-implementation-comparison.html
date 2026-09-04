@@ -249,7 +249,7 @@
     </div>
     <div class="reading-line" aria-label="OpenProgram 当前判断">
       <div class="current"><small>已经具备</small><strong>独立、可使用检查工具的完成判定</strong><span>工作 agent 产出结果，inspection judge 检查证据，再决定继续或完成。</span></div>
-      <div class="gap"><small>当前主要缺口</small><strong>外部事件唤醒与多 worker lease 尚未实现</strong><span><code>waiting_external</code> 仍需显式 resume；共享状态目录下无法识别 live sibling worker。</span></div>
+      <div class="gap"><small>当前主要缺口</small><strong>外部事件唤醒尚未实现</strong><span><code>waiting_external</code> 仍需显式 resume；同机共享目录的 live Goal 由独占 controller 锁保护。</span></div>
       <div class="target"><small>当前设计</small><strong>持久快照、异步问题、独立 judge 与硬预算共用一个 controller</strong><span>重启转为可恢复暂停；等待不消耗轮次或 active-time 预算。</span></div>
     </div>
   </header>
@@ -1185,7 +1185,7 @@
           <div class="mini"><h4>数据与判定</h4><ul><li>入口只有一段 <code>prompt</code>；同一文本交给工作 agent，并由 refinement 生成完成规格与 checklist。</li><li>schema v3 快照包含 goal/run ID、revision/version、typed status、预算/用量、checkpoint、问题队列和待消费答案。</li><li>session 入口把 refinement 与 judge 作为不推进主线的独立 agent turn；无 session 的 <code>programs run goal</code> 也在当前 runtime 中执行带只读工具约束的独立 refinement/judge turn。</li><li>judge 不只阅读工作 agent 的声明，还能检查文件、命令输出和清单项；严格 JSON 解析失败会重试一次，连续 3 轮判定失败进入 <code>failed</code>。</li></ul></div>
           <div class="mini"><h4>停机与恢复</h4><ul><li>默认 150 个工作轮次，并支持 token、active-time 与 cost 总预算；清单停滞和连续无工具轮次会进入 <code>stalled</code>。</li><li><code>/goal clear</code> 写 <code>cancelled</code>，取消旧 execution；CAS version 防止旧 controller 覆盖新操作。</li><li><code>needs_user + can_continue</code> 把问题加入队列并继续独立工作；没有独立工作时才进入真正的 <code>waiting_user</code>。</li><li>worker 重启时执行中 Goal 进入 <code>paused_recoverable</code>；目标、checklist、用量、问题和 checkpoint 保留，resume 创建新 run。</li></ul></div>
         </div>
-        <div class="callout">实现判断：OpenProgram 已具备独立 tool-capable judge、typed states、版本化持久快照、异步问题、硬预算和重启后显式恢复。仍未实现通用 deterministic gate executor、外部事件自动唤醒、multi-worker execution lease 与独立 evidence repository。</div>
+        <div class="callout">实现判断：OpenProgram 已具备独立 tool-capable judge、typed states、版本化持久快照、异步问题、硬预算和重启后显式恢复。仍未实现通用 deterministic gate executor、外部事件自动唤醒与独立 evidence repository；同机 multi-worker 由 OS 文件锁提供独占 ownership。</div>
         <div class="source-box"><details><summary>源码证据</summary><ul class="source-list">
           <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/goal/goal.py">公开入口与循环：goal.py</a></li>
           <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/goal/judge.py">判定器、检查工具和 evidence view：judge.py</a></li>
@@ -1638,7 +1638,7 @@
         <li><strong>Evaluator 是独立 inspection agent。</strong>它输出 met、unmet、blocked、impossible、waiting_external、needs_user 和 <code>can_continue</code>。本地检查之外提供 <code>web_fetch</code>、<code>web_search</code>，沿用现有 URL 与网络权限检查；网页工具的失败通过结构化 <code>is_error</code> 回执传递。一次判定含失败的工具检查回执时，controller 不接受 <code>met</code>，先重新判定；持续失败报告 judge failure。该规则保守地要求一次无检查错误的验收，不证明成功回执本身足以满足全部语义要求；通用确定性 gate executor 尚未实现。</li>
         <li><strong>异步问题队列不阻塞无关工作。</strong>问题可以累积并逐项回答；active execution 在下一个边界消费答案，只有所有剩余工作都依赖答案时才进入 <code>waiting_user</code>。问题只占用 Goal 详情面板，不替换或禁用普通 composer。</li>
         <li><strong>重启恢复采用显式新 execution。</strong>启动 reconciliation 把遗留执行状态改成 <code>paused_recoverable</code>；恢复沿用快照而不尝试复活旧调用栈。</li>
-        <li><strong>外部 scheduler 是目标扩展。</strong><code>waiting_external</code> 已有状态，但 job/timer/event 的自动 wake handle 和 multi-worker lease 尚未实现。</li>
+        <li><strong>外部 scheduler 是目标扩展。</strong><code>waiting_external</code> 已有状态，但 job/timer/event 的自动 wake handle 尚未实现。同机共享 session store 的 Goal controller 使用独立 OS 文件锁，启动恢复持相同锁，避免改写 live sibling 的状态。</li>
       </ol>
       <details class="data-details">
         <summary>查看目标状态的完整转移表</summary>
@@ -1932,8 +1932,8 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
     <section id="implementation-evidence">
       <h2>实现与验收合同</h2>
       <p>独立规格审查要求保证两项合同：真实人类依赖转入等待，不能被普通无进展计数覆盖；Web 操作成功后的 HTTP 快照立即更新可见状态与共享缓存，旧版本事件不能回退新状态。修复限定在 Goal 状态转换及前端投影，不改其他工作流。验收分别使用公开 Goal → 回答命令的回归测试，以及无 WebSocket 广播的操作响应与重新挂载测试；修复后需要原审查者复核，再做独立质量审查。</p>
-      <p>真实人类依赖不会被无进展计数错误覆盖，预算判断仍独立执行。前端通过共用 <code>updateSessionGoal</code> 按 session version 应用 HTTP、WebSocket 与 hydration 快照；无广播暂停、重新挂载、乱序消息、后台会话及迟到加载由 4 项组件测试覆盖。Web 测试合计 148 项通过，TypeScript、静态检查和 32 页生产构建通过；等待状态与前端修复的独立规格复核均通过。构建仍有既有 Next SWC lockfile 修复警告，未改依赖锁文件。</p>
-      <p>控制器保存使用 CAS；发生同运行并发更新时，以最近确认快照、本轮状态和磁盘最新状态合并，并在 session 写锁内提交，不执行无界重试。合并仅允许相同 <code>goal_id/run_id</code> 且最新状态仍在执行的情况；预算和新答案保留，本轮进度与已消费答案也保留。暂停、取消、替换运行仍拒绝旧控制器写入。终止保存共用此路径；新答案使旧终止判定失效，保存为 <code>paused_recoverable / answer_received</code>，用户可继续处理，不能误报 <code>achieved</code>。本次运行分批消费的答案共同进入后续工作提示。</p>
+      <p>真实人类依赖不会被无进展计数错误覆盖，预算判断仍独立执行。前端通过共用 <code>updateSessionGoal</code> 按 session version 应用 HTTP、WebSocket 与 hydration 快照；无广播暂停、重新挂载、乱序消息、后台会话及迟到加载由 4 项组件测试覆盖。Web 测试合计 229 项通过，TypeScript、静态检查和 32 页生产构建通过；等待状态与前端修复的独立规格复核均通过。构建仍有既有 Next SWC lockfile 修复警告，未改依赖锁文件。</p>
+      <p>控制器保存使用 CAS；发生同运行并发更新时，以最近确认快照、本轮状态和磁盘最新状态合并，并在 session 写锁内提交，不执行无界重试。合并仅允许相同 <code>goal_id/run_id</code> 且最新状态仍在执行的情况；预算和新答案保留，本轮进度与已消费答案也保留。暂停、取消、替换运行仍拒绝旧控制器写入。终止保存共用此路径；新答案使旧终止判定失效，保存为 <code>paused_recoverable / answer_received</code>，用户可继续处理，不能误报 <code>achieved</code>。分批消费的答案共同进入后续工作提示；再次恢复时从当前 revision 的持久问题记录重建已确认决定，并恢复有长度上限的 evidence window。编辑目标隔离旧 revision 的决定和证据。</p>
       <p>并发修复的独立质量复核为 <code>PASS</code>，覆盖原有“修改预算导致控制器退出但仍显示运行中”的复现。审查者独立执行 9 项针对性回归通过：预算/答案在 evaluating/terminal 的竞争、暂停/取消/替换运行、消费期间收到新答案及旧 CAS 拒绝。Goal、存储和 Web API 相关测试合计 118 项通过。该结论限于已审修复，不能代替修复后全量验证、尚未实现的设计能力或默认 App 可视验收。</p>
       <p>以下条目把设计要求绑定到公开入口和可观察结果。局部源码、测试及独立修复审查不代表完整验收：修复后全量测试已运行但未通过，默认 App 尚未刷新。下表中的实现描述仅指工作树内已有代码，不表示已发布或已完成全部要求。</p>
       <div class="matrix-wrap">
@@ -1947,7 +1947,7 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
             <tr><td>重载与 worker 重启可恢复</td><td>session hydration；startup reconciliation；<code>/goal resume</code></td><td>重载后恢复完整投影；重启中断状态变为 <code>paused_recoverable</code>；resume 创建新 run</td><td class="yes">代码与组件测试通过；默认 App 验收待刷新</td></tr>
             <tr><td>Web 与 TUI 控制一致</td><td>Goal dialog；<code>/goal</code> 命令；同一 Action API</td><td>查看目标、checklist、用量、问题；编辑、暂停、回答、预算、继续、终止</td><td class="partial">实现与 typecheck 已验证；产品视觉验收待刷新</td></tr>
             <tr><td>外部事件自动唤醒</td><td>目标：持久 wait handle + scheduler event</td><td>CI/job/timer 完成后幂等恢复，无需用户 resume</td><td class="no">未实现</td></tr>
-            <tr><td>共享状态目录多 worker ownership</td><td>目标：带过期时间的 execution lease</td><td>startup reconciliation 不会暂停 live sibling worker 的 Goal</td><td class="no">未实现</td></tr>
+            <tr><td>共享状态目录多 worker ownership</td><td><code>ownership.goal_owner()</code>；独立非阻塞 OS 文件锁</td><td>同机同 store 独占 controller；startup reconciliation 跳过 live sibling；崩溃释放锁</td><td class="yes">跨进程与异常退出测试覆盖；不支持跨主机分布式 lease</td></tr>
             <tr><td>Deterministic gates 与独立证据仓库</td><td>目标：gate runner + evidence refs/repository</td><td>可复用命令检查先于 judge，完整证据不依赖 session 快照</td><td class="no">未实现</td></tr>
           </tbody>
         </table>
@@ -1957,8 +1957,8 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
         <li><code>cd apps/web &amp;&amp; npx tsc --noEmit</code></li>
         <li><code>python -m scripts.docs_site.build</code>，随后 <code>python -m scripts.docs_site.checklinks</code></li>
       </ul></details></div>
-      <p>网页核查：judge 具有网页读取和检索工具，工具注册适配层将失败标记为 <code>is_error=true</code>，保留直接调用的字符串接口。当前环境的 arXiv 请求仍被 <code>NON_GLOBAL_ADDRESS</code> 策略拒绝，配置的 Tavily 服务缺少凭据；未绕过网络策略。针对全量失败与收尾错误选出的同一组 14 项检查，干净基线为 5 项失败、9 项通过，当前工作树为 6 项失败、8 项通过。共同失败涉及 job 父关系、已安装 server 包的导入冲突、旧 namespace 和生成 README；当前额外失败是 self-update 文档路径。其余全量失败在这组检查中通过，测试顺序或共享状态影响尚未完成归因；定向通过不替代全量验收。</p>
-      <p>当前全量验证：<code>python -m pytest -q</code> 返回 6312 项通过、13 项失败、9 项跳过、7 项未选择、1 项预期失败及 2 项 teardown error。失败涉及 self-update 文档、job 父关系、仓库布局与生成文档、models.dev 访问、job/retry/session 上下文；收尾错误涉及线程池和 models-dev-refresh 线程。失败列表没有 Goal 专属测试，但这不能证明其他失败全部与本次改动无关，也不能声明全仓库通过。TUI 测试 141 项通过、2 项跳过，类型检查通过。</p>
+      <p>网页核查：judge 具有网页读取和检索工具，失败回执标记为 <code>is_error=true</code>。已有真实模型检查受到 arXiv 的 <code>NON_GLOBAL_ADDRESS</code> 拒绝与 Tavily 缺少凭据的限制；没有绕过网络策略，不能把这次研究产物视为来源已核验的综述。</p>
+      <p>当前集成环境的全量 Python 验证正在重新执行，不能沿用旧基础版本的统计作为当前结论。TUI 测试 148 项通过、2 项跳过，类型检查通过。默认 App 产品验收独立记录。</p>
       <p>真实模型验证：Grok 带工具请求的超时已复现。MiniMax-M3 的研究例子执行 refinement、写作、判定与修订，但外部来源核查受环境限制，不能作为已核验的综述交付。失败回执防护启用后，同一模型在来源访问失败时返回 <code>blocked</code> 与未完成清单；有 session 和无 session 的错误检查回执均由代码阻止 <code>met</code>，不等于已证明全部语义判定可靠。refinement 范围约束也有真实模型检查。默认 App 尚未更新，产品可视验收未完成。</p>
     </section>
 
@@ -1966,7 +1966,7 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
       <h2>实现状态与证据边界</h2>
       <div class="framework-grid">
         <div class="card"><h3>当前代码已经具备</h3><ul><li>单 prompt Goal、Working Agent 与独立 inspection judge。</li><li>schema v3 版本化 session 快照、goal/run ID、checkpoint、CAS 写入和旧数据规范化。</li><li>typed stop states、round/token/active-time/cost 预算、checklist stall 与 idle-spin 检测。</li><li>异步问题队列、逐项回答、边界消费、有人/无人值守判定策略。</li><li>Web Goal dialog、TUI 操作、页面重载 hydration 与 worker 重启后的可恢复暂停。</li><li>五张 Archify typed source 生成并以内联 SVG 写入本文档。</li></ul></div>
-        <div class="card"><h3>仍未实现或尚未验收</h3><ul><li>deterministic gate executor、外部事件自动 wake handle 和 append-only evidence repository。</li><li>共享状态目录下的 multi-worker execution lease；startup reconciliation 仍假设本进程拥有待恢复 session。</li><li>默认 <code>/Applications/OpenProgram.app</code> 尚未从当前工作树刷新，因此实际 Goal 弹窗、重载与重启后的可见行为尚未做产品级验收。</li><li>当前工作树包含其他未完成修改；本文不能作为已发布、已提交或已部署的证明。</li></ul></div>
+        <div class="card"><h3>仍未实现或尚未验收</h3><ul><li>deterministic gate executor、外部事件自动 wake handle 和 append-only evidence repository。</li><li>跨主机分布式 lease；同机共享目录的 Goal ownership 已实现。</li><li>默认 <code>/Applications/OpenProgram.app</code> 尚未从当前工作树刷新，因此实际 Goal 弹窗、重载与重启后的可见行为尚未做产品级验收。</li><li>集成分支仅包含 Goal 改动；源码与测试状态不等于默认 App 已部署。</li></ul></div>
       </div>
       <div class="callout warn"><strong>版本边界：</strong>本地参考仓库用于读取可复现的具体代码路径；官方在线文档与公开仓库 main 用于确认后续新增合同。Hermes 本地快照的基础 GoalManager 不含当前上游的 completion contract、quality gate 与 wait barrier，因此相关段落以公开上游源码为准。Claude Code 以官方文档为准。</div>
       <p class="footer">OpenProgram Goal 的权威工程设计与实现对比。产品使用说明见 <a href="../../../capabilities/goal.html">Goal Workflow</a>；本文中的未验收项不能作为已发布或已部署的证明。</p>
