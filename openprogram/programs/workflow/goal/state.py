@@ -40,6 +40,17 @@ class GoalConflictError(ValueError):
     """A stale controller attempted to replace a newer Goal snapshot."""
 
 
+def check_goal_preconditions(goal: dict, expected: dict | None) -> None:
+    """Reject an action aimed at a different saved Goal or revision."""
+    if expected is None:
+        return
+    fields = {"goal_id", "revision", "run_id", "version"}
+    if not isinstance(expected, dict) or not expected or expected.keys() - fields:
+        raise ValueError("Invalid Goal preconditions")
+    if any(goal.get(key) != value for key, value in expected.items()):
+        raise GoalConflictError("Goal changed; reload its details before retrying")
+
+
 def _db():
     from openprogram.agent.session_db import default_db
     return default_db()

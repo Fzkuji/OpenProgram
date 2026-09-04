@@ -22,6 +22,10 @@ def register(app):
             goal = goal_module.load_goal(session_id)
             if not goal or goal.get("status") not in goal_module.RESUMABLE_STATUSES:
                 return JSONResponse(content={"error": "GoalNotResumable"}, status_code=409)
+            try:
+                goal_module.check_goal_preconditions(goal, payload.get("expected"))
+            except ValueError as exc:
+                return JSONResponse(content={"error": str(exc)}, status_code=409)
             return JSONResponse(content={
                 "goal": goal,
                 "invoke": goal_module._resume_invocation(goal),

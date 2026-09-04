@@ -52,6 +52,7 @@ def _positive_float(value, *, name: str) -> float | None:
         "timeout_s": {"hidden": True},
         "context_mode": {"hidden": True},
         "resume": {"hidden": True},
+        "expected_goal": {"hidden": True},
         "runtime": {"hidden": True},
     },
     parameters={
@@ -84,6 +85,7 @@ def goal(
     timeout_s: float | None = None,
     context_mode: str = "isolated",
     resume: bool = False,
+    expected_goal: dict | None = None,
     runtime=None,
 ) -> str:
     """Run a working agent and an independent judge until the Goal settles.
@@ -108,6 +110,10 @@ def goal(
     stored = previous if resume else None
     if resume and not stored:
         raise ValueError("No persisted Goal is available to resume")
+    if expected_goal is not None:
+        if not resume:
+            raise ValueError("Goal preconditions require resume=True")
+        _goal.check_goal_preconditions(stored, expected_goal)
     if stored and stored.get("status") not in _goal.RESUMABLE_STATUSES:
         raise ValueError(f"Goal in status {stored.get('status')!r} cannot resume")
 

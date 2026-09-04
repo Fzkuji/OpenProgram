@@ -34,6 +34,9 @@ def _resume_invocation(goal: dict) -> dict:
             "prompt": goal.get("text") or "",
             "context_mode": "session",
             "resume": True,
+            "expected_goal": {key: goal.get(key) for key in (
+                "goal_id", "revision", "run_id", "version",
+            )},
         },
     }
 
@@ -43,6 +46,7 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
     goal = _goal.load_goal(session_id)
     if not goal:
         raise ValueError("No Goal exists for this session")
+    _goal.check_goal_preconditions(goal, values.get("expected"))
     action = action.strip().lower()
     if action == "pause":
         if goal.get("status") not in _goal.RUNNING_STATUSES:
@@ -61,7 +65,6 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
         prompt = str(values.get("prompt") or "").strip()
         if not prompt:
             raise ValueError("Goal prompt cannot be empty")
-        _cancel_execution(session_id, goal)
         goal.update({
             "text": prompt,
             "revision": int(goal.get("revision") or 1) + 1,
@@ -99,6 +102,7 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
         goal.pop("last_question_options", None)
         _goal.checkpoint_active_elapsed(goal, stop=True)
         _goal.save_goal(session_id, goal)
+        _cancel_execution(session_id, goal)
     elif action == "answer":
         answer = str(values.get("answer") or "").strip()
         if not answer:
@@ -116,12 +120,6 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
         if question is None:
             raise ValueError("No matching pending Goal question")
         question_id = str(question.get("id") or "")
-        if question_id:
-            try:
-                from openprogram.agent.questions import resolve_question_and_broadcast
-                resolve_question_and_broadcast(question_id, "answered", answer)
-            except Exception:
-                pass
         question.update({
             "status": "answered",
             "answer": answer,
@@ -181,7 +179,6 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
         goal["max_turns"] = budget.get("max_turns")
         _goal.save_goal(session_id, goal)
     elif action in {"clear", "cancel"}:
-        _cancel_execution(session_id, goal)
         goal.update({
             "status": "cancelled",
             "phase": "terminal",
@@ -190,6 +187,7 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
         })
         _goal.checkpoint_active_elapsed(goal, stop=True)
         _goal.save_goal(session_id, goal)
+        _cancel_execution(session_id, goal)
     else:
         raise ValueError(f"Unknown Goal action: {action}")
     _goal._emit_goal_update(None, session_id, goal)

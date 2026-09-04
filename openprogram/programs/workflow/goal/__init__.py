@@ -66,6 +66,7 @@ from openprogram.programs.workflow.goal.state import (  # noqa: F401
     accumulate_goal_usage,
     budget_exhausted,
     checkpoint_active_elapsed,
+    check_goal_preconditions,
     default_max_turns,
     goal_usage,
     judge_model,

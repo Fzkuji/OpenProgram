@@ -81,6 +81,14 @@ they are consumed, so a worker restart cannot discard them. The short answer
 form targets the oldest pending question; include a question ID to answer
 another item in the queue.
 
+The Goal HTTP action endpoint accepts an optional `expected` object containing
+`goal_id`, `revision`, `run_id`, or `version` from the displayed snapshot.
+Mismatches return a conflict without applying the action. State commits precede
+cancellation delivery; a save conflict does not cancel the running execution.
+Resume descriptors from HTTP and `/goal` bind to the observed snapshot and are
+rechecked by the Workflow before starting work. If the Goal changes in between,
+request resume again from its current state.
+
 ## Waiting and restart recovery
 
 Startup recovery checks the recorded host, process ID, process start identity,
