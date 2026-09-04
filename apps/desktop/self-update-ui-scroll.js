@@ -1,7 +1,7 @@
 "use strict";
 
 // This fixed program runs in a private isolated world. The verifier supplies no
-// JavaScript or selector; only the already approved bounded scroll delta enters.
+// JavaScript or selector; only an already approved scroll or perspective enters.
 function scrollProgram(command) {
   const slot = "__openprogramUiScroll";
   const marker = "data-self-update-verification";
@@ -13,6 +13,7 @@ function scrollProgram(command) {
       state.area.style.scrollBehavior = state.behavior;
       state.area.removeAttribute(marker);
     }
+    if (state.toggle?.getAttribute("data-self-update-view") === state.nonce) state.toggle.removeAttribute("data-self-update-view");
     if (globalThis[slot] === state) delete globalThis[slot];
   };
   const current = () => {
@@ -23,6 +24,11 @@ function scrollProgram(command) {
         state.area.getAttribute(marker) !== command.nonce || Date.now() >= command.deadline * 1000) {
       throw new Error("scroll_target_changed");
     }
+    if (state.toggle && (document.getElementById("sessionPerspectiveToggle") !== state.toggle ||
+        state.toggle.getAttribute("data-session-id") !== command.session_id ||
+        state.toggle.getAttribute("data-tab-id") !== state.tab ||
+        state.toggle.getAttribute("data-self-update-view") !== state.nonce ||
+        state.toggle.closest("[data-center-view]") !== state.pane)) throw new Error("view_target_changed");
     return state;
   };
   const painted = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -41,15 +47,53 @@ function scrollProgram(command) {
       throw new Error("scroll_target_unavailable");
     }
     const state = { area, nonce: command.nonce, before: metrics(area), behavior: area.style.scrollBehavior };
+    if (command.kind === "view") {
+      const toggle = document.getElementById("sessionPerspectiveToggle");
+      const pane = toggle?.closest("[data-center-view]");
+      // Start from the restored transcript, never a hidden/other session pane.
+      if (!toggle || toggle.disabled || toggle.getAttribute("data-session-id") !== command.session_id ||
+          !toggle.getAttribute("data-tab-id") || toggle.hasAttribute("data-self-update-view") ||
+          document.querySelectorAll("#sessionPerspectiveToggle").length !== 1 ||
+          !pane?.contains(area) || pane.getAttribute("data-center-view") !== "session" ||
+          toggle.getAttribute("aria-pressed") !== "false") throw new Error("view_target_unavailable");
+      Object.assign(state, { toggle, pane, tab: toggle.getAttribute("data-tab-id"), target: command.target });
+      toggle.setAttribute("data-self-update-view", command.nonce);
+    }
     globalThis[slot] = state;
     area.setAttribute(marker, command.nonce);
     area.style.scrollBehavior = "auto";
     state.timer = setTimeout(() => clear(state), Math.max(1, command.deadline * 1000 - Date.now()));
+    if (state.toggle) {
+      if (command.target === "dag") state.toggle.click();
+      return painted().then(() => {
+        current();
+        if (state.pane.getAttribute("data-center-view") !== command.target ||
+            state.toggle.getAttribute("aria-pressed") !== String(command.target === "dag")) throw new Error("view_not_changed");
+        return { before: "session", after: command.target };
+      });
+    }
     area.scrollTop = Math.max(0, Math.min(area.scrollHeight - area.clientHeight, area.scrollTop + command.delta_y));
     return painted().then(() => ({ before: current().before, after: metrics(area) }));
   }
   if (command.mode === "finish") {
     const state = current();
+    if (state.toggle) {
+      if (state.pane.getAttribute("data-center-view") !== state.target) throw new Error("view_target_changed");
+      if (state.target === "dag") state.toggle.click();
+      return painted().then(() => {
+        current();
+        state.area.scrollTop = state.before.top;
+        state.area.scrollLeft = state.before.left;
+        return painted();
+      }).then(() => {
+        current();
+        if (state.pane.getAttribute("data-center-view") !== "session" ||
+            state.toggle.getAttribute("aria-pressed") !== "false" ||
+            JSON.stringify(metrics(state.area)) !== JSON.stringify(state.before)) throw new Error("view_restore_failed");
+        clear(state);
+        return "session";
+      });
+    }
     state.area.scrollTop = state.before.top;
     return painted().then(() => {
       current();

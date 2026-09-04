@@ -44,7 +44,14 @@ async function main() {
     getBoundingClientRect: () => ({ width: 800 }), hasAttribute: (name) => attributes.has(name),
     getAttribute: (name) => attributes.get(name), setAttribute: (name, value) => attributes.set(name, value),
     removeAttribute: (name) => attributes.delete(name) };
-  const isolated = vm.createContext({ document: { getElementById: (id) => id === "chatArea" ? area : {},
+  let perspective = "session";
+  const viewAttributes = new Map([["data-session-id", "p1"], ["data-tab-id", "s:p1"]]);
+  const pane = { contains: () => true, getAttribute: () => perspective };
+  const toggle = { disabled: false, closest: () => pane, hasAttribute: (name) => viewAttributes.has(name),
+    getAttribute: (name) => name === "aria-pressed" ? String(perspective === "dag") : viewAttributes.get(name),
+    setAttribute: (name, value) => viewAttributes.set(name, value), removeAttribute: (name) => viewAttributes.delete(name),
+    click: () => { perspective = perspective === "dag" ? "session" : "dag"; } };
+  const isolated = vm.createContext({ document: { getElementById: (id) => id === "chatArea" ? area : id === "sessionPerspectiveToggle" ? toggle : {},
       querySelectorAll: () => [area] }, location: { pathname: "/s/p1" }, setTimeout, clearTimeout,
       requestAnimationFrame: (fn) => setImmediate(fn) });
   contents.executeJavaScriptInIsolatedWorld = async (world, scripts, gesture) => {
@@ -58,7 +65,9 @@ async function main() {
     assert.deepEqual(result, { cancel: true }, "capture has native network isolation");
     nativeIpc.emit("test:mutation", { sender: contents });
     assert.equal(nativeMutations, 0, "capture cannot invoke native mutation");
-    if (contract.interaction) {
+    if (contract.interaction?.kind === "view") {
+      assert.equal(perspective, contract.interaction.target, "capture observes the approved perspective");
+    } else if (contract.interaction) {
       assert.equal(area.scrollTop, 100, "screenshot observes approved post-scroll state");
       assert.equal(attributes.get("data-self-update-verification"), nonce);
     }
@@ -170,6 +179,36 @@ async function main() {
   assert.equal(area.scrollTop, 250, "user scroll must not be overwritten by cleanup");
   assert.equal(attributes.size, 0);
   contents.capturePage = capture;
+  contract.interaction = { kind: "view", target: "dag" };
+  assert.deepEqual(await handler(event, nonce), { ok: true });
+  assert.equal(uploaded.interaction.before, "session");
+  assert.equal(uploaded.interaction.after, "dag");
+  assert.equal(uploaded.interaction.restored, "session");
+  assert.equal(perspective, "session");
+  assert.equal(viewAttributes.has("data-self-update-view"), false);
+  contents.capturePage = async () => { throw new Error("capture failed after switch"); };
+  assert.equal((await handler(event, nonce)).ok, false);
+  assert.equal(perspective, "session");
+  contents.capturePage = async () => { contents.emit("before-input-event", {}); throw new Error("user interrupted view"); };
+  assert.equal((await handler(event, nonce)).ok, false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(perspective, "dag", "interruption does not change the user's perspective");
+  assert.equal(viewAttributes.has("data-self-update-view"), false);
+  perspective = "session";
+  contents.capturePage = capture;
+  viewAttributes.set("data-tab-id", "s:other");
+  viewAttributes.set("data-session-id", "other");
+  assert.equal((await handler(event, nonce)).ok, false, "foreign conversation never switches");
+  assert.equal(perspective, "session");
+  viewAttributes.set("data-tab-id", "s:p1");
+  viewAttributes.set("data-session-id", "p1");
+  const click = toggle.click;
+  toggle.click = () => { if (perspective === "session") click(); };
+  assert.equal((await handler(event, nonce)).ok, false, "failed restoration cannot publish success");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(viewAttributes.has("data-self-update-view"), false);
+  toggle.click = click;
+  perspective = "session";
   delete contract.interaction;
   // Exercise the production preload entry and main registration, not a copied
   // renderer shim. Electron itself is not launched by this component test.

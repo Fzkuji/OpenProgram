@@ -132,6 +132,9 @@ export function ViewControls() {
         <button
           type="button"
           className="chat-view-control-btn"
+          id="sessionPerspectiveToggle"
+          data-session-id={sessionId}
+          data-tab-id={activeId}
           aria-label={toggleLabel}
           aria-pressed={dagView}
           onClick={() => setTabDagView(activeId!, !dagView)}

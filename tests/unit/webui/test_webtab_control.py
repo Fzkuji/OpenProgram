@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -300,38 +299,10 @@ def test_desktop_activation_does_not_restore_a_tab_changed_while_loading():
     assert show_index < navigate_index < guard_index < target_index
 
 
-def test_desktop_renderer_reload_discards_pending_native_navigations():
+def test_desktop_native_navigation_helpers_clear_pending_records():
     source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
-    # Renderer reload destroys every view owned by the window, which
-    # drops their pending-navigation records with them (destroyView
-    # nulls record.navigation). runNativeNavigation likewise clears the
-    # record before reload/history calls that bypass loadView.
-    start = source.index('win.webContents.on("did-navigate",')
-    end = source.index("\n  });", start) + len("\n  });")
-    subprocess.run(
-        [
-            "node", "-e", """
-const assert = require('node:assert/strict');
-const vm = require('node:vm');
-const { EventEmitter } = require('node:events');
-const contents = new EventEmitter();
-const ctx = {};
-const calls = [];
-vm.runInNewContext(process.argv[1], {
-  win: { webContents: contents }, ctx,
-  clearOwnedViews: (owner) => calls.push(['clear', owner]),
-  selfUpdateReopen: {
-    observeNavigation: (owner, url) => calls.push(['observe', owner, url]),
-  },
-});
-contents.emit('did-navigate', {}, 'http://localhost:18100/s/test-session');
-assert.deepEqual(calls, [
-  ['clear', ctx], ['observe', ctx, 'http://localhost:18100/s/test-session'],
-]);
-""", source[start:end],
-        ],
-        check=True, capture_output=True, text=True, timeout=10,
-    )
+    # The actual reload callback is exercised by Desktop's VM check.
+    # Both native helpers must explicitly invalidate their pending record.
     start = source.index("function destroyView")
     end = source.index("function clearOwnedViews", start)
     assert "record.navigation = null" in source[start:end]

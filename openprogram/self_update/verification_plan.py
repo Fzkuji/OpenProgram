@@ -37,10 +37,13 @@ def validate_plan(value, request) -> dict:
             raise ValueError("invalid verification check identity, entry or budget")
         if "interaction" in check:
             interaction = check["interaction"]
-            if (not isinstance(interaction, dict) or set(interaction) != {"kind", "delta_y"}
-                    or interaction["kind"] != "scroll" or type(interaction["delta_y"]) is not int
-                    or interaction["delta_y"] == 0 or not -1200 <= interaction["delta_y"] <= 1200):
-                raise ValueError("UI interaction requires a bounded conversation scroll")
+            scroll = (isinstance(interaction, dict) and set(interaction) == {"kind", "delta_y"}
+                      and interaction["kind"] == "scroll" and type(interaction["delta_y"]) is int
+                      and interaction["delta_y"] != 0 and -1200 <= interaction["delta_y"] <= 1200)
+            view = (isinstance(interaction, dict) and set(interaction) == {"kind", "target"}
+                    and interaction["kind"] == "view" and interaction["target"] in ("session", "dag"))
+            if not (scroll or view):
+                raise ValueError("UI interaction requires a bounded scroll or original-session perspective")
         if check["entry"] == "test:python":
             argv = check["argv"]
             if (not isinstance(argv, list) or not 1 <= len(argv) <= 32
@@ -53,6 +56,12 @@ def validate_plan(value, request) -> dict:
     if assertions != expected:
         raise ValueError("verification plan must cover every assertion exactly once")
     return deepcopy(value)
+
+
+def required_ui_protocol(checks) -> int:
+    """Capability floor for an already validated frozen plan."""
+    return max((3 if check.get("interaction", {}).get("kind") == "view" else
+                2 if "interaction" in check else 1 for check in checks), default=1)
 
 
 def resolve_check(plan, check_id) -> dict:

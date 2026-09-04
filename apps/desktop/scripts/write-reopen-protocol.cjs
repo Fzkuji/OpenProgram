@@ -105,6 +105,20 @@ async function writeProtocol(resources) {
       protocol = 2;
       Object.assign(uiBindings, { server: await binding(resources, server), owner_auth: await binding(resources, ownerAuth),
         scroll_frontend: await binding(resources, scrollFrontend) });
+      const viewFrontend = chunks.map(name => chunkRoot + name).find(relative => {
+        const source = text(resources, relative);
+        return source.includes("sessionPerspectiveToggle") && source.includes("data-self-update-view");
+      });
+      const viewControls = chunks.map(name => chunkRoot + name).find(relative => {
+        const source = text(resources, relative);
+        return source.includes("sessionPerspectiveToggle") && source.includes("data-tab-id") && source.includes("aria-pressed");
+      });
+      if (/^UI_VIEW_PROTOCOL = 1$/m.test(text(resources, uiBackend)) && viewFrontend && viewControls &&
+          archiveText("self-update-ui-scroll.js").includes("view_restore_failed")) {
+        protocol = 3;
+        uiBindings.view_frontend = await binding(resources, viewFrontend);
+        uiBindings.view_controls = await binding(resources, viewControls);
+      }
     }
     const uiTemporary = `${uiTarget}.${crypto.randomUUID()}.tmp`;
     const uiFd = fs.openSync(uiTemporary, "wx", 0o600);

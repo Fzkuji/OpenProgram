@@ -27,7 +27,7 @@ def ui_install(package_factory, installed_cli, monkeypatch):
     from openprogram.webui import server
     from openprogram.webui.routes import misc, self_updates
     from openprogram.webui.ws_actions import webtab
-    app = package_factory(ui=True, interaction=True)
+    app = package_factory(ui=True, interaction=True, view=True)
     actual_package = package_protocol.validate_ui_package
     monkeypatch.setattr(package_protocol, "validate_ui_package", lambda _: actual_package(app))
     monkeypatch.setattr(ui_checks, "_process_identity", lambda identity: {"app_pid": identity["app_pid"], "renderer_pid": identity["renderer_pid"]})
@@ -70,7 +70,10 @@ def ui_install(package_factory, installed_cli, monkeypatch):
                 screenshot=dict(mime_type="image/png", width=16, height=16, sha256=hashlib.sha256(raw).hexdigest(),
                     data=base64.b64encode(raw).decode()), accessibility={"nodes": [{"nodeId": "1", "role": {"value": "RootWebArea"}}]},
                 cleanup_complete=True)
-            if "interaction" in contract:
+            if contract.get("interaction", {}).get("kind") == "view":
+                body["interaction"] = {**contract["interaction"], "before": "session",
+                    "after": contract["interaction"]["target"], "restored": "session"}
+            elif "interaction" in contract:
                 before = dict(top=500, left=0, height=2000, viewport=600)
                 body["interaction"] = {**contract["interaction"], "before": before,
                     "after": {**before, "top": 500 + contract["interaction"]["delta_y"]}, "restored": dict(before)}
@@ -151,6 +154,63 @@ def _scroll_plan():
     plan = _ui_plan()
     plan["checks"][0]["interaction"] = {"kind": "scroll", "delta_y": -400}
     return plan
+
+
+def _view_plan():
+    plan = _ui_plan()
+    plan["checks"][0]["interaction"] = {"kind": "view", "target": "dag"}
+    return plan
+
+
+def test_public_prepare_accepts_approved_perspective(tmp_path, monkeypatch, ui_install):
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
+    result, _ = _public_prepare(tmp_path, monkeypatch, _view_plan())
+    assert not result.is_error, result.content
+
+
+@pytest.mark.parametrize("interaction", [
+    {"kind": "view", "target": "/s/other"}, {"kind": "view", "target": "https://example.com"},
+    {"kind": "view", "target": "dag", "selector": "button"},
+])
+def test_perspective_cannot_expand_target_or_action(tmp_path, monkeypatch, ui_install, interaction):
+    plan = _view_plan()
+    plan["checks"][0]["interaction"] = interaction
+    result, store = _public_prepare(tmp_path, monkeypatch, plan)
+    assert result.is_error
+    assert not store.root.exists()
+
+
+@pytest.mark.parametrize("verifier", [_view_plan()], indirect=True)
+def test_perspective_check_has_bound_signed_restoration(verifier):
+    verifier.run()
+    result = verifier.control["tool_result"]
+    assert not result.is_error, result.content
+    body = json.loads(json.loads(result.content[0].text)["body"])
+    assert body["interaction"] == {"kind": "view", "target": "dag", "before": "session",
+                                    "after": "dag", "restored": "session"}
+    assert consume(verifier)["verdict"] == "pass"
+
+
+@pytest.mark.parametrize("verifier", [_view_plan()], indirect=True)
+@pytest.mark.parametrize("damage", ["target", "after", "restored"])
+def test_perspective_mismatch_is_inconclusive(verifier, ui_install, damage):
+    ui_install["mutation"] = lambda body: body["interaction"].update({damage: "wrong"})
+    verifier.run()
+    assert verifier.control["tool_result"].is_error
+    assert consume(verifier)["verdict"] == "inconclusive"
+
+
+def test_view_requires_new_packaged_capability(tmp_path, monkeypatch, ui_install, package_factory):
+    old = package_factory("scroll-only", ui=True, interaction=True)
+    package = ui_install["validate_package"](old)
+    assert package["protocol"] == 2
+    monkeypatch.setattr("openprogram.self_update.package_protocol.validate_ui_package", lambda _: package)
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
+    result, store = _public_prepare(tmp_path, monkeypatch, _view_plan())
+    assert result.is_error and "guarded UI" in result.content[0].text
+    assert not store.root.exists()
 
 
 def test_public_prepare_accepts_approved_scroll(tmp_path, monkeypatch, ui_install):

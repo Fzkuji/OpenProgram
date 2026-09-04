@@ -17,7 +17,7 @@ WRITER = ROOT / "apps/desktop/scripts/write-reopen-protocol.cjs"
 
 @pytest.fixture
 def package_factory(tmp_path):
-    def build(name="fixture", version="0.6.2", *, app=None, ui=False, interaction=False):
+    def build(name="fixture", version="0.6.2", *, app=None, ui=False, interaction=False, view=False):
         if app is None:
             app = _fake_desktop_app(tmp_path / name, version)
         resources = app / "Contents/Resources"
@@ -49,6 +49,9 @@ def package_factory(tmp_path):
             for relative in ("server.py", "_webui/owner_auth.py"):
                 shutil.copyfile(ROOT / "apps/server/openprogram_server" / relative, site / "openprogram_server" / relative)
             chunk.write_text(chunk.read_text() + '\nconst marker = "data-self-update-verification";')
+        if view:
+            chunk.write_text(chunk.read_text() + '\nconst toggle = "sessionPerspectiveToggle", lease = "data-self-update-view";')
+            chunk.with_name("view-controls.js").write_text('const props = {id:"sessionPerspectiveToggle","data-tab-id":"s:p1","aria-pressed":false};')
         result = subprocess.run(["node", "-e", "require(process.argv[1]).default({electronPlatformName:'darwin',appOutDir:'fixture',packager:{getResourcesDir:()=>process.argv[2]}}).catch(e=>{console.error(e);process.exit(1)})",
                                  str(WRITER), str(resources)], cwd=ROOT, capture_output=True, text=True, timeout=15)
         assert result.returncode == 0, result.stderr
@@ -142,6 +145,20 @@ def test_writer_cli_rejects_missing_compiled_reopen_entry(package_factory):
                             capture_output=True, text=True, timeout=15)
     assert result.returncode != 0 and "compiled Web reopen" in result.stderr
     assert descriptor.read_bytes() == before
+
+
+def test_view_protocol_binds_the_separately_bundled_control(package_factory):
+    from openprogram.self_update.package_protocol import validate_ui_package
+
+    app = package_factory(ui=True, interaction=True, view=True)
+    descriptor = validate_ui_package(app)
+    assert descriptor["protocol"] == 3
+    bindings = descriptor["bindings"]
+    assert bindings["view_frontend"]["path"] != bindings["view_controls"]["path"]
+    control = app / "Contents/Resources" / bindings["view_controls"]["path"]
+    control.write_text("no perspective control")
+    with pytest.raises(ValueError, match="UI verification protocol"):
+        validate_ui_package(app)
 
 
 def test_refresh_copies_installer_and_regenerates_packaged_protocol(package_factory, tmp_path):

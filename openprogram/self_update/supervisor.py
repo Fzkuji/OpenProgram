@@ -320,6 +320,7 @@ def _validate_reopen_packages(artifact: Artifact, update_dir: Path, installer_sh
     if (update_dir / "request.json").exists():
         from .verifier_config import CONFIG_EVIDENCE_PREFIX, load_verifier_config
         from .package_protocol import validate_ui_package
+        from .verification_plan import required_ui_protocol
         store = SelfUpdateStore(update_dir.parent)
         record = store.load(update_dir.name)
         config = (load_verifier_config(store, record)
@@ -327,7 +328,7 @@ def _validate_reopen_packages(artifact: Artifact, update_dir: Path, installer_sh
         if any(check["entry"] == "ui:main" for check in config.get("verification_plan", {}).get("checks", [])):
             for app in (artifact.path, Path(DEFAULT_APP_PATH)):
                 package = validate_ui_package(app)
-                if any("interaction" in check for check in config["verification_plan"]["checks"]) and package["protocol"] != 2:
+                if package["protocol"] < required_ui_protocol(config["verification_plan"]["checks"]):
                     raise ValueError("App does not support guarded UI interactions")
 
 

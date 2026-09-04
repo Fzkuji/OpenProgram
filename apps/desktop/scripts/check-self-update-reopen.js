@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { EventEmitter } = require("node:events");
 
 // Run the production window entry, not Electron or a source substring assertion.
 async function checkWindowEntry() {
@@ -13,7 +14,7 @@ async function checkWindowEntry() {
     constructor() {
       this.id = Math.random();
       this.loaded = [];
-      this.webContents = { setWindowOpenHandler() {}, on() {}, getURL: () => "" };
+      this.webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler() {}, getURL: () => "" });
     }
     on() {}
     once() {}
@@ -21,6 +22,7 @@ async function checkWindowEntry() {
     isDestroyed() { return false; }
   }
   const calls = [];
+  const navigations = [];
   const noop = () => {};
   const context = vm.createContext({
     BrowserWindow: Window, __dirname, path, process, URL,
@@ -30,7 +32,7 @@ async function checkWindowEntry() {
     makeWindowContext: (id, win) => ({ id, win }), windows: new Map(),
     contextsByBrowserWindowId: new Map(), closeMainMenu: noop,
     tabTransfers: { windowClosing: noop }, cleanupWindowContext: noop,
-    clearOwnedViews: noop, startWindowRecovery: noop,
+    clearOwnedViews: (ctx) => navigations.push(["clear", ctx]), startWindowRecovery: noop,
     resolveStartUrl: async () => "http://127.0.0.1:18100/chat#token=auth",
     isErrorPageUrl: () => false, UI_ORIGIN: "http://127.0.0.1:18100",
     selfUpdateReopen: {
@@ -38,7 +40,7 @@ async function checkWindowEntry() {
         calls.push(ctx.id);
         return ctx.id === "main" ? "http://127.0.0.1:18100/s/p1#token=auth" : url;
       },
-      observeNavigation: noop,
+      observeNavigation: (ctx, url) => navigations.push(["observe", ctx, url]),
     },
   });
   vm.runInContext(entry, context);
@@ -48,6 +50,8 @@ async function checkWindowEntry() {
   const other = await context.createWindow({ windowId: "detached-1", detached: true });
   assert.equal(other.win.loaded[0], "http://127.0.0.1:18100/chat#token=auth");
   assert.deepEqual(calls, ["main", "detached-1"]);
+  main.win.webContents.emit("did-navigate", {}, "http://127.0.0.1:18100/s/p1");
+  assert.deepEqual(navigations, [["clear", main], ["observe", main, "http://127.0.0.1:18100/s/p1"]]);
 }
 
 const { createSelfUpdateReopen, launchUpdateId, registerReopenIpc } = require("../self-update-reopen");

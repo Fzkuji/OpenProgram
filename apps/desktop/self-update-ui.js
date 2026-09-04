@@ -28,8 +28,11 @@ function validateContract(value, nonce) {
   if (value && Object.hasOwn(value, "interaction")) {
     keys.push("interaction");
     const step = value.interaction;
-    if (!step || Object.keys(step).sort().join() !== "delta_y,kind" || step.kind !== "scroll" ||
-        !Number.isInteger(step.delta_y) || step.delta_y === 0 || Math.abs(step.delta_y) > 1200) {
+    const scroll = step && Object.keys(step).sort().join() === "delta_y,kind" && step.kind === "scroll" &&
+      Number.isInteger(step.delta_y) && step.delta_y !== 0 && Math.abs(step.delta_y) <= 1200;
+    const view = step && Object.keys(step).sort().join() === "kind,target" && step.kind === "view" &&
+      ["session", "dag"].includes(step.target);
+    if (!scroll && !view) {
       throw new Error("invalid_capture_contract");
     }
   }
@@ -118,7 +121,7 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
       let interaction;
       if (contract.interaction) {
         scrollCommand = { nonce, session_id: contract.session_id, deadline: contract.deadline,
-          delta_y: contract.interaction.delta_y };
+          ...contract.interaction };
         const moved = await bounded(runScroll(wc, { ...scrollCommand, mode: "start" }));
         identity();
         interaction = { ...contract.interaction, ...moved };

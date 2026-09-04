@@ -161,9 +161,30 @@ restore their own scroll while the original target and deadline remain valid.
 User interruption cancels the check without restoring over the user's new position.
 Target changes or failed restoration cannot pass. At a scroll boundary the position
 may remain unchanged; this alone does not prove an assertion requiring movement.
+
+For the original conversation's context graph, use a frozen perspective check:
+
+```json
+{"id":"context-view","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576,"interaction":{"kind":"view","target":"dag"}}
+```
+
+`target` is exactly `session` or `dag`, not a URL or another session. The check
+starts with the original conversation visible and invokes its actual perspective
+control. It captures the requested perspective and restores the conversation and
+scroll position before success. An already selected DAG, a missing/replaced
+control, user interruption or failed restoration cannot pass. A `session` target
+does not change the perspective and cannot prove that a switch occurred. No
+temporary perspective is persisted, including through background tab updates.
+On user interruption the adapter does not force the original perspective or
+scroll position over the user's selection. Failed restoration may leave the
+requested perspective visible; the check reports failure, not successful cleanup.
+Both candidate and rollback packages require UI protocol 3, which additionally
+binds the compiled perspective support. Protocols 1 and 2 keep their previous
+capture and scroll capabilities; they cannot accept perspective checks.
+
 The screenshot supports only assertions about the captured state; interactions
 that were not observed remain inconclusive. HTTP responses, including `/chat`
-HTML, do not prove rendered App behavior. Navigation, approved test-object actions, complete
+HTML, do not prove rendered App behavior. Approved side-effect test-object actions, complete
 verification and actual installed-App acceptance remain pending.
 
 This source-checkout capability is separate from stable-release upgrades. On macOS,

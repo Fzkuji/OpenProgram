@@ -30,3 +30,46 @@ test("verification scroll updates visible state without persisting temporary pos
   assert.equal(persisted, 1);
   assert.equal(synced, 2);
 });
+
+test("perspective verification suppresses every center-tab persistence writer while marked", () => {
+  const source = readFileSync(new URL("../lib/state/center-tabs-persistence.ts", import.meta.url), "utf8");
+  const file = ts.createSourceFile("persistence.ts", source, ts.ScriptTarget.Latest, true);
+  const fn = file.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === "persistCenterTabsPayload");
+  assert.ok(fn);
+  let marked = true;
+  const stored = new Map();
+  const context = { exports: {}, window: {}, document: { getElementById: () => ({ hasAttribute: () => marked }) },
+    centerTabsStorageKey: () => "tabs", normalizeCenterTabsPayload: (value) => value, pendingTransfers: () => [],
+    localStorage: { setItem: (key, value) => stored.set(key, value), getItem: (key) => stored.get(key) } };
+  vm.runInNewContext(ts.transpileModule(fn.getText(file), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText, context);
+  const persist = context.exports.persistCenterTabsPayload;
+  assert.equal(persist({ tabs: [{ id: "s:p1", dagView: true }] }), false);
+  assert.equal(stored.size, 0);
+  marked = false;
+  assert.equal(persist({ tabs: [{ id: "s:p1", dagView: false }] }), true);
+  assert.equal(JSON.parse(stored.get("tabs")).tabs[0].dagView, false);
+});
+
+test("native perspective target names the real session toggle and invokes its actual handler", () => {
+  const source = readFileSync(new URL("../components/chat/view-controls.tsx", import.meta.url), "utf8");
+  const file = ts.createSourceFile("view-controls.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let button;
+  function visit(node) {
+    if (ts.isJsxOpeningElement(node) && node.tagName.getText(file) === "button" &&
+        node.attributes.properties.some((attr) => attr.name?.getText(file) === "id" && attr.initializer?.text === "sessionPerspectiveToggle")) button = node;
+    ts.forEachChild(node, visit);
+  }
+  visit(file);
+  assert.ok(button);
+  const attrs = Object.fromEntries(button.attributes.properties.map((attr) => [attr.name.getText(file), attr.initializer]));
+  assert.equal(attrs["data-session-id"].expression.getText(file), "sessionId");
+  assert.equal(attrs["data-tab-id"].expression.getText(file), "activeId");
+  const calls = [];
+  const handler = vm.runInNewContext(ts.transpileModule(`(${attrs.onClick.expression.getText(file)})`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText, { activeId: "s:p1", dagView: false, setTabDagView: (...args) => calls.push(args) });
+  handler();
+  assert.deepEqual(calls, [["s:p1", true]]);
+});

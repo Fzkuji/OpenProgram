@@ -18,6 +18,7 @@ import zlib
 
 UI_PROTOCOL = 1
 UI_INTERACTION_PROTOCOL = 1
+UI_VIEW_PROTOCOL = 1
 MAX_CAPTURE_BYTES = 1572864
 _pending = {}
 _lock = threading.RLock()
@@ -70,8 +71,9 @@ def admit_plan(plan, request):
     if any(check["entry"] == "ui:main" for check in plan["checks"]):
         from .package_protocol import validate_ui_package
         from .native_checks import runtime_identity
+        from .verification_plan import required_ui_protocol
         package = validate_ui_package(Path(request.app_path))
-        if any("interaction" in check for check in plan["checks"]) and package["protocol"] != 2:
+        if package["protocol"] < required_ui_protocol(plan["checks"]):
             raise ValueError("App does not support guarded UI interactions")
         runtime_identity(Path(request.app_path))
         _main_connection()
@@ -161,6 +163,14 @@ def validate_capture(body, contract):
         raise ValueError("accessibility evidence is unavailable")
     if "interaction" in contract:
         step = body["interaction"]
+        action = contract["interaction"]
+        if action["kind"] == "view":
+            if (not isinstance(step, dict) or set(step) != {"kind", "target", "before", "after", "restored"}
+                    or {key: step[key] for key in ("kind", "target")} != action
+                    or step["before"] not in ("session", "dag") or step["after"] != action["target"]
+                    or step["restored"] != step["before"]):
+                raise ValueError("UI perspective or restoration differs from the approved operation")
+            return
         if (not isinstance(step, dict) or set(step) != {"kind", "delta_y", "before", "after", "restored"}
                 or type(step["delta_y"]) is not int
                 or {key: step[key] for key in ("kind", "delta_y")} != contract["interaction"]):
@@ -218,6 +228,7 @@ def permits_ws_command(ws, command):
 def observe_ui(store, record, check, grant):
     from .native_checks import runtime_identity
     from .package_protocol import validate_ui_package
+    from .verification_plan import required_ui_protocol
     from .system_probe import _probe_system
     from openprogram.webui.ws_actions.webtab import request_on_ws
     connection = _main_connection()
@@ -234,7 +245,7 @@ def observe_ui(store, record, check, grant):
         return value
     app = Path(record.request.app_path)
     package = validate_ui_package(app)
-    if "interaction" in check and package["protocol"] != 2:
+    if package["protocol"] < required_ui_protocol([check]):
         raise ValueError("App does not support guarded UI interactions")
     runtime = runtime_identity(app, expected_revision=record.request.candidate_sha)
     before = _probe_system(record, record.request.candidate_sha, remaining())
