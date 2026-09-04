@@ -324,7 +324,7 @@ def _registered_agentic_callables() -> dict[str, list[dict]]:
 
     indexed: dict[str, list[dict]] = {}
     for name, registered in _registry.copy().items():
-        fn = getattr(registered, "_fn", None) or registered
+        fn = inspect.unwrap(getattr(registered, "_fn", None) or registered)
         module = str(getattr(fn, "__module__", ""))
         if not module.startswith(_AGENTIC_MODULE_PREFIX):
             continue

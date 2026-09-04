@@ -24,6 +24,14 @@ def cross_session_store(tmp_path, monkeypatch):
     from openprogram.agent import session_db as session_db_module
     from openprogram.store.session.session_store import SessionStore
 
+    # JobRunner also recovers canonical executions on construction. Isolate
+    # that store with the sessions so another test's unfinished execution is
+    # not recovered against this fixture's unrelated admission ledger.
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path",
+        lambda: tmp_path / "executions.db",
+    )
+
     store = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(session_db_module, "default_store", lambda: store)
     monkeypatch.setattr(
