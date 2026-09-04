@@ -188,6 +188,16 @@ or sending the result elsewhere. Persisting a result does not reopen the App or
 prove that installation succeeded; the update phase and verified runtime evidence
 remain the source of that conclusion.
 
+Desktop now has a receiver for a trusted, update-specific conversation recovery
+request. It resolves only the original session through owner authentication and
+acknowledges it after the transcript loads in the main window. An expired request,
+a deleted session or an authentication failure leaves normal startup available
+and shows a recovery reason. Changing pages stops automatic relocation; the
+dismissible notice retains an original-session link when that identity is valid.
+Neither recovery nor its loading confirmation starts another verification Job or
+proves the update succeeded. **Automatic installer-triggered reopening is not yet
+connected**; ordinary App launches do not consume these recovery requests.
+
 If the App or normal CLI cannot start, use the entry saved for that update:
 
 ```bash

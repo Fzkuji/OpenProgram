@@ -123,9 +123,22 @@ export type {
   DesktopTransferReceipt,
 } from "@/lib/desktop-transfer-types";
 
+export interface DesktopReopenState {
+  updateId: string | null;
+  sessionId: string | null;
+  status: "inactive" | "pending" | "acknowledged" | "unavailable" | "manual_navigation";
+  reason: string | null;
+}
+
 export interface DesktopBridge {
   readonly isDesktop: true;
   readonly windowId: string;
+  /** Update-triggered original-session recovery; absent in older shells. */
+  selfUpdateReopen?: {
+    getState(): Promise<DesktopReopenState | null>;
+    sessionLoaded(sessionId: string): Promise<DesktopReopenState | null>;
+    onState(callback: (state: DesktopReopenState) => void): () => void;
+  };
   /** Absolute native path for a user-selected/dropped File. */
   getPathForFile?(file: File): string;
   /** shell.openExternal — http/https only. */

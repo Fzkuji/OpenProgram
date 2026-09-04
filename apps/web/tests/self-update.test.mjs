@@ -53,6 +53,7 @@ const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { RunningPanel } = await import("../components/right-sidebar/running-panel.tsx");
 const { SelfUpdateCard, SelfUpdateHistory } = await import("../components/chat/messages/self-update-card.tsx");
+const { SelfUpdateReopenNotice } = await import("../components/self-update-reopen-notice.tsx");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
 
 const update = {
@@ -78,6 +79,47 @@ async function mount(Component, props, check) {
     host.remove();
   }
 }
+test("reopen notice preserves a safe link without navigating and can be dismissed", async () => {
+  let listener;
+  let stopped = false;
+  window.openprogramDesktop = { windowId: "main", selfUpdateReopen: {
+    getState: async () => ({ status: "manual_navigation", sessionId: "p1", updateId: "su_test", reason: null }),
+    onState: (fn) => { listener = fn; return () => { stopped = true; }; },
+  } };
+  try {
+    await mount(SelfUpdateReopenNotice, {}, async (host) => {
+      assert.match(host.textContent, /You changed pages/);
+      assert.equal(host.querySelector("a").getAttribute("href"), "/s/p1");
+      assert.equal(window.location.pathname, "/chat");
+      await act(async () => listener({ status: "unavailable", reason: "session_missing", sessionId: null }));
+      assert.match(host.textContent, /no longer exists/);
+      assert.equal(host.querySelector("a"), null);
+      await act(async () => host.querySelector("button").click());
+      assert.equal(host.textContent, "");
+    });
+    assert.equal(stopped, true);
+  } finally { delete window.openprogramDesktop; }
+});
+
+test("reopen notice ignores a stale initial reply after a live state event", async () => {
+  let reply;
+  let listener;
+  window.openprogramDesktop = { windowId: "main", selfUpdateReopen: {
+    getState: () => new Promise((resolve) => { reply = resolve; }),
+    onState: (fn) => { listener = fn; return () => {}; },
+  } };
+  try {
+    await mount(SelfUpdateReopenNotice, {}, async (host) => {
+      await act(async () => listener({ status: "acknowledged", sessionId: "p1" }));
+      await act(async () => reply({ status: "pending", sessionId: "p1" }));
+      assert.match(host.textContent, /Update verification is separate/);
+      await act(async () => listener({ status: "unavailable", sessionId: "https://example.com", reason: "PRIVATE_TOKEN" }));
+      assert.equal(host.querySelector("a"), null);
+      assert.doesNotMatch(host.textContent, /PRIVATE_TOKEN/);
+    });
+  } finally { delete window.openprogramDesktop; }
+});
+
 test("Running renders the target separately from unknown verified runtime", async () => {
   respond = async () => response({ now: 210, items: [{
     kind: "self_update", id: update.update_id, session_id: update.session_id,

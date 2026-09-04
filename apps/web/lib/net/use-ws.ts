@@ -39,6 +39,7 @@ import { mirrorUpsertConv } from "@/lib/runtime-bridge/conv-store-mirror";
 import { runtimeState, setSocket } from "@/lib/runtime-bridge/state";
 import { applyChatWsMessage, clearSessionByMsgId } from "@/lib/net/chat-stream";
 import { waitForOwnerAuthBootstrap } from "@/lib/net/owner-auth-bootstrap";
+import { notifyDesktopSessionLoaded } from "@/lib/self-update-reopen";
 import { translateText } from "@/lib/i18n";
 import { externalLibsReady } from "@/lib/external-libs";
 import { getQueryClient } from "@/lib/query-client";
@@ -502,6 +503,7 @@ export function useWS(): void {
           // otherwise sit in the module-level Map forever.
           clearSessionByMsgId();
           loadSessionData(d as never);
+          notifyDesktopSessionLoaded((d as { id?: unknown } | null)?.id);
           {
             const dd = d as {
               id?: unknown;
