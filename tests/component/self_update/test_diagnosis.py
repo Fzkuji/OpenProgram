@@ -30,9 +30,9 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture, request):
     update_id = result["update_id"]
     for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(update_id, phase)
-    detail = {"previous_system_gate": {"candidate_sha": "3" * 40}, "error": "behavior failed"}
+    detail = {"previous_system_gate": {"candidate_sha": "3" * 40}, "error": "system probe failed: web"}
     store.transition(update_id, UpdatePhase.VERIFYING, detail=detail)
-    begin_rollback(store, update_id, "behavior failed")
+    begin_rollback(store, update_id, "system probe failed: web")
     gate = dict(schema=1, candidate_sha="3" * 40, attempt=1, verified_at=time.time(),
                 worker_pid=os.getpid(), checks={key: True for key in SYSTEM_CHECKS})
     store.transition(update_id, UpdatePhase.ROLLED_BACK, detail={**detail, "restored_system_gate": gate})

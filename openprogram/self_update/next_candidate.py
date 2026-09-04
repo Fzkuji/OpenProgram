@@ -141,7 +141,15 @@ def _failure(store, record):
         # No model explanation or changing process identity enters this key.
         if failure["verifier_verdict"] is not None or not failure["error"]:
             raise ValueError("missing failure evidence")
-        return _digest({"kind": "system-failure"})
+        # Only the controller's fixed probe stages identify a system failure.
+        # Free exception/model text cannot manufacture a distinct next attempt.
+        checks = {f"system probe failed: {check}": check for check in (
+            "owner_auth", "identity", "health", "web", "doctor", "websocket",
+        )}
+        check = checks.get(failure["error"])
+        if check is None:
+            raise ValueError("unrecognized system failure evidence")
+        return _digest({"kind": "system-failure", "check": check})
     from .verification_channel import _check_signature
     grant = _read(store.root / record.request.update_id / f"verifier-grant-{record.state.attempt}.json")
     _check_signature(receipt, grant["token"])

@@ -3,13 +3,15 @@ import shlex
 import time
 import asyncio
 import json
+import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from tests.component.self_update.test_diagnosis import diagnosis_environment  # noqa: F401
 from tests.component.agent.async_job_support import store_fixture  # noqa: F401
-from tests.component.programs.test_self_update_tools import _isolated_owner  # noqa: F401
+from tests.component.programs.test_self_update_tools import _isolated_owner, _candidate, _Manager, _request  # noqa: F401
 from tests.component.self_update.test_source_repair import _turn, _start, _result, native_sandbox
 from tests.support.waiting import wait_until
 from tests.component.self_update.test_install_transaction import installation, INSTALLER, version, phase  # noqa: F401
@@ -283,9 +285,9 @@ def test_same_failure_on_child_stops_before_another_repair_job(diagnosis_environ
     # Reuse the verified-rollback boundary from diagnosis_environment; no App is installed.
     for state in (UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(child_id, state)
-    detail = {"previous_system_gate": {"candidate_sha": "3" * 40}, "error": "behavior failed"}
+    detail = {"previous_system_gate": {"candidate_sha": "3" * 40}, "error": "system probe failed: web"}
     store.transition(child_id, UpdatePhase.VERIFYING, detail=detail)
-    begin_rollback(store, child_id, "behavior failed")
+    begin_rollback(store, child_id, "system probe failed: web")
     gate = dict(schema=1, candidate_sha="3" * 40, attempt=2, verified_at=time.time(),
                 worker_pid=os.getpid(), checks={key: True for key in SYSTEM_CHECKS})
     store.transition(child_id, UpdatePhase.ROLLED_BACK, detail={**detail, "restored_system_gate": gate})
@@ -463,3 +465,221 @@ def test_submitted_child_uses_native_transaction_and_new_verifier(
         for thread in threads:
             thread.join(timeout=5)
         auth.close()
+
+
+@pytest.mark.parametrize("checks", [("web", "doctor", "health"), ("unknown",), ("",)])
+@native_sandbox
+def test_system_failure_identity_and_total_attempt_budget(tmp_path, monkeypatch, store_fixture, _isolated_owner, checks):
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.dispatcher import TurnResult
+    from openprogram.programs.tools.system.self_update import _prepare_update
+    from openprogram.self_update import SelfUpdateStore, source_repair, UpdatePhase
+    from openprogram.self_update.maintenance import leave_maintenance
+    from openprogram.self_update.recovery import SYSTEM_CHECKS, recover_pending_updates
+    from openprogram.self_update.rollback_intent import begin_rollback
+    store = SelfUpdateStore()
+    worktree, _, sha = _candidate(tmp_path)
+    worktree = replace(worktree, parent_session="p1")
+    prepared = _prepare_update(worktree_id=worktree.id, candidate_sha=sha, goal="Fix behavior",
+        assertions=["Expected behavior is observable"],
+        iteration_policy=dict(mode="bounded_auto", max_attempts=3, deadline=time.time() + 3600,
+            allowed_paths=["feature.txt"], required_tests=["python -c 'assert True'"]),
+        req=_request(session_id="p1", user_msg_id="u1"), assistant_id="a1", manager=_Manager(worktree), store=store)
+    runner = JobRunner(max_workers=1)
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: runner)
+    monkeypatch.setattr("openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda *a, **k: None)
+    current = [store.load(prepared["update_id"])]
+    root = current[0]
+    child_ids = {root.request.update_id}
+    def execute(req):
+        record = current[0]
+        identity = dict(schema=1, update_id=record.request.update_id,
+                        candidate_sha=record.request.candidate_sha, attempt=record.state.attempt)
+        if req.source == "self_update_diagnose":
+            output = dict(**identity, category="implementation", cause="Fix the failing system endpoint",
+                          evidence_refs=["failure"], corrections=["Correct the response"])
+        else:
+            output = dict(**identity, summary="Correct endpoint behavior", edits=[dict(path="feature.txt",
+                old_text="candidate\n" if record.state.attempt == 1 else "repaired\n",
+                new_text="repaired\n" if record.state.attempt == 1 else "fixed-again\n")])
+        return TurnResult(json.dumps(output), "job-user", "job-assistant")
+    monkeypatch.setattr("openprogram.agent.dispatcher.process_user_turn", execute)
+    try:
+        for attempt, check in enumerate(checks, 1):
+            error = "system probe failed: " + check if check else ""
+            record = current[0]
+            uid = record.request.update_id
+            if record.state.phase is UpdatePhase.PREPARING:
+                store.transition(uid, UpdatePhase.STAGING)
+            store.transition(uid, UpdatePhase.READY)
+            store.transition(uid, UpdatePhase.ACTIVATING, detail={"previous_system_gate": {"candidate_sha": "3" * 40}})
+            begin_rollback(store, uid, error)
+            detail = store.load(uid).state.detail
+            gate = dict(schema=1, candidate_sha="3" * 40, attempt=attempt, verified_at=time.time(),
+                        worker_pid=os.getpid(), checks={key: True for key in SYSTEM_CHECKS})
+            store.transition(uid, UpdatePhase.ROLLED_BACK, detail={**detail, "error": error, "restored_system_gate": gate})
+            store._write_json(store.root / "maintenance.json", dict(schema=1, update_id=uid, entered_at=time.time()))
+            leave_maintenance(uid)
+            assert recover_pending_updates() is True
+            result_path = store.root / uid / f"source-repair-result-{attempt}.json"
+            assert wait_until(result_path.exists, timeout=10)
+            result = json.loads(result_path.read_text())
+            assert wait_until(lambda: (str(store.root), uid) not in source_repair._threads, timeout=5)
+            if attempt == 3:
+                assert result["status"] == "failed" and "attempt budget exhausted" in result["reason"], result
+                assert store.load_active() is None
+                assert not any(job.id == f"self-update:{uid}:repair:3" for job in runner.list_jobs("p1"))
+                assert not (store.root / uid / "iteration-next.json").exists()
+                break
+            assert result["status"] == "candidate_ready", result
+            if check in {"unknown", ""}:
+                from openprogram.self_update import next_candidate
+                status = next_candidate.status(store, store.load(uid))
+                assert status["status"] == "stopped" and "failure evidence" in status["reason"], status
+                assert store.load_active() is None
+                assert not (store.root / uid / "iteration-next.json").exists()
+                break
+            assert wait_until(lambda: store.load_active() is not None, timeout=5)
+            current[0] = store.load_active()
+            assert current[0].state.attempt == attempt + 1
+            assert current[0].request.update_id not in child_ids
+            child_ids.add(current[0].request.update_id)
+            for field in ("goal", "assertions", "base_sha", "iteration_policy", "agent_id", "session_id"):
+                assert getattr(current[0].request, field) == getattr(root.request, field)
+            from openprogram.self_update.next_candidate import chain
+            assert len(chain(store, current[0])) == attempt + 1
+        assert len(child_ids) == (3 if len(checks) == 3 else 1)
+    finally:
+        runner.shutdown()
+
+
+@pytest.mark.parametrize("diagnosis_environment", [{
+    "mode": "bounded_auto", "max_attempts": 3, "deadline": time.time() + 3600,
+    "allowed_paths": ["feature.txt"], "required_tests": ["python -c 'assert True'"],
+}], indirect=True)
+@pytest.mark.parametrize("case", ["concurrent", "cancel_pending", "cancel_preparing", "cancel_activating", "cancel_verifying"])
+@native_sandbox
+def test_submission_and_cancellation_boundaries(diagnosis_environment, monkeypatch, case):
+    from concurrent.futures import ThreadPoolExecutor
+    from openprogram.self_update import next_candidate, source_repair, UpdatePhase
+    from openprogram.programs.tools.system import self_update as tool_module
+    import asyncio
+    store, runner, _, uid = diagnosis_environment
+    monkeypatch.setattr(next_candidate, "dispatch_pending", lambda: None)
+    launches = []
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda child, **kw: launches.append(child))
+    _turn(diagnosis_environment, monkeypatch)
+    _start()
+    result = _result(diagnosis_environment)
+    assert result["status"] == "candidate_ready"
+    assert wait_until(lambda: (str(store.root), uid) not in source_repair._threads, timeout=5)
+    sha = result["candidate"]["candidate_sha"]
+    if case == "concurrent":
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(lambda _: next_candidate.submit(uid, sha), range(2)))
+        assert outcomes[0]["child_id"] == outcomes[1]["child_id"]
+        child = store.load_active()
+        assert child.state.attempt == 2
+        assert {row["child_id"] for row in outcomes} == {child.request.update_id}
+        assert len([path for path in store.root.iterdir() if path.name.startswith("su_")]) == 2
+        return
+    if case != "cancel_pending":
+        outcome = next_candidate.submit(uid, sha)
+        child = store.load(outcome["child_id"])
+        if case in {"cancel_activating", "cancel_verifying"}:
+            store.transition(child.request.update_id, UpdatePhase.READY)
+            store.transition(child.request.update_id, UpdatePhase.ACTIVATING)
+            if case == "cancel_verifying":
+                store.transition(child.request.update_id, UpdatePhase.VERIFYING)
+        original_child = store.load(child.request.update_id)
+    original_root = store.load(uid)
+    reservation = (store.root / uid / "iteration-next.json")
+    reserved_bytes = reservation.read_bytes() if reservation.exists() else None
+    monkeypatch.setattr(tool_module, "_turn_context", lambda: (_request(session_id="p1"), "cancel-reply"))
+    outcome = asyncio.run(tool_module.self_update_iteration_cancel.execute("cancel", {"update_id": uid}, None, None))
+    assert not outcome.is_error, outcome
+    assert store.load(uid) == original_root
+    if case in {"cancel_pending", "cancel_preparing"}:
+        assert store.load_active() is None
+    else:
+        assert store.load_active() == original_child
+    assert not (store.root / "iteration-pending.json").exists()
+    assert reserved_bytes == (reservation.read_bytes() if reservation.exists() else None)
+    with pytest.raises(ValueError, match="cancelled"):
+        next_candidate.submit(uid, sha)
+
+
+@pytest.mark.parametrize("stage", ["diagnose", "repair"])
+def test_iteration_cancel_reaps_owned_running_job(diagnosis_environment, monkeypatch, stage):
+    import asyncio
+    import threading
+    import openprogram.agent.dispatcher as dispatcher
+    from openprogram.agent.run_control import is_cancelled
+    from openprogram.programs.tools.system import self_update as tools
+    from openprogram.self_update import diagnosis, source_repair
+    store, runner, _, uid = diagnosis_environment
+    original = store.load(uid)
+    execute_diagnosis = dispatcher.process_user_turn
+    entered = threading.Event()
+    def execute(req):
+        if req.source != f"self_update_{stage}":
+            return execute_diagnosis(req)
+        entered.set()
+        assert wait_until(lambda: is_cancelled(req.session_id), timeout=8)
+        return dispatcher.TurnResult("{}", "cancel-u", "cancel-a")
+    monkeypatch.setattr(dispatcher, "process_user_turn", execute)
+    _start()
+    assert entered.wait(5)
+    monkeypatch.setattr(tools, "_turn_context", lambda: (_request(session_id="p1"), "cancel-reply"))
+    outcome = asyncio.run(tools.self_update_iteration_cancel.execute("cancel", {"update_id": uid}, None, None))
+    assert not outcome.is_error, outcome
+    job_id = f"self-update:{uid}:{stage}:1"
+    job = runner.await_job(job_id, timeout=5)
+    assert job.cancel_requested_at is not None
+    assert wait_until(lambda: (str(store.root), uid) not in source_repair._threads, timeout=5)
+    assert wait_until(lambda: (str(store.root), uid) not in diagnosis._monitors, timeout=5)
+    assert store.load(uid) == original
+    assert store.load_active() is None
+
+
+@pytest.fixture
+def legacy_writer(monkeypatch):
+    from openprogram.self_update import SelfUpdateStore, next_candidate
+    create = SelfUpdateStore.create
+    def write_legacy(self, request, **kwargs):
+        request = replace(request, pre_update_evidence=tuple(
+            value for value in request.pre_update_evidence if not value.startswith(next_candidate.PREFIX)))
+        kwargs.pop("iteration_config", None)
+        return create(self, request, **kwargs)
+    monkeypatch.setattr(SelfUpdateStore, "create", write_legacy)
+
+
+@pytest.mark.parametrize("diagnosis_environment", [{
+    "mode": "bounded_auto", "max_attempts": 3, "deadline": time.time() + 3600,
+    "allowed_paths": ["feature.txt"], "required_tests": ["python -c 'assert True'"],
+}], indirect=True)
+@pytest.mark.usefixtures("legacy_writer")
+@native_sandbox
+def test_valid_legacy_candidate_waits_for_explicit_new_approval(diagnosis_environment, monkeypatch):
+    from openprogram.self_update import next_candidate, source_repair
+    store, _, _, update_id = diagnosis_environment
+    root = store.load(update_id)
+    assert root.request.iteration_policy.mode.value == "bounded_auto"
+    assert not any(value.startswith(next_candidate.PREFIX) for value in root.request.pre_update_evidence)
+    launches = []
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda uid, **kw: launches.append(uid))
+    _turn(diagnosis_environment, monkeypatch)
+    _start()
+    repaired = _result(diagnosis_environment)
+    assert repaired["status"] == "candidate_ready", repaired
+    assert wait_until(lambda: (str(store.root), update_id) not in source_repair._threads, timeout=5)
+    sha = repaired["candidate"]["candidate_sha"]
+    preview = next_candidate.approval_preview(update_id, sha, _request(session_id="p1"))
+    assert preview["candidate_sha"] == sha and preview["tests"]
+    with pytest.raises(ValueError, match="authorization missing"):
+        next_candidate.submit(update_id, sha)
+    _start()
+    assert store.load_active() is None and not launches
+    assert next_candidate.status(store, root)["status"] == "awaiting_approval"
+    assert not (store.root / update_id / "iteration-next.json").exists()
