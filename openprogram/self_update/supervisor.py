@@ -98,6 +98,7 @@ def _sandbox_profile(
     build_tmp: Path,
     *,
     loopback_port: int | None = None,
+    trusted_input: Path | None = None,
 ) -> str:
     def quoted(path: Path) -> str:
         return json.dumps(str(path))
@@ -139,6 +140,8 @@ def _sandbox_profile(
         '(deny file-read* (subpath "/Applications/OpenProgram.app"))',
         '(deny file-read* (regex #".*/\\.env($|/).*$"))',
     ]
+    if trusted_input is not None:
+        rules.append(f"(allow file-read* (literal {quoted(trusted_input)}))")
     if loopback_port is not None:
         if type(loopback_port) is not int or not 1024 <= loopback_port <= 65535 or loopback_port == 18100:
             raise ValueError("invalid packaged smoke port")
@@ -377,15 +380,7 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         raise RuntimeError("candidate artifact path already exists")
 
     smoke_port = _reserve_loopback_port()
-    profile = _sandbox_profile(
-        candidate,
-        artifact_root,
-        build_home,
-        build_tmp,
-        loopback_port=smoke_port,
-    )
     profile_path = update_dir / "sandbox.sb"
-    atomic_write_text(profile_path, profile)
     environment = {
         "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(build_home),
@@ -403,6 +398,15 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
     from .controller_bundle import build_inputs
     with build_inputs(update_dir, candidate, build_home,
                       deadline=record.request.created_at + record.request.timeout_seconds) as inputs:
+        profile = _sandbox_profile(
+            candidate,
+            artifact_root,
+            build_home,
+            build_tmp,
+            loopback_port=smoke_port,
+            trusted_input=Path(inputs["OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST"]),
+        )
+        atomic_write_text(profile_path, profile)
         environment.update(inputs)
         remaining = record.request.created_at + record.request.timeout_seconds - time.time()
         if remaining <= 0:

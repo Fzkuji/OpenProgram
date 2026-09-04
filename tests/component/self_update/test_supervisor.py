@@ -377,6 +377,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     profile = (root / "su_supervisor" / "sandbox.sb").read_text(encoding="utf-8")
     assert "(deny network*)" in profile
     assert str(tmp_path / "profile") in profile
+    assert str(tmp_path / "electron.zip") in profile
     assert validations == ["registered", "snapshot", "registered", "snapshot"]
     assert browser_probes == [artifact.path]
     assert icon_probes == [candidate]
@@ -499,6 +500,67 @@ def test_candidate_sandbox_cannot_mutate_saved_controller_runtime(tmp_path: Path
     assert build_runtime.read_text(encoding="utf-8") == "candidate"
     assert saved_write.returncode != 0
     assert saved_runtime.read_text(encoding="utf-8") == "trusted"
+
+
+@pytest.mark.macos
+def test_candidate_sandbox_reads_but_cannot_modify_trusted_inputs_under_state_home(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from openprogram.self_update import supervisor
+
+    sandbox = Path("/usr/bin/sandbox-exec")
+    if not sandbox.is_file():
+        pytest.skip("requires macOS sandbox-exec")
+    fake_home = tmp_path / "home"
+    update = fake_home / ".openprogram/self-updates/su_sandbox"
+    candidate = tmp_path / "candidate"
+    artifact = update / "artifact"
+    build_home = update / "build-home"
+    build_tmp = update / "build-tmp"
+    trusted_inputs = update / "build-inputs"
+    archive = trusted_inputs / "electron.zip"
+    for directory in (candidate, artifact, build_home, build_tmp, trusted_inputs):
+        directory.mkdir(parents=True, exist_ok=True)
+    archive.write_text("trusted archive", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(fake_home))
+    profile = supervisor._sandbox_profile(
+        candidate,
+        artifact,
+        build_home,
+        build_tmp,
+        trusted_input=archive,
+    )
+    environment = {"PATH": "/usr/bin:/bin", "HOME": str(build_home), "TMPDIR": str(build_tmp)}
+    read_result = subprocess.run(
+        [str(sandbox), "-p", profile, "/bin/cat", str(archive)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    write_result = subprocess.run(
+        [str(sandbox), "-p", profile, "/bin/sh", "-c", f'printf changed > "{archive}"'],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    sibling = update / "controller/secret"
+    sibling.parent.mkdir(parents=True)
+    sibling.write_text("secret", encoding="utf-8")
+    sibling_read = subprocess.run(
+        [str(sandbox), "-p", profile, "/bin/cat", str(sibling)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert read_result.returncode == 0, read_result.stderr
+    assert read_result.stdout == "trusted archive"
+    assert write_result.returncode != 0
+    assert archive.read_text(encoding="utf-8") == "trusted archive"
+    assert sibling_read.returncode != 0
 
 
 @pytest.mark.macos
