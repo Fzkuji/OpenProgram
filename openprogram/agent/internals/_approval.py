@@ -31,7 +31,10 @@ if TYPE_CHECKING:
 EventCallback = Callable[[dict], None]
 
 # 即使 bypass 也强制审批的工具（提交计划要用户签字）。
-_FORCE_APPROVAL_TOOLS = {"exit_plan_mode"}
+_FORCE_APPROVAL_TOOLS = {"exit_plan_mode", "self_update_prepare", "self_update_retry"}
+# These approvals bind one exact request and must never become a project-wide
+# allow rule. A later candidate always needs its own owner decision.
+_ONE_SHOT_FORCE_APPROVAL_TOOLS = {"self_update_prepare", "self_update_retry"}
 # auto 档下即便未声明 requires_approval 也仍要审批的高风险工具。
 _RISKY_TOOLS = {"bash", "exec", "shell", "execute_code", "process"}
 # Non-interactive worktree side effects mutate repository state outside the
@@ -355,13 +358,21 @@ def wrap_with_approval(
                 "[denied] approval requires an interactive local owner",
                 "APPROVAL_LOCAL_OWNER_REQUIRED",
             )
+        approval_args = args
+        if name == "self_update_retry":
+            from openprogram.self_update.next_candidate import approval_preview
+            try:
+                preview = approval_preview(args.get("update_id"), args.get("candidate_sha"), req)
+            except Exception as exc:
+                return _denied(f"[denied] {exc}", "SELF_UPDATE_RETRY_INVALID")
+            approval_args = {**args, "candidate": preview}
         approved, reason, scope = await await_user_approval(
-            req=req, tool_name=name, args=args, on_event=on_event)
+            req=req, tool_name=name, args=approval_args, on_event=on_event)
         if not approved:
             msg = (f"[denied] {reason.strip()}" if isinstance(reason, str)
                    and reason.strip() else f"[denied] user did not approve {name}")
             return _denied(msg, "APPROVAL_DENIED")
-        if scope == "always":
+        if scope == "always" and name not in _ONE_SHOT_FORCE_APPROVAL_TOOLS:
             _persist_always_allow_rule(req.session_id, name, args)
         return await _run_original(call_id, args, cancel, on_update)
 
@@ -519,7 +530,7 @@ def _approval_detail(tool_name: str, args: dict) -> str:
         body = json.dumps(args, ensure_ascii=False, indent=2) if args else ""
     except Exception:
         body = str(args)
-    if len(body) > 2000:
+    if len(body) > 2000 and tool_name not in _ONE_SHOT_FORCE_APPROVAL_TOOLS:
         body = body[:1200] + "\n…（已截断）…\n" + body[-600:]
     return f"{tool_name}\n{body}".rstrip()
 

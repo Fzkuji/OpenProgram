@@ -41,6 +41,7 @@ relies on.
 
 ## Sub-packages
 
+- **`agentic_functions/`** — Compatibility exports for harnesses from before the workflow move
 - **`applications/`** — Complete programs installed and loaded through their package entry points
 - **`tools/`** — Deterministic LLM-callable functions, grouped by source purpose
 - **`workflow/`** — All model-aware Programs and complete Workflows

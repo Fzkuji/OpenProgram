@@ -1519,6 +1519,7 @@ def _build_ws_action_registry() -> dict:
         project as _ws_project,
         settings as _ws_settings,
         webtab as _ws_webtab,
+        self_update as _ws_self_update,
     )
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
@@ -1537,6 +1538,7 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_project.ACTIONS)
     table.update(_ws_settings.ACTIONS)
     table.update(_ws_webtab.ACTIONS)
+    table.update(_ws_self_update.ACTIONS)
     return table
 
 
@@ -1545,6 +1547,10 @@ WS_ACTIONS: dict = _build_ws_action_registry()
 
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
+    from openprogram.self_update.ui_checks import permits_ws_command
+    if not permits_ws_command(ws, cmd):
+        await ws.send_text(json.dumps({"type": "action_error", "data": {"code": "ui_verification_active"}}))
+        return
     raw_action = cmd.get("action") if isinstance(cmd, dict) else None
     raw_session_id = cmd.get("session_id") if isinstance(cmd, dict) else None
     action = raw_action if isinstance(raw_action, str) else None
@@ -1889,6 +1895,9 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # Global running-work snapshot for the right-sidebar Running panel.
     from openprogram.webui.routes import running as _routes_running
     _routes_running.register(app)
+
+    from openprogram.webui.routes import self_updates as _routes_self_updates
+    _routes_self_updates.register(app)
 
     from openprogram.webui.routes import provider_login as _routes_provider_login
     _routes_provider_login.register(app)

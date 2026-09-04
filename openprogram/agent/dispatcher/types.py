@@ -13,6 +13,7 @@ See docs/design/runtime/dispatcher-split.md.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Optional
 
@@ -139,6 +140,13 @@ class TurnRequest:
     # Validated, turn-scoped descriptor and DOM/ARIA preview for a visible
     # OpenProgram desktop surface. Raw renderer refs never reach providers.
     surface_context: Optional[dict[str, Any]] = None
+    profile_snapshot: Optional[dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        if self.profile_snapshot is not None:
+            if not isinstance(self.profile_snapshot, dict):
+                raise ValueError("profile_snapshot must be a dict")
+            self.profile_snapshot = deepcopy(self.profile_snapshot)
 
 
 @dataclass

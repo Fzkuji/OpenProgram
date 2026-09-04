@@ -6,7 +6,7 @@ const {
   WebContentsView,
   Menu,
   dialog,
-  ipcMain,
+  ipcMain: nativeIpcMain,
   powerMonitor,
   session,
   shell,
@@ -19,6 +19,11 @@ const https = require("https");
 const path = require("path");
 const { Buffer } = require("buffer");
 const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
+const { createSelfUpdateReopen, registerReopenIpc } = require("./self-update-reopen");
+const { registerUiVerificationIpc } = require("./self-update-ui");
+const { createUiVerificationGuard } = require("./self-update-ui-guard");
+const uiVerificationGuard = createUiVerificationGuard(nativeIpcMain);
+const { ipcMain } = uiVerificationGuard;
 const { resolvePackagedWorker } = require("./packaged-runtime");
 const { DesktopUpdateService, desktopUpdateFetch } = require("./update-service");
 const {
@@ -69,6 +74,7 @@ const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
 const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
 const UI_ORIGIN = new URL(START_URL).origin;
+const selfUpdateReopen = createSelfUpdateReopen({ argv: process.argv, origin: UI_ORIGIN });
 const HEALTH_URL = new URL("/healthz", START_URL).toString();
 const WORKER_COMMAND = "openprogram worker start";
 const RECOVERY_INTERVAL_MS = 3_000;
@@ -315,7 +321,8 @@ async function runWindowRecoveryProbe(ctx) {
   } else if (action === "load" && !ctx.win.isDestroyed()) {
     if (state.timer !== null) clearInterval(state.timer);
     state.timer = null;
-    void ctx.win.loadURL(authenticated).catch(() => {});
+    const startUrl = await selfUpdateReopen.resolveStartUrl(ctx, authenticated);
+    if (!ctx.win.isDestroyed()) void ctx.win.loadURL(startUrl).catch(() => {});
   }
 }
 
@@ -3528,6 +3535,9 @@ const ensureMainWindow = createMainWindowGate({
   windows,
   createWindow,
 });
+registerReopenIpc({ ipcMain, windows, recovery: selfUpdateReopen, origin: UI_ORIGIN });
+registerUiVerificationIpc({ ipcMain, windows, app, origin: UI_ORIGIN,
+  request: selfUpdateReopen.requestVerification, guard: uiVerificationGuard });
 
 async function createWindow(options = {}) {
   const state = loadWindowState();
@@ -3588,6 +3598,7 @@ async function createWindow(options = {}) {
   });
   // External links from the app itself (not web tabs) open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (uiVerificationGuard.blocked(win.webContents)) return { action: "deny" };
     try {
       const u = new URL(url);
       if (u.protocol === "http:" || u.protocol === "https:") shell.openExternal(url);
@@ -3600,6 +3611,7 @@ async function createWindow(options = {}) {
   // bridge is exposed to whatever document runs there. Remote links
   // (docs footer, message content) go to the system browser instead.
   win.webContents.on("will-navigate", (e, url) => {
+    if (uiVerificationGuard.blocked(win.webContents)) { e.preventDefault(); return; }
     try {
       const dest = new URL(url);
       if (dest.origin === UI_ORIGIN) return;
@@ -3619,8 +3631,14 @@ async function createWindow(options = {}) {
   );
   // Renderer reload (Cmd+R) resets the renderer's view bookkeeping —
   // orphaned WebContentsViews would leak until quit. Start clean.
-  win.webContents.on("did-navigate", () => clearOwnedViews(ctx));
-  const startUrl = await resolveStartUrl();
+  win.webContents.on("did-navigate", (_event, url) => {
+    clearOwnedViews(ctx);
+    selfUpdateReopen.observeNavigation(ctx, url);
+  });
+  win.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) selfUpdateReopen.observeNavigation(ctx, url);
+  });
+  const startUrl = await selfUpdateReopen.resolveStartUrl(ctx, await resolveStartUrl());
   void win.loadURL(startUrl).catch(() => {});
   if (isErrorPageUrl(startUrl)) {
     startWindowRecovery(ctx, false);

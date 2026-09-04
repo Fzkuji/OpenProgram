@@ -239,6 +239,13 @@ def run_foreground() -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] web: frontend build failed: {exc}")
 
+    recovery_ready = False
+    try:
+        from openprogram.self_update.recovery import recover_pending_updates
+        recovery_ready = recover_pending_updates()
+    except Exception as exc:
+        print(f"[worker] self-update recovery failed: {type(exc).__name__}")
+
     stop_event, channel_threads = _start_channel_threads()
     if channel_threads:
         labels = ", ".join(label for label, _ in channel_threads)
@@ -251,8 +258,11 @@ def run_foreground() -> int:
     try:
         from openprogram.programs.tools.jobs.cron.worker import start_in_worker
 
-        scheduler_stop, scheduler_thread = start_in_worker()
-        print("[worker] scheduler: running")
+        if recovery_ready:
+            scheduler_stop, scheduler_thread = start_in_worker()
+            print("[worker] scheduler: running")
+        else:
+            print("[worker] scheduler: deferred by self-update recovery failure")
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] scheduler failed to start: {exc}")
 

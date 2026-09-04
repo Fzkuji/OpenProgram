@@ -59,6 +59,8 @@ def test_web_chat_threads_normalized_response_format_to_existing_dispatch(
         def start(self):
             return None
 
+    # The fake thread never consumes its reservation; keep it local to this test.
+    monkeypatch.setattr("openprogram.webui.server._running_tasks", {})
     monkeypatch.setattr("openprogram.webui.ws_actions.chat.threading.Thread", Thread)
     monkeypatch.setattr("openprogram.webui.server._is_run_active", lambda _sid: False)
     monkeypatch.setattr("openprogram.webui.server._append_msg", lambda *args: None)

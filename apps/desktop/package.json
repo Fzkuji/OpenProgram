@@ -21,7 +21,7 @@
     "check:window-lifecycle": "node scripts/check-window-lifecycle.js",
     "check:theme-chrome": "node scripts/check-theme-chrome.js",
     "check:installed-transfer-client": "node scripts/check-installed-tab-transfer-client.js",
-    "check:worker-auth": "node scripts/check-worker-start-url.js",
+    "check:worker-auth": "node scripts/check-worker-start-url.js && node scripts/check-self-update-reopen.js && node scripts/check-self-update-ui-guard.js && node scripts/check-self-update-ui.js",
     "check:worker-recovery": "node scripts/check-worker-recovery.js",
     "check:packaged-runtime": "node scripts/check-packaged-runtime.js",
     "check:updates": "node scripts/check-update-service.js",
@@ -38,6 +38,7 @@
   "build": {
     "appId": "ai.openprogram.desktop",
     "productName": "OpenProgram",
+    "afterPack": "scripts/write-reopen-protocol.cjs",
     "files": [
       "main.js",
       "menu-geometry.js",
@@ -47,6 +48,11 @@
       "update-service.js",
       "packaged-runtime.js",
       "worker-start-url.js",
+      "self-update-reopen.js",
+      "self-update-ui.js",
+      "self-update-ui-guard.js",
+      "self-update-ui-scroll.js",
+      "self-update-ui-test-object.js",
       "tab-transfer-store.js",
       "window-state.js",
       "window-lifecycle.js",
@@ -69,6 +75,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "scripts/install-app.sh",
+        "to": "update/install-app.sh"
       }
     ],
     "mac": {

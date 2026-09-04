@@ -245,6 +245,28 @@ def test_async_redirects_are_manual_and_re_evaluated_per_hop(monkeypatch):
     assert len([event for event in audit_events if event.reason == "ALLOWED"]) == 2
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_explicit_no_redirect_never_contacts_target(asynchronous):
+    server = _RedirectServer()
+    origin = f"http://127.0.0.1:{server.server_address[1]}"
+    options = dict(configured_origin=origin, security=OutboundSecurityConfig(
+        owner_exceptions=(OwnerURLException(consumer="runtime.local_probe", origin=origin),),
+    ))
+    async def exercise():
+        async with safe_async_client("runtime.local_probe", **options) as client:
+            await client.get(origin + "/start", headers={"Authorization": "Bearer test-only"}, follow_redirects=False)
+    try:
+        with pytest.raises(URLPolicyError, match="REDIRECT_FORBIDDEN"):
+            if asynchronous:
+                asyncio.run(exercise())
+            else:
+                with safe_client("runtime.local_probe", **options) as client:
+                    client.get(origin + "/start", headers={"Authorization": "Bearer test-only"}, follow_redirects=False)
+        assert server.paths == ["/start"]
+    finally:
+        server.close()
+
+
 def test_http_to_https_is_allowed_but_https_to_http_is_denied(monkeypatch):
     public_client = safe_client(
         "tool.web_fetch",

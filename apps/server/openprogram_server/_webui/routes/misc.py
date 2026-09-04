@@ -2,18 +2,19 @@
 from __future__ import annotations
 
 import importlib
+import os
+import re
 import subprocess
 from pathlib import Path
 
 from fastapi.responses import JSONResponse
+from fastapi import Request
 
 _HEAD_SHA: str | None = None
 
 
 def _head_sha() -> str:
-    """Git sha of the checkout serving this process, or "" when it isn't a
-    checkout. Cached — it cannot change without a restart, and
-    ``openprogram upgrade`` polls this endpoint in a loop."""
+    """Frozen source identity, or empty when a legacy build has no evidence."""
     global _HEAD_SHA
     if _HEAD_SHA is None:
         _HEAD_SHA = ""
@@ -27,12 +28,19 @@ def _head_sha() -> str:
                 )
                 if res.returncode == 0:
                     _HEAD_SHA = res.stdout.strip()
+            else:
+                marker = Path(openprogram.__file__).resolve().parent / "_build_revision.txt"
+                if marker.is_file() and not marker.is_symlink() and marker.stat().st_size < 128:
+                    revision = marker.read_text(encoding="ascii").strip()
+                    if re.fullmatch(r"[0-9a-f]{40}(?:-dirty)?", revision):
+                        _HEAD_SHA = revision
         except Exception:
             _HEAD_SHA = ""
     return _HEAD_SHA
 
 
 def register(app):
+    _head_sha()  # Freeze before listening, not on the first post-update request.
     @app.get("/api/doctor")
     async def doctor_api():
         """Run the same checks as ``openprogram doctor`` and return the
@@ -50,7 +58,7 @@ def register(app):
         return JSONResponse(content={"status": "ok"})
 
     @app.get("/api/diagnostics")
-    async def runtime_diagnostics():
+    async def runtime_diagnostics(request: Request):
         """Authenticated runtime and storage diagnostics."""
         import time as _time
         from openprogram.webui import server as _s
@@ -60,6 +68,8 @@ def register(app):
             "checked_at": _time.time(),
             "uptime_seconds": int(_time.time() - _s._SERVER_START_TIME),
             "revision": _head_sha(),
+            "worker_pid": os.getpid(),
+            "principal_id": getattr(request.state, "authority", {}).get("principal_id"),
         }
         with _s._ws_lock:
             connections = list(_s._ws_connections)

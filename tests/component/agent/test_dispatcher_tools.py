@@ -572,6 +572,167 @@ def test_approval_denied_aborts_run(
     assert not th.is_alive(), "dispatcher hung after denial"
 
 
+def test_self_update_prepare_forces_one_shot_approval_in_bypass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.agent.internals import _approval
+    from openprogram.agent.types import AgentTool, AgentToolResult
+    from openprogram.providers.types import TextContent
+
+    fired = threading.Event()
+
+    async def execute(_call_id, _args, _cancel, _on_update):
+        fired.set()
+        return AgentToolResult(content=[TextContent(text="prepared")])
+
+    tool = AgentTool(
+        name="self_update_prepare", description="prepare", parameters={},
+        label="prepare", execute=execute,
+    )
+    req = _owner_turn(
+        session_id="c1", user_text="update", agent_id="main", source="web",
+        permission_mode="bypass",
+    )
+    monkeypatch.setattr(
+        _approval, "await_user_approval",
+        lambda **_kwargs: asyncio.sleep(0, result=(True, None, "always")),
+    )
+    persisted: list[tuple] = []
+    monkeypatch.setattr(
+        _approval, "_persist_always_allow_rule",
+        lambda *args: persisted.append(args) or True,
+    )
+
+    wrapped = _approval.wrap_with_approval(tool, req, lambda _event: None)
+    result = asyncio.run(wrapped.execute("call", {}, None, None))
+
+    assert fired.is_set() is True
+    assert result.is_error is False
+    assert persisted == []
+
+
+@pytest.mark.parametrize("turn_committed", [False, True])
+def test_dispatcher_releases_self_update_only_after_durable_turn_and_idle_status(
+    tmp_db: SessionDB,
+    captured,
+    collector,
+    monkeypatch: pytest.MonkeyPatch,
+    turn_committed: bool,
+) -> None:
+    monkeypatch.setattr(D, "_load_agent_profile", _stub_profile_with_tools([]))
+    monkeypatch.setattr(D, "finalize_turn", lambda **_kwargs: turn_committed)
+    released: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        D,
+        "release_prepared_update",
+        lambda session_id, assistant_id: released.append((session_id, assistant_id)),
+    )
+    stream_state = {"used": False}
+
+    async def final_only(model, context, options):
+        del model, context, options
+        assert stream_state["used"] is False
+        stream_state["used"] = True
+        yield EventStart(partial=_build_partial(""))
+        yield EventTextStart(content_index=0, partial=_build_partial(""))
+        yield EventTextDelta(
+            content_index=0, delta="done", partial=_build_partial("done")
+        )
+        yield EventTextEnd(
+            content_index=0, content="done", partial=_build_partial("done")
+        )
+        yield EventDone(reason="stop", message=_build_final_text("done"))
+
+    with patch.object(D, "_run_loop_blocking", _patched_run_loop(final_only)):
+        result = D.process_user_turn(
+            _owner_turn(
+                session_id="c1", user_text="update", agent_id="main",
+                source="web", permission_mode="bypass",
+            ),
+            on_event=collector,
+        )
+
+    expected = [("c1", result.assistant_msg_id)] if turn_committed else []
+    assert released == expected
+
+
+def test_dispatcher_does_not_release_when_assistant_persistence_fails(
+    tmp_db: SessionDB,
+    captured,
+    collector,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(D, "_load_agent_profile", _stub_profile_with_tools([]))
+    monkeypatch.setattr(
+        D,
+        "persist_assistant_message",
+        lambda **_kwargs: (_ for _ in ()).throw(OSError("assistant write failed")),
+    )
+    released: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        D,
+        "release_prepared_update",
+        lambda session_id, assistant_id: released.append((session_id, assistant_id)),
+    )
+
+    async def final_only(model, context, options):
+        del model, context, options
+        yield EventStart(partial=_build_partial(""))
+        yield EventDone(reason="stop", message=_build_final_text("done"))
+
+    with patch.object(D, "_run_loop_blocking", _patched_run_loop(final_only)):
+        with pytest.raises(OSError, match="assistant write failed"):
+            D.process_user_turn(
+                _owner_turn(
+                    session_id="c1", user_text="update", agent_id="main",
+                    source="web", permission_mode="bypass",
+                ),
+                on_event=collector,
+            )
+
+    assert released == []
+
+
+def test_dispatcher_does_not_release_when_finished_status_is_not_durable(
+    tmp_db: SessionDB,
+    captured,
+    collector,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(D, "_load_agent_profile", _stub_profile_with_tools([]))
+    monkeypatch.setattr(D, "finalize_turn", lambda **_kwargs: True)
+    released: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        D,
+        "release_prepared_update",
+        lambda session_id, assistant_id: released.append((session_id, assistant_id)),
+    )
+    update_session = tmp_db.update_session
+
+    def fail_finished_status(session_id: str, **fields):
+        if fields.get("status") in {"idle", "done"}:
+            raise OSError("status write failed")
+        return update_session(session_id, **fields)
+
+    monkeypatch.setattr(tmp_db, "update_session", fail_finished_status)
+
+    async def final_only(model, context, options):
+        del model, context, options
+        yield EventStart(partial=_build_partial(""))
+        yield EventDone(reason="stop", message=_build_final_text("done"))
+
+    with patch.object(D, "_run_loop_blocking", _patched_run_loop(final_only)):
+        D.process_user_turn(
+            _owner_turn(
+                session_id="c1", user_text="update", agent_id="main",
+                source="web", permission_mode="bypass",
+            ),
+            on_event=collector,
+        )
+
+    assert released == []
+
+
 # ---------------------------------------------------------------------------
 # Test 5: tool sees cancel_event when caller cancels
 # ---------------------------------------------------------------------------

@@ -123,9 +123,23 @@ export type {
   DesktopTransferReceipt,
 } from "@/lib/desktop-transfer-types";
 
+export interface DesktopReopenState {
+  updateId: string | null;
+  sessionId: string | null;
+  status: "inactive" | "pending" | "acknowledged" | "unavailable" | "manual_navigation";
+  reason: string | null;
+}
+
 export interface DesktopBridge {
   readonly isDesktop: true;
   readonly windowId: string;
+  selfUpdateCapture?(nonce: string): Promise<{ ok: boolean; reason?: string }>;
+  /** Update-triggered original-session recovery; absent in older shells. */
+  selfUpdateReopen?: {
+    getState(): Promise<DesktopReopenState | null>;
+    sessionLoaded(sessionId: string): Promise<DesktopReopenState | null>;
+    onState(callback: (state: DesktopReopenState) => void): () => void;
+  };
   /** Absolute native path for a user-selected/dropped File. */
   getPathForFile?(file: File): string;
   /** shell.openExternal — http/https only. */
@@ -778,11 +792,26 @@ export function installDesktopMenuHandlers(): void {
     const detail = e.detail;
     if (detail?.type !== "webtab.command") return;
     const d = detail.data as
-      | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; expected_geometry_revision?: number }
+      | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; nonce?: string; expected_geometry_revision?: number }
       | undefined;
-    if (!d?.req_id || !["open", "active", "activate", "preview", "list", "resolve", "close"].includes(d.op || "")) return;
+    if (!d?.req_id || !["open", "active", "activate", "preview", "list", "resolve", "close", "self_update_capture"].includes(d.op || "")) return;
     const ws = getSocket();
     if (ws?.readyState !== WebSocket.OPEN) return;
+
+    if (d.op === "self_update_capture") {
+      const reply = (ok: boolean) => {
+        if (getSocket() === ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ action: "webtab_result", req_id: d.req_id, ok, window_id: "main" }));
+        }
+      };
+      if (bridge.windowId !== "main" || d.window_id !== "main" || !bridge.selfUpdateCapture ||
+          typeof d.nonce !== "string" || !/^[0-9a-f]{64}$/.test(d.nonce)) {
+        reply(false);
+      } else {
+        void bridge.selfUpdateCapture(d.nonce).then((result) => reply(result.ok === true)).catch(() => reply(false));
+      }
+      return;
+    }
 
     if (d.op === "close") {
       const state = useCenterTabs.getState();

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 
+from fastapi import Request
 from fastapi.responses import JSONResponse
 
 
@@ -103,8 +104,27 @@ def _collect() -> list[dict]:
 
 def register(app):
     @app.get("/api/running")
-    async def api_running():
+    def api_running(request: Request):
+        from .self_updates import require_owner
+        from openprogram.self_update.projection import ProjectionAccessError, running_status
+        from openprogram.self_update.store import SelfUpdateStore
+        from openprogram.self_update.types import SelfUpdateError
+
+        try:
+            require_owner(request)
+        except ProjectionAccessError:
+            return JSONResponse({"error": "owner authentication required"}, status_code=403)
+        items = _collect()
+        update_error = None
+        try:
+            for update in running_status(SelfUpdateStore()):
+                items.append(dict(kind="self_update", id=update["update_id"],
+                    session_id=update["session_id"], label="self-update", status=update["phase"],
+                    started_at=update["created_at"], update=update))
+        except (SelfUpdateError, ValueError, OSError, KeyError, TypeError):
+            update_error = "self-update snapshot unavailable"
         return JSONResponse(content={
-            "items": _collect(),
+            "items": items,
             "now": time.time(),
-        })
+            "self_update_error": update_error,
+        }, headers={"Cache-Control": "no-store"})
