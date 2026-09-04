@@ -114,6 +114,20 @@ function counted(noun: string, count: number): string {
 }
 
 /** Render the persisted backend handoff; this layer never starts a model call. */
+export function runtimeAnswer(input: RuntimeSummaryInput): string | null {
+  if (isWorkflowName(input.fnName) || RUNNING.has(resolvedStatus(input))) return null;
+  const output = input.tree?.output;
+  if (output === undefined || output === null || output === "") return input.tree?.error || null;
+  const payload = workflowPayload(output);
+  if (payload && typeof payload.summary === "string") {
+    return [payload.summary.trim(), typeof payload.handoff_instruction === "string"
+      ? payload.handoff_instruction.trim() : ""].filter(Boolean).filter((part, i, all) => all.indexOf(part) === i).join("\n\n") || null;
+  }
+  if (typeof output === "string" && !payload) return output;
+  if (typeof output === "number" || typeof output === "boolean") return String(output);
+  return "```json\n" + JSON.stringify(payload ?? output, null, 2) + "\n```";
+}
+
 export function runtimeConclusion(input: RuntimeSummaryInput): RuntimeConclusion | null {
   if (!isWorkflowName(input.fnName)) return null;
   const text = input.text ?? ((en: string) => en);

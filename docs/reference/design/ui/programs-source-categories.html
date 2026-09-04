@@ -178,5 +178,6 @@
   <details><summary>Implementation status</summary><p>Source tracing, conditional edges and visible-page refresh are implemented. Regression tests cover source edits, entry selection and unresolved callable aliases. Installed-App visual acceptance remains unverified. No Archify integration or Harness execution changes are included.</p></details>
 </section>
 </main>
+<section><h2>Direct function replies and input</h2><p>A manually invoked function retains its execution tree and renders its persisted final answer as a separate Markdown body below the tree, visible even when the tree is collapsed. This adds no model call or persisted conversation node. Summaries and takeover instructions remain readable; other values use text or JSON. Nested calls retain their current presentation. The same selected execution detail follows incoming status updates without opening the sidebar.</p><p>Empty function forms size from visible fields. Closed Advanced sections contribute only their summary row, not hidden parameter labels. Explicit expansion remains available. Regression and default-App checks verify these presentation contracts.</p></section>
 </body>
 </html>
