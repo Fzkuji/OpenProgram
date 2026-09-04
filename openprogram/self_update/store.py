@@ -53,6 +53,9 @@ class SelfUpdateStore:
 
     def create(self, request: UpdateRequest, *, verifier_config: Mapping[str, Any] | None = None) -> UpdateState:
         with self._locked():
+            maintenance = self.root / "maintenance.json"
+            if maintenance.exists() or maintenance.is_symlink():
+                raise ActiveUpdateError("self-update maintenance has not been cleared")
             current = self._load_active_unlocked()
             if current is not None and not is_terminal(current.state.phase):
                 raise ActiveUpdateError(

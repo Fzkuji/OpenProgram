@@ -6,7 +6,14 @@ defer_commit=0
 prepare_only=0
 source_app=""
 transaction_dir=""
+verify_phase=""
 case "${1:-}" in
+  --verify-terminal:prepared|--verify-terminal:committed|--verify-terminal:rolled_back)
+    action="verify"
+    verify_phase="${1#*:}"
+    transaction_dir="${2:-}"
+    [[ $# == 2 ]] || transaction_dir=""
+    ;;
   --prepare)
     prepare_only=1
     defer_commit=1
@@ -47,6 +54,7 @@ if [[ "$action" == "install" && -z "$source_app" ]] || \
    [[ "$action" != "install" && -z "$transaction_dir" ]]; then
   printf 'usage: %s [--defer-commit] /path/to/OpenProgram.app\n' "$0" >&2
   printf '       %s --commit|--rollback /path/to/transaction\n' "$0" >&2
+  printf '       %s --verify-terminal:prepared|committed|rolled_back /path/to/transaction\n' "$0" >&2
   printf '       %s --prepare /path/to/OpenProgram.app | --activate /path/to/transaction\n' "$0" >&2
   exit 2
 fi
@@ -519,6 +527,19 @@ finish_prepared_transaction() {
   fi
   transaction_journal phase rolled_back
 }
+
+if [[ "$action" == "verify" ]]; then
+  load_prepared_transaction && [[ "$transaction_phase" == "$verify_phase" ]] || {
+    printf 'terminal transaction phase does not match\n' >&2; exit 1;
+  }
+  expected_identity="$previous_identity"
+  [[ "$verify_phase" != "committed" ]] || expected_identity="$active_identity"
+  matches_identity "$target_app" "$expected_identity" || {
+    printf 'terminal canonical App identity does not match\n' >&2; exit 1;
+  }
+  printf 'OPENPROGRAM_TRANSACTION_DIR=%s\n' "$transaction_dir"
+  exit 0
+fi
 
 if [[ "$action" != "install" ]] && \
    [[ "$action" == "activate" || -e "$transaction_dir/transaction.json" || -L "$transaction_dir/transaction.json" ]]; then

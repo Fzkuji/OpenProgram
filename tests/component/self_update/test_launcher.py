@@ -426,3 +426,40 @@ def test_native_launchd_reuses_running_process_and_restarts_after_death(tmp_path
         assert json.loads(marker.read_text())["pid"] != first_pid
     finally:
         launcher._launchctl("remove", label)
+
+
+@pytest.mark.parametrize("outcome", ["aborted", "succeeded", "rolled_back", "needs_manual_recovery"])
+def test_terminal_maintenance_uses_only_saved_controller(tmp_path, monkeypatch, outcome):
+    import time
+    from openprogram import paths
+    from openprogram.self_update import launcher, controller_bundle, UpdatePhase
+    profile = tmp_path / "profile"
+    store = _request(profile)
+    _, digest = _trusted_installer(tmp_path, monkeypatch)
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+    marker = store.root / "su_launch/supervisor.ready"
+    calls = []
+    def launchctl(*args):
+        calls.append(args)
+        if args[0] == "kickstart":
+            marker.write_text(_ready("su_launch", digest))
+            return 0, str(os.getpid())
+        return 0, "loaded"
+    monkeypatch.setattr(launcher, "_launchctl", launchctl)
+    launch_supervisor("su_launch")
+    for phase in (UpdatePhase.STAGING, UpdatePhase.READY):
+        store.transition("su_launch", phase)
+    store._write_json(store.root / "maintenance.json", dict(schema=1, update_id="su_launch", entered_at=time.time()))
+    if outcome != "aborted":
+        for phase in (UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING):
+            store.transition("su_launch", phase)
+    store.transition("su_launch", UpdatePhase(outcome))
+    monkeypatch.setattr(controller_bundle, "_installed_resources", lambda: pytest.fail("must not inspect replacement App"))
+    calls.clear()
+    result = launch_supervisor("su_launch", resume=True)
+    assert len(calls) == (0 if outcome == "needs_manual_recovery" else 2)
+    assert not result.submitted
+    calls.clear()
+    (store.root / "maintenance.json").unlink()
+    launch_supervisor("su_launch", resume=True)
+    assert calls == []

@@ -75,6 +75,66 @@ def test_startup_dispatch_is_stable_and_uses_frozen_inputs(environment, monkeypa
     assert store.load(request.update_id).state.dispatch.job_id == job_id
 
 
+def test_startup_redispatches_terminal_maintenance_owner(environment, monkeypatch):
+    from openprogram.self_update import launcher
+    store, runner, calls, request, release = environment
+    release()
+    store._write_json(store.root / "maintenance.json", {
+        "schema": 1, "update_id": request.update_id, "entered_at": time.time(),
+    })
+    store.transition(request.update_id, UpdatePhase.SUCCEEDED)
+    launches = []
+    def launch(update_id, *, resume):
+        launches.append((update_id, resume))
+        (store.root / "maintenance.json").unlink()  # Controller completion boundary.
+    monkeypatch.setattr(launcher, "launch_supervisor", launch)
+    assert recover_pending_updates() is True
+    assert launches == [(request.update_id, True)]
+    assert runner.list_jobs("p1") == [] and calls == []
+
+
+@pytest.mark.parametrize("damage", ["symlink", "oversize", "fifo", "invalid_id", "unknown", "future", "conflict", "manual"])
+def test_invalid_or_manual_maintenance_never_admits_startup(environment, monkeypatch, damage):
+    store, runner, calls, request, release = environment
+    release()
+    path = store.root / "maintenance.json"
+    marker = {"schema": 1, "update_id": request.update_id, "entered_at": time.time()}
+    if damage != "conflict":
+        store.transition(request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY if damage == "manual" else UpdatePhase.SUCCEEDED)
+    if damage == "symlink":
+        path.symlink_to(store.root / "missing")
+    elif damage == "oversize":
+        path.write_text(" " * 2_097_153)
+    elif damage == "fifo":
+        os.mkfifo(path, 0o600)
+    else:
+        if damage in {"unknown", "conflict"}:
+            marker["update_id"] = "su_unknown"
+        elif damage == "invalid_id":
+            marker["update_id"] = "../escape"
+        elif damage == "future":
+            marker["entered_at"] += 3600
+        store._write_json(path, marker)
+    monkeypatch.setattr("openprogram.self_update.launcher.launch_supervisor", lambda *_a, **_k: pytest.fail("must not launch"))
+    assert recover_pending_updates() is False
+    assert path.exists() or path.is_symlink()
+    assert runner.list_jobs("p1") == [] and calls == []
+
+
+def test_terminal_startup_wait_is_bounded_and_does_not_admit_scheduler(environment, monkeypatch):
+    store, runner, calls, request, release = environment
+    release()
+    store._write_json(store.root / "maintenance.json", {
+        "schema": 1, "update_id": request.update_id, "entered_at": time.time(),
+    })
+    store.transition(request.update_id, UpdatePhase.SUCCEEDED)
+    clock = [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(time, "sleep", lambda _: clock.__setitem__(0, clock[0] + 400))
+    assert recover_pending_updates() is False
+    assert calls == [] and runner.list_jobs("p1") == []
+
+
 @pytest.mark.parametrize("gate_changes", [
     {"checks": {}}, {"candidate_sha": "3" * 40}, {"attempt": 2},
     {"verified_at": 0}, {"worker_pid": -1},

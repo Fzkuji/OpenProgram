@@ -12,7 +12,7 @@ import subprocess
 import time
 
 from openprogram.self_update.store import SelfUpdateStore
-from openprogram.self_update.types import TERMINAL_PHASES
+from openprogram.self_update.types import TERMINAL_PHASES, UpdatePhase
 from openprogram.store.session.git_session import atomic_write_text
 
 
@@ -165,8 +165,15 @@ def launch_supervisor(update_id: str, *, resume: bool = False) -> LaunchResult:
     if record.request.update_id != update_id:
         raise LaunchError("self-update request identity mismatch")
     with store._locked():
-        if store._load_unlocked(update_id).state.phase in TERMINAL_PHASES:
-            return LaunchResult(f"ai.openprogram.self-update.{update_id}", False, False)
+        from .maintenance import load_maintenance
+        record = store._load_unlocked(update_id)
+        if record.state.phase in TERMINAL_PHASES:
+            marker = load_maintenance(store)
+            if (not resume or record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY
+                or marker is None or marker["update_id"] != update_id):
+                return LaunchResult(f"ai.openprogram.self-update.{update_id}", False, False)
+            if store._load_active_unlocked() is not None:
+                raise LaunchError("terminal maintenance conflicts with an active update")
         result, installer_sha256, pid = _submit_supervisor(store, update_id, resume=resume)
     if not _wait_ready(store.root / update_id, update_id, installer_sha256, pid):
         if resume and store.load(update_id).state.phase in TERMINAL_PHASES:

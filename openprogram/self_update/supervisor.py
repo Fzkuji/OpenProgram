@@ -281,7 +281,7 @@ def _installer_command(
         ["/bin/bash", str(installer), mode, str(argument)],
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=30 if mode.startswith("--verify-terminal:") else 300,
         env={
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": str(Path.home()),
@@ -505,6 +505,77 @@ def _ready_artifact(record: UpdateRecord, update_dir: Path) -> Artifact:
     return Artifact(path, record.state.detail["artifact_sha256"])
 
 
+def _resume_terminal(store: SelfUpdateStore, update_id: str, installer_sha256: str) -> int:
+    """Recheck a terminal outcome without changing it or repeating activation."""
+    from .commit_intent import load_commit, read_journal
+    from .maintenance import load_maintenance, _leave_maintenance_unlocked
+    from .rollback_intent import load_rollback_intent
+    from .system_probe import probe_committed_system, probe_restored_system, probe_unchanged_system
+
+    record = store.load(update_id)
+    directory = store.root / update_id
+    try:
+        with store._locked():
+            marker = load_maintenance(store)
+            if marker is None:
+                return 0
+            if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY:
+                return 1
+            if marker["update_id"] != update_id or store._load_active_unlocked() is not None:
+                raise ValueError("terminal maintenance ownership changed")
+        transaction = _validate_transaction_path(Path(record.state.detail["transaction_dir"]))
+        def evidence():
+            journal = read_journal(transaction)
+            if record.state.phase is UpdatePhase.SUCCEEDED:
+                decision, journal = load_commit(store, record, transaction, installer_sha256)
+                if journal["phase"] != "committed" or load_rollback_intent(store, record) is not None:
+                    raise ValueError("successful update is not committed")
+                return journal, decision
+            if record.state.phase is UpdatePhase.ROLLED_BACK:
+                intent = load_rollback_intent(store, record)
+                gate = record.state.detail.get("restored_system_gate", {})
+                from .recovery import SYSTEM_CHECKS
+                if (intent is None or journal["phase"] != "rolled_back"
+                    or gate.get("candidate_sha") != intent["previous_revision"]
+                    or gate.get("attempt") != record.state.attempt
+                    or not intent["started_at"] <= gate.get("verified_at", 0) < intent["deadline"]
+                    or gate.get("checks") != {key: True for key in SYSTEM_CHECKS}):
+                    raise ValueError("rolled-back update lacks verified restoration")
+                return journal, intent
+            if record.state.phase is not UpdatePhase.ABORTED or journal["phase"] != "prepared":
+                raise ValueError("aborted update is not an unchanged prepared transaction")
+            return journal, None
+
+        journal, proof = evidence()
+        mode = "--verify-terminal:" + journal["phase"]
+        if _installer_command(transaction, directory, installer_sha256, mode) != str(transaction):
+            raise ValueError("terminal verification reported another transaction")
+        if record.state.phase is UpdatePhase.SUCCEEDED:
+            gate = probe_committed_system(record)
+        elif record.state.phase is UpdatePhase.ROLLED_BACK:
+            gate = probe_restored_system(record, proof["previous_revision"])
+        else:
+            gate = probe_unchanged_system(record)
+        if _installer_command(transaction, directory, installer_sha256, mode) != str(transaction):
+            raise ValueError("terminal verification reported another transaction")
+        with store._locked():
+            if (load_maintenance(store) != marker or store._load_active_unlocked() is not None
+                or store._load_unlocked(update_id) != record or evidence() != (journal, proof)):
+                raise ValueError("terminal recovery evidence changed during verification")
+            store._write_json(directory / f"maintenance-cleanup-{record.state.attempt}.json", {
+                "schema": 1, "update_id": update_id, "attempt": record.state.attempt,
+                "phase": record.state.phase.value, "at": time.time(), "system_gate": gate,
+            })
+            _leave_maintenance_unlocked(store, update_id)
+        return 0
+    except Exception as exc:
+        store._write_json(directory / f"maintenance-error-{record.state.attempt}.json", {
+            "schema": 1, "update_id": update_id, "attempt": record.state.attempt,
+            "at": time.time(), "error": str(exc)[:1000],
+        })
+        return 1
+
+
 def run_supervisor(
     update_id: str,
     *,
@@ -543,7 +614,7 @@ def run_supervisor(
         )
         record = store.load(update_id)
         if record.state.phase in TERMINAL_PHASES:
-            return 0
+            return _resume_terminal(store, update_id, installer_sha256)
         if record.state.phase in {UpdatePhase.ACTIVATING, UpdatePhase.VERIFYING}:
             return _resume_activated(store, update_id, installer_sha256)
         if record.state.phase is UpdatePhase.PREPARING:

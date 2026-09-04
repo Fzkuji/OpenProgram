@@ -92,13 +92,23 @@ def recover_pending_updates() -> bool:
     from .launcher import launch_supervisor
     from .commit_intent import commit_pending
     from .rollback_intent import RECOVERY_SECONDS
+    from .maintenance import load_maintenance
 
     store = SelfUpdateStore()
     record = None
     try:
-        record = store.load_active()
+        started = time.time()
+        with store._locked():
+            record = store._load_active_unlocked()
+            marker = load_maintenance(store)
+            if marker is not None:
+                if record is not None and record.request.update_id != marker["update_id"]:
+                    raise ValueError("maintenance conflicts with the active update")
+                record = store._load_unlocked(marker["update_id"])
         if record is None:
             return True
+        if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY:
+            return False
         launch_supervisor(record.request.update_id, resume=True)
         record = store.load(record.request.update_id)
         if record.state.phase in {
@@ -115,7 +125,22 @@ def recover_pending_updates() -> bool:
         while True:
             record = store.load(record.request.update_id)
             if record.state.phase in TERMINAL_PHASES:
-                return record.state.phase is not UpdatePhase.NEEDS_MANUAL_RECOVERY
+                if record.state.phase is UpdatePhase.NEEDS_MANUAL_RECOVERY:
+                    return False
+                marker = load_maintenance(store)
+                if marker is None:
+                    return True
+                if marker["update_id"] != record.request.update_id:
+                    raise ValueError("terminal maintenance owner changed")
+                error_path = store.root / record.request.update_id / f"maintenance-error-{record.state.attempt}.json"
+                if error_path.exists() or error_path.is_symlink():
+                    from .verification_channel import _read
+                    if _read(error_path).get("at", 0) >= started:
+                        return False
+                if time.monotonic() >= commit_deadline:
+                    raise ValueError("terminal maintenance cleanup timed out")
+                time.sleep(0.1)
+                continue
             intent = load_rollback_intent(store, record)
             if intent is not None:
                 if rollback_deadline is None:
@@ -160,7 +185,7 @@ def recover_pending_updates() -> bool:
             with store._locked():
                 current = store._load_unlocked(record.request.update_id)
                 if current.state.phase in TERMINAL_PHASES:
-                    return current.state.phase is not UpdatePhase.NEEDS_MANUAL_RECOVERY
+                    continue  # Terminal maintenance must also finish before admission.
                 if load_rollback_intent(store, current) is not None:
                     continue
                 dispatch = current.state.dispatch

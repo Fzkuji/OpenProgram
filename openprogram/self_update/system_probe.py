@@ -48,6 +48,14 @@ def probe_committed_system(record: UpdateRecord) -> dict:
     return _probe_system(record, record.request.candidate_sha, 60)
 
 
+def probe_unchanged_system(record: UpdateRecord) -> dict:
+    """Check the unchanged runtime after an aborted update's window expired."""
+    gate = _probe_system(record, None, 60)
+    if gate["candidate_sha"] == record.request.candidate_sha:
+        raise SystemProbeError("aborted update is running the candidate")
+    return gate
+
+
 def observe_system(record: UpdateRecord, entry: str) -> dict:
     """Read a reviewed local entry with identity checks before and after I/O."""
     if entry not in OBSERVATION_ENTRIES:

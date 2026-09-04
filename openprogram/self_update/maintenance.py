@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-import json
+import math
 from pathlib import Path
 import time
 from typing import Iterator
 
 from openprogram.self_update.store import SelfUpdateStore
-from openprogram.store.session.git_session import atomic_write_text
+from openprogram.self_update.types import _validate_update_id
 
 
 _ALLOWED_SOURCE = "self_update_verify"
@@ -19,42 +19,53 @@ def _path(store: SelfUpdateStore) -> Path:
     return store.root / "maintenance.json"
 
 
+def load_maintenance(store: SelfUpdateStore) -> dict | None:
+    """Read the private owner marker; callers serialize decisions with the store."""
+    from .verification_channel import _read
+    path = _path(store)
+    if path.is_symlink():
+        raise RuntimeError("maintenance state must not be a symbolic link")
+    try:
+        value = _read(path)
+    except FileNotFoundError:
+        return None
+    if (set(value) != {"schema", "update_id", "entered_at"}
+        or type(value["schema"]) is not int or value["schema"] != 1
+        or type(value["entered_at"]) not in (int, float)
+        or not math.isfinite(value["entered_at"]) or not 0 <= value["entered_at"] <= time.time()):
+        raise ValueError("invalid maintenance state")
+    _validate_update_id(value["update_id"])
+    return value
+
+
 def enter_maintenance(update_id: str) -> None:
     store = SelfUpdateStore()
-    payload = json.dumps(
-        {"schema": 1, "update_id": update_id, "entered_at": time.time()},
-        sort_keys=True,
-    ) + "\n"
     with store._locked():  # one lock domain with active update state
         record = store._load_unlocked(update_id)
         if record.state.phase.value != "ready":
             raise RuntimeError("maintenance requires a ready self-update")
-        path = _path(store)
-        if path.is_symlink():
-            raise RuntimeError("maintenance state must not be a symbolic link")
-        if path.exists():
-            current = json.loads(path.read_text(encoding="utf-8"))
+        current = load_maintenance(store)
+        if current is not None:
             if current.get("update_id") != update_id:
                 raise RuntimeError("maintenance is owned by another self-update")
             return
-        atomic_write_text(path, payload)
+        store._write_json(_path(store), {"schema": 1, "update_id": update_id, "entered_at": time.time()})
 
 
 def leave_maintenance(update_id: str) -> None:
     store = SelfUpdateStore()
     with store._locked():
-        path = _path(store)
-        if path.is_symlink():
-            raise RuntimeError("maintenance state must not be a symbolic link")
-        if not path.exists():
-            return
-        try:
-            current = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            raise RuntimeError("maintenance state is unreadable") from exc
-        if current.get("update_id") != update_id:
-            raise RuntimeError("maintenance is owned by another self-update")
-        path.unlink()
+        _leave_maintenance_unlocked(store, update_id)
+
+
+def _leave_maintenance_unlocked(store: SelfUpdateStore, update_id: str) -> None:
+    current = load_maintenance(store)
+    if current is None:
+        return
+    if current.get("update_id") != update_id:
+        raise RuntimeError("maintenance is owned by another self-update")
+    _path(store).unlink()
+    store._fsync_directory(store.root)
 
 
 @contextmanager
@@ -70,23 +81,7 @@ def maintenance_blocks(source: str) -> bool:
         return False
     store = SelfUpdateStore()
     path = _path(store)
-    if path.is_symlink():
-        return True
-    if not path.exists():
-        return False
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        valid = (
-            isinstance(value, dict)
-            and set(value) == {"schema", "update_id", "entered_at"}
-            and value.get("schema") == 1
-            and isinstance(value.get("update_id"), str)
-        )
-        if not valid:
-            raise ValueError("invalid maintenance state")
-        return True
-    except (OSError, ValueError, KeyError, TypeError):
-        return True
+    return path.exists() or path.is_symlink()
 
 
 __all__ = [

@@ -93,6 +93,20 @@ def test_maintenance_symlink_fails_closed(tmp_path, monkeypatch) -> None:
         enter_maintenance("su_maintenance")
 
 
+def test_new_update_cannot_replace_terminal_maintenance_owner(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from openprogram.self_update.types import ActiveUpdateError
+    _ready(tmp_path / "profile", monkeypatch)
+    store = SelfUpdateStore()
+    request = store.load("su_maintenance").request
+    enter_maintenance(request.update_id)
+    store.transition(request.update_id, UpdatePhase.ABORTED)
+    assert store.load_active() is None
+    with pytest.raises(ActiveUpdateError, match="maintenance"):
+        store.create(replace(request, update_id="su_next"))
+    assert not (store.root / "su_next").exists()
+
+
 def test_maintenance_cannot_enter_during_turn_admission(tmp_path, monkeypatch) -> None:
     profile = tmp_path / "profile"
     _ready(profile, monkeypatch)
