@@ -84,7 +84,12 @@ def fake_worker(monkeypatch):
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
     yield calls, barrier, cancel_seen
-    runner_mod.shutdown_runner()
+    barrier.set()
+    with runner_mod._runner_lock:
+        runner = runner_mod._runner
+        runner_mod._runner = None
+    if runner is not None:
+        runner.shutdown(wait=True)
 
 
 def _wait_status(runner, tid, statuses, timeout=5.0):
@@ -306,12 +311,14 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
     def fake_run(*, session_id, prompt, agent_id, branch_from=None,
                  label=None, spawn_caller=None, advance_head=True):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        # Simulate a tool inside this turn spawning a sub-job.
-        child_id = runner.spawn_job(
-            session_id="p2", prompt="inner child", agent_id="main",
-            parent_msg_id="a_p2",
-        )
-        recorded["child_id"] = child_id
+        # The monkeypatch is process-global, so an older runner still winding
+        # down must not produce evidence for this specific outer job.
+        if session_id == "p1" and prompt == "outer":
+            child_id = runner.spawn_job(
+                session_id="p2", prompt="inner child", agent_id="main",
+                parent_msg_id="a_p2",
+            )
+            recorded["child_id"] = child_id
         return AgentTurnResult(head_id="h", final_text="ok",
                                failed=False, error=None)
 
