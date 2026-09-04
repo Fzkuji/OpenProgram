@@ -88,10 +88,13 @@ def goal(
 
     from openprogram.agentic_programming.agent import agent
     from openprogram.agentic_programming.function import CancelledError, current_call_id, current_session_id
+    from openprogram.agent.run_control import get_current_execution_id
     import openprogram.programs.workflow.goal as _goal
 
     sid = current_session_id()
     caller = current_call_id() or None
+    # Canonical cancellation addresses the execution owner, not its DAG call.
+    execution_id = get_current_execution_id()
     now = time.time()
     previous = _goal.load_goal(sid) if sid else None
     stored = previous if resume else None
@@ -117,7 +120,7 @@ def goal(
             "run_id": uuid.uuid4().hex,
             "status": "active",
             "phase": "resuming",
-            "execution_id": caller,
+            "execution_id": execution_id,
             "recoverable": False,
             "pause_reason": "",
             "active_started_at": now,
@@ -153,7 +156,7 @@ def goal(
             "judge_parse_failures": 0,
             "idle_rounds": 0,
             "context_mode": context_mode,
-            "execution_id": caller,
+            "execution_id": execution_id,
             "recoverable": True,
             "questions": [],
             "pending_answers": [],
