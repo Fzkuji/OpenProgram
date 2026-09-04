@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import time
 
-from .types import UpdatePhase
+from .types import UpdatePhase, _validate_update_id
 from .verification_channel import _read, _digest, _sign, _check_signature, load_grant
 
 
@@ -22,7 +22,11 @@ def commit_pending(store, record) -> bool:
 
 def read_journal(transaction: Path) -> dict:
     value = _read(transaction / "transaction.json")
-    if (set(value) != {"schema", "phase", "previous_sha256", "active_sha256", "app", "worker", "launchd"}
+    keys = {"schema", "phase", "previous_sha256", "active_sha256", "app", "worker", "launchd"}
+    if "reopen_update_id" in value:
+        keys.add("reopen_update_id")
+        _validate_update_id(value["reopen_update_id"])
+    if (set(value) != keys
         or type(value["schema"]) is not int or value["schema"] != 1
         or value["phase"] not in {"prepared", "activating", "activated", "rolling_back", "committing", "committed", "rolled_back"}
         or any(not isinstance(value[k], str) or not re.fullmatch(r"[0-9a-f]{64}", value[k])

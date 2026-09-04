@@ -17,8 +17,9 @@ WRITER = ROOT / "apps/desktop/scripts/write-reopen-protocol.cjs"
 
 @pytest.fixture
 def package_factory(tmp_path):
-    def build(name="fixture"):
-        app = _fake_desktop_app(tmp_path / name, "0.6.2")
+    def build(name="fixture", version="0.6.2", *, app=None):
+        if app is None:
+            app = _fake_desktop_app(tmp_path / name, version)
         resources = app / "Contents/Resources"
         unpacked = tmp_path / f"{name}-asar"
         unpacked.mkdir()
@@ -35,7 +36,7 @@ def package_factory(tmp_path):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
         chunk = site / "openprogram_server/_webui/_frontend/_next/static/chunks/client.js"
-        chunk.parent.mkdir(parents=True)
+        chunk.parent.mkdir(parents=True, exist_ok=True)
         chunk.write_text('window.openprogramDesktop.selfUpdateReopen.sessionLoaded("p1");')
         result = subprocess.run(["node", "-e", "require(process.argv[1]).default({electronPlatformName:'darwin',appOutDir:'fixture',packager:{getResourcesDir:()=>process.argv[2]}}).catch(e=>{console.error(e);process.exit(1)})",
                                  str(WRITER), str(resources)], cwd=ROOT, capture_output=True, text=True, timeout=15)

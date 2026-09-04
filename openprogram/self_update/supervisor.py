@@ -284,8 +284,9 @@ def _installer_command(
     timeout_seconds: float | None = None,
 ) -> str:
     installer = _installer_snapshot(update_dir, installer_sha256)
+    prefix = [f"--reopen-update={_validate_update_id(update_dir.name)}"] if mode == "--prepare" else []
     result = subprocess.run(
-        ["/bin/bash", str(installer), mode, str(argument)],
+        ["/bin/bash", str(installer), *prefix, mode, str(argument)],
         capture_output=True,
         text=True,
         timeout=timeout_seconds if timeout_seconds is not None else 30 if mode.startswith("--verify-terminal:") else 300,
@@ -308,7 +309,7 @@ def _installer_command(
     return values[0]
 
 
-def _prepare_install(artifact: Artifact, update_dir: Path, installer_sha256: str) -> str:
+def _validate_reopen_packages(artifact: Artifact, update_dir: Path, installer_sha256: str) -> None:
     if _tree_digest(artifact.path) != artifact.sha256:
         raise RuntimeError("candidate artifact changed after validation")
     _installer_snapshot(update_dir, installer_sha256)
@@ -316,11 +317,36 @@ def _prepare_install(artifact: Artifact, update_dir: Path, installer_sha256: str
     previous = validate_reopen_package(Path(DEFAULT_APP_PATH))
     if previous["bindings"]["installer"]["sha256"] != installer_sha256:
         raise ValueError("frozen installer does not match the installed reopen protocol")
+
+
+def _prepare_install(artifact: Artifact, update_dir: Path, installer_sha256: str) -> str:
+    _validate_reopen_packages(artifact, update_dir, installer_sha256)
     return _installer_command(artifact.path, update_dir, installer_sha256, "--prepare")
+
+
+def _prepared_reopen_transaction(transaction: Path, update_dir: Path) -> None:
+    from .commit_intent import read_journal
+
+    journal = read_journal(transaction)
+    if journal["phase"] != "prepared" or journal.get("reopen_update_id") != _validate_update_id(update_dir.name):
+        raise ValueError("prepared transaction does not match the reopen update")
+
+
+def _prepare_reopen_activation(store: SelfUpdateStore, update_id: str, artifact: Artifact,
+                               transaction: Path, installer_sha256: str) -> None:
+    from .reopen import prepare_reopen
+
+    update_dir = store.root / update_id
+    # Recheck even on READY re-entry: installed/candidate bytes may have changed
+    # while the controller was stopped or waiting for other sessions to finish.
+    _validate_reopen_packages(artifact, update_dir, installer_sha256)
+    _prepared_reopen_transaction(transaction, update_dir)
+    prepare_reopen(store, update_id)
 
 
 def _activate(transaction: Path, update_dir: Path, installer_sha256: str) -> str:
     transaction = _validate_transaction_path(transaction)
+    _prepared_reopen_transaction(transaction, update_dir)
     reported = _installer_command(transaction, update_dir, installer_sha256, "--activate")
     if reported != str(transaction):
         raise RuntimeError("installer activated a different transaction")
@@ -685,6 +711,9 @@ def run_supervisor(
                 raise RuntimeError("activation deadline expired during preflight")
             if previous_system_gate["candidate_sha"] == record.request.candidate_sha:
                 raise RuntimeError("candidate is already the running revision")
+            _prepare_reopen_activation(store, update_id, artifact, transaction, installer_sha256)
+            if time.time() >= deadline:
+                raise RuntimeError("activation deadline expired during reopen preflight")
             store.transition(
                 update_id,
                 UpdatePhase.ACTIVATING,

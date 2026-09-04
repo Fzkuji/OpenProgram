@@ -96,6 +96,8 @@ def test_success_persists_transaction_before_verifying(
     monkeypatch.setattr(supervisor, "_build_candidate", lambda *_args: artifact)
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_args: True)
     monkeypatch.setattr(supervisor, "_prepare_install", lambda *_args: str(transaction))
+    # Packaging/reopen admission has real native coverage in test_reopen_producer.
+    monkeypatch.setattr(supervisor, "_prepare_reopen_activation", lambda *_: None)
     def activate(*_args):
         current = store.load("su_supervisor")
         assert current.state.phase is UpdatePhase.ACTIVATING
@@ -178,6 +180,8 @@ def test_activation_failure_restores_before_reporting_rollback(tmp_path, monkeyp
     monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
     monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: Artifact(update_dir, "a" * 64))
     monkeypatch.setattr(supervisor, "_prepare_install", lambda *_: str(tx))
+    # This test isolates activation/system failure and restoration, not packaging.
+    monkeypatch.setattr(supervisor, "_prepare_reopen_activation", lambda *_: None)
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
     monkeypatch.setattr(supervisor, "_wait_for_quiescence", lambda *_: True)
     old = {"candidate_sha": "3" * 40, "worker_pid": 1234}
@@ -452,7 +456,7 @@ def test_prepare_uses_hash_pinned_snapshot_and_prepare_mode(
 ) -> None:
     from openprogram.self_update import supervisor
 
-    update_dir = tmp_path / "update"
+    update_dir = tmp_path / "su_prepare"
     app = update_dir / "artifact" / "OpenProgram.app"
     app.mkdir(parents=True)
     (app / "content").write_text("candidate", encoding="utf-8")
@@ -481,6 +485,7 @@ def test_prepare_uses_hash_pinned_snapshot_and_prepare_mode(
     assert calls[0][0] == [
         "/bin/bash",
         str(update_dir / "controller" / "install-app.sh"),
+        "--reopen-update=su_prepare",
         "--prepare",
         str(app),
     ]
@@ -527,10 +532,13 @@ def test_prepare_rejects_installer_or_artifact_drift(tmp_path: Path) -> None:
 
 def test_activate_uses_only_the_prepared_transaction(tmp_path, monkeypatch):
     from openprogram.self_update import supervisor
-    update_dir = tmp_path / "update"
+    update_dir = tmp_path / "su_activate"
     digest = _installer_at(update_dir)
     tx = tmp_path / "transaction"
     tx.mkdir()
+    SelfUpdateStore(tmp_path / "store")._write_json(tx / "transaction.json", dict(
+        schema=1, phase="prepared", previous_sha256="a" * 64, active_sha256="b" * 64,
+        app=False, worker=False, launchd=False, reopen_update_id=update_dir.name))
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
     calls = []
     def run(args, **kwargs):

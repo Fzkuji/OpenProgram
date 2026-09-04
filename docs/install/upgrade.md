@@ -195,8 +195,21 @@ a deleted session or an authentication failure leaves normal startup available
 and shows a recovery reason. Changing pages stops automatic relocation; the
 dismissible notice retains an original-session link when that identity is valid.
 Neither recovery nor its loading confirmation starts another verification Job or
-proves the update succeeded. **Automatic installer-triggered reopening is not yet
-connected**; ordinary App launches do not consume these recovery requests.
+proves the update succeeded. The controller now persists the recovery intent before
+activation and binds the opaque update ID to the installer transaction. If the App
+was open, both activation and rollback reopen it with that ID; an originally closed
+App stays closed. Ordinary App launches do not consume these recovery requests.
+
+Both the candidate and installed App must contain matching packaged recovery
+protocol declarations. Missing, incompatible or changed declarations, a mismatched
+transaction ID, or invalid frozen owner configuration stop activation before the
+old App is replaced. The controller rechecks these inputs after waiting and after
+resuming a prepared update. Packaging and the local refresh script generate the
+declaration from the actual Desktop archive, installer, runtime manifest, backend
+and compiled Web files. An older App without it needs an explicit complete update
+before conversational recovery is available. The source integration is covered by
+fixture tests; real installed-App restart and session/tab restoration acceptance
+remain pending, so this is not yet a release-ready end-to-end feature.
 
 If the App or normal CLI cannot start, use the entry saved for that update:
 

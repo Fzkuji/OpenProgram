@@ -234,6 +234,12 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
     else:
         monkeypatch.setattr(supervisor, "_prepare_install", lambda *_: str(transaction))
         monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda path: path)
+        store._write_json(transaction / "transaction.json", dict(
+            schema=1, phase="prepared", active_sha256="a" * 64, previous_sha256="b" * 64,
+            app=False, worker=False, launchd=False, reopen_update_id=request.update_id))
+    # These cases exercise real system probes and startup Jobs with minimal App
+    # packages. Actual packaged recovery admission is in test_reopen_producer.
+    monkeypatch.setattr(supervisor, "_validate_reopen_packages", lambda *_: None)
     artifact_digest = supervisor._tree_digest(artifact)
     builds = []
     monkeypatch.setattr(supervisor, "_build_candidate", lambda *_: builds.append(1) or supervisor.Artifact(artifact, artifact_digest))
@@ -292,7 +298,7 @@ def test_supervisor_real_gate_controls_startup_job(store_fixture, live, monkeypa
         else:
             store._write_json(transaction / "transaction.json", dict(schema=1, phase="activated",
                               active_sha256="a" * 64, previous_sha256="b" * 64,
-                              app=False, worker=False, launchd=False))
+                              app=False, worker=False, launchd=False, reopen_update_id=request.update_id))
         flags["doctor"] = doctor_ok
         monkeypatch.setattr(misc, "_HEAD_SHA", "2" * 40)
         thread.start()  # As with installation, Web is serving before recovery.

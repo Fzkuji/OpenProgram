@@ -16,6 +16,7 @@ from tests.component.self_update.test_source_repair import _turn, _start, _resul
 from tests.support.waiting import wait_until
 from tests.component.self_update.test_install_transaction import installation, INSTALLER, version, phase  # noqa: F401
 from tests.component.config.test_distribution_release import MACOS_DESKTOP_INSTALL
+from tests.component.self_update.test_package_protocol import package_factory  # noqa: F401
 
 
 def test_iteration_approval_never_hides_envelope_after_a_long_goal():
@@ -344,7 +345,7 @@ def test_other_session_cannot_approve_or_cancel_iteration(diagnosis_environment,
 @MACOS_DESKTOP_INSTALL
 @native_sandbox
 def test_submitted_child_uses_native_transaction_and_new_verifier(
-    diagnosis_environment, installation, monkeypatch, verdict,
+    diagnosis_environment, installation, package_factory, monkeypatch, verdict,
 ):
     import hashlib
     import os
@@ -376,6 +377,9 @@ def test_submitted_child_uses_native_transaction_and_new_verifier(
     installer.write_bytes(INSTALLER.read_bytes())
     digest = hashlib.sha256(installer.read_bytes()).hexdigest()
     _, artifact, target, native_tmp = installation
+    package_factory("child-installed", app=target)
+    package_factory("child-candidate", app=artifact)
+    monkeypatch.setattr(supervisor, "DEFAULT_APP_PATH", str(target))
     native_run = supervisor.subprocess.run
     def run(args, **kwargs):
         if args[:2] == ["/bin/bash", str(installer)]:
@@ -466,6 +470,9 @@ def test_submitted_child_uses_native_transaction_and_new_verifier(
             assert outcome == (0 if verdict == "pass" else 1), current.state.detail
             assert current.state.phase.value == ("succeeded" if verdict == "pass" else "rolled_back"), current.state.detail
             assert builds == [(update_id, 2)] and len(verification_calls) == 1
+            intent = json.loads((directory / "reopen-2.json").read_text())
+            assert intent["update_id"] == update_id and intent["attempt"] == 2
+            assert intent["session_id"] == child.request.session_id
             assert runner.await_job(f"self-update:{update_id}:verify:2", timeout=5) is not None
             assert startup and all(startup)
             assert phase(Path(current.state.detail["transaction_dir"])) == ("committed" if verdict == "pass" else "rolled_back")
