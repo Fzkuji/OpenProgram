@@ -150,6 +150,11 @@ def verifier_prompt(record: UpdateRecord, config: dict | None = None) -> str:
             "do not supply entry or execution arguments. Cite its evidence_ref, entry and observed_at exactly. "
             "HTTP HTML is not rendered UI evidence. Each check is bound to its named assertion. "
         )
+        if any(check["entry"] == "test:python" for check in config["verification_plan"]["checks"]):
+            observation_instruction += (
+                "A candidate_test receipt proves execution of the approved source test, not installed-App behavior. "
+                "Do not substitute source-test success for an assertion requiring installed UI or runtime behavior. "
+            )
     return (
         "Verify the installed candidate against the frozen acceptance contract below. "
         "This is a new verification task, not a continuation of the implementation turn. "

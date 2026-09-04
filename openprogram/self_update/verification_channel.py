@@ -152,7 +152,7 @@ def _observation_context(store):
 def observe(entry: str = "", *, check_id: str | None = None) -> dict:
     from .system_probe import OBSERVATION_ENTRIES, observe_system
     from .verification_plan import resolve_check
-    from .native_checks import CLI_ENTRIES, observe_cli
+    from .native_checks import NATIVE_ENTRIES, observe_native
     if check_id is None and (not isinstance(entry, str) or entry not in OBSERVATION_ENTRIES):
         raise ValueError("unsupported read-only observation entry")
     store = SelfUpdateStore()
@@ -168,13 +168,13 @@ def observe(entry: str = "", *, check_id: str | None = None) -> dict:
             raise ValueError("legacy verifier has no verification plan")
     if check is None:
         observed = observe_system(record, entry)
-    elif check["entry"] in CLI_ENTRIES:
+    elif check["entry"] in NATIVE_ENTRIES:
         def revalidate():
             with store._locked():
                 current, current_grant = _observation_context(store)
                 if current.request.update_id != record.request.update_id or current_grant != grant:
                     raise ValueError("verification changed during native execution")
-        observed = observe_cli(store, record, check, grant["deadline"], revalidate)
+        observed = observe_native(store, record, check, grant["deadline"], revalidate)
     else:
         observed = observe_system(record, check["entry"],
                                   timeout_seconds=min(check["timeout_seconds"], grant["deadline"] - time.time()),
@@ -224,9 +224,12 @@ def _resolve_evidence(store, record, grant, result):
             gate = evidence.get("system_gate", {})
             if config["schema"] == 2:
                 check = resolve_check(config["verification_plan"], evidence.get("check_id"))
-                from .native_checks import CLI_ENTRIES, validate_execution
-                if check["entry"] in CLI_ENTRIES:
-                    validate_execution(observed, check, record.request, passed=assertion.status == "pass")
+                from .native_checks import NATIVE_ENTRIES, validate_execution
+                if check["entry"] in NATIVE_ENTRIES:
+                    from .source_repair import _config
+                    candidate_config = _config(store, record) if check["entry"] == "test:python" else None
+                    validate_execution(observed, check, record.request, passed=assertion.status == "pass",
+                                       candidate_config=candidate_config)
                 if (evidence.get("plan_sha256") != _digest(config["verification_plan"])
                         or evidence.get("assertion_id") != assertion.id or check["assertion_id"] != assertion.id
                         or observed.get("entry") != check["entry"]

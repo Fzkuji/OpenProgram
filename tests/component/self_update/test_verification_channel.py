@@ -39,7 +39,14 @@ def verifier(store_fixture, live, monkeypatch, request):
     config = freeze_verifier_config(request, SimpleNamespace(agent_id="main", **authority.local_owner_authority()),
                                     verification_plan=plan)
     request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(config)))
-    store.create(request, verifier_config=config)
+    repair_config = None
+    if plan and any(check["entry"] == "test:python" for check in plan["checks"]):
+        from openprogram.programs.tools.system import self_update as tool
+        from openprogram.self_update.source_repair import freeze_config as freeze_repair, config_evidence as repair_evidence
+        worktree = tool.get_manager().get_worktree(request.worktree_id)
+        repair_config = freeze_repair(request, config, candidate_path=worktree.worktree_path, branch_name=worktree.branch_name)
+        request = replace(request, pre_update_evidence=(*request.pre_update_evidence, repair_evidence(repair_config)))
+    store.create(request, verifier_config=config, source_repair_config=repair_config)
     for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
         store.transition(request.update_id, phase)
     gate = probe_system(store.load(request.update_id))
@@ -69,7 +76,7 @@ def verifier(store_fixture, live, monkeypatch, request):
                 return TurnResult("inconclusive", "verify_u", "verify_a")
             observed = json.loads(output.content[0].text)
             control["observed"] = observed
-            if not observed["entry"].startswith("cli:"):
+            if not observed["entry"].startswith(("cli:", "test:")):
                 assert json.loads(observed["body"])["database_ok"] is True
             row = dict(id="acceptance-1", status=control["status"], entry=observed["entry"],
                        observation="The authenticated response reports database_ok=true",

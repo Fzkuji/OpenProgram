@@ -19,7 +19,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`iteration.py`** — Deterministic authorization checks for a proposed self-update iteration
 - **`launcher.py`** — Submit one trusted, one-shot self-update supervisor through launchd
 - **`maintenance.py`** — Durable admission gate while an approved update waits for quiescence
-- **`native_checks.py`** — Run fixed installed-CLI checks with native isolation and identity receipts
+- **`native_checks.py`** — Run approved CLI and candidate checks with native isolation and identity receipts
 - **`next_candidate.py`** — Durable, evidence-bound submission of a repaired self-update candidate
 - **`owner_repair.py`** — Explicit, bounded owner recovery through the original trusted controller
 - **`package_protocol.py`** — Validate packaged reopen declarations without executing candidate code

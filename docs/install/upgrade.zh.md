@@ -55,8 +55,9 @@ openprogram worker restart
 示例中的所有字段均必填，`schema` 必须是整数 `1`。
 check ID 唯一，最多 64 个字符，以字母或数字开头，只允许字母、数字、下划线和连字符。
 每项必须指定 1–60 秒的整数超时和 1–262144 字节的整数输出上限。
-目前支持 `/api/commands`、`/api/diagnostics`、`/api/doctor`、`/healthz`、`/chat`、`cli:version` 和 `cli:help`；
-任意 URL、查询参数及额外字段都会在创建更新前被拒绝。
+目前支持 `/api/commands`、`/api/diagnostics`、`/api/doctor`、`/healthz`、`/chat`、
+`cli:version`、`cli:help` 和 `test:python`。任意 URL、查询参数及不支持的字段都会在
+创建更新前被拒绝；只有 `test:python` 还必须提供下述 `argv`。
 
 重启后的 verifier 收到相同计划，调用 `self_update_observe(check_id="diagnostics")`，
 不能另传 `entry` 或执行参数。执行层应用已批准的限制和原总期限；签名证据必须匹配
@@ -70,8 +71,26 @@ check ID 唯一，最多 64 个字符，以字母或数字开头，只允许字�
 除必需的 runtime 与临时执行路径外，禁止读取 owner 的 HOME。
 证据绑定 runtime 身份、完整调用参数和退出状态；非零退出、超时、取消、身份变化、
 输出超限或清理失败均不能通过。这两个入口只检查 CLI 启动/帮助，不证明任意功能行为。
-目前还不接受 UI 或候选测试类型；HTTP 响应（包括 `/chat` HTML）不能证明 App 界面
-实际行为。完整验收能力和实际已安装 App 验收仍待完成。
+
+候选源码测试可以使用这样的检查项：
+
+```json
+{"id":"source-test","assertion_id":"acceptance-1","entry":"test:python","argv":["tests/verify_feature.py","expected"],"timeout_seconds":30,"max_output_bytes":65536}
+```
+
+`argv` 包含 1–32 个字符串，每项最多 4096 字符，不能包含 NUL。第一项是相对于候选
+根目录、已提交的普通 `.py` 文件，不能是符号链接、绝对路径、父目录跳转或解释器
+选项。脚本路径以 ASCII 字母、数字或下划线开头，其余只允许字母、数字、下划线、
+斜杠、点和连字符，总长最多 511 字符。后续项作为原样脚本参数，更新前批准后，
+verifier 不能修改。使用已安装候选版本的 Python，在登记的 candidate worktree
+根目录执行 `-I -B SCRIPT ARGS`。隔离模式不会自动把候选根目录加入 Python 导入
+路径；测试需要导入候选代码时必须显式设置。已登记的候选目录是额外允许读取的位置，
+即使它位于 owner 的 HOME 下；其他 HOME 数据仍不可读取。候选源码保持只读，临时测试数据应写入
+独立 `TMPDIR` 或 `HOME`，不会自动安装依赖。原生 CLI 的前置条件和限制同样适用。
+源码缺失、变脏、未登记或脚本变化都会阻止验收；证据记录源码 revision、脚本摘要和
+调用参数。`candidate_test` 结果只证明源码测试执行，不证明已安装 App 行为。
+目前还不接受 UI 类型；HTTP 响应（包括 `/chat` HTML）不能证明 App 界面实际行为。
+完整验收能力和实际已安装 App 验收仍待完成。
 
 这项源码 checkout 能力与 stable release 升级分开。macOS 上，对话内自更新使默认
 App 保持维护状态时，可以在本地终端检查，不需要启动 Agent：

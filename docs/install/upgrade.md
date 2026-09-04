@@ -58,8 +58,9 @@ be the integer `1`. Check IDs must be unique alphanumeric/underscore/hyphen
 identifiers starting with an alphanumeric character, at most 64 characters.
 Each check requires an integer timeout of 1–60 seconds and an integer output limit of
 1–262144 bytes. Supported entries are `/api/commands`, `/api/diagnostics`,
-`/api/doctor`, `/healthz`, `/chat`, `cli:version` and `cli:help`; arbitrary URLs, query strings and extra
-fields are rejected before creating the update.
+`/api/doctor`, `/healthz`, `/chat`, `cli:version`, `cli:help` and `test:python`.
+Arbitrary URLs, query strings and unsupported fields are rejected before creating
+the update; only `test:python` additionally requires `argv` as described below.
 
 The restarted verifier receives the same plan and calls
 `self_update_observe(check_id="diagnostics")`, without supplying `entry` or
@@ -77,9 +78,32 @@ writes, and denies owner-home reads outside the required runtime and scratch pat
 Evidence binds the runtime identity, exact invocation and exit status; nonzero exit,
 timeout, cancellation, changed identity, excess output or failed cleanup cannot pass.
 These entries check CLI startup/help only, not arbitrary feature behavior.
-UI and candidate-test check kinds are not accepted yet. HTTP responses, including
-`/chat` HTML, do not prove rendered App behavior. Complete verification and
-actual installed-App acceptance remain pending.
+
+For a candidate source test, add a check such as:
+
+```json
+{"id":"source-test","assertion_id":"acceptance-1","entry":"test:python","argv":["tests/verify_feature.py","expected"],"timeout_seconds":30,"max_output_bytes":65536}
+```
+
+Here `argv` contains 1–32 strings of at most 4096 characters each, with no NUL.
+The first item is a committed regular `.py` file relative to the candidate root,
+not a symlink, absolute path, parent traversal or interpreter option. Script paths
+start with an ASCII letter, digit or underscore and otherwise use letters, digits,
+underscore, slash, dot or hyphen, with at most 511 characters. The remaining items
+are literal script arguments, approved before the update; the verifier cannot change
+them. The installed candidate Python runs `-I -B SCRIPT ARGS` from the registered
+candidate worktree root. Isolated mode does not automatically add that root to
+Python's import path; a test importing candidate code must do so explicitly.
+The registered candidate path is an additional allowed read location, including
+when it is under the owner's HOME; other owner-home data stays inaccessible.
+The candidate remains read-only. Temporary test data belongs in the private `TMPDIR`
+or `HOME`, and no dependency installation is performed. Native CLI prerequisites
+and limits also apply. Missing/dirty/unregistered source or a changed script blocks
+verification; evidence records the source revision, script digest and invocation.
+A `candidate_test` result proves source-test execution, not installed-App behavior.
+UI check kinds are not accepted yet. HTTP responses, including `/chat` HTML, do not
+prove rendered App behavior. Complete verification and actual installed-App
+acceptance remain pending.
 
 This source-checkout capability is separate from stable-release upgrades. On macOS,
 if a conversational self-update leaves the default App in maintenance, inspect it

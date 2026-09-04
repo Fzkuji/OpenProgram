@@ -79,7 +79,7 @@ def installed_cli(monkeypatch):
                     python_sha256="a" * 64, manifest_sha256="b" * 64, cli_sha256="c" * 64)
     monkeypatch.setattr(native_checks, "runtime_identity", lambda *a, **kw: deepcopy(identity))
     actual = repair_candidate._test
-    control = {}
+    control = {"identity": identity}
 
     def execute(argv, *args, **kwargs):
         assert argv[0] == identity["python"]
