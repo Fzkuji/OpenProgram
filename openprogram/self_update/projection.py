@@ -224,10 +224,9 @@ def _records(store):
         if path.name.startswith("su_"):
             records.append(store._load_unlocked(path.name, read_only=True))
     nonterminal = [r.request.update_id for r in records if not is_terminal(r.state.phase)]
-    if nonterminal:
-        active = store._load_active_unlocked(read_only=True)
-        if active is None or nonterminal != [active.request.update_id]:
-            raise CorruptUpdateStateError("inconsistent active update records")
+    active = store._load_active_unlocked(read_only=True)
+    if nonterminal != ([] if active is None else [active.request.update_id]):
+        raise CorruptUpdateStateError("inconsistent active update records")
     return records
 
 

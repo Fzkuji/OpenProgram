@@ -169,6 +169,30 @@ def test_public_status_projects_verified_runtime_not_unbound_detail(
     assert status["target_app"] == "/Applications/OpenProgram.app"
 
 
+@pytest.mark.parametrize("mode", [0o600, 0o644])
+def test_public_status_requires_private_verifier_config(tmp_path, monkeypatch, mode):
+    worktree, _, candidate_sha = _candidate(tmp_path)
+    store = SelfUpdateStore(tmp_path / "state")
+    update_id = _prepare(worktree, candidate_sha, store)["update_id"]
+    request = _request()
+    monkeypatch.setattr(self_update_module, "_turn_context", lambda: (request, "turn-1_reply"))
+    monkeypatch.setattr(self_update_module, "SelfUpdateStore", lambda: store)
+    path = store.root / update_id / "verifier-config.json"
+    path.chmod(mode)
+    before = path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode
+
+    result = asyncio.run(self_update_module.self_update_status.execute(
+        "status-private-config", {"update_id": update_id}, None, None,
+    ))
+
+    assert result.is_error == bool(mode & 0o077)
+    if not result.is_error:
+        assert json.loads(result.content[0].text)["update_id"] == update_id
+    else:
+        assert str(store.root) not in str(result.content)
+    assert (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode) == before
+
+
 def test_prepare_pins_git_derived_candidate_and_never_executes_it(tmp_path: Path) -> None:
     worktree, base_sha, candidate_sha = _candidate(tmp_path)
     marker = Path(worktree.worktree_path) / "executed"

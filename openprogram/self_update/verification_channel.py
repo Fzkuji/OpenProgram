@@ -34,7 +34,8 @@ def _sign(value, token: str) -> str:
 def _check_signature(value, token: str) -> None:
     payload = {k: v for k, v in value.items() if k != "signature"}
     signature = value.get("signature")
-    if not isinstance(signature, str) or not hmac.compare_digest(signature, _sign(payload, token)):
+    if (not isinstance(token, str) or not isinstance(signature, str)
+            or not hmac.compare_digest(signature, _sign(payload, token))):
         raise ValueError("verification receipt signature does not match")
 
 

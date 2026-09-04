@@ -92,7 +92,7 @@ def load_verifier_config(store, record: UpdateRecord) -> dict:
         raise ValueError("verifier configuration is missing or not a regular file")
     if path.stat().st_size > 1_048_576:
         raise ValueError("verifier configuration exceeds the size limit")
-    config = store._read_json(path)
+    config = store._read_json(path, read_only=True)
     digests = [item for item in record.request.pre_update_evidence if item.startswith(CONFIG_EVIDENCE_PREFIX)]
     if digests != [config_evidence(config)]:
         raise ValueError("verifier configuration digest does not match the request")

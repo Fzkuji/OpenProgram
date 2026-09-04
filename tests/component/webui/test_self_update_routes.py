@@ -149,3 +149,47 @@ def test_rollback_projection_requires_private_proof_without_chmod(api, mode):
     else:
         assert str(store.root) not in response.text
     assert (proof.read_bytes(), proof.stat().st_mtime_ns, proof.stat().st_mode) == before
+
+
+@pytest.mark.parametrize("target", [None, "su_test", "su_missing"])
+def test_terminal_history_validates_active_pointer_without_repair(api, monkeypatch, target):
+    client, headers, store = api
+    monkeypatch.setattr(running, "_collect", lambda: [])
+    store.create(_request())
+    store.transition("su_test", UpdatePhase.ABORTED)
+    pointer = store.root / "active.json"
+    if target is not None:
+        store._write_json(pointer, {"schema": 1, "update_id": target})
+    before = (pointer.read_bytes(), pointer.stat().st_mtime_ns) if pointer.exists() else None
+
+    snapshot = client.get("/api/running", headers=headers)
+    history = client.get("/api/self-updates?session_id=session-1", headers=headers)
+
+    assert snapshot.status_code == 200
+    assert snapshot.json()["items"] == []
+    assert (snapshot.json()["self_update_error"] is not None) == (target == "su_missing")
+    assert history.status_code == (409 if target == "su_missing" else 200)
+    if target != "su_missing":
+        assert history.json()["items"][0]["phase"] == "aborted"
+    assert ((pointer.read_bytes(), pointer.stat().st_mtime_ns) if pointer.exists() else None) == before
+
+
+@pytest.mark.parametrize("token", [17, None, {"private": "DO_NOT_EXPOSE"}])
+def test_malformed_verifier_token_has_finite_public_errors(api, monkeypatch, token):
+    client, headers, store = api
+    monkeypatch.setattr(running, "_collect", lambda: [])
+    store.create(_request())
+    directory = store.root / "su_test"
+    store._write_json(directory / "verifier-grant-1.json", {"token": token})
+    store._write_json(directory / "verifier-result-1.json", {"signature": "0" * 64})
+    before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in directory.iterdir() if p.is_file()}
+
+    detail = client.get("/api/self-updates/su_test?session_id=session-1", headers=headers)
+    snapshot = client.get("/api/running", headers=headers)
+
+    assert detail.status_code == 409
+    assert snapshot.status_code == 200
+    assert snapshot.json()["self_update_error"] is not None
+    assert "DO_NOT_EXPOSE" not in detail.text + snapshot.text
+    assert str(store.root) not in detail.text + snapshot.text
+    assert {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in directory.iterdir() if p.is_file()} == before
