@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import subprocess
@@ -320,6 +321,10 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
         return subprocess.CompletedProcess(args, 0, "built\n", "")
 
     monkeypatch.setattr(supervisor.subprocess, "run", run)
+    monkeypatch.setattr(
+        "openprogram.self_update.controller_bundle.build_inputs",
+        lambda *_args, **_kwargs: nullcontext({"UV_OFFLINE": "1"}),
+    )
 
     artifact = supervisor._build_candidate(record, root / "su_supervisor")
 
@@ -340,6 +345,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
         "NPM_CONFIG_USERCONFIG",
         "GIT_CONFIG_NOSYSTEM",
         "GIT_CONFIG_GLOBAL",
+        "UV_OFFLINE",
     }
     profile = (root / "su_supervisor" / "sandbox.sb").read_text(encoding="utf-8")
     assert "(deny network*)" in profile

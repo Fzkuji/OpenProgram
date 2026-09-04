@@ -184,25 +184,29 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
     }
-    remaining = record.request.created_at + record.request.timeout_seconds - time.time()
-    if remaining <= 0:
-        raise RuntimeError("candidate build deadline expired")
-    result = subprocess.run(
-        [
-            str(sandbox),
-            "-f",
-            str(profile_path),
-            "/bin/bash",
-            str(script),
-            "--output",
-            str(artifact),
-        ],
-        cwd=str(candidate),
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=remaining,
-    )
+    from .controller_bundle import build_inputs
+    with build_inputs(update_dir, candidate, build_home,
+                      deadline=record.request.created_at + record.request.timeout_seconds) as inputs:
+        environment.update(inputs)
+        remaining = record.request.created_at + record.request.timeout_seconds - time.time()
+        if remaining <= 0:
+            raise RuntimeError("candidate build deadline expired")
+        result = subprocess.run(
+            [
+                str(sandbox),
+                "-f",
+                str(profile_path),
+                "/bin/bash",
+                str(script),
+                "--output",
+                str(artifact),
+            ],
+            cwd=str(candidate),
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=remaining,
+        )
     atomic_write_text(
         update_dir / "build.log",
         (result.stdout + result.stderr)[-200_000:],

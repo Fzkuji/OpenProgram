@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 
 from .supervisor import _tree_digest
 from .store import SelfUpdateStore
@@ -141,3 +143,67 @@ def prepare_controller(update_dir: Path) -> ControllerBundle:
         SelfUpdateStore._fsync_directory(update_dir)
     # Paths used in the relocation probe refer to the staging directory.
     return ControllerBundle(_runtime_python(target / "runtime"), hashlib.sha256(content).hexdigest(), digest)
+
+
+def prepare_build_inputs(update_dir: Path, candidate: Path, build_home: Path, *, deadline: float) -> dict[str, str]:
+    """Copy matching installed dependencies and caches; never share writable inputs."""
+    saved = update_dir / "controller"
+    _load_bundle(saved)
+    runtime = saved / "runtime"
+    for cached, requested in (
+        (runtime / "product-uv.lock", candidate / "uv.lock"),
+        (runtime / "product-runtime.json", candidate / "scripts/release/product-runtime.json"),
+    ):
+        if cached.is_symlink() or requested.is_symlink() or cached.read_bytes() != requested.read_bytes():
+            raise ValueError("candidate requires a different complete runtime dependency input")
+
+    base = build_home / "runtime-base"
+    copies = [(runtime, base)]
+    for relative in (".cache/uv", ".npm/_cacache", "Library/Caches/electron", "Library/Caches/electron-builder"):
+        copies.append((Path.home() / relative, build_home / relative))
+    for source, destination in copies:
+        if source.is_symlink() or not source.is_dir() or source.stat().st_uid != os.getuid():
+            raise ValueError("required local build cache is missing or not owner controlled")
+        if destination.exists() or destination.is_symlink():
+            raise ValueError("private build input already exists")
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # APFS clones preserve isolation without duplicating large dependency caches.
+        # Failure is explicit; never replace this with hard links or writable symlinks.
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            raise TimeoutError("build input deadline expired")
+        result = subprocess.run(
+            ["/bin/cp", "-cR", str(source), str(destination)],
+            env=controller_environment(), capture_output=True, timeout=remaining,
+        )
+        if result.returncode != 0:
+            raise ValueError("could not create private copy-on-write build inputs")
+        destination.chmod(0o700)
+    return {
+        "PATH": f"{base / 'bin'}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        "OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE": str(base),
+        "OPENPROGRAM_UV_BIN": str(base / "bin/uv"),
+        "OPENPROGRAM_BUILD_PYTHON": str(_runtime_python(base)),
+        "UV_PYTHON_INSTALL_DIR": str(base / "python"),
+        "UV_CACHE_DIR": str(build_home / ".cache/uv"),
+        "UV_OFFLINE": "1",
+        "NPM_CONFIG_OFFLINE": "true",
+    }
+
+
+@contextmanager
+def build_inputs(update_dir: Path, candidate: Path, build_home: Path, *, deadline: float):
+    """Release only this build's private dependency copies, including partial copies."""
+    paths = [build_home / relative for relative in ("runtime-base", ".cache", ".npm", "Library")]
+    if build_home.is_symlink() or any(path.exists() or path.is_symlink() for path in paths):
+        raise ValueError("private build input already exists")
+    try:
+        yield prepare_build_inputs(update_dir, candidate, build_home, deadline=deadline)
+    finally:
+        if build_home.is_symlink():
+            raise ValueError("private build home changed during packaging")
+        for path in paths:
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            elif path.exists():
+                shutil.rmtree(path)
