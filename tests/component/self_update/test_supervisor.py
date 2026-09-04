@@ -4,6 +4,8 @@ import hashlib
 from contextlib import nullcontext
 import os
 from pathlib import Path
+import json
+import shutil
 import subprocess
 import time
 from types import SimpleNamespace
@@ -374,6 +376,16 @@ def test_candidate_sandbox_reads_platform_without_allowing_external_writes(tmp_p
     )
     assert platform.returncode == 0, platform.stderr
     assert platform.stdout.strip() == "Darwin"
+    node = shutil.which("node", path="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+    assert node is not None
+    host = subprocess.run(
+        [*prefix, node, "-e", "const o=require('os');console.log(JSON.stringify({arch:o.arch(),models:o.cpus().map(c=>c.model)}))"],
+        env=environment, capture_output=True, text=True, timeout=10,
+    )
+    assert host.returncode == 0, host.stderr
+    observed = json.loads(host.stdout)
+    assert observed["arch"] == "arm64"
+    assert observed["models"] and all(value.startswith("Apple ") for value in observed["models"])
     for target, allowed in ((artifact / "own-output", True), (tmp_path / "outside-output", False)):
         result = subprocess.run(
             [*prefix, "/usr/bin/touch", str(target)], env=environment,
