@@ -486,8 +486,11 @@ def test_models_dev_public_loader_real_managed_success(
 
     origin = f"http://public.test:{server.port}"
     monkeypatch.setattr(models_dev, "_CATALOGUE_URL", origin + "/api.json")
+    monkeypatch.setattr(models_dev, "_read_disk_cache", lambda: {})
     monkeypatch.setattr(models_dev, "_write_disk_cache", lambda _data: None)
-    models_dev._cache.update({"data": None, "fetched_at": 0.0})
+    monkeypatch.setattr(models_dev, "_cache", {
+        "data": None, "fetched_at": 0.0, "last_attempt_at": 0.0, "refreshing": False,
+    })
     registry = dict(safe_http.CONSUMER_REGISTRY)
     spec = registry["webui.model_listing.fixed"]
     registry["webui.model_listing.fixed"] = replace(

@@ -1276,7 +1276,6 @@ class SafeClient(httpx.Client):
         auth: Any = None,
         follow_redirects: Any = None,
     ) -> httpx.Response:
-        del follow_redirects
         spec = CONSUMER_REGISTRY[self._transport._consumer]
         deadline = request.extensions.setdefault(
             "safe_overall_deadline", monotonic() + self._overall_timeout
@@ -1313,7 +1312,8 @@ class SafeClient(httpx.Client):
                 if not stream:
                     response.read()
                 return response
-            if spec.redirect_policy == "deny":
+            # A caller may restrict redirects, never relax the consumer policy.
+            if spec.redirect_policy == "deny" or follow_redirects is False:
                 response.close()
                 error = URLPolicyError(
                     "REDIRECT_FORBIDDEN", normalize_origin(str(current.url))
@@ -1422,7 +1422,6 @@ class SafeAsyncClient(httpx.AsyncClient):
         auth: Any = None,
         follow_redirects: Any = None,
     ) -> httpx.Response:
-        del follow_redirects
         spec = CONSUMER_REGISTRY[self._transport._consumer]
         deadline = request.extensions.setdefault(
             "safe_overall_deadline", monotonic() + self._overall_timeout
@@ -1456,7 +1455,8 @@ class SafeAsyncClient(httpx.AsyncClient):
                 if not stream:
                     await response.aread()
                 return response
-            if spec.redirect_policy == "deny":
+            # Keep the same stricter per-request boundary as the sync client.
+            if spec.redirect_policy == "deny" or follow_redirects is False:
                 await response.aclose()
                 error = URLPolicyError(
                     "REDIRECT_FORBIDDEN", normalize_origin(str(current.url))

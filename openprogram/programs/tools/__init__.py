@@ -13,4 +13,5 @@ from . import jobs as _jobs_self_register  # noqa: F401
 from . import knowledge as _knowledge_self_register  # noqa: F401
 from . import planning as _planning_self_register  # noqa: F401
 from . import runtime as _runtime_self_register  # noqa: F401
+from . import system as _system_self_register  # noqa: F401
 from . import web as _web_self_register  # noqa: F401

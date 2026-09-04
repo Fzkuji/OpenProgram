@@ -77,6 +77,7 @@ from openprogram.agent.dispatcher.stream_tap import make_stream_tap
 from openprogram.agent.dispatcher.error_path import handle_turn_error
 from openprogram.agent.dispatcher.finalize import finalize_error_turn, finalize_turn
 from openprogram.agent.dispatcher.persistence import persist_assistant_message
+from openprogram.self_update.handoff import release_prepared_update
 
 # The agent-loop run stage. Bound as a package attribute named
 # ``_run_loop_blocking`` — the seam tests patch (patch.object(D,
@@ -297,6 +298,7 @@ def _process_turn_once(
     on_event = on_event or _noop
     user_msg_id = req.user_msg_id or uuid.uuid4().hex[:12]
     req.user_msg_id = user_msg_id
+    from openprogram.self_update.maintenance import turn_admission
 
     # Usage metering: label every LLM call in this turn with its source.
     # Default to "chat", but DON'T clobber a source an outer scope already
@@ -350,10 +352,34 @@ def _process_turn_once(
 
     # 1-2. Session ensure + history resolution + user-message persist
     #      (prep.py). Head movement stays inside the TurnWriter.
-    session, history = prepare_turn(
-        db=db, req=req, writer=_writer,
-        user_msg_id=user_msg_id, on_event=on_event,
-    )
+    with turn_admission(req.source) as admitted:
+        if not admitted:
+            message = "OpenProgram is entering an approved update; new turns are temporarily disabled."
+            on_event({
+                "type": "chat_response",
+                "data": {
+                    "type": "error",
+                    "session_id": req.session_id,
+                    "msg_id": user_msg_id,
+                    "content": message,
+                    "reason_code": "SELF_UPDATE_MAINTENANCE",
+                },
+            })
+            return TurnResult(
+                final_text="",
+                user_msg_id=user_msg_id,
+                assistant_msg_id=assistant_msg_id,
+                failed=True,
+                error=message,
+                error_reason="SELF_UPDATE_MAINTENANCE",
+                error_retryable=True,
+            )
+        session, history = prepare_turn(
+            db=db, req=req, writer=_writer,
+            user_msg_id=user_msg_id, on_event=on_event,
+        )
+        # The admission lock is released only after quiescence can observe us.
+        db.update_session(req.session_id, status="running")
 
     # 事件层：用户轮已落盘，agent loop 即将启动。
     from openprogram.events import emit_safe as _emit_safe
@@ -385,14 +411,6 @@ def _process_turn_once(
     _placeholder_inserted = _writer.open_placeholder(
         assistant_msg_id, user_msg_id,
     )
-
-    # Mark session as running before agent loop starts.
-    try:
-        db.update_session(req.session_id, status="running")
-    except Exception:
-        _log.warning(
-            "failed to mark session %s running", req.session_id, exc_info=True,
-        )
 
     # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck
@@ -445,7 +463,11 @@ def _process_turn_once(
         except Exception as _loop_exc:
             from openprogram.context.reactive import is_overflow_error, reactive_compact
             if is_overflow_error(_loop_exc):
-                _agent_profile = _load_agent_profile(req.agent_id)
+                from copy import deepcopy
+                _agent_profile = (
+                    deepcopy(req.profile_snapshot) if req.profile_snapshot is not None
+                    else _load_agent_profile(req.agent_id)
+                )
                 _compacted = reactive_compact(
                     agent_profile=_agent_profile,
                     session_id=req.session_id,
@@ -547,12 +569,16 @@ def _process_turn_once(
     _fin_ctx_win = None
     try:
         from openprogram.context.tokens import real_context_window as _rcw
-        _fin_profile = _load_agent_profile(req.agent_id)
+        from copy import deepcopy
+        _fin_profile = (
+            deepcopy(req.profile_snapshot) if req.profile_snapshot is not None
+            else _load_agent_profile(req.agent_id)
+        )
         _fin_ctx_win = _rcw(_resolve_model(_fin_profile, req.model_override))
     except Exception:
         _fin_profile = None
         _fin_ctx_win = None
-    finalize_turn(
+    turn_committed = finalize_turn(
         db=db,
         req=req,
         session=session,
@@ -575,16 +601,33 @@ def _process_turn_once(
                {"session": req.session_id})
 
     # Mark session idle/done now that the turn completed successfully.
+    session_finished = False
     try:
         if req.source in {"wechat", "telegram", "discord", "slack"}:
             db.update_session(req.session_id, status="done", unread=True)
         else:
             db.update_session(req.session_id, status="idle")
+        session_finished = True
     except Exception:
         # A stuck "running" status is visible in the UI, so log it.
         _log.warning(
             "failed to mark session %s finished", req.session_id, exc_info=True,
         )
+
+    # A self-update may stop this worker in a later phase. Release it only
+    # after the final assistant node, session Git commit, and finished status
+    # are all durable. A mismatch is a no-op; a storage error leaves the
+    # request in PREPARING for explicit inspection/cancellation.
+    if turn_committed and session_finished:
+        try:
+            release_prepared_update(req.session_id, assistant_msg_id)
+        except Exception:
+            _log.warning(
+                "self-update turn release failed for %s turn %s",
+                req.session_id,
+                assistant_msg_id,
+                exc_info=True,
+            )
 
     # 6.99. Deliver cross-branch messages queued while this turn ran
     #       (send_message busy-queueing) — the turn is over, the session

@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+output_app=""
+if [[ "${1:-}" == "--output" ]]; then
+  output_app="${2:-}"
+  [[ $# == 2 && "$output_app" == /* && "$(basename -- "$output_app")" == "OpenProgram.app" ]] || {
+    printf 'usage: %s [--output /absolute/path/OpenProgram.app]\n' "$0" >&2
+    exit 2
+  }
+elif [[ $# != 0 ]]; then
+  printf 'usage: %s [--output /absolute/path/OpenProgram.app]\n' "$0" >&2
+  exit 2
+fi
+
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 desktop_dir="$(cd -- "$script_dir/.." && pwd)"
 repo_root="$(cd -- "$desktop_dir/../.." && pwd)"
@@ -47,6 +59,33 @@ command -v npm >/dev/null 2>&1 || {
   exit 1
 }
 
+if [[ -n "$output_app" ]]; then
+  output_app="$(node - "$output_app" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+let current = path.resolve(process.argv[2]);
+const missing = [];
+while (!fs.existsSync(current)) {
+  missing.unshift(path.basename(current));
+  current = path.dirname(current);
+}
+process.stdout.write(path.join(fs.realpathSync(current), ...missing));
+NODE
+)"
+  case "$output_app" in
+    "/Applications/OpenProgram.app"|\
+    "$runtime_dir"|"$runtime_dir"/*|\
+    "$python_build_dir"|"$python_build_dir"/*|\
+    "$web_build_dir"|"$web_build_dir"/*|\
+    "$web_output_dir"|"$web_output_dir"/*|\
+    "$frontend_stage_dir"|"$frontend_stage_dir"/*)
+      printf 'build output is managed by installation or package cleanup: %s\n' \
+        "$output_app" >&2
+      exit 2
+      ;;
+  esac
+fi
+
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-app-package.XXXXXX")"
 package_dir="$work_dir/package"
 
@@ -70,8 +109,20 @@ trap 'exit 143' TERM
 cd "$repo_root"
 npm run prepare:runtime --workspace apps/desktop
 npm run icon:check --workspace apps/desktop
-npm exec --workspace apps/desktop -- electron-builder \
-  --dir --mac --publish never --config.directories.output="$package_dir"
+if [[ -n "${OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST:-}" ]]; then
+  [[ "$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST" == /* && \
+      -f "$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST" && \
+      ! -L "$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST" ]] || {
+    printf 'invalid trusted Electron distribution\n' >&2
+    exit 1
+  }
+  npm exec --workspace apps/desktop -- electron-builder \
+    --dir --mac --publish never --config.directories.output="$package_dir" \
+    "--config.electronDist=$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST"
+else
+  npm exec --workspace apps/desktop -- electron-builder \
+    --dir --mac --publish never --config.directories.output="$package_dir"
+fi
 
 app_list="$work_dir/apps.txt"
 find "$package_dir" -type d -name OpenProgram.app -prune -print >"$app_list"
@@ -81,5 +132,21 @@ app_count="$(wc -l <"$app_list" | tr -d ' ')"
   exit 1
 }
 built_app="$(sed -n '1p' "$app_list")"
-bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"
-env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"
+OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER="${OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:-}" \
+OPENPROGRAM_SMOKE_PORT="${OPENPROGRAM_SMOKE_PORT:-}" \
+  bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"
+if [[ -n "$output_app" ]]; then
+  [[ ! -e "$output_app" && ! -L "$output_app" ]] || {
+    printf 'build output already exists: %s\n' "$output_app" >&2
+    exit 1
+  }
+  mkdir -p "$(dirname -- "$output_app")"
+  if ! ditto "$built_app" "$output_app"; then
+    rm -rf "$output_app" || :
+    printf 'failed to copy OpenProgram App artifact to %s\n' "$output_app" >&2
+    exit 1
+  fi
+  printf 'OpenProgram App artifact written to %s\n' "$output_app"
+else
+  env -u DESTDIR bash "$script_dir/install-app.sh" "$built_app"
+fi

@@ -73,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  maintenance\n"
             "    doctor          health checks\n"
             "    rescue          diagnose problems, print fix commands\n"
+            "    self-update     inspect or explicitly recover an in-chat App update\n"
             "    logs            view log files\n"
             "    update          check for + apply updates\n"
             "    worker install  run as a login service (auto-start, crash-restart)\n"
@@ -122,6 +123,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Diagnose common openprogram problems and print fix commands "
              "(deterministic — works when LLM/agent path is broken)",
     )
+    p_self_update = sub.add_parser("self-update", help="Inspect or explicitly recover a conversational App update")
+    self_update_sub = p_self_update.add_subparsers(dest="self_update_verb", required=True)
+    p_self_status = self_update_sub.add_parser("status", help="Read update maintenance and owner recovery status")
+    p_self_status.add_argument("update_id", nargs="?")
+    p_self_status.add_argument("--json", action="store_true", help="Emit JSON")
+    p_self_repair = self_update_sub.add_parser("repair", help="Confirm a bounded recovery using the original trusted controller")
+    p_self_repair.add_argument("update_id", help="Exact update id to inspect and confirm interactively")
 
     # ---- logs (structured log viewer) -------------------------------------
     p_logs = sub.add_parser(

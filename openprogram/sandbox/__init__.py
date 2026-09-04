@@ -658,7 +658,8 @@ def validate_read_path(path) -> str | None:
     child process — they open the file in the host interpreter, where no
     Seatbelt or bwrap rule applies. This is that missing enforcement
     point. No active policy (danger-full-access, or a plain library use)
-    means no restriction, exactly as for writes.
+    means no configurable restriction. Verifier-internal state stays private
+    even without a sandbox policy.
     """
     matcher = read_denier()
     if matcher is None:
@@ -679,15 +680,25 @@ def read_denier():
     per file would recompile every deny regex per candidate. Takes a real
     path (already resolved) and answers whether reading it is denied.
     """
+    from openprogram.agent.turn_request_context import get_turn_request
+    from openprogram.paths import get_state_dir
+    verifier_root = (
+        os.path.realpath(get_state_dir() / "self-updates")
+        if getattr(get_turn_request(), "source", None) == "self_update_verify" else None
+    )
+    def verifier_denied(target: str) -> bool:
+        real = os.path.realpath(target)
+        return verifier_root is not None and (real == verifier_root or real.startswith(verifier_root + os.sep))
+
     policy = resolve_policy()
     if policy is None or not policy.deny_read:
-        return None
+        return verifier_denied if verifier_root is not None else None
     deny_items = [
         (p, [re.compile(rx) for rx in _regexes_for((p,))])
         for p in policy.deny_read
     ]
     if not any(rxs for _, rxs in deny_items):
-        return None
+        return verifier_denied if verifier_root is not None else None
     allow_items = [
         (p, [re.compile(rx) for rx in _regexes_for((p,))])
         for p in policy.allow_read
@@ -699,6 +710,8 @@ def read_denier():
 
     def _denied(target: str) -> bool:
         real = os.path.realpath(target)
+        if verifier_denied(real):
+            return True
         denies = _hits(deny_items, real)
         if not denies:
             return False

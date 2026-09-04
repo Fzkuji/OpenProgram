@@ -483,6 +483,9 @@ class JobRunner:
         defer_dispatch: bool = False,
         resume_deferred: bool = False,
         borrow_current_claim: bool = False,
+        source: str = "agent_spawn",
+        profile_snapshot: Optional[dict[str, Any]] = None,
+        response_format: Optional[dict[str, Any]] = None,
     ) -> str:
         """Create a Job entity, persist it, queue it on the pool.
 
@@ -570,6 +573,9 @@ class JobRunner:
             model_override=model_override,
             thinking_effort=thinking_effort,
             render_range=render_range,
+            source=source,
+            profile_snapshot=profile_snapshot,
+            response_format=response_format,
             deferred_inbox=deferred_inbox,
             status=JobStatus.PENDING,
             created_at=existing.created_at if existing is not None else time.time(),
@@ -836,6 +842,12 @@ class JobRunner:
                     kwargs["thinking_effort"] = job.thinking_effort
                 if job.render_range is not None:
                     kwargs["render_range"] = job.render_range
+                if job.source != "agent_spawn":
+                    kwargs["source"] = job.source
+                if job.profile_snapshot is not None:
+                    kwargs["profile_snapshot"] = job.profile_snapshot
+                if job.response_format is not None:
+                    kwargs["response_format"] = job.response_format
                 authority = normalize_authority(job)
                 if authority:
                     kwargs["authority"] = authority
@@ -1820,6 +1832,12 @@ class JobRunner:
                         _turn_kwargs["thinking_effort"] = job.thinking_effort
                     if job.render_range is not None:
                         _turn_kwargs["render_range"] = job.render_range
+                    if job.source != "agent_spawn":
+                        _turn_kwargs["source"] = job.source
+                    if job.profile_snapshot is not None:
+                        _turn_kwargs["profile_snapshot"] = job.profile_snapshot
+                    if job.response_format is not None:
+                        _turn_kwargs["response_format"] = job.response_format
                     _job_authority = normalize_authority(job)
                     if _job_authority:
                         _turn_kwargs["authority"] = _job_authority
@@ -2118,6 +2136,11 @@ class JobRunner:
                 pass
         self._recover_deferred_resumes()
         self._recover_deferred_inboxes()
+        try:
+            from openprogram.self_update.delivery import deliver_pending
+            deliver_pending()
+        except Exception as exc:
+            _log.warning("self-update result delivery unavailable: %s", type(exc).__name__)
         if (
             result.finalized_preparing
             or result.released_missing

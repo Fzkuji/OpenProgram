@@ -329,6 +329,9 @@ export function persistCenterTabsPayload(
   state: CenterTabsPersistedState,
 ): boolean {
   if (typeof window === "undefined") return false;
+  // Also cover background title/state updates during the transient native check.
+  // Never persist its perspective through an unrelated store write.
+  if (typeof document !== "undefined" && document.getElementById("sessionPerspectiveToggle")?.hasAttribute("data-self-update-view")) return false;
   try {
     const key = centerTabsStorageKey();
     let projected = normalizeCenterTabsPayload({

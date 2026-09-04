@@ -299,13 +299,10 @@ def test_desktop_activation_does_not_restore_a_tab_changed_while_loading():
     assert show_index < navigate_index < guard_index < target_index
 
 
-def test_desktop_renderer_reload_discards_pending_native_navigations():
+def test_desktop_native_navigation_helpers_clear_pending_records():
     source = (REPO_ROOT / "apps" / "desktop" / "main.js").read_text(encoding="utf-8")
-    # Renderer reload destroys every view owned by the window, which
-    # drops their pending-navigation records with them (destroyView
-    # nulls record.navigation). runNativeNavigation likewise clears the
-    # record before reload/history calls that bypass loadView.
-    assert 'win.webContents.on("did-navigate", () => clearOwnedViews(ctx))' in source
+    # The actual reload callback is exercised by Desktop's VM check.
+    # Both native helpers must explicitly invalidate their pending record.
     start = source.index("function destroyView")
     end = source.index("function clearOwnedViews", start)
     assert "record.navigation = null" in source[start:end]

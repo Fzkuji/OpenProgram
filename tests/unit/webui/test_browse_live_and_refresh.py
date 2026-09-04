@@ -28,7 +28,13 @@ from openprogram.providers import metadata as cat
 
 
 @pytest.fixture(autouse=True)
-def _clear_browse_cache():
+def _clear_browse_cache(monkeypatch):
+    from openprogram.providers.sources import models_dev
+
+    # This module exercises the WebUI seams, not the models.dev cache.  Keep
+    # an expired cache left by an earlier test from scheduling a real refresh
+    # thread while these tests replace the WebUI-facing lookups.
+    monkeypatch.setattr(models_dev, "_load", lambda: {})
     listing._reset_browse_cache()
     yield
     listing._reset_browse_cache()

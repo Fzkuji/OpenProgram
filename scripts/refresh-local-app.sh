@@ -239,6 +239,16 @@ install_lock_owned=1
 "$local_python" "$repo_root/scripts/release/verify-release-version.py" \
   --installed-app "$app_path" --require-source-match --wheel "$wheel"
 
+# Freeze the installer with this build before stopping the App. A new runtime
+# must not snapshot an obsolete installer on its next conversational update.
+installer_stage="$attempt_dir/install-app.sh"
+test ! -L "$app_path/Contents/Resources/update" && \
+  test ! -L "$app_path/Contents/Resources/update/install-app.sh" || {
+  printf 'the installed update resources must not be symlinks\n' >&2
+  exit 1
+}
+cp "$repo_root/apps/desktop/scripts/install-app.sh" "$installer_stage"
+
 if pgrep -x OpenProgram >/dev/null 2>&1; then
   osascript -e 'tell application "OpenProgram" to quit' >/dev/null 2>&1 || true
   for _ in {1..50}; do
@@ -294,6 +304,10 @@ if test -d "$desktop_asar.unpacked"; then
   rsync -a --delete "$desktop_asar.unpacked/" \
     "$app_path/Contents/Resources/app.asar.unpacked/"
 fi
+mkdir -p "$app_path/Contents/Resources/update"
+cp "$installer_stage" "$app_path/Contents/Resources/update/install-app.sh"
+node "$repo_root/apps/desktop/scripts/write-reopen-protocol.cjs" \
+  --resources "$app_path/Contents/Resources"
 
 revision="$build_revision"
 if test -n "$(git -C "$repo_root" status --porcelain --untracked-files=no)"; then

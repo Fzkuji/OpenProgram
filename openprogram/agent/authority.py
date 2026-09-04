@@ -344,7 +344,7 @@ def authority_from_message(session_id: str, message_id: str) -> dict[str, Any]:
 
 _READ_TOOLS = {
     "read", "read_file", "grep", "glob", "list", "list_files",
-    "read_conversation", "list_agents", "list_jobs",
+    "read_conversation", "list_agents", "list_jobs", "self_update_status",
 }
 # Reads that stay inside the memory workspace. They reach no other part
 # of the filesystem, so they are gated on ``memory.read`` rather than on
@@ -370,7 +370,7 @@ _NETWORK_TOOLS = {
 _REPLY_LOCAL_TOOLS = {
     "todo_create", "todo_update", "todo_list", "enter_plan_mode",
     "exit_plan_mode", "clarify", "skill", "tool_search", "job_output",
-    "job_stop",
+    "job_stop", "self_update_cancel",
 }
 
 

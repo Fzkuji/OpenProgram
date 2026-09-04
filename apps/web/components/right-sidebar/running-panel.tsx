@@ -11,9 +11,13 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { jsonFetch } from "@/lib/net/fetch-client";
+import type { SelfUpdate } from "@/lib/self-update";
+import { SelfUpdateCard } from "@/components/chat/messages/self-update-card";
 
 type RunningItem = {
-  kind: "tool" | "job" | "process" | "run";
+  kind: "tool" | "job" | "process" | "run" | "self_update";
+  update?: SelfUpdate;
   id: string;
   session_id?: string | null;
   execution_id?: string | null;
@@ -37,6 +41,9 @@ export function RunningPanel({ active }: { active: boolean }) {
   const conversations = useSessionStore((s) => s.conversations);
   const [items, setItems] = useState<RunningItem[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [stale, setStale] = useState(false);
+  const [updateError, setUpdateError] = useState(false);
+  const updateSyncedAt = useRef<number | null>(null);
   // Server clock at fetch time + local clock at fetch time, so elapsed
   // stays correct even when the two clocks disagree.
   const baseRef = useRef<{ serverNow: number; fetchedAt: number }>({
@@ -48,28 +55,46 @@ export function RunningPanel({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) return;
     let stop = false;
+    let request: AbortController | null = null;
+    let pollTimer: ReturnType<typeof setTimeout>;
     async function poll() {
+      if (stop || request) return;
+      clearTimeout(pollTimer);
+      const controller = new AbortController();
+      request = controller;
+      const timeout = setTimeout(() => controller.abort(), 15000);
       try {
-        const res = await fetch("/api/running");
-        if (!res.ok) return;
-        const data = (await res.json()) as {
+        const data = await jsonFetch<{
           items: RunningItem[];
           now: number;
-        };
-        if (stop) return;
+          self_update_error?: string | null;
+        }>("/api/running", { signal: controller.signal, cache: "no-store" });
+        if (stop || controller.signal.aborted) return;
         baseRef.current = { serverNow: data.now, fetchedAt: Date.now() };
-        setItems(data.items || []);
+        // A partial projection failure must not silently remove the last update.
+        setItems((previous) => data.self_update_error
+          ? [...data.items.filter((item) => item.kind !== "self_update"), ...previous.filter((item) => item.kind === "self_update")]
+          : data.items);
+        setUpdateError(Boolean(data.self_update_error));
+        if (!data.self_update_error) updateSyncedAt.current = Date.now();
+        setStale(false);
         setLoaded(true);
       } catch {
-        /* worker unreachable — keep last snapshot */
+        if (!stop) setStale(true);
+      } finally {
+        clearTimeout(timeout);
+        request = null;
+        if (!stop) pollTimer = setTimeout(poll, POLL_MS);
       }
     }
     poll();
-    const pollTimer = setInterval(poll, POLL_MS);
+    window.addEventListener("online", poll);
     const tickTimer = setInterval(() => setTick((t) => t + 1), 1000);
     return () => {
       stop = true;
-      clearInterval(pollTimer);
+      request?.abort();
+      clearTimeout(pollTimer);
+      window.removeEventListener("online", poll);
       clearInterval(tickTimer);
     };
   }, [active]);
@@ -103,6 +128,9 @@ export function RunningPanel({ active }: { active: boolean }) {
   }
 
   const renderItem = (item: RunningItem) => {
+    if (item.kind === "self_update" && item.update) {
+      return <SelfUpdateCard key={`self_update:${item.id}`} update={item.update} />;
+    }
     const elapsed = elapsedOf(item);
     const branch = item.session_id && item.execution_id
       ? `${text("branch", "分支")} ${item.execution_id.slice(-8)}`
@@ -190,14 +218,14 @@ export function RunningPanel({ active }: { active: boolean }) {
     );
   };
 
-  if (!loaded) {
+  if (!loaded && !stale) {
     return (
       <div style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}>
         {text("Loading…", "加载中…")}
       </div>
     );
   }
-  if (items.length === 0) {
+  if (items.length === 0 && !stale && !updateError) {
     return (
       <div style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}>
         {text("Nothing is running right now", "当前没有正在运行的任务")}
@@ -207,6 +235,10 @@ export function RunningPanel({ active }: { active: boolean }) {
 
   return (
     <div style={{ overflowY: "auto", padding: "4px 8px" }}>
+      {(stale || updateError) && <p role="status" style={{ padding: 8, fontSize: 12 }}>
+        {text("Status unavailable. Displayed results may be stale; reconnecting automatically.", "状态不可用。显示的结果可能已过时；正在自动重连。")}
+        {(updateError ? updateSyncedAt.current : baseRef.current.fetchedAt) ? <> {text("Last sync", "最近同步")}: {new Date(updateError ? updateSyncedAt.current! : baseRef.current.fetchedAt).toLocaleString()}</> : null}
+      </p>}
       {[...sessionGroups.entries()].map(([sessionId, groupItems]) => {
         const title = conversations[sessionId]?.title || sessionId.slice(0, 12);
         return (

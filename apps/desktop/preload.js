@@ -10,6 +10,16 @@ const windowId = windowIdArgument
 contextBridge.exposeInMainWorld("openprogramDesktop", {
   isDesktop: true,
   windowId,
+  selfUpdateCapture: (nonce) => ipcRenderer.invoke("self-update:ui-capture", nonce),
+  selfUpdateReopen: {
+    getState: () => ipcRenderer.invoke("self-update:reopen-state"),
+    sessionLoaded: (sessionId) => ipcRenderer.invoke("self-update:session-loaded", sessionId),
+    onState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on("self-update:reopen-state", listener);
+      return () => ipcRenderer.removeListener("self-update:reopen-state", listener);
+    },
+  },
   // Electron removed the renderer's legacy File.path property. This is the
   // supported path boundary for a File explicitly selected or dropped by
   // the user; it does not expose general filesystem access to the renderer.
