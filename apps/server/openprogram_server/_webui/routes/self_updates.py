@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from fastapi import Query, Request
 from fastapi.responses import JSONResponse
 
-from openprogram.self_update.projection import ProjectionAccessError, list_status, read_status
+from openprogram.self_update.projection import ProjectionAccessError, list_status, read_evidence, read_status
 from openprogram.self_update.store import SelfUpdateStore
 from openprogram.self_update.types import ConcurrentUpdateError, SelfUpdateError, UpdateNotFoundError
 
@@ -40,6 +40,12 @@ def _response(request, session_id, reader, **kwargs):
 
 
 def register(app):
+    @app.get("/api/self-updates/{update_id}/evidence")
+    def api_self_update_evidence(request: Request, update_id: str,
+                                session_id: str = Query(min_length=1, max_length=256),
+                                evidence_id: str = Query(min_length=1, max_length=256)):
+        return _response(request, session_id, read_evidence, update_id=update_id, evidence_id=evidence_id)
+
     @app.get("/api/self-updates")
     def api_self_updates(request: Request, session_id: str = Query(min_length=1, max_length=256),
                          limit: int = Query(20, ge=1, le=50), cursor: str | None = Query(None, max_length=2048)):

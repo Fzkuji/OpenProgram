@@ -115,6 +115,14 @@ completed attempts and supports bounded `limit` and `cursor` pagination.
 `last_verified_runtime` contains the last matching verification's SHA, PID,
 timestamp and source, or is null when unknown. It does not prove the worker is
 still online. `state_revision` is a state counter, not a Git revision.
+Verifier evidence can be read with
+`GET /api/self-updates/{update_id}/evidence?session_id=…&evidence_id=…`, using
+the verifier's `evidence_id` or an assertion's `evidence_refs` value from that
+projection. Owner authentication and the original session are required. The
+response contains only observations cited by the validated signed result, not
+arbitrary files, credentials or configuration. Stored HTTP/HTML response text is
+not proof of a rendered App window. Changed or invalid evidence returns an error.
+
 Queries do not initialize or repair update state. Invalid state returns an
 error rather than an empty history. Running reports `self_update_error` if its
 update snapshot is unavailable. The projection excludes credentials, raw logs

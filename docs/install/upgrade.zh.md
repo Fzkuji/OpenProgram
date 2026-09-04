@@ -95,6 +95,12 @@ App 写权限的原生沙箱运行冻结测试。原 worktree 不变。默认只
 `candidate_revision` 与 `target_app` 表示请求的安装目标；
 `last_verified_runtime` 包含最近一次匹配验证的 SHA、PID、时间和来源，
 没有对应证据时为 null，不表示 worker 仍在线。`state_revision` 是状态计数器，不是 Git revision。
+可使用投影中 verifier 的 `evidence_id` 或某条 assertion 的 `evidence_refs` 值调用
+`GET /api/self-updates/{update_id}/evidence?session_id=…&evidence_id=…`。
+此接口要求 owner 认证和原会话，只返回已校验签名结果引用的观察记录，不支持读取任意文件，
+不返回凭据或配置。保存的 HTTP/HTML 响应文本不能证明 App 窗口已实际渲染；证据被修改或
+校验失败时返回错误。
+
 查询不初始化或修复更新状态，损坏状态返回错误，不显示为空历史。
 Running 无法读取更新快照时返回 `self_update_error`。
 投影不包含凭据、原始日志和配置；修正摘要包含状态及已生成的新 candidate SHA。

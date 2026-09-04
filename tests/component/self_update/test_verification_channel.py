@@ -108,6 +108,50 @@ def test_registered_observer_and_durable_job_result_are_bound(verifier, verdict)
     assert v.grant["token"] not in json.dumps(projected)
 
 
+def test_public_evidence_read_is_bound_to_owner_session_and_signed_receipt(verifier, monkeypatch):
+    from fastapi import FastAPI
+    from starlette.testclient import TestClient
+    from openprogram.agent.authority import owner_principal_id
+    from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.webui.routes import self_updates
+    from openprogram.self_update.projection import read_status
+
+    # The live fixture fixes the owner function; keep the tool module's
+    # already-imported alias on that same identity without bypassing checks.
+    monkeypatch.setattr("openprogram.programs.tools.system.self_update.owner_principal_id", owner_principal_id)
+    v = verifier
+    v.run()
+    consume(v)
+    auth = OwnerAuthState.from_raw_token(bytes(range(32)), owner_principal_id=owner_principal_id(),
+                                        bind_host="127.0.0.1", port=18100, allowed_origins=())
+    app = FastAPI()
+    app.add_middleware(OwnerAuthMiddleware, auth_state=auth)
+    self_updates.register(app)
+    projection = read_status(v.store, session_id="p1", update_id=v.request.update_id)
+    params = {"session_id": "p1", "evidence_id": projection["verifier"]["evidence_id"]}
+    url = f"/api/self-updates/{v.request.update_id}/evidence"
+    headers = {"Authorization": f"Bearer {auth.token}"}
+    before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in v.store.root.rglob("*") if p.is_file()}
+    with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 12345)) as client:
+        assert client.get(url, params=params).status_code == 401
+        assert client.get(url, params={**params, "session_id": "other"}, headers=headers).status_code == 403
+        response = client.get(url, params=params, headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.headers["cache-control"] == "no-store"
+        evidence = response.json()
+        assert evidence["verdict"] == "pass"
+        assert evidence["observations"][0]["entry"] == "/api/diagnostics"
+        assert json.loads(evidence["observations"][0]["body"])["database_ok"] is True
+        assert v.grant["token"] not in response.text and "signature" not in response.text
+        ref = v.control["observed"]["evidence_ref"]
+        assert client.get(url, params={**params, "evidence_id": ref}, headers=headers).status_code == 200
+        assert client.get(url, params={**params, "evidence_id": "../../verifier-grant-1.json"}, headers=headers).status_code == 404
+        assert {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in v.store.root.rglob("*") if p.is_file()} == before
+        path = next((v.store.root / v.request.update_id / "observations").iterdir())
+        v.store._write_json(path, {"observation": {"body": "forged"}})
+        assert client.get(url, params=params, headers=headers).status_code == 409
+
+
 @pytest.mark.parametrize("mutation", ["foreign_ref", "stale_time", "wrong_entry", "changed_file"])
 def test_unresolved_or_changed_evidence_cannot_pass(verifier, mutation):
     v = verifier

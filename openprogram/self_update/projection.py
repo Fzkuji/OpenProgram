@@ -194,6 +194,20 @@ def _exists(store):
     return True
 
 
+def _scoped_record(store, session_id, update_id):
+    record = (store._load_active_unlocked(read_only=True) if update_id is None
+              else store._load_unlocked(update_id, read_only=True))
+    if record is None:
+        raise UpdateNotFoundError("no active self-update")
+    if record.request.session_id != session_id:
+        raise ProjectionAccessError("self-update belongs to another origin session")
+    if not is_terminal(record.state.phase):
+        active = store._load_active_unlocked(read_only=True)
+        if active is None or active.request.update_id != record.request.update_id:
+            raise CorruptUpdateStateError("non-terminal update does not own the active slot")
+    return record
+
+
 def read_status(store: SelfUpdateStore, *, session_id: str, update_id: str | None = None) -> dict:
     _session(session_id)
     if update_id is not None:
@@ -201,17 +215,45 @@ def read_status(store: SelfUpdateStore, *, session_id: str, update_id: str | Non
     if not _exists(store):
         raise UpdateNotFoundError("no self-update exists")
     with store._locked(read_only=True):
-        record = (store._load_active_unlocked(read_only=True) if update_id is None
-                  else store._load_unlocked(update_id, read_only=True))
-        if record is None:
-            raise UpdateNotFoundError("no active self-update")
-        if record.request.session_id != session_id:
-            raise ProjectionAccessError("self-update belongs to another origin session")
-        if not is_terminal(record.state.phase):
-            active = store._load_active_unlocked(read_only=True)
-            if active is None or active.request.update_id != record.request.update_id:
-                raise CorruptUpdateStateError("non-terminal update does not own the active slot")
-        return _project(store, record)
+        return _project(store, _scoped_record(store, session_id, update_id))
+
+
+def read_evidence(store: SelfUpdateStore, *, session_id: str, update_id: str, evidence_id: str):
+    """Return only signed observations cited by this update's verifier result."""
+    from .verification_channel import _REFERENCE
+
+    _session(session_id)
+    _validate_update_id(update_id)
+    if not isinstance(evidence_id, str) or not 1 <= len(evidence_id) <= 256:
+        raise ValueError("invalid self-update evidence id")
+    if not _exists(store):
+        raise UpdateNotFoundError("no self-update exists")
+    with store._locked(read_only=True):
+        record = _scoped_record(store, session_id, update_id)
+        verifier = _verifier(store, record)
+        if verifier is None:
+            raise UpdateNotFoundError("no verifier evidence exists")
+        refs = sorted({ref for item in verifier["assertions"] for ref in item["evidence_refs"]})
+        if evidence_id != verifier["evidence_id"]:
+            if evidence_id not in refs:
+                raise UpdateNotFoundError("evidence does not belong to this verifier result")
+            refs = [evidence_id]
+        observations = []
+        for ref in refs:
+            match = _REFERENCE.fullmatch(ref)
+            if match is None:
+                raise CorruptUpdateStateError("invalid verifier evidence reference")
+            evidence = _read(store.root / update_id / "observations" / f"{match[1]}.json")
+            if _digest(evidence) != match[2]:
+                raise CorruptUpdateStateError("verifier evidence changed")
+            observed = evidence["observation"]
+            observations.append({"evidence_ref": ref, **{k: observed[k] for k in (
+                "entry", "status", "content_type", "body", "observed_at",
+            )}})
+        return _bounded(dict(update_id=update_id, attempt=record.state.attempt,
+                             candidate_revision=record.request.candidate_sha,
+                             evidence_id=evidence_id, verdict=verifier["verdict"],
+                             assertions=verifier["assertions"], observations=observations))
 
 
 def _records(store):
