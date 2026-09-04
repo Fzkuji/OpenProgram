@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useRouter } from "next/navigation";
 import {
   Boxes,
+  ChevronDown,
+  ChevronRight,
   FileCode,
   Folder,
   FolderOpen,
@@ -135,6 +137,8 @@ export function ProgramsPage({
   const [searchMatchIndex, setSearchMatchIndex] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"tree" | "graph">("tree");
+  const [callExpansion, setCallExpansion] = useState<Map<string, boolean>>(new Map());
+  useEffect(() => setCallExpansion(new Map()), [selected]);
   const [reloadToken, setReloadToken] = useState(0);
   const [meta, setMeta] = useState<FunctionsMeta>({ favorites: [], folders: {}, icons: {} });
   const explorerRef = useRef<HTMLElement>(null);
@@ -260,7 +264,7 @@ export function ProgramsPage({
   const selectedNode = logic?.nodes.find((node) => node.id === logic.root) ?? null;
   const invocationName = selectedEntry?.callable_name || "";
   const isFavorite = Boolean(invocationName) && meta.favorites.includes(invocationName);
-  const callTree = useMemo(() => logic ? buildCallTreeRows(logic) : { rows: [], truncated: false }, [logic]);
+  const callTree = useMemo(() => logic ? buildCallTreeRows(logic, 256, callExpansion) : { rows: [], truncated: false }, [logic, callExpansion]);
   const graphLayout = useMemo(() => logic ? buildGraphLayout(logic) : null, [logic]);
   const searchMatches = useMemo(() => {
     if (!search.trim()) return [];
@@ -476,13 +480,15 @@ export function ProgramsPage({
                 <div className={styles.logicToolbar}><div><strong>{text("Call logic", "调用逻辑")}</strong><small>{logic.analysis_kind === "function_calls" ? text("Source-derived function calls", "从当前源码识别的函数调用") : text("Static Program imports and Agentic Programming calls", "静态 Program import 与 Agentic Programming 调用")}</small></div><div className={styles.viewSwitch} aria-label={text("Call logic view", "调用逻辑视图")}><button className={view === "tree" ? styles.viewActive : ""} type="button" aria-pressed={view === "tree"} onClick={() => setView("tree")}><GitBranch size={13} />Call tree</button><button className={view === "graph" ? styles.viewActive : ""} type="button" aria-pressed={view === "graph"} onClick={() => setView("graph")}><Network size={13} />Graph</button></div></div>
                 {view === "tree" ? (
                   <div className={styles.callTree} data-testid="programs-call-tree">
-                    {callTree.rows.map(({ key, node, depth, cycle, reference, ancestorContinuations, isLast, conditional }) => <div key={key} className={`${styles.callRow} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}>
+                    {callTree.rows.map(({ key, node, depth, cycle, reference, ancestorContinuations, isLast, conditional, expandable, isExpanded }) => {
+                      const Row = expandable ? "button" : "div";
+                      return <Row key={key} type={expandable ? "button" : undefined} aria-expanded={expandable ? isExpanded : undefined} onClick={expandable ? () => setCallExpansion(current => new Map(current).set(node.id, !isExpanded)) : undefined} className={`${styles.callRow} ${expandable ? styles.callToggle : ""} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}>
                       {depth > 0 ? <span className={styles.callGuides} aria-hidden="true">
                         {ancestorContinuations.map((continues, index) => <i key={index} className={continues ? styles.callGuideActive : ""} />)}
                         <i className={isLast ? styles.callGuideLast : styles.callGuideBranch} />
                       </span> : null}
-                      <span className={styles.callIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{conditional ? text("conditional", "条件调用") : cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
-                    </div>)}
+                      <span className={styles.callIcon}>{expandable ? (isExpanded ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />) : usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{conditional ? text("conditional", "条件调用") : cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
+                    </Row>;})}
                     {callTree.truncated ? <div className={styles.noCalls}>{text("Additional references are hidden.", "其余引用已隐藏。")}</div> : null}
                     {logic.nodes.length === 1 && logic.analysis_complete !== false ? <div className={styles.noCalls}>{text("This Program has no detected Program or Agentic Programming calls.", "未检测到这个 Program 对其他 Program 或 Agentic Programming 原语的调用。")}</div> : null}
                   </div>
