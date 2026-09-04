@@ -965,6 +965,14 @@ def _program_logic(relative: str) -> dict:
     entities = _entity_paths()
     if relative not in entities:
         raise FileNotFoundError(relative)
+    if relative.startswith("applications/") and entities[relative].is_dir():
+        from .program_calls import application_calls
+        from openprogram.programs._programs import iter_programs
+
+        entry = next((p.function for p in iter_programs() if Path(relative).name in {
+            p.install_dir, p.package, p.repo_dir_name,
+        }), None)
+        return application_calls(entities[relative], relative, entry)
     symbols = _package_symbol_index(entities)
     focus: dict[str, str | None] = {relative: _analysis_entry_name(relative)}
     depths = {relative: 0}

@@ -205,8 +205,10 @@ def test_gui_agent_form_exposes_primary_and_advanced_parameters() -> None:
         if not param.get("hidden") or param.get("advanced")
     }
 
-    assert primary == ["task", "surface"]
-    assert advanced == {"max_steps", "max_seconds", "app_name", "backend"}
+    assert primary == ["task"]
+    assert advanced == {
+        "max_steps", "max_seconds", "app_name", "surface", "backend", "vm_url",
+    }
     assert user_params == {*primary, *advanced}
 
 

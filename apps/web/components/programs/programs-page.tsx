@@ -219,9 +219,14 @@ export function ProgramsPage({
     setLoadingLogic(true);
     setError("");
     const query = new URLSearchParams({ path: selectedEntry?.logic_path || selected });
-    void jsonFetch<LogicResponse>(`/api/programs/logic?${query}`, { signal: controller.signal })
+    let inFlight = false;
+    const refreshLogic = () => {
+      if (inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      void jsonFetch<LogicResponse>(`/api/programs/logic?${query}`, { signal: controller.signal, cache: "no-store" })
       .then((result) => {
         if (!cancelled) {
+          setError("");
           setLogic(selectedEntry ? {
             ...result,
             nodes: result.nodes.map((node) => node.id === result.root
@@ -237,10 +242,17 @@ export function ProgramsPage({
         }
       })
       .finally(() => {
+        inFlight = false;
         if (!cancelled) setLoadingLogic(false);
       });
+    };
+    refreshLogic();
+    const timer = window.setInterval(refreshLogic, 5000);
+    document.addEventListener("visibilitychange", refreshLogic);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshLogic);
       controller.abort();
     };
   }, [selected, selectedEntry, text]);
@@ -459,16 +471,17 @@ export function ProgramsPage({
                   ) : null}
                 </div>
                 <div className={styles.summary}><span>{logic.edges.filter((edge) => edge.source === logic.root).length} {text("direct calls", "个直接调用")}</span><span>{Math.max(0, logic.nodes.length - 1)} {text("reachable nodes", "个可达节点")}</span><span>{logic.edges.length} {text("edges", "条边")}</span></div>
-                {logic.analysis_complete === false ? <div className={styles.analysisWarning} role="status">{text("Partial result: some source files were not analyzed because they exceed the analysis limits.", "部分结果：部分源码超过分析限制，未纳入调用关系。")}</div> : null}
-                <div className={styles.logicToolbar}><div><strong>{text("Call logic", "调用逻辑")}</strong><small>{text("Static Program imports and Agentic Programming calls", "静态 Program import 与 Agentic Programming 调用")}</small></div><div className={styles.viewSwitch} aria-label={text("Call logic view", "调用逻辑视图")}><button className={view === "tree" ? styles.viewActive : ""} type="button" aria-pressed={view === "tree"} onClick={() => setView("tree")}><GitBranch size={13} />Call tree</button><button className={view === "graph" ? styles.viewActive : ""} type="button" aria-pressed={view === "graph"} onClick={() => setView("graph")}><Network size={13} />Graph</button></div></div>
+                {logic.analysis_kind === "function_calls" ? <div className={styles.noCalls}>{text("Current source · possible function calls, not execution order · refreshes automatically. External libraries and object methods are not expanded.", "当前源码 · 展示可能的函数调用，不代表执行顺序 · 自动刷新。外部库与对象方法不展开。")}</div> : null}
+                {logic.analysis_complete === false ? <div className={styles.analysisWarning} role="status">{text("Incomplete analysis", "分析不完整")}: {logic.analysis_warnings?.join(", ")}</div> : null}
+                <div className={styles.logicToolbar}><div><strong>{text("Call logic", "调用逻辑")}</strong><small>{logic.analysis_kind === "function_calls" ? text("Source-derived function calls", "从当前源码识别的函数调用") : text("Static Program imports and Agentic Programming calls", "静态 Program import 与 Agentic Programming 调用")}</small></div><div className={styles.viewSwitch} aria-label={text("Call logic view", "调用逻辑视图")}><button className={view === "tree" ? styles.viewActive : ""} type="button" aria-pressed={view === "tree"} onClick={() => setView("tree")}><GitBranch size={13} />Call tree</button><button className={view === "graph" ? styles.viewActive : ""} type="button" aria-pressed={view === "graph"} onClick={() => setView("graph")}><Network size={13} />Graph</button></div></div>
                 {view === "tree" ? (
                   <div className={styles.callTree} data-testid="programs-call-tree">
-                    {callTree.rows.map(({ key, node, depth, cycle, reference, ancestorContinuations, isLast }) => <div key={key} className={`${styles.callRow} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}>
+                    {callTree.rows.map(({ key, node, depth, cycle, reference, ancestorContinuations, isLast, conditional }) => <div key={key} className={`${styles.callRow} ${depth === 0 ? styles.callRoot : ""} ${reference ? styles.callReference : ""}`} style={{ "--call-depth": depth } as CSSProperties} data-edge-target={depth ? node.id : undefined}>
                       {depth > 0 ? <span className={styles.callGuides} aria-hidden="true">
                         {ancestorContinuations.map((continues, index) => <i key={index} className={continues ? styles.callGuideActive : ""} />)}
                         <i className={isLast ? styles.callGuideLast : styles.callGuideBranch} />
                       </span> : null}
-                      <span className={styles.callIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
+                      <span className={styles.callIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{conditional ? text("conditional", "条件调用") : cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
                     </div>)}
                     {callTree.truncated ? <div className={styles.noCalls}>{text("Additional references are hidden.", "其余引用已隐藏。")}</div> : null}
                     {logic.nodes.length === 1 && logic.analysis_complete !== false ? <div className={styles.noCalls}>{text("This Program has no detected Program or Agentic Programming calls.", "未检测到这个 Program 对其他 Program 或 Agentic Programming 原语的调用。")}</div> : null}
@@ -489,7 +502,7 @@ export function ProgramsPage({
                           const d = sameColumn
                             ? `M ${x1} ${y1} C ${x1 + 22} ${y1}, ${x1 + 22} ${y2}, ${x1} ${y2}`
                             : `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
-                          return <path key={`${source.id}->${target.id}`} className={skip ? styles.graphSkipEdge : undefined} data-edge={`${source.id}->${target.id}`} d={d} markerEnd="url(#program-graph-arrow)" />;
+                          return <path key={`${source.id}->${target.id}`} className={skip ? styles.graphSkipEdge : undefined} data-edge={`${source.id}->${target.id}`} d={d} strokeDasharray={logic.edges.some((edge) => edge.source === source.id && edge.target === target.id && edge.kind === "conditional") ? "5 4" : undefined} markerEnd="url(#program-graph-arrow)" />;
                         })}
                       </svg>
                       {graphLayout.nodes.map((node) => <div key={node.id} className={`${styles.graphNode} ${node.id === logic.root ? styles.graphRoot : ""}`} style={{ left: node.x, top: node.y }} data-graph-node={node.id}>
