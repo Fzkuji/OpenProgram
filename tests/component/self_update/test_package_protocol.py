@@ -27,6 +27,7 @@ def package_factory(tmp_path):
             shutil.copyfile(ROOT / "apps/desktop" / filename, unpacked / filename)
         if ui:
             shutil.copyfile(ROOT / "apps/desktop/self-update-ui.js", unpacked / "self-update-ui.js")
+            shutil.copyfile(ROOT / "apps/desktop/self-update-ui-guard.js", unpacked / "self-update-ui-guard.js")
         subprocess.run(["node", "-e", "require('@electron/asar').createPackage(process.argv[1],process.argv[2]).catch(e=>{console.error(e);process.exit(1)})",
                         str(unpacked), str(resources / "app.asar")], cwd=ROOT, check=True, capture_output=True, timeout=15)
         site = resources / "runtime/python/lib/python3.12/site-packages"

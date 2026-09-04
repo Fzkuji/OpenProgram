@@ -134,6 +134,11 @@ replayed or identity-mismatched requests cannot produce passing evidence.
 User input, navigation, window changes, conflicting capture resources, excess
 output or incomplete cleanup also prevent successful capture. No arbitrary URL,
 JavaScript, target window, click, navigation or data mutation is authorized.
+During capture, the current Desktop adapter rejects new page network requests,
+native IPC operations and external-link navigation from that main window. The
+restriction is released before evidence upload, including on failure, and does
+not apply to other windows. It does not revoke already running requests or
+replace backend authorization for future interactive checks.
 The screenshot supports only assertions about the captured state; interactions
 that were not observed remain inconclusive. HTTP responses, including `/chat`
 HTML, do not prove rendered App behavior. Approved UI interactions, complete

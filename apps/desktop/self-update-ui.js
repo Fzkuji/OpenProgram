@@ -38,7 +38,7 @@ function validateContract(value, nonce) {
 }
 
 function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
-  installation = () => installedIdentity(app) }) {
+  guard, installation = () => installedIdentity(app) }) {
   let busy = false;
   ipcMain.handle("self-update:ui-capture", async (event, nonce) => {
     const ctx = windows.get("main");
@@ -56,6 +56,7 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
     const controller = new AbortController();
     let timer = setTimeout(() => controller.abort(), 5000);
     let attachedHere = false;
+    let releaseGuard;
     const listeners = [];
     const stop = () => controller.abort(); // Never suppress the user's input.
     const listen = (emitter, name) => { emitter.on(name, stop); listeners.push([emitter, name]); };
@@ -88,6 +89,8 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
           route: url.pathname, bounds: ctx.win.getBounds() };
       }
       const before = identity();
+      if (typeof guard?.acquire !== "function") throw new Error("installation_unavailable");
+      releaseGuard = guard.acquire(wc);
       if (wc.debugger.isAttached()) throw new Error("debugger_in_use");
       wc.debugger.attach("1.3");
       attachedHere = true;
@@ -116,6 +119,8 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
       attachedHere = false;
       if (wc.debugger.isAttached()) throw new Error("capture_cleanup_failed");
       for (const [emitter, name] of listeners.splice(0)) emitter.removeListener(name, stop);
+      releaseGuard();
+      releaseGuard = null;
       const body = { schema: 1, nonce, update_id: contract.update_id, attempt: contract.attempt,
         check_id: contract.check_id, worker_pid: contract.worker_pid,
         identity: { ...before, target_id: targetId }, observed_at: Date.now() / 1000,
@@ -135,6 +140,7 @@ function registerUiVerificationIpc({ ipcMain, windows, origin, app, request,
       if (attachedHere) {
         try { if (wc.debugger.isAttached()) wc.debugger.detach(); } catch { /* no successful receipt */ }
       }
+      if (releaseGuard) releaseGuard();
       busy = false;
     }
   });

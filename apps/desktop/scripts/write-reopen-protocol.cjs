@@ -83,10 +83,12 @@ async function writeProtocol(resources) {
   const uiBackend = `${site}openprogram/self_update/ui_checks.py`;
   const uiFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("selfUpdateCapture"));
   const uiTarget = path.join(resources, "update/ui-verification-protocol.json");
-  const hasCapture = asar.listPackage(archive).includes("/self-update-ui.js");
+  const hasCapture = ["/self-update-ui.js", "/self-update-ui-guard.js"].every(name => asar.listPackage(archive).includes(name));
   if (hasCapture && fs.existsSync(path.join(resources, uiBackend)) && uiFrontend &&
       /^UI_PROTOCOL = 1$/m.test(text(resources, uiBackend)) &&
       archiveText("main.js").includes("registerUiVerificationIpc") &&
+      archiveText("main.js").includes("guard: uiVerificationGuard") &&
+      archiveText("self-update-ui.js").includes("guard.acquire(wc)") &&
       archiveText("preload.js").includes('"self-update:ui-capture"') &&
       text(resources, routes).includes("/desktop-verification/{nonce}")) {
     const uiBindings = { desktop: bindings.desktop, routes: bindings.routes, runtime_manifest: bindings.runtime_manifest,

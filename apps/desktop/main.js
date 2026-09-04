@@ -6,7 +6,7 @@ const {
   WebContentsView,
   Menu,
   dialog,
-  ipcMain,
+  ipcMain: nativeIpcMain,
   powerMonitor,
   session,
   shell,
@@ -21,6 +21,9 @@ const { Buffer } = require("buffer");
 const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
 const { createSelfUpdateReopen, registerReopenIpc } = require("./self-update-reopen");
 const { registerUiVerificationIpc } = require("./self-update-ui");
+const { createUiVerificationGuard } = require("./self-update-ui-guard");
+const uiVerificationGuard = createUiVerificationGuard(nativeIpcMain);
+const { ipcMain } = uiVerificationGuard;
 const { resolvePackagedWorker } = require("./packaged-runtime");
 const { DesktopUpdateService, desktopUpdateFetch } = require("./update-service");
 const {
@@ -3534,7 +3537,7 @@ const ensureMainWindow = createMainWindowGate({
 });
 registerReopenIpc({ ipcMain, windows, recovery: selfUpdateReopen, origin: UI_ORIGIN });
 registerUiVerificationIpc({ ipcMain, windows, app, origin: UI_ORIGIN,
-  request: selfUpdateReopen.requestVerification });
+  request: selfUpdateReopen.requestVerification, guard: uiVerificationGuard });
 
 async function createWindow(options = {}) {
   const state = loadWindowState();
@@ -3595,6 +3598,7 @@ async function createWindow(options = {}) {
   });
   // External links from the app itself (not web tabs) open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (uiVerificationGuard.blocked(win.webContents)) return { action: "deny" };
     try {
       const u = new URL(url);
       if (u.protocol === "http:" || u.protocol === "https:") shell.openExternal(url);
@@ -3607,6 +3611,7 @@ async function createWindow(options = {}) {
   // bridge is exposed to whatever document runs there. Remote links
   // (docs footer, message content) go to the system browser instead.
   win.webContents.on("will-navigate", (e, url) => {
+    if (uiVerificationGuard.blocked(win.webContents)) { e.preventDefault(); return; }
     try {
       const dest = new URL(url);
       if (dest.origin === UI_ORIGIN) return;
