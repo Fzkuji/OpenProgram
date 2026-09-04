@@ -63,6 +63,24 @@ openprogram self-update repair UPDATE_ID
 服务，然后解除维护。它不会新建验收 Job，也不会改变原更新结论。独立的恢复结果
 记录恢复了哪个版本；服务恢复不代表失败的功能已达到原始目标。
 
+App 或普通 CLI 无法启动时，使用本次更新保存的独立入口：
+
+```bash
+"$HOME/.openprogram/self-updates/UPDATE_ID/recover.sh" status
+"$HOME/.openprogram/self-updates/UPDATE_ID/recover.sh" repair
+```
+
+脚本使用 App 外保存的原 runtime，不传参数时默认只查状态。`repair` 仍要求 owner
+在交互式终端确认，不绕过证据校验或过期授权。`recover.sh resume` 在原授权和期限内
+调用原 supervisor，不批准新更新，也不重新创建验收 Job。
+
+激活前，OpenProgram 还在本用户的 `~/Library/LaunchAgents/` 中发布
+`ai.openprogram.self-update.recovery.UPDATE_ID.plist`。它在之后每次用户登录时运行一次，
+不依赖 App；没有常驻进程或周期重试，写入文件也不会立即启动另一个控制进程。
+恢复不在用户登录或磁盘解锁之前执行。当前登录会话中 App 和控制进程都停止时，
+显式运行保存的脚本。更新结束后仅清理内容仍一致的本次登录文件；保存的 runtime、
+脚本和证据继续保留。可信恢复文件缺失或损坏时需人工处理，不从未验证的 App 重建。
+
 ## 开发 checkout
 
 在 source checkout 中，同一命令执行开发升级流程，而不是 release installer。它验证 Git 目标，仅在相关源文件变化时更新依赖与构建产物，probe 新 checkout，并且只在 probe 成功后重启 worker：

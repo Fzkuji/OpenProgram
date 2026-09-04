@@ -720,11 +720,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--installer-sha256", required=True)
     parser.add_argument("update_id")
     args = parser.parse_args(argv)
-    return run_supervisor(
-        args.update_id,
-        state_root=args.state_root,
-        installer_sha256=args.installer_sha256,
-    )
+    try:
+        return run_supervisor(
+            args.update_id,
+            state_root=args.state_root,
+            installer_sha256=args.installer_sha256,
+        )
+    finally:
+        from .bootstrap import cleanup_bootstrap
+        cleanup_bootstrap(_canonical_store(args.state_root), args.update_id)
 
 
 if __name__ == "__main__":

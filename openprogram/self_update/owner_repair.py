@@ -201,7 +201,10 @@ def status(update_id: str | None = None) -> dict:
         record = store._load_unlocked(update_id)
         _owner(store, record)
         request = load_repair(store, record)
+        directory = store.root / update_id
+        script = directory / "recover.sh"
         return dict(update_id=update_id, phase=record.state.phase.value,
+                    recovery_script=str(script) if script.is_file() and not script.is_symlink() else None,
                     maintenance=marker is not None and marker["update_id"] == update_id,
                     repair_id=request["repair_id"] if request else None,
                     repair_deadline=request["deadline"] if request else None,

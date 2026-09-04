@@ -10,6 +10,7 @@ that releases a prepared request only after its origin turn is durable.
 
 ## Files in this directory
 
+- **`bootstrap.py`** — Recover an existing update from its saved runtime, independently of the App
 - **`commit_intent.py`** — Preserve an accepted commit decision across irreversible App finalization
 - **`controller_bundle.py`** — Freeze the installed controller runtime outside the replaceable App
 - **`handoff.py`** — Durable release of a prepared update after its origin turn commits

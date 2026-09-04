@@ -53,12 +53,12 @@ def _runtime_python(runtime: Path) -> Path:
     return python
 
 
-def _probe_runtime(runtime: Path, python: Path) -> None:
+def _probe_runtime(runtime: Path, python: Path, module: str = "openprogram.self_update.supervisor") -> None:
     # This executes only copied trusted code, never the candidate. Isolated
     # Python excludes user-site/PYTHONPATH; the probe also rejects .pth escapes.
     code = (
-        "from pathlib import Path; import sys; "
-        "import openprogram.self_update.supervisor as controller; "
+        "from pathlib import Path; import sys,importlib; "
+        "controller=importlib.import_module(sys.argv[2]); "
         "root=Path(sys.argv[1]).resolve(); "
         "assert Path(sys.prefix).resolve().is_relative_to(root); "
         "assert Path(sys.base_prefix).resolve().is_relative_to(root); "
@@ -67,7 +67,7 @@ def _probe_runtime(runtime: Path, python: Path) -> None:
         "print('CONTROLLER_RUNTIME_OK')"
     )
     result = subprocess.run(
-        [str(python), "-I", "-B", "-c", code, str(runtime)],
+        [str(python), "-I", "-B", "-c", code, str(runtime), module],
         cwd=str(runtime), env=controller_environment(), capture_output=True, text=True, timeout=30,
     )
     if result.returncode != 0 or result.stdout.strip() != "CONTROLLER_RUNTIME_OK":

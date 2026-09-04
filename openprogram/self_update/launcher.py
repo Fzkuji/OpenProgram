@@ -115,6 +115,12 @@ def _submit_supervisor(
     from .controller_bundle import prepare_controller, _load_bundle
     try:
         bundle = _load_bundle(update_dir / "controller") if resume else prepare_controller(update_dir)
+        from .bootstrap import prepare_bootstrap, validate_if_present
+        record = store._load_unlocked(update_id)
+        if resume:
+            validate_if_present(store, record, bundle)
+        else:
+            prepare_bootstrap(store, record, bundle)
     except Exception as exc:
         raise _PreSubmitError(f"trusted controller bundle is unavailable: {exc}") from exc
     installer_sha256 = bundle.installer_sha256

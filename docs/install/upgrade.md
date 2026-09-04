@@ -70,6 +70,29 @@ not change the original update verdict. The separate repair result records which
 version was recovered; service recovery is not proof that a failed feature meets
 its original goal.
 
+If the App or normal CLI cannot start, use the entry saved for that update:
+
+```bash
+"$HOME/.openprogram/self-updates/UPDATE_ID/recover.sh" status
+"$HOME/.openprogram/self-updates/UPDATE_ID/recover.sh" repair
+```
+
+The script uses the original saved runtime outside the App. `status` is also the
+default when no argument is given. `repair` still requires interactive owner
+confirmation; it does not bypass failed evidence or expired authorization.
+`recover.sh resume` invokes the original supervisor within its existing authority
+and deadlines, without approving a new update or recreating a verifier Job.
+
+Before activation, OpenProgram also publishes the update's user-owned
+`ai.openprogram.self-update.recovery.UPDATE_ID.plist` under `~/Library/LaunchAgents/`.
+It runs once per subsequent user login, independently of the App. There is no
+resident process or periodic retry, and writing the file does not start another
+controller immediately. Recovery does not run before login or disk unlock. If
+both the App and controller stop in the current login session, use the saved script
+explicitly. Completed updates remove only their unchanged login file; the saved
+runtime, script and evidence remain. Missing or damaged trusted recovery files
+require manual intervention rather than reconstruction from an unverified App.
+
 ## Development checkout
 
 In a source checkout, the same command uses the development pipeline instead of the release installer. It validates a Git target, updates dependencies and built assets when their source files changed, probes the new checkout, and restarts the worker only after the probe succeeds:
