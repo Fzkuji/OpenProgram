@@ -66,6 +66,8 @@ def _wire_matrix_registry(monkeypatch):
     the invariants run over a controlled, wire-complete set of rows instead
     of the (now enabled-only) runtime registry. Patched at every binding so
     ``get_providers()`` and the test-module import both see the same dict."""
+    # The wire matrix uses shipped metadata, not the external catalogue.
+    monkeypatch.setattr(cat, "_models_dev_info", lambda pid: {})
     monkeypatch.setattr(cr, "read_providers_config", lambda: _WIRE_MATRIX_CFG)
     reg = mg._load()
     assert reg, "fixture must build a non-empty registry"
