@@ -1132,6 +1132,18 @@ def test_local_app_refresh_hydrates_embedded_runtime_dependencies() -> None:
     assert '--force-reinstall "$wheel"' in refresh[reinstall:]
 
 
+def test_local_app_refresh_installs_committed_gui_harness_snapshot() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'git -C "$gui_harness_repo" archive' in refresh
+    assert '"$gui_harness_revision"' in refresh
+    assert '"$local_python" -m pip install' in refresh
+    assert '"$app_python" -I -m pip install' in refresh
+    assert '--force-reinstall "$gui_harness_stage"' in refresh
+    assert "from gui_harness.adapters.mac_window import window_support" in refresh
+
+
 def test_product_runtime_verifier_probes_macos_window_dependencies(
     monkeypatch,
 ) -> None:

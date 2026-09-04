@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$repo_root/openprogram/programs/applications/gui_harness}"
 app_path="${OPENPROGRAM_APP_PATH:-/Applications/OpenProgram.app}"
 runtime_root="$app_path/Contents/Resources/runtime"
 manifest="$runtime_root/runtime-manifest.json"
@@ -38,6 +39,10 @@ test -f "$installed_asar" || {
   printf 'the installed App archive was not found: %s\n' "$installed_asar" >&2
   exit 1
 }
+sync_gui_harness=0
+if test "$(git -C "$gui_harness_repo" rev-parse --is-inside-work-tree 2>/dev/null || :)" = true; then
+  sync_gui_harness=1
+fi
 
 "$local_python" "$repo_root/scripts/release/verify-release-version.py" \
   --installed-app "$app_path" --require-source-match
@@ -140,8 +145,23 @@ attempt=0
 while true; do
   attempt=$((attempt + 1))
   build_revision="$(git -C "$repo_root" rev-parse HEAD)"
+  gui_harness_revision=""
   attempt_dir="$wheel_dir/attempt-$attempt"
   mkdir -p "$attempt_dir"
+
+  gui_harness_stage="$attempt_dir/gui-harness"
+  if test "$sync_gui_harness" = 1; then
+    gui_harness_revision="$(git -C "$gui_harness_repo" rev-parse HEAD)"
+    gui_harness_archive="$attempt_dir/gui-harness.tar"
+    mkdir -p "$gui_harness_stage"
+    git -C "$gui_harness_repo" archive --format=tar \
+      --output="$gui_harness_archive" "$gui_harness_revision"
+    tar -C "$gui_harness_stage" -xf "$gui_harness_archive"
+    test -f "$gui_harness_stage/pyproject.toml" || {
+      printf 'the committed GUI Harness snapshot is incomplete\n' >&2
+      exit 1
+    }
+  fi
 
   rm -rf "$repo_root/apps/desktop/dist"
   "$repo_root/scripts/release/stage-release-assets.sh"
@@ -195,7 +215,14 @@ PY
   node "$asar_cli" pack "$desktop_stage" "$desktop_asar" \
     --unpack-dir node_modules/node-pty
 
-  test "$(git -C "$repo_root" rev-parse HEAD)" = "$build_revision" && break
+  gui_harness_head_changed=0
+  if test "$sync_gui_harness" = 1 && \
+    test "$(git -C "$gui_harness_repo" rev-parse HEAD)" != \
+      "$gui_harness_revision"; then
+    gui_harness_head_changed=1
+  fi
+  test "$(git -C "$repo_root" rev-parse HEAD)" = "$build_revision" && \
+    test "$gui_harness_head_changed" = 0 && break
   printf 'HEAD changed during packaging; rebuilding the current checkout\n'
 done
 
@@ -241,15 +268,26 @@ validate_stale_package_tree "$app_python"
 # Ask pip to resolve the wheel once before replacing the same-version package;
 # the second no-deps install below still performs the exact source refresh.
 hydrate_wheel_dependencies "$app_python"
+hydrate_wheel_dependencies "$local_python"
 remove_stale_package_tree "$local_python"
 remove_stale_package_tree "$app_python"
 "$local_python" -m pip install --disable-pip-version-check \
   --no-deps --force-reinstall "$wheel"
 "$app_python" -I -m pip install --disable-pip-version-check \
   --break-system-packages --no-deps --force-reinstall "$wheel"
+if test "$sync_gui_harness" = 1; then
+  "$local_python" -m pip install --disable-pip-version-check \
+    --no-deps --force-reinstall "$gui_harness_stage"
+  "$app_python" -I -m pip install --disable-pip-version-check \
+    --break-system-packages --no-deps --force-reinstall "$gui_harness_stage"
+fi
 if test "$(uname -s)" = Darwin; then
   "$app_python" -I -c \
     'import AppKit, ApplicationServices, Quartz, ScreenCaptureKit'
+  if test "$sync_gui_harness" = 1; then
+    "$app_python" -I -c \
+      'from gui_harness.adapters.mac_window import window_support'
+  fi
 fi
 cp "$desktop_asar" "$installed_asar"
 if test -d "$desktop_asar.unpacked"; then
