@@ -1,6 +1,6 @@
 # GUI Agent
 
-Give it one natural-language task. Its root controller repeatedly chooses one bounded capability: `computer_use` for the local desktop, `browser_use` for an OpenProgram background Page, or `vm_use` for a configured remote virtual machine. Every capability input and full result is appended to the next model decision's context. The model ends the task by proposing a terminal result; action and time limits remain safety boundaries.
+Give it one natural-language task. Its root controller repeatedly chooses one bounded capability: `computer_use` for the local desktop, `browser_use` for an OpenProgram background Page, or `vm_use` for a configured remote virtual machine. Every capability's planner-selected arguments and full result are appended to the next model decision's context. The model ends the task by proposing a terminal result; action and time limits remain safety boundaries.
 
 Local and VM perception combines YOLO component detection (GPA-GUI-Detector), OCR (Apple Vision on macOS, EasyOCR on Linux / Windows), and template matching. The action layer covers mouse, keyboard, and clipboard. Browser operations use the Page's DOM/CDP target instead of desktop coordinates.
 
@@ -18,7 +18,7 @@ Run it directly from the command line:
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-The Programs card asks only for `task`. There is no required surface selector. On every iteration the controller reads the original task, the exact prior capability inputs and outputs, and current capability availability before choosing the next function.
+The Programs card asks only for `task`. There is no required surface selector. On every iteration the controller reads the original task, the prior planner-selected capability arguments and full outputs, and current capability availability before choosing the next function.
 
 For a task that is naturally satisfied by the current built-in browser Page, use the same entry:
 
@@ -33,7 +33,7 @@ The control sequence is:
 1. `plan_next_capability` receives the task, current availability, and complete ordered capability history.
 2. It selects `computer_use`, `browser_use`, `vm_use`, or proposes a terminal result.
 3. `call_capability` binds controller-owned runtime settings and invokes exactly the selected function.
-4. The exact function input and full output are appended to history and therefore visible to the next decision.
+4. The planner-selected arguments and full function output are appended to history and therefore visible to the next decision. Controller-bound feedback is recovered from the previous output's `next_feedback`; it is not duplicated inside the next history input.
 5. A proposed terminal result is validated. Unsupported success is recorded and planning continues.
 
 `computer_use` and `vm_use` each execute one existing Harness step: observe the current target, verify prior feedback when present, plan one action, execute it, and return the step plus next feedback. `browser_use` executes one bounded background Page sub-task and then returns control to the root loop. There is no special pre-route for screen-reading tasks.

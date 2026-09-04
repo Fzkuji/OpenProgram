@@ -1,6 +1,6 @@
 # GUI Agent
 
-给它一个自然语言任务。根控制器重复选择一个有界能力：`computer_use` 操作本机桌面，`browser_use` 操作 OpenProgram 后台 Page，`vm_use` 操作已配置的远程虚拟机。每次能力调用的输入和完整结果都会追加到下一轮模型决策的上下文。模型通过提交终态结束任务；动作数和时间限制只作为安全边界。
+给它一个自然语言任务。根控制器重复选择一个有界能力：`computer_use` 操作本机桌面，`browser_use` 操作 OpenProgram 后台 Page，`vm_use` 操作已配置的远程虚拟机。每次能力调用中由规划器选择的参数和完整结果都会追加到下一轮模型决策的上下文。模型通过提交终态结束任务；动作数和时间限制只作为安全边界。
 
 本机与 VM 感知使用 YOLO 组件检测（GPA-GUI-Detector）、OCR（macOS 用 Apple Vision，Linux / Windows 用 EasyOCR）和模板匹配。动作层覆盖鼠标、键盘和剪贴板。浏览器操作使用 Page 的 DOM/CDP target，不使用桌面坐标。
 
@@ -18,7 +18,7 @@
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-Programs 卡片只填写 `task`，不要求用户选择 surface。控制器每一轮都会读取原始任务、此前能力函数的准确输入和完整输出，以及当前能力可用状态，再决定下一步调用。
+Programs 卡片只填写 `task`，不要求用户选择 surface。控制器每一轮都会读取原始任务、此前由规划器选择的能力参数和完整输出，以及当前能力可用状态，再决定下一步调用。
 
 任务适合由当前内置浏览器 Page 完成时，仍使用同一个入口：
 
@@ -33,7 +33,7 @@ openprogram programs run gui_agent -a task="在不置顶窗口的情况下检查
 1. `plan_next_capability` 接收任务、当前可用状态和完整的有序能力调用历史。
 2. 它选择 `computer_use`、`browser_use`、`vm_use`，或者提交一个终态。
 3. `call_capability` 绑定由控制器管理的 runtime 设置，并只调用本轮选中的函数。
-4. 该函数的准确输入和完整输出追加到 history，因此下一轮决策可以直接看到。
+4. 规划器选择的参数和函数完整输出追加到 history，因此下一轮决策可以直接看到。控制器从上一项输出的 `next_feedback` 取得下一次调用所需的 feedback，不把它重复写进下一项 history input。
 5. 提交的终态要经过校验；没有完成证据的 success 会被记录并继续规划。
 
 `computer_use` 和 `vm_use` 每次执行一个现有 Harness step：观察当前目标、在存在前序反馈时验证结果、规划一个动作、执行，并返回完整 step 和下一轮反馈。`browser_use` 每次执行一个有界的后台 Page 子任务，然后把控制权返回根循环。屏幕读取任务不走单独的预先分流。

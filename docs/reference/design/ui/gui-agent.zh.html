@@ -34,14 +34,14 @@
     <header id="overview">
       <div class="eyebrow">OpenProgram · GUI Agent · 当前已实现设计</div>
       <h1>一个公开入口，一个能力控制器，一份连续上下文。</h1>
-      <p class="lead"><code>gui_agent(task)</code> 创建唯一的根函数节点。Harness 控制器根据原始任务、当前资源可用状态，以及之前每一次能力调用的准确输入和完整输出，反复选择 <code>computer_use</code>、<code>browser_use</code> 或 <code>vm_use</code>。没有按任务类型预先二分类，也不要求用户先选择 surface。</p>
+      <p class="lead"><code>gui_agent(task)</code> 创建唯一的根函数节点。Harness 控制器根据原始任务、当前资源可用状态，以及之前每一次能力调用中由规划器选择的参数和完整输出，反复选择 <code>computer_use</code>、<code>browser_use</code> 或 <code>vm_use</code>。没有按任务类型预先二分类，也不要求用户先选择 surface。</p>
       <div class="status"><span class="pill">1 个公开入口</span><span class="pill">1 份根上下文</span><span class="pill">3 个内部能力</span><span class="pill">1 套终态契约</span></div>
     </header>
 
     <section>
       <h2>完整调用架构</h2>
       <p class="intro">函数表单、完整函数表达式和精确节点 Retry 都进入同一个 dispatcher。只有 Harness 控制器决定下一次能力调用；每次结果先写入上下文，再进入下一轮。</p>
-      <div class="diagram"><svg viewBox="0 0 1080 660" role="img" aria-labelledby="flow-title flow-desc"><title id="flow-title">GUI Agent 完整能力循环</title><desc id="flow-desc">三个输入入口进入一个 gui_agent 根控制器。控制器调用三种内部能力之一，记录完整输入输出，然后继续或验证终态。</desc><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#60758a"/></marker></defs>
+      <div class="diagram"><svg viewBox="0 0 1080 660" role="img" aria-labelledby="flow-title flow-desc"><title id="flow-title">GUI Agent 完整能力循环</title><desc id="flow-desc">三个输入入口进入一个 gui_agent 根控制器。控制器调用三种内部能力之一，记录规划器参数和完整输出，然后继续或验证终态。</desc><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#60758a"/></marker></defs>
         <rect class="box" x="30" y="35" width="220" height="70" rx="11"/><text class="title" x="140" y="64" text-anchor="middle">函数表单</text><text class="sub" x="140" y="84" text-anchor="middle">task + 高级隐藏设置</text>
         <rect class="box" x="30" y="135" width="220" height="70" rx="11"/><text class="title" x="140" y="164" text-anchor="middle">完整函数表达式</text><text class="sub" x="140" y="184" text-anchor="middle">发送前识别为函数调用</text>
         <rect class="box" x="30" y="235" width="220" height="70" rx="11"/><text class="title" x="140" y="264" text-anchor="middle">精确节点 Retry</text><text class="sub" x="140" y="284" text-anchor="middle">复用保存的输入与来源窗口</text>
@@ -50,7 +50,7 @@
         <rect class="box computer" x="240" y="330" width="220" height="95" rx="11"/><text class="title" x="350" y="362" text-anchor="middle">computer_use</text><text class="sub" x="350" y="384" text-anchor="middle">一次 gui_step</text><text class="sub" x="350" y="403" text-anchor="middle">前台桌面或准确窗口</text>
         <rect class="box browser" x="500" y="330" width="220" height="95" rx="11"/><text class="title" x="610" y="362" text-anchor="middle">browser_use</text><text class="sub" x="610" y="384" text-anchor="middle">一次有界 Page 子任务</text><text class="sub" x="610" y="403" text-anchor="middle">DOM / CDP 操作</text>
         <rect class="box" x="760" y="330" width="220" height="95" rx="11"/><text class="title" x="870" y="362" text-anchor="middle">vm_use</text><text class="sub" x="870" y="384" text-anchor="middle">一次远端 gui_step</text><text class="sub" x="870" y="403" text-anchor="middle">OSWorld 兼容 endpoint</text>
-        <rect class="box" x="420" y="485" width="380" height="70" rx="11"/><text class="title" x="610" y="514" text-anchor="middle">追加本次准确输入和完整输出</text><text class="sub" x="610" y="535" text-anchor="middle">顺序 · 状态 · 证据 · 目标 · 耗时</text>
+        <rect class="box" x="420" y="485" width="380" height="70" rx="11"/><text class="title" x="610" y="514" text-anchor="middle">追加规划器参数和完整输出</text><text class="sub" x="610" y="535" text-anchor="middle">next_feedback 保留在上一项输出中</text>
         <rect class="box result" x="420" y="605" width="380" height="44" rx="20"/><text class="title" x="610" y="632" text-anchor="middle">校验后的 GUIResult → Function 卡片和消息</text>
         <path class="line" d="M250 70C295 70 290 150 330 150"/><path class="line" d="M250 170H330"/><path class="line" d="M250 270C295 270 290 190 330 190"/><path class="line" d="M570 170H650"/><path class="line" d="M735 220C680 270 350 275 350 330"/><path class="line" d="M775 220C745 270 610 275 610 330"/><path class="line" d="M815 220C850 270 870 275 870 330"/><path class="line" d="M350 425C350 465 500 470 520 485"/><path class="line" d="M610 425V485"/><path class="line" d="M870 425C870 465 720 470 700 485"/><path class="line" d="M420 520C160 520 160 170 650 170"/><path class="line" d="M610 555V605"/><text class="label" x="175" y="502">继续或切换能力</text><text class="label" x="625" y="586">终态通过校验</text>
       </svg></div>
@@ -65,12 +65,12 @@
       <article class="card"><h3><code>vm_use</code></h3><p>通过 OSWorld 兼容的截图与输入接口执行一个远端 <code>gui_step</code>。</p></article>
     </div><div class="callout">三个 <code>*_use</code> 是内部可追踪函数节点，不是三个公开 Program，也不会再创建一个 <code>gui_agent</code>。</div></section>
 
-    <section id="context"><h2>上下文如何保证连续</h2><p class="intro">下一轮不是只看到摘要。它会看到原始任务、当前资源状态，以及之前每一次能力调用的准确输入和完整输出。某个 <code>computer_use</code> 的局部函数执行结束后，局部 Python 状态可以销毁；需要延续的信息已经写入根能力历史。</p>
+    <section id="context"><h2>上下文如何保证连续</h2><p class="intro">下一轮不是只看到摘要。它会看到原始任务、当前资源状态，以及之前每一次能力调用中由规划器选择的参数和完整输出。某个 <code>computer_use</code> 的局部函数执行结束后，局部 Python 状态可以销毁；需要延续的信息已经写入根能力历史。下一次 <code>computer_use</code> 所需的 feedback 从上一项 <code>output.next_feedback</code> 取得，由控制器在调用时绑定，不重复写进下一项 input。</p>
       <div class="sequence"><div class="step"><i>初始</i><b>User task</b><span>原始自然语言任务<br>当前窗口、Page、VM 可用状态</span></div><div class="step"><i>第 1 轮</i><b>computer_use</b><span>输入：观察桌面<br>输出：目标身份、截图、控件、状态</span></div><div class="step"><i>第 2 轮</i><b>computer_use</b><span>输入：点击保存<br>输出：applied、动作证据、反馈</span></div><div class="step"><i>第 3 轮</i><b>browser_use</b><span>输入：检查后台 Page<br>输出：Page 身份、验证结果、清理状态</span></div><div class="step"><i>第 4 轮</i><b>plan_next_capability</b><span>重新读取前面全部输入输出，不缩写为“已做三步”</span></div><div class="step"><i>结束</i><b>GUIResult</b><span>证据支持的 status、summary、handoff 和完整 history</span></div></div>
       <div class="codebox">history = [
   {"capability":"computer_use", "input":{"task":"观察桌面"},
-   "output":{"status":"observed", "target":{...}, "observation":{...}}},
-  {"capability":"computer_use", "input":{"task":"点击保存", "feedback":{...}},
+   "output":{"status":"observed", "target":{...}, "observation":{...}, "next_feedback":{...}}},
+  {"capability":"computer_use", "input":{"task":"点击保存"},
    "output":{"status":"applied", "action":{"type":"press", "control_id":"..."}, "evidence":{...}}},
   {"capability":"browser_use", "input":{"task":"检查后台页面"},
    "output":{"status":"succeeded", "page":{...}, "verification":{...}, "cleanup":{...}}}
