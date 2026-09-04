@@ -93,6 +93,61 @@ function reset() {
   useSessionStore.setState({ currentSessionId: "s1" });
 }
 
+test("a cancelled Goal keeps stop controls until canonical termination is confirmed", async () => {
+  reset();
+  useSessionStore.setState({ wsStatus: "open" });
+  const goal = { ...snapshot(2, "cancelled"), execution_id: "exec-stop", stop_requested: true };
+  runtimeState.conversations.s1.goal = goal;
+  const originalGet = api.getGoal, originalMutate = api.mutateGoal;
+  let finished = false, action;
+  api.getGoal = async () => ({ goal, execution: { execution_id: "exec-stop", status: finished ? "cancelled" : "running", finished } });
+  api.mutateGoal = async (_sid, body) => {
+    action = body.action;
+    return { goal, stop_error: "Goal change saved. Execution stop is not confirmed." };
+  };
+  const view = await mount();
+  try {
+    assert.match(view.host.textContent, /Stop not confirmed/);
+    await view.open();
+    await view.click("Retry stop");
+    assert.equal(action, "stop");
+    assert.match(view.host.textContent, /Goal change saved/);
+    finished = true;
+    await act(async () => window.dispatchEvent(new CustomEvent("op:execution-update", {
+      detail: { execution: { execution_id: "exec-stop", session_id: "s1", status: "cancelled" } },
+    })));
+    assert.match(view.host.textContent, /Execution stopped/);
+    assert.equal(view.host.querySelector('[aria-label="Open Goal details"]'), null);
+  } finally {
+    await view.close(); api.getGoal = originalGet; api.mutateGoal = originalMutate;
+    useSessionStore.setState({ wsStatus: "connecting" });
+  }
+});
+
+test("late stop observations cannot enable a newer run and offline state stays unknown", async () => {
+  reset(); useSessionStore.setState({ wsStatus: "open" });
+  const oldGoal = { ...snapshot(2, "paused"), run_id: "old", execution_id: "old-exec", stop_requested: true };
+  const nextGoal = { ...oldGoal, version: 3, run_id: "new", execution_id: "new-exec" };
+  runtimeState.conversations.s1.goal = oldGoal;
+  const original = api.getGoal;
+  let finishOld;
+  api.getGoal = async () => new Promise((resolve) => { finishOld = resolve; });
+  const view = await mount();
+  try {
+    await view.open();
+    const resolveOld = finishOld;
+    api.getGoal = async () => ({ goal: nextGoal, execution: { execution_id: "new-exec", status: "running", finished: false } });
+    await frame(nextGoal);
+    await act(async () => resolveOld({ goal: oldGoal, execution: { execution_id: "old-exec", status: "cancelled", finished: true } }));
+    const resume = [...view.host.querySelectorAll("button")].find((b) => b.textContent === "Resume");
+    assert.equal(resume.disabled, true);
+    assert.match(view.host.textContent, /Stop not confirmed/);
+    await act(async () => useSessionStore.setState({ wsStatus: "closed" }));
+    assert.match(view.host.textContent, /Execution status unknown/);
+    assert.ok(view.host.querySelector('[aria-label="Open Goal details"]'));
+  } finally { await view.close(); api.getGoal = original; useSessionStore.setState({ wsStatus: "connecting" }); }
+});
+
 async function typeInto(node, value) {
   const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), "value");
   descriptor.set.call(node, value);

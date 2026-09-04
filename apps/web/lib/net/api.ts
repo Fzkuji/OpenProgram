@@ -131,13 +131,17 @@ export const api = {
     sessionId: string,
     body: { action: string; prompt?: string; [key: string]: unknown },
   ) =>
-    jsonFetch<{ goal: Record<string, unknown>; invoke?: { name: string; kwargs: Record<string, unknown> }; resume_error?: string }>(
+    jsonFetch<{ goal: Record<string, unknown>; invoke?: { name: string; kwargs: Record<string, unknown> }; resume_error?: string; stop_error?: string }>(
       `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
       { method: "POST", body: JSON.stringify(body) },
     ),
 
-  getGoal: (sessionId: string) => jsonFetch<{ goal: Record<string, unknown> }>(
+  getGoal: (sessionId: string, signal?: AbortSignal) => jsonFetch<{
+    goal: Record<string, unknown>;
+    execution?: { execution_id?: string | null; status?: string; finished?: boolean | null };
+  }>(
     `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
+    { signal },
   ),
 
   listHistory: () =>

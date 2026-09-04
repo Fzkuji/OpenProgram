@@ -37,6 +37,21 @@ function mount(client: BackendClient, sessionId = 's1') {
 }
 
 describe('TUI Goal status', () => {
+  it('keeps an unconfirmed cancelled Goal and refreshes canonical status on execution events', async () => {
+    const stopped = { ...goal(3, 'cancelled'), execution_id: 'exec-stop', stop_requested: true };
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      goal: stopped, execution: { execution_id: 'exec-stop', status: 'cancelling', finished: false },
+    }))).mockResolvedValueOnce(new Response(JSON.stringify({
+      goal: stopped, execution: { execution_id: 'exec-stop', status: 'cancelled', finished: true },
+    })));
+    const c = connection(); const view = mount(c.client);
+    await vi.waitFor(async () => expect(await view.text()).toContain('Stopping'));
+    expect(await view.text()).toContain('/goal stop');
+    c.emit({ type: 'execution.updated', execution: { execution_id: 'exec-stop', session_id: 's1', status: 'cancelled' } });
+    await vi.waitFor(async () => expect(await view.text()).not.toContain('Write the survey'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(await view.text()).toContain('Prompt remains available');
+  });
   it.each([reply(goal(1)), new Response('', { status: 404 })])('does not replace a live snapshot with a stale in-flight HTTP reply', async (response) => {
     let resolve!: (response: Response) => void;
     vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise((done) => { resolve = done; }));

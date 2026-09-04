@@ -1548,15 +1548,27 @@ def _cancel_canonical_execution(execution, *, reason_code: str | None = None):
         _cancel_canonical_execution(child, reason_code="cancel.parent")
     service = _canonical_control_service(execution.execution_id)
     try:
-        dispatch = _run_control_awaitable(
-            service.request_cancel(
+        dispatch = None
+        # Retry the existing durable command against its exact current owner;
+        # submitting its id again with a newer version would be a collision.
+        if (
+            execution.status.value == "cancelling"
+            and execution.current_attempt_id
+            and isinstance(execution.owner_lease.get("generation"), int)
+        ):
+            dispatch = _run_control_awaitable(service.deliver_pending_cancel(
+                execution_id=execution.execution_id,
+                attempt_id=execution.current_attempt_id,
+                generation=execution.owner_lease["generation"],
+            ))
+        if dispatch is None:
+            dispatch = _run_control_awaitable(service.request_cancel(
                 command_id=f"execution-cancel:{execution.execution_id}",
                 execution_id=execution.execution_id,
                 expected_version=execution.status_version,
                 actor={"source": "run_control"},
                 reason_code=reason_code,
-            )
-        )
+            ))
     except Exception as exc:
         from openprogram.execution.store import ExecutionConflict
 
@@ -1569,13 +1581,17 @@ def _cancel_canonical_execution(execution, *, reason_code: str | None = None):
         if current is not None and current.status.value == "cancelled":
             return current.to_dict()
         if current is not None and current.status.value == "cancelling":
-            return current.to_dict()
+            result = current.to_dict()
+            result["issue_code"] = "cancel_delivery_unconfirmed"
+            return result
         if isinstance(exc, ExecutionConflict) and current is not None:
             raise ExecutionNotCancellable(
                 execution.execution_id, current.to_dict(),
             ) from exc
         raise
     result = dispatch.execution.to_dict()
+    if dispatch.issue_code:
+        result["issue_code"] = dispatch.issue_code
     if dispatch.command.rejection_code == ProjectionRecoveryRequired.code:
         result["issue_code"] = ProjectionRecoveryRequired.code
         result["recovery_required"] = True

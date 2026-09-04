@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Pause, Play, Square, Target } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,8 @@ export interface GoalState {
   };
   goal_id?: string;
   run_id?: string;
+  execution_id?: string;
+  stop_requested?: boolean;
   revision?: number;
   version?: number;
   text?: string;
@@ -199,6 +201,42 @@ export function GoalChip() {
   return <GoalDetails key={`${sessionId}:${goal.goal_id || "legacy"}`} sessionId={sessionId} goal={goal} />;
 }
 
+function useGoalExecution(sessionId: string, goal: GoalState, enabled: boolean) {
+  const connection = useSessionStore((state) => state.wsStatus);
+  const identity = `${sessionId}:${goal.run_id}:${goal.execution_id}:${goal.version}`;
+  const [observation, setObservation] = useState<{ identity?: string; status?: string; finished?: boolean | null; fresh: boolean }>({ fresh: false });
+  const request = useRef(0);
+  const controller = useRef<AbortController>();
+  const refresh = useCallback(async () => {
+    const serial = ++request.current;
+    controller.current?.abort();
+    const own = controller.current = new AbortController();
+    setObservation((v) => ({ ...v, fresh: false }));
+    if (!enabled || !goal.execution_id || connection !== "open") return;
+    try {
+      const result = await api.getGoal(sessionId, AbortSignal.any([own.signal, AbortSignal.timeout(10000)]));
+      if (serial !== request.current || own.signal.aborted) return;
+      if (result.execution?.execution_id !== goal.execution_id
+        || result.goal.goal_id !== goal.goal_id || result.goal.run_id !== goal.run_id
+        || Number(result.goal.version ?? 0) < Number(goal.version ?? 0)) return;
+      updateSessionGoal(sessionId, result.goal);
+      setObservation({ ...result.execution, identity, fresh: true });
+    } catch {
+      // Keep the Goal and its editor; a read failure is not a stopped execution.
+    }
+  }, [sessionId, goal.goal_id, goal.run_id, goal.execution_id, goal.version, identity, enabled, connection]);
+  useEffect(() => {
+    void refresh();
+    const onExecution = (event: Event) => {
+      const execution = (event as CustomEvent).detail?.execution;
+      if (execution?.session_id === sessionId) void refresh();
+    };
+    window.addEventListener("op:execution-update", onExecution);
+    return () => { request.current++; controller.current?.abort(); window.removeEventListener("op:execution-update", onExecution); };
+  }, [refresh, sessionId]);
+  return { ...observation, fresh: observation.fresh && observation.identity === identity && connection === "open", refresh };
+}
+
 function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }) {
   const { locale, text } = useTranslation();
   const zh = locale.startsWith("zh");
@@ -210,6 +248,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [stopError, setStopError] = useState("");
   const pending = useRef(false);
   const mounted = useRef(true);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -232,8 +271,16 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
   const terminal = terminalStatuses.has(goal.status || "");
   const editableRoles = resumableStatuses.has(goal.status || "") || goal.status === "waiting_user";
   const unsaved = draft.dirty || limits.dirty || roles.dirty;
+  const execution = useGoalExecution(sessionId, goal, open || !!goal.stop_requested || resumable);
+  const stopped = execution.fresh && execution.finished === true;
+  const stopPending = !!goal.stop_requested && !!goal.execution_id && !stopped;
+  const executionLabel = !goal.execution_id ? text("Stop takes effect at the next Goal boundary; no execution record.", "停止在下一个 Goal 边界生效；无执行记录。")
+    : !execution.fresh || execution.status === "unavailable" ? text("Execution status unknown", "执行状态未知")
+    : stopped ? text("Execution stopped", "执行已停止")
+    : execution.status === "cancelling" ? text("Stopping", "正在停止")
+    : text("Stop not confirmed", "停止未确认");
   useEffect(() => { if (terminal) setConfirmCancel(false); }, [terminal]);
-  if (terminal && !open) return null;
+  if (terminal && !stopPending && !open) return null;
 
   async function mutate(action: string, values: Record<string, unknown> = {}) {
     if (pending.current || (action === "edit" && draft.conflict) || (action === "budget" && limits.conflict)
@@ -241,6 +288,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
     pending.current = true;
     setBusy(true);
     setError("");
+    setStopError("");
     try {
       const result = await api.mutateGoal(sessionId, { action, ...values, expected: {
         goal_id: goal.goal_id ?? "", revision: goal.revision ?? 1,
@@ -256,11 +304,15 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
         });
       }
       if (result.resume_error) throw new Error(`${text("Answer saved.", "回答已保存。 ")} ${result.resume_error}`);
+      if (mounted.current) void execution.refresh();
+      if (result.stop_error) {
+        if (mounted.current) setStopError(result.stop_error);
+        return;
+      }
       if ((action === "resume" || action === "answer") && result.invoke && !unsaved) {
         const response = await api.runFunction(result.invoke.name, { ...result.invoke.kwargs, session_id: sessionId });
         if (response.error) throw new Error(response.error);
       }
-      if (mounted.current && action === "cancel") setOpen(false);
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
       if (cause instanceof HttpError && cause.status === 409) {
@@ -279,7 +331,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
 
   return (
     <>
-      {!terminal ? <button
+      {!terminal || stopPending ? <button
         ref={trigger}
         type="button"
         className={`runtime-badge workdir-badge ${styles.trigger}`}
@@ -287,7 +339,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
         aria-label={text("Open Goal details", "打开 Goal 详情")}
       >
         <Target size={14} strokeWidth={2} className="workdir-icon" />
-        <span className="badge-short">Goal · {statusLabel(goal.status, zh)} · {progress}</span>
+        <span className="badge-short">Goal · {stopPending ? text("Stop not confirmed", "停止未确认") : statusLabel(goal.status, zh)} · {progress}</span>
       </button> : null}
       <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) setConfirmCancel(false); }}>
         <DialogContent className={styles.dialog} aria-busy={busy} onCloseAutoFocus={(event) => {
@@ -302,6 +354,12 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
               {text("revision", "修订")} {goal.revision ?? 1} · version {goal.version ?? 0}
             </DialogDescription>
           </DialogHeader>
+
+          {(goal.stop_requested || resumable) ? <section className={styles.reason} aria-label={text("Execution stop status", "执行停止状态")}>
+            <p role="status">{executionLabel}</p>
+            <Button variant="outline" disabled={busy} onClick={() => void execution.refresh()}>{text("Refresh status", "刷新状态")}</Button>
+            {stopPending ? <Button variant="outline" disabled={busy} onClick={() => void mutate("stop")}>{text("Retry stop", "重试停止")}</Button> : null}
+          </section> : null}
 
           <label className={styles.field}>
             <span>{text("Goal", "目标")}</span>
@@ -454,6 +512,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
             </ul>
           ) : null}
           {error ? <p className={styles.error} role="alert">{error}</p> : null}
+          {stopError && !stopped ? <p className={styles.error} role="alert">{stopError}</p> : null}
 
           {confirmCancel ? <section aria-label={text("End Goal confirmation", "终止目标确认")}>
             <p>{text("End this Goal? Saved work and history will remain.", "终止此目标？已保存的工作和历史记录会保留。")}</p>
@@ -465,7 +524,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
             {!terminal ? <Button ref={endButton} variant="destructive" disabled={busy} onClick={() => setConfirmCancel(true)}><Square size={14} />{text("End", "终止")}</Button> : null}
             {running ? <Button variant="outline" disabled={busy} onClick={() => void mutate("pause")}><Pause size={14} />{text("Pause", "暂停")}</Button> : null}
             <Button variant="outline" disabled={busy || !draft.dirty || draft.conflict || !draft.value.trim()} onClick={() => void mutate("edit", { prompt: draft.value.trim() })}>{text("Save edit", "保存修改")}</Button>
-            {resumable ? <Button disabled={busy || unsaved} onClick={() => void mutate("resume")}><Play size={14} />{text("Resume", "继续")}</Button> : null}
+            {resumable ? <Button disabled={busy || unsaved || (!!goal.execution_id && !stopped)} onClick={() => void mutate("resume")}><Play size={14} />{text("Resume", "继续")}</Button> : null}
           </DialogFooter>}
           {unsaved ? <p className={styles.draftNotice} role="status">{text("Save or discard unsaved changes before resuming.", "继续前请保存或放弃未保存的修改。")}
             <Button variant="ghost" disabled={busy} onClick={() => { draft.reset(); limits.reset(); roles.reset(); }}>{text("Discard changes", "放弃修改")}</Button>

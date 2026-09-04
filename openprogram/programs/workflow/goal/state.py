@@ -26,7 +26,7 @@ DEFAULT_MAX_TURNS = 150
 DEFAULT_PHASE_TIMEOUT_S = 300.0
 # 连续 N 轮零工具且仍 unmet → 判定为 idle spin 停机；第 1 次先警告。
 IDLE_ROUND_LIMIT = 2
-_CLEAR_VERBS = {"clear", "stop", "off", "cancel"}
+_CLEAR_VERBS = {"clear", "off", "cancel"}
 GOAL_SCHEMA_VERSION = 3
 RUNNING_STATUSES = {"refining", "active", "running", "evaluating"}
 WAITING_STATUSES = {"paused", "paused_recoverable", "waiting_user", "waiting_external"}
@@ -363,7 +363,7 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
             "schema_version", "goal_id", "run_id", "revision", "version",
             "text", "spec", "checklist", "status", "phase", "turns_used",
             "max_turns", "budget", "usage", "checkpoint", "execution_id",
-            "recoverable", "pause_reason", "last_reason", "last_question",
+            "recoverable", "pause_reason", "stop_requested", "last_reason", "last_question",
             "last_question_id", "last_question_at", "last_question_options",
             "questions", "pending_answers", "interaction_mode", "created_at",
             "updated_at", "roles", "roles_origin", "role_requests")},

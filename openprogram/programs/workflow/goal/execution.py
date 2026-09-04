@@ -2,6 +2,42 @@
 from __future__ import annotations
 
 
+class GoalStopUnconfirmed(RuntimeError):
+    """The Goal intent is saved, but cancellation could not be confirmed."""
+
+    def __init__(self, goal: dict):
+        super().__init__("Goal change saved. Execution stop is not confirmed; use /goal stop to retry.")
+        self.goal = goal
+
+
+def request_goal_stop(goal: dict, session_id: str) -> None:
+    """Submit cancellation for this saved identity, never a session fallback."""
+    observed = goal_execution_state(goal, session_id)
+    if observed["status"] == "untracked" or observed["finished"]:
+        return
+    if observed["status"] == "unavailable":
+        raise GoalStopUnconfirmed(goal)
+    from openprogram.agent.run_control import cancel_execution, ExecutionNotCancellable
+
+    try:
+        # Stop the root first to forbid new descendants. Include descendants
+        # behind terminal intermediate parents, not just direct live children.
+        for execution_id in [observed["execution_id"], *observed.get("active_children", [])]:
+            try:
+                result = cancel_execution(execution_id)
+            except ExecutionNotCancellable:
+                continue  # Rechecked below; a terminal parent may have children.
+            if isinstance(result, dict) and result.get("issue_code") not in (
+                None, "owner_not_local", "owner_not_active", "already_delivered",
+            ):
+                raise GoalStopUnconfirmed(goal)
+        latest = goal_execution_state(goal, session_id)
+        if not latest["finished"] and latest["status"] != "cancelling":
+            raise GoalStopUnconfirmed(goal)
+    except Exception as exc:
+        raise GoalStopUnconfirmed(goal) from exc
+
+
 def goal_execution_state(goal: dict, session_id: str = "") -> dict:
     execution_id = str(goal.get("execution_id") or "")
     if not execution_id:

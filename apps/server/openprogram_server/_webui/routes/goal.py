@@ -45,9 +45,14 @@ def register(app):
                 action,
                 **{key: value for key, value in payload.items() if key != "action"},
             )
+        except goal_module.GoalStopUnconfirmed as exc:
+            return JSONResponse(content={
+                "goal": exc.goal, "stop_error": str(exc),
+                "execution": goal_module.goal_execution_state(exc.goal, session_id),
+            })
         except ValueError as exc:
             return JSONResponse(content={"error": str(exc)}, status_code=409)
-        response = {"goal": goal}
+        response = {"goal": goal, "execution": goal_module.goal_execution_state(goal, session_id)}
         if (
             action == "answer"
             and goal.get("status") == "paused"

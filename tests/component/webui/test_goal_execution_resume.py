@@ -40,6 +40,127 @@ def test_http_resume_rejects_a_previous_execution_that_has_not_stopped(bound_goa
     assert package.load_goal("bound") == before
 
 
+@pytest.mark.parametrize("surface", ["http", "tui"])
+def test_pause_reports_failed_stop_without_losing_saved_intent(bound_goal, monkeypatch, surface):
+    package, _store, execution, client = bound_goal
+    state = package.load_goal("bound")
+    state.update(status="active", phase="working")
+    package.save_goal("bound", state)
+    def fail_stop(_execution_id):
+        raise OSError("secret database path")
+    monkeypatch.setattr("openprogram.agent.run_control.cancel_execution", fail_stop)
+    if surface == "http":
+        response = client.post("/api/sessions/bound/goal", json={"action": "pause"})
+        assert response.status_code == 200
+        result = response.json()
+        assert "not confirmed" in result.get("stop_error", "")
+        assert result["execution"]["status"] == "queued"
+    else:
+        result = package.handle_goal_command("bound", "pause")
+        assert "not confirmed" in result["text"]
+    assert "secret" not in str(result)
+    saved = package.load_goal("bound")
+    assert saved["status"] == "paused" and saved["stop_requested"] is True
+    assert saved["execution_id"] == execution.execution_id
+    assert "invoke" not in result
+    assert client.post("/api/sessions/bound/goal", json={"action": "resume"}).status_code == 409
+
+
+def test_stop_retry_reuses_the_canonical_command_and_reports_driver_failure(bound_goal, monkeypatch):
+    from openprogram.agent import run_control
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverAck, DriverBinding, DriverRegistry
+    package, store, execution, client = bound_goal
+    attempts = AttemptStore(store)
+    lease, reserved = attempts.lease(execution.execution_id, expected_version=execution.status_version, owner_id="test", ttl_seconds=30)
+    attempt, running = attempts.activate(lease.attempt_id, generation=lease.generation, expected_execution_version=reserved.status_version)
+    class Driver:
+        fail = True
+        calls = []
+        async def request_cancel(self, handle, command_id):
+            self.calls.append(command_id)
+            if self.fail:
+                raise OSError("private driver error")
+            return DriverAck(command_id=command_id, attempt_id=attempt.attempt_id)
+    driver = Driver()
+    registry = DriverRegistry()
+    registry.bind(DriverBinding(execution_id=running.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, driver=driver, handle={}))
+    service = RuntimeControlService(store, attempts, registry)
+    monkeypatch.setattr(service, "_schedule_cancel_escalation", lambda *_a: None)
+    monkeypatch.setattr(run_control, "_canonical_control_service", lambda _id: service)
+    state = package.load_goal("bound"); state.update(status="active")
+    package.save_goal("bound", state)
+    response = client.post("/api/sessions/bound/goal", json={"action": "pause"}).json()
+    assert "not confirmed" in response.get("stop_error", "")
+    assert response["execution"]["status"] == "cancelling"
+    assert "private" not in str(response)
+    saved = package.load_goal("bound")
+    driver.fail = False
+    retried = client.post("/api/sessions/bound/goal", json={"action": "stop"}).json()
+    assert "stop_error" not in retried
+    assert driver.calls == [f"execution-cancel:{execution.execution_id}"] * 2
+    assert len(store.list_commands(execution.execution_id)) == 1
+    assert package.load_goal("bound") == saved
+    assert "invoke" not in retried
+
+
+def test_stop_does_not_target_an_execution_in_another_session(bound_goal, monkeypatch):
+    package, store, execution, client = bound_goal
+    other = store.create_execution(session_id="other", revision_id=execution.revision_id)
+    state = package.load_goal("bound")
+    state.update(status="active", execution_id=other.execution_id)
+    package.save_goal("bound", state)
+    monkeypatch.setattr("openprogram.agent.run_control.cancel_execution", lambda *_a: pytest.fail("foreign stop"))
+    response = client.post("/api/sessions/bound/goal", json={"action": "pause"}).json()
+    assert "not confirmed" in response["stop_error"]
+    assert store.get_execution(other.execution_id).status is ExecutionStatus.QUEUED
+
+
+@pytest.mark.parametrize("surface", ["http", "tui"])
+def test_stop_reaches_active_descendants_behind_terminal_parents(bound_goal, monkeypatch, surface):
+    from openprogram.agent import run_control
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    package, store, parent, client = bound_goal
+    child = store.create_execution(session_id="bound", revision_id=parent.revision_id, parent_execution_id=parent.execution_id)
+    grandchild = store.create_execution(session_id="bound", revision_id=parent.revision_id, parent_execution_id=child.execution_id)
+    for item in (parent, child):
+        item = store.transition_execution(item.execution_id, expected_version=item.status_version, target=ExecutionStatus.CANCELLING)
+        store.transition_execution(item.execution_id, expected_version=item.status_version, target=ExecutionStatus.CANCELLED)
+    service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    monkeypatch.setattr(run_control, "_canonical_control_service", lambda _id: service)
+    state = package.load_goal("bound"); state.update(status="paused", stop_requested=True)
+    package.save_goal("bound", state)
+    before = package.load_goal("bound")
+    response = (client.post("/api/sessions/bound/goal", json={"action": "stop"}).json()
+                if surface == "http" else package.handle_goal_command("bound", "stop"))
+    assert "stop_error" not in response and "invoke" not in response
+    assert package.goal_execution_state(package.load_goal("bound"), "bound")["finished"] is True
+    assert package.load_goal("bound") == before
+    assert store.get_execution(grandchild.execution_id).status is ExecutionStatus.CANCELLED
+
+
+@pytest.mark.parametrize("active_descendant", [False, True])
+def test_new_goal_cannot_replace_an_execution_with_unconfirmed_stop(bound_goal, monkeypatch, active_descendant):
+    package, store, execution, _client = bound_goal
+    if active_descendant:
+        store.create_execution(session_id="bound", revision_id=execution.revision_id, parent_execution_id=execution.execution_id)
+        execution = store.transition_execution(execution.execution_id, expected_version=execution.status_version, target=ExecutionStatus.CANCELLING)
+        store.transition_execution(execution.execution_id, expected_version=execution.status_version, target=ExecutionStatus.CANCELLED)
+    state = package.load_goal("bound")
+    state.update(status="cancelled", stop_requested=True)
+    package.save_goal("bound", state)
+    before = package.load_goal("bound")
+    monkeypatch.setattr("openprogram.agentic_programming.function.current_session_id", lambda: "bound")
+    monkeypatch.setattr(package, "reset_goal_usage_cursor", lambda *_a: pytest.fail("replacement started before old execution ended"))
+    with pytest.raises(package.GoalConflictError, match="execution"):
+        package.goal("replacement", resume=False)
+    assert package.load_goal("bound") == before
+
+
 def test_public_goal_rechecks_execution_before_starting(bound_goal, monkeypatch):
     package, _store, _execution, _client = bound_goal
     function = importlib.import_module("openprogram.agentic_programming.function")

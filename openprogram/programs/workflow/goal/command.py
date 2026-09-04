@@ -15,17 +15,7 @@ import openprogram.programs.workflow.goal as _goal
 
 
 def _cancel_execution(session_id: str, goal: dict) -> None:
-    execution_id = str(goal.get("execution_id") or "")
-    if not execution_id:
-        return
-    try:
-        from openprogram.agent.run_control import mark_cancelled
-        mark_cancelled(
-            session_id,
-            execution_id=execution_id,
-        )
-    except Exception:
-        pass
+    _goal.request_goal_stop(goal, session_id)
 
 
 def _resume_invocation(goal: dict, session_id: str = "") -> dict:
@@ -58,11 +48,11 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
             "phase": "paused",
             "recoverable": True,
             "pause_reason": "user",
+            "stop_requested": True,
             "last_reason": "Goal paused by the user.",
         })
         _goal.checkpoint_active_elapsed(goal, stop=True)
         _goal.save_goal(session_id, goal)
-        _cancel_execution(session_id, goal)
     elif action == "edit":
         prompt = str(values.get("prompt") or "").strip()
         if not prompt:
@@ -74,6 +64,7 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
             "phase": "paused",
             "recoverable": True,
             "pause_reason": "edited",
+            "stop_requested": True,
             "last_reason": "Goal was edited; resume to refine the new revision.",
         })
         goal.pop("spec", None)
@@ -104,7 +95,6 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
         goal.pop("last_question_options", None)
         _goal.checkpoint_active_elapsed(goal, stop=True)
         _goal.save_goal(session_id, goal)
-        _cancel_execution(session_id, goal)
     elif action == "answer":
         answer = str(values.get("answer") or "").strip()
         if not answer:
@@ -195,14 +185,19 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
             "status": "cancelled",
             "phase": "terminal",
             "recoverable": False,
+            "stop_requested": True,
             "last_reason": "Goal cancelled by the user.",
         })
         _goal.checkpoint_active_elapsed(goal, stop=True)
         _goal.save_goal(session_id, goal)
-        _cancel_execution(session_id, goal)
+    elif action == "stop":
+        if not goal.get("stop_requested"):
+            raise ValueError("No saved Goal stop request to retry")
     else:
         raise ValueError(f"Unknown Goal action: {action}")
     _goal._emit_goal_update(None, session_id, goal)
+    if action in {"pause", "edit", "cancel", "clear", "stop"}:
+        _cancel_execution(session_id, goal)
     return goal
 
 
@@ -210,7 +205,7 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
     """Report unavailable storage without interpreting it as an absent Goal."""
     try:
         return _handle_goal_command(session_id, raw_args)
-    except (_goal.GoalStateUnavailable, _goal.GoalConflictError) as exc:
+    except (_goal.GoalStateUnavailable, _goal.GoalConflictError, _goal.GoalStopUnconfirmed) as exc:
         return {"text": str(exc), "send_text": None}
 
 
@@ -232,7 +227,7 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
     if args.lower() == "help":
         return {"text": (
             "/goal — show objective, roles, usage, checkpoint and questions\n"
-            "/goal pause | resume | clear\n/goal edit <objective>\n"
+            "/goal pause | resume | clear | stop (retry saved stop)\n/goal edit <objective>\n"
             "/goal answer [question-id] <answer>\n"
             "/goal role <work|judge> <provider> <model> [effort=high] [timeout_s=300]\n"
             "/goal budget max_turns=10 max_tokens=10000 max_elapsed_s=3600 max_cost_usd=5\n"
@@ -261,13 +256,19 @@ def _handle_goal_command(session_id: str, raw_args: str) -> dict:
             apply_goal_action(session_id, "cancel")
         except ValueError:
             return {"text": "No Goal to cancel.", "send_text": None}
-        return {"text": "Goal cancelled.", "send_text": None}
+        return {"text": "Goal cancellation saved. " + _goal._status_text(_goal.load_goal(session_id), session_id), "send_text": None}
+    if head == "stop":
+        try:
+            stopped = apply_goal_action(session_id, "stop")
+        except ValueError as exc:
+            return {"text": str(exc), "send_text": None}
+        return {"text": _goal._status_text(stopped, session_id), "send_text": None}
     if head == "pause":
         try:
             apply_goal_action(session_id, "pause")
         except ValueError as exc:
             return {"text": str(exc), "send_text": None}
-        return {"text": "Goal paused.", "send_text": None}
+        return {"text": "Goal pause saved. " + _goal._status_text(_goal.load_goal(session_id), session_id), "send_text": None}
     if head == "resume":
         goal = _goal.load_goal(session_id)
         if not goal or goal.get("status") not in _goal.RESUMABLE_STATUSES:

@@ -162,8 +162,8 @@ def test_command_set_status_and_clear_use_the_workflow_state(
 
     cancelled: list[tuple[str, str | None]] = []
     monkeypatch.setattr(
-        "openprogram.agent.run_control.mark_cancelled",
-        lambda sid, *, execution_id=None: cancelled.append((sid, execution_id)),
+        G, "request_goal_stop",
+        lambda goal, sid: cancelled.append((sid, goal.get("execution_id"))),
     )
     G.save_goal("s1", {
         "text": "tests pass",
@@ -833,7 +833,7 @@ def test_goal_clear_during_judge_does_not_get_overwritten(
     monkeypatch.setattr(agent_module, "agent", lambda **_kwargs: "finished")
 
     def clear_then_accept(*_args, **_kwargs):
-        assert G.handle_goal_command("s1", "clear")["text"] == "Goal cancelled."
+        assert G.handle_goal_command("s1", "clear")["text"].startswith("Goal cancellation saved.")
         return "met", "done", "", []
 
     monkeypatch.setattr(G, "evaluate_goal", clear_then_accept)
@@ -859,7 +859,7 @@ def test_goal_is_active_and_clearable_during_refinement(
 
     def clear_during_refinement(*_args, **_kwargs):
         assert G.load_goal("s1")["status"] == "active"
-        assert G.handle_goal_command("s1", "clear")["text"] == "Goal cancelled."
+        assert G.handle_goal_command("s1", "clear")["text"].startswith("Goal cancellation saved.")
         return "SPEC", ["item"]
 
     monkeypatch.setattr(G, "refine_goal_spec_candidate", clear_during_refinement)

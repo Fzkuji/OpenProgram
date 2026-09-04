@@ -87,7 +87,8 @@ does not discard unsaved text. Its composer chip still disappears.
 Ending a Goal asks for confirmation in the same dialog; saved work and history
 remain available. Escape leaves the confirmation before closing the dialog.
 
-Achieved, cancelled, and impossible Goals no longer occupy the composer.
+Achieved, cancelled, and impossible Goals no longer occupy the composer once
+any requested execution stop has been confirmed.
 Their original objective and output remain available in the corresponding
 execution record. Paused, waiting, and recoverable failed Goals keep the detail
 entry so you can inspect and continue them after a reload.
@@ -107,11 +108,27 @@ live updates in version order. While offline, it retains the last confirmed
 snapshot and labels it as offline. A failed refresh is shown explicitly; it
 does not clear the Goal or resume execution.
 
+Pausing, editing, and ending first save your Goal change, then request
+cancellation of its exact execution. If cancellation cannot be delivered,
+the change remains saved and the UI reports that the execution stop is not
+confirmed. **Retry stop**, or `/goal stop`, retries only that execution's
+existing cancellation command; it does not start another Goal or reset usage.
+The Web dialog and TUI distinguish an unknown execution state, stopping, and
+a confirmed stop. They refresh on related execution events and reconnection;
+the dialog also offers **Refresh status**. A cancelled Goal with an unconfirmed
+stop keeps its controls visible. Resume stays unavailable until the previous
+execution and all its descendants have ended. Starting a replacement
+Goal also checks any saved stop request before initializing work or usage.
+Script-only Goals without an execution record stop cooperatively at a Goal
+boundary; the UI cannot confirm
+their physical execution state.
+
 The same operations are available in the TUI:
 
 ```text
 /goal
 /goal pause
+/goal stop
 /goal resume
 /goal edit focus the survey on knowledge editing
 /goal answer use papers published since 2023

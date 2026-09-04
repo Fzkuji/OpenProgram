@@ -6,6 +6,8 @@ import { usePanelWidth } from '../utils/useTerminalWidth.js';
 import { useColors } from '../theme/ThemeProvider.js';
 
 interface GoalSnapshot {
+  execution_id?: string;
+  stop_requested?: boolean;
   version?: number;
   status: string;
   phase?: string;
@@ -16,6 +18,7 @@ interface GoalSnapshot {
 interface GoalView {
   sessionId?: string;
   goal?: GoalSnapshot | null;
+  execution?: { execution_id?: string | null; status?: string; finished?: boolean | null };
   connection: ConnectionState;
   loading: boolean;
   failed: boolean;
@@ -42,10 +45,10 @@ function useGoalView(client: BackendClient, sessionId?: string): GoalView {
     let controller: AbortController | undefined;
     setView({ sessionId, connection: client.getState(), loading: !!sessionId, failed: false });
     if (!sessionId) return;
-    const apply = (goal: GoalSnapshot | null) => setView((previous) => {
+    const apply = (goal: GoalSnapshot | null, execution?: GoalView['execution']) => setView((previous) => {
       if (!alive || previous.sessionId !== sessionId) return previous;
       if (goal && (previous.goal?.version ?? 0) > (goal.version ?? 0)) return previous;
-      return { ...previous, goal, loading: false, failed: false };
+      return { ...previous, goal, execution: execution?.execution_id === goal?.execution_id ? execution : undefined, loading: false, failed: false };
     });
     const refresh = async () => {
       const current = ++request;
@@ -58,12 +61,12 @@ function useGoalView(client: BackendClient, sessionId?: string): GoalView {
           signal: AbortSignal.any([own.signal, AbortSignal.timeout(10000)]),
         });
         if (!response.ok && response.status !== 404) throw new Error('Goal read failed');
-        const body = response.status === 404 ? null : await response.json() as { goal?: unknown } | null;
+        const body = response.status === 404 ? null : await response.json() as { goal?: unknown; execution?: GoalView['execution'] } | null;
         const value = response.status === 404 ? null : snapshot(body?.goal);
         if (value === undefined) throw new Error('Invalid Goal snapshot');
         if (!alive || current !== request || own.signal.aborted) return;
         // An unversioned absence cannot erase a live update received in flight.
-        if (value !== null || events === atStart) apply(value);
+        if (value !== null || events === atStart) apply(value, body?.execution);
         setView((v) => ({ ...v, loading: false }));
       } catch {
         if (alive && current === request && !own.signal.aborted) {
@@ -72,6 +75,10 @@ function useGoalView(client: BackendClient, sessionId?: string): GoalView {
       }
     };
     const off = client.on((frame) => {
+      if (frame.type === 'execution.updated' && frame.execution.session_id === sessionId) {
+        void refresh();
+        return;
+      }
       const data = ('data' in frame ? frame.data : null) as Record<string, unknown> | null;
       if (!data) return;
       const loaded = frame.type === 'session_loaded' && data.id === sessionId;
@@ -84,6 +91,7 @@ function useGoalView(client: BackendClient, sessionId?: string): GoalView {
       // Legacy/no-Goal hydration has no version; never retract a live Goal.
       if (goal === null) setView((v) => v.goal ? v : { ...v, goal: null, loading: false });
       else apply(goal);
+      if (goal?.execution_id) void refresh();
     });
     const offState = client.onState((connection) => {
       setView((v) => ({ ...v, connection }));
@@ -103,7 +111,9 @@ export function GoalStatus({ client, sessionId }: { client: BackendClient; sessi
   const colors = useColors();
   const width = usePanelWidth();
   const g = view.goal;
-  if (!sessionId || (g && terminal.has(g.status))) return null;
+  const stopped = view.connection === 'connected' && !view.failed && !view.loading && view.execution?.finished === true;
+  const stopPending = !!g?.stop_requested && !!g.execution_id && !stopped;
+  if (!sessionId || (g && terminal.has(g.status) && !stopPending)) return null;
   if (!g && !view.failed && !view.loading && view.connection === 'connected') return null;
   const pending = Array.isArray(g?.questions) ? g.questions.filter((q) => q?.status === 'pending').length : 0;
   const checklist = Array.isArray(g?.checklist) ? g.checklist : [];
@@ -116,6 +126,11 @@ export function GoalStatus({ client, sessionId }: { client: BackendClient; sessi
       {['Goal', g ? clean(g.status) : '', typeof g?.phase === 'string' ? clean(g.phase) : '', progress, pending ? `${pending} pending` : '', freshness].filter(Boolean).join(' · ')}
     </Text>
     <Text wrap="truncate-end">{typeof g?.text === 'string' ? clean(g.text) : 'Goal status unavailable'}</Text>
-    <Text color={colors.muted}>Details and controls: /goal</Text>
+    {g?.execution_id ? <Text color={colors.muted} wrap="truncate-end">{
+      view.connection !== 'connected' || view.failed || view.loading || !view.execution || view.execution.status === 'unavailable' ? 'Execution status unknown'
+        : stopped ? 'Execution stopped' : view.execution.status === 'cancelling' ? 'Stopping'
+        : stopPending ? 'Stop not confirmed' : `Execution: ${clean(view.execution.status ?? 'unknown')}`
+    }</Text> : null}
+    <Text color={colors.muted}>{stopPending ? 'Details: /goal · Retry stop: /goal stop' : 'Details and controls: /goal'}</Text>
   </Box>;
 }
