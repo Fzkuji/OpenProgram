@@ -61,6 +61,7 @@ function registerSingleMainWindow({
   ensureMainWindow,
   recoverErroredWindows,
   onReady,
+  platform = process.platform,
 }) {
   if (!app || typeof app.on !== "function") {
     throw new TypeError("app is required");
@@ -83,6 +84,12 @@ function registerSingleMainWindow({
   });
 
   app.whenReady().then(async () => {
+    if (
+      platform === "darwin" &&
+      typeof app.setAccessibilitySupportEnabled === "function"
+    ) {
+      app.setAccessibilitySupportEnabled(true);
+    }
     if (typeof onReady === "function") await onReady();
     void ensureMainWindow();
     app.on("activate", () => {
