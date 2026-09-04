@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { SearchInput } from "@/components/ui/search-input";
 import { ManagePageHeader, ManageRow, managePageStyles as shared } from "@/components/ui/manage-page";
-import listStyles from "@/components/functions/functions-page.module.css";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./scheduler-page.module.css";
 import {
@@ -183,19 +182,19 @@ export function SchedulerPage() {
           actions={[{ label: text("Create", "创建"), onClick: () => begin(), primary: true }]}
         />
         {pageError && <div className={shared.errorBar} role="alert">{pageError}</div>}
-        <main className={`${shared.splitBody} ${styles.layout}`}>
-          <nav className={`${listStyles.profilesNav} ${styles.nav}`} aria-label={text("Task types", "任务类型")}>
+        <main className={styles.layout}>
+          <nav className={styles.nav} aria-label={text("Task types", "任务类型")}>
             {filters.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                className={`${listStyles.profileItem} ${styles.navButton} ${filter === item.id ? listStyles.active : ""}`}
+                className={`${shared.tabBtn} ${styles.navButton} ${filter === item.id ? shared.active : ""}`}
                 onClick={() => setFilter(item.id)}
                 aria-current={filter === item.id ? "page" : undefined}
               >
-                <span className={listStyles.profileIcon} aria-hidden="true">{item.icon}</span>
-                <span className={listStyles.profileName}>{item.label}</span>
-                <span className={listStyles.profileCount}>{counts[item.id]}</span>
+                <span className={shared.tabIcon} aria-hidden="true">{item.icon}</span>
+                <span className={styles.filterLabel}>{item.label}</span>
+                <span className={shared.tabCount}>{counts[item.id]}</span>
               </button>
             ))}
           </nav>
@@ -314,7 +313,7 @@ function formatSchedule(task: Task, text: (en: string, zh: string) => string) {
 }
 
 function Suggestions({ onChoose, text }: {
-  onChoose: (template: Partial<typeof EMPTY_FORM>) => void;
+  onChoose: (template?: Partial<typeof EMPTY_FORM>) => void;
   text: (en: string, zh: string) => string;
 }) {
   const rows = [
@@ -330,20 +329,20 @@ function Suggestions({ onChoose, text }: {
           <strong>{text("No scheduled tasks", "还没有定时任务")}</strong>
           <span>{text("Create a task or start from a suggestion.", "创建任务，或从建议开始。")}</span>
         </div>
+        <Button onClick={() => onChoose()}>{text("Create task", "创建任务")}</Button>
       </div>
       <div className={styles.sectionHeader}>
-        <span>{text("Suggestions", "建议")}</span>
+        <span>{text("Start from a suggestion", "从建议开始")}</span>
       </div>
       <div className={styles.suggestionList}>
         {rows.map((row) => (
-          <ManageRow
-            key={row.title}
-            icon={row.icon}
-            name={row.title}
-            description={row.schedule}
-            actions={<Button size="sm" variant="outline" aria-label={actionAccessibleName(text("Use", "使用"), row.title)} onClick={() => onChoose(row.form)}>{text("Use", "使用")}</Button>}
-            className={styles.suggestionRow}
-          />
+          <article key={row.title} className={styles.suggestionRow}>
+            <span className={styles.suggestionIcon} aria-hidden="true">{row.icon}</span>
+            <h3>{row.title}</h3>
+            <p className={styles.suggestionSchedule}>{row.schedule}</p>
+            <p className={styles.suggestionPrompt}>{row.form.prompt}</p>
+            <Button size="sm" variant="outline" aria-label={actionAccessibleName(text("Use", "使用"), row.title)} onClick={() => onChoose(row.form)}>{text("Use", "使用")}</Button>
+          </article>
         ))}
       </div>
     </section>
