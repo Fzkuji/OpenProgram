@@ -56,14 +56,15 @@
   <li>Memory writer 删除 <code>record_commitments</code> 工具与提示，旧 runtime parser 只作为一次性迁移兼容代码保留。</li>
 </ul>
 
-<h2>6. UI 信息结构</h2>
-<p>独立 <code>/scheduler</code> 页面复用 Chats、Memory、Programs 与 MCP 的管理页结构：64px topbar 只显示一次页面标题，搜索和 Create 作为右侧工具；topbar 下方固定为左侧分类栏和右侧内容区。页面不设置第二个大标题或宣传式说明区，避免与 OpenProgram 其他管理页产生不同的字号、留白和操作层级。</p>
-<div class="card"><h3>页面结构</h3><p><code>Scheduler | [Search] [Create]</code><br><code>[All tasks]   | Scheduled tasks (n)</code><br><code>[One-time]   | 1  title · schedule · prompt · MemoryRef | status | actions</code><br><code>[Recurring]  | 2  title · schedule · prompt · MemoryRef | status | actions</code><br><code>[Monitors]   | 3  ...</code><br><code>无任务时：右侧内容区显示三条可直接创建的较大建议行</code></p></div>
-<p>任务行显示类型、执行计划、prompt 摘要、启用状态和 Memory 引用数量；执行计划使用等宽数据样式作为 Scheduler 的唯一专属视觉标识。Memory 页面只保留 Topics、Timeline、Recent 与 Core。</p>
+<h2>6. Scheduler layout</h2>
+<p>The Scheduler uses the shared page header and theme tokens. Four compact filters occupy a horizontal row below the header instead of a full-height sidebar. Filters wrap at narrow container widths. Task rows retain their schedule, status and actions.</p>
+<div class="card"><h3>Empty state</h3><p>The introduction and Create task action are centered within the available content area. Three suggestion cards share a centered, 960px maximum-width grid, with one column in narrow containers. Each card shows its title, schedule, prompt and a Use action that opens the existing form. Existing tasks remain a full-width list.</p></div>
+<p>Acceptance: /scheduler has no dedicated category column; all four filters remain accessible at 360px, 768px and 1440px container widths; suggestions wrap without horizontal overflow; Create and Use open the existing form without creating a task; loading, search and error states retain their behavior. No scheduler API, persistence, execution or terminal TUI changes.</p>
+<p>Implementation status: the layout passes specification and quality reviews, Web static checks, 152 unit tests, TypeScript checking, production build, and documentation link checks. Browser component previews at 360px, 768px and 1440px show no horizontal overflow; Create task and Use open the existing dialog. The default App also displays the layout correctly; Use opens the existing prefilled form and Escape returns to the Scheduler without creating a task.</p>
 
 <h2>7. 采用、修改与拒绝</h2>
 <table><thead><tr><th>参考</th><th>处理</th></tr></thead><tbody>
-  <tr><td>用户提供的 Scheduled tasks 页面截图</td><td>采用独立页面、Create、搜索和一次性/周期/监控的产品分类；不采用重复 hero 标题和大面积留白。页面直接复用 OpenProgram 的 <code>ManagePageHeader</code>、<code>ManageRow</code>、左右分栏尺寸与主题 token。</td></tr>
+  <tr><td>用户提供的 Scheduled tasks 页面截图</td><td>采用独立页面、Create、搜索和一次性/周期/监控的产品分类；不采用重复 hero 标题和大面积留白。页面直接复用 OpenProgram 的 <code>ManagePageHeader</code>、<code>ManageRow</code>、主题一致的筛选按钮与主题 token。</td></tr>
   <tr><td>现有 OpenProgram cron</td><td>保留执行安全机制与 cron 兼容入口，产品名称迁移为 Scheduler，并集成到常驻 worker。</td></tr>
   <tr><td>原 Commitments/heartbeat</td><td>拒绝继续作为 Memory 类型；只保留迁移读取，不保留 Memory tab、status 字段或特殊 heartbeat。</td></tr>
   <tr><td>Scheduler 自动写 Memory</td><td>拒绝在 service 层隐式双写。采用 Agent 显式组合两个现有工具，并以 MemoryRef 保存关联，避免新增跨存储事务和重复 CRUD。</td></tr>
@@ -77,7 +78,7 @@
   <tr><td>Memory 生命周期</td><td>真实 Scheduler prompt worker 会加载 merged permission rules；本地 owner 任务可使用 <code>memory_status</code>、<code>memory_get</code> 与 <code>memory_update</code>，deny/ask 仍优先，其他副作用仍拒绝。真实 ScriptedProvider 链路已更新 Topic 并产生 Memory Git 提交；多条 MemoryRef 超限时保留每条 ID 与 Topic 路径，只截断内容并显式标记。规格复审与质量复审均通过。</td></tr>
   <tr><td>守护循环故障隔离</td><td><code>run_forever</code> 把普通 tick 异常以 warning 和完整 traceback 写入 stderr（常驻 worker 重定向到全局 worker 日志，独立前台命令显示在终端），按原分钟 cadence 等待后继续下一 tick；初始失败不重放 <code>@reboot</code> tick。该输出不进入任务 execution log。<code>run_once</code> 仍立即传播异常，<code>KeyboardInterrupt</code> 等 <code>BaseException</code> 不转为重试。正式命令、兼容别名及其 <code>--once</code>/<code>--list</code> 入口均绕过 TUI stdio 重定向。公共回归覆盖启动/普通 tick、正常等待、oversleep、下一 tick、日志、CLI 入口与两类 fail-fast 边界。</td></tr>
   <tr><td>完整 Python</td><td><code>5316 passed, 15 skipped, 2 deselected, 1 xfailed</code>。剩余 4 项失败在基线提交 <code>17db67dc</code> 上逐项复现，分别属于既有 channel HTTP inventory 与 agentic harness 扫描。</td></tr>
-  <tr><td>Web</td><td>全量静态检查、Scheduler 检查与 <code>tsc --noEmit</code> 通过；独立页面包含首次加载错误、操作错误和 icon button 可访问名称。视觉验收要求只有一个页面标题、64px 管理页 topbar、搜索与主操作同栏、topbar 下方保持左栏分类和右栏内容、任务按可见顺序编号、空状态在右栏显示三条建议，并在默认 18100 App 中截图确认。</td></tr>
+  <tr><td>Web</td><td>全量静态检查、Scheduler 检查与 <code>tsc --noEmit</code> 通过；独立页面包含首次加载错误、操作错误和 icon button 可访问名称。视觉验收要求只有一个页面标题、64px 管理页 topbar、搜索与主操作同栏、topbar 下方显示横向分类筛选、任务按可见顺序编号、空状态居中显示响应式建议卡片，并在默认 18100 App 中截图确认。</td></tr>
   <tr><td>独立审查</td><td>规格审查通过；质量审查提出的权限、状态 claim、并发、MemoryRef、兼容入口与 UI 错误处理问题全部修复，复审通过。管理页结构统一修订另行完成规格 PASS；质量审查要求补充窄分栏重排、可区分操作名称和可执行视图逻辑检查，修复后 scoped re-review PASS。</td></tr>
 </tbody></table>
 <p><b>本轮实现状态：</b>内部 Agent 的 Scheduler-Memory 生命周期关联和守护循环的普通 tick 异常隔离已经实现；记录删除后不保留占位对象或 ID 转发，旧 <code>memory_id</code> 的当前查询返回 <code>NOT_FOUND</code>。外部 token 权限模型仍按边界延期。</p>

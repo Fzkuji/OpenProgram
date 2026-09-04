@@ -17,7 +17,7 @@ assert.match(page, /loadedOnce/);
 assert.match(page, /ManagePageHeader/);
 assert.match(page, /ManageRow/);
 assert.match(page, /managePageStyles as shared/);
-assert.match(page, /shared\.splitBody/);
+assert.match(page, /styles\.layout/);
 assert.match(page, /taskIndex/);
 assert.match(page, /actionAccessibleName/);
 assert.match(page, /shouldShowSuggestions/);
