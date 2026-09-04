@@ -50,6 +50,7 @@ registerHooks({
 const { window } = parseHTML("<!doctype html><html><body></body></html>");
 globalThis.window = window;
 globalThis.document = window.document;
+document.oninput = null; // Enable React's native input-event path in this DOM.
 globalThis.Event = window.Event;
 globalThis.CustomEvent = window.CustomEvent;
 globalThis.localStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };
@@ -91,6 +92,208 @@ function reset() {
   runtimeState.conversations = { s1: { id: "s1", goal: snapshot(1) } };
   useSessionStore.setState({ currentSessionId: "s1" });
 }
+
+async function typeInto(node, value) {
+  const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), "value");
+  descriptor.set.call(node, value);
+  await act(async () => node.dispatchEvent(new Event("input", { bubbles: true })));
+}
+
+test("Goal actions include the snapshot identity shown to the user", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(3), run_id: "run-1" };
+  const original = api.mutateGoal;
+  let sent;
+  api.mutateGoal = async (_sid, body) => { sent = body; return { goal: snapshot(4, "paused") }; };
+  const view = await mount();
+  try {
+    await view.open();
+    await view.click("Pause");
+    assert.deepEqual(sent.expected, { goal_id: "goal-1", revision: 1, run_id: "run-1", version: 3 });
+  } finally { api.mutateGoal = original; await view.close(); }
+});
+
+test("progress does not overwrite an unsaved budget and a conflict keeps the draft", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(1), budget: { max_turns: 5 } };
+  const view = await mount();
+  try {
+    await view.open();
+    const input = view.host.querySelector('input[type="number"]');
+    await typeInto(input, "12");
+    await frame({ ...snapshot(2), budget: { max_turns: 5 } });
+    assert.equal(input.value, "12");
+    await frame({ ...snapshot(3), budget: { max_turns: 9 } });
+    assert.equal(input.value, "12");
+    assert.match(view.host.textContent, /changed elsewhere/i);
+    const save = [...view.host.querySelectorAll("button")].find(node => node.textContent === "Save limits");
+    assert.equal(save.disabled, true);
+  } finally { await view.close(); }
+});
+
+test("remote edits retain the local goal draft and require explicit reload", async () => {
+  reset();
+  const view = await mount();
+  try {
+    await view.open();
+    const input = view.host.querySelector("textarea");
+    await typeInto(input, "My unsaved review");
+    await frame({ ...snapshot(2), revision: 2, text: "Remote scope" });
+    assert.equal(input.value, "My unsaved review");
+    assert.match(view.host.textContent, /changed elsewhere/i);
+    await view.click("Use latest goal");
+    assert.equal(input.value, "Remote scope");
+  } finally { await view.close(); }
+});
+
+test("switching sessions closes the old Goal dialog and isolates late errors", async () => {
+  reset();
+  runtimeState.conversations.s2 = { id: "s2", goal: { ...snapshot(1), goal_id: "goal-2", text: "Second goal" } };
+  const original = api.mutateGoal;
+  let reject;
+  api.mutateGoal = () => new Promise((_resolve, failure) => {
+    reject = failure;
+    setTimeout(() => failure(new Error("Old request failed")), 100);
+  });
+  const view = await mount();
+  try {
+    await view.open();
+    await view.click("Pause");
+    await act(async () => useSessionStore.setState({ currentSessionId: "s2" }));
+    assert.equal(view.host.querySelector("textarea"), null);
+    await view.open();
+    await act(async () => reject(new Error("Old request failed")));
+    assert.equal(view.host.querySelector("textarea").value, "Second goal");
+    assert.doesNotMatch(view.host.textContent, /Old request failed/);
+  } finally { api.mutateGoal = original; await view.close(); }
+});
+
+test("unknown cost is not displayed as a zero-dollar charge", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(1), usage: { cost_known: false, cost_usd: 0 } };
+  const view = await mount();
+  try {
+    await view.open();
+    assert.match(view.host.textContent, /Unknown/);
+    assert.doesNotMatch(view.host.textContent, /\$0\.0000/);
+  } finally { await view.close(); }
+});
+
+test("failed saves keep the draft and duplicate clicks send one request", async () => {
+  reset();
+  const original = api.mutateGoal;
+  let reject;
+  let calls = 0;
+  api.mutateGoal = () => { calls++; return new Promise((_resolve, failure) => { reject = failure; }); };
+  const view = await mount();
+  try {
+    await view.open();
+    await typeInto(view.host.querySelector("textarea"), "Keep this draft");
+    const save = [...view.host.querySelectorAll("button")].find(node => node.textContent === "Save edit");
+    await act(async () => { save.click(); save.click(); });
+    assert.equal(calls, 1);
+    await act(async () => reject(new Error("Save conflict")));
+    assert.equal(view.host.querySelector("textarea").value, "Keep this draft");
+    assert.match(view.host.textContent, /Save conflict/);
+  } finally { api.mutateGoal = original; await view.close(); }
+});
+
+test("completion keeps an already-open editor and its unsaved text", async () => {
+  reset();
+  const view = await mount();
+  try {
+    await view.open();
+    await typeInto(view.host.querySelector("textarea"), "A revised goal");
+    await frame(snapshot(2, "achieved"));
+    assert.equal(view.host.querySelector("textarea").value, "A revised goal");
+    assert.equal(view.host.querySelector('[aria-label="Open Goal details"]'), null);
+  } finally { await view.close(); }
+});
+
+test("answering does not resume past unsaved edits", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(1, "waiting_user"), questions: [
+    { id: "scope", prompt: "Scope?", status: "pending" },
+  ] };
+  const mutate = api.mutateGoal;
+  const run = api.runFunction;
+  let runs = 0;
+  api.mutateGoal = async () => ({ goal: snapshot(2, "paused"), invoke: { name: "goal", kwargs: { resume: true } } });
+  api.runFunction = async () => { runs++; return {}; };
+  const view = await mount();
+  try {
+    await view.open();
+    await typeInto(view.host.querySelector("textarea"), "Unsaved goal");
+    await typeInto(view.host.querySelector('[aria-label="Answer: Scope?"]'), "Editing");
+    await view.click("Submit answer");
+    assert.equal(runs, 0);
+    assert.equal(view.host.querySelector("textarea").value, "Unsaved goal");
+    assert.match(view.host.textContent, /Save or discard/);
+  } finally { api.mutateGoal = mutate; api.runFunction = run; await view.close(); }
+});
+
+test("a conflict fetches the latest Goal without replacing the local draft", async () => {
+  reset();
+  const { HttpError } = await import("../lib/net/fetch-client.ts");
+  const mutate = api.mutateGoal;
+  const get = api.getGoal;
+  api.mutateGoal = async () => { throw new HttpError("Goal changed", 409); };
+  api.getGoal = async () => ({ goal: { ...snapshot(2), revision: 2, text: "Saved remotely" } });
+  const view = await mount();
+  try {
+    await view.open();
+    await typeInto(view.host.querySelector("textarea"), "Local draft");
+    await view.click("Save edit");
+    assert.equal(runtimeState.conversations.s1.goal.text, "Saved remotely");
+    assert.equal(view.host.querySelector("textarea").value, "Local draft");
+    assert.match(view.host.textContent, /changed elsewhere/);
+  } finally { api.mutateGoal = mutate; api.getGoal = get; await view.close(); }
+});
+
+test("ending a Goal requires explicit confirmation", async () => {
+  reset();
+  const mutate = api.mutateGoal;
+  let calls = 0;
+  api.mutateGoal = async () => { calls++; return { goal: snapshot(2, "cancelled") }; };
+  const view = await mount();
+  try {
+    await view.open();
+    await view.click("End");
+    assert.equal(calls, 0);
+    await view.click("Keep goal");
+    assert.equal(calls, 0);
+    await view.click("End");
+    await view.click("Confirm end");
+    assert.equal(calls, 1);
+  } finally { api.mutateGoal = mutate; await view.close(); }
+});
+
+test("a failed resume acknowledgement is shown in the dialog", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = snapshot(1, "paused");
+  const mutate = api.mutateGoal;
+  const run = api.runFunction;
+  api.mutateGoal = async () => ({ goal: snapshot(1, "paused"), invoke: { name: "goal", kwargs: {} } });
+  api.runFunction = async () => ({ error: "Execution could not start" });
+  const view = await mount();
+  try {
+    await view.open();
+    await view.click("Resume");
+    assert.match(view.host.querySelector('[role="alert"]').textContent, /Execution could not start/);
+  } finally { api.mutateGoal = mutate; api.runFunction = run; await view.close(); }
+});
+
+test("completion dismisses a pending end confirmation without changing the result", async () => {
+  reset();
+  const view = await mount();
+  try {
+    await view.open();
+    await view.click("End");
+    await frame(snapshot(2, "achieved"));
+    assert.doesNotMatch(view.host.textContent, /Confirm end/);
+    assert.equal(runtimeState.conversations.s1.goal.status, "achieved");
+  } finally { await view.close(); }
+});
 
 test("saved work and judge identities remain visible after remount", async () => {
   reset();

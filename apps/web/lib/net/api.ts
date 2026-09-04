@@ -136,6 +136,10 @@ export const api = {
       { method: "POST", body: JSON.stringify(body) },
     ),
 
+  getGoal: (sessionId: string) => jsonFetch<{ goal: Record<string, unknown> }>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
+  ),
+
   listHistory: () =>
     jsonFetch<{ id: string; title: string; created_at?: number }[]>("/api/history"),
 

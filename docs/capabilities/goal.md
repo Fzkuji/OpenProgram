@@ -53,6 +53,20 @@ status, checklist, resource usage, last decision reason, and all pending
 questions. The dialog supports editing, pausing, resuming, answering individual
 questions, changing execution limits, and cancelling.
 
+Progress updates leave unsaved text and limits intact. If another client edits
+the same values, the dialog preserves your draft and offers an explicit
+“Use latest” action; it does not silently overwrite either version. Requests
+include the displayed Goal identity and version. Save failures retain the
+draft. Resume waits until edits are saved or discarded, including when an
+answer unblocks work. Closing and reopening the same Goal keeps its draft;
+switching sessions resets the editor to that session's saved Goal. Unknown
+provider cost is shown as unknown, not as a zero-dollar charge.
+
+An already-open editor remains open when the Goal completes, so completion
+does not discard unsaved text. Its composer chip still disappears.
+Ending a Goal asks for confirmation in the same dialog; saved work and history
+remain available. Escape leaves the confirmation before closing the dialog.
+
 Achieved, cancelled, and impossible Goals no longer occupy the composer.
 Their original objective and output remain available in the corresponding
 execution record. Paused, waiting, and recoverable failed Goals keep the detail

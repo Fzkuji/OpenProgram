@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pause, Play, Square, Target } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/net/api";
+import { HttpError } from "@/lib/net/fetch-client";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { updateSessionGoal } from "@/lib/runtime-bridge/goal-state";
 import { useSessionStore } from "@/lib/session-store";
@@ -114,12 +115,12 @@ function readGoalFromRuntime(sid: string | null): GoalState | null {
 }
 
 export function useSessionGoal(sessionId: string | null): GoalState | null {
-  const [goal, setGoal] = useState<GoalState | null>(() => readGoalFromRuntime(sessionId));
-  useEffect(() => setGoal(readGoalFromRuntime(sessionId)), [sessionId]);
+  const [snapshot, setSnapshot] = useState(() => ({ sessionId, goal: readGoalFromRuntime(sessionId) }));
+  useEffect(() => setSnapshot({ sessionId, goal: readGoalFromRuntime(sessionId) }), [sessionId]);
   useEffect(() => {
     const onGoalState = (event: Event) => {
       const detail = (event as CustomEvent).detail as { session_id?: string; goal?: GoalState | null } | undefined;
-      if (detail?.session_id === sessionId) setGoal(detail.goal ?? null);
+      if (detail?.session_id === sessionId) setSnapshot({ sessionId, goal: detail.goal ?? null });
     };
     const onWsMessage = (event: Event) => {
       const detail = (event as CustomEvent).detail as
@@ -136,7 +137,21 @@ export function useSessionGoal(sessionId: string | null): GoalState | null {
       window.removeEventListener("op:ws-message", onWsMessage);
     };
   }, [sessionId]);
-  return goal;
+  return snapshot.sessionId === sessionId ? snapshot.goal : readGoalFromRuntime(sessionId);
+}
+
+function useGoalDraft<T>(source: T, revision: number) {
+  const [draft, setDraft] = useState({ base: source, value: source, revision });
+  const dirty = JSON.stringify(draft.value) !== JSON.stringify(draft.base);
+  const changed = revision !== draft.revision || JSON.stringify(source) !== JSON.stringify(draft.base);
+  useEffect(() => {
+    if (!dirty && changed) setDraft({ base: source, value: source, revision });
+  }, [source, revision, dirty, changed]);
+  return {
+    value: draft.value, dirty, conflict: dirty && changed,
+    set: (value: T) => setDraft((current) => ({ ...current, value })),
+    reset: () => setDraft({ base: source, value: source, revision }),
+  };
 }
 
 function statusLabel(status: string | undefined, zh: boolean) {
@@ -155,21 +170,32 @@ function statusLabel(status: string | undefined, zh: boolean) {
 }
 
 export function GoalChip() {
-  const { locale, text } = useTranslation();
-  const zh = locale.startsWith("zh");
   const sessionId = useSessionStore((state) => state.currentSessionId);
   const goal = useSessionGoal(sessionId);
+  if (!sessionId || !goal) return null;
+  return <GoalDetails key={`${sessionId}:${goal.goal_id || "legacy"}`} sessionId={sessionId} goal={goal} />;
+}
+
+function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }) {
+  const { locale, text } = useTranslation();
+  const zh = locale.startsWith("zh");
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [limits, setLimits] = useState<BudgetDraft>(emptyBudget);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const draft = useGoalDraft(goal.text ?? "", goal.revision ?? 1);
+  const limits = useGoalDraft(budgetDraft(goal), goal.revision ?? 1);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => setDraft(goal?.text ?? ""), [goal?.text, goal?.revision]);
-  useEffect(() => setLimits(budgetDraft(goal)), [goal?.version]);
-  // Terminal goals remain in execution history, not in the active composer.
-  if (!goal || terminalStatuses.has(goal.status || "")) return null;
+  const pending = useRef(false);
+  const mounted = useRef(true);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const endButton = useRef<HTMLButtonElement>(null);
+  const hadConfirmation = useRef(false);
+  useEffect(() => {
+    if (hadConfirmation.current && !confirmCancel) endButton.current?.focus();
+    hadConfirmation.current = confirmCancel;
+  }, [confirmCancel]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const checklist = goal.checklist ?? [];
   const pendingQuestions = (goal.questions ?? []).filter((item) => item.status === "pending");
@@ -179,28 +205,54 @@ export function GoalChip() {
     : `${goal.turns_used ?? 0}${goal.max_turns ? `/${goal.max_turns}` : ""}`;
   const running = runningStatuses.has(goal.status || "");
   const resumable = resumableStatuses.has(goal.status || "");
+  const terminal = terminalStatuses.has(goal.status || "");
+  useEffect(() => { if (terminal) setConfirmCancel(false); }, [terminal]);
+  if (terminal && !open) return null;
 
   async function mutate(action: string, values: Record<string, unknown> = {}) {
-    if (!sessionId) return;
+    if (pending.current || (action === "edit" && draft.conflict) || (action === "budget" && limits.conflict)
+      || (action === "resume" && (draft.dirty || limits.dirty))) return;
+    pending.current = true;
     setBusy(true);
     setError("");
     try {
-      const result = await api.mutateGoal(sessionId, { action, ...values });
+      const result = await api.mutateGoal(sessionId, { action, ...values, expected: {
+        goal_id: goal.goal_id ?? "", revision: goal.revision ?? 1,
+        run_id: goal.run_id ?? "", version: goal.version ?? 0,
+      } });
       updateSessionGoal(sessionId, result.goal);
-      if ((action === "resume" || action === "answer") && result.invoke) {
-        await api.runFunction(result.invoke.name, { ...result.invoke.kwargs, session_id: sessionId });
+      if (mounted.current) {
+        if (action === "edit") draft.reset();
+        if (action === "budget") limits.reset();
+        if (action === "answer") setAnswers((current) => {
+          const next = { ...current }; delete next[String(values.question_id)]; return next;
+        });
       }
-      if (action === "cancel") setOpen(false);
+      if ((action === "resume" || action === "answer") && result.invoke && !draft.dirty && !limits.dirty) {
+        const response = await api.runFunction(result.invoke.name, { ...result.invoke.kwargs, session_id: sessionId });
+        if (response.error) throw new Error(response.error);
+      }
+      if (mounted.current && action === "cancel") setOpen(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (cause instanceof HttpError && cause.status === 409) {
+        try {
+          const latest = await api.getGoal(sessionId);
+          updateSessionGoal(sessionId, latest.goal);
+        } catch {
+          if (mounted.current) setError(text("The request conflicted and the latest Goal could not be loaded. Your draft is preserved.", "请求冲突，且无法读取最新目标；草稿已保留。"));
+        }
+      }
     } finally {
-      setBusy(false);
+      pending.current = false;
+      if (mounted.current) setBusy(false);
     }
   }
 
   return (
     <>
-      <button
+      {!terminal ? <button
+        ref={trigger}
         type="button"
         className={`runtime-badge workdir-badge ${styles.trigger}`}
         onClick={() => setOpen(true)}
@@ -208,9 +260,13 @@ export function GoalChip() {
       >
         <Target size={14} strokeWidth={2} className="workdir-icon" />
         <span className="badge-short">Goal · {statusLabel(goal.status, zh)} · {progress}</span>
-      </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className={styles.dialog}>
+      </button> : null}
+      <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) setConfirmCancel(false); }}>
+        <DialogContent className={styles.dialog} aria-busy={busy} onCloseAutoFocus={(event) => {
+          event.preventDefault(); trigger.current?.focus();
+        }} onEscapeKeyDown={(event) => {
+          if (confirmCancel) { event.preventDefault(); setConfirmCancel(false); }
+        }}>
           <DialogHeader>
             <DialogTitle>{text("Goal details", "Goal 详情")}</DialogTitle>
             <DialogDescription>
@@ -221,18 +277,23 @@ export function GoalChip() {
 
           <label className={styles.field}>
             <span>{text("Goal", "目标")}</span>
-            <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={4} />
+            <textarea disabled={busy} value={draft.value} onChange={(event) => draft.set(event.target.value)} rows={4} />
           </label>
+          {draft.conflict ? <div role="status" className={styles.reason}>
+            <p>{text("The goal changed elsewhere. Your unsaved text is preserved.", "目标已在其他位置修改，未保存的正文已保留。")}</p>
+            <Button variant="outline" disabled={busy} onClick={draft.reset}>{text("Use latest goal", "采用最新目标")}</Button>
+          </div> : null}
 
           <div className={styles.metrics}>
             <div><span>{text("Status", "状态")}</span><strong>{statusLabel(goal.status, zh)}</strong></div>
             <div><span>{text("Progress", "进度")}</span><strong>{progress}</strong></div>
             <div><span>{text("Tokens", "Token")}</span><strong>{goal.usage?.total_tokens ?? 0}</strong></div>
-            <div><span>{text("Cost", "成本")}</span><strong>${(goal.usage?.cost_usd ?? 0).toFixed(4)}</strong></div>
+            <div><span>{text("Cost", "成本")}</span><strong>{goal.usage?.cost_known === true && Number.isFinite(goal.usage.cost_usd)
+              ? `$${goal.usage.cost_usd!.toFixed(4)}` : text("Unknown", "未知")}</strong></div>
             <div><span>{text("Active time", "执行时间")}</span><strong>{formatElapsed(goal.usage?.active_elapsed_s)}</strong></div>
           </div>
 
-          {goal.roles ? <section className={styles.metrics} aria-label={text("Goal roles", "Goal 角色")}>
+          {goal.roles ? <section className={styles.roles} aria-label={text("Goal roles", "Goal 角色")}>
             {(["work", "judge"] as const).map((name) => {
               const role = goal.roles![name];
               if (!role) return <div key={name}>{name}: {text("Unavailable", "不可用")}</div>;
@@ -258,24 +319,29 @@ export function GoalChip() {
                   <span>{label}</span>
                   <input
                     type="number"
+                    disabled={busy}
                     min="0"
                     step={key === "max_cost_usd" ? "0.01" : "1"}
                     inputMode="decimal"
-                    value={limits[key]}
+                    value={limits.value[key]}
                     placeholder={text("No limit", "无限制")}
-                    onChange={(event) => setLimits((current) => ({
-                      ...current,
+                    onChange={(event) => limits.set({
+                      ...limits.value,
                       [key]: event.target.value,
-                    }))}
+                    })}
                   />
                 </label>
               ))}
             </div>
             <Button
               variant="outline"
-              disabled={busy}
-              onClick={() => void mutate("budget", limits)}
+              disabled={busy || !limits.dirty || limits.conflict}
+              onClick={() => void mutate("budget", limits.value)}
             >{text("Save limits", "保存限制")}</Button>
+            {limits.conflict ? <div role="status">
+              <p>{text("Limits changed elsewhere. Your unsaved values are preserved.", "限制已在其他位置修改，未保存的数值已保留。")}</p>
+              <Button variant="outline" disabled={busy} onClick={limits.reset}>{text("Use latest limits", "采用最新限制")}</Button>
+            </div> : null}
           </details>
 
           {goal.last_reason ? <p className={styles.reason}>{goal.last_reason}</p> : null}
@@ -297,12 +363,15 @@ export function GoalChip() {
                           <button
                             key={option.label}
                             type="button"
+                            disabled={busy}
                             onClick={() => setAnswers((current) => ({ ...current, [question.id]: option.label }))}
                           >{option.label}</button>
                         ))}
                       </div>
                     ) : null}
                     <textarea
+                      disabled={busy}
+                      aria-label={`${text("Answer", "回答")}: ${question.prompt}`}
                       value={answer}
                       onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))}
                       rows={2}
@@ -312,7 +381,7 @@ export function GoalChip() {
                       disabled={busy || !answer.trim()}
                       onClick={() => void mutate("answer", { question_id: question.id, answer: answer.trim() })}
                     >
-                      <Play size={14} />{goal.status === "waiting_user" ? text("Answer and resume", "回答并继续") : text("Submit answer", "提交回答")}
+                      <Play size={14} />{goal.status === "waiting_user" && !draft.dirty && !limits.dirty ? text("Answer and resume", "回答并继续") : text("Submit answer", "提交回答")}
                     </Button>
                   </div>
                 );
@@ -326,12 +395,21 @@ export function GoalChip() {
           ) : null}
           {error ? <p className={styles.error} role="alert">{error}</p> : null}
 
-          <DialogFooter className={styles.actions}>
-            {!terminalStatuses.has(goal.status || "") ? <Button variant="destructive" disabled={busy} onClick={() => void mutate("cancel")}><Square size={14} />{text("End", "终止")}</Button> : null}
+          {confirmCancel ? <section aria-label={text("End Goal confirmation", "终止目标确认")}>
+            <p>{text("End this Goal? Saved work and history will remain.", "终止此目标？已保存的工作和历史记录会保留。")}</p>
+            <DialogFooter className={styles.actions}>
+              <Button autoFocus variant="outline" disabled={busy} onClick={() => setConfirmCancel(false)}>{text("Keep goal", "保留目标")}</Button>
+              <Button variant="destructive" disabled={busy} onClick={() => void mutate("cancel")}>{text("Confirm end", "确认终止")}</Button>
+            </DialogFooter>
+          </section> : <DialogFooter className={styles.actions}>
+            {!terminal ? <Button ref={endButton} variant="destructive" disabled={busy} onClick={() => setConfirmCancel(true)}><Square size={14} />{text("End", "终止")}</Button> : null}
             {running ? <Button variant="outline" disabled={busy} onClick={() => void mutate("pause")}><Pause size={14} />{text("Pause", "暂停")}</Button> : null}
-            <Button variant="outline" disabled={busy || draft.trim() === (goal.text || "").trim() || !draft.trim()} onClick={() => void mutate("edit", { prompt: draft.trim() })}>{text("Save edit", "保存修改")}</Button>
-            {resumable ? <Button disabled={busy} onClick={() => void mutate("resume")}><Play size={14} />{text("Resume", "继续")}</Button> : null}
-          </DialogFooter>
+            <Button variant="outline" disabled={busy || !draft.dirty || draft.conflict || !draft.value.trim()} onClick={() => void mutate("edit", { prompt: draft.value.trim() })}>{text("Save edit", "保存修改")}</Button>
+            {resumable ? <Button disabled={busy || draft.dirty || limits.dirty} onClick={() => void mutate("resume")}><Play size={14} />{text("Resume", "继续")}</Button> : null}
+          </DialogFooter>}
+          {draft.dirty || limits.dirty ? <p className={styles.draftNotice} role="status">{text("Save or discard unsaved changes before resuming.", "继续前请保存或放弃未保存的修改。")}
+            <Button variant="ghost" disabled={busy} onClick={() => { draft.reset(); limits.reset(); }}>{text("Discard changes", "放弃修改")}</Button>
+          </p> : null}
         </DialogContent>
       </Dialog>
     </>

@@ -60,6 +60,19 @@
 .metrics span { color: hsl(var(--muted-foreground)); font-size: 10px; }
 .metrics strong { margin-top: 3px; font-size: 12px; }
 
+.roles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  font-size: 12px;
+}
+
+.roles > div { min-width: 0; }
+.roles span { display: block; color: hsl(var(--muted-foreground)); }
+.roles strong { display: block; margin: 4px 0; overflow-wrap: anywhere; }
+.roles > p { grid-column: 1 / -1; margin: 0; color: hsl(var(--muted-foreground)); }
+.draftNotice { margin: 0; font-size: 12px; color: hsl(var(--muted-foreground)); }
+
 .budget {
   border: 1px solid hsl(var(--border));
   border-radius: 9px;
@@ -157,6 +170,7 @@
 .actions { gap: 8px; }
 
 @media (max-width: 560px) {
+  .roles { grid-template-columns: 1fr; }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .budgetGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .actions { align-items: stretch; }
