@@ -9,8 +9,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import signal
 import stat
+import socket
 import subprocess
+import tempfile
 import time
 from typing import Iterator
 
@@ -93,11 +96,13 @@ def _sandbox_profile(
     artifact_root: Path,
     build_home: Path,
     build_tmp: Path,
+    *,
+    loopback_port: int | None = None,
 ) -> str:
     def quoted(path: Path) -> str:
         return json.dumps(str(path))
 
-    return "\n".join((
+    rules = [
         "(version 1)",
         "(deny default)",
         "(allow file-read*)",
@@ -133,7 +138,131 @@ def _sandbox_profile(
         f"(allow file-read* (subpath {quoted(build_tmp)}))",
         '(deny file-read* (subpath "/Applications/OpenProgram.app"))',
         '(deny file-read* (regex #".*/\\.env($|/).*$"))',
-    )) + "\n"
+    ]
+    if loopback_port is not None:
+        if type(loopback_port) is not int or not 1024 <= loopback_port <= 65535 or loopback_port == 18100:
+            raise ValueError("invalid packaged smoke port")
+        rules.append(f'(allow network* (local ip "localhost:{loopback_port}") '
+                     f'(remote ip "localhost:{loopback_port}"))')
+    return "\n".join(rules) + "\n"
+
+
+def _reserve_loopback_port() -> int:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    if port == 18100:
+        return _reserve_loopback_port()
+    return port
+
+
+def _rebind_runtime_manifest(resources: Path, previous_sha256: str) -> None:
+    manifest = resources / "runtime/runtime-manifest.json"
+    current_sha256 = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    paths = [resources / "update/reopen-protocol.json"]
+    ui_protocol = resources / "update/ui-verification-protocol.json"
+    if ui_protocol.exists() or ui_protocol.is_symlink():
+        paths.append(ui_protocol)
+    documents = []
+    for path in paths:
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError("candidate package protocol is unavailable")
+        document = json.loads(path.read_text(encoding="utf-8"))
+        binding = (document.get("bindings") or {}).get("runtime_manifest")
+        if binding != {
+            "path": "runtime/runtime-manifest.json",
+            "sha256": previous_sha256,
+        }:
+            raise RuntimeError("candidate package protocol did not bind the prior manifest")
+        documents.append((path, document))
+    for path, document in documents:
+        document["bindings"]["runtime_manifest"]["sha256"] = current_sha256
+        atomic_write_text(path, json.dumps(document, sort_keys=True) + "\n")
+
+
+def _complete_browser_probe(
+    artifact: Path,
+    runtime_base: Path,
+    update_dir: Path,
+    *,
+    deadline: float,
+) -> None:
+    from .controller_bundle import _runtime_python
+    from .package_protocol import validate_reopen_package, validate_ui_package
+
+    resources = artifact / "Contents/Resources"
+    candidate_runtime = artifact / "Contents/Resources/runtime"
+    candidate_browsers = candidate_runtime / "assets/playwright"
+    trusted_browsers = runtime_base / "assets/playwright"
+    if _tree_digest(candidate_browsers) != _tree_digest(trusted_browsers):
+        raise RuntimeError("candidate browser assets do not match the trusted runtime input")
+    manifest_path = candidate_runtime / "runtime-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    browser_capability = (manifest.get("capabilities") or {}).get("browser.playwright")
+    if (
+        manifest.get("schema") != 2
+        or manifest.get("browser_probe") != "deferred"
+        or browser_capability != {"present": True, "verified": False}
+    ):
+        raise RuntimeError("candidate did not preserve the deferred browser probe contract")
+    validate_reopen_package(artifact)
+    ui_protocol = resources / "update/ui-verification-protocol.json"
+    if ui_protocol.exists() or ui_protocol.is_symlink():
+        validate_ui_package(artifact)
+    previous_manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    remaining = min(60, deadline - time.time())
+    if remaining <= 0:
+        raise RuntimeError("candidate browser probe deadline expired")
+    with tempfile.TemporaryDirectory(prefix="browser-probe-", dir=update_dir) as home:
+        code = (
+            "from playwright.sync_api import sync_playwright; "
+            "p=sync_playwright().start(); b=p.chromium.launch(headless=True); "
+            "page=b.new_page(); page.set_content('<title>OpenProgram runtime probe</title>'); "
+            "assert page.title() == 'OpenProgram runtime probe'; b.close(); p.stop(); "
+            "print('TRUSTED_BROWSER_PROBE_OK')"
+        )
+        argv = [str(_runtime_python(runtime_base)), "-I", "-B", "-c", code]
+        proc = subprocess.Popen(
+            argv,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "HOME": home,
+                "TMPDIR": home,
+                "PLAYWRIGHT_BROWSERS_PATH": str(candidate_browsers),
+            },
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=remaining)
+        finally:
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+        result = subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+    if result.returncode != 0 or result.stdout.strip() != "TRUSTED_BROWSER_PROBE_OK":
+        raise RuntimeError("trusted browser probe failed")
+    manifest["capabilities"]["browser.playwright"] = {"present": True, "verified": True}
+    manifest["browser_probe"] = "complete"
+    atomic_write_text(manifest_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    _rebind_runtime_manifest(resources, previous_manifest_sha256)
+    validate_reopen_package(artifact)
+    if ui_protocol.exists():
+        validate_ui_package(artifact)
+    atomic_write_text(
+        update_dir / "browser-probe.json",
+        json.dumps(
+            {
+                "schema": 1,
+                "browser_sha256": _tree_digest(candidate_browsers),
+                "verified_at": time.time(),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+    )
 
 
 def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
@@ -173,7 +302,14 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
     if artifact.exists() or artifact.is_symlink():
         raise RuntimeError("candidate artifact path already exists")
 
-    profile = _sandbox_profile(candidate, artifact_root, build_home, build_tmp)
+    smoke_port = _reserve_loopback_port()
+    profile = _sandbox_profile(
+        candidate,
+        artifact_root,
+        build_home,
+        build_tmp,
+        loopback_port=smoke_port,
+    )
     profile_path = update_dir / "sandbox.sb"
     atomic_write_text(profile_path, profile)
     environment = {
@@ -184,6 +320,10 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         "NPM_CONFIG_USERCONFIG": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
+        "NEXT_TELEMETRY_DISABLED": "1",
+        "NPM_CONFIG_AUDIT": "false",
+        "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER": "1",
+        "OPENPROGRAM_SMOKE_PORT": str(smoke_port),
     }
     from .controller_bundle import build_inputs
     with build_inputs(update_dir, candidate, build_home,
@@ -208,10 +348,17 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
             text=True,
             timeout=remaining,
         )
-    atomic_write_text(
-        update_dir / "build.log",
-        (result.stdout + result.stderr)[-200_000:],
-    )
+        atomic_write_text(
+            update_dir / "build.log",
+            (result.stdout + result.stderr)[-200_000:],
+        )
+        if result.returncode == 0:
+            _complete_browser_probe(
+                artifact,
+                Path(inputs["OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE"]),
+                update_dir,
+                deadline=record.request.created_at + record.request.timeout_seconds,
+            )
     if result.returncode != 0:
         raise RuntimeError(f"candidate packaging failed with exit {result.returncode}")
     if not artifact.is_dir() or artifact.is_symlink():

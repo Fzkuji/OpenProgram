@@ -50,6 +50,10 @@ openprogram worker restart
 Desktop archive 仍重新构建。缓存缺失或依赖基线不匹配时，在激活前停止更新；
 不会因此允许联网下载或沿用不匹配依赖。该构建过程及真实已安装验收仍是发布条件。
 
+packaged worker smoke 只使用控制器选择的单个私有 loopback 端口，且不会使用默认端口
+18100。浏览器自动化由保存的可信 runtime 单独检查，并要求候选浏览器资源树 hash 与该
+runtime 一致。两项检查都完成后才允许激活。
+
 源码 checkout 的聊天工具 `self_update_prepare` 接受可选的 `verification_plan`
 参数。计划包含在强制 owner 审批中，并与不可变请求一起保存。例如：
 

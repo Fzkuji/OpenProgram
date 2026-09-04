@@ -7,6 +7,7 @@ from pathlib import Path
 import json
 import shutil
 import subprocess
+import sys
 import time
 from types import SimpleNamespace
 
@@ -325,7 +326,17 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     monkeypatch.setattr(supervisor.subprocess, "run", run)
     monkeypatch.setattr(
         "openprogram.self_update.controller_bundle.build_inputs",
-        lambda *_args, **_kwargs: nullcontext({"UV_OFFLINE": "1"}),
+        lambda *_args, **_kwargs: nullcontext(
+            {
+                "UV_OFFLINE": "1",
+                "OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE": str(tmp_path / "runtime-base"),
+            }
+        ),
+    )
+    browser_probes: list[Path] = []
+    monkeypatch.setattr(
+        supervisor, "_complete_browser_probe",
+        lambda artifact, *_args, **_kwargs: browser_probes.append(artifact),
     )
 
     artifact = supervisor._build_candidate(record, root / "su_supervisor")
@@ -348,11 +359,17 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
         "GIT_CONFIG_NOSYSTEM",
         "GIT_CONFIG_GLOBAL",
         "UV_OFFLINE",
+        "NEXT_TELEMETRY_DISABLED",
+        "NPM_CONFIG_AUDIT",
+        "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER",
+        "OPENPROGRAM_SMOKE_PORT",
+        "OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE",
     }
     profile = (root / "su_supervisor" / "sandbox.sb").read_text(encoding="utf-8")
     assert "(deny network*)" in profile
     assert str(tmp_path / "profile") in profile
     assert validations == ["registered", "snapshot", "registered", "snapshot"]
+    assert browser_probes == [artifact.path]
     assert (root / "su_supervisor" / "artifact.json").is_file()
 
 
@@ -393,6 +410,37 @@ def test_candidate_sandbox_reads_platform_without_allowing_external_writes(tmp_p
         )
         assert (result.returncode == 0) is allowed, result.stderr
         assert target.exists() is allowed
+    port = supervisor._reserve_loopback_port()
+    smoke_profile = supervisor._sandbox_profile(
+        candidate, artifact, build_home, build_tmp, loopback_port=port
+    )
+    network = subprocess.run(
+        [
+            str(sandbox),
+            "-p",
+            smoke_profile,
+            sys.executable,
+            "-I",
+            "-B",
+            "-c",
+            (
+                "import socket,sys; p=int(sys.argv[1]); "
+                "s=socket.socket();s.bind(('127.0.0.1',p));s.listen(); "
+                "c=socket.create_connection(('127.0.0.1',p));"
+                "a,_=s.accept();c.send(b'x');assert a.recv(1)==b'x'; "
+                "blocked=socket.socket(); "
+                "\ntry: blocked.bind(('127.0.0.1',p+1))"
+                "\nexcept PermissionError: pass"
+                "\nelse: raise AssertionError('other port allowed')"
+            ),
+            str(port),
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert network.returncode == 0, network.stderr
 
 
 @pytest.mark.macos

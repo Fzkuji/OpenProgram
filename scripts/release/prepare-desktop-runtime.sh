@@ -35,7 +35,8 @@ if test -n "$base"; then
   uv_version="$("$uv_bin" --version | awk '{print $2}')"
   cp "$repo_root/scripts/release/verify-product-runtime.py" "$runtime_root/bin/verify-product-runtime.py"
   "$python_bin" -I "$runtime_root/bin/verify-product-runtime.py" "$runtime_root" \
-    --write --python-relative "$python_relative" --openprogram-version "$package_version" --uv-version "$uv_version"
+    --write --defer-browser --python-relative "$python_relative" \
+    --openprogram-version "$package_version" --uv-version "$uv_version"
   printf 'prepared self-update runtime from matching complete dependency input\n'
   exit 0
 fi

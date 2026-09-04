@@ -120,7 +120,9 @@ app_count="$(wc -l <"$app_list" | tr -d ' ')"
   exit 1
 }
 built_app="$(sed -n '1p' "$app_list")"
-bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"
+OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER="${OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:-}" \
+OPENPROGRAM_SMOKE_PORT="${OPENPROGRAM_SMOKE_PORT:-}" \
+  bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"
 if [[ -n "$output_app" ]]; then
   [[ ! -e "$output_app" && ! -L "$output_app" ]] || {
     printf 'build output already exists: %s\n' "$output_app" >&2

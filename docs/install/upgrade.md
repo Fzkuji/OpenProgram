@@ -52,6 +52,11 @@ Desktop archive. Missing caches or a different dependency base stop the update
 before activation; they do not authorize downloads or reuse of mismatched
 dependencies. This build path and real installed acceptance remain release gates.
 
+The packaged worker smoke test uses one controller-selected private loopback
+port and never the default port 18100. Browser automation is checked separately
+by the saved trusted runtime against browser assets whose tree hash matches that
+runtime. Both checks must complete before activation.
+
 The source-checkout `self_update_prepare` chat tool accepts an optional
 `verification_plan` argument. The plan is included in the mandatory owner
 approval and stored with the immutable request. For example:
