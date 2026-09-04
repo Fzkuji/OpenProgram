@@ -1142,6 +1142,12 @@ def test_local_app_refresh_installs_committed_gui_harness_snapshot() -> None:
     assert '"$app_python" -I -m pip install' in refresh
     assert '--force-reinstall "$gui_harness_stage"' in refresh
     assert "from gui_harness.adapters.mac_window import window_support" in refresh
+    assert 'json.load(stream)["programs"]["gui"]["commit"]' in refresh
+    assert 'test "$gui_harness_revision" = "$gui_harness_pin"' in refresh
+    snapshot = refresh.index('cp "$product_runtime_config" "$product_runtime_stage"')
+    validate = refresh.index('"$local_python" - "$product_runtime_stage"')
+    install = refresh.index('cp "$product_runtime_stage" "$installed_product_runtime"')
+    assert snapshot < validate < install
 
 
 def test_product_runtime_verifier_probes_macos_window_dependencies(

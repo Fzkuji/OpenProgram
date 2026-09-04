@@ -6,6 +6,8 @@ gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$repo_root/openprogram/program
 app_path="${OPENPROGRAM_APP_PATH:-/Applications/OpenProgram.app}"
 runtime_root="$app_path/Contents/Resources/runtime"
 manifest="$runtime_root/runtime-manifest.json"
+product_runtime_config="$repo_root/scripts/release/product-runtime.json"
+installed_product_runtime="$runtime_root/product-runtime.json"
 installed_asar="$app_path/Contents/Resources/app.asar"
 uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
 
@@ -166,10 +168,25 @@ while true; do
   gui_harness_revision=""
   attempt_dir="$wheel_dir/attempt-$attempt"
   mkdir -p "$attempt_dir"
+  product_runtime_stage="$attempt_dir/product-runtime.json"
 
   gui_harness_stage="$attempt_dir/gui-harness"
   if test "$sync_gui_harness" = 1; then
+    cp "$product_runtime_config" "$product_runtime_stage"
     gui_harness_revision="$(git -C "$gui_harness_repo" rev-parse HEAD)"
+    gui_harness_pin="$("$local_python" - "$product_runtime_stage" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    print(json.load(stream)["programs"]["gui"]["commit"])
+PY
+)"
+    test "$gui_harness_revision" = "$gui_harness_pin" || {
+      printf 'GUI Harness checkout %s does not match product runtime pin %s\n' \
+        "$gui_harness_revision" "$gui_harness_pin" >&2
+      exit 1
+    }
     gui_harness_archive="$attempt_dir/gui-harness.tar"
     mkdir -p "$gui_harness_stage"
     git -C "$gui_harness_repo" archive --format=tar \
@@ -307,6 +324,9 @@ if test "$(uname -s)" = Darwin; then
     "$app_python" -I -c \
       'from gui_harness.adapters.mac_window import window_support'
   fi
+fi
+if test "$sync_gui_harness" = 1; then
+  cp "$product_runtime_stage" "$installed_product_runtime"
 fi
 cp "$desktop_asar" "$installed_asar"
 if test -d "$desktop_asar.unpacked"; then
