@@ -117,6 +117,9 @@ def _test(command, candidate, scratch, remaining, check, *, verification=False, 
                 or not Path(command[0]).is_absolute()
                 or type(output_limit) is not int or not 1 <= output_limit <= 262144):
             raise ValueError("native verification requires fixed argv and output bound")
+        # A forked child can leave the watchdog's process group via setsid.
+        # Native acceptance is single-process; enforce this before code runs.
+        profile += "(deny process-fork)\n"
         # Source and user data remain read-only/inaccessible even if test code
         # tries to override HOME or write through a relative path.
         profile += f"(deny file-read* (subpath {json.dumps(str(Path.home().resolve()))}))\n"

@@ -82,6 +82,11 @@ lookup. Preparation rejects a CLI plan without the native sandbox or a compatibl
 installed runtime manifest and matching package/App build-revision markers.
 Execution uses private temporary directories, blocks network access and App/source
 writes, and denies owner-home reads outside the required runtime and scratch paths.
+Native verification is single-process: the sandbox denies process creation,
+including ordinary or detached subprocesses, `fork` and `posix_spawn`. A check
+requiring a child process cannot pass through this adapter. This restriction
+applies to these CLI checks and the candidate checks below, not the separate
+source-repair required-test or build execution paths.
 Evidence binds the runtime identity, exact invocation and exit status; nonzero exit,
 timeout, cancellation, changed identity, excess output or failed cleanup cannot pass.
 These entries check CLI startup/help only, not arbitrary feature behavior.

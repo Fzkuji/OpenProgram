@@ -20,7 +20,7 @@ def _test_plan():
 
 
 @pytest.fixture
-def live(http_live, tmp_path, monkeypatch, installed_cli):
+def live(http_live, tmp_path, monkeypatch, installed_cli, request):
     from openprogram.programs.tools.system import self_update as tool
     from openprogram.webui.routes import misc
     original, flags, state = http_live
@@ -28,13 +28,13 @@ def live(http_live, tmp_path, monkeypatch, installed_cli):
     worktree.parent_session = "p1"
     candidate = Path(worktree.worktree_path)
     (candidate / "feature.py").write_text("VALUE = 'expected'\n")
-    (candidate / "verify.py").write_text(
+    (candidate / "verify.py").write_text(getattr(request, "param",
         "import os, sys, tempfile\nfrom pathlib import Path\n"
         "sys.path.insert(0, str(Path.cwd()))\nimport feature\n"
         "assert feature.VALUE == sys.argv[1]\n"
         "assert Path('feature.py').is_file()\n"
         "with tempfile.TemporaryFile() as f: f.write(b'private test data')\n"
-        "print('candidate verified')\n")
+        "print('candidate verified')\n"))
     _git(candidate, "add", "feature.py", "verify.py")
     _git(candidate, "commit", "-m", "add candidate acceptance")
     sha = _git(candidate, "rev-parse", "HEAD")

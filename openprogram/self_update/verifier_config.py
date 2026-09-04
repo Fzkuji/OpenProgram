@@ -172,6 +172,12 @@ def verifier_prompt(record: UpdateRecord, config: dict | None = None) -> str:
             "do not supply entry or execution arguments. Cite its evidence_ref, entry and observed_at exactly. "
             "HTTP HTML is not rendered UI evidence. Each check is bound to its named assertion. "
         )
+        if any(check["entry"] in {"cli:version", "cli:help", "test:python"}
+               for check in config["verification_plan"]["checks"]):
+            observation_instruction += (
+                "Native CLI and candidate checks are single-process: their sandbox denies fork and spawn. "
+                "A check requiring a subprocess cannot establish success through this adapter. "
+            )
         if any(check["entry"] == "test:python" for check in config["verification_plan"]["checks"]):
             observation_instruction += (
                 "A candidate_test receipt proves execution of the approved source test, not installed-App behavior. "
