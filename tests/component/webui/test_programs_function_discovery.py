@@ -195,7 +195,7 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert not old_source.exists()
 
 
-def test_goal_form_exposes_only_prompt() -> None:
+def test_goal_form_keeps_prompt_primary_and_preserves_explicit_controls() -> None:
     source = (
         Path(__file__).parents[3]
         / "openprogram/programs/workflow/goal/goal.py"
@@ -206,6 +206,13 @@ def test_goal_form_exposes_only_prompt() -> None:
     )
     visible = [p["name"] for p in goal["params_detail"] if not p.get("hidden")]
     assert visible == ["prompt"]
+    advanced = {p["name"] for p in goal["params_detail"] if p.get("advanced")}
+    assert advanced == {
+        "model", "effort", "judge_model", "judge_effort", "judge_timeout_s",
+        "max_rounds", "max_tokens", "max_elapsed_s", "max_cost_usd",
+        "timeout_s", "context_mode",
+    }
+    assert not advanced.intersection({"runtime", "resume", "expected_goal"})
 
 
 def test_gui_agent_form_exposes_primary_and_advanced_parameters() -> None:

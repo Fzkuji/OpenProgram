@@ -26,6 +26,9 @@ and judge otherwise use the same implementation.
 
 Optional limits are `max_rounds`, `max_tokens`, `max_elapsed_s`, and
 `max_cost_usd`. Limits and usage remain cumulative when a Goal is resumed.
+The creation form keeps the objective as its primary field. Expand **Advanced**
+for limits, role settings, and context mode. Explicit arguments in a typed
+`goal(...)` call are preserved; internal recovery fields are not editable here.
 The default working-turn timeout is 300 seconds; Python and CLI callers can
 override it with `timeout_s`. Cumulative budgets are checked at controller
 boundaries, so the current phase can consume resources beyond a total limit
