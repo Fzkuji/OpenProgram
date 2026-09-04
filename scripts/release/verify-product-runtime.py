@@ -100,6 +100,18 @@ def _probe_rich_terminal() -> None:
         raise RuntimeError("built-in Rich terminal UI probe failed")
 
 
+def _probe_macos_window_control() -> None:
+    if platform.system() != "Darwin":
+        return
+    for module in (
+        "AppKit",
+        "ApplicationServices",
+        "Quartz",
+        "ScreenCaptureKit",
+    ):
+        importlib.import_module(module)
+
+
 def _probe(
     root: Path,
     product: dict,
@@ -139,6 +151,7 @@ def _probe(
 
     _probe_pdf_tools()
     _probe_rich_terminal()
+    _probe_macos_window_control()
 
     from playwright.sync_api import sync_playwright
 

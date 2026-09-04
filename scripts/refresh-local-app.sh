@@ -74,6 +74,12 @@ validate_stale_package_tree() {
     "$python_executable" --check
 }
 
+hydrate_wheel_dependencies() {
+  local python_executable="$1"
+  "$python_executable" -I -m pip install --disable-pip-version-check \
+    --break-system-packages "$wheel"
+}
+
 wheel_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-local-wheel.XXXXXX")"
 install_lock_file="$(dirname -- "$app_path")/.openprogram-app-install.lock"
 install_lock_owned=0
@@ -231,12 +237,20 @@ fi
 # validated package directories before reinstalling.
 validate_stale_package_tree "$local_python"
 validate_stale_package_tree "$app_python"
+# The embedded runtime may predate a newly declared production dependency.
+# Ask pip to resolve the wheel once before replacing the same-version package;
+# the second no-deps install below still performs the exact source refresh.
+hydrate_wheel_dependencies "$app_python"
 remove_stale_package_tree "$local_python"
 remove_stale_package_tree "$app_python"
 "$local_python" -m pip install --disable-pip-version-check \
   --no-deps --force-reinstall "$wheel"
 "$app_python" -I -m pip install --disable-pip-version-check \
   --break-system-packages --no-deps --force-reinstall "$wheel"
+if test "$(uname -s)" = Darwin; then
+  "$app_python" -I -c \
+    'import AppKit, ApplicationServices, Quartz, ScreenCaptureKit'
+fi
 cp "$desktop_asar" "$installed_asar"
 if test -d "$desktop_asar.unpacked"; then
   rsync -a --delete "$desktop_asar.unpacked/" \
