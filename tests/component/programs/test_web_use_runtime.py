@@ -1162,7 +1162,6 @@ def test_sync_mcp_client_cleans_thread_when_start_fails(monkeypatch):
 
 def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     from openprogram.programs import _runtime
-    from openprogram.programs.workflow import browser as browser_module
     from openprogram.programs.gui_harness_bridge import (
         install_gui_harness_web_use,
     )
@@ -1171,16 +1170,7 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
 
     def original(**kwargs):
         calls.append(("original", kwargs))
-        return {"mode": "desktop"}
-
-    monkeypatch.setattr(
-        browser_module,
-        "_run_browser_task_commands",
-        lambda **kwargs: calls.append(("web_use", kwargs)) or {
-            "status": "succeeded", "mode": "web_use",
-            "backend": kwargs["backend"],
-        },
-    )
+        return {"status": "succeeded", "mode": "unified"}
     wrapped = install_gui_harness_web_use(original)
     tool = _runtime.get("gui_agent")
     assert tool is not None
@@ -1192,8 +1182,9 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     assert result["status"] == "succeeded"
     assert result["success"] is True
     assert result["infeasible_declared"] is False
-    assert result["backend"] == "chrome_devtools_mcp"
-    assert calls[0][0] == "web_use"
+    assert calls[0][0] == "original"
+    assert calls[0][1]["browser_backend"] == "chrome_devtools_mcp"
+    assert calls[0][1]["preferred_capability"] == "browser_use"
 
 
 def test_programs_cli_resolves_registered_gui_agent(monkeypatch, capsys):
@@ -1227,8 +1218,6 @@ def test_programs_cli_resolves_registered_gui_agent(monkeypatch, capsys):
 
 
 def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
-    from openprogram.programs.workflow import browser as browser_module
-    from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
     from openprogram.programs.gui_harness_bridge import (
         DEFAULT_MAX_STEPS,
         install_gui_harness_web_use,
@@ -1236,83 +1225,60 @@ def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
 
     calls = []
 
-    def original(**_kwargs):
-        raise AssertionError("browser surface must not call desktop harness")
-
-    monkeypatch.setattr(
-        browser_module,
-        "_run_browser_task_commands",
-        lambda **kwargs: calls.append(kwargs) or {
+    def original(**kwargs):
+        calls.append(kwargs)
+        return {
             "status": "succeeded",
             "reason_code": "verified",
             "summary": "done",
-            "backend": kwargs["backend"],
-        },
-    )
+        }
 
     runtime = object()
     wrapped = install_gui_harness_web_use(original)
     result = wrapped(task="inspect the page", surface="browser", runtime=runtime)
 
     assert result["success"] is True
-    assert result["backend"] == DEFAULT_BACKEND
     assert calls == [{
         "task": "inspect the page",
-        "backend": DEFAULT_BACKEND,
         "max_steps": DEFAULT_MAX_STEPS,
+        "app_name": "desktop",
         "max_seconds": None,
         "runtime": runtime,
+        "allow_general": False,
+        "browser_backend": "",
+        "vm_url": "",
+        "preferred_capability": "browser_use",
     }]
 
 
 def test_registered_gui_agent_without_page_returns_structured_handoff(monkeypatch):
-    from openprogram.agent import surface_context
-    from openprogram.programs.workflow.browser import web_use_runtime
-    from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
     from openprogram.programs.gui_harness_bridge import (
         install_gui_harness_web_use,
     )
 
-    context = {"context_id": "ctx-empty", "surfaces": []}
-    released = []
-
-    class _Registry:
-        def list_pages(self, **_kwargs):
-            return {"ok": True, "pages": []}
-
-        def execute(self, **_kwargs):
-            raise AssertionError("an empty Page inventory must not be observed")
-
-    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
-    monkeypatch.setattr(surface_context, "current", lambda: None)
-    monkeypatch.setattr(
-        surface_context, "capture_pages", lambda _context=None: context,
-    )
-    monkeypatch.setattr(
-        surface_context, "release_bindings", lambda value: released.append(value),
-    )
-
-    wrapped = install_gui_harness_web_use(
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("browser surface must not call desktop harness")
-        )
-    )
+    seen = []
+    wrapped = install_gui_harness_web_use(lambda **kwargs: seen.append(kwargs) or {
+        "status": "infeasible",
+        "reason_code": "page_unavailable",
+        "summary": "No accessible built-in Page is open.",
+        "infeasible_declared": True,
+        "handoff_instruction": "Open or restore a built-in Page, then retry.",
+    })
     result = wrapped(
         task="inspect the page", surface="browser", runtime=SimpleNamespace(),
     )
 
     assert result == {
-        "status": "failed",
+        "status": "infeasible",
         "success": False,
         "reason_code": "page_unavailable",
         "summary": "No accessible built-in Page is open.",
-        "backend": DEFAULT_BACKEND,
-        "infeasible_declared": False,
+        "infeasible_declared": True,
         "handoff_instruction": (
-            "Open or restore a built-in Page, then retry this GUI task."
+            "Open or restore a built-in Page, then retry."
         ),
     }
-    assert released == [context]
+    assert seen[0]["preferred_capability"] == "browser_use"
 
 
 def test_gui_agent_does_not_release_a_borrowed_empty_context(monkeypatch):

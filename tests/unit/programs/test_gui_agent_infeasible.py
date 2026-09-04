@@ -36,8 +36,10 @@ def test_legacy_harness_json_parser_imports_resolve():
 
 
 def _stub_harness_loop(monkeypatch, *, step_result=None, conclusion_result=None):
-    """gui_agent imports execute_task at call time; stub it so cv2 stays unused."""
-    execute_task = types.ModuleType("gui_harness.tasks.execute_task")
+    """Stub the capability layer so cv2 and a real provider stay unused."""
+    import gui_harness.tasks as tasks_package
+
+    capability_loop = types.ModuleType("gui_harness.tasks.capability_loop")
     result_module = types.ModuleType("gui_harness.tasks.result")
 
     def fake_step(**_kwargs):
@@ -62,14 +64,81 @@ def _stub_harness_loop(monkeypatch, *, step_result=None, conclusion_result=None)
             "summary": "human should log in", "success": True, "issues": None,
         }
 
-    execute_task.gui_step = fake_step
-    execute_task.build_step_feedback = lambda *_args, **_kwargs: {}
-    execute_task._seen = seen
+    def fake_call(_name, _args, **_kwargs):
+        try:
+            step = fake_step()
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "success": False,
+                "reason_code": "step_error",
+                "summary": str(exc),
+            }
+        if step.get("done"):
+            status = str(step.get("terminal_status") or (
+                "infeasible" if step.get("infeasible") else "succeeded"
+            ))
+            plan_args = (step.get("plan") or {}).get("args") or {}
+            handoff = str(
+                step.get("handoff_instruction")
+                or plan_args.get("handoff_instruction")
+                or plan_args.get("reasoning")
+                or ""
+            )
+            return {
+                "status": status,
+                "success": status == "succeeded",
+                "reason_code": step.get("reason_code") or status,
+                "handoff_instruction": handoff,
+                "blocker": step.get("blocker") or "blocked",
+                "completion_verified": status == "succeeded",
+                "step": step,
+            }
+        return {
+            "status": "applied",
+            "success": bool((step.get("exec_result") or {}).get("success")),
+            "step": step,
+        }
+
+    def fake_plan(*, history, **_kwargs):
+        capability_entries = [
+            entry for entry in history
+            if entry.get("type") == "capability_call"
+        ]
+        if not capability_entries:
+            return {"call": "computer_use", "args": {"task": "test step"}}
+        output = capability_entries[-1]["output"]
+        if output.get("status") in {"succeeded", "infeasible", "failed"}:
+            status = output["status"]
+            return {
+                "call": "terminal",
+                "args": {
+                    "status": status,
+                    "reason": output.get("reason_code") or status,
+                    "reason_code": output.get("reason_code") or status,
+                    "blocker": output.get("blocker") or "blocked",
+                    "handoff_instruction": output.get("handoff_instruction") or "",
+                },
+            }
+        return {"call": "computer_use", "args": {"task": "test step"}}
+
+    capability_loop.CAPABILITIES = ("computer_use", "browser_use", "vm_use")
+    capability_loop.capability_status = lambda **_kwargs: {
+        "computer_use": {"available": True},
+        "browser_use": {"available": True},
+        "vm_use": {"available": False},
+    }
+    capability_loop.plan_next_capability = fake_plan
+    capability_loop.call_capability = fake_call
+    capability_loop.validate_terminal_decision = lambda decision, _history: {
+        "accepted": True,
+        **decision["args"],
+    }
     result_module.save_workflow_record = lambda *_args, **_kwargs: None
     result_module.conclusion = fake_conclusion
 
-    monkeypatch.setitem(sys.modules, "gui_harness.tasks", types.ModuleType("gui_harness.tasks"))
-    monkeypatch.setitem(sys.modules, "gui_harness.tasks.execute_task", execute_task)
+    monkeypatch.setattr(tasks_package, "capability_loop", capability_loop, raising=False)
+    monkeypatch.setitem(sys.modules, "gui_harness.tasks.capability_loop", capability_loop)
     monkeypatch.setitem(sys.modules, "gui_harness.tasks.result", result_module)
     return {"seen": seen}
 
@@ -96,10 +165,10 @@ def test_gui_agent_real_modules_preserve_infeasible(
     if importlib.util.find_spec("cv2") is None:
         pytest.skip("real GUI harness test requires the optional opencv-python dependency")
 
-    execute_task = importlib.import_module("gui_harness.tasks.execute_task")
+    capability_loop = importlib.import_module("gui_harness.tasks.capability_loop")
     result_module = importlib.import_module("gui_harness.tasks.result")
     monkeypatch.setattr(
-        execute_task,
+        capability_loop,
         "gui_step",
         lambda **_kwargs: {
             "done": True,
@@ -109,6 +178,23 @@ def test_gui_agent_real_modules_preserve_infeasible(
                 "args": {"reasoning": "FAIL/INFEASIBLE take over login"},
             },
         },
+    )
+    monkeypatch.setattr(
+        capability_loop,
+        "plan_next_capability",
+        lambda **kwargs: (
+            {"call": "computer_use", "args": {"task": "need login"}}
+            if not kwargs["history"]
+            else {
+                "call": "terminal",
+                "args": {
+                    "status": "infeasible",
+                    "reason": "login required",
+                    "blocker": "login required",
+                    "handoff_instruction": "FAIL/INFEASIBLE take over login",
+                },
+            }
+        ),
     )
     monkeypatch.setattr(result_module, "save_workflow_record", lambda *_a, **_k: None)
     monkeypatch.setattr(
@@ -147,7 +233,7 @@ def test_gui_agent_step_limit_cannot_be_overridden_by_conclusion(
     result = gui_agent(task="long task", max_steps=1, runtime=object())
 
     assert result["status"] == "failed"
-    assert result["reason_code"] == "step_limit"
+    assert result["reason_code"] == "safety_step_limit"
     assert result["success"] is False
 
 

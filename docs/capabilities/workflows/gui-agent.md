@@ -1,6 +1,8 @@
 # GUI Agent
 
-Give it a natural-language task and it operates the desktop autonomously: taking screenshots, detecting UI components, clicking, typing, and verifying results, looping until the task completes or the step limit is reached. It works on the local desktop and can also drive remote virtual machines through a VM interface. The perception layer combines YOLO component detection (GPA-GUI-Detector), OCR (Apple Vision on macOS, EasyOCR on Linux / Windows), and template matching; the action layer covers mouse, keyboard, and clipboard. On the OSWorld benchmark it scores 79.8% on the Multi-Apps split ([results](https://github.com/Fzkuji/GUI-Agent-Harness/blob/main/benchmarks/osworld/multi_apps.md)).
+Give it one natural-language task. Its root controller repeatedly chooses one bounded capability: `computer_use` for the local desktop, `browser_use` for an OpenProgram background Page, or `vm_use` for a configured remote virtual machine. Every capability input and full result is appended to the next model decision's context. The model ends the task by proposing a terminal result; action and time limits remain safety boundaries.
+
+Local and VM perception combines YOLO component detection (GPA-GUI-Detector), OCR (Apple Vision on macOS, EasyOCR on Linux / Windows), and template matching. The action layer covers mouse, keyboard, and clipboard. Browser operations use the Page's DOM/CDP target instead of desktop coordinates.
 
 ## Availability
 
@@ -8,7 +10,7 @@ Every supported release registers this Program and ships Playwright Chromium plu
 
 ## Usage
 
-The entry function is **`gui_agent`**, registered as a tool (`as_tool=True`, toolset `harness`). In chat, just describe a desktop task to trigger it, e.g. "Open Firefox and go to google.com".
+The public entry function is **`gui_agent`**, registered as a tool (`as_tool=True`, toolset `harness`). Its public input is only `task`. The planner and the three `*_use` functions remain traceable child function nodes, but they are not registered as separate public tools.
 
 Run it directly from the command line:
 
@@ -16,31 +18,37 @@ Run it directly from the command line:
 openprogram programs run gui_agent -a task="Open Firefox and go to google.com"
 ```
 
-The Programs card asks for `task` and a `surface`. Keep `desktop` for foreground OS input, or select `browser` to operate an exact Page in OpenProgram's built-in browser. Browser actions use the Page's DOM/CDP target and do not activate its tab, raise the OpenProgram window, or move the system pointer.
+The Programs card asks only for `task`. There is no required surface selector. On every iteration the controller reads the original task, the exact prior capability inputs and outputs, and current capability availability before choosing the next function.
 
-Run against the built-in browser Page:
+For a task that is naturally satisfied by the current built-in browser Page, use the same entry:
 
 ```bash
-openprogram programs run gui_agent -a task="Inspect and complete the visible form" -a surface=browser
+openprogram programs run gui_agent -a task="Inspect and complete the current built-in browser form without foregrounding the window"
 ```
 
-Parameters (function signature `gui_agent(task, max_steps=None, app_name="desktop", surface="desktop", ...)`):
+Trusted callers can also supply hidden controller settings: `max_steps` is the action safety limit (default 150); `max_seconds` is the optional wall-clock safety limit; `app_name` selects component memory; `backend` pins an existing Page backend; and `vm_url` enables `vm_use`. The old `surface` field is accepted only as a compatibility preference. It does not lock the run to one capability and is absent from the public function schema.
 
-| Parameter | Description |
-|---|---|
-| `task` | What to do, in natural language |
-| `max_steps` | Maximum number of actions. Default 150. `0` or a negative value means no cap. |
-| `max_seconds` | Whole-process deadline for runs dispatched through OpenProgram Programs or Functions, on either surface. Default 300 seconds; a positive value overrides it, while `0` or a negative value removes the deadline. In a direct Python bridge call, the browser loop also enforces this value internally; the desktop harness has no separate internal timer. |
-| `app_name` | Application name used for component memory, e.g. `firefox`, `libreoffice_calc`; default `desktop` |
-| `surface` | `desktop` for foreground OS/VM input or `browser` for an exact built-in Page. The browser route uses the default Page backend unless a trusted caller supplies `backend`. |
+The control sequence is:
 
-Each desktop step runs observe (one screenshot + component detection + state recognition) → verify the previous step's result → plan one action → execute → build feedback for the next round. A first-step `done` decision receives a separate current-screen completion check. Feedback keeps the latest eight action outcomes; selecting the same failed action four times stops the run instead of repeating indefinitely. Previously learned UI transitions remain available, but learning is an explicit operation rather than an implicit pre-step side effect. When the agent cannot finish or a human must take over, it chooses fail, stops, and returns `success=false`; both `summary` and `handoff_instruction` preserve the handoff text.
+1. `plan_next_capability` receives the task, current availability, and complete ordered capability history.
+2. It selects `computer_use`, `browser_use`, `vm_use`, or proposes a terminal result.
+3. `call_capability` binds controller-owned runtime settings and invokes exactly the selected function.
+4. The exact function input and full output are appended to history and therefore visible to the next decision.
+5. A proposed terminal result is validated. Unsupported success is recorded and planning continues.
+
+`computer_use` and `vm_use` each execute one existing Harness step: observe the current target, verify prior feedback when present, plan one action, execute it, and return the step plus next feedback. `browser_use` executes one bounded background Page sub-task and then returns control to the root loop. There is no special pre-route for screen-reading tasks.
+
+The implementation uses OpenProgram's high-level agentic programming calls. `plan_next_capability`, desktop planning, verification, and conclusion call `llm()` with the active Runtime context. The Browser Page action loop calls `agent()` with its action tool and a single bounded iteration. GUI workflow code does not call `Runtime.exec` directly. The root controller does not wrap itself in a nested `goal()` call because it already owns the capability history, terminal proposal, evidence validation, timeout, cancellation, and no-progress decisions; a second goal controller would duplicate those decisions.
+
+`vm_use` requires an OSWorld-compatible HTTP endpoint. Screenshots are read from `GET /screenshot`, and input commands are sent to `POST /execute`. VM target selection is serialized within the Harness process. Whether the call succeeds or raises, the prior input target and screenshot backend are restored before another capability runs. Endpoint credentials and query values are not included in planner availability context.
 
 Desktop observations include the frontmost application and screenshot coordinate bounds. If the target application's windows are minimized or located in another macOS Space and remain unavailable after one bounded Window-menu recovery, the run stops as infeasible and asks the user to move or unminimize the window. It does not create additional windows indefinitely.
 
-Desktop coordinate input always applies to the current foreground GUI; it is not a background-window API. Use `surface=browser` when a built-in Page must be inspected or changed without bringing OpenProgram or that Page to the foreground.
+Desktop coordinate input always applies to the current foreground GUI; it is not a background-window API. Browser actions use the selected Page in the background and do not activate its tab, raise the OpenProgram window, or move the system pointer. The controller may switch between these capabilities when the recorded results require it.
 
-Desktop and built-in-browser runs share the same terminal fields: `status` (`succeeded`, `infeasible`, `failed`, or `cancelled`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. Desktop results additionally include step history and timing; browser results include backend and WebSession details.
+All runs share the same terminal fields: `status` (`succeeded`, `infeasible`, or `failed`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. `success` is true only for `succeeded`. Infeasible and failed results always return `success=false`; infeasible results retain the blocker, marker, and user handoff instruction. The result also contains the ordered capability history and timing.
+
+`max_seconds` is enforced before each model or capability call and again after it returns. A terminal proposal that arrives after the deadline is rejected and normalized as a timeout failure. Provider cancellation is cooperative, so an in-flight provider request can return slightly after the configured wall-clock boundary; it still cannot turn that run into success.
 
 The Function card displays that task result directly: `Succeeded` for a verified result, `Failed` when the task ended without satisfying the request, and `Needs takeover` when the handoff instruction requires user action. `Error` identifies a runtime exception or an invalid GUI result contract. An internal completed worker state never changes a failed GUI result into `Completed`.
 

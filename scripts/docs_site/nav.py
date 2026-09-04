@@ -115,10 +115,10 @@ def is_excluded(rel: Path) -> bool:
 def discover(docs_root: Path) -> list[Page]:
     """All public renderable pages under docs/, excluding internal paths.
 
-    Bilingual convention: ``xxx.md`` is the default (English) version; a sibling
-    ``xxx.zh.md`` is its Chinese version. The .zh.md does NOT get its own
-    sidebar entry — it's attached to xxx.md as ``zh_src`` and reached via the
-    language toggle.
+    Bilingual convention: ``xxx.md`` or ``xxx.html`` is the default (English)
+    version; a sibling ``xxx.zh.md`` or ``xxx.zh.html`` is its Chinese version.
+    The Chinese source does not get its own sidebar entry; it is attached to the
+    default source as ``zh_src`` and reached via the language toggle.
     """
     # First pass: collect all .zh.md chinese sources, keyed by their base stem.
     zh_sources: dict[Path, Path] = {}  # base rel (xxx.md) -> zh src path
@@ -128,6 +128,12 @@ def discover(docs_root: Path) -> list[Page]:
             continue
         base_rel = rel.with_name(rel.name[:-len(".zh.md")] + ".md")
         zh_sources[base_rel] = path
+    for path in docs_root.rglob("*.zh.html"):
+        rel = path.relative_to(docs_root)
+        if is_excluded(rel):
+            continue
+        base_rel = rel.with_name(rel.name[:-len(".zh.html")] + ".html")
+        zh_sources.setdefault(base_rel, path)
 
     pages: list[Page] = []
     for path in sorted(docs_root.rglob("*")):
@@ -136,7 +142,7 @@ def discover(docs_root: Path) -> list[Page]:
         rel = path.relative_to(docs_root)
         if is_excluded(rel):
             continue
-        if rel.name.endswith(".zh.md"):
+        if rel.name.endswith((".zh.md", ".zh.html")):
             continue  # chinese version is attached to its base, not a page
         out = rel.with_suffix(".html")
         rel_str = str(rel).replace("\\", "/")
