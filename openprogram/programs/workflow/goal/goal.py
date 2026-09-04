@@ -285,7 +285,19 @@ def goal(
         "If no such work remains, return the blocker for the judge to record."
     )
     evidence_parts = [session_view] if session_view else []
+    saved_evidence = str(goal_state.get("evidence_window") or "")
+    if saved_evidence:
+        evidence_parts.append(saved_evidence)
     consumed_answers: list[str] = []
+
+    def confirmed_answers() -> str:
+        return "\n".join(
+            f"{item.get('prompt') or 'Question'}: {item.get('answer')}"
+            for item in goal_state.get("questions") or []
+            if isinstance(item, dict) and item.get("status") == "answered"
+            and item.get("revision", goal_state.get("revision", 1)) == goal_state.get("revision", 1)
+            and str(item.get("answer") or "").strip()
+        )
 
     def consume_queued_answers() -> str:
         queued = [
@@ -352,8 +364,17 @@ def goal(
                 finish()
             return terminal_result(last_result)
         try:
+            recovery_context = ""
+            if saved_evidence:
+                recovery_context += (
+                    "\n\nPrior Goal work evidence (verify before relying on it):\n"
+                    + saved_evidence
+                )
+            answers = confirmed_answers()
+            if answers:
+                recovery_context += "\n\nConfirmed user answers for this Goal:\n" + answers
             last_result = agent(
-                prompt=work_prompt + async_question_policy,
+                prompt=work_prompt + recovery_context + async_question_policy,
                 model=model,
                 effort=effort,
                 timeout_s=turn_timeout,
@@ -371,15 +392,20 @@ def goal(
 
         goal_state["turns_used"] = int(goal_state.get("turns_used") or 0) + 1
         evidence_parts.append(f"[goal work round {round_index + 1}]\n{last_result}")
-        if goal_state.get("pending_answers"):
-            goal_state["status"] = "active"
-            persist("answer_pending")
-            continue
         from openprogram.programs.workflow.goal.judge import VIEW_TAIL_MAX_CHARS
         session_evidence = "\n".join(evidence_parts)
         if len(session_evidence) > VIEW_TAIL_MAX_CHARS:
             prefix = "[earlier evidence truncated]\n"
             session_evidence = prefix + session_evidence[-(VIEW_TAIL_MAX_CHARS - len(prefix)):]
+        goal_state["evidence_window"] = session_evidence
+        evidence_parts = [session_evidence]
+        if goal_state.get("pending_answers"):
+            goal_state["status"] = "active"
+            persist("answer_pending")
+            continue
+        answers = confirmed_answers()
+        if answers:
+            session_evidence += "\n\nConfirmed user answers for this Goal:\n" + answers
 
         goal_state["status"] = "evaluating"
         persist("evaluating")

@@ -72,12 +72,14 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
             "last_reason": "Goal was edited; resume to refine the new revision.",
         })
         goal.pop("spec", None)
+        goal.pop("evidence_window", None)
         goal.pop("checklist", None)
         goal.pop("pending_answer", None)
         goal["pending_answers"] = []
         goal["questions"] = [
             {
                 **item,
+                "revision": item.get("revision", int(goal["revision"]) - 1),
                 "status": (
                     "superseded"
                     if item.get("status") == "pending"
