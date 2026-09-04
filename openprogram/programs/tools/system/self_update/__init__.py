@@ -8,6 +8,7 @@ external supervisor rather than this worker process.
 from __future__ import annotations
 
 import fnmatch
+import json
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -529,16 +530,25 @@ def self_update_repair_cancel(update_id: str) -> dict[str, Any]:
 
 @function(
     name="self_update_observe",
-    description=("For the active post-update verifier only: observe a read-only local HTTP entry "
-                 "and save identity-bound evidence. Entries: /api/commands, /api/diagnostics, "
-                 "/api/doctor, /healthz, /chat. A frozen plan requires only check_id, not entry. "
-                 "HTML is not rendered UI evidence."),
+    description=("For the active post-update verifier only: execute an approved frozen check_id "
+                 "and save identity-bound evidence (local HTTP, fixed CLI, candidate script or main-window capture). "
+                 "Do not supply execution arguments. Legacy requests accept entry: /api/commands, /api/diagnostics, "
+                 "/api/doctor, /healthz, /chat. HTML and candidate tests are not installed UI evidence."),
     toolset=["core"],
     path_params={},
 )
 def self_update_observe(entry: str = "", check_id: str | None = None) -> dict[str, Any]:
     from openprogram.self_update.verification_channel import observe
-    return observe(entry, check_id=check_id)
+    result = observe(entry, check_id=check_id)
+    if result["entry"] == "ui:main":
+        from openprogram.agent.types import AgentToolResult
+        from openprogram.providers.types import ImageContent, TextContent
+        capture = json.loads(result["body"])
+        image = capture["screenshot"].pop("data")
+        result["body"] = json.dumps(capture, allow_nan=False)
+        return AgentToolResult(content=[TextContent(text=json.dumps(result, allow_nan=False)),
+                                        ImageContent(data=image, mime_type="image/png")])
+    return result
 
 
 @function(

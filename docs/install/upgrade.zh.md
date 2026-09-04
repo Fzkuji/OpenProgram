@@ -54,9 +54,9 @@ openprogram worker restart
 每条 assertion（`acceptance-1`、`acceptance-2` 等）必须恰好对应一个 check，共 1–32 条。
 示例中的所有字段均必填，`schema` 必须是整数 `1`。
 check ID 唯一，最多 64 个字符，以字母或数字开头，只允许字母、数字、下划线和连字符。
-每项必须指定 1–60 秒的整数超时和 1–262144 字节的整数输出上限。
+每项必须指定 1–60 秒的整数超时和 1–262144 字节的整数输出上限（`ui:main` 为 1–1572864）。
 目前支持 `/api/commands`、`/api/diagnostics`、`/api/doctor`、`/healthz`、`/chat`、
-`cli:version`、`cli:help` 和 `test:python`。任意 URL、查询参数及不支持的字段都会在
+`cli:version`、`cli:help`、`test:python` 和 `ui:main`。任意 URL、查询参数及不支持的字段都会在
 创建更新前被拒绝；只有 `test:python` 还必须提供下述 `argv`。
 
 重启后的 verifier 收到相同计划，调用 `self_update_observe(check_id="diagnostics")`，
@@ -89,8 +89,26 @@ verifier 不能修改。使用已安装候选版本的 Python，在登记的 can
 独立 `TMPDIR` 或 `HOME`，不会自动安装依赖。原生 CLI 的前置条件和限制同样适用。
 源码缺失、变脏、未登记或脚本变化都会阻止验收；证据记录源码 revision、脚本摘要和
 调用参数。`candidate_test` 结果只证明源码测试执行，不证明已安装 App 行为。
-目前还不接受 UI 类型；HTTP 响应（包括 `/chat` HTML）不能证明 App 界面实际行为。
-完整验收能力和实际已安装 App 验收仍待完成。
+
+对原会话的 App 主窗口进行只读截图，可以使用：
+
+```json
+{"id":"main-capture","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576}
+```
+
+准备阶段要求兼容的已打包 UI 验收描述文件、runtime 身份，以及恰好一个已连接的
+Desktop 主窗口。安装前，候选包和回退包都必须具有匹配的截图、后端和前端能力绑定；
+缺少该能力的旧包不能使用这个计划。verifier 收到 PNG 图片和 accessibility tree，
+不是只有文件路径；批准的输出上限覆盖包含 base64 图片数据的整个截图 JSON。
+PNG 必须为非交错的 8-bit RGB/RGBA，每个维度最多 16384，总像素最多 3200 万。
+应使用能够检查图片的 verifier 模型；准备阶段尚未强制检查模型的图片能力。
+
+截图绑定活动验收 Job、候选 revision、worker、原会话路由和确切的主窗口连接。
+过期、取消、重放或身份不匹配的请求不能产生通过证据。用户输入、导航、窗口变化、
+截图资源冲突、输出超限或清理不完整也会阻止截图成功。不授权任意 URL、JavaScript、
+目标窗口、点击、导航或数据修改。截图只能支持对所捕获状态的断言；没有观察到的
+交互行为仍应判为 inconclusive。HTTP 响应（包括 `/chat` HTML）不能证明 App 界面
+实际行为。已批准的 UI 交互、完整验收能力和实际已安装 App 验收仍待完成。
 
 这项源码 checkout 能力与 stable release 升级分开。macOS 上，对话内自更新使默认
 App 保持维护状态时，可以在本地终端检查，不需要启动 Agent：

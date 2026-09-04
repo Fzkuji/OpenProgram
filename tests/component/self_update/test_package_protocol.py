@@ -17,7 +17,7 @@ WRITER = ROOT / "apps/desktop/scripts/write-reopen-protocol.cjs"
 
 @pytest.fixture
 def package_factory(tmp_path):
-    def build(name="fixture", version="0.6.2", *, app=None):
+    def build(name="fixture", version="0.6.2", *, app=None, ui=False):
         if app is None:
             app = _fake_desktop_app(tmp_path / name, version)
         resources = app / "Contents/Resources"
@@ -25,6 +25,8 @@ def package_factory(tmp_path):
         unpacked.mkdir()
         for filename in ("main.js", "preload.js", "self-update-reopen.js"):
             shutil.copyfile(ROOT / "apps/desktop" / filename, unpacked / filename)
+        if ui:
+            shutil.copyfile(ROOT / "apps/desktop/self-update-ui.js", unpacked / "self-update-ui.js")
         subprocess.run(["node", "-e", "require('@electron/asar').createPackage(process.argv[1],process.argv[2]).catch(e=>{console.error(e);process.exit(1)})",
                         str(unpacked), str(resources / "app.asar")], cwd=ROOT, check=True, capture_output=True, timeout=15)
         site = resources / "runtime/python/lib/python3.12/site-packages"
@@ -38,6 +40,9 @@ def package_factory(tmp_path):
         chunk = site / "openprogram_server/_webui/_frontend/_next/static/chunks/client.js"
         chunk.parent.mkdir(parents=True, exist_ok=True)
         chunk.write_text('window.openprogramDesktop.selfUpdateReopen.sessionLoaded("p1");')
+        if ui:
+            shutil.copyfile(ROOT / "openprogram/self_update/ui_checks.py", site / "openprogram/self_update/ui_checks.py")
+            chunk.write_text(chunk.read_text() + '\nwindow.openprogramDesktop.selfUpdateCapture("nonce");')
         result = subprocess.run(["node", "-e", "require(process.argv[1]).default({electronPlatformName:'darwin',appOutDir:'fixture',packager:{getResourcesDir:()=>process.argv[2]}}).catch(e=>{console.error(e);process.exit(1)})",
                                  str(WRITER), str(resources)], cwd=ROOT, capture_output=True, text=True, timeout=15)
         assert result.returncode == 0, result.stderr

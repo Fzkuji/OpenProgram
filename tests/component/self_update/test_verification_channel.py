@@ -76,7 +76,7 @@ def verifier(store_fixture, live, monkeypatch, request):
                 return TurnResult("inconclusive", "verify_u", "verify_a")
             observed = json.loads(output.content[0].text)
             control["observed"] = observed
-            if not observed["entry"].startswith(("cli:", "test:")):
+            if not observed["entry"].startswith(("cli:", "test:", "ui:")):
                 assert json.loads(observed["body"])["database_ok"] is True
             row = dict(id="acceptance-1", status=control["status"], entry=observed["entry"],
                        observation="The authenticated response reports database_ok=true",

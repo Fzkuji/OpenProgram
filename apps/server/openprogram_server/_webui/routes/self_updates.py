@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+import json
 
 from fastapi import Query, Request
 from fastapi.responses import JSONResponse
@@ -68,6 +69,30 @@ def _reopen_response(request, update_id, ack=None):
 
 
 def register(app):
+    @app.api_route("/api/self-updates/{update_id}/desktop-verification/{nonce}", methods=["GET", "POST"])
+    async def api_desktop_verification(request: Request, update_id: str, nonce: str):
+        from openprogram.self_update.ui_checks import MAX_CAPTURE_BYTES, exchange
+        try:
+            require_owner(request)
+            body = None
+            if request.method == "POST":
+                raw = bytearray()
+                async for chunk in request.stream():
+                    raw.extend(chunk)
+                    if len(raw) > MAX_CAPTURE_BYTES:
+                        raise ValueError("capture too large")
+                body = SelfUpdateStore._loads_json(raw.decode())
+                token = request.headers.get("authorization", "").removeprefix("Bearer ")
+                if body is None or token and token in json.dumps(body, allow_nan=False):
+                    raise ValueError("invalid capture")
+            result = exchange(SelfUpdateStore(), update_id=update_id, nonce=nonce,
+                              principal_id=request.state.authority["principal_id"], body=body)
+            return JSONResponse(result, headers={"Cache-Control": "no-store"})
+        except ProjectionAccessError:
+            return JSONResponse({"reason": "owner_mismatch"}, status_code=403, headers={"Cache-Control": "no-store"})
+        except (SelfUpdateError, OSError, ValueError, KeyError, TypeError):
+            return JSONResponse({"reason": "capture_unavailable"}, status_code=409, headers={"Cache-Control": "no-store"})
+
     @app.get("/api/self-updates/{update_id}/desktop-reopen")
     def api_self_update_reopen(request: Request, update_id: str):
         return _reopen_response(request, update_id)

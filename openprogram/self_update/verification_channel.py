@@ -168,6 +168,9 @@ def observe(entry: str = "", *, check_id: str | None = None) -> dict:
             raise ValueError("legacy verifier has no verification plan")
     if check is None:
         observed = observe_system(record, entry)
+    elif check["entry"] == "ui:main":
+        from .ui_checks import observe_ui
+        observed = observe_ui(store, record, check, grant)
     elif check["entry"] in NATIVE_ENTRIES:
         def revalidate():
             with store._locked():
@@ -224,6 +227,9 @@ def _resolve_evidence(store, record, grant, result):
             gate = evidence.get("system_gate", {})
             if config["schema"] == 2:
                 check = resolve_check(config["verification_plan"], evidence.get("check_id"))
+                if check["entry"] == "ui:main":
+                    from .ui_checks import validate_observation
+                    validate_observation(observed, record, check, grant)
                 from .native_checks import NATIVE_ENTRIES, validate_execution
                 if check["entry"] in NATIVE_ENTRIES:
                     from .source_repair import _config

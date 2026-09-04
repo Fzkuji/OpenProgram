@@ -83,6 +83,8 @@ def freeze_verifier_config(request: UpdateRequest, turn, *, attempt: int = 1, ve
         config.update(schema=2, prompt_version=2, verification_plan=validate_plan(verification_plan, request))
         from .native_checks import admit_plan
         admit_plan(config["verification_plan"], request)
+        from .ui_checks import admit_plan as admit_ui_plan
+        admit_ui_plan(config["verification_plan"], request)
     config_evidence(config)
     return json.loads(json.dumps(config, allow_nan=False))
 
@@ -154,6 +156,12 @@ def verifier_prompt(record: UpdateRecord, config: dict | None = None) -> str:
             observation_instruction += (
                 "A candidate_test receipt proves execution of the approved source test, not installed-App behavior. "
                 "Do not substitute source-test success for an assertion requiring installed UI or runtime behavior. "
+            )
+        if any(check["entry"] == "ui:main" for check in config["verification_plan"]["checks"]):
+            observation_instruction += (
+                "ui:main returns an actual screenshot image and accessibility tree of the original session's main window. "
+                "Inspect the image for visual assertions; missing image or unobserved interaction behavior is inconclusive. "
+                "Capture does not grant permission to click, navigate, edit or submit data. "
             )
     return (
         "Verify the installed candidate against the frozen acceptance contract below. "

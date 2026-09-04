@@ -317,6 +317,16 @@ def _validate_reopen_packages(artifact: Artifact, update_dir: Path, installer_sh
     previous = validate_reopen_package(Path(DEFAULT_APP_PATH))
     if previous["bindings"]["installer"]["sha256"] != installer_sha256:
         raise ValueError("frozen installer does not match the installed reopen protocol")
+    if (update_dir / "request.json").exists():
+        from .verifier_config import CONFIG_EVIDENCE_PREFIX, load_verifier_config
+        from .package_protocol import validate_ui_package
+        store = SelfUpdateStore(update_dir.parent)
+        record = store.load(update_dir.name)
+        config = (load_verifier_config(store, record)
+                  if any(item.startswith(CONFIG_EVIDENCE_PREFIX) for item in record.request.pre_update_evidence) else {})
+        if any(check["entry"] == "ui:main" for check in config.get("verification_plan", {}).get("checks", [])):
+            validate_ui_package(artifact.path)
+            validate_ui_package(Path(DEFAULT_APP_PATH))
 
 
 def _prepare_install(artifact: Artifact, update_dir: Path, installer_sha256: str) -> str:

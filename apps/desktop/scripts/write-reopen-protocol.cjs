@@ -78,6 +78,27 @@ async function writeProtocol(resources) {
   try { fs.writeFileSync(fd, JSON.stringify({ schema: 1, protocol: 1, bindings }) + "\n"); fs.fsyncSync(fd); }
   finally { fs.closeSync(fd); }
   fs.renameSync(temporary, target);
+  // Older complete packages keep their reopen-only protocol. Capture capability
+  // is advertised only when all three actual packaged consumers are present.
+  const uiBackend = `${site}openprogram/self_update/ui_checks.py`;
+  const uiFrontend = chunks.map(name => chunkRoot + name).find(relative => text(resources, relative).includes("selfUpdateCapture"));
+  const uiTarget = path.join(resources, "update/ui-verification-protocol.json");
+  const hasCapture = asar.listPackage(archive).includes("/self-update-ui.js");
+  if (hasCapture && fs.existsSync(path.join(resources, uiBackend)) && uiFrontend &&
+      /^UI_PROTOCOL = 1$/m.test(text(resources, uiBackend)) &&
+      archiveText("main.js").includes("registerUiVerificationIpc") &&
+      archiveText("preload.js").includes('"self-update:ui-capture"') &&
+      text(resources, routes).includes("/desktop-verification/{nonce}")) {
+    const uiBindings = { desktop: bindings.desktop, routes: bindings.routes, runtime_manifest: bindings.runtime_manifest,
+      backend: await binding(resources, uiBackend), frontend: await binding(resources, uiFrontend) };
+    const uiTemporary = `${uiTarget}.${crypto.randomUUID()}.tmp`;
+    const uiFd = fs.openSync(uiTemporary, "wx", 0o600);
+    try { fs.writeFileSync(uiFd, JSON.stringify({ schema: 1, protocol: 1, bindings: uiBindings }) + "\n"); fs.fsyncSync(uiFd); }
+    finally { fs.closeSync(uiFd); }
+    fs.renameSync(uiTemporary, uiTarget);
+  } else if (fs.existsSync(uiTarget)) {
+    fs.unlinkSync(uiTarget); // Do not retain a stale capability after rebuilding.
+  }
   const directory = fs.openSync(path.dirname(target), "r");
   try { fs.fsyncSync(directory); } finally { fs.closeSync(directory); }
 }

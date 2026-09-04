@@ -57,8 +57,8 @@ and so on), from 1 to 32 checks. All fields shown are required; `schema` must
 be the integer `1`. Check IDs must be unique alphanumeric/underscore/hyphen
 identifiers starting with an alphanumeric character, at most 64 characters.
 Each check requires an integer timeout of 1–60 seconds and an integer output limit of
-1–262144 bytes. Supported entries are `/api/commands`, `/api/diagnostics`,
-`/api/doctor`, `/healthz`, `/chat`, `cli:version`, `cli:help` and `test:python`.
+1–262144 bytes (1–1572864 for `ui:main`). Supported entries are `/api/commands`, `/api/diagnostics`,
+`/api/doctor`, `/healthz`, `/chat`, `cli:version`, `cli:help`, `test:python` and `ui:main`.
 Arbitrary URLs, query strings and unsupported fields are rejected before creating
 the update; only `test:python` additionally requires `argv` as described below.
 
@@ -101,9 +101,33 @@ or `HOME`, and no dependency installation is performed. Native CLI prerequisites
 and limits also apply. Missing/dirty/unregistered source or a changed script blocks
 verification; evidence records the source revision, script digest and invocation.
 A `candidate_test` result proves source-test execution, not installed-App behavior.
-UI check kinds are not accepted yet. HTTP responses, including `/chat` HTML, do not
-prove rendered App behavior. Complete verification and actual installed-App
-acceptance remain pending.
+
+For a read-only capture of the original session's main App window, use:
+
+```json
+{"id":"main-capture","assertion_id":"acceptance-1","entry":"ui:main","timeout_seconds":30,"max_output_bytes":1048576}
+```
+
+Preparation requires a compatible packaged UI-verification descriptor, runtime
+identity and exactly one connected main Desktop window. The candidate and rollback
+packages must both contain matching capture/backend/frontend capability bindings
+before installation. An older package without this capability cannot use this plan.
+The verifier receives a PNG image and accessibility tree, not merely a file path;
+the approved output limit covers the entire capture JSON, including base64 image
+data. PNGs must be non-interlaced 8-bit RGB/RGBA, with each dimension at most 16384
+and at most 32 million pixels. Use a verifier model that can inspect images;
+image-capability admission is not yet enforced by preparation.
+
+Capture is bound to the active verification Job, candidate revision, worker,
+original session route and exact main-window connection. Expired, cancelled,
+replayed or identity-mismatched requests cannot produce passing evidence.
+User input, navigation, window changes, conflicting capture resources, excess
+output or incomplete cleanup also prevent successful capture. No arbitrary URL,
+JavaScript, target window, click, navigation or data mutation is authorized.
+The screenshot supports only assertions about the captured state; interactions
+that were not observed remain inconclusive. HTTP responses, including `/chat`
+HTML, do not prove rendered App behavior. Approved UI interactions, complete
+verification and actual installed-App acceptance remain pending.
 
 This source-checkout capability is separate from stable-release upgrades. On macOS,
 if a conversational self-update leaves the default App in maintenance, inspect it

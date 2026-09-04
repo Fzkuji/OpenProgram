@@ -33,6 +33,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`supervisor.py`** — External controller for one durable conversational self-update
 - **`system_probe.py`** — Observe the default worker before releasing post-update verification
 - **`types.py`** — Durable data contract for conversational self-update
+- **`ui_checks.py`** — One-shot main-window capture requests owned by the active verifier Job
 - **`verification.py`** — Validate identity-bound, timestamped self-update acceptance evidence
 - **`verification_channel.py`** — Bind live observations and durable Job results to one verifier authorization
 - **`verification_plan.py`** — Validate owner-approved checks without granting model-selected execution
