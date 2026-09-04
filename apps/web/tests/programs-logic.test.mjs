@@ -3,6 +3,24 @@ import test from "node:test";
 
 import { buildCallTreeRows, buildGraphLayout } from "../components/programs/programs-logic.ts";
 
+test("conditional function calls retain their meaning in the tree", () => {
+  const input = logic(2);
+  input.edges = [{source: "n0", target: "n1", kind: "conditional"}];
+  assert.equal(buildCallTreeRows(input).rows[1].conditional, true);
+});
+
+test("a shared child uses its incoming edge, not another ancestor edge", () => {
+  const input = logic(3);
+  input.edges = [
+    {source: "n0", target: "n1", kind: "call"},
+    {source: "n0", target: "n2", kind: "conditional"},
+    {source: "n1", target: "n2", kind: "call"},
+  ];
+  const rows = buildCallTreeRows(input).rows.filter(row => row.node.id === "n2");
+  assert.equal(rows[0].conditional, false);
+  assert.equal(rows[1].conditional, true);
+});
+
 function logic(size) {
   const nodes = Array.from({ length: size }, (_, index) => ({
     id: `n${index}`,

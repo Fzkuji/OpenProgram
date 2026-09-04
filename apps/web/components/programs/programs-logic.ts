@@ -11,7 +11,8 @@ export type LogicNode = {
 export type LogicResponse = {
   root: string;
   nodes: LogicNode[];
-  edges: Array<{ source: string; target: string }>;
+  edges: Array<{ source: string; target: string; kind?: string }>;
+  analysis_kind?: string;
   analysis_complete?: boolean;
   analysis_warnings?: string[];
 };
@@ -24,6 +25,7 @@ export type CallTreeRow = {
   cycle: boolean;
   ancestorContinuations: boolean[];
   isLast: boolean;
+  conditional?: boolean;
 };
 
 export type GraphLayoutNode = LogicNode & { x: number; y: number };
@@ -54,6 +56,7 @@ export function buildCallTreeRows(logic: LogicResponse, limit = 256) {
     key: string,
     ancestorContinuations: boolean[],
     isLast: boolean,
+    parent?: string,
   ) {
     if (rows.length >= limit) {
       truncated = true;
@@ -63,7 +66,9 @@ export function buildCallTreeRows(logic: LogicResponse, limit = 256) {
     if (!node) return;
     const cycle = ancestry.has(id);
     const reference = cycle || expanded.has(id);
-    rows.push({ key, node, depth, reference, cycle, ancestorContinuations, isLast });
+    rows.push({ key, node, depth, reference, cycle, ancestorContinuations, isLast,
+      conditional: logic.edges.some((edge) => edge.target === id && edge.source === parent && edge.kind === "conditional"),
+    });
     if (reference) return;
     expanded.add(id);
     const nextAncestry = new Set(ancestry).add(id);
@@ -76,6 +81,7 @@ export function buildCallTreeRows(logic: LogicResponse, limit = 256) {
         `${key}/${index}:${target}`,
         depth === 0 ? [] : [...ancestorContinuations, !isLast],
         index === targets.length - 1,
+        id,
       );
     }
   }
