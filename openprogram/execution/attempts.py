@@ -108,6 +108,11 @@ class AttemptStore:
                 ).fetchone()[0]
             )
             now = self._clock()
+            lease = dict(execution.owner_lease)
+            if "process_owner" in lease:
+                from .process_owner import current_process_owner
+                lease["process_owner"] = current_process_owner()
+            lease.update({"owner_id": owner_id, "generation": generation})
             record = AttemptRecord(
                 attempt_id=attempt_id,
                 execution_id=execution_id,
@@ -131,7 +136,7 @@ class AttemptStore:
                 (
                     expected_version + 1,
                     attempt_id,
-                    _json({"owner_id": owner_id, "generation": generation}),
+                    _json(lease),
                     now,
                     execution_id,
                     expected_version,
@@ -157,6 +162,29 @@ class AttemptStore:
                 created_at=now,
             )
             return record, execution
+
+    def set_process_owner(self, attempt_id: str, *, generation: int, active: bool) -> None:
+        """Attach or drop process evidence for one exact physical attempt."""
+        with self.executions._transaction() as connection:
+            attempt = self._require(connection, attempt_id)
+            self._validate_generation(attempt, generation)
+            execution = self.executions._require_execution(connection, attempt.execution_id)
+            if (execution.current_attempt_id != attempt_id
+                    or execution.owner_lease.get("generation") != generation):
+                if active:
+                    raise AttemptConflict("stale_owner", "execution owner changed")
+                return
+            lease = dict(execution.owner_lease)
+            if active:
+                from .process_owner import current_process_owner
+                self._validate_lease(attempt, self._clock())
+                lease["process_owner"] = current_process_owner()
+            else:
+                lease.pop("process_owner", None)
+            connection.execute(
+                "UPDATE executions SET owner_lease_json = ? WHERE execution_id = ?",
+                (_json(lease), execution.execution_id),
+            )
 
     def activate(
         self,

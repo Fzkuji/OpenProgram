@@ -536,6 +536,7 @@ class JobRunner:
             run_id=run_id,
             capabilities=AgentProductionDriver.capabilities_for_payload(input_payload),
             job_agent_payload=input_payload,
+            track_process_owner=True,
         )
 
     def _canonical_job(self, job_id: str) -> Job | None:

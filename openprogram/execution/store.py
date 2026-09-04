@@ -321,6 +321,7 @@ class ExecutionStore:
         capabilities: CapabilitySet = CapabilitySet(),
         agent_turn_payload: Mapping[str, Any] | None = None,
         job_agent_payload: Mapping[str, Any] | None = None,
+        track_process_owner: bool = False,
     ) -> ExecutionRecord:
         """Admit one execution and its immutable input in one transaction."""
         if not input_ref or not input_hash or not entrypoint or not config_snapshot_ref:
@@ -380,6 +381,13 @@ class ExecutionStore:
                 capabilities=capabilities,
                 emit_created_event=False,
             )
+            if track_process_owner:
+                from .process_owner import current_process_owner
+                connection.execute(
+                    "UPDATE executions SET owner_lease_json = ? WHERE execution_id = ?",
+                    (_json({"process_owner": current_process_owner()}), record.execution_id),
+                )
+                record = self._require_execution(connection, record.execution_id)
             try:
                 self._insert_execution_input(
                     connection,

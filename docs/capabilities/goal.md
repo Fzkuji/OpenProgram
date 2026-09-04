@@ -83,6 +83,14 @@ another item in the queue.
 
 ## Waiting and restart recovery
 
+Startup recovery checks the recorded host, process ID, process start identity,
+and attempt lease before treating an execution as abandoned. A second local
+controller leaves a live owner alone; a confirmed exited process can be
+recovered without waiting for its lease to expire. Admission has a bounded
+30-second grace period before an attempt exists. Unknown process identity is
+treated conservatively within the valid lease; this is not cross-host owner
+discovery. Older records without process evidence retain legacy recovery.
+
 Questions are asynchronous. The judge records a question when some required
 work needs information that cannot be established safely. If independent work
 remains, the Goal keeps running that work and leaves the question in the Goal

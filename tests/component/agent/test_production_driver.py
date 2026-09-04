@@ -675,6 +675,127 @@ def test_canonical_entry_renews_owner_until_long_work_finishes(tmp_path, monkeyp
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("stale_observation", [False, True])
+def test_second_controller_startup_preserves_a_live_canonical_agent(tmp_path, monkeypatch, stale_observation):
+    from openprogram.agent.production_driver import AgentProductionDriver, CanonicalAgentEntry
+    from openprogram.execution import DriverRegistry, RuntimeControlService
+
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    entered, release = threading.Event(), threading.Event()
+
+    def work(*, request, cancel_event):
+        entered.set()
+        assert release.wait(5)
+        return SimpleNamespace(failed=False)
+
+    driver = AgentProductionDriver(store, turn_runner=work)
+    entry = CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id="live-goal-owner",
+        turn_payload={"version": 1, "kind": "chat", "request": {
+            "user_text": "work", "agent_id": "default", "source": "test"}},
+        trusted_actor={"subject": "test"}, config_snapshot_ref="config:test",
+        user_message_id="u", assistant_message_id="a",
+    )
+    before_activation = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    assert before_activation.recover_startup() == ()
+    original_activate = entry.control.attempts.activate
+    def activate_after_startup_check(*args, **kwargs):
+        # The lease exists, but the physical driver has not started yet.
+        assert before_activation.recover_startup() == ()
+        return original_activate(*args, **kwargs)
+    monkeypatch.setattr(entry.control.attempts, "activate", activate_after_startup_check)
+
+    async def run():
+        active = await entry.activate(admission)
+        handle = driver._handles[(admission.execution_id, active.attempt_id, active.generation)]
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            second_store = ExecutionStore(store.path)
+            second = RuntimeControlService(second_store, AttemptStore(second_store), DriverRegistry())
+            if stale_observation:
+                from openprogram.execution import process_owner
+                original = process_owner.process_owner_may_be_alive
+                observations = []
+                def stale_once(*args, **kwargs):
+                    observations.append(True)
+                    return False if len(observations) == 1 else original(*args, **kwargs)
+                monkeypatch.setattr(process_owner, "process_owner_may_be_alive", stale_once)
+            recovered = second.recover_startup()
+            assert all(item.execution.execution_id != admission.execution_id for item in recovered)
+            assert second_store.get_execution(admission.execution_id).status is ExecutionStatus.RUNNING
+        finally:
+            release.set()
+            await asyncio.wait_for(handle.done, 3)
+        assert store.get_execution(admission.execution_id).status is ExecutionStatus.COMPLETED
+
+    asyncio.run(run())
+
+
+def _hold_canonical_agent_process(db_path, ready):
+    from openprogram.agent.production_driver import AgentProductionDriver, CanonicalAgentEntry
+
+    store = ExecutionStore(db_path)
+    def work(*, request, cancel_event):
+        ready.send(admission.execution_id)
+        threading.Event().wait(20)
+        return SimpleNamespace(failed=False)
+    driver = AgentProductionDriver(store, turn_runner=work)
+    entry = CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id="process-owner", turn_payload={"version": 1, "kind": "chat", "request": {
+            "user_text": "work", "agent_id": "default", "source": "test"}},
+        trusted_actor={"subject": "test"}, config_snapshot_ref="config:test",
+        user_message_id="u", assistant_message_id="a",
+    )
+    async def run():
+        active = await entry.activate(admission)
+        await driver._handles[(admission.execution_id, active.attempt_id, active.generation)].done
+    asyncio.run(run())
+
+
+def test_startup_distinguishes_live_and_exited_owner_process(tmp_path):
+    import multiprocessing
+    from openprogram.execution import DriverRegistry, RuntimeControlService
+
+    context = multiprocessing.get_context("spawn")
+    receive, send = context.Pipe(duplex=False)
+    db_path = tmp_path / "process.sqlite3"
+    process = context.Process(target=_hold_canonical_agent_process, args=(db_path, send))
+    process.start()
+    send.close()
+    try:
+        assert receive.poll(10), "child Agent did not enter work"
+        execution_id = receive.recv()
+        store = ExecutionStore(db_path)
+        control = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+        assert control.recover_startup() == ()
+        assert store.get_execution(execution_id).status is ExecutionStatus.RUNNING
+        process.terminate()
+        process.join(5)
+        assert not process.is_alive()
+        recovered = control.recover_startup()
+        assert [item.execution.execution_id for item in recovered] == [execution_id]
+        assert store.get_execution(execution_id).status is ExecutionStatus.INTERRUPTED
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+        receive.close()
+        process.close()
+
+
+def test_process_identity_rejects_pid_reuse_and_preserves_unknown(monkeypatch):
+    from openprogram.execution import process_owner
+
+    lease = {"process_owner": process_owner.current_process_owner()}
+    monkeypatch.setattr(process_owner, "process_start_identity", lambda _pid: "different-start")
+    assert not process_owner.process_owner_may_be_alive(lease, lease_expires_at=time.time() + 30)
+    monkeypatch.setattr(process_owner, "process_start_identity", lambda _pid: None)
+    assert process_owner.process_owner_may_be_alive(lease, lease_expires_at=time.time() + 30)
+    assert not process_owner.process_owner_may_be_alive(lease, lease_expires_at=time.time() - 1)
+
+
 @pytest.mark.parametrize("cause", ["heartbeat_error", "owner_fenced", "cancel"])
 def test_canonical_owner_renewal_stops_on_loss_or_cancel(tmp_path, monkeypatch, cause):
     from openprogram.agent import production_driver as module
@@ -1548,7 +1669,7 @@ def test_startup_recovery_reloads_after_concurrent_transition_conflict(
 
     store, execution = _admitted(tmp_path, execution_id="exec-recovery-race")
     service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
-    original = store.transition_execution
+    original = store._transition_execution
     calls = 0
 
     def concurrent_transition(*args, **kwargs):
@@ -1558,9 +1679,11 @@ def test_startup_recovery_reloads_after_concurrent_transition_conflict(
             raise ExecutionConflict("status_conflict", "another recovery won")
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(store, "transition_execution", concurrent_transition)
+    # Recovery checks owner evidence and transitions in the same transaction.
+    monkeypatch.setattr(store, "_transition_execution", concurrent_transition)
     recoveries = service.recover_startup()
 
+    assert calls == 1
     current = store.get_execution(execution.execution_id)
     assert current is not None
     assert current.status is ExecutionStatus.QUEUED

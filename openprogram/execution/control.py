@@ -1748,12 +1748,14 @@ class RuntimeControlService:
                 updated_at=now,
             )
             self.attempts._insert(connection, attempt)
+            from .process_owner import current_process_owner
             connection.execute(
                 "UPDATE executions SET current_attempt_id = ?, owner_lease_json = ?, updated_at = ? "
                 "WHERE execution_id = ? AND status_version = ?",
                 (
                     attempt.attempt_id,
-                    _json({"owner_id": owner_id, "generation": generation}),
+                    _json({"owner_id": owner_id, "generation": generation,
+                           "process_owner": current_process_owner()}),
                     now,
                     execution_id,
                     expected_version,
@@ -3031,6 +3033,7 @@ class RuntimeControlService:
         *,
         attempt_id: str | None = None,
         generation: int | None = None,
+        only_if_abandoned: bool = False,
     ) -> RecoveryCompletion:
         """Durably finalize work whose physical owner is known to be gone.
 
@@ -3047,6 +3050,15 @@ class RuntimeControlService:
             )
         with self.executions._transaction() as connection:
             execution = self.executions._require_execution(connection, execution_id)
+            if only_if_abandoned:
+                from .process_owner import process_owner_may_be_alive
+                owner_attempt = (self.attempts._require(connection, execution.current_attempt_id)
+                                 if execution.current_attempt_id else None)
+                if process_owner_may_be_alive(
+                    execution.owner_lease,
+                    lease_expires_at=owner_attempt.lease_expires_at if owner_attempt else None,
+                ):
+                    return RecoveryCompletion(execution=execution)
             if attempt_id is not None and (
                 execution.current_attempt_id != attempt_id
                 or execution.owner_lease.get("generation") != generation
@@ -3266,6 +3278,14 @@ class RuntimeControlService:
                     stalled_repairs.add(str(repair["execution_id"]))
         recoveries = []
         for execution in self.executions.list_nonterminal():
+            from .process_owner import process_owner_may_be_alive
+            owner_attempt = (self.attempts.get(execution.current_attempt_id)
+                             if execution.current_attempt_id else None)
+            if process_owner_may_be_alive(
+                execution.owner_lease,
+                lease_expires_at=owner_attempt.lease_expires_at if owner_attempt else None,
+            ):
+                continue
             if (
                 execution.execution_id in stalled_repairs
                 or execution.reason_code == "finish_repair_capacity_migration"
@@ -3282,19 +3302,27 @@ class RuntimeControlService:
                 execution.status in {ExecutionStatus.QUEUED, ExecutionStatus.PAUSED}
                 and execution.current_attempt_id is not None
             ):
-                recoveries.append(self.recover_owner_loss(execution.execution_id))
+                recovery = self.recover_owner_loss(
+                    execution.execution_id, only_if_abandoned=True,
+                )
+                if recovery.attempt is not None or recovery.execution.status in TERMINAL_EXECUTION_STATUSES:
+                    recoveries.append(recovery)
             elif (
                 execution.status is ExecutionStatus.QUEUED
                 and execution.current_attempt_id is None
                 and self.executions.get_agent_turn_input(execution.execution_id) is not None
             ):
                 try:
-                    recovered = self.executions.transition_execution(
-                        execution.execution_id,
-                        expected_version=execution.status_version,
-                        target=ExecutionStatus.FAILED,
-                        reason_code="owner_lost_before_activation",
-                    )
+                    with self.executions._transaction() as connection:
+                        current = self.executions._require_execution(connection, execution.execution_id)
+                        if process_owner_may_be_alive(current.owner_lease):
+                            continue
+                        recovered = self.executions._transition_execution(
+                            connection, execution.execution_id,
+                            expected_version=execution.status_version,
+                            target=ExecutionStatus.FAILED,
+                            reason_code="owner_lost_before_activation",
+                        )
                 except (AttemptConflict, ExecutionConflict):
                     recovered = self.executions.get_execution(execution.execution_id)
                     if recovered is None:

@@ -540,6 +540,9 @@ class AgentProductionDriver:
         if activation is not None and activation.checkpoint is not None and self.activation_observer is not None:
             self.activation_observer(activation)
         cancel_event = threading.Event()
+        self._control_service().attempts.set_process_owner(
+            attempt.attempt_id, generation=attempt.generation, active=True,
+        )
         # Activation is often initiated by a short-lived transport loop.  An
         # execution owner must not inherit that loop's cancellation lifetime,
         # including the initial Job attempt.  The driver owns a thread-backed
@@ -1928,6 +1931,14 @@ class AgentProductionDriver:
             raise AgentDriverError("stale_handle", "Agent driver handle is no longer live")
 
     def _release(self, handle: AgentDriverHandle) -> None:
+        try:
+            self._control_service().attempts.set_process_owner(
+                handle.attempt_id, generation=handle.generation, active=False,
+            )
+        except Exception:
+            # Local handle cleanup must still happen. If persistence is down,
+            # the stopped heartbeat bounds this marker by its attempt lease.
+            _log.exception("failed to release Agent process owner %s", handle.attempt_id)
         key = self._key(handle)
         with self._handles_lock:
             if self._handles.get(key) is handle:
@@ -2012,6 +2023,7 @@ class CanonicalAgentEntry:
             entrypoint=self._ENTRYPOINT,
             trusted_actor=trusted_actor,
             config_snapshot_ref=config_snapshot_ref,
+            track_process_owner=True,
             user_message_id=user_message_id,
             assistant_message_id=assistant_message_id,
             capabilities=self.driver.capabilities_for_payload(payload),
