@@ -537,9 +537,11 @@
       <a href="#state">状态与存储</a>
       <a href="#protocol">时序</a>
       <a href="#verification">验收</a>
+      <a href="#verification-actions">验收工具</a>
       <a href="#failures">失败恢复</a>
       <a href="#security">安全边界</a>
       <a href="#api">接口</a>
+      <a href="#surfaces">状态与会话恢复</a>
       <a href="#references">参考</a>
       <a href="#plan">实施计划</a>
       <a href="#acceptance">完成条件</a>
@@ -840,6 +842,23 @@
       </div>
     </section>
 
+    <section id="verification-actions" aria-labelledby="verification-actions-title">
+      <div class="section-head"><div class="section-num">08A</div><div><h2 id="verification-actions-title">真实 UI、API 与测试证据</h2><p>验收 Agent 使用同一个 JobRunner 和冻结配置。新增的是有限的验收能力，不是第二个 Agent、Scheduler 或通用浏览器控制服务。</p></div></div>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>验收入口</div><div>执行合同</div><div>不能替代的证据</div></div>
+        <div class="table-row"><div>默认 App 界面</div><div>受限适配层连接 <code>/Applications/OpenProgram.app</code> 的实际主窗口。绑定 App 进程、window、owner、<code>update_id</code>、attempt 和本次 worker identity；操作前后复核身份。模型不能指定 CDP 地址、任意 target、JS 或文件路径。</div><div>保存实际截图、可访问性树、当前路由、窗口标识和时间。只收到 <code>/chat</code> HTML、DOM 文本或内置 Web tab 的截图，不能证明 App 主界面的视觉和交互要求。</div></div>
+        <div class="table-row"><div>界面交互</div><div>更新前冻结每条 assertion 允许的页面和动作：读取、截图、滚动、切换指定界面、在批准的测试对象内操作。复用现有浏览器/GUI 传输，单独验证 App 主窗口定位；不直接把通用 <code>playwright_browser</code> 整套能力交给 verifier。</div><div>提交消息、改设置、删除数据、外部导航、上传下载、剪贴板和执行代码默认禁止。需要副作用的验收须预先批准精确测试数据及清理动作；缺少可执行的权限约束时返回 inconclusive。</div></div>
+        <div class="table-row"><div>本地 API</div><div>保留 owner-auth 和 loopback 限制；按冻结的 method、路径、参数和响应上限执行。禁止重定向、模型传入认证信息和任意 URL。调用前后核对同一 worker 与 candidate identity。</div><div>真实响应必须与 assertion 相关。健康检查通过不证明功能正确；HTTP 200、页面标题或模型自述均不能单独判定通过。</div></div>
+        <div class="table-row"><div>受限测试与 CLI</div><div>冻结检查 ID 对应的固定 argv、cwd、runtime、超时及输出上限，不接收模型生成的 shell。源码测试在隔离 candidate worktree 中执行；安装验收调用实际安装的 CLI/runtime，并核对来源。复用已有 sandbox 和进程组清理。</div><div>源码测试不能替代安装后验收。继承最小环境、关闭未批准网络；禁止写默认用户数据或绕过安装权限。需要测试数据时只使用预先批准的隔离目录，不启动第二套 profile/App。</div></div>
+      </div>
+      <div class="cards" style="margin-top:16px">
+        <article class="card accent-blue"><div class="label">Frozen verification plan</div><h3>能力在更新前确定</h3><p>每条 assertion 绑定 evidence kind、检查 ID、允许目标/动作和预算。计划摘要进入 request evidence 和 verifier config 的摘要绑定。prepare 必须检查依赖与权限是否可用；旧配置不自动获得新增 UI 或 test 权限。</p></article>
+        <article class="card accent-green"><div class="label">Trusted evidence receipt</div><h3>由执行适配层保存证据</h3><p>沿用 controller 的受限观察与签名 receipt 协议，增加证据类型而不接受模型自签结果。每份证据绑定 update、attempt、SHA、worker、检查 ID、时间和内容摘要。截图及输出限量保存，认证信息不进入日志、截图导出或模型上下文。</p></article>
+        <article class="card accent-amber"><div class="label">Failure and cleanup</div><h3>缺失证据不判通过</h3><p>窗口关闭、身份变化、权限拒绝、对象消失、输出截断影响判断、provider 失败或超时均记录具体原因。适配层释放自有连接和测试资源，不关闭用户窗口；清理失败须记录并阻止 pass。总时限不因重连或重启重置。</p></article>
+      </div>
+      <p style="margin-top:16px">页面内容、测试输出和候选代码均是不可信数据，不能扩大工具权限。对允许动作的约束必须同时覆盖 UI、IPC 和后端写入口；仅凭 DOM selector、按钮文字或“只读”提示词不足以阻止副作用。自动验收不接触其他会话和个人浏览器资料；用户正在操作目标窗口时停止自动交互并保留已有证据，等待不得超过原验收时限。</p>
+    </section>
+
     <section id="failures" aria-labelledby="failures-title">
       <div class="section-head"><div class="section-num">09</div><div><h2 id="failures-title">失败语义与恢复</h2><p>失败状态必须说明候选是否被激活、当前运行哪个 revision、旧 App 是否保留，以及验收任务是否执行。</p></div></div>
       <div class="failure-table">
@@ -853,7 +872,7 @@
         <div class="table-row"><div>验收 Agent fail、inconclusive 或超时</div><div>保存 verifier-result，先恢复旧 App；具备冻结配置的新请求自动诊断。允许的实现/测试失败继续修正和测试；默认只在再次安装前等待授权，完整 bounded_auto 授权可在范围内自动提交。inconclusive、环境或目标问题停止再次安装。</div><div>显示逐条 assertion、恢复 revision、attempt 和剩余预算。</div></div>
         <div class="table-row"><div>JobRunner、provider 或 model 不可用</div><div>不使用 Scheduler 延后执行；标记环境型 inconclusive，并恢复旧 App。</div><div>显示缺失依赖和可重试条件，不误报代码缺陷。</div></div>
         <div class="table-row"><div>rollback 自身失败</div><div>停止所有自动迭代，保留 previous/candidate/transaction，进入 NEEDS_MANUAL_RECOVERY。</div><div>显示实际 App、revision、进程和只读恢复说明，不报告已经恢复。</div></div>
-        <div class="table-row"><div>supervisor 自身崩溃或机器重启</div><div>下一次 worker/App 启动前运行 recovery：依据 phase、规范 App、previous.app 和 revision 做幂等修复。</div><div>不猜测成功；状态为 RECOVERED 或 NEEDS_MANUAL_RECOVERY。</div></div>
+        <div class="table-row"><div>supervisor 自身崩溃或机器重启</div><div>下一次 worker/App 启动前运行 recovery：依据 phase、规范 App、previous.app 和 revision 做幂等修复。</div><div>不新增 RECOVERED phase；恢复后依据真实结果保留 SUCCEEDED、ROLLED_BACK 或 ABORTED，无法确定时为 NEEDS_MANUAL_RECOVERY。恢复事件与恢复证据单独保存。</div></div>
       </div>
       <h3 id="recovery-bootstrap" style="margin-top:24px">独立于 App 的恢复入口</h3>
       <p>激活候选前，可信当前版本除保存 controller/runtime/installer，还生成本次更新专用的 <code>~/.openprogram/self-updates/&lt;update_id&gt;/recover.sh</code>，并在本机用户的 <code>~/Library/LaunchAgents/</code> 写入对应的一次性登录任务。脚本、状态目录和 runtime 都位于 App 外；不依赖 PATH 中的 OpenProgram、待修复 App、普通 worker 或 Scheduler。没有完整可验证的保存副本时，不生成新的控制代码，也不尝试猜测恢复。</p>
@@ -920,6 +939,32 @@
       </div>
     </section>
 
+    <section id="surfaces" aria-labelledby="surfaces-title">
+      <div class="section-head"><div class="section-num">11A</div><div><h2 id="surfaces-title">状态投影、原会话结果与重启定位</h2><p>request、事务状态和 controller 验证记录是事实来源。聊天卡、Running 面板和工具读取同一份白名单投影，不各自猜测安装结果。</p></div></div>
+      <div class="mapping-table">
+        <div class="table-row table-head"><div>投影字段</div><div>写入者与来源</div><div>读取含义</div><div>缺失或过期</div></div>
+        <div class="table-row"><div><code>update_id</code>、root/parent、origin session、attempt</div><div>已校验 request 与迭代关系。</div><div>定位同一次更新、原会话及父子 attempt；身份只由服务端提供。</div><div>归属不一致时拒绝读取；不能通过 renderer 传值改绑。</div></div>
+        <div class="table-row"><div><code>phase</code>、<code>state_revision</code>、<code>updated_at</code></div><div>SelfUpdateStore 的持久化 phase、递增 <code>revision</code> 和时间。</div><div>事务进度；<code>state_revision</code> 是状态版本号，不是 Git SHA。</div><div>损坏/未来 schema 返回明确错误，不转为“没有更新”。读取不得初始化、修复或推进事务。</div></div>
+        <div class="table-row"><div><code>candidate_revision</code>、changed paths</div><div>prepare 从 Git 核验并冻结的 request。</div><div>目标源码版本与变更范围，不表示已安装或正在运行。</div><div>不能用 candidate SHA 填充运行版本。</div></div>
+        <div class="table-row"><div><code>last_verified_runtime</code></div><div>按 phase 选择并校验 controller 的 <code>system_gate</code>、<code>committed_system_gate</code>、<code>restored_system_gate</code>；激活前旧版本来自 <code>previous_system_gate</code>。人工恢复使用对应已校验恢复 receipt。</div><div>最后验证的 SHA、worker PID、验证时间及证据来源。SUCCEEDED 选提交证据，ROLLED_BACK 选恢复证据，VERIFYING 选候选证据。安装 journal 的 committed 不是另一个 update phase。</div><div>中间切换、ABORTED 或人工恢复状态没有匹配证据时为 unknown；不取“最近一个看似有效”的旧 gate。此字段不是持续在线证明。</div></div>
+        <div class="table-row"><div><code>target_app</code>、rollback 状态</div><div>request 的规范 App 路径、事务清单和对应恢复状态。</div><div>区分安装目标、可恢复副本、已恢复和需要人工恢复。</div><div>目标路径不命名为“实际活动 App”；不能因曾经保存 previous.app 就一直显示可回退。</div></div>
+        <div class="table-row"><div>验收、诊断、修正与下一次提交</div><div>对应已校验 result/receipt 及 next-candidate summary。</div><div>逐条 verdict 和证据、修正 SHA、待授权状态、预算及 child ID。verifier pass 不等于安装已提交；安装提交完成后 update phase 才是 SUCCEEDED。</div><div>还未产生结果显示 pending；无 evidence 显示 inconclusive。回退后继续修正不能覆盖原失败结论。</div></div>
+      </div>
+      <h3 id="projection-contract" style="margin-top:24px">共享读取合同</h3>
+      <p>目标位置为 <code>openprogram/self_update/projection.py</code>；专用工具、Web 路由和 Running 聚合调用同一读取函数。Web 使用 owner-auth 的 <code>GET /api/self-updates?session_id=…</code> 与 <code>GET /api/self-updates/{update_id}</code>，并校验 origin session 访问权限；列表使用有上限的稳定游标分页。不得依赖 active 指针查询历史，否则终态和重启后的结果会消失。上述路由是待实现合同，不是当前可用接口。</p>
+      <p>投影只包含明确允许的字段、有限摘要和不透明 evidence ID，不返回配置、token、签名密钥、环境变量或任意日志路径。证据读取必须再次核验 owner、session、update 和 receipt 绑定；不支持任意文件读取。状态及关联结果在同一一致性边界内读取，无法形成一致快照时返回可重试错误。读操作不触发 claim、repair、Job 或 Scheduler。</p>
+      <p>首版复用 Running 的有界轮询，不新增事件总线。每个视图至多一个在途读取；会话切换取消旧请求，并用请求代次拒绝迟到响应。state revision 只排序状态变更，关联结果使用完整投影摘要判断变化。断线保留带“上次同步”时间的旧卡，明确显示离线；重连重新读取，不能因 WebSocket 断开、Job 消失或 App 打开就推断失败或成功。</p>
+      <div class="cards" style="margin-top:16px">
+        <article class="card accent-blue"><div class="label">Chat and Running</div><h3>一个更新，一份状态</h3><p>聊天以 root update 聚合各 attempt，显示当前阶段、目标/已验证版本、预算和证据。Running 使用同一投影显示非终态事务或仍待执行的迭代工作；所有 attempt 终止后从 Running 移除，原会话历史仍保留。按钮调用已有强制审批/取消入口，UI 可见性不代替后端权限。</p></article>
+        <article class="card accent-green"><div class="label">Durable result delivery</div><h3>结果不依赖窗口在线</h3><p>controller 先持久化终态，worker 通过已有 Job completion/follow-up 投递机制把有限结果写回原会话。以 update、attempt 和结果类型形成稳定投递键；重复启动或 ACK 丢失不产生重复消息。终态早于 verifier 创建、原会话未打开时也必须投递；会话删除则保留未投递状态，不改投其他会话或创建新的用户任务。</p></article>
+        <article class="card accent-amber"><div class="label">No false completion</div><h3>分别显示执行与安装结论</h3><p>自动验收任务完成、目标通过、安装提交、回退完成和后续修正分别显示。通知由确定性代码生成，不另起 LLM 来编写状态，也不因此触发再次安装。DAG 保留 origin caller 与验证 Job 的关系，不改写用户主分支 HEAD。</p></article>
+      </div>
+      <h3 id="desktop-reopen" style="margin-top:24px">Desktop 重启定位原会话</h3>
+      <p>复用 <code>apps/desktop/worker-start-url.js</code> 的 owner-auth 启动机制与现有 <code>/s/{session_id}</code> 路由。supervisor 在停止 App 前保存本次更新的受信任 reopen 意图，绑定 update、attempt、origin session、owner、期限和启动动作。Desktop 只接收不透明 update ID；由已认证服务解析经过核验的会话，再构造同源路由。候选、模型、CLI 参数和 renderer 不能指定任意 URL、文件路径或认证 fragment。</p>
+      <p>只在这次更新触发的重新打开中消费该意图，不改变普通启动、用户当前窗口、中心标签和稳定 Release updater。完成认证并确认原会话加载后才 ACK；ACK 前崩溃可重试定位，不能重新激活更新或重建 verifier Job。多窗口只由指定主窗口消费；重复消费是幂等定位，不重复建标签。用户主动离开原会话后不再强制跳回，保留可点击的结果提示。</p>
+      <p>owner 改变、session 不存在、意图过期、身份不匹配或恢复接口不可用时，保持普通启动并显示明确原因；不跳到其他会话，不自动创建会话，也不把定位失败判为安装成功。App 原本未打开时遵守保存的启动状态；若验收必须操作可见 App，应在 prepare 时显示并获得打开窗口的授权。更新与回退双方均须支持所需的最小读取/恢复协议，协议不兼容在激活前拒绝。</p>
+    </section>
+
     <section id="references" aria-labelledby="references-title">
       <div class="section-head"><div class="section-num">12</div><div><h2 id="references-title">参考实现与采用方式</h2><p>参考只用于确定进程、更新和 worktree 边界；OpenProgram 的候选来源、权限和验收仍由本设计定义。</p></div></div>
       <div class="reference-grid">
@@ -940,8 +985,18 @@
         <article class="task-card"><div class="task-id">TASK C · CHAT HANDOFF</div><h3>专用工具、审批与 turn-end release</h3><p>工具不执行停止动作，只提交持久化意图。</p><ul><li><code>programs/tools/system/self_update/</code>：prepare/status/cancel</li><li><code>agent/internals/_approval.py</code>：forced owner approval</li><li><code>agent/dispatcher/</code>：final durable 后 release</li><li>RED：拒绝 dirty SHA、非 owner source、并发 update、final 未落盘</li></ul></article>
         <article class="task-card"><div class="task-id">TASK D · EXTERNAL SUPERVISOR</div><h3>launchd one-shot 控制进程</h3><p>当前可信版本生成固定 controller，candidate 只能提供 commit 内容。</p><ul><li><code>self_update/supervisor.py</code> 与固定 shell handoff</li><li>build sandbox、maintenance gate、quiescence timeout</li><li>状态/日志/transaction 目录生命周期</li><li>RED：worker 被停止后 supervisor 仍完成；重复启动幂等</li></ul></article>
         <article class="task-card"><div class="task-id">TASK E · RESTART VERIFICATION</div><h3>startup claim、JobRunner 与受控迭代</h3><p>不恢复被中断的执行栈；重启后创建新 Job，普通 Scheduler 不参与控制。</p><ul><li><code>self_update/recovery.py</code>：system gate、lease、稳定 Job ID 和 exactly-once dispatch</li><li><code>worker/runner.py</code>：JobRunner ready 后、普通 Scheduler 前的启动 hook</li><li><code>agent/job/runner.py</code>：source/authority/tool/model snapshot</li><li><code>self_update/iteration.py</code>：attempt budget、scope diff 和停止条件</li><li>RED：重复启动、lease 过期、orphan verifier、provider 缺失、三轮耗尽和 scope 扩大</li></ul></article>
-        <article class="task-card"><div class="task-id">TASK F · UI AND FULL ACCEPTANCE</div><h3>状态卡、恢复结果与真实 App 验收</h3><p>状态来自服务器投影，不允许 renderer 修改 candidate 或路径。</p><ul><li>Web update card + Running panel status</li><li>Desktop reopen 定位 origin session</li><li>Python/Web/CLI/Desktop/full gate 与 checklinks</li><li>真实默认 App：成功、pre-activation fail、post-activation rollback 三场景</li></ul></article>
+        <article class="task-card"><div class="task-id">TASK F · UI AND FULL ACCEPTANCE</div><h3>状态卡、恢复结果与真实 App 验收</h3><p>按下述子任务实现；包含实际验收工具，不把任务缩减为状态卡。</p><ul><li>共享投影、持久化结果与 Web/Running</li><li>Desktop reopen 定位 origin session</li><li>受限真实 UI/API/CLI/test evidence</li><li>Python/Web/CLI/Desktop/full gate、文档与默认 App 三场景</li></ul></article>
       </div>
+      <h3 id="task-f" style="margin-top:24px">Task F 的依赖与验证范围</h3>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>子任务与目标位置</div><div>交付内容</div><div>必须通过的验收</div></div>
+        <div class="table-row"><div>F1 · <code>self_update/projection.py</code>、Web self-updates 路由、现有 status 工具和 Running 路由</div><div>先实现同源白名单投影、分页历史及权限合同；不引入新的控制入口。</div><div>公共 API/工具：跨 session 拒绝、无凭据泄漏、终态可读取、查询不写盘、损坏状态不伪装为空、候选/运行版本不同、旧恢复证据不能覆盖新状态。</div></div>
+        <div class="table-row"><div>F2 · 现有 Job result delivery、Web chat 与 Running 组件</div><div>依赖 F1；确定性持久化结果、root/attempt 聚合、断线/重连与证据展示。</div><div>结果先于订阅、窗口关闭、投递后崩溃、重复恢复、切换会话时迟到响应、待授权/回退/人工恢复、终态历史、键盘与窄屏。运行真实组件行为测试，不以源码字符串检查替代。</div></div>
+        <div class="table-row"><div>F3 · <code>apps/desktop/main.js</code>、<code>worker-start-url.js</code> 与 startup handoff</div><div>依赖 F1/F2；绑定更新的单次 reopen、原会话加载 ACK，普通启动保持原行为。</div><div>真实路由加载、错误 owner/session、过期意图、认证失败、ACK 丢失、多窗口、手动导航优先；不产生第二个 verifier 或自动修改会话。</div></div>
+        <div class="table-row"><div>F4 · <code>self_update/verifier_config.py</code>、现有受限观察/签名协议与 App/测试适配层</div><div>依赖已评审的重启验证与 F3；冻结验收计划并提供真实 UI/API/CLI/test 证据。各 Workflow 阶段 prompt 使用同一目标、assertion 与预算，工具权限由执行层强制限制。</div><div>真实 App 主窗口定位与截图、批准的交互、实际 CLI 检查；拒绝任意 JS/CDP/URL/shell、越权写入、跨会话、身份切换、伪造 receipt 和重放；旧配置不获得新权限，缺证据/清理失败不判 pass。</div></div>
+        <div class="table-row"><div>F5 · 主线集成、产品文档与发布验收</div><div>依赖 F1–F4；同步本页、英文/中文产品文档及 Archify 图；逐项核对整个目标与当前实现。</div><div>完整 Python、contracts、Web、CLI、Desktop、打包、docs/checklinks 和组合提交验证。随后仅用 <code>scripts/refresh-local-app.sh</code> 更新默认 App，实际验证成功、激活前失败、激活后回退；分别记录 local commit、main、remote 和 installed identity。</div></div>
+      </div>
+      <p style="margin-top:16px">每个子任务开始前从已评审的不可变 commit 创建隔离 worktree，写明 exact 文件、RED 和完整测试命令。通过相关检查的独立改动及时提交；评审通过不等于发布通过。已证实的基线失败保留为未通过状态，不能用较小测试集合替代完整 gate。Archify 的机器验证、浏览器验证与人工视觉检查分别记录，未通过的图不计为最终交付。</p>
     </section>
 
     <section id="acceptance" aria-labelledby="acceptance-title">
@@ -972,6 +1027,7 @@
         <article class="evidence target"><div class="label">Target work</div><h3>Durable self-update protocol</h3><p>update directory、状态机、single-active lock、turn-end release、maintenance gate 和 one-shot supervisor 尚未实现。人工恢复控制入口及独立登录恢复入口仍待完整集成与验收；本页不把设计要求计为已经发布的能力。</p></article>
         <article class="evidence target"><div class="label">Target work</div><h3>自动验收与延迟 commit</h3><p>startup claim、self_update_verify Job、verifier result、目标失败 rollback、chat card 和 reopen routing 尚未实现。</p></article>
         <article class="evidence target"><div class="label">Integration pending</div><h3>诊断与自动修正分阶段验收</h3><p>回退后自动诊断单独实现和评审；隔离 worktree 自动修正、新 SHA 测试、下一 candidate 授权与激活另行验证。功能分支上的测试或评审通过不代表已合入主线或已安装；整体迭代流程仍待集成与实际 App 验收。</p></article>
+        <article class="evidence target"><div class="label">Target work</div><h3>用户界面与真实观察能力</h3><p>共享状态投影、原会话结果卡、Desktop reopen 和受限真实 UI/CLI/test 证据尚待实现。功能分支已有的只读 HTTP 观察不能证明实际 App 交互；Task F 包含这些缺口及完整产品验收。</p></article>
       </div>
 
       <div class="source-list" aria-label="当前实现入口">
