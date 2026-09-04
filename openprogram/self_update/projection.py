@@ -250,6 +250,8 @@ def read_evidence(store: SelfUpdateStore, *, session_id: str, update_id: str, ev
             observations.append({"evidence_ref": ref, **{k: observed[k] for k in (
                 "entry", "status", "content_type", "body", "observed_at",
             )}})
+            if "execution" in observed:
+                observations[-1]["execution"] = observed["execution"]
         return _bounded(dict(update_id=update_id, attempt=record.state.attempt,
                              candidate_revision=record.request.candidate_sha,
                              evidence_id=evidence_id, verdict=verifier["verdict"],

@@ -58,7 +58,7 @@ be the integer `1`. Check IDs must be unique alphanumeric/underscore/hyphen
 identifiers starting with an alphanumeric character, at most 64 characters.
 Each check requires an integer timeout of 1–60 seconds and an integer output limit of
 1–262144 bytes. Supported entries are `/api/commands`, `/api/diagnostics`,
-`/api/doctor`, `/healthz` and `/chat`; arbitrary URLs, query strings and extra
+`/api/doctor`, `/healthz`, `/chat`, `cli:version` and `cli:help`; arbitrary URLs, query strings and extra
 fields are rejected before creating the update.
 
 The restarted verifier receives the same plan and calls
@@ -67,9 +67,19 @@ execution arguments. The execution layer applies the approved limits and the
 original overall deadline. Signed evidence must match that check and assertion;
 reusing evidence for another assertion does not pass. Omitting the plan preserves
 the previous HTTP-only verifier behavior and grants no new permissions.
-UI, CLI and candidate-test check kinds are not accepted by this plan yet. HTTP
-responses, including `/chat` HTML, do not prove rendered App behavior; complete
-UI/CLI/test verification and installed-App acceptance remain pending.
+
+The fixed CLI entries run the installed App's Python with `-I -B -m openprogram`
+and respectively `--version` or `--help`, never a model-supplied command or PATH
+lookup. Preparation rejects a CLI plan without the native sandbox or a compatible
+installed runtime manifest and matching package/App build-revision markers.
+Execution uses private temporary directories, blocks network access and App/source
+writes, and denies owner-home reads outside the required runtime and scratch paths.
+Evidence binds the runtime identity, exact invocation and exit status; nonzero exit,
+timeout, cancellation, changed identity, excess output or failed cleanup cannot pass.
+These entries check CLI startup/help only, not arbitrary feature behavior.
+UI and candidate-test check kinds are not accepted yet. HTTP responses, including
+`/chat` HTML, do not prove rendered App behavior. Complete verification and
+actual installed-App acceptance remain pending.
 
 This source-checkout capability is separate from stable-release upgrades. On macOS,
 if a conversational self-update leaves the default App in maintenance, inspect it

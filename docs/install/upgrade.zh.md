@@ -55,15 +55,23 @@ openprogram worker restart
 示例中的所有字段均必填，`schema` 必须是整数 `1`。
 check ID 唯一，最多 64 个字符，以字母或数字开头，只允许字母、数字、下划线和连字符。
 每项必须指定 1–60 秒的整数超时和 1–262144 字节的整数输出上限。
-目前支持 `/api/commands`、`/api/diagnostics`、`/api/doctor`、`/healthz`、`/chat`；
+目前支持 `/api/commands`、`/api/diagnostics`、`/api/doctor`、`/healthz`、`/chat`、`cli:version` 和 `cli:help`；
 任意 URL、查询参数及额外字段都会在创建更新前被拒绝。
 
 重启后的 verifier 收到相同计划，调用 `self_update_observe(check_id="diagnostics")`，
 不能另传 `entry` 或执行参数。执行层应用已批准的限制和原总期限；签名证据必须匹配
 对应 check 和 assertion，不能复用到另一验收项。省略计划时保留原有的 HTTP-only
-验收行为，不增加权限。此计划目前还不接受 UI、CLI 或候选测试类型；HTTP 响应
-（包括 `/chat` HTML）不能证明 App 界面实际行为。完整 UI/CLI/test 验收能力和实际
-已安装 App 验收仍待完成。
+验收行为，不增加权限。
+
+固定 CLI 检查使用已安装 App 的 Python 执行 `-I -B -m openprogram`，分别追加
+`--version` 或 `--help`，不接受模型提供的命令，也不通过 PATH 查找解释器。
+缺少原生沙箱、兼容的 runtime manifest 或匹配的包/App 构建 revision 标记时，
+准备阶段拒绝 CLI 计划。执行使用独立临时目录，禁止网络访问和 App/源码写入；
+除必需的 runtime 与临时执行路径外，禁止读取 owner 的 HOME。
+证据绑定 runtime 身份、完整调用参数和退出状态；非零退出、超时、取消、身份变化、
+输出超限或清理失败均不能通过。这两个入口只检查 CLI 启动/帮助，不证明任意功能行为。
+目前还不接受 UI 或候选测试类型；HTTP 响应（包括 `/chat` HTML）不能证明 App 界面
+实际行为。完整验收能力和实际已安装 App 验收仍待完成。
 
 这项源码 checkout 能力与 stable release 升级分开。macOS 上，对话内自更新使默认
 App 保持维护状态时，可以在本地终端检查，不需要启动 Agent：

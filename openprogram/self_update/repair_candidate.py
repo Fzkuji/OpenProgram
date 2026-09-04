@@ -103,7 +103,7 @@ finally:
 '''
 
 
-def _test(command, candidate, scratch, remaining, check):
+def _test(command, candidate, scratch, remaining, check, *, verification=False, output_limit=1_048_576):
     from .supervisor import _sandbox_executable, _sandbox_profile
     from openprogram.store.session.git_session import atomic_write_text
     sandbox = _sandbox_executable()
@@ -111,6 +111,18 @@ def _test(command, candidate, scratch, remaining, check):
     for directory in (home, temporary):
         directory.mkdir(mode=0o700)
     profile = _sandbox_profile(candidate, scratch, home, temporary)
+    if verification:
+        if (not isinstance(command, list) or not command
+                or any(not isinstance(arg, str) or "\0" in arg for arg in command)
+                or not Path(command[0]).is_absolute()
+                or type(output_limit) is not int or not 1 <= output_limit <= 262144):
+            raise ValueError("native verification requires fixed argv and output bound")
+        # Source and user data remain read-only/inaccessible even if test code
+        # tries to override HOME or write through a relative path.
+        profile += f"(deny file-read* (subpath {json.dumps(str(Path.home().resolve()))}))\n"
+        for readable in (candidate, scratch, Path(command[0]).parent.parent):
+            profile += f"(allow file-read* (subpath {json.dumps(str(readable))}))\n"
+        profile += f"(deny file-write* (subpath {json.dumps(str(candidate))}))\n"
     profile += f"(allow file-read* (subpath {json.dumps(str(candidate))}))\n"
     profile += f"(deny file-write* (literal {json.dumps(str(candidate / '.git'))}))\n"
     runtime = Path(sys.base_prefix).resolve()
@@ -119,10 +131,10 @@ def _test(command, candidate, scratch, remaining, check):
         profile += f"(allow file-read* (subpath {json.dumps(str(runtime))}))\n"
     profile_path = scratch / "test.sb"
     atomic_write_text(profile_path, profile)
-    argv = shlex.split(command)
+    argv = list(command) if verification else shlex.split(command)
     if not argv:
         raise ValueError("empty required test")
-    if argv[0] in {"python", "python3", Path(sys.executable).name}:
+    if not verification and argv[0] in {"python", "python3", Path(sys.executable).name}:
         argv[0] = sys.executable  # No silent PATH fallback to a different Python.
     env = dict(PATH=f"{Path(sys.executable).parent}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
                HOME=str(home), TMPDIR=str(temporary), CI="1", PYTHONDONTWRITEBYTECODE="1",
@@ -145,9 +157,11 @@ def _test(command, candidate, scratch, remaining, check):
                         break
                     total += len(chunk)
                     output.extend(chunk)
-                    del output[:-200_000]
-                    if total > 1_048_576:
-                        raise ValueError("required test output exceeded 1 MiB")
+                    if not verification:
+                        del output[:-200_000]
+                    if total > output_limit:
+                        raise ValueError("native output exceeded its approved limit" if verification
+                                         else "required test output exceeded 1 MiB")
         check()
         return proc.wait(timeout=2), output.decode("utf-8", errors="replace")
     finally:
@@ -159,7 +173,8 @@ def _test(command, candidate, scratch, remaining, check):
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
         proc.stdout.close()
-        atomic_write_text(scratch / "test.log", output.decode("utf-8", errors="replace"))
+        if not verification:
+            atomic_write_text(scratch / "test.log", output.decode("utf-8", errors="replace"))
 
 
 def materialize(store, record, frozen, repair_request, output, check):

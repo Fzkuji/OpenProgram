@@ -7,6 +7,7 @@ import re
 
 def validate_plan(value, request) -> dict:
     from .system_probe import OBSERVATION_ENTRIES
+    from .native_checks import CLI_ENTRIES
 
     if (not isinstance(value, dict) or set(value) != {"schema", "checks"}
             or type(value["schema"]) is not int or value["schema"] != 1
@@ -23,7 +24,7 @@ def validate_plan(value, request) -> dict:
                 or check["id"] in ids
                 or not isinstance(check["assertion_id"], str) or check["assertion_id"] not in expected
                 or check["assertion_id"] in assertions
-                or not isinstance(check["entry"], str) or check["entry"] not in OBSERVATION_ENTRIES
+                or not isinstance(check["entry"], str) or check["entry"] not in OBSERVATION_ENTRIES | CLI_ENTRIES.keys()
                 or type(check["timeout_seconds"]) is not int or not 1 <= check["timeout_seconds"] <= 60
                 or type(check["max_output_bytes"]) is not int or not 1 <= check["max_output_bytes"] <= 262144):
             raise ValueError("invalid verification check identity, entry or budget")

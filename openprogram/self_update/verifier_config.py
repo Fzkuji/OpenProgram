@@ -81,6 +81,8 @@ def freeze_verifier_config(request: UpdateRequest, turn, *, attempt: int = 1, ve
     if verification_plan is not None:
         from .verification_plan import validate_plan
         config.update(schema=2, prompt_version=2, verification_plan=validate_plan(verification_plan, request))
+        from .native_checks import admit_plan
+        admit_plan(config["verification_plan"], request)
     config_evidence(config)
     return json.loads(json.dumps(config, allow_nan=False))
 
