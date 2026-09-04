@@ -343,3 +343,33 @@ def test_public_aborted_repair_checks_old_app_without_activation(live, installat
     assert (transaction / "transaction.json").read_bytes() == journal
     assert owner_repair.status(request.update_id)["repair_result"]["resolution"] == "unchanged-old"
     assert store.load(request.update_id).state.dispatch is None
+
+
+@pytest.mark.parametrize("controller_running", [False, True])
+def test_deterministic_launch_failure_requires_new_consent_unless_controller_is_running(recoverable, monkeypatch, controller_running):
+    from contextlib import nullcontext
+    from openprogram.self_update import owner_repair as repair, launcher
+    from openprogram.self_update.verification_channel import _digest
+    v = recoverable
+    manual(v)
+    request = repair.approve_repair(v.v.request.update_id, _digest(repair.preview_repair(v.v.request.update_id)))
+    installer = v.update / "controller/install-app.sh"
+    original = installer.read_bytes()
+    installer.write_bytes(original + b"\n# damaged saved installer\n")
+    monkeypatch.setattr(launcher, "launch_supervisor", real_launch_supervisor)
+    monkeypatch.setattr(launcher, "_launchctl", lambda *_: pytest.fail("must fail before launchctl"))
+    with supervisor._controller_lock(v.update) if controller_running else nullcontext():
+        assert cli(monkeypatch, "repair", v.v.request.update_id) == 1
+    assert repair.status(v.v.request.update_id)["maintenance"] and v.commands == []
+    result = repair.read_result(v.v.store, request)
+    if controller_running:
+        assert result is None  # A running controller retains its original authority.
+        return
+    assert result is not None and result["status"] == "failed"
+    installer.write_bytes(original)
+    prompts = []
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "refused")
+    monkeypatch.setattr(launcher, "launch_supervisor", lambda uid, **kw: run(v))
+    assert cli(monkeypatch, "repair", v.v.request.update_id) == 1
+    assert prompts and v.commands == [] and repair.status(v.v.request.update_id)["maintenance"]
+    assert repair.load_repair(v.v.store, v.v.store.load(v.v.request.update_id)) == request

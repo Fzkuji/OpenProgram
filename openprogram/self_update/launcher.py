@@ -20,6 +20,10 @@ class LaunchError(RuntimeError):
     """The one-shot supervisor could not be submitted safely."""
 
 
+class _PreSubmitError(LaunchError):
+    """Local validation failed before any launchctl call."""
+
+
 @dataclass(frozen=True)
 class LaunchResult:
     label: str
@@ -112,19 +116,19 @@ def _submit_supervisor(
     try:
         bundle = _load_bundle(update_dir / "controller") if resume else prepare_controller(update_dir)
     except Exception as exc:
-        raise LaunchError(f"trusted controller bundle is unavailable: {exc}") from exc
+        raise _PreSubmitError(f"trusted controller bundle is unavailable: {exc}") from exc
     installer_sha256 = bundle.installer_sha256
     controller = update_dir / "supervisor.sh"
     log = update_dir / "supervisor.log"
     if log.is_symlink() or (log.exists() and not log.is_file()):
-        raise LaunchError("supervisor log path is not a regular file")
+        raise _PreSubmitError("supervisor log path is not a regular file")
     body = _controller_body(update_id, store.root, installer_sha256, bundle.python)
     if controller.is_symlink() or (controller.exists() and not controller.is_file()):
-        raise LaunchError("supervisor controller path is not a regular file")
+        raise _PreSubmitError("supervisor controller path is not a regular file")
     if resume and not controller.is_file():
-        raise LaunchError("saved supervisor controller is missing")
+        raise _PreSubmitError("saved supervisor controller is missing")
     if controller.exists() and controller.read_text(encoding="utf-8") != body:
-        raise LaunchError(
+        raise _PreSubmitError(
             "existing supervisor controller does not match trusted content"
         )
     if not resume:
@@ -166,6 +170,7 @@ def launch_supervisor(update_id: str, *, resume: bool = False) -> LaunchResult:
     record = store.load(update_id)
     if record.request.update_id != update_id:
         raise LaunchError("self-update request identity mismatch")
+    pre_submit_error = None
     with store._locked():
         from .maintenance import load_maintenance
         from .owner_repair import load_repair, read_result, cleanup_error
@@ -182,7 +187,15 @@ def launch_supervisor(update_id: str, *, resume: bool = False) -> LaunchResult:
                 return LaunchResult(f"ai.openprogram.self-update.{update_id}", False, False)
             if store._load_active_unlocked() is not None:
                 raise LaunchError("terminal maintenance conflicts with an active update")
-        result, installer_sha256, pid = _submit_supervisor(store, update_id, resume=resume, repair_id=repair_id)
+        try:
+            result, installer_sha256, pid = _submit_supervisor(store, update_id, resume=resume, repair_id=repair_id)
+        except _PreSubmitError as exc:
+            pre_submit_error = exc
+    if pre_submit_error is not None:
+        if repair_id is not None:
+            from .owner_repair import fail_before_launch
+            fail_before_launch(store, update_id, repair_id, str(pre_submit_error))
+        raise pre_submit_error
     if not _wait_ready(store.root / update_id, update_id, installer_sha256, pid):
         if resume and store.load(update_id).state.phase in TERMINAL_PHASES:
             return result

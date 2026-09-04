@@ -168,6 +168,25 @@ def approve_repair(update_id: str, plan_sha256: str) -> dict:
             return request
 
 
+def fail_before_launch(store, update_id, repair_id, error):
+    """End a deterministically rejected launch without revoking a live controller."""
+    from .supervisor import _controller_lock
+    with _controller_lock(store.root / update_id) as acquired:
+        if not acquired:
+            return
+        with store._locked():
+            request = load_repair(store, store._load_unlocked(update_id))
+            if request is None or request["repair_id"] != repair_id:
+                return
+            result = read_result(store, request)
+            if result is None:
+                _write_result(store, request, error=error)
+            elif result["status"] == "recovered" and load_maintenance(store) is not None:
+                store._write_json(store.root / update_id / f"owner-repair-cleanup-error-{repair_id}.json", {
+                    "request_sha256": _digest(request), "at": time.time(), "error": error,
+                })
+
+
 def status(update_id: str | None = None) -> dict:
     store = SelfUpdateStore()
     if not store.root.exists():
