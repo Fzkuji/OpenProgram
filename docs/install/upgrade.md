@@ -129,6 +129,22 @@ update snapshot is unavailable. The projection excludes credentials, raw logs
 and configuration; repair summaries include status and the new candidate SHA
 when present. It does not replace the separate CLI recovery inspection output.
 
+The conversation shows persisted self-update history grouped by update sequence
+and attempt; **Load older updates** reads another page. Running uses the same
+status card. Target revision and last verified runtime are separate: an unknown
+runtime stays **Unknown**, and a prior verification is not a live connection check.
+Expand **Update details and evidence** to inspect assertions and load authenticated
+evidence as plain text. When status cannot be read, the view retains its last
+snapshot with an explicit stale warning and last-sync time, then retries.
+
+Under **Request an update action**, cancellation, stopping iteration and retry
+buttons only append a request to the original conversation's unsent draft; they
+preserve existing draft text. Retry requires a complete new candidate commit SHA.
+Send the draft in that conversation to request the tool operation. These buttons
+do not install, cancel or approve anything themselves, and normal tool authority
+and mandatory approvals still apply. The card changes only after the controller
+reports the new state.
+
 `candidate_ready` means the new commit and all configured tests passed validation;
 `awaiting_tests` means no required tests were configured. Missing/failed tests or
 source drift produce `failed`; cancellation and expiry produce `cancelled` and

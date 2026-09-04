@@ -1,0 +1,29 @@
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-block: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+.versions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 8px 16px; margin-block: 10px; }
+.versions dt, .note { color: var(--text-secondary); }
+.versions dd { margin: 2px 0 0; }
+.card code { font-family: var(--font-mono, monospace); font-size: 11px; }
+.card details { margin-top: 8px; }
+.card summary { cursor: pointer; }
+.card button { font: inherit; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+.card button:disabled { opacity: .6; cursor: default; }
+.card button:focus-visible, .card summary:focus-visible, .card input:focus-visible, .history > button:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 3px; }
+.card pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; font-size: 11px; }
+.card ul { padding-left: 20px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.actions label { min-width: 0; width: 100%; }
+.actions input { display: block; box-sizing: border-box; width: 100%; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 6px; }
+.history { width: 100%; min-width: 0; font-size: 12px; }
+.history > button { font: inherit; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+.history > button:disabled { opacity: .6; cursor: default; }
