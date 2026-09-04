@@ -312,3 +312,35 @@ def test_packaged_python_can_run_read_only_candidate_tests(diagnosis_environment
     _start()
     result = _result(diagnosis_environment)
     assert result["status"] == "candidate_ready", result
+
+
+def test_restart_reconciles_completed_diagnosis_before_clearing_pointer(diagnosis_environment, monkeypatch):
+    from openprogram.self_update import diagnosis, source_repair
+    store, runner, calls, update_id = diagnosis_environment
+    _turn(diagnosis_environment, monkeypatch)
+    monkeypatch.setattr(diagnosis, "_monitor", lambda *args: None)
+    _start()
+    job = runner.await_job(f"self-update:{update_id}:diagnose:1", timeout=5)
+    record = store.load(update_id)
+    request, _ = diagnosis._load_request(store, record)
+    result = diagnosis._validate_result(record, request, job)
+    class ProcessLost(BaseException):
+        pass
+    def lost(*args):
+        raise ProcessLost()
+    prepare = source_repair.prepare_after_diagnosis
+    monkeypatch.setattr(source_repair, "prepare_after_diagnosis", lost)
+    with pytest.raises(ProcessLost), store._locked():
+        diagnosis._finish(store, record, "completed", "validated diagnostic output", diagnosis=result, job=job)
+    receipt = diagnosis._path(store, record, "result").read_bytes()
+    assert diagnosis._pointer(store) == update_id
+    monkeypatch.setattr(source_repair, "prepare_after_diagnosis", prepare)
+    _start()
+    repaired = _result(diagnosis_environment)
+    assert repaired["status"] == "awaiting_tests", repaired
+    original_deadline = record.state.updated_at + source_repair.SECONDS
+    assert json.loads(source_repair._path(store, record, "request").read_text())["deadline"] == original_deadline
+    assert diagnosis._path(store, record, "result").read_bytes() == receipt
+    _start()
+    assert _result(diagnosis_environment) == repaired and len(calls) == 1
+    assert len(runner.list_jobs("p1")) == 2

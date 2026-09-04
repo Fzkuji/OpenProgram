@@ -142,7 +142,7 @@ def _finish(store, record, status, reason, *, diagnosis=None, job=None):
             attempt=record.state.attempt, status=status, reason=reason, at=time.time(),
             diagnosis=diagnosis, job_sha256=_digest(job.to_dict()) if job is not None else None,
         ))
-    if status == "completed":
+    if _result(store, record)["status"] == "completed":
         from .source_repair import prepare_after_diagnosis
         try:
             prepare_after_diagnosis(store, record)
