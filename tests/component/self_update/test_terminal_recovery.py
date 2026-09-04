@@ -99,7 +99,8 @@ def test_manual_recovery_is_not_automatically_cleared(accepted, monkeypatch):
     assert v.commands == []
 
 
-def test_aborted_prepared_transaction_recovers_without_activation(live, installation, monkeypatch):
+@pytest.mark.parametrize("reason", ["quiescence", "cancel"])
+def test_aborted_prepared_transaction_recovers_without_activation(live, installation, monkeypatch, reason):
     import hashlib
     import os
     from openprogram.webui.routes import misc
@@ -118,7 +119,18 @@ def test_aborted_prepared_transaction_recovers_without_activation(live, installa
     store.transition(request.update_id, UpdatePhase.READY, detail={"transaction_dir": str(transaction)})
     from openprogram.self_update.maintenance import enter_maintenance
     enter_maintenance(request.update_id)
-    supervisor._abort(store, request.update_id, UpdatePhase.READY, "quiescence timed out")
+    if reason == "cancel":
+        import asyncio
+        from openprogram.agent import authority
+        from openprogram.programs.tools.system import self_update as public_tools
+        from tests.component.programs.test_self_update_tools import _request
+        monkeypatch.setattr(public_tools, "owner_principal_id", authority.owner_principal_id)
+        turn = _request(session_id=request.session_id)
+        monkeypatch.setattr(public_tools, "_turn_context", lambda: (turn, "a1"))
+        result = asyncio.run(public_tools.self_update_cancel.execute("cancel-recovery", {"update_id": request.update_id}, None, None))
+        assert not result.is_error
+    else:
+        supervisor._abort(store, request.update_id, UpdatePhase.READY, "quiescence timed out")
     directory = store.root / request.update_id
     installer = directory / "controller/install-app.sh"
     installer.parent.mkdir()
@@ -126,8 +138,10 @@ def test_aborted_prepared_transaction_recovers_without_activation(live, installa
     digest = hashlib.sha256(installer.read_bytes()).hexdigest()
     monkeypatch.setattr(supervisor, "_validate_transaction_path", lambda value: transaction if value == transaction else pytest.fail("wrong transaction"))
     native_run = supervisor.subprocess.run
+    modes = []
     def fixture_run(args, **kwargs):
         if args[:2] == ["/bin/bash", str(installer)]:
+            modes.append(args[2])
             kwargs["env"] = {"DESTDIR": str(target.parent.parent), "HOME": str(tmp / "home"),
                              "TMPDIR": str(tmp / "tmp"), "PATH": os.environ["PATH"]}
         return native_run(args, **kwargs)
@@ -139,3 +153,10 @@ def test_aborted_prepared_transaction_recovers_without_activation(live, installa
     assert not maintenance_blocks("web")
     assert phase(transaction) == "prepared" and (transaction / "transaction.json").read_bytes() == journal
     assert store.load(request.update_id).state.phase is UpdatePhase.ABORTED
+    assert store.load(request.update_id).state.detail["transaction_dir"] == str(transaction)
+    assert modes == ["--verify-terminal:prepared"] * 2
+    receipt = json.loads((directory / "maintenance-cleanup-1.json").read_text())
+    assert receipt["system_gate"]["candidate_sha"] == "3" * 40 + "-dirty"
+    assert receipt["system_gate"]["checks"]["doctor"] is True
+    assert store.load(request.update_id).state.dispatch is None
+    assert not (directory / "verifier-grant-1.json").exists()

@@ -416,6 +416,7 @@ def _cancel_update(
             UpdatePhase.ABORTED,
             expected_phase=record.state.phase,
             detail={
+                **record.state.detail,
                 "reason": str(reason or "owner requested cancellation").strip()[:1000],
                 "cancelled_by_session": req.session_id,
             },

@@ -364,7 +364,7 @@ def test_prepare_publishes_bound_verifier_config_before_launch(tmp_path, monkeyp
         config = load_verifier_config(store, record)
         assert config_evidence(config) in record.request.pre_update_evidence
         assert config["model_override"] == "fake/fixed"
-        assert config["tools_override"] == ["read", "glob", "grep", "list"]
+        assert config["tools_override"] == ["read", "glob", "grep", "list", "self_update_observe"]
         seen.append(update_id)
     monkeypatch.setattr(self_update_module, "_launch_supervisor", launch)
     result = _prepare(worktree, candidate_sha, store)
