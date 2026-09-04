@@ -127,7 +127,8 @@ def _test(command, candidate, scratch, remaining, check):
     env = dict(PATH=f"{Path(sys.executable).parent}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
                HOME=str(home), TMPDIR=str(temporary), CI="1", PYTHONDONTWRITEBYTECODE="1",
                GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
-    proc = subprocess.Popen([sys.executable, "-I", "-c", _WATCHDOG, str(os.getpid()), str(remaining),
+    # -I ignores PYTHONDONTWRITEBYTECODE; the unsandboxed watchdog needs -B.
+    proc = subprocess.Popen([sys.executable, "-I", "-B", "-c", _WATCHDOG, str(os.getpid()), str(remaining),
                              str(sandbox), "-f", str(profile_path), *argv], cwd=candidate,
                             env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
     output = bytearray()

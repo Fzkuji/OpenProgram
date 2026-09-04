@@ -245,6 +245,30 @@ def test_native_watchdog_stops_when_worker_identity_is_lost():
     assert result.returncode == 125
 
 
+@native_sandbox
+def test_candidate_test_watchdog_does_not_write_runtime_bytecode(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from openprogram.self_update import repair_candidate
+
+    root = tmp_path.resolve()
+    caches = root / "runtime-caches"
+    wrapper = root / "python-wrapper"
+    wrapper.write_text("#!/bin/sh\nexec " + shlex.quote(sys.executable)
+                       + " -X " + shlex.quote(f"pycache_prefix={caches}") + ' "$@"\n')
+    wrapper.chmod(0o700)
+    monkeypatch.setattr(repair_candidate, "sys", SimpleNamespace(
+        executable=str(wrapper), base_prefix=sys.base_prefix))
+    candidate, scratch = root / "candidate", root / "scratch"
+    candidate.mkdir()
+    scratch.mkdir()
+
+    code, output = repair_candidate._test("/usr/bin/true", candidate, scratch, 5, lambda: 5)
+
+    assert code == 0, output
+    assert not list(caches.rglob("*.pyc")), "watchdog wrote runtime bytecode outside the test sandbox"
+
+
 @pytest.mark.parametrize("diagnosis_environment", [{"required_tests": ["python -c " + shlex.quote(
     "from pathlib import Path\nimport socket\n"
     "try: (Path.cwd().parent/'forbidden-test-write').write_text('bad')\n"
