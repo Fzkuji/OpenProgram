@@ -1,6 +1,7 @@
 """Build inputs are private copies of matching trusted dependencies, not user environment."""
 import os
 from pathlib import Path
+import json
 import shutil
 import subprocess
 import time
@@ -8,6 +9,31 @@ import time
 import pytest
 
 from openprogram.self_update import controller_bundle as bundle
+
+
+@pytest.mark.parametrize(
+    ("machine", "filename", "sha256"),
+    (
+        (
+            "arm64",
+            "electron-v37.10.3-darwin-arm64.zip",
+            "24529be1f2f87c587d06c7474607f1b57d1184b3f45d916cac33791de3a70014",
+        ),
+        (
+            "x86_64",
+            "electron-v37.10.3-darwin-x64.zip",
+            "e545e2a41e5fd7d28bf1349b4f60f1bcfd8e4c216f57b2d3e698ec1c00b719cf",
+        ),
+    ),
+)
+def test_electron_archive_is_pinned_by_version_and_architecture(
+    tmp_path, monkeypatch, machine, filename, sha256
+):
+    package = tmp_path / "apps/desktop/package.json"
+    package.parent.mkdir(parents=True)
+    package.write_text(json.dumps({"devDependencies": {"electron": "37.10.3"}}))
+    monkeypatch.setattr(bundle.platform, "machine", lambda: machine)
+    assert bundle._electron_archive_spec(tmp_path) == (filename, sha256)
 
 
 @pytest.fixture
@@ -24,7 +50,6 @@ def inputs(tmp_path, monkeypatch):
         ".cache/uv",
         ".npm/_cacache",
         ".electron-gyp",
-        "Library/Caches/electron",
         "Library/Caches/electron-builder",
     ):
         path = home / name
@@ -33,6 +58,15 @@ def inputs(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.setattr(bundle, "_load_bundle", lambda path: None)
     monkeypatch.setattr(bundle, "_runtime_python", lambda path: path / "python/bin/python3")
+    electron_cache = home / "Library/Caches/electron/cache"
+    electron_cache.mkdir(parents=True)
+    archive = electron_cache / "electron-test.zip"
+    archive.write_bytes(b"trusted electron")
+    monkeypatch.setattr(
+        bundle,
+        "_electron_archive_spec",
+        lambda _candidate: (archive.name, bundle._file_digest(archive)),
+    )
     return home, update, candidate, build_home
 
 
@@ -56,6 +90,9 @@ def test_matching_build_inputs_are_private_clones_with_closed_environment(inputs
     assert "OPENAI_API_KEY" not in environment
     assert "UV_CACHE_DIR" in environment
     assert (build_home / ".electron-gyp/entry").read_text() == "original"
+    electron_dist = Path(environment["OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST"])
+    assert electron_dist.read_bytes() == b"trusted electron"
+    assert electron_dist.parent == update / "build-inputs"
     assert (build_home / "runtime-base/product-uv.lock").read_bytes() == (candidate / "uv.lock").read_bytes()
     assert os.stat(build_home / "runtime-base").st_mode & 0o777 == 0o700
 
@@ -67,6 +104,7 @@ def test_changed_dependency_input_fails_before_copy(inputs, path):
     with pytest.raises(ValueError, match="different complete runtime"):
         bundle.prepare_build_inputs(update, candidate, build_home, deadline=time.time() + 20)
     assert list(build_home.iterdir()) == []
+    assert not (update / "build-inputs").exists()
 
 
 def test_expired_build_input_budget_does_not_copy(inputs):

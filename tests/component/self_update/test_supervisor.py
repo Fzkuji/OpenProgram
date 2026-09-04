@@ -330,6 +330,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
             {
                 "UV_OFFLINE": "1",
                 "OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE": str(tmp_path / "runtime-base"),
+                "OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST": str(tmp_path / "electron.zip"),
             }
         ),
     )
@@ -371,6 +372,7 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
         "OPENPROGRAM_SELF_UPDATE_DEFER_ICON_RENDER",
         "OPENPROGRAM_SMOKE_PORT",
         "OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE",
+        "OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST",
     }
     profile = (root / "su_supervisor" / "sandbox.sb").read_text(encoding="utf-8")
     assert "(deny network*)" in profile

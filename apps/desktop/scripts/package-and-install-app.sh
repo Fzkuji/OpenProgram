@@ -109,8 +109,20 @@ trap 'exit 143' TERM
 cd "$repo_root"
 npm run prepare:runtime --workspace apps/desktop
 npm run icon:check --workspace apps/desktop
-npm exec --workspace apps/desktop -- electron-builder \
-  --dir --mac --publish never --config.directories.output="$package_dir"
+if [[ -n "${OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST:-}" ]]; then
+  [[ "$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST" == /* && \
+      -f "$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST" && \
+      ! -L "$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST" ]] || {
+    printf 'invalid trusted Electron distribution\n' >&2
+    exit 1
+  }
+  npm exec --workspace apps/desktop -- electron-builder \
+    --dir --mac --publish never --config.directories.output="$package_dir" \
+    "--config.electronDist=$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST"
+else
+  npm exec --workspace apps/desktop -- electron-builder \
+    --dir --mac --publish never --config.directories.output="$package_dir"
+fi
 
 app_list="$work_dir/apps.txt"
 find "$package_dir" -type d -name OpenProgram.app -prune -print >"$app_list"

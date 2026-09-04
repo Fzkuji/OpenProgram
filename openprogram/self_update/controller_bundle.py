@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -15,6 +16,18 @@ import time
 from .supervisor import _tree_digest
 from .store import SelfUpdateStore
 from openprogram.store.session.git_session import atomic_write_text
+
+
+_ELECTRON_ARCHIVES = {
+    ("37.10.3", "arm64"): (
+        "electron-v37.10.3-darwin-arm64.zip",
+        "24529be1f2f87c587d06c7474607f1b57d1184b3f45d916cac33791de3a70014",
+    ),
+    ("37.10.3", "x64"): (
+        "electron-v37.10.3-darwin-x64.zip",
+        "e545e2a41e5fd7d28bf1349b4f60f1bcfd8e4c216f57b2d3e698ec1c00b719cf",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -53,6 +66,69 @@ def _runtime_python(runtime: Path) -> Path:
     if not python.is_relative_to(runtime.resolve()) or not python.is_file() or not os.access(python, os.X_OK):
         raise ValueError("controller Python is unavailable or escapes the runtime")
     return python
+
+
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _electron_archive_spec(candidate: Path) -> tuple[str, str]:
+    package = candidate / "apps/desktop/package.json"
+    if package.is_symlink() or not package.is_file() or package.stat().st_size > 1_048_576:
+        raise ValueError("candidate Electron package metadata is unavailable")
+    data = json.loads(package.read_text(encoding="utf-8"))
+    version = (data.get("devDependencies") or {}).get("electron")
+    machine = platform.machine()
+    arch = "arm64" if machine == "arm64" else "x64" if machine == "x86_64" else machine
+    try:
+        return _ELECTRON_ARCHIVES[(version, arch)]
+    except KeyError:
+        raise ValueError("candidate Electron archive is not pinned by the trusted controller") from None
+
+
+def stage_electron_distribution(
+    update_dir: Path,
+    candidate: Path,
+    *,
+    deadline: float,
+) -> Path:
+    filename, expected = _electron_archive_spec(candidate)
+    cache = Path.home() / "Library/Caches/electron"
+    if cache.is_symlink() or not cache.is_dir() or cache.stat().st_uid != os.getuid():
+        raise ValueError("required local Electron archive cache is unavailable")
+    matches = [
+        path
+        for path in cache.rglob(filename)
+        if not path.is_symlink()
+        and path.is_file()
+        and path.stat().st_uid == os.getuid()
+        and path.resolve().is_relative_to(cache.resolve())
+        and _file_digest(path) == expected
+    ]
+    if len(matches) != 1:
+        raise ValueError("one trusted cached Electron archive is required")
+    target_dir = update_dir / "build-inputs"
+    if target_dir.exists() or target_dir.is_symlink():
+        raise ValueError("trusted build input already exists")
+    target_dir.mkdir(mode=0o700)
+    target = target_dir / filename
+    remaining = deadline - time.time()
+    if remaining <= 0:
+        raise TimeoutError("build input deadline expired")
+    result = subprocess.run(
+        ["/bin/cp", "-c", str(matches[0]), str(target)],
+        env=controller_environment(),
+        capture_output=True,
+        timeout=remaining,
+    )
+    if result.returncode != 0 or _file_digest(target) != expected:
+        raise ValueError("could not stage the trusted Electron archive")
+    target.chmod(0o400)
+    return target
 
 
 def _probe_runtime(runtime: Path, python: Path, module: str = "openprogram.self_update.supervisor") -> None:
@@ -163,7 +239,6 @@ def prepare_build_inputs(update_dir: Path, candidate: Path, build_home: Path, *,
         ".cache/uv",
         ".npm/_cacache",
         ".electron-gyp",
-        "Library/Caches/electron",
         "Library/Caches/electron-builder",
     ):
         copies.append((Path.home() / relative, build_home / relative))
@@ -185,6 +260,11 @@ def prepare_build_inputs(update_dir: Path, candidate: Path, build_home: Path, *,
         if result.returncode != 0:
             raise ValueError("could not create private copy-on-write build inputs")
         destination.chmod(0o700)
+    electron_dist = stage_electron_distribution(
+        update_dir,
+        candidate,
+        deadline=deadline,
+    )
     return {
         "PATH": f"{base / 'bin'}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
         "OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE": str(base),
@@ -194,6 +274,7 @@ def prepare_build_inputs(update_dir: Path, candidate: Path, build_home: Path, *,
         "UV_CACHE_DIR": str(build_home / ".cache/uv"),
         "UV_OFFLINE": "1",
         "NPM_CONFIG_OFFLINE": "true",
+        "OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST": str(electron_dist),
     }
 
 
@@ -204,7 +285,13 @@ def build_inputs(update_dir: Path, candidate: Path, build_home: Path, *, deadlin
         build_home / relative
         for relative in ("runtime-base", ".cache", ".npm", ".electron-gyp", "Library")
     ]
-    if build_home.is_symlink() or any(path.exists() or path.is_symlink() for path in paths):
+    trusted_inputs = update_dir / "build-inputs"
+    if (
+        build_home.is_symlink()
+        or trusted_inputs.exists()
+        or trusted_inputs.is_symlink()
+        or any(path.exists() or path.is_symlink() for path in paths)
+    ):
         raise ValueError("private build input already exists")
     try:
         yield prepare_build_inputs(update_dir, candidate, build_home, deadline=deadline)
@@ -216,3 +303,7 @@ def build_inputs(update_dir: Path, candidate: Path, build_home: Path, *, deadlin
                 path.unlink()
             elif path.exists():
                 shutil.rmtree(path)
+        if trusted_inputs.is_symlink() or trusted_inputs.is_file():
+            trusted_inputs.unlink()
+        elif trusted_inputs.exists():
+            shutil.rmtree(trusted_inputs)
