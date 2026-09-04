@@ -21,6 +21,7 @@ EXPECTED_SOURCES = {
     "code": {"execute_code", "lsp", "semble"},
     "interaction": {"canvas", "clarify", "send_file"},
     "runtime": {"mcp_meta", "program", "skill"},
+    "system": {"self_update"},
 }
 
 
