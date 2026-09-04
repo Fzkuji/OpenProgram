@@ -495,7 +495,10 @@ class AgentProductionDriver:
                 "immutable Agent input does not match the execution session",
             )
         request = self._resolve_activation_input(record, activation)
-        setattr(request, "_execution_revision_id", execution.revision_id)
+        # Forced-tool inputs are frozen and cannot create Agent continuation
+        # checkpoints; only mutable chat/Job requests need this runtime field.
+        if not isinstance(request, ForcedToolActivation):
+            setattr(request, "_execution_revision_id", execution.revision_id)
         steer_inputs = tuple(activation.steer_inputs) if activation is not None else ()
         continuation = None
         if activation is not None and activation.checkpoint is not None:
@@ -795,10 +798,11 @@ class AgentProductionDriver:
             execution_id=attempt.execution_id,
         ):
             raise AgentDriverError("owner_conflict", "Agent execution already has a live runtime")
-        setattr(request, "_execution_revision_id", attempt.execution_id)
-        execution = self.executions.get_execution(attempt.execution_id)
-        if execution is not None:
-            setattr(request, "_execution_revision_id", execution.revision_id)
+        if not isinstance(request, ForcedToolActivation):
+            setattr(request, "_execution_revision_id", attempt.execution_id)
+            execution = self.executions.get_execution(attempt.execution_id)
+            if execution is not None:
+                setattr(request, "_execution_revision_id", execution.revision_id)
         session_token = set_current_session_id(request.session_id)
         execution_token = set_current_execution_id(attempt.execution_id)
         bound = current_token(request.session_id, execution_id=attempt.execution_id)

@@ -597,6 +597,42 @@ def test_activation_uses_the_durable_agent_turn_payload_by_default(tmp_path):
     assert seen["request"].source == "web"
 
 
+def test_canonical_entry_activates_goal_resume_without_mutating_frozen_input(tmp_path, monkeypatch):
+    from openprogram.agent.production_driver import AgentProductionDriver, CanonicalAgentEntry
+
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    seen = {}
+    entered, release = threading.Event(), threading.Event()
+    def run_tool(**kwargs):
+        seen.update(kwargs)
+        entered.set()
+        assert release.wait(2)
+        return SimpleNamespace(failed=False, error=None)
+    monkeypatch.setattr("openprogram.agent.dispatcher.dispatch_forced_tool_call", run_tool)
+    driver = AgentProductionDriver(executions=store)
+    entry = CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id="goal-resume",
+        turn_payload={"version": 1, "kind": "forced_tool", "tool_name": "goal",
+                      "tool_input": {"prompt": "finish", "resume": True}},
+        trusted_actor={"subject": "user-1"}, config_snapshot_ref="config:test",
+        user_message_id="u", assistant_message_id="a",
+    )
+    async def run():
+        try:
+            active = await entry.activate(admission)
+            assert await asyncio.to_thread(entered.wait, 2)
+            handle = driver._handles[(admission.execution_id, active.attempt_id, active.generation)]
+            release.set()
+            await handle.done
+        finally:
+            release.set()
+    asyncio.run(run())
+    assert seen["tool_name"] == "goal"
+    assert seen["tool_input"]["resume"] is True
+    assert store.get_execution(admission.execution_id).status is ExecutionStatus.COMPLETED
+
+
 def test_internal_canonical_entry_admits_before_activation_with_exact_identity(tmp_path):
     from openprogram.agent.production_driver import (
         AgentProductionDriver,
