@@ -284,5 +284,7 @@ def running_status(store: SelfUpdateStore):
                     raise CorruptUpdateStateError("invalid pending update pointer")
                 pointers.append(_validate_update_id(value["update_id"]))
         records = _records(store)
+        if set(pointers) - {record.request.update_id for record in records}:
+            raise CorruptUpdateStateError("pending update points to a missing record")
         return _bounded([_project(store, r) for r in records
                          if not is_terminal(r.state.phase) or r.request.update_id in pointers])

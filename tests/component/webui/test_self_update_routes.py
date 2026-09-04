@@ -1,6 +1,7 @@
 """Actual authenticated ASGI reads over real self-update records."""
 from dataclasses import replace
 import json
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -93,3 +94,58 @@ def test_pagination_and_limits_through_public_route(api):
     assert client.get("/api/self-updates?session_id=session-1&limit=999", headers=headers).status_code == 422
     assert client.get("/api/self-updates/su_missing?session_id=session-1", headers=headers).status_code == 404
     assert "token" not in json.dumps(first)
+
+
+@pytest.mark.parametrize("pointer_name", ["diagnosis-pending.json", "source-repair-pending.json", "iteration-pending.json"])
+@pytest.mark.parametrize("missing", [False, True])
+def test_running_pending_target_must_exist_without_repair(api, monkeypatch, pointer_name, missing):
+    client, headers, store = api
+    monkeypatch.setattr(running, "_collect", lambda: [])
+    store.create(_request())
+    store.transition("su_test", UpdatePhase.ABORTED)
+    pointer = store.root / pointer_name
+    store._write_json(pointer, {"schema": 1, "update_id": "su_missing" if missing else "su_test"})
+    before = pointer.read_bytes(), pointer.stat().st_mtime_ns
+
+    response = client.get("/api/running", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    if missing:
+        assert payload["self_update_error"] is not None
+        assert payload["items"] == []
+    else:
+        assert payload["self_update_error"] is None
+        assert payload["items"][0]["update"]["update_id"] == "su_test"
+    assert (pointer.read_bytes(), pointer.stat().st_mtime_ns) == before
+
+
+@pytest.mark.parametrize("mode", [0o600, 0o400, 0o640, 0o604, 0o644, 0o660])
+def test_rollback_projection_requires_private_proof_without_chmod(api, mode):
+    from openprogram.self_update.recovery import SYSTEM_CHECKS
+    from openprogram.self_update.rollback_intent import begin_rollback
+
+    client, headers, store = api
+    request = _request()
+    store.create(request)
+    previous = dict(schema=1, candidate_sha="1" * 40, attempt=1, worker_pid=123,
+                    verified_at=time.time(), checks={name: True for name in SYSTEM_CHECKS})
+    for phase in (UpdatePhase.STAGING, UpdatePhase.READY, UpdatePhase.ACTIVATING):
+        store.transition(request.update_id, phase, detail={"previous_system_gate": previous})
+    begin_rollback(store, request.update_id, "system probe failed: health")
+    restored = dict(previous, verified_at=time.time())
+    store.transition(request.update_id, UpdatePhase.ROLLED_BACK,
+                     detail={"previous_system_gate": previous, "restored_system_gate": restored})
+    proof = store.root / request.update_id / "rollback-1.json"
+    proof.chmod(mode)
+    before = proof.read_bytes(), proof.stat().st_mtime_ns, proof.stat().st_mode
+
+    response = client.get("/api/self-updates/su_test?session_id=session-1", headers=headers)
+
+    assert response.status_code == (409 if mode & 0o077 else 200)
+    if not mode & 0o077:
+        assert response.json()["last_verified_runtime"]["candidate_sha"] == previous["candidate_sha"]
+        assert response.json()["last_verified_runtime"]["source"] == "restored_system_gate"
+    else:
+        assert str(store.root) not in response.text
+    assert (proof.read_bytes(), proof.stat().st_mtime_ns, proof.stat().st_mode) == before

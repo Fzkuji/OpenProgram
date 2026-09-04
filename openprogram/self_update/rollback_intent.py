@@ -22,7 +22,8 @@ def load_rollback_intent(store, record) -> dict | None:
         return None
     with os.fdopen(fd, "r", encoding="utf-8") as handle:
         info = os.fstat(handle.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size > 8192:
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or info.st_mode & 0o077 or info.st_size > 8192):
             raise ValueError("invalid rollback intent file")
         value = store._loads_json(handle.read(8193))
     if not isinstance(value, dict) or set(value) != {
