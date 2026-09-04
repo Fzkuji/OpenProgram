@@ -1934,8 +1934,8 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
       <p>独立规格审查要求保证两项合同：真实人类依赖转入等待，不能被普通无进展计数覆盖；Web 操作成功后的 HTTP 快照立即更新可见状态与共享缓存，旧版本事件不能回退新状态。修复限定在 Goal 状态转换及前端投影，不改其他工作流。验收分别使用公开 Goal → 回答命令的回归测试，以及无 WebSocket 广播的操作响应与重新挂载测试；修复后需要原审查者复核，再做独立质量审查。</p>
       <p>真实人类依赖不会被无进展计数错误覆盖，预算判断仍独立执行。前端通过共用 <code>updateSessionGoal</code> 按 session version 应用 HTTP、WebSocket 与 hydration 快照；无广播暂停、重新挂载、乱序消息、后台会话及迟到加载由 4 项组件测试覆盖。Web 测试合计 229 项通过，TypeScript、静态检查和 32 页生产构建通过；等待状态与前端修复的独立规格复核均通过。构建仍有既有 Next SWC lockfile 修复警告，未改依赖锁文件。</p>
       <p>控制器保存使用 CAS；发生同运行并发更新时，以最近确认快照、本轮状态和磁盘最新状态合并，并在 session 写锁内提交，不执行无界重试。合并仅允许相同 <code>goal_id/run_id</code> 且最新状态仍在执行的情况；预算和新答案保留，本轮进度与已消费答案也保留。暂停、取消、替换运行仍拒绝旧控制器写入。终止保存共用此路径；新答案使旧终止判定失效，保存为 <code>paused_recoverable / answer_received</code>，用户可继续处理，不能误报 <code>achieved</code>。分批消费的答案共同进入后续工作提示；再次恢复时从当前 revision 的持久问题记录重建已确认决定，并恢复有长度上限的 evidence window。编辑目标隔离旧 revision 的决定和证据。</p>
-      <p>并发修复的独立质量复核为 <code>PASS</code>，覆盖原有“修改预算导致控制器退出但仍显示运行中”的复现。审查者独立执行 9 项针对性回归通过：预算/答案在 evaluating/terminal 的竞争、暂停/取消/替换运行、消费期间收到新答案及旧 CAS 拒绝。Goal、存储和 Web API 相关测试合计 118 项通过。该结论限于已审修复，不能代替修复后全量验证、尚未实现的设计能力或默认 App 可视验收。</p>
-      <p>以下条目把设计要求绑定到公开入口和可观察结果。局部源码、测试及独立修复审查不代表完整验收：修复后全量测试已运行但未通过，默认 App 尚未刷新。下表中的实现描述仅指工作树内已有代码，不表示已发布或已完成全部要求。</p>
+      <p>并发修复的独立质量复核为 <code>PASS</code>，覆盖原有“修改预算导致控制器退出但仍显示运行中”的复现。审查者独立执行 9 项针对性回归通过：预算/答案在 evaluating/terminal 的竞争、暂停/取消/替换运行、消费期间收到新答案及旧 CAS 拒绝。集成后的 Goal、存储和 Web API 相关测试通过，完整统计见下方全量验证。该结论限于已审修复，不能代替修复后全量验证、尚未实现的设计能力或默认 App 可视验收。</p>
+      <p>以下条目把设计要求绑定到公开入口和可观察结果。局部源码、测试及独立修复审查不代表完整验收：最终集成代码的全量测试已通过，默认 App 的刷新与可视验收单独记录。下表中的实现描述仅指工作树内已有代码，不表示已发布或已完成全部要求。</p>
       <div class="matrix-wrap">
         <table>
           <thead><tr><th>要求</th><th>公开入口 / 证据</th><th>可观察结果</th><th>当前状态</th></tr></thead>
@@ -1958,8 +1958,8 @@ Goal answer saved; resuming from the latest checkpoint.</pre>
         <li><code>python -m scripts.docs_site.build</code>，随后 <code>python -m scripts.docs_site.checklinks</code></li>
       </ul></details></div>
       <p>网页核查：judge 具有网页读取和检索工具，失败回执标记为 <code>is_error=true</code>。已有真实模型检查受到 arXiv 的 <code>NON_GLOBAL_ADDRESS</code> 拒绝与 Tavily 缺少凭据的限制；没有绕过网络策略，不能把这次研究产物视为来源已核验的综述。</p>
-      <p>当前集成环境的全量 Python 验证正在重新执行，不能沿用旧基础版本的统计作为当前结论。TUI 测试 148 项通过、2 项跳过，类型检查通过。默认 App 产品验收独立记录。</p>
-      <p>真实模型验证：Grok 带工具请求的超时已复现。MiniMax-M3 的研究例子执行 refinement、写作、判定与修订，但外部来源核查受环境限制，不能作为已核验的综述交付。失败回执防护启用后，同一模型在来源访问失败时返回 <code>blocked</code> 与未完成清单；有 session 和无 session 的错误检查回执均由代码阻止 <code>met</code>，不等于已证明全部语义判定可靠。refinement 范围约束也有真实模型检查。默认 App 尚未更新，产品可视验收未完成。</p>
+      <p>最终集成代码执行 <code>python -m pytest -q -n 4</code>：7008 项通过、18 项跳过、1 项预期失败。全量发现的 Goal 包装函数源码定位问题已修复；两组 agent 合同测试的执行数据库已按测试隔离，避免启动恢复读取其他测试的记录。TUI 测试 148 项通过、2 项跳过，类型检查通过。默认 App 产品验收独立记录。</p>
+      <p>真实模型验证：通过公开 <code>programs run goal</code> 入口，MiniMax-M3 完成约 300 字中文文章写作、文件读取核对与判定，命令正常退出；产物由人工式读取检查确认。此例仅使用给定事实，不调用网络，不能替代来源核验。已有综述尝试受到外部来源访问和检索凭据限制，仍不能作为已核验的综述交付。失败回执防护会阻止包含错误检查回执的 <code>met</code>，不证明全部语义判定可靠。默认 App 的刷新和可视验收单独记录。</p>
     </section>
 
     <section id="status">
