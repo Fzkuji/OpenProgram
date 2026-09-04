@@ -62,6 +62,7 @@ from openprogram.agent.continuation import (
 
 
 _log = logging.getLogger(__name__)
+AGENT_LEASE_SECONDS = 30.0
 
 
 class AgentDriverError(RuntimeError):
@@ -573,6 +574,19 @@ class AgentProductionDriver:
                     task.cancel()
                     return
             try:
+                # Validate ownership before executing any user work, then
+                # retain the exact fenced lease independently of transport
+                # event loops, including bounded terminal-write retries.
+                self._control_service().attempts.heartbeat(
+                    attempt.attempt_id, generation=attempt.generation,
+                    ttl_seconds=AGENT_LEASE_SECONDS,
+                )
+                threading.Thread(
+                    target=self._maintain_owner,
+                    args=(attempt, handle),
+                    daemon=True,
+                    name=f"openprogram-agent-lease-{attempt.attempt_id}",
+                ).start()
                 result = asyncio.run(
                     self._run_attempt(
                         attempt, request, cancel_event,
@@ -581,6 +595,7 @@ class AgentProductionDriver:
                     )
                 )
             except BaseException as exc:
+                self._recover_owner_loss(attempt)
                 task.set_exception(exc)
             else:
                 task.set_result(result)
@@ -600,6 +615,44 @@ class AgentProductionDriver:
             driver=self,
             handle=handle,
         )
+
+    def _maintain_owner(self, attempt: AttemptRecord, handle: AgentDriverHandle) -> None:
+        """Renew a live producer's lease; never renew a replacement owner."""
+        wake = threading.Event()
+        handle.done.add_done_callback(lambda _done: wake.set())
+        key = self._key(handle)
+        interval = AGENT_LEASE_SECONDS / 3
+        while True:
+            wake.wait(interval)
+            wake.clear()
+            with self._handles_lock:
+                pending = key in self._pending_finishes
+                stalled = key in self._finish_repair_stalled
+            if handle.done.done() and (not pending or stalled):
+                return
+            service = self._control_service()
+            try:
+                service.attempts.heartbeat(
+                    attempt.attempt_id, generation=attempt.generation,
+                    ttl_seconds=AGENT_LEASE_SECONDS,
+                )
+            except Exception:
+                # Signal this producer only. Looking up a physical process by
+                # execution_id could kill a replacement after a concurrent
+                # handoff. In-flight external operations remain cooperative.
+                handle.cancel_event.set()
+                try:
+                    current = service.attempts.get(attempt.attempt_id)
+                    if current is not None and current.status is AttemptStatus.ENDED:
+                        return
+                except Exception:
+                    pass
+                self._recover_owner_loss(attempt)
+                return
+            if handle.done.done():
+                # Finish retries are bounded and can settle before the next
+                # normal heartbeat. Do not leave an idle lease thread alive.
+                interval = min(AGENT_LEASE_SECONDS / 3, 0.1)
 
     def activation_committed(self, binding: DriverBinding[AgentDriverHandle]) -> None:
         """Release a driver-owned producer after registry fencing commits."""
@@ -703,7 +756,7 @@ class AgentProductionDriver:
                 admission.execution_id,
                 expected_version=admission.status_version,
                 owner_id=f"agent-failure-{uuid.uuid4().hex}",
-                ttl_seconds=30,
+                ttl_seconds=AGENT_LEASE_SECONDS,
             )
             active, running = service.attempts.activate(
                 attempt.attempt_id,
@@ -1990,7 +2043,7 @@ class CanonicalAgentEntry:
             admission.execution_id,
             expected_version=admission.status_version,
             owner_id=f"agent-entry-{uuid.uuid4().hex}",
-            ttl_seconds=30,
+            ttl_seconds=AGENT_LEASE_SECONDS,
         )
         active, running = self.control.attempts.activate(
             attempt.attempt_id,

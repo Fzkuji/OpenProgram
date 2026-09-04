@@ -633,6 +633,136 @@ def test_canonical_entry_activates_goal_resume_without_mutating_frozen_input(tmp
     assert store.get_execution(admission.execution_id).status is ExecutionStatus.COMPLETED
 
 
+def test_canonical_entry_renews_owner_until_long_work_finishes(tmp_path, monkeypatch):
+    from openprogram.agent import production_driver as module
+
+    # Use the real public admission/activation and persistence. Only shorten
+    # the production lease duration; no direct lifecycle-row mutations.
+    monkeypatch.setattr(module, "AGENT_LEASE_SECONDS", 0.3, raising=False)
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    entered, release = threading.Event(), threading.Event()
+    def run_turn(*, request, cancel_event):
+        entered.set()
+        assert release.wait(3)
+        return SimpleNamespace(failed=False)
+    driver = module.AgentProductionDriver(store, turn_runner=run_turn)
+    entry = module.CanonicalAgentEntry(store, driver)
+    original_lease = entry.control.attempts.lease
+    monkeypatch.setattr(entry.control.attempts, "lease", lambda *a, **kw: original_lease(
+        *a, **{**kw, "ttl_seconds": 0.3},
+    ))
+    admission = entry.admit(
+        session_id="renewal", turn_payload={"version": 1, "kind": "chat", "request": {
+            "user_text": "long work", "agent_id": "default", "source": "test"}},
+        trusted_actor={"subject": "test"}, config_snapshot_ref="config:test",
+        user_message_id="u", assistant_message_id="a",
+    )
+    async def run():
+        try:
+            active = await entry.activate(admission)
+            assert await asyncio.to_thread(entered.wait, 2)
+            handle = driver._handles[(admission.execution_id, active.attempt_id, active.generation)]
+            before = entry.control.attempts.get(active.attempt_id)
+            await asyncio.sleep(0.65)
+            renewed = entry.control.attempts.get(active.attempt_id)
+            assert renewed.lease_expires_at > before.lease_expires_at
+            release.set()
+            await asyncio.wait_for(handle.done, 3)
+            assert store.get_execution(admission.execution_id).status is ExecutionStatus.COMPLETED
+            assert store.list_finish_repairs(limit=10) == []
+        finally:
+            release.set()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("cause", ["heartbeat_error", "owner_fenced", "cancel"])
+def test_canonical_owner_renewal_stops_on_loss_or_cancel(tmp_path, monkeypatch, cause):
+    from openprogram.agent import production_driver as module
+
+    monkeypatch.setattr(module, "AGENT_LEASE_SECONDS", 0.3)
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    entered, observed_cancel, release = threading.Event(), threading.Event(), threading.Event()
+    def run_turn(*, request, cancel_event):
+        entered.set()
+        try:
+            if cancel_event.wait(2):
+                observed_cancel.set()
+            assert release.wait(2)
+            return SimpleNamespace(failed=False)
+        finally:
+            release.set()
+    driver = module.AgentProductionDriver(store, turn_runner=run_turn)
+    entry = module.CanonicalAgentEntry(store, driver)
+    admission = entry.admit(
+        session_id="renewal-loss", turn_payload={"version": 1, "kind": "chat", "request": {
+            "user_text": "cancel work", "agent_id": "default", "source": "test"}},
+        trusted_actor={"subject": "test"}, config_snapshot_ref="config:test",
+        user_message_id="u", assistant_message_id="a",
+    )
+    async def run():
+        try:
+            active = await entry.activate(admission)
+            assert await asyncio.to_thread(entered.wait, 2)
+            handle = driver._handles[(admission.execution_id, active.attempt_id, active.generation)]
+            if cause == "heartbeat_error":
+                def fail(*a, **kw):
+                    raise OSError("storage unavailable")
+                monkeypatch.setattr(entry.control.attempts, "heartbeat", fail)
+            elif cause == "owner_fenced":
+                entry.control.recover_owner_loss(admission.execution_id,
+                    attempt_id=active.attempt_id, generation=active.generation)
+            else:
+                current = store.get_execution(admission.execution_id)
+                await entry.control.request_cancel(command_id="cancel-renewal",
+                    execution_id=admission.execution_id, expected_version=current.status_version,
+                    actor={"surface": "test"}, reason_code="user_cancelled")
+            assert await asyncio.to_thread(observed_cancel.wait, 2)
+            release.set()
+            await asyncio.wait_for(handle.done, 3)
+            final = store.get_execution(admission.execution_id)
+            assert final.status is not ExecutionStatus.COMPLETED
+            assert final.status is not ExecutionStatus.RUNNING
+        finally:
+            release.set()
+    asyncio.run(run())
+
+
+def test_renewal_loss_never_terminates_replacement_by_execution_id(tmp_path, monkeypatch):
+    from openprogram.agent import production_driver as module
+
+    monkeypatch.setattr(module, "AGENT_LEASE_SECONDS", 0.03)
+    store, execution = _admitted(tmp_path)
+    driver = module.AgentProductionDriver(store)
+    service = driver._control_service()
+    attempt, leased = service.attempts.lease(execution.execution_id,
+        expected_version=execution.status_version, owner_id="old", ttl_seconds=30)
+    active, _ = service.attempts.activate(attempt.attempt_id, generation=attempt.generation,
+        expected_execution_version=leased.status_version)
+    handle = module.AgentDriverHandle(execution_id=execution.execution_id,
+        attempt_id=active.attempt_id, generation=active.generation,
+        session_id=execution.session_id, cancel_event=threading.Event(),
+        done=module._ThreadResultFuture())
+    physical_kills, recoveries = [], []
+    def lose_lease(*a, **kw):
+        raise OSError("renewal failed")
+    monkeypatch.setattr(service.attempts, "heartbeat", lose_lease)
+    def stale_read(_attempt_id):
+        # The read can race a handoff. Its stale ACTIVE value must not
+        # authorize a kill against the shared execution's replacement.
+        return active
+    monkeypatch.setattr(service.attempts, "get", stale_read)
+    async def terminate(*a, **kw):
+        physical_kills.append("replacement")
+    monkeypatch.setattr(driver, "terminate", terminate)
+    monkeypatch.setattr(service, "recover_owner_loss", lambda execution_id, **kw:
+        recoveries.append((execution_id, kw)))
+    driver._maintain_owner(active, handle)
+    assert handle.cancel_event.is_set()
+    assert not physical_kills
+    assert recoveries == [(execution.execution_id, {
+        "attempt_id": active.attempt_id, "generation": active.generation})]
+
+
 def test_internal_canonical_entry_admits_before_activation_with_exact_identity(tmp_path):
     from openprogram.agent.production_driver import (
         AgentProductionDriver,
