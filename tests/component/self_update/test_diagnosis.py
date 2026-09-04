@@ -23,8 +23,11 @@ def diagnosis_environment(tmp_path, monkeypatch, store_fixture, request):
     worktree, _, sha = _candidate(tmp_path)
     worktree = replace(worktree, parent_session="p1")
     store = SelfUpdateStore()
+    policy = dict(getattr(request, "param", None) or {})
+    verification_plan = policy.pop("verification_plan", None)
     result = _prepare_update(worktree_id=worktree.id, candidate_sha=sha, goal="Fix behavior",
-                             assertions=["Expected behavior is observable"], iteration_policy=getattr(request, "param", None),
+                             assertions=["Expected behavior is observable"], iteration_policy=policy or None,
+                             verification_plan=verification_plan,
                              req=_request(session_id="p1", user_msg_id="u1"), assistant_id="a1",
                              manager=_Manager(worktree), store=store)
     update_id = result["update_id"]

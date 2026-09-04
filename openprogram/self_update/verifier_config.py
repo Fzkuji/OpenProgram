@@ -14,6 +14,16 @@ CONFIG_EVIDENCE_PREFIX = "verifier-config-sha256:"
 VERIFIER_TOOLS = ("read", "glob", "grep", "list", "self_update_observe")
 
 
+def validate_model_capabilities(config, model=None):
+    if not any(check["entry"] == "ui:main" for check in config.get("verification_plan", {}).get("checks", [])):
+        return
+    if model is None:
+        from openprogram.agent.internals._model_tools import resolve_model
+        model = resolve_model(config["profile_snapshot"], config["model_override"])
+    if "image" not in (getattr(model, "input", None) or ()):
+        raise ValueError("UI verification requires a model with image input")
+
+
 def config_evidence(config: dict) -> str:
     encoded = json.dumps(config, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     if len(encoded) > 1_048_576:
@@ -81,6 +91,7 @@ def freeze_verifier_config(request: UpdateRequest, turn, *, attempt: int = 1, ve
     if verification_plan is not None:
         from .verification_plan import validate_plan
         config.update(schema=2, prompt_version=2, verification_plan=validate_plan(verification_plan, request))
+        validate_model_capabilities(config, model)
         from .native_checks import admit_plan
         admit_plan(config["verification_plan"], request)
         from .ui_checks import admit_plan as admit_ui_plan
@@ -135,6 +146,15 @@ def load_verifier_config(store, record: UpdateRecord) -> dict:
     return config
 
 
+def plan_context(record, config):
+    """Keep planned phase inputs aligned without changing legacy Job prompts."""
+    if config is None or config["schema"] != 2:
+        return {}
+    return dict(verification_plan=deepcopy(config["verification_plan"]),
+                iteration_policy=record.request.iteration_policy.to_dict(),
+                timeout_seconds=record.request.timeout_seconds)
+
+
 def verifier_prompt(record: UpdateRecord, config: dict | None = None) -> str:
     contract = {
         "update_id": record.request.update_id, "candidate_sha": record.request.candidate_sha,
@@ -146,7 +166,7 @@ def verifier_prompt(record: UpdateRecord, config: dict | None = None) -> str:
         "and observed_at exactly. Its /chat response is HTML, not rendered UI evidence. "
     )
     if config is not None and config["schema"] == 2:
-        contract["verification_plan"] = config["verification_plan"]
+        contract.update(plan_context(record, config))
         observation_instruction = (
             "Use self_update_observe with only a check_id from the frozen verification_plan; "
             "do not supply entry or execution arguments. Cite its evidence_ref, entry and observed_at exactly. "

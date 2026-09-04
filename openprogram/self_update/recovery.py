@@ -9,7 +9,7 @@ import time
 
 from .store import SelfUpdateStore
 from .types import TERMINAL_PHASES, UpdatePhase
-from .verifier_config import load_verifier_config, verifier_prompt
+from .verifier_config import load_verifier_config, verifier_prompt, validate_model_capabilities
 from .rollback_intent import load_rollback_intent
 
 
@@ -77,6 +77,7 @@ def require_verifier_execution(*, session_id, spawn_caller, **inputs) -> None:
         expected["prompt"] = verifier_prompt(record, config)
         if inputs != expected:
             raise ValueError("verifier execution inputs differ from the frozen request")
+        validate_model_capabilities(config)
 
 
 def recover_pending_updates() -> bool:
@@ -199,7 +200,7 @@ def recover_pending_updates() -> bool:
                 if existing.source != "self_update_verify" or existing.agent_id != record.request.agent_id:
                     raise ValueError("verifier Job ID is occupied by a different job")
                 return True  # Terminal/orphan Jobs are evidence, never resubmitted.
-            resolve_model(config["profile_snapshot"], config["model_override"])
+            validate_model_capabilities(config, resolve_model(config["profile_snapshot"], config["model_override"]))
             claim = store.claim_verifier(
                 record.request.update_id, owner=f"worker:{os.getpid()}", lease_seconds=_CLAIM_SECONDS,
             )

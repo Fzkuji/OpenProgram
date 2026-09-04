@@ -29,7 +29,8 @@ def verifier(store_fixture, live, monkeypatch, request):
     original, flags, _ = live
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store_fixture)
     monkeypatch.setattr("openprogram.agent.internals._model_tools.load_agent_profile", lambda _: {"id": "main", "system_prompt": "verify"})
-    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", lambda *a: SimpleNamespace(provider="fake", id="fixed"))
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model", lambda *a: SimpleNamespace(
+        provider="fake", id="fixed", input=["text", "image"] if plan and any(c["entry"] == "ui:main" for c in plan["checks"]) else ["text"]))
     monkeypatch.setattr("openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
     store = SelfUpdateStore()
     store.transition(original.request.update_id, UpdatePhase.NEEDS_MANUAL_RECOVERY)

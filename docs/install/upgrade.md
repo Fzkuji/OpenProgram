@@ -69,6 +69,13 @@ original overall deadline. Signed evidence must match that check and assertion;
 reusing evidence for another assertion does not pass. Omitting the plan preserves
 the previous HTTP-only verifier behavior and grants no new permissions.
 
+For a planned update, verification, post-rollback diagnosis and source-repair
+Jobs receive the same approved plan and iteration policy, together with the
+attempt's timeout. A repaired child candidate keeps the original goal, assertions,
+check IDs, limits, model and authority; it cannot refresh the overall iteration
+deadline. Diagnosis and source repair still have only their read tools: including
+the verification plan in their prompts does not authorize them to execute checks.
+
 The fixed CLI entries run the installed App's Python with `-I -B -m openprogram`
 and respectively `--version` or `--help`, never a model-supplied command or PATH
 lookup. Preparation rejects a CLI plan without the native sandbox or a compatible
@@ -115,8 +122,11 @@ before installation. An older package without this capability cannot use this pl
 The verifier receives a PNG image and accessibility tree, not merely a file path;
 the approved output limit covers the entire capture JSON, including base64 image
 data. PNGs must be non-interlaced 8-bit RGB/RGBA, with each dimension at most 16384
-and at most 32 million pixels. Use a verifier model that can inspect images;
-image-capability admission is not yet enforced by preparation.
+and at most 32 million pixels. The resolved verifier model must declare image
+input support. Preparation rejects a text-only model; restart recovery checks
+the capability again before creating the verifier Job. If image support is no
+longer available, startup records an error instead of running a text-only verifier.
+An already queued Job repeats this check at execution, before calling the model.
 
 Capture is bound to the active verification Job, candidate revision, worker,
 original session route and exact main-window connection. Expired, cancelled,

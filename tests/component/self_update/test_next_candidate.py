@@ -17,6 +17,41 @@ from tests.support.waiting import wait_until
 from tests.component.self_update.test_install_transaction import installation, INSTALLER, version, phase  # noqa: F401
 from tests.component.config.test_distribution_release import MACOS_DESKTOP_INSTALL
 from tests.component.self_update.test_package_protocol import package_factory  # noqa: F401
+from tests.component.self_update.test_verification_plan import _plan
+
+
+@pytest.mark.parametrize("diagnosis_environment", [{
+    "verification_plan": _plan(), "mode": "bounded_auto", "max_attempts": 3,
+    "deadline": time.time() + 3600, "allowed_paths": ["feature.txt"],
+    "required_tests": ["python -c 'assert True'"],
+}], indirect=True)
+@native_sandbox
+def test_planned_repair_preserves_contract_in_jobs_and_child(diagnosis_environment, monkeypatch):
+    from openprogram.agent.job.store import load_job
+    from openprogram.self_update.verifier_config import load_verifier_config, verifier_prompt
+    from openprogram.self_update.next_candidate import chain
+    store, _, _, update_id = diagnosis_environment
+    original = store.load(update_id)
+    _turn(diagnosis_environment, monkeypatch)
+    _start()
+    assert _result(diagnosis_environment)["status"] == "candidate_ready"
+    assert wait_until(lambda: store.load_active() is not None, timeout=5)
+    child = store.load_active()
+    config = load_verifier_config(store, child)
+    assert config["verification_plan"] == _plan()
+    assert [item.request.update_id for item in chain(store, child)] == [update_id, child.request.update_id]
+    for phase in ("diagnose", "repair"):
+        job = load_job(original.request.session_id, f"self-update:{update_id}:{phase}:1")
+        contract = json.loads(job.prompt.split("\n", 1)[1])
+        assert contract["verification_plan"] == _plan()
+        assert contract["iteration_policy"] == original.request.iteration_policy.to_dict()
+        assert contract["timeout_seconds"] == original.request.timeout_seconds
+        assert job.tools_override == ["read", "glob", "grep", "list"]
+    contract = json.loads(verifier_prompt(child, config).split("\n", 1)[1])
+    assert contract["verification_plan"] == _plan()
+    assert contract["iteration_policy"] == original.request.iteration_policy.to_dict()
+    assert contract["timeout_seconds"] == child.request.timeout_seconds <= original.request.timeout_seconds
+    assert contract["attempt"] == 2
 
 
 def test_iteration_approval_never_hides_envelope_after_a_long_goal():

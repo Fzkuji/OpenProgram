@@ -187,7 +187,8 @@ def prepare_after_rollback(store, record):
     store._write_json(store.root / "diagnosis-pending.json", dict(schema=1, update_id=record.request.update_id))
 
 
-def _prompt(record, request):
+def _prompt(record, request, config):
+    from .verifier_config import plan_context
     return (
         "Diagnose the failed update from the frozen evidence below. This is a new read-only task, "
         "not verification of a currently installed candidate and not continuation of its implementation turn. "
@@ -199,14 +200,14 @@ def _prompt(record, request):
         + json.dumps(dict(goal=record.request.goal, assertions=record.request.assertions,
                           repo=record.request.repo, worktree_id=record.request.worktree_id,
                           changed_paths=record.request.changed_paths,
-                          diagnosis_request=request), ensure_ascii=False, sort_keys=True)
+                          diagnosis_request=request, **plan_context(record, config)), ensure_ascii=False, sort_keys=True)
     )
 
 
 def _inputs(record, request, config):
     return {**{key: config[key] for key in ("agent_id", "profile_snapshot", "model_override",
                                            "tools_override", "response_format", "authority")},
-            "prompt": _prompt(record, request)}
+            "prompt": _prompt(record, request, config)}
 
 
 def _check_job(record, request, config, job):

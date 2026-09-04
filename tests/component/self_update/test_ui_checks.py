@@ -3,10 +3,12 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 import threading
 import time
 import struct
 import zlib
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -104,8 +106,61 @@ def _ui_plan():
 
 
 def test_public_prepare_accepts_main_window_capture_plan(tmp_path, monkeypatch, ui_install):
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text", "image"]))
     result, _ = _public_prepare(tmp_path, monkeypatch, _ui_plan())
     assert not result.is_error, result.content
+
+
+def test_public_prepare_rejects_text_only_ui_verifier(tmp_path, monkeypatch, ui_install):
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text"]))
+    result, store = _public_prepare(tmp_path, monkeypatch, _ui_plan())
+    assert result.is_error
+    assert "image" in result.content[0].text
+    assert not store.root.exists()
+
+
+@pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
+def test_restart_rejects_lost_image_capability_before_job_admission(verifier, monkeypatch):
+    from openprogram.self_update.recovery import recover_pending_updates
+    from openprogram.agent.job.store import load_job
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text"]))
+    assert recover_pending_updates() is False
+    assert load_job(verifier.request.session_id, verifier.grant["job_id"]) is None
+    error = verifier.store.root / verifier.request.update_id / "startup-error-1.json"
+    assert error.is_file()
+
+
+@pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
+def test_restored_queue_checks_image_capability_before_model_execution(verifier, monkeypatch):
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import JobStatus
+    from openprogram.self_update.verifier_config import load_verifier_config, verifier_prompt
+    record = verifier.store.load(verifier.request.update_id)
+    config = load_verifier_config(verifier.store, record)
+    claim = verifier.store.claim_verifier(record.request.update_id, owner=f"worker:{os.getpid()}", lease_seconds=15)
+    verifier.runner.spawn_job(job_id=claim.job_id, session_id=record.request.session_id,
+        prompt=verifier_prompt(record, config), agent_id=config["agent_id"], source="self_update_verify",
+        context_mode="clean", parent_msg_id=None, caller_msg_id=record.request.origin_assistant_id,
+        spawn_caller=record.request.origin_assistant_id, advance_head=False, wait=True,
+        creates_agent=False, defer_dispatch=True, **{key: config[key] for key in (
+            "profile_snapshot", "model_override", "tools_override", "response_format", "authority")})
+    verifier.runner.shutdown()
+    with verifier.runner._governor.ledger.immediate() as conn:
+        conn.execute("UPDATE job_admissions SET dispatch_ready = 1 WHERE job_id = ?", (claim.job_id,))
+    monkeypatch.setattr("openprogram.agent.internals._model_tools.resolve_model",
+                        lambda *a: SimpleNamespace(provider="fake", id="fixed", input=["text"]))
+    recovered = JobRunner(max_workers=1, governor=verifier.runner._governor)
+    monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: recovered)
+    try:
+        job = recovered.await_job(claim.job_id, timeout=5)
+        assert job is not None and job.status is JobStatus.ERRORED
+        assert "image" in job.error
+        assert "tool_result" not in verifier.control
+    finally:
+        recovered.shutdown()
 
 
 @pytest.mark.parametrize("verifier", [_ui_plan()], indirect=True)
