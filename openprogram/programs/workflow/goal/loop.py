@@ -11,21 +11,21 @@ def apply_goal_verdict(goal: dict, verdict: str, reason: str) -> str | None:
         goal["status"] = "achieved"
         goal["judge_parse_failures"] = 0
         return "achieved"
+    if verdict in {"blocked", "impossible", "waiting_external"}:
+        goal["status"] = verdict
+        goal["judge_parse_failures"] = 0
+        return verdict
     if verdict == "judge_failure":
         failures = int(goal.get("judge_parse_failures") or 0) + 1
         goal["judge_parse_failures"] = failures
         if failures >= _goal.JUDGE_PARSE_FAILURE_LIMIT:
-            goal["status"] = "error"
+            goal["status"] = "failed"
             goal["last_reason"] = (
                 f"judge failed {failures} times in a row: {reason}"
             )
-            return "error"
+            return "failed"
     else:
         goal["judge_parse_failures"] = 0
-    max_turns = goal.get("max_turns")
-    if max_turns and int(goal.get("turns_used") or 0) >= int(max_turns):
-        goal["status"] = "capped"
-        return "capped"
     return None
 
 
@@ -50,12 +50,12 @@ def apply_checklist_stall(goal: dict, verdict: str, reason: str) -> str | None:
     goal["last_done_count"] = done_count
     if goal["stall_rounds"] < _goal.STALL_ROUND_LIMIT:
         return None
-    goal["status"] = "error"
+    goal["status"] = "stalled"
     goal["last_reason"] = (
         f"checklist stuck at {done_count}/{len(items)} for "
         f"{goal['stall_rounds']} consecutive rounds: {reason}"
     )
-    return "error"
+    return "stalled"
 
 
 IDLE_WARNING = (
@@ -82,11 +82,11 @@ def apply_idle_spin(goal: dict, used_tools: bool, verdict: str) -> str | None:
     goal["idle_rounds"] = idle
     if idle < _goal.IDLE_ROUND_LIMIT:
         return None
-    goal["status"] = "error"
+    goal["status"] = "stalled"
     goal["last_reason"] = (
         f"idle spin: {idle} consecutive rounds without any tool use"
     )
-    return "error"
+    return "stalled"
 
 
 def next_work_prompt(
@@ -122,6 +122,19 @@ def next_work_prompt(
     if undone:
         text += "\n未完成项：\n" + "\n".join(
             f"{index}. {item.get('text')}" for index, item in undone
+        )
+    pending_questions = [
+        item for item in (goal.get("questions") or [])
+        if isinstance(item, dict) and item.get("status") == "pending"
+    ]
+    if pending_questions:
+        text += (
+            "\n\n待用户异步确认的问题：\n"
+            + "\n".join(
+                f"- {item.get('prompt')}" for item in pending_questions
+            )
+            + "\n不要猜测或执行依赖这些答案的事项；继续完成所有不依赖答案、"
+              "风险明确且可验证的工作。"
         )
     if int(goal.get("idle_rounds") or 0) >= 1:
         text += f"\n\n{IDLE_WARNING}"

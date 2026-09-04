@@ -11,8 +11,10 @@ def agent(
     *,
     model: str = "",
     effort: str = "",
-    tools: list[str] | None = None,
+    tools: list[Any] | None = None,
+    tools_deny: list[str] | None = None,
     response_format: dict[str, Any] | JsonSchemaOutput | None = None,
+    execution_kind: str = "agent",
     max_iterations: int = 20,
     timeout_s: float | None = None,
 ) -> str | dict[str, Any] | list[Any] | int | float | bool | None:
@@ -24,6 +26,8 @@ def agent(
         effort: Reasoning effort override
         tools: Tool names to provide (None = all available tools)
         response_format: JSON Schema or JsonSchemaOutput contract (None = return text)
+        tools_deny: Tool names that must remain unavailable for this turn
+        execution_kind: Runtime execution label for this tool loop
         max_iterations: Max tool loop rounds
         timeout_s: Timeout in seconds
 
@@ -53,10 +57,12 @@ def agent(
         "max_iterations": max_iterations,
         "timeout_s": timeout_s,
         "effort": effort or None,
-        "execution_kind": "agent",
+        "execution_kind": execution_kind,
     }
     if response_format is not None:
         exec_options["response_format"] = response_format
+    if tools_deny is not None:
+        exec_options["tools_deny"] = tools_deny
     result = runtime.exec(**exec_options)
 
     if response_format is not None:

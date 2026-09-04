@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "OpenProgram Goal 生命周期",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1040, 760]
+  },
+  "lanes": [
+    {"id": "main", "label": "主生命周期"},
+    {"id": "wait", "label": "可恢复等待"},
+    {"id": "problem", "label": "困难任务分类"},
+    {"id": "terminal", "label": "终态"}
+  ],
+  "states": [
+    {"id": "draft", "type": "start", "label": "Draft", "sublabel": "目标已保存", "lane": "main", "col": 0, "step": "01"},
+    {"id": "refining", "type": "active", "label": "Refining", "sublabel": "形成 spec 与 checklist", "lane": "main", "col": 1, "step": "02"},
+    {"id": "running", "type": "active", "label": "Running", "sublabel": "独立工作继续，问题可累计", "lane": "main", "col": 2, "step": "03"},
+    {"id": "evaluating", "type": "decision", "label": "Evaluating", "sublabel": "Gate + Judge", "lane": "main", "col": 3, "step": "04"},
+    {"id": "achieved", "type": "success", "label": "Achieved", "sublabel": "证据满足完成合同", "lane": "main", "col": 4, "step": "05"},
+    {"id": "paused", "type": "waiting", "label": "Paused", "sublabel": "用户暂停或重启恢复", "lane": "wait", "col": 0, "yOffset": -42, "tag": "recoverable"},
+    {"id": "waiting_user", "type": "waiting", "label": "Waiting User", "sublabel": "仅剩依赖回答的工作", "lane": "wait", "col": 1, "yOffset": -42, "tag": "event"},
+    {"id": "waiting_external", "type": "external", "label": "Waiting External", "sublabel": "等待作业或外部状态", "lane": "wait", "col": 2, "yOffset": -42, "tag": "event"},
+    {"id": "blocked", "type": "failure", "label": "Blocked", "sublabel": "缺少权限、依赖或输入", "lane": "problem", "col": 0, "yOffset": 76, "tag": "recoverable"},
+    {"id": "stalled", "type": "failure", "label": "Stalled", "sublabel": "连续无有效进展", "lane": "problem", "col": 1, "yOffset": 76, "tag": "recoverable"},
+    {"id": "budget", "type": "failure", "label": "Budget Exhausted", "sublabel": "turn · token · time · cost", "lane": "problem", "col": 2, "yOffset": 76, "tag": "recoverable"},
+    {"id": "impossible", "type": "failure", "label": "Impossible", "sublabel": "当前合同内无法满足", "lane": "terminal", "col": 0, "tag": "terminal"},
+    {"id": "failed", "type": "failure", "label": "Failed", "sublabel": "不可恢复执行错误", "lane": "terminal", "col": 1, "tag": "terminal"},
+    {"id": "cancelled", "type": "failure", "label": "Cancelled", "sublabel": "用户明确终止", "lane": "terminal", "col": 2, "tag": "terminal"}
+  ],
+  "transitions": [
+    {"id": "draft_refine", "from": "draft", "to": "refining", "route": "straight"},
+    {"id": "refine_run", "from": "refining", "to": "running", "route": "straight"},
+    {"id": "run_eval", "from": "running", "to": "evaluating", "route": "straight"},
+    {"id": "eval_done", "from": "evaluating", "to": "achieved", "variant": "emphasis", "route": "straight"}
+  ],
+  "cards": [
+    {"dot": "emerald", "title": "成功", "items": ["只有 Controller 接受已验证 verdict 才能进入 achieved"]},
+    {"dot": "amber", "title": "异步提问", "items": ["问题入队不等于 Goal 暂停", "完成全部独立工作后才进入 waiting_user"]},
+    {"dot": "rose", "title": "困难任务", "items": ["blocked、stalled 和 budget_exhausted 保存原因与证据", "impossible、failed、cancelled 不自动续跑"]}
+  ]
+}

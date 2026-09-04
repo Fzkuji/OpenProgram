@@ -30,7 +30,7 @@ from typing import Any
 
 from openprogram.programs._helpers import is_available as _tool_is_available
 from openprogram.programs._helpers import read_int_param, read_string_param
-from openprogram.programs._runtime import function
+from openprogram.programs._runtime import ToolReturn, function
 from . import providers as _  # registers builtins on import  # noqa: F401
 from .registry import SearchResult, registry
 
@@ -239,6 +239,11 @@ def execute(
 
 
 
+def _execute_agent_tool(**kwargs) -> ToolReturn:
+    text = execute(**kwargs)
+    return ToolReturn(text=text, is_error=text.startswith("Error:"))
+
+
 # Register as an AgentTool. ``execute`` stays a plain callable so any
 # existing import-and-call sites keep working; the return value (an
 # AgentTool) is discarded — it's already in the registry.
@@ -248,6 +253,6 @@ function(
     parameters=SPEC["parameters"],
     toolset=['core', 'research'],
     check_fn=_tool_check_fn,
-)(execute)
+)(_execute_agent_tool)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION", "_tool_check_fn"]

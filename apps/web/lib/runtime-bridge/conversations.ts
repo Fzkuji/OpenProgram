@@ -11,6 +11,7 @@ import {
   switchDraftChannelChoice,
 } from "./draft-channel-choice";
 import { runtimeState, getSocket, type TreeEntry } from "./state";
+import { updateSessionGoal } from "./goal-state";
 import {
   formatProgramResultContent,
   scrollToBottom,
@@ -565,18 +566,16 @@ export function loadSessionData(data: LegacyConv): void {
   // 不该被覆盖为 undefined; 显式 filter 一下 data 里的 undefined 值.
   const cleanedData: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
-    if (v !== undefined) cleanedData[k] = v;
+    if (v !== undefined && k !== "goal") cleanedData[k] = v;
   }
   map[id] = Object.assign({}, map[id] || {}, cleanedData);
   // Keep the sidebar's store entry in sync with the freshly-loaded
   // session's summary fields (title / channel / preview / flags).
   mirrorUpsertConv(map[id] as Record<string, unknown>);
-  // Announce the session's /goal state so the composer GoalChip can
-  // hydrate after a reload (live changes ride `goal_update` frames).
+  // A slow session load must not overwrite a newer HTTP or live Goal update.
   try {
-    window.dispatchEvent(new CustomEvent("op:goal-state", {
-      detail: { session_id: id, goal: (map[id] as { goal?: unknown }).goal ?? null },
-    }));
+    const loaded = data as { goal?: { version?: number } | null };
+    if (loaded.goal !== undefined) updateSessionGoal(id, loaded.goal);
   } catch { /* defensive */ }
   // 清 transcript skeleton — 不能只在 currentSessionId 分支里清:
   // 回包晚到、用户已切走时, loading 态若还指着这个 id 也要释放。

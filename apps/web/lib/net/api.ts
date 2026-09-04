@@ -127,6 +127,15 @@ export const api = {
     );
   },
 
+  mutateGoal: (
+    sessionId: string,
+    body: { action: string; prompt?: string; [key: string]: unknown },
+  ) =>
+    jsonFetch<{ goal: Record<string, unknown>; invoke?: { name: string; kwargs: Record<string, unknown> } }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/goal`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
   listHistory: () =>
     jsonFetch<{ id: string; title: string; created_at?: number }[]>("/api/history"),
 

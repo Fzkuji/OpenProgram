@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OpenProgram Goal 控制流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {"id": "surface", "label": "Web / TUI"},
+    {"id": "controller", "label": "Goal Controller"},
+    {"id": "agents", "label": "Agent Roles"},
+    {"id": "evidence", "label": "Evidence & State"},
+    {"id": "exceptions", "label": "Wait / Stop", "variant": "exception"}
+  ],
+  "phases": [
+    {"id": "define", "label": "定义与恢复", "fromCol": 0, "toCol": 1},
+    {"id": "execute", "label": "执行与判定", "fromCol": 2, "toCol": 4, "variant": "emphasis"},
+    {"id": "settle", "label": "继续或终止", "fromCol": 5, "toCol": 5, "variant": "dashed"}
+  ],
+  "mainPath": ["goal_input", "persist", "work", "collect", "gate", "judge", "commit"],
+  "nodes": [
+    {"id": "goal_input", "lane": "surface", "col": 0, "type": "frontend", "label": "Goal 输入", "sublabel": "创建 / 编辑 / 继续", "width": 138},
+    {"id": "persist", "lane": "controller", "col": 1, "type": "backend", "label": "持久化状态", "sublabel": "goal_id · version · checkpoint", "width": 150},
+    {"id": "work", "lane": "agents", "col": 2, "type": "backend", "label": "Working Agent", "sublabel": "调用工具并推进任务", "width": 146},
+    {"id": "collect", "lane": "evidence", "col": 3, "type": "database", "label": "证据与用量", "sublabel": "结果 · 文件 · token · 时间", "width": 150},
+    {"id": "gate", "lane": "agents", "col": 4, "type": "security", "label": "确定性 Gate", "sublabel": "命令 · 文件 · 计数 · 权限", "width": 146},
+    {"id": "judge", "lane": "agents", "col": 5, "type": "backend", "label": "Judge Agent", "sublabel": "只读检查与语义判定", "width": 148},
+    {"id": "commit", "lane": "controller", "col": 5, "type": "messagebus", "label": "原子状态转移", "sublabel": "CAS version + event", "width": 150},
+    {"id": "questions", "lane": "exceptions", "col": 3, "type": "database", "label": "异步问题队列", "sublabel": "累计 · 去重 · 稍后回答", "width": 150},
+    {"id": "wait", "lane": "exceptions", "col": 4, "type": "external", "label": "等待边界", "sublabel": "无独立工作 / 外部事件", "width": 150},
+    {"id": "stop", "lane": "exceptions", "col": 5, "type": "security", "label": "停止并保留证据", "sublabel": "blocked · stalled · failed", "width": 150}
+  ],
+  "edges": [
+    {"id": "input_state", "from": "goal_input", "to": "persist", "label": "create / edit / resume", "variant": "emphasis"},
+    {"id": "state_work", "from": "persist", "to": "work", "label": "lease + checkpoint"},
+    {"id": "work_evidence", "from": "work", "to": "collect", "label": "result + tool evidence"},
+    {"id": "evidence_gate", "from": "collect", "to": "gate", "label": "verifiable criteria"},
+    {"id": "gate_judge", "from": "gate", "to": "judge", "label": "gate result"},
+    {"id": "judge_commit", "from": "judge", "to": "commit", "label": "typed verdict", "variant": "emphasis"},
+    {"id": "commit_resume", "from": "commit", "to": "work", "label": "unmet → next round", "variant": "dashed", "role": "branch"},
+    {"id": "judge_questions", "from": "judge", "to": "questions", "label": "needs_user", "variant": "dashed", "role": "branch"},
+    {"id": "questions_work", "from": "questions", "to": "work", "label": "可继续 → 独立工作", "variant": "dashed", "role": "return"},
+    {"id": "questions_wait", "from": "questions", "to": "wait", "label": "无独立工作", "variant": "dashed", "role": "branch"},
+    {"id": "judge_wait", "from": "judge", "to": "wait", "label": "waiting_external", "variant": "dashed", "role": "branch"},
+    {"id": "commit_stop", "from": "commit", "to": "stop", "label": "terminal verdict", "variant": "security", "role": "error"}
+  ],
+  "cards": [
+    {"dot": "emerald", "title": "完成所有权", "items": ["Working Agent 只提交结果", "Judge 提交判定，Controller 决定最终状态"]},
+    {"dot": "amber", "title": "异步问题", "items": ["问题持久化并允许累计，不阻塞独立工作", "只在全部剩余工作依赖回答时进入 waiting_user"]},
+    {"dot": "rose", "title": "循环边界", "items": ["轮数、token、时间和成本共同限制", "停滞、阻塞与不可实现分别记录"]}
+  ]
+}

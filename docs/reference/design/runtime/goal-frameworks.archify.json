@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "四种原生 Goal 的控制结构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {"id": "openprogram", "label": "OpenProgram"},
+    {"id": "codex", "label": "Codex"},
+    {"id": "claude", "label": "Claude Code"},
+    {"id": "hermes", "label": "Hermes Agent"}
+  ],
+  "phases": [
+    {"id": "state", "label": "状态所有权", "fromCol": 0, "toCol": 1},
+    {"id": "decision", "label": "工作与判定", "fromCol": 2, "toCol": 3, "variant": "emphasis"},
+    {"id": "continuation", "label": "续轮与等待", "fromCol": 4, "toCol": 5, "variant": "dashed"}
+  ],
+  "nodes": [
+    {"id": "op_state", "lane": "openprogram", "col": 0, "type": "database", "label": "Versioned Goal snapshot", "sublabel": "goal/run ID · CAS", "width": 164},
+    {"id": "op_judge", "lane": "openprogram", "col": 2, "type": "security", "label": "Working Agent → Judge", "sublabel": "独立且可只读检查", "width": 170},
+    {"id": "op_next", "lane": "openprogram", "col": 4, "type": "messagebus", "label": "Controller / Wait", "sublabel": "异步问题 · 重启恢复", "width": 160},
+    {"id": "codex_state", "lane": "codex", "col": 0, "type": "database", "label": "SQLite ThreadGoal", "sublabel": "typed status · usage", "width": 164},
+    {"id": "codex_judge", "lane": "codex", "col": 2, "type": "backend", "label": "Working Agent 自报", "sublabel": "update_goal", "width": 170},
+    {"id": "codex_next", "lane": "codex", "col": 4, "type": "messagebus", "label": "Idle Controller", "sublabel": "pause · resume · limits", "width": 160},
+    {"id": "claude_state", "lane": "claude", "col": 0, "type": "database", "label": "Session Goal Prompt", "sublabel": "resume 保留", "width": 164},
+    {"id": "claude_judge", "lane": "claude", "col": 2, "type": "security", "label": "Stop Hook Evaluator", "sublabel": "小模型 · 无工具", "width": 170},
+    {"id": "claude_next", "lane": "claude", "col": 4, "type": "messagebus", "label": "阻止停止或清除", "sublabel": "后台任务 defer", "width": 160},
+    {"id": "hermes_state", "lane": "hermes", "col": 0, "type": "database", "label": "GoalState + Contract", "sublabel": "gates · waits", "width": 164},
+    {"id": "hermes_judge", "lane": "hermes", "col": 2, "type": "security", "label": "Gate → Judge", "sublabel": "机械检查优先", "width": 170},
+    {"id": "hermes_next", "lane": "hermes", "col": 4, "type": "messagebus", "label": "Queue / Wait Barrier", "sublabel": "事件唤醒", "width": 160}
+  ],
+  "edges": [
+    {"id": "op_decide", "from": "op_state", "to": "op_judge", "label": "work + evidence"},
+    {"id": "op_continue", "from": "op_judge", "to": "op_next", "label": "verdict"},
+    {"id": "codex_decide", "from": "codex_state", "to": "codex_judge", "label": "run turn"},
+    {"id": "codex_continue", "from": "codex_judge", "to": "codex_next", "label": "self-report"},
+    {"id": "claude_decide", "from": "claude_state", "to": "claude_judge", "label": "on Stop"},
+    {"id": "claude_continue", "from": "claude_judge", "to": "claude_next", "label": "three verdicts"},
+    {"id": "hermes_decide", "from": "hermes_state", "to": "hermes_judge", "label": "turn result"},
+    {"id": "hermes_continue", "from": "hermes_judge", "to": "hermes_next", "label": "done / blocked / wait"}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "判定能力", "items": ["OpenProgram 与 Hermes 支持独立证据判定", "Codex 依赖工作 Agent 自报，Claude evaluator 无工具"]},
+    {"dot": "amber", "title": "恢复能力", "items": ["Codex 使用持久 idle controller", "Hermes 支持事件等待；OpenProgram 支持显式重启恢复"]}
+  ]
+}

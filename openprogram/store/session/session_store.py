@@ -31,7 +31,7 @@ import uuid
 from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 _log = logging.getLogger(__name__)
 
@@ -904,6 +904,50 @@ class SessionStore:
         if index_fields:
             self._update_index_entry(session_id, **index_fields)
             self._save_index()
+
+    def compare_and_set_session_dict(
+        self,
+        session_id: str,
+        field: str,
+        *,
+        version: int,
+        value: dict[str, Any],
+    ) -> bool:
+        """Atomically replace one versioned session dictionary."""
+        return self.update_session_dict(
+            session_id, field,
+            lambda current: value if int(current.get("version") or 0) == int(version) else None,
+        ) is not None
+
+    def update_session_dict(
+        self,
+        session_id: str,
+        field: str,
+        update: Callable[[dict[str, Any]], dict[str, Any] | None],
+    ) -> dict[str, Any] | None:
+        """Read and transform a dictionary under the session's write lock.
+
+        The callback must not perform I/O or re-enter the store. Returning
+        None rejects the update without changing durable or cached state.
+        """
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return None
+        git, idx = pair
+        with self._head_file_lock(git):
+            with idx._persist_lock:
+                meta = git.read_meta()
+                current = meta.get(field)
+                value = update(current if isinstance(current, dict) else {})
+                if value is None:
+                    return None
+                meta[field] = dict(value)
+                with idx._lock:
+                    idx.meta.clear()
+                    idx.meta.update(meta)
+                    idx.head_id = meta.get("head_id")
+                git.write_meta(meta)
+        return value
 
     def get_session(self, session_id: str) -> Optional[dict[str, Any]]:
         pair = self._open(session_id)

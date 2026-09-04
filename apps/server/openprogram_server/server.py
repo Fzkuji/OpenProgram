@@ -1998,6 +1998,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.webui.routes import lifecycle as _routes_lifecycle
     _routes_lifecycle.register(app)
 
+    # Durable Goal projection and pause/edit/resume/cancel actions.
+    from openprogram.webui.routes import goal as _routes_goal
+    _routes_goal.register(app)
+
     # Pending user-input questions list/reply/reject — routes.questions
     # (REST parity for runtime.ask; WS is the live path). Reconnect recovery.
     from openprogram.webui.routes import questions as _routes_questions

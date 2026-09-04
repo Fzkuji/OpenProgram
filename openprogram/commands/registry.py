@@ -230,7 +230,7 @@ def register_shared_builtins() -> None:
         description=(
             "run the Goal Workflow with current session context "
             "(or inspect/clear its state)"),
-        argument_hint="[condition | clear]",
+        argument_hint="[prompt | clear]",
     )
 
 

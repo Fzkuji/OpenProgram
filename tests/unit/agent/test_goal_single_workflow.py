@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 
 
 def test_goal_set_builds_the_single_workflow_call_without_writing_state(
@@ -19,7 +20,6 @@ def test_goal_set_builds_the_single_workflow_call_without_writing_state(
         "name": "goal",
         "kwargs": {
             "prompt": "tests pass",
-            "condition": "tests pass",
             "context_mode": "session",
         },
     }
@@ -67,14 +67,14 @@ def test_one_goal_function_selects_only_the_initial_context(
     monkeypatch.setattr(goal_pkg, "evaluate_goal", fake_evaluate)
 
     assert goal_module.goal(
-        "do work", "done", context_mode="isolated", max_rounds=1,
+        "do work", context_mode="isolated", max_rounds=1,
     ) == "finished"
     assert "SESSION VIEW" not in work_prompts[-1]
     assert judge_views[-1] == "[goal work round 1]\nfinished"
     assert refine_contexts[-1] == ""
 
     assert goal_module.goal(
-        "do work", "done", context_mode="session", max_rounds=1,
+        "do work", context_mode="session", max_rounds=1,
     ) == "finished"
     assert "SESSION VIEW" in work_prompts[-1]
     assert judge_views[-1].startswith("SESSION VIEW\n")
@@ -90,7 +90,7 @@ def test_goal_program_isolated_history_is_part_of_its_registered_contract() -> N
     assert goal_module.goal.input_meta["context_mode"]["hidden"] is True
 
 
-def test_goal_agent_tool_exposes_context_mode_not_condition() -> None:
+def test_goal_has_one_text_parameter_and_exposes_context_mode() -> None:
     goal_module = importlib.import_module(
         "openprogram.programs.workflow.goal.goal"
     )
@@ -99,3 +99,44 @@ def test_goal_agent_tool_exposes_context_mode_not_condition() -> None:
     assert "context_mode" in params
     assert params["context_mode"]["enum"] == ["isolated", "session"]
     assert "condition" not in params
+    assert "condition" not in inspect.signature(goal_module.goal).parameters
+
+
+def test_goal_accepts_numeric_strings_from_programs_run(monkeypatch) -> None:
+    goal_pkg = importlib.import_module("openprogram.programs.workflow.goal")
+    goal_module = importlib.import_module("openprogram.programs.workflow.goal.goal")
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    monkeypatch.setattr(goal_pkg, "refine_goal_spec_candidate", lambda *_a, **_k: ("SPEC", []))
+    monkeypatch.setattr(goal_pkg, "evaluate_goal", lambda *_a, **_k: ("met", "done", "", [], False))
+    seen: list[dict] = []
+    monkeypatch.setattr(
+        agent_module,
+        "agent",
+        lambda **kwargs: seen.append(kwargs) or "finished",
+    )
+
+    assert goal_module.goal(
+        "do work",
+        max_rounds="2",
+        max_tokens="20000",
+        max_elapsed_s="600",
+        max_cost_usd="1.5",
+        timeout_s="180",
+    ) == "finished"
+    assert seen[0]["timeout_s"] == 180.0
+    assert seen[0]["tools_deny"] == ["ask_user_question"]
+    assert "Human questions are asynchronous" in seen[0]["prompt"]
+
+
+def test_headless_goal_reports_budget_stop_instead_of_empty_success(monkeypatch) -> None:
+    goal_pkg = importlib.import_module("openprogram.programs.workflow.goal")
+    goal_module = importlib.import_module("openprogram.programs.workflow.goal.goal")
+    function_module = importlib.import_module("openprogram.agentic_programming.function")
+    monkeypatch.setattr(function_module, "current_session_id", lambda: "")
+    monkeypatch.setattr(goal_pkg, "refine_goal_spec_candidate", lambda *_a, **_k: ("SPEC", []))
+    monkeypatch.setattr(goal_pkg, "budget_exhausted", lambda *_a, **_k: "elapsed_time")
+
+    result = goal_module.goal("do work", max_elapsed_s=1)
+
+    assert "budget_exhausted" in result
+    assert "elapsed_time" in result
