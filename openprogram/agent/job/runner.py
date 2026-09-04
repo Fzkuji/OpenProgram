@@ -643,6 +643,11 @@ class JobRunner:
         status = status_map.get(execution.status)
         if status is None:
             return
+        # Startup recovery also visits foreground Agent executions. Their
+        # validated immutable input distinguishes them from resource-admitted
+        # Jobs; a missing or corrupt Job input must still fail closed below.
+        if self._execution_store.get_agent_turn_input(execution.execution_id) is not None:
+            return
         # A durable finalization intent is the sole source of terminal
         # projection fields.  In particular, recovery must not replace a
         # pending result/error/head with fields reconstructed from the

@@ -31,6 +31,15 @@ status, checklist, resource usage, last decision reason, and all pending
 questions. The dialog supports editing, pausing, resuming, answering individual
 questions, changing execution limits, and cancelling.
 
+Achieved, cancelled, and impossible Goals no longer occupy the composer.
+Their original objective and output remain available in the corresponding
+execution record. Paused, waiting, and recoverable failed Goals keep the detail
+entry so you can inspect and continue them after a reload.
+
+Expand an execution record to inspect its LLM replies. The tree shows the
+stored prompt preview and actual output; an empty reply is labelled “No text
+output”. Copy includes the reply, including records using the older reply field.
+
 The same operations are available in the TUI:
 
 ```text

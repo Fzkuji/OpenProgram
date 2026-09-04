@@ -70,13 +70,27 @@ def _exec_tnode(n, kids: dict[str, list]) -> dict:
     elif status == "interrupted":
         tn["error"] = str(meta.get("error") or n.output or "")
     if n.is_llm():
-        # exec rows render params._content (prompt) + raw_reply.
+        # Runtime stores the prompt preview separately from system input.
+        # Both tree summaries and details consume output; keep raw_reply for
+        # older clients and preserve structured content with JSON encoding.
         tn["node_type"] = "exec"
         inp = n.input
-        if isinstance(inp, (list, dict)):
-            inp = json.dumps(inp, default=str, ensure_ascii=False)
-        tn["params"] = {"_content": str(inp or "")}
-        tn["raw_reply"] = str(n.output or "")
+        params = dict(inp) if isinstance(inp, dict) else {}
+        content = meta.get("prompt_text")
+        if content is None:
+            content = (
+                json.dumps(inp, default=str, ensure_ascii=False)
+                if isinstance(inp, (list, dict)) else str(inp or "")
+            )
+        if content:
+            params["_content"] = content
+        tn["params"] = params
+        out = n.output
+        tn["output"] = (
+            "" if out is None else out if isinstance(out, str)
+            else json.dumps(out, default=str, ensure_ascii=False)
+        )
+        tn["raw_reply"] = tn["output"]
     else:
         if isinstance(n.input, dict):
             tn["params"] = {k: v for k, v in n.input.items()

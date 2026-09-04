@@ -160,7 +160,8 @@ export function GoalChip() {
 
   useEffect(() => setDraft(goal?.text ?? ""), [goal?.text, goal?.revision]);
   useEffect(() => setLimits(budgetDraft(goal)), [goal?.version]);
-  if (!goal || goal.status === "cleared") return null;
+  // Terminal goals remain in execution history, not in the active composer.
+  if (!goal || terminalStatuses.has(goal.status || "")) return null;
 
   const checklist = goal.checklist ?? [];
   const pendingQuestions = (goal.questions ?? []).filter((item) => item.status === "pending");

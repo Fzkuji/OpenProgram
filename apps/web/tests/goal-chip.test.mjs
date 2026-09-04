@@ -157,3 +157,73 @@ test("late session hydration preserves the newest Goal while loading other sessi
     assert.match(view.host.textContent, /Paused after restart/);
   } finally { await view.close(); }
 });
+
+test("terminal Goal leaves the composer without deleting its persisted result", async () => {
+  for (const status of ["achieved", "cancelled", "impossible", "cleared"]) {
+    reset();
+    const view = await mount();
+    try {
+      await frame(snapshot(2, status));
+      assert.equal(Boolean(view.host.querySelector("button")), false, status);
+      assert.equal(runtimeState.conversations.s1.goal.status, status);
+      await view.close();
+      const reloaded = await mount();
+      try { assert.equal(Boolean(reloaded.host.querySelector("button")), false, status); }
+      finally { await reloaded.close(); }
+    } finally { if (view.host.isConnected) await view.close(); }
+  }
+});
+
+test("recoverable Goal states keep a usable details entry", async () => {
+  for (const status of ["paused", "paused_recoverable", "waiting_user", "waiting_external", "failed", "stalled", "budget_exhausted"]) {
+    reset();
+    runtimeState.conversations.s1.goal = snapshot(2, status);
+    const view = await mount();
+    try {
+      await view.open();
+      assert.match(view.host.textContent, /Goal details/);
+      assert.equal(view.host.querySelector("textarea").value, "Write the review");
+    } finally { await view.close(); }
+  }
+});
+
+test("LLM tree rows show and copy replies from legacy and current projections", async () => {
+  const { TreeStep } = await import("../components/chat/messages/execution-strip.tsx");
+  const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  let copied;
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+    clipboard: { writeText: async value => { copied = value; } },
+  } });
+  try {
+    for (const fields of [{ raw_reply: "实际回复" }, { output: "实际回复", raw_reply: "实际回复" }]) {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const root = createRoot(host);
+      try {
+        await act(async () => root.render(createElement(TreeStep, {
+          node: { name: "LLM", node_type: "exec", params: { _content: "输入" }, ...fields },
+        })));
+        assert.match(host.textContent, /实际回复/);
+        await act(async () => host.querySelector("button").click());
+        assert.equal(JSON.parse(copied).output, "实际回复");
+      } finally { await act(async () => root.unmount()); host.remove(); }
+    }
+  } finally {
+    if (oldNavigator) Object.defineProperty(globalThis, "navigator", oldNavigator);
+    else delete globalThis.navigator;
+  }
+});
+
+test("an empty LLM reply is labelled without inventing an output", async () => {
+  const { TreeStep } = await import("../components/chat/messages/execution-strip.tsx");
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(TreeStep, {
+      node: { name: "LLM", node_type: "exec", output: "", params: {} },
+    })));
+    assert.match(host.textContent, /No text output/);
+    assert.doesNotMatch(host.textContent, /_content/);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
