@@ -5510,10 +5510,10 @@
         <div style="font-family:system-ui,sans-serif;line-height:1.65;overflow-wrap:anywhere;min-width:0">
           <p>保留 gui_agent 能力循环。Agent 从当前窗口列表选择应用和窗口，调用 computer_use。窗口后端把单窗口截图和控件信息交给现有 gui_step 规划、验证流程；不激活应用，不回退到全局键盘、鼠标、剪贴板或命令执行。</p>
           <ol><li>确认应用进程和唯一窗口；目标不明确、身份失效、权限不足或窗口最小化时明确返回限制。</li><li>通过 ScreenCaptureKit 截取该窗口，只枚举该窗口的 Accessibility 子控件；控件编号只对本次观察有效。</li><li>现有规划器只获得受限动作：执行控件支持的按压动作、设置可写文本、执行支持的滚动动作。不支持的坐标手势明确返回限制。</li><li>执行前重新检查进程、窗口、控件归属和权限；同一应用进程内串行执行。输入、结果、目标身份和截图继续通过现有能力调用历史传递。</li><li>下一次正常验证判断任务进展；动作发送成功不等于任务完成。取消或目标消失后停止，不切换到前台继续。</li></ol>
-          <p>系统捕获提示由 ScreenCaptureKit 管理。首个后端不实现自绘鼠标提示或任意后台坐标输入，控件操作不依赖它们。必须分别验证原生应用和 Electron 应用；截图成功不能证明输入互不干扰。</p>
+          <p>系统捕获提示由 ScreenCaptureKit 管理。Harness 另外创建一个不激活应用、不接收鼠标事件，并与准确目标窗口对齐的窗口控制提示层。提示层在窗口会话期间持续显示被控制应用，成功执行动作后在所选 Accessibility 控件边界显示动作类型。它不移动系统鼠标，不接收输入，也不提供坐标点击能力。提示层无法创建或绘制时，Accessibility 操作仍继续，任务结果不受影响。</p>
           <p>参考：<a href="https://developer.apple.com/videos/play/wwdc2023/10136/">ScreenCaptureKit 系统集成</a>、<a href="https://learn.chatgpt.com/docs/computer-use">Codex 后台操作行为</a>。OpenAI 没有公开底层输入实现。</p>
           <h3>实现状态</h3>
-          <p>后台窗口后端已经实现。原生 AppKit 验收覆盖单窗口截图、文本替换与读取、按钮操作，以及 computer_use 从 applied 到验证成功的调用链。OpenProgram 在创建首个窗口前启用 Electron 原生辅助功能支持；随后使用 Harness 的 MacWindow observe → dispatch 调用链操作 Toggle sidebar，并恢复原始 DOM 状态。原生与 Electron 动作执行期间，目标应用均未激活，前台进程和系统鼠标坐标均保持不变。规划器和验证器的边界检查使用确定性的测试替身；实际模型质量与输入隔离分开验收。系统捕获提示由 ScreenCaptureKit 提供。任意坐标事件和伪造鼠标覆盖提示不属于该后端。</p>
+          <p>后台窗口后端及窗口控制提示层已经实现。提示 helper 同时绑定准确窗口和目标进程，持续跟随当前 WindowServer 几何；目标离开当前 Space 或被其他应用窗口遮挡时隐藏；退出时强制回收。每次 Accessibility 动作成功后重新读取所选控件边界再更新标记；没有当前边界时清除旧标记。原生验收覆盖目标移动、其他窗口遮挡、当前控件边界、helper 关闭、目标保持未激活，以及前台应用和系统鼠标不变。任意坐标事件仍不属于该后端。</p>
         </div>
         <ul>
           <li>&bull; 根循环每轮选择 computer_use、browser_use 或 vm_use</li>
