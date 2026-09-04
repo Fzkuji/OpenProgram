@@ -3,6 +3,7 @@ the commands registry: set / status / clear against a session."""
 from __future__ import annotations
 
 import math
+import shlex
 import time
 from typing import Optional
 
@@ -156,6 +157,16 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
             })
         goal["last_reason"] = "User answer saved for the next Goal boundary."
         _goal.save_goal(session_id, goal)
+    elif action == "roles":
+        if goal.get("status") not in _goal.RESUMABLE_STATUSES:
+            raise ValueError("Pause the Goal before changing its roles")
+        from .roles import edit_role_requests
+        requests = edit_role_requests(goal, values.get("roles"))
+        goal["role_requests"] = requests
+        goal.pop("roles", None)
+        goal["roles_origin"] = "user-configured"
+        goal["last_reason"] = "Role settings saved; models will be validated on resume."
+        _goal.save_goal(session_id, goal)
     elif action == "budget":
         budget = dict(goal.get("budget") or {})
         for key in ("max_turns", "max_tokens", "max_elapsed_s", "max_cost_usd"):
@@ -174,7 +185,7 @@ def apply_goal_action(session_id: str, action: str, **values) -> dict:
                     raise ValueError(f"{key} must be a positive number or zero") from exc
                 if not math.isfinite(float(parsed)) or parsed < 0:
                     raise ValueError(f"{key} must be a positive number or zero")
-                budget[key] = parsed
+                budget[key] = parsed or None
         goal["budget"] = budget
         goal["max_turns"] = budget.get("max_turns")
         _goal.save_goal(session_id, goal)
@@ -209,6 +220,33 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
                 "send_text": None}
 
     head = args.split()[0].lower()
+    if args.lower() == "help":
+        return {"text": (
+            "/goal — show objective, roles, usage, checkpoint and questions\n"
+            "/goal pause | resume | clear\n/goal edit <objective>\n"
+            "/goal answer [question-id] <answer>\n"
+            "/goal role <work|judge> <provider> <model> [effort=high] [timeout_s=300]\n"
+            "/goal budget max_turns=10 max_tokens=10000 max_elapsed_s=3600 max_cost_usd=5\n"
+            "Role edits require a paused Goal. Zero removes a limit."
+        ), "send_text": None}
+    if head in {"role", "budget"}:
+        try:
+            parts = shlex.split(args)
+            if head == "role":
+                if len(parts) < 4 or parts[1] not in {"work", "judge"}:
+                    raise ValueError("Usage: /goal role <work|judge> <provider> <model> [effort=high] [timeout_s=300]")
+                options = _command_options(parts[4:], {"effort", "timeout_s"})
+                apply_goal_action(session_id, "roles", roles={parts[1]: {
+                    "provider": parts[2], "model": parts[3], **options,
+                }})
+                return {"text": "Goal role settings saved. Resume to validate and use them.", "send_text": None}
+            options = _command_options(parts[1:], {"max_turns", "max_tokens", "max_elapsed_s", "max_cost_usd"})
+            if not options:
+                raise ValueError("Usage: /goal budget max_turns=10 max_tokens=10000 (zero removes a limit)")
+            apply_goal_action(session_id, "budget", **options)
+            return {"text": "Goal limits saved.", "send_text": None}
+        except ValueError as exc:
+            return {"text": str(exc), "send_text": None}
     if head in _goal._CLEAR_VERBS:
         try:
             apply_goal_action(session_id, "cancel")
@@ -279,6 +317,16 @@ def handle_goal_command(session_id: str, raw_args: str) -> dict:
     }
 
 
+def _command_options(parts, allowed):
+    options = {}
+    for part in parts:
+        key, separator, value = part.partition("=")
+        if not separator or key not in allowed or key in options:
+            raise ValueError("Invalid or duplicate Goal setting: " + part)
+        options[key] = value
+    return options
+
+
 def _status_text(goal: Optional[dict]) -> str:
     if not goal:
         return "No goal set. /goal <prompt> to set one."
@@ -290,6 +338,11 @@ def _status_text(goal: Optional[dict]) -> str:
         + (f"/{int(cap)}" if cap else ""),
     ]
     usage = goal.get("usage") or {}
+    budget = goal.get("budget") or {}
+    lines.append("  limits: " + ", ".join(
+        f"{key}={budget.get(key) if budget.get(key) is not None else 'unlimited'}"
+        for key in ("max_turns", "max_tokens", "max_elapsed_s", "max_cost_usd")
+    ))
     for name, role in (goal.get("roles") or {}).items():
         lines.append(
             f"  {name}: {role.get('provider')}/{role.get('model')} · "
@@ -297,11 +350,19 @@ def _status_text(goal: Optional[dict]) -> str:
         )
     if goal.get("roles_origin") == "legacy-resolved":
         lines.append("  roles: resolved on first resume of a legacy Goal")
+    if not goal.get("roles") and goal.get("role_requests"):
+        requested = goal["role_requests"]
+        for role, prefix in (("work", ""), ("judge", "judge_")):
+            lines.append(f"  {role}: {requested.get(prefix + 'model') or 'same as work'} (validate on resume) · "
+                         f"effort {requested.get(prefix + 'effort')} · timeout {requested.get(prefix + 'timeout_s')}s")
     if usage:
         lines.append(
             f"  usage: {int(usage.get('total_tokens') or 0)} tokens · "
-            f"${float(usage.get('cost_usd') or 0):.4f}"
+            + (f"${float(usage['cost_usd']):.4f}" if usage.get("cost_known") is True
+               and isinstance(usage.get("cost_usd"), (int, float)) and math.isfinite(usage["cost_usd"])
+               else "cost unknown")
         )
+        lines.append(f"  active time: {float(usage.get('active_elapsed_s') or 0):.1f}s")
     if goal.get("spec"):
         spec = str(goal["spec"])
         lines.append("  spec: " + (spec[:300] + "…" if len(spec) > 300

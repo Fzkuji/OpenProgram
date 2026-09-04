@@ -106,6 +106,30 @@ def test_unavailable_saved_role_pauses_before_any_work(role_goal):
     assert factory.created[-1]._closed  # Cleanup also covers partial preparation.
 
 
+def test_paused_role_edit_is_used_by_public_resume_without_resetting_progress(role_goal):
+    package, factory, calls, _unavailable = role_goal
+    package.goal("write the article", runtime=factory("worker", "writer"),
+                 judge_model="judge:reviewer", max_rounds=1)
+    before = package.load_goal("role-session")
+    changed = package.apply_goal_action("role-session", "roles", roles={
+        "judge": {"provider": "new-judge", "model": "new-reviewer", "effort": "high", "timeout_s": 19},
+    })
+    for key in ("goal_id", "revision", "checklist", "usage", "budget", "questions"):
+        assert changed.get(key) == before.get(key)
+    assert not changed.get("roles")
+    frames = []
+    package._emit_goal_update(frames.append, "role-session", changed)
+    assert frames[0]["data"]["goal"]["role_requests"] == changed["role_requests"]
+    package.apply_goal_action("role-session", "budget", max_turns=2)
+    calls.clear()
+    package.goal("ignored", resume=True, runtime=factory("unrelated-default", "other"))
+    saved = package.load_goal("role-session")
+    assert saved["roles"]["judge"]["provider"] == "new-judge"
+    assert saved["roles"]["judge"]["timeout_s"] == 19
+    assert saved["roles"]["work"] == before["roles"]["work"]
+    assert any(provider == "new-judge" for provider, _model, _key in calls)
+
+
 def test_initial_role_failure_keeps_selection_for_retry(role_goal):
     package, factory, calls, unavailable = role_goal
     unavailable.add("judge")

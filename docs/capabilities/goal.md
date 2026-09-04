@@ -46,6 +46,26 @@ again by the Python caller; they are not reconstructed as hosted providers.
 
 The details dialog and `/goal` status show the saved work and judge settings.
 
+In a paused or waiting Goal, expand **Configure agents** to edit the work and
+judge provider, model, reasoning effort, and timeout. Provider identifies the
+configured authentication route, not a credential. Saving keeps the objective,
+evidence, questions, and cumulative usage unchanged; the selected models are
+validated on resume. If a model is unavailable, correct the saved selection
+and resume again. Running Goals must be paused before role changes.
+
+The TUI exposes the same settings without opening a browser:
+
+```text
+/goal help
+/goal role work openai_codex gpt-5.4 effort=high timeout_s=300
+/goal role judge openai_codex gpt-5.4 effort=medium timeout_s=180
+/goal budget max_turns=10 max_tokens=10000 max_elapsed_s=3600 max_cost_usd=5
+```
+
+Use your configured provider and model names; these examples do not select a
+model automatically. Zero removes a budget limit. `/goal` displays resolved or
+pending role selections and reports unknown cost explicitly.
+
 ## Inspect and control it
 
 The Goal chip in the composer opens a detail dialog. It shows the objective,

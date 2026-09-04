@@ -358,7 +358,7 @@ def _emit_goal_update(on_event: Optional[Callable], session_id: str,
             "recoverable", "pause_reason", "last_reason", "last_question",
             "last_question_id", "last_question_at", "last_question_options",
             "questions", "pending_answers", "interaction_mode", "created_at",
-            "updated_at", "roles", "roles_origin")},
+            "updated_at", "roles", "roles_origin", "role_requests")},
     }
     if on_event is not None:
         try:

@@ -2,10 +2,59 @@
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 import math
+from typing import get_args
+
+from openprogram.providers.types import ThinkingLevel
 
 
 _active_options = ContextVar("goal_role_options", default=None)
 _resources = ContextVar("goal_role_resources", default=None)
+
+
+def edit_role_requests(goal, updates):
+    """Prepare explicit role selections without resolving credentials or models."""
+    if not isinstance(updates, dict) or not updates or updates.keys() - {"work", "judge"}:
+        raise ValueError("Role updates require work or judge")
+    from .state import DEFAULT_PHASE_TIMEOUT_S
+    requests = {
+        "model": "", "effort": "off", "timeout_s": DEFAULT_PHASE_TIMEOUT_S,
+        "judge_model": "", "judge_effort": "off", "judge_timeout_s": DEFAULT_PHASE_TIMEOUT_S,
+        **(goal.get("role_requests") or {}),
+    }
+    for name, saved in (goal.get("roles") or {}).items():
+        prefix = "judge_" if name == "judge" else ""
+        requests.update({
+            prefix + "model": f"{saved['provider']}:{saved['model']}",
+            prefix + "effort": saved["effort"],
+            prefix + "timeout_s": saved["timeout_s"],
+        })
+    for name, patch in updates.items():
+        if not isinstance(patch, dict) or patch.keys() - {"provider", "model", "effort", "timeout_s"}:
+            raise ValueError("Invalid role settings")
+        prefix = "judge_" if name == "judge" else ""
+        selector = requests[prefix + "model"]
+        separators = [char for char in (":", "/") if char in selector]
+        parts = selector.split(min(separators, key=selector.index), 1) if separators else ["", ""]
+        config = {"provider": parts[0], "model": parts[1],
+                  "effort": requests[prefix + "effort"], "timeout_s": requests[prefix + "timeout_s"], **patch}
+        provider, model = config["provider"], config["model"]
+        if (not isinstance(provider, str) or not provider.strip() or any(char in provider for char in ":/")
+                or not isinstance(model, str) or not model.strip()):
+            raise ValueError("Each role requires an explicit provider and model")
+        effort = config["effort"]
+        if not isinstance(effort, str) or effort not in {"off", *get_args(ThinkingLevel)}:
+            raise ValueError("Invalid role reasoning effort")
+        try:
+            timeout = float(config["timeout_s"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Role timeout must be a positive finite number") from exc
+        if isinstance(config["timeout_s"], bool) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("Role timeout must be a positive finite number")
+        requests.update({prefix + "model": f"{provider.strip()}:{model.strip()}",
+                         prefix + "effort": effort, prefix + "timeout_s": timeout})
+    if not requests["model"]:
+        raise ValueError("Configure the work role first")
+    return requests
 
 
 @contextmanager

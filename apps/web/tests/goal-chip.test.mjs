@@ -119,7 +119,7 @@ test("progress does not overwrite an unsaved budget and a conflict keeps the dra
   const view = await mount();
   try {
     await view.open();
-    const input = view.host.querySelector('input[type="number"]');
+    const input = view.host.querySelector('[aria-label="Turns"]');
     await typeInto(input, "12");
     await frame({ ...snapshot(2), budget: { max_turns: 5 } });
     assert.equal(input.value, "12");
@@ -293,6 +293,35 @@ test("completion dismisses a pending end confirmation without changing the resul
     assert.doesNotMatch(view.host.textContent, /Confirm end/);
     assert.equal(runtimeState.conversations.s1.goal.status, "achieved");
   } finally { await view.close(); }
+});
+
+test("paused Goal role settings are editable and saved with snapshot preconditions", async () => {
+  reset();
+  runtimeState.conversations.s1.goal = { ...snapshot(1, "paused"), roles: {
+    work: { provider: "worker", model: "writer", effort: "high", timeout_s: 30 },
+    judge: { provider: "judge", model: "reviewer", effort: "low", timeout_s: 40 },
+  } };
+  const mutate = api.mutateGoal;
+  let sent;
+  api.mutateGoal = async (_sid, body) => {
+    sent = body;
+    return { goal: { ...snapshot(2, "paused"), role_requests: {
+      model: "worker:writer", effort: "high", timeout_s: 30,
+      judge_model: "judge:new-reviewer", judge_effort: "low", judge_timeout_s: 40,
+    } } };
+  };
+  const view = await mount();
+  try {
+    await view.open();
+    const model = view.host.querySelector('[aria-label="Judge model"]');
+    assert.ok(model);
+    await typeInto(model, "new-reviewer");
+    await view.click("Save roles");
+    assert.equal(sent.action, "roles");
+    assert.equal(sent.roles.judge.model, "new-reviewer");
+    assert.equal(sent.expected.goal_id, "goal-1");
+    assert.match(view.host.textContent, /validated on resume/);
+  } finally { api.mutateGoal = mutate; await view.close(); }
 });
 
 test("saved work and judge identities remain visible after remount", async () => {

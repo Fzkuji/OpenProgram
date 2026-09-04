@@ -72,6 +72,11 @@
 .roles strong { display: block; margin: 4px 0; overflow-wrap: anywhere; }
 .roles > p { grid-column: 1 / -1; margin: 0; color: hsl(var(--muted-foreground)); }
 .draftNotice { margin: 0; font-size: 12px; color: hsl(var(--muted-foreground)); }
+.roleFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.roleFields fieldset { min-width: 0; margin: 0; padding: 8px; border: 1px solid hsl(var(--border)); border-radius: 7px; }
+.roleFields label { display: grid; gap: 4px; margin: 8px 0; }
+.roleFields input, .roleFields select { width: 100%; min-width: 0; padding: 7px; font: inherit; color: hsl(var(--foreground)); background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: 5px; }
+.roleFields fieldset:disabled { opacity: .65; }
 
 .budget {
   border: 1px solid hsl(var(--border));
@@ -171,6 +176,7 @@
 
 @media (max-width: 560px) {
   .roles { grid-template-columns: 1fr; }
+  .roleFields { grid-template-columns: 1fr; }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .budgetGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .actions { align-items: stretch; }

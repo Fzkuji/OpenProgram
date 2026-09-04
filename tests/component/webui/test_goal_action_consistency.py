@@ -107,3 +107,57 @@ def test_current_request_commits_before_cancel_delivery(action_goal, monkeypatch
     })
     assert result.status_code == 200
     assert observed == ["cancelled"]
+
+
+def test_tui_role_and_budget_commands_update_the_existing_goal(action_goal):
+    package, _client = action_goal
+    result = package.handle_goal_command("actions", 'role work worker writer effort=high timeout_s=17')
+    assert "invoke" not in result
+    saved = package.load_goal("actions")
+    assert saved["role_requests"]["model"] == "worker:writer"
+    assert saved["role_requests"]["timeout_s"] == 17
+    result = package.handle_goal_command("actions", "budget max_tokens=123 max_turns=2")
+    assert "invoke" not in result
+    assert package.load_goal("actions")["budget"]["max_tokens"] == 123
+    assert "unknown" in package.handle_goal_command("actions", "")["text"].lower()
+
+
+@pytest.mark.parametrize("status", ["active", "evaluating", "achieved", "cancelled"])
+def test_role_edit_rejects_running_or_terminal_goal(action_goal, status):
+    package, client = action_goal
+    state = package.load_goal("actions")
+    state["status"] = status
+    package.save_goal("actions", state)
+    before = package.load_goal("actions")
+    response = client.post("/api/sessions/actions/goal", json={
+        "action": "roles", "roles": {"work": {
+            "provider": "worker", "model": "writer", "effort": "high", "timeout_s": 17,
+        }},
+    })
+    assert response.status_code == 409
+    assert package.load_goal("actions") == before
+
+
+@pytest.mark.parametrize("patch", [
+    {"timeout_s": 0}, {"timeout_s": "nan"}, {"timeout_s": True},
+    {"effort": "unsupported"}, {"provider": ""}, {"api_key": "must-not-save"},
+])
+def test_invalid_role_settings_do_not_change_saved_goal(action_goal, patch):
+    package, client = action_goal
+    before = package.load_goal("actions")
+    response = client.post("/api/sessions/actions/goal", json={
+        "action": "roles", "roles": {"work": {
+            "provider": "worker", "model": "writer", "effort": "high", "timeout_s": 17, **patch,
+        }},
+    })
+    assert response.status_code == 409
+    assert package.load_goal("actions") == before
+
+
+def test_tui_help_and_zero_budget_do_not_start_a_goal(action_goal):
+    package, _client = action_goal
+    before = package.load_goal("actions")
+    assert "invoke" not in package.handle_goal_command("actions", "help")
+    assert package.load_goal("actions") == before
+    package.handle_goal_command("actions", "budget max_tokens=0")
+    assert package.load_goal("actions")["budget"]["max_tokens"] is None

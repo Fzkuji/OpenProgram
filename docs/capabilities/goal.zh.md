@@ -21,6 +21,19 @@ Python 调用可用 `model`、`effort` 选择工作角色，用 `judge_model`、
 
 详情弹窗和 `/goal` 状态显示保存的工作、判定角色设置。
 
+目标暂停或等待时，可展开“配置 Agent”，修改工作和判定角色的 provider、模型、推理强度及超时。Provider 是已配置的认证路由，不是凭证。保存不改变目标、证据、问题与累计用量；恢复时验证模型。模型不可用时，可修正选择后再次恢复。执行中的目标需要先暂停才能修改角色。
+
+TUI 使用相同设置，不需要打开浏览器：
+
+```text
+/goal help
+/goal role work openai_codex gpt-5.4 effort=high timeout_s=300
+/goal role judge openai_codex gpt-5.4 effort=medium timeout_s=180
+/goal budget max_turns=10 max_tokens=10000 max_elapsed_s=3600 max_cost_usd=5
+```
+
+请使用已配置的 provider 和模型名称；示例不会自动选择模型。预算设为零表示移除该上限。`/goal` 显示已解析或等待验证的角色配置，并明确标注未知成本。
+
 ## 查看与控制
 
 composer 中的 Goal 状态条会打开详情弹窗。弹窗显示目标、状态、checklist、资源用量、最近判定原因和全部待答问题，并支持编辑、暂停、继续、逐项回答、调整执行限制和终止。

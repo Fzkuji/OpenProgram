@@ -31,6 +31,10 @@ export interface GoalState {
     timeout_s: number;
   }>;
   roles_origin?: string;
+  role_requests?: {
+    model?: string; effort?: string; timeout_s?: number;
+    judge_model?: string; judge_effort?: string; judge_timeout_s?: number;
+  };
   goal_id?: string;
   run_id?: string;
   revision?: number;
@@ -98,6 +102,25 @@ function budgetDraft(goal: GoalState | null): BudgetDraft {
       return [key, value == null ? "" : String(value)];
     }),
   ) as BudgetDraft;
+}
+
+type RoleDraft = Record<"work" | "judge", {
+  provider: string; model: string; effort: string; timeout_s: string;
+}>;
+
+function roleDraft(goal: GoalState): RoleDraft {
+  const requested = goal.role_requests ?? {};
+  return Object.fromEntries((["work", "judge"] as const).map((name) => {
+    const saved = goal.roles?.[name];
+    const selector = (name === "work" ? requested.model : requested.judge_model || requested.model) ?? "";
+    const separator = selector.search(/[:/]/);
+    return [name, {
+      provider: saved?.provider ?? (separator < 0 ? "" : selector.slice(0, separator)),
+      model: saved?.model ?? (separator < 0 ? selector : selector.slice(separator + 1)),
+      effort: saved?.effort || (name === "work" ? requested.effort : requested.judge_effort) || "off",
+      timeout_s: String(saved?.timeout_s ?? (name === "work" ? requested.timeout_s : requested.judge_timeout_s) ?? 300),
+    }];
+  })) as RoleDraft;
 }
 
 function formatElapsed(seconds: number | undefined): string {
@@ -183,6 +206,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
   const [confirmCancel, setConfirmCancel] = useState(false);
   const draft = useGoalDraft(goal.text ?? "", goal.revision ?? 1);
   const limits = useGoalDraft(budgetDraft(goal), goal.revision ?? 1);
+  const roles = useGoalDraft(roleDraft(goal), goal.revision ?? 1);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -206,12 +230,14 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
   const running = runningStatuses.has(goal.status || "");
   const resumable = resumableStatuses.has(goal.status || "");
   const terminal = terminalStatuses.has(goal.status || "");
+  const editableRoles = resumableStatuses.has(goal.status || "") || goal.status === "waiting_user";
+  const unsaved = draft.dirty || limits.dirty || roles.dirty;
   useEffect(() => { if (terminal) setConfirmCancel(false); }, [terminal]);
   if (terminal && !open) return null;
 
   async function mutate(action: string, values: Record<string, unknown> = {}) {
     if (pending.current || (action === "edit" && draft.conflict) || (action === "budget" && limits.conflict)
-      || (action === "resume" && (draft.dirty || limits.dirty))) return;
+      || (action === "roles" && (roles.conflict || !editableRoles)) || (action === "resume" && unsaved)) return;
     pending.current = true;
     setBusy(true);
     setError("");
@@ -224,11 +250,12 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
       if (mounted.current) {
         if (action === "edit") draft.reset();
         if (action === "budget") limits.reset();
+        if (action === "roles") roles.reset();
         if (action === "answer") setAnswers((current) => {
           const next = { ...current }; delete next[String(values.question_id)]; return next;
         });
       }
-      if ((action === "resume" || action === "answer") && result.invoke && !draft.dirty && !limits.dirty) {
+      if ((action === "resume" || action === "answer") && result.invoke && !unsaved) {
         const response = await api.runFunction(result.invoke.name, { ...result.invoke.kwargs, session_id: sessionId });
         if (response.error) throw new Error(response.error);
       }
@@ -307,6 +334,37 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
           </section> : null}
 
           <details className={styles.budget}>
+            <summary>{text("Configure agents", "配置 Agent")}</summary>
+            <p>{editableRoles ? text("Provider is the authentication route. Saved models are validated on resume.", "Provider 是认证路由；保存的模型会在恢复时验证。")
+              : text("Pause the Goal before changing agents.", "更换 Agent 前请先暂停目标。")}</p>
+            <div className={styles.roleFields}>
+              {(["work", "judge"] as const).map((name) => {
+                const label = name === "work" ? text("Working agent", "工作 Agent") : text("Judge", "判定 Agent");
+                return <fieldset key={name} disabled={busy || !editableRoles}>
+                  <legend>{label}</legend>
+                  {(["provider", "model", "effort", "timeout_s"] as const).map((key) => {
+                    const field = { provider: text("provider", "认证路由"), model: text("model", "模型"),
+                      effort: text("reasoning effort", "推理强度"), timeout_s: text("timeout (seconds)", "超时（秒）") }[key];
+                    const set = (value: string) => roles.set({ ...roles.value, [name]: { ...roles.value[name], [key]: value } });
+                    return <label key={key}><span>{field}</span>
+                      {key === "effort" ? <select aria-label={`${label} ${field}`} value={roles.value[name][key]} onChange={(event) => set(event.target.value)}>
+                        {["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select> : <input aria-label={`${label} ${field}`} type={key === "timeout_s" ? "number" : "text"}
+                        min={key === "timeout_s" ? "0.001" : undefined} step={key === "timeout_s" ? "any" : undefined}
+                        value={roles.value[name][key]} onChange={(event) => set(event.target.value)} />}
+                    </label>;
+                  })}
+                </fieldset>;
+              })}
+            </div>
+            <Button variant="outline" disabled={busy || !editableRoles || !roles.dirty || roles.conflict}
+              onClick={() => void mutate("roles", { roles: roles.value })}>{text("Save roles", "保存角色")}</Button>
+            {roles.conflict ? <div role="status"><p>{text("Agent settings changed elsewhere. Your draft is preserved.", "Agent 设置已在其他位置改变，草稿已保留。")}</p>
+              <Button variant="outline" disabled={busy} onClick={roles.reset}>{text("Use latest roles", "采用最新角色")}</Button>
+            </div> : null}
+          </details>
+
+          <details className={styles.budget}>
             <summary>{text("Execution limits", "执行限制")}</summary>
             <div className={styles.budgetGrid}>
               {([
@@ -319,6 +377,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
                   <span>{label}</span>
                   <input
                     type="number"
+                    aria-label={label}
                     disabled={busy}
                     min="0"
                     step={key === "max_cost_usd" ? "0.01" : "1"}
@@ -381,7 +440,7 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
                       disabled={busy || !answer.trim()}
                       onClick={() => void mutate("answer", { question_id: question.id, answer: answer.trim() })}
                     >
-                      <Play size={14} />{goal.status === "waiting_user" && !draft.dirty && !limits.dirty ? text("Answer and resume", "回答并继续") : text("Submit answer", "提交回答")}
+                      <Play size={14} />{goal.status === "waiting_user" && !unsaved ? text("Answer and resume", "回答并继续") : text("Submit answer", "提交回答")}
                     </Button>
                   </div>
                 );
@@ -405,10 +464,10 @@ function GoalDetails({ sessionId, goal }: { sessionId: string; goal: GoalState }
             {!terminal ? <Button ref={endButton} variant="destructive" disabled={busy} onClick={() => setConfirmCancel(true)}><Square size={14} />{text("End", "终止")}</Button> : null}
             {running ? <Button variant="outline" disabled={busy} onClick={() => void mutate("pause")}><Pause size={14} />{text("Pause", "暂停")}</Button> : null}
             <Button variant="outline" disabled={busy || !draft.dirty || draft.conflict || !draft.value.trim()} onClick={() => void mutate("edit", { prompt: draft.value.trim() })}>{text("Save edit", "保存修改")}</Button>
-            {resumable ? <Button disabled={busy || draft.dirty || limits.dirty} onClick={() => void mutate("resume")}><Play size={14} />{text("Resume", "继续")}</Button> : null}
+            {resumable ? <Button disabled={busy || unsaved} onClick={() => void mutate("resume")}><Play size={14} />{text("Resume", "继续")}</Button> : null}
           </DialogFooter>}
-          {draft.dirty || limits.dirty ? <p className={styles.draftNotice} role="status">{text("Save or discard unsaved changes before resuming.", "继续前请保存或放弃未保存的修改。")}
-            <Button variant="ghost" disabled={busy} onClick={() => { draft.reset(); limits.reset(); }}>{text("Discard changes", "放弃修改")}</Button>
+          {unsaved ? <p className={styles.draftNotice} role="status">{text("Save or discard unsaved changes before resuming.", "继续前请保存或放弃未保存的修改。")}
+            <Button variant="ghost" disabled={busy} onClick={() => { draft.reset(); limits.reset(); roles.reset(); }}>{text("Discard changes", "放弃修改")}</Button>
           </p> : null}
         </DialogContent>
       </Dialog>
