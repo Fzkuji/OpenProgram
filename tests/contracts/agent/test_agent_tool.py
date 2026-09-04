@@ -21,6 +21,12 @@ def _runner_lifecycle():
 def store(tmp_path, monkeypatch):
     from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
+    # Pair the canonical execution database with this test's session store;
+    # runner startup must not recover executions left by unrelated tests.
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path",
+        lambda: tmp_path / "executions.db",
+    )
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
     monkeypatch.setattr(
