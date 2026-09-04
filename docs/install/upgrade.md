@@ -57,8 +57,10 @@ dependencies. This build path and real installed acceptance remain release gates
 
 The packaged worker smoke test uses one controller-selected private loopback
 port and never the default port 18100. Browser automation is checked separately
-by the saved trusted runtime against browser assets whose tree hash matches that
-runtime. Both checks must complete before activation.
+by the revalidated saved controller runtime, which is outside every
+candidate-writable path, against browser assets whose tree hash matches that
+runtime. The writable build-runtime copy is never executed by the controller.
+Both checks must complete before activation.
 The fixed macOS icon render check also runs under the trusted controller instead
 of granting the candidate build access to host graphics services.
 

@@ -454,6 +454,54 @@ def test_candidate_sandbox_reads_platform_without_allowing_external_writes(tmp_p
 
 
 @pytest.mark.macos
+def test_candidate_sandbox_cannot_mutate_saved_controller_runtime(tmp_path: Path) -> None:
+    from openprogram.self_update import supervisor
+
+    sandbox = Path("/usr/bin/sandbox-exec")
+    if not sandbox.is_file():
+        pytest.skip("requires macOS sandbox-exec")
+    update = tmp_path / "update"
+    candidate = tmp_path / "candidate"
+    artifact = update / "artifact"
+    build_home = update / "build-home"
+    build_tmp = update / "build-tmp"
+    build_runtime = build_home / "runtime-base/bin/python"
+    saved_runtime = update / "controller/runtime/bin/python"
+    for directory in (candidate, artifact, build_tmp, build_runtime.parent, saved_runtime.parent):
+        directory.mkdir(parents=True, exist_ok=True)
+    build_runtime.write_text("trusted", encoding="utf-8")
+    saved_runtime.write_text("trusted", encoding="utf-8")
+    prefix = [
+        str(sandbox),
+        "-p",
+        supervisor._sandbox_profile(candidate, artifact, build_home, build_tmp),
+        "/bin/sh",
+        "-c",
+    ]
+    environment = {"PATH": "/usr/bin:/bin", "HOME": str(build_home), "TMPDIR": str(build_tmp)}
+
+    build_write = subprocess.run(
+        [*prefix, f'printf candidate > "{build_runtime}"'],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    saved_write = subprocess.run(
+        [*prefix, f'printf candidate > "{saved_runtime}"'],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert build_write.returncode == 0, build_write.stderr
+    assert build_runtime.read_text(encoding="utf-8") == "candidate"
+    assert saved_write.returncode != 0
+    assert saved_runtime.read_text(encoding="utf-8") == "trusted"
+
+
+@pytest.mark.macos
 def test_candidate_sandbox_cannot_read_installed_app(tmp_path: Path) -> None:
     from openprogram.self_update import supervisor
 

@@ -53,8 +53,9 @@ Desktop archive 仍重新构建。缓存缺失或依赖基线不匹配时，在�
 不会因此允许联网下载或沿用不匹配依赖。该构建过程及真实已安装验收仍是发布条件。
 
 packaged worker smoke 只使用控制器选择的单个私有 loopback 端口，且不会使用默认端口
-18100。浏览器自动化由保存的可信 runtime 单独检查，并要求候选浏览器资源树 hash 与该
-runtime 一致。两项检查都完成后才允许激活。
+18100。浏览器自动化由重新校验过的保存 controller runtime 单独检查；该 runtime 位于
+candidate 所有可写路径之外，并要求候选浏览器资源树 hash 与其一致。控制器不会执行
+可写的构建 runtime 副本。两项检查都完成后才允许激活。
 固定的 macOS 图标渲染检查也由可信控制器执行，不向候选构建开放宿主图形服务。
 
 源码 checkout 的聊天工具 `self_update_prepare` 接受可选的 `verification_plan`

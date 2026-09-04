@@ -3,13 +3,14 @@ import json
 from pathlib import Path
 import subprocess
 import time
+from types import SimpleNamespace
 
 import pytest
 
 
 def _probe_tree(tmp_path: Path):
     update = tmp_path / "update"
-    base = update / "build-home/runtime-base"
+    base = update / "controller/runtime"
     artifact = update / "artifact/OpenProgram.app"
     trusted = base / "assets/playwright/browser/data"
     candidate = artifact / "Contents/Resources/runtime/assets/playwright/browser/data"
@@ -75,13 +76,17 @@ def test_trusted_browser_probe_binds_assets_and_finalizes_manifest(
 
     update, base, artifact, manifest, _candidate = _probe_tree(tmp_path)
     processes = []
-    monkeypatch.setattr(controller_bundle, "_runtime_python", lambda root: root / "python/bin/python3")
+    monkeypatch.setattr(
+        controller_bundle,
+        "_load_bundle",
+        lambda root: SimpleNamespace(python=root / "runtime/python/bin/python3"),
+    )
     monkeypatch.setattr(
         supervisor.subprocess,
         "Popen",
         lambda *a, **kw: processes.append(_Process(*a, **kw)) or processes[-1],
     )
-    supervisor._complete_browser_probe(artifact, base, update, deadline=time.time() + 10)
+    supervisor._complete_browser_probe(artifact, update, deadline=time.time() + 10)
     result = json.loads(manifest.read_text())
     assert result["browser_probe"] == "complete"
     assert result["capabilities"]["browser.playwright"] == {
@@ -115,9 +120,14 @@ def test_trusted_browser_probe_binds_assets_and_finalizes_manifest(
 def test_trusted_browser_probe_rejects_unbound_input_before_launch(
     tmp_path, monkeypatch, package_validators, tamper
 ):
-    from openprogram.self_update import supervisor
+    from openprogram.self_update import controller_bundle, supervisor
 
     update, base, artifact, manifest, candidate = _probe_tree(tmp_path)
+    monkeypatch.setattr(
+        controller_bundle,
+        "_load_bundle",
+        lambda root: SimpleNamespace(python=root / "runtime/python/bin/python3"),
+    )
     if tamper == "asset":
         candidate.write_bytes(b"different")
     else:
@@ -130,7 +140,28 @@ def test_trusted_browser_probe_rejects_unbound_input_before_launch(
         lambda *_a, **_kw: pytest.fail("unbound browser launched"),
     )
     with pytest.raises(RuntimeError, match="browser assets|deferred browser"):
-        supervisor._complete_browser_probe(artifact, base, update, deadline=time.time() + 10)
+        supervisor._complete_browser_probe(artifact, update, deadline=time.time() + 10)
+    assert not (update / "browser-probe.json").exists()
+
+
+def test_trusted_browser_probe_rejects_tampered_controller_before_launch(
+    tmp_path, monkeypatch, package_validators
+):
+    from openprogram.self_update import controller_bundle, supervisor
+
+    update, _base, artifact, _manifest, _candidate = _probe_tree(tmp_path)
+    monkeypatch.setattr(
+        controller_bundle,
+        "_load_bundle",
+        lambda _root: (_ for _ in ()).throw(ValueError("controller bundle digest mismatch")),
+    )
+    monkeypatch.setattr(
+        supervisor.subprocess,
+        "Popen",
+        lambda *_a, **_kw: pytest.fail("tampered controller launched"),
+    )
+    with pytest.raises(ValueError, match="controller bundle digest mismatch"):
+        supervisor._complete_browser_probe(artifact, update, deadline=time.time() + 10)
     assert not (update / "browser-probe.json").exists()
 
 
@@ -148,11 +179,15 @@ def test_trusted_browser_probe_timeout_kills_its_process_group(
     process.poll = lambda: None
     process.wait = lambda: setattr(process, "returncode", -9)
     killed = []
-    monkeypatch.setattr(controller_bundle, "_runtime_python", lambda root: root / "python/bin/python3")
+    monkeypatch.setattr(
+        controller_bundle,
+        "_load_bundle",
+        lambda root: SimpleNamespace(python=root / "runtime/python/bin/python3"),
+    )
     monkeypatch.setattr(supervisor.subprocess, "Popen", lambda *_a, **_kw: process)
     monkeypatch.setattr(supervisor.os, "killpg", lambda pid, sig: killed.append((pid, sig)))
     with pytest.raises(subprocess.TimeoutExpired):
-        supervisor._complete_browser_probe(artifact, base, update, deadline=time.time() + 1)
+        supervisor._complete_browser_probe(artifact, update, deadline=time.time() + 1)
     assert killed and process.returncode == -9
     assert not (update / "browser-probe.json").exists()
 

@@ -248,19 +248,22 @@ def _complete_icon_probe(
 
 def _complete_browser_probe(
     artifact: Path,
-    runtime_base: Path,
     update_dir: Path,
     *,
     deadline: float,
 ) -> None:
-    from .controller_bundle import _runtime_python
+    from .controller_bundle import _load_bundle
     from .package_protocol import validate_reopen_package, validate_ui_package
 
+    controller = update_dir / "controller"
+    trusted = _load_bundle(controller)
+    trusted_runtime = controller / "runtime"
     resources = artifact / "Contents/Resources"
     candidate_runtime = artifact / "Contents/Resources/runtime"
     candidate_browsers = candidate_runtime / "assets/playwright"
-    trusted_browsers = runtime_base / "assets/playwright"
-    if _tree_digest(candidate_browsers) != _tree_digest(trusted_browsers):
+    trusted_browsers = trusted_runtime / "assets/playwright"
+    trusted_browser_sha256 = _tree_digest(trusted_browsers)
+    if _tree_digest(candidate_browsers) != trusted_browser_sha256:
         raise RuntimeError("candidate browser assets do not match the trusted runtime input")
     manifest_path = candidate_runtime / "runtime-manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -287,7 +290,7 @@ def _complete_browser_probe(
             "assert page.title() == 'OpenProgram runtime probe'; b.close(); p.stop(); "
             "print('TRUSTED_BROWSER_PROBE_OK')"
         )
-        argv = [str(_runtime_python(runtime_base)), "-I", "-B", "-c", code]
+        argv = [str(trusted.python), "-I", "-B", "-c", code]
         proc = subprocess.Popen(
             argv,
             env={
@@ -310,6 +313,11 @@ def _complete_browser_probe(
         result = subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
     if result.returncode != 0 or result.stdout.strip() != "TRUSTED_BROWSER_PROBE_OK":
         raise RuntimeError("trusted browser probe failed")
+    if (
+        _tree_digest(trusted_browsers) != trusted_browser_sha256
+        or _tree_digest(candidate_browsers) != trusted_browser_sha256
+    ):
+        raise RuntimeError("browser assets changed during the trusted probe")
     manifest["capabilities"]["browser.playwright"] = {"present": True, "verified": True}
     manifest["browser_probe"] = "complete"
     atomic_write_text(manifest_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -427,7 +435,6 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
             )
             _complete_browser_probe(
                 artifact,
-                Path(inputs["OPENPROGRAM_SELF_UPDATE_RUNTIME_BASE"]),
                 update_dir,
                 deadline=record.request.created_at + record.request.timeout_seconds,
             )
