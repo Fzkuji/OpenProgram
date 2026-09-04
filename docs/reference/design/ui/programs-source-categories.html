@@ -174,7 +174,7 @@
 <section>
   <h2>Application function calls</h2>
   <p>The Application view reads current package source on each request. It starts at decorated public functions and follows local function calls and package imports, rather than treating every repository import as an execution edge. Tests, benchmarks and unrelated files do not enter the graph.</p>
-  <p>Conditional calls are labelled as conditional, not as a fixed execution sequence. The existing tree and graph share the same source-derived nodes. Unresolved calls and analysis limits are reported; the analyzer never executes package code to discover relationships. The visible page refreshes its analysis while open.</p>
+  <p>Conditional calls are labelled as conditional, not as a fixed execution sequence. The existing tree and graph share the same source-derived nodes. Unresolved calls and analysis limits are reported; the analyzer never executes package code to discover relationships. The visible page refreshes its analysis while open. The call tree initially expands the first three levels, keeping capability functions visible and their internals collapsed. Branch rows toggle with a click, Enter or Space. Expansion choices survive source refreshes for the selected Program; leaves and repeated references have no toggle.</p>
   <details><summary>Implementation status</summary><p>Source tracing, conditional edges and visible-page refresh are implemented. Regression tests cover source edits, entry selection and unresolved callable aliases. Installed-App visual acceptance remains unverified. No Archify integration or Harness execution changes are included.</p></details>
 </section>
 </main>

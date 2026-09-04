@@ -3,6 +3,23 @@ import test from "node:test";
 
 import { buildCallTreeRows, buildGraphLayout } from "../components/programs/programs-logic.ts";
 
+test("branches collapse, expand, and retain choices after refresh", () => {
+  const input = logic(5);
+  input.edges = input.nodes.slice(1).map((node, index) => ({source: `n${index}`, target: node.id}));
+  const choices = new Map();
+  let result = buildCallTreeRows(input, 256, choices);
+  assert.deepEqual(result.rows.map(row => row.node.id), ["n0", "n1", "n2", "n3"]);
+  assert.equal(result.rows[3].expandable, true);
+  assert.equal(result.rows[3].isExpanded, false);
+  assert.equal(result.truncated, false);
+  choices.set("n3", true);
+  result = buildCallTreeRows(structuredClone(input), 256, choices);
+  assert.equal(result.rows.length, 5);
+  assert.equal(result.rows[4].expandable, false);
+  choices.set("n1", false);
+  assert.deepEqual(buildCallTreeRows(input, 256, choices).rows.map(row => row.node.id), ["n0", "n1"]);
+});
+
 test("conditional function calls retain their meaning in the tree", () => {
   const input = logic(2);
   input.edges = [{source: "n0", target: "n1", kind: "conditional"}];
