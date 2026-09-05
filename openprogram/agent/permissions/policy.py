@@ -125,7 +125,14 @@ def _hard_constraint_violation(
         return None
     if req.source not in {"agent_spawn", "mcp"}:
         return None
-    if tool_name in _RISKY_TOOLS or tool_name in _WORKTREE_TOOLS:
+    if tool_name in _WORKTREE_TOOLS:
+        return f"{req.source} cannot execute {tool_name}"
+    # Owner-delegated Agents use their admitted permission snapshot for
+    # shell/process tools. Authority checks, explicit rules, non-interactive
+    # approval limits and the backend sandbox still apply below.
+    if tool_name in _RISKY_TOOLS and not (
+        req.source == "agent_spawn" and req.authority_tier == "owner"
+    ):
         return f"{req.source} cannot execute {tool_name}"
     if tool_name in _WRITE_TOOLS:
         if not _path_is_safe(tool_name, args, req):
