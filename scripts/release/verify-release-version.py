@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import plistlib
 import re
 import subprocess
+import sys
 import tomllib
 import zipfile
 from email.parser import BytesParser
@@ -17,9 +17,18 @@ VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 
 def _installed_app_version(app_path: Path) -> str:
-    resources = app_path / "Contents" / "Resources"
-    with (app_path / "Contents" / "Info.plist").open("rb") as stream:
-        bundle_version = plistlib.load(stream)["CFBundleShortVersionString"]
+    # This script also runs before the checkout is installed. Import only the
+    # stdlib-only compatibility seam; metadata below comes from the App's own
+    # isolated interpreter, never from this checkout or the caller's PATH.
+    sys.path.insert(0, str(ROOT))
+    try:
+        from openprogram._compat import desktop_bundle_metadata, no_window_creation_flags
+    finally:
+        sys.path.pop(0)
+    try:
+        resources, bundle_version = desktop_bundle_metadata(app_path)
+    except (OSError, ValueError, KeyError) as exc:
+        raise SystemExit(f"could not read installed App version: {exc}") from exc
     manifest = json.loads(
         (resources / "runtime" / "runtime-manifest.json").read_text(
             encoding="utf-8"
@@ -57,7 +66,11 @@ def _installed_app_version(app_path: Path) -> str:
             capture_output=True,
             text=True,
             timeout=10,
-            env={"PATH": "/usr/bin:/bin", "HOME": os.devnull},
+            encoding="utf-8",
+            creationflags=no_window_creation_flags(),
+            env={"PATH": os.defpath, "HOME": os.devnull,
+                 **{name: os.environ[name] for name in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP")
+                    if name in os.environ}},
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError) as exc:
         raise SystemExit(f"could not read installed App metadata: {exc}") from exc

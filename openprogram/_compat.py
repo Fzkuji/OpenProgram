@@ -983,6 +983,45 @@ def _windows_powershell(script: str, *, timeout: float = 5.0) -> str:
     return result.stdout if result.returncode == 0 else ""
 
 
+def desktop_bundle_metadata(app_path):
+    """Read the installed shell version and resources without launching it.
+
+    Select the actual bundle layout, so release tooling can inspect macOS
+    fixtures on any host. Windows PE metadata requires native PowerShell.
+    """
+    import plistlib
+    from pathlib import Path
+
+    app = Path(app_path)
+    if app.name == "OpenProgram.exe" and app.is_file():
+        app = app.parent
+    plist = app / "Contents" / "Info.plist"
+    if plist.is_file():
+        with plist.open("rb") as stream:
+            version = plistlib.load(stream).get("CFBundleShortVersionString")
+        return app / "Contents" / "Resources", version
+
+    executable = app / "OpenProgram.exe"
+    resources = app / "resources"
+    if not executable.is_file() or not (resources / "app.asar").is_file():
+        raise ValueError("installed Desktop bundle layout is unavailable")
+    # A single-quoted PowerShell literal treats all path characters as data;
+    # doubling apostrophes also handles installation folders such as O'Brien.
+    literal = str(executable.resolve()).replace("'", "''")
+    version = _windows_powershell(
+        f"[Diagnostics.FileVersionInfo]::GetVersionInfo('{literal}').ProductVersion",
+        timeout=15,
+    ).strip()
+    if not version:
+        raise ValueError("installed Windows EXE product version is unavailable")
+    # Electron's Windows resource can express the three-part release version
+    # with a zero fourth component. Do not discard a nonzero revision.
+    parts = version.split(".")
+    if len(parts) == 4 and parts[-1] == "0" and all(part.isdecimal() for part in parts):
+        version = ".".join(parts[:3])
+    return resources, version
+
+
 def platform_environment_advisories(state_dir) -> list[tuple[bool, str, str]]:
     """Return non-blocking host advice without changing system settings.
 

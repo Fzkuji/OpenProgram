@@ -111,6 +111,10 @@ Desktop runtime 准备在 checkout 构建目录内的独立暂存目录中完成
 此流程只准备打包输入，不会替换已安装 App。PowerShell 构建辅助脚本在各自构建步骤
 结束时恢复调用者的 workspace、工具链、Python 下载目录与浏览器缓存环境变量，
 失败路径也遵守同一约定。
+共享的 `verify-release-version.py --installed-app` 前置校验接受 Windows 安装目录
+或其中的 `OpenProgram.exe`。它不启动外壳，而是读取 PE 产品版本，再要求其与
+runtime manifest 及内置隔离 Python 读取的包版本一致。Windows 版本末尾的第四段
+零会被规范化，非零修订号不会被静默丢弃。此只读校验本身不实现 App 刷新。
 
 Tag workflow 构建 Windows x86_64 与 arm64 Electron 应用，以及按用户安装、可选择目录的
 NSIS installer。封装前通过正式 PowerShell release installer 暂存同一份完整 W2 runtime，

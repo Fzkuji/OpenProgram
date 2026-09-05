@@ -143,6 +143,12 @@ if restoration also fails, its backup is retained with an explicit recovery path
 Cleanup failure preserves the published runtime and reports both the retained
 staging path and the underlying error; the publication lock is still released.
 This prepares packaging inputs only and does not replace the installed App.
+The shared `verify-release-version.py --installed-app` preflight accepts the
+Windows installation directory or its `OpenProgram.exe`. It reads PE product
+version metadata without launching the shell, then requires agreement with the
+runtime manifest and package metadata from the embedded isolated Python.
+Windows' zero fourth version component is normalized; nonzero revisions are
+not silently discarded. This read-only gate does not itself implement refresh.
 
 The tag workflow builds Windows x86_64 and arm64 Electron applications and
 assisted, per-user NSIS installers. It stages the exact complete W2 runtime through the
