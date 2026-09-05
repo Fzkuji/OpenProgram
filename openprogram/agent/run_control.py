@@ -1770,7 +1770,18 @@ def has_active_runtime(session_id: str) -> bool:
     stale and should be treated as no-op.
     """
     with _active_exec_runtimes_lock:
-        return (session_id, None) in _active_exec_runtimes
+        key = (session_id, None)
+        if key not in _active_exec_runtimes:
+            return False
+        runtime = _active_exec_runtimes[key]
+        # Foreground threads are registered before start. Only a thread that
+        # has actually started can be known to have finished; preserve the
+        # reservation handoff and opaque runtimes until explicit cleanup.
+        is_alive = getattr(runtime, "is_alive", None)
+        if getattr(runtime, "ident", None) is not None and callable(is_alive) and not is_alive():
+            _active_exec_runtimes.pop(key)
+            return False
+        return True
 
 
 def kill_active_runtime(

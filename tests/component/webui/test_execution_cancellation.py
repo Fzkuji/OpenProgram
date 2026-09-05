@@ -6,6 +6,8 @@ import asyncio
 import json
 import threading
 
+import pytest
+
 from openprogram.context.nodes import Call, ROLE_CODE
 from openprogram.agent.authority import owner_authority
 from openprogram.execution import AttemptStore, ExecutionStore, RuntimeControlService
@@ -293,3 +295,96 @@ def test_session_reload_preserves_cancelling_execution_status(
     assert execution["status"] == "cancelling"
     assert execution["reason_code"] == "cancel.user"
     assert loaded["data"]["run_active"] is True
+
+
+@pytest.mark.parametrize("quiet_seconds", [0, 600])
+def test_reload_checks_foreground_thread_liveness_and_preserves_cancel_identity(
+    tmp_path, monkeypatch, quiet_seconds,
+):
+    import time
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions.session import handle_load_session
+    from openprogram.agent.run_control import register_active_runtime, unregister_active_runtime
+
+    sessions = SessionStore(tmp_path / "reload-sessions")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.store.session.session_store._default_store", sessions)
+    execution_store = ExecutionStore(tmp_path / "reload-executions.sqlite3")
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: execution_store)
+    monkeypatch.setattr(server, "_get_provider_info", lambda sid=None: {})
+    monkeypatch.setattr(server, "refresh_context_stats", lambda sid: None)
+    monkeypatch.setattr(server, "_broadcast", lambda payload: None)
+    sid = "reload-thread-liveness"
+    sessions.create_session(sid, "main")
+    with server._sessions_lock:
+        server._sessions[sid] = {"id": sid}
+    release = threading.Event()
+    worker = threading.Thread(target=release.wait)
+    register_active_runtime(sid, worker)
+    try:
+        # Registration precedes start: this handoff must still block admission.
+        assert server._is_run_active(sid)
+        assert not server._try_reserve_run(sid, "other-user")
+        worker.start()
+        with server._running_tasks_lock:
+            server._running_tasks[sid] = {
+                "msg_id": "user-1", "func_name": "agent",
+                "execution_id": "execution-quiet", "status_version": 7,
+                "started_at": time.time() - quiet_seconds,
+                "last_event_at": time.time() - quiet_seconds,
+            }
+        ws = FakeWS()
+        asyncio.run(handle_load_session(ws, {"session_id": sid}))
+        loaded = next(f["data"] for f in ws.frames if f["type"] == "session_loaded")
+        assert loaded["run_active"] is True
+        replay = next((f["data"] for f in ws.frames if f["type"] == "running_task"), None)
+        assert replay is not None, "quiet live executions retain their cancellation controls"
+        assert (replay["execution_id"], replay["status_version"]) == ("execution-quiet", 7)
+        assert server._is_run_active(sid)
+    finally:
+        release.set()
+        if worker.ident is not None:
+            worker.join(timeout=5)
+        unregister_active_runtime(sid)
+        with server._running_tasks_lock:
+            server._running_tasks.pop(sid, None)
+        with server._sessions_lock:
+            server._sessions.pop(sid, None)
+
+
+def test_reload_prunes_completed_orphan_foreground_thread(tmp_path, monkeypatch):
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions.session import handle_load_session
+    from openprogram.agent.run_control import register_active_runtime, unregister_active_runtime
+
+    sessions = SessionStore(tmp_path / "orphan-sessions")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.store.session.session_store._default_store", sessions)
+    execution_store = ExecutionStore(tmp_path / "orphan-executions.sqlite3")
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: execution_store)
+    monkeypatch.setattr(server, "_get_provider_info", lambda sid=None: {})
+    monkeypatch.setattr(server, "refresh_context_stats", lambda sid: None)
+    monkeypatch.setattr(server, "_broadcast", lambda payload: None)
+    sid = "reload-completed-orphan"
+    sessions.create_session(sid, "main")
+    with server._sessions_lock:
+        server._sessions[sid] = {"id": sid}
+    worker = threading.Thread(target=lambda: None)
+    worker.start()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    register_active_runtime(sid, worker)
+    try:
+        for _ in range(2):
+            ws = FakeWS()
+            asyncio.run(handle_load_session(ws, {"session_id": sid}))
+            loaded = next(f["data"] for f in ws.frames if f["type"] == "session_loaded")
+            assert loaded["run_active"] is False
+            assert not any(f["type"] == "running_task" for f in ws.frames)
+        assert server._try_reserve_run(sid, "new-user"), "orphan cleanup permits a new turn"
+    finally:
+        unregister_active_runtime(sid)
+        with server._running_tasks_lock:
+            server._running_tasks.pop(sid, None)
+        with server._sessions_lock:
+            server._sessions.pop(sid, None)

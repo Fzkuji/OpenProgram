@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 
 
 # Keep ordinary tool results byte-for-byte compatible while preventing one
@@ -1075,19 +1074,11 @@ async def handle_load_session(ws, cmd: dict):
         # the computation finishes, so the transcript can render first.
         if refresh_context_after_load:
             await asyncio.to_thread(_s.refresh_context_stats, session_id)
-        # _is_run_active above already removed any non-reserved task without
-        # a live runtime. The remaining timeout also recovers a reservation
-        # whose setup thread died before runtime handoff.
+        # The run guard owns stale runtime and reservation cleanup. A quiet
+        # live task must retain its execution identity for reconnect controls.
         with _s._running_tasks_lock:
-            task_info = _s._running_tasks.get(session_id)
-        if task_info:
-            _now = time.time()
-            _started = task_info.get("started_at", _now)
-            _last_evt_ts = task_info.get("last_event_at", _started)
-            if (_now - _started > 300) and (_now - _last_evt_ts > 300):
-                with _s._running_tasks_lock:
-                    _s._running_tasks.pop(session_id, None)
-                task_info = None
+            task = _s._running_tasks.get(session_id)
+            task_info = dict(task) if task else None
         if task_info:
             # Live partial-tree dump retired with the tree-Context
             # event system. The DAG nodes the function has produced so
@@ -1099,6 +1090,7 @@ async def handle_load_session(ws, cmd: dict):
                     "msg_id": task_info["msg_id"],
                     "func_name": task_info["func_name"],
                     "execution_id": task_info.get("execution_id"),
+                    "status_version": task_info.get("status_version"),
                     "started_at": task_info["started_at"],
                     "display_params": task_info.get("display_params", ""),
                     "partial_tree": None,
