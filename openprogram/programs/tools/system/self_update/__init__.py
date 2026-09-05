@@ -170,7 +170,6 @@ def _validate_registered_worktree(
 ) -> None:
     entries = _git(source, "worktree", "list", "--porcelain", "-z").split("\0\0")
     expected = {
-        "worktree": str(candidate),
         "HEAD": candidate_sha,
         "branch": f"refs/heads/{branch_name}",
     }
@@ -180,7 +179,9 @@ def _validate_registered_worktree(
             key, separator, value = line.partition(" ")
             if separator:
                 fields[key] = value
-        if fields.get("worktree") == str(candidate):
+        # Git emits forward slashes on Windows; compare host paths rather than
+        # their serialized spelling while keeping HEAD and branch exact.
+        if fields.get("worktree") and Path(fields["worktree"]) == candidate:
             if all(fields.get(key) == value for key, value in expected.items()):
                 return
             break

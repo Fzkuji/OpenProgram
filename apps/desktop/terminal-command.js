@@ -4,9 +4,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
-function existingAbsolute(value, existsSync) {
+function existingAbsolute(value, existsSync, pathApi = path) {
   return typeof value === "string"
-    && path.isAbsolute(value)
+    && pathApi.isAbsolute(value)
     && existsSync(value)
     ? value
     : null;
@@ -15,11 +15,12 @@ function existingAbsolute(value, existsSync) {
 function resolveWindowsShell(env, existsSync) {
   const systemRoot = env.SystemRoot || env.SYSTEMROOT || "C:\\Windows";
   const powershell = existingAbsolute(
-    path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    path.win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
     existsSync,
+    path.win32,
   );
   if (powershell) return { command: powershell, kind: "powershell" };
-  const comspec = existingAbsolute(env.ComSpec || env.COMSPEC, existsSync);
+  const comspec = existingAbsolute(env.ComSpec || env.COMSPEC, existsSync, path.win32);
   if (comspec) return { command: comspec, kind: "cmd" };
   return { command: "powershell.exe", kind: "powershell" };
 }

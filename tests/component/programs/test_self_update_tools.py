@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import asyncio
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -46,6 +47,9 @@ def _candidate(tmp_path: Path) -> tuple[Worktree, str, str]:
     worktree = tmp_path / "candidate"
     source.mkdir()
     _git(source, "init")
+    # The verifier intentionally ignores user Git configuration. Keep fixture
+    # checkout normalization identical with and without the host's autocrlf.
+    _git(source, "config", "core.autocrlf", "false")
     _git(source, "config", "user.email", "tests@example.com")
     _git(source, "config", "user.name", "Tests")
     (source / "pyproject.toml").write_text(
@@ -185,7 +189,8 @@ def test_public_status_requires_private_verifier_config(tmp_path, monkeypatch, m
         "status-private-config", {"update_id": update_id}, None, None,
     ))
 
-    assert result.is_error == bool(mode & 0o077)
+    # Windows keeps inherited ACLs; POSIX mode bits are not access authority.
+    assert result.is_error == (os.name != "nt" and bool(mode & 0o077))
     if not result.is_error:
         assert json.loads(result.content[0].text)["update_id"] == update_id
     else:

@@ -229,17 +229,12 @@ def _candidate(store, record):
         if (test["command"] != command or test["candidate_sha"] != sha or type(test["exit_code"]) is not int
                 or test["exit_code"] != 0 or test["log_path"] != str(log) or log.resolve() != log):
             raise ValueError("required test binding changed")
-        fd = os.open(log, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
-        try:
-            info = os.fstat(fd)
+        from openprogram._compat import open_regular_binary
+        with open_regular_binary(log) as handle:
+            info = os.fstat(handle.fileno())
             if not stat.S_ISREG(info.st_mode) or info.st_size > 1_048_576 or info.st_nlink != 1:
                 raise ValueError("invalid required test log")
-            with os.fdopen(fd, "rb") as handle:
-                fd = -1
-                data = handle.read(1_048_577)
-        finally:
-            if fd >= 0:
-                os.close(fd)
+            data = handle.read(1_048_577)
         if len(data) > 1_048_576 or hashlib.sha256(data).hexdigest() != test["log_sha256"]:
             raise ValueError("required test log changed")
     return manifest, result

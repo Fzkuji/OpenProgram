@@ -72,8 +72,8 @@ def _controller_body(update_id: str, root: Path, installer_sha256: str, python: 
 
 def _ready_pid(update_dir: Path, update_id: str, installer_sha256: str) -> int | None:
     try:
-        descriptor = os.open(update_dir / "supervisor.ready", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(descriptor, "rb") as handle:
+        from openprogram._compat import open_regular_binary
+        with open_regular_binary(update_dir / "supervisor.ready") as handle:
             if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
                 return None
             value = json.loads(handle.read(4097))
