@@ -78,6 +78,12 @@ it does not establish support for the separate macOS-specific controller and
 installer pipeline, which still needs a Windows implementation and native
 end-to-end acceptance before it can be advertised as available.
 
+Post-rollback diagnosis and isolated source repair use the same portable state
+checks. Model-provided LF edits match consistently CRLF source files while
+preserving the original line-ending convention. Duplicate matches are rejected;
+mixed-line-ending files require exact text. Native candidate test execution and
+activation remain part of the controller gap described above.
+
 Local shell tools use Git Bash when it is installed and otherwise fall back to
 the Windows PowerShell included with the operating system; they never depend on
 `cmd.exe` parsing Bash-oriented commands. Background shell and process-tree
