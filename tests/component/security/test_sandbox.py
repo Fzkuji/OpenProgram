@@ -592,7 +592,7 @@ def test_run_structures_only_likely_sandbox_denials(
     on(cfg)
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
     completed = subprocess.CompletedProcess([], 1, stdout="", stderr=stderr)
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: completed)
+    monkeypatch.setattr("openprogram.backend.local.run_command", lambda *_a, **_kw: completed)
     result = LocalBackend().run("false", timeout=5, cwd="/tmp")
     assert result.sandbox_error == sandbox_error
 

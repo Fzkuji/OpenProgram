@@ -213,3 +213,45 @@ def test_terminal_after_provider_resume_never_replays_the_provider():
 
     result = asyncio.run(run())
     assert result == [continuation.assistant_message]
+
+
+def test_resumed_tool_interrupt_closes_stream_without_provider_replay():
+    import pytest
+    from openprogram.agentic_programming.function import CancelledError
+    from openprogram.providers.utils.errors import ExecInterrupt
+
+    async def run(error_type, cancelled):
+        event = asyncio.Event()
+        calls = []
+
+        async def execute(*_args):
+            calls.append('tool')
+            if cancelled:
+                event.set()
+            raise error_type('cancelled')
+
+        async def provider(*_args, **_kwargs):
+            raise AssertionError('cancelled continuation requested another provider decision')
+            yield  # pragma: no cover
+
+        tool = AgentTool(
+            name='echo', label='echo', description='echo',
+            parameters={'type': 'object'}, execute=execute,
+        )
+        stream = agent_loop_resume(
+            _continuation(), AgentContext(system_prompt='', messages=[], tools=[tool]),
+            AgentLoopConfig(model=_model(), convert_to_llm=lambda messages: messages), event, provider,
+        )
+        try:
+            if error_type is ExecInterrupt and not cancelled:
+                with pytest.raises(ExecInterrupt):
+                    await asyncio.wait_for(stream.result(), timeout=1)
+            else:
+                assert await asyncio.wait_for(stream.result(), timeout=1) == []
+            assert calls == ['tool']
+        finally:
+            await stream.cancel_producer()
+
+    asyncio.run(run(CancelledError, True))
+    asyncio.run(run(ExecInterrupt, True))
+    asyncio.run(run(ExecInterrupt, False))

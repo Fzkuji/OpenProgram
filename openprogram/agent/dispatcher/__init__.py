@@ -298,6 +298,11 @@ def process_agent_continuation(
         on_event=on_event,
         head_id=writer.head_for_finalize(assistant_msg_id),
     )
+    if req.advance_head:
+        if req.source in {"wechat", "telegram", "discord", "slack"}:
+            db.update_session(req.session_id, status="done", unread=True)
+        else:
+            db.update_session(req.session_id, status="idle")
     on_event({"type": "chat_response", "data": {
         "type": "result", "session_id": req.session_id,
         "msg_id": user_msg_id, "content": final_text,

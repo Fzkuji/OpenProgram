@@ -877,3 +877,54 @@ def test_permission_update_during_wait_publication_is_not_lost(real_agent_chat, 
     ), detail=lambda: {"errors": h.activation_errors, "outcomes": [str(x) for x in h.outcomes]})
     assert completed.status is ExecutionStatus.COMPLETED, (h.activation_errors, [getattr(x, "error", str(x)) for x in h.outcomes])
     assert h.tools.calls == ["first"]
+
+
+def test_cancel_resumed_local_shell_reaps_child_and_finalizes_chat(
+    real_agent_chat, tmp_path, monkeypatch,
+):
+    import shlex
+    import sys
+    from openprogram.programs.tools.files.bash.bash import bash
+    from tests.component.providers.scripted_provider import ScriptedToolCall
+
+    started = tmp_path / 'started'
+    delayed = tmp_path / 'delayed'
+    script = (
+        f"from pathlib import Path; import time; Path({str(started)!r}).touch(); "
+        f"time.sleep(3); Path({str(delayed)!r}).touch()"
+    )
+    command = f'{shlex.quote(sys.executable)} -c {shlex.quote(script)}'
+    monkeypatch.setattr(
+        'openprogram.agent.dispatcher.loop_runner._resolve_tools',
+        lambda *_a, **_kw: [bash],
+    )
+    real_agent_chat.provider.add_response(
+        ScriptedToolCall('bash', {'command': command, 'timeout': 5000}, 'cancel-shell'),
+    )
+    real_agent_chat.provider.block_calls.add(0)
+    execution = _chat(real_agent_chat)
+    _wait(real_agent_chat.provider.entered.is_set)
+    _command(real_agent_chat, 'execution.pause', execution, 'pause-shell')
+    real_agent_chat.provider.release.set()
+    paused = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+        is ExecutionStatus.PAUSED else None
+    ))
+    _command(real_agent_chat, 'execution.continue', paused, 'resume-shell')
+    _wait(started.exists)
+    running = real_agent_chat.store.get_execution(execution.execution_id)
+    _command(real_agent_chat, 'execution.cancel', running, 'cancel-shell')
+    _wait(lambda: real_agent_chat.store.get_execution(execution.execution_id).status
+          is ExecutionStatus.CANCELLED, timeout=2.0, detail=lambda: {
+              "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
+              "outcomes": [repr(x) for x in real_agent_chat.outcomes],
+              "branch": real_agent_chat.sessions.get_branch(real_agent_chat.session_id),
+          })
+    branch = real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
+    reply = next(item for item in branch if item.get('id', '').endswith('_reply'))
+    assert reply['status'] == 'cancelled'
+    assert real_agent_chat.sessions.get_session(real_agent_chat.session_id)['status'] == 'idle'
+    assert not real_agent_chat.server._is_run_active(real_agent_chat.session_id)
+    time.sleep(3.1)
+    assert not delayed.exists(), 'child continued writing after cancellation'
+    assert real_agent_chat.provider.call_count == 1

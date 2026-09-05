@@ -1,4 +1,4 @@
-"""Local backend — subprocess.run in the host shell.
+"""Local backend — cancellable command execution in the host shell.
 
 The agent's ``bash`` tool routes every command through here. On POSIX
 that's ``shell=True`` (the host ``/bin/sh``), exactly as before. On
@@ -19,6 +19,7 @@ import sys
 from dataclasses import replace
 
 from openprogram.backend.base import Backend, RunResult, decode_maybe
+from openprogram.backend.process import run_command
 from openprogram import sandbox as _sandbox
 
 log = logging.getLogger(__name__)
@@ -127,11 +128,9 @@ class LocalBackend(Backend):
                 sandbox_error="unavailable",
             )
         try:
-            proc = subprocess.run(
+            proc = run_command(
                 args,
                 shell=use_shell,
-                capture_output=True,
-                text=True,
                 timeout=timeout,
                 cwd=cwd,
                 env=env,

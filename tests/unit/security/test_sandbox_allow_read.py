@@ -180,7 +180,7 @@ def test_local_backend_attaches_matched_path_and_rule(monkeypatch):
         returncode=1, stdout="", stderr=f"cat: {secret}: Operation not permitted",
     )
     monkeypatch.setattr(
-        "openprogram.backend.local.subprocess.run",
+        "openprogram.backend.local.run_command",
         lambda *_a, **_kw: completed,
     )
     result = LocalBackend().run(f"cat {secret}", timeout=5, cwd="/tmp")
