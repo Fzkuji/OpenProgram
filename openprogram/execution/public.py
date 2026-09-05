@@ -98,10 +98,12 @@ def execution_snapshot(
     project_id: str | None = None,
     job_id: str | None = None,
     job: Any = None,
+    event_sequence: int | None = None,
 ) -> ExecutionSnapshot:
     from .foreground import foreground_task_snapshot
 
-    sequence = _event_sequence(store, execution.execution_id, execution.status_version)
+    sequence = (event_sequence if event_sequence is not None
+                else _event_sequence(store, execution.execution_id, execution.status_version))
     return ExecutionSnapshot(
         execution_id=execution.execution_id,
         job_id=job_id or execution.execution_id,

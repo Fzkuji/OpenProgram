@@ -1803,6 +1803,12 @@ class ExecutionStore:
         if type(after_sequence) is not int or after_sequence < 0:
             raise ExecutionConflict("invalid_cursor", "after_sequence must be a non-negative integer")
         with closing(self._connect()) as connection:
+            # One WAL read snapshot binds lifecycle state to the event cursor.
+            # A later writer must not advance bounds or status independently.
+            connection.execute("BEGIN")
+            execution = self._get_execution(connection, execution_id)
+            if execution is None:
+                raise ExecutionConflict("not_found", "execution does not exist")
             bounds = connection.execute(
                 "SELECT MIN(execution_sequence) AS first_sequence, "
                 "MAX(execution_sequence) AS last_sequence "
@@ -1833,11 +1839,9 @@ class ExecutionStore:
                         rows = ()
                         break
                     expected += 1
-        execution = self.get_execution(execution_id)
-        if execution is None:
-            raise ExecutionConflict("not_found", "execution does not exist")
         return EventReplay(
             execution_id=execution_id,
+            execution=execution,
             events=tuple(self._event(row) for row in rows),
             cursor=EventCursor(
                 execution_id=execution_id,

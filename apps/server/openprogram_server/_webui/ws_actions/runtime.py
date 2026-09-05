@@ -352,7 +352,7 @@ def _public_event(event) -> dict:
     }
 
 
-def _public_execution_snapshot(execution) -> tuple[dict, dict]:
+def _public_execution_snapshot(execution, *, event_sequence: int | None = None) -> tuple[dict, dict]:
     """Return the one snapshot shape shared by command and reconnect paths."""
     from openprogram.execution import default_store
     from openprogram.execution.public import execution_snapshot
@@ -380,7 +380,7 @@ def _public_execution_snapshot(execution) -> tuple[dict, dict]:
     if record is not None:
         execution_data = execution_snapshot(
             record, store=default_store(), resource=resource,
-            job_id=getattr(job, "id", None), job=job,
+            job_id=getattr(job, "id", None), job=job, event_sequence=event_sequence,
         ).to_dict()
     cursor = {
         "execution_id": execution_data.get("execution_id"),
@@ -726,7 +726,9 @@ async def handle_execution_replay(ws, cmd: dict) -> None:
     except Exception:
         await ws.send_text(json.dumps({"type": "execution.replay", "error": "not_found", "execution_id": execution_id}))
         return
-    snapshot, cursor = _public_execution_snapshot(execution)
+    snapshot, cursor = _public_execution_snapshot(
+        replay.execution, event_sequence=replay.cursor.next_sequence - 1,
+    )
     await ws.send_text(json.dumps({
         "type": "execution.replay",
         "execution_id": execution_id,

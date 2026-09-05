@@ -26,11 +26,6 @@ import {
 } from "@/lib/net/execution-client";
 import "@/lib/net/ws-events";
 
-type ExecutionUpdateDetail = {
-  execution?: ExecutionSnapshot;
-  event_cursor?: EventCursor;
-};
-
 export type ExecutionDebuggerController = {
   executions: ExecutionSnapshot[];
   events: PersistedExecutionEvent[];
@@ -186,14 +181,6 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     setEvents([]);
     setConnection({ state: "reconnecting", cursor: cursors[executionId] || null });
   }, [snapshots, cursors]);
-
-  const lastRequestedId = useRef<string | null>(null);
-  useEffect(() => {
-    if (!requestedExecutionId) { lastRequestedId.current = null; return; }
-    if (!snapshots[requestedExecutionId] || lastRequestedId.current === requestedExecutionId) return;
-    lastRequestedId.current = requestedExecutionId;
-    selectExecution(requestedExecutionId);
-  }, [requestedExecutionId, snapshots, selectExecution]);
 
   const command = useCallback(async (commandValue: ExecutionCommand): Promise<CommandResult> => {
     try {

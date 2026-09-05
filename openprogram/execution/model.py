@@ -317,6 +317,7 @@ class EventReplay:
     execution_id: str
     events: tuple[ExecutionEvent, ...]
     cursor: "EventCursor"
+    execution: ExecutionRecord
     recovery: str | None = None
 
 

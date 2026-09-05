@@ -73,6 +73,7 @@ export function RightSidebar() {
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
   const [debuggerExecutionId, setDebuggerExecutionId] = useState<string | null>(null);
+  const [debuggerRequestVersion, setDebuggerRequestVersion] = useState(0);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const { style: railStyle, resizeHandleProps } = useResizableRail({
     open,
@@ -153,7 +154,8 @@ export function RightSidebar() {
   }
 
   function openDebugger(executionId?: string) {
-    if (executionId) setDebuggerExecutionId(executionId);
+    setDebuggerExecutionId(executionId || null);
+    setDebuggerRequestVersion((version) => version + 1);
     setRightDockView(VIEW_DEBUGGER);
     if (!open) setRightDockOpen(true);
   }
@@ -312,7 +314,7 @@ export function RightSidebar() {
         </div>
         <div className="right-view" data-view={VIEW_DEBUGGER}>
           <SessionDebugger
-            key={currentSessionId || "no-session"}
+            key={`${currentSessionId || "no-session"}:${debuggerRequestVersion}`}
             sessionId={currentSessionId}
             active={open && view === VIEW_DEBUGGER}
             requestedExecutionId={debuggerExecutionId}

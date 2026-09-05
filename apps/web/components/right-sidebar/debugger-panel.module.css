@@ -1,4 +1,7 @@
 .panel {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-width: 0;
   overflow: hidden;
@@ -56,7 +59,7 @@
 .textButton { border: 0; padding: 0; background: transparent; color: var(--accent-blue); cursor: pointer; font: inherit; }
 .textButton:hover { text-decoration: underline; }
 
-.layout { display: grid; grid-template-columns: 192px minmax(0, 1fr); height: calc(100% - 93px); min-height: 0; }
+.layout { display: grid; grid-template-columns: 192px minmax(0, 1fr); flex: 1; min-height: 0; }
 .executionRail { min-width: 0; overflow-y: auto; border-right: 1px solid var(--border); background: var(--bg-secondary); }
 .sectionTitle { display: flex; justify-content: space-between; padding: 13px 12px 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
 .executionTree { padding-bottom: 14px; }
@@ -139,11 +142,17 @@
 .emptyState { display: grid; gap: 8px; place-items: center; min-height: 240px; padding: 30px; text-align: center; }
 .emptyState strong { color: var(--text-primary); font-size: 13px; }
 
-@media (max-width: 680px) {
-  .layout { grid-template-columns: 1fr; height: auto; }
-  .executionRail { max-height: 190px; border-right: 0; border-bottom: 1px solid var(--border); }
-  .twoColumn, .identityGrid { grid-template-columns: 1fr 1fr; }
-  .content { overflow: visible; }
+@container (max-width: 560px) {
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .executionRail { max-height: 150px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .twoColumn { grid-template-columns: minmax(0, 1fr); }
+  .identityGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .heroTop { flex-direction: column; }
+  .heroTop > div { min-width: 0; overflow-wrap: anywhere; }
+  .content { padding: 10px; }
+  .connectionLine { flex-wrap: wrap; gap: 6px 12px; }
+  .connectionLine > span:first-child { flex-basis: 100%; white-space: normal; }
+  .cardHeader { flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from openprogram.events import emit_ws_frame
 
 
-def _execution_payload(execution):
+def _execution_payload(execution, *, event_sequence: int | None = None):
     from openprogram.execution import default_store
     from openprogram.execution.public import execution_snapshot
 
@@ -29,7 +29,7 @@ def _execution_payload(execution):
     except Exception:
         pass
     return execution_snapshot(
-        execution, store=default_store(), resource=resource,
+        execution, store=default_store(), resource=resource, event_sequence=event_sequence,
     ).to_dict()
 
 
@@ -277,7 +277,7 @@ def register(app):
             )
         except Exception:
             return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
-        snapshot = _execution_payload(execution)
+        snapshot = _execution_payload(replay.execution, event_sequence=replay.cursor.next_sequence - 1)
         return JSONResponse({
             "execution_id": execution_id,
             "events": [_public_event(event) for event in replay.events],
