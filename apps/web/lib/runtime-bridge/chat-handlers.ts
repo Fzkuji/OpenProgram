@@ -423,8 +423,8 @@ export function handleExecutionCommandUpdated(frame: unknown): void {
     delete runtimeState._optimisticCancels[commandId];
     return;
   }
-  const ownsForeground = snapshot.status !== "paused"
-    && !(snapshot.status === "reconciliation_required" && !snapshot.current_attempt_id);
+  const ownsForeground = snapshot?.status !== "paused"
+    && !(snapshot?.status === "reconciliation_required" && !snapshot?.current_attempt_id);
   const restoredTask = {
     ...pending.task,
     session_id: snapshotSessionId,
