@@ -849,6 +849,14 @@ async def handle_chat(ws, cmd: dict):
             project_defaults,
             save_session_run_config,
         )
+        # This is an accepted message, not an unsent composer draft. Persist
+        # its session before saving settings so a first-turn Bypass selection
+        # (and other run settings) survives refresh without a project binding.
+        from openprogram.agent.session_db import default_db
+        session_db = default_db()
+        if session_db.get_session(session_id) is None:
+            session_db.create_session(session_id, agent_id or _s._default_agent_id(),
+                                      project_id=project_id)
         run_cfg = save_session_run_config(
             session_id,
             agent_id=_db_agent_id(session_id),
