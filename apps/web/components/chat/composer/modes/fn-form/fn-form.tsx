@@ -139,7 +139,7 @@ export function FunctionForm({
       >
         {params.length === 0 ? (
           <div className={styles.noParams}>
-            No parameters needed — click run to execute
+            {text("No parameters required. Use the submit button to continue.", "无需填写参数，点击提交按钮继续。")}
           </div>
         ) : (
           <>

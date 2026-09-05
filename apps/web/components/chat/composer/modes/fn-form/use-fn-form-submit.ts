@@ -49,6 +49,17 @@ export function useFnFormSubmit({
       ), { tone: "error" });
       return;
     }
+    const localAction = useSessionStore.getState().fnFormSubmitAction;
+    if (localAction) {
+      const result = localAction.submit(normalized.kwargs);
+      if (result?.error) {
+        if (result.errorParam) fnForm.setError(result.errorParam);
+        showToast(result.error, { tone: "error" });
+      } else {
+        handleFnFormClose();
+      }
+      return;
+    }
     const accepted = dispatchFunction(
       fnFormFunction,
       normalized.kwargs,

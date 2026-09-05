@@ -278,6 +278,7 @@ interface ConvState {
   openFnForm: (
     fn: AgenticFunction,
     prefill?: Record<string, string> | null,
+    submitAction?: ConvState["fnFormSubmitAction"],
   ) => void;
   /** 手动运行的"修改"入口：预填上次的参数，提交时以 fork_of_node
    *  为锚点作为兄弟分支重跑（旧运行保留在 ◀ N/M ▶ 里）。 */
@@ -288,6 +289,11 @@ interface ConvState {
   ) => void;
   fnFormPrefill: Record<string, string> | null;
   fnFormForkOf: string | null;
+  /** Optional local submission, e.g. preparing a draft through the same parameter form. */
+  fnFormSubmitAction: {
+    label: string;
+    submit: (kwargs: Record<string, unknown>) => { error: string; errorParam?: string } | void;
+  } | null;
   closeFnForm: () => void;
   /** True between the close click and the wrapper-height transition
    *  end — `fnFormFunction` stays non-null through the close animation
@@ -475,6 +481,7 @@ function switchChat(
     fnFormClosing: false,
     fnFormPrefill: null,
     fnFormForkOf: null,
+    fnFormSubmitAction: null,
     welcomeVisible: currentSessionId === null,
   };
 }
@@ -901,17 +908,18 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
   fnFormFunction: null,
   fnFormPrefill: null,
   fnFormForkOf: null,
-  openFnForm: (fn, prefill = null) => set({
+  fnFormSubmitAction: null,
+  openFnForm: (fn, prefill = null, submitAction = null) => set({
     fnFormFunction: fn, fnFormClosing: false,
-    fnFormPrefill: prefill, fnFormForkOf: null,
+    fnFormPrefill: prefill, fnFormForkOf: null, fnFormSubmitAction: submitAction,
   }),
   openFnFormEdit: (fn, prefill, forkOfNode) => set({
     fnFormFunction: fn, fnFormClosing: false,
-    fnFormPrefill: prefill, fnFormForkOf: forkOfNode,
+    fnFormPrefill: prefill, fnFormForkOf: forkOfNode, fnFormSubmitAction: null,
   }),
   closeFnForm: () => set({
     fnFormFunction: null, fnFormClosing: false,
-    fnFormPrefill: null, fnFormForkOf: null,
+    fnFormPrefill: null, fnFormForkOf: null, fnFormSubmitAction: null,
   }),
   fnFormClosing: false,
   setFnFormClosing: (v) => set({ fnFormClosing: v }),
