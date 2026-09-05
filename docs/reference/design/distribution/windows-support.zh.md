@@ -103,6 +103,11 @@ Managed upgrade 通过兼容接缝选择 Windows ZIP 和 tag 下的 PowerShell i
 
 ## W3 实现
 
+Desktop runtime 准备在 checkout 构建目录内的独立暂存目录中完成构建或安装，
+使用独占锁串行发布。新产物准备完成且版本与 Desktop 包一致后才替换旧产物。
+发布失败会恢复旧产物；若恢复也失败，则保留备份并明确报告恢复路径。
+此流程只准备打包输入，不会替换已安装 App。
+
 Tag workflow 构建 Windows x86_64 与 arm64 Electron 应用，以及按用户安装、可选择目录的
 NSIS installer。封装前通过正式 PowerShell release installer 暂存同一份完整 W2 runtime，
 随后从 `win-unpacked` 验证内置 runtime、worker health、Web chat 路由和不可变

@@ -24,6 +24,11 @@ The effective default is the session override, then the project default, then As
 
 ## Understand a refusal
 
+For Windows path rules, forward slashes avoid escaping ambiguity: for example,
+`read(C:/Users/me/project/**)`. Ordinary backslashes in drive paths are preserved;
+the rule syntax still uses `\\`, `\(`, and `\)` to escape its own special characters.
+JSON configuration additionally requires JSON's normal backslash escaping.
+
 A tool result identifies whether the refusal came from authority, a permission rule, Plan mode, Auto classification, or Sandbox. `AUTHORITY_TIER_MISSING` means the execution request lacks an authenticated authority tier. It is not resolved by Bypass. New authenticated chat submissions carry that identity; old admitted executions missing identity must be resubmitted through an authenticated interface.
 
 Sandbox is configured separately in the composer Plus menu. Changing Sandbox affects subsequent turns. Bypass keeps the current sandbox restrictions, and an ordinary tool approval never authorizes a sandbox escalation. When a sandbox denial cannot open a separate escalation wait, change the relevant settings explicitly and submit a new call.

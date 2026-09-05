@@ -180,7 +180,9 @@ def _unescape(s: str) -> str:
     i = 0
     while i < len(s):
         c = s[i]
-        if c == "\\" and i + 1 < len(s):
+        # Only the rule grammar's own metacharacters are escaped. Consuming
+        # arbitrary backslashes corrupts pasted Windows paths (e.g. C:\Users).
+        if c == "\\" and i + 1 < len(s) and s[i + 1] in "\\()":
             out.append(s[i + 1])
             i += 2
         else:

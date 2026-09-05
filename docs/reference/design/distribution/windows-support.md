@@ -133,6 +133,13 @@ queries are read-only and do not enable long paths or change Defender.
 
 ## W3 implementation
 
+Desktop runtime preparation builds or installs into a unique staging directory
+inside the checkout's build directory. An exclusive lock serializes publication.
+The previous payload is kept until the replacement is ready and its version
+matches the desktop package. Failed publication restores the previous payload;
+if restoration also fails, its backup is retained with an explicit recovery path.
+This prepares packaging inputs only and does not replace the installed App.
+
 The tag workflow builds Windows x86_64 and arm64 Electron applications and
 assisted, per-user NSIS installers. It stages the exact complete W2 runtime through the
 formal PowerShell release installer before packaging, then smoke-tests the
