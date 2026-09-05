@@ -26,7 +26,6 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Bug } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { ContextCommitTimeline } from "./context-commit-timeline";
@@ -40,6 +39,7 @@ import {
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
   ActivityIcon,
+  BugIcon,
   type AnimatedNavIconHandle,
   FolderOpenIcon,
   PanelLeftCloseIcon,
@@ -86,6 +86,7 @@ export function RightSidebar() {
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
+  const debuggerIconRef = useRef<AnimatedNavIconHandle>(null);
   const runningIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
@@ -266,13 +267,17 @@ export function RightSidebar() {
           }
           data-view={VIEW_DEBUGGER}
           onClick={() => onNavClick(VIEW_DEBUGGER)}
+          onMouseEnter={() => debuggerIconRef.current?.startAnimation()}
+          onMouseLeave={() => debuggerIconRef.current?.stopAnimation()}
+          onFocus={() => debuggerIconRef.current?.startAnimation()}
+          onBlur={() => debuggerIconRef.current?.stopAnimation()}
           role="button"
           tabIndex={0}
           onKeyDown={activateOnKey(() => onNavClick(VIEW_DEBUGGER))}
           title={text("Execution debugger", "执行调试器")}
         >
           <span className={sidebarNavIconClass}>
-            <Bug size={20} aria-hidden="true" />
+            <BugIcon ref={debuggerIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>
             {text("Debugger", "调试器")}
