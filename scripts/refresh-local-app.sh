@@ -354,7 +354,7 @@ else
   cp "$runtime_assets_stage/product-runtime.json" "$installed_product_runtime"
 fi
 mkdir -p "$runtime_root/bin" "$runtime_root/assets/tui"
-cp "$runtime_assets_stage/node" "$runtime_root/bin/node"
+install -m 755 "$runtime_assets_stage/node" "$runtime_root/bin/node"
 cp "$runtime_assets_stage/index.cjs" "$runtime_root/assets/tui/index.cjs"
 cp "$runtime_assets_stage/product-uv.lock" "$runtime_root/product-uv.lock"
 cp "$runtime_assets_stage/verify-product-runtime.py" "$runtime_root/bin/verify-product-runtime.py"
