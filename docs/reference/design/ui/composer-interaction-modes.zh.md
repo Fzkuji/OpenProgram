@@ -180,7 +180,7 @@ apps/web/components/chat/composer/
 ## 后端：审批合流到 QuestionRegistry
 
 为了让"审批"也走同一条事件路径 → 落到同一个 composer 承接点，后端把
-`_approval.py` 合流到 `QuestionRegistry`（user-input-requests.md 点 6）：
+`permissions/approval.py` 合流到 `QuestionRegistry`（user-input-requests.md 点 6）：
 
 * `await_user_approval` 不再用独立的 `ApprovalRegistry` + 自定义
   `approval_request` 信封，而是注册一个 `kind="approval"` 的 PendingQuestion
@@ -198,7 +198,7 @@ apps/web/components/chat/composer/
 ## 退役（已完成）
 
 * `apps/web/components/ui/question-prompt.tsx` 浮窗 + app-shell 挂载 → 已删。
-* `_approval.py` 的 `ApprovalRegistry` / `approval_request` 信封 → 已删；
+* `permissions/approval.py` 的 `ApprovalRegistry` / `approval_request` 信封 → 已删；
   `approval_registry()` 返回统一 QuestionRegistry。
 
 ## 落地顺序（每步独立验证，全部完成）

@@ -48,7 +48,7 @@ rather than adding new detection:
 | `tool.before` | `agent_loop.py`, before every `tool.execute()` | one event feeds both the notify emit and the gate query |
 | `tool.after` | `agent_loop.py`, after every tool call finishes | notify emit with the result text channel |
 | `subagent.started` / `completed` | `task/runner.py`, the job_status broadcast | conversion, funnelled through `_broadcast_job_status` |
-| `permission.requested` | `_approval.py`, the approval_request envelope | added tap |
+| `permission.requested` | `permissions/approval.py`, the approval_request envelope | added tap |
 | `artifact.file.changed` | `file_backup.backup_before_edit` and `project_commit` | new emission after a successful write |
 
 ## 4. Gate mounting and honest coverage

@@ -40,7 +40,7 @@
 | `tool.before` | `agent_loop.py`，每次 `tool.execute()` 之前 | 一份事件同时喂 notify emit 与 gate 问询 |
 | `tool.after` | `agent_loop.py`，每次工具调用结束之后 | notify emit，附结果文本通道 |
 | `subagent.started` / `completed` | `task/runner.py` 的 job_status 广播 | 转换，经 `_broadcast_job_status` 汇总 |
-| `permission.requested` | `_approval.py` 的 approval_request 信封 | 新增 tap |
+| `permission.requested` | `permissions/approval.py` 的 approval_request 信封 | 新增 tap |
 | `artifact.file.changed` | `file_backup.backup_before_edit` 与 `project_commit` | 写成功后新增发送 |
 
 ## 4. gate 的挂载点与如实声明的覆盖率

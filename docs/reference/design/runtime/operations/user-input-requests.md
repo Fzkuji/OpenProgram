@@ -132,7 +132,7 @@ runtime.can_ask()  # -> bool; False in headless runs so authors can branch
    answer box while a question is pending; TUI renders the question in the
    input slot (tui-upgrade.md P2). First answer wins across surfaces;
    `question.replied` retracts the UI elsewhere.
-6. **Approval merge**: `_approval.py` moves onto the same registry as
+6. **Approval merge**: `permissions/approval.py` moves onto the same registry as
    `kind="approval"`, giving the otherwise unreachable `ask` permission mode
    a real UI, with opencode's reply shape (allow once / always / reject with
    feedback that becomes the tool error text).

@@ -111,7 +111,7 @@ runtime.can_ask()  # -> bool；无头运行时为 False，作者可据此分支
    问题待答期间输入框兼作答案框；TUI 把问题渲染在输入槽位里
    （tui-upgrade.md P2）。跨界面以第一个答案为准；`question.replied` 会撤回
    其他界面上的 UI。
-6. **审批合流**：`_approval.py` 迁移到同一个 registry，`kind="approval"`，
+6. **审批合流**：`permissions/approval.py` 迁移到同一个 registry，`kind="approval"`，
    给原本无从触达的 `ask` 权限模式一个真 UI，采用 opencode 的 reply 形态
    （allow once / always / reject 并带一条会成为 tool error 文本的反馈）。
 7. **Channels**：按钮即文本命令（`/answer <id> <choice>`）；对于 channel
