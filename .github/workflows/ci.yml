@@ -238,6 +238,7 @@ jobs:
           tests/component/runtime/test_process_liveness.py
           tests/component/runtime/test_local_backend_process_tree.py
           tests/component/runtime/test_git_bash_source_transport.py
+          tests/component/agent/test_job_cancel_projection_race.py
           tests/component/programs/test_pdf_import_isolation.py
           tests/unit/core/test_windows_worker_service.py
           tests/component/security/test_sandbox.py

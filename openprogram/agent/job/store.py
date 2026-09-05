@@ -266,6 +266,8 @@ def update_job_status(
     session_id: str,
     job_id: str,
     new_status: JobStatus,
+    *,
+    expected_status: Optional[JobStatus] = None,
     **fields: Any,
 ) -> Optional[Job]:
     """Atomic state transition + extra-field stamp.
@@ -277,6 +279,10 @@ def update_job_status(
     ``fields`` overrides any Job attribute — typical use is
     ``head_id=...``, ``result_text=...``, ``error=...``, plus the
     timestamp fields the runner stamps explicitly.
+
+    With ``expected_status``, a stale caller receives the current row without
+    changing any fields. The comparison shares the write lock so a progress
+    stamp cannot race a terminal transition and try to resurrect the job.
     """
     path = _ensure_session(session_id)
     if path is None:
@@ -292,6 +298,8 @@ def update_job_status(
                 t = Job.from_dict(row)
             except Exception:
                 return None
+            if expected_status is not None and t.status != expected_status:
+                return t
             if t.status == new_status:
                 # Non-terminal no-op transitions may refresh progress fields.
                 # A terminal row is an immutable outcome: a retry or racing
