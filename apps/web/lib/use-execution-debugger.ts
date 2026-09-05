@@ -244,10 +244,9 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       draft_id: draft.draft_id,
       action: "revision.draft.replace",
       expected_draft_version: draft.draft_version,
-      payload: {
-        changes,
-        frontier_mapping: draft.frontier_mapping || [],
-      },
+      payload: Array.isArray(changes)
+        ? { changes, frontier_mapping: draft.frontier_mapping || [] }
+        : { preparation: changes },
     });
     setDebuggerData((current) => ({
       ...current,
