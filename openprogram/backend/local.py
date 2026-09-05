@@ -24,6 +24,8 @@ from openprogram.backend.process import run_command
 from openprogram import sandbox as _sandbox
 from openprogram._compat import (
     ProcessTreeOwner,
+    git_bash_invocation,
+    powershell_invocation,
     no_window_creation_flags,
 )
 
@@ -141,20 +143,12 @@ def _invocation(command: str, cwd: str | None = None, *,
                     'PATH="$(cygpath -u "$OPENPROGRAM_RECOVERABLE_TRASH")'
                     '/shims/bin:$PATH"; export PATH; ' + command
                 )
-            return ([bash, "-c", command], False, prepared_env, False)
-        return (
-            [
-                _windows_powershell(),
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                command,
-            ],
-            False,
-            prepare_child_env(),
-            False,
+            args, prepared_env = git_bash_invocation(bash, command, prepared_env)
+            return (args, False, prepared_env, False)
+        args, prepared_env = powershell_invocation(
+            _windows_powershell(), command, prepare_child_env(),
         )
+        return (args, False, prepared_env, False)
     return (command, True, prepare_child_env(), False)
 
 

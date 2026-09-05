@@ -26,14 +26,16 @@ def test_timeout_retains_output_and_stops_child(tmp_path):
     result = LocalBackend().run(
         _python(
             f"import time; from pathlib import Path; print('partial', flush=True); "
-            f"time.sleep(1); Path({str(marker)!r}).touch()",
+            f"time.sleep(3); Path({str(marker)!r}).touch()",
             tmp_path,
         ),
-        timeout=0.2,
+        # Budget includes native shell/interpreter cold startup, not just the
+        # sleep in the child. A 200ms limit can expire before any output exists.
+        timeout=2,
     )
     assert result.timed_out
     assert "partial" in result.stdout
-    time.sleep(1.1)
+    time.sleep(3.1)
     assert not marker.exists()
 
 

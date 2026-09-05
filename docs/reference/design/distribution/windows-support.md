@@ -91,6 +91,12 @@ cleanup helpers use no-window process creation so Desktop agent runs do not
 flash console windows. The tool contract describes the active surface as a host
 shell and directs portable file work to the dedicated file/search tools or
 Python rather than assuming Unix coreutils are installed.
+Shell source transport lives in `_compat`: Git Bash receives the exact source
+through a temporary environment variable, removed before evaluation, so MSYS
+argument parsing cannot collapse embedded backslashes. PowerShell receives
+UTF-16 encoded source and emits UTF-8. Python child I/O defaults to UTF-8 unless
+the caller explicitly configured it. Neither transport changes command exit
+status or the existing process-tree timeout/cancellation contract.
 
 Program discovery uses direct distribution metadata lookups for the catalogued
 applications. It does not rebuild Python's complete import-to-distribution map

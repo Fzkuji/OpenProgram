@@ -236,6 +236,7 @@ jobs:
           tests/component/config/test_windows_release_version.py
           tests/component/runtime/test_process_liveness.py
           tests/component/runtime/test_local_backend_process_tree.py
+          tests/component/runtime/test_git_bash_source_transport.py
           tests/component/programs/test_pdf_import_isolation.py
           tests/unit/core/test_windows_worker_service.py
           tests/component/security/test_sandbox.py
