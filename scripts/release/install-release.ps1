@@ -82,7 +82,7 @@ function Assert-SafeArchive {
 
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $Zip = [IO.Compression.ZipFile]::OpenRead($Archive)
+    $Zip = [IO.Compression.ZipFile]::OpenRead((ConvertTo-ExtendedFileSystemPath $Archive))
     $Names = [Collections.Generic.HashSet[string]]::new(
         [StringComparer]::OrdinalIgnoreCase
     )
@@ -132,6 +132,17 @@ function Assert-SafeArchive {
     }
 }
 
+function ConvertTo-ExtendedFileSystemPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $Full = [IO.Path]::GetFullPath($Path)
+    if ($Full.StartsWith('\\?\', [StringComparison]::Ordinal)) { return $Full }
+    if ($Full.StartsWith('\\', [StringComparison]::Ordinal)) {
+        return '\\?\UNC\' + $Full.Substring(2)
+    }
+    return '\\?\' + $Full
+}
+
 function Expand-SafeArchive {
     param(
         [Parameter(Mandatory = $true)][string]$Archive,
@@ -139,12 +150,52 @@ function Expand-SafeArchive {
     )
 
     Assert-SafeArchive $Archive
-    [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $Destination)
-    $ReparsePoint = Get-ChildItem -LiteralPath $Destination -Force -Recurse |
-        Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 } |
-        Select-Object -First 1
-    if ($ReparsePoint) {
-        throw "extracted runtime contains a reparse point: $($ReparsePoint.FullName)"
+    # Windows PowerShell 5's default .NET paths and provider enumeration can
+    # fail on ordinary dependency trees once the staging prefix exceeds 260
+    # characters. Keep extraction and inspection on extended-length paths.
+    $Extended = ConvertTo-ExtendedFileSystemPath $Destination
+    if ([IO.Directory]::Exists($Extended) -and
+        ([IO.File]::GetAttributes($Extended) -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "runtime extraction destination is redirected: $Destination"
+    }
+    $Zip = [IO.Compression.ZipFile]::OpenRead((ConvertTo-ExtendedFileSystemPath $Archive))
+    try {
+        [IO.Directory]::CreateDirectory($Extended) | Out-Null
+        $Buffer = New-Object byte[] 65536
+        [long]$Written = 0
+        foreach ($Entry in $Zip.Entries) {
+            $Name = $Entry.FullName.Replace('\', '/')
+            $Target = $Extended.TrimEnd('\') + '\' + $Name.Replace('/', '\').TrimEnd('\')
+            if ($Name.EndsWith('/')) {
+                [IO.Directory]::CreateDirectory($Target) | Out-Null
+                continue
+            }
+            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Target)) | Out-Null
+            $InputStream = $Entry.Open()
+            try {
+                $OutputStream = [IO.File]::Open($Target, [IO.FileMode]::CreateNew,
+                    [IO.FileAccess]::Write, [IO.FileShare]::None)
+                try {
+                    while (($Count = $InputStream.Read($Buffer, 0, $Buffer.Length)) -gt 0) {
+                        $Written += $Count
+                        if ($Written -gt 8589934592) { throw 'runtime archive expands beyond the 8 GiB limit' }
+                        $OutputStream.Write($Buffer, 0, $Count)
+                    }
+                    if ($OutputStream.Length -ne $Entry.Length) { throw "archive entry length mismatch: $Name" }
+                } finally { $OutputStream.Dispose() }
+            } finally { $InputStream.Dispose() }
+        }
+    } finally { $Zip.Dispose() }
+    $Pending = [Collections.Generic.Stack[string]]::new()
+    $Pending.Push($Extended)
+    while ($Pending.Count -gt 0) {
+        foreach ($Entry in [IO.Directory]::EnumerateFileSystemEntries($Pending.Pop())) {
+            $Attributes = [IO.File]::GetAttributes($Entry)
+            if ($Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "extracted runtime contains a reparse point: $Entry"
+            }
+            if ($Attributes -band [IO.FileAttributes]::Directory) { $Pending.Push($Entry) }
+        }
     }
 }
 
@@ -220,10 +271,79 @@ function Move-Atomic {
             Remove-Item -LiteralPath $Backup -Force -ErrorAction SilentlyContinue
             [IO.File]::Replace($Source, $Destination, $Backup, $true)
         } else {
-            [IO.File]::Replace($Source, $Destination, $null, $true)
+            # PowerShell 5 binds $null to an empty string for this .NET
+            # parameter. NullString requests a genuine null backup path.
+            [IO.File]::Replace($Source, $Destination, [NullString]::Value, $true)
         }
     } else {
         [IO.File]::Move($Source, $Destination)
+    }
+}
+
+function Publish-CliLaunchers {
+    param([string]$Ps1Source, [string]$Ps1Target, [string]$CmdSource, [string]$CmdTarget)
+
+    $Entries = @(
+        @{ Source = $Ps1Source; Target = $Ps1Target; Extension = 'ps1' },
+        @{ Source = $CmdSource; Target = $CmdTarget; Extension = 'cmd' }
+    )
+    foreach ($Entry in $Entries) {
+        $Directory = Split-Path -Parent $Entry.Target
+        $Entry.Previous = Join-Path $Directory "openprogram.previous.$($Entry.Extension)"
+        $Entry.Rollback = Join-Path $Directory ('.openprogram-' + [guid]::NewGuid().ToString('N') + ".rollback.$($Entry.Extension)")
+        $Entry.HadFile = $false
+        $Entry.Activated = $false
+        $Entry.KeepRollback = $false
+    }
+    try {
+        # Snapshot both entry points before either replacement. These private
+        # copies also survive a failed rollback; previous launchers remain the
+        # normal user-facing rollback aid after a successful installation.
+        foreach ($Entry in $Entries) {
+            if (Test-Path -LiteralPath $Entry.Target) {
+                if (-not (Test-Path -LiteralPath $Entry.Target -PathType Leaf)) {
+                    throw "CLI launcher target is not a file: $($Entry.Target)"
+                }
+                [IO.File]::Copy($Entry.Target, $Entry.Rollback, $false)
+                $Entry.HadFile = $true
+            }
+        }
+        foreach ($Entry in $Entries) {
+            Move-Atomic $Entry.Source $Entry.Target $Entry.Previous
+            $Entry.Activated = $true
+        }
+    } catch {
+        $ActivationError = $_
+        $Recovery = [Collections.Generic.List[string]]::new()
+        for ($Index = $Entries.Count - 1; $Index -ge 0; $Index--) {
+            $Entry = $Entries[$Index]
+            if (-not $Entry.Activated) { continue }
+            try {
+                if ($Entry.HadFile) {
+                    Move-Atomic $Entry.Rollback $Entry.Target
+                } else {
+                    # Delete only the new launcher this transaction created,
+                    # never an installation directory or a pre-existing file.
+                    [IO.File]::Delete($Entry.Target)
+                }
+            } catch {
+                $Entry.KeepRollback = $true
+                $RecoveryDetail = if ($Entry.HadFile) {
+                    "original retained at $($Entry.Rollback)"
+                } else { 'new launcher could not be removed' }
+                $Recovery.Add("$($Entry.Target) (${RecoveryDetail}; $($_.Exception.Message))")
+            }
+        }
+        if ($Recovery.Count -gt 0) {
+            throw "CLI launcher activation and rollback failed; manual recovery required: $($Recovery -join '; ')"
+        }
+        throw $ActivationError
+    } finally {
+        foreach ($Entry in $Entries) {
+            if (-not $Entry.KeepRollback) {
+                Remove-Item -LiteralPath $Entry.Rollback -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 }
 
@@ -261,9 +381,12 @@ $BinDir = if ($env:OPENPROGRAM_BIN_DIR) {
 }
 New-Item -ItemType Directory -Path $ReleasesRoot, $BinDir -Force | Out-Null
 
+$InstallLock = [IO.File]::Open((Join-Path $RuntimeRoot '.install.lock'),
+    [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
 $Staging = Join-Path $RuntimeRoot (".staging-$Version-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $Staging | Out-Null
 try {
+    New-Item -ItemType Directory -Path $Staging | Out-Null
+    $CandidateRoot = $ReleaseDir
     if (-not (Test-Path -LiteralPath $ReleaseDir -PathType Container)) {
         $ArchiveName = "OpenProgram-$Version-runtime-windows-$Arch.zip"
         if ($env:OPENPROGRAM_RUNTIME_ARCHIVE) {
@@ -297,30 +420,27 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $ExtractedRuntime "runtime-manifest.json") -PathType Leaf)) {
             throw "runtime archive has no manifest"
         }
-        [IO.Directory]::Move($ExtractedRuntime, $ReleaseDir)
+        $CandidateRoot = $ExtractedRuntime
     }
-} finally {
-    Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
-}
 
-$ManifestPath = Join-Path $ReleaseDir "runtime-manifest.json"
+$ManifestPath = Join-Path $CandidateRoot "runtime-manifest.json"
 if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
-    throw "installed runtime has no manifest: $ReleaseDir"
+    throw "candidate runtime has no manifest: $CandidateRoot"
 }
 $Manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $PythonRelative = [string]$Manifest.python
 if (-not $PythonRelative -or [IO.Path]::IsPathRooted($PythonRelative)) {
     throw "runtime manifest Python path is invalid"
 }
-$PythonBin = [IO.Path]::GetFullPath((Join-Path $ReleaseDir $PythonRelative))
-$ReleasePrefix = [IO.Path]::GetFullPath($ReleaseDir).TrimEnd("\") + "\"
+$PythonBin = [IO.Path]::GetFullPath((Join-Path $CandidateRoot $PythonRelative))
+$ReleasePrefix = [IO.Path]::GetFullPath($CandidateRoot).TrimEnd("\") + "\"
 if (-not $PythonBin.StartsWith($ReleasePrefix, [StringComparison]::OrdinalIgnoreCase)) {
     throw "runtime manifest Python path escapes the release directory"
 }
 if (-not (Test-Path -LiteralPath $PythonBin -PathType Leaf)) {
     throw "managed Python is missing: $PythonBin"
 }
-Invoke-Native $PythonBin -I (Join-Path $ReleaseDir "bin\verify-product-runtime.py") $ReleaseDir
+Invoke-Native $PythonBin -I (Join-Path $CandidateRoot "bin\verify-product-runtime.py") $CandidateRoot
 Invoke-Native $PythonBin -I -m openprogram --version
 
 $ProbeListener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
@@ -344,8 +464,8 @@ try {
     $env:USERPROFILE = $ProbeState
     Remove-Item Env:OPENPROGRAM_STATE_DIR -ErrorAction SilentlyContinue
     $env:OPENPROGRAM_WEB_PORT = [string]$ProbePort
-    $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $ReleaseDir "assets\playwright"
-    $env:GPA_MODEL_PATH = Join-Path $ReleaseDir "assets\gpa\model.pt"
+    $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $CandidateRoot "assets\playwright"
+    $env:GPA_MODEL_PATH = Join-Path $CandidateRoot "assets\gpa\model.pt"
     Invoke-Native $PythonBin -I -B -m openprogram worker start
     Test-WorkerHealth $PythonBin $ProbePort
     Invoke-Native $PythonBin -I -B -m openprogram worker stop
@@ -365,6 +485,13 @@ try {
     Remove-Item -LiteralPath $ProbeState -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# Only a completely verified candidate becomes a reusable immutable release.
+# The per-runtime lock also serializes launcher activation and rollback.
+if ($CandidateRoot -ne $ReleaseDir) {
+    [IO.Directory]::Move($CandidateRoot, $ReleaseDir)
+    $PythonBin = [IO.Path]::GetFullPath((Join-Path $ReleaseDir $PythonRelative))
+}
+
 $LauncherPs1 = Join-Path $BinDir "openprogram.ps1"
 $LauncherCmd = Join-Path $BinDir "openprogram.cmd"
 $LauncherTemporary = Join-Path $BinDir (".openprogram-" + [guid]::NewGuid().ToString("N") + ".ps1")
@@ -376,13 +503,6 @@ $LauncherContent = @"
 & '$($PythonBin.Replace("'", "''"))' -I -m openprogram @args
 exit `$LASTEXITCODE
 "@
-# Windows PowerShell 5 otherwise decodes UTF-8 paths as the system ANSI page.
-[IO.File]::WriteAllText($LauncherTemporary, $LauncherContent, [Text.UTF8Encoding]::new($true))
-try {
-    Move-Atomic $LauncherTemporary $LauncherPs1 (Join-Path $BinDir "openprogram.previous.ps1")
-} finally {
-    Remove-Item -LiteralPath $LauncherTemporary -Force -ErrorAction SilentlyContinue
-}
 $CmdTemporary = Join-Path $BinDir (".openprogram-" + [guid]::NewGuid().ToString("N") + ".cmd")
 $CmdPython = ConvertTo-CmdBatchLiteral $PythonBin
 $CmdPlaywright = ConvertTo-CmdBatchLiteral (Join-Path $ReleaseDir "assets\playwright")
@@ -403,13 +523,17 @@ exit /b %_OPENPROGRAM_EXIT%
 # CMD needs BOM-free UTF-8 and an ASCII preamble selecting that code page
 # before it parses embedded paths. Restore the caller's console on return;
 # delayed expansion must not consume literal exclamation marks in paths.
-Write-Utf8NoBom $CmdTemporary $CmdContent
 try {
+    # Finish both files before changing either active entry point.
+    # Windows PowerShell 5 needs the BOM to decode Unicode paths correctly.
+    [IO.File]::WriteAllText($LauncherTemporary, $LauncherContent, [Text.UTF8Encoding]::new($true))
+    Write-Utf8NoBom $CmdTemporary $CmdContent
     # A managed install must replace launchers left by an older release or a
     # source checkout. Otherwise PATH can silently continue to run a stale
     # virtualenv even though the new runtime passed every activation probe.
-    Move-Atomic $CmdTemporary $LauncherCmd (Join-Path $BinDir "openprogram.previous.cmd")
+    Publish-CliLaunchers $LauncherTemporary $LauncherPs1 $CmdTemporary $LauncherCmd
 } finally {
+    Remove-Item -LiteralPath $LauncherTemporary -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $CmdTemporary -Force -ErrorAction SilentlyContinue
 }
 
@@ -425,3 +549,18 @@ if (-not $env:OPENPROGRAM_BIN_DIR) {
 Write-Host "OpenProgram $Version installed."
 Write-Host "Executable: $LauncherCmd"
 Write-Host "Runtime: $ReleaseDir"
+} finally {
+    try {
+        if (Test-Path -LiteralPath $Staging) {
+            $StagingFull = [IO.Path]::GetFullPath($Staging)
+            $RuntimePrefix = [IO.Path]::GetFullPath($RuntimeRoot).TrimEnd('\') + '\'
+            if (-not $StagingFull.StartsWith($RuntimePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'refusing cleanup outside the CLI runtime staging directory'
+            }
+            try { [IO.Directory]::Delete((ConvertTo-ExtendedFileSystemPath $StagingFull), $true) }
+            catch { Write-Warning "runtime staging retained at ${StagingFull}: $($_.Exception.Message)" }
+        }
+    } finally {
+        $InstallLock.Dispose()
+    }
+}

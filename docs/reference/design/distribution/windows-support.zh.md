@@ -76,6 +76,12 @@ Session store 关闭时取消待执行的索引计时器，在索引锁之外等
 再刷新最新 registry 快照。旧调用者复用已关闭的 store 时，后续写入改为同步，
 不重新启动后台计时器。失败的写入保留 dirty 状态与进程退出重试。这样可以避免
 Windows 退出流程遗留写入线程和文件句柄，同时保留存储一致性检查。
+如果线程资源不足导致索引计时器无法启动，会移除未启动的句柄并同步保存待写快照。
+线程创建恢复后，后续更新可重新使用后台刷新。
+
+Push 与 pull request 检查只保留同一 workflow、同一分支或 PR 的最新运行，避免
+过时提交持续占用 Windows 原生 runner。手动安装验收与定时 smoke 使用独立运行组，
+不会被后续 push 取消。各 Windows matrix 继续覆盖两种原生架构。
 
 Windows CI 分为两部分：
 
@@ -93,6 +99,9 @@ Windows CI 分为两部分：
 线性启动进程。自更新日志读取沿用 Windows 继承 ACL 的约定。这只证明状态
 展示和恢复记录可移植，不代表独立的 macOS 控制器与安装流程已支持 Windows；
 后者仍需 Windows 实现及原生端到端验收。
+聊天准备和重试入口在解析当前 turn 或创建状态之前查询 `_compat` 中的控制器能力。
+尚无实现的适配器会明确说明缺少源码更新流程，并指向独立的 CLI/Desktop 发布更新器，
+不会占用活动更新位置。状态查询和取消不受此能力检查限制。
 
 回滚后的诊断与隔离源码修复使用同一套可移植状态检查。模型提供的 LF 编辑
 可以匹配统一使用 CRLF 的源码，并保留原文件换行格式；重复匹配仍然拒绝，
@@ -109,9 +118,21 @@ Playwright Chromium 和模型数据。Runtime verifier 会实际执行 Ink 启�
 
 公开 `install.ps1` bootstrap 解析 stable release，并从该不可变 tag 下载 PowerShell
 installer。Installer 解压前验证 checksum 和每个 ZIP entry，拒绝 link 与 reparse
-point，验证 runtime capability manifest，并在隔离状态中完成 worker cold-start。
-全部通过后才原子替换 active PowerShell launcher。Release 保留在版本化目录中，上一份
-launcher 也会保留；安装失败不会改变 active launcher。Installer 全程不修改 ACL。
+point，在暂存目录中验证 runtime capability manifest，并在隔离状态中完成 worker
+cold-start。每个 runtime 的独占文件锁串行化验证、发布与激活。候选全部通过后才
+移入不可变版本目录，再原子替换 active PowerShell launcher。Release 保留在版本化
+目录中，上一份 launcher 也会保留；候选验证失败既不发布版本，也不改变 active
+launcher。复用已缓存版本时仍会重新验证。Installer 全程不修改 ACL。
+
+ZIP 解压前先验证所有条目名称，再通过 Windows 扩展长度路径流式写入，避免
+PowerShell 5 旧版目录解压 API 的限制。复制时检查实际展开字节数与条目长度，
+保留空文件和显式目录；检查与失败候选清理也使用扩展路径 API，避免深层依赖目录
+留下无法清理的半成品 runtime。这些操作不修改系统长路径注册表设置。
+
+激活前会准备两个 launcher 文件并保存原内容，再逐个原子替换。后续替换失败时，
+按逆序恢复已经发布的入口。恢复失败时，在报告的恢复路径保留原件，并返回明确错误。
+不需要 backup 参数的 .NET 文件替换使用 PowerShell `NullString`，避免 Windows
+PowerShell 5 把 `$null` 绑定成非法空路径。
 
 Managed upgrade 通过兼容接缝选择 Windows ZIP 和 tag 下的 PowerShell installer。
 `doctor` 将长路径注册表状态和 Defender 实时扫描/排除状态作为非阻断提示。这些查询
@@ -159,6 +180,33 @@ Windows x64 和 arm64 CI 安装包括原生 PTY 模块在内的 Desktop 与 Web 
 覆盖范围包括 ConPTY 命令选择、浏览器导入、跨窗口 tab 事务、封装 worker 启动、
 release 选择、checksum 失败和签名失败。
 
+## Windows 本地刷新发布
+
+原生发布基础函数位于
+[`windows-refresh-transaction.ps1`](https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/windows-refresh-transaction.ps1)。
+加载脚本不会修改安装或启动进程。调用方提供已经验证、按顺序排列的同级源与目标路径，
+用于 App、独立 CLI runtime 和启动器。路径不得重叠，拒绝驱动器相对路径和重定向祖先。
+文件及目录移动使用 Windows 扩展长度路径，不修改 ACL 或机器设置。
+
+第一个目标的父目录内使用独占 OS 文件锁串行化发布，并在持锁期间检查可变的发布文件。
+四个显式回调分别负责停止旧安装、验证新安装、停止失败的新安装，以及回滚后恢复旧服务。
+每个回调必须明确返回布尔真；异常、假、缺失结果或普通输出都不算成功。发布函数本身
+不启动 App，也不把文件替换成功等同于 worker 健康。接入它的编排层还必须协调 CLI
+发布安装锁和其他 Desktop 安装器。
+
+修改前，刷盘的 JSON 日志记录全部源、目标和唯一备份。发布保留原件并按顺序切换，
+失败时逆序补偿。成功回滚会恢复原有目标以及原先不存在的目标，并把新文件放回暂存位置。
+成功发布保留原件和完成回执，不删除任何 runtime 目录树。若停止新安装或回滚失败，
+则保留未完成日志和剩余文件，在错误中给出恢复位置。后续尝试不得覆盖该未完成事务，
+包括控制器退出、OS 已释放文件锁的情况。
+
+这属于补偿式发布，不是跨多个路径的崩溃原子操作。进程可能在重命名和日志更新之间退出，
+因此恢复必须检查已记录的实际路径，不能只相信日志最后的标记。自动崩溃恢复和完整的
+构建、停止、重启编排尚未实现。编排层必须冻结当前 checkout，为 App 和独立 CLI
+构建同一个 wheel，在停止默认 worker 前验证候选，并使用默认 profile、端口验收安装结果。
+macOS 刷新脚本尚未转接到该函数；Windows 对话式更新后端仍需完整控制器实现和验收后
+才可用。
+
 ## W4 实现
 
 Windows 命令沙箱委托给默认 WSL2 发行版，并通过 bubblewrap 运行命令。兼容接缝
@@ -188,3 +236,4 @@ capability 和 ACL 工作。Job Objects 适合未来加入 CPU、内存和进程
 | W2 | 已实现；Windows Release 构建与 installer jobs 是发布门禁。 |
 | W3 | 已实现并完成本地验证；配置签名凭证并通过 Windows Desktop release job 后才可发布。 |
 | W4 | 已通过可选 WSL2 与 bubblewrap 委托实现；原生 AppContainer 隔离和资源配额留作后续工作。 |
+| 本地刷新 | 原生发布和补偿回滚已实现，并有 Windows 文件系统测试。构建与生命周期编排、自动崩溃恢复和已安装 App 验收仍未实现。 |

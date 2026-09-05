@@ -52,9 +52,10 @@ def test_windows_release_installer_replaces_stale_launchers_atomically() -> None
 
     launcher_section = installer[installer.index("$LauncherPs1 =") :]
     assert 'OPENPROGRAM_IMMUTABLE_RUNTIME = "1"' in launcher_section
-    assert 'Move-Atomic $LauncherTemporary $LauncherPs1' in launcher_section
-    assert 'Move-Atomic $CmdTemporary $LauncherCmd' in launcher_section
-    assert '"openprogram.previous.cmd"' in launcher_section
+    assert 'Publish-CliLaunchers $LauncherTemporary $LauncherPs1 $CmdTemporary $LauncherCmd' in launcher_section
+    assert 'Move-Atomic $Entry.Source $Entry.Target $Entry.Previous' in installer
+    assert '"openprogram.previous.$($Entry.Extension)"' in installer
+    assert 'Move-Atomic $Entry.Rollback $Entry.Target' in installer
     assert 'if (-not (Test-Path -LiteralPath $LauncherCmd' not in launcher_section
     assert "ConvertTo-CmdBatchLiteral $PythonBin" in launcher_section
     assert '"$CmdPython" -I -B -m openprogram %*' in launcher_section

@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Superseded checks must not hold scarce Windows ARM64 runners ahead of HEAD.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -229,10 +234,13 @@ jobs:
         run: >-
           uv run --locked --extra dev python -m pytest -q
           tests/component/config/test_windows_install_contract.py
+          tests/component/config/test_conversational_update_capability.py
           tests/component/config/test_windows_cli_launchers.py
+          tests/component/config/test_windows_release_transaction.py
           tests/component/runtime/test_windows_process.py
           tests/component/config/test_windows_release.py
           tests/component/config/test_windows_runtime_preparation.py
+          tests/component/config/test_windows_refresh_publication.py
           tests/component/config/test_windows_build_environment.py
           tests/component/config/test_windows_release_version.py
           tests/component/runtime/test_process_liveness.py

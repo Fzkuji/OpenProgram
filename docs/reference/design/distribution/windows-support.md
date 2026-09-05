@@ -86,6 +86,11 @@ rest of the runtime. This makes state projection and recovery records portable;
 it does not establish support for the separate macOS-specific controller and
 installer pipeline, which still needs a Windows implementation and native
 end-to-end acceptance before it can be advertised as available.
+The chat prepare and retry entry points consult the controller capability in
+`_compat` before resolving turn context or creating state. When no controller
+adapter is implemented they explain the missing source-update workflow and
+point to the separate published CLI/Desktop updaters, without reserving an
+active update. Status and cancellation are not gated by this capability.
 
 Post-rollback diagnosis and isolated source repair use the same portable state
 checks. Model-provided LF edits match consistently CRLF source files while
@@ -119,6 +124,15 @@ closed store does not restart background timers if a legacy caller reuses it;
 those writes are synchronous. Failed writes remain dirty and retain the
 process-exit retry. This avoids lingering writers and file handles during
 Windows teardown without weakening the stored-data consistency checks.
+If an index timer cannot start because threads are unavailable, its unstarted
+handle is discarded and the pending snapshot is saved synchronously. Later
+updates can resume background flushing when thread creation recovers.
+
+Push and pull-request checks supersede older runs for the same workflow and
+branch or pull request, so stale revisions do not monopolize native Windows
+runners. Explicit installation acceptance and scheduled smoke runs use unique
+run groups and are not cancelled by later pushes. Both native architectures
+remain in every Windows matrix.
 
 The Windows CI surface has two parts:
 
@@ -143,9 +157,27 @@ The public `install.ps1` bootstrap resolves a stable release and downloads the
 PowerShell installer from that immutable tag. The installer validates the
 checksum and every ZIP entry before extraction, rejects links and reparse
 points, verifies the runtime capability manifest, and completes a worker cold
-start in isolated state. Only then does it atomically replace the active
-PowerShell launcher. Releases stay in versioned directories, and the previous
-launcher is retained; a failed installation never changes the active launcher.
+start in isolated state while the new runtime is still in staging. An exclusive
+per-runtime file lock serializes verification, publication, and activation.
+Only a verified candidate moves into the immutable version directory, after
+which the installer atomically replaces the active PowerShell launcher.
+Releases stay in versioned directories and the previous launcher is retained;
+failed candidate verification neither publishes a version nor changes the
+active launcher. Cached versions are revalidated before activation.
+ZIP extraction validates all entry names before writing, then streams files
+through extended-length Windows paths instead of PowerShell 5's legacy
+directory extraction API. The copy checks actual expanded bytes and entry
+lengths; empty files and explicit directories are preserved. Inspection and
+failed-candidate cleanup use the same extended-path APIs, so a deep dependency
+tree does not leave an unremovable partial staging runtime. These operations
+do not change the machine's long-path registry setting.
+Activation prepares both launcher files and snapshots their original contents
+before publishing either entry point. Replacements are individually atomic;
+a later replacement failure restores already-published entries in reverse
+order. A failed restoration retains the original file under its reported
+recovery path and returns an explicit error. The installer uses PowerShell's
+`NullString` for the .NET replace operation without a backup argument, because
+Windows PowerShell 5 otherwise binds `$null` as an invalid empty path.
 No installer step edits ACLs. PowerShell build helpers restore the caller's
 workspace, toolchain, Python download, and browser-cache environment settings
 when their scoped build steps finish, including failure paths.
@@ -203,6 +235,47 @@ endings where assertions depend on source text. The Desktop suite covers ConPTY 
 selection, browser import, cross-window tab transactions, packaged worker
 bootstrap, release selection, checksum failure, and signature failure.
 
+## Windows local refresh publication
+
+The native publication primitive lives in
+[`windows-refresh-transaction.ps1`](https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/windows-refresh-transaction.ps1).
+Loading it has no installation or process side effects. The caller supplies an
+ordered set of already-verified sibling source/destination pairs for the App,
+independent CLI runtime and launchers. Paths must not overlap; drive-relative
+paths and redirected ancestors are rejected. File and directory moves use
+extended-length Windows paths without changing ACLs or machine settings.
+
+One exclusive OS file lock in the first destination's parent serializes the
+publication. Mutable payload inspection happens under that lock. Four explicit
+callbacks delimit process lifecycle: quiesce the old installation, verify the
+published installation, quiesce a failed replacement, and restore the old
+service after rollback. Each must return exactly Boolean true; an exception,
+false, missing result or incidental output cannot establish success. The
+publisher itself neither starts an App nor assumes that file replacement proves
+worker health. The integrating orchestrator must also coordinate with the CLI
+release install lock and other Desktop installers.
+
+Before mutation, a flushed JSON journal records every source, destination and
+unique backup. Replacements retain originals, publish in order and compensate
+in reverse order on failure. Successful rollback restores both existing and
+previously absent targets while returning new payloads to their staging paths.
+Success retains originals and a committed receipt; no runtime tree is deleted.
+If replacement shutdown or rollback fails, the pending journal and remaining
+payloads are retained and the error reports their recovery location. A later
+attempt refuses to overwrite that pending transaction, including after the
+controller exits and the OS releases its lock.
+
+This is compensating publication, not a crash-atomic multi-path filesystem
+operation. A crash can occur between a rename and its journal update, so recovery
+must inspect the recorded paths instead of trusting the last flags alone.
+Automatic crash recovery and the complete build/stop/restart orchestration are
+not implemented. The orchestration must freeze the current checkout, build one
+wheel for both App and standalone CLI, verify the candidate before stopping the
+default worker, and validate the installed result on the default profile and
+port. The macOS refresh script is not dispatched to this primitive, and the
+conversational update backend remains unavailable on Windows until its complete
+controller contract is implemented and accepted.
+
 ## W4 implementation
 
 The Windows command sandbox delegates to the default WSL2 distribution and
@@ -238,3 +311,4 @@ remain separate future work rather than incomplete parts of W4.
 | W2 | Implemented; the Windows Release build and installer jobs are the publication gate. |
 | W3 | Implemented and locally validated; configured signing credentials and the Windows Desktop release job are the publication gate. |
 | W4 | Implemented through optional WSL2 and bubblewrap delegation; native AppContainer isolation and resource quotas remain future work. |
+| Local refresh | Native publication and compensating rollback are implemented with Windows filesystem tests. Build/lifecycle orchestration, automatic crash recovery and installed-App acceptance remain unimplemented. |

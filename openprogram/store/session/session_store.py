@@ -535,8 +535,16 @@ class SessionStore:
                 self._index_timer = threading.Timer(5.0, self._do_deferred_flush)
                 self._index_timer.daemon = True
                 self._index_flush_threads.add(self._index_timer)
-                self._index_timer.start()
-                return
+                try:
+                    self._index_timer.start()
+                except RuntimeError as exc:
+                    # Thread exhaustion must not strand dirty state or leave
+                    # an unstarted handle that close() cannot join.
+                    self._index_flush_threads.discard(self._index_timer)
+                    self._index_timer = None
+                    _log.warning("index timer unavailable; flushing synchronously: %s", exc)
+                else:
+                    return
         # close() stops background work. Legacy callers can still reuse the
         # filesystem store, but subsequent registry writes are synchronous.
         self._save_index()

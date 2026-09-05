@@ -47,6 +47,19 @@ class SelfUpdateToolError(RuntimeError):
     """A stable validation error safe to return through the tool runtime."""
 
 
+def _require_update_backend() -> None:
+    from openprogram._compat import conversational_update_backend
+
+    if conversational_update_backend() is None:
+        raise SelfUpdateToolError(
+            "Conversational source self-update is not available on this host; "
+            "its packaging, activation and recovery controller currently requires macOS. "
+            "No update request was created. For a published version, use "
+            "`openprogram upgrade` for the CLI or the Desktop release updater. "
+            "Existing self-update status and cancellation remain available."
+        )
+
+
 def _launch_supervisor(update_id: str) -> None:
     from openprogram.self_update.launcher import launch_supervisor
 
@@ -453,7 +466,8 @@ def _turn_context() -> tuple[Any, str]:
     name="self_update_prepare",
     description=(
         "Prepare an owner-approved OpenProgram self-update from the exact clean HEAD "
-        "of this session's active linked worktree. This persists intent only; it does "
+        "of this session's active linked worktree. Requires the macOS source-update controller; "
+        "published CLI/Desktop upgrades use a separate updater. This persists intent only; it does "
         "not build, install, stop, or restart the App. Approval also permits isolated "
         "source repair and listed tests after verified rollback. Default mode requires approval for each new SHA; "
         "bounded_auto explicitly permits further installations within the original attempt, deadline, path and test limits."
@@ -470,6 +484,7 @@ def self_update_prepare(
     iteration_policy: dict[str, Any] | None = None,
     verification_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    _require_update_backend()
     req, assistant_id = _turn_context()
     return _prepare_update(
         worktree_id=worktree_id,
@@ -557,9 +572,10 @@ def self_update_observe(entry: str = "", check_id: str | None = None) -> dict[st
 
 @function(
     name="self_update_retry", toolset=["core"], requires_approval=True, path_params={},
-    description="Approve this exact tested repair candidate in its original owner session. Preserves original goal, scope, model and iteration budget; returns a child request, not installation success.",
+    description="Approve this exact tested repair candidate in its original owner session. Requires the macOS source-update controller. Preserves original goal, scope, model and iteration budget; returns a child request, not installation success.",
 )
 def self_update_retry(update_id: str, candidate_sha: str) -> dict[str, Any]:
+    _require_update_backend()
     from openprogram.self_update.next_candidate import submit
     req, assistant_id = _turn_context()
     return submit(update_id, candidate_sha, req=req, assistant_id=assistant_id)
