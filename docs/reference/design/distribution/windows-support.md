@@ -235,6 +235,47 @@ endings where assertions depend on source text. The Desktop suite covers ConPTY 
 selection, browser import, cross-window tab transactions, packaged worker
 bootstrap, release selection, checksum failure, and signature failure.
 
+## Windows local refresh publication
+
+The native publication primitive lives in
+[`windows-refresh-transaction.ps1`](https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/windows-refresh-transaction.ps1).
+Loading it has no installation or process side effects. The caller supplies an
+ordered set of already-verified sibling source/destination pairs for the App,
+independent CLI runtime and launchers. Paths must not overlap; drive-relative
+paths and redirected ancestors are rejected. File and directory moves use
+extended-length Windows paths without changing ACLs or machine settings.
+
+One exclusive OS file lock in the first destination's parent serializes the
+publication. Mutable payload inspection happens under that lock. Four explicit
+callbacks delimit process lifecycle: quiesce the old installation, verify the
+published installation, quiesce a failed replacement, and restore the old
+service after rollback. Each must return exactly Boolean true; an exception,
+false, missing result or incidental output cannot establish success. The
+publisher itself neither starts an App nor assumes that file replacement proves
+worker health. The integrating orchestrator must also coordinate with the CLI
+release install lock and other Desktop installers.
+
+Before mutation, a flushed JSON journal records every source, destination and
+unique backup. Replacements retain originals, publish in order and compensate
+in reverse order on failure. Successful rollback restores both existing and
+previously absent targets while returning new payloads to their staging paths.
+Success retains originals and a committed receipt; no runtime tree is deleted.
+If replacement shutdown or rollback fails, the pending journal and remaining
+payloads are retained and the error reports their recovery location. A later
+attempt refuses to overwrite that pending transaction, including after the
+controller exits and the OS releases its lock.
+
+This is compensating publication, not a crash-atomic multi-path filesystem
+operation. A crash can occur between a rename and its journal update, so recovery
+must inspect the recorded paths instead of trusting the last flags alone.
+Automatic crash recovery and the complete build/stop/restart orchestration are
+not implemented. The orchestration must freeze the current checkout, build one
+wheel for both App and standalone CLI, verify the candidate before stopping the
+default worker, and validate the installed result on the default profile and
+port. The macOS refresh script is not dispatched to this primitive, and the
+conversational update backend remains unavailable on Windows until its complete
+controller contract is implemented and accepted.
+
 ## W4 implementation
 
 The Windows command sandbox delegates to the default WSL2 distribution and
@@ -270,3 +311,4 @@ remain separate future work rather than incomplete parts of W4.
 | W2 | Implemented; the Windows Release build and installer jobs are the publication gate. |
 | W3 | Implemented and locally validated; configured signing credentials and the Windows Desktop release job are the publication gate. |
 | W4 | Implemented through optional WSL2 and bubblewrap delegation; native AppContainer isolation and resource quotas remain future work. |
+| Local refresh | Native publication and compensating rollback are implemented with Windows filesystem tests. Build/lifecycle orchestration, automatic crash recovery and installed-App acceptance remain unimplemented. |
