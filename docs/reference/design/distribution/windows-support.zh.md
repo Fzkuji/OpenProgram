@@ -109,9 +109,11 @@ Playwright Chromium 和模型数据。Runtime verifier 会实际执行 Ink 启�
 
 公开 `install.ps1` bootstrap 解析 stable release，并从该不可变 tag 下载 PowerShell
 installer。Installer 解压前验证 checksum 和每个 ZIP entry，拒绝 link 与 reparse
-point，验证 runtime capability manifest，并在隔离状态中完成 worker cold-start。
-全部通过后才原子替换 active PowerShell launcher。Release 保留在版本化目录中，上一份
-launcher 也会保留；安装失败不会改变 active launcher。Installer 全程不修改 ACL。
+point，在暂存目录中验证 runtime capability manifest，并在隔离状态中完成 worker
+cold-start。每个 runtime 的独占文件锁串行化验证、发布与激活。候选全部通过后才
+移入不可变版本目录，再原子替换 active PowerShell launcher。Release 保留在版本化
+目录中，上一份 launcher 也会保留；候选验证失败既不发布版本，也不改变 active
+launcher。复用已缓存版本时仍会重新验证。Installer 全程不修改 ACL。
 
 Managed upgrade 通过兼容接缝选择 Windows ZIP 和 tag 下的 PowerShell installer。
 `doctor` 将长路径注册表状态和 Defender 实时扫描/排除状态作为非阻断提示。这些查询

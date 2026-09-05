@@ -261,9 +261,12 @@ $BinDir = if ($env:OPENPROGRAM_BIN_DIR) {
 }
 New-Item -ItemType Directory -Path $ReleasesRoot, $BinDir -Force | Out-Null
 
+$InstallLock = [IO.File]::Open((Join-Path $RuntimeRoot '.install.lock'),
+    [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
 $Staging = Join-Path $RuntimeRoot (".staging-$Version-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $Staging | Out-Null
 try {
+    New-Item -ItemType Directory -Path $Staging | Out-Null
+    $CandidateRoot = $ReleaseDir
     if (-not (Test-Path -LiteralPath $ReleaseDir -PathType Container)) {
         $ArchiveName = "OpenProgram-$Version-runtime-windows-$Arch.zip"
         if ($env:OPENPROGRAM_RUNTIME_ARCHIVE) {
@@ -297,30 +300,27 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $ExtractedRuntime "runtime-manifest.json") -PathType Leaf)) {
             throw "runtime archive has no manifest"
         }
-        [IO.Directory]::Move($ExtractedRuntime, $ReleaseDir)
+        $CandidateRoot = $ExtractedRuntime
     }
-} finally {
-    Remove-Item -LiteralPath $Staging -Recurse -Force -ErrorAction SilentlyContinue
-}
 
-$ManifestPath = Join-Path $ReleaseDir "runtime-manifest.json"
+$ManifestPath = Join-Path $CandidateRoot "runtime-manifest.json"
 if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
-    throw "installed runtime has no manifest: $ReleaseDir"
+    throw "candidate runtime has no manifest: $CandidateRoot"
 }
 $Manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $PythonRelative = [string]$Manifest.python
 if (-not $PythonRelative -or [IO.Path]::IsPathRooted($PythonRelative)) {
     throw "runtime manifest Python path is invalid"
 }
-$PythonBin = [IO.Path]::GetFullPath((Join-Path $ReleaseDir $PythonRelative))
-$ReleasePrefix = [IO.Path]::GetFullPath($ReleaseDir).TrimEnd("\") + "\"
+$PythonBin = [IO.Path]::GetFullPath((Join-Path $CandidateRoot $PythonRelative))
+$ReleasePrefix = [IO.Path]::GetFullPath($CandidateRoot).TrimEnd("\") + "\"
 if (-not $PythonBin.StartsWith($ReleasePrefix, [StringComparison]::OrdinalIgnoreCase)) {
     throw "runtime manifest Python path escapes the release directory"
 }
 if (-not (Test-Path -LiteralPath $PythonBin -PathType Leaf)) {
     throw "managed Python is missing: $PythonBin"
 }
-Invoke-Native $PythonBin -I (Join-Path $ReleaseDir "bin\verify-product-runtime.py") $ReleaseDir
+Invoke-Native $PythonBin -I (Join-Path $CandidateRoot "bin\verify-product-runtime.py") $CandidateRoot
 Invoke-Native $PythonBin -I -m openprogram --version
 
 $ProbeListener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
@@ -344,8 +344,8 @@ try {
     $env:USERPROFILE = $ProbeState
     Remove-Item Env:OPENPROGRAM_STATE_DIR -ErrorAction SilentlyContinue
     $env:OPENPROGRAM_WEB_PORT = [string]$ProbePort
-    $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $ReleaseDir "assets\playwright"
-    $env:GPA_MODEL_PATH = Join-Path $ReleaseDir "assets\gpa\model.pt"
+    $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $CandidateRoot "assets\playwright"
+    $env:GPA_MODEL_PATH = Join-Path $CandidateRoot "assets\gpa\model.pt"
     Invoke-Native $PythonBin -I -B -m openprogram worker start
     Test-WorkerHealth $PythonBin $ProbePort
     Invoke-Native $PythonBin -I -B -m openprogram worker stop
@@ -363,6 +363,13 @@ try {
         }
     }
     Remove-Item -LiteralPath $ProbeState -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Only a completely verified candidate becomes a reusable immutable release.
+# The per-runtime lock also serializes launcher activation and rollback.
+if ($CandidateRoot -ne $ReleaseDir) {
+    [IO.Directory]::Move($CandidateRoot, $ReleaseDir)
+    $PythonBin = [IO.Path]::GetFullPath((Join-Path $ReleaseDir $PythonRelative))
 }
 
 $LauncherPs1 = Join-Path $BinDir "openprogram.ps1"
@@ -425,3 +432,18 @@ if (-not $env:OPENPROGRAM_BIN_DIR) {
 Write-Host "OpenProgram $Version installed."
 Write-Host "Executable: $LauncherCmd"
 Write-Host "Runtime: $ReleaseDir"
+} finally {
+    try {
+        if (Test-Path -LiteralPath $Staging) {
+            $StagingFull = [IO.Path]::GetFullPath($Staging)
+            $RuntimePrefix = [IO.Path]::GetFullPath($RuntimeRoot).TrimEnd('\') + '\'
+            if (-not $StagingFull.StartsWith($RuntimePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'refusing cleanup outside the CLI runtime staging directory'
+            }
+            try { Remove-Item -LiteralPath $StagingFull -Recurse -Force -ErrorAction Stop }
+            catch { Write-Warning "runtime staging retained at ${StagingFull}: $($_.Exception.Message)" }
+        }
+    } finally {
+        $InstallLock.Dispose()
+    }
+}

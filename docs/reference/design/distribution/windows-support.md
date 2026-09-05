@@ -143,9 +143,13 @@ The public `install.ps1` bootstrap resolves a stable release and downloads the
 PowerShell installer from that immutable tag. The installer validates the
 checksum and every ZIP entry before extraction, rejects links and reparse
 points, verifies the runtime capability manifest, and completes a worker cold
-start in isolated state. Only then does it atomically replace the active
-PowerShell launcher. Releases stay in versioned directories, and the previous
-launcher is retained; a failed installation never changes the active launcher.
+start in isolated state while the new runtime is still in staging. An exclusive
+per-runtime file lock serializes verification, publication, and activation.
+Only a verified candidate moves into the immutable version directory, after
+which the installer atomically replaces the active PowerShell launcher.
+Releases stay in versioned directories and the previous launcher is retained;
+failed candidate verification neither publishes a version nor changes the
+active launcher. Cached versions are revalidated before activation.
 No installer step edits ACLs. PowerShell build helpers restore the caller's
 workspace, toolchain, Python download, and browser-cache environment settings
 when their scoped build steps finish, including failure paths.
