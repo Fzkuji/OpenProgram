@@ -436,7 +436,11 @@ Before activation, OpenProgram also publishes the update's user-owned
 `ai.openprogram.self-update.recovery.UPDATE_ID.plist` under `~/Library/LaunchAgents/`.
 It runs once per subsequent user login, independently of the App. There is no
 resident process or periodic retry, and writing the file does not start another
-controller immediately. Recovery does not run before login or disk unlock. If
+controller immediately. New recovery jobs use launchd's `Standard` process class
+so runtime integrity reads are not classified as discretionary background work.
+Previously saved `Background` entries retain their exact bindings and remain
+supported; recovery does not rewrite their scheduling policy. Recovery does not
+run before login or disk unlock. If
 both the App and controller stop in the current login session, use the saved script
 explicitly. Completed updates validate the saved runtime and remove only their
 unchanged login file within the same state lock, without hashing the entire runtime
