@@ -1789,6 +1789,7 @@ class JobRunner:
                 session_id,
                 job_id,
                 latest.status,
+                expected_status=latest.status,
                 cancel_requested_at=time.time(),
                 reason_code=effective_reason,
             ) or latest
