@@ -67,7 +67,7 @@ def _controller_lock(update_dir: Path) -> Iterator[bool]:
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode):
             raise RuntimeError("supervisor lock is not a regular file")
-        os.fchmod(descriptor, 0o600)
+        file_lock.restrict_descriptor_to_user(descriptor)
         try:
             file_lock.flock(
                 descriptor, file_lock.LOCK_EX | file_lock.LOCK_NB

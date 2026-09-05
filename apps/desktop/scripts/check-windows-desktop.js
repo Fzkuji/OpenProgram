@@ -125,6 +125,18 @@ const cmd = resolveTerminalCommand("claude", {
 });
 assert.deepEqual(cmd.args, ["/d", "/k", "claude"]);
 assert.throws(() => resolveTerminalCommand("arbitrary"), /unsupported terminal preset/);
+for (const [platform, available, expected] of [
+  ["linux", ["/bin/bash", "/bin/sh"], "/bin/bash"],
+  ["linux", ["/bin/sh"], "/bin/sh"],
+  ["darwin", ["/bin/zsh", "/bin/sh"], "/bin/zsh"],
+]) {
+  assert.equal(resolveTerminalCommand("shell", {
+    platform, env: {}, existsSync: (candidate) => available.includes(candidate),
+  }).command, expected);
+}
+assert.throws(() => resolveTerminalCommand("shell", {
+  platform: "linux", env: {}, existsSync: () => false,
+}), /No usable terminal shell/);
 
 let killInvocation = null;
 const killed = killWindowsProcessTree(4242, {

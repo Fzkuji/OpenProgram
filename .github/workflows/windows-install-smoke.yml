@@ -33,6 +33,10 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Prepare native ARM64 build dependencies
+        if: matrix.arch == 'arm64'
+        shell: pwsh
+        run: ./scripts/release/prepare-windows-native-deps.ps1 -Architecture arm64
       - name: Complete install from checkout (non-interactive)
         shell: pwsh
         run: .\scripts\install.ps1 -Yes
@@ -48,8 +52,19 @@ jobs:
           & $py -m openprogram worker start
           if ($LASTEXITCODE -ne 0) { exit 1 }
           try {
-            & $py -m openprogram doctor
-            if ($LASTEXITCODE -ne 0) { exit 1 }
+            $doctorOutput = & $py -m openprogram doctor --json
+            $doctorExit = $LASTEXITCODE
+            $doctorOutput | Write-Output
+            $checks = @($doctorOutput | ConvertFrom-Json)
+            if ($checks.Count -eq 0 -or $doctorExit -notin @(0, 1)) { exit 1 }
+            # A clean install intentionally has no provider credentials. All
+            # other diagnostics, including worker health, must still pass.
+            $unexpected = @($checks | Where-Object {
+              -not $_.ok -and -not (
+                $_.id -eq '_check_providers' -and $_.detail -like '0 configured*'
+              )
+            })
+            if ($unexpected.Count -gt 0) { exit 1 }
           } finally {
             & $py -m openprogram worker stop
           }

@@ -53,7 +53,12 @@ function resolveTerminalCommand(
       useConpty: true,
     };
   }
-  const command = existingAbsolute(env.SHELL, existsSync) || "/bin/zsh";
+  const defaults = platform === "darwin"
+    ? ["/bin/zsh", "/bin/bash", "/bin/sh"]
+    : ["/bin/bash", "/bin/sh"];
+  const command = existingAbsolute(env.SHELL, existsSync)
+    || defaults.find((candidate) => existsSync(candidate));
+  if (!command) throw new Error("No usable terminal shell found; configure SHELL with an installed absolute path");
   return {
     command,
     args: preset === "claude" ? ["-l", "-i", "-c", "exec claude"] : ["-l"],
