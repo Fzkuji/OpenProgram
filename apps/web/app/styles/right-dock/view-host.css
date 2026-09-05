@@ -22,6 +22,8 @@
 
 /* View host — one child visible at a time, matching data-view. */
 .right-view-host {
+  margin-top: 12px;
+  min-height: 0;
   flex: 1;
   overflow: hidden;
   position: relative;

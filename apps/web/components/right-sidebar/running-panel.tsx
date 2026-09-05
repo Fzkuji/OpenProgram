@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
+import { SidebarNotice } from "./sidebar-notice";
 import { useSessionStore } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { jsonFetch } from "@/lib/net/fetch-client";
@@ -256,16 +257,16 @@ export function RunningPanel({
 
   if (!loaded && !stale) {
     return (
-      <div style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}>
+      <SidebarNotice>
         {text("Loading…", "加载中…")}
-      </div>
+      </SidebarNotice>
     );
   }
   if (items.length === 0 && !stale && !updateError) {
     return (
-      <div style={{ padding: 16, fontSize: 13, color: "var(--text-dim)" }}>
+      <SidebarNotice>
         {text("Nothing is running right now", "当前没有正在运行的任务")}
-      </div>
+      </SidebarNotice>
     );
   }
 

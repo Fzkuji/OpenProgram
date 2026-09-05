@@ -16,6 +16,11 @@ import {
 } from "@/lib/execution-debugger";
 import { buildWaitAnswer } from "@/lib/execution-wait";
 import type { PersistedExecutionEvent } from "@/lib/net/execution-client";
+import { SidebarNotice } from "./sidebar-notice";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { SectionHeader } from "../sidebar/section-header";
 import styles from "./debugger-panel.module.css";
 
 export type DebuggerConnection = {
@@ -105,12 +110,12 @@ function statusClass(status: string): string {
   return styles.queued;
 }
 
-function connectionCopy(connection: DebuggerConnection): { label: string; detail: string; className: string } {
-  if (connection.state === "connected") return { label: "Synced", detail: "Last fetched snapshot", className: styles.connectionGood };
-  if (connection.state === "reconnecting") return { label: "Reconnecting", detail: "Snapshot will be refreshed before replay", className: styles.connectionWarn };
-  if (connection.state === "gap") return { label: "Event gap", detail: connection.message || "Refresh required before applying more events", className: styles.connectionDanger };
-  if (connection.state === "stale") return { label: "Stale", detail: connection.message || "This view is behind the canonical snapshot", className: styles.connectionWarn };
-  return { label: "Conflict", detail: connection.message || "The server rejected an optimistic version", className: styles.connectionDanger };
+function connectionCopy(connection: DebuggerConnection): { label: string; detail: string } {
+  if (connection.state === "connected") return { label: "Synced", detail: "Last fetched snapshot" };
+  if (connection.state === "reconnecting") return { label: "Reconnecting", detail: "Snapshot will be refreshed before replay" };
+  if (connection.state === "gap") return { label: "Event gap", detail: connection.message || "Refresh required before applying more events" };
+  if (connection.state === "stale") return { label: "Stale", detail: connection.message || "This view is behind the canonical snapshot" };
+  return { label: "Conflict", detail: connection.message || "The server rejected an optimistic version" };
 }
 
 function formatUnknown(value: unknown): string {
@@ -215,15 +220,15 @@ function ActionButton({
     await onCommand?.(command);
   }
   return (
-    <button
+    <Button variant="ghost"
       type="button"
-      className={`${styles.actionButton} ${action === "cancel" ? styles.cancelButton : ""}`}
+      className={action === "cancel" ? styles.cancelButton : undefined}
       onClick={() => void submit()}
       disabled={disabled}
       title={!onCommand ? "Control service is not connected" : !ready ? "A published reference is required" : undefined}
     >
       {pending ? "Submitting…" : ACTION_LABELS[action]}
-    </button>
+    </Button>
   );
 }
 
@@ -344,8 +349,12 @@ export function DebuggerPanel({
   if (!snapshot) {
     return (
       <section className={styles.panel} aria-label="Debugger">
-        <header className={styles.header}><div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div>{sessionId && <span className={styles.connectionBadge}>{connectionInfo.label}</span>}</header>
-        <div className={styles.emptyState}><strong>{connection.state === "stale" ? "Could not load executions" : connection.state === "reconnecting" && sessionId ? "Loading conversation executions…" : "No executions in this conversation"}</strong><span>{connection.message || (sessionId ? "Execution history appears here when this conversation runs." : "Open a conversation to inspect its execution history.")}</span>{onRefresh && sessionId && <button type="button" className={styles.textButton} onClick={onRefresh}>Refresh</button>}</div>
+        <SidebarNotice>
+          <div>{connection.state === "stale" ? "Could not load executions." : connection.state === "reconnecting" && sessionId ? "Loading executions…" : "No executions in this conversation."}</div>
+          {connection.message && <div>{connection.message}</div>}
+          {!sessionId && <div>Run a message to see its execution here.</div>}
+          {sessionId && connection.state === "stale" && onRefresh && <Button variant="ghost" onClick={onRefresh}>Retry</Button>}
+        </SidebarNotice>
       </section>
     );
   }
@@ -368,21 +377,15 @@ export function DebuggerPanel({
 
   return (
     <section className={styles.panel} aria-label="Debugger">
-      <header className={styles.header}>
-        <div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div>
-        <div className={`${styles.connectionBadge} ${connectionInfo.className}`} title={connectionInfo.detail}>
-          <span className={styles.connectionDot} aria-hidden="true" />{connectionInfo.label}
-        </div>
-      </header>
       <div className={styles.connectionLine} data-health={health}>
-        <span>{connectionInfo.detail}{fetchedAt ? ` · ${new Date(fetchedAt).toLocaleTimeString()}` : ""}</span>
+        <span title={connectionInfo.detail}>{connectionInfo.label}{fetchedAt ? ` · ${new Date(fetchedAt).toLocaleTimeString()}` : ""}</span>
         <span>cursor {connection.cursor?.next_sequence ?? "—"}</span>
-        {onRefresh && <button type="button" className={styles.textButton} onClick={onRefresh}>Refresh snapshot</button>}
+        {onRefresh && <Button variant="ghost" type="button" onClick={onRefresh} aria-label="Refresh snapshot">Refresh</Button>}
       </div>
 
       <div className={styles.layout}>
         <aside className={styles.executionRail} aria-label="Executions">
-          <div className={styles.sectionTitle}><span>Executions</span><span>{executions.length}</span></div>
+          <SectionHeader name={`Executions · ${executions.length}`} collapsible={false} collapsed={false} onToggle={() => {}} className="px-3 py-2" />
           {executions.length ? <ExecutionTree executions={executions} selectedId={snapshot.execution_id} onSelect={selectExecution} /> : <div className={styles.empty}>No executions available.</div>}
         </aside>
 
@@ -390,7 +393,6 @@ export function DebuggerPanel({
           <section className={styles.hero}>
             <div className={styles.heroTop}>
               <div>
-                <div className={styles.overline}>Execution</div>
                 <h3>{shortId(snapshot.execution_id)}</h3>
                 <p className={styles.muted}>Run {shortId(snapshot.run_id)} · revision {shortId(snapshot.revision_id)}</p>
                 <p className={styles.muted}>Last execution update: {new Date(snapshot.updated_at * 1000).toLocaleString()}</p>
@@ -399,14 +401,14 @@ export function DebuggerPanel({
             </div>
             <div className={styles.identityGrid}>
               <div><span>Version</span><strong>{snapshot.status_version}</strong></div>
-              <div><span>Attempt</span><strong>{shortId(snapshot.current_attempt_id)}</strong></div>
-              <div><span>Safe point</span><strong>{formatUnknown(snapshot.safe_point?.kind)}</strong></div>
-              <div><span>Checkpoint</span><strong>{shortId(snapshot.checkpoint_head_id)}</strong></div>
+              {snapshot.current_attempt_id && <div><span>Attempt</span><strong>{shortId(snapshot.current_attempt_id)}</strong></div>}
+              {snapshot.safe_point?.kind && <div><span>Safe point</span><strong>{snapshot.safe_point.kind}</strong></div>}
+              {snapshot.checkpoint_head_id && <div><span>Checkpoint</span><strong>{shortId(snapshot.checkpoint_head_id)}</strong></div>}
             </div>
             {snapshot.reason_code && <div className={styles.reason}>{snapshot.reason_code === "effect_reconciliation" ? "A tool action has an unconfirmed result. Execution is blocked pending reconciliation; this is not ongoing generation." : snapshot.reason_code}</div>}
-            {availableExecutionActions(snapshot).includes("steer") && <label className={styles.steerInput}>Steer input ref<input value={steerValue} onChange={(event) => setSteerValue(event.target.value)} placeholder="Durable input reference" /></label>}
+            {availableExecutionActions(snapshot).includes("steer") && <label className={styles.steerInput}>Steer input ref<Input value={steerValue} onChange={(event) => setSteerValue(event.target.value)} placeholder="Durable input reference" /></label>}
             <div className={styles.actions}>
-              {(["pause", "continue", "step", "steer", "fork", "retry", "cancel"] as ExecutionCommandAction[]).map((action) => (
+              {(["pause", "continue", "step", "steer", "fork", "retry", "cancel"] as ExecutionCommandAction[]).filter((action) => availableExecutionActions(snapshot).includes(action)).map((action) => (
                 <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} ready={(action !== "steer" || Boolean(steerValue.trim())) && (action !== "fork" || Boolean(actionPayloads.fork))} onCommand={onCommand ? submitAction : undefined} />
               ))}
             </div>
@@ -466,18 +468,18 @@ export function DebuggerPanel({
                       {(wait.policy_snapshot?.allowed_scopes || []).map((scope) => <option key={scope} value={scope}>{scope}</option>)}
                     </select>
                   ) : wait.kind === "form" ? (
-                    <textarea aria-label="Form answer" value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={JSON.stringify(Object.fromEntries(Object.entries(wait.request?.schema || {}).map(([name, field]) => [name, field.default ?? ""])), null, 2)} disabled={!onRespondWait} />
+                    <Textarea aria-label="Form answer" value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={JSON.stringify(Object.fromEntries(Object.entries(wait.request?.schema || {}).map(([name, field]) => [name, field.default ?? ""])), null, 2)} disabled={!onRespondWait} />
                   ) : wait.kind === "ask_many" || wait.request?.multi ? (
-                    <textarea aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={'["answer 1", ["answer 2"]]'} disabled={!onRespondWait} />
+                    <Textarea aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={'["answer 1", ["answer 2"]]'} disabled={!onRespondWait} />
                   ) : wait.request?.options?.length ? (
                     <select aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} disabled={!onRespondWait}>
                       <option value="">Choose an answer</option>
                       {wait.request.options.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select>
                   ) : (
-                    <input aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder="Answer" disabled={!onRespondWait} />
+                    <Input aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder="Answer" disabled={!onRespondWait} />
                   )}
-                  <button type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait || (wait.kind === "approval" && !approvalScope)}>Answer</button><button type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait}>Decline</button>
+                  <Button variant="ghost" type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait || (wait.kind === "approval" && !approvalScope)}>Answer</Button><Button variant="ghost" type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait}>Decline</Button>
                 </div>
               </div>
             )) : <div className={styles.empty}>No unresolved execution-owned waits.</div>}
@@ -489,10 +491,10 @@ export function DebuggerPanel({
             {selectedDraft ? (
               <div className={styles.revisionEditor}>
                 <div className={styles.editorMeta}><span>Draft {shortId(selectedDraft.draft_id)}</span><span>source checkpoint {shortId(selectedDraft.source_checkpoint_id)}</span><span>base {shortId(selectedDraft.base_revision_id)}</span></div>
-                <label className={styles.editorLabel}>Supported changes <textarea value={draftText || JSON.stringify(selectedDraft.changes, null, 2)} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} /></label>
+                <label className={styles.editorLabel}>Supported changes <Textarea value={draftText || JSON.stringify(selectedDraft.changes, null, 2)} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} /></label>
                 <div className={styles.revisionActions}>
-                  {selectedDraft.status === "draft" && <button type="button" onClick={() => { try { const changes = JSON.parse(draftText) as RevisionDraft["changes"]; setDraftError(null); void Promise.resolve(onUpdateDraft?.(selectedDraft, changes)).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft update failed.")); } catch { setDraftText("Invalid JSON change list"); } }} disabled={!onUpdateDraft}>Save draft</button>}
-                  {(["validate", "approve", "publish", "fork"] as const).map((action) => <button key={action} type="button" onClick={() => { setDraftError(null); void Promise.resolve(onDraftAction?.(selectedDraft, action)).catch((error) => setDraftError(error instanceof Error ? error.message : "Revision action failed.")); }} disabled={!onDraftAction || (action === "validate" ? selectedDraft.status !== "draft" : action === "approve" ? selectedDraft.status !== "validated" : action === "publish" ? selectedDraft.status !== "approved" : selectedDraft.status !== "published")}>{action[0].toUpperCase() + action.slice(1)}</button>)}
+                  {selectedDraft.status === "draft" && <Button variant="ghost" type="button" onClick={() => { try { const changes = JSON.parse(draftText) as RevisionDraft["changes"]; setDraftError(null); void Promise.resolve(onUpdateDraft?.(selectedDraft, changes)).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft update failed.")); } catch { setDraftText("Invalid JSON change list"); } }} disabled={!onUpdateDraft}>Save draft</Button>}
+                  {(["validate", "approve", "publish", "fork"] as const).map((action) => <Button variant="ghost" key={action} type="button" onClick={() => { setDraftError(null); void Promise.resolve(onDraftAction?.(selectedDraft, action)).catch((error) => setDraftError(error instanceof Error ? error.message : "Revision action failed.")); }} disabled={!onDraftAction || (action === "validate" ? selectedDraft.status !== "draft" : action === "approve" ? selectedDraft.status !== "validated" : action === "publish" ? selectedDraft.status !== "approved" : selectedDraft.status !== "published")}>{action[0].toUpperCase() + action.slice(1)}</Button>)}
                 </div>
                 {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
                 {selectedDraft.validation && <div className={styles.validation}><span>Report {shortId(selectedDraft.validation.report_ref)}</span><span>Reusable {selectedDraft.validation.reusable_steps.length}</span><span>Affected {selectedDraft.validation.affected_steps.length}</span>{selectedDraft.validation.error_code && <strong>{selectedDraft.validation.error_code}</strong>}</div>}
@@ -501,9 +503,9 @@ export function DebuggerPanel({
               <div className={styles.empty}>
                 <span>Create a draft through the revision service to edit future logic. This view never mutates the source execution.</span>
                 {onCreateDraft && snapshot.checkpoint_head_id && (
-                  <button type="button" className={styles.actionButton} onClick={() => { setDraftError(null); void Promise.resolve(onCreateDraft({ execution_id: snapshot.execution_id, source_checkpoint_id: snapshot.checkpoint_head_id! })).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft creation failed.")); }}>
+                  <Button variant="ghost" type="button" onClick={() => { setDraftError(null); void Promise.resolve(onCreateDraft({ execution_id: snapshot.execution_id, source_checkpoint_id: snapshot.checkpoint_head_id! })).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft creation failed.")); }}>
                     Create draft
-                  </button>
+                  </Button>
                 )}
                 {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
               </div>
