@@ -151,6 +151,13 @@ def _error(store, update_id, exc):
         print("Self-update bootstrap: unable to persist diagnostic", file=sys.stderr)
 
 
+def _remove_login_entry(store, plist):
+    """Called under the store lock with an already validated login entry."""
+    if plist.exists():
+        plist.unlink()
+        store._fsync_directory(plist.parent)
+
+
 def cleanup_bootstrap(store, update_id):
     """Remove only the matching completed update's login file, retaining evidence."""
     from .controller_bundle import _load_bundle
@@ -167,9 +174,7 @@ def cleanup_bootstrap(store, update_id):
                 return
             bundle = _load_bundle(directory / "controller")
             plist = validate_bootstrap(store, record, bundle)
-            if plist.exists():
-                plist.unlink()
-                store._fsync_directory(plist.parent)
+            _remove_login_entry(store, plist)
     except Exception as exc:
         _error(store, update_id, exc)
 
@@ -191,21 +196,31 @@ def main(argv=None) -> int:
         read_only = args.mode == "status"
         with store._locked(read_only=read_only):
             record = store._load_unlocked(args.update_id, read_only=read_only)
+            if not read_only:
+                print("Self-update bootstrap: validating saved runtime", file=sys.stderr, flush=True)
             bundle = _load_bundle(store.root / args.update_id / "controller")
             if bundle.installer_sha256 != args.installer_sha256:
                 raise ValueError("recovery installer identity changed")
-            validate_bootstrap(store, record, bundle)
+            plist = validate_bootstrap(store, record, bundle)
             finished = _finished(store, record)
             if read_only:
                 from .owner_repair import _status_unlocked
                 print(json.dumps(_status_unlocked(store, record), indent=2))
                 return 0
+            if finished and args.mode == "resume":
+                # Validation and terminal-state observation belong to this
+                # same lock scope. Avoid reopening and hashing the complete
+                # runtime again merely to remove the validated login entry.
+                _remove_login_entry(store, plist)
+                print("Self-update bootstrap: completed update cleanup finished", file=sys.stderr, flush=True)
+                return 0
         if args.mode == "repair":
             from openprogram.cli.commands.self_update import _cmd_self_update
             result = _cmd_self_update(argparse.Namespace(self_update_verb="repair", update_id=args.update_id))
         else:
-            result = 0 if finished else run_supervisor(args.update_id, state_root=store.root,
-                                                      installer_sha256=bundle.installer_sha256)
+            print("Self-update bootstrap: resuming update controller", file=sys.stderr, flush=True)
+            result = run_supervisor(args.update_id, state_root=store.root,
+                                    installer_sha256=bundle.installer_sha256)
         cleanup_bootstrap(store, args.update_id)
         return result
     except Exception as exc:
