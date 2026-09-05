@@ -438,7 +438,10 @@ It runs once per subsequent user login, independently of the App. There is no
 resident process or periodic retry, and writing the file does not start another
 controller immediately. Recovery does not run before login or disk unlock. If
 both the App and controller stop in the current login session, use the saved script
-explicitly. Completed updates remove only their unchanged login file; the saved
+explicitly. Completed updates validate the saved runtime and remove only their
+unchanged login file within the same state lock, without hashing the entire runtime
+a second time for cleanup. Recovery writes progress to `bootstrap.log` before
+runtime validation and controller resumption. The saved
 runtime, script and evidence remain. Missing or damaged trusted recovery files
 require manual intervention rather than reconstruction from an unverified App.
 
