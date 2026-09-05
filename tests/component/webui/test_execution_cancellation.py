@@ -480,6 +480,13 @@ def test_canonical_continuation_restores_hydration_and_live_controls(
             if active:
                 assert projected["execution_id"] == record.execution_id
                 assert projected["status_version"] == record.status_version
+                from openprogram.webui.ws_actions.runtime import handle_execution_replay
+                replay_ws = FakeWS()
+                asyncio.run(handle_execution_replay(replay_ws, {
+                    "execution_id": record.execution_id, "after_sequence": 0,
+                }))
+                recovered = replay_ws.frames[-1]["data"]["snapshot"].get("foreground_task")
+                assert recovered == projected, "cursor recovery carries the same foreground controls as live projection"
         assert server._try_reserve_run(sid, "after-cancel")
     finally:
         with server._sessions_lock:

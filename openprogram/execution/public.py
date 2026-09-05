@@ -99,6 +99,8 @@ def execution_snapshot(
     job_id: str | None = None,
     job: Any = None,
 ) -> ExecutionSnapshot:
+    from .foreground import foreground_task_snapshot
+
     sequence = _event_sequence(store, execution.execution_id, execution.status_version)
     return ExecutionSnapshot(
         execution_id=execution.execution_id,
@@ -126,6 +128,7 @@ def execution_snapshot(
         terminal_at=execution.terminal_at,
         updated_at=execution.updated_at,
         event_sequence=sequence,
+        foreground_task=foreground_task_snapshot(store, execution),
     )
 
 
