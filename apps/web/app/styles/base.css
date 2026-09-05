@@ -116,6 +116,7 @@
      to `--fs-sm` (13px). */
   --fs-sm: 13px;
   --fs-base: 14px;
+  --fs-chat: 15px; /* transcript copy and embedded conversation cards */
   --fs-md: 16px;
   --fs-lg: 20px;
 }
