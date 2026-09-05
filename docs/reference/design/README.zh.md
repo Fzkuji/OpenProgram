@@ -69,7 +69,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`runtime/execution/agentic-self-recursion.md`](runtime/execution/agentic-self-recursion.md) | Agentic 自递归（[已渲染](runtime/execution/agentic-self-recursion.html)） |
 | [`runtime/operations/branch-naming.md`](runtime/operations/branch-naming.md) | 分支命名（[已渲染](runtime/operations/branch-naming.html)） |
 | [`runtime/session/README.md`](runtime/session/README.md) | Session 子系统：数据模型、存储、命名、列表、生命周期 |
-| [`runtime/self-update.html`](runtime/self-update.html) | Source checkout 升级：Git 门禁、channel 语义、验证与手动恢复 |
+| [`runtime/self-update.html`](runtime/self-update.html) | 对话内自主更新：owner 审批、候选激活、验收与恢复 |
 | [`runtime/goal-framework-implementation-comparison.html`](runtime/goal-framework-implementation-comparison.html) | **Goal 权威设计**：原生实现对比、controller 与状态流程、异步问题、困难任务停止、重启恢复、Web/TUI 界面和实现证据 |
 | [`runtime/sandbox-architecture.html`](runtime/sandbox-architecture.html) | 唯一权威执行安全设计：Authority 权限档、Permission 模式与审批、宿主沙箱边界、框架对照和实现证据 |
 | [`runtime/permission-model.md`](runtime/permission-model.md) / [`runtime/sandbox.md`](runtime/sandbox.md) | 指向权威执行安全设计的稳定旧链接入口 |
