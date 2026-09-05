@@ -31,7 +31,7 @@ export function useFnFormSubmit({
   const { text } = useTranslation();
 
   return useCallback(() => {
-    if (!fnFormFunction) return;
+    if (!fnFormFunction || useSessionStore.getState().fnFormClosing) return;
     const enteredValues = Object.fromEntries(
       Object.entries(fnForm.values).filter(
         ([, value]) => typeof value !== "string" || value.trim() !== "",
