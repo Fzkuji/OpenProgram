@@ -159,6 +159,13 @@ which the installer atomically replaces the active PowerShell launcher.
 Releases stay in versioned directories and the previous launcher is retained;
 failed candidate verification neither publishes a version nor changes the
 active launcher. Cached versions are revalidated before activation.
+ZIP extraction validates all entry names before writing, then streams files
+through extended-length Windows paths instead of PowerShell 5's legacy
+directory extraction API. The copy checks actual expanded bytes and entry
+lengths; empty files and explicit directories are preserved. Inspection and
+failed-candidate cleanup use the same extended-path APIs, so a deep dependency
+tree does not leave an unremovable partial staging runtime. These operations
+do not change the machine's long-path registry setting.
 Activation prepares both launcher files and snapshots their original contents
 before publishing either entry point. Replacements are individually atomic;
 a later replacement failure restores already-published entries in reverse

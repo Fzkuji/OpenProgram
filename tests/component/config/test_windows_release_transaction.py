@@ -16,6 +16,41 @@ ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="native PowerShell installer")
 
 
+@pytest.mark.parametrize(
+    "content", [b"deep runtime content", bytes(range(256)) * 2048], ids=["small", "multi-buffer"],
+)
+def test_release_archive_extracts_paths_beyond_legacy_max_path(tmp_path: Path, content: bytes):
+    archive = tmp_path / "deep.zip"
+    entry = "runtime/" + "/".join(["part-" + "p" * 70] * 3) + "/payload.txt"
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as payload:
+        payload.writestr(entry, content)
+        payload.writestr("runtime/explicit/", b"")
+        payload.writestr("runtime/explicit/空文件.txt", b"")
+        payload.writestr("runtime/empty-directory/", b"")
+    destination = tmp_path / "中文 staging"
+    destination.mkdir()
+    source = (ROOT / "scripts/release/install-release.ps1").read_text(encoding="utf-8")
+    helpers = source[:source.index("$Version = if")]
+    driver = tmp_path / "extract.ps1"
+    quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+    driver.write_text(
+        helpers + f"\nExpand-SafeArchive {quote(archive)} {quote(destination)}\n",
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [shutil.which("powershell.exe"), "-NoProfile", "-NonInteractive",
+         "-ExecutionPolicy", "Bypass", "-File", str(driver)],
+        capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert result.returncode == 0, result.stderr.decode("mbcs", errors="replace")
+    target = destination / entry
+    assert len(str(target)) > 260
+    assert Path("\\\\?\\" + str(target)).read_bytes() == content
+    assert (destination / "runtime/explicit/空文件.txt").read_bytes() == b""
+    assert (destination / "runtime/empty-directory").is_dir()
+    assert not list((destination / "runtime/empty-directory").iterdir())
+
+
 @pytest.fixture
 def install_fixture(tmp_path: Path):
     state = tmp_path / "state"
@@ -27,6 +62,8 @@ def install_fixture(tmp_path: Path):
     events = tmp_path / "events.txt"
     archive = tmp_path / "runtime.zip"
     with zipfile.ZipFile(archive, "w") as payload:
+        # Every transaction also exercises long-path publication or cleanup.
+        payload.writestr("runtime/assets/" + "/".join(["deep-" + "p" * 65] * 3) + "/note.txt", "deep data")
         payload.writestr("runtime/runtime-manifest.json", json.dumps({"python": "bin/python.cmd"}))
         payload.writestr("runtime/bin/verify-product-runtime.py", "fixture marker")
         # No Python worker is started: only this harmless native batch process

@@ -82,7 +82,7 @@ function Assert-SafeArchive {
 
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $Zip = [IO.Compression.ZipFile]::OpenRead($Archive)
+    $Zip = [IO.Compression.ZipFile]::OpenRead((ConvertTo-ExtendedFileSystemPath $Archive))
     $Names = [Collections.Generic.HashSet[string]]::new(
         [StringComparer]::OrdinalIgnoreCase
     )
@@ -132,6 +132,17 @@ function Assert-SafeArchive {
     }
 }
 
+function ConvertTo-ExtendedFileSystemPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $Full = [IO.Path]::GetFullPath($Path)
+    if ($Full.StartsWith('\\?\', [StringComparison]::Ordinal)) { return $Full }
+    if ($Full.StartsWith('\\', [StringComparison]::Ordinal)) {
+        return '\\?\UNC\' + $Full.Substring(2)
+    }
+    return '\\?\' + $Full
+}
+
 function Expand-SafeArchive {
     param(
         [Parameter(Mandatory = $true)][string]$Archive,
@@ -139,12 +150,52 @@ function Expand-SafeArchive {
     )
 
     Assert-SafeArchive $Archive
-    [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $Destination)
-    $ReparsePoint = Get-ChildItem -LiteralPath $Destination -Force -Recurse |
-        Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 } |
-        Select-Object -First 1
-    if ($ReparsePoint) {
-        throw "extracted runtime contains a reparse point: $($ReparsePoint.FullName)"
+    # Windows PowerShell 5's default .NET paths and provider enumeration can
+    # fail on ordinary dependency trees once the staging prefix exceeds 260
+    # characters. Keep extraction and inspection on extended-length paths.
+    $Extended = ConvertTo-ExtendedFileSystemPath $Destination
+    if ([IO.Directory]::Exists($Extended) -and
+        ([IO.File]::GetAttributes($Extended) -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "runtime extraction destination is redirected: $Destination"
+    }
+    $Zip = [IO.Compression.ZipFile]::OpenRead((ConvertTo-ExtendedFileSystemPath $Archive))
+    try {
+        [IO.Directory]::CreateDirectory($Extended) | Out-Null
+        $Buffer = New-Object byte[] 65536
+        [long]$Written = 0
+        foreach ($Entry in $Zip.Entries) {
+            $Name = $Entry.FullName.Replace('\', '/')
+            $Target = $Extended.TrimEnd('\') + '\' + $Name.Replace('/', '\').TrimEnd('\')
+            if ($Name.EndsWith('/')) {
+                [IO.Directory]::CreateDirectory($Target) | Out-Null
+                continue
+            }
+            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Target)) | Out-Null
+            $InputStream = $Entry.Open()
+            try {
+                $OutputStream = [IO.File]::Open($Target, [IO.FileMode]::CreateNew,
+                    [IO.FileAccess]::Write, [IO.FileShare]::None)
+                try {
+                    while (($Count = $InputStream.Read($Buffer, 0, $Buffer.Length)) -gt 0) {
+                        $Written += $Count
+                        if ($Written -gt 8589934592) { throw 'runtime archive expands beyond the 8 GiB limit' }
+                        $OutputStream.Write($Buffer, 0, $Count)
+                    }
+                    if ($OutputStream.Length -ne $Entry.Length) { throw "archive entry length mismatch: $Name" }
+                } finally { $OutputStream.Dispose() }
+            } finally { $InputStream.Dispose() }
+        }
+    } finally { $Zip.Dispose() }
+    $Pending = [Collections.Generic.Stack[string]]::new()
+    $Pending.Push($Extended)
+    while ($Pending.Count -gt 0) {
+        foreach ($Entry in [IO.Directory]::EnumerateFileSystemEntries($Pending.Pop())) {
+            $Attributes = [IO.File]::GetAttributes($Entry)
+            if ($Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "extracted runtime contains a reparse point: $Entry"
+            }
+            if ($Attributes -band [IO.FileAttributes]::Directory) { $Pending.Push($Entry) }
+        }
     }
 }
 
@@ -506,7 +557,7 @@ Write-Host "Runtime: $ReleaseDir"
             if (-not $StagingFull.StartsWith($RuntimePrefix, [StringComparison]::OrdinalIgnoreCase)) {
                 throw 'refusing cleanup outside the CLI runtime staging directory'
             }
-            try { Remove-Item -LiteralPath $StagingFull -Recurse -Force -ErrorAction Stop }
+            try { [IO.Directory]::Delete((ConvertTo-ExtendedFileSystemPath $StagingFull), $true) }
             catch { Write-Warning "runtime staging retained at ${StagingFull}: $($_.Exception.Message)" }
         }
     } finally {
