@@ -140,6 +140,8 @@ inside the checkout's build directory. An exclusive lock serializes publication.
 The previous payload is kept until the replacement is ready and its version
 matches the desktop package. Failed publication restores the previous payload;
 if restoration also fails, its backup is retained with an explicit recovery path.
+Cleanup failure preserves the published runtime and reports both the retained
+staging path and the underlying error; the publication lock is still released.
 This prepares packaging inputs only and does not replace the installed App.
 
 The tag workflow builds Windows x86_64 and arm64 Electron applications and

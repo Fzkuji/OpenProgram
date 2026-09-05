@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(os.name != "nt", reason="native Windows packagin
 
 
 @pytest.mark.parametrize("archive", [False, True])
-@pytest.mark.parametrize("outcome", ["success", "build-failure", "wrong-version", "publish-failure", "rollback-failure"])
+@pytest.mark.parametrize("outcome", ["success", "build-failure", "wrong-version", "publish-failure", "rollback-failure", "cleanup-failure"])
 def test_runtime_preparation_retains_last_good_payload(tmp_path, archive, outcome):
     shell = shutil.which("powershell.exe")
     assert shell, "Windows packaging requires PowerShell"
@@ -41,6 +41,11 @@ $Version = if ($env:TEST_OUTCOME -eq 'wrong-version') { '0.0.0' } else { '0.8.1'
     driver = repo / "test.ps1"
     driver.write_text('''
 $ErrorActionPreference = 'Stop'
+function Remove-Item {
+    param([string]$LiteralPath, [switch]$Recurse, [switch]$Force)
+    if ($env:TEST_OUTCOME -eq 'cleanup-failure') { throw 'injected cleanup failure' }
+    Microsoft.PowerShell.Management\\Remove-Item @PSBoundParameters
+}
 function Move-Item {
     param([string]$LiteralPath, [string]$Destination)
     if ($env:TEST_OUTCOME -in @('publish-failure', 'rollback-failure') -and
@@ -55,6 +60,9 @@ finally {
     if ($env:OPENPROGRAM_RUNTIME_ROOT -ne 'preserve-original-environment') {
         throw 'caller environment was not restored'
     }
+    $Lock = [IO.File]::Open((Join-Path $PSScriptRoot 'apps\\desktop\\build\\.runtime-prepare.lock'),
+        [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    $Lock.Dispose()
 }
 ''', encoding="utf-8")
     env = dict(os.environ, TEST_ARCHIVE="1" if archive else "0", TEST_OUTCOME=outcome,
@@ -67,10 +75,16 @@ finally {
     result = subprocess.run([shell, "-NoLogo", "-NoProfile", "-NonInteractive",
                              "-ExecutionPolicy", "Bypass", "-File", str(driver)],
                             env=env, capture_output=True, text=True, timeout=20)
-    if outcome == "success":
+    if outcome in {"success", "cleanup-failure"}:
         assert result.returncode == 0, result.stderr
         assert (old / "new.txt").is_file()
         assert not (old / "original.txt").exists()
+        if outcome == "cleanup-failure":
+            assert "injected cleanup failure" in result.stdout
+            backups = list(old.parent.glob(".runtime-stage-*/previous-runtime/original.txt"))
+            assert len(backups) == 1
+            assert backups[0].read_text() == "keep me"
+            return
     elif outcome == "rollback-failure":
         assert result.returncode != 0
         backups = list(old.parent.glob(".runtime-stage-*/previous-runtime/original.txt"))

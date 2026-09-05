@@ -106,6 +106,8 @@ Managed upgrade 通过兼容接缝选择 Windows ZIP 和 tag 下的 PowerShell i
 Desktop runtime 准备在 checkout 构建目录内的独立暂存目录中完成构建或安装，
 使用独占锁串行发布。新产物准备完成且版本与 Desktop 包一致后才替换旧产物。
 发布失败会恢复旧产物；若恢复也失败，则保留备份并明确报告恢复路径。
+清理失败不会破坏已发布的 runtime，会同时报告保留的暂存路径和具体错误，
+并继续释放发布锁。
 此流程只准备打包输入，不会替换已安装 App。PowerShell 构建辅助脚本在各自构建步骤
 结束时恢复调用者的 workspace、工具链、Python 下载目录与浏览器缓存环境变量，
 失败路径也遵守同一约定。
