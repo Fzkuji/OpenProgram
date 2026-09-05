@@ -92,7 +92,7 @@ function UpdateRequests({ update }: { update: SelfUpdate }) {
       <Button type="button" disabled={!/^[0-9a-f]{40}$/.test(candidate)} onClick={() => prepare(`self_update_retry(update_id=${JSON.stringify(update.update_id)}, candidate_sha=${JSON.stringify(candidate)})`)}>{text("Prepare retry request", "准备重试请求")}</Button>
     </div>}
     <p className={`${styles.note} ${styles.actionNote}`}>{text("Adds a draft to the original conversation. Send it there to request approval and execution.", "将请求加入原会话草稿；需在那里发送，按权限规则审批并执行。")}</p>
-    {prepared && <p role="status">{text("Request added to the original conversation draft; not submitted.", "请求已加入原会话草稿，尚未发送。")}</p>}
+    {prepared && <p className={styles.actionNote} role="status">{text("Request added to the original conversation draft; not submitted.", "请求已加入原会话草稿，尚未发送。")}</p>}
     </div>
   </details>;
 }
