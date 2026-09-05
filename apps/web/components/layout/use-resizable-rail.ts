@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 
 const COLLAPSED_RAIL_WIDTH = 49;
@@ -37,20 +37,37 @@ export function useResizableRail({
     [width],
   );
 
-  const onPointerMove = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      const next = drag.startWidth + (event.clientX - drag.startX) * direction;
-      setWidth(Math.max(minWidth, Math.min(maxWidth, next)));
-    },
-    [direction, maxWidth, minWidth],
-  );
-
   const finishResize = useCallback(() => {
     dragRef.current = null;
     setResizing(false);
   }, []);
+
+  useEffect(() => {
+    if (!resizing) return;
+    window.addEventListener("pointerup", finishResize);
+    window.addEventListener("pointercancel", finishResize);
+    window.addEventListener("blur", finishResize);
+    return () => {
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+      window.removeEventListener("blur", finishResize);
+    };
+  }, [resizing, finishResize]);
+
+  const onPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (event.buttons === 0) {
+        finishResize();
+        return;
+      }
+      const next = drag.startWidth + (event.clientX - drag.startX) * direction;
+      setWidth(Math.max(minWidth, Math.min(maxWidth, next)));
+    },
+    [direction, maxWidth, minWidth, finishResize],
+  );
+
 
   const style: CSSProperties = {
     width: open ? `${width}px` : `${COLLAPSED_RAIL_WIDTH}px`,
