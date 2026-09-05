@@ -219,10 +219,42 @@ def validate_runtime_contract(
                         "additional_working_dirs", "_execution_revision_id", "execution_location",
                     ) if expected_semantics.get(key) != actual_semantics.get(key)
                 )
+        tool_differences = []
+        if isinstance(expected, Mapping) and isinstance(actual, Mapping):
+            before = expected.get("tools")
+            after = actual.get("tools")
+            if isinstance(before, list) and isinstance(after, list):
+                before_by_name = {
+                    tool["name"]: tool for tool in before
+                    if isinstance(tool, Mapping) and isinstance(tool.get("name"), str)
+                }
+                after_by_name = {
+                    tool["name"]: tool for tool in after
+                    if isinstance(tool, Mapping) and isinstance(tool.get("name"), str)
+                }
+                for name in sorted(before_by_name.keys() | after_by_name.keys()):
+                    old, new = before_by_name.get(name), after_by_name.get(name)
+                    if old == new:
+                        continue
+                    fields = (
+                        ["added"] if old is None else ["removed"] if new is None else
+                        [key for key in (
+                            "description", "parameters", "cache_control", "permission",
+                            "approval", "implementation",
+                        ) if old.get(key) != new.get(key)]
+                    )
+                    tool_differences.append(f"{name!r}({','.join(fields) or 'schema'})")
+                if before != after and not tool_differences:
+                    tool_differences.append("order_or_duplicate_entries")
+        tool_detail = (
+            "; tools: " + ", ".join(tool_differences[:20])
+            + (f"; {len(tool_differences) - 20} more" if len(tool_differences) > 20 else "")
+            if tool_differences else ""
+        )
         raise AgentCheckpointError(
             "continuation_contract_mismatch",
             "durable Agent runtime contract no longer resolves exactly; fields: "
-            + ", ".join(differing_fields or ["schema"]),
+            + ", ".join(differing_fields or ["schema"]) + tool_detail,
         )
 
 
