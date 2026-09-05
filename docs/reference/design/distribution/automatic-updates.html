@@ -578,7 +578,7 @@
     <section class="hero" id="overview">
       <p class="eyebrow">Distribution architecture · stable channel</p>
       <h1>正式版本自动更新</h1>
-      <p class="lede">OpenProgram 只把完整、稳定、经过 manifest 验证的 GitHub Release 视为可安装更新。Desktop 自动发现并校验 DMG；managed CLI/server 验证完整 runtime 后原子切换。仓库出现新提交不构成用户更新。</p>
+      <p class="lede">OpenProgram 只把完整、稳定、经过 manifest 验证的 GitHub Release 视为可安装更新。Desktop 自动发现并校验平台 installer：macOS 使用 DMG，Windows 使用带 Authenticode 签名的 EXE；managed CLI/server 验证完整 runtime 后原子切换。仓库出现新提交不构成用户更新。</p>
 
       <div class="status-strip" aria-label="实现状态">
         <div class="status-cell ready"><div class="k">Design</div><div class="v">已确定</div><div class="detail">一个 stable 通道，一套 Release 合同</div></div>
@@ -590,8 +590,8 @@
       <div class="brief">
         <article id="question"><h2>Question</h2><p>如何让正式安装发现和应用新版本，同时不跟踪 <code>main</code>、不降级产品功能，并保证失败时保留可用版本？</p></article>
         <article id="audience"><h2>Audience</h2><p>维护 Release、Desktop、CLI/server、设置页和安装文档的开发者与发布人员。</p></article>
-        <article id="scope"><h2>Scope</h2><p>macOS Desktop，macOS/Linux managed CLI/server，以及 source checkout 的明确分流。</p></article>
-        <article id="exclusions"><h2>Exclusions</h2><p>Windows 实现、macOS 签名、Linux Desktop、PyPI 产品安装、后台替换运行中的应用。</p></article>
+        <article id="scope"><h2>Scope</h2><p>macOS/Windows Desktop，macOS/Linux/Windows managed CLI/server，以及 source checkout 的明确分流。</p></article>
+        <article id="exclusions"><h2>Exclusions</h2><p>Windows 沙箱、macOS 签名、Linux Desktop、PyPI 产品安装、后台替换运行中的应用。</p></article>
       </div>
     </section>
 
@@ -599,7 +599,7 @@
       <div class="section-head"><div class="section-num">01</div><div><h2 id="decisions-title">必须保持的产品合同</h2><p>平台动作不同，但版本来源、完整产品定义和验证结果必须一致。</p></div></div>
       <div class="decision-grid">
         <article class="decision complete"><div class="label">Release unit</div><h3>更新单位是完整产品</h3><p>不单独更新 wheel、Web、Program、OCR、Browser 或模型。每个受支持产物都满足统一 capability manifest，并包含固定 CPython。</p></article>
-        <article class="decision desktop"><div class="label">Desktop</div><h3>自动检查，校验后打开 DMG</h3><p>主进程选择当前架构的 unsigned DMG，验证 bytes 与 SHA-256。renderer 不能提供 URL、hash 或文件名。</p></article>
+        <article class="decision desktop"><div class="label">Desktop</div><h3>自动检查，校验后打开 installer</h3><p>主进程选择当前平台与架构的 DMG 或 EXE，验证 bytes 与 SHA-256；Windows 再验证 Authenticode。renderer 不能提供 URL、hash 或文件名。</p></article>
         <article class="decision cli"><div class="label">CLI / server</div><h3>显式命令，原子切换 runtime</h3><p><code>openprogram upgrade</code> 验证 Release、runtime、capabilities 和 cold start，最后替换 <code>current</code>；不自动重启现有 worker。</p></article>
         <article class="decision dev"><div class="label">Development</div><h3>源码安装保留 Git 流程</h3><p>source checkout 继续使用显式 ref、preflight、build 与 probe，不把开发分支伪装成 stable Release。</p></article>
       </div>
@@ -610,7 +610,7 @@
       <div class="diagram">
         <svg viewBox="0 0 1040 470" role="img" aria-labelledby="update-architecture-title update-architecture-desc">
           <title>Automatic update architecture</title>
-          <desc>GitHub latest Release 经过稳定版本、manifest、资产和架构验证后，分别进入 Desktop 的校验 DMG 下载路径和 managed CLI 的完整 runtime 原子切换路径。</desc>
+          <desc>GitHub latest Release 经过稳定版本、manifest、资产和架构验证后，分别进入 Desktop 的平台 installer 校验下载路径和 managed CLI 的完整 runtime 原子切换路径。</desc>
           <defs>
             <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6aa6ff"/></marker>
             <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#78d69a"/></marker>
@@ -633,15 +633,15 @@
             <path d="M775 84H850" stroke="#6aa6ff" stroke-width="2" marker-end="url(#arrow-blue)"/>
             <path d="M928 120V185H290V225" fill="none" stroke="#6aa6ff" stroke-width="2" marker-end="url(#arrow-blue)"/>
             <path d="M928 120V185H750V225" fill="none" stroke="#78d69a" stroke-width="2" marker-end="url(#arrow-green)"/>
-            <text x="350" y="177" fill="#6aa6ff" font-size="11">macOS Desktop · arm64/x64</text>
-            <text x="760" y="177" fill="#78d69a" font-size="11">managed CLI · macOS/Linux</text>
+            <text x="350" y="177" fill="#6aa6ff" font-size="11">Desktop · macOS arm64/x64 · Windows x64</text>
+            <text x="760" y="177" fill="#78d69a" font-size="11">managed CLI · macOS/Linux/Windows</text>
             <rect x="95" y="225" width="390" height="190" rx="14" fill="#111722" stroke="#6aa6ff"/>
             <text x="120" y="258" fill="#f6f8fb" font-size="15">Desktop main process</text>
-            <text x="120" y="287" fill="#8f9caf" font-size="11">1 · select architecture-matched unsigned DMG</text>
+            <text x="120" y="287" fill="#8f9caf" font-size="11">1 · select exact platform/architecture installer</text>
             <text x="120" y="311" fill="#8f9caf" font-size="11">2 · stream to exclusive random .part file</text>
             <text x="120" y="335" fill="#8f9caf" font-size="11">3 · verify exact bytes + SHA-256</text>
-            <text x="120" y="359" fill="#8f9caf" font-size="11">4 · atomic rename, then open DMG</text>
-            <text x="120" y="390" fill="#6aa6ff" font-size="11">User replaces OpenProgram.app</text>
+            <text x="120" y="359" fill="#8f9caf" font-size="11">4 · Windows Authenticode, then open installer</text>
+            <text x="120" y="390" fill="#6aa6ff" font-size="11">User confirms the visible platform installation</text>
             <rect x="555" y="225" width="390" height="190" rx="14" fill="#111722" stroke="#78d69a"/>
             <text x="580" y="258" fill="#f6f8fb" font-size="15">Managed CLI installer</text>
             <text x="580" y="287" fill="#8f9caf" font-size="11">1 · fetch installer from immutable tag</text>
@@ -656,7 +656,7 @@
         <div class="diagram-mobile">
           <div><strong>1 · GitHub latest</strong><br>只接受 non-draft、non-prerelease、<code>vX.Y.Z</code>。</div>
           <div><strong>2 · Release + manifest gate</strong><br>验证唯一资产、版本、bytes、SHA-256 和平台架构。</div>
-          <div><strong>3A · Desktop</strong><br>校验 DMG 后打开，由用户替换应用。</div>
+          <div><strong>3A · Desktop</strong><br>校验平台 installer；Windows 额外验证 Authenticode；随后由用户确认安装。</div>
           <div><strong>3B · managed CLI</strong><br>验证完整 runtime 与 cold start，最后原子切换 <code>current</code>。</div>
         </div>
         <div class="legend"><span><i></i>metadata / Desktop</span><span class="verified"><i></i>完整 runtime 安装</span><span class="boundary-line"><i></i>信任边界</span></div>
@@ -674,6 +674,15 @@
             <li><strong>严格选择</strong><span>仅匹配当前 <code>process.arch</code> 的完整 unsigned DMG。</span></li>
             <li><strong>安全保存</strong><span>用户选择目标；随机 exclusive 临时文件；流式 size/hash 验证。</span></li>
             <li><strong>打开安装介质</strong><span>校验成功后打开 DMG。应用不后台替换运行中的 <code>.app</code>。</span></li>
+          </ol>
+        </article>
+        <article class="path-card">
+          <div class="path-head desktop"><h3>Windows Desktop</h3><p>自动发现 + 完整下载 + 签名验证 + 明确安装交接</p></div>
+          <ol class="steps">
+            <li><strong>启动调度</strong><span>packaged app 启动后自动检查；开发模式不自动检查。</span></li>
+            <li><strong>严格选择</strong><span>只接受精确命名的 <code>OpenProgram-&lt;version&gt;-win-x64.exe</code>。</span></li>
+            <li><strong>双重校验</strong><span>流式验证 size/SHA-256，落盘后要求 Authenticode 状态为 Valid。</span></li>
+            <li><strong>打开 installer</strong><span>校验成功后打开按用户安装的 NSIS 向导，不静默替换运行中的应用。</span></li>
           </ol>
         </article>
         <article class="path-card">
@@ -703,8 +712,8 @@
           <article class="update-state" id="state-idle" role="tabpanel" aria-labelledby="tab-idle" data-update-state="idle"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.7.0</span></div><div class="setting-row"><span class="name">Automatically check for updates</span><span class="toggle" aria-hidden="true"></span></div><div class="state-message">Not checked yet</div><div class="mock-actions"><span class="mock-button primary">Check now</span></div></div></div><p class="state-note">缓存不存在或已失效。默认开启自动检查。</p></article>
           <article class="update-state" id="state-checking" role="tabpanel" aria-labelledby="tab-checking" data-update-state="checking"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.7.0</span></div><div class="setting-row"><span class="name">Automatically check for updates</span><span class="toggle" aria-hidden="true"></span></div><div class="state-message">Checking GitHub Releases…</div><div class="mock-actions"><span class="mock-button">Check now · disabled</span></div></div></div><p class="state-note">一个进行中的 Promise 被所有窗口复用，不产生并发 metadata 请求。</p></article>
           <article class="update-state" id="state-current" role="tabpanel" aria-labelledby="tab-current" data-update-state="up-to-date"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.7.1</span></div><div class="setting-row"><span class="name">Latest stable release</span><span class="value">0.7.1</span></div><div class="state-message ok">OpenProgram is up to date</div><div class="mock-actions"><span class="mock-button">Check now</span><span class="mock-button">View release notes</span></div></div></div><p class="state-note">相同或更低的版本都显示 up to date，不允许 stable 降级。</p></article>
-          <article class="update-state active" id="state-available" role="tabpanel" aria-labelledby="tab-available" data-update-state="available"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.7.0</span></div><div class="setting-row"><span class="name">Available version</span><span class="value">0.7.1 · stable</span></div><div class="setting-row"><span class="name">Published</span><span class="value">GitHub Release date</span></div><div class="state-message ok">A complete update for this Mac is available.</div><div class="mock-actions"><span class="mock-button primary">Download and open DMG</span><span class="mock-button">View release notes</span></div></div></div><p class="state-note">Release Notes 在应用内按纯文本摘要显示；完整正文只打开固定 GitHub Release 页面。</p></article>
-          <article class="update-state" id="state-downloading" role="tabpanel" aria-labelledby="tab-downloading" data-update-state="downloading"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Downloading</span><span class="value">1.52 GB / 2.45 GB · 62%</span></div><div class="state-message">Downloading and verifying the complete DMG<div class="progress-track"><span></span></div></div><div class="mock-actions"><span class="mock-button">Download in progress · disabled</span></div></div></div><p class="state-note">主进程最多每 250ms 发布一次进度；完成时保证发送最终状态。</p></article>
+          <article class="update-state active" id="state-available" role="tabpanel" aria-labelledby="tab-available" data-update-state="available"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Current version</span><span class="value">0.7.0</span></div><div class="setting-row"><span class="name">Available version</span><span class="value">0.7.1 · stable</span></div><div class="setting-row"><span class="name">Published</span><span class="value">GitHub Release date</span></div><div class="state-message ok">A complete update for this platform is available.</div><div class="mock-actions"><span class="mock-button primary">Download and open installer</span><span class="mock-button">View release notes</span></div></div></div><p class="state-note">Release Notes 在应用内按纯文本摘要显示；完整正文只打开固定 GitHub Release 页面。</p></article>
+          <article class="update-state" id="state-downloading" role="tabpanel" aria-labelledby="tab-downloading" data-update-state="downloading"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Downloading</span><span class="value">1.52 GB / 2.45 GB · 62%</span></div><div class="state-message">Downloading and verifying the complete installer<div class="progress-track"><span></span></div></div><div class="mock-actions"><span class="mock-button">Download in progress · disabled</span></div></div></div><p class="state-note">主进程最多每 250ms 发布一次进度；完成时保证发送最终状态。</p></article>
           <article class="update-state" id="state-error" role="tabpanel" aria-labelledby="tab-error" data-update-state="error"><div class="settings-shell"><div class="settings-title">Application</div><div class="settings-body"><h3>OpenProgram</h3><div class="setting-row"><span class="name">Available version</span><span class="value">0.7.1</span></div><div class="state-message error">Download checksum mismatch. The temporary file was removed.</div><div class="mock-actions"><span class="mock-button primary">Retry download</span><span class="mock-button">Check now</span><span class="mock-button">View release notes</span></div></div></div><p class="state-note">错误状态保留已验证的 release metadata，因此用户可直接重试，不需要先重新检查。</p></article>
         </div>
       </div>
@@ -719,7 +728,7 @@
         <article><strong>resume / 设置变化</strong><span>清除旧 timer，最多立即检查一次，然后重新排程。</span></article>
       </div>
       <div class="decision-grid" style="margin-top:16px">
-        <article class="decision"><div class="label">Persisted schema 1</div><h3><code>update-state.json</code></h3><p>保存 automaticChecks、lastAttemptAt、lastSuccessAt 和最近一次经过验证的 release metadata；使用 0600 临时文件加 rename。</p></article>
+        <article class="decision"><div class="label">Persisted schema 1</div><h3><code>update-state.json</code></h3><p>保存 automaticChecks、lastAttemptAt、lastSuccessAt 和最近一次经过验证的 release metadata；使用临时文件加 rename。POSIX 可指定文件 mode，Windows 沿用当前用户目录 ACL。</p></article>
         <article class="decision"><div class="label">Repair</div><h3>损坏状态不能控制调度</h3><p>无效 JSON、未知 schema、未来时间、版本/架构不匹配和缺失 release 都被归一化并重写。写入失败时不提交隐藏的内存设置变化。</p></article>
       </div>
     </section>
@@ -729,7 +738,7 @@
       <div class="boundary-grid">
         <article class="boundary remote"><div class="label">Remote metadata</div><h3>GitHub 响应默认不可信</h3><p>HTTPS、固定 host、最多 5 次重定向、逐跳验证、大小与 body idle timeout；再次要求 <code>draft === false</code> 和 <code>prerelease === false</code>。</p><ul class="contract-list"><li>tag 必须是 <code>vX.Y.Z</code></li><li>asset name 与 manifest basename 唯一</li><li>GitHub size 与 manifest bytes 一致</li></ul></article>
         <article class="boundary renderer"><div class="label">Renderer IPC</div><h3>renderer 不能选择远端目标</h3><p>preload 只暴露 <code>getState</code>、<code>check</code>、布尔设置、<code>download</code>、<code>openRelease</code> 和状态订阅。</p><ul class="contract-list"><li>不接受 URL、path、hash、repository 或命令</li><li>公开状态剥离 asset name/URL/SHA-256</li><li>窗口关闭不能中止检查或下载</li></ul></article>
-        <article class="boundary files"><div class="label">Downloaded files</div><h3>完成校验前不激活</h3><p>Desktop 使用随机、exclusive、0600 临时文件并处理 short write；CLI 在新版本目录验证完整 runtime 后才替换 <code>current</code>。</p><ul class="contract-list"><li>大小/hash 不符立即删除临时文件</li><li>archive path traversal 被拒绝</li><li>launcher 准备失败保留旧 current</li></ul></article>
+        <article class="boundary files"><div class="label">Downloaded files</div><h3>完成校验前不激活</h3><p>Desktop 使用随机 exclusive 临时文件并处理 short write；Windows 沿用目录 ACL 并额外验证 Authenticode。CLI 在新版本目录验证完整 runtime 后才替换 <code>current</code>。</p><ul class="contract-list"><li>大小/hash/签名不符立即删除临时文件</li><li>archive path traversal 被拒绝</li><li>launcher 准备失败保留旧 current</li></ul></article>
         <article class="boundary state"><div class="label">Child process</div><h3>版本化 installer 使用最小环境</h3><p>managed upgrade 固定 repository 和目标 version，只传 PATH/HOME/temp/locale/proxy/XDG/OpenProgram state 等允许项。</p><ul class="contract-list"><li>不继承 provider/API 凭据</li><li>不继承 archive/checksum source override</li><li><code>--json</code> 始终输出单一 JSON 文档</li></ul></article>
       </div>
     </section>
@@ -739,7 +748,7 @@
       <div class="failure-list">
         <div class="failure-row"><div class="case">离线、超时、GitHub 限流</div><div class="result">自动检查记录错误并按 6 小时退避；手动检查显示可重试错误。</div><div class="preserve">应用和当前版本继续运行</div></div>
         <div class="failure-row"><div class="case">Release / manifest 无效</div><div class="result">拒绝响应，不下载；不回退 wheel、source archive、其他架构或旧版本。</div><div class="preserve">最近一次有效 metadata 可保留</div></div>
-        <div class="failure-row"><div class="case">DMG body stall / size / hash 错误</div><div class="result">中止 response，关闭文件，删除随机临时文件，恢复可重试动作。</div><div class="preserve">未校验文件绝不打开</div></div>
+        <div class="failure-row"><div class="case">Installer body stall / size / hash / Windows 签名错误</div><div class="result">中止 response，关闭文件，删除随机临时文件，恢复可重试动作。</div><div class="preserve">未校验文件绝不打开</div></div>
         <div class="failure-row"><div class="case">CLI archive / cold start / launcher 失败</div><div class="result">installer 非零退出；不执行最后的 <code>current</code> 替换。</div><div class="preserve">旧 runtime 仍为 current</div></div>
         <div class="failure-row"><div class="case">切换成功但 worker 仍运行旧版本</div><div class="result">命令明确报告 active runtime 已更新，并打印显式 restart 指令。</div><div class="preserve">运行中请求不被隐式中断</div></div>
       </div>
@@ -757,7 +766,7 @@
       <div class="section-head"><div class="section-num">09</div><div><h2 id="references-title">参考实现与采用方式</h2><p>参考用于确定平台限制和状态模型；最终方案服从 OpenProgram 的 unsigned Desktop 与完整 runtime 合同。</p></div></div>
       <div class="reference-grid">
         <article class="reference-card"><span class="choice">采用</span><h3><a href="https://docs.github.com/en/rest/releases/releases#get-the-latest-release">GitHub Releases API</a></h3><p>latest stable metadata、Release Notes 和 assets。客户端仍对 stable 字段、tag、唯一资产和 manifest 做独立验证。</p></article>
-        <article class="reference-card"><span class="choice modified">修改采用</span><h3><a href="https://www.electronjs.org/docs/latest/tutorial/updates">Electron update lifecycle</a></h3><p>采用 check / available / download / error 状态模型；Desktop 完成边界为校验后打开 DMG，不调用自动替换。</p></article>
+        <article class="reference-card"><span class="choice modified">修改采用</span><h3><a href="https://www.electronjs.org/docs/latest/tutorial/updates">Electron update lifecycle</a></h3><p>采用 check / available / download / error 状态模型；Desktop 完成边界为校验后打开平台 installer，不调用自动替换。</p></article>
         <article class="reference-card"><span class="choice rejected">当前不采用</span><h3><a href="https://www.electronjs.org/docs/latest/api/auto-updater/">Electron autoUpdater</a></h3><p>macOS 原生自动安装要求签名，Electron 不提供 Linux 内置 updater；与当前产物和平台合同不匹配。</p></article>
         <article class="reference-card"><span class="choice rejected">不新增依赖</span><h3><a href="https://www.electron.build/docs/features/auto-update/">electron-updater</a></h3><p>现有 Release manifest、Node/Electron API、Python 和 shell 已覆盖本阶段；新增包不能改变当前 Desktop 安装边界。</p></article>
       </div>
@@ -766,14 +775,17 @@
     <section id="source-map" aria-labelledby="source-title">
       <div class="section-head"><div class="section-num">10</div><div><h2 id="source-title">实现入口</h2><p>链接分别指向当前主分支的公共兼容入口和正式实现；设计结论不依赖本页中的代码副本。</p></div></div>
       <div class="file-grid">
-        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/desktop/update-service.js"><span class="path">desktop/update-service.js</span><p>Desktop metadata、状态、缓存、调度、下载、hash 与公开投影。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/update-service.js"><span class="path">apps/desktop/update-service.js</span><p>Desktop metadata、状态、缓存、调度、平台资产选择、下载、hash 与公开投影。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/windows-signature.js"><span class="path">apps/desktop/windows-signature.js</span><p>Windows updater 的 Authenticode 状态、证书 subject 与 thumbprint 验证。</p></a>
         <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/main.js"><span class="path">apps/desktop/main.js</span><p>自动检查 timer、resume、IPC handler 和多窗口状态广播。</p></a>
         <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/preload.js"><span class="path">apps/desktop/preload.js</span><p>固定、无 URL 参数的 renderer bridge。</p></a>
         <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/settings/general-section.tsx"><span class="path">apps/web/components/settings/general-section.tsx</span><p>Desktop 更新状态和普通 Web 的 CLI 指令回退。</p></a>
         <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/python/openprogram_cli/_impl/commands/upgrade.py"><span class="path">apps/cli/python/openprogram_cli/_impl/commands/upgrade.py</span><p>安装类型分流、managed Release gate、dry-run/JSON 与 installer 执行。</p></a>
         <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/updater/github.py"><span class="path">openprogram/updater/github.py</span><p>GitHub stable metadata、manifest 和 immutable installer 获取。</p></a>
-        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.sh"><span class="path">scripts/install-release.sh</span><p>保持已发布 URL 的兼容入口；下载同一不可变 tag 下的正式实现。</p></a>
-        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/install-release.sh"><span class="path">scripts/release/install-release.sh</span><p>完整 runtime 下载、校验、cold start、launcher staging 和原子激活。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.sh"><span class="path">scripts/install-release.sh</span><p>保持 macOS/Linux 已发布 URL 的兼容入口；下载同一不可变 tag 下的正式实现。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/install-release.ps1"><span class="path">scripts/install-release.ps1</span><p>保持 Windows PowerShell 已发布 URL 的兼容入口；下载同一不可变 tag 下的正式实现。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/install-release.sh"><span class="path">scripts/release/install-release.sh</span><p>macOS/Linux 完整 runtime 下载、校验、cold start、launcher staging 和原子激活。</p></a>
+        <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/install-release.ps1"><span class="path">scripts/release/install-release.ps1</span><p>Windows ZIP 下载、校验、cold start、launcher staging 和原子激活。</p></a>
         <a class="file-card" href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/workflows/release.yml"><span class="path">.github/workflows/release.yml</span><p>完整资产发布和创建 Release 后的 latest endpoint 门禁。</p></a>
       </div>
     </section>
@@ -781,12 +793,12 @@
     <section id="implementation-evidence" aria-labelledby="evidence-title">
       <div class="section-head"><div class="section-num">11</div><div><h2 id="evidence-title">实现状态与验收证据</h2><p>实现事实和仍需 Release 环境验证的事实分开记录。这里不保留日期化变更日志或 commit 清单。</p></div></div>
       <div class="evidence-grid">
-        <article class="evidence-card pass"><div class="label">Implemented</div><h3>Desktop 完整路径</h3><p>stable metadata、架构选择、状态缓存、24h/6h 调度、最小 IPC、verified download、Settings 状态和 Web fallback 已实现。</p><code>npm run check --prefix desktop</code></article>
+        <article class="evidence-card pass"><div class="label">Implemented</div><h3>Desktop 完整路径</h3><p>stable metadata、平台/架构选择、状态缓存、24h/6h 调度、最小 IPC、verified download、Windows Authenticode、Settings 状态和 Web fallback 已实现。</p><code>npm run check --workspace apps/desktop</code></article>
         <article class="evidence-card pass"><div class="label">Implemented</div><h3>Managed CLI 完整路径</h3><p>Release manifest gate、immutable installer、环境隔离、dry-run/JSON、真实 old→new current 切换与 launcher 失败保留旧版本已覆盖。</p><code>uv run pytest -q tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release.py</code></article>
         <article class="evidence-card pass"><div class="label">Verified</div><h3>安全与失败路径</h3><p>逐跳 host 验证、metadata/download stall abort、short write、随机 exclusive 临时文件、checksum/size 清理、并发 Promise 和状态修复已验证。</p><code>apps/desktop/scripts/check-update-service.js</code></article>
         <article class="evidence-card pass"><div class="label">Verified</div><h3>文档与发布门禁</h3><p>双语安装/升级文档、Release latest 验证、文档构建、链接、Desktop/Web/TypeScript 与 workflow 静态门禁纳入发布检查。</p><code>python -m scripts.docs_site.checklinks</code></article>
         <article class="evidence-card pass"><div class="label">Release-visible acceptance</div><h3>v0.7.0 stable Release</h3><p><a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.7.0">v0.7.0</a> 已以 non-draft、non-prerelease 发布；四平台 runtime、四个 CLI installer、两种 macOS Desktop、manifest、checksums 与 latest endpoint 门禁全部通过。</p></article>
-        <article class="evidence-card pending"><div class="label">Installed-client acceptance</div><h3>真实客户端更新交互</h3><p>尚未操作当前用户窗口验证版本发现、DMG 打开、长时间运行与 sleep/resume 排程；这些交互不由发布资产 smoke 代替。</p></article>
+        <article class="evidence-card pending"><div class="label">Installed-client acceptance</div><h3>真实客户端更新交互</h3><p>尚未操作当前用户窗口验证版本发现、平台 installer 打开、长时间运行与 sleep/resume 排程；这些交互不由发布资产 smoke 代替。Windows 还必须在正式 release runner 使用真实证书通过 Authenticode gate。</p></article>
         <article class="evidence-card pending"><div class="label">Compatibility acceptance</div><h3>v0.6.6 及更早版本的一次性过渡</h3><p>Desktop 需要手动安装首个含 updater 的 v0.7.0 DMG；CLI/server 重新运行一次公开 installer。安装 v0.7.0 后，后续版本才使用更新 UI 和 managed upgrade 命令。</p></article>
       </div>
       <div class="release-handoff"><h3>发布后的明确状态</h3><p>v0.7.0 是首个包含 updater 的正式 GitHub Release，完整资产、唯一 <code>release-manifest.json</code>、stable 字段与 Release workflow gate 均已验证。v0.6.6 及更早 Desktop 不含该 updater，仍需手动安装 v0.7.0；当前证据不包含前台客户端更新交互。</p></div>

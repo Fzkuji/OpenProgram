@@ -240,7 +240,13 @@ def _canon_path(path: object) -> str:
     # Only absolute paths resolve here. Relative paths must stay relative:
     # callers (_path_is_safe, _targets_agentics) anchor them to the session
     # worktree, not the process cwd that realpath would use.
-    if os.path.isabs(normalized):
+    # Python 3.13 deliberately stopped treating a single leading slash as
+    # absolute on Windows. Model/tool calls still commonly use POSIX-style
+    # ``/tmp/x`` paths there (Git Bash accepts them), so preserve the prior
+    # drive-root interpretation instead of turning them into ``\tmp\x``.
+    if os.path.isabs(normalized) or (
+        os.name == "nt" and normalized.startswith(("/", "\\"))
+    ):
         return os.path.realpath(normalized)
     return os.path.normpath(normalized)
 
@@ -268,7 +274,9 @@ def _realpath_glob_pattern(pattern: str) -> str:
         return pattern
     if head.endswith(("/", os.sep)):
         root = os.path.realpath(head.rstrip("/\\") or "/")
-        return root + "/" + tail
+        # The canonical value uses the native separator. A mixed
+        # ``C:\etc/**`` pattern never matches ``C:\etc\passwd`` on Windows.
+        return root.rstrip("/\\") + os.sep + tail
     parent, base = os.path.split(head)
     if not parent:
         return pattern
@@ -408,7 +416,10 @@ def _match_one(pattern: str, value: str, *, allow: bool) -> bool:
 
     def _cmp(pat: str, val: str) -> bool:
         if any(ch in pat for ch in "*?["):
-            return fnmatch.fnmatch(val, pat)
+            # fnmatch() applies os.path.normcase() and therefore makes allow
+            # rules case-insensitive on Windows. Allows stay exact/case-aware;
+            # deny matching performs its own explicit casefold below.
+            return fnmatch.fnmatchcase(val, pat)
         return val == pat
 
     if allow:

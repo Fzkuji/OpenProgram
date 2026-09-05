@@ -312,7 +312,14 @@ export default class App extends PureComponent<Props, State> {
       this.props.stdout.write(DFE)
       // Disable bracketed paste mode
       this.props.stdout.write(DBP)
-      stdin.setRawMode(false)
+      try {
+        stdin.setRawMode(false)
+      } catch (error) {
+        // SIGHUP and SSH disconnect can revoke the PTY before cleanup runs.
+        // Keep removing listeners and settling the Ink root even if termios
+        // can no longer be changed on that file descriptor.
+        logError(error)
+      }
       stdin.removeListener('readable', this.handleReadable)
       stdin.unref()
     }

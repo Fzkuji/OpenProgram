@@ -146,6 +146,41 @@ def _capture_shipped_registry():
 _SHIPPED_REGISTRY = _capture_shipped_registry()
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    """Treat WinError 1314 as a missing test-host capability.
+
+    File symlinks require Developer Mode or a privileged account on Windows.
+    Product tests that exercise symlink handling should still run whenever the
+    host permits creation, without making that OS setting a suite prerequisite.
+    Patch only during the test call: pytest itself creates best-effort temp-dir
+    symlinks while setting up ``tmp_path`` and already handles that failure.
+    """
+    if sys.platform != "win32":
+        yield
+        return
+
+    original = Path.symlink_to
+
+    def symlink_to(self, target, target_is_directory=False):
+        try:
+            return original(
+                self,
+                target,
+                target_is_directory=target_is_directory,
+            )
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("Windows account cannot create symbolic links")
+            raise
+
+    Path.symlink_to = symlink_to
+    try:
+        yield
+    finally:
+        Path.symlink_to = original
+
+
 @pytest.fixture(autouse=True)
 def _restore_shipped_tools():
     from openprogram.programs import _runtime as _R

@@ -151,6 +151,28 @@ def test_defaults_leave_stream_opts_unset():
     assert opts.parallel_tool_calls is None
 
 
+def test_unsupported_model_drops_stale_thinking_effort():
+    stream_fn, state = _make_stream_fn([_text_msg()])
+    session = _session(stream_fn, thinking_level="high")
+
+    asyncio.run(session.run("go"))
+
+    assert state["opts"][0].reasoning is None
+
+
+def test_supported_model_keeps_thinking_effort():
+    stream_fn, state = _make_stream_fn([_text_msg()])
+    model = _fake_model().model_copy(update={
+        "reasoning": True,
+        "thinking_levels": ["low", "high"],
+    })
+    session = _session(stream_fn, model=model, thinking_level="high")
+
+    asyncio.run(session.run("go"))
+
+    assert state["opts"][0].reasoning == "high"
+
+
 def test_runtime_typed_error_reaches_tool_result_message() -> None:
     saved = snapshot_registry()
     try:

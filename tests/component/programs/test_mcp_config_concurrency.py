@@ -13,7 +13,7 @@ import pytest
 
 
 def _wait_for(paths: list[Path]) -> None:
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + (30 if os.name == "nt" else 5)
     while not all(path.exists() for path in paths):
         if time.monotonic() >= deadline:
             raise AssertionError(f"timed out waiting for {paths}")
@@ -57,7 +57,11 @@ def test_two_process_mcp_routes_do_not_enforce_revision_conflicts(
     config_path.chmod(0o600)
     release = tmp_path / "release"
     ready = [tmp_path / "ready-first", tmp_path / "ready-second"]
-    env = {**os.environ, "HOME": os.fspath(home)}
+    env = {
+        **os.environ,
+        "HOME": os.fspath(home),
+        "USERPROFILE": os.fspath(home),
+    }
     script = """
 import sys, time
 from pathlib import Path
@@ -95,25 +99,40 @@ if response.status_code == 409:
 if response.status_code not in (200, 201):
     raise SystemExit(4)
 """
-    processes = [
-        subprocess.Popen(
-            [
-                sys.executable,
-                "-c",
-                script,
-                operation,
-                name,
-                os.fspath(marker),
-                os.fspath(release),
-            ],
-            cwd=Path(__file__).parents[3],
-            env=env,
-        )
-        for name, marker in zip(("first", "second"), ready, strict=True)
-    ]
-    _wait_for(ready)
-    release.write_text("go", encoding="utf-8")
-    codes = sorted(process.wait(timeout=10) for process in processes)
+    processes = []
+    try:
+        processes = [
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    script,
+                    operation,
+                    name,
+                    os.fspath(marker),
+                    os.fspath(release),
+                ],
+                cwd=Path(__file__).parents[3],
+                env=env,
+                start_new_session=os.name != "nt",
+            )
+            for name, marker in zip(("first", "second"), ready, strict=True)
+        ]
+        _wait_for(ready)
+        release.write_text("go", encoding="utf-8")
+        wait_timeout = 30 if os.name == "nt" else 10
+        codes = sorted(process.wait(timeout=wait_timeout) for process in processes)
+    finally:
+        release.touch(exist_ok=True)
+        from openprogram._compat import kill_process_tree
+
+        for process in processes:
+            if process.poll() is None:
+                kill_process_tree(process.pid)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
 
     assert codes == [0, 0]
     stored = json.loads(config_path.read_text(encoding="utf-8"))["servers"]

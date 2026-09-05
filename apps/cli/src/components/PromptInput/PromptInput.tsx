@@ -7,6 +7,12 @@ import { fileCompletions, findAtToken, FileMatch } from '../../utils/fileComplet
 import { usePanelWidth } from '../../utils/useTerminalWidth.js';
 import { useColors } from '../../theme/ThemeProvider.js';
 import { stringWidth } from '../../runtime/ink/stringWidth.js';
+import {
+  firstGrapheme,
+  getGraphemeSegmenter,
+  nextGraphemeBoundary,
+  previousGraphemeBoundary,
+} from '../../runtime/utils/intl.js';
 import { clearDraft, getDraft, setDraft } from '../../utils/draftStore.js';
 
 export interface PromptInputProps {
@@ -21,6 +27,8 @@ export interface PromptInputProps {
   onDraftApplied?: () => void;
   /** Open cross-session context search. Receives the current draft. */
   onContextSearch?: (draft: string) => void;
+  /** Empty prompt + `?` opens the keyboard shortcut reference. */
+  onShowShortcuts?: () => void;
   /** Session id used as the persistence key for per-session drafts.
    *  ``null`` / ``undefined`` falls back to a "__new__" slot so the
    *  draft typed before a session exists still persists. Match what
@@ -28,8 +36,11 @@ export interface PromptInputProps {
   draftKey?: string | null;
 }
 
-const filterCommands = (filter: string): SlashCommand[] => {
-  const needle = filter.replace(/^\//, '').toLowerCase();
+export const filterCommands = (filter: string): SlashCommand[] => {
+  // Arguments are not part of command completion. Keeping them in the
+  // filter made valid input such as `/memory status` display the misleading
+  // "no matching commands" message even though Enter executed it correctly.
+  const needle = filter.replace(/^\//, '').trimStart().split(/\s/, 1)[0].toLowerCase();
   const commands = allSlashCommands();
   if (!needle) return commands;
   return commands.filter((c) => c.name.toLowerCase().includes(needle));
@@ -45,8 +56,8 @@ const sliceCells = (text: string, start: number, end: number): string => {
   let position = 0;
   let out = '';
 
-  for (const char of text) {
-    const width = Math.max(0, stringWidth(char));
+  for (const { segment } of getGraphemeSegmenter().segment(text)) {
+    const width = Math.max(0, stringWidth(segment));
     const next = position + width;
     if (next <= start) {
       position = next;
@@ -54,7 +65,7 @@ const sliceCells = (text: string, start: number, end: number): string => {
     }
     if (position >= end) break;
     if (next > end) break;
-    out += char;
+    out += segment;
     position = next;
   }
 
@@ -69,15 +80,16 @@ interface InputViewport {
   suffix: boolean;
 }
 
-const buildInputViewport = (
+export const buildInputViewport = (
   value: string,
   cursor: number,
   maxColumns: number,
 ): InputViewport => {
   const before = visibleInput(value.slice(0, cursor));
-  const rawCursor = visibleInput(value.slice(cursor, cursor + 1));
-  const cursorText = rawCursor.slice(0, 1) || ' ';
-  const after = visibleInput(value.slice(cursor + 1));
+  const cursorGrapheme = firstGrapheme(value.slice(cursor));
+  const rawCursor = visibleInput(cursorGrapheme);
+  const cursorText = firstGrapheme(rawCursor) || ' ';
+  const after = visibleInput(value.slice(cursor + cursorGrapheme.length));
   const cursorCol = stringWidth(before);
   const cursorWidth = Math.max(1, stringWidth(cursorText));
   const afterStart = cursorCol + cursorWidth;
@@ -122,11 +134,31 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   initialDraft,
   onDraftApplied,
   onContextSearch,
+  onShowShortcuts,
   draftKey,
 }) => {
   const colors = useColors();
   const [value, setValue] = useState('');
   const [cursor, setCursor] = useState(0);
+  // A terminal can deliver several printable keys plus Enter in one stdin
+  // read (notably ConPTY and programmatic paste). React batches that read, so
+  // render-state alone is stale until every key has been dispatched. Keep the
+  // editing cursor synchronous as well as reactive so characters retain order
+  // and Enter submits the complete line.
+  const valueRef = useRef(value);
+  const inputCursorRef = useRef(cursor);
+  valueRef.current = value;
+  inputCursorRef.current = cursor;
+  const replaceInput = (next: string, nextCursor = next.length) => {
+    valueRef.current = next;
+    inputCursorRef.current = nextCursor;
+    setValue(next);
+    setCursor(nextCursor);
+  };
+  const moveCursor = (next: number) => {
+    inputCursorRef.current = next;
+    setCursor(next);
+  };
   const [menuIndex, setMenuIndex] = useState(0);
   // -1 means we're not browsing history. 0..history.length-1 picks an entry.
   const [historyIndex, setHistoryIndex] = useState<number>(-1);
@@ -172,8 +204,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
   useEffect(() => {
     if (initialDraft === undefined) return;
-    setValue(initialDraft);
-    setCursor(initialDraft.length);
+    replaceInput(initialDraft);
     setHistoryIndex(-1);
     onDraftApplied?.();
   }, [initialDraft, onDraftApplied]);
@@ -189,8 +220,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   useEffect(() => {
     const loaded = getDraft(draftKey);
     hydratedRef.current = draftKey;
-    setValue(loaded);
-    setCursor(loaded.length);
+    replaceInput(loaded);
     setHistoryIndex(-1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey]);
@@ -205,8 +235,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
   const submitText = (text: string) => {
     if (busy || !text.trim()) return;
-    setValue('');
-    setCursor(0);
+    replaceInput('');
     setMenuIndex(0);
     setHistoryIndex(-1);
     // Submitted text leaves the draft slot empty so reopening the
@@ -217,6 +246,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   };
 
   useInput((input, key) => {
+    const currentValue = valueRef.current;
+    const currentCursor = inputCursorRef.current;
     // While the agent is busy, esc cancels the in-flight turn.
     if (busy) {
       if (key.escape) onCancel?.();
@@ -226,7 +257,37 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     // Ctrl-R opens saved-context search. The old input-history search
     // remains covered by ↑/↓ recall and autosuggest.
     if (key.ctrl && input === 'r') {
-      onContextSearch?.(value);
+      onContextSearch?.(currentValue);
+      return;
+    }
+
+    if (input === '?' && !key.ctrl && !key.meta && currentValue.length === 0) {
+      onShowShortcuts?.();
+      return;
+    }
+    // Readline-compatible editing works consistently in PowerShell, cmd,
+    // Windows Terminal and POSIX shells. Handle these before menu routing so
+    // editing an incomplete slash command never triggers the picker.
+    if (key.ctrl && input === 'a') {
+      moveCursor(0);
+      return;
+    }
+    if (key.ctrl && input === 'e') {
+      if (suggestion && currentCursor === currentValue.length) {
+        replaceInput(currentValue + suggestion);
+        setHistoryIndex(-1);
+      } else {
+        moveCursor(currentValue.length);
+      }
+      return;
+    }
+    if (key.ctrl && input === 'w') {
+      let start = currentCursor;
+      while (start > 0 && /\s/.test(currentValue[start - 1]!)) start--;
+      while (start > 0 && !/\s/.test(currentValue[start - 1]!)) start--;
+      const next = currentValue.slice(0, start) + currentValue.slice(currentCursor);
+      replaceInput(next, start);
+      setHistoryIndex(-1);
       return;
     }
 
@@ -243,20 +304,18 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       }
       if ((key.tab && !key.shift) || key.return) {
         const pick = fileMatches[fileIndex]!;
-        const before = value.slice(0, atToken.start);
-        const after = value.slice(cursor);
+        const before = currentValue.slice(0, atToken.start);
+        const after = currentValue.slice(currentCursor);
         const insertText = `@${pick.path}${pick.isDir ? '/' : ''} `;
         const next = before + insertText + after;
-        setValue(next);
-        setCursor(before.length + insertText.length);
+        replaceInput(next, before.length + insertText.length);
         return;
       }
       if (key.escape) {
         // Drop the @partial so the menu closes.
-        const before = value.slice(0, atToken.start);
-        const after = value.slice(cursor);
-        setValue(before + after);
-        setCursor(before.length);
+        const before = currentValue.slice(0, atToken.start);
+        const after = currentValue.slice(currentCursor);
+        replaceInput(before + after, before.length);
         return;
       }
     }
@@ -283,9 +342,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
         // If the user has only typed `/foo` (no trailing space/args), running
         // the command means submitting `/foo`. If they've typed `/foo bar`,
         // submit the whole line.
-        const trimmed = value.trim();
+        const trimmed = currentValue.trim();
         const exactMatch = trimmed === `/${cmd.name}` || trimmed.startsWith(`/${cmd.name} `);
-        const toSend = exactMatch ? value : `/${cmd.name}`;
+        const toSend = exactMatch ? currentValue : `/${cmd.name}`;
         submitText(toSend);
         return;
       }
@@ -294,16 +353,15 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     if (key.return) {
       // alt+enter inserts a newline; plain enter submits.
       if (key.meta) {
-        setValue((v) => v.slice(0, cursor) + '\n' + v.slice(cursor));
-        setCursor((c) => c + 1);
+        const next = currentValue.slice(0, currentCursor) + '\n' + currentValue.slice(currentCursor);
+        replaceInput(next, currentCursor + 1);
         return;
       }
-      submitText(value);
+      submitText(currentValue);
       return;
     }
     if (key.escape) {
-      setValue('');
-      setCursor(0);
+      replaceInput('');
       setMenuIndex(0);
       setHistoryIndex(-1);
       return;
@@ -314,59 +372,55 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       const next = historyIndex < 0 ? history.length - 1 : Math.max(0, historyIndex - 1);
       setHistoryIndex(next);
       const v = history[next] ?? '';
-      setValue(v);
-      setCursor(v.length);
+      replaceInput(v);
       return;
     }
     if (key.downArrow && history && historyIndex >= 0) {
       const next = historyIndex + 1;
       if (next >= history.length) {
         setHistoryIndex(-1);
-        setValue('');
-        setCursor(0);
+        replaceInput('');
       } else {
         setHistoryIndex(next);
         const v = history[next] ?? '';
-        setValue(v);
-        setCursor(v.length);
+        replaceInput(v);
       }
       return;
     }
     if (key.leftArrow) {
-      setCursor((c) => Math.max(0, c - 1));
+      moveCursor(previousGraphemeBoundary(currentValue, currentCursor));
       return;
     }
     if (key.rightArrow) {
       // At end-of-line with a suggestion, → accepts the rest.
-      if (cursor === value.length && suggestion) {
-        const next = value + suggestion;
-        setValue(next);
-        setCursor(next.length);
+      if (currentCursor === currentValue.length && suggestion) {
+        const next = currentValue + suggestion;
+        replaceInput(next);
         setHistoryIndex(-1);
         return;
       }
-      setCursor((c) => Math.min(value.length, c + 1));
+      moveCursor(nextGraphemeBoundary(currentValue, currentCursor));
       return;
     }
-    // ctrl+E accepts the autosuggest (mnemonic: end-of-line / accept).
-    if (key.ctrl && input === 'e' && suggestion) {
-      const next = value + suggestion;
-      setValue(next);
-      setCursor(next.length);
-      setHistoryIndex(-1);
+    if (key.backspace) {
+      if (currentCursor === 0) return;
+      const previous = previousGraphemeBoundary(currentValue, currentCursor);
+      const next = currentValue.slice(0, previous) + currentValue.slice(currentCursor);
+      replaceInput(next, previous);
       return;
     }
-    if (key.backspace || key.delete) {
-      if (cursor === 0) return;
-      setValue((v) => v.slice(0, cursor - 1) + v.slice(cursor));
-      setCursor((c) => Math.max(0, c - 1));
+    if (key.delete) {
+      if (currentCursor >= currentValue.length) return;
+      const following = nextGraphemeBoundary(currentValue, currentCursor);
+      const next = currentValue.slice(0, currentCursor) + currentValue.slice(following);
+      replaceInput(next, currentCursor);
       return;
     }
     // Plain character insert. Filter out control chars.
     if (input && !key.ctrl && !key.meta) {
       setHistoryIndex(-1);
-      setValue((v) => v.slice(0, cursor) + input + v.slice(cursor));
-      setCursor((c) => c + input.length);
+      const next = currentValue.slice(0, currentCursor) + input + currentValue.slice(currentCursor);
+      replaceInput(next, currentCursor + input.length);
     }
   });
 

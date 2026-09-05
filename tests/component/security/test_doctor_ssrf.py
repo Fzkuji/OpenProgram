@@ -117,3 +117,35 @@ def test_doctor_scans_all_installed_application_packages():
         True,
         "all Runtime HTTP calls and registry consumers classified",
     )
+
+
+def test_run_checks_reuses_one_runtime_http_inventory(monkeypatch):
+    calls = 0
+
+    def fake_runtime_checks():
+        nonlocal calls
+        calls += 1
+        return [
+            (True, "runtime-http-registry", "classified"),
+            (True, "runtime-http-owner-exceptions", "none"),
+            (True, "runtime-http-policy-proxy", "disabled"),
+            (True, "runtime-http-recent-denials", "none"),
+            (True, "runtime-http-unmanaged-transport", "none active"),
+        ]
+
+    monkeypatch.setattr(doctor, "CHECKS", ())
+    monkeypatch.setattr(doctor, "runtime_http_checks", fake_runtime_checks)
+    monkeypatch.setattr(
+        "openprogram._compat.platform_environment_advisories", lambda _path: []
+    )
+
+    rows = doctor.run_checks()
+
+    assert calls == 1
+    assert [row["label"] for row in rows] == [
+        "runtime-http-registry",
+        "runtime-http-owner-exceptions",
+        "runtime-http-policy-proxy",
+        "runtime-http-recent-denials",
+        "runtime-http-unmanaged-transport",
+    ]

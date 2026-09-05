@@ -241,6 +241,7 @@ const fakeElectron = {
 };
 
 const processSignals = [];
+const windowsTreeKills = [];
 const sandboxProcess = Object.create(process);
 sandboxProcess.kill = (pid, signal) => {
   processSignals.push([pid, signal]);
@@ -274,6 +275,15 @@ const sandbox = {
       };
     }
     if (id === "node-pty") return { spawn: fakePtySpawn };
+    if (id === "./terminal-command") {
+      return {
+        ...require(path.join(__dirname, "..", "terminal-command")),
+        killWindowsProcessTree(pid) {
+          windowsTreeKills.push(pid);
+          return true;
+        },
+      };
+    }
     if (id === "./browser-profile-import") {
       return {
         listBrowserSources: () => [],
@@ -1317,11 +1327,19 @@ async function checkDownloadsLifecycle() {
   const outsideFile = path.join(outsideDirectory, "outside.pdf");
   fs.writeFileSync(outsideFile, "outside");
   const symlinkPath = path.join(transferUserData, "escape.pdf");
-  fs.symlinkSync(outsideFile, symlinkPath);
   const sameRootTarget = path.join(transferUserData, "target.pdf");
   const sameRootSymlink = path.join(transferUserData, "alias.pdf");
   fs.writeFileSync(sameRootTarget, "target");
-  fs.symlinkSync(sameRootTarget, sameRootSymlink);
+  let symlinkSupported = true;
+  try {
+    fs.symlinkSync(outsideFile, symlinkPath);
+    fs.symlinkSync(sameRootTarget, sameRootSymlink);
+  } catch (error) {
+    if (!new Set(["EPERM", "EACCES", "ENOTSUP"]).has(error?.code)) throw error;
+    symlinkSupported = false;
+    try { fs.unlinkSync(symlinkPath); } catch (_cleanupError) { /* not created */ }
+    try { fs.unlinkSync(sameRootSymlink); } catch (_cleanupError) { /* not created */ }
+  }
   const validShape = (id, filePath, overrides = {}) => ({
     id,
     filename: path.basename(filePath),
@@ -1339,8 +1357,10 @@ async function checkDownloadsLifecycle() {
     entries: [
       validShape("parent", path.join(transferUserData, "..", "parent.pdf")),
       validShape("prefix", `${transferUserData}-outside/prefix.pdf`),
-      validShape("symlink", symlinkPath),
-      validShape("same-root-symlink", sameRootSymlink),
+      ...(symlinkSupported ? [
+        validShape("symlink", symlinkPath),
+        validShape("same-root-symlink", sameRootSymlink),
+      ] : []),
       validShape("bad-type", path.join(transferUserData, "bad.pdf"), { url: 42 }),
       validShape("pending", path.join(transferUserData, "pending.pdf"), {
         state: "progressing",
@@ -1446,10 +1466,12 @@ async function checkDownloadsLifecycle() {
   }
 
   const event = { sender: win.webContents };
-  hooks.downloads.set("runtime-symlink", validShape("runtime-symlink", sameRootSymlink));
-  assert.equal(await ipcHandlers.get("downloads:open")(event, "runtime-symlink"), false);
-  assert.equal(ipcHandlers.get("downloads:show")(event, "runtime-symlink"), false);
-  hooks.downloads.delete("runtime-symlink");
+  if (symlinkSupported) {
+    hooks.downloads.set("runtime-symlink", validShape("runtime-symlink", sameRootSymlink));
+    assert.equal(await ipcHandlers.get("downloads:open")(event, "runtime-symlink"), false);
+    assert.equal(ipcHandlers.get("downloads:show")(event, "runtime-symlink"), false);
+    hooks.downloads.delete("runtime-symlink");
+  }
   assert.equal(ipcHandlers.get("downloads:clear")(event), true);
   assert.equal(hooks.downloads.has(id), true, "clear must preserve every active item");
   assert.equal(await ipcHandlers.get("downloads:cancel")(event, id), true);
@@ -1506,6 +1528,10 @@ function checkContextMenuEndAlignment() {
 }
 
 async function checkTerminalProcessIdentity() {
+  const gracefulKills = process.platform === "win32" ? [undefined] : ["SIGTERM"];
+  const escalatedKills = process.platform === "win32"
+    ? [undefined, undefined]
+    : ["SIGTERM", "SIGKILL"];
   const start = ipcHandlers.get("terminal:start");
   const write = ipcListeners.get("terminal:write");
   const resize = ipcListeners.get("terminal:resize");
@@ -1564,7 +1590,13 @@ async function checkTerminalProcessIdentity() {
     true,
   );
   const first = spawnedPtys.at(-1);
-  assert.deepEqual(Array.from(first.args), ["-l", "-i", "-c", "exec claude"]);
+  assert.deepEqual(
+    Array.from(first.args),
+    process.platform === "win32"
+      ? ["-NoLogo", "-NoExit", "-Command", "claude"]
+      : ["-l", "-i", "-c", "exec claude"],
+  );
+  assert.equal(first.options.useConpty, process.platform === "win32");
   assert.equal(first.options.cwd, fs.realpathSync(transferUserData));
   assert.equal(first.options.name, "xterm-256color");
   assert.deepEqual([first.options.cols, first.options.rows], [90, 31]);
@@ -1609,11 +1641,15 @@ async function checkTerminalProcessIdentity() {
   const second = spawnedPtys.at(-1);
   const firstKillTimer = clock.pendingIds().find((id) => !timersBeforeReplace.has(id));
   assert.notEqual(firstKillTimer, undefined);
-  assert.deepEqual(first.kills, ["SIGTERM"]);
-  assert.deepEqual(processSignals.slice(-2), [
-    [-first.pid, "SIGTERM"],
-    [first.pid + 1_000, "SIGTERM"],
-  ]);
+  assert.deepEqual(first.kills, gracefulKills);
+  if (process.platform === "win32") {
+    assert.deepEqual(processSignals, []);
+  } else {
+    assert.deepEqual(processSignals.slice(-2), [
+      [-first.pid, "SIGTERM"],
+      [first.pid + 1_000, "SIGTERM"],
+    ]);
+  }
   assert.equal(
     sender.listenerCount("destroyed"),
     1,
@@ -1630,7 +1666,7 @@ async function checkTerminalProcessIdentity() {
     "a PTY that exits after SIGTERM cancels its SIGKILL timer",
   );
   clock.runCleared(firstKillTimer);
-  assert.deepEqual(first.kills, ["SIGTERM"]);
+  assert.deepEqual(first.kills, gracefulKills);
   assert.equal(
     processSignals.length,
     signalsBeforeFirstExit,
@@ -1638,16 +1674,20 @@ async function checkTerminalProcessIdentity() {
   );
   const timersBeforeStop = new Set(clock.pendingIds());
   stop(event, claudeId);
-  assert.deepEqual(second.kills, ["SIGTERM"]);
+  assert.deepEqual(second.kills, gracefulKills);
   const secondKillTimer = clock.pendingIds().find((id) => !timersBeforeStop.has(id));
   assert.notEqual(secondKillTimer, undefined);
   clock.runCleared(secondKillTimer);
   clock.clearTimeout(secondKillTimer);
-  assert.deepEqual(second.kills, ["SIGTERM", "SIGKILL"]);
-  assert.deepEqual(processSignals.slice(-2), [
-    [-second.pid, "SIGKILL"],
-    [second.pid + 1_000, "SIGKILL"],
-  ]);
+  assert.deepEqual(second.kills, escalatedKills);
+  if (process.platform === "win32") {
+    assert.deepEqual(processSignals, []);
+  } else {
+    assert.deepEqual(processSignals.slice(-2), [
+      [-second.pid, "SIGKILL"],
+      [second.pid + 1_000, "SIGKILL"],
+    ]);
+  }
   second.emit("exit", { exitCode: 137, signal: 9 });
 
   await start(event, {
@@ -1656,17 +1696,28 @@ async function checkTerminalProcessIdentity() {
   const third = spawnedPtys.at(-1);
   const timersBeforeDestroy = new Set(clock.pendingIds());
   sender.emit("destroyed");
-  assert.deepEqual(third.kills, ["SIGTERM"], "renderer destruction kills all owned PTYs");
+  assert.deepEqual(third.kills, gracefulKills, "renderer destruction kills all owned PTYs");
   const thirdKillTimer = clock.pendingIds().find((id) => !timersBeforeDestroy.has(id));
   assert.notEqual(thirdKillTimer, undefined);
   clock.runCleared(thirdKillTimer);
   clock.clearTimeout(thirdKillTimer);
-  assert.deepEqual(third.kills, ["SIGTERM", "SIGKILL"]);
-  assert.deepEqual(processSignals.slice(-2), [
-    [-third.pid, "SIGKILL"],
-    [third.pid + 1_000, "SIGKILL"],
-  ]);
+  assert.deepEqual(third.kills, escalatedKills);
+  if (process.platform === "win32") {
+    assert.deepEqual(processSignals, []);
+  } else {
+    assert.deepEqual(processSignals.slice(-2), [
+      [-third.pid, "SIGKILL"],
+      [third.pid + 1_000, "SIGKILL"],
+    ]);
+  }
   third.emit("exit", { exitCode: 137, signal: 9 });
+  if (process.platform === "win32") {
+    assert.deepEqual(
+      windowsTreeKills.slice(-6),
+      [first.pid, second.pid, second.pid, third.pid, third.pid].slice(-6),
+      "Windows stops each ConPTY process tree and retries during escalation",
+    );
+  }
 }
 
 async function checkFocusedRoutingAndCleanup() {
@@ -1886,13 +1937,17 @@ function installAmbiguousCommitFailure(token, { blockReconcileReads = false } = 
 
   fs.fsyncSync = function failDirectorySync(...args) {
     fsyncCalls += 1;
-    if (fsyncCalls === 2) {
+    if (process.platform !== "win32" && fsyncCalls === 2) {
       throw new Error("injected directory fsync failure after committed rename");
     }
     return originalFsync.apply(this, args);
   };
   fs.renameSync = function failPriorRestore(...args) {
     renameCalls += 1;
+    if (process.platform === "win32" && renameCalls === 1) {
+      const result = originalRename.apply(this, args);
+      throw new Error("injected metadata failure after committed rename");
+    }
     if (renameCalls === 2) {
       ambiguous = true;
       throw new Error("injected prior-decision restore failure");

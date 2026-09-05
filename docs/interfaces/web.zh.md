@@ -32,6 +32,14 @@ openprogram web
 
 把图片或文本文件拖放到输入框上（粘贴同样可行），会随下一条消息一起发送。
 
+### 无头或远程 Linux 上的项目目录
+
+Project 文件夹和额外工作目录都指向运行 worker 的机器上的路径。通常
+OpenProgram 会打开这台机器的原生文件夹选择器；如果 Linux 没有 X11 或
+Wayland display（例如通过 SSH 使用服务器），Web UI 会改为显示服务器路径
+输入框。填写 `/srv/projects/example` 这样的绝对路径后，worker 会先确认目录
+存在再使用。原生选择器可用时，用户点取消仍然只是取消，不会误弹手工输入框。
+
 ### 会话分支与 DAG 视图
 
 会话历史按 DAG 存储，不是扁平列表：

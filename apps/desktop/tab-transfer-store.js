@@ -56,7 +56,12 @@ function writeSyncedFile(filePath, bytes) {
   let fd = null;
   let failure = null;
   try {
-    fd = fs.openSync(filePath, "wx", 0o600);
+    // Windows inherits the user's ordinary directory ACL. Supplying a POSIX
+    // mode here does not improve its security model and has caused misleading
+    // permission failures in Windows development environments.
+    fd = process.platform === "win32"
+      ? fs.openSync(filePath, "wx")
+      : fs.openSync(filePath, "wx", 0o600);
     fs.writeFileSync(fd, bytes);
     fs.fsyncSync(fd);
   } catch (error) {
@@ -73,6 +78,12 @@ function writeSyncedFile(filePath, bytes) {
 }
 
 function syncDirectory(directory) {
+  if (process.platform === "win32") {
+    // Windows cannot open a directory as a Node file descriptor for fsync.
+    // The file is still fsynced before the atomic rename; directory-metadata
+    // durability is the explicit Windows degradation at this storage seam.
+    return;
+  }
   let fd = null;
   let failure = null;
   try {

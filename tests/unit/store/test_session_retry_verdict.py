@@ -15,11 +15,17 @@ from types import SimpleNamespace
 from openprogram.agent.retry import is_retryable_error
 
 
-def _msg(error_message: str, error_retryable=None) -> SimpleNamespace:
+def _msg(
+    error_message: str,
+    error_retryable=None,
+    *,
+    error_transport_exhausted: bool = False,
+) -> SimpleNamespace:
     return SimpleNamespace(
         stop_reason="error",
         error_message=error_message,
         error_retryable=error_retryable,
+        error_transport_exhausted=error_transport_exhausted,
     )
 
 
@@ -41,6 +47,15 @@ def test_verdict_true_retries_even_when_text_evades_regex() -> None:
     msg = _msg("LLMError: upstream hiccup of a novel phrasing",
                error_retryable=True)
     assert is_retryable_error(msg) is True
+
+
+def test_exhausted_provider_budget_blocks_session_retry() -> None:
+    msg = _msg(
+        "ProviderStreamError: connection terminated",
+        error_retryable=True,
+        error_transport_exhausted=True,
+    )
+    assert is_retryable_error(msg) is False
 
 
 def test_no_verdict_falls_back_to_text_matching() -> None:

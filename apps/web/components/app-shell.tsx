@@ -343,8 +343,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // desktop — acceptable one-time flash inside Electron.
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
-    if (desktopBridge()) {
+    const bridge = desktopBridge();
+    if (bridge) {
       document.documentElement.classList.add("is-desktop");
+      if (bridge.platform === "win32") {
+        document.documentElement.classList.add("desktop-windows");
+      }
       setIsDesktop(true);
       installDesktopMenuHandlers();
     }
@@ -492,8 +496,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
     >
       {/* Desktop (Electron): the tab strip is window chrome — one full-width
-         row across the top with the macOS traffic lights at its left end
-         (Chrome-style). Always visible, even on non-chat routes. The strip
+         row with macOS traffic lights or Windows caption controls embedded
+         at the platform-native end. Always visible on every route. The strip
          is a singleton; when it lives here it must NOT also render inside
          center-col below. */}
       {isDesktop ? (

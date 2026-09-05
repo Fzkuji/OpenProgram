@@ -83,7 +83,29 @@ function releaseAssetUrl(version, name) {
   return `https://github.com/${REPOSITORY}/releases/download/v${version}/${encodeURIComponent(name)}`;
 }
 
-function resolveDesktopRelease(release, manifest, currentVersion, arch) {
+function desktopAssetSpec(version, platform, arch) {
+  if (platform === "darwin" && (arch === "arm64" || arch === "x64")) {
+    return {
+      name: `OpenProgram-${version}-mac-${arch}-unsigned.dmg`,
+      kind: "dmg",
+    };
+  }
+  if (platform === "win32" && (arch === "x64" || arch === "arm64")) {
+    return {
+      name: `OpenProgram-${version}-win-${arch}.exe`,
+      kind: "windows-installer",
+    };
+  }
+  throw new Error(`unsupported Desktop platform: ${platform}/${arch}`);
+}
+
+function resolveDesktopRelease(
+  release,
+  manifest,
+  currentVersion,
+  arch,
+  platform = "darwin",
+) {
   if (!release || release.draft !== false) throw new Error("draft release is not eligible");
   if (release.prerelease !== false) throw new Error("prerelease is not eligible");
   const tagMatch = VERSION_RE.exec(String(release.tag_name || ""));
@@ -96,8 +118,8 @@ function resolveDesktopRelease(release, manifest, currentVersion, arch) {
   const releaseAssets = assetMap(release);
   if (!releaseAssets.has("release-manifest.json")) throw new Error("release manifest asset is missing");
   const manifestFiles = manifestMap(manifest);
-  if (arch !== "arm64" && arch !== "x64") throw new Error(`unsupported macOS architecture: ${arch}`);
-  const name = `OpenProgram-${latestVersion}-mac-${arch}-unsigned.dmg`;
+  const spec = desktopAssetSpec(latestVersion, platform, arch);
+  const { name } = spec;
   const asset = releaseAssets.get(name);
   const entry = manifestFiles.get(name);
   if (!asset || !entry) throw new Error(`complete Desktop asset is missing: ${name}`);
@@ -110,6 +132,7 @@ function resolveDesktopRelease(release, manifest, currentVersion, arch) {
     releaseName: typeof release.name === "string" ? release.name : `OpenProgram ${latestVersion} Release`,
     releaseNotes: typeof release.body === "string" ? release.body.slice(0, 20_000) : "",
     releaseUrl: expectedReleaseUrl,
+    artifactKind: spec.kind,
     asset: {
       name,
       bytes: entry.bytes,
@@ -161,10 +184,15 @@ function saveStateFileAtomic(filePath, state) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
   try {
-    fs.writeFileSync(temporary, `${JSON.stringify(normalizePersistedState(state), null, 2)}\n`, {
+    const options = {
       encoding: "utf8",
-      mode: 0o600,
-    });
+    };
+    if (process.platform !== "win32") options.mode = 0o600;
+    fs.writeFileSync(
+      temporary,
+      `${JSON.stringify(normalizePersistedState(state), null, 2)}\n`,
+      options,
+    );
     fs.renameSync(temporary, filePath);
   } finally {
     try { fs.unlinkSync(temporary); } catch (_error) { /* already renamed */ }
@@ -277,7 +305,9 @@ async function downloadVerified(fetchImpl, asset, targetPath, onProgress = () =>
   let file;
   try {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    file = await fs.promises.open(temporary, "wx", 0o600);
+    file = process.platform === "win32"
+      ? await fs.promises.open(temporary, "wx")
+      : await fs.promises.open(temporary, "wx", 0o600);
     const iterator = response.body[Symbol.asyncIterator]();
     try {
       while (true) {
@@ -311,12 +341,25 @@ async function downloadVerified(fetchImpl, asset, targetPath, onProgress = () =>
 }
 
 class DesktopUpdateService {
-  constructor({ currentVersion, arch, statePath, fetchImpl, chooseSavePath, openPath, emit, now = Date.now }) {
+  constructor({
+    currentVersion,
+    arch,
+    platform = "darwin",
+    statePath,
+    fetchImpl,
+    chooseSavePath,
+    verifyArtifact = async () => {},
+    openPath,
+    emit,
+    now = Date.now,
+  }) {
     this.currentVersion = currentVersion;
     this.arch = arch;
+    this.platform = platform;
     this.statePath = statePath;
     this.fetchImpl = fetchImpl;
     this.chooseSavePath = chooseSavePath;
+    this.verifyArtifact = verifyArtifact;
     this.openPath = openPath;
     this.emit = emit || (() => {});
     this.now = now;
@@ -341,6 +384,7 @@ class DesktopUpdateService {
     }
     if (cached !== null) {
       try {
+        const expectedAsset = desktopAssetSpec(cached.latestVersion, platform, arch);
         if (
           ![
             cached.currentVersion,
@@ -352,7 +396,8 @@ class DesktopUpdateService {
           ].every((value) => typeof value === "string")
           || cached.currentVersion !== currentVersion
           || cached.releaseNotes.length > 20_000
-          || cached.asset?.name !== `OpenProgram-${cached.latestVersion}-mac-${arch}-unsigned.dmg`
+          || cached.asset?.name !== expectedAsset.name
+          || cached.artifactKind !== expectedAsset.kind
           || cached.asset?.url !== releaseAssetUrl(cached.latestVersion, cached.asset.name)
           || cached.releaseUrl !== `https://github.com/${REPOSITORY}/releases/tag/v${cached.latestVersion}`
           || !Number.isSafeInteger(cached.asset?.bytes)
@@ -437,7 +482,13 @@ class DesktopUpdateService {
         releaseAssetUrl(version, "release-manifest.json"),
       );
       const manifest = await readJsonLimited(manifestResponse);
-      const resolved = resolveDesktopRelease(release, manifest, this.currentVersion, this.arch);
+      const resolved = resolveDesktopRelease(
+        release,
+        manifest,
+        this.currentVersion,
+        this.arch,
+        this.platform,
+      );
       this.persisted.lastSuccessAt = now;
       this.persisted.release = resolved;
       this.persist();
@@ -477,6 +528,12 @@ class DesktopUpdateService {
           this.publish({ progress: { downloaded, total } });
         }
       });
+      try {
+        await this.verifyArtifact(targetPath, release.asset);
+      } catch (error) {
+        await fs.promises.unlink(targetPath).catch(() => {});
+        throw error;
+      }
       const openError = await this.openPath(targetPath);
       if (openError) throw new Error(openError);
       this.publish({ status: "downloaded", progress: null });
@@ -493,6 +550,7 @@ module.exports = {
   LATEST_URL,
   SUCCESS_INTERVAL_MS,
   compareVersions,
+  desktopAssetSpec,
   desktopUpdateFetch,
   downloadVerified,
   nextAutomaticCheckAt,

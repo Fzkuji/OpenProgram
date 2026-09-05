@@ -140,9 +140,9 @@ Then use it — the harness's functions are callable like any built-in
 
 ## Platform notes
 
-- **Supported release hosts are macOS and Linux.** Windows has no supported
-  release installer or native package; Windows users may use a browser to
-  connect to OpenProgram on a supported remote host.
+- **Supported CLI/server release hosts are macOS, Linux, and Windows x86_64/arm64.**
+  Windows Desktop is supported on both architectures. Sandboxed command
+  execution on Windows uses optional WSL2 plus bubblewrap.
 - **These Program commands require a mutable environment.** They work in a
   source-development checkout and may be used by a CLI release only when its
   release notes explicitly support Program mutation. Packaged desktop builds
@@ -166,7 +166,7 @@ Then use it — the harness's functions are callable like any built-in
 | `ModuleNotFoundError` for the harness's own deps | The Program environment preparation failed — rerun `openprogram programs install <source>` and inspect its error. |
 | Imports inside the harness fail (`from <pkg>.x import y`) | The package dir isn't named like the import root, or a missing `__init__.py`. The package folder name must equal the import name. |
 | An existing dev symlink does not load | Run `openprogram programs install <git-source>` once to verify and record it; the installer does not modify the linked checkout. |
-| A Windows source checkout fails to install or run a harness | Windows release installation and compatibility are not supported. Use a supported macOS/Linux host and check the harness README for its own platform requirements. |
+| A harness fails to install or run on Windows | Check the harness README and dependency markers. The OpenProgram CLI/server is supported, but an individual harness may still provide only macOS/Linux backends. |
 
 ---
 

@@ -307,11 +307,12 @@ def test_spawn_inside_job_records_parent(store_fixture, fake_worker,
                  label=None, spawn_caller=None, advance_head=True):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         # Simulate a tool inside this turn spawning a sub-job.
-        child_id = runner.spawn_job(
-            session_id="p2", prompt="inner child", agent_id="main",
-            parent_msg_id="a_p2",
-        )
-        recorded["child_id"] = child_id
+        if session_id == "p1":
+            child_id = runner.spawn_job(
+                session_id="p2", prompt="inner child", agent_id="main",
+                parent_msg_id="a_p2",
+            )
+            recorded["child_id"] = child_id
         return AgentTurnResult(head_id="h", final_text="ok",
                                failed=False, error=None)
 

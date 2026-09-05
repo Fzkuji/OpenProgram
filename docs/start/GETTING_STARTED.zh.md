@@ -10,7 +10,13 @@
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-installer 提供自己的 Python 并包含 Web UI，因此运行时不需要 Node.js。Session 与 Memory 历史需要 Git；`openprogram doctor` 会报告 Git 是否可用。macOS 桌面用户使用 GitHub Releases 中的 DMG。Linux 用户使用带 Web UI 或 TUI 的完整 CLI/server runtime；当前不发布 Linux 桌面包。平台范围和开发 checkout 安装见[安装](../install/install.zh.md)。
+Windows x86_64 使用 PowerShell：
+
+```powershell
+irm https://openprogram.io/install.ps1 | iex
+```
+
+installer 提供自己的 Python 并包含 Web UI，因此运行时不需要 Node.js。Session 与 Memory 历史需要 Git；`openprogram doctor` 会报告 Git 是否可用。macOS Desktop 使用 release DMG。Windows Desktop 只在已发布 release 附带带签名 `win-x64.exe` 时使用该 installer；否则使用完整 Windows CLI/server runtime 和浏览器 UI。Windows 沙箱是单独层级。平台范围和开发 checkout 安装见[安装](../install/install.zh.md)。
 
 ## 第 2 步：首次运行，接入 provider
 

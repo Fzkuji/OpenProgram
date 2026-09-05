@@ -298,6 +298,30 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
     );
   }
 
+  if (pickerKind === 'shortcuts') {
+    const shortcuts: PickerItem<string>[] = [
+      { label: '/', description: 'commands and completion', value: 'slash' },
+      { label: '@', description: 'attach a workspace file', value: 'file' },
+      { label: 'enter', description: 'send · alt+enter inserts a newline', value: 'send' },
+      { label: 'shift+tab', description: 'cycle safe permission modes', value: 'permission' },
+      { label: 'ctrl+k', description: 'open command palette', value: 'palette' },
+      { label: 'ctrl+r', description: 'search saved context', value: 'search' },
+      { label: 'ctrl+a / ctrl+e', description: 'start / end of input', value: 'line' },
+      { label: 'ctrl+w', description: 'delete previous word', value: 'word' },
+      { label: 'esc', description: 'clear input or stop a running turn', value: 'escape' },
+      { label: 'ctrl+c twice', description: 'exit while idle', value: 'exit' },
+      { label: '↑ / ↓', description: 'prompt history or picker selection', value: 'history' },
+    ];
+    return (
+      <Picker
+        title="Keyboard shortcuts"
+        items={shortcuts}
+        onSelect={() => setPickerKind(null)}
+        onCancel={() => setPickerKind(null)}
+      />
+    );
+  }
+
   if (pickerKind === 'model') {
     const items: PickerItem<string>[] = modelsList.map((m) => ({
       label: m,

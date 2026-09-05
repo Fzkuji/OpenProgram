@@ -751,11 +751,14 @@ SETTINGS: list[SettingSpec] = [
     SettingSpec(
         key="sandbox.mode", path=("sandbox", "mode"), group="Sandbox",
         label="Sandbox mode", widget="enum", apply=APPLY_LIVE,
-        default="workspace-write", choices=lambda: list(_sandbox_modes()),
-        help="`danger-full-access` runs local model-driven commands with "
+        default="auto", choices=lambda: list(_sandbox_modes()),
+        help="`auto` uses the sandbox when its backend is available and "
+             "otherwise keeps local commands usable without one. "
+             "`danger-full-access` runs local model-driven commands with "
              "your full user authority. "
              "`workspace-write` applies the host-native sandbox "
-             "(macOS sandbox-exec, Linux bubblewrap), restricts writes to "
+             "(macOS sandbox-exec, Linux bubblewrap, or bubblewrap delegated "
+             "to the default WSL2 distribution on Windows), restricts writes to "
              "the working directory and configured roots, blocks the paths "
              "listed under Blocked read paths, and disables network. Read per "
              "command, so a change applies to the next command everywhere "

@@ -30,7 +30,7 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 | `agent.output_style` | Agent | how replies are written; appends a block to the system prompt. See [Output styles](output-styles.md) | default | live |
 | `providers.<name>` | Providers | read-only status row (configured or not); configure with `openprogram providers login` or the Web UI | — | — |
 
-The local sandbox is host-native: Seatbelt on macOS and bubblewrap on Linux. Windows and unsupported platforms refuse commands while the sandbox is enabled unless the owner explicitly selects the unsafe `sandbox.unavailable_policy=warn` or sets `sandbox.mode=danger-full-access`. Docker is not an automatic fallback.
+The local sandbox uses Seatbelt on macOS, bubblewrap on Linux, and bubblewrap delegated through the default WSL2 distribution on Windows. If that backend is unavailable, commands are refused while the sandbox is enabled unless the owner explicitly selects the unsafe `sandbox.unavailable_policy=warn` or sets `sandbox.mode=danger-full-access`. Docker is not an automatic fallback.
 
 ## Top-level keys in config.json
 

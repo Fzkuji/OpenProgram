@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import closing
 import json
+import os
 
 import pytest
 
@@ -645,6 +646,10 @@ def test_structured_source_label_must_not_be_empty(tmp_path):
     assert not (root / "topics/empty-label.md").exists()
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="the mocked invocation deliberately exercises POSIX shell commands",
+)
 def test_restricted_writer_shell_uses_the_committed_source_baseline(
     tmp_path, monkeypatch,
 ):

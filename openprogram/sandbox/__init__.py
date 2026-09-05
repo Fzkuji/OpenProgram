@@ -1,7 +1,9 @@
 """System-level sandbox — restrict a shell command's file, process and
 network access.
 
-macOS: sandbox-exec (Seatbelt).  Linux: bubblewrap (bwrap).
+macOS: sandbox-exec (Seatbelt). Linux: bubblewrap (bwrap). Windows delegates
+the same bubblewrap policy to the default WSL2 distribution; it never rewrites
+Windows ACLs.
 
 The policy is resolved from ``~/.openprogram/config.json`` (the
 ``sandbox.*`` keys in ``config_schema.SETTINGS``) at the moment a command
@@ -14,7 +16,7 @@ skipped by an approval-layer bypass either, because it is read below the
 approval layer. Callers that already hold a policy pass it explicitly to
 ``wrap_command``.
 
-What the boundary is, on both platforms:
+What the boundary is for every available platform backend:
 
 * writes are confined to the working directory plus configured roots
 * reads are open EXCEPT the credential globs in ``deny_read``
@@ -40,11 +42,14 @@ import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 
+from openprogram import _compat
+
 log = logging.getLogger(__name__)
 
 MODE_DANGER_FULL_ACCESS = "danger-full-access"
 MODE_WORKSPACE_WRITE = "workspace-write"
-MODES = (MODE_DANGER_FULL_ACCESS, MODE_WORKSPACE_WRITE)
+MODE_AUTO = "auto"
+MODES = (MODE_AUTO, MODE_DANGER_FULL_ACCESS, MODE_WORKSPACE_WRITE)
 
 UNAVAILABLE_POLICY_REFUSE = "refuse"
 UNAVAILABLE_POLICY_WARN = "warn"
@@ -155,6 +160,8 @@ def unavailable_reason() -> str | None:
         if not executable:
             return "Linux needs bubblewrap (install the `bubblewrap` package)"
         return _bwrap_unavailable_reason(executable)
+    if sys.platform == "win32":
+        return _compat.windows_wsl_sandbox_reason()
     return f"no sandbox backend for platform {sys.platform!r}"
 
 
@@ -213,7 +220,10 @@ def _with_hard_floor(policy: SandboxPolicy) -> SandboxPolicy:
 
 
 def _config_mode_on(sb: dict) -> bool:
-    return str(sb.get("mode") or MODE_WORKSPACE_WRITE).strip().lower() == MODE_WORKSPACE_WRITE
+    mode = str(sb.get("mode") or MODE_AUTO).strip().lower()
+    if mode == MODE_AUTO:
+        return unavailable_reason() is None
+    return mode == MODE_WORKSPACE_WRITE
 
 
 def _policy_from_section(sb: dict) -> SandboxPolicy:
@@ -475,6 +485,8 @@ def _sbpl_str(s: str) -> str:
 def _glob_to_regex(pattern: str) -> str | None:
     """Anchored regex for one deny-read glob, or None if it is empty."""
     p = os.path.expanduser(pattern.strip())
+    if os.sep == "\\":
+        p = p.replace("\\", "/")
     if not p:
         return None
     # `dir/**` has to cover `dir` itself as well, otherwise the listing
@@ -508,6 +520,13 @@ def _glob_to_regex(pattern: str) -> str | None:
     return "^" + rx + "$"
 
 
+def _regex_path(path: str) -> str:
+    """Use one separator convention for Windows glob matching."""
+
+    value = os.fspath(path)
+    return value.replace("\\", "/") if os.sep == "\\" else value
+
+
 SANDBOX_DENIAL_GUIDANCE = (
     "request sandbox escalation or ask the owner to change sandbox.deny_read; "
     "do not relocate or copy the protected content"
@@ -525,7 +544,7 @@ def _hard_floor_read_globs() -> tuple[str, ...]:
 
 def is_hard_floor_read(path: str) -> bool:
     """True for ~/.openprogram/auth/** and the agentics directory."""
-    target = os.path.realpath(os.path.expanduser(os.fspath(path)))
+    target = _regex_path(os.path.realpath(os.path.expanduser(os.fspath(path))))
     return any(re.match(rx, target) for rx in _regexes_for(_hard_floor_read_globs()))
 
 
@@ -534,6 +553,7 @@ def _pattern_specificity(pattern: str) -> int:
 
 
 def _matching_patterns(target: str, patterns: tuple[str, ...]) -> list[str]:
+    target = _regex_path(target)
     hit: list[str] = []
     for pattern in patterns:
         if any(re.match(rx, target) for rx in _regexes_for((pattern,))):
@@ -569,9 +589,16 @@ def match_deny_read(
     if policy is None or not text or not policy.deny_read:
         return None
     tokens: list[str] = []
-    for raw in re.findall(r"[^\s'\"`:;]+", text):
-        tok = raw.strip(".,)(")
-        if tok.startswith(("~", "/", "./", "../", ".")) or "/" in tok:
+    for raw in re.findall(r"[^\s'\"`;]+", text):
+        # Keep the colon inside ``C:\path`` while trimming punctuation such
+        # as the colon after ``cat:``. Windows diagnostics use backslashes,
+        # and the old POSIX-only tokenizer silently lost their denied path.
+        tok = raw.strip(".,)(:")
+        if (
+            tok.startswith(("~", "/", "./", "../", "."))
+            or "/" in tok
+            or "\\" in tok
+        ):
             tokens.append(tok)
     for tok in tokens:
         try:
@@ -645,7 +672,7 @@ def validate_write_path(path, *, cwd: str | None = None) -> str | None:
         return f"path is outside writable roots: {target}"
     for pattern in policy.deny_write:
         regex = _glob_to_regex(pattern)
-        if regex and re.match(regex, target):
+        if regex and re.match(regex, _regex_path(target)):
             return f"path is denied by sandbox policy: {target}"
     return None
 
@@ -695,14 +722,15 @@ def read_denier():
     floor_rx = [re.compile(rx) for rx in _regexes_for(_hard_floor_read_globs())]
 
     def _hits(items, target: str) -> list[str]:
-        return [p for p, rxs in items if any(rx.match(target) for rx in rxs)]
+        normalized = _regex_path(target)
+        return [p for p, rxs in items if any(rx.match(normalized) for rx in rxs)]
 
     def _denied(target: str) -> bool:
         real = os.path.realpath(target)
         denies = _hits(deny_items, real)
         if not denies:
             return False
-        if any(rx.match(real) for rx in floor_rx):
+        if any(rx.match(_regex_path(real)) for rx in floor_rx):
             return True
         allows = _hits(allow_items, real)
         if not allows:
@@ -767,6 +795,8 @@ def wrap_command(command: str, cwd: str,
         profile = _seatbelt_profile(cwd, policy)
         return (["/usr/bin/sandbox-exec", "-p", profile,
                  "/bin/bash", "-c", command], False)
+    if sys.platform == "win32":
+        return (_wsl_bwrap_args(command, cwd, policy), False)
     return (_bwrap_args(command, cwd, policy), False)
 
 
@@ -881,4 +911,89 @@ def _bwrap_args(command: str, cwd: str, policy: SandboxPolicy) -> list[str]:
         if os.path.exists(path):
             args += ["--ro-bind", path, path]
     args += ["--", "/bin/bash", "-c", command]
+    return args
+
+
+def _wsl_bwrap_args(
+    command: str,
+    cwd: str,
+    policy: SandboxPolicy,
+) -> list[str]:
+    """Apply the bubblewrap policy inside the default WSL2 distribution.
+
+    WSL2 is a delegation boundary, not an AppContainer imitation: commands
+    run as Linux commands and Windows paths are translated with that distro's
+    own ``wslpath``.  No Windows ACL or file mode is changed.
+    """
+
+    def translated(path: str) -> str:
+        try:
+            return _compat.windows_path_to_wsl(path)
+        except RuntimeError as exc:
+            raise SandboxUnavailable(str(exc)) from exc
+
+    try:
+        prefix = _compat.windows_wsl_exec_prefix()
+    except RuntimeError as exc:
+        raise SandboxUnavailable(str(exc)) from exc
+
+    cwd = os.path.realpath(cwd)
+    wsl_cwd = translated(cwd)
+    args = [
+        *prefix,
+        "bwrap",
+        "--new-session",
+        "--die-with-parent",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--cap-drop", "ALL",
+        "--ro-bind", "/", "/",
+        "--proc", "/proc",
+        "--dev", "/dev",
+    ]
+    if not policy.host_process_info:
+        args.insert(len(prefix) + 3, "--unshare-pid")
+    if not policy.network:
+        args.append("--unshare-net")
+
+    args += ["--tmpfs", "/tmp", "--dir", "/tmp/openprogram-home"]
+    for root in _writable_roots(cwd, policy):
+        wsl_root = translated(root)
+        args += ["--bind", wsl_root, wsl_root]
+
+    for path in _concrete_paths(policy.deny_read):
+        if not read_is_denied(path, policy) or not os.path.exists(path):
+            continue
+        wsl_path = translated(path)
+        if os.path.isdir(path):
+            args += ["--perms", "0000", "--tmpfs", wsl_path]
+        else:
+            args += ["--ro-bind", "/dev/null", wsl_path]
+    for path in _concrete_paths(policy.allow_read):
+        if read_is_denied(path, policy) or not os.path.exists(path):
+            continue
+        wsl_path = translated(path)
+        args += ["--ro-bind", wsl_path, wsl_path]
+    for path in _concrete_paths(policy.deny_write):
+        if not os.path.exists(path):
+            continue
+        wsl_path = translated(path)
+        args += ["--ro-bind", wsl_path, wsl_path]
+
+    args += [
+        "--clearenv",
+        "--setenv", "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "--setenv", "HOME", "/tmp/openprogram-home",
+        "--setenv", "SHELL", "/bin/bash",
+        "--setenv", "TMPDIR", "/tmp",
+        "--setenv", "TMP", "/tmp",
+        "--setenv", "TEMP", "/tmp",
+    ]
+    safe_env = child_env(policy)
+    fixed = {"PATH", "HOME", "SHELL", "TMPDIR", "TMP", "TEMP", "PWD", "OLDPWD"}
+    for name, value in safe_env.items():
+        if name in fixed:
+            continue
+        args += ["--setenv", name, value]
+    args += ["--chdir", wsl_cwd, "--", "/bin/bash", "-c", command]
     return args

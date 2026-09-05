@@ -30,7 +30,7 @@ openprogram setup                # 重新走一遍配置向导
 
 ## 怎么更新到最新版本？
 
-stable installation 只变更到明确的已发布版本。0.7.0 是首个启用 updater 的版本，也是从 v0.6.6 进入 updater release 线的一次性过渡：macOS Desktop 用户手动安装 v0.7.0 DMG，macOS/Linux CLI/server 用户重新运行一次公开 installer。后续 Desktop release 在 Settings 中发现；managed CLI/server 和 source-checkout 用户都运行 `openprogram upgrade`，命令根据安装类型选择 release 路径或 Git 门禁路径。详见[升级](../install/upgrade.zh.md)。
+stable installation 只变更到明确的已发布版本。0.7.0 是首个启用 updater 的版本，也是从 v0.6.6 进入 updater release 线的一次性过渡：macOS Desktop 用户手动安装 v0.7.0 DMG，原有 macOS/Linux CLI/server 用户重新运行一次公开 installer。当前 managed CLI/server release 还通过 PowerShell installer 支持 Windows x86_64。后续 Desktop release 在 Settings 中发现；managed CLI/server 和 source-checkout 用户都运行 `openprogram upgrade`，命令根据安装类型选择 release 路径或 Git 门禁路径。详见[升级](../install/upgrade.zh.md)。
 
 ## `openprogram web` 打开的页面加载不出来？
 

@@ -29,10 +29,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-try:
-    import fitz  # type: ignore
-except ImportError:  # pragma: no cover
-    fitz = None  # type: ignore
+
+def _pymupdf():
+    """Load the PDF runtime only when a document operation needs it.
+
+    Document workflows are registered during normal CLI and worker startup.
+    Importing PyMuPDF at module scope therefore loaded a relatively heavy
+    optional dependency for unrelated commands, while the legacy ``fitz``
+    import also emits a warning in current releases.
+    """
+    try:
+        import pymupdf
+    except ImportError as exc:  # pragma: no cover - complete releases include it
+        raise ImportError(
+            "pymupdf is unavailable in this installation; "
+            "reinstall the complete OpenProgram release"
+        ) from exc
+    return pymupdf
 
 _ROW_Y_TOLERANCE = 4.0       # words within this Δy are treated as one row
 _LAYOUT_TARGET_WIDTH = 110   # characters the widest page row maps to
@@ -97,11 +110,7 @@ def page_layout(page) -> PageLayout:
 
 def render_page_png(page, out_path: str | Path, *, dpi: int = 150) -> Path:
     """Render a page to a PNG (used for scanned / image-only pages)."""
-    if fitz is None:
-        raise ImportError(
-            "pymupdf is unavailable in this installation; "
-            "reinstall the complete OpenProgram release"
-        )
+    fitz = _pymupdf()
     out_path = Path(out_path)
     mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
     pix = page.get_pixmap(matrix=mat, alpha=False)
@@ -115,11 +124,7 @@ def pdf_pages(
     pages: tuple[int, int] | None = None,
 ) -> list[PageLayout]:
     """Render a PDF (or page range) as a list of :class:`PageLayout`."""
-    if fitz is None:
-        raise ImportError(
-            "pymupdf is unavailable in this installation; "
-            "reinstall the complete OpenProgram release"
-        )
+    fitz = _pymupdf()
     doc = fitz.open(str(pdf_path))
     n = len(doc)
     if pages is None:

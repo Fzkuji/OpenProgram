@@ -23,6 +23,7 @@ TRASH_ENV = "OPENPROGRAM_RECOVERABLE_TRASH"
 _rename = os.rename
 _unlink = os.unlink
 _rmdir = os.rmdir
+_rmtree = shutil.rmtree
 _SAFE_RMTREE_SUPPORTED = (
     hasattr(os, "O_DIRECTORY")
     and hasattr(os, "O_NOFOLLOW")
@@ -102,7 +103,15 @@ def _empty_directory_fd(fd: int) -> None:
 
 def _physical_rmtree(path: str) -> None:
     if not _safe_rmtree_supported():
-        raise NotImplementedError("safe cross-filesystem directory cleanup is unavailable")
+        # Windows has no dir_fd/O_NOFOLLOW equivalent in Python. Recoverable
+        # deletion is an interception convenience rather than a sandbox
+        # boundary, so keep directory recovery functional there and retain
+        # the fd-relative, symlink-race-resistant implementation on POSIX.
+        if os.path.islink(path):
+            _unlink(path)
+        else:
+            _rmtree(path)
+        return
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         _empty_directory_fd(fd)
@@ -117,8 +126,6 @@ def _copy_then_delete(
     kind: str,
     before_cleanup: Callable[[str], None] | None = None,
 ) -> None:
-    if kind == "directory" and not _safe_rmtree_supported():
-        raise NotImplementedError("safe cross-filesystem directory cleanup is unavailable")
     partial = destination + ".partial-" + uuid.uuid4().hex
     try:
         if kind == "symlink":
@@ -516,7 +523,13 @@ def prepare_child_env(base: dict[str, str] | None = None) -> dict[str, str] | No
         part for part in (str(shim_dir), str(package_root), env.get("PYTHONPATH", "")) if part
     )
     preload = shim_dir / "node_preload.cjs"
-    node_option = f'--require="{preload}"'
+    if os.name == "nt":
+        # NODE_OPTIONS parses backslashes as escapes. Forward slashes remain
+        # valid Win32 paths and survive Node's option parser unchanged.
+        preload_value = preload.as_posix()
+    else:
+        preload_value = str(preload)
+    node_option = f'--require="{preload_value}"'
     env["NODE_OPTIONS"] = " ".join(part for part in (node_option, env.get("NODE_OPTIONS", "")) if part)
     return env
 

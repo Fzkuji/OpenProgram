@@ -23,11 +23,15 @@ def _check_python_version() -> tuple[bool, str, str]:
 
 def _check_node() -> tuple[bool, str, str]:
     n = shutil.which("node")
+    if n is None and os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        return True, "node available", "not required by managed runtime"
     return (n is not None), "node available", n or "not on PATH"
 
 
 def _check_npm() -> tuple[bool, str, str]:
     n = shutil.which("npm")
+    if n is None and os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        return True, "npm available", "not required by managed runtime"
     return (n is not None), "npm available", n or "not on PATH"
 
 
@@ -308,23 +312,38 @@ CHECKS: tuple[Callable[[], tuple[bool, str, str]], ...] = (
     _check_mcp,
     _check_disk_cache,
     _check_backend_port,
-    _check_runtime_http_registry,
-    _check_runtime_http_owner_exceptions,
-    _check_runtime_http_policy_proxy,
-    _check_runtime_http_recent_denials,
-    _check_runtime_http_unmanaged_transport,
 )
 
 
 def run_checks() -> list[dict]:
     """Run every check and return JSON-serialisable result list."""
     results: list[dict] = []
-    for fn in CHECKS:
+    checks: list[Callable[[], tuple[bool, str, str]]] = list(CHECKS)
+    from openprogram import _compat
+
+    platform_rows = _compat.platform_environment_advisories(get_state_dir())
+    for fn in checks:
         try:
             ok, label, detail = fn()
         except Exception as e:  # never let a buggy check kill /doctor
             ok, label, detail = False, fn.__name__, f"{type(e).__name__}: {e}"
         results.append({"ok": ok, "label": label, "detail": detail})
+    # The five Runtime HTTP rows share one source inventory. Compute it once;
+    # rescanning the installed tree per row is especially costly on Defender.
+    try:
+        runtime_rows = runtime_http_checks()
+    except Exception as e:  # never let a buggy check kill /doctor
+        runtime_rows = [
+            (False, "runtime-http-registry", f"{type(e).__name__}: {e}")
+        ]
+    results.extend(
+        {"ok": ok, "label": label, "detail": detail}
+        for ok, label, detail in runtime_rows
+    )
+    results.extend(
+        {"ok": ok, "label": label, "detail": detail}
+        for ok, label, detail in platform_rows
+    )
     return results
 
 

@@ -29,6 +29,7 @@ def _isolated_runtime(monkeypatch: pytest.MonkeyPatch):
 def _run_python(source: str, *, home: Path) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
     env["PYTHONPATH"] = os.getcwd()
     env.pop("_OPENPROGRAM_RECORDINGS_MANAGEMENT", None)
     return subprocess.run(

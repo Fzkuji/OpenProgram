@@ -47,3 +47,14 @@ openprogram --profile dev web          # http://localhost:18200
 ```
 
 两个实例各有自己的会话、配置、日志和后台 worker；`openprogram status` 看的是默认实例，`openprogram --profile dev status` 看开发实例。
+
+Linux 上的常驻 worker 也按 profile 隔离。分别在各自的命令上下文安装，
+OpenProgram 会创建两个独立的 systemd 用户服务：
+
+```bash
+openprogram worker install
+openprogram --profile dev worker install
+```
+
+此后 `worker start`、`stop`、`restart`、`status` 和 `uninstall` 都只操作
+当前 profile 的服务；停止或升级 `dev` worker 不会替换或停止默认 worker。

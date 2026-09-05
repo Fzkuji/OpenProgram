@@ -478,6 +478,8 @@ export class BackendClient {
   private state: ConnectionState = 'connecting';
   private queue: WsRequest[] = [];
   private hasConnected = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private closed = false;
 
   constructor(url: string) {
     this.url = url;
@@ -494,6 +496,7 @@ export class BackendClient {
   }
 
   connect(): void {
+    this.closed = false;
     this.setState('connecting');
     // The owner token rides in the Authorization header, never in the URL
     // query, and only when the URL is our own backend.
@@ -520,9 +523,13 @@ export class BackendClient {
     });
     this.ws.on('close', () => {
       this.setState('disconnected');
+      if (this.closed) return;
       const baseDelay = this.hasConnected ? 200 : 50;
       const delay = Math.min(5000, baseDelay * Math.pow(2, this.retry++));
-      setTimeout(() => this.connect(), delay);
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        if (!this.closed) this.connect();
+      }, delay);
     });
     this.ws.on('error', () => {
       // close handler will reconnect
@@ -549,7 +556,13 @@ export class BackendClient {
   }
 
   close(): void {
+    this.closed = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.ws?.removeAllListeners('close');
     this.ws?.close();
+    this.ws = null;
   }
 }

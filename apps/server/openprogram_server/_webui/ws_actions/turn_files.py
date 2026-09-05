@@ -21,10 +21,37 @@ _MAX_DIFF_BYTES = 512 * 1024
 _MAX_DIFF_PAGE_BYTES = 256 * 1024
 _MAX_DIFF_LINES = 200
 _MAX_DIFF_LINE_BYTES = 64 * 1024
+_DIR_FD_CAPABLE = all(
+    function in os.supports_dir_fd
+    for function in (os.open, os.stat)
+)
 
 
 class _OutputLimitError(OSError):
     pass
+
+
+def _is_reparse_point(info: os.stat_result) -> bool:
+    attributes = getattr(info, "st_file_attributes", 0)
+    flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return bool(flag and attributes & flag)
+
+
+def _validate_directory_path(path: Path) -> None:
+    """Reject symlink/junction traversal without relying on ``dir_fd``."""
+
+    absolute = Path(os.path.abspath(path))
+    current = Path(absolute.parts[0])
+    for component in (None, *absolute.parts[1:]):
+        if component is not None:
+            current = current / component
+        info = os.lstat(current)
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or _is_reparse_point(info)
+        ):
+            raise OSError("unsafe recovery directory")
 
 
 def _open_session(session_id: str):
@@ -697,6 +724,27 @@ def _state_bytes(session_dir: Path, turn_id: str, state: dict) -> tuple[bytes, s
     ):
         raise OSError("unsafe recovery blob reference")
     directory = turn_backup_dir(session_dir, turn_id)
+    if not _DIR_FD_CAPABLE:
+        _validate_directory_path(directory)
+        blob = directory / blob_ref
+        info = os.lstat(blob)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or _is_reparse_point(info)
+            or info.st_nlink != 1
+        ):
+            raise OSError("unsafe recovery blob")
+        if state.get("size") is not None and info.st_size != state.get("size"):
+            raise OSError("recovery blob size mismatch")
+        if info.st_size > _MAX_DIFF_BYTES:
+            return b"", "large"
+        raw = blob.read_bytes()
+        if f"sha256:{hashlib.sha256(raw).hexdigest()}" != state.get("digest"):
+            raise OSError("recovery blob digest mismatch")
+        if b"\0" in raw:
+            return b"", "binary"
+        return raw, "available"
     directory_fd = _open_directory_no_symlinks(directory)
     try:
         descriptor = os.open(
@@ -1027,6 +1075,31 @@ def _read_workspace_file(root: Path, rel: str, identity: dict) -> bytes:
         raise OSError("unsafe workspace path")
     if identity.get("kind") != "regular":
         raise OSError("workspace path is not a regular file")
+    if not _DIR_FD_CAPABLE:
+        target = root / relative
+        _validate_directory_path(target.parent)
+        info = os.lstat(target)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or _is_reparse_point(info)
+            or (
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mtime_ns,
+            )
+            != (
+                identity.get("dev"),
+                identity.get("ino"),
+                identity.get("size"),
+                identity.get("mtime_ns"),
+            )
+        ):
+            raise OSError("stale workspace snapshot")
+        if info.st_size > _MAX_DIFF_BYTES:
+            raise _OutputLimitError("workspace file exceeds review limit")
+        return target.read_bytes()
     descriptor = os.open(
         root,
         os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),

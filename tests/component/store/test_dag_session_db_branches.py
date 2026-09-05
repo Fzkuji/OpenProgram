@@ -273,9 +273,11 @@ def test_concurrent_meta_writers_never_publish_a_torn_file(db):
                 errors.append(f"{type(e).__name__}: {e}")
 
     def reader():
+        from openprogram.store.session.git_session import read_text_with_retry
+
         while not stop.is_set():
             try:
-                _json.loads(meta_path.read_text(encoding="utf-8"))
+                _json.loads(read_text_with_retry(meta_path))
             except FileNotFoundError:
                 torn.append("meta.json missing")
             except _json.JSONDecodeError as e:

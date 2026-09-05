@@ -4,10 +4,13 @@ import { readFileSync } from 'fs';
 const read = (path: string): string => readFileSync(path, 'utf8');
 
 describe('REPL layout contract', () => {
-  it('uses the fullscreen app-owned transcript layout', () => {
+  it('uses the app-owned transcript layout with an inline accessibility fallback', () => {
     const source = read('src/screens/REPL.tsx');
 
-    expect(source).toContain('<Shell mouseTracking mode="alt">');
+    expect(source).toContain('altScreen = true');
+    expect(source).toContain('screenReader = false');
+    expect(source).toContain('mouseTracking={altScreen && !screenReader}');
+    expect(source).toContain("mode={altScreen && !screenReader ? 'alt' : 'inline'}");
     expect(source).toContain('<TranscriptViewport');
     expect(source).toContain('scrollRef={transcriptScrollRef}');
     expect(source).toContain('<Messages');
@@ -25,10 +28,59 @@ describe('REPL layout contract', () => {
     expect(source).not.toContain('resetScrollbackCursor');
   });
 
-  it('clears previous shell history before starting the live REPL', () => {
+  it('enters alternate screen without erasing the main-screen scrollback', () => {
+    const entry = read('src/index.tsx');
+    const alternateScreen = read('src/runtime/ink/components/AlternateScreen.tsx');
+    const runtime = read('src/runtime/ink/ink.tsx');
+
+    expect(entry).not.toContain("process.stdout.write('\\x1b[2J\\x1b[3J\\x1b[H')");
+    expect(alternateScreen).toContain('ENTER_ALT_SCREEN +');
+    expect(alternateScreen).toContain('ERASE_SCREEN +');
+    expect(alternateScreen).not.toContain('ERASE_SCROLLBACK');
+    expect(runtime).not.toContain('ERASE_SCROLLBACK');
+  });
+
+  it('does not race Ink input with a pre-render terminal query', () => {
     const source = read('src/index.tsx');
 
-    expect(source).toContain("process.stdout.write('\\x1b[2J\\x1b[3J\\x1b[H')");
+    expect(source).not.toContain('detectAutoTheme(null)');
+    expect(source).not.toContain('setCachedSystemTheme');
+  });
+
+  it('fails cleanly before rendering ANSI frames when stdio is not a TTY', () => {
+    const source = read('src/index.tsx');
+
+    expect(source).toContain('!process.stdin.isTTY || !process.stdout.isTTY');
+    expect(source).toContain('use `openprogram --print` for pipelines');
+    expect(source.indexOf('!process.stdin.isTTY || !process.stdout.isTTY'))
+      .toBeLessThan(source.indexOf('new BackendClient(ws)'));
+  });
+
+  it('uses conventional process exit codes for POSIX termination signals', () => {
+    const source = read('src/index.tsx');
+
+    expect(source).toContain("process.once('SIGINT', () => process.exit(130))");
+    expect(source).toContain("process.once('SIGTERM', () => process.exit(143))");
+  });
+
+  it('closes the backend when rendering or waiting for exit fails', () => {
+    const source = read('src/index.tsx');
+    const connect = source.indexOf('client.connect()');
+    const render = source.indexOf('await render(root');
+    const finallyBlock = source.indexOf('} finally {');
+    const close = source.indexOf('client.close()');
+
+    expect(source.indexOf('try {')).toBeLessThan(connect);
+    expect(connect).toBeLessThan(render);
+    expect(render).toBeLessThan(finallyBlock);
+    expect(finallyBlock).toBeLessThan(close);
+  });
+
+  it('loads the requested transcript for --resume on startup', () => {
+    const source = read('src/screens/REPL.tsx');
+
+    expect(source).toContain("if (initialConversation)");
+    expect(source).toContain("client.send({ action: 'load_session', session_id: initialConversation })");
   });
 
   it('keeps transcript scrolling out of PromptInput', () => {

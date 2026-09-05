@@ -19,9 +19,9 @@ openprogram backup prune --keep 5   # 只保留最新的 5 份
 
 归档文件放在 `~/.openprogram/backups/`（命名 profile 下是
 `~/.openprogram-<profile>/backups/`），文件名为
-`<profile>-<时间戳>.tar.gz`，权限 `0600`，只有你自己能读。
-归档先写入唯一的 owner-only 临时文件，flush 后原子发布；POSIX 还会
-fsync 所在目录。
+`<profile>-<时间戳>.tar.gz`。POSIX 主机使用 `0600` 权限；Windows source
+checkout 保留状态目录继承的 NTFS ACL，不改写 ACL 继承。归档先写入唯一的
+临时文件，flush 后原子发布；POSIX 还会 fsync 所在目录。
 
 ## 备份范围
 
@@ -107,7 +107,9 @@ openprogram backup restore default-20260811-012458.tar.gz --dry-run
 被拒绝的归档不会改动本机状态。通过校验后，每个文件都用 OpenProgram 其余
 部分共用的 owner-only 原子写入发布，并且每次发布都记录 journal：因此被崩溃
 或磁盘写满打断的恢复会被回滚，而不是停在改了一半的状态。下次执行恢复时
-会自动先做这个回滚。
+会自动先做这个回滚。POSIX 使用 descriptor-relative 路径遍历；Windows 的
+Python 不提供这些 `dir_fd` 操作，因此 fallback 会在每次路径操作前验证包含
+关系，并拒绝 symlink、junction 和其他 reparse point。
 
 ## 清理
 

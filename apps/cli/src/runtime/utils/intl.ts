@@ -36,6 +36,35 @@ export function lastGrapheme(text: string): string {
   return last
 }
 
+/** Return the UTF-16 index of the grapheme immediately before ``index``. */
+export function previousGraphemeBoundary(text: string, index: number): number {
+  const cursor = Math.min(text.length, Math.max(0, index))
+  let previous = 0
+
+  for (const segment of getGraphemeSegmenter().segment(text)) {
+    if (segment.index >= cursor) {
+      break
+    }
+
+    previous = segment.index
+  }
+
+  return previous
+}
+
+/** Return the UTF-16 index immediately after the grapheme at ``index``. */
+export function nextGraphemeBoundary(text: string, index: number): number {
+  const cursor = Math.min(text.length, Math.max(0, index))
+
+  for (const segment of getGraphemeSegmenter().segment(text)) {
+    if (segment.index > cursor) {
+      return segment.index
+    }
+  }
+
+  return text.length
+}
+
 export function getWordSegmenter(): Intl.Segmenter {
   if (!wordSegmenter) {
     wordSegmenter = new Intl.Segmenter(undefined, { granularity: 'word' })

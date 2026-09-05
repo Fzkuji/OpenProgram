@@ -258,7 +258,7 @@ def test_agent_duplicate_copies_configuration_without_sessions(tmp_path, monkeyp
     workspace = client.get("/api/agents/main_copy/workspace")
     assert workspace.status_code == 200
     payload = workspace.json()
-    assert payload["path"].endswith("/agents/main_copy/workspace")
+    assert Path(payload["path"]).parts[-3:] == ("agents", "main_copy", "workspace")
     assert [row["name"] for row in payload["files"]] == [
         "AGENTS.md",
         "SOUL.md",

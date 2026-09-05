@@ -147,11 +147,12 @@ function cssFiles(dir) {
   });
 }
 for (const file of cssFiles(join(root, "app", "styles")).concat(cssFiles(join(root, "components")))) {
-  if (file.includes(`${join("styles", "themes")}/`)) continue;
+  const projectPath = relative(root, file).replaceAll("\\", "/");
+  if (projectPath.startsWith("app/styles/themes/")) continue;
   assert.doesNotMatch(
     readFileSync(file, "utf8"),
     /\[data-theme=["'](?:beige-dark|beige-light|dark|light|aurora|aurora-light)["']\]/,
-    `${relative(root, file)} must consume tokens instead of branching on a theme id`,
+    `${projectPath} must consume tokens instead of branching on a theme id`,
   );
 }
 assert.match(composer, /background:\s*var\(--composer-surface\)/);

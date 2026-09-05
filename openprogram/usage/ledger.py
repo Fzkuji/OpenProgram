@@ -13,6 +13,7 @@ a future JSONL or remote backend can implement the same two methods.
 """
 from __future__ import annotations
 
+import atexit
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -536,6 +537,7 @@ class UsageLedger:
 
 # Process-wide default ledger. Lazily connects on first append/query.
 default_ledger = UsageLedger()
+atexit.register(default_ledger.close)
 
 
 __all__ = ["UsageLedger", "AggregateRow", "default_ledger"]

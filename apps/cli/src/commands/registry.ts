@@ -13,6 +13,7 @@ export interface SlashCommand {
  *  comes from the worker's unified registry via loadBackendCommands. */
 export const SLASH_COMMANDS: SlashCommand[] = [
   { name: 'help', description: 'Show available commands' },
+  { name: 'keybindings', description: 'Show keyboard shortcuts' },
   { name: 'agents', description: 'List or switch agents' },
   { name: 'agent', description: 'Switch to a different agent' },
   { name: 'model', description: 'Change the model' },

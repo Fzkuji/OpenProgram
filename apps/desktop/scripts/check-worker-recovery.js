@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const {
   createRecoveryState,
   createRecoveryCoordinator,
+  recordWorkerCommandExit,
   startRecoveryCycle,
   beginRecoveryProbe,
   finishRecoveryProbe,
@@ -21,27 +22,50 @@ assert.equal(
   "a recovery cycle must spawn the worker at most once",
 );
 
+recordWorkerCommandExit(coordinator, "start", 1);
 assert.equal(beginRecoveryProbe(state, 6_000), true);
 assert.equal(
-  finishRecoveryProbe(state, coordinator, true, false, 6_000),
+  finishRecoveryProbe(state, coordinator, false, false, 6_000),
+  null,
+  "a rejected start must allow a grace period for a busy worker",
+);
+assert.equal(beginRecoveryProbe(state, 9_000), true);
+assert.equal(
+  finishRecoveryProbe(state, coordinator, false, false, 9_000),
+  "restart",
+  "a live but unresponsive worker is restarted after four failed probes",
+);
+assert.equal(coordinator.restartIssued, true);
+assert.equal(beginRecoveryProbe(state, 12_000), true);
+assert.equal(
+  finishRecoveryProbe(state, coordinator, true, true, 12_000),
+  "load",
+);
+assert.equal(coordinator.startRejected, false);
+assert.equal(coordinator.unreachableProbes, 0);
+
+startRecoveryCycle(state);
+assert.equal(beginRecoveryProbe(state, 15_000), true);
+assert.equal(
+  finishRecoveryProbe(state, coordinator, true, false, 15_000),
   null,
   "a reachable worker without an authenticated URL must keep waiting",
 );
 
-assert.equal(beginRecoveryProbe(state, 9_000), true);
-assert.equal(finishRecoveryProbe(state, coordinator, true, true, 9_000), "load");
+assert.equal(beginRecoveryProbe(state, 18_000), true);
+assert.equal(finishRecoveryProbe(state, coordinator, true, true, 18_000), "load");
 assert.equal(state.active, false);
-assert.equal(beginRecoveryProbe(state, 9_000), false);
+assert.equal(beginRecoveryProbe(state, 18_000), false);
 
 startRecoveryCycle(state);
 assert.equal(
-  beginRecoveryProbe(state, 9_000),
+  beginRecoveryProbe(state, 18_000),
   false,
   "a failed recovered navigation must wait before probing again",
 );
-assert.equal(beginRecoveryProbe(state, 12_000), true);
+assert.equal(beginRecoveryProbe(state, 21_000), true);
 assert.equal(
-  finishRecoveryProbe(state, coordinator, false, false, 12_000),
+  finishRecoveryProbe(state, coordinator, false, false, 21_000),
   "spawn",
   "a new recovery cycle may start the worker once",
 );

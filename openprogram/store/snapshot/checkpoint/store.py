@@ -21,6 +21,10 @@ from .paths import (
 
 
 _STATS_MAX_BYTES = 1024 * 1024
+_DIR_FD_CAPABLE = all(
+    function in os.supports_dir_fd
+    for function in (os.open, os.stat, os.unlink, os.rename, os.link)
+)
 
 
 class MutationJournalError(RuntimeError):
@@ -51,6 +55,14 @@ def _file_kind(mode: int) -> str:
     if stat.S_ISDIR(mode):
         return "directory"
     return "special"
+
+
+def _is_reparse_point(info: os.stat_result) -> bool:
+    """Return whether a Windows directory entry redirects path traversal."""
+
+    attributes = getattr(info, "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return bool(reparse_flag and attributes & reparse_flag)
 
 
 def _has_nul(path: Path) -> bool:
@@ -275,6 +287,9 @@ class CheckpointStore:
     def _inspect_state(self, path: str) -> dict:
         try:
             chain = self._capture_parent_chain(path)
+            if not _DIR_FD_CAPABLE:
+                self._verify_parent_chain(path, chain)
+                return self._inspect_state_path(Path(path))
             descriptor = self._open_verified_parent(path, chain)
         except (FileNotFoundError, NotADirectoryError):
             return {"kind": "absent"}
@@ -295,13 +310,21 @@ class CheckpointStore:
             raise OSError(f"history path has no parent: {path}")
         current = Path(parts[0])
         root_info = os.lstat(current)
-        if not stat.S_ISDIR(root_info.st_mode) or stat.S_ISLNK(root_info.st_mode):
+        if (
+            not stat.S_ISDIR(root_info.st_mode)
+            or stat.S_ISLNK(root_info.st_mode)
+            or _is_reparse_point(root_info)
+        ):
             raise OSError(f"unsafe root for history path: {path}")
         components = []
         for name in parts[1:]:
             current = current / name
             info = os.lstat(current)
-            if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            if (
+                not stat.S_ISDIR(info.st_mode)
+                or stat.S_ISLNK(info.st_mode)
+                or _is_reparse_point(info)
+            ):
                 raise OSError(f"unsafe parent for history path: {current}")
             components.append({"name": name, "dev": info.st_dev, "ino": info.st_ino})
         return {
@@ -309,6 +332,57 @@ class CheckpointStore:
             "root_dev": root_info.st_dev,
             "root_ino": root_info.st_ino,
             "components": components,
+        }
+
+    @staticmethod
+    def _verify_parent_chain(path: str, chain: dict) -> None:
+        """Revalidate a captured chain on hosts without descriptor traversal.
+
+        CPython does not expose ``dir_fd`` directory traversal on Windows.
+        W1 therefore uses a capability-gated path fallback: every parent is
+        re-lstat'ed, junctions/reparse points are rejected, and the recorded
+        file identity must still match immediately before mutation.
+        """
+
+        current = Path(str(chain["root"]))
+        expected = (chain.get("root_dev"), chain.get("root_ino"))
+        info = os.lstat(current)
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or _is_reparse_point(info)
+            or (info.st_dev, info.st_ino) != expected
+        ):
+            raise OSError(f"history root changed before apply: {path}")
+        for component in chain.get("components", []):
+            current = current / component["name"]
+            info = os.lstat(current)
+            if (
+                not stat.S_ISDIR(info.st_mode)
+                or stat.S_ISLNK(info.st_mode)
+                or _is_reparse_point(info)
+                or (info.st_dev, info.st_ino)
+                != (component.get("dev"), component.get("ino"))
+            ):
+                raise OSError(f"history parent changed before apply: {path}")
+
+    @staticmethod
+    def _inspect_state_path(path: Path) -> dict:
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            return {"kind": "absent"}
+        if _is_reparse_point(info):
+            return {"kind": "symlink"}
+        if not stat.S_ISREG(info.st_mode):
+            return {"kind": _file_kind(info.st_mode)}
+        if info.st_nlink != 1:
+            return {"kind": "hardlink", "links": info.st_nlink}
+        return {
+            "kind": "regular",
+            "digest": _digest(path),
+            "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+            "size": info.st_size,
         }
 
     @staticmethod
@@ -634,6 +708,14 @@ class CheckpointStore:
         transaction_id: str,
         expected_current: dict | None = None,
     ) -> str | None:
+        if not _DIR_FD_CAPABLE:
+            return self._apply_state_without_dir_fd(
+                path,
+                state,
+                backup_dir,
+                transaction_id,
+                expected_current,
+            )
         target = Path(path)
         tmp_name = f".{target.name}.{transaction_id}.tmp"
         guard_name = f".{target.name}.{transaction_id}.guard"
@@ -717,12 +799,87 @@ class CheckpointStore:
                 pass
             os.close(parent_descriptor)
 
+    def _apply_state_without_dir_fd(
+        self,
+        path: str,
+        state: dict,
+        backup_dir: Path,
+        transaction_id: str,
+        expected_current: dict | None = None,
+    ) -> str | None:
+        """Apply one journal state where CPython has no ``dir_fd`` support."""
+
+        target = Path(path)
+        temporary = target.parent / f".{target.name}.{transaction_id}.tmp"
+        guard = target.parent / f".{target.name}.{transaction_id}.guard"
+        expected = expected_current or self._inspect_state(path)
+        chain = expected.get("parent_chain") or self._capture_parent_chain(path)
+        self._verify_parent_chain(path, chain)
+        if not self._state_matches(self._inspect_state_path(target), expected):
+            raise OSError(f"stale current state for {path}")
+
+        if state.get("kind") == "regular":
+            blob = (
+                Path(str(state.get("blob_path")))
+                if state.get("blob_path")
+                else backup_dir / str(state.get("blob_ref") or "")
+            )
+            if not blob.is_file():
+                raise OSError(f"missing recovery blob for {path}")
+            if state.get("digest") and _digest(blob) != state.get("digest"):
+                raise OSError(f"recovery blob digest mismatch for {path}")
+            descriptor = os.open(
+                temporary,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                | getattr(os, "O_BINARY", 0),
+                0o600,
+            )
+            try:
+                with blob.open("rb") as source:
+                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                        view = memoryview(chunk)
+                        while view:
+                            written = os.write(descriptor, view)
+                            view = view[written:]
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+
+        try:
+            self._verify_parent_chain(path, chain)
+            if expected.get("kind") == "regular":
+                os.replace(target, guard)
+                moved = self._inspect_state_path(guard)
+                if not self._state_matches(moved, expected):
+                    if not target.exists():
+                        os.replace(guard, target)
+                    raise OSError(f"stale current state for {path}")
+            elif expected.get("kind") != "absent":
+                raise OSError(f"unsafe current state for {path}")
+
+            if state.get("kind") == "regular":
+                try:
+                    os.link(temporary, target)
+                except FileExistsError as exc:
+                    raise OSError(f"external writer created {path}") from exc
+                temporary.unlink()
+            elif state.get("kind") != "absent":
+                raise OSError(f"unsupported target state for {path}")
+            return str(guard) if guard.exists() else None
+        finally:
+            temporary.unlink(missing_ok=True)
+
     def _restore_changed_guard(
         self,
         action: dict,
         guard_path: str,
         transaction_id: str,
     ) -> None:
+        if not _DIR_FD_CAPABLE:
+            self._restore_changed_guard_without_dir_fd(
+                action, guard_path, transaction_id,
+            )
+            return
         target = Path(action["path"])
         guard = Path(guard_path)
         applied_name = f".{target.name}.{transaction_id}.applied"
@@ -745,6 +902,27 @@ class CheckpointStore:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+
+    def _restore_changed_guard_without_dir_fd(
+        self,
+        action: dict,
+        guard_path: str,
+        transaction_id: str,
+    ) -> None:
+        target = Path(action["path"])
+        guard = Path(guard_path)
+        applied = target.parent / f".{target.name}.{transaction_id}.applied"
+        chain = (
+            action["expected_current"].get("parent_chain")
+            or self._capture_parent_chain(action["path"])
+        )
+        self._verify_parent_chain(action["path"], chain)
+        if self._inspect_state_path(target).get("kind") != "absent":
+            os.replace(target, applied)
+            action["recovery_artifact"] = str(applied)
+        if self._inspect_state_path(target).get("kind") != "absent":
+            raise OSError(f"external writer recreated {target}")
+        os.replace(guard, target)
 
     @staticmethod
     def _fsync_directory(path: Path) -> None:

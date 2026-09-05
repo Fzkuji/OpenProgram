@@ -82,7 +82,11 @@ def test_provider_update_waits_to_read_and_preserves_concurrent_api_key(
     provider_read = tmp_path / "provider-read"
     provider_update = tmp_path / "provider-update"
     release = tmp_path / "release"
-    env = {**os.environ, "HOME": os.fspath(home)}
+    env = {
+        **os.environ,
+        "HOME": os.fspath(home),
+        "USERPROFILE": os.fspath(home),
+    }
     api_key_writer = subprocess.Popen(
         [
             sys.executable,
@@ -186,7 +190,11 @@ def test_two_process_custom_provider_creates_preserve_both_providers(
     config.chmod(0o600)
     release = tmp_path / "release"
     ready = [tmp_path / "ready-first", tmp_path / "ready-second"]
-    env = {**os.environ, "HOME": os.fspath(home)}
+    env = {
+        **os.environ,
+        "HOME": os.fspath(home),
+        "USERPROFILE": os.fspath(home),
+    }
     script = """
 import sys, time
 from pathlib import Path
@@ -263,7 +271,8 @@ def test_outbound_url_security_update_preserves_mode_and_unrelated_config(
             }
         },
     }
-    assert (cfgp.stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":
+        assert (cfgp.stat().st_mode & 0o777) == 0o600
 
 
 def test_provider_update_waits_to_read_and_preserves_concurrent_api_key(
@@ -279,7 +288,11 @@ def test_provider_update_waits_to_read_and_preserves_concurrent_api_key(
     provider_read = tmp_path / "provider-read"
     provider_update = tmp_path / "provider-update"
     release = tmp_path / "release"
-    env = {**os.environ, "HOME": os.fspath(home)}
+    env = {
+        **os.environ,
+        "HOME": os.fspath(home),
+        "USERPROFILE": os.fspath(home),
+    }
     api_key_writer = subprocess.Popen(
         [
             sys.executable,
@@ -362,7 +375,11 @@ def test_two_process_custom_provider_creates_preserve_both_providers(
     config.chmod(0o600)
     release = tmp_path / "release"
     ready = [tmp_path / "ready-first", tmp_path / "ready-second"]
-    env = {**os.environ, "HOME": os.fspath(home)}
+    env = {
+        **os.environ,
+        "HOME": os.fspath(home),
+        "USERPROFILE": os.fspath(home),
+    }
     script = """
 import sys, time
 from pathlib import Path

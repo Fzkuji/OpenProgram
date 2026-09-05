@@ -125,6 +125,7 @@ export type {
 
 export interface DesktopBridge {
   readonly isDesktop: true;
+  readonly platform?: "darwin" | "win32" | "linux";
   readonly windowId: string;
   /** Absolute native path for a user-selected/dropped File. */
   getPathForFile?(file: File): string;

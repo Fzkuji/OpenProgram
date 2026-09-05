@@ -8,6 +8,12 @@ import pytest
 from tests.support.waiting import wait_until
 
 
+# Starting a job includes a durable jobs.json write and a session Git commit.
+# Same-session commits are intentionally serialized; Windows filesystem and
+# Defender latency can make a healthy pickup exceed the old one-second waits.
+WORKER_START_TIMEOUT = 5.0
+
+
 def _wait_for_stamped_cancel_reason(session_id: str) -> None:
     """Hold the fake turn until cancel has a stored reason.
 

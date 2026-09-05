@@ -42,7 +42,7 @@ def _log(text: str) -> None:
     the webui ``_log`` import failed. That polluted CLI chat with
     "[probe] xxx unavailable" lines on every startup. Now: broadcast
     via webui when available, always write to
-    ``~/.openprogram/logs/runtime.log``, only mirror to stderr when
+    the active profile's ``logs/runtime.log``, only mirror to stderr when
     ``OPENPROGRAM_DEBUG_RUNTIME=1``. Per-call sites that DO want to
     surface a one-liner to the user (e.g. "no provider available")
     use ``_user_log`` instead.
@@ -53,8 +53,9 @@ def _log(text: str) -> None:
     except Exception:
         pass
     try:
-        from pathlib import Path as _Path
-        log_dir = _Path.home() / ".openprogram" / "logs"
+        from openprogram.paths import get_logs_dir
+
+        log_dir = get_logs_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
         with open(log_dir / "runtime.log", "a", encoding="utf-8") as f:
             import time as _time

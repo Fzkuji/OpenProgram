@@ -43,7 +43,9 @@ and is not a normal product installation path.
 `openprogram doctor` runs a fast end-to-end check: the
 Python/Node/git toolchain, skills and plugins loading, provider
 credentials, MCP servers, disk cache, and whether the worker is
-listening on :18100. `openprogram rescue` goes beyond diagnosis
+listening on :18100. On Windows it also reports long-path configuration and a
+read-only Defender performance advisory. It never changes the registry,
+Defender exclusions, or file ACLs. `openprogram rescue` goes beyond diagnosis
 and prints the fix commands directly. Read their output before
 raising an issue.
 

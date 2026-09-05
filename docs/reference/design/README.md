@@ -194,7 +194,7 @@ Extension gating design + reference comparison — see
 | Doc | Topic |
 |---|---|
 | [`distribution/installation-packaging.html`](distribution/installation-packaging.html) | Complete-product installation, packaging, platform support, and release artifacts |
-| [`distribution/automatic-updates.html`](distribution/automatic-updates.html) | Stable Release discovery, Desktop verified DMG handoff, managed CLI atomic activation, trust boundaries, UI states, and implementation evidence |
+| [`distribution/automatic-updates.html`](distribution/automatic-updates.html) | Stable Release discovery, verified macOS/Windows Desktop installer handoff, managed CLI atomic activation, trust boundaries, UI states, and implementation evidence |
 | [`distribution/implementation-plan.md`](distribution/implementation-plan.md) | Historical distribution implementation evidence not duplicated by the current designs |
 
 ## plans/ — dated implementation plans

@@ -2,14 +2,14 @@
 =============================================================================
  OpenProgram - legacy source-development installer (Windows / PowerShell)
 -----------------------------------------------------------------------------
- Windows release installation, packaging, and compatibility are not supported.
- This script remains only for existing source-development workflows.
+ Windows release installation is handled by the root `install.ps1` bootstrap
+ and packaged release installer. This legacy script remains the editable
+ source-development workflow.
  Brings up the OpenProgram HOST so `openprogram` just works:
    1. Verify (or winget-install) the system toolchain: Python 3.11+, Node 20+, git
-   2. Python env (uses an active venv/conda, else creates .\.venv)
+   2. Python env (creates/reuses .\.venv unless -Python is supplied)
    3. OpenProgram (editable) + its deps
-   4. Web UI:  web\ -> npm install && npm run build  (served on :18100)
-      (Windows uses the Rich REPL, not the Ink TUI, so cli\ is not built)
+   4. Web + terminal UI: builds apps/web and the full Ink TUI in apps/cli
    5. Default extras [all]: browser tool (Playwright + Chromium) + channels
 
  Agentic programs (GUI / Research / Wiki) are NOT installed here - the
@@ -19,9 +19,10 @@
  Non-interactive: pass -Programs <gui|research|wiki|all> (comma-separated
  or repeated) to install them right after the main install.
 
- -Minimal skips 4(build)/5/6 - a bare host for servers; everything it
+ -Minimal skips the Web build and optional extras - a bare host for servers; everything it
  skipped can be added later (openprogram programs install all,
- pip install -e .[all], cd web; npm run build).
+ pip install -e .[all], npm ci --include-workspace-root,
+ npm run build --workspace apps/web, npm run build --workspace apps/cli).
 
  The GUI harness's torch build is whatever pip resolves. For an explicit
  CUDA/CPU variant run the harness's own installer afterwards:
@@ -70,6 +71,17 @@ function Ok($m){ Write-Host "  ok $m" -ForegroundColor Green }
 function Warn($m){ Write-Host "  !! $m" -ForegroundColor Yellow }
 function Die($m){ Write-Host "ERROR $m" -ForegroundColor Red; exit 1 }
 
+function Invoke-CheckedNative {
+  param(
+    [Parameter(Mandatory=$true)][string]$Description,
+    [Parameter(Mandatory=$true)][string]$Command,
+    [Parameter(ValueFromRemainingArguments=$true)][string[]]$CommandArgs
+  )
+  & $Command @CommandArgs
+  $code = $LASTEXITCODE
+  if ($code -ne 0) { Die "$Description failed (exit $code)" }
+}
+
 function Have($name){ return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 
 # Non-interactive signals — treated exactly like -Yes (defaults, no prompts).
@@ -85,7 +97,10 @@ function Test-NonInteractive {
   return $false
 }
 function Winget-Install($id){
-  if (Have winget) { winget install --silent --accept-package-agreements --accept-source-agreements -e --id $id }
+  if (Have winget) {
+    winget install --silent --accept-package-agreements --accept-source-agreements -e --id $id
+    if ($LASTEXITCODE -ne 0) { Die "winget could not install $id (exit $LASTEXITCODE)" }
+  }
   else { Warn "winget not available - install $id manually" }
 }
 
@@ -114,7 +129,12 @@ if (-not $Bootstrapped -and -not (Test-OpenProgramCheckout $HostRoot)) {
   if (Test-Path $dest) {
     if (Test-OpenProgramCheckout $dest) {
       Step "reusing existing OpenProgram checkout at $dest"
-      Push-Location $dest; try { git pull --ff-only } finally { Pop-Location }
+      Push-Location $dest
+      try {
+        git pull --ff-only
+        if ($LASTEXITCODE -ne 0) { Die "git pull --ff-only failed in $dest" }
+      }
+      finally { Pop-Location }
     } else {
       Die "target exists but is not an OpenProgram checkout: $dest (remove it or pass -Target DIR)"
     }
@@ -138,23 +158,77 @@ if (-not $Bootstrapped -and -not (Test-OpenProgramCheckout $HostRoot)) {
 }
 Step "checking system toolchain (python3.11+, node20+, git)"
 if (-not (Have git))  { Step "installing git";    Winget-Install "Git.Git" }
-if (Have git)  { Ok "git: $(git --version)" } else { Warn "git missing" }
-if (-not (Have node)) { Step "installing Node.js"; Winget-Install "OpenJS.NodeJS.LTS" }
+if (Have git)  { Ok "git: $(git --version)" } else { Die "git missing after installation; open a new PowerShell and run this installer again" }
+if (-not $Minimal -and -not (Have node)) { Step "installing Node.js"; Winget-Install "OpenJS.NodeJS.LTS" }
 if (Have node) {
   $nodeMajor = [int]((node -p "process.versions.node.split('.')[0]") 2>$null)
-  if ($nodeMajor -ge 20) { Ok "node: $(node --version)" } else { Warn "node $(node --version) < 20 - upgrade to Node 20+" }
-} else { Warn "node not found - the web UI needs Node 20+ (https://nodejs.org)" }
+  if ($nodeMajor -ge 20 -and $nodeMajor -le 22) { Ok "node: $(node --version)" }
+  elseif ($nodeMajor -gt 22) { Warn "node $(node --version) is newer than the validated Node 22 LTS; continuing with workspace-scoped installs" }
+  else { Die "node $(node --version) < 20 - upgrade to Node 20+ (Node 22 LTS recommended)" }
+} elseif (-not $Minimal) { Die "node not found after installation; open a new PowerShell and run this installer again" }
+else { Warn "node not found (allowed by -Minimal)" }
 
 # ---- 2. Python env ----------------------------------------------------------
+function Test-IsolatedCheckoutVenv {
+  $python = "$HostRoot\.venv\Scripts\python.exe"
+  $config = "$HostRoot\.venv\pyvenv.cfg"
+  if (-not (Test-Path $python) -or -not (Test-Path $config)) { return $false }
+  if (Select-String -LiteralPath $config -Pattern '^include-system-site-packages\s*=\s*true\s*$' -Quiet) {
+    return $false
+  }
+  & $python -c "import sys; assert sys.version_info[:2] >= (3,11)" *> $null
+  return ($LASTEXITCODE -eq 0)
+}
+
+function New-CheckoutVenv([switch]$Clear) {
+  $candidates = New-Object System.Collections.Generic.List[object]
+  if ($env:CONDA_PREFIX -and (Test-Path "$env:CONDA_PREFIX\python.exe")) {
+    $candidates.Add([pscustomobject]@{ Command="$env:CONDA_PREFIX\python.exe"; Prefix=@() })
+  }
+  $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+  if ($launcher) {
+    $candidates.Add([pscustomobject]@{ Command=$launcher.Source; Prefix=@("-3") })
+  }
+  $pathPython = Get-Command python.exe -ErrorAction SilentlyContinue
+  if ($pathPython) {
+    $candidates.Add([pscustomobject]@{ Command=$pathPython.Source; Prefix=@() })
+  }
+  foreach ($common in @(
+    "$HOME\miniconda3\python.exe",
+    "$HOME\anaconda3\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe"
+  )) {
+    if (Test-Path $common) {
+      $candidates.Add([pscustomobject]@{ Command=$common; Prefix=@() })
+    }
+  }
+  foreach ($candidate in $candidates) {
+    if ($candidate.Command.StartsWith("$HostRoot\.venv\", [StringComparison]::OrdinalIgnoreCase)) {
+      continue
+    }
+    & $candidate.Command @($candidate.Prefix) -c "import sys; assert sys.version_info[:2] >= (3,11)" *> $null
+    if ($LASTEXITCODE -ne 0) { continue }
+    $venvArgs = @($candidate.Prefix) + @("-m", "venv")
+    if ($Clear) { $venvArgs += "--clear" }
+    $venvArgs += "$HostRoot\.venv"
+    & $candidate.Command @venvArgs
+    if ($LASTEXITCODE -eq 0 -and (Test-IsolatedCheckoutVenv)) { return }
+  }
+  Die "no working Python 3.11+ found; install Python 3.12 and run this installer again"
+}
+
 function Resolve-Python {
   if ($Python) { return $Python }
-  if ($env:VIRTUAL_ENV -and (Test-Path "$env:VIRTUAL_ENV\Scripts\python.exe")) { return "$env:VIRTUAL_ENV\Scripts\python.exe" }
-  if ($env:CONDA_PREFIX -and (Test-Path "$env:CONDA_PREFIX\python.exe"))        { return "$env:CONDA_PREFIX\python.exe" }
-  if (Test-Path "$HostRoot\.venv\Scripts\python.exe")                          { return "$HostRoot\.venv\Scripts\python.exe" }
-  $base = (Get-Command python -ErrorAction SilentlyContinue).Source
-  if (-not $base) { Die "no python found - install Python 3.11+ first (https://www.python.org/downloads/)" }
+  if (Test-IsolatedCheckoutVenv) { return "$HostRoot\.venv\Scripts\python.exe" }
+  $clear = Test-Path "$HostRoot\.venv"
+  if ($clear) { Warn "existing .venv is invalid or exposes system site-packages; rebuilding it" }
   Step "creating virtualenv at $HostRoot\.venv"
-  & $base -m venv "$HostRoot\.venv"
+  New-CheckoutVenv -Clear:$clear
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$HostRoot\.venv\Scripts\python.exe")) {
+    Die "could not create virtualenv at $HostRoot\.venv"
+  }
   return "$HostRoot\.venv\Scripts\python.exe"
 }
 $PY = Resolve-Python
@@ -165,26 +239,53 @@ function Pip {
   & $PY -m pip @args 2>&1 | ForEach-Object { Write-Host $_ }
   if ($LASTEXITCODE -ne 0) { Die "pip $($args -join ' ') failed (exit $LASTEXITCODE)" }
 }
-& $PY -m pip install --quiet --upgrade pip *> $null
+Pip install --quiet --upgrade pip
 
 # ---- 3. OpenProgram (editable) ----------------------------------------------
 Step "installing OpenProgram (editable) from $HostRoot"
 Pip install -e "$HostRoot"
 Ok "openprogram installed"
 
-# ---- 4. web frontend deps ---------------------------------------------------
+function Install-CliLauncher {
+  $binDir = Join-Path $env:LOCALAPPDATA "OpenProgram\bin"
+  New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+  $launcher = Join-Path $binDir "openprogram.cmd"
+  $quotedPython = $PY.Replace('%', '%%')
+  $content = "@echo off`r`n`"$quotedPython`" -m openprogram %*`r`n"
+  [System.IO.File]::WriteAllText($launcher, $content, [System.Text.Encoding]::ASCII)
+
+  $separator = [IO.Path]::PathSeparator
+  $currentParts = @($env:Path -split [Regex]::Escape([string]$separator))
+  if (-not ($currentParts | Where-Object { $_ -ieq $binDir })) {
+    $env:Path = "$binDir$separator$env:Path"
+  }
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $userParts = @($userPath -split [Regex]::Escape([string]$separator))
+  if (-not ($userParts | Where-Object { $_ -ieq $binDir })) {
+    $updated = if ($userPath) { "$userPath$separator$binDir" } else { $binDir }
+    [Environment]::SetEnvironmentVariable("Path", $updated, "User")
+  }
+  Ok "CLI launcher: $launcher (added to your user PATH)"
+}
+Install-CliLauncher
+
+# ---- 4. web + terminal frontend deps ----------------------------------------
 function Install-Web {
-  if (-not (Have npm)) { Warn "npm missing - skipping web UI deps"; return }
+  if ($Minimal) { Warn "skipping web/TUI dependencies and builds (-Minimal)"; return }
+  if (-not (Have npm)) { Die "npm missing - cannot install the web/TUI" }
   if (-not (Test-Path "$HostRoot\apps\web\package.json")) { Warn "apps/web/ not found - skipping"; return }
-  Step "installing web UI deps (apps/web/ - Next.js)"
+  if (-not (Test-Path "$HostRoot\apps\cli\package.json")) { Warn "apps/cli/ not found - skipping"; return }
+  Step "installing web and terminal UI dependencies"
   Push-Location "$HostRoot"
   try {
-    cmd /c "npm install"
-    if ($Minimal) { Warn "skipping web production build (-Minimal) - the worker builds it on first start" }
-    else { Step "building web production bundle"; cmd /c "npm run build --workspace apps/web" }
+    Invoke-CheckedNative "frontend dependency install" "npm.cmd" ci --include-workspace-root --ignore-scripts --no-audit --no-fund
+    Step "building web production bundle"
+    Invoke-CheckedNative "web production build" "npm.cmd" run build --workspace apps/web
+    Step "building terminal UI bundle"
+    Invoke-CheckedNative "terminal UI production build" "npm.cmd" run build --workspace apps/cli
   }
   finally { Pop-Location }
-  Ok "web UI ready (:18100 serves both the UI and the API)"
+  Ok "web UI and terminal UI ready"
 }
 
 # ---- 6. default extras: [all] = browser + channels (opt out with -Minimal) ----
@@ -194,18 +295,24 @@ function Install-DefaultExtras {
   Pip install -e "${HostRoot}[all]"
   Step "fetching Playwright Chromium (~150MB)"
   & $PY -m playwright install chromium
-  if ($LASTEXITCODE -ne 0) { Warn "playwright chromium download failed - run '& `"$PY`" -m playwright install chromium' later (needs network)" }
+  if ($LASTEXITCODE -ne 0) { Die "playwright chromium download failed (needs network)" }
 }
 
 # ---- 7. heavier opt-in extras: stealth browsers / agent-browser ---------------
 function Install-Extras {
   if ($Stealth) {
     Step "installing stealth browser (patchright + camoufox)"; Pip install -e "${HostRoot}[browser-stealth]"
-    & $PY -m patchright install chromium 2>$null; & $PY -m camoufox fetch 2>$null
+    & $PY -m patchright install chromium
+    if ($LASTEXITCODE -ne 0) { Die "patchright Chromium install failed" }
+    & $PY -m camoufox fetch
+    if ($LASTEXITCODE -ne 0) { Die "camoufox fetch failed" }
   }
   if ($AgentBrowser) {
     Step "installing agent-browser (global npm)"
-    if (Have npm) { cmd /c "npm install -g agent-browser"; cmd /c "agent-browser install" } else { Warn "npm missing" }
+    if (Have npm) {
+      Invoke-CheckedNative "agent-browser npm install" "npm.cmd" install -g agent-browser
+      Invoke-CheckedNative "agent-browser browser install" "agent-browser.cmd" install
+    } else { Die "npm missing - cannot install agent-browser" }
   }
 }
 
@@ -257,8 +364,8 @@ function Install-Programs {
   # and -Programs gui -Programs research both fan out to one call each.
   foreach ($name in ($Programs -join ',').Split(',', [StringSplitOptions]::RemoveEmptyEntries)) {
     Step "installing agentic program: $name"
-    openprogram programs install $name
-    if ($LASTEXITCODE -ne 0) { Warn "program install failed: $name" }
+    & $PY -m openprogram programs install $name
+    if ($LASTEXITCODE -ne 0) { Die "program install failed: $name" }
   }
 }
 

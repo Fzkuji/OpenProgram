@@ -19,6 +19,8 @@ resources:
 
     npm run dist        # build, validate, and replace /Applications/OpenProgram.app
     npm run dist:mac    # release-only, explicitly unsigned DMG + ZIP
+    npm run dist:win          # Windows x64 NSIS package with the complete runtime
+    npm run dist:win:arm64    # Windows arm64 NSIS package with the complete runtime
 
 `npm run dist` builds the unpacked app in a random temporary directory. It never
 opens that temporary bundle. After validation it replaces the single canonical
@@ -30,6 +32,15 @@ need them.
 
 Packaged builds never fall back to `PATH`, system Python, conda, or the source
 checkout. The tag workflow builds explicitly unsigned macOS artifacts and uses
-no Apple signing or notarization credentials. Linux source development can run
-Electron directly, but no Linux desktop artifact is published until a complete
-packaged public-entry gate passes.
+no Apple signing or notarization credentials. The Windows tag job requires the
+Windows signing certificate secrets, signs both the application executable and
+NSIS installer, verifies Authenticode, and smoke-tests the embedded runtime.
+Missing signing credentials fail publication; local unsigned Windows builds are
+development artifacts only. Linux source development can run Electron directly,
+but no Linux desktop artifact is published until a complete packaged
+public-entry gate passes.
+
+Windows Terminal panes use Windows PowerShell through ConPTY, with `COMSPEC` as
+the fallback. The Desktop updater downloads the exact `win-x64.exe` or `win-arm64.exe`, checks its
+size and SHA-256, verifies Authenticode, and then opens the visible installer.
+No Windows Desktop path changes file ACLs.

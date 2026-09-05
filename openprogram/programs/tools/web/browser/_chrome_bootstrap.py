@@ -1,8 +1,8 @@
 """Auto-launch a sidecar Chrome instance with CDP enabled.
 
 The browser tool's explicit `engine="auto"` mode calls into here when no
-desktop CDP target is available. The sidecar profile is stored at
-`~/.openprogram/chrome-profile`
+desktop CDP target is available. The sidecar profile is stored under the
+active OpenProgram profile (``<state>/chrome-profile``)
 (a copy of the user's real Chrome profile so saved logins / extensions
 work) and listens on a fixed port. Subsequent open() calls just
 connect_over_cdp to the running sidecar.
@@ -26,6 +26,8 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
+
+from openprogram._compat import no_window_creation_flags
 
 
 DEFAULT_PORT = 9222
@@ -126,11 +128,15 @@ def real_user_data_dir() -> str:
 
 
 def sidecar_dir() -> Path:
-    return Path.home() / ".openprogram" / "chrome-profile"
+    from openprogram.paths import get_state_dir
+
+    return get_state_dir() / "chrome-profile"
 
 
 def port_file() -> Path:
-    return Path.home() / ".openprogram" / "browser-cdp-port"
+    from openprogram.paths import get_state_dir
+
+    return get_state_dir() / "browser-cdp-port"
 
 
 def is_port_listening(port: int, host: str = "127.0.0.1", timeout: float = 0.3) -> bool:
@@ -231,7 +237,9 @@ def ensure_sidecar_profile() -> bool:
 
 
 def _bootstrap_lock_path() -> Path:
-    return Path.home() / ".openprogram" / "browser-cdp.lock"
+    from openprogram.paths import get_state_dir
+
+    return get_state_dir() / "browser-cdp.lock"
 
 
 def _acquire_bootstrap_lock(timeout_s: float = 60.0):
@@ -316,6 +324,7 @@ def launch_sidecar_chrome(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
+            creationflags=no_window_creation_flags(),
         )
         deadline = time.time() + timeout_s
         while time.time() < deadline:

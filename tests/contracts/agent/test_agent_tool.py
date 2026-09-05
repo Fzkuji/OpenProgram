@@ -10,8 +10,13 @@ import pytest
 def store(tmp_path, monkeypatch):
     from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
+    from openprogram.agent.job import runner as runner_mod
+    from openprogram import store as store_mod
+
+    runner_mod.shutdown_runner()
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
+    monkeypatch.setattr(store_mod, "default_store", lambda: s)
     monkeypatch.setattr(
         "openprogram.store.session.session_store.default_store", lambda: s,
     )
@@ -25,7 +30,8 @@ def store(tmp_path, monkeypatch):
         "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "init")
-    return s
+    yield s
+    runner_mod.shutdown_runner()
 
 
 @pytest.fixture

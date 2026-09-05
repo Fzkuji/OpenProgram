@@ -228,5 +228,6 @@ def test_saving_state_leaves_no_temporary_behind(tmp_path):
     assert len(names) == 2, "each write picks a name of its own"
     assert all(str(os.getpid()) in name for name in names)
     assert list(store.path.parent.glob("*.tmp")) == []
-    assert store.path.stat().st_mode & 0o777 == 0o644
+    if os.name != "nt":
+        assert store.path.stat().st_mode & 0o777 == 0o644
     assert store.load().local_tokens == 2

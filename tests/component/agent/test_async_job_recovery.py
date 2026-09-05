@@ -7,6 +7,7 @@ import pytest
 
 from tests.component.agent.async_job_support import (
     _FakeMonotonic,
+    WORKER_START_TIMEOUT,
     fake_worker,
     store_fixture,
 )
@@ -619,7 +620,7 @@ def test_borrowed_child_runtime_budget_cancels_child_and_cleans_runtime(
         parent_msg_id="a1",
     )
     try:
-        assert child_entered.wait(1.0)
+        assert child_entered.wait(WORKER_START_TIMEOUT)
         child_id = child_ids[0]
         assert child_id != parent_id
         runtime_row = runner._governor.ledger.connection().execute(
@@ -741,7 +742,7 @@ def test_borrowed_child_activity_refreshes_child_and_parent_idle(
         parent_msg_id="a1",
     )
     try:
-        assert child_entered.wait(1.0)
+        assert child_entered.wait(WORKER_START_TIMEOUT)
         child_id = child_ids[0]
         assert child_id != parent_id
         clock.advance(0.75)
@@ -881,7 +882,7 @@ def test_explicit_cancel_of_borrowed_child_is_job_keyed_and_cleans_up(
         parent_msg_id="a1",
     )
     try:
-        assert child_entered.wait(1.0)
+        assert child_entered.wait(WORKER_START_TIMEOUT)
         child_id = child_ids[0]
         assert child_id != parent_id
         child_token = run_control.current_token("p1", execution_id=child_id)
@@ -939,7 +940,7 @@ def test_runner_spawn_persists_durable_admission(
         assert job.admission_id
         assert job.budget_scope_id
         assert job.effective_limits["max_live_per_session"] == 1
-        assert fake_worker[3].wait(2)
+        assert fake_worker[3].wait(WORKER_START_TIMEOUT)
         assert ledger.connection().execute(
             "SELECT state FROM job_admissions WHERE job_id = ?", (tid,),
         ).fetchone()[0] == "live"

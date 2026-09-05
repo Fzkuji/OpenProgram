@@ -47,3 +47,15 @@ openprogram --profile dev web          # http://localhost:18200
 ```
 
 Each instance has its own sessions, config, logs, and background worker; `openprogram status` reports on the default instance, `openprogram --profile dev status` on the development one.
+
+On Linux, persistent workers are isolated too. Install each profile from its
+own command context and OpenProgram creates a separate systemd user service:
+
+```bash
+openprogram worker install
+openprogram --profile dev worker install
+```
+
+After that, `worker start`, `stop`, `restart`, `status`, and `uninstall` only
+operate on the active profile's service. Stopping or upgrading the `dev`
+worker does not replace or stop the default worker.

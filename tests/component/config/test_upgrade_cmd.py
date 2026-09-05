@@ -227,13 +227,23 @@ def test_deps_run_only_when_manifests_change(repo, monkeypatch, capsys):
     monkeypatch.setattr(up, "_git", _fake_git(repo, fetch_head=target))
     monkeypatch.setattr(up, "_cold_start_probe", lambda root, sha: "probe ok")
     ran: list[list[str]] = []
-    monkeypatch.setattr(up, "_run_or_fail",
-                        lambda cmd, cwd, reason: ran.append(cmd))
+    monkeypatch.setattr(
+        up,
+        "_run_or_fail",
+        lambda cmd, cwd, reason, **kwargs: ran.append((cmd, kwargs)),
+    )
 
     up.run_upgrade(channel="stable", no_restart=True, as_json=True)
     capsys.readouterr()
-    assert ran[0][-3:] == ["install", "-e", "."]
-    assert ["npm", "ci"] in ran
+    assert ran[0][0][-3:] == ["install", "-e", "."]
+    npm_cmd, npm_options = ran[1]
+    assert npm_cmd == [
+        "npm",
+        "ci",
+        "--include-workspace-root",
+        "--ignore-scripts",
+    ]
+    assert npm_options == {"node_tool": True}
 
 
 def test_deps_skipped_when_manifests_unchanged(repo, monkeypatch, capsys):

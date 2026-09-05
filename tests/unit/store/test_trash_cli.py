@@ -3,6 +3,7 @@ def _record_one_deletion(tmp_path, monkeypatch):
 
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr("openprogram.paths._migration_checked", True)
     source = tmp_path / "deleted.txt"
     source.write_text("recover")

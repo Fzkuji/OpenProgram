@@ -41,9 +41,703 @@ Notes on Windows ``flock`` semantics:
 from __future__ import annotations
 
 import os as _os
+import functools as _functools
 import signal as _signal
 import subprocess as _subprocess
 import sys as _sys
+
+
+def install_asyncio_exception_handler(loop) -> None:
+    """Install the small set of platform-specific asyncio workarounds.
+
+    On Windows, CPython's proactor transport can report a peer reset from
+    ``_call_connection_lost`` *after* the WebSocket has already completed its
+    normal disconnect path.  The callback runs outside application code, so
+    catching ``WebSocketDisconnect`` cannot prevent the noisy ``WinError
+    10054`` traceback.  Suppress only that exact transport-teardown callback;
+    every other loop exception keeps the caller's existing/default handling.
+    """
+
+    previous = loop.get_exception_handler()
+
+    def _handler(active_loop, context) -> None:
+        exception = context.get("exception")
+        handle = context.get("handle")
+        callback = getattr(handle, "_callback", None)
+        owner = getattr(callback, "__self__", None)
+        callback_name = getattr(callback, "__name__", "")
+        owner_module = getattr(type(owner), "__module__", "")
+        winerror = getattr(exception, "winerror", None)
+        benign_windows_disconnect = (
+            _sys.platform == "win32"
+            and isinstance(exception, ConnectionResetError)
+            and winerror == 10054
+            and callback_name == "_call_connection_lost"
+            and owner_module == "asyncio.proactor_events"
+        )
+        if benign_windows_disconnect:
+            return
+        if previous is not None:
+            previous(active_loop, context)
+        else:
+            active_loop.default_exception_handler(context)
+
+    loop.set_exception_handler(_handler)
+
+
+def filesystem_path(path) -> str:
+    """Return a Win32-safe spelling for a local filesystem path.
+
+    Python still reaches legacy ``MAX_PATH`` APIs when Windows long-path
+    policy is disabled.  The extended-length prefix bypasses that process-
+    external registry dependency without changing the path on POSIX.  Keep
+    this conversion at the compatibility seam so product modules do not grow
+    scattered ``\\\\?\\`` branches.
+    """
+
+    value = _os.fspath(path)
+    if _sys.platform != "win32" or not isinstance(value, str):
+        return value
+    if value.startswith("\\\\?\\"):
+        return value
+    absolute = _os.path.abspath(value)
+    if len(absolute) < 248:
+        return absolute
+    if absolute.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + absolute[2:]
+    return "\\\\?\\" + absolute
+
+
+def no_window_creation_flags() -> int:
+    """Flags for background subprocesses that must not flash a console."""
+
+    if _sys.platform != "win32":
+        return 0
+    return int(getattr(_subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def process_tree_popen_kwargs() -> dict[str, object]:
+    """Creation options for a child that may need whole-tree termination.
+
+    POSIX tree termination is only safe when the child leads its own session;
+    otherwise a shell inherits the caller's process group and ``killpg`` could
+    terminate OpenProgram itself.  Windows ``taskkill /T`` discovers descendants
+    by PID, while ``CREATE_NEW_PROCESS_GROUP`` keeps console control events from
+    leaking between the child command and the interactive parent.
+    """
+
+    if _sys.platform == "win32":
+        flags = no_window_creation_flags()
+        flags |= int(getattr(_subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        return {"creationflags": flags}
+    return {"start_new_session": True}
+
+
+class ProcessTreeOwner:
+    """Own one subprocess tree independently of its original leader.
+
+    A process PID is not a durable tree handle.  A shell can start a
+    background child and exit while that child still owns one of our capture
+    pipes; by the time ``communicate()`` times out, ``taskkill /T /PID`` (and
+    ``getpgid(pid)`` on POSIX) can no longer find the descendants through the
+    dead shell.
+
+    POSIX solves this by creating a session and retaining its process-group
+    id.  Windows needs a kernel Job Object.  The process is created suspended,
+    assigned to a kill-on-close job, and only then resumed, so there is no
+    startup race in which it can spawn an unowned descendant.
+
+    Call :meth:`release` after normal completion to let deliberately detached
+    descendants keep running.  Call :meth:`terminate` on timeout or failure to
+    force-kill everything still owned by the tree.
+    """
+
+    def __init__(self) -> None:
+        self._pgid: int | None = None
+        self._job_handle: int | None = None
+        self._started = False
+        self._finished = False
+
+    def __del__(self) -> None:
+        # Ownership is intentionally fail-closed: an exception between spawn
+        # and the caller's explicit release must not strand a child tree.  At
+        # interpreter shutdown module globals may already be cleared, hence
+        # the broad guard in this last-resort path only.
+        try:
+            self.terminate()
+        except BaseException:
+            pass
+
+    def popen(self, *args, **kwargs) -> _subprocess.Popen:
+        """Start and take ownership of one process tree."""
+
+        if self._started:
+            raise RuntimeError("a ProcessTreeOwner can only start one process")
+        self._started = True
+        if _sys.platform == "win32":
+            return self._popen_windows(*args, **kwargs)
+
+        if "start_new_session" in kwargs:
+            raise TypeError(
+                "ProcessTreeOwner controls the start_new_session option"
+            )
+        proc = _subprocess.Popen(*args, start_new_session=True, **kwargs)
+        # start_new_session makes the initial PID the new PGID.  Retain that
+        # value instead of asking getpgid(pid) during cleanup: the leader may
+        # already be a reaped shell while background members still exist.
+        self._pgid = proc.pid
+        return proc
+
+    def _popen_windows(self, *args, **kwargs) -> _subprocess.Popen:
+        if "creationflags" in kwargs:
+            creationflags = int(kwargs.pop("creationflags"))
+        else:
+            creationflags = 0
+        creationflags |= no_window_creation_flags()
+        creationflags |= int(
+            getattr(_subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        )
+        creationflags |= int(getattr(_subprocess, "CREATE_SUSPENDED", 0x00000004))
+
+        job_handle = _windows_create_kill_on_close_job()
+        proc: _subprocess.Popen | None = None
+        assigned = False
+        try:
+            proc = _subprocess.Popen(
+                *args,
+                creationflags=creationflags,
+                **kwargs,
+            )
+            _windows_assign_process_to_job(job_handle, proc)
+            assigned = True
+            _windows_resume_process(proc.pid)
+        except BaseException:
+            # A CREATE_SUSPENDED process has not had an opportunity to spawn
+            # children.  If assignment succeeded, closing the kill-on-close
+            # job is the most reliable cleanup; otherwise terminate the one
+            # suspended process directly.
+            if assigned:
+                _windows_terminate_and_close_job(job_handle)
+            else:
+                _windows_close_handle(job_handle)
+                if proc is not None:
+                    kill = getattr(proc, "kill", None)
+                    try:
+                        if kill is not None:
+                            kill()
+                    except OSError:
+                        pass
+            if proc is not None:
+                wait = getattr(proc, "wait", None)
+                try:
+                    if wait is not None:
+                        wait(timeout=2)
+                except (OSError, _subprocess.TimeoutExpired):
+                    pass
+                for name in ("stdin", "stdout", "stderr"):
+                    stream = getattr(proc, name, None)
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except OSError:
+                            pass
+            raise
+
+        self._job_handle = job_handle
+        return proc
+
+    def terminate(self) -> bool:
+        """Force-kill the owned tree.  Best-effort and idempotent."""
+
+        if self._finished:
+            return False
+        self._finished = True
+        if _sys.platform == "win32":
+            job_handle, self._job_handle = self._job_handle, None
+            if job_handle is None:
+                return False
+            return _windows_terminate_and_close_job(job_handle)
+
+        pgid, self._pgid = self._pgid, None
+        if pgid is None:
+            return False
+        try:
+            _os.killpg(pgid, _signal.SIGKILL)
+            return True
+        except (ProcessLookupError, PermissionError, OSError):
+            return False
+
+    def release(self) -> None:
+        """Release a normally completed tree without killing descendants."""
+
+        if self._finished:
+            return
+        self._finished = True
+        if _sys.platform == "win32":
+            job_handle, self._job_handle = self._job_handle, None
+            if job_handle is not None:
+                _windows_release_job(job_handle)
+        else:
+            self._pgid = None
+
+
+@_functools.cache
+def _windows_job_api():
+    """Return lazily configured kernel32 Job/Thread API bindings."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    class BasicLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_longlong),
+            ("PerJobUserTimeLimit", ctypes.c_longlong),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class IoCounters(ctypes.Structure):
+        _fields_ = [
+            ("ReadOperationCount", ctypes.c_ulonglong),
+            ("WriteOperationCount", ctypes.c_ulonglong),
+            ("OtherOperationCount", ctypes.c_ulonglong),
+            ("ReadTransferCount", ctypes.c_ulonglong),
+            ("WriteTransferCount", ctypes.c_ulonglong),
+            ("OtherTransferCount", ctypes.c_ulonglong),
+        ]
+
+    class ExtendedLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", BasicLimitInformation),
+            ("IoInfo", IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    class ThreadEntry32(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ThreadID", wintypes.DWORD),
+            ("th32OwnerProcessID", wintypes.DWORD),
+            ("tpBasePri", wintypes.LONG),
+            ("tpDeltaPri", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+        ]
+
+    kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.SetInformationJobObject.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    ]
+    kernel32.SetInformationJobObject.restype = wintypes.BOOL
+    kernel32.AssignProcessToJobObject.argtypes = [
+        wintypes.HANDLE,
+        wintypes.HANDLE,
+    ]
+    kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel32.TerminateJobObject.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.Thread32First.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(ThreadEntry32),
+    ]
+    kernel32.Thread32First.restype = wintypes.BOOL
+    kernel32.Thread32Next.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(ThreadEntry32),
+    ]
+    kernel32.Thread32Next.restype = wintypes.BOOL
+    kernel32.OpenThread.argtypes = [
+        wintypes.DWORD,
+        wintypes.BOOL,
+        wintypes.DWORD,
+    ]
+    kernel32.OpenThread.restype = wintypes.HANDLE
+    kernel32.ResumeThread.argtypes = [wintypes.HANDLE]
+    kernel32.ResumeThread.restype = wintypes.DWORD
+    return kernel32, ExtendedLimitInformation, ThreadEntry32
+
+
+def _windows_set_job_kill_on_close(job_handle: int, enabled: bool) -> None:
+    import ctypes
+
+    kernel32, info_type, _thread_type = _windows_job_api()
+    info = info_type()
+    if enabled:
+        info.BasicLimitInformation.LimitFlags = 0x00002000
+    if not kernel32.SetInformationJobObject(
+        job_handle,
+        9,  # JobObjectExtendedLimitInformation
+        ctypes.byref(info),
+        ctypes.sizeof(info),
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def _windows_create_kill_on_close_job() -> int:
+    import ctypes
+
+    kernel32, _info_type, _thread_type = _windows_job_api()
+    handle = kernel32.CreateJobObjectW(None, None)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    value = int(handle)
+    try:
+        _windows_set_job_kill_on_close(value, True)
+    except BaseException:
+        _windows_close_handle(value)
+        raise
+    return value
+
+
+def _windows_assign_process_to_job(
+    job_handle: int,
+    proc: _subprocess.Popen,
+) -> None:
+    import ctypes
+
+    kernel32, _info_type, _thread_type = _windows_job_api()
+    process_handle = int(getattr(proc, "_handle"))
+    if not kernel32.AssignProcessToJobObject(job_handle, process_handle):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def _windows_resume_process(pid: int) -> None:
+    """Resume the primary thread of a CREATE_SUSPENDED process."""
+
+    import ctypes
+
+    kernel32, _info_type, thread_type = _windows_job_api()
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000004, 0)
+    invalid_handle = ctypes.c_void_p(-1).value
+    if not snapshot or int(snapshot) == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    resumed = False
+    try:
+        entry = thread_type()
+        entry.dwSize = ctypes.sizeof(entry)
+        present = bool(kernel32.Thread32First(snapshot, ctypes.byref(entry)))
+        while present:
+            if int(entry.th32OwnerProcessID) == int(pid):
+                thread = kernel32.OpenThread(0x0002, False, entry.th32ThreadID)
+                if thread:
+                    try:
+                        previous = kernel32.ResumeThread(thread)
+                        # A zero return means the thread was already running;
+                        # do not mistake an injected/helper thread for the
+                        # CREATE_SUSPENDED primary thread.  Walk the complete
+                        # snapshot and undo one suspension on every suspended
+                        # thread owned by the new process.
+                        if previous not in (0, 0xFFFFFFFF):
+                            resumed = True
+                    finally:
+                        kernel32.CloseHandle(thread)
+            present = bool(kernel32.Thread32Next(snapshot, ctypes.byref(entry)))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    if not resumed:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def _windows_close_handle(handle: int) -> bool:
+    kernel32, _info_type, _thread_type = _windows_job_api()
+    return bool(kernel32.CloseHandle(handle))
+
+
+def _windows_terminate_and_close_job(job_handle: int) -> bool:
+    kernel32, _info_type, _thread_type = _windows_job_api()
+    terminated = bool(kernel32.TerminateJobObject(job_handle, 1))
+    closed = _windows_close_handle(job_handle)
+    return terminated or closed
+
+
+def _windows_release_job(job_handle: int) -> None:
+    """Destroy a job without applying its kill-on-close limit."""
+
+    try:
+        _windows_set_job_kill_on_close(job_handle, False)
+    except OSError:
+        # SetInformationJobObject should be infallible for our own handle.  If
+        # the OS nevertheless rejects it, retaining the handle is safer than
+        # unexpectedly killing a deliberately detached background command.
+        return
+    _windows_close_handle(job_handle)
+
+
+def can_open_browser() -> bool:
+    """Whether an automatic browser launch is meaningful on this host.
+
+    Linux servers and SSH sessions commonly have ``xdg-open`` installed but
+    no graphical session.  Calling :mod:`webbrowser` there either produces a
+    misleading success or starts a helper that cannot display anything.  WSLg
+    and desktop Linux expose DISPLAY/WAYLAND_DISPLAY and remain supported.
+    """
+
+    if not _sys.platform.startswith("linux"):
+        return True
+    return bool(
+        _os.environ.get("DISPLAY") or _os.environ.get("WAYLAND_DISPLAY")
+    )
+
+
+def open_browser_url(url: str, *, new: int = 2) -> bool:
+    """Best-effort open ``url`` without launching dead helpers headlessly."""
+
+    if not can_open_browser():
+        return False
+    try:
+        import webbrowser
+
+        return bool(webbrowser.open(url, new=new))
+    except Exception:
+        return False
+
+
+def tui_child_requires_direct_stdio_inheritance() -> bool:
+    """Whether an interactive Node TUI must inherit the console directly.
+
+    Windows exposes console streams as native handles behind CRT file
+    descriptors.  Passing descriptors saved with :func:`os.dup` through
+    ``subprocess.Popen(stdout=..., stderr=...)`` is not stable across the
+    detached worker bootstrap and can fail with ``WinError 6``.  Direct
+    inheritance also preserves Node's ``isTTY``/raw-mode detection.
+
+    POSIX descriptors remain safe to duplicate, which lets the Python startup
+    phase write to a log before the Ink child takes over the real terminal.
+    Keep this platform distinction in the compatibility seam rather than in
+    the CLI launcher.
+    """
+
+    return _sys.platform == "win32"
+
+
+def tui_worker_ready_timeout_seconds() -> float:
+    """Upper bound for the TUI's detached-worker cold start.
+
+    A complete Windows runtime can spend over a minute in Defender's first
+    scan. POSIX has no equivalent reason to leave an apparently blank terminal
+    waiting for two minutes after a worker startup failure.
+    """
+
+    return 120.0 if _sys.platform == "win32" else 30.0
+
+
+@_functools.cache
+def _windows_default_wsl2_distribution() -> tuple[str | None, str | None]:
+    """Return the default WSL2 distribution and an actionable failure.
+
+    Reading the per-user WSL registry avoids launching ``wsl.exe`` on hosts
+    where it is installed as a Windows feature but has no distribution.  On
+    those machines the launcher can wait for interactive setup indefinitely.
+    """
+
+    if _sys.platform != "win32":
+        return None, "WSL2 delegation is only available on Windows"
+    try:
+        import winreg
+
+        root_path = r"Software\Microsoft\Windows\CurrentVersion\Lxss"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, root_path) as root:
+            default_id, _ = winreg.QueryValueEx(root, "DefaultDistribution")
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            root_path + "\\" + str(default_id),
+        ) as distro:
+            name, _ = winreg.QueryValueEx(distro, "DistributionName")
+            version, _ = winreg.QueryValueEx(distro, "Version")
+    except (OSError, ValueError, TypeError):
+        return None, (
+            "Windows sandbox needs a default WSL2 distribution with "
+            "bubblewrap installed"
+        )
+    if int(version) != 2:
+        return None, f"default WSL distribution {name!r} is not WSL2"
+    if not str(name).strip():
+        return None, "default WSL2 distribution has no name"
+    return str(name), None
+
+
+def _windows_wsl_executable() -> str | None:
+    import shutil
+
+    return shutil.which("wsl.exe") if _sys.platform == "win32" else None
+
+
+def windows_wsl_exec_prefix() -> list[str]:
+    """Return a stable argv prefix for the default WSL2 distribution."""
+
+    executable = _windows_wsl_executable()
+    distribution, reason = _windows_default_wsl2_distribution()
+    if executable is None:
+        raise RuntimeError("Windows sandbox needs wsl.exe")
+    if reason is not None or distribution is None:
+        raise RuntimeError(reason or "Windows sandbox needs a default WSL2 distribution")
+    return [executable, "--distribution", distribution, "--exec"]
+
+
+@_functools.cache
+def windows_wsl_sandbox_reason() -> str | None:
+    """Why WSL2+bubblewrap cannot enforce the Windows sandbox, if any."""
+
+    try:
+        prefix = windows_wsl_exec_prefix()
+    except RuntimeError as exc:
+        return str(exc)
+    probe = (
+        "command -v bwrap >/dev/null 2>&1 || exit 21; "
+        "command -v bash >/dev/null 2>&1 || exit 22; "
+        "exec bwrap --new-session --die-with-parent --unshare-pid "
+        "--unshare-ipc --unshare-uts --unshare-net --cap-drop ALL "
+        "--ro-bind / / --proc /proc --dev /dev -- /bin/true"
+    )
+    flags = getattr(_subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = _subprocess.run(
+            [*prefix, "sh", "-c", probe],
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            creationflags=flags,
+        )
+    except _subprocess.TimeoutExpired:
+        return "Windows WSL2 sandbox probe timed out"
+    except OSError as exc:
+        return f"Windows WSL2 sandbox probe failed: {exc}"
+    if result.returncode == 0:
+        return None
+    if result.returncode == 21:
+        return "Windows sandbox needs bubblewrap in the default WSL2 distribution"
+    if result.returncode == 22:
+        return "Windows sandbox needs /bin/bash in the default WSL2 distribution"
+    lines = (result.stderr or result.stdout).strip().splitlines()
+    detail = f": {lines[-1]}" if lines else ""
+    return "WSL2 bubblewrap cannot create the required namespaces" + detail
+
+
+@_functools.lru_cache(maxsize=512)
+def windows_path_to_wsl(path: str) -> str:
+    """Translate one absolute Windows path through the selected WSL distro."""
+
+    absolute = _os.path.abspath(_os.fspath(path))
+    prefix = windows_wsl_exec_prefix()
+    flags = getattr(_subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = _subprocess.run(
+            [*prefix, "wslpath", "-a", "-u", absolute],
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            creationflags=flags,
+        )
+    except (_subprocess.TimeoutExpired, OSError) as exc:
+        raise RuntimeError(f"could not translate Windows path for WSL2: {exc}") from exc
+    translated = result.stdout.strip()
+    if result.returncode != 0 or not translated.startswith("/"):
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(
+            f"could not translate Windows path for WSL2: {absolute}"
+            + (f" ({detail})" if detail else "")
+        )
+    return translated
+
+
+def managed_release_target(
+    system: str | None = None,
+    machine: str | None = None,
+) -> tuple[str, str, str, str] | None:
+    """Return the formal runtime platform, arch, suffix and installer.
+
+    This is the single platform seam used by the managed updater. Archive
+    format is part of the target contract: POSIX runtimes use ``tar.gz`` and
+    Windows runtimes use a ZIP that needs no Unix compatibility layer.
+    """
+
+    import platform as _platform
+
+    system = system or _platform.system()
+    machine = (machine or _platform.machine()).lower()
+    platform_name = {
+        "Darwin": "macos",
+        "Linux": "linux",
+        "Windows": "windows",
+    }.get(system)
+    arch = {
+        "arm64": "arm64",
+        "aarch64": "arm64",
+        "x86_64": "x86_64",
+        "amd64": "x86_64",
+    }.get(machine)
+    if platform_name is None or arch is None:
+        return None
+    if platform_name == "windows":
+        return platform_name, arch, ".zip", "install-release.ps1"
+    return platform_name, arch, ".tar.gz", "install-release.sh"
+
+
+def release_installer_command(path) -> list[str]:
+    """Build the native command for one downloaded release installer."""
+
+    import shutil
+
+    value = _os.fspath(path)
+    if value.lower().endswith(".ps1"):
+        executable = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
+        if executable is None:
+            raise OSError("PowerShell is required to run the release installer")
+        return [
+            executable,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            value,
+        ]
+    return ["sh", value]
+
+
+def release_installer_fallback_command(path) -> list[str] | None:
+    """Return a Git-for-Windows fallback for a POSIX installer, if present.
+
+    Formal Windows releases use PowerShell. This fallback only preserves the
+    ability to exercise or recover an older POSIX-tagged managed installer on
+    a Windows host where ``sh`` is not on PATH.
+    """
+
+    import shutil
+
+    value = _os.fspath(path)
+    if _sys.platform != "win32" or not value.lower().endswith(".sh"):
+        return None
+    git = shutil.which("git.exe")
+    if not git:
+        return None
+    candidate = _os.path.abspath(
+        _os.path.join(_os.path.dirname(git), "..", "bin", "sh.exe")
+    )
+    return [candidate, value] if _os.path.isfile(candidate) else None
 
 
 def kill_process_tree(pid: int) -> bool:
@@ -60,7 +754,9 @@ def kill_process_tree(pid: int) -> bool:
         try:
             res = _subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=10,
+                capture_output=True,
+                timeout=10,
+                creationflags=no_window_creation_flags(),
             )
             return res.returncode == 0
         except (FileNotFoundError, _subprocess.TimeoutExpired, OSError):
@@ -73,25 +769,29 @@ def kill_process_tree(pid: int) -> bool:
         except (ProcessLookupError, OSError):
             return False
 
-    # POSIX
+    # POSIX.  Only signal a process group when the target actually leads a
+    # group that is different from ours.  ``killpg(getpgid(pid), ...)`` is
+    # unsafe as a generic fallback: an ordinary child inherits its caller's
+    # process group, so that spelling would kill the caller (and potentially
+    # its terminal) along with the child.  Callers that need tree semantics
+    # launch the target with ``start_new_session=True``; every other target
+    # gets the safe single-process fallback.
     try:
         pgid = _os.getpgid(pid)
     except (ProcessLookupError, PermissionError):
         return False
     try:
-        _os.killpg(pgid, _signal.SIGKILL)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # pgid mismatch (target wasn't a session leader) — fall back to
-        # single-process kill so callers that forgot start_new_session
-        # still get the process gone.
-        try:
+        own_pgid = _os.getpgrp()
+    except (AttributeError, OSError):
+        own_pgid = None
+    try:
+        if pgid == pid and pgid != own_pgid:
+            _os.killpg(pgid, _signal.SIGKILL)
+        else:
             _os.kill(pid, _signal.SIGKILL)
-            return True
-        except (ProcessLookupError, OSError):
-            return False
+        return True
+    except (ProcessLookupError, PermissionError, OSError):
+        return False
 
 try:  # POSIX (macOS, Linux)
     import fcntl as _fcntl
@@ -166,27 +866,23 @@ except ImportError:  # Windows
                 _time.sleep(_RETRY_INTERVAL)
 
 
-def node_tool_cmd(argv: list[str]) -> list[str]:
-    """Make a node-ecosystem command (``npm`` / ``npx`` / ``agent-browser``
-    / any project ``.cmd`` bin) runnable via ``subprocess(..., shell=False)``
-    on every OS.
+def executable_cmd(argv: list[str]) -> list[str]:
+    """Return an argv that ``subprocess(..., shell=False)`` can execute.
 
-    The Windows problem: npm/npx/etc. ship as ``*.cmd`` batch shims, and
-    ``CreateProcess`` (what ``subprocess`` uses when ``shell=False``)
-    cannot execute a ``.cmd``/``.bat`` even by absolute path — it raises
-    ``OSError [WinError 193] "%1 is not a valid Win32 application"``.
-    Resolving the bare name with ``shutil.which`` alone is NOT enough.
+    Windows ``CreateProcess`` cannot directly launch ``.cmd``/``.bat`` files
+    or scripts whose interpreter is declared by a POSIX shebang. Route batch
+    files through ``cmd.exe`` and resolve a shebang interpreter without ever
+    enabling shell interpolation. This supports credential helpers and other
+    user-configured subprocesses while preserving their argv boundaries.
 
-    So on Windows we resolve ``argv[0]`` and, if it's a ``.cmd``/``.bat``,
-    route it through ``cmd.exe /c``; a real ``.exe`` (e.g. ``node``) is
-    passed through untouched. On POSIX the argv is returned unchanged
-    (with a best-effort ``shutil.which`` resolve of ``argv[0]``), so the
-    behaviour on macOS/Linux is identical to ``subprocess`` with the bare
-    name.
-
-    Pass the result straight to ``subprocess.run/Popen(..., shell=False)``.
+    A Git-for-Windows shell is discovered next to ``git.exe`` only when a
+    helper explicitly asks for ``sh``/``bash``. It is not a runtime
+    dependency; an absent interpreter remains a clear launch failure.
     """
+    import shlex
     import shutil
+    from pathlib import Path
+
     if not argv:
         return argv
     exe, rest = argv[0], list(argv[1:])
@@ -196,47 +892,527 @@ def node_tool_cmd(argv: list[str]) -> list[str]:
     if resolved.lower().endswith((".cmd", ".bat")):
         comspec = _os.environ.get("COMSPEC", "cmd.exe")
         return [comspec, "/c", resolved, *rest]
+    if resolved.lower().endswith(".ps1"):
+        powershell = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
+        if powershell:
+            return [
+                powershell,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                resolved,
+                *rest,
+            ]
+
+    try:
+        with Path(resolved).open("rb") as script:
+            first_line = script.readline(4096)
+    except OSError:
+        first_line = b""
+    if first_line.startswith(b"#!"):
+        declaration = first_line[2:].decode("utf-8", errors="replace").strip()
+        words = shlex.split(declaration, posix=True)
+        if words:
+            interpreter, interpreter_args = words[0], words[1:]
+            if interpreter.replace("\\", "/").rsplit("/", 1)[-1] == "env":
+                if interpreter_args[:1] == ["-S"]:
+                    interpreter_args = shlex.split(" ".join(interpreter_args[1:]))
+                if interpreter_args:
+                    interpreter, interpreter_args = (
+                        interpreter_args[0], interpreter_args[1:]
+                    )
+            interpreter_name = interpreter.replace("\\", "/").rsplit("/", 1)[-1]
+            found = shutil.which(interpreter) or shutil.which(interpreter_name)
+            if found is None and interpreter_name in {"python", "python3"}:
+                found = _sys.executable
+            if found is None and interpreter_name in {"sh", "bash"}:
+                git = shutil.which("git.exe")
+                if git:
+                    candidate = Path(git).parent.parent / "bin" / f"{interpreter_name}.exe"
+                    if candidate.is_file():
+                        found = str(candidate)
+            if found:
+                return [found, *interpreter_args, resolved, *rest]
     return [resolved, *rest]
 
 
+def node_tool_cmd(argv: list[str]) -> list[str]:
+    """Compatibility alias for existing Node-ecosystem call sites."""
+    return executable_cmd(argv)
+
+
+def _windows_powershell(script: str, *, timeout: float = 5.0) -> str:
+    """Run one read-only Windows CIM query and return UTF-8 output.
+
+    Kept in the compatibility seam because modern Windows no longer ships
+    WMIC and product modules must not grow their own platform subprocesses.
+    """
+
+    import shutil
+
+    executable = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
+    if executable is None:
+        return ""
+    prefix = (
+        "$ErrorActionPreference='Stop';"
+        "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new();"
+    )
+    flags = getattr(_subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = _subprocess.run(
+            [
+                executable,
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                prefix + script,
+            ],
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=flags,
+        )
+    except (OSError, _subprocess.TimeoutExpired):
+        return ""
+    return result.stdout if result.returncode == 0 else ""
+
+
+def platform_environment_advisories(state_dir) -> list[tuple[bool, str, str]]:
+    """Return non-blocking host advice without changing system settings.
+
+    Rows are marked successful because these are optional platform capability
+    and performance notes rather than requirements for running OpenProgram.
+    No probe changes service state, security policy, ACLs, or file modes.
+    """
+
+    if _sys.platform.startswith("linux"):
+        from openprogram.sandbox import unavailable_reason
+
+        sandbox_reason = unavailable_reason()
+        sandbox_detail = (
+            "available (bubblewrap namespaces verified)"
+            if sandbox_reason is None
+            else f"optional isolation unavailable: {sandbox_reason}"
+        )
+        service_reason = _linux_systemd_user_reason()
+        service_detail = (
+            "available"
+            if service_reason is None
+            else f"optional login service unavailable: {service_reason}; "
+                 "use `openprogram worker start`"
+        )
+        return [
+            (True, "linux sandbox", sandbox_detail),
+            (True, "systemd user service", service_detail),
+        ]
+
+    if _sys.platform != "win32":
+        return []
+
+    long_paths = _windows_powershell(
+        "$v=(Get-ItemProperty "
+        "'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem' "
+        "-Name LongPathsEnabled -ErrorAction SilentlyContinue).LongPathsEnabled;"
+        "if($null -eq $v){'unknown'}elseif($v -eq 1){'enabled'}else{'disabled'}"
+    ).strip().lower()
+    if long_paths == "enabled":
+        long_path_detail = "enabled"
+    elif long_paths == "disabled":
+        long_path_detail = (
+            "disabled — enable Win32 long paths if deeply nested Programs fail"
+        )
+    else:
+        long_path_detail = "status unavailable; no setting was changed"
+
+    import json
+
+    defender_output = _windows_powershell(
+        "$s=Get-MpComputerStatus -ErrorAction Stop;"
+        "$p=Get-MpPreference -ErrorAction Stop;"
+        "[pscustomobject]@{realTime=[bool]$s.RealTimeProtectionEnabled;"
+        "exclusions=@($p.ExclusionPath)}|ConvertTo-Json -Compress",
+        timeout=8.0,
+    ).strip()
+    runtime_dir = _os.path.join(_os.fspath(state_dir), "runtime")
+    defender_detail = "status unavailable; no setting was changed"
+    if defender_output:
+        try:
+            payload = json.loads(defender_output)
+            exclusions = payload.get("exclusions") or []
+            if isinstance(exclusions, str):
+                exclusions = [exclusions]
+            normalized_runtime = _os.path.normcase(_os.path.abspath(runtime_dir))
+            excluded = any(
+                _os.path.normcase(_os.path.abspath(str(value))).rstrip("\\/")
+                == normalized_runtime.rstrip("\\/")
+                for value in exclusions
+                if value
+            )
+            if excluded:
+                defender_detail = f"runtime exclusion present: {runtime_dir}"
+            elif payload.get("realTime"):
+                defender_detail = (
+                    "real-time scanning active; if startup is slow, consider "
+                    f"excluding only {runtime_dir}"
+                )
+            else:
+                defender_detail = "real-time scanning is not active"
+        except (TypeError, ValueError, OSError):
+            pass
+
+    return [
+        (True, "windows long paths", long_path_detail),
+        (True, "windows defender", defender_detail),
+    ]
+
+
+def _linux_systemd_user_reason() -> str | None:
+    """Why a Linux systemd user manager cannot be reached, if any."""
+
+    import shutil
+
+    executable = shutil.which("systemctl")
+    if executable is None:
+        return "systemctl is not installed"
+    try:
+        result = _subprocess.run(
+            [executable, "--user", "show-environment"],
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except _subprocess.TimeoutExpired:
+        return "systemctl --user timed out"
+    except OSError as exc:
+        return f"systemctl --user probe failed: {exc}"
+    if result.returncode == 0:
+        return None
+    lines = (result.stderr or result.stdout).strip().splitlines()
+    detail = lines[-1] if lines else f"exit status {result.returncode}"
+    container = (
+        _os.path.exists("/.dockerenv")
+        or _os.path.exists("/run/.containerenv")
+        or bool(_os.environ.get("container"))
+    )
+    if container:
+        return f"container has no reachable user manager ({detail})"
+    return detail
+
+
+def process_command_line(pid: int) -> str:
+    """Best-effort command line query for one process on this host."""
+
+    if pid <= 0:
+        return ""
+    if _sys.platform == "win32":
+        output = _windows_powershell(
+            "$p=Get-CimInstance Win32_Process -Filter \"ProcessId = "
+            f"{int(pid)}\";if($null -ne $p){{[Console]::Out.Write($p.CommandLine)}}"
+        )
+        return output.strip()
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as stream:
+            return (
+                stream.read()
+                .replace(b"\x00", b" ")
+                .decode("utf-8", "replace")
+                .strip()
+            )
+    except OSError:
+        pass
+    try:
+        result = _subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        return result.stdout.strip()
+    except (OSError, _subprocess.TimeoutExpired):
+        return ""
+
+
+def pids_on_port(port: int) -> list[int]:
+    """Return PIDs listening on one TCP port, or an empty list on error."""
+
+    if _sys.platform == "win32":
+        try:
+            result = _subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+                creationflags=no_window_creation_flags(),
+            )
+        except (OSError, _subprocess.TimeoutExpired):
+            return []
+        pids: list[int] = []
+        needle = f":{port}"
+        for line in (result.stdout or "").splitlines():
+            parts = line.split()
+            if len(parts) < 5 or parts[3].upper() != "LISTENING":
+                continue
+            if not parts[1].endswith(needle):
+                continue
+            try:
+                pids.append(int(parts[4]))
+            except ValueError:
+                pass
+        return pids
+
+    try:
+        result = _subprocess.run(
+            ["lsof", f"-iTCP:{port}", "-sTCP:LISTEN", "-nP", "-Fp"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, _subprocess.TimeoutExpired):
+        result = None
+    if result is not None:
+        found = {
+            int(line[1:])
+            for line in result.stdout.splitlines()
+            if line.startswith("p") and line[1:].isdigit()
+        }
+        if found:
+            return sorted(found)
+
+    # ``lsof`` is not part of many minimal Linux images (including the
+    # distributions people commonly use for a packaged runtime).  The kernel
+    # already exposes the authoritative socket table, so fall back to mapping
+    # LISTEN socket inodes from /proc/net/tcp{,6} to /proc/<pid>/fd links.
+    # Permission-denied processes are skipped; diagnostics remain best-effort.
+    if _sys.platform.startswith("linux"):
+        return _linux_proc_pids_on_port(port)
+    return []
+
+
+def _linux_listening_socket_inodes(
+    port: int,
+    *,
+    proc_root: str = "/proc",
+) -> set[str]:
+    """Return Linux TCP LISTEN socket inodes for ``port`` from procfs."""
+
+    if not 0 <= int(port) <= 65535:
+        return set()
+    inodes: set[str] = set()
+    for table in ("tcp", "tcp6"):
+        path = _os.path.join(proc_root, "net", table)
+        try:
+            with open(path, encoding="ascii", errors="replace") as stream:
+                rows = stream.readlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            fields = row.split()
+            # linux/net/tcp exposes: sl, local_address, rem_address, st,
+            # ..., inode.  0A is TCP_LISTEN and inode is column 10.
+            if len(fields) < 10 or fields[3].upper() != "0A":
+                continue
+            try:
+                local_port = int(fields[1].rsplit(":", 1)[1], 16)
+            except (IndexError, ValueError):
+                continue
+            inode = fields[9]
+            if local_port == int(port) and inode.isdigit() and inode != "0":
+                inodes.add(inode)
+    return inodes
+
+
+def _linux_proc_pids_on_port(
+    port: int,
+    *,
+    proc_root: str = "/proc",
+) -> list[int]:
+    """Map Linux procfs socket inodes to owning process IDs."""
+
+    import glob
+
+    inodes = _linux_listening_socket_inodes(port, proc_root=proc_root)
+    if not inodes:
+        return []
+    owners: set[int] = set()
+    pattern = _os.path.join(proc_root, "[0-9]*", "fd", "*")
+    for descriptor in glob.iglob(pattern):
+        try:
+            target = _os.readlink(descriptor)
+        except OSError:
+            continue
+        if not target.startswith("socket:[") or not target.endswith("]"):
+            continue
+        if target[8:-1] not in inodes:
+            continue
+        pid_text = _os.path.basename(
+            _os.path.dirname(_os.path.dirname(descriptor))
+        )
+        try:
+            owners.add(int(pid_text))
+        except ValueError:
+            continue
+    return sorted(owners)
+
+
+def process_ids_by_name(names) -> list[int]:
+    """Return Windows PIDs whose executable basename is in ``names``."""
+
+    if _sys.platform != "win32":
+        return []
+    safe_names = sorted(
+        {
+            name.lower()
+            for name in names
+            if name and all(char.isalnum() or char in "._-" for char in name)
+        }
+    )
+    if not safe_names:
+        return []
+    query = " OR ".join(f"Name = '{name}'" for name in safe_names)
+    output = _windows_powershell(
+        "Get-CimInstance Win32_Process -Filter \""
+        + query
+        + '\"|ForEach-Object{[Console]::Out.WriteLine($_.ProcessId)}'
+    )
+    pids: list[int] = []
+    for line in output.splitlines():
+        try:
+            pids.append(int(line.strip()))
+        except ValueError:
+            continue
+    return pids
+
+
+def kill_processes_matching(names, command_line_fragment: str) -> None:
+    """Best-effort force-kill named processes whose command line matches.
+
+    Windows enumerates processes through CIM and terminates the matching
+    process trees with ``taskkill``. POSIX enumerates process IDs and performs
+    a literal command-line substring match.  Do not route the fragment through
+    ``pkill -f``: pkill interprets it as a regular expression (so paths can
+    match unintended processes) and its own invocation may match the pattern.
+    Keeping both implementations here prevents product commands from growing
+    platform branches of their own.
+    """
+
+    if not command_line_fragment:
+        return
+    if _sys.platform == "win32":
+        normalized_fragment = command_line_fragment.replace("\\", "/").lower()
+        for pid in process_ids_by_name(names):
+            command_line = process_command_line(pid).replace("\\", "/").lower()
+            if normalized_fragment not in command_line:
+                continue
+            try:
+                _subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    check=False,
+                    stdout=_subprocess.DEVNULL,
+                    stderr=_subprocess.DEVNULL,
+                    timeout=10,
+                    creationflags=no_window_creation_flags(),
+                )
+            except (FileNotFoundError, _subprocess.TimeoutExpired, OSError):
+                pass
+        return
+
+    fragment = command_line_fragment
+    for pid, command_line in _posix_process_command_lines().items():
+        if pid == _os.getpid():
+            continue
+        if fragment not in command_line:
+            continue
+        kill_process_tree(pid)
+
+
+def _posix_process_command_lines() -> dict[int, str]:
+    """Best-effort POSIX process snapshot for literal command matching."""
+
+    if _sys.platform.startswith("linux"):
+        import glob
+
+        pids = {
+            int(_os.path.basename(path))
+            for path in glob.iglob("/proc/[0-9]*")
+            if _os.path.basename(path).isdigit()
+        }
+        return {
+            pid: command
+            for pid in sorted(pids)
+            if (command := process_command_line(pid))
+        }
+    try:
+        result = _subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, _subprocess.TimeoutExpired):
+        return {}
+    values: dict[int, str] = {}
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(None, 1)
+        if not parts or not parts[0].isdigit():
+            continue
+        values[int(parts[0])] = parts[1] if len(parts) > 1 else ""
+    return values
+
+
+def worker_service_backend() -> str | None:
+    """Name of the per-user worker service adapter for this host."""
+
+    if _sys.platform == "darwin":
+        return "launchd"
+    if _sys.platform == "linux":
+        return "systemd"
+    if _sys.platform == "win32":
+        return "windows"
+    return None
+
+
 def restrict_to_user(path) -> None:
-    """Lock a credential file down to the current user only — cross-platform.
+    """Apply owner-only POSIX mode; preserve inherited ACLs on Windows W1.
 
     POSIX: ``chmod 0o600`` (owner read/write, nothing for group/other) —
     identical to the bare ``os.chmod(path, 0o600)`` call sites this
     replaces.
 
-    Windows: the POSIX mode bits are meaningless to NTFS — ``os.chmod``
-    there only toggles the read-only attribute, so a ``0o600`` is a
-    near-no-op and the file keeps whatever ACL it inherited. Files under
-    ``%USERPROFILE%`` already inherit a user-private ACL (so the practical
-    exposure is small), but for defence-in-depth we additionally strip
-    inheritance and grant full control to only the current user + SYSTEM
-    via ``icacls``. SYSTEM is kept so backup / AV / indexing still work.
-
-    Best-effort throughout: any failure (no ``icacls``, odd account name,
-    timeout) leaves the inherited — already user-scoped — ACL in place,
-    which is safe. Never raises.
+    Windows W1 deliberately preserves the inherited NTFS ACL. POSIX mode
+    bits have no equivalent there, while rewriting inherited ACLs has made
+    state unreadable for domain accounts, OneDrive folders, and managed
+    machines. Credential-specific ACL hardening
+    therefore remains outside W1; callers still get the normal user-profile
+    ACL without a compatibility-breaking mutation.
     """
     p = _os.fspath(path)
+    if _sys.platform == "win32":
+        return
     try:
         _os.chmod(p, 0o600)
     except OSError:
         pass
-    if _sys.platform != "win32":
-        return
-    user = _os.environ.get("USERNAME") or _os.environ.get("USER")
-    if not user:
+
+
+def restrict_directory_to_user(path) -> None:
+    """Apply owner-only POSIX mode; preserve inherited ACLs on Windows W1."""
+
+    p = _os.fspath(path)
+    if _sys.platform == "win32":
         return
     try:
-        _subprocess.run(
-            ["icacls", p, "/inheritance:r",
-             "/grant:r", f"{user}:F", "/grant:r", "SYSTEM:F"],
-            stdout=_subprocess.DEVNULL,
-            stderr=_subprocess.DEVNULL,
-            timeout=10,
-        )
-    except (OSError, ValueError, _subprocess.SubprocessError):
+        _os.chmod(p, 0o700)
+    except OSError:
         pass
 
 
@@ -466,9 +1642,33 @@ class InteractivePty:
         try:
             if self._backend == "win":
                 try:
+                    # PtyProcess.close() closes its TCP bridge, but pywinpty's
+                    # native reader can still be blocked in PTY.read().  Wake
+                    # that read first so both the bridge and our queue pump can
+                    # terminate deterministically.
+                    self._proc.pty.cancel_io()
+                except Exception:
+                    pass
+                try:
                     self._proc.close(force=True)
                 except Exception:
                     pass
+                # The adapter pump and pywinpty's internal read helper must
+                # observe the closed ConPTY before close() returns. Leaving
+                # daemon readers alive leaks production threads into the next
+                # command/test and can retain console handles unnecessarily.
+                reader = getattr(self, "_reader", None)
+                if reader is not None:
+                    try:
+                        reader.join(timeout=2.0)
+                    except Exception:
+                        pass
+                native_reader = getattr(self._proc, "_thread", None)
+                if native_reader is not None:
+                    try:
+                        native_reader.join(timeout=2.0)
+                    except Exception:
+                        pass
             else:
                 try:
                     _os.close(self._master)
@@ -522,10 +1722,33 @@ __all__ = [
     "LOCK_NB",
     "LOCK_UN",
     "InteractivePty",
+    "ProcessTreeOwner",
+    "executable_cmd",
+    "filesystem_path",
     "flock",
+    "install_asyncio_exception_handler",
     "interactive_pty_available",
+    "can_open_browser",
+    "kill_processes_matching",
     "kill_process_tree",
+    "managed_release_target",
     "node_tool_cmd",
+    "no_window_creation_flags",
+    "open_browser_url",
+    "platform_environment_advisories",
+    "pids_on_port",
+    "process_command_line",
+    "process_ids_by_name",
+    "process_tree_popen_kwargs",
     "prompt_toolkit_usable",
+    "restrict_directory_to_user",
     "restrict_to_user",
+    "release_installer_command",
+    "release_installer_fallback_command",
+    "tui_child_requires_direct_stdio_inheritance",
+    "tui_worker_ready_timeout_seconds",
+    "windows_path_to_wsl",
+    "windows_wsl_exec_prefix",
+    "windows_wsl_sandbox_reason",
+    "worker_service_backend",
 ]

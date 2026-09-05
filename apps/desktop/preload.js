@@ -9,6 +9,7 @@ const windowId = windowIdArgument
 
 contextBridge.exposeInMainWorld("openprogramDesktop", {
   isDesktop: true,
+  platform: process.platform,
   windowId,
   // Electron removed the renderer's legacy File.path property. This is the
   // supported path boundary for a File explicitly selected or dropped by

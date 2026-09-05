@@ -24,7 +24,7 @@ def _sitemap(urls: list[str]) -> str:
 
 
 def test_site_publish_notifies_indexnow_after_repository_publish() -> None:
-    workflow = Path(".github/workflows/docs-pages.yml").read_text()
+    workflow = Path(".github/workflows/docs-pages.yml").read_text(encoding="utf-8")
 
     publish = workflow.index("- name: Publish to the site repository")
     notify = workflow.index("- name: Submit sitemap to IndexNow")

@@ -169,7 +169,15 @@ namespace OPFolder {
             return ((r.stdout or "").strip() or None), False
         return None, True  # no usable PowerShell found
 
-    # Linux / other: GTK (zenity) then KDE (kdialog).
+    # Linux / other: GTK (zenity) then KDE (kdialog).  A worker commonly
+    # runs on a headless Linux server while the Web UI is opened from a
+    # different machine.  Merely finding ``zenity`` in PATH does not make a
+    # native picker usable there: without an X11 or Wayland display it exits
+    # non-zero, which used to look exactly like a user cancellation and kept
+    # the Web UI from offering its manual-path fallback.
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return None, True
+
     for cmd in (
         ["zenity", "--file-selection", "--directory",
          "--title=Select working directory", f"--filename={start}/"],
@@ -181,7 +189,12 @@ namespace OPFolder {
             continue
         if r.returncode == 0:
             return (r.stdout.strip() or None), False
-        return None, False  # tool present → non-zero means cancelled
+        # Both tools use exit 1 with no diagnostic for an ordinary Cancel.
+        # A different code, or stderr output, means the frontend could not
+        # start (missing display plugin, broken DBus session, etc.); try the
+        # next desktop integration before declaring native picking absent.
+        if r.returncode == 1 and not (r.stderr or "").strip():
+            return None, False
     return None, True  # no native chooser found
 
 
@@ -193,11 +206,34 @@ def register(app):
         Returns ``{"path": "<chosen>"}`` on success, ``{"path": null}``
         if the user cancelled, or ``{"path": null, "unsupported": true}``
         when no native dialog is available — the UI then falls back to a
-        manual path input.
+        manual path input.  Posting ``manual_path`` validates that fallback
+        on the worker host without attempting to open a graphical dialog.
         """
         import asyncio
         import pathlib
-        start = (body or {}).get("start") or str(pathlib.Path.home())
+        payload = body or {}
+        if "manual_path" in payload:
+            raw_path = payload.get("manual_path")
+            if not isinstance(raw_path, str) or not raw_path.strip():
+                return JSONResponse(
+                    content={"path": None, "error": "folder path is required"},
+                    status_code=400,
+                )
+            expanded = os.path.expanduser(raw_path.strip())
+            if not os.path.isabs(expanded):
+                return JSONResponse(
+                    content={"path": None, "error": "folder path must be absolute"},
+                    status_code=400,
+                )
+            path = os.path.abspath(expanded)
+            if not os.path.isdir(path):
+                return JSONResponse(
+                    content={"path": None, "error": f"not a directory: {raw_path.strip()}"},
+                    status_code=400,
+                )
+            return JSONResponse(content={"path": path, "unsupported": False})
+
+        start = payload.get("start") or str(pathlib.Path.home())
         start = os.path.abspath(os.path.expanduser(start))
         if not os.path.isdir(start):
             start = str(pathlib.Path.home())

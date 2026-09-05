@@ -5,9 +5,8 @@ Single-verb model (openclaw / gh / docker style). The top-level grammar
 is:
 
     openprogram                           launch the terminal UI
-                                          (Ink on macOS/Linux, Rich on
-                                          Windows — both are "TUI";
-                                          platform decides which)
+                                          (Ink when the terminal supports raw
+                                          input, otherwise Rich)
     openprogram tui                       same as bare openprogram
     openprogram chat                      alias for `openprogram tui`
     openprogram --print "prompt"          one-shot — send prompt,
@@ -41,8 +40,8 @@ Examples:
 
 Note on retired flags: ``--tui`` / ``--no-tui`` / ``--web`` / ``--cli``
 are gone. The chat mode is now implicit (``openprogram`` is chat); the
-browser is a verb (``openprogram web``); the REPL is a Windows-only
-silent fallback when Ink can't initialise. ``--no-tui`` had no good
+    browser is a verb (``openprogram web``); the REPL is the line-oriented
+    fallback when Ink can't initialise. ``--no-tui`` had no good
 analogue (the verb-based design wins where the flag would have lost),
 so it's removed entirely.
 """
@@ -52,16 +51,16 @@ import sys
 import json
 from pathlib import Path
 
+from openprogram._compat import tui_child_requires_direct_stdio_inheritance
 from openprogram.cli.parser import build_parser
 
 
-# --- Pre-import TTY redirect ------------------------------------------------
+# --- Validated TUI TTY redirect ---------------------------------------------
 # When the user is launching the Ink TUI (no subcommand or just `--resume`),
-# we want a clean terminal: anything printed during openprogram package import
-# (RequestsDependencyWarning, "[detect] codex OK", uvicorn boot logs)
-# would otherwise show up above the TUI. Do the dup2 BEFORE pulling any
-# openprogram modules so the noise lands in a log file. The original tty fds
-# are exposed as module attributes so cli_ink can hand them to the Node child.
+# we want a clean terminal for startup output. main() performs this dup2 only
+# after argparse accepts the complete invocation and applies --profile, so CLI
+# errors stay visible and later startup noise lands in a log file. The original
+# tty fds are exposed as module attributes so cli_ink can hand them to Node.
 
 _TUI_TTY_OUT: int | None = None
 _TUI_TTY_ERR: int | None = None
@@ -70,25 +69,19 @@ _TUI_TTY_ERR: int | None = None
 def _looks_like_tui_invocation(argv: list[str]) -> bool:
     """Return True if argv corresponds to launching the Ink TUI.
 
-    Used by :func:`_maybe_redirect_for_tui` to decide whether to dup2
-    stdio into a log file before the Ink Node process takes over the
-    terminal — only worth doing when a TUI launch is actually going
-    to happen.
+    Used by :func:`_maybe_redirect_for_tui` after argparse has accepted the
+    invocation to decide whether to dup2 stdio into a log file before the Ink
+    Node process takes over the terminal.
 
-    Bare ``openprogram`` and ``openprogram --resume <id>`` go to chat
-    (which is TUI on POSIX). Any subcommand (``programs``, ``skills``,
+    Bare ``openprogram`` and ``openprogram --resume <id>`` go to the TUI.
+    Any subcommand (``programs``, ``skills``,
     ``web``, ...) and one-shot flags (``--print`` / ``-p``) keep stdio
     plain — no TUI, no redirect.
 
-    Windows: Ink's ``setRawMode`` reliably fails on common Windows
-    terminal configurations (PowerShell loses the console-handle flag
-    across Python subprocess inheritance; Git Bash / MinTTY doesn't
-    expose a Windows console at all). So Windows skips the TUI attempt
-    entirely and goes straight to the Rich REPL — which also means no
-    stdio redirect is needed there.
+    This is intentionally capability-based rather than platform-based. Modern
+    Windows Terminal / ConPTY supports Ink raw input; terminals without it
+    fail quickly and ``run_cli_chat`` restores stdio before using Rich.
     """
-    if sys.platform == "win32":
-        return False
     bypass_words = {
         "agents", "sessions", "channels", "config", "programs", "skills", "plugins", "doctor",
         "providers", "web", "resume", "init", "doctor", "browser",
@@ -99,18 +92,54 @@ def _looks_like_tui_invocation(argv: list[str]) -> bool:
     bypass_flags = {
         "--print", "-p", "--help", "-h", "--version", "--print-prompt",
     }
+    skip_value = False
     for arg in argv:
+        if skip_value:
+            skip_value = False
+            continue
         if arg in bypass_flags:
             return False
         if arg.startswith("--print=") or arg.startswith("-p="):
             return False
+        # Values are data, not subcommands. A profile or session id named
+        # "web" must not disable the TUI startup redirect.
+        if arg in {"--profile", "--resume"}:
+            skip_value = True
+            continue
+        if arg.startswith("--profile=") or arg.startswith("--resume="):
+            continue
         if arg in bypass_words:
             return False
     return True
 
 
+def _early_profile_from_argv(argv: list[str]) -> str | None:
+    """Read the top-level profile without reparsing so startup logs follow it."""
+    for index, arg in enumerate(argv):
+        if arg == "--profile" and index + 1 < len(argv):
+            return argv[index + 1]
+        if arg.startswith("--profile="):
+            return arg.partition("=")[2]
+    return None
+
+
+def _tui_startup_log_path(argv: list[str] | None = None) -> Path:
+    """Return the active profile's Ink startup log path."""
+    from openprogram.paths import get_logs_dir, set_active_profile
+
+    profile = _early_profile_from_argv(sys.argv[1:] if argv is None else argv)
+    if profile is not None:
+        set_active_profile(profile)
+    return get_logs_dir() / "ink-startup.log"
+
+
 def _maybe_redirect_for_tui() -> None:
     global _TUI_TTY_OUT, _TUI_TTY_ERR
+    # Ink must receive the original Windows console handles by inheritance.
+    # The compatibility seam owns the platform decision; skipping this log
+    # redirect does not disable the TUI or its Rich fallback.
+    if tui_child_requires_direct_stdio_inheritance():
+        return
     try:
         if not sys.stdout.isatty():
             return
@@ -119,10 +148,9 @@ def _maybe_redirect_for_tui() -> None:
     if not _looks_like_tui_invocation(sys.argv[1:]):
         return
     try:
-        from pathlib import Path
-        log_dir = Path.home() / ".openprogram" / "logs"
+        log_path = _tui_startup_log_path()
+        log_dir = log_path.parent
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / "ink-startup.log"
         _TUI_TTY_OUT = os.dup(1)
         _TUI_TTY_ERR = os.dup(2)
         fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
@@ -149,10 +177,6 @@ def _is_cli_process() -> bool:
         return False
     parent = Path(sys.argv[0]).parent.name
     return parent in {"openprogram", "cli", "openprogram_cli"}
-
-
-if _is_cli_process():
-    _maybe_redirect_for_tui()
 
 
 def _ensure_utf8_stdio() -> None:
@@ -269,8 +293,8 @@ def _needs_first_run_setup() -> bool:
 def _restore_tui_tty() -> bool:
     """Point stdout/stderr back at the real terminal; True if it was redirected.
 
-    The module-load redirect (:func:`_maybe_redirect_for_tui`) sends stdio to
-    a log file so Ink starts on a clean terminal. But the bare-``openprogram``
+    The pre-Ink redirect (:func:`_maybe_redirect_for_tui`) sends stdio to a log
+    file so Ink starts on a clean terminal. But the bare-``openprogram``
     path runs INTERACTIVE steps before Ink — the first-run setup wizard and
     the TUI-vs-web menu. With stdio still pointed at the log those prompts
     were invisible on POSIX (the terminal just sat there), and ``isatty()``
@@ -290,10 +314,10 @@ def _restore_tui_tty() -> bool:
 
 
 def _re_redirect_tui_log() -> None:
-    """Re-point stdout/stderr at the ink-startup log (post-prompt, pre-Ink)."""
+    """Re-point stdout/stderr at the profile's startup log before Ink."""
     try:
-        from pathlib import Path
-        log_path = Path.home() / ".openprogram" / "logs" / "ink-startup.log"
+        log_path = _tui_startup_log_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
         os.dup2(fd, 1)
         os.dup2(fd, 2)
@@ -353,17 +377,20 @@ def main():
         from openprogram.paths import set_active_profile
         set_active_profile(args.profile)
 
+    # Never redirect before argparse has accepted the complete invocation.
+    # Otherwise errors such as ``--bogus`` or a missing ``--profile`` value
+    # disappear into ink-startup.log and the terminal appears to do nothing.
+    # Module imports may be slightly noisier as a result, but CLI diagnostics
+    # must remain visible on the terminal that launched the process.
+    if _is_cli_process():
+        _maybe_redirect_for_tui()
+
     # -------- TUI launch (bare openprogram OR `openprogram tui/chat`) --
-    # Chat is the default experience. Two backing implementations:
-    #
-    #   * macOS / Linux — full-screen Ink TUI (React-in-terminal, Node)
-    #   * Windows       — Rich-driven terminal UI (Python; Ink can't
-    #                     initialise raw input mode on Windows consoles)
-    #
-    # Both are valid "terminal UIs" from a user's perspective; the
-    # ``tui_enabled`` flag selects which implementation to launch.
-    # There is no user-facing knob — the platform decides.
-    tui_enabled = sys.platform != "win32"
+    # Chat is the default experience on every platform. Ink is attempted when
+    # the invocation owns a TTY; its raw-mode startup check is the capability
+    # boundary. Unsupported terminals fall back to the Rich REPL with their
+    # stdio restored, including Git Bash / MinTTY on Windows.
+    tui_enabled = True
 
     if args.command == "rescue":
         from openprogram.cli.commands.rescue import _cmd_rescue
@@ -428,6 +455,8 @@ def main():
                         resume=args.resume,
                         tui=tui_enabled,
                         response_format=response_format,
+                        no_alt_screen=args.no_alt_screen,
+                        screen_reader=args.screen_reader,
                     )
                 except StructuredOutputError as exc:
                     if isinstance(exc, StructuredOutputSchemaError):
@@ -448,12 +477,17 @@ def main():
                     )
                     raise SystemExit(4) from None
             else:
-                _cmd_cli_chat(oneshot=args.print_prompt, resume=args.resume,
-                              tui=tui_enabled)
+                _cmd_cli_chat(
+                    oneshot=args.print_prompt,
+                    resume=args.resume,
+                    tui=tui_enabled,
+                    no_alt_screen=args.no_alt_screen,
+                    screen_reader=args.screen_reader,
+                )
             return
         # Interactive pre-Ink stretch (first-run wizard + surface menu) needs
-        # the REAL terminal — the module-load redirect already pointed stdio
-        # at the ink-startup log, which made these prompts invisible on POSIX.
+        # the REAL terminal — the post-argparse redirect already pointed stdio
+        # at the ink-startup log, which otherwise hides prompts on POSIX.
         restored = _restore_tui_tty()
         # First-run onboarding: a brand-new user just types `openprogram`, not
         # `openprogram setup`. If nothing is configured yet, run the setup
@@ -478,8 +512,13 @@ def main():
         # Ink takes the terminal next — put stray module noise back in the log.
         if restored:
             _re_redirect_tui_log()
-        _cmd_cli_chat(oneshot=None, resume=args.resume,
-                      tui=tui_enabled)
+        _cmd_cli_chat(
+            oneshot=None,
+            resume=args.resume,
+            tui=tui_enabled,
+            no_alt_screen=args.no_alt_screen,
+            screen_reader=args.screen_reader,
+        )
         return
 
     # -------- Subcommand dispatch --------
@@ -883,10 +922,11 @@ def main():
         from openprogram import worker as _worker
         from openprogram.worker import services as _services
         rc = _worker.print_status()
+        service_rc = 0
         if _services.is_supported():
             print()
-            _services.status()
-        sys.exit(rc)
+            service_rc = _services.status()
+        sys.exit(rc or service_rc)
 
     if args.command == "worker":
         verb = getattr(args, "worker_verb", None)
@@ -902,10 +942,11 @@ def main():
         if verb == "status":
             from openprogram.worker import services as _services
             rc = _worker.print_status()
+            service_rc = 0
             if _services.is_supported():
                 print()
-                _services.status()
-            sys.exit(rc)
+                service_rc = _services.status()
+            sys.exit(rc or service_rc)
         if verb == "install":
             from openprogram.worker import services as _services
             sys.exit(_services.install())

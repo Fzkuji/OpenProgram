@@ -121,11 +121,13 @@ def test_channels_settings_exposes_pairing_management():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[3]
-    index = (root / "apps/web/components/settings/channels/index.tsx").read_text()
+    index = (root / "apps/web/components/settings/channels/index.tsx").read_text(
+        encoding="utf-8"
+    )
     access = root / "apps/web/components/settings/channels/access-list.tsx"
 
     assert access.is_file()
-    source = access.read_text()
+    source = access.read_text(encoding="utf-8")
     assert "AccessList" in index
     assert 'fetch("/api/channels/access/approve"' in source
     assert 'method: "DELETE"' in source

@@ -566,6 +566,7 @@ def parse_source_file(path: Path, sources_root: Path) -> list[MemoryEvent]:
     relative = path.relative_to(sources_root).as_posix()
     with path.open("r", encoding="utf-8", newline="") as handle:
         text = handle.read()
+    text = text.replace("\r\n", "\n")
     if is_v2_source_path(relative):
         return _parse_v2_source_file(path, sources_root, relative, text)
     lines = text.split("\n")

@@ -8,7 +8,7 @@
 
 <p align="center">
   <b>OpenProgram: Self-Programming AI Agent Framework</b><br/>
-  Agents create and refine their own workflows · Any LLM · macOS and Linux releases
+  Agents create and refine their own workflows · Any LLM · macOS, Linux, and Windows CLI releases
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
   <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
   <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
 </p>
 
@@ -27,7 +27,7 @@
   <a href="comparisons/ai-agent-frameworks.md">Framework Comparison</a> &middot;
   <a href="reference/API.md">API Reference</a> &middot;
   <a href="capabilities/agentic-programming/philosophy.md">Philosophy</a> &middot;
-  <a href="README.zh.md">中文</a>
+  <a href="README.zh.md">Chinese</a>
 </p>
 
 ---
@@ -58,7 +58,13 @@
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-macOS desktop: download the unsigned DMG from [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases). Linux uses the same CLI/server runtime and the Web UI; no Linux desktop package is published. Windows native packaging is not in this release.
+Windows x86_64 CLI/server:
+
+```powershell
+irm https://openprogram.io/install.ps1 | iex
+```
+
+Desktop: macOS releases use the unsigned DMG; Windows uses a signed `win-x64.exe` when that artifact is attached to the [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases). Linux and Windows without that EXE use the complete CLI/server runtime and Web UI.
 
 Platform matrix, PATH, `openprogram doctor`, and source-checkout install: **[Installation](install/install.md)**.
 
@@ -96,7 +102,7 @@ GUI Agent, Research Agent, and Wiki Agent ship with every supported release. Thi
 
 ## Why OpenProgram?
 
-The current OpenProgram release supports macOS and Linux installations, multiple providers, and a Web interface (desktop App or `openprogram web` → http://localhost:18100). Windows native packaging is deferred for a later release decision; Windows and mobile devices can currently use the browser client against a supported remote host. The harness itself provides **three mechanisms for building agent programs.**
+OpenProgram supports macOS and Linux installations, native Windows x86_64 CLI/server, multiple providers, a full terminal UI, and a Web interface (Desktop App or `openprogram web` → http://localhost:18100). The Windows Desktop distribution path produces a signed per-user installer and embeds the same complete runtime; Windows sandbox execution remains separate. The Windows release includes the Ink TUI and falls back to the Python Rich interface only when the terminal cannot provide raw input. Mobile devices can use the browser client against a supported remote host. The harness itself provides **three mechanisms for building agent programs.**
 
 ### 1. DAG Context — for native multi-agent systems
 

@@ -44,7 +44,7 @@ def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "proj"
     (root / "src").mkdir(parents=True)
     (root / "Alpha_dir").mkdir()
-    (root / "src" / "x.py").write_text("print('hi')\n", encoding="utf-8")
+    (root / "src" / "x.py").write_bytes(b"print('hi')\n")
     (root / "zeta.txt").write_text("zzz", encoding="utf-8")
     (root / "apple.txt").write_text("aaa", encoding="utf-8")
     (root / ".hidden").write_text("dot", encoding="utf-8")
@@ -53,7 +53,11 @@ def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.txt").write_text("secret", encoding="utf-8")
-    os.symlink(outside / "secret.txt", root / "sneaky_link")
+    try:
+        os.symlink(outside / "secret.txt", root / "sneaky_link")
+    except OSError as exc:
+        if os.name != "nt" or getattr(exc, "winerror", None) != 1314:
+            raise
 
     def fake_get_project(project_id: str):
         if project_id == "p1":
@@ -81,14 +85,16 @@ def test_tree_root_dirs_first_case_insensitive(project_root):
     assert data["project_id"] == "p1" and data["path"] == ""
     assert "error" not in data
     names = [(e["name"], e["type"]) for e in data["entries"]]
-    assert names == [
+    expected = [
         ("Alpha_dir", "dir"),
         ("src", "dir"),
         (".hidden", "file"),
         ("apple.txt", "file"),
-        ("sneaky_link", "file"),
         ("zeta.txt", "file"),
     ]
+    if (project_root / "sneaky_link").is_symlink():
+        expected.insert(-1, ("sneaky_link", "file"))
+    assert names == expected
     by_name = {e["name"]: e for e in data["entries"]}
     assert by_name["zeta.txt"]["size"] == 3
     assert by_name["zeta.txt"]["mtime"] > 0
@@ -154,6 +160,8 @@ def test_read_unknown_project(project_root):
 
 
 def test_read_symlink_escape_rejected(project_root):
+    if not (project_root / "sneaky_link").is_symlink():
+        pytest.skip("creating symlinks requires Windows Developer Mode or elevation")
     data = _run(ws_files.handle_project_file_read,
                 {"project_id": "p1", "path": "sneaky_link"})["data"]
     assert data["error"] == "path escapes project root"
@@ -223,7 +231,10 @@ def test_write_no_expected_mtime_creates_new_file(project_root):
 
 
 def test_write_traversal_rejected(project_root):
-    for bad in ("../outside/evil.txt", "/etc/evil", "sneaky_link"):
+    bad_paths = ["../outside/evil.txt", "/etc/evil"]
+    if (project_root / "sneaky_link").is_symlink():
+        bad_paths.append("sneaky_link")
+    for bad in bad_paths:
         data = _write({"project_id": "p1", "path": bad, "content": "x"})
         assert data["error"] == "path escapes project root", bad
     assert (project_root.parent / "outside" / "secret.txt").read_text() == "secret"
@@ -567,8 +578,11 @@ def test_raw_escape_403(client, project_root):
     r = client.get("/files/raw",
                    params={"project_id": "p1", "path": "../outside/secret.txt"})
     assert r.status_code == 403
-    r = client.get("/files/raw", params={"project_id": "p1", "path": "sneaky_link"})
-    assert r.status_code == 403
+    if (project_root / "sneaky_link").is_symlink():
+        r = client.get(
+            "/files/raw", params={"project_id": "p1", "path": "sneaky_link"}
+        )
+        assert r.status_code == 403
 
 
 def test_raw_missing_404(client, project_root):

@@ -39,6 +39,7 @@ GPA_MODEL_PATH="$resources/runtime/assets/gpa/model.pt"
 export PLAYWRIGHT_BROWSERS_PATH GPA_MODEL_PATH
 "$embedded_python" -I "$resources/runtime/bin/verify-product-runtime.py" \
   "$resources/runtime"
+"$resources/runtime/bin/node" "$resources/runtime/assets/tui/index.cjs" --probe
 
 port="$((19000 + RANDOM % 500))"
 cleanup() {

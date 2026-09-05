@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 
 import pytest
 
@@ -20,7 +21,8 @@ def test_owner_identity_is_stable_and_corruption_is_not_replaced(authority_state
     authority._reset_owner_cache_for_tests()
     assert authority.owner_principal_id() == first
     assert first.startswith("owner/install/")
-    assert authority._owner_path().stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert authority._owner_path().stat().st_mode & 0o777 == 0o600
 
     authority._owner_path().write_text("{}", encoding="utf-8")
     authority._reset_owner_cache_for_tests()

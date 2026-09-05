@@ -64,6 +64,12 @@ jobs:
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
+          - runner: windows-2025
+            platform: windows
+            arch: x86_64
+          - runner: windows-11-vs2026-arm
+            platform: windows
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -76,13 +82,18 @@ jobs:
         with:
           version: "0.11.16"
       - name: Verify version
+        if: matrix.platform != 'windows'
         run: python3 scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+      - name: Verify version on Windows
+        if: matrix.platform == 'windows'
+        run: python scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
       - name: Install Linux runtime test dependencies
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends --yes xvfb xauth libgl1 libglib2.0-0
       - name: Build complete product runtime
+        if: matrix.platform != 'windows'
         env:
           OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
         shell: bash
@@ -92,13 +103,37 @@ jobs:
           else
             scripts/release/build-product-runtime.sh
           fi
+      - name: Build complete Windows product runtime
+        if: matrix.platform == 'windows'
+        env:
+          OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
+        shell: pwsh
+        run: scripts/release/build-product-runtime.ps1
+      - name: Verify Linux runtime on the Ubuntu 22.04 glibc baseline
+        if: matrix.platform == 'linux'
+        env:
+          OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
+        shell: bash
+        run: >-
+          bash scripts/release/smoke-linux-runtime-baseline.sh
+          "$OPENPROGRAM_RUNTIME_ROOT" "${{ matrix.arch }}"
       - name: Archive complete product runtime
+        if: matrix.platform != 'windows'
         env:
           OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
           OPENPROGRAM_RUNTIME_OUTPUT_DIR: ${{ runner.temp }}/runtime-artifacts
           OPENPROGRAM_RUNTIME_PLATFORM: ${{ matrix.platform }}
           OPENPROGRAM_RUNTIME_ARCH: ${{ matrix.arch }}
         run: scripts/release/archive-product-runtime.sh
+      - name: Archive complete Windows product runtime
+        if: matrix.platform == 'windows'
+        env:
+          OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
+          OPENPROGRAM_RUNTIME_OUTPUT_DIR: ${{ runner.temp }}/runtime-artifacts
+          OPENPROGRAM_RUNTIME_PLATFORM: ${{ matrix.platform }}
+          OPENPROGRAM_RUNTIME_ARCH: ${{ matrix.arch }}
+        shell: pwsh
+        run: scripts/release/archive-product-runtime.ps1
       - uses: actions/upload-artifact@v7
         with:
           name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
@@ -120,6 +155,16 @@ jobs:
             runtime_platform: macos
             arch: x86_64
             builder_arch: x64
+          - runner: windows-2025
+            platform: win
+            runtime_platform: windows
+            arch: x86_64
+            builder_arch: x64
+          - runner: windows-11-vs2026-arm
+            platform: win
+            runtime_platform: windows
+            arch: arm64
+            builder_arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -133,16 +178,34 @@ jobs:
           name: product-runtime-${{ matrix.runtime_platform }}-${{ matrix.arch }}
           path: runtime-artifact
       - name: Verify version
+        if: matrix.platform != 'win'
         run: python3 scripts/release/verify-release-version.py --tag "${GITHUB_REF_NAME}"
+      - name: Verify version on Windows
+        if: matrix.platform == 'win'
+        run: python scripts/release/verify-release-version.py --tag "$env:GITHUB_REF_NAME"
       - name: Install desktop dependencies
         run: npm ci --workspace apps/desktop --include-workspace-root
       - name: Prepare embedded runtime from release archive
+        if: matrix.platform != 'win'
         shell: bash
         run: |
           archive="$(find "$GITHUB_WORKSPACE/runtime-artifact" -name '*.tar.gz' -print -quit)"
           test -n "$archive"
           OPENPROGRAM_RUNTIME_ARCHIVE="$archive" scripts/release/prepare-desktop-runtime.sh
+      - name: Prepare embedded Windows runtime from release archive
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $env:OPENPROGRAM_RUNTIME_ARCHIVE = (
+            Get-ChildItem -LiteralPath "$env:GITHUB_WORKSPACE\runtime-artifact" -Filter "*.zip" |
+            Select-Object -First 1
+          ).FullName
+          if (-not $env:OPENPROGRAM_RUNTIME_ARCHIVE) {
+            throw "Windows runtime ZIP was not downloaded"
+          }
+          scripts/release/prepare-desktop-runtime.ps1
       - name: Build explicitly unsigned macOS artifacts
+        if: matrix.platform != 'win'
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -153,19 +216,86 @@ jobs:
             extension="${artifact##*.}"
             mv "$artifact" "${artifact%.*}-unsigned.$extension"
           done
+      - name: Require Windows signing credentials
+        if: matrix.platform == 'win'
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          if (-not $env:CSC_LINK -or -not $env:CSC_KEY_PASSWORD) {
+            throw "Windows Desktop publication requires WINDOWS_CSC_LINK and WINDOWS_CSC_KEY_PASSWORD"
+          }
+      - name: Build signed Windows installer
+        if: matrix.platform == 'win'
+        working-directory: apps/desktop
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win nsis --${{ matrix.builder_arch }} --publish never
+      - name: Verify Windows Authenticode signatures
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $Unpacked = Get-ChildItem -LiteralPath apps/desktop/dist -Directory |
+            Where-Object { $_.Name -match '^win(?:-arm64)?-unpacked$' } |
+            Select-Object -First 1
+          if (-not $Unpacked) { throw "unpacked Windows application is missing" }
+          $Files = @(
+            Get-ChildItem -LiteralPath apps/desktop/dist -Filter "*.exe" -File
+            Get-ChildItem -LiteralPath $Unpacked.FullName -Filter "OpenProgram.exe" -File
+          )
+          if ($Files.Count -lt 2) { throw "signed installer or application executable is missing" }
+          foreach ($File in $Files) {
+            $Signature = Get-AuthenticodeSignature -LiteralPath $File.FullName
+            if ($Signature.Status -ne "Valid" -or -not $Signature.SignerCertificate) {
+              throw "invalid Authenticode signature: $($File.FullName) ($($Signature.Status))"
+            }
+          }
       - name: Verify embedded complete runtime
+        if: matrix.platform != 'win'
         run: scripts/release/smoke-packaged-runtime.sh mac apps/desktop/dist
+      - name: Verify embedded complete Windows runtime
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: scripts/release/smoke-packaged-runtime.ps1 apps/desktop/dist
       - name: Create SHA-256 checksums
+        if: matrix.platform != 'win'
         shell: bash
         run: |
           cd apps/desktop/dist
           find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' \) -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}
+      - name: Create Windows SHA-256 checksums
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $Lines = Get-ChildItem -LiteralPath apps/desktop/dist -Filter "*.exe" -File |
+            Sort-Object Name |
+            ForEach-Object {
+              $Algorithm = [Security.Cryptography.SHA256]::Create()
+              $Stream = [IO.File]::OpenRead($_.FullName)
+              try {
+                $Hash = ([BitConverter]::ToString($Algorithm.ComputeHash($Stream))).Replace("-", "").ToLowerInvariant()
+              } finally {
+                $Stream.Dispose()
+                $Algorithm.Dispose()
+              }
+              "$Hash  $($_.Name)"
+            }
+          [IO.File]::WriteAllLines(
+            "apps/desktop/dist/SHA256SUMS-${{ matrix.platform }}-${{ matrix.arch }}",
+            $Lines,
+            [Text.UTF8Encoding]::new($false)
+          )
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
             apps/desktop/dist/*.dmg
             apps/desktop/dist/*.zip
+            apps/desktop/dist/*.exe
             apps/desktop/dist/SHA256SUMS-*
 
   cli-installer:
@@ -186,6 +316,12 @@ jobs:
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
+          - runner: windows-2025
+            platform: windows
+            arch: x86_64
+          - runner: windows-11-vs2026-arm
+            platform: windows
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -194,6 +330,7 @@ jobs:
           name: product-runtime-${{ matrix.platform }}-${{ matrix.arch }}
           path: runtime-artifact
       - name: Install the same complete runtime archive
+        if: matrix.platform != 'windows'
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -204,6 +341,19 @@ jobs:
           OPENPROGRAM_BIN_DIR="$RUNNER_TEMP/openprogram-bin" \
             scripts/install-release.sh
           "$RUNNER_TEMP/openprogram-bin/openprogram" --version
+      - name: Install the same complete Windows runtime archive
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $env:OPENPROGRAM_VERSION = $env:GITHUB_REF_NAME.Substring(1)
+          $env:OPENPROGRAM_RUNTIME_ARCHIVE = (
+            Get-ChildItem -LiteralPath "$env:GITHUB_WORKSPACE\runtime-artifact" -Filter "*.zip" |
+            Select-Object -First 1
+          ).FullName
+          $env:OPENPROGRAM_STATE_DIR = "$env:RUNNER_TEMP\openprogram-state"
+          $env:OPENPROGRAM_BIN_DIR = "$env:RUNNER_TEMP\openprogram-bin"
+          scripts/install-release.ps1
+          & "$env:RUNNER_TEMP\openprogram-bin\openprogram.cmd" --version
 
   publish:
     needs: [python, product-runtime, desktop, cli-installer]

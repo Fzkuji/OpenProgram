@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-import stat
 import subprocess
+import sys
 
 import pytest
 
@@ -134,16 +134,16 @@ def test_gh_pr_create_argv_is_exact():
     )[-1] == "--draft"
 
 
-def test_gh_pr_create_argv_runs_against_a_fake_gh(tmp_path, monkeypatch):
+def test_gh_pr_create_argv_runs_against_a_fake_gh(tmp_path):
     recorded = tmp_path / "argv.txt"
-    fake = tmp_path / "gh"
+    fake = tmp_path / "fake_gh.py"
     fake.write_text(
-        '#!/bin/sh\nfor a in "$@"; do echo "$a" >> "%s"; done\n'
-        'echo https://example.invalid/pr/1\n' % recorded,
+        "import pathlib, sys\n"
+        "pathlib.Path(sys.argv[1]).write_text("
+        "'\\n'.join(sys.argv[2:]) + '\\n', encoding='utf-8')\n"
+        "print('https://example.invalid/pr/1')\n",
         encoding="utf-8",
     )
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
 
     body = tmp_path / "body.md"
     body.write_text(pr_body("Why."), encoding="utf-8")
@@ -151,7 +151,13 @@ def test_gh_pr_create_argv_runs_against_a_fake_gh(tmp_path, monkeypatch):
         base="main", head="topic", title="Add thing", body_file=str(body),
         allowed=True,
     )
-    result = subprocess.run(argv, capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        [sys.executable, str(fake), str(recorded), *argv[1:]],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
 
     assert result.stdout.strip() == "https://example.invalid/pr/1"
     assert recorded.read_text(encoding="utf-8").split("\n")[:-1] == argv[1:]

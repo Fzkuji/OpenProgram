@@ -16,13 +16,18 @@ case "$OPENPROGRAM_VERSION" in
     ;;
 esac
 case "$OPENPROGRAM_REPOSITORY" in
-  *[!A-Za-z0-9_.\/-]*|*..*|/*|*/|*/*/*)
+  *[!A-Za-z0-9_./-]*|*..*|/*|*/|*/*/*)
+    printf 'invalid OpenProgram repository: %s\n' "$OPENPROGRAM_REPOSITORY" >&2
+    exit 1
+    ;;
+  */*) ;;
+  *)
     printf 'invalid OpenProgram repository: %s\n' "$OPENPROGRAM_REPOSITORY" >&2
     exit 1
     ;;
 esac
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || true)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || true)
 checkout_installer="$script_dir/release/install-release.sh"
 if [ -f "$checkout_installer" ]; then
   exec sh "$checkout_installer" "$@"
@@ -34,7 +39,7 @@ command -v curl >/dev/null 2>&1 || {
 }
 temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/openprogram-installer.XXXXXX")
 cleanup() { rm -rf "$temporary_dir"; }
-trap cleanup EXIT
+trap cleanup 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM

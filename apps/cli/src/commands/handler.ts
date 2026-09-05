@@ -46,6 +46,9 @@ export interface SlashContext {
   showAgentInfo: () => void;
   /** Export the current transcript to a markdown file. */
   exportTranscript: (filename?: string) => string;
+  /** Override workspace seed writes for host adapters and deterministic
+   *  failure tests. Normal TUI calls use node:fs writeFileSync. */
+  writeWorkspaceSeed?: (path: string, content: string) => void;
   /** Get the most recent assistant reply text (for /copy). */
   lastAssistantText?: () => string | null;
   /** Copy the given text to the system clipboard. */
@@ -60,6 +63,8 @@ export interface SlashContext {
    * alias list into the transcript.
    */
   requestAliasesPrint?: () => void;
+  /** Submit a generated user turn (used by /review). */
+  submitChat?: (text: string) => void;
 }
 
 const helpText = (): string => {
@@ -85,8 +90,37 @@ const detachUsage = (
   'Usage: /detach <channel> <account> <peer>'
 );
 
-const tokenize = (s: string): string[] =>
-  s.trim().split(/\s+/).filter((x) => x.length > 0);
+/** Small shell-like tokenizer: quotes group arguments while Windows path
+ * backslashes remain literal. It intentionally does not execute or expand. */
+const tokenize = (s: string): string[] => {
+  const tokens: string[] = [];
+  let token = '';
+  let quote = '';
+  for (let i = 0; i < s.length; i++) {
+    const char = s[i]!;
+    if (quote) {
+      if (char === quote) {
+        quote = '';
+      } else if (char === '\\' && s[i + 1] === quote) {
+        token += quote;
+        i++;
+      } else {
+        token += char;
+      }
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (/\s/.test(char)) {
+      if (token) {
+        tokens.push(token);
+        token = '';
+      }
+    } else {
+      token += char;
+    }
+  }
+  if (token) tokens.push(token);
+  return tokens;
+};
 
 const requestError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -164,6 +198,10 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
     case 'help':
       // slash commands run silently — no user echo
       ctx.pushSystem(helpText());
+      return true;
+
+    case 'keybindings':
+      ctx.openPicker('shortcuts');
       return true;
 
     case 'clear':
@@ -680,12 +718,13 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         ];
         const created: string[] = [];
         const skipped: string[] = [];
+        const writeSeed = ctx.writeWorkspaceSeed ?? writeFileSync;
         for (const [name, content] of seeds) {
           const path = join(cwd, name);
           if (existsSync(path)) {
             skipped.push(name);
           } else {
-            writeFileSync(path, content);
+            writeSeed(path, content);
             created.push(name);
           }
         }
@@ -788,10 +827,97 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
       return true;
     }
 
-    case 'memory':
-    case 'review':
-    {
-      ctx.pushSystem(`/${cmd} is not implemented in the TUI yet — try \`openprogram ${cmd}\` from the shell.`);
+    case 'review': {
+      if (!ctx.submitChat) {
+        ctx.pushSystem('Review is unavailable in this terminal session.');
+        return true;
+      }
+      const target = args.join(' ').trim();
+      ctx.submitChat(
+        target
+          ? `Review the current code changes against ${target}. Focus on correctness, regressions, security, and missing tests. Report findings first with file and line references; do not modify files.`
+          : 'Review the current working-tree changes. Focus on correctness, regressions, security, and missing tests. Report findings first with file and line references; do not modify files.',
+      );
+      return true;
+    }
+
+    case 'memory': {
+      const [verb = 'status', path, ...rest] = args;
+      const base = `${backendBase()}/api/memory`;
+      const report = (label: string, operation: Promise<Response>, render: (data: any) => string) => {
+        void operation
+          .then(async (response) => {
+            const data = await response.json().catch(() => ({})) as Record<string, any>;
+            if (!response.ok) throw new Error(data.error ?? data.detail ?? `HTTP ${response.status}`);
+            ctx.pushSystem(render(data));
+          })
+          .catch((error) => ctx.pushSystem(`${label} failed: ${requestError(error)}`));
+      };
+      if (verb === 'status') {
+        report('Memory status', backendFetch(`${base}/status`), (data) =>
+          `Memory status\n${JSON.stringify(data, null, 2)}`);
+        return true;
+      }
+      if (verb === 'list') {
+        report('Memory list', backendFetch(`${base}/topics`), (data) => {
+          const topics = Array.isArray(data) ? data : [];
+          return topics.length
+            ? `Memory topics:\n${topics.map((topic) => `• ${topic.path}${topic.title ? ` — ${topic.title}` : ''}`).join('\n')}`
+            : 'Memory topics: none.';
+        });
+        return true;
+      }
+      if (verb === 'recall' || verb === 'search') {
+        const query = [path, ...rest].filter(Boolean).join(' ');
+        if (!query) {
+          ctx.pushSystem('Usage: /memory recall <query>');
+          return true;
+        }
+        report(
+          'Memory recall',
+          backendFetch(`${base}/refs?q=${encodeURIComponent(query)}&limit=8`),
+          (data) => {
+            const rows = Array.isArray(data) ? data : [];
+            return rows.length
+              ? rows.map((row) => `--- topics/${row.topic_path}#^${row.memory_id}\n${row.content}`).join('\n\n')
+              : `No memories matched ${JSON.stringify(query)}.`;
+          },
+        );
+        return true;
+      }
+      if (verb === 'show') {
+        if (!path) {
+          ctx.pushSystem('Usage: /memory show <topic-path|core>');
+          return true;
+        }
+        const url = path === 'core'
+          ? `${base}/core`
+          : `${base}/topics/${encodeURIComponent(path)}`;
+        report('Memory show', backendFetch(url), (data) =>
+          `Memory ${path}\n\n${String(data.content ?? '')}`);
+        return true;
+      }
+      if (verb === 'edit' || verb === 'set') {
+        const content = rest.join(' ');
+        if (!path || !content) {
+          ctx.pushSystem('Usage: /memory edit <topic-path|core> <content> (quote content with spaces; use alt+enter for newlines)');
+          return true;
+        }
+        const url = path === 'core'
+          ? `${base}/core`
+          : `${base}/topics/${encodeURIComponent(path)}`;
+        report(
+          'Memory edit',
+          backendFetch(url, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ content }),
+          }),
+          (data) => `Memory ${path} saved.${data.warning ? `\nWarning: ${data.warning}` : ''}`,
+        );
+        return true;
+      }
+      ctx.pushSystem('Usage: /memory [status|list|recall|show|edit]');
       return true;
     }
 
@@ -872,11 +998,96 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
           .catch((error) => ctx.pushSystem(`MCP ${verb} failed for ${name}: ${requestError(error)}`));
         return true;
       }
-      if (verb === 'add' || verb === 'edit' || verb === 'remove' || verb === 'rm' || verb === 'delete') {
-        ctx.pushSystem('MCP add, edit, and remove require the shell CLI; removal is not available in the TUI.');
+      if (verb === 'add') {
+        if (!name) {
+          ctx.pushSystem('Usage: /mcp add <name> <command> [args…] [--env KEY=VALUE] [--timeout N] [--disabled]');
+          return true;
+        }
+        const command: string[] = [];
+        const env: Record<string, string> = {};
+        let timeout = 30;
+        let enabled = true;
+        for (let i = 2; i < args.length; i++) {
+          const value = args[i]!;
+          if (value === '--disabled') {
+            enabled = false;
+          } else if (value === '--timeout' && args[i + 1]) {
+            timeout = Number(args[++i]);
+          } else if (value === '--env' && args[i + 1]) {
+            const item = args[++i]!;
+            const split = item.indexOf('=');
+            if (split <= 0) {
+              ctx.pushSystem(`Invalid --env value: ${item}. Expected KEY=VALUE.`);
+              return true;
+            }
+            env[item.slice(0, split)] = item.slice(split + 1);
+          } else {
+            command.push(value);
+          }
+        }
+        if (!command.length || !Number.isFinite(timeout) || timeout <= 0) {
+          ctx.pushSystem('MCP add requires a command and a positive --timeout.');
+          return true;
+        }
+        void backendFetch(base, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, type: 'local', command, env, enabled, timeout_seconds: timeout }),
+        })
+          .then(async (response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            ctx.pushSystem(`MCP server ${name} added.`);
+          })
+          .catch((error) => ctx.pushSystem(`MCP add failed for ${name}: ${requestError(error)}`));
         return true;
       }
-      ctx.pushSystem('Usage: /mcp [list|show|restart|enable|disable] [name]');
+      if (verb === 'edit') {
+        const [field, ...values] = args.slice(2);
+        if (!name || !field || !values.length) {
+          ctx.pushSystem('Usage: /mcp edit <name> <command|timeout|enabled|url|env> <value…>');
+          return true;
+        }
+        let body: Record<string, unknown> | null = null;
+        if (field === 'command') body = { type: 'local', command: values };
+        if (field === 'timeout') body = { timeout_seconds: Number(values[0]) };
+        if (field === 'enabled' && /^(true|false)$/i.test(values[0]!)) {
+          body = { enabled: values[0]!.toLowerCase() === 'true' };
+        }
+        if (field === 'url') body = { type: 'remote', url: values.join(' ') };
+        if (field === 'env') {
+          const split = values[0]!.indexOf('=');
+          if (split > 0) body = { env: { [values[0]!.slice(0, split)]: values[0]!.slice(split + 1) } };
+        }
+        if (!body || (field === 'timeout' && (!Number.isFinite(body.timeout_seconds) || Number(body.timeout_seconds) <= 0))) {
+          ctx.pushSystem(`Invalid MCP edit field/value: ${field} ${values.join(' ')}`);
+          return true;
+        }
+        void backendFetch(`${base}/${encodeURIComponent(name)}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            ctx.pushSystem(`MCP server ${name} updated.`);
+          })
+          .catch((error) => ctx.pushSystem(`MCP edit failed for ${name}: ${requestError(error)}`));
+        return true;
+      }
+      if (verb === 'remove' || verb === 'rm' || verb === 'delete') {
+        if (!name) {
+          ctx.pushSystem(`Usage: /mcp ${verb} <name>`);
+          return true;
+        }
+        void backendFetch(`${base}/${encodeURIComponent(name)}`, { method: 'DELETE' })
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            ctx.pushSystem(`MCP server ${name} removed.`);
+          })
+          .catch((error) => ctx.pushSystem(`MCP remove failed for ${name}: ${requestError(error)}`));
+        return true;
+      }
+      ctx.pushSystem('Usage: /mcp [list|show|add|edit|remove|restart|enable|disable] [name]');
       return true;
     }
 

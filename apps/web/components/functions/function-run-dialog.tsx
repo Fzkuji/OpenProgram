@@ -8,6 +8,7 @@ import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useFolderPicker } from "@/components/ui/folder-picker";
 import { pushPath } from "@/lib/shallow-nav";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 
@@ -31,6 +32,7 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
   });
   const [result, setResult] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const { pickFolder, folderPickerDialog } = useFolderPicker();
 
   async function runInChat() {
     // Build typed kwargs and POST the new function-call endpoint.
@@ -89,6 +91,7 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
   }
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.5)" }}
@@ -134,6 +137,7 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
                 p={p}
                 value={values[p.name] ?? ""}
                 onChange={(v) => setValues({ ...values, [p.name]: v })}
+                pickFolder={pickFolder}
               />
             ))
           )}
@@ -182,6 +186,8 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
         </div>
       </div>
     </div>
+    {folderPickerDialog}
+    </>
   );
 }
 
@@ -189,12 +195,15 @@ function ParamInput({
   p,
   value,
   onChange,
+  pickFolder,
 }: {
   p: FunctionParamDetail;
   value: string;
   onChange: (v: string) => void;
+  pickFolder(start?: string): Promise<string | null>;
 }) {
   const { text } = useTranslation();
+  const [pickerError, setPickerError] = useState<string | null>(null);
   return (
     <div>
       <div className="mb-1 flex items-center gap-2">
@@ -270,31 +279,41 @@ function ParamInput({
         />
       ) : /(Path|folder|dir|directory|workdir)/i.test(p.type) ||
         /(workdir|folder|directory|dir_path|work_dir)/i.test(p.name) ? (
-        <div className="flex gap-2">
-          <Input
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={p.placeholder ?? "/path/to/folder"}
-            className="h-8 flex-1 font-mono text-[12px]"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={async () => {
-              try {
-                const r = await fetch("/api/pick-folder", { method: "POST" });
-                const j = await r.json();
-                if (j.path) onChange(j.path);
-              } catch (e) {
-                alert(text("Folder picker unavailable: ", "文件夹选择器不可用：") + String(e));
-              }
-            }}
-          >
-            <Folder />
-            {text("Browse", "浏览")}
-          </Button>
+        <div>
+          <div className="flex gap-2">
+            <Input
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={p.placeholder ?? "/path/to/folder"}
+              className="h-8 flex-1 font-mono text-[12px]"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={async () => {
+                setPickerError(null);
+                try {
+                  const path = await pickFolder(value);
+                  if (path) onChange(path);
+                } catch (error) {
+                  const detail = error instanceof Error ? error.message : String(error);
+                  setPickerError(
+                    text(`Folder picker unavailable: ${detail}`, `文件夹选择器不可用：${detail}`),
+                  );
+                }
+              }}
+            >
+              <Folder />
+              {text("Browse", "浏览")}
+            </Button>
+          </div>
+          {pickerError ? (
+            <p className="mt-1 text-[11px] text-destructive" role="alert">
+              {pickerError}
+            </p>
+          ) : null}
         </div>
       ) : (
         <Input

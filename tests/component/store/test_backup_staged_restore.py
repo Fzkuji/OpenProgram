@@ -1162,6 +1162,7 @@ def test_recovery_unlink_parent_swap_cannot_delete_outside_root(
     assert not (detached / "target.json").exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode contract; Windows uses ACLs")
 def test_restore_staging_is_owner_only_and_on_the_state_filesystem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

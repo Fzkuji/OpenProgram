@@ -43,7 +43,10 @@ def test_deny_hits_symlink_to_denied_path(tmp_path):
     target = tmp_path / "secret"
     target.write_text("x")
     link = tmp_path / "visible"
-    link.symlink_to(target)
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable for this Windows account: {exc}")
     rules = PermissionRules(deny=[f"read({target.parent}/**)"])
     assert _match_rule(rules, "read", {"path": str(link)}) == "deny"
     assert parse_command("read", {"path": str(link)}) == os.path.realpath(target)

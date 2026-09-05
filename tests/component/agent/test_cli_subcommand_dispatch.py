@@ -9,6 +9,7 @@ agents 的所有 verb 全部命中). 现在子 parser 经 ``set_defaults
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -38,10 +39,18 @@ MISSING_VERB_COMMANDS = [
     "argv", MISSING_VERB_COMMANDS, ids=[" ".join(c) for c in MISSING_VERB_COMMANDS]
 )
 def test_missing_verb_prints_help_not_nameerror(argv, tmp_path):
+    env = os.environ.copy()
+    env["HOME"] = str(tmp_path)
+    if sys.platform == "win32":
+        env["USERPROFILE"] = str(tmp_path)
+
     proc = subprocess.run(
         [sys.executable, "-m", "openprogram", *argv],
-        capture_output=True, text=True, timeout=60,
-        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        env=env,
     )
     combined = proc.stdout + proc.stderr
     assert "Traceback" not in combined, combined[-800:]

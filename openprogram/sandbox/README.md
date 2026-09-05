@@ -6,7 +6,9 @@
 
 network access.
 
-macOS: sandbox-exec (Seatbelt).  Linux: bubblewrap (bwrap).
+macOS: sandbox-exec (Seatbelt). Linux: bubblewrap (bwrap). Windows delegates
+the same bubblewrap policy to the default WSL2 distribution; it never rewrites
+Windows ACLs.
 
 The policy is resolved from ``~/.openprogram/config.json`` (the
 ``sandbox.*`` keys in ``config_schema.SETTINGS``) at the moment a command
@@ -19,7 +21,7 @@ skipped by an approval-layer bypass either, because it is read below the
 approval layer. Callers that already hold a policy pass it explicitly to
 ``wrap_command``.
 
-What the boundary is, on both platforms:
+What the boundary is for every available platform backend:
 
 * writes are confined to the working directory plus configured roots
 * reads are open EXCEPT the credential globs in ``deny_read``

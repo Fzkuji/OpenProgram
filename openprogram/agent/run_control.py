@@ -1500,6 +1500,7 @@ def set_current_execution_id(execution_id: str | None):
 
 def clear_turn_context() -> None:
     """Drop context-bound session/execution/token (test teardown)."""
+    _current_session_id.set(None)
     _current_execution_id.set(None)
     _current_token.set(None)
 

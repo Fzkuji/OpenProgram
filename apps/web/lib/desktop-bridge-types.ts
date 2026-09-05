@@ -147,6 +147,7 @@ export interface DesktopDownloadsApi {
 
 export interface DesktopUpdateRelease {
   status: "available" | "up-to-date";
+  artifactKind?: "dmg" | "windows-installer";
   currentVersion: string;
   latestVersion: string;
   publishedAt: string;

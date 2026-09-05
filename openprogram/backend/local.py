@@ -1,13 +1,14 @@
-"""Local backend — subprocess.run in the host shell.
+"""Local backend — bounded subprocess execution in the host shell.
 
 The agent's ``bash`` tool routes every command through here. On POSIX
 that's ``shell=True`` (the host ``/bin/sh``), exactly as before. On
 Windows ``shell=True`` would invoke ``cmd.exe``, which cannot parse the
 bash syntax the agent is steered toward (``&&``, pipes, ``$(...)``,
 single-quote escaping, heredocs) or run unix coreutils (``rm``/``ls``/
-``grep``/…). So on Windows we run the command through a real POSIX bash
-(Git Bash / WSL) when one is present, falling back to ``cmd.exe`` only
-if no bash exists.
+``grep``/…). So on Windows we run the command through Git Bash when it is
+present, falling back to the built-in Windows PowerShell instead of the much
+less capable ``cmd.exe``. Background shells are created without a console
+window so Desktop tool calls do not flash a terminal on screen.
 """
 from __future__ import annotations
 
@@ -20,6 +21,10 @@ from dataclasses import replace
 
 from openprogram.backend.base import Backend, RunResult, decode_maybe
 from openprogram import sandbox as _sandbox
+from openprogram._compat import (
+    ProcessTreeOwner,
+    no_window_creation_flags,
+)
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +60,22 @@ def _windows_bash() -> str | None:
     return chosen
 
 
+def _windows_powershell() -> str:
+    """Return the best available non-interactive Windows PowerShell."""
+
+    found = shutil.which("pwsh.exe") or shutil.which("powershell.exe")
+    if found:
+        return found
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    return os.path.join(
+        system_root,
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    )
+
+
 def _invocation(command: str, cwd: str | None = None, *,
                 policy: _sandbox.SandboxPolicy | None = None,
                 force_sandbox: bool = False,
@@ -62,8 +83,8 @@ def _invocation(command: str, cwd: str | None = None, *,
     """Return ``(args, shell, env, sandboxed)`` for the host run. POSIX: the command
     string via the host shell (unchanged). Windows: a real bash via
     ``[bash, "-c", command]`` (shell=False) when available, else the
-    command string via cmd.exe (shell=True) as a last resort. ``env`` is
-    None when the command runs unsandboxed, i.e. inherits ours.
+    command string via non-interactive Windows PowerShell. ``env`` is None
+    when the command runs unsandboxed, i.e. inherits ours.
 
     With ``sandbox.mode`` set, the command is wrapped so the child can
     only write inside *cwd*, cannot read the configured credential paths,
@@ -79,6 +100,7 @@ def _invocation(command: str, cwd: str | None = None, *,
         policy = (_sandbox.resolve_policy(required=True) if force_sandbox
                   else _sandbox.resolve_policy())
     from openprogram.sandbox.recoverable_delete import (
+        TRASH_ENV,
         prepare_child_env,
         sandbox_writable_root,
     )
@@ -108,7 +130,30 @@ def _invocation(command: str, cwd: str | None = None, *,
     if sys.platform == "win32":
         bash = _windows_bash()
         if bash:
-            return ([bash, "-c", command], False, prepare_child_env(), False)
+            prepared_env = prepare_child_env()
+            if prepared_env and prepared_env.get(TRASH_ENV):
+                # MSYS prepends /usr/bin to a Windows PATH while starting
+                # Git Bash, which would otherwise put the real rm/rmdir ahead
+                # of our recoverable-delete shims. Resolve the run-local path
+                # inside MSYS and prepend it again in the shell itself.
+                command = (
+                    'PATH="$(cygpath -u "$OPENPROGRAM_RECOVERABLE_TRASH")'
+                    '/shims/bin:$PATH"; export PATH; ' + command
+                )
+            return ([bash, "-c", command], False, prepared_env, False)
+        return (
+            [
+                _windows_powershell(),
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                command,
+            ],
+            False,
+            prepare_child_env(),
+            False,
+        )
     return (command, True, prepare_child_env(), False)
 
 
@@ -127,41 +172,90 @@ class LocalBackend(Backend):
                 sandbox_error="unavailable",
             )
         try:
-            proc = subprocess.run(
+            tree = ProcessTreeOwner()
+            proc = tree.popen(
                 args,
                 shell=use_shell,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
                 cwd=cwd,
                 env=env,
             )
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired as timeout_error:
+                # ``subprocess.run(..., timeout=...)`` only kills the direct
+                # shell.  Background grandchildren retain the capture pipes,
+                # so communicate() can then hang until those processes exit.
+                # The tree owner remains valid even when the direct shell has
+                # already exited.  Windows uses a kernel Job Object; POSIX
+                # retains the process-group id chosen at creation.
+                if not tree.terminate():
+                    try:
+                        proc.kill()
+                    except OSError:
+                        pass
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired as drain_error:
+                    # Never close a TextIOWrapper while communicate()'s
+                    # Windows reader thread is blocked inside it: close waits
+                    # for that thread's I/O lock and turns this bounded fallback
+                    # into a permanent hang.  Return the cumulative partial
+                    # output and leave the daemon reader to observe EOF when
+                    # the kernel finishes tearing the job down.
+                    try:
+                        proc.wait(timeout=1)
+                    except (OSError, subprocess.TimeoutExpired):
+                        pass
+                    stdout = decode_maybe(
+                        drain_error.stdout
+                        if drain_error.stdout is not None
+                        else timeout_error.stdout
+                    )
+                    stderr = decode_maybe(
+                        drain_error.stderr
+                        if drain_error.stderr is not None
+                        else timeout_error.stderr
+                    )
+                return RunResult(
+                    exit_code=-1,
+                    stdout=stdout or "",
+                    stderr=stderr or "",
+                    timed_out=True,
+                )
+            except BaseException:
+                # A decoding error, interrupted wait, or other unexpected
+                # communicate failure must not orphan the command tree.
+                tree.terminate()
+                raise
+            tree.release()
             sandbox_error = (
                 "denied" if _sandbox.is_sandbox_denial(
-                    proc.returncode, proc.stdout, proc.stderr,
+                    proc.returncode, stdout, stderr,
                     sandboxed=sandboxed,
                 ) else None
             )
             path = rule = None
             if sandbox_error == "denied":
                 hit = _sandbox.match_deny_read(
-                    f"{command}\n{proc.stdout}\n{proc.stderr}",
+                    f"{command}\n{stdout}\n{stderr}",
                 )
                 if hit:
                     path, rule = hit
             return RunResult(
-                proc.returncode, proc.stdout, proc.stderr,
+                proc.returncode, stdout, stderr,
                 sandbox_error=sandbox_error,
                 sandbox_path=path,
                 sandbox_rule=rule,
             )
-        except subprocess.TimeoutExpired as e:
-            return RunResult(
-                exit_code=-1,
-                stdout=decode_maybe(e.stdout),
-                stderr=decode_maybe(e.stderr),
-                timed_out=True,
-            )
+        except OSError:
+            # Preserve the previous contract for spawn failures (missing shell,
+            # invalid cwd, descriptor exhaustion): callers see the OS error.
+            raise
 
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:
@@ -175,7 +269,10 @@ class LocalBackend(Backend):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
+            creationflags=no_window_creation_flags(),
         )
         setattr(proc, "_openprogram_sandboxed", sandboxed)
         return proc

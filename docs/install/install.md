@@ -9,14 +9,14 @@ OpenProgram has separate release installations for desktop users and CLI/server 
 | macOS arm64 / x64 | DMG | Supported | Local or remote |
 | Linux x86_64 | No published desktop artifact | Supported | Local or remote |
 | Linux arm64 | No published desktop artifact | Supported | Local or remote |
-| Windows | Deferred for a later release decision | Deferred for a later release decision | May connect to a supported remote host |
+| Windows x86_64 / arm64 | Signed EXE when attached to the release | Supported | Local or remote |
 | iOS / Android / iPadOS | No native app | Not applicable | May connect to a supported remote host; mobile layout is not a support commitment |
 
 Only artifacts attached to a published [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases) are release installations. CI artifacts and source-checkout builds are not stable releases.
 
 ## Desktop installation
 
-The supported macOS desktop artifact contains Electron and the complete platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, default OCR/model data, and the GUI, Research, and Wiki first-party Programs. It does not use a system Python or Node.js at runtime. Git is required for session and Memory history and is checked by `openprogram doctor`. Linux currently uses the complete CLI/server release because the complete AppImage failed its packaging gate; no reduced Linux desktop artifact is published.
+Supported macOS and Windows desktop artifacts contain Electron and the complete platform product runtime. The runtime includes managed CPython, OpenProgram, the prebuilt Web UI, providers, channels, search, Playwright Chromium, default OCR/model data, and the GUI, Research, and Wiki first-party Programs. It does not use a system Python or Node.js at runtime. Git is required for session and Memory history and is checked by `openprogram doctor`. Linux currently uses the complete CLI/server release because the complete AppImage failed its packaging gate; no reduced Linux desktop artifact is published.
 
 ### macOS
 
@@ -25,9 +25,18 @@ The supported macOS desktop artifact contains Electron and the complete platform
 3. Open the DMG and copy `OpenProgram.app` to `/Applications`.
 4. Start OpenProgram from Applications. Because the current release is not signed with Apple Developer ID, macOS may block the first launch. Open **System Settings → Privacy & Security**, find the OpenProgram notice, and select **Open Anyway**. The checksum verifies the downloaded bytes; the app is not Apple-verified.
 
+### Windows
+
+1. In GitHub Releases, confirm that the release includes `OpenProgram-<version>-win-x64.exe` or `OpenProgram-<version>-win-arm64.exe` for the machine. If it does not, use the supported CLI/server installation below; unsigned CI or source builds are not release installers.
+2. Download the EXE and verify its SHA-256 against `SHA256SUMS-win-x86_64` or `SHA256SUMS-win-arm64`.
+3. Open the file properties and confirm that **Digital Signatures** reports a valid signature before running it.
+4. Run the assisted per-user installer. It can choose an installation directory and does not require an administrator account.
+
+The Windows app uses the embedded runtime, Windows PowerShell/ConPTY for its Terminal panes, and the same browser, Files, chat, and multi-window surfaces as macOS. Windows Desktop updates verify release metadata, file length, SHA-256, and Authenticode before opening the next installer.
+
 ## CLI and server installation
 
-The release installer supports macOS and Linux. It downloads the complete platform runtime archive, verifies its SHA-256 and capability manifest, and installs it under `~/.openprogram/runtime/cli/releases/<version>`. On macOS, the same archive is also the Desktop build input. It does not resolve product dependencies, clone the repository, or build JavaScript on the user's machine.
+The release installer supports macOS, Linux, and Windows x86_64/arm64. It downloads the complete platform runtime archive, verifies its SHA-256 and capability manifest, and installs it under `~/.openprogram/runtime/cli/releases/<version>`. On macOS, the same archive is also the Desktop build input. It does not resolve product dependencies, clone the repository, or build JavaScript on the user's machine.
 
 Install the latest stable release:
 
@@ -43,7 +52,36 @@ curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.7.0 sh
 
 The command creates `~/.local/bin/openprogram`. If that directory is not already on `PATH`, invoke it by its absolute path or add the directory to the shell configuration.
 
-Before switching `current`, the installer automatically runs the version probe and a worker cold-start/health check. A failed probe leaves the current version unchanged. After installation, run:
+Published Linux runtimes are native CLI/server packages for glibc systems, not
+Desktop packages. Both x86_64 and arm64 are consumed on a clean Ubuntu 22.04
+(glibc 2.35) image before publication; newer glibc distributions are expected
+to work, while Alpine and other musl systems are not release targets. The host
+needs `curl`, `tar`, a SHA-256 utility, Git, and the standard shared libraries
+used by Chromium. The installer reports a failed browser/runtime probe before
+changing the active version. A system Python, Node.js, or npm is not required.
+
+On Windows, run the PowerShell bootstrap:
+
+```powershell
+irm https://openprogram.io/install.ps1 | iex
+```
+
+To select a specific immutable release:
+
+```powershell
+$env:OPENPROGRAM_VERSION = "X.Y.Z"
+irm https://openprogram.io/install.ps1 | iex
+```
+
+The Windows installer downloads the signed-by-checksum release ZIP, validates
+every archive entry before extraction, verifies the complete runtime, and
+cold-starts the worker before activating it. It installs versioned runtimes
+under `%USERPROFILE%\.openprogram\runtime\cli\releases` and creates
+`%LOCALAPPDATA%\OpenProgram\bin\openprogram.cmd`. The launcher directory is
+added to the user `PATH`; open a new terminal if the current one does not see
+it yet.
+
+Before switching `current`, the installer verifies the architecture-matched manifest and bundled Ink TUI, then runs a worker cold-start/health check on an operating-system-assigned loopback port. Installation is serialized by a per-user lock, files are staged outside the immutable release directory, and `current` is changed atomically only after every check passes. A failed probe leaves the previous version selected. After installation, run:
 
 ```bash
 ~/.local/bin/openprogram --version
@@ -51,7 +89,7 @@ Before switching `current`, the installer automatically runs the version probe a
 ~/.local/bin/openprogram doctor
 ```
 
-The Web UI is served at `http://localhost:18100`. The runtime contains the prebuilt Web UI, so Node.js is not required. Before activation, the installer verifies Web, providers, MCP, memory, channels, search, Chromium, OCR/model data, and all three first-party Programs. `doctor` may still report missing user configuration such as provider credentials.
+The Web UI is served at `http://localhost:18100`. The runtime contains the prebuilt Web UI, a private Node.js executable, and the compiled Ink application, so system Node.js is not required for either the Web UI or TUI. Before activation, the installer verifies Web, providers, MCP, memory, channels, search, Ink, Chromium, OCR/model data, and all three first-party Programs. `doctor` may still report missing user configuration such as provider credentials.
 
 ## Included product and additional extensions
 
@@ -69,14 +107,40 @@ cd OpenProgram
 ./scripts/install.sh
 ```
 
-This development installer installs the same product capabilities, then adds toolchains, editable sources, tests, diagnostics, local Web/Ink builds, and backend replacement options. It is not the recommended installation for ordinary users and does not define the `stable` channel.
+On Windows, use PowerShell instead:
+
+```powershell
+git clone https://github.com/Fzkuji/OpenProgram.git
+Set-Location OpenProgram
+.\scripts\install.ps1 -Yes
+```
+
+The Windows development installer creates an isolated `.venv`, installs the
+frontend workspaces from the npm lockfile, builds the browser UI and full Ink
+terminal UI, and installs the optional browser and Channel dependencies. It also creates
+`%LOCALAPPDATA%\OpenProgram\bin\openprogram.cmd` and adds that directory to the
+user `PATH`, so a new PowerShell can invoke `openprogram` without activating
+the checkout environment. Node.js 22 LTS is the validated version. `-Minimal`
+installs only the Python CLI/server and does not install or build frontend
+dependencies.
+
+This development installer installs editable CLI/server sources and the browser
+UI. Windows Desktop development is packaged separately with the Desktop
+workspace's `dist:win` command; it is not installed by `scripts/install.ps1`.
+The release and development installs include the full Ink terminal UI, with
+the Python Rich interface as a capability fallback. Windows sandboxing is optional: `auto`
+keeps native commands usable when WSL2 with bubblewrap is absent, while an
+explicit `workspace-write` policy requires that backend. A source build is not
+recommended for ordinary users and does not define the `stable` channel.
 
 ## Data and removal
 
 Configuration, sessions, logs, Programs, and caches live under `~/.openprogram`; replacing the desktop application or CLI runtime does not delete them.
 
 - macOS Desktop: remove `OpenProgram.app`.
-- CLI runtime: remove `~/.local/bin/openprogram` and `~/.openprogram/runtime/cli`.
+- macOS/Linux CLI runtime: remove `~/.local/bin/openprogram` and `~/.openprogram/runtime/cli`.
+- Windows CLI runtime: remove `%LOCALAPPDATA%\OpenProgram\bin` and `%USERPROFILE%\.openprogram\runtime\cli`.
+- Windows Desktop: uninstall OpenProgram from **Installed apps**. User state is retained unless it is explicitly purged.
 - User data is removed only by an explicit purge of `~/.openprogram` after backup.
 
 See [Upgrading](upgrade.md) for version changes and [Profiles](profiles.md) for isolated state directories.

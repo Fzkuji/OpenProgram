@@ -45,23 +45,25 @@ FAKE_SERVER = textwrap.dedent('''
     import json, sys
 
     def send(payload):
-        body = json.dumps(payload)
-        sys.stdout.write(f"Content-Length: {len(body.encode())}\\r\\n\\r\\n{body}")
-        sys.stdout.flush()
+        body = json.dumps(payload).encode("utf-8")
+        sys.stdout.buffer.write(
+            f"Content-Length: {len(body)}\\r\\n\\r\\n".encode("ascii") + body
+        )
+        sys.stdout.buffer.flush()
 
     def read():
         headers = {}
         while True:
-            line = sys.stdin.readline()
+            line = sys.stdin.buffer.readline()
             if not line:
                 return None
             line = line.strip()
             if not line:
                 break
-            name, _, value = line.partition(":")
+            name, _, value = line.partition(b":")
             headers[name.strip().lower()] = value.strip()
-        length = int(headers.get("content-length", 0))
-        return json.loads(sys.stdin.read(length)) if length else None
+        length = int(headers.get(b"content-length", 0))
+        return json.loads(sys.stdin.buffer.read(length).decode("utf-8")) if length else None
 
     while True:
         message = read()
@@ -103,6 +105,8 @@ FAKE_SERVER = textwrap.dedent('''
         elif method == "boom":
             send({"jsonrpc": "2.0", "id": message["id"],
                   "error": {"code": -32601, "message": "no such method"}})
+        elif method == "shutdown":
+            send({"jsonrpc": "2.0", "id": message["id"], "result": None})
         elif method == "exit":
             break
 ''')
@@ -115,7 +119,7 @@ def fake_server(tmp_path):
     process = subprocess.Popen(
         [sys.executable, str(script)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL, text=True,
+        stderr=subprocess.DEVNULL,
     )
     spec = ServerSpec(language_id="python", binary="fake",
                       arguments=(), install_hint="none", extensions=(".py",))
@@ -381,7 +385,7 @@ def test_definition_accepts_a_bare_location(stub, tmp_path):
 
 def test_locations_convert_utf16_columns_for_display(stub, tmp_path):
     target = tmp_path / "target.py"
-    target.write_text("😀widget()\n")
+    target.write_text("😀widget()\n", encoding="utf-8")
     _server, path = stub["install"]({
         "uri": lsp_client.path_to_uri(str(target)),
         "range": {"start": {"line": 0, "character": 2},

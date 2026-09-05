@@ -10,12 +10,21 @@ the owner without trying to acquire.
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import IO, Optional
 
 from openprogram import _compat as fcntl
 
 from .paths import lock_path
+
+
+_held_paths: set[str] = set()
+_held_paths_lock = threading.Lock()
+
+
+def _lock_key(path: Path) -> str:
+    return os.path.normcase(os.path.abspath(os.fspath(path)))
 
 
 class WorkerLock:
@@ -32,8 +41,24 @@ class WorkerLock:
         try:
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            fh.seek(0)
-            raw = fh.read().strip()
+            if os.name == "nt":
+                # msvcrt denies reads that overlap another handle's locked
+                # byte.  Same-process probes use the registry below; an
+                # external probe reads the separate lifecycle PID file.
+                with _held_paths_lock:
+                    local_holder = _lock_key(self.path) in _held_paths
+                if local_holder:
+                    raw = str(os.getpid())
+                else:
+                    from .paths import pid_path
+
+                    try:
+                        raw = pid_path().read_text(encoding="utf-8").splitlines()[0]
+                    except (OSError, IndexError):
+                        raw = ""
+            else:
+                fh.seek(0)
+                raw = fh.read().strip()
             try:
                 self.holder_pid = int(raw) if raw else None
             except ValueError:
@@ -48,6 +73,8 @@ class WorkerLock:
         os.fsync(fh.fileno())
         self._fh = fh
         self.holder_pid = os.getpid()
+        with _held_paths_lock:
+            _held_paths.add(_lock_key(self.path))
         return True
 
     def release(self) -> None:
@@ -67,6 +94,8 @@ class WorkerLock:
             self._fh.close()
         except OSError:
             pass
+        with _held_paths_lock:
+            _held_paths.discard(_lock_key(self.path))
         self._fh = None
 
 
@@ -77,7 +106,8 @@ def read_holder_pid() -> Optional[int]:
         return None
     try:
         raw = p.read_text(encoding="utf-8").strip()
-        return int(raw) if raw else None
+        pid = int(raw) if raw else None
+        return pid if pid is not None and pid > 0 else None
     except (OSError, ValueError):
         return None
 

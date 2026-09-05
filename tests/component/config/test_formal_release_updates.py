@@ -24,6 +24,7 @@ def test_source_checkout_is_not_a_managed_release(monkeypatch):
     from openprogram.updater import detect
 
     monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
+    monkeypatch.setattr(detect, "managed_runtime_root", lambda: None)
     monkeypatch.setattr(detect, "repo_root", lambda: object())
     monkeypatch.setattr(detect, "is_pyinstaller_binary", lambda: False)
 
@@ -40,11 +41,62 @@ def test_wheel_inside_another_git_repo_is_not_a_source_checkout(
     package.mkdir(parents=True)
     (foreign_repo / ".git").mkdir()
     monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
+    monkeypatch.setattr(detect, "managed_runtime_root", lambda: None)
     monkeypatch.setattr(detect, "package_root", lambda: package)
     monkeypatch.setattr(detect, "is_pyinstaller_binary", lambda: False)
 
     assert detect.repo_root() is None
     assert detect.detect_install_method() is detect.InstallMethod.UNKNOWN
+
+
+def test_bundled_python_is_a_managed_release_without_environment_marker(
+    monkeypatch, tmp_path
+):
+    from openprogram.updater import detect
+
+    runtime = tmp_path / "runtime"
+    python = runtime / "python" / "cpython" / "python.exe"
+    package = python.parent / "Lib" / "site-packages" / "openprogram"
+    package.mkdir(parents=True)
+    python.write_bytes(b"")
+    (runtime / "bin").mkdir()
+    (runtime / "bin" / "verify-product-runtime.py").write_text(
+        "# verifier\n", encoding="utf-8"
+    )
+    (runtime / "product-runtime.json").write_text("{}\n", encoding="utf-8")
+    (runtime / "runtime-manifest.json").write_text(
+        json.dumps({"schema": 2, "python": "python/cpython/python.exe"}),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
+    monkeypatch.setattr(sys, "executable", str(python))
+    monkeypatch.setattr(detect, "package_root", lambda: package)
+    monkeypatch.setattr(detect, "is_pyinstaller_binary", lambda: False)
+    monkeypatch.setattr(detect, "repo_root", lambda: None)
+
+    assert detect.managed_runtime_root() == runtime
+    assert detect.detect_install_method() is detect.InstallMethod.MANAGED_RELEASE
+
+
+def test_unrelated_runtime_manifest_does_not_mark_a_wheel_managed(
+    monkeypatch, tmp_path
+):
+    from openprogram.updater import detect
+
+    runtime = tmp_path / "runtime"
+    python = runtime / "python" / "python.exe"
+    package = runtime / "site-packages" / "openprogram"
+    package.mkdir(parents=True)
+    python.parent.mkdir(parents=True, exist_ok=True)
+    python.write_bytes(b"")
+    (runtime / "runtime-manifest.json").write_text(
+        json.dumps({"schema": 2, "python": "python/python.exe"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "executable", str(python))
+    monkeypatch.setattr(detect, "package_root", lambda: package)
+
+    assert detect.managed_runtime_root() is None
 
 
 def test_worker_start_does_not_apply_product_updates():
@@ -119,7 +171,7 @@ def test_automatic_update_design_is_one_accessible_review_page():
         'data-update-state="available"',
         'data-update-state="error"',
         'prefers-reduced-motion',
-        'https://github.com/Fzkuji/OpenProgram/blob/main/desktop/update-service.js',
+        'https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/update-service.js',
         'https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/python/openprogram_cli/_impl/commands/upgrade.py',
     ):
         assert contract in design

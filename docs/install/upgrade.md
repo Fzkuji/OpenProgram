@@ -34,7 +34,14 @@ To select a specific immutable release instead:
 curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=X.Y.Z sh
 ```
 
-The command downloads the versioned installer from the immutable release tag. The installer downloads the platform runtime archive used by Desktop, verifies its checksum and complete capability manifest in a new version directory, cold-starts the worker, then changes the `current` symlink. A failure before the change leaves the previous version selected. A running worker is not restarted automatically.
+On Windows, the equivalent command is:
+
+```powershell
+$env:OPENPROGRAM_VERSION = "X.Y.Z"
+irm https://openprogram.io/install.ps1 | iex
+```
+
+The command downloads the versioned installer from the immutable release tag. The installer downloads the platform runtime archive, verifies its checksum and complete capability manifest in a staging directory, and cold-starts the worker before publishing or activating that version. macOS and Linux serialize upgrades and atomically change the `current` symlink; Windows atomically replaces the PowerShell launcher and retains its previous launcher. A failure before activation leaves the previous version selected and removes an unpublished staging runtime. Version directories are retained, so rollback uses the same command with the previous `OPENPROGRAM_VERSION`. A running worker is not restarted automatically.
 
 Restart a login service after upgrading:
 

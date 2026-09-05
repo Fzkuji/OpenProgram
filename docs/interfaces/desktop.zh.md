@@ -1,8 +1,10 @@
 # 桌面 App 与内置浏览器
 
-macOS Desktop App 将 OpenProgram 显示为多 Pane 工作区。每个 Pane 可以放 Files、聊天、内置 Browser 或 Terminal；Pane 可以分屏，也可以移到其他应用窗口，底层会话与浏览器 tab 不会因此改变。
+macOS 与 Windows Desktop App 将 OpenProgram 显示为多 Pane 工作区。每个 Pane 可以放 Files、聊天、内置 Browser 或 Terminal；Pane 可以分屏，也可以移到其他应用窗口，底层会话与浏览器 tab 不会因此改变。
 
-从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下载对应架构的 DMG，把 `OpenProgram.app` 复制到 `/Applications` 后启动。当前 release 未签名，首次启动可能需要进入“系统设置 → 隐私与安全性 → 仍要打开”。完整步骤见[安装](../install/install.zh.md)。
+macOS 从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下载对应架构的 DMG，把 `OpenProgram.app` 复制到 `/Applications`；当前 macOS 渠道未签名，首次启动可能需要进入“系统设置 → 隐私与安全性 → 仍要打开”。Windows 只安装已发布 release 附带的带签名 `win-x64.exe` 或 `win-arm64.exe`；某个版本没有带签名 Windows EXE 时，使用该版本的 CLI/server 与浏览器 UI。完整步骤见[安装](../install/install.zh.md)。
+
+Terminal Pane 在 macOS 使用 login shell，在 Windows 通过 ConPTY 使用 Windows PowerShell。两个平台的封装 App 都从内置 managed Python 启动 worker，不依赖系统 Python 或 Node.js。
 
 ## 打开 Browser
 
@@ -18,11 +20,11 @@ Browser 菜单只管理浏览器动作：新建浏览器 tab、Bookmarks、Histo
 
 书签栏直接显示导入或本地维护的 Bookmarks bar 内容。非空的 Other bookmarks 与 Mobile bookmarks 保持为独立文件夹入口。超出宽度的项目进入有限宽度的溢出菜单；嵌套文件夹逐级展开，并在当前窗口高度内滚动。
 
-Bookmarks manager 提供文件夹树、当前目录列表、搜索、favicon 和条目菜单。History 按本地日期分组，每行只显示时间、favicon、标题和域名。Desktop Browser 数据与后端状态分开：在 macOS 上，History 与持久化 `webtabs` partition 位于 `~/Library/Application Support/openprogram-desktop/`，聊天、项目、Programs 和 worker 配置仍位于 `~/.openprogram/`。清除浏览数据不会删除这些后端状态。
+Bookmarks manager 提供文件夹树、当前目录列表、搜索、favicon 和条目菜单。History 按本地日期分组，每行只显示时间、favicon、标题和域名。Desktop Browser 数据与后端状态分开：History 与持久化 `webtabs` partition 位于 Electron 的当前用户应用数据目录，聊天、项目、Programs 和 worker 配置仍位于 `~/.openprogram/`。清除浏览数据不会删除这些后端状态。
 
 ## 导入已有浏览器资料
 
-在 macOS 上，OpenProgram 可以识别本地 Google Chrome、Brave、Microsoft Edge 和 Chromium profile。导入始终由用户显式发起：分别选择来源浏览器、profile 和需要的数据类型。
+在 macOS 与 Windows 上，OpenProgram 可以识别本地 Google Chrome、Brave、Microsoft Edge 和 Chromium profile。导入始终由用户显式发起：分别选择来源浏览器、profile 和需要的数据类型。
 
 | 数据 | 行为 |
 |---|---|

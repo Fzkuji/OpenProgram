@@ -904,15 +904,15 @@ def test_direct_page_inventory_preserves_tab_entries_and_split_panes(monkeypatch
 def test_frontend_and_electron_expose_turn_surface_preview_contract():
     send = (
         REPO_ROOT / "apps/web/components/chat/composer/submit/send-chat-message.ts"
-    ).read_text()
-    bridge = (REPO_ROOT / "apps/web/lib/desktop-bridge.ts").read_text()
-    preload = (REPO_ROOT / "apps/desktop/preload.js").read_text()
-    main = (REPO_ROOT / "apps/desktop/main.js").read_text()
-    use_ws = (REPO_ROOT / "apps/web/lib/net/use-ws.ts").read_text()
+    ).read_text(encoding="utf-8")
+    bridge = (REPO_ROOT / "apps/web/lib/desktop-bridge.ts").read_text(encoding="utf-8")
+    preload = (REPO_ROOT / "apps/desktop/preload.js").read_text(encoding="utf-8")
+    main = (REPO_ROOT / "apps/desktop/main.js").read_text(encoding="utf-8")
+    use_ws = (REPO_ROOT / "apps/web/lib/net/use-ws.ts").read_text(encoding="utf-8")
     chip = (
         REPO_ROOT
         / "apps/web/components/chat/composer/environment-row/chips/web-surface-chip.tsx"
-    ).read_text()
+    ).read_text(encoding="utf-8")
 
     assert "surfaceRefForChat(sessionId, toolsEnabled)" in send
     assert "payload.surface = surface" in send
@@ -952,7 +952,9 @@ def test_web_use_is_registered_as_surface_aware_public_tool():
 
 
 def test_surface_tool_is_injected_after_tools_are_resolved():
-    source = (REPO_ROOT / "openprogram/agent/dispatcher/loop_runner.py").read_text()
+    source = (REPO_ROOT / "openprogram/agent/dispatcher/loop_runner.py").read_text(
+        encoding="utf-8"
+    )
 
     resolve_at = source.index(
         "tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)"
@@ -1222,7 +1224,7 @@ def test_chat_query_owner_always_releases_captured_surface_bindings():
     source = (
         REPO_ROOT
         / "apps/server/openprogram_server/_webui/_execute/chat.py"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     capture_at = source.index("surface_context = _capture_surface")
     finally_at = source.index("finally:", capture_at)
     release_at = source.index("_release_surface_bindings(surface_context)", finally_at)
@@ -1234,7 +1236,7 @@ def test_chat_query_owner_always_releases_captured_surface_bindings():
 def test_websocket_disconnect_releases_owned_surface_bindings():
     source = (
         REPO_ROOT / "apps/server/openprogram_server/server.py"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     finally_at = source.index("    finally:\n", source.index("async def _websocket_handler"))
     remove_at = source.index("_ws_connections.remove(ws)", finally_at)
     release_at = source.index("release_connection(ws)", finally_at)
@@ -1243,7 +1245,7 @@ def test_websocket_disconnect_releases_owned_surface_bindings():
 
 
 def test_electron_bound_surface_control_does_not_focus_the_app_window():
-    source = (REPO_ROOT / "apps/desktop/main.js").read_text()
+    source = (REPO_ROOT / "apps/desktop/main.js").read_text(encoding="utf-8")
     start = source.index("async function activateView")
     end = source.index("const SURFACE_PREVIEW_SCRIPT", start)
     activate_source = source[start:end]
@@ -1254,9 +1256,9 @@ def test_electron_bound_surface_control_does_not_focus_the_app_window():
 
 
 def test_electron_bound_surface_activation_requires_existing_visibility():
-    bridge = (REPO_ROOT / "apps/web/lib/desktop-bridge.ts").read_text()
-    preload = (REPO_ROOT / "apps/desktop/preload.js").read_text()
-    main = (REPO_ROOT / "apps/desktop/main.js").read_text()
+    bridge = (REPO_ROOT / "apps/web/lib/desktop-bridge.ts").read_text(encoding="utf-8")
+    preload = (REPO_ROOT / "apps/desktop/preload.js").read_text(encoding="utf-8")
+    main = (REPO_ROOT / "apps/desktop/main.js").read_text(encoding="utf-8")
 
     assert "bridge.webTab.activate(tab.id, d.url, true)" in bridge
     assert 'ipcRenderer.invoke("webtab:activate", id, url, requireVisible)' in preload

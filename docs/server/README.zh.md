@@ -64,7 +64,15 @@ openprogram worker install      # 安装为系统服务
 openprogram worker uninstall    # 移除
 ```
 
-macOS 用 launchd（`~/Library/LaunchAgents/ai.openprogram.worker.plist`），Linux 用 systemd --user。安装后 worker 随登录自动启动，崩溃后自动重启。`openprogram status` 会显示服务是否已安装。
+macOS 使用 launchd（`~/Library/LaunchAgents/ai.openprogram.worker.plist`），
+Linux 使用 systemd --user，Windows source checkout 使用最低权限的每用户任务计划。
+安装后 worker 随登录自动启动，崩溃后自动重启。`openprogram status` 会显示服务是否已安装。
+
+Linux 安装服务后，`worker start`、`stop`、`restart` 会继续通过已安装的
+systemd 用户服务执行，不会悄悄改成脱管的后台进程。`restart` 还会按当前 CLI
+runtime 刷新生成的 unit，因此不可变 release 升级后不会继续启动旧 runtime。
+每个命名 [profile](../install/profiles.zh.md) 都有独立 unit，所以一个 profile 的
+服务命令不会停止或替换另一个 profile 的 worker。
 
 ## 相关页面
 

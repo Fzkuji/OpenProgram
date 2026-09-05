@@ -112,6 +112,9 @@ def main() -> int:
     installer = (ROOT / "scripts" / "release" / "install-release.sh").read_text(
         encoding="utf-8"
     )
+    windows_installer = (
+        ROOT / "scripts" / "release" / "install-release.ps1"
+    ).read_text(encoding="utf-8")
     expected_tag = f"v{python_version}"
     errors = []
     if desktop_version != python_version:
@@ -124,7 +127,15 @@ def main() -> int:
         f'OPENPROGRAM_VERSION="${{OPENPROGRAM_VERSION:-{python_version}}}"'
     )
     if expected_default not in installer:
-        errors.append("release installer default version does not match project version")
+        errors.append("POSIX release installer default version does not match project version")
+    windows_default = (
+        'if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } '
+        f'else {{ "{python_version}" }}'
+    )
+    if windows_default not in windows_installer:
+        errors.append(
+            "Windows release installer default version does not match project version"
+        )
     if args.installed_app is not None:
         installed_version = _installed_app_version(args.installed_app)
         if args.require_source_match and installed_version != python_version:

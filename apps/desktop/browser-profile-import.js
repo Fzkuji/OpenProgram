@@ -47,6 +47,48 @@ const MAC_BROWSERS = [
   },
 ];
 
+const WINDOWS_BROWSERS = [
+  {
+    id: "chrome",
+    name: "Google Chrome",
+    executables: [
+      ["localAppData", "Google", "Chrome", "Application", "chrome.exe"],
+      ["programFiles", "Google", "Chrome", "Application", "chrome.exe"],
+      ["programFilesX86", "Google", "Chrome", "Application", "chrome.exe"],
+    ],
+    data: ["Google", "Chrome", "User Data"],
+  },
+  {
+    id: "edge",
+    name: "Microsoft Edge",
+    executables: [
+      ["programFilesX86", "Microsoft", "Edge", "Application", "msedge.exe"],
+      ["programFiles", "Microsoft", "Edge", "Application", "msedge.exe"],
+      ["localAppData", "Microsoft", "Edge", "Application", "msedge.exe"],
+    ],
+    data: ["Microsoft", "Edge", "User Data"],
+  },
+  {
+    id: "brave",
+    name: "Brave",
+    executables: [
+      ["programFiles", "BraveSoftware", "Brave-Browser", "Application", "brave.exe"],
+      ["programFilesX86", "BraveSoftware", "Brave-Browser", "Application", "brave.exe"],
+      ["localAppData", "BraveSoftware", "Brave-Browser", "Application", "brave.exe"],
+    ],
+    data: ["BraveSoftware", "Brave-Browser", "User Data"],
+  },
+  {
+    id: "chromium",
+    name: "Chromium",
+    executables: [
+      ["localAppData", "Chromium", "Application", "chrome.exe"],
+      ["programFiles", "Chromium", "Application", "chrome.exe"],
+    ],
+    data: ["Chromium", "User Data"],
+  },
+];
+
 function readJson(filePath, fallback = null) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -113,17 +155,40 @@ function browserDefinitions({
   homeDir = os.homedir(),
   applicationsDir = "/Applications",
   platform = process.platform,
+  localAppDataDir = process.env.LOCALAPPDATA
+    || path.join(homeDir, "AppData", "Local"),
+  programFilesDir = process.env.ProgramFiles || "C:\\Program Files",
+  programFilesX86Dir = process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
 } = {}) {
-  if (platform !== "darwin") return [];
-  const applicationRoots = [...new Set([applicationsDir, path.join(homeDir, "Applications")])];
-  return MAC_BROWSERS.map((browser) => ({
-    ...browser,
-    executable: applicationRoots
-      .map((root) => path.join(root, browser.app))
-      .find((candidate) => fs.existsSync(candidate))
-      || path.join(applicationsDir, browser.app),
-    dataRoot: path.join(homeDir, browser.data),
-  }));
+  if (platform === "darwin") {
+    const applicationRoots = [...new Set([applicationsDir, path.join(homeDir, "Applications")])];
+    return MAC_BROWSERS.map((browser) => ({
+      ...browser,
+      executable: applicationRoots
+        .map((root) => path.join(root, browser.app))
+        .find((candidate) => fs.existsSync(candidate))
+        || path.join(applicationsDir, browser.app),
+      dataRoot: path.join(homeDir, browser.data),
+    }));
+  }
+  if (platform === "win32") {
+    const roots = {
+      localAppData: localAppDataDir,
+      programFiles: programFilesDir,
+      programFilesX86: programFilesX86Dir,
+    };
+    return WINDOWS_BROWSERS.map((browser) => {
+      const candidates = browser.executables.map(([root, ...parts]) =>
+        path.join(roots[root], ...parts));
+      return {
+        ...browser,
+        executable: candidates.find((candidate) => fs.existsSync(candidate))
+          || candidates[0],
+        dataRoot: path.join(localAppDataDir, ...browser.data),
+      };
+    });
+  }
+  return [];
 }
 
 function listBrowserSources(options) {
@@ -152,15 +217,17 @@ function resolveSource(browserId, profileId, options) {
 
 function copyFileIfPresent(source, destination) {
   if (!fs.existsSync(source)) return false;
-  fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
+  const directoryOptions = { recursive: true };
+  if (process.platform !== "win32") directoryOptions.mode = 0o700;
+  fs.mkdirSync(path.dirname(destination), directoryOptions);
   fs.copyFileSync(source, destination);
-  fs.chmodSync(destination, 0o600);
+  if (process.platform !== "win32") fs.chmodSync(destination, 0o600);
   return true;
 }
 
 function withCopiedDatabase(source, fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-browser-import-"));
-  fs.chmodSync(dir, 0o700);
+  if (process.platform !== "win32") fs.chmodSync(dir, 0o700);
   const copy = path.join(dir, path.basename(source));
   try {
     for (const suffix of ["", "-wal", "-shm"]) {
@@ -371,7 +438,7 @@ async function readCookies(source, signal) {
   const cookieSource = cookieFileForProfile(source.profilePath);
   if (!cookieSource) throw importError("cookies_missing", "Cookies file disappeared");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-cookie-import-"));
-  fs.chmodSync(root, 0o700);
+  if (process.platform !== "win32") fs.chmodSync(root, 0o700);
   const profileCopy = path.join(root, source.profile.id);
   const cookieCopy = path.join(profileCopy, path.relative(source.profilePath, cookieSource));
   let child = null;
@@ -518,6 +585,7 @@ async function runBrowserImport(
 module.exports = {
   MAX_HISTORY_IMPORT,
   MAX_BOOKMARK_IMPORT,
+  browserDefinitions,
   listBrowserSources,
   readHistory,
   readBookmarks,
@@ -571,8 +639,36 @@ if (require.main === module) {
       assert.deepStrictEqual(
         browserDefinitions({ ...options, platform: "linux" }),
         [],
-        "profile discovery stays macOS-only",
+        "profile discovery stays on supported Desktop platforms",
       );
+      const windowsLocal = path.join(dir, "LocalAppData");
+      const windowsPrograms = path.join(dir, "ProgramFiles");
+      const windowsChrome = path.join(
+        windowsPrograms,
+        "Google",
+        "Chrome",
+        "Application",
+        "chrome.exe",
+      );
+      const windowsChromeRoot = path.join(
+        windowsLocal,
+        "Google",
+        "Chrome",
+        "User Data",
+      );
+      fs.mkdirSync(path.dirname(windowsChrome), { recursive: true });
+      fs.writeFileSync(windowsChrome, "");
+      fs.mkdirSync(path.join(windowsChromeRoot, "Default"), { recursive: true });
+      fs.writeFileSync(path.join(windowsChromeRoot, "Default", "History"), "");
+      const windowsSources = listBrowserSources({
+        platform: "win32",
+        homeDir: home,
+        localAppDataDir: windowsLocal,
+        programFilesDir: windowsPrograms,
+        programFilesX86Dir: path.join(dir, "ProgramFilesX86"),
+      });
+      assert.strictEqual(windowsSources[0].id, "chrome");
+      assert.strictEqual(windowsSources[0].profiles[0].id, "Default");
       const listed = listBrowserSources(options);
       assert.strictEqual(listed[0].profiles[0].name, "Person 1");
       assert.strictEqual(listed[0].profiles[0].available.cookies, true);

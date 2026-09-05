@@ -331,6 +331,15 @@ def test_different_sessions_run_in_parallel(
 def test_dispatch_inbound_uses_bound_session_run_config(
     tmp_db: SessionDB, stub_routing, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    supported_model = _stub_model().model_copy(update={
+        "reasoning": True,
+        "thinking_levels": ["low", "high"],
+    })
+    monkeypatch.setattr(
+        D,
+        "_resolve_model",
+        lambda profile, override=None: supported_model,
+    )
     tmp_db.create_session(
         "local_bound",
         "main",

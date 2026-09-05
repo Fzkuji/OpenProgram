@@ -1,8 +1,7 @@
 """System service integration for the persistent worker.
 
 macOS uses launchd (per-user LaunchAgents). Linux uses systemd
-``--user`` units. Windows is unsupported here — users on Windows should
-use ``openprogram worker start`` and Task Scheduler to auto-start.
+``--user`` units. Windows uses a least-privilege per-user scheduled task.
 
 Public API:
 
@@ -13,42 +12,69 @@ Public API:
 """
 from __future__ import annotations
 
-import sys
+import importlib
+
+
+def _backend():
+    from openprogram._compat import worker_service_backend
+
+    name = worker_service_backend()
+    if name is None:
+        return None
+    return importlib.import_module(f".{name}", __name__)
 
 
 def is_supported() -> bool:
-    return sys.platform in ("darwin", "linux")
+    return _backend() is not None
 
 
 def install() -> int:
-    if sys.platform == "darwin":
-        from . import launchd
-        return launchd.install()
-    if sys.platform == "linux":
-        from . import systemd
-        return systemd.install()
-    print(f"openprogram worker install: {sys.platform} not supported.")
+    backend = _backend()
+    if backend is not None:
+        return backend.install()
+    print("openprogram worker install: no service adapter for this platform.")
     print("Use `openprogram worker start` to run the worker manually.")
     return 1
 
 
 def uninstall() -> int:
-    if sys.platform == "darwin":
-        from . import launchd
-        return launchd.uninstall()
-    if sys.platform == "linux":
-        from . import systemd
-        return systemd.uninstall()
-    print(f"openprogram worker uninstall: {sys.platform} not supported.")
+    backend = _backend()
+    if backend is not None:
+        return backend.uninstall()
+    print("openprogram worker uninstall: no service adapter for this platform.")
     return 1
 
 
 def status() -> int:
-    if sys.platform == "darwin":
-        from . import launchd
-        return launchd.status()
-    if sys.platform == "linux":
-        from . import systemd
-        return systemd.status()
-    print(f"openprogram worker service: {sys.platform} not supported.")
+    backend = _backend()
+    if backend is not None:
+        return backend.status()
+    print("openprogram worker service: no service adapter for this platform.")
     return 1
+
+
+def _run_if_installed(action: str) -> int | None:
+    """Run a service-manager action when this backend owns the worker.
+
+    ``None`` means no installed service claimed the command, so lifecycle can
+    use its ordinary detached-process implementation.  A non-zero result is a
+    real manager failure and must never silently fall back to a detached worker.
+    """
+
+    backend = _backend()
+    method = getattr(backend, action, None) if backend is not None else None
+    if method is None:
+        return None
+    return method()
+
+
+def start_if_installed() -> int | None:
+    return _run_if_installed("start_if_installed")
+
+
+def stop_if_installed() -> int | None:
+    return _run_if_installed("stop_if_installed")
+
+
+def restart_if_installed() -> int | None:
+    return _run_if_installed("restart_if_installed")

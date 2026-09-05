@@ -39,8 +39,8 @@ const MODE_LABELS: {
     en: "Bypass permissions",
     zh: "跳过审批",
     key: "5",
-    enDesc: "Full access: no approval prompts and no sandbox limits.",
-    zhDesc: "完全放开：不弹审批，沙箱限制也不生效。",
+    enDesc: "No approval prompts; configured sandbox limits still apply.",
+    zhDesc: "不弹审批；已配置的沙箱限制仍然生效。",
   },
 ];
 

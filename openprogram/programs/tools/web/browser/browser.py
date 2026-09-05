@@ -209,8 +209,9 @@ _sessions: dict[str, dict[str, Any]] = {}
 
 def _state_dir() -> str:
     """Where saved login states live — one JSON per host. Created lazily."""
-    from pathlib import Path
-    p = Path.home() / ".openprogram" / "browser-states"
+    from openprogram.paths import get_state_dir
+
+    p = get_state_dir() / "browser-states"
     p.mkdir(parents=True, exist_ok=True)
     return str(p)
 

@@ -135,7 +135,10 @@ def test_directory_validation_rejects_symlinked_bytecode_cache(
     external = tmp_path / "external-cache"
     external.mkdir()
     (external / "hidden.py").write_text("def hidden():\n    return True\n", encoding="utf-8")
-    (project / "__pycache__").symlink_to(external, target_is_directory=True)
+    try:
+        (project / "__pycache__").symlink_to(external, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlink creation is unavailable: {exc}")
 
     with pytest.raises(validation.InvalidWorkflow, match="must not be symlinks"):
         validation.validate_workflow_directory(project)

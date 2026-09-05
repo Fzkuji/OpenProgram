@@ -130,12 +130,12 @@ def extract_pdf_figures(
     "image_path"}`` in page order; the PNGs are written to ``out_dir``.
     """
     try:
-        import fitz  # type: ignore
-    except ImportError:
+        import pymupdf as fitz
+    except ImportError as exc:
         raise ImportError(
             "pymupdf is unavailable in this installation; "
             "reinstall the complete OpenProgram release"
-        )
+        ) from exc
 
     src = Path(pdf_path)
     if not src.is_absolute():

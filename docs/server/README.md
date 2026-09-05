@@ -64,7 +64,18 @@ openprogram worker install      # install as a system service
 openprogram worker uninstall    # remove it
 ```
 
-macOS uses launchd (`~/Library/LaunchAgents/ai.openprogram.worker.plist`); Linux uses systemd --user. Once installed, the worker starts automatically at login and restarts after a crash. `openprogram status` shows whether the service is installed.
+macOS uses launchd (`~/Library/LaunchAgents/ai.openprogram.worker.plist`),
+Linux uses systemd --user, and a Windows source checkout uses a least-privilege
+per-user Task Scheduler entry. Once installed, the worker starts automatically
+at login and restarts after a crash. `openprogram status` shows whether the
+service is installed.
+
+On Linux, `worker start`, `stop`, and `restart` continue to use the installed
+systemd user service instead of silently creating a detached replacement.
+`restart` also refreshes the generated unit from the active CLI runtime, so an
+immutable release upgrade does not keep launching the previous runtime.
+Each named [profile](../install/profiles.md) gets a distinct unit, so service
+commands for one profile cannot stop or replace another profile's worker.
 
 ## Related pages
 

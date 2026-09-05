@@ -30,6 +30,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import AsyncIterator, Iterable, Optional
 
+from openprogram._compat import no_window_creation_flags
+
 from .config import CliBackendConfig
 from .events import CliEvent, Done, Error, SessionInfo, TextDelta, Usage
 from .parsers import LineParser, parser_for
@@ -166,6 +168,7 @@ class CliRunner:
                 cwd=self.workspace_dir,
                 env=env,
                 start_new_session=True,
+                creationflags=no_window_creation_flags(),
             )
         except FileNotFoundError:
             yield Error(
@@ -294,6 +297,7 @@ class CliRunner:
                     cwd=self.workspace_dir,
                     env=env,
                     start_new_session=True,
+                    creationflags=no_window_creation_flags(),
                 )
             except FileNotFoundError:
                 yield Error(

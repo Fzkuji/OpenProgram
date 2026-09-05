@@ -4,6 +4,10 @@ export interface REPLProps {
   client: BackendClient;
   initialAgent?: string;
   initialConversation?: string;
+  /** Use the cursor-addressed alternate terminal buffer (default). */
+  altScreen?: boolean;
+  /** Flatten terminal chrome for assistive technology; implies inline mode. */
+  screenReader?: boolean;
 }
 
 export interface AgentInfo {
@@ -83,7 +87,7 @@ export type PickerKind =
   | 'branch'
   | 'jobs' | 'job_detail'
   | 'settings'
-  | 'commands'
+  | 'commands' | 'shortcuts'
   | 'context_search' | 'context_search_results'
   | 'register_account_id' | 'register_token'
   | 'channel_action' | 'channel_peer_input' | 'channel_qr_wait'

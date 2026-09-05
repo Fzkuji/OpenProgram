@@ -135,9 +135,8 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 
 ## 平台说明
 
-- **受支持的 release host 是 macOS 和 Linux。** Windows 没有受支持的
-  release installer 或 native package；Windows 用户可以用浏览器连接运行在
-  受支持远程主机上的 OpenProgram。
+- **受支持的 CLI/server release 主机包括 macOS、Linux 和 Windows x86_64/arm64。**
+  Windows Desktop 同时支持两种架构；Windows 沙箱命令执行使用可选的 WSL2 与 bubblewrap。
 - **这些 Program 命令需要可变环境。** source-development checkout 可以使用；
   CLI release 仅在对应 release notes 明确支持 Program mutation 时使用。
   packaged desktop 在 Program 拥有隔离的外部环境前会拒绝这些修改命令。
@@ -158,7 +157,7 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 | harness 自身依赖出现 `ModuleNotFoundError` | Program 环境准备失败——重新执行 `openprogram programs install <source>` 并检查错误。 |
 | harness 内部的导入失败（`from <pkg>.x import y`） | package 目录的命名与导入根不一致，或缺少 `__init__.py`。package 文件夹名必须等于导入名。 |
 | 现有dev symlink没有加载 | 运行一次`openprogram programs install <Git来源>`完成校验与登记；安装器不会修改链接目标。 |
-| Windows source checkout 无法安装或运行 harness | Windows release 安装和兼容性不受支持。改用受支持的 macOS/Linux 主机，并检查 harness README 中的平台要求。 |
+| harness 在 Windows 上无法安装或运行 | 检查 harness README 与 dependency marker。OpenProgram CLI/server 受支持，但单个 harness 仍可能只提供 macOS/Linux backend。 |
 
 ---
 

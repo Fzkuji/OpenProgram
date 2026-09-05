@@ -91,7 +91,9 @@ def test_download_inbound_saves_to_account_dir(
     row = saved[0]
     p = Path(row["path"])
     assert p.is_file() and p.read_bytes() == b"PNGDATA"
-    assert "channels/discord/accounts/a1/attachments" in str(p)
+    assert p.parts[-6:-1] == (
+        "channels", "discord", "accounts", "a1", "attachments",
+    )
     assert row["mime"] == "image/png"
     assert row["size"] == 7
     assert seen["headers"] == {"Authorization": "Bearer t"}

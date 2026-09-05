@@ -33,7 +33,9 @@ Each step runs observe (screenshot + component detection + state recognition) â†
 
 - Product runtimes do not install PyTorch or EasyOCR.
 - The release capability probe rejects an artifact if the detector model is missing.
-- Supported product platforms are macOS and Linux.
+- Program registration is included on macOS, Linux, and Windows x86_64
+  runtimes; individual desktop backends still follow the harness's platform
+  and dependency support.
 - The runtime needs a working directory configured before running (screenshots and run records are written there).
 
 Source and README: `openprogram/programs/applications/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).

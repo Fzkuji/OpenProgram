@@ -32,23 +32,21 @@ def token_path() -> Path:
 
 
 def _verify_private_regular(info: os.stat_result, message: str) -> None:
-    if sys.platform == "win32" or not hasattr(os, "geteuid"):
+    if not stat.S_ISREG(info.st_mode):
         raise MCPTokenError(message)
-    if (
-        not stat.S_ISREG(info.st_mode)
-        or stat.S_IMODE(info.st_mode) != 0o600
-        or info.st_uid != os.geteuid()
-    ):
-        raise MCPTokenError(message)
+    if sys.platform != "win32" and hasattr(os, "geteuid"):
+        if stat.S_IMODE(info.st_mode) != 0o600 or info.st_uid != os.geteuid():
+            raise MCPTokenError(message)
 
 
 def _verify_directory(info: os.stat_result, message: str, *, private: bool) -> None:
-    if sys.platform == "win32" or not hasattr(os, "geteuid"):
+    if not stat.S_ISDIR(info.st_mode):
         raise MCPTokenError(message)
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
-        raise MCPTokenError(message)
-    if private and stat.S_IMODE(info.st_mode) & 0o077:
-        raise MCPTokenError(message)
+    if sys.platform != "win32" and hasattr(os, "geteuid"):
+        if info.st_uid != os.geteuid():
+            raise MCPTokenError(message)
+        if private and stat.S_IMODE(info.st_mode) & 0o077:
+            raise MCPTokenError(message)
 
 
 def _same_file(left: os.stat_result, right: os.stat_result) -> bool:
@@ -93,7 +91,10 @@ def _prepare_parent(target: Path, *, create: bool, message: str) -> os.stat_resu
                 if not create:
                     raise MCPTokenError(message) from None
                 _verify_directory(info, message, private=False)
-                if stat.S_IMODE(info.st_mode) & 0o022:
+                if (
+                    sys.platform != "win32"
+                    and stat.S_IMODE(info.st_mode) & 0o022
+                ):
                     raise MCPTokenError(message)
                 try:
                     os.mkdir(current, 0o700)
@@ -159,11 +160,77 @@ def _revalidate_open_parent(
     _revalidate_parent(target, expected, message)
 
 
+def _create_token_windows(target: Path, parent_info: os.stat_result) -> str:
+    """Create and atomically publish an MCP token without POSIX ``dir_fd``.
+
+    Windows has no CPython descriptor-relative link/unlink API. A unique file
+    is written and fsynced in the already validated parent, then published by
+    an atomic hard-link create. The target is never replaced, concurrent
+    creators still have one winner, every ancestor is revalidated around the
+    write, and no ACL or POSIX mode mutation is attempted.
+    """
+
+    descriptor: int | None = None
+    temporary: Path | None = None
+    published = False
+    published_info: os.stat_result | None = None
+    succeeded = False
+    try:
+        token = secrets.token_urlsafe(32)
+        temporary = target.with_name(
+            f".{target.name}.{secrets.token_hex(12)}.tmp"
+        )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        descriptor = os.open(temporary, flags, 0o600)
+        initial_info = os.fstat(descriptor)
+        _verify_private_regular(initial_info, _CREATE_FAILED)
+        _revalidate_parent(target, parent_info, _CREATE_FAILED)
+        _write_all(descriptor, token.encode("ascii"))
+        os.fsync(descriptor)
+        _revalidate_parent(target, parent_info, _CREATE_FAILED)
+        try:
+            os.link(temporary, target, follow_symlinks=False)
+        except FileExistsError:
+            raise MCPTokenError(_EXISTS) from None
+        published = True
+        published_info = os.lstat(target)
+        _verify_private_regular(published_info, _CREATE_FAILED)
+        if not _same_file(initial_info, published_info):
+            raise MCPTokenError(_CREATE_FAILED)
+        _revalidate_parent(target, parent_info, _CREATE_FAILED)
+        succeeded = True
+        return token
+    except MCPTokenError:
+        raise
+    except Exception:
+        raise MCPTokenError(_CREATE_FAILED) from None
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+        if published and not succeeded and published_info is not None:
+            try:
+                current = os.lstat(target)
+                if _same_file(current, published_info):
+                    target.unlink()
+            except OSError:
+                pass
+
+
 def create_token(path: Path | None = None) -> str:
     """Create one private token file without replacing a concurrent winner."""
     try:
         target = _selected_target(path, _CREATE_FAILED)
         parent_info = _prepare_parent(target, create=True, message=_CREATE_FAILED)
+        if sys.platform == "win32":
+            return _create_token_windows(target, parent_info)
         parent_descriptor = _open_parent(target, parent_info, _CREATE_FAILED)
     except MCPTokenError:
         raise

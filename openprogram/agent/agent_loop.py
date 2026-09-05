@@ -721,13 +721,13 @@ async def _stream_assistant_response(
 
         fn = snapshot_stream
         try:
+            from openprogram.providers.api_registry import resolve_api_provider_snapshot
             from openprogram.providers.utils.failover import (
                 resolve_fallback_models,
                 failover_stream_fn,
             )
             _fallbacks = resolve_fallback_models(config.model)
             if structured_plan is not None:
-                from openprogram.providers.api_registry import resolve_api_provider_snapshot
                 from openprogram.providers.structured_output import negotiate_structured_output
 
                 compatible = []
@@ -764,8 +764,31 @@ async def _stream_assistant_response(
                 _fallbacks = available
             if _fallbacks:
                 fn = failover_stream_fn(fn, _fallbacks)
-        except Exception:
-            pass
+                import os as _os
+                import sys as _sys
+
+                if _os.environ.get("OPENPROGRAM_DEBUG_PROVIDER", "").strip().lower() \
+                        in ("1", "true", "yes"):
+                    print(
+                        "[provider failover] candidates="
+                        + ",".join(
+                            f"{getattr(item, 'provider', '?')}/{getattr(item, 'id', '?')}"
+                            for item in _fallbacks
+                        ),
+                        file=_sys.stderr,
+                        flush=True,
+                    )
+        except Exception as exc:
+            import os as _os
+            import sys as _sys
+
+            if _os.environ.get("OPENPROGRAM_DEBUG_PROVIDER", "").strip().lower() \
+                    in ("1", "true", "yes"):
+                print(
+                    f"[provider failover] setup failed: {type(exc).__name__}: {exc}",
+                    file=_sys.stderr,
+                    flush=True,
+                )
 
     assert fn is not None
 
@@ -785,8 +808,13 @@ async def _stream_assistant_response(
         )
 
     from openprogram.providers import SimpleStreamOptions
+    # ``thinking_levels`` is the model's request-body capability contract.
+    # A stale session/agent preference can outlive a model switch, so never
+    # forward it to a model whose list is empty: OpenAI-compatible upstreams
+    # commonly reject an unsupported ``reasoning_effort`` with HTTP 400.
+    reasoning = config.reasoning if config.model.thinking_levels else None
     stream_opts = SimpleStreamOptions(
-        reasoning=config.reasoning,
+        reasoning=reasoning,
         thinking_budgets=config.thinking_budgets,
         temperature=config.temperature,
         max_tokens=config.max_tokens,

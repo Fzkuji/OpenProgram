@@ -145,6 +145,26 @@ EVENTS: dict[str, EventSpec] = {
         payload_doc="{session, count} — an agent enumerated a session's "
                     "branches via the collab tools",
     ),
+    "branch.message_sent": EventSpec(
+        kind="notify",
+        payload_doc="{from, to} — one agent dispatched a message to another "
+                    "session branch",
+    ),
+    "agents.listed": EventSpec(
+        kind="notify",
+        payload_doc="{sessions, branches} — an agent enumerated available "
+                    "collaboration targets",
+    ),
+    "subagent.started": EventSpec(
+        kind="notify",
+        payload_doc="{job_id, label} — a background agent job entered its "
+                    "running state",
+    ),
+    "subagent.ended": EventSpec(
+        kind="notify",
+        payload_doc="{job_id, status, error} — a background agent job "
+                    "reached a terminal state",
+    ),
     "sessions.listed": EventSpec(
         kind="notify",
         payload_doc="{count} — an agent enumerated sessions via the collab "

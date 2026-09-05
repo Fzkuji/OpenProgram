@@ -8,12 +8,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
+def _set_test_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+
+
 @pytest.fixture()
 def meta_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     home = tmp_path / "home"
     legacy_dir = tmp_path / "installed" / "openprogram" / "webui"
     legacy_dir.mkdir(parents=True)
-    monkeypatch.setenv("HOME", str(home))
+    _set_test_home(monkeypatch, home)
     monkeypatch.delenv("OPENPROGRAM_PROFILE", raising=False)
 
     import openprogram.paths as paths
@@ -110,7 +115,7 @@ def test_toolset_resolution_reads_the_active_profile_state(
     monkeypatch: pytest.MonkeyPatch,
 ):
     home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
+    _set_test_home(monkeypatch, home)
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "runtime")
     import openprogram.paths as paths
 
@@ -132,7 +137,7 @@ def test_failed_meta_write_keeps_the_previous_complete_file(
     monkeypatch: pytest.MonkeyPatch,
 ):
     home = tmp_path / "home"
-    monkeypatch.setenv("HOME", str(home))
+    _set_test_home(monkeypatch, home)
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "atomic")
     import openprogram.paths as paths
     from openprogram.programs.meta_storage import PROGRAMS_META, save_meta

@@ -635,9 +635,10 @@ def test_restore_inventory_files_are_atomically_published_owner_only(
         "default.json": (0o600, b'{"credentials":"old-auth"}'),
         "restored.json": (0o600, None),
     }
-    assert stat.S_IMODE(config.stat().st_mode) == 0o600
-    assert stat.S_IMODE(auth.stat().st_mode) == 0o600
-    assert stat.S_IMODE(mcp_token.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(config.stat().st_mode) == 0o600
+        assert stat.S_IMODE(auth.stat().st_mode) == 0o600
+        assert stat.S_IMODE(mcp_token.stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize("failure", ["write", "fsync", "replace"])
@@ -720,6 +721,7 @@ def test_backup_cli_warning_and_manifest_report_same_scope(profile: Path, capsys
     assert "Web runtime tokens and pending pairing codes are never included" in output
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode contract; Windows uses ACLs")
 def test_archive_is_owner_only_and_named_for_profile(profile: Path):
     from openprogram.cli.commands.backup import create_backup
 

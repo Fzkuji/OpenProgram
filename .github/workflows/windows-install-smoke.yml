@@ -1,31 +1,58 @@
 name: Windows install smoke
 
-# Smoke-tests scripts/install.ps1 on a real Windows runner: non-interactive
-# minimal install from a checkout, plus the off-the-web bootstrap path
-# (clone + handoff). Manual trigger + weekly, so it doesn't tax every push.
+# Smoke-tests scripts/install.ps1 on a real Windows runner: a complete
+# source-development install from a checkout, plus the minimal off-the-web
+# bootstrap path (clone + handoff).
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
   schedule:
     - cron: "0 3 * * 1"
 
 jobs:
   install-ps1:
-    runs-on: windows-latest
-    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x64
+          - runner: windows-11-vs2026-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Minimal install from checkout (non-interactive)
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Complete install from checkout (non-interactive)
         shell: pwsh
-        run: .\scripts\install.ps1 -Yes -Minimal
+        run: .\scripts\install.ps1 -Yes
       - name: openprogram importable after install
         shell: pwsh
         run: |
-          $py = if (Test-Path .\.venv\Scripts\python.exe) { ".\.venv\Scripts\python.exe" } else { "python" }
+          $py = ".\.venv\Scripts\python.exe"
           & $py -c "import openprogram; print('openprogram OK:', openprogram.__file__)"
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path .\apps\web\.next\BUILD_ID)) {
+            Write-Error "web production build marker missing"; exit 1
+          }
+          & $py -m openprogram worker start
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          try {
+            & $py -m openprogram doctor
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } finally {
+            & $py -m openprogram worker stop
+          }
       - name: Off-the-web bootstrap (clone + handoff, CI env => defaults)
         shell: pwsh
         env:

@@ -164,7 +164,7 @@ duplicated in this historical distribution ledger.
 - Renamed the Research writer's dropped `context` parameter to the runtime-supported `project_context` field.
 - Recorded Browser Agent as an explicitly deferred internal tool loop without changing its current behavior.
 - Local acceptance: the previously failing four tests pass; affected tests report 461 passed; the full non-integration suite reports 5274 passed, 11 skipped, and 1 expected failure. Desktop, Web, release-script, runtime-HTTP, Ruff, and documentation gates pass.
-- Windows native packaging remains deferred for a later release decision. This repair does not add a Windows artifact or introduce constraints that prevent a later implementation.
+- This repair predates the native Windows artifacts. The current Windows release path is defined in [Windows support](windows-support.md).
 
 ### Native release result and v0.6.2 correction
 
@@ -218,7 +218,7 @@ duplicated in this historical distribution ledger.
 - Developer installations add editable sources, tests, diagnostics, local frontend builds, and replaceable OCR/browser backends. They do not define a smaller or different product edition.
 - Ordinary users install from GitHub Release artifacts. PyPI wheels remain internal build inputs and developer artifacts, not a product installation path.
 - macOS artifacts are explicitly unsigned DMG/ZIP files. Apple Developer ID signing and notarization are not release requirements. Linux publishes complete x86_64/arm64 CLI/server runtimes; no Linux Desktop artifact is published after the complete AppImage failed its packaging gate.
-- Windows native packaging is deferred from this release, while the runtime/Desktop separation must preserve later implementation feasibility. OS credential-store integration remains excluded.
+- This batch originally shipped without Windows artifacts. The same runtime/Desktop separation now produces native Windows x64 and arm64 runtime, installer, and Desktop artifacts as defined in [Windows support](windows-support.md). OS credential-store integration remains excluded.
 
 ### Current-batch files
 
@@ -314,7 +314,7 @@ Platform artifact builds run in the release workflow because a macOS host cannot
 - Linux x86_64 acceptance: build the AppImage on a native x86_64 runner, execute its public entry under Xvfb, let Electron start the embedded worker, verify `/healthz`, `/chat`, immutable Program behavior, and matching freedesktop filename/`StartupWMClass` metadata.
 - Linux CLI acceptance: on native x86_64 and arm64 runners, install the release wheel with the pinned uv and managed CPython, cold-start the worker before switching `current`, and verify the installed launcher version.
 - Pre-release execution: the manually dispatched Linux smoke workflow requires no Apple signing or PyPI credentials and uploads the verified wheel and AppImage only as CI artifacts. It does not create a stable release.
-- This historical batch did not add Linux arm64 desktop artifacts, distro-native deb/rpm packages, Windows implementation, or OS credential-store integration. Windows remains deferred for a later product decision.
+- This historical batch predates the Windows implementation and did not add Linux arm64 desktop artifacts, distro-native deb/rpm packages, or OS credential-store integration. The current Windows release path is defined in [Windows support](windows-support.md).
 
 ### Prior-batch ledger
 

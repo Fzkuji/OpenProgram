@@ -483,6 +483,7 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/distribution/installation-packaging.html": 1035,
     "reference/design/distribution/automatic-updates.html": 1036,
     "reference/design/distribution/implementation-plan.md": 1037,
+    "reference/design/distribution/windows-support.md": 1038,
     # Integrations: keep the current Web Use and MCP server HTML designs
     # together after the alphabetical integration notes.
     "reference/design/integrations/web-use.html": 1039,

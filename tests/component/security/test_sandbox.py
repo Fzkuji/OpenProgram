@@ -14,6 +14,7 @@ import pytest
 from openprogram import sandbox
 from openprogram.sandbox import (
     DEFAULT_DENY_READ,
+    MODE_AUTO,
     MODE_WORKSPACE_WRITE,
     SandboxPolicy,
     SandboxUnavailable,
@@ -21,6 +22,7 @@ from openprogram.sandbox import (
     _bwrap_args,
     _glob_to_regex,
     _seatbelt_profile,
+    _wsl_bwrap_args,
     child_env,
     is_available,
     policy_from_dict,
@@ -51,7 +53,19 @@ def on(cfg: dict, **extra) -> None:
 
 # --- policy resolution -----------------------------------------------------
 
-def test_workspace_write_by_default(cfg):
+def test_auto_default_uses_an_available_backend(cfg, monkeypatch):
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
+    assert resolve_policy() is not None
+
+
+def test_auto_default_keeps_commands_usable_without_a_backend(cfg, monkeypatch):
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "not installed")
+    assert resolve_policy() is None
+
+
+def test_explicit_workspace_write_stays_enabled_without_a_backend(cfg, monkeypatch):
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "not installed")
+    cfg["sandbox"] = {"mode": MODE_WORKSPACE_WRITE}
     assert resolve_policy() is not None
 
 
@@ -335,7 +349,17 @@ def test_glob_regex_avoids_non_capturing_groups():
 def test_glob_to_regex_expands_home():
     import re
     rx = _glob_to_regex("~/.ssh/**")
-    assert rx == "^" + re.escape(os.path.expanduser("~/.ssh")) + "(/.*)?$"
+    target = os.path.realpath(os.path.expanduser("~/.ssh/id_rsa"))
+    if os.sep == "\\":
+        target = target.replace("\\", "/")
+    assert re.match(rx, target)
+
+
+def test_glob_to_regex_matches_native_windows_separators(monkeypatch):
+    monkeypatch.setattr(sandbox.os, "sep", "\\")
+    rx = _glob_to_regex(r"C:\Users\owner\.ssh\**")
+    assert rx is not None
+    assert __import__("re").match(rx, r"C:/Users/owner/.ssh/id_rsa")
 
 
 # --- macOS profile ---------------------------------------------------------
@@ -379,7 +403,8 @@ def test_seatbelt_profile_only_allows_the_current_tmpdir(monkeypatch):
     tmpdir = "/private/var/folders/example/T"
     monkeypatch.setenv("TMPDIR", tmpdir)
     p = _seatbelt_profile("/w", SandboxPolicy())
-    assert f'(allow file-write* (subpath "{tmpdir}"))' in p
+    expected = os.path.realpath(tmpdir).replace("\\", "\\\\")
+    assert f'(allow file-write* (subpath "{expected}"))' in p
     assert '(allow file-write* (subpath "/private/var/folders"))' not in p
 
 
@@ -416,7 +441,8 @@ def test_seatbelt_escapes_the_working_directory():
 def test_seatbelt_extra_writable_roots():
     p = _seatbelt_profile("/w", SandboxPolicy(writable_roots=("/extra",),
                                               deny_read=(), deny_write=()))
-    assert '(allow file-write* (subpath "/extra"))' in p
+    expected = os.path.realpath("/extra").replace("\\", "\\\\")
+    assert f'(allow file-write* (subpath "{expected}"))' in p
 
 
 # --- Linux arguments -------------------------------------------------------
@@ -489,6 +515,40 @@ def test_bwrap_availability_requires_working_namespaces(monkeypatch):
     assert "cannot create the required namespaces" in reason
 
 
+def test_wsl_bwrap_translates_windows_roots_without_acl_changes(
+    monkeypatch, tmp_path,
+):
+    work = tmp_path / "work"
+    secret = tmp_path / "secret"
+    work.mkdir()
+    secret.mkdir()
+    monkeypatch.setattr(
+        sandbox._compat,
+        "windows_wsl_exec_prefix",
+        lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
+    )
+    monkeypatch.setattr(
+        sandbox._compat,
+        "windows_path_to_wsl",
+        lambda path: "/mnt/c/" + str(path).replace("\\", "/").replace(":", ""),
+    )
+    args = _wsl_bwrap_args(
+        "echo ok",
+        str(work),
+        SandboxPolicy(deny_read=(str(secret) + "/**",), deny_write=()),
+    )
+
+    assert args[:5] == [
+        "wsl.exe", "--distribution", "Ubuntu", "--exec", "bwrap",
+    ]
+    assert "--unshare-pid" in args
+    assert "--unshare-net" in args
+    assert "--clearenv" in args
+    assert "--chdir" in args
+    assert args[-3:] == ["/bin/bash", "-c", "echo ok"]
+    assert not any(value.lower() in {"icacls", "chmod", "takeown"} for value in args)
+
+
 # --- child environment -----------------------------------------------------
 
 def test_child_env_drops_credentials():
@@ -515,7 +575,18 @@ def test_child_env_refuses_a_credential_named_extra():
 
 # --- wrap_command ----------------------------------------------------------
 
-def test_wrap_command_returns_a_list():
+def test_wrap_command_returns_a_list(monkeypatch):
+    if sys.platform == "win32":
+        monkeypatch.setattr(
+            sandbox._compat,
+            "windows_wsl_exec_prefix",
+            lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
+        )
+        monkeypatch.setattr(
+            sandbox._compat,
+            "windows_path_to_wsl",
+            lambda path: "/mnt/c/" + str(path).replace("\\", "/").replace(":", ""),
+        )
     args, shell = wrap_command("ls", "/tmp/test")
     assert isinstance(args, list)
     assert shell is False
@@ -536,6 +607,17 @@ def test_invocation_plain_when_off(cfg):
     assert sandboxed is False
     if sys.platform != "win32":
         assert (args, shell) == ("echo hi", True)
+
+
+def test_invocation_auto_runs_plain_when_backend_is_unavailable(
+    cfg, monkeypatch,
+):
+    from openprogram.backend.local import _invocation
+
+    monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "not installed")
+    args, _shell, _env, sandboxed = _invocation("echo hi", cwd="/tmp")
+    assert args
+    assert sandboxed is False
 
 
 def test_invocation_wraps_when_on(cfg):
@@ -591,8 +673,37 @@ def test_run_structures_only_likely_sandbox_denials(
 
     on(cfg)
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: None)
-    completed = subprocess.CompletedProcess([], 1, stdout="", stderr=stderr)
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: completed)
+    if sys.platform == "win32":
+        monkeypatch.setattr(
+            sandbox._compat,
+            "windows_wsl_exec_prefix",
+            lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
+        )
+        monkeypatch.setattr(
+            sandbox._compat,
+            "windows_path_to_wsl",
+            lambda path: "/mnt/c/" + str(path).replace("\\", "/").replace(":", ""),
+        )
+    class CompletedPopen:
+        pid = 123
+        returncode = 1
+        stdout = None
+        stderr = None
+
+        def communicate(self, timeout=None):
+            return "", stderr
+
+    class Owner:
+        def popen(self, *_a, **_kw):
+            return CompletedPopen()
+
+        def release(self):
+            return None
+
+        def terminate(self):
+            return True
+
+    monkeypatch.setattr("openprogram.backend.local.ProcessTreeOwner", Owner)
     result = LocalBackend().run("false", timeout=5, cwd="/tmp")
     assert result.sandbox_error == sandbox_error
 
@@ -618,7 +729,7 @@ def test_sandbox_settings_are_registered():
             "sandbox.deny_write",
             "sandbox.writable_roots", "sandbox.network",
             "sandbox.unavailable_policy", "sandbox.pass_env"} <= keys
-    assert _BY_KEY["sandbox.mode"].default == MODE_WORKSPACE_WRITE
+    assert _BY_KEY["sandbox.mode"].default == MODE_AUTO
 
 
 def test_deny_read_ships_loaded():

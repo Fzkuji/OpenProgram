@@ -11,16 +11,24 @@ backend is a single, long-lived process shared by all front-ends.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
-from openprogram._compat import node_tool_cmd
+from openprogram._compat import (
+    node_tool_cmd,
+    tui_child_requires_direct_stdio_inheritance,
+    tui_worker_ready_timeout_seconds,
+)
+
+
+_TUI_READY_ENV = "_OPENPROGRAM_TUI_READY_FILE"
+_TUI_READY_MARKER = "OpenProgram Ink TUI first frame ready\n"
 
 
 def _find_free_port() -> int:
@@ -40,6 +48,25 @@ def _wait_until_listening(port: int, timeout: float = 5.0) -> bool:
             except OSError:
                 time.sleep(0.05)
     return False
+
+
+def _managed_runtime_root() -> Path | None:
+    """Locate an immutable product runtime from the running interpreter.
+
+    Release layouts differ slightly by platform, so detect the runtime
+    manifest instead of branching on ``sys.platform`` or assuming a fixed
+    Python directory depth.
+    """
+    candidates = (Path(sys.executable).resolve(), Path(__file__).resolve())
+    seen: set[Path] = set()
+    for candidate in candidates:
+        for parent in (candidate.parent, *candidate.parents):
+            if parent in seen:
+                continue
+            seen.add(parent)
+            if (parent / "runtime-manifest.json").is_file():
+                return parent
+    return None
 
 
 def _resolve_cli_entry() -> Path:
@@ -62,6 +89,16 @@ def _resolve_cli_entry() -> Path:
     install without the source tree) or if the build failed in a way
     that didn't produce the expected output.
     """
+    runtime_root = _managed_runtime_root()
+    if runtime_root is not None:
+        bundled = runtime_root / "assets" / "tui" / "index.cjs"
+        if bundled.is_file():
+            return bundled
+        raise FileNotFoundError(
+            f"Packaged Ink TUI is missing: {bundled}. "
+            "Reinstall the complete OpenProgram release."
+        )
+
     import openprogram
 
     project_root = Path(openprogram.__file__).resolve().parents[1]
@@ -149,6 +186,21 @@ def _build_ink_bundle(cli_dir: Path, expected_bundle: Path) -> None:
 
 
 def _resolve_node() -> str:
+    runtime_root = _managed_runtime_root()
+    if runtime_root is not None:
+        names = (
+            ("node.exe", "node")
+            if sys.platform == "win32"
+            else ("node", "node.exe")
+        )
+        for name in names:
+            bundled = runtime_root / "bin" / name
+            if bundled.is_file():
+                return str(bundled)
+        raise RuntimeError(
+            "the packaged Node.js runtime is missing. "
+            "Reinstall the complete OpenProgram release."
+        )
     node = shutil.which("node")
     if not node:
         raise RuntimeError(
@@ -164,7 +216,7 @@ def _tty_write(msg: str) -> None:
 
     Without this, the "no worker is running" hint and similar
     actionable errors would land in
-    ``~/.openprogram/logs/ink-startup.log`` and the user would see a
+    the active profile's ``logs/ink-startup.log`` and the user would see a
     silent prompt return — exactly the "I ran openprogram and nothing
     happened" bug.
     """
@@ -190,6 +242,63 @@ def _tty_write(msg: str) -> None:
             sys.stderr.flush()
         except (OSError, ValueError):
             pass
+
+
+def _has_interactive_tui_stdio() -> bool:
+    """Return whether Ink can safely own an interactive terminal.
+
+    POSIX startup may already have redirected fd 1 to a log, in which case
+    the saved original stdout fd is the capability to inspect. Requiring both
+    directions to be TTYs prevents ANSI frames from leaking into pipelines
+    and sends scripted input directly to the line-oriented Rich fallback.
+    """
+    from openprogram import cli as _cli
+
+    try:
+        stdin_tty = bool(sys.stdin.isatty())
+    except (AttributeError, OSError, ValueError):
+        stdin_tty = False
+
+    try:
+        stdout_tty = bool(sys.stdout.isatty())
+    except (AttributeError, OSError, ValueError):
+        stdout_tty = False
+
+    saved_stdout = getattr(_cli, "_TUI_TTY_OUT", None)
+    if not stdout_tty and saved_stdout is not None:
+        try:
+            stdout_tty = os.isatty(saved_stdout)
+        except (OSError, TypeError, ValueError):
+            stdout_tty = False
+
+    return stdin_tty and stdout_tty
+
+
+def _tui_first_frame_ready(path: Path) -> bool:
+    """Return whether Node acknowledged a completed first Ink frame."""
+    try:
+        return path.read_text(encoding="utf-8") == _TUI_READY_MARKER
+    except (OSError, UnicodeError):
+        return False
+
+
+def _is_tui_startup_failure(
+    *, first_frame_ready: bool, user_interrupted: bool
+) -> bool:
+    """Classify failure using the explicit first-frame handshake."""
+    return not user_interrupted and not first_frame_ready
+
+
+def _tui_child_environment() -> dict[str, str]:
+    """Return the child environment with Python's authoritative state root."""
+    from openprogram.paths import get_state_dir
+
+    env = os.environ.copy()
+    # This is a private parent/child handshake. Never inherit a caller-supplied
+    # path; _run_ink_child replaces it with a fresh path for every launch.
+    env.pop(_TUI_READY_ENV, None)
+    env["OPENPROGRAM_STATE_DIR"] = str(get_state_dir())
+    return env
 
 
 def _print_no_worker_hint() -> None:
@@ -226,7 +335,7 @@ def _resolve_worker_port(*, autostart: bool) -> int | None:
     Returns the port number on success, ``None`` on failure (caller
     prints the "no worker" hint).
     """
-    from openprogram.worker import spawn_detached
+    from openprogram.worker import current_worker_pid, spawn_detached
     from openprogram.worker.lifecycle import find_running_webui
 
     port, _pid, source = find_running_webui()
@@ -252,8 +361,18 @@ def _resolve_worker_port(*, autostart: bool) -> int | None:
             "``openprogram worker start`` first.\n"
         )
         return None
-    deadline = time.time() + 8.0
-    while time.time() < deadline:
+    # Windows receives a longer Defender cold-scan allowance through the
+    # compatibility seam; POSIX fails in a bounded time. Once a managed PID
+    # has appeared, its disappearance is definitive startup failure and there
+    # is no reason to wait out either deadline.
+    deadline = time.monotonic() + tui_worker_ready_timeout_seconds()
+    observed_pid: int | None = None
+    while time.monotonic() < deadline:
+        live_pid = current_worker_pid()
+        if live_pid is not None:
+            observed_pid = live_pid
+        elif observed_pid is not None:
+            return None
         port, _pid, source = find_running_webui()
         if source != "none" and port is not None:
             if _wait_until_listening(port, timeout=0.5):
@@ -262,7 +381,136 @@ def _resolve_worker_port(*, autostart: bool) -> int | None:
     return None
 
 
-def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
+def _restore_tty_stdio(tty_out: int | None, tty_err: int | None) -> None:
+    """Restore process stdio from saved terminal descriptors."""
+    for std_fd, saved in ((1, tty_out), (2, tty_err)):
+        if saved is None:
+            continue
+        try:
+            os.dup2(saved, std_fd)
+        except OSError:
+            pass
+
+
+def _release_owned_tty_fds(tty_out: int | None, tty_err: int | None) -> None:
+    """Restore stdio and close only descriptors created by this launcher."""
+    _restore_tty_stdio(tty_out, tty_err)
+    for saved in (tty_out, tty_err):
+        if saved is None:
+            continue
+        try:
+            os.close(saved)
+        except OSError:
+            pass
+
+
+def _run_ink_child(
+    *,
+    node: str,
+    entry: Path,
+    port: int,
+    tty_out: int | None,
+    tty_err: int | None,
+    agent,
+    session_id: str | None,
+    no_alt_screen: bool,
+    screen_reader: bool,
+) -> int:
+    """Verify the endpoint, run Node, and return its exit status."""
+    from openprogram.backend_endpoint import (
+        OwnerAuthError,
+        resolve_backend_endpoint,
+    )
+
+    env = _tui_child_environment()
+    try:
+        endpoint = resolve_backend_endpoint()
+    except OwnerAuthError as exc:
+        _tty_write(
+            f"openprogram: cannot verify the Web server on port {port}: {exc}\n"
+            "  Try `openprogram status`, or stop it and start again.\n"
+        )
+        raise SystemExit(2) from exc
+    if endpoint.port != port:
+        _tty_write(
+            f"openprogram: the verified Web server is on port {endpoint.port}, "
+            f"not {port}.\n  Try `openprogram status`.\n"
+        )
+        raise SystemExit(2)
+
+    ws_url = endpoint.websocket_url
+    env["OPENPROGRAM_BACKEND_URL"] = endpoint.base_url
+    env["OPENPROGRAM_BACKEND_ORIGIN"] = endpoint.origin
+    env["OPENPROGRAM_BACKEND_TOKEN"] = endpoint.token
+    env["OPENPROGRAM_WS"] = ws_url
+    if agent is not None and getattr(agent, "id", None):
+        env["OPENPROGRAM_AGENT"] = agent.id
+    if session_id:
+        env["OPENPROGRAM_CONV"] = session_id
+
+    cmd = [node, str(entry), "--ws", ws_url]
+    if no_alt_screen:
+        cmd.append("--no-alt-screen")
+    if screen_reader:
+        cmd.append("--screen-reader")
+
+    launched_at = time.monotonic()
+    user_interrupted = False
+    with tempfile.TemporaryDirectory(prefix="openprogram-tui-ready-") as ready_dir:
+        ready_path = Path(ready_dir) / "first-frame"
+        env[_TUI_READY_ENV] = str(ready_path)
+
+        # stdin=None preserves the native console/PTY capability. Passing fd 0
+        # explicitly makes some Windows ConPTY launches appear non-interactive
+        # to Node; POSIX naturally inherits fd 0 through the same path.
+        proc = subprocess.Popen(cmd, env=env, stdout=tty_out, stderr=tty_err)
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            user_interrupted = True
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        first_frame_ready = _tui_first_frame_ready(ready_path)
+
+    elapsed = time.monotonic() - launched_at
+    rc = proc.returncode or 0
+    if _is_tui_startup_failure(
+        first_frame_ready=first_frame_ready,
+        user_interrupted=user_interrupted,
+    ):
+        _tty_write(
+            "\n"
+            f"openprogram: Ink TUI exited rc={rc} before its first frame "
+            f"(after {elapsed:.2f}s).\n"
+            "  The terminal could not complete raw input and renderer setup\n"
+            "  (for example a revoked SSH PTY or Windows Git Bash / MinTTY).\n"
+            "  Falling back to the Rich REPL (text-only chat).\n"
+            "  Use the browser UI instead with: openprogram web\n"
+            "\n"
+        )
+        # Global saved descriptors belong to openprogram.cli and remain open;
+        # launcher-owned descriptors are closed by run_ink_tui's finally.
+        _restore_tty_stdio(tty_out, tty_err)
+        raise RuntimeError(
+            f"Ink TUI exited before its first frame (rc={rc}, "
+            f"after {elapsed:.2f}s). "
+            "Falling back to the Rich REPL."
+        )
+    return rc
+
+
+def run_ink_tui(
+    *,
+    agent=None,
+    session_id: str | None = None,
+    rt=None,
+    no_alt_screen: bool = False,
+    screen_reader: bool = False,
+) -> None:
     """Connect the Node TUI to the live worker.
 
     The agent / session_id / rt arguments are kept for signature compatibility
@@ -270,10 +518,16 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
     agent over the ws ``list_agents`` action and picks its own session_id when
     the user sends the first message.
     """
+    if not _has_interactive_tui_stdio():
+        raise RuntimeError(
+            "the Ink TUI requires terminal stdin and stdout; "
+            "falling back to the Rich REPL for piped or redirected input"
+        )
+
     # Resolve the Node binary + the built Ink bundle. Both errors are
     # actionable for the user but trivial to surface invisibly — at
     # this point ``cli._maybe_redirect_for_tui`` has already pointed
-    # stderr at ``~/.openprogram/logs/ink-startup.log``, so an
+    # stderr at the active profile's ``logs/ink-startup.log``, so an
     # uncaught FileNotFoundError would land there and the user would
     # see ``openprogram`` exit with no output. Route them through
     # ``_tty_write`` instead.
@@ -314,145 +568,58 @@ def run_ink_tui(*, agent=None, session_id: str | None = None, rt=None) -> None:
         _print_no_worker_hint()
         raise RuntimeError("the background service is unavailable")
 
-    # cli.py already did the early dup2 for the TUI path and stashed the
+    # application.main already did the post-parse dup2 for the TUI path and
+    # stashed the
     # original tty fds on the cli module. Reuse those so the Node child
     # gets a clean terminal while logs land in ~/.openprogram/logs/.
     from openprogram import cli as _cli
-    tty_out = getattr(_cli, "_TUI_TTY_OUT", None)
-    tty_err = getattr(_cli, "_TUI_TTY_ERR", None)
-    if tty_out is None or tty_err is None:
-        log_dir = Path.home() / ".openprogram" / "logs"
+    direct_stdio = tui_child_requires_direct_stdio_inheritance()
+    tty_out = None if direct_stdio else getattr(_cli, "_TUI_TTY_OUT", None)
+    tty_err = None if direct_stdio else getattr(_cli, "_TUI_TTY_ERR", None)
+    owns_tty_fds = False
+    if not direct_stdio and (tty_out is None or tty_err is None):
+        from openprogram.paths import get_logs_dir
+
+        log_dir = get_logs_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "ink-server.log"
-        tty_out = os.dup(1)
-        tty_err = os.dup(2)
-        log_fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND)
-        os.dup2(log_fd, 1)
-        os.dup2(log_fd, 2)
-        os.close(log_fd)
-
-    # Resolve the backend endpoint once, challenge-verified, and hand the
-    # owner token to the TUI through the child's environment only — never
-    # on argv (world-readable via ps) and never in a URL query.
-    from openprogram.backend_endpoint import (
-        OwnerAuthError,
-        resolve_backend_endpoint,
-    )
-
-    env = os.environ.copy()
-    # No degraded launch. Without a verified endpoint the TUI has no owner
-    # token, so every request it makes is rejected and the user sees an
-    # unexplained dead UI. Fail here, where the reason is still known.
-    try:
-        endpoint = resolve_backend_endpoint()
-    except OwnerAuthError as exc:
-        _tty_write(
-            f"openprogram: cannot verify the Web server on port {port}: {exc}\n"
-            "  Try `openprogram status`, or stop it and start again.\n"
-        )
-        sys.exit(2)
-    if endpoint.port != port:
-        _tty_write(
-            f"openprogram: the verified Web server is on port {endpoint.port}, "
-            f"not {port}.\n  Try `openprogram status`.\n"
-        )
-        sys.exit(2)
-    ws_url = endpoint.websocket_url
-    env["OPENPROGRAM_BACKEND_URL"] = endpoint.base_url
-    env["OPENPROGRAM_BACKEND_ORIGIN"] = endpoint.origin
-    env["OPENPROGRAM_BACKEND_TOKEN"] = endpoint.token
-    env["OPENPROGRAM_WS"] = ws_url
-    if agent is not None and getattr(agent, "id", None):
-        env["OPENPROGRAM_AGENT"] = agent.id
-    if session_id:
-        env["OPENPROGRAM_CONV"] = session_id
-
-    cmd = [node, str(entry), "--ws", ws_url]
-    # Track launch time so we can distinguish "TUI started, user
-    # quit" (normal) from "TUI couldn't start at all" (raw-mode
-    # failure, missing console, etc.) — the latter exits within
-    # ~1 second with a non-zero code and we want to fall through
-    # to the Rich REPL instead of leaving the user staring at a
-    # silently-restored prompt.
-    _t_launch = time.monotonic()
-    # stdin handling: ``stdin=None`` (default) lets the OS inherit
-    # the parent's stdin handle naturally. On Windows this is the
-    # crucial path for Ink — passing ``stdin=0`` makes Python's
-    # subprocess explicitly hand over a CRT-fd-derived handle with
-    # ``STARTF_USESTDHANDLES``, and Node + Ink see that as a plain
-    # handle rather than the console, so ``process.stdin.isTTY`` is
-    # false and ``setRawMode`` throws. ``stdin=None`` keeps the
-    # console attribute intact across the spawn boundary on both
-    # Windows and POSIX (POSIX inherits fd 0 either way).
-    proc = subprocess.Popen(cmd, env=env, stdout=tty_out, stderr=tty_err)
-    user_interrupted = False
-    try:
-        proc.wait()
-    except KeyboardInterrupt:
-        user_interrupted = True
-        proc.terminate()
+        owned_out: int | None = None
+        owned_err: int | None = None
         try:
-            proc.wait(timeout=2.0)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-
-    elapsed = time.monotonic() - _t_launch
-    rc = proc.returncode or 0
-
-    # Heuristic: Node + Ink that successfully entered raw-mode runs
-    # until the user explicitly quits — minimum lifespan is seconds.
-    # ANY exit within 1.5 s (regardless of return code) almost always
-    # means the TUI couldn't initialise. The canonical case is Ink's
-    # "Raw mode is not supported on the current process.stdin" on
-    # Windows when subprocess inheritance didn't preserve the console
-    # handle properly — Ink prints the error but Node sometimes exits
-    # with rc=0, sometimes with rc=1, so we can't gate on rc alone.
-    # The user couldn't realistically type "/quit" in under a second
-    # anyway, so the false-positive risk is negligible.
-    tui_quick_fail = not user_interrupted and elapsed < 1.5
-
-    if tui_quick_fail:
-        # Surface what just happened, while we still have working
-        # handles. ``_tty_write`` goes directly to the saved tty fd via
-        # ``os.write`` so it bypasses any Python-level stdio buffering
-        # left over from the dup2 redirect — Rich's ``console.print``
-        # in cli_chat's fallback path can't be trusted here because
-        # ``sys.stdout`` was attached to a non-tty target (the log
-        # file) and may have switched to block-buffered mode.
-        _tty_write(
-            "\n"
-            f"openprogram: Ink TUI exited rc={rc} after {elapsed:.2f}s.\n"
-            "  This usually means the terminal can't enter raw input mode\n"
-            "  (Windows Git Bash / MinTTY, or a PowerShell + Node combo where\n"
-            "  the console handle didn't pass through Python's subprocess).\n"
-            "  Falling back to the Rich REPL (text-only chat).\n"
-            "  Use the browser UI instead with: openprogram web\n"
-            "\n"
-        )
-        # Restore stdio so the Rich REPL fallback in cli_chat writes to
-        # the user's terminal instead of into the dup2-redirected log.
-        # cli_chat does the same restore, but doing it here too is
-        # safe (idempotent) and means even bare callers get a working
-        # fallback. Don't close tty_out / tty_err afterward — they're
-        # the SOURCE of the dup2, closing would kill the restored
-        # stdio.
-        for std_fd, saved in ((1, tty_out), (2, tty_err)):
+            owned_out = os.dup(1)
+            owned_err = os.dup(2)
+            tty_out, tty_err = owned_out, owned_err
+            owns_tty_fds = True
+            log_fd = os.open(
+                str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND
+            )
             try:
-                os.dup2(saved, std_fd)
-            except OSError:
-                pass
-        raise RuntimeError(
-            f"Ink TUI exited immediately (rc={rc}, after {elapsed:.2f}s). "
-            "Falling back to the Rich REPL."
-        )
+                os.dup2(log_fd, 1)
+                os.dup2(log_fd, 2)
+            finally:
+                os.close(log_fd)
+        except BaseException:
+            # Allocation/redirection can itself fail (closed SSH PTY, fd
+            # exhaustion). Restore and release whichever duplicates exist.
+            _release_owned_tty_fds(owned_out, owned_err)
+            raise
 
-    # Normal exit path — Node finished cleanly (user quit, or a real
-    # runtime error after the TUI had been running long enough that
-    # the user almost certainly saw it). Close our saved fds so we
-    # don't leak, then exit.
     try:
-        os.close(tty_out)
-        os.close(tty_err)
-    except OSError:
-        pass
+        rc = _run_ink_child(
+            node=node,
+            entry=entry,
+            port=port,
+            tty_out=tty_out,
+            tty_err=tty_err,
+            agent=agent,
+            session_id=session_id,
+            no_alt_screen=no_alt_screen,
+            screen_reader=screen_reader,
+        )
+    finally:
+        # The module-level descriptors are owned by openprogram.cli and may be
+        # needed by its Rich fallback. Only close the emergency duplicates
+        # created in this function, on every success and exception path.
+        if owns_tty_fds:
+            _release_owned_tty_fds(tty_out, tty_err)
     sys.exit(rc)

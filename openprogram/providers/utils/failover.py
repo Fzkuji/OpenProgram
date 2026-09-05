@@ -76,6 +76,14 @@ def failover_category(
         return FailoverCategory.TIMEOUT
     if reason == ErrorReason.TRANSPORT:
         return FailoverCategory.NETWORK
+    # Stream adapters carry the most precise verdict on their exception.
+    # Some pre-content EOFs have no HTTP status or marker for the generic
+    # taxonomy to recognize, but ``retry_stream`` has already classified
+    # them as safe to replay. They are equally safe to try on a fallback
+    # model; ignoring this bit made the advertised fallback chain inert for
+    # Codex's common "ended before terminal response" failure.
+    if getattr(exc, "retryable", None) is True:
+        return FailoverCategory.NETWORK
     return FailoverCategory.NONE
 
 
@@ -103,10 +111,13 @@ def should_failover(
 
 # Event types that mean real output has begun — once any of these has been
 # forwarded we are "committed" and must NOT switch models (it would dupe or
-# drop tokens). Matches the content events agent_loop renders.
+# drop tokens). A text/thinking ``*_start`` is deliberately not substantive:
+# Responses providers announce an empty block before sending any delta, and a
+# stream can die immediately afterwards. Treating that placeholder as output
+# disabled the fallback chain exactly when it was most useful.
 _CONTENT_EVENT_TYPES = frozenset({
-    "text_start", "text_delta", "text_end",
-    "thinking_start", "thinking_delta", "thinking_end",
+    "text_delta", "text_end",
+    "thinking_delta", "thinking_end",
     "toolcall_start", "toolcall_delta", "toolcall_end",
 })
 

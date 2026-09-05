@@ -39,7 +39,7 @@ def test_list_json_mode(tmp_path, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data[0]["name"] == "echo"
     assert data[0]["description"] == "makes echoes"
-    assert data[0]["path"].endswith("echo/SKILL.md")
+    assert Path(data[0]["path"]).parts[-2:] == ("echo", "SKILL.md")
 
 
 def test_list_empty_when_no_dirs_exist(tmp_path, capsys):

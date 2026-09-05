@@ -81,7 +81,7 @@ def test_json_without_key_path_requires_string_root(tmp_path):
 
 def _counting_helper(tmp_path, counter, *, token="sk-1"):
     return _script(tmp_path, "count.sh", f"""
-        echo x >> {counter}
+        echo x >> '{counter.as_posix()}'
         echo '{token}'
     """)
 
@@ -209,7 +209,7 @@ def test_missing_json_key_path_raises(tmp_path):
 def test_failure_is_not_cached(tmp_path):
     counter = tmp_path / "runs"
     helper = _script(tmp_path, "bad.sh", f"""
-        echo x >> {counter}
+        echo x >> '{counter.as_posix()}'
         exit 1
     """)
     data = {"command": [helper], "parses": "text", "cache_seconds": 300}

@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from openprogram.context.nodes import Call
+from .git_session import read_text_with_retry
 
 
 @dataclass
@@ -197,7 +198,7 @@ class SessionMemoryIndex:
         self.reset()
         for fpath in history_files:
             try:
-                payload = json.loads(fpath.read_text(encoding="utf-8"))
+                payload = json.loads(read_text_with_retry(fpath))
             except (json.JSONDecodeError, OSError):
                 continue
             # Drop fields not on the Call dataclass; tolerate extras.

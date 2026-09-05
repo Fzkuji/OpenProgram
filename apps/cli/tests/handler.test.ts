@@ -3,7 +3,6 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,6 +42,52 @@ describe('handleSlash', () => {
     const ctx = makeCtx();
     expect(handleSlash('/help', ctx)).toBe(true);
     expect(ctx.pushSystem).toHaveBeenCalled();
+  });
+
+  it('/keybindings opens the shortcut reference', () => {
+    const ctx = makeCtx();
+    expect(handleSlash('/keybindings', ctx)).toBe(true);
+    expect(ctx.openPicker).toHaveBeenCalledWith('shortcuts');
+  });
+
+  it('/review submits a read-only review turn', () => {
+    const submitChat = vi.fn();
+    const ctx = makeCtx({ submitChat });
+    expect(handleSlash('/review main', ctx)).toBe(true);
+    expect(submitChat).toHaveBeenCalledWith(expect.stringContaining('against main'));
+    expect(submitChat).toHaveBeenCalledWith(expect.stringContaining('do not modify files'));
+  });
+
+  it('/memory lists topics through the owner API', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ path: 'people/alice.md', title: 'Alice' }],
+    }));
+    const ctx = makeCtx();
+
+    expect(handleSlash('/memory list', ctx)).toBe(true);
+    await vi.waitFor(() => {
+      expect(ctx.pushSystem).toHaveBeenCalledWith('Memory topics:\n• people/alice.md — Alice');
+    });
+  });
+
+  it('/memory edit saves quoted content through the owner API', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    handleSlash('/memory edit people/alice.md "# Alice Smith"', ctx);
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://backend.test/api/memory/topics/people%2Falice.md',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({ content: '# Alice Smith' }),
+        }),
+      );
+    });
   });
 
   it('/jobs requests canonical job DTOs for the active session', () => {
@@ -302,17 +347,17 @@ describe('handleSlash', () => {
   it('/init reports a synchronous seed write failure', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'openprogram-init-failure-'));
     try {
-      symlinkSync(
-        join(workspace, 'missing-parent', 'AGENTS.md'),
-        join(workspace, 'AGENTS.md'),
-      );
       process.chdir(workspace);
-      const ctx = makeCtx();
+      const ctx = makeCtx({
+        writeWorkspaceSeed: () => {
+          throw new Error('simulated write failure');
+        },
+      });
 
       expect(handleSlash('/init', ctx)).toBe(true);
 
       expect(ctx.pushSystem).toHaveBeenCalledWith(
-        expect.stringContaining('/init failed:'),
+        '/init failed: simulated write failure',
       );
     } finally {
       process.chdir(originalCwd);
@@ -478,6 +523,47 @@ describe('handleSlash', () => {
         expect.objectContaining({ method: 'POST' }),
       );
       expect(ctx.pushSystem).toHaveBeenCalledWith(`MCP server filesystem ${result}.`);
+    });
+  });
+
+  it('/mcp add posts a local server configuration', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    handleSlash('/mcp add demo "C:\\Program Files\\node.exe" server.js --env TOKEN=abc --timeout 45', ctx);
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://backend.test/api/mcp/servers',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            name: 'demo',
+            type: 'local',
+            command: ['C:\\Program Files\\node.exe', 'server.js'],
+            env: { TOKEN: 'abc' },
+            enabled: true,
+            timeout_seconds: 45,
+          }),
+        }),
+      );
+    });
+  });
+
+  it('/mcp remove deletes the named server', async () => {
+    vi.stubEnv('OPENPROGRAM_BACKEND_URL', 'http://backend.test');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    const ctx = makeCtx();
+
+    handleSlash('/mcp rm demo', ctx);
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://backend.test/api/mcp/servers/demo',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
     });
   });
 

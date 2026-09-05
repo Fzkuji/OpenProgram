@@ -42,6 +42,8 @@ import threading
 import uuid
 from typing import Any
 
+from openprogram._compat import no_window_creation_flags
+
 from openprogram.backend.local import _invocation
 from openprogram import sandbox as _sandbox
 
@@ -301,6 +303,7 @@ def _spawn(entry: dict[str, Any], log_dir: str) -> Any | None:
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
+                creationflags=no_window_creation_flags(),
             )
         else:
             log_fh.flush()

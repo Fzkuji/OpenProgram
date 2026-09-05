@@ -20,10 +20,13 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from collections.abc import Callable
 from typing import Optional
 
+from openprogram._compat import no_window_creation_flags
+
 from . import paths
-from .lock import read_holder_pid
+from .lock import is_held_by, read_holder_pid
 
 
 # port file
@@ -148,7 +151,8 @@ def _read_pid_file() -> Optional[int]:
         return None
     try:
         raw = p.read_text(encoding="utf-8").strip().splitlines()
-        return int(raw[0]) if raw else None
+        pid = int(raw[0]) if raw else None
+        return pid if pid is not None and pid > 0 else None
     except (OSError, ValueError):
         return None
 
@@ -220,17 +224,38 @@ def _process_alive(pid: int) -> bool:
 def current_worker_pid() -> Optional[int]:
     """Return the PID of the live worker, or None.
 
-    Prefers the lock file (authoritative — fcntl-backed). Falls back
-    to the .pid sidecar in case the lock got cleared by a clean
-    release while the worker process kept running (defensive).
+    The bytes in ``worker.lock`` are only a hint: a crashed process leaves
+    them behind even though the kernel has released the advisory lock, and
+    that PID may later be reused by an unrelated process.  Verify actual lock
+    ownership before trusting the holder.  The legacy PID sidecar fallback is
+    accepted only when its live process still has an OpenProgram worker
+    command line, so ``openprogram stop`` never signals an unrelated reused
+    PID.
     """
     holder = read_holder_pid()
-    if holder is not None and _process_alive(holder):
+    if (
+        holder is not None
+        and _process_alive(holder)
+        and is_held_by(holder)
+    ):
         return holder
     pid = _read_pid_file()
-    if pid is not None and _process_alive(pid):
+    if (
+        pid is not None
+        and _process_alive(pid)
+        and _looks_like_worker_process(pid)
+    ):
         return pid
     return None
+
+
+def _looks_like_worker_process(pid: int) -> bool:
+    """Best-effort identity check for the legacy PID-file fallback."""
+
+    from openprogram._compat import process_command_line
+
+    command = " ".join(process_command_line(pid).lower().split())
+    return "openprogram" in command and "worker run" in command
 
 
 # start / stop
@@ -248,8 +273,25 @@ def _detached_worker_command(flags=None) -> list[str]:
     return command
 
 
-def spawn_detached() -> int:
-    """Fork a background worker. Returns 0 on success, 1 if already running."""
+def spawn_detached(
+    *,
+    prefer_service: bool = True,
+    on_spawn: Callable[[int], None] | None = None,
+) -> int:
+    """Start the worker through its installed service or as a detached child.
+
+    ``on_spawn`` runs immediately after ``Popen`` returns, before readiness is
+    polled.  Release installers use it to durably record the detached session
+    leader so cleanup can terminate the whole process group even before the
+    worker has written its ordinary lock and PID files.
+    """
+    if prefer_service:
+        from openprogram.worker import services
+
+        service_result = services.start_if_installed()
+        if service_result is not None:
+            return service_result
+
     existing = current_worker_pid()
     if existing is not None:
         port = read_worker_port()
@@ -274,12 +316,30 @@ def spawn_detached() -> int:
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
+            creationflags=no_window_creation_flags(),
             cwd=Path.home(),
         )
     except Exception as e:  # noqa: BLE001
         log.close()
         print(f"failed to spawn worker: {type(e).__name__}: {e}")
         return 1
+    if on_spawn is not None:
+        try:
+            on_spawn(proc.pid)
+        except Exception as e:  # noqa: BLE001
+            # A caller that cannot record ownership must not lose a detached
+            # worker.  Kill the just-created tree before returning failure;
+            # this is especially important before worker.lock exists.
+            from openprogram._compat import kill_process_tree
+
+            kill_process_tree(proc.pid)
+            log.close()
+            print(f"failed to record spawned worker: {type(e).__name__}: {e}")
+            return 1
+    # Popen duplicated/inherited the descriptor for the child.  The CLI or TUI
+    # parent must not retain its own copy for the rest of an interactive
+    # session; doing so leaked one descriptor on every worker recovery.
+    log.close()
 
     deadline = time.time() + 5.0
     while time.time() < deadline:
@@ -304,8 +364,15 @@ def spawn_detached() -> int:
     return 0
 
 
-def stop_worker() -> int:
-    """SIGTERM the worker, escalate to SIGKILL after 5s. Returns 0 on success."""
+def stop_worker(*, prefer_service: bool = True) -> int:
+    """Stop the service-owned or detached worker, escalating when required."""
+    if prefer_service:
+        from openprogram.worker import services
+
+        service_result = services.stop_if_installed()
+        if service_result is not None:
+            return service_result
+
     pid = current_worker_pid()
     if pid is None:
         print("openprogram: not running.")
@@ -353,17 +420,24 @@ def stop_worker() -> int:
     return 1
 
 
-def restart_worker() -> int:
-    """Stop the live worker (if any) and spawn a fresh one."""
+def restart_worker(*, prefer_service: bool = True) -> int:
+    """Refresh a managed service or restart the ordinary detached worker."""
+    if prefer_service:
+        from openprogram.worker import services
+
+        service_result = services.restart_if_installed()
+        if service_result is not None:
+            return service_result
+
     if current_worker_pid() is not None:
-        rc = stop_worker()
+        rc = stop_worker(prefer_service=False)
         if rc != 0:
             return rc
         # Wait a beat for the lock + port files to clear.
         deadline = time.time() + 2.0
         while time.time() < deadline and current_worker_pid() is not None:
             time.sleep(0.1)
-    return spawn_detached()
+    return spawn_detached(prefer_service=False)
 
 
 # status

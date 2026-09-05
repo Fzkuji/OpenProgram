@@ -26,11 +26,24 @@ export function execFileNoThrow(
     let stdout = ''
     let stderr = ''
     let timedOut = false
+    let forceTimer: ReturnType<typeof setTimeout> | null = null
+
+    const clearTimers = () => {
+      if (timer) {
+        clearTimeout(timer)
+      }
+      if (forceTimer) {
+        clearTimeout(forceTimer)
+      }
+    }
 
     const timer = options.timeout
       ? setTimeout(() => {
           timedOut = true
           child.kill('SIGTERM')
+          // A stale clipboard/display helper can ignore TERM. Escalate so a
+          // nominal timeout is a real bound rather than an indefinite await.
+          forceTimer = setTimeout(() => child.kill('SIGKILL'), 250)
         }, options.timeout)
       : null
 
@@ -41,16 +54,12 @@ export function execFileNoThrow(
       stderr += String(chunk)
     })
     child.on('error', error => {
-      if (timer) {
-        clearTimeout(timer)
-      }
+      clearTimers()
 
       resolve({ stdout, stderr, code: 1, error: String(error) })
     })
     child.on('close', code => {
-      if (timer) {
-        clearTimeout(timer)
-      }
+      clearTimers()
 
       resolve({ stdout, stderr, code: timedOut ? 124 : (code ?? 0) })
     })

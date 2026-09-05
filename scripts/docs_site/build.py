@@ -14,6 +14,8 @@ import os
 import re
 import shutil
 import sys
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from markdown_it import MarkdownIt
@@ -24,6 +26,8 @@ from pygments import highlight as pyg_highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
+
+from openprogram import _compat
 
 from . import nav as navmod
 from . import search as searchmod
@@ -46,6 +50,43 @@ SITE_ORIGIN = os.environ.get(
     "OPENPROGRAM_DOCS_ORIGIN", "https://openprogram.io")
 
 _SLUG_DEDUP: dict[str, int] = {}
+
+
+@contextmanager
+def _site_build_lock(timeout: float = 180.0):
+    """Serialize manual, worker, and release documentation builds.
+
+    A thread lock in the worker cannot coordinate with a manual or release
+    build in another process. Both used the same ``_site.tmp`` directory, so
+    either process could delete the other's partially rendered tree and then
+    publish it. The byte lock is advisory and cross-platform through the
+    compatibility seam; it does not alter file permissions or ACLs.
+    """
+
+    lock_path = DOCS_ROOT / "_site.build.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                _compat.flock(
+                    handle.fileno(), _compat.LOCK_EX | _compat.LOCK_NB,
+                )
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"could not acquire documentation build lock within {timeout}s"
+                    )
+                time.sleep(0.1)
+        try:
+            yield
+        finally:
+            _compat.flock(handle.fileno(), _compat.LOCK_UN)
 
 
 # ── markdown rendering ──────────────────────────────────────────────────────
@@ -411,6 +452,11 @@ def render_nav(sections, current_out: Path, base: str) -> str:
 # ── main build ──────────────────────────────────────────────────────────────
 
 def build() -> int:
+    with _site_build_lock():
+        return _build_locked()
+
+
+def _build_locked() -> int:
     # Regenerate the code-derived reference pages first (CLI / config keys /
     # provider registry) so discover() picks them up. Idempotent writes —
     # unchanged content never touches mtimes, so the worker's mtime-based
@@ -430,9 +476,18 @@ def build() -> int:
             old = DOCS_ROOT / "_site.old"
             if old.exists():
                 shutil.rmtree(old)
-            if final.exists():
+            had_final = final.exists()
+            if had_final:
                 final.rename(old)
-            OUT_ROOT.rename(final)
+            try:
+                OUT_ROOT.rename(final)
+            except Exception:
+                # Never leave /docs missing if the second half of the swap
+                # fails (for example because an antivirus briefly holds a
+                # Windows directory handle).
+                if had_final and old.exists() and not final.exists():
+                    old.rename(final)
+                raise
             shutil.rmtree(old, ignore_errors=True)
         return rc
     finally:
