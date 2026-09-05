@@ -376,7 +376,8 @@ $LauncherContent = @"
 & '$($PythonBin.Replace("'", "''"))' -I -m openprogram @args
 exit `$LASTEXITCODE
 "@
-Write-Utf8NoBom $LauncherTemporary $LauncherContent
+# Windows PowerShell 5 otherwise decodes UTF-8 paths as the system ANSI page.
+[IO.File]::WriteAllText($LauncherTemporary, $LauncherContent, [Text.UTF8Encoding]::new($true))
 try {
     Move-Atomic $LauncherTemporary $LauncherPs1 (Join-Path $BinDir "openprogram.previous.ps1")
 } finally {
@@ -388,13 +389,20 @@ $CmdPlaywright = ConvertTo-CmdBatchLiteral (Join-Path $ReleaseDir "assets\playwr
 $CmdGpa = ConvertTo-CmdBatchLiteral (Join-Path $ReleaseDir "assets\gpa\model.pt")
 $CmdContent = @"
 @echo off
-setlocal
+setlocal DisableDelayedExpansion
+for /f "tokens=2 delims=:" %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P"
+chcp 65001 >nul
 set "PLAYWRIGHT_BROWSERS_PATH=$CmdPlaywright"
 set "GPA_MODEL_PATH=$CmdGpa"
 set "OPENPROGRAM_IMMUTABLE_RUNTIME=1"
 "$CmdPython" -I -B -m openprogram %*
-exit /b %ERRORLEVEL%
+set "_OPENPROGRAM_EXIT=%ERRORLEVEL%"
+chcp %_OPENPROGRAM_CODEPAGE% >nul
+exit /b %_OPENPROGRAM_EXIT%
 "@
+# CMD needs BOM-free UTF-8 and an ASCII preamble selecting that code page
+# before it parses embedded paths. Restore the caller's console on return;
+# delayed expansion must not consume literal exclamation marks in paths.
 Write-Utf8NoBom $CmdTemporary $CmdContent
 try {
     # A managed install must replace launchers left by an older release or a

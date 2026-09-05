@@ -41,6 +41,15 @@ the npm lockfile, builds the browser and Ink terminal interfaces, installs the
 selected Python extras, and exposes a stable `openprogram.cmd` launcher on the
 user `PATH`. `-Minimal` installs only the Python CLI/server path.
 
+Both CLI installers also provide a native PowerShell launcher. Generated
+PowerShell scripts use UTF-8 with a BOM for Windows PowerShell 5; batch scripts
+use BOM-free UTF-8 with an ASCII code-page preamble. Batch launchers disable
+delayed expansion while reading embedded paths, escape percent signs, and
+restore the caller's code page without replacing Python's exit status. Native
+tests execute the generated launchers with Unicode and shell-special paths
+under OEM, Chinese, and UTF-8 code pages, including PowerShell argument passing.
+No installer changes execution policy or the system locale.
+
 Ink startup is capability-based on every operating system. Windows Terminal
 and ConPTY preserve the inherited stdin console handle and run the full-screen
 TUI. MinTTY and other terminals that cannot enter raw input fail at the UI
