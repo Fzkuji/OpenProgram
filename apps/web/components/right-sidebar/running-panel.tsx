@@ -228,7 +228,10 @@ export function RunningPanel({
         {item.execution_id && onOpenExecution ? (
           <button
             type="button"
-            onClick={() => onOpenExecution(item.execution_id as string)}
+            onClick={() => {
+              if (item.session_id) useCenterTabs.getState().openSessionTab(item.session_id, conversations[item.session_id]?.title || item.session_id);
+              onOpenExecution(item.execution_id as string);
+            }}
             style={{
               width: "100%",
               minHeight: 28,

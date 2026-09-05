@@ -1561,6 +1561,15 @@ class ExecutionStore:
         with closing(self._connect()) as connection:
             return self._get_execution(connection, execution_id)
 
+    def list_for_session(self, session_id: str) -> list[ExecutionRecord]:
+        """Read a session's complete execution history, including terminal work."""
+        with closing(self._connect()) as connection:
+            return [self._record(row) for row in connection.execute(
+                "SELECT * FROM executions WHERE session_id = ? "
+                "ORDER BY created_at DESC, execution_id",
+                (session_id,),
+            )]
+
     def list_nonterminal(
         self, *, session_id: str | None = None
     ) -> list[ExecutionRecord]:

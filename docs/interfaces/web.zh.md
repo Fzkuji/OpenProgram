@@ -75,3 +75,9 @@ Wayland display（例如通过 SSH 使用服务器），Web UI 会改为显示�
 | `/settings` | 设置：providers（模型与凭据）、search、general（含主题、运行版本，以及存在 Electron bridge 时的 Desktop 更新状态）、system、usage、auth、channels |
 
 `/settings` 直接打开会跳到 `/settings/general`。模型凭据仍在 `/settings/providers`，见[配置模型](../models/README.md)。
+
+### 执行调试器
+
+Debugger 只显示当前会话的执行记录，包括已结束的执行。切换会话会重新建立选择和详情状态；从 Running 打开执行时，先打开该执行所属会话。
+
+Synced 表示快照读取成功，不代表执行仍在运行。面板展示获取时间、执行最后更新时间、事件游标和持久执行事件。缺少资源、检查点、等待项或修改草稿时，显示一段紧凑说明。待核对状态表示某个副作用结果尚未确认，执行受阻，并非持续生成。

@@ -2,7 +2,6 @@ import type {
   CommandResult,
   EventCursor,
   ExecutionCommand,
-  ExecutionEvent,
   ExecutionSnapshot,
   RevisionChange,
   RevisionDraft,
@@ -21,9 +20,18 @@ export class ExecutionApiError extends Error {
 }
 
 type SnapshotResponse = { snapshot?: ExecutionSnapshot; data?: ExecutionSnapshot };
+export type PersistedExecutionEvent = {
+  sequence: number;
+  execution_id: string;
+  kind: string;
+  execution_version: number;
+  command_id?: string | null;
+  payload?: Record<string, unknown>;
+};
+
 type EventsResponse = {
   snapshot?: ExecutionSnapshot;
-  events?: ExecutionEvent[];
+  events?: PersistedExecutionEvent[];
   event_cursor?: EventCursor;
   recovery?: string;
 };
@@ -89,6 +97,10 @@ export async function getExecutionSnapshot(
   const snapshot = body.snapshot || body.data;
   if (!snapshot?.execution_id) throw new ExecutionApiError(200, "invalid_snapshot", "The execution snapshot is invalid.");
   return snapshot;
+}
+
+export async function getSessionExecutions(sessionId: string, signal?: AbortSignal): Promise<RunningExecutionList> {
+  return request<RunningExecutionList>(`/api/session/${encodeURIComponent(sessionId)}/executions`, { signal, cache: "no-store" });
 }
 
 export async function getRunningExecutions(signal?: AbortSignal): Promise<RunningExecutionList> {

@@ -149,3 +149,10 @@
 @media (prefers-reduced-motion: reduce) {
   .actionButton, .executionItem, .waitControls button, .revisionActions button { transition: none; }
 }
+
+.eventList { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow: auto; }
+.eventList li { display: flex; gap: 12px; padding: 6px 0; }
+.eventList li > :first-child, .eventList li > :last-child { color: var(--text-muted); }
+.eventList li > :nth-child(2) { flex: 1; overflow-wrap: anywhere; }
+
+.eventDetail { display: block; color: var(--text-muted); font-size: inherit; }

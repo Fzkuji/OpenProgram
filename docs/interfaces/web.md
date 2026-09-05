@@ -77,3 +77,9 @@ Each message's action menu has "Rewind to here": it truly rolls the session back
 | `/settings` | Settings: providers (models and credentials), search, general (including theme, runtime version, and Desktop update status when the Electron bridge is present), system, usage, auth, channels |
 
 Opening `/settings` directly lands on `/settings/general`. Model credentials stay on `/settings/providers`; see [configuring models](../models/README.md).
+
+### Execution debugger
+
+Debugger shows only executions belonging to the current conversation, including completed executions. Switching conversations resets the selected execution and its inspector. Opening an execution from Running first opens its conversation.
+
+The Synced badge confirms a successful snapshot fetch, not that an execution is still running. The panel shows the fetch time, the execution’s last update, its event cursor, and persisted execution events. Missing resources, checkpoints, waits, and revision drafts appear as one compact summary. A reconciliation-required execution is blocked on an unconfirmed effect and is not ongoing generation.

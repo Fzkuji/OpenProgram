@@ -4,11 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildExecutionCommand,
   newCommandId,
-  reduceExecutionEvent,
   type CommandResult,
   type EventCursor,
   type ExecutionCommand,
-  type ExecutionEvent,
   type ExecutionSnapshot,
   type RevisionChange,
   type RevisionDraft,
@@ -16,11 +14,11 @@ import {
 } from "@/lib/execution-debugger";
 import {
   ExecutionApiError,
+  type PersistedExecutionEvent,
   createRevisionDraft,
   getExecutionDebuggerState,
   getExecutionEvents,
-  getExecutionSnapshot,
-  getRunningExecutions,
+  getSessionExecutions,
   parseRevisionState,
   postExecutionCommand,
   postExecutionWait,
@@ -35,6 +33,8 @@ type ExecutionUpdateDetail = {
 
 export type ExecutionDebuggerController = {
   executions: ExecutionSnapshot[];
+  events: PersistedExecutionEvent[];
+  fetchedAt: number | null;
   selectedExecutionId: string | null;
   checkpoints: import("@/components/right-sidebar/debugger-panel").CheckpointInspector[];
   waits: import("@/lib/execution-debugger").DurableWait[];
@@ -74,181 +74,118 @@ function errorMessage(error: unknown): string {
     : "Execution request failed.";
 }
 
-export function useExecutionDebugger(active: boolean, requestedExecutionId?: string | null): ExecutionDebuggerController {
+export function useExecutionDebugger(active: boolean, sessionId: string | null, requestedExecutionId?: string | null): ExecutionDebuggerController {
   const [snapshots, setSnapshots] = useState<Record<string, ExecutionSnapshot>>({});
   const [cursors, setCursors] = useState<Record<string, EventCursor>>({});
+  const [events, setEvents] = useState<PersistedExecutionEvent[]>([]);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const [debuggerData, setDebuggerData] = useState<Record<string, {
     checkpoints: import("@/components/right-sidebar/debugger-panel").CheckpointInspector[];
     waits: import("@/lib/execution-debugger").DurableWait[];
     drafts: RevisionDraft[];
   }>>({});
-  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(requestedExecutionId || null);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [connection, setConnection] = useState<DebuggerConnection>({ state: "reconnecting" });
   const refreshToken = useRef(0);
+  const mounted = useRef(true);
+  const refreshController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; refreshToken.current++; refreshController.current?.abort(); };
+  }, []);
 
   const loadDebuggerData = useCallback(async (executionId: string, signal?: AbortSignal) => {
     const state = await getExecutionDebuggerState(executionId, signal);
-    setDebuggerData((current) => ({
-      ...current,
-      [executionId]: {
-        checkpoints: (state.checkpoints || []).map((checkpoint) => ({
-          ...checkpoint,
-          status_version: checkpoint.status_version ?? checkpoint.source_execution_version ?? 0,
-          safe_point: checkpoint.safe_point || null,
-          frontier: checkpoint.frontier || [],
-          effect_receipts: checkpoint.effect_receipts || [],
-        })),
-        waits: state.waits || [],
-        drafts: (state.drafts || []).map(parseRevisionState),
-      },
-    }));
+    if (!mounted.current || signal?.aborted) return state;
+    setDebuggerData((current) => ({ ...current, [executionId]: {
+      checkpoints: (state.checkpoints || []).map((checkpoint) => ({
+        ...checkpoint,
+        status_version: checkpoint.status_version ?? checkpoint.source_execution_version ?? 0,
+        safe_point: checkpoint.safe_point || null,
+        frontier: checkpoint.frontier || [],
+        effect_receipts: checkpoint.effect_receipts || [],
+      })),
+      waits: state.waits || [],
+      drafts: (state.drafts || []).map(parseRevisionState),
+    } }));
     return state;
   }, []);
 
-  const recover = useCallback(async (executionId: string, afterSequence: number) => {
-    setConnection((current) => ({ ...current, state: "reconnecting", message: "Refreshing canonical execution state…" }));
-    try {
-      const replay = await getExecutionEvents(executionId, afterSequence);
-      if (!replay.snapshot?.execution_id) throw new Error("The execution recovery response is incomplete.");
-      setSnapshots((current) => ({ ...current, [executionId]: replay.snapshot as ExecutionSnapshot }));
-      if (replay.event_cursor) setCursors((current) => ({ ...current, [executionId]: replay.event_cursor as EventCursor }));
-      await loadDebuggerData(executionId);
-      setConnection({ state: "connected", cursor: replay.event_cursor || null });
-    } catch (error) {
-      setConnection({ state: "stale", message: errorMessage(error) });
-    }
-  }, [loadDebuggerData]);
-
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
+    if (!sessionId || !active || refreshController.current) return;
     const token = ++refreshToken.current;
     const controller = new AbortController();
-    void (async () => {
-      setConnection({ state: "reconnecting", message: "Loading canonical execution state…" });
-      try {
-        const list = await getRunningExecutions(controller.signal);
-        if (token !== refreshToken.current) return;
-        const next: Record<string, ExecutionSnapshot> = {};
-        const nextCursors: Record<string, EventCursor> = {};
-        for (const item of list.items || []) {
-          if (item.kind !== "execution" || !item.snapshot?.execution_id) continue;
-          next[item.snapshot.execution_id] = item.snapshot;
-          if (item.event_cursor) nextCursors[item.snapshot.execution_id] = item.event_cursor;
-        }
-        setSnapshots((current) => ({ ...current, ...next }));
-        setCursors((current) => ({ ...current, ...nextCursors }));
-        const inspectionId = selectedExecutionId || Object.keys(next)[0];
-        if (inspectionId) {
-          void loadDebuggerData(inspectionId, controller.signal).catch((error) => {
-            if (!(error instanceof DOMException && error.name === "AbortError")) {
-              setConnection({ state: "stale", message: errorMessage(error) });
-            }
-          });
-        }
-        setConnection({ state: "connected", cursor: selectedExecutionId ? nextCursors[selectedExecutionId] || null : null });
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        if (token === refreshToken.current) setConnection({ state: "stale", message: errorMessage(error) });
+    refreshController.current = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]);
+    try {
+      const list = await getSessionExecutions(sessionId, signal);
+      const next: Record<string, ExecutionSnapshot> = {};
+      const nextCursors: Record<string, EventCursor> = {};
+      for (const item of list.items || []) {
+        if (item.snapshot?.session_id !== sessionId) continue;
+        next[item.snapshot.execution_id] = item.snapshot;
+        if (item.event_cursor) nextCursors[item.snapshot.execution_id] = item.event_cursor;
       }
-    })();
-    return controller;
-  }, [loadDebuggerData, selectedExecutionId]);
+      const inspectionId = [selectedExecutionId, requestedExecutionId].find((id) => id && next[id])
+        || Object.values(next).sort((a, b) => b.updated_at - a.updated_at)[0]?.execution_id;
+      let history: PersistedExecutionEvent[] = [];
+      if (inspectionId) {
+        const [replay] = await Promise.all([
+          getExecutionEvents(inspectionId, Math.max(0, next[inspectionId].event_sequence - 50), signal),
+          loadDebuggerData(inspectionId, signal),
+        ]);
+        if (replay.snapshot?.session_id !== sessionId) throw new Error("Execution does not belong to this conversation.");
+        next[inspectionId] = replay.snapshot;
+        if (replay.event_cursor) nextCursors[inspectionId] = replay.event_cursor;
+        history = replay.events || [];
+      }
+      if (!mounted.current || token !== refreshToken.current || signal.aborted) return;
+      setSnapshots(next);
+      setCursors(nextCursors);
+      setEvents(history);
+      setFetchedAt(Date.now());
+      setConnection({ state: "connected", cursor: inspectionId ? nextCursors[inspectionId] || null : null });
+    } catch (error) {
+      if (!mounted.current || token !== refreshToken.current || controller.signal.aborted) return;
+      setConnection({ state: "stale", message: errorMessage(error) });
+    } finally {
+      if (refreshController.current === controller) refreshController.current = null;
+    }
+  }, [active, sessionId, selectedExecutionId, requestedExecutionId, loadDebuggerData]);
 
   useEffect(() => {
-    if (!active) return;
-    const controller = refresh();
-    const timer = window.setInterval(() => { refresh(); }, 5000);
-    return () => {
-      controller.abort();
-      window.clearInterval(timer);
+    if (!active || !sessionId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      await refresh();
+      if (!cancelled) timer = setTimeout(poll, 5000);
     };
-  }, [active, refresh]);
-
-  useEffect(() => {
-    if (!requestedExecutionId) return;
-    setSelectedExecutionId(requestedExecutionId);
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        if (!snapshots[requestedExecutionId]) {
-          const snapshot = await getExecutionSnapshot(requestedExecutionId, controller.signal);
-          setSnapshots((current) => ({ ...current, [requestedExecutionId]: snapshot }));
-          setConnection((current) => ({ ...current, state: "connected" }));
-        }
-        await loadDebuggerData(requestedExecutionId, controller.signal);
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setConnection({ state: "stale", message: errorMessage(error) });
-        }
-      }
-    })();
-    return () => controller.abort();
-  }, [loadDebuggerData, requestedExecutionId, snapshots]);
-
-  useEffect(() => {
-    if (!active) return;
+    void poll();
     const onUpdate = (event: WindowEventMap["op:execution-update"]) => {
-      const detail = event.detail || {};
-      const execution = detail.execution;
-      if (!execution?.execution_id) return;
-      const executionId = execution.execution_id;
-      const previous = snapshots[executionId];
-      if (!previous || !Number.isSafeInteger(execution.event_sequence)) {
-        setSnapshots((current) => ({ ...current, [executionId]: execution }));
-        if (detail.event_cursor) setCursors((current) => ({ ...current, [executionId]: detail.event_cursor as EventCursor }));
-        void loadDebuggerData(executionId).catch((error) => {
-          setConnection({ state: "stale", message: errorMessage(error) });
-        });
-        setConnection({ state: "connected", cursor: detail.event_cursor || null });
-        return;
-      }
-      const eventValue: ExecutionEvent = {
-        sequence: execution.event_sequence,
-        status_version: execution.status_version,
-        execution,
-      };
-      const reduced = reduceExecutionEvent(previous, eventValue);
-      if (reduced.kind === "gap") {
-        setConnection({ state: "gap", expected_sequence: reduced.expected, received_sequence: reduced.received });
-        void recover(executionId, previous.event_sequence);
-        return;
-      }
-      if (reduced.kind === "stale") {
-        setConnection({ state: "stale", message: "Received an older execution snapshot." });
-        return;
-      }
-      setSnapshots((current) => ({ ...current, [executionId]: reduced.snapshot }));
-      if (detail.event_cursor) setCursors((current) => ({ ...current, [executionId]: detail.event_cursor as EventCursor }));
-      void loadDebuggerData(executionId).catch((error) => {
-        setConnection({ state: "stale", message: errorMessage(error) });
-      });
-      setConnection({ state: "connected", cursor: detail.event_cursor || null });
+      if (event.detail?.execution?.session_id !== sessionId) return;
+      // Fetch one canonical snapshot/history pair instead of mixing event and poll versions.
+      void refresh();
     };
     window.addEventListener("op:execution-update", onUpdate);
-    return () => window.removeEventListener("op:execution-update", onUpdate);
-  }, [active, loadDebuggerData, recover, snapshots]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      refreshToken.current++;
+      refreshController.current?.abort();
+      refreshController.current = null;
+      window.removeEventListener("op:execution-update", onUpdate);
+    };
+  }, [active, sessionId, refresh]);
 
   const executions = useMemo(() => Object.values(snapshots).sort((a, b) => b.updated_at - a.updated_at), [snapshots]);
-  const selected = selectedExecutionId ? snapshots[selectedExecutionId] : undefined;
-
+  const selectedKey = [selectedExecutionId, requestedExecutionId].find((id) => id && snapshots[id]) || executions[0]?.execution_id || null;
   const selectExecution = useCallback((executionId: string) => {
+    if (!snapshots[executionId]) return;
     setSelectedExecutionId(executionId);
-    const cursor = cursors[executionId];
-    setConnection((current) => ({ ...current, cursor: cursor || null }));
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        if (!snapshots[executionId]) {
-          const snapshot = await getExecutionSnapshot(executionId, controller.signal);
-          setSnapshots((current) => ({ ...current, [executionId]: snapshot }));
-        }
-        await loadDebuggerData(executionId, controller.signal);
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setConnection({ state: "stale", message: errorMessage(error) });
-        }
-      }
-    })();
-  }, [cursors, loadDebuggerData, snapshots]);
+    setEvents([]);
+    setConnection({ state: "reconnecting", cursor: cursors[executionId] || null });
+  }, [snapshots, cursors]);
 
   const command = useCallback(async (commandValue: ExecutionCommand): Promise<CommandResult> => {
     try {
@@ -269,8 +206,8 @@ export function useExecutionDebugger(active: boolean, requestedExecutionId?: str
 
   const respondWait = useCallback(async (input: Parameters<ExecutionDebuggerController["respondWait"]>[0]) => {
     await postExecutionWait({ ...input, generation: input.claim_generation, expected_version: snapshots[input.execution_id]?.status_version ?? 0 });
-    await recover(input.execution_id, snapshots[input.execution_id]?.event_sequence ?? 0);
-  }, [recover, snapshots]);
+    await refresh();
+  }, [refresh, snapshots]);
 
   const createDraft = useCallback(async (input: Parameters<ExecutionDebuggerController["createDraft"]>[0]) => {
     const draft = await createRevisionDraft({
@@ -349,12 +286,13 @@ export function useExecutionDebugger(active: boolean, requestedExecutionId?: str
       },
     }));
   }, [command, snapshots]);
-  const selectedKey = selected?.execution_id || selectedExecutionId || executions[0]?.execution_id || null;
   const selectedData = selectedKey && debuggerData[selectedKey]
     ? selectDebuggerInspection(debuggerData[selectedKey], selectedKey)
     : undefined;
   return {
     executions,
+    events,
+    fetchedAt,
     selectedExecutionId: selectedKey,
     checkpoints: (selectedData?.checkpoints || []) as import("@/components/right-sidebar/debugger-panel").CheckpointInspector[],
     waits: selectedData?.waits || [],

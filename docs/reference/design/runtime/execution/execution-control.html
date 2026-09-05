@@ -287,7 +287,7 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
     <tr><td>Admission</td><td>queued execution、immutable TurnRequest payload 和 input message IDs 已提交。</td><td>不发送 ack，不创建运行中任务；输入或 revision 无效时返回明确 admission 错误。</td></tr>
     <tr><td>Activation</td><td>一个 lease、attempt_id 和 generation 绑定到 AgentDriver；running task 只引用该 execution_id。</td><td>activation 失败通过 Control Service 写 failed/interrupted，释放 reservation，不由入口直接写消息 lifecycle。</td></tr>
     <tr><td>运行与等待</td><td>取消通过 exact durable command 唤醒 driver cancel event 与该 execution 的 question wait。</td><td>runner exception 分类为 agent_runner_error；不可判定 owner loss 交给 canonical recovery。</td></tr>
-      <tr><td>完成</td><td>AgentDriver 以 attempt/generation fence 调用 Control Service finish_attempt；暂时性存储错误进入有界重试队列。</td><td>每次重试重新读取 execution、attempt、generation 和 status_version；迟到或重复 completion 不能覆盖 canonical terminal。超过进程内重试预算后 repair 标记为 <code>finish_repair_stalled</code>，持久保存 retry_count 与 next_attempt_at，由单一低频 reconciler 和 startup replay 继续处理；持久化失败时 pending completion 保留，不标记 finished。</td></tr>
+      <tr><td>完成</td><td>AgentDriver 以 attempt/generation fence 调用 Control Service finish_attempt；暂时性存储错误进入有界重试队列。</td><td>每次重试重新读取 execution、attempt、generation 和 status_version；迟到或重复 completion 不能覆盖 canonical terminal。lease 过期后的持久完成意图由专用恢复事务处理：重新验证当前 attempt、owner generation 与持久 intent，结束并 fencing 旧 attempt，未解决 effect 仍转 reconciliation_required；普通 finish 不接受过期 lease。超过进程内重试预算后 repair 标记为 <code>finish_repair_stalled</code>，持久保存 retry_count 与 next_attempt_at，由单一低频 reconciler 和 startup replay 继续处理；持久化失败时 pending completion 保留，不标记 finished。</td></tr>
   </tbody></table></div>
   <p>当前实现对 ordinary <code>kind=chat</code> admission 声明 provider、tool 和 wait-before-tool safe point；continue 由 paused checkpoint 推导，cancel 普遍可用。question 与 approval 使用同一 execution-owned <code>WaitRecordV1</code> 表、state-blob request/policy/answer refs、generation fence、canonical wait answer/decline command、取消时的同事务关闭以及 startup reclaim/expiry；前端卡片只发送 exact execution envelope。Control Service 的 safe-point wait handoff 在一个 transaction 内发布 checkpoint、open wait、paused execution 和 ended attempt；Job observer 随后持久化 resource release，outcome 按 policy 从该 checkpoint 重新 admission。工具 approval 在 dispatch 前声明并创建 wait；<code>runtime.ask</code>、<code>ask_many</code>、<code>confirm</code> 与 <code>form</code> 只消费同一 safe point 预先声明、已 resolved 的精确请求。没有预先声明的运行时提问会以明确错误结束，不能创建普通 wait 或保留进程内阻塞 owner。</p>
 </section>
@@ -317,6 +317,7 @@ runtime.finish_attempt(attempt_id, outcome)</code></pre>
 
 <section id="surface">
   <h2>16. Debugger 与界面合同</h2>
+  <p>Debugger 仅检查当前会话的执行记录，包含已结束记录；切换会话重新建立独立的数据订阅，禁止旧请求或其他会话事件覆盖当前视图。快照读取成功只表示同步成功，不表示执行仍然存活。界面显示快照获取时间、执行最后更新时间和所选执行的事件游标；选中执行的事件历史来自持久事件接口。没有资源、检查点、等待或草稿时合并为明确的空信息，不渲染多张空卡片。</p>
   <div class="table-wrap"><table>
     <thead><tr><th>界面元素</th><th>来源</th><th>行为</th></tr></thead>
     <tbody>
@@ -851,7 +852,7 @@ Tests / checks:
       <tr><td>Scheduler</td><td>scheduled prompt admission 生成一次 Job/execution；重复 tick 使用 admission idempotency；pause/continue/step/cancel 使用 snapshot cursor。</td><td><code>tests/component/scheduler/test_scheduler.py</code>、<code>apps/web/scripts/check-scheduler.mjs</code>。</td></tr>
       <tr><td>Web Job card</td><td>spawn/get/list 与 runtime command 只渲染 JobResourceDTO；Job card 在 accepted wait、activation applied、safe-point paused 和 terminal race 中不维护本地 truth。</td><td><code>tests/component/agent/test_canonical_job_entry.py</code>、<code>tests/unit/webui/test_webui_job_resource_view.py</code>、<code>apps/web/scripts/check-job-resources.mjs</code>。</td></tr>
       <tr><td>Running snapshot</td><td><code>GET /api/running</code> 只返回 execution snapshot/projection；snapshot+cursor gap、重连、迟到 terminal event 和跨 project auth 均保持顺序与隔离。</td><td><code>tests/component/webui/test_running_snapshot.py</code>、<code>tests/component/webui/test_webui_head_mirror_and_run_guard.py</code>、<code>apps/web/scripts/check-job-resource-view.mjs</code>。</td></tr>
-      <tr><td>Web Debugger 空状态</td><td>authorized execution 列表为空或当前选择不存在时，Debugger 直接显示 <code>No execution selected</code>；在空状态返回前不得读取 <code>checkpoint_head_id</code>、capability 或构造 command payload。</td><td><code>apps/web/tests/debugger-panel-wiring.test.mjs</code> 与默认 App/18100 浏览器验收。</td></tr>
+      <tr><td>Web Debugger 会话范围与空状态</td><td><code>GET /api/session/{session_id}/executions</code> 从 canonical store 返回当前会话全部 execution（包括终态），逐项执行既有 snapshot authorization，不混入其他会话或全局 Running 项。列表携带 snapshot、event_cursor 和读取时间。authorized execution 列表为空或当前选择不存在时，Debugger 直接显示 <code>No execution selected</code>；在空状态返回前不得读取 <code>checkpoint_head_id</code>、capability 或构造 command payload。</td><td><code>apps/web/tests/debugger-panel-wiring.test.mjs</code> 与默认 App/18100 浏览器验收。</td></tr>
     </tbody>
   </table></div>
   <ol>

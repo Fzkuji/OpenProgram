@@ -75,6 +75,37 @@ def _public_event(event):
     }
 
 def register(app):
+    @app.get("/api/session/{session_id}/executions")
+    def api_session_executions(session_id: str, request: Request):
+        """List only authorized canonical executions in the selected session."""
+        import time
+        from openprogram.agent.authority import normalize_authority
+        from openprogram.execution import default_store
+
+        actor, bound_session = _actor_and_session(request)
+        authority = normalize_authority(actor)
+        if (not authority or authority.get("authority_tier") != "owner"
+                or (bound_session is not None and bound_session != session_id)):
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        items = []
+        for execution in default_store().list_for_session(session_id):
+            if not _authorize_read(actor, bound_session, execution, "execution.snapshot"):
+                continue
+            snapshot = _execution_payload(execution)
+            items.append({
+                "kind": "execution", "id": execution.execution_id,
+                "execution_id": execution.execution_id, "session_id": session_id,
+                "label": "execution", "status": execution.status.value,
+                "started_at": execution.created_at, "snapshot": snapshot,
+                "event_cursor": {
+                    "execution_id": execution.execution_id,
+                    "next_sequence": int(snapshot.get("event_sequence") or 0) + 1,
+                    "snapshot_status_version": execution.status_version,
+                },
+            })
+        return JSONResponse({"items": items, "now": time.time()},
+                            headers={"Cache-Control": "no-store"})
+
     async def _revision(request: Request, body: dict, action: str):
         """Use the same strict revision envelope as the WebSocket surface."""
         from openprogram.execution import default_store

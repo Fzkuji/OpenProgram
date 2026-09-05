@@ -47,8 +47,7 @@ import {
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
 import { RunningPanel } from "./running-panel";
-import { DebuggerPanel } from "./debugger-panel";
-import { useExecutionDebugger } from "@/lib/use-execution-debugger";
+import { SessionDebugger } from "./session-debugger";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import { setRightDockApi } from "@/lib/right-dock";
@@ -74,7 +73,7 @@ export function RightSidebar() {
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
   const [debuggerExecutionId, setDebuggerExecutionId] = useState<string | null>(null);
-  const debuggerState = useExecutionDebugger(open && view === VIEW_DEBUGGER, debuggerExecutionId);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const { style: railStyle, resizeHandleProps } = useResizableRail({
     open,
     minWidth: 240,
@@ -312,25 +311,11 @@ export function RightSidebar() {
           <RunningPanel active={open && view === VIEW_RUNNING} onOpenExecution={openDebugger} />
         </div>
         <div className="right-view" data-view={VIEW_DEBUGGER}>
-          <DebuggerPanel
-            executions={debuggerState.executions}
-            selectedExecutionId={debuggerState.selectedExecutionId}
-            connection={debuggerState.connection}
-            checkpoints={debuggerState.checkpoints}
-            waits={debuggerState.waits}
-            drafts={debuggerState.drafts}
-            onSelectExecution={(executionId) => {
-              setDebuggerExecutionId(executionId);
-              debuggerState.selectExecution(executionId);
-            }}
-            onCommand={debuggerState.command}
-            onRespondWait={debuggerState.respondWait}
-            onCreateDraft={async (input) => {
-              await debuggerState.createDraft(input);
-            }}
-            onUpdateDraft={debuggerState.updateDraft}
-            onDraftAction={debuggerState.draftAction}
-            onRefresh={debuggerState.refresh}
+          <SessionDebugger
+            key={currentSessionId || "no-session"}
+            sessionId={currentSessionId}
+            active={open && view === VIEW_DEBUGGER}
+            requestedExecutionId={debuggerExecutionId}
           />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into

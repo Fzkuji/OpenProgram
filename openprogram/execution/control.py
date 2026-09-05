@@ -3339,6 +3339,77 @@ class RuntimeControlService:
                 recoveries.append(RecoveryCompletion(execution=recovered))
         return tuple(recoveries)
 
+    def _replay_expired_finish_repair(
+        self, execution_id: str, attempt_id: str, generation: int,
+    ) -> bool:
+        """Consume a durable completion after its exact owner's lease expires.
+
+        This recovery transaction cannot dispatch work or revive a lease. It
+        re-reads the persisted intent and fences the abandoned attempt while
+        preserving cancellation and unresolved-effect authority.
+        """
+        with self.executions._transaction() as connection:
+            repair = connection.execute(
+                "SELECT * FROM execution_finish_repairs "
+                "WHERE execution_id = ? AND attempt_id = ? AND generation = ?",
+                (execution_id, attempt_id, generation),
+            ).fetchone()
+            if repair is None:
+                raise AttemptConflict("not_found", "durable finish intent is missing")
+            attempt = self.attempts._require(connection, attempt_id)
+            self.attempts._validate_generation(attempt, generation)
+            self.attempts._validate_not_fenced(attempt)
+            if attempt.execution_id != execution_id or attempt.status is not AttemptStatus.ACTIVE:
+                raise AttemptConflict("stale_owner", "finish intent has no active owner")
+            if attempt.lease_expires_at > self.attempts._clock():
+                return False
+            execution = self.executions._require_execution(connection, execution_id)
+            self.attempts._validate_owner(execution, attempt, execution.status_version)
+            target = ExecutionStatus(repair["target"])
+            if target not in TERMINAL_EXECUTION_STATUSES:
+                raise AttemptConflict("invalid_outcome", "finish intent must be terminal")
+            outcome, reason_code = repair["outcome"], repair["reason_code"]
+            command = None
+            if execution.status is ExecutionStatus.CANCELLING:
+                command = self._applying_command(connection, execution_id, CommandKind.CANCEL)
+                if command is None:
+                    raise AttemptConflict("command_mismatch", "cancellation has no applying command")
+                target, outcome = ExecutionStatus.CANCELLED, "cancelled"
+                reason_code = execution.reason_code or "cancelled"
+            elif repair["command_id"]:
+                command = self.executions._get_command(connection, repair["command_id"])
+                if (command is None or command.execution_id != execution_id
+                        or command.status is not CommandStatus.APPLYING):
+                    raise AttemptConflict("command_mismatch", "finish intent command is not applying")
+            unresolved = connection.execute(
+                "SELECT 1 FROM effects WHERE execution_id = ? "
+                "AND status IN ('dispatched', 'uncertain') LIMIT 1", (execution_id,),
+            ).fetchone() is not None
+            if unresolved:
+                target, outcome = ExecutionStatus.RECONCILIATION_REQUIRED, "reconciliation_required"
+                reason_code = "effect_reconciliation"
+            elif reason_code == "finish_repair_stalled":
+                reason_code = None
+            completed = self.executions._transition_execution(
+                connection, execution_id, expected_version=execution.status_version,
+                target=target, reason_code=reason_code, clear_owner=True,
+            )
+            ended = self.attempts._end_for_owner_loss(connection, attempt, outcome=outcome)
+            self.executions._append_event(
+                connection, execution_id=execution_id,
+                execution_version=completed.status_version, kind="attempt.ended",
+                payload={"attempt": ended.to_dict()}, created_at=ended.updated_at,
+            )
+            if command is not None and completed.status in TERMINAL_EXECUTION_STATUSES:
+                self.executions._transition_command(
+                    connection, command.command_id, expected_status=CommandStatus.APPLYING,
+                    target=CommandStatus.APPLIED, result_version=completed.status_version,
+                )
+        self.registry.unbind(execution_id, attempt_id=attempt_id, generation=generation)
+        if completed.status in TERMINAL_EXECUTION_STATUSES:
+            self._forget_cancel_delivery(execution_id)
+        return True
+
     def replay_finish_repairs(
         self, *, include_stalled: bool = False, due_only: bool = False,
     ) -> int:
@@ -3425,15 +3496,16 @@ class RuntimeControlService:
                         command_id=command_id,
                     )
                 try:
-                    self.finish_attempt(
-                        attempt_id=attempt_id,
-                        generation=generation,
-                        expected_execution_version=execution.status_version,
-                        target=target,
-                        outcome=outcome,
-                        command_id=(str(command_id) if command_id else None),
-                        reason_code=reason_code,
-                    )
+                    if not self._replay_expired_finish_repair(execution_id, attempt_id, generation):
+                        self.finish_attempt(
+                            attempt_id=attempt_id,
+                            generation=generation,
+                            expected_execution_version=execution.status_version,
+                            target=target,
+                            outcome=outcome,
+                            command_id=(str(command_id) if command_id else None),
+                            reason_code=reason_code,
+                        )
                 except Exception:
                     retry_count = int(repair.get("retry_count") or 0) + 1
                     try:

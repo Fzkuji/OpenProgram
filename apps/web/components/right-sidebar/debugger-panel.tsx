@@ -15,6 +15,7 @@ import {
   type RevisionDraft,
 } from "@/lib/execution-debugger";
 import { buildWaitAnswer } from "@/lib/execution-wait";
+import type { PersistedExecutionEvent } from "@/lib/net/execution-client";
 import styles from "./debugger-panel.module.css";
 
 export type DebuggerConnection = {
@@ -39,6 +40,9 @@ export type CheckpointInspector = {
 
 export type DebuggerPanelProps = {
   executions: ExecutionSnapshot[];
+  sessionId?: string | null;
+  events?: PersistedExecutionEvent[];
+  fetchedAt?: number | null;
   selectedExecutionId?: string | null;
   connection: DebuggerConnection;
   checkpoints?: CheckpointInspector[];
@@ -102,7 +106,7 @@ function statusClass(status: string): string {
 }
 
 function connectionCopy(connection: DebuggerConnection): { label: string; detail: string; className: string } {
-  if (connection.state === "connected") return { label: "Live", detail: "Canonical events current", className: styles.connectionGood };
+  if (connection.state === "connected") return { label: "Synced", detail: "Last fetched snapshot", className: styles.connectionGood };
   if (connection.state === "reconnecting") return { label: "Reconnecting", detail: "Snapshot will be refreshed before replay", className: styles.connectionWarn };
   if (connection.state === "gap") return { label: "Event gap", detail: connection.message || "Refresh required before applying more events", className: styles.connectionDanger };
   if (connection.state === "stale") return { label: "Stale", detail: connection.message || "This view is behind the canonical snapshot", className: styles.connectionWarn };
@@ -113,6 +117,20 @@ function formatUnknown(value: unknown): string {
   if (value == null || value === "") return "—";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+function eventSummary(event: PersistedExecutionEvent): string {
+  const payload = event.payload || {};
+  const values: string[] = [];
+  for (const key of ["record", "attempt", "command"]) {
+    const value = payload[key];
+    if (!value || typeof value !== "object") continue;
+    const row = value as Record<string, unknown>;
+    for (const field of ["action", "status", "outcome", "reason_code"]) {
+      if (typeof row[field] === "string" && !values.includes(row[field] as string)) values.push(row[field] as string);
+    }
+  }
+  return values.join(" · ");
 }
 
 function ResourceSummary({ resource }: { resource: Record<string, unknown> | null }) {
@@ -221,6 +239,9 @@ function CommandNotice({ result }: { result: CommandResult | null }) {
 
 export function DebuggerPanel({
   executions,
+  sessionId,
+  events = [],
+  fetchedAt,
   selectedExecutionId,
   connection,
   checkpoints = [],
@@ -324,7 +345,7 @@ export function DebuggerPanel({
     return (
       <section className={styles.panel} aria-label="Debugger">
         <header className={styles.header}><div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div><span className={styles.connectionBadge}>{connectionInfo.label}</span></header>
-        <div className={styles.emptyState}><strong>No execution selected</strong><span>Open an execution from Running or a conversation node to inspect its canonical state.</span></div>
+        <div className={styles.emptyState}><strong>{connection.state === "stale" ? "Could not load executions" : connection.state === "reconnecting" && sessionId ? "Loading conversation executions…" : "No executions in this conversation"}</strong><span>{connection.message || (sessionId ? "Execution history appears here when this conversation runs." : "Open a conversation to inspect its execution history.")}</span>{onRefresh && sessionId && <button type="button" className={styles.textButton} onClick={onRefresh}>Refresh</button>}</div>
       </section>
     );
   }
@@ -354,7 +375,7 @@ export function DebuggerPanel({
         </div>
       </header>
       <div className={styles.connectionLine} data-health={health}>
-        <span>{connectionInfo.detail}</span>
+        <span>{connectionInfo.detail}{fetchedAt ? ` · ${new Date(fetchedAt).toLocaleTimeString()}` : ""}</span>
         <span>cursor {connection.cursor?.next_sequence ?? "—"}</span>
         {onRefresh && <button type="button" className={styles.textButton} onClick={onRefresh}>Refresh snapshot</button>}
       </div>
@@ -372,6 +393,7 @@ export function DebuggerPanel({
                 <div className={styles.overline}>Execution</div>
                 <h3>{shortId(snapshot.execution_id)}</h3>
                 <p className={styles.muted}>Run {shortId(snapshot.run_id)} · revision {shortId(snapshot.revision_id)}</p>
+                <p className={styles.muted}>Last execution update: {new Date(snapshot.updated_at * 1000).toLocaleString()}</p>
               </div>
               <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{STATUS_LABELS[snapshot.status] || snapshot.status}</div>
             </div>
@@ -381,7 +403,7 @@ export function DebuggerPanel({
               <div><span>Safe point</span><strong>{formatUnknown(snapshot.safe_point?.kind)}</strong></div>
               <div><span>Checkpoint</span><strong>{shortId(snapshot.checkpoint_head_id)}</strong></div>
             </div>
-            {snapshot.reason_code && <div className={styles.reason}>{snapshot.reason_code}</div>}
+            {snapshot.reason_code && <div className={styles.reason}>{snapshot.reason_code === "effect_reconciliation" ? "A tool action has an unconfirmed result. Execution is blocked pending reconciliation; this is not ongoing generation." : snapshot.reason_code}</div>}
             {availableExecutionActions(snapshot).includes("steer") && <label className={styles.steerInput}>Steer input ref<input value={steerValue} onChange={(event) => setSteerValue(event.target.value)} placeholder="Durable input reference" /></label>}
             <div className={styles.actions}>
               {(["pause", "continue", "step", "steer", "fork", "retry", "cancel"] as ExecutionCommandAction[]).map((action) => (
@@ -393,20 +415,32 @@ export function DebuggerPanel({
             </div>
           </section>
 
-          <div className={styles.twoColumn}>
-            <section className={styles.card}>
+          <section className={styles.card}>
+            <div className={styles.cardHeader}><h4>Execution history</h4><span>Latest {events.length} events</span></div>
+            {events.length ? <ol className={styles.eventList}>{events.slice(-50).reverse().map((event) => (
+              <li key={event.sequence}><span>#{event.sequence}</span><span>{event.kind.replaceAll(".", " · ")}<small className={styles.eventDetail}>{eventSummary(event)}</small></span><span>v{event.execution_version}</span></li>
+            ))}</ol> : <div className={styles.empty}>No execution events recorded.</div>}
+            {events.length > 50 && <div className={styles.empty}>Showing the latest 50 returned events.</div>}
+          </section>
+
+          {(!snapshot.resource || !selectedCheckpoint || !selectedWaits.length || !selectedDraft) && <p className={styles.muted}>Not recorded for this execution: {[
+            !snapshot.resource && "resource snapshot", !selectedCheckpoint && "checkpoint",
+            !selectedWaits.length && "open questions or approvals", !selectedDraft && "revision draft",
+          ].filter(Boolean).join(", ")}.</p>}
+          {(snapshot.resource || Object.keys(snapshot.effect_summary).length > 0) && <div className={styles.twoColumn}>
+            {snapshot.resource && <section className={styles.card}>
               <div className={styles.cardHeader}><h4>Resource wait</h4><span>{snapshot.resource?.resource_state ? String(snapshot.resource.resource_state) : "unavailable"}</span></div>
               <ResourceSummary resource={snapshot.resource} />
-            </section>
-            <section className={styles.card}>
+            </section>}
+            {Object.keys(snapshot.effect_summary).length > 0 && <section className={styles.card}>
               <div className={styles.cardHeader}><h4>Effects</h4><span>{formatUnknown(snapshot.effect_summary.unresolved)} unresolved</span></div>
               <dl className={styles.definitionList}>
                 {Object.entries(snapshot.effect_summary).map(([key, value]) => <div key={key}><dt>{key.replaceAll("_", " ")}</dt><dd>{formatUnknown(value)}</dd></div>)}
               </dl>
-            </section>
-          </div>
+            </section>}
+          </div>}
 
-          <section className={styles.card}>
+          {selectedCheckpoint && <section className={styles.card}>
             <div className={styles.cardHeader}><h4>Checkpoint inspector</h4><span>{selectedCheckpoint ? "Published" : "Not selected"}</span></div>
             {selectedCheckpoint ? (
               <div className={styles.inspectorGrid}>
@@ -418,9 +452,9 @@ export function DebuggerPanel({
                 <div className={styles.inspectorWide}><span>Effect receipts</span><div className={styles.receipts}>{(selectedCheckpoint.effect_receipts || []).map((item) => <span key={item.effect_id}>{item.effect_id} · {item.status}</span>)}</div></div>
               </div>
             ) : <div className={styles.empty}>Only published checkpoint snapshots can be inspected.</div>}
-          </section>
+          </section>}
 
-          <section className={styles.card}>
+          {selectedWaits.length > 0 && <section className={styles.card}>
             <div className={styles.cardHeader}><h4>Question and approval waits</h4><span>{selectedWaits.length} open</span></div>
             {selectedWaits.length ? selectedWaits.map((wait) => (
               <div className={styles.waitRow} key={wait.wait_id}>
@@ -448,9 +482,9 @@ export function DebuggerPanel({
               </div>
             )) : <div className={styles.empty}>No unresolved execution-owned waits.</div>}
             {waitError && <div className={styles.formError} role="alert">{waitError}</div>}
-          </section>
+          </section>}
 
-          <section className={styles.card}>
+          {(selectedDraft || snapshot.checkpoint_head_id) && <section className={styles.card}>
             <div className={styles.cardHeader}><h4>Revision draft</h4><span>{selectedDraft ? selectedDraft.status : "No draft"}</span></div>
             {selectedDraft ? (
               <div className={styles.revisionEditor}>
@@ -474,7 +508,7 @@ export function DebuggerPanel({
                 {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
               </div>
             )}
-          </section>
+          </section>}
         </div>
       </div>
     </section>
