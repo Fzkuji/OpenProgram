@@ -840,6 +840,13 @@ def _is_run_active(session_id: str) -> bool:
     # Drop it so subsequent calls don't keep blocking Edit/Retry/etc.
     if not _has_active_runtime(session_id):
         with _running_tasks_lock:
+            current = _running_tasks.get(session_id)
+            if current is not task:
+                # A concurrent observer may already have removed the stale
+                # owner and admitted another turn. Never clear its reservation.
+                return current is not None or _has_active_runtime(session_id)
+            if _has_active_runtime(session_id):
+                return True
             zombie = _running_tasks.pop(session_id, None)
         _emit_running_task_event(
             session_id,

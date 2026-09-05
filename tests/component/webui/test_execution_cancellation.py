@@ -388,3 +388,34 @@ def test_reload_prunes_completed_orphan_foreground_thread(tmp_path, monkeypatch)
             server._running_tasks.pop(sid, None)
         with server._sessions_lock:
             server._sessions.pop(sid, None)
+
+
+def test_orphan_cleanup_preserves_new_reservation(monkeypatch):
+    from openprogram.webui import server as s
+    from openprogram.agent.run_control import register_active_runtime, unregister_active_runtime
+    sid = 'orphan-cleanup-replacement'
+    old = threading.Thread(target=lambda: None)
+    old.start()
+    old.join(timeout=5)
+    assert not old.is_alive()
+    register_active_runtime(sid, old)
+    s._running_tasks[sid] = {'msg_id': 'old', 'func_name': 'agent'}
+    original = s._has_active_runtime
+    injected = False
+    def check(session):
+        nonlocal injected
+        result = original(session)
+        if not result and not injected:
+            injected = True
+            # Another observer runs after the first liveness result, before
+            # its caller acquires the running-task lock for stale cleanup.
+            assert s._try_reserve_run(sid, 'new')
+        return result
+    monkeypatch.setattr(s, '_has_active_runtime', check)
+    monkeypatch.setattr(s, '_emit_running_task_event', lambda *a, **kw: None)
+    try:
+        assert s._is_run_active(sid)
+        assert s._running_tasks.get(sid, {}).get('msg_id') == 'new'
+    finally:
+        s._running_tasks.pop(sid, None)
+        unregister_active_runtime(sid)
