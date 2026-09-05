@@ -962,7 +962,9 @@ class AgentProductionDriver:
                             f"Job worktree is unavailable: {worktree_id}",
                         )
                     worktree_token = set_worktree(worktree.worktree_path)
-            steer_queue = [copy.deepcopy(dict(item)) for item in steer_inputs]
+            # ActivationInput recursively freezes payloads; copy nested mappings
+            # without deepcopy, which cannot pickle MappingProxyType values.
+            steer_queue = [_json_safe(item) for item in steer_inputs]
             steer_consumed_ids: set[str] = set()
             if continuation is not None:
                 from openprogram.agent.dispatcher import process_agent_continuation
