@@ -145,19 +145,40 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
         adapter = CanonicalAgentAdapter(
             event_sink=lambda env: _srv._broadcast(json.dumps(env, default=str)),
         )
+        from openprogram.agent.session_config import (
+            load_session_run_config, permission_from_config, project_defaults,
+            reasoning_from_config, tools_override_from_config,
+        )
+        from openprogram.programs.permission_rule import load_merged_rules
+
+        authority = local_owner_authority()
+        run_config = load_session_run_config(session_id)
+        provider = conv.get("provider_override")
+        model = conv.get("model_override")
+        model_override = f"{provider}/{model}" if provider and model else model
         request = TurnRequest(
             session_id=session_id,
             user_text=str(new_user.get("content") or ""),
-            agent_id=(new_user.get("agent_id") or "main"),
+            agent_id=(conv.get("agent_id") or new_user.get("agent_id") or _srv._default_agent_id()),
             source="web",
+            permission_mode=permission_from_config(
+                run_config, default=project_defaults(session_id).get("permission_mode"),
+            ),
+            permission_rules=load_merged_rules(session_id),
+            additional_working_dirs=run_config.additional_working_dirs,
+            tools_override=tools_override_from_config(run_config),
+            thinking_effort=reasoning_from_config(run_config),
+            model_override=model_override,
+            service_tier=conv.get("service_tier"),
             user_msg_id=new_msg_id,
             user_already_persisted=True,
+            **authority,
         )
         admission = adapter.admit(
             request,
-            trusted_actor=local_owner_authority(),
+            trusted_actor=authority,
             user_message_id=new_msg_id,
-            assistant_message_id=None,
+            assistant_message_id=f"{new_msg_id}_reply",
             config_snapshot_ref=f"session:{session_id}",
         )
     except Exception as exc:
