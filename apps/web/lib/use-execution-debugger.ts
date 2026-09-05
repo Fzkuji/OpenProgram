@@ -187,6 +187,14 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     setConnection({ state: "reconnecting", cursor: cursors[executionId] || null });
   }, [snapshots, cursors]);
 
+  const lastRequestedId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!requestedExecutionId) { lastRequestedId.current = null; return; }
+    if (!snapshots[requestedExecutionId] || lastRequestedId.current === requestedExecutionId) return;
+    lastRequestedId.current = requestedExecutionId;
+    selectExecution(requestedExecutionId);
+  }, [requestedExecutionId, snapshots, selectExecution]);
+
   const command = useCallback(async (commandValue: ExecutionCommand): Promise<CommandResult> => {
     try {
       const result = await postExecutionCommand(commandValue);
