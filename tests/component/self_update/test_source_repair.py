@@ -313,7 +313,10 @@ def test_corrupt_pointer_still_cancels_running_repair_job(diagnosis_environment,
     assert entered.wait(5)
     pointer = store.root / "source-repair-pending.json"
     pointer.unlink()
-    os.mkfifo(pointer, 0o600)
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(pointer, 0o600)
+    else:
+        pointer.write_bytes(b"invalid source repair pointer")
     job_id = f"self-update:{update_id}:repair:1"
     assert wait_until(lambda: load_job("p1", job_id).cancel_requested_at is not None, timeout=3)
     from openprogram.self_update import source_repair

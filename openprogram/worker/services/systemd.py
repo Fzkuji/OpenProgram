@@ -107,6 +107,14 @@ def _service_environment() -> dict[str, str]:
     return values
 
 
+def _unit_path_value(value: str) -> str:
+    """Path directives consume literal text, not ExecStart's quoted words."""
+    value = str(value)
+    if any(character in value for character in "\r\n\0") or value.endswith("\\") or value != value.strip():
+        raise ValueError("systemd path cannot be represented as one literal directive")
+    return value.replace("%", "%%")
+
+
 def _build_unit() -> str:
     from openprogram.worker.lifecycle import _detached_worker_command
 
@@ -127,11 +135,11 @@ def _build_unit() -> str:
         "[Service]\n"
         "Type=simple\n"
         f"ExecStart={command}\n"
-        f"WorkingDirectory={_unit_quote(str(Path.home()))}\n"
+        "WorkingDirectory=%h\n"
         "Restart=on-failure\n"
         "RestartSec=5\n"
-        f"StandardOutput={_unit_quote('append:' + log)}\n"
-        f"StandardError={_unit_quote('append:' + log)}\n"
+        f"StandardOutput=append:{_unit_path_value(log)}\n"
+        f"StandardError=append:{_unit_path_value(log)}\n"
         f"{environment}"
         "\n"
         "[Install]\n"

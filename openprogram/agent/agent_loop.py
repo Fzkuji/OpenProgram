@@ -175,13 +175,20 @@ def _job_operation_timeout(declared: float | None) -> float | None:
 
 
 def _finish_interrupted_stream(stream, exc, messages, cancel_event) -> None:
-    from openprogram.agentic_programming.function import CancelledError
+    from openprogram.agentic_programming.function import CancelledError, check_cancelled
     from openprogram.providers.utils.errors import ExecInterrupt
 
-    if isinstance(exc, CancelledError) or (
-        isinstance(exc, ExecInterrupt) and cancel_event is not None
-        and cancel_event.is_set()
-    ):
+    cancelled = isinstance(exc, CancelledError) or bool(
+        cancel_event is not None and cancel_event.is_set()
+    )
+    if isinstance(exc, ExecInterrupt) and not cancelled:
+        # A synchronous callback can observe the owner's cancellation before
+        # this event loop has delivered its asynchronously bridged signal.
+        try:
+            check_cancelled()
+        except CancelledError:
+            cancelled = True
+    if isinstance(exc, (CancelledError, ExecInterrupt)) and cancelled:
         if not stream._result_event.is_set():
             stream.end(messages)
     elif isinstance(exc, ExecInterrupt):

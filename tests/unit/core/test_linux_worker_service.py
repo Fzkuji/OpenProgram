@@ -79,7 +79,9 @@ def test_systemd_unit_quotes_paths_flags_and_packaged_environment(
     unit = systemd._build_unit()
 
     assert 'ExecStart="/opt/Open Program/50%%/$$runtime/python" "-I" "-B"' in unit
-    assert f"StandardOutput={systemd._unit_quote('append:' + str(log))}" in unit
+    assert "WorkingDirectory=%h\n" in unit
+    assert f"StandardOutput=append:{str(log).replace('%', '%%')}\n" in unit
+    assert f"StandardError=append:{str(log).replace('%', '%%')}\n" in unit
     assert 'Environment="PLAYWRIGHT_BROWSERS_PATH=/opt/Open Program/assets/playwright"' in unit
     assert 'Environment="GPA_MODEL_PATH=/opt/Open Program/assets/gpa/model.pt"' in unit
     assert 'Environment="OPENPROGRAM_IMMUTABLE_RUNTIME=1"' in unit

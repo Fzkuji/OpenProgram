@@ -61,6 +61,12 @@ def _edits(request, root, edits):
         if (before is not None and (not isinstance(before, str) or not before)
                 or after is not None and not isinstance(after, str) or before == after):
             raise ValueError("invalid source edit text")
+        # Model-facing readers normalize line endings. Match their LF text
+        # against a consistently CRLF source without rewriting untouched lines.
+        # Mixed-newline files retain exact matching; ambiguity still fails below.
+        if original is not None and "\r\n" in original and "\n" not in original.replace("\r\n", ""):
+            before = before.replace("\r\n", "\n").replace("\n", "\r\n") if before is not None else None
+            after = after.replace("\r\n", "\n").replace("\n", "\r\n") if after is not None else None
         if before is None:
             if original is not None:
                 raise ValueError("new source file already exists")
