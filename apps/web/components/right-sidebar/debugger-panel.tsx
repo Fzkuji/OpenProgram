@@ -344,7 +344,7 @@ export function DebuggerPanel({
   if (!snapshot) {
     return (
       <section className={styles.panel} aria-label="Debugger">
-        <header className={styles.header}><div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div><span className={styles.connectionBadge}>{connectionInfo.label}</span></header>
+        <header className={styles.header}><div><p className={styles.kicker}>Runtime control</p><h2>Debugger</h2></div>{sessionId && <span className={styles.connectionBadge}>{connectionInfo.label}</span>}</header>
         <div className={styles.emptyState}><strong>{connection.state === "stale" ? "Could not load executions" : connection.state === "reconnecting" && sessionId ? "Loading conversation executions…" : "No executions in this conversation"}</strong><span>{connection.message || (sessionId ? "Execution history appears here when this conversation runs." : "Open a conversation to inspect its execution history.")}</span>{onRefresh && sessionId && <button type="button" className={styles.textButton} onClick={onRefresh}>Refresh</button>}</div>
       </section>
     );
