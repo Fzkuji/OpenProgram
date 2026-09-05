@@ -45,6 +45,8 @@ globalThis.CustomEvent = window.CustomEvent;
 // Text assertions select a browser preference, independent of the host OS.
 globalThis.localStorage = { getItem(key) { return key === "agentic_locale" ? "en" : null; }, setItem() {}, removeItem() {} };
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+globalThis.requestAnimationFrame = (callback) => setTimeout(() => callback(0), 0);
+globalThis.cancelAnimationFrame = clearTimeout;
 window.location = { pathname: "/chat", hash: "", search: "" };
 window.history = { replaceState() {}, pushState() {} };
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
@@ -68,12 +70,19 @@ const update = {
 function response(payload, status = 200) {
   return { ok: status === 200, status, async json() { return payload; }, async text() { return JSON.stringify(payload); } };
 }
+async function expandUpdates(host) {
+  let toggle;
+  while ((toggle = host.querySelector('article[data-update-id] .tl-toggle[aria-expanded="false"]'))) {
+    await act(async () => toggle.click());
+  }
+}
 async function mount(Component, props, check) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   try {
     await act(async () => { root.render(createElement(Component, props)); });
+    await expandUpdates(host);
     await check(host, root);
   } finally {
     await act(async () => root.unmount());
@@ -174,6 +183,7 @@ test("session changes abort requests and discard late replies even if fetch igno
   };
   await mount(SelfUpdateHistory, { sessionId: "session-one" }, async (host, root) => {
     await act(async () => root.render(createElement(SelfUpdateHistory, { sessionId: "session-two" })));
+    await expandUpdates(host);
     assert.equal(oldSignal.aborted, true);
     assert.ok(host.textContent.includes("b".repeat(40)));
     await act(async () => finishOld(response({ items: [update], next_cursor: null })));
@@ -245,9 +255,9 @@ test("evidence stays literal text and requests only the projected authorized evi
     return response({ observations: [{ body: "<script>alert(1)</script><b>unsafe</b>" }] });
   };
   await mount(SelfUpdateCard, { update: verified }, async (host) => {
-    const summary = host.querySelector("summary");
-    assert.equal(summary.parentElement.tagName, "DETAILS");
-    await act(async () => host.querySelector("button").click());
+    assert.equal(host.querySelector("details"), null);
+    const load = [...host.querySelectorAll("button")].find((button) => button.textContent === "Load evidence");
+    await act(async () => load.click());
     assert.equal(calls.length, 1);
     const query = new URL(calls[0].url, "http://localhost").searchParams;
     assert.equal(query.get("session_id"), update.session_id);
@@ -265,14 +275,18 @@ test("control preparation preserves the original draft and does not send, instal
   let requests = 0;
   respond = async () => { requests++; throw new Error("must not submit"); };
   await mount(SelfUpdateCard, { update: { ...update, phase: "ready" } }, async (host) => {
-    const button = [...host.querySelectorAll("button")].find((item) => item.textContent === "Prepare cancellation request");
+    const button = [...host.querySelectorAll("button")].find((item) => item.getAttribute("aria-label") === "Prepare cancellation request");
     await act(async () => button.click());
+    assert.equal(useSessionStore.getState().composerDrafts[update.session_id], "Existing draft");
+    assert.equal(useSessionStore.getState().fnFormFunction.name, "self_update_cancel");
+    await act(async () => useSessionStore.getState().fnFormSubmitAction.submit({}));
     const drafts = useSessionStore.getState().composerDrafts;
     assert.ok(drafts[update.session_id].startsWith("Existing draft\n\n"));
     assert.ok(drafts[update.session_id].includes('self_update_cancel(update_id="update-one")'));
     assert.equal(drafts["other-session"], "Other draft");
     assert.equal(requests, 0);
-    assert.match(host.textContent, /not submitted/);
+    useSessionStore.getState().closeFnForm();
+    assert.equal(useSessionStore.getState().fnFormSubmitAction, null);
   });
 });
 
