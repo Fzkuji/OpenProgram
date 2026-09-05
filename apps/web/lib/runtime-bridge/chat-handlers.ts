@@ -320,6 +320,7 @@ type ExecutionCommandFrame = {
       session_id?: unknown;
       status?: unknown;
       status_version?: unknown;
+      current_attempt_id?: unknown;
     };
   };
 };
@@ -422,6 +423,8 @@ export function handleExecutionCommandUpdated(frame: unknown): void {
     delete runtimeState._optimisticCancels[commandId];
     return;
   }
+  const ownsForeground = snapshot.status !== "paused"
+    && !(snapshot.status === "reconciliation_required" && !snapshot.current_attempt_id);
   const restoredTask = {
     ...pending.task,
     session_id: snapshotSessionId,
@@ -429,7 +432,7 @@ export function handleExecutionCommandUpdated(frame: unknown): void {
     status_version: snapshotVersion,
     cancelling: false,
   };
-  store.setRunningTaskFor(snapshotSessionId, restoredTask, "never");
+  store.setRunningTaskFor(snapshotSessionId, ownsForeground ? restoredTask : null, "never");
   const messageId = pending.messageId || executionId;
   if (store.messagesById[messageId]) {
     const messageStatus = messageStatusForExecution(
@@ -443,8 +446,8 @@ export function handleExecutionCommandUpdated(frame: unknown): void {
   }
   if (snapshotSessionId === runtimeState.currentSessionId) {
     runtimeState.isPaused = String(snapshot?.status || "") === "paused";
-    setRunning(true);
-    setRunActive(true);
+    setRunning(ownsForeground);
+    setRunActive(ownsForeground);
     updatePauseBtn();
   }
   delete runtimeState._optimisticCancels[commandId];
@@ -593,8 +596,9 @@ export function handleSessionUpdated(
 /** Restore a durable continuation after its initial transport task ended.
  * Called only after the canonical execution update passes ordering checks. */
 export function restoreForegroundExecutionTask(value: unknown, execution?: unknown): void {
-  const canonical = execution as { session_id?: string; execution_id?: string; status?: string } | undefined;
-  if (canonical?.status === "paused") {
+  const canonical = execution as { session_id?: string; execution_id?: string; status?: string; current_attempt_id?: string | null } | undefined;
+  if (canonical?.status === "paused"
+    || (canonical?.status === "reconciliation_required" && !canonical.current_attempt_id)) {
     const sid = canonical.session_id;
     const eid = canonical.execution_id;
     if (sid && eid && useSessionStore.getState().runningTasks[sid]?.execution_id === eid) {

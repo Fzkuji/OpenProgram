@@ -24,7 +24,6 @@ _RUNNING_STATUSES = {
     "running",
     "pausing",
     "cancelling",
-    "reconciliation_required",
 }
 _workers: dict[str, "ExecutionProjectionWorker"] = {}
 _workers_lock = threading.Lock()

@@ -8,6 +8,9 @@ def foreground_task_snapshot(store, execution: ExecutionRecord) -> dict | None:
     """Return controls for an active interactive turn, never a background Job."""
     if execution.status in TERMINAL_EXECUTION_STATUSES or execution.status is ExecutionStatus.PAUSED:
         return None
+    if (execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
+            and execution.current_attempt_id is None):
+        return None
     payload = store.get_agent_turn_input(execution.execution_id)
     if payload is None:
         return None
