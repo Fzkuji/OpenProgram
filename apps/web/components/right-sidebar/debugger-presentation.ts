@@ -38,7 +38,7 @@ export function activityRows(events: PersistedExecutionEvent[], text: Text) {
     if (event.kind.startsWith("execution.") && typeof state.status === "string") {
       title = statusLabel(state.status, text);
     } else if (event.kind === "effect.dispatched") {
-      title = effect.kind === "provider.before" ? text("Model request sent", "已发送模型请求") : text("External action started", "已开始外部操作");
+      title = record(effect.metadata).kind === "provider.before" ? text("Model request sent", "已发送模型请求") : text("External action started", "已开始外部操作");
     } else if (event.kind === "command.rejected") {
       title = text("Control request rejected", "控制请求被拒绝");
     }

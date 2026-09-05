@@ -430,6 +430,20 @@ export function DebuggerPanel({
             <ol className={styles.eventList}>{events.slice(-50).reverse().map((event) => (
               <li key={event.sequence}><span>#{event.sequence}</span><span>{event.kind}<small className={styles.eventDetail}>{eventSummary(event)}</small></span>{event.execution_version != null && <span>v{event.execution_version}</span>}</li>
             ))}</ol>
+          {selectedCheckpoint && <section className={styles.card}>
+            <div className={styles.cardHeader}><h4>Checkpoint inspector</h4><span>{selectedCheckpoint ? "Published" : "Not selected"}</span></div>
+            {selectedCheckpoint ? (
+              <div className={styles.inspectorGrid}>
+                <div><span>ID</span><code>{selectedCheckpoint.checkpoint_id}</code></div>
+                <div><span>Revision</span><code>{selectedCheckpoint.revision_id}</code></div>
+                <div><span>Status version</span><code>{selectedCheckpoint.status_version}</code></div>
+                <div><span>Parent</span><code>{shortId(selectedCheckpoint.parent_checkpoint_id)}</code></div>
+                <div className={styles.inspectorWide}><span>Frontier</span><div className={styles.frontier}>{(selectedCheckpoint.frontier || []).map((item) => <span key={item.step_id} className={styles.frontierItem}>{item.step_id}<small>{item.status}</small></span>)}</div></div>
+                <div className={styles.inspectorWide}><span>Effect receipts</span><div className={styles.receipts}>{(selectedCheckpoint.effect_receipts || []).map((item) => <span key={item.effect_id}>{item.effect_id} · {item.status}</span>)}</div></div>
+              </div>
+            ) : <div className={styles.empty}>Only published checkpoint snapshots can be inspected.</div>}
+          </section>}
+
           </ExecutionStrip>
 
           {(snapshot.resource || Object.keys(snapshot.effect_summary).length > 0) && <div className={styles.twoColumn}>
@@ -444,20 +458,6 @@ export function DebuggerPanel({
               </dl>
             </section>}
           </div>}
-
-          {selectedCheckpoint && <section className={styles.card}>
-            <div className={styles.cardHeader}><h4>Checkpoint inspector</h4><span>{selectedCheckpoint ? "Published" : "Not selected"}</span></div>
-            {selectedCheckpoint ? (
-              <div className={styles.inspectorGrid}>
-                <div><span>ID</span><code>{selectedCheckpoint.checkpoint_id}</code></div>
-                <div><span>Revision</span><code>{selectedCheckpoint.revision_id}</code></div>
-                <div><span>Status version</span><code>{selectedCheckpoint.status_version}</code></div>
-                <div><span>Parent</span><code>{shortId(selectedCheckpoint.parent_checkpoint_id)}</code></div>
-                <div className={styles.inspectorWide}><span>Frontier</span><div className={styles.frontier}>{(selectedCheckpoint.frontier || []).map((item) => <span key={item.step_id} className={styles.frontierItem}>{item.step_id}<small>{item.status}</small></span>)}</div></div>
-                <div className={styles.inspectorWide}><span>Effect receipts</span><div className={styles.receipts}>{(selectedCheckpoint.effect_receipts || []).map((item) => <span key={item.effect_id}>{item.effect_id} · {item.status}</span>)}</div></div>
-              </div>
-            ) : <div className={styles.empty}>Only published checkpoint snapshots can be inspected.</div>}
-          </section>}
 
           {selectedWaits.length > 0 && <section className={styles.card}>
             <div className={styles.cardHeader}><h4>Question and approval waits</h4><span>{selectedWaits.length} open</span></div>
