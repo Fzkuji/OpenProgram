@@ -23,7 +23,7 @@ from openprogram.programs.tools.agents.agent.agent.agent import _agent_impl
 
 
 @pytest.fixture
-def parent_turn(tmp_path, monkeypatch):
+def parent_turn(tmp_path, monkeypatch, request):
     """Isolated store, two sessions, parent turn bound on p1:a1.
     Deliveries are captured at run_agent_turn_async; captured kwargs are
     exposed as ``store.async_calls``."""
@@ -31,6 +31,10 @@ def parent_turn(tmp_path, monkeypatch):
     from openprogram.agent import session_db as sdb_mod
 
     s = SessionStore(tmp_path / "sessions-git")
+    # Register immediately so setup errors also join deferred index writers.
+    # Runner shutdown below happens first; the unit boundary must not race a
+    # timer still flushing the fixture's store on slower native ARM64 disks.
+    request.addfinalizer(s.close)
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
     monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: s)
     monkeypatch.setattr("openprogram.store.default_store", lambda: s)

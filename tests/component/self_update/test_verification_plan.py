@@ -24,6 +24,9 @@ def _plan():
 
 
 def _public_prepare(tmp_path, monkeypatch, plan, *, assertions=None):
+    # _isolated_owner supplies a no-op supervisor. Exercise plan validation
+    # against that fake controller, not the host's native backend availability.
+    monkeypatch.setattr("openprogram._compat.conversational_update_backend", lambda: "fixture-controller")
     worktree, _, sha = _candidate(tmp_path)
     store = SelfUpdateStore(tmp_path / "updates")
     monkeypatch.setattr(tool, "_turn_context", lambda: (_request(), "turn-1_reply"))
