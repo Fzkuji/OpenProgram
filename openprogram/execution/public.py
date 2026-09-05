@@ -121,7 +121,10 @@ def _resume_eligibility(store: Any, execution: ExecutionRecord) -> tuple[bool, b
             if checkpoint is not None:
                 if (checkpoint.execution_id != execution.execution_id
                         or checkpoint.revision_id != execution.revision_id):
-                    return False, False
+                    from .revisions import RevisionControlService
+                    if (connection.execute("SELECT 1 FROM attempts WHERE execution_id = ? LIMIT 1", (execution.execution_id,)).fetchone()
+                            or RevisionControlService(store).instruction_branch(connection, execution, checkpoint) is None):
+                        return False, False
                 return (execution.capabilities.pause,
                         execution.capabilities.step
                         and not RuntimeControlService._agent_step_has_no_next_action(checkpoint))

@@ -908,6 +908,7 @@ class ExecutionStore:
         source_execution_id: str,
         child_execution_id: str,
         created_at: float,
+        assistant_message_id: str | None = None,
     ) -> ExecutionInputRecord:
         row = connection.execute(
             "SELECT * FROM execution_inputs WHERE execution_id = ?",
@@ -926,7 +927,7 @@ class ExecutionStore:
             entrypoint=source.entrypoint,
             session_id=source.session_id,
             user_message_id=source.user_message_id,
-            assistant_message_id=source.assistant_message_id,
+            assistant_message_id=assistant_message_id or source.assistant_message_id,
             trusted_actor=source.trusted_actor,
             config_snapshot_ref=source.config_snapshot_ref,
             created_at=created_at,

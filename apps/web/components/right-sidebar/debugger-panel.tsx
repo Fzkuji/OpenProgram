@@ -69,8 +69,9 @@ export type DebuggerPanelProps = {
   onCreateDraft?: (input: {
     execution_id: string;
     source_checkpoint_id: string;
+    preparation?: { instructions: string; rationale?: string };
   }) => Promise<void> | void;
-  onUpdateDraft?: (draft: RevisionDraft, changes: RevisionDraft["changes"]) => Promise<void> | void;
+  onUpdateDraft?: (draft: RevisionDraft, changes: RevisionDraft["changes"] | { instructions: string; rationale?: string }) => Promise<void> | void;
   onDraftAction?: (
     draft: RevisionDraft,
     action: "validate" | "approve" | "publish" | "fork",
@@ -217,7 +218,7 @@ function ActionButton({
       className={action === "cancel" ? styles.cancelButton : undefined}
       onClick={() => void submit()}
       disabled={disabled}
-      title={!onCommand ? "Control service is not connected" : !ready ? "A published reference is required" : undefined}
+      title={!onCommand ? "Refresh the execution before sending a command" : !ready ? action === "steer" ? "Enter the next instruction" : "Create and publish an instruction branch first" : undefined}
     >
       {pending ? "Submitting…" : ACTION_LABELS[action]}
     </Button>
@@ -228,8 +229,7 @@ function CommandNotice({ result }: { result: CommandResult | null }) {
   if (!result) return null;
   return (
     <div className={`${styles.commandNotice} ${result.status === "rejected" ? styles.noticeDanger : ""}`} role="status">
-      <span>{result.status}</span>
-      <span>{result.rejection_code || `command ${shortId(result.command_id)}`}</span>
+      <span>{{ accepted: "Request accepted; waiting for the runtime.", applying: "Applying request…", applied: "Request applied.", rejected: "Request could not be applied. Check the technical details." }[result.status]}</span>
     </div>
   );
 }
@@ -257,11 +257,14 @@ export function DebuggerPanel({
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(selectedExecutionId || executions[0]?.execution_id || null);
   const [commandResults, setCommandResults] = useState<Record<string, CommandResult>>({});
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
-  const [waitValue, setWaitValue] = useState("");
-  const [approvalScope, setApprovalScope] = useState("");
+  const [waitValues, setWaitValues] = useState<Record<string, string>>({});
+  const [approvalScopes, setApprovalScopes] = useState<Record<string, string>>({});
+  const [pendingWaits, setPendingWaits] = useState<Set<string>>(new Set());
+  const waitKey = (wait: DurableWait) => `${wait.wait_id}:${wait.claim_generation}`;
   const [waitError, setWaitError] = useState<string | null>(null);
   const [steerValue, setSteerValue] = useState("");
   const [draftText, setDraftText] = useState<string | null>(null);
+  const [draftPending, setDraftPending] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
   const selectedId = selectedExecutionId !== undefined
     ? selectedExecutionId
@@ -277,10 +280,25 @@ export function DebuggerPanel({
   const connectionInfo = connectionCopy(connection);
   useEffect(() => { setDraftText(null); setDraftError(null); }, [selectedDraft?.draft_id]);
 
+
+
   useEffect(() => {
-    setWaitValue("");
-    setApprovalScope("");
-  }, [selectedWaits.map((wait) => wait.wait_id).join(",")]);
+    setCommandResults((current) => {
+      let next = current;
+      for (const event of events) {
+        const value = event.payload?.command;
+        if (!value || typeof value !== "object") continue;
+        const command = value as Record<string, unknown>;
+        const id = command.command_id;
+        const status = command.status;
+        if (typeof id !== "string" || !["accepted", "applying", "applied", "rejected"].includes(String(status))) continue;
+        const entry = Object.entries(next).find(([, result]) => result.command_id === id);
+        if (!entry || entry[1].status === status) continue;
+        next = { ...next, [entry[0]]: { ...entry[1], status: status as CommandResult["status"], rejection_code: typeof command.rejection_code === "string" ? command.rejection_code : null } };
+      }
+      return next;
+    });
+  }, [events]);
 
   function selectExecution(id: string) {
     setLocalSelectedId(id);
@@ -314,8 +332,12 @@ export function DebuggerPanel({
 
   async function respondWait(wait: DurableWait, outcome: "answer" | "decline") {
     if (!onRespondWait) return;
+    if (pendingWaits.has(waitKey(wait))) return;
     setWaitError(null);
+    setPendingWaits((current) => new Set(current).add(waitKey(wait)));
     try {
+      const waitValue = waitValues[waitKey(wait)] || "";
+      const approvalScope = approvalScopes[waitKey(wait)] || "";
       let answer: unknown = waitValue.trim();
       if (outcome === "answer") {
         if (wait.kind === "form" || wait.kind === "ask_many" || wait.request?.multi) {
@@ -334,10 +356,12 @@ export function DebuggerPanel({
         outcome,
         value: outcome === "answer" ? answer : undefined,
       });
-      setWaitValue("");
-      setApprovalScope("");
+      setWaitValues((current) => ({ ...current, [waitKey(wait)]: "" }));
+      setApprovalScopes((current) => ({ ...current, [waitKey(wait)]: "" }));
     } catch (error) {
       setWaitError(error instanceof Error ? error.message : "Wait response failed.");
+    } finally {
+      setPendingWaits((current) => { const next = new Set(current); next.delete(waitKey(wait)); return next; });
     }
   }
 
@@ -404,7 +428,7 @@ export function DebuggerPanel({
             {availableExecutionActions(snapshot).includes("steer") && <label className={styles.steerInput}>{text("Instruction for the next step", "下一步的补充指令")}<Input maxLength={4096} value={steerValue} onChange={(event) => setSteerValue(event.target.value)} placeholder={text("Describe the change", "描述需要调整的内容")} /></label>}
             <div className={styles.actions}>
               {(["pause", "continue", "step", "steer", "fork", "retry", "cancel"] as ExecutionCommandAction[]).filter((action) => availableExecutionActions(snapshot).includes(action)).map((action) => (
-                <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} ready={(action !== "steer" || Boolean(steerValue.trim())) && (action !== "fork" || Boolean(actionPayloads.fork))} onCommand={onCommand ? submitAction : undefined} />
+                <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} ready={(action !== "steer" || Boolean(steerValue.trim())) && (action !== "fork" || Boolean(actionPayloads.fork))} onCommand={onCommand && connection.state === "connected" ? submitAction : undefined} />
               ))}
             </div>
             <div className={styles.commandStack}>
@@ -419,6 +443,7 @@ export function DebuggerPanel({
             ))}</ol>
           </section>}
           <ExecutionStrip label={text("Technical details", "技术详情")}>
+            {Object.values(commandResults).map((result) => <p key={result.command_id}>{result.command_id} · {result.status}{result.rejection_code ? ` · ${result.rejection_code}` : ""}</p>)}
             <dl className={styles.definitionList}>
               <div><dt>Execution ID</dt><dd>{snapshot.execution_id}</dd></div>
               <div><dt>Run ID</dt><dd>{snapshot.run_id}</dd></div>
@@ -466,53 +491,56 @@ export function DebuggerPanel({
                 <div><strong>{wait.kind}</strong><span>{shortId(wait.wait_id)} · generation {wait.claim_generation}</span><code>{wait.request_ref}</code></div>
                 <div className={styles.waitControls}>
                   {wait.kind === "approval" ? (
-                    <select aria-label="Approval scope" value={approvalScope} onChange={(event) => setApprovalScope(event.target.value)} disabled={!onRespondWait}>
+                    <select aria-label="Approval scope" value={approvalScopes[waitKey(wait)] || ""} onChange={(event) => setApprovalScopes((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>
                       <option value="">Choose approval scope</option>
                       {(wait.policy_snapshot?.allowed_scopes ?? ["once"]).map((scope) => <option key={scope} value={scope}>{scope}</option>)}
                     </select>
                   ) : wait.kind === "form" ? (
-                    <Textarea aria-label="Form answer" value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={JSON.stringify(Object.fromEntries(Object.entries(wait.request?.schema || {}).map(([name, field]) => [name, field.default ?? ""])), null, 2)} disabled={!onRespondWait} />
+                    <Textarea aria-label="Form answer" value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder={JSON.stringify(Object.fromEntries(Object.entries(wait.request?.schema || {}).map(([name, field]) => [name, field.default ?? ""])), null, 2)} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
                   ) : wait.kind === "ask_many" || wait.request?.multi ? (
-                    <Textarea aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={'["answer 1", ["answer 2"]]'} disabled={!onRespondWait} />
+                    <Textarea aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder={'["answer 1", ["answer 2"]]'} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
                   ) : wait.request?.options?.length ? (
-                    <select aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} disabled={!onRespondWait}>
+                    <select aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>
                       <option value="">Choose an answer</option>
                       {wait.request.options.map((option) => <option key={option} value={option}>{option}</option>)}
                     </select>
                   ) : (
-                    <Input aria-label={`${wait.kind} answer`} value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder="Answer" disabled={!onRespondWait} />
+                    <Input aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder="Answer" disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
                   )}
-                  <Button variant="ghost" type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait || (wait.kind === "approval" && !approvalScope)}>Answer</Button><Button variant="ghost" type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait}>Decline</Button>
+                  <Button variant="ghost" type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait || pendingWaits.has(waitKey(wait)) || (wait.kind === "approval" && !approvalScopes[waitKey(wait)])}>Answer</Button><Button variant="ghost" type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>Decline</Button>
                 </div>
               </div>
             )) : <div className={styles.empty}>No unresolved execution-owned waits.</div>}
             {waitError && <div className={styles.formError} role="alert">{waitError}</div>}
           </section>}
 
-          {(selectedDraft || snapshot.checkpoint_head_id) && <section className={styles.card}>
-            <div className={styles.cardHeader}><h4>Revision draft</h4><span>{selectedDraft ? selectedDraft.status : "No draft"}</span></div>
-            {selectedDraft ? (
-              <div className={styles.revisionEditor}>
-                <div className={styles.editorMeta}><span>Draft {shortId(selectedDraft.draft_id)}</span><span>source checkpoint {shortId(selectedDraft.source_checkpoint_id)}</span><span>base {shortId(selectedDraft.base_revision_id)}</span></div>
-                <label className={styles.editorLabel}>Supported changes <Textarea value={draftText ?? JSON.stringify(selectedDraft.changes, null, 2)} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} /></label>
-                <div className={styles.revisionActions}>
-                  {selectedDraft.status === "draft" && <Button variant="ghost" type="button" onClick={() => { try { const changes = JSON.parse(draftText ?? JSON.stringify(selectedDraft.changes)) as RevisionDraft["changes"]; setDraftError(null); void Promise.resolve(onUpdateDraft?.(selectedDraft, changes)).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft update failed.")); } catch { setDraftError("Enter a valid JSON change list."); } }} disabled={!onUpdateDraft}>Save draft</Button>}
-                  {(["validate", "approve", "publish", "fork"] as const).map((action) => <Button variant="ghost" key={action} type="button" onClick={() => { setDraftError(null); void Promise.resolve(onDraftAction?.(selectedDraft, action)).catch((error) => setDraftError(error instanceof Error ? error.message : "Revision action failed.")); }} disabled={!onDraftAction || (action === "validate" ? selectedDraft.status !== "draft" : action === "approve" ? selectedDraft.status !== "validated" : action === "publish" ? selectedDraft.status !== "approved" : selectedDraft.status !== "published")}>{action[0].toUpperCase() + action.slice(1)}</Button>)}
-                </div>
-                {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
-                {selectedDraft.validation && <div className={styles.validation}><span>Report {shortId(selectedDraft.validation.report_ref)}</span><span>Reusable {selectedDraft.validation.reusable_steps.length}</span><span>Affected {selectedDraft.validation.affected_steps.length}</span>{selectedDraft.validation.error_code && <strong>{selectedDraft.validation.error_code}</strong>}</div>}
-              </div>
-            ) : (
-              <div className={styles.empty}>
-                <span>Create a draft through the revision service to edit future logic. This view never mutates the source execution.</span>
-                {onCreateDraft && snapshot.checkpoint_head_id && (
-                  <Button variant="ghost" type="button" onClick={() => { setDraftError(null); void Promise.resolve(onCreateDraft({ execution_id: snapshot.execution_id, source_checkpoint_id: snapshot.checkpoint_head_id! })).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft creation failed.")); }}>
-                    Create draft
-                  </Button>
-                )}
-                {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
-              </div>
-            )}
+          {(selectedDraft || (snapshot.capabilities.fork && snapshot.checkpoint_head_id)) && <section className={styles.card}>
+            <div className={styles.cardHeader}><h4>{text("Branch with new instructions", "按新指令创建分支")}</h4></div>
+            <p className={styles.muted}>{text("Continue from this saved point with new instructions. The original execution stays unchanged.", "从此保存点按新指令继续，原执行保持不变。")}</p>
+            {(!selectedDraft || selectedDraft.editor) ? <label className={styles.editorLabel}>
+              {text("Instructions for the new branch", "新分支的指令")}
+              <Textarea maxLength={4096} value={draftText ?? selectedDraft?.editor?.instructions ?? ""} onChange={(event) => setDraftText(event.target.value)} disabled={draftPending || Boolean(selectedDraft && selectedDraft.status !== "draft")} />
+            </label> : <p className={styles.muted}>{text("This revision was prepared by another client.", "此修订由其他客户端准备。")}</p>}
+            {selectedDraft && <p className={styles.muted}>{({ draft: "Draft", validated: "Validated", approved: "Approved", published: "Ready to create branch", discarded: "Discarded", rejected: "Needs changes" })[selectedDraft.status]}</p>}
+            <div className={styles.revisionActions}>
+              {(!selectedDraft || (selectedDraft.status === "draft" && selectedDraft.editor)) && <Button variant="ghost" disabled={draftPending || (selectedDraft ? !onUpdateDraft : !onCreateDraft) || !(draftText ?? selectedDraft?.editor?.instructions ?? "").trim()} onClick={async () => {
+                setDraftError(null); setDraftPending(true);
+                try {
+                  const preparation = { instructions: (draftText ?? selectedDraft?.editor?.instructions ?? "").trim() };
+                  if (selectedDraft) await onUpdateDraft?.(selectedDraft, preparation);
+                  else await onCreateDraft?.({ execution_id: snapshot.execution_id, source_checkpoint_id: snapshot.checkpoint_head_id!, preparation });
+                  setDraftText(null);
+                } catch (error) { setDraftError(error instanceof Error ? error.message : "Could not save instructions."); }
+                finally { setDraftPending(false); }
+              }}>{selectedDraft ? text("Save instructions", "保存指令") : text("Prepare branch", "准备分支")}</Button>}
+              {selectedDraft && (["validate", "approve", "publish", "fork"] as const).filter((action) => ({ validate: "draft", approve: "validated", publish: "approved", fork: "published" })[action] === selectedDraft.status).map((action) => <Button variant="ghost" key={action} disabled={draftPending || !onDraftAction || (draftText !== null && draftText !== selectedDraft.editor?.instructions)} onClick={async () => {
+                setDraftError(null); setDraftPending(true);
+                try { await onDraftAction?.(selectedDraft, action); }
+                catch (error) { setDraftError(error instanceof Error ? error.message : "Could not apply revision action."); }
+                finally { setDraftPending(false); }
+              }}>{({ validate: "Check compatibility", approve: "Approve revision", publish: "Publish revision", fork: "Create branch" })[action]}</Button>)}
+            </div>
+            {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
           </section>}
         </div>
       </div>

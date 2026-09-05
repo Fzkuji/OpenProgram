@@ -220,7 +220,7 @@ def run_loop_blocking(
         from openprogram.store.session.session_node_writer import SessionNodeWriter
 
         graph = SessionNodeWriter(db, req.session_id).load()
-        anchor = continuation.state.payload["turn"]["user_message_id"]
+        anchor = getattr(req, "_steering_tail_id", None) or continuation.state.payload["turn"]["user_message_id"]
         if anchor not in graph.nodes:
             raise ValueError("Agent checkpoint user anchor is not in the session graph")
         context_messages = render_dag_messages(
@@ -374,7 +374,11 @@ def run_loop_blocking(
         from openprogram.providers.types import TextContent, UserMessage
         from openprogram.store import SessionNodeWriter
 
-        message_id = uuid.uuid4().hex[:12]
+        if isinstance(command_id, str):
+            import hashlib
+            message_id = hashlib.sha256(f"{req.session_id}:{command_id}".encode()).hexdigest()[:24]
+        else:
+            message_id = uuid.uuid4().hex[:12]
         timestamp = time.time()
         predecessor = (
             getattr(req, "_steering_tail_id", None)
@@ -393,14 +397,15 @@ def run_loop_blocking(
             metadata.update(normalize_authority(req))
             stamp_schema(metadata)
             writer = SessionNodeWriter(db, req.session_id, advance_head=False)
-            writer.append(Call(
-                id=message_id,
-                created_at=timestamp,
-                role=ROLE_USER,
-                output=text,
-                predecessor=predecessor,
-                metadata=metadata,
-            ))
+            if not db.message_exists(req.session_id, message_id):
+                writer.append(Call(
+                    id=message_id,
+                    created_at=timestamp,
+                    role=ROLE_USER,
+                    output=text,
+                    predecessor=predecessor,
+                    metadata=metadata,
+                ))
             if not db.message_exists(req.session_id, message_id):
                 raise RuntimeError("steering user message was not persisted")
             writer.update(assistant_msg_id, predecessor=message_id)

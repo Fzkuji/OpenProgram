@@ -200,6 +200,7 @@ def project_draft_state(
         "validation": _validation_dict(validation),
         "approval": _approval_dict(approval),
         "manifest": _manifest_dict(manifest),
+        "editor": service.instruction_editor(draft.changes),
     }
 
 
@@ -240,6 +241,20 @@ def validate_revision_request(command: Mapping[str, Any], action: str) -> str | 
     payload = command.get("payload")
     if not isinstance(payload, Mapping):
         return "invalid_payload"
+    if action in {"revision.draft.create", "revision.draft.replace"} and "preparation" in payload:
+        required = {"preparation", "source_checkpoint_id"} if action == "revision.draft.create" else {"preparation"}
+        preparation = payload["preparation"]
+        if (set(payload) != required or not isinstance(preparation, Mapping)
+                or set(preparation) - {"instructions", "rationale"}
+                or not isinstance(preparation.get("instructions"), str)
+                or not preparation["instructions"].strip()
+                or len(preparation["instructions"].encode("utf-8")) > 16384
+                or not isinstance(preparation.get("rationale", ""), str)
+                or len(preparation.get("rationale", "").encode("utf-8")) > 4096
+                or (action == "revision.draft.create" and (
+                    not isinstance(payload["source_checkpoint_id"], str) or not payload["source_checkpoint_id"]))):
+            return "invalid_payload"
+        return None
     required = {
         "revision.draft.create": {
             "source_checkpoint_id",
@@ -328,7 +343,7 @@ def submit_revision_request(
             raise RevisionPublicError("not_found")
     execution, binding = _authorize(
         store,
-        trusted_actor,
+        actor,
         execution_id,
         action=action,
         bound_session=bound_session,
@@ -338,6 +353,19 @@ def submit_revision_request(
     payload = dict(command.get("payload") or {})
     version = int(command.get("expected_draft_version", 0))
     try:
+        if "preparation" in payload:
+            if action == "revision.draft.replace" and (
+                draft.draft_version != version or draft.status != "draft"
+                or draft.requested_by != _subject(trusted_actor)
+            ):
+                raise ExecutionConflict("draft_version_conflict", "draft is not editable at this version")
+            checkpoint_id = payload.get("source_checkpoint_id") or draft.source_checkpoint_id
+            payload = {
+                "source_checkpoint_id": checkpoint_id,
+                "changes": service.prepare_agent_instructions(execution_id, checkpoint_id,
+                    payload["preparation"]["instructions"], payload["preparation"].get("rationale", "")),
+                "frontier_mapping": [],
+            }
         if action == "revision.draft.create":
             draft = service.create_draft(
                 project_binding=binding,

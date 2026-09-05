@@ -82,6 +82,13 @@ def _require_ref(value: Any) -> str:
 
 
 def _strict_artifact(kind: str, content: Mapping[str, Any]) -> dict[str, Any]:
+    if kind == "prompt" and isinstance(content, Mapping) and set(content) == {"template_hash", "instructions"}:
+        instructions = content["instructions"]
+        if (not isinstance(instructions, str) or not instructions.strip()
+                or len(instructions.encode("utf-8")) > 16384
+                or content["template_hash"] != hashlib.sha256(instructions.encode("utf-8")).hexdigest()):
+            raise ExecutionConflict("invalid_artifact", "Agent instructions must have bounded, hash-bound text")
+        return dict(content)
     expected = {
         "workflow": {"graph_hash"},
         "prompt": {"template_hash"},
@@ -178,6 +185,90 @@ class RevisionControlService:
     def __init__(self, executions: ExecutionStore):
         self.executions = executions
         self.checkpoints = ExecutionCheckpointStore(executions)
+
+    def prepare_agent_instructions(self, execution_id: str, checkpoint_id: str,
+                                   instructions: str, rationale: str = "") -> list[dict[str, Any]]:
+        """Prepare real instruction artifacts from a validated source checkpoint."""
+        source = self.executions.get_execution(execution_id)
+        checkpoint = self.checkpoints.get(checkpoint_id)
+        if (source is None or checkpoint is None or checkpoint.execution_id != execution_id
+                or checkpoint.revision_id != source.revision_id):
+            raise ExecutionConflict("invalid_checkpoint", "instruction branch requires its source checkpoint")
+        payload = self.executions.get_agent_turn_input(execution_id)
+        if not payload or payload.get("kind") != "chat":
+            raise ExecutionConflict("unsupported_instruction_branch", "instruction editing requires an Agent chat checkpoint")
+        if not isinstance(rationale, str) or len(rationale.encode("utf-8")) > _MAX_RATIONALE_BYTES:
+            raise ExecutionConflict("invalid_revision_schema", "revision rationale is invalid")
+        program_content = self._agent_program_content(checkpoint)
+        prompt_content = _strict_artifact("prompt", {
+            "instructions": instructions,
+            "template_hash": hashlib.sha256(instructions.encode("utf-8")).hexdigest()
+            if isinstance(instructions, str) else "",
+        })
+        program = self.put_artifact(kind="program_artifact", content=program_content)
+        prompt = self.put_artifact(kind="prompt", content=prompt_content)
+        base = self.executions.get_revision(source.revision_id)
+        if base is None:
+            raise ExecutionConflict("base_revision_mismatch", "source revision is unavailable")
+        return [
+            {"kind": "program_artifact", "target": "agent.program", "before_hash": base.content_hash,
+             "after_ref": program.artifact_ref, "rationale": rationale},
+            {"kind": "prompt", "target": "agent.additional_instructions", "before_hash": program_content["source_hash"],
+             "after_ref": prompt.artifact_ref, "rationale": rationale},
+        ]
+
+    def _agent_program_content(self, checkpoint: CheckpointManifest) -> dict[str, str]:
+        from openprogram.agent.continuation import AgentCheckpointV1, AgentCheckpointError
+        try:
+            state = AgentCheckpointV1.load(self.executions, checkpoint)
+        except AgentCheckpointError as exc:
+            raise ExecutionConflict(exc.code, str(exc)) from exc
+        source = self.executions.get_execution_input(checkpoint.execution_id)
+        if source is None or source.entrypoint != "openprogram.agent.production_driver:AgentProductionDriver":
+            raise ExecutionConflict("unsupported_instruction_branch", "checkpoint has no Agent program")
+        return {"entrypoint": source.entrypoint,
+                "source_hash": state.payload["resolved_model_system_tool_snapshot_ref"]["sha256"]}
+
+    def instruction_editor(self, changes: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+        if len(changes) != 2 or {item["target"] for item in changes} != {"agent.program", "agent.additional_instructions"}:
+            return None
+        change = next(item for item in changes if item["target"] == "agent.additional_instructions")
+        with self.executions._connect() as connection:
+            row = connection.execute("SELECT * FROM revision_artifacts WHERE artifact_ref = ?", (change["after_ref"],)).fetchone()
+        if row is None or row["kind"] != "prompt":
+            return None
+        content = self._artifact(row).content
+        _strict_artifact("prompt", content)
+        if "instructions" not in content:
+            return None
+        return {"kind": "agent_instructions", "instructions": content["instructions"],
+                "rationale": change["rationale"]}
+
+    def published_instructions(self, revision_id: str) -> tuple[RevisionManifest, str] | None:
+        """Read only text bound to the immutable published revision."""
+        with self.executions._connect() as connection:
+            row = connection.execute("SELECT * FROM revision_manifests WHERE revision_id = ?", (revision_id,)).fetchone()
+            if row is None:
+                return None
+            manifest = self._manifest(row)
+            validation = connection.execute("SELECT draft_id FROM revision_validations WHERE validation_id = ?", (manifest.validation_id,)).fetchone()
+            draft = self.get_draft(validation["draft_id"]) if validation else None
+            editor = self.instruction_editor(draft.changes) if draft else None
+            return (manifest, editor["instructions"]) if editor else None
+
+    def instruction_branch(self, connection, execution, checkpoint) -> tuple[RevisionManifest, str] | None:
+        published = self.published_instructions(execution.revision_id)
+        if published is None or execution.source_checkpoint_id != checkpoint.checkpoint_id:
+            return None
+        manifest, instructions = published
+        if (execution.parent_execution_id != manifest.source_execution_id
+                or checkpoint.execution_id != manifest.source_execution_id
+                or checkpoint.revision_id != manifest.parent_revision_id):
+            raise ExecutionConflict("revision_manifest_source_mismatch", "instruction branch source is invalid")
+        self.require_fork_manifest(connection, manifest_id=manifest.manifest_id,
+            source_execution_id=manifest.source_execution_id, checkpoint_id=checkpoint.checkpoint_id,
+            proof_hash=manifest.proof_hash)
+        return manifest, instructions
 
     def put_artifact(self, *, kind: str, content: Mapping[str, Any]) -> RevisionArtifact:
         value = _strict_artifact(kind, content)
@@ -619,6 +710,8 @@ class RevisionControlService:
     def _compatible_checkpoint_and_proof(self, connection: sqlite3.Connection, draft: RevisionDraft) -> tuple[CheckpointManifest, list[dict[str, Any]]]:
         checkpoint = self.checkpoints._get(connection, draft.source_checkpoint_id)
         assert checkpoint is not None
+        if self.instruction_editor(draft.changes) is not None:
+            return checkpoint, self._agent_instruction_proof(connection, draft, checkpoint)
         mapping = {item["old_step_id"]: item for item in draft.frontier_mapping}
         while checkpoint is not None:
             proof = self._proof(checkpoint, mapping)
@@ -626,6 +719,43 @@ class RevisionControlService:
                 return checkpoint, proof
             checkpoint = self.checkpoints._get(connection, checkpoint.parent_checkpoint_id) if checkpoint.parent_checkpoint_id else None
         raise ExecutionConflict("compatible_checkpoint_required", "no checkpoint has a proven compatible prefix")
+
+    def _agent_instruction_proof(self, connection, draft, checkpoint) -> list[dict[str, Any]]:
+        """Prove unchanged Agent runtime and every already-completed effect."""
+        from openprogram.agent.continuation import AgentCheckpointV1
+        program = next(item for item in draft.changes if item["target"] == "agent.program")
+        prompt = next(item for item in draft.changes if item["target"] == "agent.additional_instructions")
+        content = self._agent_program_content(checkpoint)
+        row = connection.execute("SELECT * FROM revision_artifacts WHERE artifact_ref = ?", (program["after_ref"],)).fetchone()
+        if (program["kind"] != "program_artifact" or prompt["kind"] != "prompt"
+                or program["before_hash"] != draft.base_revision_hash
+                or prompt["before_hash"] != content["source_hash"]
+                or row is None or self._artifact(row).content != content or draft.frontier_mapping):
+            raise ExecutionConflict("invalid_instruction_revision", "instructions must preserve the Agent program and runtime")
+        state = AgentCheckpointV1.load(self.executions, checkpoint)
+        allowed_executions = set()
+        current = self.executions._require_execution(connection, checkpoint.execution_id)
+        while current is not None and current.execution_id not in allowed_executions:
+            allowed_executions.add(current.execution_id)
+            current = (self.executions._get_execution(connection, current.parent_execution_id)
+                       if current.parent_execution_id else None)
+        proof = [{"kind": "agent_checkpoint", "checkpoint_id": checkpoint.checkpoint_id,
+                  "checkpoint_hash": checkpoint.state_refs["agent_checkpoint"]["sha256"],
+                  "runtime_contract_hash": content["source_hash"], "reuse_decision": "reuse"}]
+        receipts = {item["action_id"]: item for item in state.payload["terminal_effect_receipts"]}
+        for action in state.payload["completed_actions"]:
+            receipt = receipts.get(action["action_id"])
+            effect = (connection.execute("SELECT * FROM effects WHERE effect_id = ?", (receipt["effect_id"],)).fetchone()
+                      if receipt else None)
+            if (effect is None or effect["execution_id"] not in allowed_executions
+                    or effect["action_id"] != action["action_id"]
+                    or effect["status"] != receipt["outcome"]
+                    or effect["status"] not in {"committed", "not_committed", "compensated"}):
+                raise ExecutionConflict("checkpoint_effect_proof_required", "Agent action lacks a matching terminal effect")
+            proof.append({"kind": "agent_action", "action_id": action["action_id"],
+                          "input_hash": action["input_hash"], "effect_id": receipt["effect_id"],
+                          "receipt_hash": receipt["receipt_ref"]["sha256"], "reuse_decision": "reuse"})
+        return proof
 
     def _proof(self, checkpoint: CheckpointManifest, mapping: Mapping[str, Mapping[str, Any]]) -> list[dict[str, Any]] | None:
         frontier = checkpoint.completed_frontier

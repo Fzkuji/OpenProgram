@@ -353,10 +353,14 @@ def agent_loop_resume(
             # the continuation dispatcher, not sent through a second provider
             # request.
             if continuation.phase == "after_provider" and not tool_calls:
-                new_messages.append(assistant)
-                ev_stream.push(AgentEventAgentEnd(messages=new_messages))
-                ev_stream.end(new_messages)
-                return
+                steering = await config.get_steering_messages() if config.get_steering_messages else []
+                if not steering:
+                    new_messages.append(assistant)
+                    ev_stream.push(AgentEventAgentEnd(messages=new_messages))
+                    ev_stream.end(new_messages)
+                    return
+                current_context.messages.extend(steering)
+                new_messages.extend(steering)
 
             # The restored provider decision is already durable.  Continue
             # with the next decision only after all stored/remaining tool

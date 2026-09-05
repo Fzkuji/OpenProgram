@@ -79,6 +79,7 @@ export type ExecutionCommand = {
 };
 
 export type CommandResult = {
+  result_json?: { child_execution_id?: string; [key: string]: unknown };
   command_id: string;
   status: "accepted" | "applying" | "applied" | "rejected";
   rejection_code?: string | null;
@@ -100,11 +101,13 @@ export type RevisionChange = {
     | "output_schema"
     | "program_artifact";
   target: string;
+  before_hash: string;
   after_ref: string;
   rationale: string;
 };
 
 export type RevisionDraft = {
+  editor?: { kind: "agent_instructions"; instructions: string; rationale?: string };
   draft_id: string;
   project_id: string;
   source_execution_id: string;

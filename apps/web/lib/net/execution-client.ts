@@ -184,6 +184,7 @@ type RevisionAction =
   | "revision.publish";
 
 type RevisionStateResponse = {
+  editor?: RevisionDraft["editor"];
   draft?: RevisionDraft;
   validation?: RevisionDraft["validation"] | null;
   approval?: RevisionDraft["approval"] | null;
@@ -232,6 +233,7 @@ export function parseRevisionState(body: RevisionStateResponse): RevisionDraft {
         policy_version: String(approval.policy_version || ""),
       }
       : draft.approval,
+    editor: state.editor as RevisionDraft["editor"] ?? draft.editor,
     manifest: manifest
       ? {
         manifest_id: typeof manifest.manifest_id === "string" ? manifest.manifest_id : undefined,
@@ -291,8 +293,9 @@ export async function postRevisionDraftCommand(input: {
 export function createRevisionDraft(input: {
   execution_id: string;
   source_checkpoint_id: string;
-  changes: RevisionChange[];
-  frontier_mapping: Array<Record<string, unknown>>;
+  changes?: RevisionChange[];
+  frontier_mapping?: Array<Record<string, unknown>>;
+  preparation?: { instructions: string; rationale?: string };
 }): Promise<RevisionDraft> {
   return postRevisionDraftCommand({
     ...input,
@@ -300,8 +303,7 @@ export function createRevisionDraft(input: {
     expected_draft_version: 0,
     payload: {
       source_checkpoint_id: input.source_checkpoint_id,
-      changes: input.changes,
-      frontier_mapping: input.frontier_mapping,
+      ...(input.preparation ? { preparation: input.preparation } : { changes: input.changes, frontier_mapping: input.frontier_mapping }),
     },
   });
 }

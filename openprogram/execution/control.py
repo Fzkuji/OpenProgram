@@ -1529,6 +1529,8 @@ class RuntimeControlService:
                     raise ExecutionConflict("revision_not_found", "source revision is missing")
 
             child_id = child_execution_id or f"exec_{uuid.uuid4().hex}"
+            instruction_branch = (kind is CommandKind.FORK
+                and RevisionControlService(self.executions).published_instructions(revision.revision_id) is not None)
             now = time.time()
             child = ExecutionRecord(
                 execution_id=child_id,
@@ -1537,7 +1539,7 @@ class RuntimeControlService:
                 revision_id=revision.revision_id,
                 parent_execution_id=source.execution_id,
                 source_checkpoint_id=checkpoint.checkpoint_id,
-                status=ExecutionStatus.QUEUED,
+                status=ExecutionStatus.PAUSED if instruction_branch else ExecutionStatus.QUEUED,
                 status_version=1,
                 capabilities=source.capabilities,
                 created_at=now,
@@ -1552,6 +1554,7 @@ class RuntimeControlService:
                 source_execution_id=source.execution_id,
                 child_execution_id=child.execution_id,
                 created_at=now,
+                assistant_message_id=f"{child_id}_reply" if instruction_branch else None,
             )
             self.executions._append_event(
                 connection,
@@ -1561,6 +1564,13 @@ class RuntimeControlService:
                 payload={"record": child.to_dict()},
                 created_at=now,
             )
+            if instruction_branch:
+                _manifest, instructions = RevisionControlService(self.executions).published_instructions(revision.revision_id)
+                self.executions._accept_command(
+                    connection, command_id=f"revision-instructions:{child_id}",
+                    execution_id=child_id, expected_version=child.status_version,
+                    kind=CommandKind.STEER, payload={"message": instructions}, actor=actor,
+                )
             self.executions._append_event(
                 connection,
                 execution_id=source.execution_id,
@@ -1699,7 +1709,10 @@ class RuntimeControlService:
                     or checkpoint.revision_id != execution.revision_id
                 )
             ):
-                raise ExecutionConflict("invalid_checkpoint", "checkpoint does not belong to the current execution revision")
+                from .revisions import RevisionControlService
+                if (connection.execute("SELECT 1 FROM attempts WHERE execution_id = ? LIMIT 1", (execution_id,)).fetchone()
+                        or RevisionControlService(self.executions).instruction_branch(connection, execution, checkpoint) is None):
+                    raise ExecutionConflict("invalid_checkpoint", "checkpoint does not belong to the current execution revision")
             if (
                 kind is CommandKind.STEP
                 and self._agent_step_has_no_next_action(checkpoint)

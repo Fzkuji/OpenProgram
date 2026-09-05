@@ -19,6 +19,7 @@ import {
   createRevisionDraft,
   getExecutionDebuggerState,
   getExecutionEvents,
+  getExecutionSnapshot,
   getSessionExecutions,
   parseRevisionState,
   postExecutionCommand,
@@ -50,10 +51,11 @@ export type ExecutionDebuggerController = {
   createDraft: (input: {
     execution_id: string;
     source_checkpoint_id: string;
+    preparation?: { instructions: string; rationale?: string };
     changes?: RevisionChange[];
     frontier_mapping?: Array<Record<string, unknown>>;
   }) => Promise<RevisionDraft>;
-  updateDraft: (draft: RevisionDraft, changes: RevisionChange[]) => Promise<void>;
+  updateDraft: (draft: RevisionDraft, changes: RevisionChange[] | { instructions: string; rationale?: string }) => Promise<void>;
   draftAction: (draft: RevisionDraft, action: "validate" | "approve" | "publish" | "fork") => Promise<void>;
 };
 
@@ -191,17 +193,27 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       const result = await postExecutionCommand(commandValue);
       const resultExecution = result.execution;
       if (resultExecution?.execution_id) {
-        setSnapshots((current) => ({ ...current, [resultExecution.execution_id]: resultExecution }));
+        setSnapshots((current) => ({ ...current, [resultExecution.execution_id]: { ...current[resultExecution.execution_id], ...resultExecution } }));
         void loadDebuggerData(resultExecution.execution_id).catch((error) => {
           setConnection({ state: "stale", message: errorMessage(error) });
         });
+      }
+      const childId = result.result_json?.child_execution_id;
+      if (childId) {
+        const child = await getExecutionSnapshot(childId);
+        if (mounted.current && child.session_id === sessionId) {
+          setSnapshots((current) => ({ ...current, [childId]: child }));
+          setSelectedExecutionId(childId);
+          setEvents([]);
+          setConnection({ state: "reconnecting" });
+        }
       }
       return result;
     } catch (error) {
       setConnection({ state: "conflict", message: errorMessage(error) });
       throw error;
     }
-  }, [loadDebuggerData]);
+  }, [loadDebuggerData, sessionId]);
 
   const respondWait = useCallback(async (input: Parameters<ExecutionDebuggerController["respondWait"]>[0]) => {
     await postExecutionWait({ ...input, generation: input.claim_generation, expected_version: snapshots[input.execution_id]?.status_version ?? 0 });
@@ -212,6 +224,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     const draft = await createRevisionDraft({
       execution_id: input.execution_id,
       source_checkpoint_id: input.source_checkpoint_id,
+      preparation: input.preparation,
       changes: input.changes || [],
       frontier_mapping: input.frontier_mapping || [],
     });
@@ -225,7 +238,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     return draft;
   }, []);
 
-  const updateDraft = useCallback(async (draft: RevisionDraft, changes: RevisionChange[]) => {
+  const updateDraft = useCallback(async (draft: RevisionDraft, changes: RevisionChange[] | { instructions: string; rationale?: string }) => {
     const updated = await postRevisionDraftCommand({
       execution_id: draft.source_execution_id,
       draft_id: draft.draft_id,
