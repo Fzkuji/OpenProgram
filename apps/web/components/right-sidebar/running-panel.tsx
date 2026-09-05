@@ -121,8 +121,12 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
       {processes.stale && <SidebarNotice>{text("Could not refresh this program. Showing the last saved result.", "无法刷新此程序，当前显示上次读取的记录。")}</SidebarNotice>}
       {!item ? <SidebarNotice>{processes.stale ? text("Program details unavailable.", "暂时无法读取程序详情。") : text("Loading program…", "正在读取程序…")}</SidebarNotice> : <div className={styles.scroll}>
         <h3 className={styles.title}>{programName(item)}</h3><p className={styles.meta}>{processStatus(item)}</p>{item.status === "unknown" && <p className={styles.notice}>{text("The process supervisor is unavailable. This program is not confirmed to have exited; its record is retained.", "程序监督进程不可用，尚不能确认程序已退出，记录仍然保留。")}</p>}
+        {item.execution_id && ids.has(item.execution_id) && <Button variant="ghost" className={styles.row} onClick={() => { state.selectExecution(item.execution_id!); setSelection("agent"); }}>
+          <Bot size={16} aria-hidden="true" /><span className={styles.rowText}><span className={styles.meta}>{text("Started by", "所属 Agent")}</span><span className={styles.name}>{executionTitle(state.executions.find(e => e.execution_id === item.execution_id)!, 1, text)}</span></span>
+        </Button>}
+        <h4 className={styles.outputHeading}>{text("Command", "命令")}</h4>
+        <pre className={styles.output}>{item.command}</pre>
         <dl className={styles.facts}>
-          <dt>{text("Command", "命令")}</dt><dd>{item.command}</dd>
           <dt>{text("Working directory", "工作目录")}</dt><dd>{item.cwd || "—"}</dd>
           <dt>{text("Started", "开始时间")}</dt><dd>{updatedTime(item.started_at)}</dd>
           {item.ended_at != null && <><dt>{text("Ended", "结束时间")}</dt><dd>{updatedTime(item.ended_at)}</dd></>}
