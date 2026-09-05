@@ -3,12 +3,22 @@
 import shlex
 import sys
 import time
+from pathlib import Path
 
 from openprogram.backend.local import LocalBackend
 
 
-def _python(code):
-    return f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
+def _python(code, tmp_path):
+    from openprogram.backend import local
+
+    # Exercise cancellation of real code, not nested `python -c` source
+    # escaping through MSYS/native command-line parsing on Windows.
+    script = tmp_path / "child.py"
+    script.write_text(code, encoding="utf-8")
+    arguments = [Path(sys.executable).as_posix(), script.as_posix()]
+    if sys.platform == "win32" and local._windows_bash() is None:
+        return "& " + " ".join("'" + arg.replace("'", "''") + "'" for arg in arguments)
+    return shlex.join(arguments)
 
 
 def test_timeout_retains_output_and_stops_child(tmp_path):
@@ -16,7 +26,8 @@ def test_timeout_retains_output_and_stops_child(tmp_path):
     result = LocalBackend().run(
         _python(
             f"import time; from pathlib import Path; print('partial', flush=True); "
-            f"time.sleep(1); Path({str(marker)!r}).touch()"
+            f"time.sleep(1); Path({str(marker)!r}).touch()",
+            tmp_path,
         ),
         timeout=0.2,
     )
@@ -40,7 +51,7 @@ def test_pre_cancelled_execution_never_starts_shell_or_cancels_next_turn(tmp_pat
     token = begin_turn(sid)
     try:
         token.cancel()
-        command = _python(f"from pathlib import Path; Path({str(marker)!r}).touch()")
+        command = _python(f"from pathlib import Path; Path({str(marker)!r}).touch()", tmp_path)
         result = LocalBackend().run(command, timeout=2)
         assert result.exit_code != 0
         assert "cancelled" in result.stderr
