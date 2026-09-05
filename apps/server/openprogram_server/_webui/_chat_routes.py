@@ -147,7 +147,7 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
         )
         from openprogram.agent.session_config import (
             load_session_run_config, permission_from_config, project_defaults,
-            reasoning_from_config, tools_override_from_config,
+            tools_override_from_config,
         )
         from openprogram.programs.permission_rule import load_merged_rules
 
@@ -167,7 +167,7 @@ def _fork_user_turn_and_run(session_id: str, pivot_id: str, new_content: str | N
             permission_rules=load_merged_rules(session_id),
             additional_working_dirs=run_config.additional_working_dirs,
             tools_override=tools_override_from_config(run_config),
-            thinking_effort=reasoning_from_config(run_config),
+            thinking_effort=run_config.thinking_effort,
             model_override=model_override,
             service_tier=conv.get("service_tier"),
             user_msg_id=new_msg_id,
