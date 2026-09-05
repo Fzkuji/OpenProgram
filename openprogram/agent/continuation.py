@@ -543,6 +543,26 @@ class AgentCheckpointV1:
             *(f"terminal_effect_receipt.{index}" for index in range(len(value["terminal_effect_receipts"]))),
             *(f"pending_message.{index}" for index in range(len(value["pending_messages"]))),
         }
+        # Historical results can outlive the current provider/tool decision.
+        # Match the builder's content deduplication and exact semantic names;
+        # arbitrary extra state refs remain invalid.
+        owned_results = {refs[name]["ref"]: refs[name]
+                         for name in expected_ref_names if name in refs}
+        actions = value["completed_actions"]
+        if not isinstance(actions, list) or not actions:
+            raise AgentCheckpointError("checkpoint_schema_invalid", "completed actions are invalid")
+        for index, action in enumerate(actions):
+            if not isinstance(action, Mapping):
+                raise AgentCheckpointError("checkpoint_schema_invalid", "completed action is invalid")
+            descriptor = _validate_descriptor(action.get("result_ref"))
+            if descriptor["ref"] not in owned_results:
+                name = f"completed_action_result.{index}"
+                expected_ref_names.add(name)
+                if refs.get(name) != descriptor:
+                    raise AgentCheckpointError("state_ref_invalid", "historical result ref differs from its action")
+                owned_results[descriptor["ref"]] = descriptor
+            elif owned_results[descriptor["ref"]] != descriptor:
+                raise AgentCheckpointError("state_ref_invalid", "completed result descriptor differs from its blob")
         if set(refs) != expected_ref_names:
             raise AgentCheckpointError("state_ref_invalid", "checkpoint state refs do not own every durable value")
         fixed_refs = [
