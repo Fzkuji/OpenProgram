@@ -32,6 +32,7 @@ def test_timeout_retains_output_and_stops_child(tmp_path):
         # Budget includes native shell/interpreter cold startup, not just the
         # sleep in the child. A 200ms limit can expire before any output exists.
         timeout=2,
+        cwd=str(tmp_path),
     )
     assert result.timed_out
     assert "partial" in result.stdout
@@ -54,13 +55,13 @@ def test_pre_cancelled_execution_never_starts_shell_or_cancels_next_turn(tmp_pat
     try:
         token.cancel()
         command = _python(f"from pathlib import Path; Path({str(marker)!r}).touch()", tmp_path)
-        result = LocalBackend().run(command, timeout=2)
+        result = LocalBackend().run(command, timeout=2, cwd=str(tmp_path))
         assert result.exit_code != 0
         assert "cancelled" in result.stderr
         assert not marker.exists()
         end_turn(sid, token)
         token = begin_turn(sid)
-        assert LocalBackend().run(command, timeout=2).exit_code == 0
+        assert LocalBackend().run(command, timeout=2, cwd=str(tmp_path)).exit_code == 0
         assert marker.exists()
     finally:
         end_turn(sid, token)

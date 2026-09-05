@@ -1,6 +1,59 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+function Remove-RuntimeStaging {
+    param([string]$Path, [string]$BuildDirectory)
+
+    $Full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $Parent = [IO.Path]::GetFullPath($BuildDirectory).TrimEnd('\')
+    if (-not $Full.StartsWith($Parent + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Split-Path -Leaf $Full).StartsWith('.runtime-stage-', [StringComparison]::Ordinal)) {
+        throw 'refusing cleanup outside runtime staging'
+    }
+    # Windows PowerShell's recursive Remove-Item can enumerate a long entry
+    # yet fail deleting it after the backup prefix lengthens its path. Keep
+    # enumeration and deletion on extended-length .NET paths throughout.
+    $Extended = if ($Full.StartsWith('\\')) { '\\?\UNC\' + $Full.Substring(2) } else { '\\?\' + $Full }
+    $Prefix = $Extended + '\'
+    if ([IO.File]::GetAttributes($Extended) -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'runtime staging root is redirected'
+    }
+    $Pending = [Collections.Generic.Stack[string]]::new()
+    $Directories = [Collections.Generic.List[string]]::new()
+    $Pending.Push($Extended)
+    while ($Pending.Count -gt 0) {
+        $Directory = $Pending.Pop()
+        $Directories.Add($Directory)
+        foreach ($Entry in [IO.Directory]::EnumerateFileSystemEntries($Directory)) {
+            if (-not $Entry.StartsWith($Prefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'enumerated cleanup path escaped staging'
+            }
+            $Attributes = [IO.File]::GetAttributes($Entry)
+            if ($Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                # Remove only the link itself, never its target.
+                if ($Attributes -band [IO.FileAttributes]::Directory) {
+                    [IO.Directory]::Delete($Entry, $false)
+                } else { [IO.File]::Delete($Entry) }
+            } elseif ($Attributes -band [IO.FileAttributes]::Directory) {
+                $Pending.Push($Entry)
+            } else {
+                if ($Attributes -band [IO.FileAttributes]::ReadOnly) {
+                    [IO.File]::SetAttributes($Entry, $Attributes -band (-bnot [IO.FileAttributes]::ReadOnly))
+                }
+                [IO.File]::Delete($Entry)
+            }
+        }
+    }
+    for ($Index = $Directories.Count - 1; $Index -ge 0; $Index--) {
+        $Directory = $Directories[$Index]
+        $Attributes = [IO.File]::GetAttributes($Directory)
+        if ($Attributes -band [IO.FileAttributes]::ReadOnly) {
+            [IO.File]::SetAttributes($Directory, $Attributes -band (-bnot [IO.FileAttributes]::ReadOnly))
+        }
+        [IO.Directory]::Delete($Directory, $false)
+    }
+}
+
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $BuildRoot = [IO.Path]::GetFullPath((Join-Path $RepoRoot "apps\desktop\build"))
 $RuntimeRoot = Join-Path $BuildRoot "runtime"
@@ -100,7 +153,7 @@ try {
         if (-not ([IO.Path]::GetFullPath($Staging)).StartsWith($BuildRoot + "\", [StringComparison]::OrdinalIgnoreCase)) {
             throw "refusing cleanup outside the runtime build directory"
         }
-        try { Remove-Item -LiteralPath $Staging -Recurse -Force }
+        try { Remove-RuntimeStaging -Path $Staging -BuildDirectory $BuildRoot }
         catch { Write-Warning "temporary runtime files retained at ${Staging}: $($_.Exception.Message)" }
     }
     $Lock.Dispose()
