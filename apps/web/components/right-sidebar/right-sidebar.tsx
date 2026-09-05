@@ -174,7 +174,7 @@ export function RightSidebar() {
       // .right-view-host { display: none }`) and the small
       // `.sidebar.collapsed *` override in 02-sidebar.css.
       className={
-        "sidebar right-sidebar relative flex shrink-0 flex-col overflow-hidden " +
+        "sidebar right-sidebar relative flex shrink-0 flex-col rail-shell " +
         "bg-bg-secondary border-l border-[var(--border)] " +
         (open ? "" : "collapsed")
       }
@@ -187,6 +187,7 @@ export function RightSidebar() {
           title={t("right.resize_panel")}
         />
       )}
+      <div className="rail-content">
       {/* Header — same 48px row + 8px padding as the left sidebar
           header, but `justify-start` keeps the toggle pinned to the
           LEFT edge so it mirrors the left sidebar's toggle (which
@@ -344,6 +345,7 @@ export function RightSidebar() {
           <SessionViewSwitch current={VIEW_CONTEXT} />
           <ContextCommitTimeline />
         </div>
+      </div>
       </div>
     </aside>
   );

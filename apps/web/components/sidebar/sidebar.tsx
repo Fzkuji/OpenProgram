@@ -161,7 +161,7 @@ export const Sidebar = memo(function Sidebar() {
         // `.sidebar.collapsed *` overflow/scrollbar-width override + the
         // `.sidebar-nav-item/-label/-action/.user-menu-footer-info`
         // collapsed-state rules in 02-sidebar.css.
-        "sidebar relative flex shrink-0 flex-col overflow-hidden " +
+        "sidebar relative flex shrink-0 flex-col rail-shell " +
         "bg-bg-secondary border-r border-[var(--border)] " +
         (open ? "" : "collapsed")
       }
@@ -173,6 +173,7 @@ export const Sidebar = memo(function Sidebar() {
           title={text("Resize sidebar", "调整侧边栏宽度")}
         />
       )}
+      <div className="rail-content">
       {/* 收起态（49px 窄轨）只剩收起按钮：改用 justify-center 并去掉左右
           padding，让唯一按钮在窄轨里水平居中，否则 justify-between + p-[8px]
           会把它推到右边（靠右 bug）。 */}
@@ -330,6 +331,7 @@ export const Sidebar = memo(function Sidebar() {
          is kept around for any code path that might still inject the
          legacy `_sidebar.html` template. */}
       <UserMenuFooter />
+      </div>
     </div>
   );
 });

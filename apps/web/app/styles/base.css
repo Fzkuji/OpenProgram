@@ -448,30 +448,27 @@ textarea:focus-visible {
   min-height: 0;
 }
 
-/* Shared sidebar hit target stays inside the clipped rail. */
+/* Keep content clipped while the invisible handle crosses the divider. */
+.sidebar.rail-shell { overflow: visible; }
+.rail-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
 .rail-resize-handle {
   position: absolute;
   inset-block: 0;
-  width: 12px;
+  width: 16px;
   z-index: 10;
   cursor: ew-resize;
   touch-action: none;
   user-select: none;
 }
-.rail-resize-handle[data-edge="left"] { left: 0; }
-.rail-resize-handle[data-edge="right"] { right: 0; }
-.rail-resize-handle::after {
-  content: '';
-  position: absolute;
-  inset-block: 0;
-  width: 2px;
-  background: var(--accent-blue);
-  opacity: 0;
-}
-.rail-resize-handle[data-edge="left"]::after { left: 0; }
-.rail-resize-handle[data-edge="right"]::after { right: 0; }
-.rail-resize-handle:hover::after,
-.rail-resize-handle[data-resizing="true"]::after { opacity: 1; }
+.rail-resize-handle[data-edge="left"] { left: -8px; }
+.rail-resize-handle[data-edge="right"] { right: -8px; }
 
 /* Column resize handle */
 /* Zero layout width — main content sits flush against the sidebar's own
