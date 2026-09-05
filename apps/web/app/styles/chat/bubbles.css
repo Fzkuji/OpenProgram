@@ -293,8 +293,8 @@
 .message-content {
   padding-left: 36px;
   padding-right: 36px;
-  /* Claude body copy: 15px / 1.7, generous and airy. */
-  font-size: 15px;
+  /* Transcript and embedded cards share the same text size. */
+  font-size: var(--fs-chat);
   line-height: 1.7;
   color: var(--text-primary);
   /* `break-word` only breaks at the *end* of an overflowing line, which

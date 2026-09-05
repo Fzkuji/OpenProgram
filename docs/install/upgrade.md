@@ -339,13 +339,13 @@ when present. It does not replace the separate CLI recovery inspection output.
 
 The conversation shows persisted self-update history grouped by update sequence
 and attempt; **Load older updates** reads another page. Running uses the same
-status card. Target revision and last verified runtime are separate: an unknown
+status card. Its compact summary shows the attempt and current phase; expand it for versions, evidence and actions. The card shares the conversation font and text-size token, and uses the common Button and Input controls. Target revision and last verified runtime are separate: an unknown
 runtime stays **Unknown**, and a prior verification is not a live connection check.
-Expand **Update details and evidence** to inspect assertions and load authenticated
+Expand **Details and evidence** to inspect assertions and load authenticated
 evidence as plain text. When status cannot be read, the view retains its last
 snapshot with an explicit stale warning and last-sync time, then retries.
 
-Under **Request an update action**, cancellation, stopping iteration and retry
+Under **Update actions**, cancellation, stopping iteration and retry
 buttons only append a request to the original conversation's unsent draft; they
 preserve existing draft text. Retry requires a complete new candidate commit SHA.
 Send the draft in that conversation to request the tool operation. These buttons
