@@ -107,7 +107,12 @@ def test_invalid_diagnosis_does_not_block_restored_service(diagnosis_environment
     if damage == "pointer":
         pointer = store.root / "diagnosis-pending.json"
         pointer.unlink()
-        os.mkfifo(pointer, 0o600)
+        if hasattr(os, "mkfifo"):
+            os.mkfifo(pointer, 0o600)
+        else:
+            # Windows has no filesystem FIFO. A malformed pointer exercises
+            # the same diagnostic failure without creating an update directory.
+            pointer.write_bytes(b"invalid pending diagnosis pointer")
     else:
         path = directory / {"config": "diagnosis-config.json", "request": "diagnosis-request-1.json",
                             "evidence": "state.json"}[damage]

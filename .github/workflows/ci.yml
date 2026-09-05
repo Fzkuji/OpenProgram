@@ -228,9 +228,12 @@ jobs:
       - name: Windows platform contracts
         run: >-
           uv run --locked --extra dev python -m pytest -q
-          tests/unit/core/test_windows_install_contract.py
-          tests/unit/core/test_windows_process.py
-          tests/unit/core/test_windows_release.py
+          tests/component/config/test_windows_install_contract.py
+          tests/component/runtime/test_windows_process.py
+          tests/component/config/test_windows_release.py
+          tests/component/runtime/test_process_liveness.py
+          tests/component/runtime/test_local_backend_process_tree.py
+          tests/component/programs/test_pdf_import_isolation.py
           tests/unit/core/test_windows_worker_service.py
           tests/component/security/test_sandbox.py
           tests/component/config/test_formal_release_updates.py

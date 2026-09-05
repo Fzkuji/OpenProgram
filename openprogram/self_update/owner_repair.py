@@ -7,6 +7,9 @@ from pathlib import Path
 import re
 import time
 import uuid
+import stat
+
+from openprogram._compat import is_link_metadata, user_private_metadata
 
 from .store import SelfUpdateStore
 from .types import TERMINAL_PHASES, UpdatePhase
@@ -23,7 +26,7 @@ def _owner(store, record):
         raise ValueError("self-update repair requires the default profile")
     for directory in (store.root, store.root / record.request.update_id):
         info = directory.lstat()
-        if directory.is_symlink() or not directory.is_dir() or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        if is_link_metadata(info) or not stat.S_ISDIR(info.st_mode) or not user_private_metadata(info):
             raise ValueError("self-update state is not owned privately by this local user")
 
 

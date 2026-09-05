@@ -25,6 +25,16 @@ import pytest
 from openprogram import attachments as att
 
 
+def test_attachment_index_write_does_not_require_fchmod(tmp_path, monkeypatch):
+    from openprogram.webui.ws_actions.chat import _write_private_json
+
+    monkeypatch.delattr(os, "fchmod", raising=False)
+    index = tmp_path / ".opdedup.json"
+    _write_private_json(index, {"name": "中文附件"})
+    assert json.loads(index.read_text(encoding="utf-8")) == {"name": "中文附件"}
+    assert list(tmp_path.iterdir()) == [index]
+
+
 @pytest.fixture
 def state(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """An isolated state dir, with the sessions root materialised.

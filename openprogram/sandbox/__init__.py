@@ -772,10 +772,12 @@ def _regexes_for(patterns: tuple[str, ...]) -> list[str]:
     for pattern in patterns:
         variants = [pattern]
         prefix = os.path.expanduser(_static_prefix(pattern))
-        if prefix.startswith("/"):
+        if os.path.isabs(prefix):
             real = os.path.realpath(prefix)
-            if real != prefix.rstrip("/"):
-                variants.append(real + os.path.expanduser(pattern)[len(prefix):])
+            if real != prefix.rstrip("/\\"):
+                suffix = os.path.expanduser(pattern)[len(prefix):]
+                separator = os.sep if prefix.endswith(("/", "\\")) and suffix else ""
+                variants.append(real + separator + suffix)
         for v in variants:
             rx = _glob_to_regex(v)
             if rx and rx not in seen:

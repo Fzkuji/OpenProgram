@@ -19,7 +19,7 @@ function verifyWindowsAuthenticode(
   } = {},
 ) {
   if (platform !== "win32") return null;
-  if (!path.isAbsolute(filePath) || !existsSync(filePath)) {
+  if (!path.win32.isAbsolute(filePath) || !existsSync(filePath)) {
     throw new Error("Windows update installer is missing");
   }
   let output;

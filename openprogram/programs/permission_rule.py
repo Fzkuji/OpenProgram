@@ -415,6 +415,10 @@ def _match_one(pattern: str, value: str, *, allow: bool) -> bool:
         return candidate == prefix or candidate.startswith(prefix + " ")
 
     def _cmp(pat: str, val: str) -> bool:
+        # A host path can mix Git/POSIX slashes with native separators.
+        # normpath preserves case, so allow rules remain case-sensitive.
+        if os.path.isabs(pat) and os.path.isabs(val):
+            pat, val = os.path.normpath(pat), os.path.normpath(val)
         if any(ch in pat for ch in "*?["):
             # fnmatch() applies os.path.normcase() and therefore makes allow
             # rules case-insensitive on Windows. Allows stay exact/case-aware;

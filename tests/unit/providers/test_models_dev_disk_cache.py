@@ -153,10 +153,14 @@ def test_structured_output_tri_state_survives_disk_model_and_web_listing(
         }
     }))
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
-    monkeypatch.setattr(models_dev, "_CATALOGUE_URL", "http://127.0.0.1:1/nope")
+    # This test covers disk-to-model projection, not network scheduling.
+    # Keep stale refresh queued so no real thread survives fixture teardown.
+    scheduled = []
+    monkeypatch.setattr(models_dev, "_start_background_refresh", lambda: scheduled.append(True))
     _reset_mem_cache()
     try:
         rows = models_dev.list_models("acme")
+        assert scheduled == [True]
         built = {
             mid: _build_model_from_row(
                 {"id": mid, "name": mid, "api": "openai-completions", **row},
