@@ -83,12 +83,15 @@ def _run_git(*args: str, cwd: str) -> tuple[int, str, str]:
     """Run ``git`` with the given args. Returns ``(returncode, stdout,
     stderr)``. Never raises on normal exits (non-zero is OK and
     surfaced via the return tuple)."""
+    from openprogram._compat import no_window_creation_flags
     try:
         proc = subprocess.run(
             ["git", *args],
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            creationflags=no_window_creation_flags(),
             timeout=_GIT_TIMEOUT_SECS,
         )
         return proc.returncode, proc.stdout, proc.stderr

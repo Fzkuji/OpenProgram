@@ -72,6 +72,7 @@ def _require_local_owner(req: Any) -> dict[str, str]:
 
 
 def _git(cwd: Path, *args: str) -> str:
+    from openprogram._compat import no_window_creation_flags
     environment = {
         "PATH": os.environ.get(
             "PATH", "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
@@ -91,6 +92,8 @@ def _git(cwd: Path, *args: str) -> str:
             cwd=str(cwd),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            creationflags=no_window_creation_flags(),
             timeout=_GIT_TIMEOUT_SECONDS,
             env=environment,
         )
