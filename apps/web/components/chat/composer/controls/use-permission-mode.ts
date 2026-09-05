@@ -2,8 +2,8 @@
 
 /**
  * Permission-mode selector state (per-session, persisted in the store's
- * session scope's settings). Six fixed modes — no provider polling like thinking.
- * See docs/design/runtime/permission-model.md §2.1 / §4.5.
+ * session scope's settings). Five selectable modes; inherited defaults resolve server-side.
+ * See docs/capabilities/permissions.md and agent/permissions/state.py.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
