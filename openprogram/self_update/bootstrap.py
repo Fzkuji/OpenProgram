@@ -67,7 +67,7 @@ def _publish(path: Path, value: bytes, mode: int):
         SelfUpdateStore._fsync_directory(path.parent)
 
 
-def _expected(store, record, bundle):
+def _expected(store, record, bundle, *, process_type="Standard"):
     from .controller_bundle import controller_environment
     update_id = record.request.update_id
     directory = store.root / update_id
@@ -85,7 +85,9 @@ def _expected(store, record, bundle):
     ).encode()
     plist_bytes = plistlib.dumps({
         "Label": label, "ProgramArguments": ["/bin/sh", str(script), "resume"],
-        "RunAtLoad": True, "ProcessType": "Background",
+        # Recovery restores a user-requested update. Background classification
+        # throttles the large runtime integrity read as discretionary work.
+        "RunAtLoad": True, "ProcessType": process_type,
         "StandardOutPath": str(directory / "bootstrap.log"),
         "StandardErrorPath": str(directory / "bootstrap.log"),
     }, sort_keys=True)
@@ -107,6 +109,11 @@ def prepare_bootstrap(store, record, bundle):
     _directory(agents.parent, create=True)
     _directory(agents, create=True)
     script, body, plist, payload, binding = _expected(store, record, bundle)
+    saved = script.parent / "bootstrap.json"
+    if saved.exists() or saved.is_symlink():
+        # Keep already published bindings immutable across scheduling changes.
+        validate_bootstrap(store, record, bundle)
+        return
     _publish(script, body, 0o700)
     _publish(plist, payload, 0o600)
     _publish(script.parent / "bootstrap.json", (json.dumps(binding, sort_keys=True) + "\n").encode(), 0o600)
@@ -125,6 +132,12 @@ def validate_bootstrap(store, record, bundle):
     _directory(_agents_directory())
     script, body, plist, payload, binding = _expected(store, record, bundle)
     saved = json.loads(_bytes(script.parent / "bootstrap.json", 0o600))
+    if saved != binding:
+        # Accept only the exact older format, including every original digest;
+        # never accept a caller-selected launchd scheduling policy.
+        script, body, plist, payload, binding = _expected(
+            store, record, bundle, process_type="Background",
+        )
     if saved != binding or type(saved.get("schema")) is not int or _bytes(script, 0o700) != body:
         raise ValueError("recovery entry does not match the original update")
     if plist.exists() or plist.is_symlink() or not _finished(store, record):
