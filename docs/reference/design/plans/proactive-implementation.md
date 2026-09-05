@@ -28,7 +28,7 @@ codebase:
 | Role in the design | Existing mechanism | Location |
 |---|---|---|
 | In-process event fan-out | `EventBus` — implemented but idle; dispatcher and agent_loop bypassed it with direct callbacks | `openprogram/events/bus.py` |
-| The gate's `ask` path | `ApprovalRegistry` + `_wrap_with_approval`: request, block and wait, approve or deny; a denial returns an is_error tool result | `openprogram/agent/internals/_approval.py` |
+| The gate's `ask` path | `ApprovalRegistry` + `_wrap_with_approval`: request, block and wait, approve or deny; a denial returns an is_error tool result | `openprogram/agent/permissions/approval.py` |
 | The observer's `Prepare` background task | `JobRunner.spawn_job` — ThreadPoolExecutor, state machine, job_status broadcast | `openprogram/agent/job/runner.py` |
 | Landing slot for `Inject` | memory prefetch into the system prompt plus steering messages | `openprogram/agent/agent_loop.py` |
 | Event causality, rewind, branching | the session git DAG, whose nodes carry parent_id / caller | `openprogram/context/git/` |

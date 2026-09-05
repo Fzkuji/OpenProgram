@@ -124,7 +124,7 @@ def test_retry_targets_clicked_node_and_acks_canonical_execution(monkeypatch):
     _patch_db(monkeypatch, [older, newer])
     calls = []
 
-    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT", **options):
         calls.append((name, kwargs, session_id, anchor_msg_id))
         return {
             "session_id": session_id,

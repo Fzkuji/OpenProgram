@@ -1813,7 +1813,7 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
 
     from openprogram.agent.authority import local_owner_authority
     from openprogram.agent.dispatcher import TurnRequest
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.types import AgentTool, AgentToolResult
     from openprogram.providers.types import TextContent
 
@@ -1850,7 +1850,7 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
         raise AssertionError("unexpected approval")
 
     monkeypatch.setattr(
-        "openprogram.agent.internals._approval.await_user_approval",
+        "openprogram.agent.permissions.approval.await_user_approval",
         unexpected_approval,
     )
 
@@ -1870,7 +1870,7 @@ def test_subprocess_permission_snapshot_denies_nested_browser_page_before_bypass
 
     from openprogram.agent.authority import local_owner_authority
     from openprogram.agent.dispatcher import TurnRequest
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.process_runner import _permission_rules_from_snapshot
     from openprogram.agent.types import AgentTool, AgentToolResult
     from openprogram.providers.types import TextContent

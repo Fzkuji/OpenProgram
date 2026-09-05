@@ -2,7 +2,7 @@
 import pytest
 from openprogram.agent.authority import owner_authority
 from openprogram.agent.dispatcher.types import TurnRequest
-from openprogram.agent.internals._approval import wrap_with_approval
+from openprogram.agent.permissions.approval import wrap_with_approval
 from openprogram.agent.session_config import PermissionRules
 from openprogram.agent.types import AgentTool, AgentToolResult
 

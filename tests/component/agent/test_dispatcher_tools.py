@@ -611,7 +611,7 @@ def test_approval_denied_aborts_tool_before_execution(
 def test_self_update_prepare_forces_one_shot_approval_in_bypass(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openprogram.agent.internals import _approval
+    from openprogram.agent.permissions import approval as _approval
     from openprogram.agent.types import AgentTool, AgentToolResult
     from openprogram.providers.types import TextContent
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 from openprogram.programs.permission_rule import (
     parse_rule, rule_to_string, parse_command, pattern_matches, PermissionRuleValue,
 )
-from openprogram.agent.internals._approval import _match_rule
+from openprogram.agent.permissions.policy import _match_rule
 from openprogram.agent.session_config import (
     PermissionRules, _normalize_permission, VALID_PERMISSION,
 )
@@ -145,7 +145,7 @@ import asyncio
 import pytest
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.agent.dispatcher.types import TurnRequest
-from openprogram.agent.internals import _approval
+from openprogram.agent.permissions import approval as _approval
 
 
 def _make_tool(name: str):
@@ -246,7 +246,7 @@ def test_acceptedits_auto_allows_safe_file_tool(tmp_path, monkeypatch):
                       permission_mode="acceptEdits")
     # path inside cwd → safe → auto-allow
     async def _fake(*a, **k): return (False, None, "once")  # would deny if asked
-    import openprogram.agent.internals._approval as _ap
+    import openprogram.agent.permissions.approval as _ap
     _ensure_test_authority(req)
     wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)
     import asyncio
@@ -282,7 +282,7 @@ def test_path_safety(tmp_path):
 
 def test_path_is_safe_additional_dir_allows(tmp_path, monkeypatch):
     # 额外工作目录内的写目标放行（additional-working-directories.md §3.1）。
-    from openprogram.agent.internals._approval import _path_is_safe
+    from openprogram.agent.permissions.policy import _path_is_safe
     cwd = tmp_path / "cwd"; cwd.mkdir()
     extra = tmp_path / "extra"; extra.mkdir()
     monkeypatch.chdir(cwd)
@@ -293,7 +293,7 @@ def test_path_is_safe_additional_dir_allows(tmp_path, monkeypatch):
 
 def test_path_is_safe_outside_all_dirs_blocks(tmp_path, monkeypatch):
     # 主目录 + 额外目录都不包含 → 拦。
-    from openprogram.agent.internals._approval import _path_is_safe
+    from openprogram.agent.permissions.policy import _path_is_safe
     cwd = tmp_path / "cwd"; cwd.mkdir()
     extra = tmp_path / "extra"; extra.mkdir()
     outside = tmp_path / "outside"; outside.mkdir()
@@ -306,7 +306,7 @@ def test_path_is_safe_outside_all_dirs_blocks(tmp_path, monkeypatch):
 def test_path_is_safe_uses_worktree_contextvar(tmp_path, monkeypatch):
     # 围栏基准与 system prompt 同源：ContextVar 绑定的项目 cwd 优先于
     # os.getcwd()（服务器进程启动目录）。
-    from openprogram.agent.internals._approval import _path_is_safe
+    from openprogram.agent.permissions.policy import _path_is_safe
     import openprogram.worktree.context as wt_ctx
     proc_cwd = tmp_path / "proc"; proc_cwd.mkdir()
     project = tmp_path / "project"; project.mkdir()
@@ -342,7 +342,7 @@ def test_acceptedits_denies_dangerous_path(tmp_path, monkeypatch):
 
 def _run_with_args(tool, req, args, approve=True, scope="once"):
     import asyncio
-    import openprogram.agent.internals._approval as _ap
+    import openprogram.agent.permissions.approval as _ap
     async def _fake(*a, **k): return (approve, None, scope)
     _ensure_test_authority(req)
     wrapped = _ap.wrap_with_approval(tool, req, on_event=lambda e: None)

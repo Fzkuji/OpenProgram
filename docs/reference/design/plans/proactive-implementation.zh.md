@@ -21,7 +21,7 @@
 | 设计中的角色 | 现有机制 | 位置 |
 |---|---|---|
 | 进程内事件扇出 | `EventBus`——已实现但闲置，dispatcher 和 agent_loop 用直接回调绕过了它 | `openprogram/events/bus.py` |
-| gate 的 `ask` 路径 | `ApprovalRegistry` + `_wrap_with_approval`：发起请求、阻塞等待、批准或拒绝，拒绝时回一个 is_error 的 tool result | `openprogram/agent/internals/_approval.py` |
+| gate 的 `ask` 路径 | `ApprovalRegistry` + `_wrap_with_approval`：发起请求、阻塞等待、批准或拒绝，拒绝时回一个 is_error 的 tool result | `openprogram/agent/permissions/approval.py` |
 | observer 的 `Prepare` 后台 task | `JobRunner.spawn_job`——ThreadPoolExecutor、状态机、job_status 广播 | `openprogram/agent/job/runner.py` |
 | `Inject` 的落地槽位 | 注入 system prompt 的 memory prefetch，以及 steering messages | `openprogram/agent/agent_loop.py` |
 | 事件因果、rewind、分支 | session git DAG，节点带 parent_id / caller | `openprogram/context/git/` |

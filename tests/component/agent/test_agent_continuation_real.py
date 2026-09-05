@@ -98,7 +98,7 @@ class _Tools:
                         )
                     elif self.wait_kind == "approval":
                         from openprogram.agent.dispatcher.types import TurnRequest
-                        from openprogram.agent.internals._approval import (
+                        from openprogram.agent.permissions.approval import (
                             await_user_approval,
                         )
 
@@ -794,7 +794,7 @@ def test_durable_wait_registration_publishes_checkpoint_before_tool_dispatch(
 def test_permission_change_resumes_real_approval_without_repeating_provider(real_agent_chat, monkeypatch):
     from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
     from openprogram.agent.authority import local_owner_authority
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.permissions import update_permission, reconcile_permission_waits
     import openprogram.agent.dispatcher.loop_runner as loop_runner
 
@@ -828,7 +828,7 @@ def test_permission_change_resumes_real_approval_without_repeating_provider(real
 def test_permission_change_before_tool_check_applies_to_running_turn(real_agent_chat, monkeypatch):
     from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
     from openprogram.agent.authority import local_owner_authority
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.permissions import update_permission
     import openprogram.agent.dispatcher.loop_runner as loop_runner
 
@@ -855,7 +855,7 @@ def test_permission_change_before_tool_check_applies_to_running_turn(real_agent_
 def test_permission_update_during_wait_publication_is_not_lost(real_agent_chat, monkeypatch):
     from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
     from openprogram.agent.authority import local_owner_authority
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.permissions import update_permission
     import openprogram.agent.dispatcher.loop_runner as loop_runner
     h = real_agent_chat

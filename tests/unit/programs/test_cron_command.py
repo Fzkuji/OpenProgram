@@ -231,7 +231,7 @@ def test_prompt_job_applies_memory_permission_rules(
 ):
     import asyncio
 
-    from openprogram.agent.internals import _approval
+    from openprogram.agent.permissions import approval as _approval
     from openprogram.agent.session_config import PermissionRules
     from openprogram.agent.types import AgentTool, AgentToolResult
     from openprogram.programs import permission_rule

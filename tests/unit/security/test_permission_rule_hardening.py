@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from openprogram.agent.internals._approval import _match_rule
+from openprogram.agent.permissions.policy import _match_rule
 from openprogram.agent.session_config import PermissionRules, SessionRunConfig
 from openprogram.programs.permission_rule import (
     load_merged_rules,

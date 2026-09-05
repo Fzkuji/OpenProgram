@@ -31,7 +31,6 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 - **`history_ownership.py`** — Resolve owned child change sets for file-history operations
 - **`inbox.py`** — Per-session send_message inbox
 - **`messages.py`** — Custom message types and LLM converters for the agent layer
-- **`permissions.py`** — Versioned owner session permissions and operation-boundary snapshots
 - **`plan_mode.py`** — Plan-mode session flag
 - **`process_runner.py`** — Run @agentic_function tools in an isolated subprocess so the stop
 - **`production_driver.py`** — Internal production driver for canonical Agent executions
@@ -55,5 +54,6 @@ The Runtime layer composes these to build whatever agent behavior is needed.
 - **`internals/`** — Agent package internals
 - **`job/`** — Async job lifecycle
 - **`management/`** — Multi-agent support
+- **`permissions/`** — Session permission policy and execution lifecycle
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._

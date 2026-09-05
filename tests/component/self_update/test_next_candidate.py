@@ -59,7 +59,7 @@ def test_planned_repair_preserves_contract_in_jobs_and_child(diagnosis_environme
 
 
 def test_iteration_approval_never_hides_envelope_after_a_long_goal():
-    from openprogram.agent.internals._approval import _approval_detail
+    from openprogram.agent.permissions.approval import _approval_detail
     args = dict(goal="goal " * 1000, iteration_policy=dict(mode="bounded_auto", max_attempts=3,
                 deadline=12345, allowed_paths=["feature.txt"], required_tests=["python -m pytest"]))
     for name in ("self_update_prepare", "self_update_retry"):
@@ -113,7 +113,7 @@ def test_bounded_repair_submits_new_child_with_original_budget(diagnosis_environ
 @pytest.mark.parametrize("decision", ["allow", "deny", "dirty", "log", "log_link_race"])
 @native_sandbox
 def test_default_retry_requires_fresh_exact_one_shot_approval(diagnosis_environment, monkeypatch, decision):
-    from openprogram.agent.internals import _approval
+    from openprogram.agent.permissions import approval as _approval
     from openprogram.programs.tools.system import self_update as tools
     from openprogram.self_update.handoff import release_prepared_update
     from tests.component.programs.test_self_update_tools import _request
@@ -750,7 +750,7 @@ def test_valid_legacy_candidate_waits_for_explicit_new_approval(diagnosis_enviro
 def test_first_startup_resumes_durable_repair_result_without_retesting(diagnosis_environment, monkeypatch):
     from openprogram.self_update import SelfUpdateStore, source_repair, next_candidate
     from openprogram.self_update.handoff import release_prepared_update
-    from openprogram.agent.internals import _approval
+    from openprogram.agent.permissions import approval as _approval
     from openprogram.programs.tools.system import self_update as tools
     store, runner, _, uid = diagnosis_environment
     root = store.load(uid)

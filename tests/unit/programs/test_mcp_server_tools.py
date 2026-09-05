@@ -960,7 +960,7 @@ def test_tool_call_approval_gate_denials_are_typed_before_invocation(
         raise AssertionError("MCP approval must not wait")
 
     monkeypatch.setattr(
-        "openprogram.agent.internals._approval.await_user_approval",
+        "openprogram.agent.permissions.approval.await_user_approval",
         approval_must_not_wait,
     )
     tool = _runtime_tool(
@@ -1064,7 +1064,7 @@ def test_tool_call_uses_fixed_turn_request_and_detached_arguments(
         return tool
 
     monkeypatch.setattr(
-        "openprogram.agent.internals._approval.wrap_with_approval", capture_wrap
+        "openprogram.agent.permissions.approval.wrap_with_approval", capture_wrap
     )
     arguments = {
         "query": "caller",

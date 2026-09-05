@@ -92,7 +92,7 @@ git commit -m "feat: define MCP server tool contracts"
 - Modify: `openprogram/programs/_runtime.py`
 - Modify: `openprogram/mcp/adapter.py`
 - Modify: `openprogram/agent/agent_loop.py`
-- Modify: `openprogram/agent/internals/_approval.py`
+- Modify: `openprogram/agent/permissions/approval.py`
 - Modify: `openprogram/agentic_programming/function.py`
 - Modify: `openprogram/programs/tools/files/bash/bash.py`
 - Modify: `tests/unit/test_tools_runtime.py`
@@ -126,7 +126,7 @@ Run the same command; expected: PASS.
 **Commit:**
 
 ```bash
-git add openprogram/agent/types.py openprogram/programs/_runtime.py openprogram/mcp/adapter.py openprogram/agent/agent_loop.py openprogram/agent/internals/_approval.py openprogram/agentic_programming/function.py openprogram/programs/tools/files/bash/bash.py tests/unit/test_tools_runtime.py tests/agent/test_loop_options.py tests/agent/test_tool_gate.py tests/unit/test_acp_server.py
+git add openprogram/agent/types.py openprogram/programs/_runtime.py openprogram/mcp/adapter.py openprogram/agent/agent_loop.py openprogram/agent/permissions/approval.py openprogram/agentic_programming/function.py openprogram/programs/tools/files/bash/bash.py tests/unit/test_tools_runtime.py tests/agent/test_loop_options.py tests/agent/test_tool_gate.py tests/unit/test_acp_server.py
 git commit -m "refactor: type runtime tool error results"
 ```
 
@@ -136,7 +136,7 @@ git commit -m "refactor: type runtime tool error results"
 
 - Modify: `openprogram/config_schema.py`
 - Modify: `openprogram/agent/authority.py`
-- Modify: `openprogram/agent/internals/_approval.py`
+- Modify: `openprogram/agent/permissions/approval.py`
 - Modify: `tests/unit/test_config_schema.py`
 - Modify: `tests/unit/test_authority_scope.py`
 - Modify: `tests/unit/test_permission_rules.py`
@@ -176,7 +176,7 @@ Run the same command; expected: PASS.
 **Commit:**
 
 ```bash
-git add openprogram/config_schema.py openprogram/agent/authority.py openprogram/agent/internals/_approval.py tests/unit/test_config_schema.py tests/unit/test_authority_scope.py tests/unit/test_permission_rules.py tests/unit/test_spawn_hard_constraints.py tests/unit/test_mcp_server_security.py
+git add openprogram/config_schema.py openprogram/agent/authority.py openprogram/agent/permissions/approval.py tests/unit/test_config_schema.py tests/unit/test_authority_scope.py tests/unit/test_permission_rules.py tests/unit/test_spawn_hard_constraints.py tests/unit/test_mcp_server_security.py
 git commit -m "feat: add MCP server security boundary"
 ```
 

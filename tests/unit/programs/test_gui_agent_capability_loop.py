@@ -173,6 +173,8 @@ def test_capability_status_reports_missing_perception_dependencies(harness_on_pa
 def test_gui_step_does_not_dispatch_after_planner_deadline(harness_on_path, monkeypatch):
     from gui_harness.tasks import execute_task as module
 
+    monkeypatch.setattr(module, "_build_action_registry", lambda **_: {})
+    monkeypatch.setattr(module, "build_action_catalog", lambda *_: [])
     now = [0.0]
     monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
     monkeypatch.setattr(module, "observe_screen", lambda *_: {
@@ -428,11 +430,12 @@ def test_gui_agent_rejects_terminal_returned_after_deadline(
 
 
 def test_capability_status_does_not_expose_vm_endpoint_credentials(
-    harness_on_path,
+    harness_on_path, monkeypatch,
 ):
-    from gui_harness.tasks.capability_loop import capability_status
+    from gui_harness.tasks import capability_loop
 
-    status = capability_status(
+    monkeypatch.setattr(capability_loop.importlib.util, "find_spec", lambda _: object())
+    status = capability_loop.capability_status(
         vm_url="http://user:secret@127.0.0.1:5000?token=private",
     )
 

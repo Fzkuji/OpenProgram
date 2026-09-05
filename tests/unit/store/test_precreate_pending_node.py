@@ -248,6 +248,8 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         "word_count",
         {"text": "window only"},
         "s1",
+        anchor_msg_id="pred:ROOT",
+        retry_of=node.id,
         origin_window_id="window-2",
         surface_ref={"version": 1, "window_id": "window-2"},
     )
@@ -256,6 +258,9 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         item for item in store.get_nodes("s1")
         if item.input == {"text": "window only"}
     )
+    assert window_only.metadata["retry_of"] == node.id
+    assert window_only.predecessor == "ROOT"
+    assert "retry_of" not in node.metadata
     assert window_only.metadata["surface_origin"] == {
         "version": 1,
         "window_id": "window-2",

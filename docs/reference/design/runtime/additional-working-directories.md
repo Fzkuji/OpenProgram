@@ -39,7 +39,7 @@ SessionRunConfig.additional_working_dirs        session_config.py:61 (field) :79
 TurnRequest.additional_working_dirs             dispatcher/types.py:112
    ↑ populated by: webui/_execute/chat.py:259, channels/_conversation.py:243
    ↓
-_path_is_safe → check_path_safety(path, dirs)   internals/_approval.py:72-82 → programs/tools/file_safety.py:63
+_path_is_safe → check_path_safety(path, dirs)   permissions/policy.py → programs/tools/files/file_safety.py
 ```
 
 `save_session_run_config(..., additional_working_dirs=...)` accepts the parameter; passing `None` means "leave unchanged", so the chat path never accidentally clears existing directories.
@@ -48,7 +48,7 @@ _path_is_safe → check_path_safety(path, dirs)   internals/_approval.py:72-82 �
 
 ### 3.1 Backend: the fence baseline
 
-The fence's working-directory set is assembled in `openprogram/agent/internals/_approval.py:81`:
+The fence's working-directory set is assembled in `openprogram/agent/permissions/policy.py`:
 
 ```python
 from openprogram.worktree.context import current_worktree_path

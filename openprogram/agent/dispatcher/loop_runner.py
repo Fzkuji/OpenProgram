@@ -27,7 +27,7 @@ from typing import Mapping, Optional, TYPE_CHECKING
 
 from openprogram.agent import plan_mode as _plan_mode
 from openprogram.agent.session_config import reasoning_from_config, SessionRunConfig
-from openprogram.agent.internals._approval import (
+from openprogram.agent.permissions.approval import (
     wrap_with_approval as _wrap_with_approval,
 )
 from openprogram.agent.internals._event_parsing import (

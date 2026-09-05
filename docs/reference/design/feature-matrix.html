@@ -630,7 +630,7 @@
 <tr>
   <td class="name">一</td>
   <td><b>不可逆操作与凭据</b>：补齐可恢复删除的剩余执行路径；外部命令取密钥已实现为 credential_process（argv 无 shell、可配超时、结果缓存、helper stderr 脱敏）。</td>
-  <td><code>agent/internals/_approval.py</code> 已确认显式 deny 先于 bypass 生效。当前工作树为带 session/turn 上下文的本地 agent 子进程提供 shell、Python 和 Node 常用删除 API 的回收目录、manifest 以及 <code>trash list/restore</code>；没有上下文的 cron/后台任务、Docker、SSH、绝对路径命令、直接 syscall 和禁用注入等路径不在覆盖范围内，因此该机制不是安全边界，列表也不是全量删除审计。</td>
+  <td><code>agent/permissions/approval.py</code> 已确认显式 deny 先于 bypass 生效。当前工作树为带 session/turn 上下文的本地 agent 子进程提供 shell、Python 和 Node 常用删除 API 的回收目录、manifest 以及 <code>trash list/restore</code>；没有上下文的 cron/后台任务、Docker、SSH、绝对路径命令、直接 syscall 和禁用注入等路径不在覆盖范围内，因此该机制不是安全边界，列表也不是全量删除审计。</td>
   <td class="y">先处理不可逆本地状态与密钥暴露风险。最低验收：明确覆盖范围内的删除均转入可恢复位置；恢复路径和分发产物有测试；补充路径不得弱化现有 sandbox 的 fail-closed 行为；密钥不写入普通配置或日志；外部命令有参数约束、超时和脱敏。</td>
 </tr>
 <tr>

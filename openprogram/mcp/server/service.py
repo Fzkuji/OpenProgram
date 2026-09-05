@@ -1204,7 +1204,7 @@ class MCPService:
             )
 
         from openprogram.agent.dispatcher import TurnRequest
-        from openprogram.agent.internals._approval import wrap_with_approval
+        from openprogram.agent.permissions.approval import wrap_with_approval
         from openprogram.programs.permission_rule import load_merged_rules
 
         underlying_started = False

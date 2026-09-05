@@ -45,8 +45,10 @@
 </section>
 <section id="files"><h2>Files and acceptance boundaries</h2><table><tr><th>Module</th><th>Responsibility</th></tr>
 <tr><td>agent/authority.py</td><td>Identity and capability ceilings</td></tr>
-<tr><td>agent/permissions.py</td><td>Versioned live settings and current call policy</td></tr>
-<tr><td>agent/internals/_approval.py</td><td>Shared decision, manifest, execution, precise approval</td></tr>
+<tr><td>agent/permissions/state.py</td><td>Versioned session state, owner validation and atomic updates</td></tr>
+<tr><td>agent/permissions/policy.py</td><td>Shared operation decisions, explicit rules and hard constraints</td></tr>
+<tr><td>agent/permissions/approval.py</td><td>Approval manifests, exact wait consumption and tool execution</td></tr>
+<tr><td>agent/permissions/lifecycle.py</td><td>Live call snapshots and canonical wait reconciliation</td></tr>
 <tr><td>agent/session_config.py</td><td>Legacy and current settings resolution</td></tr>
 <tr><td>agent/production_driver.py</td><td>Durable admission, immutable recovery, wait publication</td></tr>
 <tr><td>server WebSocket permission handler</td><td>Authenticated settings and canonical wait re-evaluation</td></tr>

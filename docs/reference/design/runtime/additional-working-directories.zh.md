@@ -38,7 +38,7 @@ SessionRunConfig.additional_working_dirs        session_config.py:61（字段）
 TurnRequest.additional_working_dirs             dispatcher/types.py:112
    ↑ 填充：webui/_execute/chat.py:259、channels/_conversation.py:243
    ↓
-_path_is_safe → check_path_safety(path, dirs)   internals/_approval.py:72-82 → programs/tools/file_safety.py:63
+_path_is_safe → check_path_safety(path, dirs)   permissions/policy.py → programs/tools/files/file_safety.py
 ```
 
 `save_session_run_config(..., additional_working_dirs=...)` 接受该参数，传 None 表示不改动，聊天路径因此不会误清已有目录。
@@ -47,7 +47,7 @@ _path_is_safe → check_path_safety(path, dirs)   internals/_approval.py:72-82 �
 
 ### 3.1 后端：围栏基准
 
-围栏的工作目录集在 `openprogram/agent/internals/_approval.py:81` 组装：
+围栏的工作目录集在 `openprogram/agent/permissions/policy.py` 组装：
 
 ```python
 from openprogram.worktree.context import current_worktree_path

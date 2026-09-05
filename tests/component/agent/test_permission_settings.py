@@ -6,7 +6,7 @@ import pytest
 
 from openprogram.agent.authority import local_owner_authority, owner_authority
 from openprogram.agent.dispatcher.types import TurnRequest
-from openprogram.agent.internals._approval import wrap_with_approval
+from openprogram.agent.permissions.approval import wrap_with_approval
 from openprogram.agent.permissions import permission_state, update_permission, PermissionUpdateError
 from openprogram.agent.types import AgentTool, AgentToolResult
 from openprogram.store.session.session_store import SessionStore

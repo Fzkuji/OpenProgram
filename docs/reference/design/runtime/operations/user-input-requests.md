@@ -22,7 +22,7 @@ on the main chat path:
 |---|---|
 | `ask_user` / `set_ask_user` / `FollowUp` (`openprogram/programs/workflow/ask_user/`) | Primitive complete, DAG awaiting-node bookkeeping complete; but no handler registered in the worker, and the agentic subprocess bridge is one-way — returns `None` in practice |
 | webui follow-up round-trip (`webui/server.py:234-270`, WS `follow_up_answer` action, web `handleFollowUpQuestion`) | All three segments exist; the initiator `_web_follow_up` has no caller left — dead code. The web UI side is legacy DOM injection into `#runtime_pending` (only exists while a runtime block streams). TUI types the envelope but never handles it |
-| Approval gate (`openprogram/agent/internals/_approval.py`, wired in dispatcher) | Wait machinery complete and live, but `resolve()` is only called from tests; no web/TUI UI; default `bypass` masks it; sub-agents force bypass to avoid 300s hangs |
+| Approval gate (`openprogram/agent/permissions/approval.py`, wired in dispatcher) | Wait machinery complete and live, but `resolve()` is only called from tests; no web/TUI UI; default `bypass` masks it; sub-agents force bypass to avoid 300s hangs |
 
 The skeleton — blocking queue, WS action, stop-sentinel unblocking, DAG
 awaiting nodes — is therefore already available. What this design adds is the

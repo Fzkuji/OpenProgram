@@ -243,6 +243,7 @@ def run_agentic_function_call(
     project_id: str | None = None,
     origin_window_id: str | None = None,
     surface_ref: dict | None = None,
+    retry_of: str | None = None,
 ) -> dict:
     """Dispatch an @agentic_function via the forced tool-call path and
     return ``{"session_id", "msg_id"}`` (or ``{"error", "status_code",
@@ -268,6 +269,9 @@ def run_agentic_function_call(
       of that call (same fork model as chat-message retry): both runs
       share the original's predecessor, so the version switcher counts
       2/2 and only the active head renders in the transcript.
+
+    ``retry_of`` identifies the validated original call for branch grouping;
+    it is stored on the pre-created node and does not change the fork point.
 
     The forced path advances HEAD to the new node, so the newest run
     becomes the active branch and only it renders in the transcript.
@@ -475,6 +479,7 @@ def run_agentic_function_call(
                 ),
                 caller=_caller,
                 forced_predecessor=_forced_pred,
+                retry_of=retry_of,
                 store=_shim,
             )
             if _node is not None:

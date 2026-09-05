@@ -1113,7 +1113,7 @@ def test_gui_agent_max_seconds_bounds_the_subprocess(monkeypatch) -> None:
 
 def test_approval_wrapper_preserves_worker_resident_marker() -> None:
     from openprogram.agent.dispatcher.types import TurnRequest
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.types import AgentTool
 
     async def execute(call_id, args, cancel, on_update):

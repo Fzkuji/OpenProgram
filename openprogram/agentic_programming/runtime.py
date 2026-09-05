@@ -2096,7 +2096,7 @@ class Runtime:
         if get_turn_request() is None:
             return agent_tools
         try:
-            from openprogram.agent.internals._approval import wrap_with_approval
+            from openprogram.agent.permissions.approval import wrap_with_approval
 
             req = inner_turn_request("program")
             if req is None:

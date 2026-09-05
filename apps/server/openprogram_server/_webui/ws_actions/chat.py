@@ -1358,7 +1358,7 @@ async def handle_retry_function(ws, cmd: dict):
         ):
             _fail("surface belongs to another desktop window.")
             return
-    options = {"anchor_msg_id": anchor}
+    options = {"anchor_msg_id": anchor, "retry_of": node.id}
     if origin_window_id:
         options["origin_window_id"] = origin_window_id
     if surface_ref:
