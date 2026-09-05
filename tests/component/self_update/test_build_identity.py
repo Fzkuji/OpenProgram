@@ -86,4 +86,10 @@ def test_doctor_exposes_stable_check_ids(monkeypatch):
     def healthy():
         return True, "Healthy", "checked"
     monkeypatch.setattr(doctor, "CHECKS", (healthy,))
-    assert doctor.run_checks() == [{"id": "healthy", "ok": True, "label": "Healthy", "detail": "checked"}]
+    monkeypatch.setattr(doctor, "runtime_http_checks", lambda: [(True, "runtime-http-registry", "checked")])
+    monkeypatch.setattr("openprogram._compat.platform_environment_advisories", lambda _: [(True, "platform-check", "checked")])
+    assert doctor.run_checks() == [
+        {"id": "healthy", "ok": True, "label": "Healthy", "detail": "checked"},
+        {"id": "runtime_http:runtime-http-registry", "ok": True, "label": "runtime-http-registry", "detail": "checked"},
+        {"id": "platform:platform-check", "ok": True, "label": "platform-check", "detail": "checked"},
+    ]

@@ -6,6 +6,8 @@ macOS 从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下�
 
 Terminal Pane 在 macOS 使用 login shell，在 Windows 通过 ConPTY 使用 Windows PowerShell。两个平台的封装 App 都从内置 managed Python 启动 worker，不依赖系统 Python 或 Node.js。
 
+在 Linux 从源码运行 Desktop 时，终端优先使用已安装且为绝对路径的 `SHELL`，否则依次回退到 `/bin/bash`、`/bin/sh`，不要求安装 zsh。若没有可用 shell，终端会在启动进程前明确提示缺失项。
+
 ## 打开 Browser
 
 新建 Pane 后选择 **Browser**，或从应用 tab 栏新建浏览器 tab。Browser home 与已加载网页使用同一套浏览器控件：

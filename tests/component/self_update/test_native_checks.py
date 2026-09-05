@@ -14,6 +14,10 @@ from tests.component.self_update.test_verification_channel import (
     consume, live, store_fixture, verifier,  # noqa: F401
 )
 
+native_sandbox = pytest.mark.skipif(
+    not Path("/usr/bin/sandbox-exec").is_file(),
+    reason="actual macOS verifier backend; exercised by macos-native-verification CI",
+)
 
 def _cli_plan(entry="cli:version"):
     plan = _plan()
@@ -39,6 +43,7 @@ def _app(tmp_path):
     return app
 
 
+@native_sandbox
 def test_public_prepare_accepts_fixed_installed_cli_check(tmp_path, monkeypatch):
     app = _app(tmp_path)
     actual = native_checks.runtime_identity
@@ -131,6 +136,7 @@ def test_native_failure_cannot_be_reported_as_pass(native_verifier, failure):
 
 
 @pytest.mark.parametrize("attempt", ["write", "home", "network"])
+@native_sandbox
 def test_native_sandbox_denies_source_write_home_read_and_network(tmp_path, attempt):
     candidate, scratch = tmp_path / "candidate", tmp_path / "scratch"
     candidate.mkdir()
@@ -152,6 +158,7 @@ def test_native_sandbox_denies_source_write_home_read_and_network(tmp_path, atte
 
 
 @pytest.mark.parametrize("case", ["shell", "output", "timeout", "cancel"])
+@native_sandbox
 def test_native_command_limits(tmp_path, case):
     candidate, scratch = tmp_path / "candidate", tmp_path / "scratch"
     candidate.mkdir()

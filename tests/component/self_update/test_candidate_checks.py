@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.component.programs.test_self_update_tools import _isolated_owner, _git, _Manager  # noqa: F401
-from tests.component.self_update.test_native_checks import _app, _cli_plan, installed_cli, native_verifier  # noqa: F401
+from tests.component.self_update.test_native_checks import _app, _cli_plan, installed_cli, native_verifier, native_sandbox  # noqa: F401
 from tests.component.self_update.test_verification_plan import _public_prepare, _candidate
 from tests.component.self_update.test_system_probe import live as http_live  # noqa: F401
 from tests.component.self_update.test_verification_channel import consume, store_fixture, verifier  # noqa: F401
@@ -46,6 +46,7 @@ def live(http_live, tmp_path, monkeypatch, installed_cli, request):
                   worktree_id=worktree.id, base_sha=base, candidate_sha=sha)), flags, state
 
 
+@native_sandbox
 def test_public_prepare_freezes_candidate_test_arguments(tmp_path, monkeypatch):
     from tests.component.self_update import test_verification_plan as helpers
     worktree, base, _ = _candidate(tmp_path)

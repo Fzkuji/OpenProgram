@@ -341,11 +341,11 @@ def run_checks() -> list[dict]:
             (False, "runtime-http-registry", f"{type(e).__name__}: {e}")
         ]
     results.extend(
-        {"ok": ok, "label": label, "detail": detail}
+        {"id": "runtime_http:" + label, "ok": ok, "label": label, "detail": detail}
         for ok, label, detail in runtime_rows
     )
     results.extend(
-        {"ok": ok, "label": label, "detail": detail}
+        {"id": "platform:" + label, "ok": ok, "label": label, "detail": detail}
         for ok, label, detail in platform_rows
     )
     return results
