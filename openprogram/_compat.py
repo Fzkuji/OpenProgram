@@ -1383,6 +1383,12 @@ def worker_service_backend() -> str | None:
     return None
 
 
+def restrict_descriptor_to_user(descriptor: int) -> None:
+    """Apply POSIX descriptor mode without rewriting inherited Windows ACLs."""
+    if _sys.platform != "win32":
+        _os.fchmod(descriptor, 0o600)
+
+
 def restrict_to_user(path) -> None:
     """Apply owner-only POSIX mode; preserve inherited ACLs on Windows W1.
 
@@ -1927,6 +1933,7 @@ def directory_read_file(handle, name):
 
 
 __all__ = [
+    "restrict_descriptor_to_user",
     "directory_handle",
     "directory_child",
     "directory_close",
