@@ -200,6 +200,19 @@ PY
 
   rm -rf "$repo_root/apps/desktop/dist"
   "$repo_root/scripts/release/stage-release-assets.sh"
+  # Freeze the runtime assets with the wheel, including additions required by
+  # newer Desktop capability checks when refreshing an older installed App.
+  runtime_assets_stage="$attempt_dir/runtime-assets"
+  mkdir -p "$runtime_assets_stage"
+  cp "${OPENPROGRAM_NODE_BIN:-$(command -v node)}" "$runtime_assets_stage/node"
+  cp "$repo_root/apps/cli/dist/index-standalone.cjs" "$runtime_assets_stage/index.cjs"
+  "$runtime_assets_stage/node" "$runtime_assets_stage/index.cjs" --probe || {
+    printf 'bundled Node cannot run after relocation; set OPENPROGRAM_NODE_BIN to a standalone Node executable\n' >&2
+    exit 1
+  }
+  cp "$repo_root/uv.lock" "$runtime_assets_stage/product-uv.lock"
+  cp "$repo_root/scripts/release/verify-product-runtime.py" "$runtime_assets_stage/verify-product-runtime.py"
+  cp "$product_runtime_config" "$runtime_assets_stage/product-runtime.json"
   rm -rf "$repo_root/build"
   "$uv_bin" build --wheel --out-dir "$attempt_dir" "$repo_root"
   wheel="$(find "$attempt_dir" -maxdepth 1 -type f \
@@ -337,7 +350,24 @@ if test "$(uname -s)" = Darwin; then
 fi
 if test "$sync_gui_harness" = 1; then
   cp "$product_runtime_stage" "$installed_product_runtime"
+else
+  cp "$runtime_assets_stage/product-runtime.json" "$installed_product_runtime"
 fi
+mkdir -p "$runtime_root/bin" "$runtime_root/assets/tui"
+install -m 755 "$runtime_assets_stage/node" "$runtime_root/bin/node"
+cp "$runtime_assets_stage/index.cjs" "$runtime_root/assets/tui/index.cjs"
+cp "$runtime_assets_stage/product-uv.lock" "$runtime_root/product-uv.lock"
+cp "$runtime_assets_stage/verify-product-runtime.py" "$runtime_root/bin/verify-product-runtime.py"
+if test ! -e "$runtime_root/bin/python" && test ! -L "$runtime_root/bin/python"; then
+  ln -s "../$app_python_relative" "$runtime_root/bin/python"
+fi
+runtime_version="$("$app_python" -I -c 'from importlib.metadata import version; print(version("openprogram"))')"
+runtime_uv_version="$("$runtime_root/bin/uv" --version | awk '{print $2}')"
+# The verifier probes every capability before writing its manifest. Never
+# retain an old manifest or mark a newly required capability verified by fiat.
+"$app_python" -I "$runtime_root/bin/verify-product-runtime.py" "$runtime_root" \
+  --write --python-relative "$app_python_relative" \
+  --openprogram-version "$runtime_version" --uv-version "$runtime_uv_version"
 cp "$desktop_asar" "$installed_asar"
 if test -d "$desktop_asar.unpacked"; then
   rsync -a --delete "$desktop_asar.unpacked/" \

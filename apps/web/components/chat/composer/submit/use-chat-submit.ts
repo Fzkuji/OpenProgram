@@ -15,6 +15,7 @@
  * live assistant to cancelled, and clears runningTask so the send queue
  * drains at 0ms. Server cancelled still wins on reload.
  */
+import type { ExecutionCommand } from "@/lib/execution-debugger";
 import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
@@ -313,11 +314,13 @@ export function stopSession(
       previousMessageStatus: optimisticMessage?.status,
     };
     const sent = send({
+      type: "execution.command",
       action: "execution.cancel",
       command_id: commandId,
       execution_id: executionId,
       expected_version: expectedVersion,
-    });
+      payload: {},
+    } satisfies ExecutionCommand);
     if (!sent) delete runtimeState._optimisticCancels[commandId];
   } else if (task) {
     // The Stop button can win the ACK/activation race while the task still

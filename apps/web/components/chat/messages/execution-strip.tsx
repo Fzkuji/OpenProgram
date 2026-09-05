@@ -12,6 +12,7 @@
  * 图标绝对定位在标题行内部，与文字共用同一垂直中心。流式进行中的一轮
  * 不走这里（assistant-bubble 平铺实时块），落定后切到本组件。
  */
+import type { ExecutionCommand } from "@/lib/execution-debugger";
 import { memo, useEffect, useState } from "react";
 import { Wrench } from "lucide-react";
 import { afterTwoAnimationFrames } from "./collapse-frame";
@@ -559,11 +560,13 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
     const expectedVersion = attach.status_version;
     if (executionId && typeof expectedVersion === "number") {
       wsSend({
+        type: "execution.command",
         action: "execution.cancel",
         command_id: crypto.randomUUID(),
         execution_id: executionId,
         expected_version: expectedVersion,
-      });
+        payload: {},
+      } satisfies ExecutionCommand);
     }
   }
   const preview = card.content || "";

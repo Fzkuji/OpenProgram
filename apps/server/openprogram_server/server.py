@@ -236,6 +236,8 @@ def _emit_running_task_event(
     try:
         with _running_tasks_lock:
             task = _running_tasks.get(session_id)
+            task = dict(task) if task else None
+        task = _canonical_foreground_task(session_id) or task
         if task:
             payload = {
                 "type": "running_task",
@@ -803,6 +805,13 @@ def _get_or_create_session(session_id: str = None,
         return _sessions[session_id]
 
 
+def _canonical_foreground_task(session_id: str) -> dict | None:
+    from openprogram.execution import default_store
+    from openprogram.execution.foreground import active_foreground_task
+
+    return active_foreground_task(default_store(), session_id)
+
+
 def _is_run_active(session_id: str) -> bool:
     """Is there an in-flight agent run for this conversation?
 
@@ -810,6 +819,9 @@ def _is_run_active(session_id: str) -> bool:
     while a run is active). Driven off ``_running_tasks`` — the same
     dict we use for pause / stop, so we can't drift out of sync.
     """
+    # A durable continuation no longer owns the initial transport thread.
+    if _canonical_foreground_task(session_id) is not None:
+        return True
     with _running_tasks_lock:
         task = _running_tasks.get(session_id)
         # A chat handler reserves the session before it mutates the DAG and

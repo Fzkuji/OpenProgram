@@ -28,7 +28,7 @@ class FakeWS:
         self.frames.append(json.loads(text))
 
 
-def _canonical_execution(tmp_path, *, execution_id="exec-web-cancel"):
+def _canonical_execution(tmp_path, *, execution_id="exec-web-cancel", source="test", interaction="interactive"):
     store = ExecutionStore(tmp_path / "executions.sqlite3")
     revision = store.create_revision(
         revision_id=f"revision-{execution_id}", manifest={"entrypoint": "agent"},
@@ -52,7 +52,8 @@ def _canonical_execution(tmp_path, *, execution_id="exec-web-cancel"):
             "request": {
                 "user_text": "cancel me",
                 "agent_id": "main",
-                "source": "test",
+                "source": source,
+                "interaction": interaction,
             },
         },
     )
@@ -419,3 +420,109 @@ def test_orphan_cleanup_preserves_new_reservation(monkeypatch):
     finally:
         s._running_tasks.pop(sid, None)
         unregister_active_runtime(sid)
+
+
+@pytest.mark.parametrize("source,interaction,foreground", [
+    ("web", "interactive", True), ("tui", "interactive", True),
+    ("scheduler", "interactive", False), ("web", "noninteractive", False),
+])
+def test_canonical_continuation_restores_hydration_and_live_controls(
+    tmp_path, monkeypatch, source, interaction, foreground,
+):
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions.session import handle_load_session
+    from openprogram.execution.outbox import ProjectionDispatcher
+    from openprogram.execution.projections import projection_handlers
+
+    executions, record = _canonical_execution(tmp_path, source=source, interaction=interaction)
+    _patch_canonical_store(monkeypatch, executions)
+    sessions = SessionStore(tmp_path / "foreground-sessions")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.store.session.session_store._default_store", sessions)
+    monkeypatch.setattr(server, "_get_provider_info", lambda sid=None: {})
+    monkeypatch.setattr(server, "refresh_context_stats", lambda sid: None)
+    transport_frames = []
+    monkeypatch.setattr(server, "_broadcast", lambda payload: transport_frames.append(json.loads(payload)))
+    frames = []
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
+    dispatcher = ProjectionDispatcher(executions, projection_handlers(executions))
+    sid = record.session_id
+    sessions.create_session(sid, "main")
+    with server._sessions_lock:
+        server._sessions[sid] = {"id": sid}
+    try:
+        # No transport thread or in-memory task survives a durable wait.
+        for status in (ExecutionStatus.QUEUED, ExecutionStatus.RUNNING,
+                       ExecutionStatus.PAUSING, ExecutionStatus.PAUSED,
+                       ExecutionStatus.RUNNING,
+                       ExecutionStatus.CANCELLING, ExecutionStatus.CANCELLED):
+            if status is not record.status:
+                record = executions.transition_execution(
+                    record.execution_id, expected_version=record.status_version, target=status,
+                )
+            active = foreground and status not in {ExecutionStatus.PAUSED, ExecutionStatus.CANCELLED}
+            ws = FakeWS()
+            asyncio.run(handle_load_session(ws, {"session_id": sid}))
+            loaded = next(f["data"] for f in ws.frames if f["type"] == "session_loaded")
+            assert loaded["run_active"] is active
+            replay = next((f["data"] for f in ws.frames if f["type"] == "running_task"), None)
+            assert (replay is not None) is active
+            if active:
+                assert replay["execution_id"] == record.execution_id
+                assert replay["status_version"] == record.status_version
+                assert not server._try_reserve_run(sid, "another-turn")
+                server._emit_running_task_event(sid, cleared_execution_id=record.execution_id)
+                assert transport_frames[-1]["type"] == "running_task", "late transport cleanup preserves a resumed execution"
+                assert transport_frames[-1]["data"]["status_version"] == record.status_version
+            dispatcher.dispatch_once(owner_id="foreground-test")
+            projected = frames[-1]["data"].get("foreground_task")
+            assert (projected is not None) is active
+            if active:
+                assert projected["execution_id"] == record.execution_id
+                assert projected["status_version"] == record.status_version
+                from openprogram.webui.ws_actions.runtime import handle_execution_replay
+                replay_ws = FakeWS()
+                asyncio.run(handle_execution_replay(replay_ws, {
+                    "execution_id": record.execution_id, "after_sequence": 0,
+                }))
+                recovered = replay_ws.frames[-1]["data"]["snapshot"].get("foreground_task")
+                assert recovered == projected, "cursor recovery carries the same foreground controls as live projection"
+        assert server._try_reserve_run(sid, "after-cancel")
+    finally:
+        with server._sessions_lock:
+            server._sessions.pop(sid, None)
+        with server._running_tasks_lock:
+            server._running_tasks.pop(sid, None)
+
+
+def test_real_web_stop_envelope_is_applied_by_runtime_handler(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    from pathlib import Path
+    from openprogram.webui.ws_actions import runtime
+    from openprogram.webui import server
+
+    executions, record = _canonical_execution(tmp_path, execution_id="frontend-cancel")
+    _patch_canonical_store(monkeypatch, executions)
+    monkeypatch.setattr(server, "_broadcast", lambda payload: None)
+    monkeypatch.setattr(server, "_release_session_occupancy_for_execution", lambda execution: None)
+    root = Path(__file__).resolve().parents[3]
+    output = tmp_path / "frontend-command.json"
+    env = {
+        **os.environ,
+        "OPENPROGRAM_TEST_CANCEL_FRAME": str(output),
+        "OPENPROGRAM_TEST_CANCEL_TARGET": json.dumps({
+            "session_id": record.session_id, "msg_id": "user-canonical",
+            "execution_id": record.execution_id, "status_version": record.status_version,
+        }),
+    }
+    subprocess.run(
+        ["node", "--experimental-strip-types", "apps/web/scripts/check-send-queue.mjs"],
+        cwd=root, env=env, check=True, capture_output=True, text=True, timeout=30,
+    )
+    frame = json.loads(output.read_text())
+    ws = FakeWS()
+    asyncio.run(runtime.ACTIONS["execution.cancel"](ws, frame))
+    command = next(f["command"] for f in ws.frames if f["type"] == "execution.command.updated")
+    assert command["status"] == "applied", command
+    assert executions.get_execution(record.execution_id).status is ExecutionStatus.CANCELLED

@@ -174,6 +174,30 @@ def _job_operation_timeout(declared: float | None) -> float | None:
     return current_job_operation_timeout(declared)
 
 
+def _finish_interrupted_stream(stream, exc, messages, cancel_event) -> None:
+    from openprogram.agentic_programming.function import CancelledError, check_cancelled
+    from openprogram.providers.utils.errors import ExecInterrupt
+
+    cancelled = isinstance(exc, CancelledError) or bool(
+        cancel_event is not None and cancel_event.is_set()
+    )
+    if isinstance(exc, ExecInterrupt) and not cancelled:
+        # A synchronous callback can observe the owner's cancellation before
+        # this event loop has delivered its asynchronously bridged signal.
+        try:
+            check_cancelled()
+        except CancelledError:
+            cancelled = True
+    if isinstance(exc, (CancelledError, ExecInterrupt)) and cancelled:
+        if not stream._result_event.is_set():
+            stream.end(messages)
+    elif isinstance(exc, ExecInterrupt):
+        if not stream._result_event.is_set():
+            stream.fail(exc)
+    else:
+        raise exc
+
+
 def agent_loop(
     prompts: list[AgentMessage],
     context: AgentContext,
@@ -210,23 +234,7 @@ def agent_loop(
             if not ev_stream._result_event.is_set():
                 ev_stream.fail(e)
         except BaseException as e:
-            # User-triggered CancelledError (BaseException subclass) — end the
-            # stream cleanly so the chat dispatcher unblocks and the running_task
-            # gets cleared. Without this branch the Task dies with an unretrieved
-            # exception and the UI is stuck on the stop button.
-            from openprogram.agentic_programming.function import (
-                CancelledError as _AgenticCancelled,
-            )
-            if isinstance(e, _AgenticCancelled):
-                if not ev_stream._result_event.is_set():
-                    ev_stream.end(new_messages)
-            else:
-                from openprogram.providers.utils.errors import ExecInterrupt
-                if isinstance(e, ExecInterrupt):
-                    if not ev_stream._result_event.is_set():
-                        ev_stream.fail(e)
-                else:
-                    raise
+            _finish_interrupted_stream(ev_stream, e, new_messages, cancel_event)
 
     ev_stream.attach_producer(asyncio.ensure_future(_run()))
     return ev_stream
@@ -270,12 +278,7 @@ def agent_loop_continue(
             if not ev_stream._result_event.is_set():
                 ev_stream.fail(e)
         except BaseException as e:
-            from openprogram.providers.utils.errors import ExecInterrupt
-            if isinstance(e, ExecInterrupt):
-                if not ev_stream._result_event.is_set():
-                    ev_stream.fail(e)
-            else:
-                raise
+            _finish_interrupted_stream(ev_stream, e, new_messages, cancel_event)
 
     ev_stream.attach_producer(asyncio.ensure_future(_run()))
     return ev_stream
@@ -366,12 +369,7 @@ def agent_loop_resume(
             if not ev_stream._result_event.is_set():
                 ev_stream.fail(exc)
         except BaseException as exc:
-            from openprogram.providers.utils.errors import ExecInterrupt
-            if isinstance(exc, ExecInterrupt):
-                if not ev_stream._result_event.is_set():
-                    ev_stream.fail(exc)
-            else:
-                raise
+            _finish_interrupted_stream(ev_stream, exc, new_messages, cancel_event)
 
     ev_stream.attach_producer(asyncio.ensure_future(_run()))
     return ev_stream

@@ -92,11 +92,19 @@ def atomic_write_text(fpath: Path, text: str) -> Path:
     leaves the rename itself unflushed: a power loss then reverts the
     destination to its previous bytes even though the write "succeeded".
     """
+    # Profile state is owner-only on POSIX; Windows retains inherited ACLs.
+    # Apply the mode at creation so even the unpublished bytes remain private.
     tmp = fpath.with_name(f"{fpath.name}.{uuid.uuid4().hex}.tmp")
     native_tmp = filesystem_path(tmp)
     native_target = filesystem_path(fpath)
+    created = False
     try:
-        with open(native_tmp, "w", encoding="utf-8", newline="\n") as handle:
+        descriptor = os.open(
+            native_tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+            0o600,
+        )
+        created = True
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
@@ -109,10 +117,11 @@ def atomic_write_text(fpath: Path, text: str) -> Path:
     finally:
         # No-op after a successful replace; cleans up when write_text
         # or replace raised so a failed write leaves no litter.
-        try:
-            os.unlink(native_tmp)
-        except FileNotFoundError:
-            pass
+        if created:
+            try:
+                os.unlink(native_tmp)
+            except FileNotFoundError:
+                pass
     return fpath
 
 

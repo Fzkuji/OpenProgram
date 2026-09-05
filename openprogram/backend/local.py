@@ -20,6 +20,7 @@ import sys
 from dataclasses import replace
 
 from openprogram.backend.base import Backend, RunResult, decode_maybe
+from openprogram.backend.process import run_command
 from openprogram import sandbox as _sandbox
 from openprogram._compat import (
     ProcessTreeOwner,
@@ -172,90 +173,40 @@ class LocalBackend(Backend):
                 sandbox_error="unavailable",
             )
         try:
-            tree = ProcessTreeOwner()
-            proc = tree.popen(
+            proc = run_command(
                 args,
+                tree=ProcessTreeOwner(),
                 shell=use_shell,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+                timeout=timeout,
                 cwd=cwd,
                 env=env,
             )
-            try:
-                stdout, stderr = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired as timeout_error:
-                # ``subprocess.run(..., timeout=...)`` only kills the direct
-                # shell.  Background grandchildren retain the capture pipes,
-                # so communicate() can then hang until those processes exit.
-                # The tree owner remains valid even when the direct shell has
-                # already exited.  Windows uses a kernel Job Object; POSIX
-                # retains the process-group id chosen at creation.
-                if not tree.terminate():
-                    try:
-                        proc.kill()
-                    except OSError:
-                        pass
-                try:
-                    stdout, stderr = proc.communicate(timeout=5)
-                except subprocess.TimeoutExpired as drain_error:
-                    # Never close a TextIOWrapper while communicate()'s
-                    # Windows reader thread is blocked inside it: close waits
-                    # for that thread's I/O lock and turns this bounded fallback
-                    # into a permanent hang.  Return the cumulative partial
-                    # output and leave the daemon reader to observe EOF when
-                    # the kernel finishes tearing the job down.
-                    try:
-                        proc.wait(timeout=1)
-                    except (OSError, subprocess.TimeoutExpired):
-                        pass
-                    stdout = decode_maybe(
-                        drain_error.stdout
-                        if drain_error.stdout is not None
-                        else timeout_error.stdout
-                    )
-                    stderr = decode_maybe(
-                        drain_error.stderr
-                        if drain_error.stderr is not None
-                        else timeout_error.stderr
-                    )
-                return RunResult(
-                    exit_code=-1,
-                    stdout=stdout or "",
-                    stderr=stderr or "",
-                    timed_out=True,
-                )
-            except BaseException:
-                # A decoding error, interrupted wait, or other unexpected
-                # communicate failure must not orphan the command tree.
-                tree.terminate()
-                raise
-            tree.release()
             sandbox_error = (
                 "denied" if _sandbox.is_sandbox_denial(
-                    proc.returncode, stdout, stderr,
+                    proc.returncode, proc.stdout, proc.stderr,
                     sandboxed=sandboxed,
                 ) else None
             )
             path = rule = None
             if sandbox_error == "denied":
                 hit = _sandbox.match_deny_read(
-                    f"{command}\n{stdout}\n{stderr}",
+                    f"{command}\n{proc.stdout}\n{proc.stderr}",
                 )
                 if hit:
                     path, rule = hit
             return RunResult(
-                proc.returncode, stdout, stderr,
+                proc.returncode, proc.stdout, proc.stderr,
                 sandbox_error=sandbox_error,
                 sandbox_path=path,
                 sandbox_rule=rule,
             )
-        except OSError:
-            # Preserve the previous contract for spawn failures (missing shell,
-            # invalid cwd, descriptor exhaustion): callers see the OS error.
-            raise
+        except subprocess.TimeoutExpired as e:
+            return RunResult(
+                exit_code=-1,
+                stdout=decode_maybe(e.stdout),
+                stderr=decode_maybe(e.stderr),
+                timed_out=True,
+            )
 
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:

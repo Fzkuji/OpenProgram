@@ -448,6 +448,7 @@ class ExecutionSnapshot:
     terminal_at: float | None
     updated_at: float
     event_sequence: int
+    foreground_task: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -473,6 +474,7 @@ class ExecutionSnapshot:
             "terminal_at": self.terminal_at,
             "updated_at": self.updated_at,
             "event_sequence": self.event_sequence,
+            "foreground_task": _snapshot_json(self.foreground_task) if self.foreground_task else None,
         }
 
 

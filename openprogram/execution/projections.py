@@ -220,6 +220,9 @@ class ExecutionProjectionReadModel:
                 "status": execution.status.value,
             }
         elif projection_kind == "ui":
+            from .foreground import foreground_task_snapshot
+
+            payload["foreground_task"] = foreground_task_snapshot(self.store, execution)
             payload["ui"] = {
                 "is_running": execution.status.value in _RUNNING_STATUSES,
                 "label": entrypoint or "execution",

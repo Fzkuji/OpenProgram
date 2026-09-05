@@ -1660,12 +1660,12 @@ def test_release_installer_probe_ignores_caller_service_and_no_web(
     values = probe_log.read_text(encoding="utf-8").splitlines()
     probe_home, xdg_config, state_dir, profile, no_web, workdir, cwd, unit = values
     assert probe_home != str(caller_home)
-    assert xdg_config == str(Path(probe_home) / ".config")
-    assert state_dir == str(Path(probe_home) / ".openprogram")
+    assert Path(xdg_config) == Path(probe_home) / ".config"
+    assert Path(state_dir) == Path(probe_home) / ".openprogram"
     assert profile == ""
     assert no_web == ""
     assert workdir == probe_home
-    assert cwd == probe_home
+    assert Path(cwd).resolve() == Path(probe_home).resolve()
     assert unit == "unit-hidden"
     assert caller_unit.read_text(encoding="utf-8") == (
         "caller unit must remain untouched\n"
@@ -2266,6 +2266,14 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     stage_assets = release_scripts / "stage-release-assets.sh"
     stage_assets.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     stage_assets.chmod(0o755)
+    # This fixture stops before installation, but must provide every artifact
+    # normally produced by the release build before the version recheck.
+    tui = repo / "apps/cli/dist/index-standalone.cjs"
+    tui.parent.mkdir(parents=True)
+    tui.write_text("// staged Ink bundle\n", encoding="utf-8")
+    (repo / "uv.lock").write_text("", encoding="utf-8")
+    for name in ("product-runtime.json", "verify-product-runtime.py"):
+        (release_scripts / name).write_bytes((ROOT / "scripts/release" / name).read_bytes())
     (release_scripts / "install-release.sh").write_text(
         'OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-0.6.6}"\n',
         encoding="utf-8",
@@ -2307,6 +2315,11 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     app = _fake_desktop_app(tmp_path / "installed", "0.6.6")
     installed_asar = app / "Contents" / "Resources" / "app.asar"
     installed_asar.write_bytes(b"original-asar")
+    embedded_bin = app / "Contents/Resources/runtime/bin"
+    embedded_bin.mkdir(exist_ok=True)
+    embedded_uv = embedded_bin / "uv"
+    embedded_uv.write_text("#!/bin/sh\nprintf 'uv 0.11.16\\n'\n", encoding="utf-8")
+    embedded_uv.chmod(0o755)
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     mutation_log = tmp_path / "mutation.log"
@@ -2330,6 +2343,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         "#!/bin/sh\n"
         "set -eu\n"
         'case "$2" in\n'
+        '  --probe) test -z "${NODE_PROBE_FAIL:-}" ;;\n'
         '  extract) mkdir -p "$4/node_modules" ;;\n'
         '  pack) test -f "$3/menu-geometry.js" || exit 92; '
         'test -f "$3/worker-recovery-state.js" || exit 93; '
@@ -2406,6 +2420,16 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         fake_uv.read_text(encoding="utf-8").replace("0.6.1", "0.6.6"),
         encoding="utf-8",
     )
+    bad_node = subprocess.run(
+        ["bash", str(scripts / "refresh-local-app.sh")],
+        env=env | {"NODE_PROBE_FAIL": "1"},
+        capture_output=True, text=True, timeout=15,
+    )
+    assert bad_node.returncode != 0
+    assert "bundled Node cannot run after relocation" in bad_node.stderr
+    assert not mutation_log.exists()
+    assert installed_asar.read_bytes() == b"original-asar"
+
     lock_file = app.parent / ".openprogram-app-install.lock"
     lock_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
     try:

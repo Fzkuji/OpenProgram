@@ -444,7 +444,11 @@ require manual intervention rather than reconstruction from an unverified App.
 
 ## Development checkout
 
-In a source checkout, the same command uses the development pipeline instead of the release installer. It validates a Git target, updates dependencies and built assets when their source files changed, probes the new checkout, and restarts the worker only after the probe succeeds:
+For the locally installed macOS App, run `scripts/refresh-local-app.sh` from the current checkout after committing a change. The script rebuilds the wheel and Desktop assets, updates both the PATH and embedded Python installations, and refreshes bundled Node and Ink resources. It probes the complete embedded runtime before regenerating its capability manifest and restarting the default worker. This also upgrades older App runtime manifests when a newly required capability is introduced; a failed probe stops the refresh instead of declaring the capability verified.
+
+The copied Node executable must work outside its original installation. The script checks this before modifying the App. If your PATH selects a Node build that needs adjacent libraries, set `OPENPROGRAM_NODE_BIN` to a standalone Node executable when running the refresh script.
+
+In a source checkout, `openprogram upgrade` uses the development pipeline instead of the release installer. It validates a Git target, updates dependencies and built assets when their source files changed, probes the new checkout, and restarts the worker only after the probe succeeds:
 
 ```bash
 openprogram upgrade --check

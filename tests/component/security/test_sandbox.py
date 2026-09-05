@@ -353,6 +353,11 @@ def test_glob_to_regex_expands_home():
     if os.sep == "\\":
         target = target.replace("\\", "/")
     assert re.match(rx, target)
+    # Also verify the public policy check against the resolved path.
+    assert sandbox.read_is_denied(
+        os.path.realpath(os.path.expanduser("~/.ssh/id_rsa")),
+        SandboxPolicy(deny_read=("~/.ssh/**",)),
+    )
 
 
 def test_glob_to_regex_matches_native_windows_separators(monkeypatch):

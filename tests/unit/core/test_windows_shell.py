@@ -75,6 +75,6 @@ def test_local_backend_hides_windows_shell_window(monkeypatch) -> None:
     result = local.LocalBackend().run("echo ok", timeout=5)
 
     assert result.stdout == "ok\n"
-    assert seen["timeout"] == 5
+    assert 0 < seen["timeout"] <= 5  # Cancellable collection stays within the budget.
     assert seen["released"] is True
     assert "creationflags" not in seen

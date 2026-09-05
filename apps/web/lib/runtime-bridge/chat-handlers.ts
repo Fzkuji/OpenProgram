@@ -9,6 +9,7 @@
  * Imported for side effects + `initChatPage()` by `useWS`.
  */
 
+import type { ExecutionCommand } from "@/lib/execution-debugger";
 import {
   extractMessagesFromTree,
   fetchBranches,
@@ -194,11 +195,13 @@ export function wsHandleChatAck(data: ChatAckData): void {
         } else {
           try {
             sock.send(JSON.stringify({
+              type: "execution.command",
               action: "execution.cancel",
               command_id: commandId,
               execution_id: data.execution_id,
               expected_version: data.status_version,
-            }));
+              payload: {},
+            } satisfies ExecutionCommand));
           } catch {
             delete runtimeState._optimisticCancels[commandId];
           }
@@ -585,6 +588,31 @@ export function handleSessionUpdated(
   if ("status" in data) conv.status = data.status || undefined;
   if ("unread" in data) conv.unread = !!data.unread;
   mirrorUpsertConv(conv);
+}
+
+/** Restore a durable continuation after its initial transport task ended.
+ * Called only after the canonical execution update passes ordering checks. */
+export function restoreForegroundExecutionTask(value: unknown, execution?: unknown): void {
+  const canonical = execution as { session_id?: string; execution_id?: string; status?: string } | undefined;
+  if (canonical?.status === "paused") {
+    const sid = canonical.session_id;
+    const eid = canonical.execution_id;
+    if (sid && eid && useSessionStore.getState().runningTasks[sid]?.execution_id === eid) {
+      handleRunningTaskClear(sid, { execution_id: eid });
+    }
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  const task = value as { session_id?: string; execution_id?: string; msg_id?: string; status_version?: number };
+  const sid = task.session_id;
+  const eid = task.execution_id;
+  if (!sid || !eid || !task.msg_id || typeof task.status_version !== "number") return;
+  const current = useSessionStore.getState().runningTasks[sid];
+  if (current?.execution_id && current.execution_id !== eid) return;
+  if (Object.values(runtimeState._optimisticCancels).some(
+    (cancel) => cancel.sessionId === sid && cancel.task.execution_id === eid,
+  )) return;
+  handleRunningTask(task);
 }
 
 export function handleRunningTask(rt: unknown): void {
