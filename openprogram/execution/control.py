@@ -1531,6 +1531,9 @@ class RuntimeControlService:
             child_id = child_execution_id or f"exec_{uuid.uuid4().hex}"
             instruction_branch = (kind is CommandKind.FORK
                 and RevisionControlService(self.executions).published_instructions(revision.revision_id) is not None)
+            source_input = self.executions.get_agent_turn_input(source.execution_id)
+            agent_retry = kind is CommandKind.RETRY and source_input is not None and source_input.get("kind") == "chat"
+            isolated_agent_branch = instruction_branch or agent_retry
             now = time.time()
             child = ExecutionRecord(
                 execution_id=child_id,
@@ -1539,7 +1542,7 @@ class RuntimeControlService:
                 revision_id=revision.revision_id,
                 parent_execution_id=source.execution_id,
                 source_checkpoint_id=checkpoint.checkpoint_id,
-                status=ExecutionStatus.PAUSED if instruction_branch else ExecutionStatus.QUEUED,
+                status=ExecutionStatus.PAUSED if isolated_agent_branch else ExecutionStatus.QUEUED,
                 status_version=1,
                 capabilities=source.capabilities,
                 created_at=now,
@@ -1554,7 +1557,7 @@ class RuntimeControlService:
                 source_execution_id=source.execution_id,
                 child_execution_id=child.execution_id,
                 created_at=now,
-                assistant_message_id=f"{child_id}_reply" if instruction_branch else None,
+                assistant_message_id=f"{child_id}_reply" if isolated_agent_branch else None,
             )
             self.executions._append_event(
                 connection,
@@ -1709,9 +1712,8 @@ class RuntimeControlService:
                     or checkpoint.revision_id != execution.revision_id
                 )
             ):
-                from .revisions import RevisionControlService
                 if (connection.execute("SELECT 1 FROM attempts WHERE execution_id = ? LIMIT 1", (execution_id,)).fetchone()
-                        or RevisionControlService(self.executions).instruction_branch(connection, execution, checkpoint) is None):
+                        or not self._agent_branch_checkpoint_is_valid(self.executions, connection, execution, checkpoint)):
                     raise ExecutionConflict("invalid_checkpoint", "checkpoint does not belong to the current execution revision")
             if (
                 kind is CommandKind.STEP
@@ -1819,6 +1821,38 @@ class RuntimeControlService:
             )
             command = applying
             return command, reserved, active, checkpoint, steer_inputs, False
+
+    @staticmethod
+    def _agent_branch_checkpoint_is_valid(store, connection, execution, checkpoint) -> bool:
+        """Accept only the exact source of an isolated Agent Retry/Fork."""
+        if (not execution.parent_execution_id
+                or execution.source_checkpoint_id != checkpoint.checkpoint_id
+                or execution.parent_execution_id != checkpoint.execution_id):
+            return False
+        source = store._get_execution(connection, execution.parent_execution_id)
+        record = store.get_execution_input(execution.execution_id)
+        payload = store.get_agent_turn_input(execution.execution_id)
+        if (source is None or source.session_id != execution.session_id
+                or source.revision_id != checkpoint.revision_id
+                or record is None or record.assistant_message_id != f"{execution.execution_id}_reply"
+                or not payload or payload.get("kind") != "chat"):
+            return False
+        from openprogram.agent.continuation import AgentCheckpointV1
+        state = AgentCheckpointV1.load(store, checkpoint)
+        ancestors = set()
+        current = source
+        while current is not None and current.execution_id not in ancestors:
+            ancestors.add(current.execution_id)
+            current = store._get_execution(connection, current.parent_execution_id) if current.parent_execution_id else None
+        for receipt in state.payload["terminal_effect_receipts"]:
+            effect = connection.execute("SELECT * FROM effects WHERE effect_id = ?", (receipt["effect_id"],)).fetchone()
+            if (effect is None or effect["execution_id"] not in ancestors
+                    or effect["action_id"] != receipt["action_id"] or effect["status"] != receipt["outcome"]):
+                return False
+        if execution.revision_id == checkpoint.revision_id:
+            return True
+        from .revisions import RevisionControlService
+        return RevisionControlService(store).instruction_branch(connection, execution, checkpoint) is not None
 
     @staticmethod
     def _agent_step_has_no_next_action(checkpoint: CheckpointManifest | None) -> bool:

@@ -500,10 +500,8 @@ class AgentProductionDriver:
         # checkpoints; only mutable chat/Job requests need this runtime field.
         if not isinstance(request, ForcedToolActivation):
             setattr(request, "_execution_revision_id", execution.revision_id)
-            if execution.parent_execution_id is not None:
-                from openprogram.execution.revisions import RevisionControlService
-                if RevisionControlService(self.executions).published_instructions(execution.revision_id) is not None:
-                    request.advance_head = False
+            if execution.parent_execution_id is not None and record.assistant_message_id == f"{execution.execution_id}_reply":
+                request.advance_head = False
         steer_inputs = tuple(activation.steer_inputs) if activation is not None else ()
         continuation = None
         if activation is not None and activation.checkpoint is not None:
@@ -520,28 +518,30 @@ class AgentProductionDriver:
                 )
                 if (execution.parent_execution_id is not None
                         and activation.checkpoint.execution_id != execution.execution_id):
-                    from openprogram.execution.revisions import RevisionControlService
                     with self.executions._connect() as connection:
                         connection.execute("BEGIN")
-                        branch = RevisionControlService(self.executions).instruction_branch(connection, execution, activation.checkpoint)
-                    if branch is not None:
-                        if record.assistant_message_id != f"{execution.execution_id}_reply":
-                            raise AgentDriverError("checkpoint_schema_invalid", "instruction branch assistant anchor is invalid")
-                        branch_payload = copy.deepcopy(dict(continuation.state.payload))
-                        branch_payload["turn"]["assistant_message_id"] = record.assistant_message_id
-                        branch_state = replace(continuation.state, payload=branch_payload)
-                        branch_state.validate()
-                        continuation = replace(continuation, state=branch_state)
-                        from openprogram.agent.session_db import default_db
-                        from openprogram.context.nodes import Call, ROLE_LLM
-                        from openprogram.store import SessionNodeWriter
-                        db = default_db()
-                        if not db.message_exists(record.session_id, record.assistant_message_id):
-                            SessionNodeWriter(db, record.session_id, advance_head=False).append(Call(
-                                id=record.assistant_message_id, role=ROLE_LLM, output="",
-                                predecessor=record.user_message_id, created_at=time.time(),
-                                metadata={"agent_id": request.agent_id, "execution_id": execution.execution_id},
-                            ))
+                        branch = RuntimeControlService._agent_branch_checkpoint_is_valid(
+                            self.executions, connection, execution, activation.checkpoint,
+                        )
+                    if not branch:
+                        raise AgentDriverError("invalid_checkpoint", "Agent branch source checkpoint is invalid")
+                    if record.assistant_message_id != f"{execution.execution_id}_reply":
+                        raise AgentDriverError("checkpoint_schema_invalid", "Agent branch assistant anchor is invalid")
+                    branch_payload = copy.deepcopy(dict(continuation.state.payload))
+                    branch_payload["turn"]["assistant_message_id"] = record.assistant_message_id
+                    branch_state = replace(continuation.state, payload=branch_payload)
+                    branch_state.validate()
+                    continuation = replace(continuation, state=branch_state)
+                    from openprogram.agent.session_db import default_db
+                    from openprogram.context.nodes import Call, ROLE_LLM
+                    from openprogram.store import SessionNodeWriter
+                    db = default_db()
+                    if not db.message_exists(record.session_id, record.assistant_message_id):
+                        SessionNodeWriter(db, record.session_id, advance_head=False).append(Call(
+                            id=record.assistant_message_id, role=ROLE_LLM, output="",
+                            predecessor=record.user_message_id, created_at=time.time(),
+                            metadata={"agent_id": request.agent_id, "execution_id": execution.execution_id},
+                        ))
                 if (
                     record.user_message_id != continuation.state.payload["turn"]["user_message_id"]
                     or record.assistant_message_id != continuation.assistant_message_id

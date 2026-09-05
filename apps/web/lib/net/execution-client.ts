@@ -216,6 +216,10 @@ export function parseRevisionState(body: RevisionStateResponse): RevisionDraft {
   const manifest = state.manifest as Record<string, unknown> | null | undefined;
   return {
     ...draft,
+    status: draft.status === "discarded" ? "discarded"
+      : manifest ? "published"
+        : approval?.status === "approved" ? "approved"
+          : validation ? "validated" : draft.status,
     validation: validation
       ? {
         validation_id: typeof validation.validation_id === "string" ? validation.validation_id : undefined,
