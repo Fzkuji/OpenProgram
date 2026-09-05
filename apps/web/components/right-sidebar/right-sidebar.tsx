@@ -25,7 +25,7 @@
  * are registered on mount — see `setRightDockApi` below.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { ContextCommitTimeline } from "./context-commit-timeline";
@@ -39,7 +39,6 @@ import {
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
   ActivityIcon,
-  MonitorCheckIcon,
   type AnimatedNavIconHandle,
   FolderOpenIcon,
   PanelLeftCloseIcon,
@@ -47,7 +46,6 @@ import {
 } from "../animated-icons";
 import { FileTree } from "../files/file-tree";
 import { RunningPanel } from "./running-panel";
-import { SessionDebugger } from "./session-debugger";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useCurrentProject } from "@/lib/state/files-shared";
 import { setRightDockApi } from "@/lib/right-dock";
@@ -64,16 +62,14 @@ import {
 // "detail" picks `<div data-view="detail">`.
 const VIEW_FILES = "files";
 const VIEW_RUNNING = "running";
-const VIEW_DEBUGGER = "debugger";
 
 export function RightSidebar() {
   const { t, text } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
-  const view = useSessionStore((s) => s.rightDock.view);
+  const storedView = useSessionStore((s) => s.rightDock.view);
+  const view = storedView === "debugger" ? VIEW_RUNNING : storedView;
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
-  const [debuggerExecutionId, setDebuggerExecutionId] = useState<string | null>(null);
-  const [debuggerRequestVersion, setDebuggerRequestVersion] = useState(0);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const { style: railStyle, resizeHandleProps } = useResizableRail({
     open,
@@ -86,7 +82,6 @@ export function RightSidebar() {
   // toggle button's hover.
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
-  const debuggerIconRef = useRef<AnimatedNavIconHandle>(null);
   const runningIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
@@ -150,13 +145,6 @@ export function RightSidebar() {
     // History / Execution Detail nav buttons only switch view +
     // ensure the panel is open. Collapsing is the top toggle's job.
     setRightDockView(v);
-    if (!open) setRightDockOpen(true);
-  }
-
-  function openDebugger(executionId?: string) {
-    setDebuggerExecutionId(executionId || null);
-    setDebuggerRequestVersion((version) => version + 1);
-    setRightDockView(VIEW_DEBUGGER);
     if (!open) setRightDockOpen(true);
   }
 
@@ -251,30 +239,6 @@ export function RightSidebar() {
           className={
             sidebarNavItemClass +
             " right-nav-item" +
-            (view === VIEW_DEBUGGER ? " " + sidebarNavItemActiveClass : "")
-          }
-          data-view={VIEW_DEBUGGER}
-          onClick={() => onNavClick(VIEW_DEBUGGER)}
-          onMouseEnter={() => debuggerIconRef.current?.startAnimation()}
-          onMouseLeave={() => debuggerIconRef.current?.stopAnimation()}
-          onFocus={() => debuggerIconRef.current?.startAnimation()}
-          onBlur={() => debuggerIconRef.current?.stopAnimation()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={activateOnKey(() => onNavClick(VIEW_DEBUGGER))}
-          title={text("Execution debugger", "执行调试器")}
-        >
-          <span className={sidebarNavIconClass}>
-            <MonitorCheckIcon ref={debuggerIconRef} size={20} />
-          </span>
-          <span className={sidebarNavLabelClass}>
-            {text("Debugger", "调试器")}
-          </span>
-        </div>
-        <div
-          className={
-            sidebarNavItemClass +
-            " right-nav-item" +
             (view === VIEW_RUNNING ? " " + sidebarNavItemActiveClass : "")
           }
           data-view={VIEW_RUNNING}
@@ -284,13 +248,13 @@ export function RightSidebar() {
           role="button"
           tabIndex={0}
           onKeyDown={activateOnKey(() => onNavClick(VIEW_RUNNING))}
-          title={text("Running tasks", "正在运行的任务")}
+          title={text("Agents and programs in this conversation", "当前会话的 Agent 和程序")}
         >
           <span className={sidebarNavIconClass}>
             <ActivityIcon ref={runningIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>
-            {text("Running", "运行中")}
+            {text("Activity", "运行记录")}
           </span>
         </div>
       </div>
@@ -308,17 +272,9 @@ export function RightSidebar() {
             </div>
           )}
         </div>
-        {/* Running view — global live-work list, polls /api/running. */}
+        {/* One conversation-owned view for Agents and their managed programs. */}
         <div className="right-view" data-view={VIEW_RUNNING}>
-          <RunningPanel active={open && view === VIEW_RUNNING} onOpenExecution={openDebugger} />
-        </div>
-        <div className="right-view" data-view={VIEW_DEBUGGER}>
-          <SessionDebugger
-            key={`${currentSessionId || "no-session"}:${debuggerRequestVersion}`}
-            sessionId={currentSessionId}
-            active={open && view === VIEW_DEBUGGER}
-            requestedExecutionId={debuggerExecutionId}
-          />
+          <RunningPanel key={currentSessionId || "no-session"} sessionId={currentSessionId} active={open && view === VIEW_RUNNING} />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template

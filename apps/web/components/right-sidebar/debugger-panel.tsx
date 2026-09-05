@@ -47,6 +47,7 @@ export type CheckpointInspector = {
 };
 
 export type DebuggerPanelProps = {
+  detailOnly?: boolean;
   executions: ExecutionSnapshot[];
   sessionId?: string | null;
   events?: PersistedExecutionEvent[];
@@ -240,6 +241,7 @@ export function DebuggerPanel({
   events = [],
   unresolvedEffects = [],
   fetchedAt,
+  detailOnly = false,
   selectedExecutionId,
   connection,
   checkpoints = [],
@@ -367,7 +369,7 @@ export function DebuggerPanel({
 
   if (!snapshot) {
     return (
-      <section className={styles.panel} aria-label="Debugger">
+      <section className={styles.panel} aria-label="Execution details">
         <SidebarNotice>
           <div>{connection.state === "stale" ? "Could not load executions." : connection.state === "reconnecting" && sessionId ? "Loading executions…" : "No executions in this conversation."}</div>
           {connection.message && <div>{connection.message}</div>}
@@ -395,14 +397,14 @@ export function DebuggerPanel({
     : connection.state === "conflict" ? "stale" : connection.state;
 
   return (
-    <section className={styles.panel} aria-label="Debugger">
+    <section className={styles.panel} aria-label="Execution details">
       <div className={styles.connectionLine} data-health={health}>
         <span title={connectionInfo.detail}>{connectionInfo.label}{fetchedAt ? ` · ${shortTime(fetchedAt)}` : ""}</span>
         {onRefresh && <Button variant="ghost" type="button" onClick={onRefresh} aria-label="Refresh snapshot">Refresh</Button>}
       </div>
 
-      <div className={`${styles.layout} ${executions.length === 1 ? styles.singleExecution : ""}`}>
-        {executions.length > 1 && <aside className={styles.executionRail} aria-label="Executions">
+      <div className={`${styles.layout} ${(detailOnly || executions.length === 1) ? styles.singleExecution : ""}`}>
+        {!detailOnly && executions.length > 1 && <aside className={styles.executionRail} aria-label="Executions">
           <SectionHeader name={`Executions · ${executions.length}`} collapsible={false} collapsed={false} onToggle={() => {}} className="px-3 py-2" />
           {executions.length ? <ExecutionTree executions={executions} selectedId={snapshot.execution_id} onSelect={selectExecution} /> : <div className={styles.empty}>No executions available.</div>}
         </aside>}

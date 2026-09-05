@@ -60,6 +60,17 @@ def authorize_execution_action(
     project_binding: Mapping[str, Any],
 ) -> ExecutionAuthorization:
     """Authorize one exact execution action or raise non-disclosing denial."""
+    if not isinstance(project_binding, Mapping) or project_binding.get("session_id") != getattr(execution, "session_id", None):
+        raise ExecutionAuthorizationError("execution is not visible")
+    return authorize_session_action(actor, action, project_binding)
+
+
+def authorize_session_action(
+    actor: Mapping[str, Any] | Any,
+    action: str,
+    project_binding: Mapping[str, Any],
+) -> ExecutionAuthorization:
+    """Check principal grants for a session; callers must prove target membership."""
     raw = actor if isinstance(actor, Mapping) else {}
     normalized = normalize_authority(raw)
     project_id = project_binding.get("project_id") if isinstance(project_binding, Mapping) else None
@@ -69,7 +80,7 @@ def authorize_execution_action(
         or not normalized
         or not isinstance(project_id, str)
         or not project_id
-        or session_id != getattr(execution, "session_id", None)
+        or not isinstance(session_id, str) or not session_id
         or not _scope_contains(raw, "project_ids", project_id)
         or not _scope_contains(raw, "session_ids", str(session_id))
     ):

@@ -472,10 +472,12 @@ class JobRunner:
         self._dispatch_wake.set()
 
     @staticmethod
-    def _canonical_input(job: Job, *, run_id: str | None) -> tuple[str, str, dict[str, Any]]:
+    def _canonical_input(job: Job, *, run_id: str | None,
+                         parent_execution_id: str | None = None) -> tuple[str, str, dict[str, Any]]:
         from openprogram.agent.job.input import JobAgentInputV1
 
-        immutable = JobAgentInputV1.from_job(job, run_id=run_id).to_dict()
+        immutable = JobAgentInputV1.from_job(job, run_id=run_id,
+                                            parent_execution_id=parent_execution_id).to_dict()
         payload = json.dumps(
             immutable,
             ensure_ascii=False,
@@ -502,10 +504,22 @@ class JobRunner:
             self._execution_store.get_execution(job.parent_job_id)
             if job.parent_job_id else None
         )
-        if parent is not None and parent.session_id != job.parent_session_id:
+        caller_session = job.caller_session_id or job.parent_session_id
+        if parent is not None and parent.session_id != caller_session:
             parent = None
+        if parent is None and not job.parent_job_id and existing is None:
+            from openprogram.agent.run_control import get_current_execution_id, get_current_session_id
+
+            caller_execution_id = get_current_execution_id()
+            if caller_execution_id and get_current_session_id() == caller_session:
+                candidate = self._execution_store.get_execution(caller_execution_id)
+                if (candidate is not None and candidate.session_id == caller_session
+                        and candidate.status.value == "running" and candidate.current_attempt_id is not None):
+                    parent = candidate
         run_id = parent.run_id if parent is not None else f"job-run-{job.id}"
-        input_ref, input_hash, input_payload = self._canonical_input(job, run_id=run_id)
+        input_ref, input_hash, input_payload = self._canonical_input(
+            job, run_id=run_id, parent_execution_id=parent.execution_id if parent else None,
+        )
         if existing is not None:
             record = self._execution_store.get_job_agent_input(job.id)
             if record is None:

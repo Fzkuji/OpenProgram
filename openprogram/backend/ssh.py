@@ -59,18 +59,18 @@ class SshBackend(Backend):
                        "backend via `openprogram setup backend`.",
             )
 
+    def spawn_spec(self, command: str, cwd: str | None = None) -> dict:
+        return {"args": ["ssh", "-T", "-o", "BatchMode=yes", "-o",
+                         "StrictHostKeyChecking=accept-new", self.target,
+                         f"cd {shlex.quote(cwd)} && {command}" if cwd else command]}
+
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:
         # -T disables pseudo-tty allocation so our PIPEs stay clean
         # line streams. Process output is captured via the remote ssh
         # client streaming stdout back over the same socket.
-        argv = ["ssh", "-T",
-                "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=accept-new",
-                self.target,
-                f"cd {shlex.quote(cwd)} && {command}" if cwd else command]
         return subprocess.Popen(
-            argv,
+            **self.spawn_spec(command, cwd=cwd),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

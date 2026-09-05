@@ -202,14 +202,18 @@ class LocalBackend(Backend):
                 timed_out=True,
             )
 
+    def spawn_spec(self, command: str, cwd: str | None = None) -> dict:
+        args, use_shell, env, sandboxed = _invocation(command, cwd=cwd)
+        return {"args": args, "shell": use_shell, "cwd": cwd or None,
+                "env": env, "creationflags": no_window_creation_flags(),
+                "sandboxed": sandboxed}
+
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:
-        args, use_shell, env, sandboxed = _invocation(command, cwd=cwd)
+        spec = self.spawn_spec(command, cwd=cwd)
+        sandboxed = spec.pop("sandboxed")
         proc = subprocess.Popen(
-            args,
-            shell=use_shell,
-            cwd=cwd or None,
-            env=env,
+            **spec,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -217,7 +221,6 @@ class LocalBackend(Backend):
             encoding="utf-8",
             errors="replace",
             bufsize=1,
-            creationflags=no_window_creation_flags(),
         )
         setattr(proc, "_openprogram_sandboxed", sandboxed)
         return proc

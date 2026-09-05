@@ -1955,7 +1955,8 @@ class ExecutionStore:
             )
 
     def list_audit_events(
-        self, execution_id: str, *, actor: Mapping[str, Any]
+        self, execution_id: str, *, actor: Mapping[str, Any],
+        conversation_session_id: str | None = None,
     ) -> list[AuditEvent]:
         execution = self.get_execution(execution_id)
         if execution is None:
@@ -1963,9 +1964,15 @@ class ExecutionStore:
             raise ExecutionAuthorizationError("execution is not visible")
         from .authorization import authorize_execution_action
 
-        authorize_execution_action(
-            actor, "audit.read", execution, self._project_binding(execution)
-        )
+        if conversation_session_id is None:
+            authorize_execution_action(
+                actor, "audit.read", execution, self._project_binding(execution)
+            )
+        else:
+            from .conversation_scope import authorize_conversation_execution
+
+            authorize_conversation_execution(actor, "audit.read", execution, store=self,
+                                             session_id=conversation_session_id)
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT * FROM execution_audit_events WHERE execution_id = ? "

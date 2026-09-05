@@ -38,6 +38,8 @@ export type EventCursor = {
 };
 
 export type ExecutionSnapshot = {
+  started_at?: number;
+  view_parent_execution_id?: string | null;
   can_continue?: boolean;
   can_step?: boolean;
   display?: { kind?: string; label?: string; entrypoint?: string; tool_name?: string; user_message_id?: string; assistant_message_id?: string };

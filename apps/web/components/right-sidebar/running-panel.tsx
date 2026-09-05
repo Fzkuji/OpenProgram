@@ -1,326 +1,135 @@
 "use client";
 
-/**
- * Running panel — session-grouped global view of current executions for the
- * right sidebar. Polls GET /api/running, groups items by session, identifies
- * parallel branches by execution ID, and keeps unscoped processes under Other.
- * Session headers open the corresponding conversation tab.
- */
-import { useEffect, useRef, useState } from "react";
-
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "@/lib/i18n";
+import { useExecutionDebugger } from "@/lib/use-execution-debugger";
+import { useManagedProcesses } from "@/lib/use-managed-processes";
+import { processIsActive, stopProcess, type ManagedProcess } from "@/lib/net/process-client";
+import type { ExecutionSnapshot } from "@/lib/execution-debugger";
+import { Button } from "@/components/ui/button";
+import { DebuggerPanel } from "./debugger-panel";
 import { SidebarNotice } from "./sidebar-notice";
-import { useSessionStore } from "@/lib/session-store";
-import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { jsonFetch } from "@/lib/net/fetch-client";
-import type { SelfUpdate } from "@/lib/self-update";
-import { SelfUpdateCard } from "@/components/chat/messages/self-update-card";
+import { executionTitle, statusLabel, updatedTime } from "./debugger-presentation";
+import styles from "./running-panel.module.css";
 
-type RunningItem = {
-  kind: "execution" | "tool" | "job" | "process" | "run" | "self_update";
-  update?: SelfUpdate;
-  id: string;
-  session_id?: string | null;
-  execution_id?: string | null;
-  label: string;
-  status: string;
-  started_at: number | null;
-  pid?: number;
-  capabilities?: { pause?: boolean; step?: boolean };
-  event_cursor?: { next_sequence?: number };
-  snapshot?: Record<string, unknown>;
-};
+const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
 
-const POLL_MS = 3000;
-
-function formatElapsed(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-}
-
-export function RunningPanel({
-  active,
-  onOpenExecution,
-}: {
-  active: boolean;
-  onOpenExecution?: (executionId: string) => void;
-}) {
+/** One conversation-owned list; inspecting a row reuses the existing controls. */
+export function RunningPanel({ active, sessionId }: { active: boolean; sessionId: string | null }) {
   const { text } = useTranslation();
-  const conversations = useSessionStore((s) => s.conversations);
-  const [items, setItems] = useState<RunningItem[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [stale, setStale] = useState(false);
-  const [updateError, setUpdateError] = useState(false);
-  const updateSyncedAt = useRef<number | null>(null);
-  // Server clock at fetch time + local clock at fetch time, so elapsed
-  // stays correct even when the two clocks disagree.
-  const baseRef = useRef<{ serverNow: number; fetchedAt: number }>({
-    serverNow: 0,
-    fetchedAt: 0,
-  });
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    if (!active) return;
-    let stop = false;
-    let request: AbortController | null = null;
-    let pollTimer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      if (stop || request) return;
-      clearTimeout(pollTimer);
-      const controller = new AbortController();
-      request = controller;
-      const timeout = setTimeout(() => controller.abort(), 15000);
-      try {
-        const data = await jsonFetch<{
-          items: RunningItem[];
-          now: number;
-          self_update_error?: string | null;
-        }>("/api/running", { signal: controller.signal, cache: "no-store" });
-        if (stop || controller.signal.aborted) return;
-        baseRef.current = { serverNow: data.now, fetchedAt: Date.now() };
-        // A partial projection failure must not silently remove the last update.
-        setItems((previous) => data.self_update_error
-          ? [...data.items.filter((item) => item.kind !== "self_update"), ...previous.filter((item) => item.kind === "self_update")]
-          : data.items);
-        setUpdateError(Boolean(data.self_update_error));
-        if (!data.self_update_error) updateSyncedAt.current = Date.now();
-        setStale(false);
-        setLoaded(true);
-      } catch {
-        if (!stop) setStale(true);
-      } finally {
-        clearTimeout(timeout);
-        request = null;
-        if (!stop) pollTimer = setTimeout(poll, POLL_MS);
-      }
-    }
-    poll();
-    window.addEventListener("online", poll);
-    const tickTimer = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => {
-      stop = true;
-      request?.abort();
-      clearTimeout(pollTimer);
-      window.removeEventListener("online", poll);
-      clearInterval(tickTimer);
-    };
-  }, [active]);
-
-  const elapsedOf = (item: RunningItem): string | null => {
-    if (!item.started_at) return null;
-    const { serverNow, fetchedAt } = baseRef.current;
-    const drift = (Date.now() - fetchedAt) / 1000;
-    return formatElapsed(serverNow - item.started_at + drift);
-  };
-
-  const kindLabel = (kind: RunningItem["kind"]) =>
-    kind === "execution"
-      ? text("Execution", "执行")
-      : kind === "tool"
-      ? text("Tool", "工具")
-      : kind === "job"
-        ? text("Job", "任务")
-        : kind === "run"
-          ? text("Run", "运行")
-          : text("Process", "进程");
-
-  const sessionGroups = new Map<string, RunningItem[]>();
-  const otherItems: RunningItem[] = [];
-  for (const item of items) {
-    if (!item.session_id) {
-      otherItems.push(item);
-      continue;
-    }
-    const group = sessionGroups.get(item.session_id);
-    if (group) group.push(item);
-    else sessionGroups.set(item.session_id, [item]);
+  const state = useExecutionDebugger(active, sessionId);
+  const [selection, setSelection] = useState<"agent" | string | null>(null);
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [stopPending, setStopPending] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
+  const processes = useManagedProcesses(active, sessionId, selection && selection !== "agent" ? selection : null);
+  const processStatus = (item: ManagedProcess) => text(...({
+    starting: ["Starting", "正在启动"], running: ["Running", "正在运行"], stopping: ["Stopping", "正在停止"],
+    completed: ["Completed", "已完成"], exited: ["Exited", "已退出"], failed: ["Failed", "运行失败"],
+    stopped: ["Stopped", "已停止"], interrupted: ["Interrupted", "执行中断"], unknown: ["Status needs confirmation", "状态待确认"], lost: ["Status needs confirmation", "状态待确认"],
+  }[item.status] as [string, string] || [item.status, item.status]));
+  const stale = processes.stale || state.connection.state !== "connected";
+  const refresh = () => { state.refresh(); processes.refresh(); };
+  const byExecution = new Map<string, ManagedProcess[]>();
+  const unassigned: ManagedProcess[] = [];
+  const ids = new Set(state.executions.map(item => item.execution_id));
+  for (const item of processes.items) {
+    if (item.execution_id && ids.has(item.execution_id)) {
+      byExecution.set(item.execution_id, [...(byExecution.get(item.execution_id) || []), item]);
+    } else unassigned.push(item);
   }
-
-  const renderItem = (item: RunningItem) => {
-    if (item.kind === "self_update" && item.update) {
-      return <SelfUpdateCard key={`self_update:${item.id}`} update={item.update} />;
-    }
-    const elapsed = elapsedOf(item);
-    const branch = item.session_id && item.execution_id
-      ? `${text("branch", "分支")} ${item.execution_id.slice(-8)}`
-      : "";
-    const processPid = !item.session_id && item.kind === "process" && item.pid != null
-      ? `pid ${item.pid}`
-      : "";
-    return (
-      <div
-        key={`${item.kind}:${item.id}`}
-        title={item.label}
-        style={{
-          padding: "8px 10px",
-          marginBottom: 4,
-          borderRadius: 8,
-          border: "1px solid var(--border)",
-          fontSize: 12,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            marginBottom: 2,
-          }}
-        >
-          {/* breathing dot — same look as the sidebar running dot */}
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background:
-                item.status === "cancelling"
-                  ? "var(--warning, #e5a50a)"
-                  : "var(--accent, #3b82f6)",
-              flexShrink: 0,
-              animation: "convRunningBreathe 1.6s ease-in-out infinite",
-            }}
-          />
-          <span
-            style={{
-              color: "var(--text-dim)",
-              textTransform: "uppercase",
-              fontSize: 10,
-              letterSpacing: 0.5,
-              flexShrink: 0,
-            }}
-          >
-            {kindLabel(item.kind)}
-          </span>
-          <span
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              flex: 1,
-            }}
-          >
-            {item.label}
-          </span>
-          {branch && (
-            <span style={{ color: "var(--text-dim)", fontSize: 11, flexShrink: 0 }}>
-              {branch}
-            </span>
-          )}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            color: "var(--text-dim)",
-            fontSize: 11,
-          }}
-        >
-          <span>{processPid}</span>
-          <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-            {item.status !== "running" && item.status !== "cancelling"
-              ? item.status
-              : elapsed || ""}
-          </span>
-        </div>
-        {item.execution_id && onOpenExecution ? (
-          <button
-            type="button"
-            onClick={() => {
-              if (item.session_id) useCenterTabs.getState().openSessionTab(item.session_id, conversations[item.session_id]?.title || item.session_id);
-              onOpenExecution(item.execution_id as string);
-            }}
-            style={{
-              width: "100%",
-              minHeight: 28,
-              marginTop: 5,
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              background: "var(--bg-tertiary)",
-              color: "var(--text)",
-              cursor: "pointer",
-              font: "inherit",
-              fontSize: 11,
-              textAlign: "left",
-            }}
-            aria-label={text("Open execution debugger", "打开执行调试器")}
-          >
-            {text("Open debugger", "打开调试器")}
-          </button>
-        ) : null}
-      </div>
-    );
-  };
-
-  if (!loaded && !stale) {
-    return (
-      <SidebarNotice>
-        {text("Loading…", "加载中…")}
-      </SidebarNotice>
-    );
+  const children = new Map<string | null, ExecutionSnapshot[]>();
+  for (const item of state.executions) {
+    const parentId = item.view_parent_execution_id ?? item.parent_execution_id;
+    const parent = parentId && ids.has(parentId) ? parentId : null;
+    children.set(parent, [...(children.get(parent) || []), item]);
   }
-  if (items.length === 0 && !stale && !updateError) {
-    return (
-      <SidebarNotice>
-        {text("Nothing is running right now", "当前没有正在运行的任务")}
-      </SidebarNotice>
-    );
+  function hasActive(item: ExecutionSnapshot, seen = new Set<string>()): boolean {
+    if (seen.has(item.execution_id)) return false;
+    seen.add(item.execution_id);
+    return !terminal.has(item.status) || (byExecution.get(item.execution_id) || []).some(processIsActive)
+      || (children.get(item.execution_id) || []).some(child => hasActive(child, seen));
   }
-
-  return (
-    <div style={{ overflowY: "auto", padding: "4px 8px" }}>
-      {(stale || updateError) && <p role="status" style={{ padding: 8, fontSize: 12 }}>
-        {text("Status unavailable. Displayed results may be stale; reconnecting automatically.", "状态不可用。显示的结果可能已过时；正在自动重连。")}
-        {(updateError ? updateSyncedAt.current : baseRef.current.fetchedAt) ? <> {text("Last sync", "最近同步")}: {new Date(updateError ? updateSyncedAt.current! : baseRef.current.fetchedAt).toLocaleString()}</> : null}
-      </p>}
-      {[...sessionGroups.entries()].map(([sessionId, groupItems]) => {
-        const title = conversations[sessionId]?.title || sessionId.slice(0, 12);
-        return (
-          <div key={sessionId} style={{ marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={() => useCenterTabs.getState().openSessionTab(sessionId, title)}
-              title={title}
-              style={{
-                width: "100%",
-                padding: "8px 10px 6px",
-                border: 0,
-                background: "transparent",
-                color: "var(--text)",
-                cursor: "pointer",
-                font: "inherit",
-                fontSize: 12,
-                fontWeight: 600,
-                overflow: "hidden",
-                textAlign: "left",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {title}
-            </button>
-            {groupItems.map(renderItem)}
-          </div>
-        );
-      })}
-      {otherItems.length > 0 && (
-        <div>
-          <div
-            style={{
-              padding: "8px 10px 6px",
-              color: "var(--text)",
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            {text("Other", "其他")}
-          </div>
-          {otherItems.map(renderItem)}
-        </div>
-      )}
+  function programRow(item: ManagedProcess): ReactNode {
+    if (activeOnly && !processIsActive(item)) return null;
+    return <button type="button" key={`process:${item.id}`} className={styles.row} onClick={() => { setSelection(item.id); setStopError(null); }}>
+      <span className={styles.symbol} aria-hidden="true">›_</span>
+      <span className={styles.rowText}><span className={styles.name}>{item.command}</span>
+        <span className={styles.meta}>{processStatus(item)}{item.exit_code != null ? ` · ${text("Exit", "退出码")} ${item.exit_code}` : ""}</span>
+      </span>
+    </button>;
+  }
+  const rendered = new Set<string>();
+  function agentRows(parent: string | null, depth = 0): ReactNode {
+    return (children.get(parent) || []).map(item => {
+      if (rendered.has(item.execution_id) || (activeOnly && !hasActive(item))) return null;
+      rendered.add(item.execution_id);
+      const owned = byExecution.get(item.execution_id) || [];
+      return <div className={styles.branch} key={item.execution_id}>
+        <button type="button" className={styles.row} onClick={() => { state.selectExecution(item.execution_id); setSelection("agent"); }}>
+          <span className={`${styles.dot} ${!terminal.has(item.status) ? styles.active : ""}`} aria-hidden="true" />
+          <span className={styles.rowText}>
+            <span className={styles.name}>{executionTitle(item, state.executions.length - state.executions.indexOf(item), text)}</span>
+            <span className={styles.meta}>{statusLabel(item.status, text)}{owned.length ? ` · ${owned.filter(processIsActive).length}/${owned.length} ${text("programs running", "程序运行中")}` : ""}</span>
+          </span>
+        </button>
+        {(owned.length > 0 || children.has(item.execution_id)) && <div className={depth < 6 ? styles.children : undefined}>
+          {owned.map(programRow)}{agentRows(item.execution_id, depth + 1)}
+        </div>}
+      </div>;
+    });
+  }
+  if (!sessionId) return <SidebarNotice>{text("Open a conversation to view its Agents and programs.", "打开一个会话，查看其中的 Agent 和程序。")}</SidebarNotice>;
+  const back = <Button variant="ghost" onClick={() => setSelection(null)}>{text("← All activity", "← 全部运行记录")}</Button>;
+  if (selection === "agent") return <div className={styles.panel}>
+    <div className={styles.toolbar}>{back}</div>
+    <DebuggerPanel key={state.selectedExecutionId || "empty"} {...state} detailOnly
+      onSelectExecution={state.selectExecution} onCommand={state.command} onRespondWait={state.respondWait}
+      onCreateDraft={async input => { await state.createDraft(input); }} onUpdateDraft={state.updateDraft}
+      onDraftAction={state.draftAction} onRefresh={refresh} />
+  </div>;
+  if (selection) {
+    const item = processes.detail?.process.id === selection ? processes.detail.process : null;
+    return <div className={styles.panel}>
+      <div className={styles.toolbar}>{back}<Button variant="ghost" onClick={processes.refresh}>{text("Refresh", "刷新")}</Button></div>
+      {processes.stale && <SidebarNotice>{text("Could not refresh this program. Showing the last saved result.", "无法刷新此程序，当前显示上次读取的记录。")}</SidebarNotice>}
+      {!item ? <SidebarNotice>{processes.stale ? text("Program details unavailable.", "暂时无法读取程序详情。") : text("Loading program…", "正在读取程序…")}</SidebarNotice> : <div className={styles.scroll}>
+        <h3 className={styles.title}>{item.command}</h3><p className={styles.meta}>{processStatus(item)}</p>{item.status === "unknown" && <p className={styles.notice}>{text("The process supervisor is unavailable. This program is not confirmed to have exited; its record is retained.", "程序监督进程不可用，尚不能确认程序已退出，记录仍然保留。")}</p>}
+        <dl className={styles.facts}>
+          <dt>{text("Working directory", "工作目录")}</dt><dd>{item.cwd || "—"}</dd>
+          <dt>{text("Started", "开始时间")}</dt><dd>{updatedTime(item.started_at)}</dd>
+          {item.ended_at != null && <><dt>{text("Ended", "结束时间")}</dt><dd>{updatedTime(item.ended_at)}</dd></>}
+          {item.exit_code != null && <><dt>{text("Exit code", "退出码")}</dt><dd>{item.exit_code}</dd></>}
+          <dt>{text("Environment", "运行环境")}</dt><dd>{item.backend_id}</dd>
+        </dl>
+        {processIsActive(item) && <Button variant="destructive" disabled={stopPending || processes.stale || item.can_stop === false} onClick={async () => {
+          setStopPending(true); setStopError(null);
+          try { await stopProcess(item.id, sessionId); processes.refresh(); }
+          catch { setStopError(text("Could not stop the program. Refresh its status and try again.", "未能停止程序，请刷新状态后重试。")); }
+          finally { setStopPending(false); }
+        }}>{stopPending ? text("Stopping…", "正在停止…") : text("Stop program", "停止程序")}</Button>}
+        {stopError && <p role="alert" className={styles.error}>{stopError}</p>}
+        <h4 className={styles.outputHeading}>{text("Output", "输出")}</h4>
+        {item.truncated && <p className={styles.meta}>{text("Earlier output was truncated; the process record is retained.", "较早的输出已截断，程序记录仍然保留。")}</p>}
+        <pre className={styles.output}>{processes.detail?.output || text("No output recorded yet.", "尚无输出记录。")}</pre>
+      </div>}
+    </div>;
+  }
+  const visibleAgents = state.executions.filter(item => !activeOnly || hasActive(item));
+  const visibleOther = unassigned.filter(item => !activeOnly || processIsActive(item));
+  return <section className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")}>
+    <div className={styles.toolbar}>
+      <Button variant="ghost" aria-pressed={!activeOnly} onClick={() => setActiveOnly(false)}>{text("All", "全部")}</Button>
+      <Button variant="ghost" aria-pressed={activeOnly} onClick={() => setActiveOnly(true)}>{text("Active", "运行中")}</Button>
+      <Button variant="ghost" onClick={refresh}>{text("Refresh", "刷新")}</Button>
     </div>
-  );
+    <p className={styles.summary}>{text("This conversation", "当前会话")} · {state.executions.length} {text("executions", "执行")} · {processes.items.length} {text("programs", "程序")}</p>
+    {stale && (state.fetchedAt || processes.loaded || processes.stale) && <p role="status" className={styles.notice}>{text("Some statuses could not be refreshed. Showing the last saved records.", "部分状态暂时无法刷新，当前显示上次读取的记录。")}</p>}
+    <div className={styles.scroll}>
+      {!state.fetchedAt && !processes.loaded && !processes.stale ? <SidebarNotice>{text("Loading…", "加载中…")}</SidebarNotice> : null}
+      {agentRows(null)}
+      {visibleOther.length > 0 && <><h3 className={styles.outputHeading}>{text("Other programs in this conversation", "此会话的其他程序")}</h3>{visibleOther.map(programRow)}</>}
+      {state.fetchedAt && processes.loaded && visibleAgents.length === 0 && visibleOther.length === 0 && <SidebarNotice>{activeOnly ? text("Nothing is active. Completed records remain under All.", "当前没有运行项，已结束的记录保留在“全部”中。") : text("Agents and their programs will appear here when this conversation runs.", "此会话开始执行后，Agent 及其程序会显示在这里。")}</SidebarNotice>}
+    </div>
+  </section>;
 }

@@ -43,6 +43,14 @@ class Backend(abc.ABC):
             the calling tool doesn't surface raw exceptions to the LLM
         """
 
+    def spawn_spec(self, command: str, cwd: str | None = None) -> dict:
+        """Resolve a launch in the caller's backend and sandbox context.
+
+        The serializable Popen arguments can be handed to a durable supervisor.
+        They are not persisted, especially the environment.
+        """
+        raise NotImplementedError(f"backend {self.backend_id!r} does not support durable spawn")
+
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:
         """Start a long-lived process; return the Popen handle.

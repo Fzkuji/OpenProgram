@@ -173,7 +173,8 @@ class JobAgentInputV1:
         return cls(value["turn_request"], value["job_context"])
 
     @classmethod
-    def from_job(cls, job: Any, *, run_id: str | None = None) -> "JobAgentInputV1":
+    def from_job(cls, job: Any, *, run_id: str | None = None,
+                 parent_execution_id: str | None = None) -> "JobAgentInputV1":
         from openprogram.agent.authority import normalize_authority
 
         deferred_inbox = None
@@ -186,7 +187,7 @@ class JobAgentInputV1:
         caller = None
         if job.caller_msg_id:
             caller = {
-                "execution_id": job.parent_job_id or job.id,
+                "execution_id": parent_execution_id or job.parent_job_id or job.id,
                 "session_id": caller_session,
                 "msg_id": job.caller_msg_id,
                 "node_id": job.caller_msg_id,
@@ -197,7 +198,7 @@ class JobAgentInputV1:
         )
         if caller is None and spawn_caller is not None:
             caller = {
-                "execution_id": job.parent_job_id or job.id,
+                "execution_id": parent_execution_id or job.parent_job_id or job.id,
                 "session_id": caller_session,
                 "msg_id": spawn_caller,
                 "node_id": spawn_caller,
@@ -238,6 +239,9 @@ class JobAgentInputV1:
             "kind": "job_agent",
             "turn_request": request,
             "job_context": {
+                # This field reconstructs the Job resource parent. A normal
+                # chat execution is recorded as caller.execution_id and on
+                # the canonical execution, not as a resource-governed Job.
                 "parent_execution_id": job.parent_job_id,
                 "run_id": run_id,
                 "branch_frontier": job.target_branch_head_id,

@@ -49,11 +49,18 @@ def _actor_and_session(request: Request):
     return actor, bound_session if isinstance(bound_session, str) else None
 
 
-def _authorize_read(actor, bound_session, execution, action: str) -> bool:
+def _authorize_read(actor, bound_session, execution, action: str, conversation_session_id: str | None = None) -> bool:
     from openprogram.execution.authorization import ExecutionAuthorizationError, authorize_execution_action
     from openprogram.execution.public import project_id_for_session
 
     try:
+        if conversation_session_id is not None:
+            from openprogram.execution import default_store
+            from openprogram.execution.conversation_scope import authorize_conversation_execution
+
+            authorize_conversation_execution(actor, action, execution, store=default_store(),
+                                             session_id=conversation_session_id, bound_session=bound_session)
+            return True
         if bound_session is not None and bound_session != execution.session_id:
             return False
         authorize_execution_action(
@@ -83,22 +90,30 @@ def register(app):
     def api_session_executions(session_id: str, request: Request):
         """List only authorized canonical executions in the selected session."""
         import time
-        from openprogram.agent.authority import normalize_authority
         from openprogram.execution import default_store
+        from openprogram.execution.authorization import ExecutionAuthorizationError, authorize_session_action
+        from openprogram.execution.conversation_scope import conversation_executions, conversation_parent_ids
+        from openprogram.execution.public import project_id_for_session
 
         actor, bound_session = _actor_and_session(request)
-        authority = normalize_authority(actor)
-        if (not authority or authority.get("authority_tier") != "owner"
-                or (bound_session is not None and bound_session != session_id)):
+        if bound_session is not None and bound_session != session_id:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        try:
+            authorize_session_action(actor, "execution.snapshot", {
+                "project_id": project_id_for_session(session_id), "session_id": session_id,
+            })
+        except ExecutionAuthorizationError:
             return JSONResponse({"error": "not_found"}, status_code=404)
         items = []
-        for execution in default_store().list_for_session(session_id):
-            if not _authorize_read(actor, bound_session, execution, "execution.snapshot"):
-                continue
+        parents = conversation_parent_ids(default_store(), session_id)
+        # Membership is proved by this scoped query; principal/action grants
+        # above apply to the caller conversation, not every target session.
+        for execution in conversation_executions(default_store(), session_id):
             snapshot = _execution_payload(execution)
             items.append({
                 "kind": "execution", "id": execution.execution_id,
-                "execution_id": execution.execution_id, "session_id": session_id,
+                "execution_id": execution.execution_id, "session_id": execution.session_id,
+                "parent_execution_id": parents.get(execution.execution_id),
                 "label": (snapshot.get("display") or {}).get("label") or "execution",
                 "status": execution.status.value,
                 "started_at": execution.created_at, "snapshot": snapshot,
@@ -238,7 +253,8 @@ def register(app):
         execution = store.get_execution(execution_id)
         actor, bound_session = _actor_and_session(request)
         if execution is None or not _authorize_read(
-            actor, bound_session, execution, "execution.snapshot"
+            actor, bound_session, execution, "execution.snapshot",
+            request.query_params.get("conversation_session_id"),
         ):
             return JSONResponse(
                 {"error": "not_found", "execution_id": execution_id},
@@ -280,7 +296,7 @@ def register(app):
 
         execution = default_store().get_execution(execution_id)
         actor, bound_session = _actor_and_session(request)
-        if execution is None or not _authorize_read(actor, bound_session, execution, "execution.snapshot"):
+        if execution is None or not _authorize_read(actor, bound_session, execution, "execution.snapshot", request.query_params.get("conversation_session_id")):
             return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
         snapshot = _execution_payload(execution)
         return JSONResponse({"type": "execution.snapshot", "snapshot": snapshot, "data": snapshot})
@@ -291,7 +307,7 @@ def register(app):
 
         execution = default_store().get_execution(execution_id)
         actor, bound_session = _actor_and_session(request)
-        if execution is None or not _authorize_read(actor, bound_session, execution, "execution.events"):
+        if execution is None or not _authorize_read(actor, bound_session, execution, "execution.events", request.query_params.get("conversation_session_id")):
             return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
         try:
             replay = default_store().read_event_replay(
@@ -315,14 +331,15 @@ def register(app):
         store = default_store()
         execution = store.get_execution(execution_id)
         actor, bound_session = _actor_and_session(request)
-        if execution is None or not _authorize_read(actor, bound_session, execution, "audit.read"):
+        if execution is None or not _authorize_read(actor, bound_session, execution, "audit.read", request.query_params.get("conversation_session_id")):
             return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
         try:
             store.append_audit_event(
                 execution_id=execution_id, actor=actor or {}, action="audit.read",
                 result="allowed", surface="rest", payload={"purpose": "view"},
             )
-            events = store.list_audit_events(execution_id, actor=actor or {})
+            events = store.list_audit_events(execution_id, actor=actor or {},
+                                            conversation_session_id=request.query_params.get("conversation_session_id"))
         except Exception:
             return JSONResponse({"error": "not_found", "execution_id": execution_id}, status_code=404)
         return JSONResponse({"execution_id": execution_id, "events": [event.to_dict() for event in events]})

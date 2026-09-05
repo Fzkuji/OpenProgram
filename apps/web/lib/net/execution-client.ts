@@ -39,6 +39,8 @@ type EventsResponse = {
 export type RunningExecutionList = {
   items: Array<{
     kind?: string;
+    started_at?: number;
+    parent_execution_id?: string | null;
     execution_id?: string | null;
     snapshot?: ExecutionSnapshot;
     event_cursor?: EventCursor;
@@ -92,9 +94,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export async function getExecutionSnapshot(
   executionId: string,
   signal?: AbortSignal,
+  conversationSessionId?: string | null,
 ): Promise<ExecutionSnapshot> {
   const body = await request<SnapshotResponse>(
-    `/api/execution/${encodeURIComponent(executionId)}`,
+    `/api/execution/${encodeURIComponent(executionId)}${conversationSessionId ? `?conversation_session_id=${encodeURIComponent(conversationSessionId)}` : ""}`,
     { signal, cache: "no-store" },
   );
   const snapshot = body.snapshot || body.data;
@@ -114,9 +117,10 @@ export async function getExecutionEvents(
   executionId: string,
   afterSequence: number,
   signal?: AbortSignal,
+  conversationSessionId?: string | null,
 ): Promise<EventsResponse> {
   return request<EventsResponse>(
-    `/api/execution/${encodeURIComponent(executionId)}/events?after_sequence=${Math.max(0, afterSequence)}`,
+    `/api/execution/${encodeURIComponent(executionId)}/events?after_sequence=${Math.max(0, afterSequence)}${conversationSessionId ? `&conversation_session_id=${encodeURIComponent(conversationSessionId)}` : ""}`,
     { signal, cache: "no-store" },
   );
 }
@@ -124,9 +128,10 @@ export async function getExecutionEvents(
 export async function getExecutionDebuggerState(
   executionId: string,
   signal?: AbortSignal,
+  conversationSessionId?: string | null,
 ): Promise<DebuggerStateResponse> {
   return request<DebuggerStateResponse>(
-    `/api/execution/${encodeURIComponent(executionId)}/debugger`,
+    `/api/execution/${encodeURIComponent(executionId)}/debugger${conversationSessionId ? `?conversation_session_id=${encodeURIComponent(conversationSessionId)}` : ""}`,
     { signal, cache: "no-store" },
   );
 }

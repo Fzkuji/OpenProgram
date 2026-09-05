@@ -95,7 +95,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
   }, []);
 
   const loadDebuggerData = useCallback(async (executionId: string, signal?: AbortSignal) => {
-    const state = await getExecutionDebuggerState(executionId, signal);
+    const state = await getExecutionDebuggerState(executionId, signal, sessionId);
     if (!mounted.current || signal?.aborted) return state;
     setDebuggerData((current) => ({ ...current, [executionId]: {
       checkpoints: (state.checkpoints || []).map((checkpoint) => ({
@@ -110,7 +110,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       drafts: (state.drafts || []).map(parseRevisionState),
     } }));
     return state;
-  }, []);
+  }, [sessionId]);
 
   const refresh = useCallback(async () => {
     if (!sessionId || !active || refreshController.current) return;
@@ -123,8 +123,8 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       const next: Record<string, ExecutionSnapshot> = {};
       const nextCursors: Record<string, EventCursor> = {};
       for (const item of list.items || []) {
-        if (item.snapshot?.session_id !== sessionId) continue;
-        next[item.snapshot.execution_id] = item.snapshot;
+        if (!item.snapshot?.execution_id) continue;
+        next[item.snapshot.execution_id] = { ...item.snapshot, started_at: item.started_at, view_parent_execution_id: item.parent_execution_id };
         if (item.event_cursor) nextCursors[item.snapshot.execution_id] = item.event_cursor;
       }
       const inspectionId = [selectedExecutionId, requestedExecutionId].find((id) => id && next[id])
@@ -132,11 +132,11 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       let history: PersistedExecutionEvent[] = [];
       if (inspectionId) {
         const [replay] = await Promise.all([
-          getExecutionEvents(inspectionId, Math.max(0, next[inspectionId].event_sequence - 50), signal),
+          getExecutionEvents(inspectionId, Math.max(0, next[inspectionId].event_sequence - 50), signal, sessionId),
           loadDebuggerData(inspectionId, signal),
         ]);
-        if (replay.snapshot?.session_id !== sessionId) throw new Error("Execution does not belong to this conversation.");
-        next[inspectionId] = replay.snapshot;
+        if (replay.snapshot?.execution_id !== inspectionId || replay.snapshot.session_id !== next[inspectionId].session_id) throw new Error("Execution does not belong to this conversation.");
+        next[inspectionId] = { ...next[inspectionId], ...replay.snapshot };
         if (replay.event_cursor) nextCursors[inspectionId] = replay.event_cursor;
         history = replay.events || [];
       }
@@ -179,7 +179,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     };
   }, [active, sessionId, refresh]);
 
-  const executions = useMemo(() => Object.values(snapshots).sort((a, b) => b.updated_at - a.updated_at), [snapshots]);
+  const executions = useMemo(() => Object.values(snapshots).sort((a, b) => (b.started_at ?? b.updated_at) - (a.started_at ?? a.updated_at)), [snapshots]);
   const selectedKey = [selectedExecutionId, requestedExecutionId].find((id) => id && snapshots[id]) || executions[0]?.execution_id || null;
   const selectExecution = useCallback((executionId: string) => {
     if (!snapshots[executionId]) return;
@@ -200,8 +200,9 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       }
       const childId = result.result_json?.child_execution_id;
       if (childId) {
-        const child = await getExecutionSnapshot(childId);
-        if (mounted.current && child.session_id === sessionId) {
+        const child = await getExecutionSnapshot(childId, undefined, sessionId);
+        const scope = await getSessionExecutions(sessionId!);
+        if (mounted.current && scope.items.some(item => item.snapshot?.execution_id === childId)) {
           setSnapshots((current) => ({ ...current, [childId]: child }));
           setSelectedExecutionId(childId);
           setEvents([]);

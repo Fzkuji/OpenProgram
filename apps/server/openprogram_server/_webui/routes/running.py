@@ -184,30 +184,20 @@ def _collect() -> list[dict]:
     except Exception:
         pass
 
-    try:
-        from openprogram.programs.tools.files import process as _proc
-        with _proc._LOCK:
-            sessions = list(_proc._SESSIONS.values())
-        for sess in sessions:
-            if sess.proc.poll() is not None:
-                continue
-            items.append({
-                "kind": "process",
-                "id": sess.id,
-                "session_id": None,
-                "label": sess.command,
-                "status": "running",
-                "started_at": sess.started_at,
-                "pid": sess.proc.pid,
-            })
-    except Exception:
-        pass
+    from openprogram.processes import ProcessStore
+    from openprogram.processes.store import ACTIVE, public_record
+    for record in ProcessStore().list():
+        if record["status"] in ACTIVE:
+            items.append({**public_record(record), "kind": "process", "label": record["command"]})
 
     items.sort(key=lambda item: item.get("started_at") or 0, reverse=True)
     return items
 
 
 def register(app):
+    from . import processes
+    processes.register(app)
+
     @app.get("/api/running")
     def api_running(request: Request):
         from .self_updates import require_owner

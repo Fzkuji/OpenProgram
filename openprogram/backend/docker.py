@@ -51,13 +51,16 @@ class DockerBackend(Backend):
                        "switch backend via `openprogram setup backend`.",
             )
 
+    def spawn_spec(self, command: str, cwd: str | None = None) -> dict:
+        return {"args": self._argv(command, cwd)}
+
     def spawn(self, command: str,
               cwd: str | None = None) -> subprocess.Popen:
         # Per-spawn container; caller manages lifecycle via the returned
         # Popen. Terminating the docker client tears the container down
         # since --rm is set.
         return subprocess.Popen(
-            self._argv(command, cwd),
+            **self.spawn_spec(command, cwd=cwd),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
