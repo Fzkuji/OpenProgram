@@ -74,6 +74,9 @@ def test_runtime_identity_rejects_incompatible_installation(tmp_path, change):
 
 @pytest.fixture
 def installed_cli(monkeypatch):
+    import shutil
+    if shutil.which("sandbox-exec") is None:
+        pytest.skip("native self-update verifier requires sandbox-exec; covered by macOS CI")
     prefix = "/Applications/OpenProgram.app/Contents/Resources/runtime/python"
     identity = dict(python=prefix + "/bin/python3.12", prefix=prefix, revision="2" * 40,
                     python_sha256="a" * 64, manifest_sha256="b" * 64, cli_sha256="c" * 64)

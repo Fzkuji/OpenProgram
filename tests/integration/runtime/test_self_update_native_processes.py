@@ -1,8 +1,14 @@
 """Native acceptance cannot leave subprocesses behind a successful receipt."""
 import os
 import signal
+import sys
 
 import pytest
+
+pytestmark = [
+    pytest.mark.macos,
+    pytest.mark.skipif(sys.platform != "darwin", reason="native candidate verifier uses macOS sandbox-exec"),
+]
 
 from tests.component.self_update.test_candidate_checks import (
     _test_plan, live,  # noqa: F401

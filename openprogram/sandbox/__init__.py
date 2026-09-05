@@ -485,6 +485,8 @@ def _sbpl_str(s: str) -> str:
 def _glob_to_regex(pattern: str) -> str | None:
     """Anchored regex for one deny-read glob, or None if it is empty."""
     p = os.path.expanduser(pattern.strip())
+    if pattern.strip().startswith("~/"):
+        p = os.path.join(os.path.realpath(os.path.expanduser("~")), pattern.strip()[2:])
     if os.sep == "\\":
         p = p.replace("\\", "/")
     if not p:

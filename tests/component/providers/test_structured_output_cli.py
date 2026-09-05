@@ -35,7 +35,7 @@ def test_cli_main_preflights_schema_before_chat_runtime(tmp_path, monkeypatch):
     path.write_text(json.dumps(SCHEMA), encoding="utf-8")
     seen = {}
 
-    def run(*, oneshot, resume, tui, response_format):
+    def run(*, oneshot, resume, tui, response_format, no_alt_screen=False, screen_reader=False):
         seen.update(prompt=oneshot, response_format=response_format)
 
     monkeypatch.setattr(cli, "_cmd_cli_chat", run)

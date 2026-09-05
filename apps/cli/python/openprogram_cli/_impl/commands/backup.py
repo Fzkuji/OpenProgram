@@ -81,7 +81,9 @@ _SKIP_SUFFIXES = (".lock", ".pid", ".port", ".log", ".sock")
 # receives the stronger descriptor-relative implementation.
 _RESTORE_DIR_FD_CAPABLE = all(
     function in os.supports_dir_fd
-    for function in (os.open, os.stat, os.unlink, os.replace)
+    # CPython records rename's capability; replace shares that implementation
+    # but is not itself included in supports_dir_fd on POSIX.
+    for function in (os.open, os.stat, os.unlink, os.rename)
 )
 _OWNER_FD_CAPABLE = hasattr(os, "geteuid") and hasattr(os, "fchmod")
 

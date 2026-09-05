@@ -2270,6 +2270,11 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         'OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-0.6.6}"\n',
         encoding="utf-8",
     )
+    (release_scripts / "install-release.ps1").write_text(
+        'if ($env:OPENPROGRAM_VERSION) { $env:OPENPROGRAM_VERSION } '
+        'else { "0.6.6" }\n',
+        encoding="utf-8",
+    )
     (repo / "pyproject.toml").write_text(
         '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
         encoding="utf-8",

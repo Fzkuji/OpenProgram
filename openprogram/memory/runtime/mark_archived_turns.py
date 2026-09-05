@@ -59,6 +59,11 @@ def _v2_archived_nodes(
         relative = archive.relative_to(memory_dir)
     except (OSError, ValueError):
         return []
+    if "\r" in text:
+        # Migration witnesses must preserve the original canonical framing.
+        # General archive readers may normalize CRLF, but that is not proof
+        # that an old cursor's exact bytes were committed by the v2 writer.
+        return []
     nodes: list[tuple[str, str]] = []
     for frame in scan_source_archive(text, relative).frames:
         parts = frame.source_id.split("/", 2)

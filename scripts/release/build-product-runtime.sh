@@ -25,14 +25,14 @@ for command_name in npm node git; do
     exit 1
   }
 done
-test -n "$uv_bin" && test -x "$uv_bin" || {
+if test -z "$uv_bin" || ! test -x "$uv_bin"; then
   printf 'missing build command: uv\n' >&2
   exit 1
-}
-test -n "$json_python" && test -x "$json_python" || {
+fi
+if test -z "$json_python" || ! test -x "$json_python"; then
   printf 'missing build command: python3\n' >&2
   exit 1
-}
+fi
 
 read_config() {
   "$json_python" - "$product_config" "$1" <<'PY'

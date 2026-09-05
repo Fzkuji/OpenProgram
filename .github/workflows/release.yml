@@ -103,6 +103,10 @@ jobs:
           else
             scripts/release/build-product-runtime.sh
           fi
+      - name: Prepare native Windows ARM64 OpenSSL
+        if: matrix.platform == 'windows' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: scripts/release/prepare-windows-native-deps.ps1 -Architecture arm64
       - name: Build complete Windows product runtime
         if: matrix.platform == 'windows'
         env:

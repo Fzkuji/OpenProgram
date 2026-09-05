@@ -13,6 +13,19 @@ def test_filesystem_path_preserves_short_windows_paths(tmp_path: Path) -> None:
     assert _compat.filesystem_path(tmp_path) == str(tmp_path.absolute())
 
 
+def test_atomic_write_preserves_utf8_and_lf_bytes(tmp_path: Path) -> None:
+    target = tmp_path / "archive.txt"
+    body = "first\n中文\n"
+    atomic_write_text(target, body)
+    assert target.read_bytes() == body.encode("utf-8")
+
+
+def test_atomic_write_can_be_read_as_user_state(tmp_path: Path) -> None:
+    target = tmp_path / "state.json"
+    atomic_write_text(target, '{"ready": true}\n')
+    assert _compat.read_user_state_bytes(target, limit=100) == b'{"ready": true}\n'
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Win32 extended paths only")
 def test_atomic_write_supports_long_path_without_system_policy(tmp_path: Path) -> None:
     parent = tmp_path / ("workflow-" + "x" * 180)

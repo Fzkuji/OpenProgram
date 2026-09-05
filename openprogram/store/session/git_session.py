@@ -96,10 +96,12 @@ def atomic_write_text(fpath: Path, text: str) -> Path:
     native_tmp = filesystem_path(tmp)
     native_target = filesystem_path(fpath)
     try:
-        with open(native_tmp, "w", encoding="utf-8") as handle:
+        with open(native_tmp, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
+        from openprogram._compat import restrict_to_user
+        restrict_to_user(native_tmp)
         _retry_windows_file_access(
             lambda: os.replace(native_tmp, native_target)
         )

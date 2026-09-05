@@ -15,6 +15,16 @@ from pathlib import Path
 import pytest
 
 
+def test_restore_uses_descriptor_operations_when_available() -> None:
+    from openprogram.cli.commands.backup import _RESTORE_DIR_FD_CAPABLE
+
+    expected = all(
+        function in os.supports_dir_fd
+        for function in (os.open, os.stat, os.unlink, os.rename)
+    )
+    assert _RESTORE_DIR_FD_CAPABLE is expected
+
+
 def _state(tmp_path: Path) -> Path:
     root = tmp_path / "state"
     root.mkdir()
