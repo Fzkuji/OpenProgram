@@ -35,14 +35,30 @@ def main():
     # this does not accidentally make the launched command ignore SIGTERM.
     signal.signal(signal.SIGTERM, lambda *_: None)
     try:
-        launch = json.loads(sys.stdin.buffer.readline())
-        proc = subprocess.Popen(**launch, stdin=subprocess.PIPE)
+        # Use raw pipe I/O throughout: a daemon holding a buffered stdin
+        # lock would abort the interpreter when the managed group finishes.
+        frame = bytearray()
+        while b"\n" not in frame:
+            chunk = os.read(sys.stdin.fileno(), 8192)
+            if not chunk:
+                raise EOFError("missing process launch frame")
+            frame.extend(chunk)
+        header, _, pending_input = bytes(frame).partition(b"\n")
+        launch = json.loads(header)
+        proc = subprocess.Popen(**launch, stdin=subprocess.PIPE, bufsize=0)
 
         def forward_input():
             try:
-                while chunk := sys.stdin.buffer.read1(8192):
-                    proc.stdin.write(chunk)
-                    proc.stdin.flush()
+                chunk = pending_input
+                while True:
+                    if not chunk:
+                        chunk = os.read(sys.stdin.fileno(), 8192)
+                        if not chunk:
+                            break
+                    offset = 0
+                    while offset < len(chunk):
+                        offset += os.write(proc.stdin.fileno(), chunk[offset:])
+                    chunk = b""
             except (BrokenPipeError, OSError):
                 pass
             finally:

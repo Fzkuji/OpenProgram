@@ -195,7 +195,8 @@ def main():
         # truncation explicitly distinguishes this from complete output.
         if reader.is_alive() or read_error:
             store.update(process_id, truncated=True)
-        store.update(process_id, status="exited", exit_code=code, ended_at=time.time(), heartbeat=time.time())
+        store.update(process_id, status="stopped" if stopping_at is not None else "exited",
+                     exit_code=code, ended_at=time.time(), heartbeat=time.time())
         for command in store.commands(process_id):
             if pending_write is not None and command["id"] == pending_write.command_id:
                 complete = pending_write.done.is_set() and pending_write.error is None and pending_write.delivered == len(pending_write.payload)
