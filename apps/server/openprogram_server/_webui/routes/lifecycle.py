@@ -73,31 +73,8 @@ def _authorize_read(actor, bound_session, execution, action: str, conversation_s
         return False
 
 
-def _public_event(event):
-    from openprogram.execution.audit import redact_audit_payload
+from openprogram.execution.public import public_event as _public_event
 
-    payload = event.payload
-    if event.kind.startswith("effect.") and isinstance(payload.get("effect"), dict):
-        effect = payload["effect"]
-        # A provider effect can contain the full runtime/tool contract. It is
-        # durable evidence, not a UI frame; replaying it repeatedly can exceed
-        # websocket recovery limits. Keep the persisted event unchanged.
-        metadata = effect.get("metadata") or {}
-        payload = {"effect": {
-            **{key: effect.get(key) for key in (
-                "effect_id", "execution_id", "status", "classification",
-                "created_at", "updated_at", "dispatched_at", "resolved_at",
-            )},
-            "metadata": {key: metadata.get(key) for key in ("kind", "tool_name")},
-        }}
-    return {
-        "sequence": event.execution_sequence,
-        "execution_id": event.execution_id,
-        "kind": event.kind,
-        "payload": redact_audit_payload(payload),
-        "execution_version": event.execution_version,
-        "command_id": event.command_id,
-    }
 
 def register(app):
     @app.get("/api/session/{session_id}/executions")

@@ -338,18 +338,7 @@ def _authorize_execution(
     )
 
 
-def _public_event(event) -> dict:
-    """The reconnect transport never exposes raw prompt/output payloads."""
-    from openprogram.execution.audit import redact_audit_payload
-
-    return {
-        "sequence": event.execution_sequence,
-        "execution_id": event.execution_id,
-        "kind": event.kind,
-        "payload": redact_audit_payload(event.payload),
-        "execution_version": event.execution_version,
-        "command_id": event.command_id,
-    }
+from openprogram.execution.public import public_event as _public_event
 
 
 def _public_execution_snapshot(execution, *, event_sequence: int | None = None) -> tuple[dict, dict]:

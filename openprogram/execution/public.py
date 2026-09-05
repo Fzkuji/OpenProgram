@@ -253,3 +253,31 @@ __all__ = [
     "job_resource_dto",
     "project_id_for_session",
 ]
+
+
+def public_event(event) -> dict:
+    """Bounded, redacted event projection shared by REST and WebSocket replay."""
+    from openprogram.execution.audit import redact_audit_payload
+
+    payload = event.payload
+    if event.kind.startswith("effect.") and isinstance(payload.get("effect"), dict):
+        effect = payload["effect"]
+        # A provider effect can contain the full runtime/tool contract. It is
+        # durable evidence, not a UI frame; replaying it repeatedly can exceed
+        # websocket recovery limits. Keep the persisted event unchanged.
+        metadata = effect.get("metadata") or {}
+        payload = {"effect": {
+            **{key: effect.get(key) for key in (
+                "effect_id", "execution_id", "status", "classification",
+                "created_at", "updated_at", "dispatched_at", "resolved_at",
+            )},
+            "metadata": {key: metadata.get(key) for key in ("kind", "tool_name")},
+        }}
+    return {
+        "sequence": event.execution_sequence,
+        "execution_id": event.execution_id,
+        "kind": event.kind,
+        "payload": redact_audit_payload(payload),
+        "execution_version": event.execution_version,
+        "command_id": event.command_id,
+    }
