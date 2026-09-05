@@ -531,7 +531,13 @@ class AgentProductionDriver:
                     branch_payload["turn"]["assistant_message_id"] = record.assistant_message_id
                     branch_state = replace(continuation.state, payload=branch_payload)
                     branch_state.validate()
-                    continuation = replace(continuation, state=branch_state)
+                    branch_snapshot = copy.deepcopy(dict(continuation.resolved_snapshot))
+                    # The validated manifest permits only this revision identity
+                    # change; model, tools, prompt and authority remain exact.
+                    branch_snapshot["request_semantics"]["_execution_revision_id"] = execution.revision_id
+                    continuation = replace(
+                        continuation, state=branch_state, resolved_snapshot=branch_snapshot,
+                    )
                     from openprogram.agent.session_db import default_db
                     from openprogram.context.nodes import Call, ROLE_LLM
                     from openprogram.store import SessionNodeWriter
@@ -569,6 +575,7 @@ class AgentProductionDriver:
                     reset_worktree(_workdir_token)
                 validate_runtime_contract(continuation.resolved_snapshot, _contract)
             except AgentCheckpointError as exc:
+                _log.warning("Agent continuation %s rejected: %s", execution.execution_id, exc)
                 raise AgentDriverError(exc.code, str(exc)) from exc
         if activation is not None and activation.checkpoint is not None and self.activation_observer is not None:
             self.activation_observer(activation)
@@ -1088,7 +1095,12 @@ class AgentProductionDriver:
         latest_assistant: dict[str, Any] | None = None
         latest_snapshot: dict[str, Any] = {}
         if continuation is not None:
-            prior_actions = [dict(item) for item in continuation.state.payload["completed_actions"]]
+            for item in continuation.state.payload["completed_actions"]:
+                action = dict(item)
+                action["result"] = continuation.state.read_json_ref(
+                    self.executions, continuation.checkpoint.execution_id, action["result_ref"],
+                )
+                prior_actions.append(action)
             for item in continuation.state.payload["terminal_effect_receipts"]:
                 receipt = dict(item)
                 receipt_ref = receipt.pop("receipt_ref", None)
@@ -1201,7 +1213,7 @@ class AgentProductionDriver:
                 if not provider_effect_id or not provider_input_hash or provider_terminal_receipt is None:
                     raise AgentDriverError("checkpoint_schema_invalid", "wait has no committed provider decision")
                 if not any(item.get("action_id") == provider_action_id for item in action_values):
-                    action_values.append({"action_id": provider_action_id, "input_hash": provider_input_hash})
+                    action_values.append({"action_id": provider_action_id, "input_hash": provider_input_hash, "result": latest_assistant})
                 if not any(item.get("effect_id") == provider_effect_id for item in receipt_values):
                     receipt_values.append({
                         "effect_id": provider_effect_id,
@@ -1213,7 +1225,7 @@ class AgentProductionDriver:
             if effect_id is not None:
                 if action_id is None or input_hash is None or terminal_receipt is None:
                     raise AgentDriverError("checkpoint_schema_invalid", "effect safe point is missing a receipt")
-                action_values.append({"action_id": action_id, "input_hash": input_hash})
+                action_values.append({"action_id": action_id, "input_hash": input_hash, "result": latest_assistant if phase == "after_provider" else completed_tool_results[-1]})
                 receipt_values.append({
                     "effect_id": effect_id,
                     "frontier_step_id": f"{phase}:{action_id}",
@@ -1491,6 +1503,20 @@ class AgentProductionDriver:
                 }
             else:
                 raise AgentDriverError("invalid_safe_point", "unsupported Agent safe point")
+            def remember_completed_action() -> None:
+                # Retain every completed effect, including those before a control
+                # command arrived, independently of the current provider decision.
+                prior_actions.append({
+                    "action_id": action_id, "input_hash": input_hash,
+                    "result": dict(latest_assistant) if kind == "provider.after" else dict(result),
+                })
+                prior_receipts.append({
+                    "effect_id": effect_id,
+                    "frontier_step_id": f"{'after_provider' if kind == 'provider.after' else 'after_tool'}:{action_id}",
+                    "action_id": action_id, "outcome": "committed",
+                    "receipt": dict(terminal_receipt),
+                })
+
             command = current_command(service, attempt.execution_id)
             if command is None:
                 service.effects.resolve(
@@ -1498,6 +1524,7 @@ class AgentProductionDriver:
                     outcome=EffectStatus.COMMITTED, receipt=terminal_receipt,
                     attempt_id=attempt.attempt_id, generation=attempt.generation,
                 )
+                remember_completed_action()
                 return False
             current = service.executions.get_execution(attempt.execution_id)
             if current is None:
@@ -1515,6 +1542,7 @@ class AgentProductionDriver:
                 agent_checkpoint=checkpoint,
                 command_id=command.command_id, managed_action_id=action_id,
             )
+            remember_completed_action()
             if command.kind is CommandKind.STEER and steer_queue is not None:
                 consumed = steer_consumed_ids or set()
                 for applied in completion.applied_commands:

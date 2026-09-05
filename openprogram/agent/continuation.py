@@ -203,9 +203,26 @@ def validate_runtime_contract(
         or not isinstance(actual, Mapping)
         or dict(expected) != dict(actual)
     ):
+        differing_fields = [
+            key for key in sorted(required)
+            if not isinstance(expected, Mapping) or not isinstance(actual, Mapping)
+            or expected.get(key) != actual.get(key)
+        ]
+        if isinstance(expected, Mapping) and isinstance(actual, Mapping):
+            expected_semantics = expected.get("request_semantics")
+            actual_semantics = actual.get("request_semantics")
+            if isinstance(expected_semantics, Mapping) and isinstance(actual_semantics, Mapping):
+                differing_fields.extend(
+                    f"request_semantics.{key}" for key in (
+                        "thinking_effort", "service_tier", "tools_override", "response_format",
+                        "structured_output", "structured_output_mode", "structured_output_attempt",
+                        "additional_working_dirs", "_execution_revision_id", "execution_location",
+                    ) if expected_semantics.get(key) != actual_semantics.get(key)
+                )
         raise AgentCheckpointError(
             "continuation_contract_mismatch",
-            "durable Agent runtime contract no longer resolves exactly",
+            "durable Agent runtime contract no longer resolves exactly; fields: "
+            + ", ".join(differing_fields or ["schema"]),
         )
 
 
@@ -367,6 +384,7 @@ class AgentCheckpointV1:
             raise AgentCheckpointError("state_ref_limit", "Agent checkpoint has too many state refs")
         actions: list[dict[str, Any]] = []
         tool_result_index = 0
+        covered_tool_refs: set[str] = set()
         for item in completed_actions:
             if not isinstance(item, Mapping):
                 raise AgentCheckpointError("checkpoint_schema_invalid", "completed action is invalid")
@@ -375,20 +393,34 @@ class AgentCheckpointV1:
                 raise AgentCheckpointError("checkpoint_schema_invalid", "completed action identity is invalid")
             if not isinstance(action.get("input_hash"), str):
                 raise AgentCheckpointError("checkpoint_schema_invalid", "completed action input hash is invalid")
-            if action["action_id"] == provider_action_id:
+            if "result" in action:
+                result_ref, raw_result = _json_value(
+                    action["result"], name="completed action result", cap=MAX_AGENT_DELTA_BYTES,
+                )
+                if result_ref["ref"] not in blobs:
+                    refs[f"completed_action_result.{len(actions)}"] = result_ref
+                    blobs[result_ref["ref"]] = raw_result
+                if "result_ref" in action and _validate_descriptor(action["result_ref"]) != result_ref:
+                    raise AgentCheckpointError("state_blob_corrupt", "completed action result changed")
+                if action["action_id"] == provider_action_id and result_ref != assistant_ref:
+                    raise AgentCheckpointError("checkpoint_schema_invalid", "provider result differs from current decision")
+            elif "result_ref" in action:
+                raise AgentCheckpointError("state_ref_invalid", "historical action result payload is missing")
+            elif action["action_id"] == provider_action_id:
                 result_ref = assistant_ref
             elif tool_result_index < len(tool_refs):
                 result_ref = tool_refs[tool_result_index]
                 tool_result_index += 1
             else:
                 raise AgentCheckpointError("checkpoint_schema_invalid", "completed action result ref is missing")
+            covered_tool_refs.add(result_ref["ref"])
             action = {
                 "action_id": action["action_id"],
                 "input_hash": action["input_hash"],
                 "result_ref": dict(result_ref),
             }
             actions.append(action)
-        if tool_result_index != len(tool_refs):
+        if any(ref["ref"] not in covered_tool_refs for ref in tool_refs):
             raise AgentCheckpointError("checkpoint_schema_invalid", "tool results have no completed action")
         payload = {
             "schema_version": AGENT_CHECKPOINT_SCHEMA_VERSION,
