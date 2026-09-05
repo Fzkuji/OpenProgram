@@ -18,6 +18,52 @@ def current_permission_request(request):
     return req
 
 
+def spawn_permission_snapshot(store, parent, child):
+    """Freeze policy only from the exact live, same-principal owner parent.
+
+    Caller-supplied parent IDs, source labels and session settings alone cannot
+    confer approval policy. Recovery retains the already admitted input.
+    """
+    from types import SimpleNamespace
+    from openprogram.agent.authority import normalize_authority
+    from openprogram.agent.run_control import get_current_execution_id, get_current_session_id
+    from openprogram.agent.session_config import VALID_PERMISSION
+
+    if (parent is None or child.source != "agent_spawn"
+            or get_current_execution_id() != parent.execution_id
+            or get_current_session_id() != parent.session_id
+            or parent.status.value != "running" or parent.current_attempt_id is None
+            or (child.caller_session_id or child.parent_session_id) != parent.session_id):
+        return None
+    payload = store.get_job_agent_input(parent.execution_id)
+    if payload is not None:
+        values = payload["turn_request"]
+    else:
+        payload = store.get_agent_turn_input(parent.execution_id)
+        if payload is None or payload.get("kind") != "chat":
+            return None
+        values = payload["request"]
+    parent_authority = normalize_authority(values)
+    child_authority = normalize_authority(child)
+    if (not parent_authority or not child_authority
+            or parent_authority.get("authority_tier") != "owner"
+            or child_authority.get("authority_tier") != "owner"
+            or not parent_authority.get("principal_id")
+            or parent_authority["principal_id"] != child_authority.get("principal_id")):
+        return None
+    request_values = copy.deepcopy(dict(values))
+    request_values.setdefault("session_id", parent.session_id)
+    request_values.setdefault("interaction", parent_authority.get("interaction"))
+    request = current_permission_request(SimpleNamespace(**request_values))
+    from openprogram.agent import plan_mode
+    if plan_mode.is_plan_mode(parent.session_id):
+        request.permission_mode = "plan"
+    if request.permission_mode not in VALID_PERMISSION:
+        raise ValueError("parent permission mode is invalid")
+    return {"mode": request.permission_mode,
+            "rules": copy.deepcopy(getattr(request, "permission_rules", None))}
+
+
 def wrap_live_permission(tool, request, on_event):
     """Pin a decision per operation, without modifying the admission request.
 

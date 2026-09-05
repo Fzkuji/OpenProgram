@@ -174,7 +174,8 @@ class JobAgentInputV1:
 
     @classmethod
     def from_job(cls, job: Any, *, run_id: str | None = None,
-                 parent_execution_id: str | None = None) -> "JobAgentInputV1":
+                 parent_execution_id: str | None = None,
+                 permission_snapshot: Mapping[str, Any] | None = None) -> "JobAgentInputV1":
         from openprogram.agent.authority import normalize_authority
 
         deferred_inbox = None
@@ -234,6 +235,13 @@ class JobAgentInputV1:
             "spawned_from_session": caller["session_id"] if caller else None,
             **authority,
         }
+        if permission_snapshot is not None:
+            from openprogram.agent.session_config import VALID_PERMISSION
+            if (job.source != "agent_spawn" or set(permission_snapshot) != {"mode", "rules"}
+                    or permission_snapshot["mode"] not in VALID_PERMISSION):
+                raise JobAgentInputError("invalid inherited permission snapshot")
+            request["permission_mode"] = permission_snapshot["mode"]
+            request["permission_rules"] = copy.deepcopy(permission_snapshot["rules"])
         payload = {
             "version": JOB_AGENT_INPUT_VERSION,
             "kind": "job_agent",
@@ -280,6 +288,9 @@ class JobAgentInputV1:
         values = copy.deepcopy(dict(self.turn_request))
         if session_id is not None and values.get("session_id") != session_id:
             raise JobAgentInputError("Job Agent input belongs to another session")
+        if isinstance(values.get("permission_rules"), Mapping):
+            from openprogram.agent.session_config import _as_permission_rules
+            values["permission_rules"] = _as_permission_rules(values["permission_rules"])
         return TurnRequest(**values)
 
     def to_job(self, *, execution_id: str, session_id: str) -> Any:

@@ -39,7 +39,7 @@ import traceback
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from openprogram.agent.job.store import (
     list_jobs as _store_list,
@@ -473,11 +473,13 @@ class JobRunner:
 
     @staticmethod
     def _canonical_input(job: Job, *, run_id: str | None,
-                         parent_execution_id: str | None = None) -> tuple[str, str, dict[str, Any]]:
+                         parent_execution_id: str | None = None,
+                         permission_snapshot: Mapping[str, Any] | None = None) -> tuple[str, str, dict[str, Any]]:
         from openprogram.agent.job.input import JobAgentInputV1
 
         immutable = JobAgentInputV1.from_job(job, run_id=run_id,
-                                            parent_execution_id=parent_execution_id).to_dict()
+                                            parent_execution_id=parent_execution_id,
+                                            permission_snapshot=permission_snapshot).to_dict()
         payload = json.dumps(
             immutable,
             ensure_ascii=False,
@@ -516,15 +518,18 @@ class JobRunner:
                 if (candidate is not None and candidate.session_id == caller_session
                         and candidate.status.value == "running" and candidate.current_attempt_id is not None):
                     parent = candidate
-        run_id = parent.run_id if parent is not None else f"job-run-{job.id}"
-        input_ref, input_hash, input_payload = self._canonical_input(
-            job, run_id=run_id, parent_execution_id=parent.execution_id if parent else None,
-        )
         if existing is not None:
             record = self._execution_store.get_job_agent_input(job.id)
             if record is None:
                 raise RuntimeError(f"canonical execution identity conflict: {job.id}")
             return
+        from openprogram.agent.permissions.lifecycle import spawn_permission_snapshot
+        permission_snapshot = spawn_permission_snapshot(self._execution_store, parent, job)
+        run_id = parent.run_id if parent is not None else f"job-run-{job.id}"
+        input_ref, input_hash, input_payload = self._canonical_input(
+            job, run_id=run_id, parent_execution_id=parent.execution_id if parent else None,
+            permission_snapshot=permission_snapshot,
+        )
         revision = self._execution_store.create_revision(
             revision_id=f"job-revision-{input_hash[:24]}",
             manifest={

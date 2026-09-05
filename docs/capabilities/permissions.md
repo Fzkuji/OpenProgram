@@ -20,7 +20,7 @@ An ordinary approval that is no longer required is automatically resolved throug
 
 Changes are session-specific. Other windows receive the confirmed mode; stale updates are rejected rather than overwriting a newer choice. A failed or disconnected update remains unconfirmed. Reconnect and review the current mode before retrying. An unsent draft stores its mode locally and sends it with the first message.
 
-The effective default is the session override, then the project default, then Ask permissions. Background tasks and external channels retain their own identity and non-interactive restrictions; changing a local session to Bypass does not grant them owner permissions.
+The effective default is the session override, then the project default, then Ask permissions. A sub-agent created by an authenticated owner Agent inherits the parent’s effective permission mode and explicit rules at creation. For example, a parent using Bypass can create a sub-agent that runs ordinary commands without approval. The sub-agent keeps its own identity and non-interactive restrictions; explicit ask rules and mandatory approvals still prevent operations that require an approver. Later mode changes do not rewrite already admitted sub-agents. Independent scheduled tasks and external channels do not acquire owner permissions or Bypass from a local session.
 
 ## Understand a refusal
 
