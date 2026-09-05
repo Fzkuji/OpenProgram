@@ -388,14 +388,44 @@ printf '%s\n' "$revision" > \
 # A KeepAlive launchd service can restart the worker while the wheel is still
 # being replaced. Stop that interim process after installation so the next
 # worker necessarily imports the refreshed runtime.
-"$local_python" -m openprogram worker stop >/dev/null 2>&1
+# Rebind an existing launchd service to the same embedded interpreter used by
+# the App. A detached fallback must use it too, never the PATH installation.
+if test -f "$HOME/Library/LaunchAgents/ai.openprogram.worker.plist"; then
+  "$app_python" -I -B -m openprogram worker install
+else
+  "$app_python" -I -B -m openprogram worker stop >/dev/null 2>&1
+fi
 
 for _ in {1..50}; do
   curl -fsS http://127.0.0.1:18100/healthz >/dev/null 2>&1 && break
-  "$local_python" -m openprogram worker start >/dev/null 2>&1 || true
+  "$app_python" -I -B -m openprogram worker start >/dev/null 2>&1 || true
   sleep 0.2
 done
 curl -fsS http://127.0.0.1:18100/healthz >/dev/null
+# A healthy endpoint or matching package revision cannot prove which Python
+# won startup. Verify the actual owner process before declaring refresh done.
+"$app_python" -I -B - "$app_python" <<'PYTHON'
+import subprocess
+import sys
+from pathlib import Path
+from openprogram.worker.lifecycle import current_worker_pid
+
+pid = current_worker_pid()
+if pid is None:
+    raise SystemExit("refreshed worker has no live owner")
+command = subprocess.check_output(
+    ["ps", "-p", str(pid), "-o", "command="], text=True,
+).strip()
+executable = subprocess.check_output(
+    ["ps", "-p", str(pid), "-o", "comm="], text=True,
+).strip()
+if (
+    Path(executable).resolve() != Path(sys.argv[1]).resolve()
+    or not command.endswith(" -I -B -u -m openprogram worker run")
+):
+    raise SystemExit(f"refreshed worker {pid} does not use the embedded App interpreter")
+print(f"verified embedded App worker PID {pid}")
+PYTHON
 if test "${OPENPROGRAM_REFRESH_BACKGROUND:-0}" = 1; then
   open -g -a "$app_path"
 else

@@ -359,6 +359,8 @@ App 或普通 CLI 无法启动时，使用本次更新保存的独立入口：
 
 复制后的 Node 可执行文件必须能够脱离原安装目录运行。脚本会在修改 App 之前检查这一点。如果 PATH 中的 Node 依赖相邻动态库，运行刷新脚本时将 `OPENPROGRAM_NODE_BIN` 设为独立 Node 可执行文件的路径。
 
+刷新后的 worker 使用 App 内置 Python 和 `-I -B`。已有 launchd 服务会重新绑定到该解释器，独立进程启动也使用同一解释器。健康检查后，脚本核对真实 worker 进程的可执行文件及参数；包版本一致不等于解释器一致。已有 checkpoint 继续严格验证工具实现合同；切换 Python 安装路径可能导致实现指纹不一致。
+
 在 source checkout 中，`openprogram upgrade` 执行开发升级流程，而不是 release installer。它验证 Git 目标，仅在相关源文件变化时更新依赖与构建产物，probe 新 checkout，并且只在 probe 成功后重启 worker：
 
 ```bash
