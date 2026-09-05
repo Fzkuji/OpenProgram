@@ -1022,6 +1022,44 @@ def desktop_bundle_metadata(app_path):
     return resources, version
 
 
+def _utf8_shell_environment(env=None):
+    child_env = dict(os.environ if env is None else env)
+    child_env.setdefault("PYTHONUTF8", "1")
+    child_env.setdefault("PYTHONIOENCODING", "utf-8")
+    return child_env
+
+
+def powershell_invocation(executable: str, command: str, env=None):
+    """Keep PowerShell source/Unicode independent of native argv quoting."""
+    import base64
+
+    source = (
+        '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); '
+        + command
+    )
+    encoded = base64.b64encode(source.encode("utf-16-le")).decode("ascii")
+    return [executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], _utf8_shell_environment(env)
+
+
+def git_bash_invocation(bash: str, command: str, env=None):
+    """Transport shell source past MSYS argv parsing without losing escapes.
+
+    MSYS parses the native Windows command line differently from the CRT
+    quoting used by subprocess. In particular, doubled backslashes inside a
+    `-c` argument can collapse. Environment values are passed verbatim. Remove
+    the transport variable before evaluating so descendant tools do not inherit
+    a second copy of the command (which may contain credentials).
+    """
+    child_env = _utf8_shell_environment(env)
+    child_env["OPENPROGRAM_INTERNAL_SHELL_COMMAND"] = command
+    trampoline = (
+        '__openprogram_source=$OPENPROGRAM_INTERNAL_SHELL_COMMAND; '
+        'unset OPENPROGRAM_INTERNAL_SHELL_COMMAND; '
+        'export -n __openprogram_source; eval "$__openprogram_source"'
+    )
+    return [bash, "-c", trampoline], child_env
+
+
 def platform_environment_advisories(state_dir) -> list[tuple[bool, str, str]]:
     """Return non-blocking host advice without changing system settings.
 

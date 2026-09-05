@@ -604,11 +604,22 @@ def test_is_available_returns_bool():
 
 # --- the backend seam ------------------------------------------------------
 
+def _assert_unsandboxed_environment(env):
+    if sys.platform != "win32":
+        assert env is None
+        return
+    # Native shell transport may add UTF-8 defaults and an internal command
+    # value, but must not replace inheritance with the sandbox's filtered env.
+    assert isinstance(env, dict)
+    assert all(env.get(key) == value for key, value in os.environ.items()
+               if key != "OPENPROGRAM_INTERNAL_SHELL_COMMAND")
+
+
 def test_invocation_plain_when_off(cfg):
     from openprogram.backend.local import _invocation
     cfg["sandbox"] = {"mode": "danger-full-access"}
     args, shell, env, sandboxed = _invocation("echo hi", cwd="/tmp")
-    assert env is None
+    _assert_unsandboxed_environment(env)
     assert sandboxed is False
     if sys.platform != "win32":
         assert (args, shell) == ("echo hi", True)
@@ -653,7 +664,7 @@ def test_invocation_warns_and_runs_when_configured_to(cfg, monkeypatch):
     cfg["sandbox"]["unavailable_policy"] = "warn"
     monkeypatch.setattr(sandbox, "unavailable_reason", lambda: "no tool here")
     args, shell, env, sandboxed = _invocation("echo hi", cwd="/tmp")
-    assert env is None
+    _assert_unsandboxed_environment(env)
     assert sandboxed is False
 
 

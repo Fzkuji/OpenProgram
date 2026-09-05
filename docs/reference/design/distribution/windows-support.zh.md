@@ -55,6 +55,10 @@ Windows PowerShell，不再让 `cmd.exe` 解析面向 Bash 的命令。后台 sh
 清理统一使用无窗口进程创建，避免 Desktop 中的 agent 运行闪出控制台窗口。工具
 契约把该入口描述为 host shell，并要求可移植的文件操作优先使用专用 file/search
 工具或 Python，而不是假设机器上存在 Unix coreutils。
+Shell 源码传递集中在 `_compat`：Git Bash 通过临时环境变量接收原样源码，执行前
+移除该变量，避免 MSYS 参数解析折叠内嵌反斜杠。PowerShell 使用 UTF-16 编码源码，
+输出 UTF-8。Python 子进程 I/O 默认使用 UTF-8，除非调用者已显式配置。
+两种传递方式都保留命令退出码和现有进程树超时、取消约定。
 
 Program discovery 对 catalog 中的应用直接查询 distribution metadata，不会为每个
 Program、每条 WebSocket 连接重建 Python 的完整 import-to-distribution 映射。完整
