@@ -120,6 +120,12 @@ those writes are synchronous. Failed writes remain dirty and retain the
 process-exit retry. This avoids lingering writers and file handles during
 Windows teardown without weakening the stored-data consistency checks.
 
+Push and pull-request checks supersede older runs for the same workflow and
+branch or pull request, so stale revisions do not monopolize native Windows
+runners. Explicit installation acceptance and scheduled smoke runs use unique
+run groups and are not cancelled by later pushes. Both native architectures
+remain in every Windows matrix.
+
 The Windows CI surface has two parts:
 
 - the core job covers compatibility seams, checkpoint history, backup/restore,

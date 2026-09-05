@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Superseded checks must not hold scarce Windows ARM64 runners ahead of HEAD.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest

@@ -11,6 +11,12 @@ on:
   schedule:
     - cron: "0 3 * * 1"
 
+# Push/PR checks follow the newest revision. Give explicit and scheduled
+# acceptance runs unique groups so neither running nor pending runs are lost.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
 jobs:
   install-ps1:
     strategy:

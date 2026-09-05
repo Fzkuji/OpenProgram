@@ -77,6 +77,10 @@ Session store 关闭时取消待执行的索引计时器，在索引锁之外等
 不重新启动后台计时器。失败的写入保留 dirty 状态与进程退出重试。这样可以避免
 Windows 退出流程遗留写入线程和文件句柄，同时保留存储一致性检查。
 
+Push 与 pull request 检查只保留同一 workflow、同一分支或 PR 的最新运行，避免
+过时提交持续占用 Windows 原生 runner。手动安装验收与定时 smoke 使用独立运行组，
+不会被后续 push 取消。各 Windows matrix 继续覆盖两种原生架构。
+
 Windows CI 分为两部分：
 
 - core job 覆盖兼容接缝、checkpoint history、backup/restore、升级行为、installer
