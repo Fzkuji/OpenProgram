@@ -180,8 +180,10 @@ requires valid Authenticode before opening the installer. A failed validation
 deletes the candidate. Installation remains a visible user-confirmed handoff;
 the running application is not silently replaced.
 
-Windows CI installs Desktop dependencies including the native PTY module and
-runs the same Desktop contract suite. The suite covers ConPTY command
+Windows x64 and arm64 CI installs Desktop and Web dependencies including the
+native PTY module and runs the Desktop contracts and Web unit tests. Web test
+fixtures select an explicit browser locale and normalize source-checkout line
+endings where assertions depend on source text. The Desktop suite covers ConPTY command
 selection, browser import, cross-window tab transactions, packaged worker
 bootstrap, release selection, checksum failure, and signature failure.
 

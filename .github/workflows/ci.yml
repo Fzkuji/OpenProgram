@@ -268,10 +268,12 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
-      - name: Install Desktop dependencies and native modules
-        run: npm ci --workspace apps/desktop --include-workspace-root
+      - name: Install Desktop and Web dependencies with native modules
+        run: npm ci --workspace apps/desktop --workspace apps/web --include-workspace-root
       - name: Windows Desktop checks
         run: npm run check --workspace apps/desktop
+      - name: Windows Web unit tests
+        run: npm test --workspace apps/web
 
   web:
     runs-on: ubuntu-latest

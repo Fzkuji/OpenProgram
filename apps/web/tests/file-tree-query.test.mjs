@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(
   new URL("../components/files/file-tree.tsx", import.meta.url),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 
 test("FileTree pages directories with snapshot cursors and an accessible load-more row", () => {
   assert.match(source, /interface DirectoryPage/);

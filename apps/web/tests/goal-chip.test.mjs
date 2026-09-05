@@ -33,10 +33,6 @@ registerHooks({
         export const DialogHeader = DialogContent;
         export const DialogTitle = DialogContent;`,
     };
-    if (url.endsWith("/lib/i18n.ts")) return {
-      format: "module", shortCircuit: true,
-      source: 'export const useTranslation = () => ({locale:"en", text:(en)=>en}); export const translateText = (en)=>en;',
-    };
     if (url.endsWith(".tsx")) return {
       format: "module", shortCircuit: true,
       source: ts.transpileModule(readFileSync(fileURLToPath(url), "utf8"), {
@@ -53,7 +49,9 @@ globalThis.document = window.document;
 document.oninput = null; // Enable React's native input-event path in this DOM.
 globalThis.Event = window.Event;
 globalThis.CustomEvent = window.CustomEvent;
-globalThis.localStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };
+// Use the real i18n module with an explicit browser preference. The old loader
+// stub targeted a removed i18n.ts path and let the host locale affect assertions.
+globalThis.localStorage = { getItem(key) { return key === "agentic_locale" ? "en" : null; }, setItem() {}, removeItem() {} };
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 window.location = { pathname: "/chat", hash: "" };
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });

@@ -42,7 +42,8 @@ globalThis.window = window;
 globalThis.document = window.document;
 globalThis.Event = window.Event;
 globalThis.CustomEvent = window.CustomEvent;
-globalThis.localStorage = { getItem() { return null; }, setItem() {}, removeItem() {} };
+// Text assertions select a browser preference, independent of the host OS.
+globalThis.localStorage = { getItem(key) { return key === "agentic_locale" ? "en" : null; }, setItem() {}, removeItem() {} };
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 window.location = { pathname: "/chat", hash: "", search: "" };
 window.history = { replaceState() {}, pushState() {} };
@@ -276,7 +277,12 @@ test("manual recovery is explicit and an old verified revision never becomes the
   await mount(SelfUpdateCard, { update: manual }, async (host) => {
     assert.match(host.textContent, /Manual recovery required/);
     assert.match(host.textContent, /PID 1234/);
-    assert.deepEqual([...host.querySelectorAll("dd code")].map((node) => node.textContent), [update.candidate_revision, manual.last_verified_runtime.candidate_sha]);
+    const expected = [update.candidate_revision, manual.last_verified_runtime.candidate_sha];
+    const versions = [...host.querySelectorAll("dd code")];
+    assert.deepEqual(versions.map((node) => node.textContent), expected.map((sha) => sha.slice(0, 8)));
+    assert.deepEqual(versions.map((node) => node.title), expected);
+    const details = [...host.querySelectorAll("p code")].map((node) => node.textContent);
+    assert.ok(expected.every((sha) => details.includes(sha)), "details retain complete, distinct revision identities");
     assert.doesNotMatch(host.textContent, /Update committed/);
   });
 });
