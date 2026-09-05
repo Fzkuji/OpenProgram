@@ -81,7 +81,7 @@ const { useSessionStore } = await import("../lib/session-store/index.ts");
 const { stopSession } = await import(
   "../components/chat/composer/submit/use-chat-submit.ts"
 );
-const { handleRunningTaskClear } = await import(
+const { handleRunningTaskClear, restoreForegroundExecutionTask } = await import(
   "../lib/runtime-bridge/chat-handlers.ts"
 );
 
@@ -376,4 +376,23 @@ assert.deepEqual(
   "not_running sends the retained row through the normal chat sender",
 );
 
+// Durable approval continuation has no surviving initial chat_ack/task.
+store.setRunningTaskFor(A, null, "always");
+useSendQueue.setState({ queues: {} });
+const resumedTask = {
+  session_id: A, msg_id: "resumed-user", execution_id: "resumed-execution",
+  status_version: 11, status: "running", func_name: "agent",
+};
+restoreForegroundExecutionTask(resumedTask);
+assert.equal(useSessionStore.getState().runningTasks[A]?.execution_id, "resumed-execution");
+const resumedCancel = [];
+stopSession(A, (frame) => { resumedCancel.push(frame); return true; });
+assert.equal(resumedCancel[0].execution_id, "resumed-execution");
+assert.equal(resumedCancel[0].expected_version, 11);
+restoreForegroundExecutionTask(resumedTask);
+assert.equal(useSessionStore.getState().runningTasks[A], undefined, "pending cancel cannot be revived by a late projection");
+store.setRunningTaskFor(A, { session_id: A, msg_id: "new-user", execution_id: "new-owner" });
+restoreForegroundExecutionTask(resumedTask);
+assert.equal(useSessionStore.getState().runningTasks[A].execution_id, "new-owner", "resume projection preserves another foreground owner");
+store.setRunningTaskFor(A, null, "always");
 console.log("check-send-queue: ok");

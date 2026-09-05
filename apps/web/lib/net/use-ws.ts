@@ -29,6 +29,7 @@ import {
   clearHydratedTreePaths,
   handleRunningTask,
   handleRunningTaskClear,
+  restoreForegroundExecutionTask,
   handleExecutionCommandUpdated,
   handleSessionsList,
   handleSessionUpdated,
@@ -309,6 +310,7 @@ export function useWS(): void {
             execution.session_id,
             messageIds,
           )) return true;
+          restoreForegroundExecutionTask(d?.foreground_task);
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const store = useSessionStore.getState();
             const sid = String(execution.session_id || "");

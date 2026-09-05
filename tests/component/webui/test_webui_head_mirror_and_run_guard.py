@@ -683,6 +683,19 @@ def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
             with _s._running_tasks_lock:
                 _s._running_tasks.pop(session_id, None)
             _s._unregister_active_runtime(session_id)
+            # The fake thread never executes: finish its durable admission
+            # before testing another independent mode in this same session.
+            from openprogram.execution import default_store, ExecutionStatus
+            executions = default_store()
+            for record in executions.list_nonterminal(session_id=session_id):
+                cancelling = executions.transition_execution(
+                    record.execution_id, expected_version=record.status_version,
+                    target=ExecutionStatus.CANCELLING,
+                )
+                executions.transition_execution(
+                    record.execution_id, expected_version=cancelling.status_version,
+                    target=ExecutionStatus.CANCELLED,
+                )
         return observed.get("permission_mode")
 
     assert _ack_mode({"text": "hi", "session_id": session_id}) == "ask"

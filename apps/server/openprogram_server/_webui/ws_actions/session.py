@@ -1079,6 +1079,7 @@ async def handle_load_session(ws, cmd: dict):
         with _s._running_tasks_lock:
             task = _s._running_tasks.get(session_id)
             task_info = dict(task) if task else None
+        task_info = _s._canonical_foreground_task(session_id) or task_info
         if task_info:
             # Live partial-tree dump retired with the tree-Context
             # event system. The DAG nodes the function has produced so

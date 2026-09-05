@@ -587,6 +587,22 @@ export function handleSessionUpdated(
   mirrorUpsertConv(conv);
 }
 
+/** Restore a durable continuation after its initial transport task ended.
+ * Called only after the canonical execution update passes ordering checks. */
+export function restoreForegroundExecutionTask(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  const task = value as { session_id?: string; execution_id?: string; msg_id?: string; status_version?: number };
+  const sid = task.session_id;
+  const eid = task.execution_id;
+  if (!sid || !eid || !task.msg_id || typeof task.status_version !== "number") return;
+  const current = useSessionStore.getState().runningTasks[sid];
+  if (current?.execution_id && current.execution_id !== eid) return;
+  if (Object.values(runtimeState._optimisticCancels).some(
+    (cancel) => cancel.sessionId === sid && cancel.task.execution_id === eid,
+  )) return;
+  handleRunningTask(task);
+}
+
 export function handleRunningTask(rt: unknown): void {
   if (!rt) return;
   const t = rt as {
