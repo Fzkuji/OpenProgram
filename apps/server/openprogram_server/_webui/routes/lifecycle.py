@@ -18,10 +18,13 @@ def _execution_payload(execution, *, event_sequence: int | None = None):
     from openprogram.execution.public import execution_snapshot
 
     resource = None
+    job = None
     try:
         from openprogram.agent.job import get_runner
 
-        view = get_runner().get_job_resource_view(execution.execution_id)
+        runner = get_runner()
+        view = runner.get_job_resource_view(execution.execution_id)
+        job = runner.get_job(execution.execution_id)
         # ExecutionSnapshot.resource is the resource projection itself.  The
         # surrounding JobResourceDTO is a separate public view and must not
         # be nested into the snapshot resource field.
@@ -29,7 +32,8 @@ def _execution_payload(execution, *, event_sequence: int | None = None):
     except Exception:
         pass
     return execution_snapshot(
-        execution, store=default_store(), resource=resource, event_sequence=event_sequence,
+        execution, store=default_store(), resource=resource, job=job,
+        job_id=getattr(job, "id", None), event_sequence=event_sequence,
     ).to_dict()
 
 
@@ -95,7 +99,8 @@ def register(app):
             items.append({
                 "kind": "execution", "id": execution.execution_id,
                 "execution_id": execution.execution_id, "session_id": session_id,
-                "label": "execution", "status": execution.status.value,
+                "label": (snapshot.get("display") or {}).get("label") or "execution",
+                "status": execution.status.value,
                 "started_at": execution.created_at, "snapshot": snapshot,
                 "event_cursor": {
                     "execution_id": execution.execution_id,
@@ -224,6 +229,7 @@ def register(app):
         """
         from openprogram.execution import default_store
         from openprogram.execution.checkpoints import ExecutionCheckpointStore
+        from openprogram.execution.effects import EffectStore
         from openprogram.execution.revision_public import project_draft_state
         from openprogram.execution.revisions import RevisionControlService
         from openprogram.execution.waits import DurableWaitStore
@@ -244,12 +250,28 @@ def register(app):
             project_draft_state(revision_service, draft.draft_id)
             for draft in revision_service.list_drafts_for_execution(execution_id)
         ]
+        unresolved_effects = []
+        for effect in EffectStore(store).list_unresolved(execution_id):
+            # Effect metadata may include full provider context or tool
+            # arguments. Only project the registered operation and lifecycle.
+            kind = effect.metadata.get("kind")
+            payload = effect.metadata.get("payload")
+            tool_name = payload.get("tool_name") if isinstance(payload, dict) else None
+            unresolved_effects.append({
+                "effect_id": effect.effect_id, "status": effect.status.value,
+                "classification": effect.classification.value,
+                "kind": kind if kind in {"provider.before", "tool.before"} else None,
+                "tool_name": tool_name if kind == "tool.before" and isinstance(tool_name, str) else None,
+                "created_at": effect.created_at, "updated_at": effect.updated_at,
+                "dispatched_at": effect.dispatched_at,
+            })
         return JSONResponse({
             "type": "execution.debugger.state",
             "execution_id": execution_id,
             "checkpoints": [checkpoint.to_dict() for checkpoint in checkpoints],
             "waits": [wait.to_dict() for wait in DurableWaitStore(store).list_open(execution_id=execution_id)],
             "drafts": drafts,
+            "unresolved_effects": unresolved_effects,
         })
 
     @app.get("/api/execution/{execution_id}")

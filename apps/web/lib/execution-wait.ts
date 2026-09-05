@@ -33,7 +33,7 @@ export function buildWaitAnswer(
   approvalScope?: string,
 ): unknown {
   if (wait.kind === "approval") {
-    const scopes = wait.policy_snapshot?.allowed_scopes || [];
+    const scopes = wait.policy_snapshot?.allowed_scopes ?? ["once"];
     if (!approvalScope || !scopes.includes(approvalScope)) throw new Error("Choose an allowed approval scope.");
     return { answer: APPROVE_ANSWER, scope: approvalScope };
   }

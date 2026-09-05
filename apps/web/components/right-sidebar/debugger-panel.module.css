@@ -73,3 +73,6 @@
   .twoColumn { grid-template-columns: minmax(0, 1fr); }
   .heroTop { flex-direction: column; }
 }
+
+.singleExecution { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.eventList time { flex-shrink: 0; color: var(--text-dim); font-size: 12px; }

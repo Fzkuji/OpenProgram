@@ -15,6 +15,7 @@ import {
 import {
   ExecutionApiError,
   type PersistedExecutionEvent,
+  type UnresolvedEffect,
   createRevisionDraft,
   getExecutionDebuggerState,
   getExecutionEvents,
@@ -29,6 +30,7 @@ import "@/lib/net/ws-events";
 export type ExecutionDebuggerController = {
   executions: ExecutionSnapshot[];
   events: PersistedExecutionEvent[];
+  unresolvedEffects: UnresolvedEffect[];
   fetchedAt: number | null;
   selectedExecutionId: string | null;
   checkpoints: import("@/components/right-sidebar/debugger-panel").CheckpointInspector[];
@@ -78,6 +80,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     checkpoints: import("@/components/right-sidebar/debugger-panel").CheckpointInspector[];
     waits: import("@/lib/execution-debugger").DurableWait[];
     drafts: RevisionDraft[];
+    unresolvedEffects?: UnresolvedEffect[];
   }>>({});
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [connection, setConnection] = useState<DebuggerConnection>({ state: "reconnecting" });
@@ -100,6 +103,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
         frontier: checkpoint.frontier || [],
         effect_receipts: checkpoint.effect_receipts || [],
       })),
+      unresolvedEffects: state.unresolved_effects || [],
       waits: state.waits || [],
       drafts: (state.drafts || []).map(parseRevisionState),
     } }));
@@ -243,12 +247,12 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
 
   const draftAction = useCallback(async (draft: RevisionDraft, action: "validate" | "approve" | "publish" | "fork") => {
     if (action === "fork") {
-      if (!draft.manifest?.manifest_id || !draft.manifest.proof_hash) throw new ExecutionApiError(409, "manifest_required", "A published revision manifest is required before fork.");
+      if (!draft.manifest?.manifest_id || !draft.manifest.proof_hash || !draft.manifest.compatible_checkpoint_id) throw new ExecutionApiError(409, "manifest_required", "A published revision manifest is required before fork.");
       const snapshot = snapshots[draft.source_execution_id];
       if (!snapshot) throw new ExecutionApiError(404, "execution_not_loaded", "The source execution snapshot is not loaded.");
       const forkCommand = buildExecutionCommand(snapshot, "fork", newCommandId(), {
         manifest_id: draft.manifest.manifest_id,
-        checkpoint_id: snapshot.checkpoint_head_id,
+        checkpoint_id: draft.manifest.compatible_checkpoint_id,
         proof_hash: draft.manifest.proof_hash,
       });
       await command(forkCommand);
@@ -287,6 +291,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
   return {
     executions,
     events,
+    unresolvedEffects: selectedKey ? debuggerData[selectedKey]?.unresolvedEffects || [] : [],
     fetchedAt,
     selectedExecutionId: selectedKey,
     checkpoints: (selectedData?.checkpoints || []) as import("@/components/right-sidebar/debugger-panel").CheckpointInspector[],

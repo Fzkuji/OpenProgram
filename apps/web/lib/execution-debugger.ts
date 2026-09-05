@@ -38,6 +38,9 @@ export type EventCursor = {
 };
 
 export type ExecutionSnapshot = {
+  can_continue?: boolean;
+  can_step?: boolean;
+  display?: { kind?: string; label?: string; entrypoint?: string; tool_name?: string; user_message_id?: string; assistant_message_id?: string };
   execution_id: string;
   job_id: string;
   run_id: string;
@@ -123,7 +126,7 @@ export type RevisionDraft = {
     error_code?: string | null;
   };
   approval?: { approval_id?: string; approval_ref: string; policy_version: string };
-  manifest?: { manifest_id?: string; revision_id: string; content_hash: string; proof_hash?: string };
+  manifest?: { manifest_id?: string; revision_id: string; content_hash: string; proof_hash?: string; compatible_checkpoint_id?: string };
 };
 
 export type DurableWait = {
@@ -175,15 +178,14 @@ export function canExecuteAction(
     return !["completed", "failed", "cancelled", "interrupted"].includes(snapshot.status);
   }
   if (action === "continue") {
-    return snapshot.status === "paused"
-      && Boolean(snapshot.checkpoint_head_id || snapshot.resource?.initial_handoff);
+    return snapshot.status === "paused" && snapshot.capabilities.pause && snapshot.can_continue === true;
   }
-  if (action === "pause") return snapshot.status === "queued" || snapshot.status === "running";
-  if (action === "step") return snapshot.status === "paused" && snapshot.capabilities.step;
-  if (action === "steer") return ["running", "paused"].includes(snapshot.status) && snapshot.capabilities.steer;
+  if (action === "pause") return snapshot.capabilities.pause && ["queued", "running"].includes(snapshot.status);
+  if (action === "step") return snapshot.status === "paused" && snapshot.capabilities.step && snapshot.can_step === true;
+  if (action === "steer") return ["running", "pausing", "paused"].includes(snapshot.status) && snapshot.capabilities.steer;
   if (action === "fork") return ["paused", "completed", "failed", "interrupted"].includes(snapshot.status)
     && snapshot.capabilities.fork;
-  return ["failed", "interrupted"].includes(snapshot.status) && snapshot.capabilities.retry;
+  return ["failed", "interrupted"].includes(snapshot.status) && snapshot.capabilities.retry && Boolean(snapshot.checkpoint_head_id);
 }
 
 export function availableExecutionActions(snapshot: ExecutionSnapshot): ExecutionCommandAction[] {

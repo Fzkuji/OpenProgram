@@ -15,12 +15,15 @@ import {
   type RevisionDraft,
 } from "@/lib/execution-debugger";
 import { buildWaitAnswer } from "@/lib/execution-wait";
-import type { PersistedExecutionEvent } from "@/lib/net/execution-client";
+import type { PersistedExecutionEvent, UnresolvedEffect } from "@/lib/net/execution-client";
 import { SidebarNotice } from "./sidebar-notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SectionHeader } from "../sidebar/section-header";
+import { useTranslation } from "@/lib/i18n";
+import { ExecutionStrip } from "../chat/messages/execution-strip";
+import { executionTitle, statusLabel, activityRows, shortTime, updatedTime } from "./debugger-presentation";
 import styles from "./debugger-panel.module.css";
 
 export type DebuggerConnection = {
@@ -47,6 +50,7 @@ export type DebuggerPanelProps = {
   executions: ExecutionSnapshot[];
   sessionId?: string | null;
   events?: PersistedExecutionEvent[];
+  unresolvedEffects?: UnresolvedEffect[];
   fetchedAt?: number | null;
   selectedExecutionId?: string | null;
   connection: DebuggerConnection;
@@ -84,18 +88,6 @@ const ACTION_LABELS: Record<ExecutionCommandAction, string> = {
   cancel: "Cancel",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  queued: "Queued",
-  running: "Running",
-  pausing: "Pausing",
-  paused: "Paused",
-  cancelling: "Cancelling",
-  reconciliation_required: "Needs reconciliation",
-  completed: "Completed",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  interrupted: "Interrupted",
-};
 
 function shortId(value: string | null | undefined): string {
   if (!value) return "—";
@@ -161,6 +153,7 @@ function ExecutionTree({
   selectedId: string | null;
   onSelect?: (id: string) => void;
 }) {
+  const { text } = useTranslation();
   const children = useMemo(() => {
     const grouped = new Map<string | null, ExecutionSnapshot[]>();
     for (const execution of executions) {
@@ -184,10 +177,9 @@ function ExecutionTree({
         >
           <span className={`${styles.statusDot} ${statusClass(execution.status)}`} aria-hidden="true" />
           <span className={styles.executionText}>
-            <span className={styles.executionName}>{shortId(execution.execution_id)}</span>
-            <span className={styles.executionMeta}>{STATUS_LABELS[execution.status] || execution.status} · rev {shortId(execution.revision_id)}</span>
+            <span className={styles.executionName}>{executionTitle(execution, executions.length - executions.indexOf(execution), text)}</span>
+            <span className={styles.executionMeta}>{statusLabel(execution.status, text)}</span>
           </span>
-          <span className={styles.version}>v{execution.status_version}</span>
         </button>
         {renderBranch(execution.execution_id, depth + 1)}
       </div>
@@ -246,6 +238,7 @@ export function DebuggerPanel({
   executions,
   sessionId,
   events = [],
+  unresolvedEffects = [],
   fetchedAt,
   selectedExecutionId,
   connection,
@@ -260,6 +253,7 @@ export function DebuggerPanel({
   onDraftAction,
   onRefresh,
 }: DebuggerPanelProps) {
+  const { text } = useTranslation();
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(selectedExecutionId || executions[0]?.execution_id || null);
   const [commandResults, setCommandResults] = useState<Record<string, CommandResult>>({});
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
@@ -267,7 +261,7 @@ export function DebuggerPanel({
   const [approvalScope, setApprovalScope] = useState("");
   const [waitError, setWaitError] = useState<string | null>(null);
   const [steerValue, setSteerValue] = useState("");
-  const [draftText, setDraftText] = useState("");
+  const [draftText, setDraftText] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const selectedId = selectedExecutionId !== undefined
     ? selectedExecutionId
@@ -281,6 +275,7 @@ export function DebuggerPanel({
   const selectedWaits = snapshot ? waits.filter((wait) => wait.execution_id === snapshot.execution_id && ["open", "claimed"].includes(wait.status)) : [];
   const selectedDraft = snapshot ? drafts.find((draft) => draft.source_execution_id === snapshot.execution_id) : undefined;
   const connectionInfo = connectionCopy(connection);
+  useEffect(() => { setDraftText(null); setDraftError(null); }, [selectedDraft?.draft_id]);
 
   useEffect(() => {
     setWaitValue("");
@@ -362,10 +357,10 @@ export function DebuggerPanel({
   const actionPayloads: Partial<Record<ExecutionCommandAction, Record<string, unknown>>> = {
     steer: steerValue.trim() ? { message: steerValue.trim() } : undefined,
     retry: snapshot.checkpoint_head_id ? { checkpoint_id: snapshot.checkpoint_head_id } : undefined,
-    fork: selectedDraft?.status === "published" && selectedDraft.manifest?.manifest_id && selectedDraft.manifest.proof_hash
+    fork: selectedDraft?.status === "published" && selectedDraft.manifest?.manifest_id && selectedDraft.manifest.proof_hash && selectedDraft.manifest.compatible_checkpoint_id
       ? {
         manifest_id: selectedDraft.manifest.manifest_id,
-        checkpoint_id: snapshot.checkpoint_head_id,
+        checkpoint_id: selectedDraft.manifest.compatible_checkpoint_id,
         proof_hash: selectedDraft.manifest.proof_hash,
       }
       : undefined,
@@ -378,35 +373,35 @@ export function DebuggerPanel({
   return (
     <section className={styles.panel} aria-label="Debugger">
       <div className={styles.connectionLine} data-health={health}>
-        <span title={connectionInfo.detail}>{connectionInfo.label}{fetchedAt ? ` · ${new Date(fetchedAt).toLocaleTimeString()}` : ""}</span>
-        <span>cursor {connection.cursor?.next_sequence ?? "—"}</span>
+        <span title={connectionInfo.detail}>{connectionInfo.label}{fetchedAt ? ` · ${shortTime(fetchedAt)}` : ""}</span>
         {onRefresh && <Button variant="ghost" type="button" onClick={onRefresh} aria-label="Refresh snapshot">Refresh</Button>}
       </div>
 
-      <div className={styles.layout}>
-        <aside className={styles.executionRail} aria-label="Executions">
+      <div className={`${styles.layout} ${executions.length === 1 ? styles.singleExecution : ""}`}>
+        {executions.length > 1 && <aside className={styles.executionRail} aria-label="Executions">
           <SectionHeader name={`Executions · ${executions.length}`} collapsible={false} collapsed={false} onToggle={() => {}} className="px-3 py-2" />
           {executions.length ? <ExecutionTree executions={executions} selectedId={snapshot.execution_id} onSelect={selectExecution} /> : <div className={styles.empty}>No executions available.</div>}
-        </aside>
+        </aside>}
 
         <div className={styles.content}>
           <section className={styles.hero}>
             <div className={styles.heroTop}>
               <div>
-                <h3>{shortId(snapshot.execution_id)}</h3>
-                <p className={styles.muted}>Run {shortId(snapshot.run_id)} · revision {shortId(snapshot.revision_id)}</p>
-                <p className={styles.muted}>Last execution update: {new Date(snapshot.updated_at * 1000).toLocaleString()}</p>
+                <h3>{executionTitle(snapshot, executions.length - executions.indexOf(snapshot), text)}</h3>
+                <p className={styles.muted}>{text("Updated", "更新于")} {updatedTime(snapshot.updated_at)}</p>
               </div>
-              <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{STATUS_LABELS[snapshot.status] || snapshot.status}</div>
+              <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{statusLabel(snapshot.status, text)}</div>
             </div>
-            <div className={styles.identityGrid}>
-              <div><span>Version</span><strong>{snapshot.status_version}</strong></div>
-              {snapshot.current_attempt_id && <div><span>Attempt</span><strong>{shortId(snapshot.current_attempt_id)}</strong></div>}
-              {snapshot.safe_point?.kind && <div><span>Safe point</span><strong>{snapshot.safe_point.kind}</strong></div>}
-              {snapshot.checkpoint_head_id && <div><span>Checkpoint</span><strong>{shortId(snapshot.checkpoint_head_id)}</strong></div>}
-            </div>
-            {snapshot.reason_code && <div className={styles.reason}>{snapshot.reason_code === "effect_reconciliation" ? "A tool action has an unconfirmed result. Execution is blocked pending reconciliation; this is not ongoing generation." : snapshot.reason_code}</div>}
-            {availableExecutionActions(snapshot).includes("steer") && <label className={styles.steerInput}>Steer input ref<Input value={steerValue} onChange={(event) => setSteerValue(event.target.value)} placeholder="Durable input reference" /></label>}
+            {snapshot.status === "reconciliation_required" ? <div className={styles.reason}>
+              {unresolvedEffects.some((effect) => effect.kind === "provider.before")
+                ? text("The model request has no confirmed response. This run is waiting for its result to be resolved.", "模型请求尚无已确认的响应，本次执行正在等待结果核对。")
+                : unresolvedEffects.some((effect) => effect.kind === "tool.before")
+                  ? text("A tool result is unconfirmed. Verify the external action before starting it again.", "工具结果尚未确认。再次执行前需要核对外部操作的实际结果。")
+                  : text("An external action has an unconfirmed outcome. This run needs attention before it can continue.", "外部操作结果尚未确认，需要处理后才能继续执行。")}
+              {unresolvedEffects.filter((effect) => effect.tool_name).map((effect) => <div key={effect.effect_id}>{effect.tool_name}</div>)}
+            </div> : snapshot.status === "interrupted" && <p className={styles.muted}>{text("Execution stopped before a final result was saved.", "执行在保存最终结果前中断。")}</p>}
+
+            {availableExecutionActions(snapshot).includes("steer") && <label className={styles.steerInput}>{text("Instruction for the next step", "下一步的补充指令")}<Input maxLength={4096} value={steerValue} onChange={(event) => setSteerValue(event.target.value)} placeholder={text("Describe the change", "描述需要调整的内容")} /></label>}
             <div className={styles.actions}>
               {(["pause", "continue", "step", "steer", "fork", "retry", "cancel"] as ExecutionCommandAction[]).filter((action) => availableExecutionActions(snapshot).includes(action)).map((action) => (
                 <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} ready={(action !== "steer" || Boolean(steerValue.trim())) && (action !== "fork" || Boolean(actionPayloads.fork))} onCommand={onCommand ? submitAction : undefined} />
@@ -417,18 +412,26 @@ export function DebuggerPanel({
             </div>
           </section>
 
-          <section className={styles.card}>
-            <div className={styles.cardHeader}><h4>Execution history</h4><span>Latest {events.length} events</span></div>
-            {events.length ? <ol className={styles.eventList}>{events.slice(-50).reverse().map((event) => (
-              <li key={event.sequence}><span>#{event.sequence}</span><span>{event.kind.replaceAll(".", " · ")}<small className={styles.eventDetail}>{eventSummary(event)}</small></span><span>v{event.execution_version}</span></li>
-            ))}</ol> : <div className={styles.empty}>No execution events recorded.</div>}
-            {events.length > 50 && <div className={styles.empty}>Showing the latest 50 returned events.</div>}
-          </section>
+          {activityRows(events, text).length > 0 && <section className={styles.card}>
+            <div className={styles.cardHeader}><h4>{text("Progress", "执行进展")}</h4></div>
+            <ol className={styles.eventList}>{activityRows(events, text).slice(0, 8).map((event) => (
+              <li key={event.sequence}><span>{event.title}</span>{event.time && <time>{shortTime(event.time * 1000)}</time>}</li>
+            ))}</ol>
+          </section>}
+          <ExecutionStrip label={text("Technical details", "技术详情")}>
+            <dl className={styles.definitionList}>
+              <div><dt>Execution ID</dt><dd>{snapshot.execution_id}</dd></div>
+              <div><dt>Run ID</dt><dd>{snapshot.run_id}</dd></div>
+              <div><dt>Revision</dt><dd>{snapshot.revision_id}</dd></div>
+              <div><dt>State version</dt><dd>{snapshot.status_version}</dd></div>
+              {connection.cursor && <div><dt>Event cursor</dt><dd>{connection.cursor.next_sequence}</dd></div>}
+              {snapshot.reason_code && <div><dt>Reason code</dt><dd>{snapshot.reason_code}</dd></div>}
+            </dl>
+            <ol className={styles.eventList}>{events.slice(-50).reverse().map((event) => (
+              <li key={event.sequence}><span>#{event.sequence}</span><span>{event.kind}<small className={styles.eventDetail}>{eventSummary(event)}</small></span>{event.execution_version != null && <span>v{event.execution_version}</span>}</li>
+            ))}</ol>
+          </ExecutionStrip>
 
-          {(!snapshot.resource || !selectedCheckpoint || !selectedWaits.length || !selectedDraft) && <p className={styles.muted}>Not recorded for this execution: {[
-            !snapshot.resource && "resource snapshot", !selectedCheckpoint && "checkpoint",
-            !selectedWaits.length && "open questions or approvals", !selectedDraft && "revision draft",
-          ].filter(Boolean).join(", ")}.</p>}
           {(snapshot.resource || Object.keys(snapshot.effect_summary).length > 0) && <div className={styles.twoColumn}>
             {snapshot.resource && <section className={styles.card}>
               <div className={styles.cardHeader}><h4>Resource wait</h4><span>{snapshot.resource?.resource_state ? String(snapshot.resource.resource_state) : "unavailable"}</span></div>
@@ -465,7 +468,7 @@ export function DebuggerPanel({
                   {wait.kind === "approval" ? (
                     <select aria-label="Approval scope" value={approvalScope} onChange={(event) => setApprovalScope(event.target.value)} disabled={!onRespondWait}>
                       <option value="">Choose approval scope</option>
-                      {(wait.policy_snapshot?.allowed_scopes || []).map((scope) => <option key={scope} value={scope}>{scope}</option>)}
+                      {(wait.policy_snapshot?.allowed_scopes ?? ["once"]).map((scope) => <option key={scope} value={scope}>{scope}</option>)}
                     </select>
                   ) : wait.kind === "form" ? (
                     <Textarea aria-label="Form answer" value={waitValue} onChange={(event) => setWaitValue(event.target.value)} placeholder={JSON.stringify(Object.fromEntries(Object.entries(wait.request?.schema || {}).map(([name, field]) => [name, field.default ?? ""])), null, 2)} disabled={!onRespondWait} />
@@ -491,9 +494,9 @@ export function DebuggerPanel({
             {selectedDraft ? (
               <div className={styles.revisionEditor}>
                 <div className={styles.editorMeta}><span>Draft {shortId(selectedDraft.draft_id)}</span><span>source checkpoint {shortId(selectedDraft.source_checkpoint_id)}</span><span>base {shortId(selectedDraft.base_revision_id)}</span></div>
-                <label className={styles.editorLabel}>Supported changes <Textarea value={draftText || JSON.stringify(selectedDraft.changes, null, 2)} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} /></label>
+                <label className={styles.editorLabel}>Supported changes <Textarea value={draftText ?? JSON.stringify(selectedDraft.changes, null, 2)} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} /></label>
                 <div className={styles.revisionActions}>
-                  {selectedDraft.status === "draft" && <Button variant="ghost" type="button" onClick={() => { try { const changes = JSON.parse(draftText) as RevisionDraft["changes"]; setDraftError(null); void Promise.resolve(onUpdateDraft?.(selectedDraft, changes)).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft update failed.")); } catch { setDraftText("Invalid JSON change list"); } }} disabled={!onUpdateDraft}>Save draft</Button>}
+                  {selectedDraft.status === "draft" && <Button variant="ghost" type="button" onClick={() => { try { const changes = JSON.parse(draftText ?? JSON.stringify(selectedDraft.changes)) as RevisionDraft["changes"]; setDraftError(null); void Promise.resolve(onUpdateDraft?.(selectedDraft, changes)).catch((error) => setDraftError(error instanceof Error ? error.message : "Draft update failed.")); } catch { setDraftError("Enter a valid JSON change list."); } }} disabled={!onUpdateDraft}>Save draft</Button>}
                   {(["validate", "approve", "publish", "fork"] as const).map((action) => <Button variant="ghost" key={action} type="button" onClick={() => { setDraftError(null); void Promise.resolve(onDraftAction?.(selectedDraft, action)).catch((error) => setDraftError(error instanceof Error ? error.message : "Revision action failed.")); }} disabled={!onDraftAction || (action === "validate" ? selectedDraft.status !== "draft" : action === "approve" ? selectedDraft.status !== "validated" : action === "publish" ? selectedDraft.status !== "approved" : selectedDraft.status !== "published")}>{action[0].toUpperCase() + action.slice(1)}</Button>)}
                 </div>
                 {draftError && <div className={styles.formError} role="alert">{draftError}</div>}

@@ -450,6 +450,9 @@ class ExecutionSnapshot:
     updated_at: float
     event_sequence: int
     foreground_task: Mapping[str, Any] | None = None
+    display: Mapping[str, Any] | None = None
+    can_continue: bool = False
+    can_step: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -476,6 +479,9 @@ class ExecutionSnapshot:
             "updated_at": self.updated_at,
             "event_sequence": self.event_sequence,
             "foreground_task": _snapshot_json(self.foreground_task) if self.foreground_task else None,
+            "display": _snapshot_json(self.display) if self.display else None,
+            "can_continue": self.can_continue,
+            "can_step": self.can_step,
         }
 
 

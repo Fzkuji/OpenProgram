@@ -70,6 +70,71 @@ def _canonical_resource(
     return dict(resource) if isinstance(resource, Mapping) else None
 
 
+def _display_metadata(store: Any, execution: ExecutionRecord, job: Any) -> dict[str, Any] | None:
+    """Project names and message associations, never input text or arguments."""
+    try:
+        source = store.get_execution_input(execution.execution_id)
+        payload = store.get_agent_turn_input(execution.execution_id) or {}
+        request = payload.get("request", {}) if payload.get("kind") == "chat" else payload
+        tool_name = payload.get("tool_name")
+        agent_id = request.get("agent_id") if isinstance(request, Mapping) else None
+        label = getattr(job, "label", None) or tool_name or agent_id
+        if source is None and not label:
+            return None
+        return {
+            "kind": "job_agent" if job is not None else payload.get("kind"),
+            "label": label if isinstance(label, str) else None,
+            "entrypoint": source.entrypoint if source else None,
+            "tool_name": tool_name if isinstance(tool_name, str) else None,
+            "user_message_id": source.user_message_id if source else None,
+            "assistant_message_id": source.assistant_message_id if source else None,
+        }
+    except Exception:
+        _log.debug("display metadata lookup failed for execution snapshot", exc_info=True)
+        return None
+
+
+def _resume_eligibility(store: Any, execution: ExecutionRecord) -> tuple[bool, bool]:
+    """Expose current resume prerequisites; command/CAS remains authoritative."""
+    from contextlib import closing
+    from .checkpoints import ExecutionCheckpointStore
+    from .control import RuntimeControlService
+    from .model import ExecutionStatus
+
+    if execution.status is not ExecutionStatus.PAUSED or execution.current_attempt_id is not None:
+        return False, False
+    try:
+        with closing(store._connect()) as connection:
+            connection.execute("BEGIN")
+            current = store._get_execution(connection, execution.execution_id)
+            if current is None or current.status_version != execution.status_version:
+                return False, False
+            if connection.execute(
+                "SELECT 1 FROM effects WHERE execution_id = ? "
+                "AND status IN ('dispatched', 'uncertain') LIMIT 1",
+                (execution.execution_id,),
+            ).fetchone() is not None:
+                return False, False
+            checkpoint_id = execution.checkpoint_head_id or execution.source_checkpoint_id
+            checkpoint = (ExecutionCheckpointStore(store)._get(connection, checkpoint_id)
+                          if checkpoint_id else None)
+            if checkpoint is not None:
+                if (checkpoint.execution_id != execution.execution_id
+                        or checkpoint.revision_id != execution.revision_id):
+                    return False, False
+                return (execution.capabilities.pause,
+                        execution.capabilities.step
+                        and not RuntimeControlService._agent_step_has_no_next_action(checkpoint))
+            previous_attempt = connection.execute(
+                "SELECT 1 FROM attempts WHERE execution_id = ? LIMIT 1",
+                (execution.execution_id,),
+            ).fetchone()
+            return execution.capabilities.pause and previous_attempt is None, False
+    except Exception:
+        _log.debug("resume eligibility lookup failed for execution snapshot", exc_info=True)
+        return False, False
+
+
 def execution_update_frame(
     execution: Mapping[str, Any],
     event_cursor: Mapping[str, Any],
@@ -104,6 +169,7 @@ def execution_snapshot(
 
     sequence = (event_sequence if event_sequence is not None
                 else _event_sequence(store, execution.execution_id, execution.status_version))
+    can_continue, can_step = _resume_eligibility(store, execution)
     return ExecutionSnapshot(
         execution_id=execution.execution_id,
         job_id=job_id or execution.execution_id,
@@ -131,6 +197,9 @@ def execution_snapshot(
         updated_at=execution.updated_at,
         event_sequence=sequence,
         foreground_task=foreground_task_snapshot(store, execution),
+        display=_display_metadata(store, execution, job),
+        can_continue=can_continue,
+        can_step=can_step,
     )
 
 

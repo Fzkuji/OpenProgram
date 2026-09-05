@@ -59,7 +59,10 @@ export type CheckpointInspector = {
   effect_receipts?: Array<{ effect_id: string; status: string; kind?: string }>;
 };
 
+export type UnresolvedEffect = { effect_id: string; status: string; classification?: string; kind?: string | null; tool_name?: string | null; created_at?: number; updated_at?: number; dispatched_at?: number | null };
+
 export type DebuggerStateResponse = {
+  unresolved_effects?: UnresolvedEffect[];
   type?: string;
   execution_id: string;
   checkpoints?: CheckpointInspector[];
@@ -234,6 +237,7 @@ export function parseRevisionState(body: RevisionStateResponse): RevisionDraft {
         manifest_id: typeof manifest.manifest_id === "string" ? manifest.manifest_id : undefined,
         revision_id: String(manifest.revision_id || ""),
         content_hash: String(manifest.content_hash || ""),
+        compatible_checkpoint_id: typeof manifest.compatible_checkpoint_id === "string" ? manifest.compatible_checkpoint_id : undefined,
         proof_hash: typeof manifest.proof_hash === "string" ? manifest.proof_hash : undefined,
       }
       : draft.manifest,
