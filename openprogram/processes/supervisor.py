@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
+import queue
 import signal
 import subprocess
 import sys
@@ -18,12 +20,57 @@ import time
 from .store import ProcessStore, process_identity
 
 
+@dataclass
+class _StdinWrite:
+    command_id: str
+    payload: bytes
+    delivered: int = 0
+    error: Exception | None = None
+    done: threading.Event = field(default_factory=threading.Event)
+
+
+class _WindowsStdinWriter:
+    """One bounded writer keeps a blocked Windows pipe off the control loop."""
+
+    def __init__(self, fd: int):
+        self.fd = fd
+        self.jobs: queue.Queue[_StdinWrite] = queue.Queue(maxsize=1)
+        self.closed = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        while not self.closed.is_set():
+            try:
+                job = self.jobs.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            try:
+                while job.delivered < len(job.payload):
+                    written = os.write(self.fd, job.payload[job.delivered:])
+                    if written <= 0:
+                        raise BrokenPipeError("stdin write made no progress")
+                    job.delivered += written
+            except Exception as exc:
+                job.error = exc
+            finally:
+                job.done.set()
+
+    def close(self):
+        if self.closed.is_set():
+            return
+        self.closed.set()
+        self.thread.join(timeout=1)
+
+
 def main():
     store = ProcessStore(sys.argv[1])
     process_id = sys.argv[2]
     proc = None
     tree = None
     reader = None
+    stdin_writer = None
+    pending_write = None
     read_error = []
     try:
         launch = json.load(sys.stdin)
@@ -65,6 +112,8 @@ def main():
         stopping_at = None
         last_heartbeat = 0
         write_offsets = {}
+        if os.name != "posix":
+            stdin_writer = _WindowsStdinWriter(proc.stdin.fileno())
         def members_alive():
             return tree.active_process_count() > 0 if tree is not None else proc.poll() is None
 
@@ -85,12 +134,29 @@ def main():
                             stopping_at = time.monotonic()
                             store.update(process_id, status="stopping")
                     else:
+                        if stdin_writer is not None and pending_write is not None and pending_write.command_id == command["id"]:
+                            if not pending_write.done.is_set():
+                                write_blocked = True
+                                continue
+                            completed = pending_write
+                            pending_write = None
+                            write_offsets[command["id"]] = completed.delivered
+                            if completed.error is not None:
+                                raise completed.error
+                            write_offsets.pop(command["id"], None)
+                            store.acknowledge(command["id"])
+                            continue
                         if stopping_at is not None:
                             raise RuntimeError("process is stopping")
-                        if write_blocked:
+                        if write_blocked or pending_write is not None:
                             continue
                         text = command["input"] or ""
                         payload = (text if text.endswith("\n") else text + "\n").encode("utf-8")
+                        if stdin_writer is not None:
+                            pending_write = _StdinWrite(command["id"], payload)
+                            stdin_writer.jobs.put_nowait(pending_write)
+                            write_blocked = True
+                            continue
                         # Keep offsets until the full command is delivered;
                         # retrying the drain never repeats already written bytes.
                         if os.name == "posix":
@@ -117,6 +183,10 @@ def main():
                     tree.terminate_members()
             time.sleep(0.05)
         code = proc.wait()
+        if stdin_writer is not None:
+            # Tree termination closes the pipe's readers. Never wait forever
+            # for a Windows write if a handle remains open unexpectedly.
+            stdin_writer.close()
         if tree is not None:
             tree.release()  # ActiveProcesses reached zero; no descendants are detached.
             tree = None
@@ -127,7 +197,11 @@ def main():
             store.update(process_id, truncated=True)
         store.update(process_id, status="exited", exit_code=code, ended_at=time.time(), heartbeat=time.time())
         for command in store.commands(process_id):
-            store.acknowledge(command["id"], None if command["kind"] == "stop" else "process exited")
+            if pending_write is not None and command["id"] == pending_write.command_id:
+                complete = pending_write.done.is_set() and pending_write.error is None and pending_write.delivered == len(pending_write.payload)
+                store.acknowledge(command["id"], None if complete else f"process exited; delivered_bytes={pending_write.delivered}")
+            else:
+                store.acknowledge(command["id"], None if command["kind"] == "stop" else "process exited")
     except BaseException as exc:
         confirmed_exit = proc is None
         if tree is not None and proc is not None:
@@ -152,8 +226,12 @@ def main():
                      ended_at=time.time() if confirmed_exit else None,
                      exit_code=proc.returncode if proc else None, heartbeat=time.time())
     finally:
+        if stdin_writer is not None:
+            stdin_writer.close()
         if proc is not None:
-            if proc.stdin:
+            # Closing a descriptor under a still-blocked Windows write can
+            # itself block. Process teardown owns that final exceptional case.
+            if proc.stdin and (stdin_writer is None or not stdin_writer.thread.is_alive()):
                 proc.stdin.close()
             if proc.stdout:
                 proc.stdout.close()
