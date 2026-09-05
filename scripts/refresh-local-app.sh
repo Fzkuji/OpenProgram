@@ -204,8 +204,12 @@ PY
   # newer Desktop capability checks when refreshing an older installed App.
   runtime_assets_stage="$attempt_dir/runtime-assets"
   mkdir -p "$runtime_assets_stage"
-  cp "$(command -v node)" "$runtime_assets_stage/node"
+  cp "${OPENPROGRAM_NODE_BIN:-$(command -v node)}" "$runtime_assets_stage/node"
   cp "$repo_root/apps/cli/dist/index-standalone.cjs" "$runtime_assets_stage/index.cjs"
+  "$runtime_assets_stage/node" "$runtime_assets_stage/index.cjs" --probe || {
+    printf 'bundled Node cannot run after relocation; set OPENPROGRAM_NODE_BIN to a standalone Node executable\n' >&2
+    exit 1
+  }
   cp "$repo_root/uv.lock" "$runtime_assets_stage/product-uv.lock"
   cp "$repo_root/scripts/release/verify-product-runtime.py" "$runtime_assets_stage/verify-product-runtime.py"
   cp "$product_runtime_config" "$runtime_assets_stage/product-runtime.json"
