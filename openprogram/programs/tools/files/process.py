@@ -77,8 +77,8 @@ def execute(
         store = ProcessStore()
         if action == "start":
             record = start(command, cwd=cwd, store=store)
-            if record["status"] == "failed":
-                return f"Error: process launch failed; session_id={record['id']}; inspect log"
+            if record["status"] in {"failed", "unknown"}:
+                return f"Error: process launch {record['status']}; session_id={record['id']}; inspect log"
             return (f"started session_id={record['id']} pid={record['pid']} "
                     f"status={record['status']} backend={record['backend_id']}")
         records = scoped_records(store, owner_session)

@@ -248,6 +248,21 @@ class ProcessTreeOwner:
         self._job_handle = job_handle
         return proc
 
+    def active_process_count(self) -> int:
+        """Read the Windows kernel-owned membership, even after the leader exits."""
+        if _sys.platform != "win32" or self._job_handle is None:
+            raise RuntimeError("an active Windows Job Object is required")
+        return _windows_job_active_processes(self._job_handle)
+
+    def terminate_members(self) -> None:
+        """Terminate Windows members while retaining the handle for exit proof."""
+        if _sys.platform != "win32" or self._job_handle is None:
+            raise RuntimeError("an active Windows Job Object is required")
+        import ctypes
+        kernel32, _, _ = _windows_job_api()
+        if not kernel32.TerminateJobObject(self._job_handle, 1):
+            raise ctypes.WinError(ctypes.get_last_error())
+
     def terminate(self) -> bool:
         """Force-kill the owned tree.  Best-effort and idempotent."""
 
@@ -375,6 +390,33 @@ def _windows_job_api():
     kernel32.ResumeThread.argtypes = [wintypes.HANDLE]
     kernel32.ResumeThread.restype = wintypes.DWORD
     return kernel32, ExtendedLimitInformation, ThreadEntry32
+
+
+def _windows_job_active_processes(job_handle: int) -> int:
+    import ctypes
+    from ctypes import wintypes
+
+    class BasicAccountingInformation(ctypes.Structure):
+        _fields_ = [
+            ("TotalUserTime", ctypes.c_longlong),
+            ("TotalKernelTime", ctypes.c_longlong),
+            ("ThisPeriodTotalUserTime", ctypes.c_longlong),
+            ("ThisPeriodTotalKernelTime", ctypes.c_longlong),
+            ("TotalPageFaultCount", wintypes.DWORD),
+            ("TotalProcesses", wintypes.DWORD),
+            ("ActiveProcesses", wintypes.DWORD),
+            ("TotalTerminatedProcesses", wintypes.DWORD),
+        ]
+
+    kernel32, _, _ = _windows_job_api()
+    query = kernel32.QueryInformationJobObject
+    query.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID,
+                      wintypes.DWORD, wintypes.LPVOID]
+    query.restype = wintypes.BOOL
+    info = BasicAccountingInformation()
+    if not query(job_handle, 1, ctypes.byref(info), ctypes.sizeof(info), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return int(info.ActiveProcesses)
 
 
 def _windows_set_job_kill_on_close(job_handle: int, enabled: bool) -> None:

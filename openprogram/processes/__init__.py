@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
+import shutil
 import subprocess
 import sys
 import threading
@@ -26,6 +28,32 @@ def current_owner():
     return session_id, execution_id, current_call_id() or None
 
 
+def _supervisor_command(store, process_id, launch):
+    command = [sys.executable, "-m", "openprogram.processes.supervisor", str(store.path), process_id]
+    if not sys.platform.startswith("linux"):
+        return command
+    # setsid does not move a child out of a systemd service's cgroup. Keep
+    # worker KillMode untouched and assign only this supervisor to a new scope.
+    cgroups = Path("/proc/self/cgroup").read_text()
+    services = [part for line in cgroups.splitlines() for part in line.split(":", 2)[-1].split("/")
+                if part.endswith(".service") and not part.startswith("user@")]
+    if not services:
+        return command
+    runner = shutil.which("systemd-run")
+    if runner is None:
+        raise RuntimeError("durable processes from a systemd service require systemd-run --user")
+    scope = f"openprogram-managed-{process_id}.scope"
+    launch["_supervisor_scope"] = scope
+    options = [runner, "--user", "--scope", "--quiet", f"--unit={scope}", "--slice=app.slice"]
+    # Scope argument expansion was introduced in systemd 254. Older versions
+    # already pass literal arguments and do not recognize this switch.
+    version = subprocess.run([runner, "--version"], capture_output=True, text=True,
+                             check=True, timeout=3)
+    if int(version.stdout.split()[1]) >= 254:
+        options.append("--expand-environment=no")
+    return [*options, "--", *command]
+
+
 def start(command, cwd=None, *, store=None):
     from openprogram.backend import get_active_backend
     session_id, execution_id, tool_call_id = current_owner()
@@ -44,7 +72,7 @@ def start(command, cwd=None, *, store=None):
     supervisor = None
     try:
         supervisor = subprocess.Popen(
-            [sys.executable, "-m", "openprogram.processes.supervisor", str(store.path), record["id"]],
+            _supervisor_command(store, record["id"], launch),
             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             **options,
         )

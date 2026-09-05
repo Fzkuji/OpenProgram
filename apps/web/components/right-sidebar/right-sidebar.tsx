@@ -25,7 +25,7 @@
  * are registered on mount — see `setRightDockApi` below.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { ContextCommitTimeline } from "./context-commit-timeline";
@@ -71,6 +71,13 @@ export function RightSidebar() {
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const update = () => setVisible(!document.hidden);
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
   const { style: railStyle, resizeHandleProps } = useResizableRail({
     open,
     minWidth: 240,
@@ -274,7 +281,7 @@ export function RightSidebar() {
         </div>
         {/* One conversation-owned view for Agents and their managed programs. */}
         <div className="right-view" data-view={VIEW_RUNNING}>
-          <RunningPanel key={currentSessionId || "no-session"} sessionId={currentSessionId} active={open && view === VIEW_RUNNING} />
+          <RunningPanel key={currentSessionId || "no-session"} sessionId={currentSessionId} active={open && visible && view === VIEW_RUNNING} />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template

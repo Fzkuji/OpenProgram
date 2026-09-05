@@ -76,11 +76,25 @@ def _authorize_read(actor, bound_session, execution, action: str, conversation_s
 def _public_event(event):
     from openprogram.execution.audit import redact_audit_payload
 
+    payload = event.payload
+    if event.kind.startswith("effect.") and isinstance(payload.get("effect"), dict):
+        effect = payload["effect"]
+        # A provider effect can contain the full runtime/tool contract. It is
+        # durable evidence, not a UI frame; replaying it repeatedly can exceed
+        # websocket recovery limits. Keep the persisted event unchanged.
+        metadata = effect.get("metadata") or {}
+        payload = {"effect": {
+            **{key: effect.get(key) for key in (
+                "effect_id", "execution_id", "status", "classification",
+                "created_at", "updated_at", "dispatched_at", "resolved_at",
+            )},
+            "metadata": {key: metadata.get(key) for key in ("kind", "tool_name")},
+        }}
     return {
         "sequence": event.execution_sequence,
         "execution_id": event.execution_id,
         "kind": event.kind,
-        "payload": redact_audit_payload(event.payload),
+        "payload": redact_audit_payload(payload),
         "execution_version": event.execution_version,
         "command_id": event.command_id,
     }
@@ -92,7 +106,7 @@ def register(app):
         import time
         from openprogram.execution import default_store
         from openprogram.execution.authorization import ExecutionAuthorizationError, authorize_session_action
-        from openprogram.execution.conversation_scope import conversation_executions, conversation_parent_ids
+        from openprogram.execution.conversation_scope import conversation_execution_scope
         from openprogram.execution.public import project_id_for_session
 
         actor, bound_session = _actor_and_session(request)
@@ -105,10 +119,10 @@ def register(app):
         except ExecutionAuthorizationError:
             return JSONResponse({"error": "not_found"}, status_code=404)
         items = []
-        parents = conversation_parent_ids(default_store(), session_id)
+        executions, parents = conversation_execution_scope(default_store(), session_id)
         # Membership is proved by this scoped query; principal/action grants
         # above apply to the caller conversation, not every target session.
-        for execution in conversation_executions(default_store(), session_id):
+        for execution in executions:
             snapshot = _execution_payload(execution)
             items.append({
                 "kind": "execution", "id": execution.execution_id,

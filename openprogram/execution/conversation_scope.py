@@ -1,8 +1,6 @@
 """Exact execution membership derived from immutable conversation provenance."""
 from __future__ import annotations
 
-import hashlib
-import json
 from contextlib import closing
 from typing import Any
 
@@ -10,9 +8,10 @@ from .authorization import ExecutionAuthorizationError, authorize_session_action
 from .model import ExecutionRecord
 
 
-def _conversation_scope(store: Any, session_id: str):
+def conversation_execution_scope(store: Any, session_id: str):
     """Include direct runs, exact called Jobs and descendants, never whole target sessions."""
     from openprogram.agent.job.input import JobAgentInputV1
+    from .store import ExecutionConflict
 
     with closing(store._connect()) as connection:
         connection.execute("BEGIN")
@@ -22,24 +21,16 @@ def _conversation_scope(store: Any, session_id: str):
         inputs = {row["execution_id"]: row for row in connection.execute(
             "SELECT execution_id, session_id, user_message_id, assistant_message_id FROM execution_inputs",
         )}
-        callers = {}
-        for row in connection.execute("SELECT execution_id, payload_json, content_hash FROM execution_agent_turn_inputs"):
-            raw = row["payload_json"]
-            if hashlib.sha256(raw.encode("utf-8")).hexdigest() != row["content_hash"]:
-                continue
-            try:
-                payload = json.loads(raw)
-                if not isinstance(payload, dict) or payload.get("kind") != "job_agent":
-                    continue
-                job = JobAgentInputV1.parse(payload)
-                execution = executions.get(row["execution_id"])
-                if execution is None or job.turn_request["session_id"] != execution.session_id:
-                    continue
-                caller = job.job_context["caller"]
-                if caller is not None:
-                    callers[row["execution_id"]] = caller
-            except (ValueError, TypeError, KeyError):
-                continue
+        # These untrusted hints only select candidates. Full immutable input
+        # integrity/schema checks happen below, for relevant sessions only.
+        caller_sessions = {
+            row["execution_id"]: row["caller_session_id"]
+            for row in connection.execute(
+                "SELECT execution_id, CASE WHEN json_valid(payload_json) THEN "
+                "json_extract(payload_json, '$.job_context.caller.session_id') "
+                "END AS caller_session_id FROM execution_agent_turn_inputs"
+            ) if isinstance(row["caller_session_id"], str)
+        }
 
     anchor_owners = {}
     for key, record in inputs.items():
@@ -88,17 +79,43 @@ def _conversation_scope(store: Any, session_id: str):
                 pending.append(ancestor)
         return found
 
-    caller_parents = {key: caller_owners(caller) - {key} for key, caller in callers.items()}
+    caller_parents = {}
+    checked_callers = set()
     included = {key for key, execution in executions.items() if execution.session_id == session_id}
-    included.update(key for key, caller in callers.items() if caller["session_id"] == session_id)
     while True:
+        # Canonical ancestry needs neither payload parsing nor a session DAG.
         additions = {
-            key for key, execution in executions.items() if key not in included and (
-                execution.parent_execution_id in included
-                or (len(caller_parents.get(key, set())) == 1
-                    and bool(caller_parents[key] & included))
-            )
+            key for key, execution in executions.items()
+            if key not in included and execution.parent_execution_id in included
         }
+        relevant_sessions = {session_id} | {executions[key].session_id for key in included}
+        for key, caller_session in caller_sessions.items():
+            if key in checked_callers or caller_session not in relevant_sessions or key not in executions:
+                continue
+            if executions[key].parent_execution_id in included:
+                checked_callers.add(key)
+                continue
+            checked_callers.add(key)
+            try:
+                payload = store.get_job_agent_input(key)
+                if payload is None:
+                    continue
+                job = JobAgentInputV1.parse(payload)
+                if job.turn_request["session_id"] != executions[key].session_id:
+                    continue
+                caller = job.job_context["caller"]
+                if caller is None or caller["session_id"] != caller_session:
+                    continue
+            except (ExecutionConflict, ValueError, TypeError, KeyError):
+                continue
+            caller_parents[key] = caller_owners(caller) - {key}
+            if caller_session == session_id:
+                additions.add(key)
+        additions.update(
+            key for key, owners in caller_parents.items()
+            if key not in included and len(owners) == 1 and owners & included
+        )
+        additions.difference_update(included)
         if not additions:
             parents = {}
             for key in included:
@@ -113,12 +130,12 @@ def _conversation_scope(store: Any, session_id: str):
 
 
 def conversation_executions(store: Any, session_id: str) -> tuple[ExecutionRecord, ...]:
-    return _conversation_scope(store, session_id)[0]
+    return conversation_execution_scope(store, session_id)[0]
 
 
 def conversation_parent_ids(store: Any, session_id: str) -> dict[str, str | None]:
     """Conversation display links only; ambiguous callers remain roots."""
-    return _conversation_scope(store, session_id)[1]
+    return conversation_execution_scope(store, session_id)[1]
 
 
 def authorize_conversation_execution(

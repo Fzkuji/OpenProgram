@@ -22,12 +22,18 @@ def main():
     store = ProcessStore(sys.argv[1])
     process_id = sys.argv[2]
     proc = None
+    tree = None
     reader = None
     read_error = []
     try:
         launch = json.load(sys.stdin)
         sys.stdin.close()
         launch.pop("sandboxed", None)
+        expected_scope = launch.pop("_supervisor_scope", None)
+        if expected_scope is not None:
+            cgroups = Path("/proc/self/cgroup").read_text()
+            if not any(expected_scope in line.split(":", 2)[-1].split("/") for line in cgroups.splitlines()):
+                raise RuntimeError("managed supervisor is not in its independent systemd scope")
         # The command gets its own process group; stopping the managed shell
         # also stops its ordinary descendants, without signalling the worker.
         if os.name == "posix":
@@ -39,8 +45,10 @@ def main():
             proc.stdin.write((json.dumps(launch) + "\n").encode("utf-8"))
             proc.stdin.flush()
         else:
-            proc = subprocess.Popen(**launch, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, bufsize=0)
+            from openprogram._compat import ProcessTreeOwner
+            tree = ProcessTreeOwner()
+            proc = tree.popen(**launch, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, bufsize=0)
         store.update(process_id, status="running", pid=proc.pid,
                      pid_identity=process_identity(proc.pid), supervisor_pid=os.getpid(),
                      supervisor_identity=process_identity(os.getpid()), heartbeat=time.time())
@@ -57,7 +65,10 @@ def main():
         stopping_at = None
         last_heartbeat = 0
         write_offsets = {}
-        while proc.poll() is None:
+        def members_alive():
+            return tree.active_process_count() > 0 if tree is not None else proc.poll() is None
+
+        while members_alive():
             now = time.time()
             if now - last_heartbeat >= 1:
                 store.update(process_id, heartbeat=now)
@@ -66,11 +77,11 @@ def main():
             for command in store.commands(process_id):
                 try:
                     if command["kind"] == "stop":
-                        if stopping_at is None and proc.poll() is None:
+                        if stopping_at is None and members_alive():
                             if os.name == "posix":
                                 os.killpg(proc.pid, signal.SIGTERM)
                             else:
-                                proc.terminate()
+                                tree.terminate_members()
                             stopping_at = time.monotonic()
                             store.update(process_id, status="stopping")
                     else:
@@ -99,13 +110,16 @@ def main():
                 except Exception as exc:
                     sent = write_offsets.pop(command["id"], 0)
                     store.acknowledge(command["id"], f"{type(exc).__name__}; delivered_bytes={sent}")
-            if stopping_at is not None and time.monotonic() - stopping_at >= 5 and proc.poll() is None:
+            if stopping_at is not None and time.monotonic() - stopping_at >= 5 and members_alive():
                 if os.name == "posix":
                     os.killpg(proc.pid, signal.SIGKILL)
                 else:
-                    proc.kill()
+                    tree.terminate_members()
             time.sleep(0.05)
         code = proc.wait()
+        if tree is not None:
+            tree.release()  # ActiveProcesses reached zero; no descendants are detached.
+            tree = None
         reader.join(timeout=2)
         # A descendant retaining the pipe must not prevent terminal state;
         # truncation explicitly distinguishes this from complete output.
@@ -115,16 +129,27 @@ def main():
         for command in store.commands(process_id):
             store.acknowledge(command["id"], None if command["kind"] == "stop" else "process exited")
     except BaseException as exc:
-        if proc is not None and proc.poll() is None:
-            # This exact child is still owned. Do not leave an unmonitored
-            # process when its only output/control owner failed.
-            if os.name == "posix":
+        confirmed_exit = proc is None
+        if tree is not None and proc is not None:
+            try:
+                tree.terminate_members()
+                deadline = time.monotonic() + 5
+                while tree.active_process_count() and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                confirmed_exit = tree.active_process_count() == 0
+                if confirmed_exit:
+                    proc.wait(timeout=1)
+                    tree.release()
+            except Exception:
+                confirmed_exit = False
+        elif proc is not None:
+            if proc.poll() is None:
                 os.killpg(proc.pid, signal.SIGKILL)
-            else:
-                proc.kill()
             proc.wait()
+            confirmed_exit = True
         store.append_output(process_id, f"\n[supervisor failed: {type(exc).__name__}]\n".encode())
-        store.update(process_id, status="failed", ended_at=time.time(),
+        store.update(process_id, status="failed" if confirmed_exit else "unknown",
+                     ended_at=time.time() if confirmed_exit else None,
                      exit_code=proc.returncode if proc else None, heartbeat=time.time())
     finally:
         if proc is not None:
