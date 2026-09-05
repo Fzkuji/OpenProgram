@@ -712,6 +712,7 @@ class RuntimeControlService:
         agent_checkpoint: Any | None = None,
         command_id: str | None = None,
         managed_action_id: str | None = None,
+        consumed_steer_command_ids: tuple[str, ...] = (),
         fault_at: str | None = None,
     ) -> SafePointCompletion:
         """Atomically terminalize one effect and publish its Agent frontier."""
@@ -792,6 +793,21 @@ class RuntimeControlService:
                         steering_commands = [
                             self.executions._command(row) for row in steering_rows
                         ]
+                consumed_steering = []
+                for consumed_id in dict.fromkeys(consumed_steer_command_ids):
+                    consumed = self.executions._get_command(connection, consumed_id)
+                    if (
+                        consumed is None or consumed.execution_id != execution_id
+                        or consumed.kind is not CommandKind.STEER
+                        or consumed.status not in {
+                            CommandStatus.ACCEPTED, CommandStatus.APPLYING, CommandStatus.APPLIED,
+                        }
+                    ):
+                        raise AgentSafePointConflict(
+                            "command_state_invalid", "consumed steering is not owned by this execution",
+                        )
+                    if consumed.status is not CommandStatus.APPLIED:
+                        consumed_steering.append(consumed)
                 receipt_ref = self.executions._put_state_blob_in_transaction(
                     connection, execution_id=execution_id, payload=receipt_blob,
                     media_type="application/json", schema_version=1,
@@ -887,6 +903,25 @@ class RuntimeControlService:
                         submitted_at=now, updated_at=now,
                     )
                 applied_commands: list[ControlCommand] = []
+                # The decision receipt and consumed input acknowledgments must
+                # commit together, including when Step/Pause takes priority.
+                if stored is None or stored.kind is not CommandKind.STEER:
+                    for steer in consumed_steering:
+                        if steer.status is CommandStatus.ACCEPTED:
+                            steer = self.executions._transition_command(
+                                connection, steer.command_id,
+                                expected_status=CommandStatus.ACCEPTED,
+                                target=CommandStatus.APPLYING,
+                            )
+                        applied_commands.append(self.executions._transition_command(
+                            connection, steer.command_id,
+                            expected_status=CommandStatus.APPLYING,
+                            target=CommandStatus.APPLIED,
+                            result_version=updated.status_version,
+                            receipt={"checkpoint_id": checkpoint.checkpoint_id,
+                                     "safe_point": checkpoint.safe_point,
+                                     "terminal_receipt": dict(terminal_receipt)},
+                        ))
                 if command_id is not None:
                     assert stored is not None
                     if stored.kind is CommandKind.STEER:

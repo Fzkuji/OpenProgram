@@ -1239,6 +1239,7 @@ class AgentProductionDriver:
                 command.command_id
                 for command in self._control_service().executions.list_commands(attempt.execution_id)
                 if command.status not in {CommandStatus.APPLIED, CommandStatus.REJECTED}
+                and command.command_id not in (steer_consumed_ids or ())
             ]
             try:
                 return AgentCheckpointV1.build(
@@ -1544,6 +1545,7 @@ class AgentProductionDriver:
                 receipt_blob=canonical_json_bytes(terminal_receipt),
                 agent_checkpoint=checkpoint,
                 command_id=command.command_id, managed_action_id=action_id,
+                consumed_steer_command_ids=tuple(sorted(steer_consumed_ids or ())),
             )
             remember_completed_action()
             if command.kind is CommandKind.STEER and steer_queue is not None:

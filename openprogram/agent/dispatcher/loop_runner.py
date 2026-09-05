@@ -356,7 +356,7 @@ def run_loop_blocking(
     durable_steer_inputs = (execution_context or {}).get("steer_inputs")
     durable_steer_consumed_ids = (execution_context or {}).get("steer_consumed_ids")
 
-    async def _get_steering_messages():
+    async def _get_one_steering_message():
         # Runtime steering is available only to a canonical execution and is
         # consumed from its durable execution command queue at a safe point.
         # Session-local inboxes are not a second steering transport.
@@ -442,6 +442,17 @@ def run_loop_blocking(
             content=[TextContent(text=text)],
             timestamp=int(timestamp * 1000),
         )]
+
+    async def _get_steering_messages():
+        # All commands already queued at this boundary belong to the next
+        # decision. Leaving one behind would request another answer on resume.
+        messages = []
+        while isinstance(durable_steer_inputs, list) and durable_steer_inputs:
+            delivered = await _get_one_steering_message()
+            if not delivered:
+                break
+            messages.extend(delivered)
+        return messages
 
     safe_point_callback = (execution_context or {}).get("safe_point_hook")
     last_safe_point_snapshot: dict[str, object] = {}
