@@ -40,6 +40,7 @@ export type RunningExecutionList = {
   items: Array<{
     kind?: string;
     started_at?: number;
+    task_label?: string | null;
     parent_execution_id?: string | null;
     execution_id?: string | null;
     snapshot?: ExecutionSnapshot;

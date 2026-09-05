@@ -7,6 +7,8 @@ event bus (``ws.frame`` → server's WS forwarder).
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -101,10 +103,17 @@ def register(app):
         # above apply to the caller conversation, not every target session.
         for execution in executions:
             snapshot = _execution_payload(execution)
+            # Request excerpts are restricted to this authorized conversation;
+            # global execution projections never expose input text.
+            payload = default_store().get_agent_turn_input(execution.execution_id) or {}
+            turn = payload.get("request", {}) if payload.get("kind") == "chat" else payload
+            user_text = turn.get("user_text") if isinstance(turn, Mapping) else None
+            task_label = " ".join(user_text.split())[:160] if isinstance(user_text, str) else None
             items.append({
                 "kind": "execution", "id": execution.execution_id,
                 "execution_id": execution.execution_id, "session_id": execution.session_id,
                 "parent_execution_id": parents.get(execution.execution_id),
+                "task_label": task_label,
                 "label": (snapshot.get("display") or {}).get("label") or "execution",
                 "status": execution.status.value,
                 "started_at": execution.created_at, "snapshot": snapshot,

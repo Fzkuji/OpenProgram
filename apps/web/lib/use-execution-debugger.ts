@@ -124,7 +124,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       const nextCursors: Record<string, EventCursor> = {};
       for (const item of list.items || []) {
         if (!item.snapshot?.execution_id) continue;
-        next[item.snapshot.execution_id] = { ...item.snapshot, started_at: item.started_at, view_parent_execution_id: item.parent_execution_id };
+        next[item.snapshot.execution_id] = { ...item.snapshot, started_at: item.started_at, task_label: item.task_label, view_parent_execution_id: item.parent_execution_id };
         if (item.event_cursor) nextCursors[item.snapshot.execution_id] = item.event_cursor;
       }
       const inspectionId = [selectedExecutionId, requestedExecutionId].find((id) => id && next[id])
