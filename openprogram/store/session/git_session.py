@@ -104,10 +104,12 @@ def atomic_write_text(fpath: Path, text: str) -> Path:
             0o600,
         )
         created = True
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
+        from openprogram._compat import restrict_to_user
+        restrict_to_user(native_tmp)
         _retry_windows_file_access(
             lambda: os.replace(native_tmp, native_target)
         )

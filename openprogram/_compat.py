@@ -1736,6 +1736,28 @@ def user_private_metadata(info, *, exact_mode: int | None = None) -> bool:
     return mode == exact_mode if exact_mode is not None else not bool(mode & 0o077)
 
 
+def open_regular_binary(path):
+    """Open a stable regular file for streaming, without changing its access policy."""
+    import stat
+
+    native = filesystem_path(path)
+    before = _os.lstat(native)
+    if not stat.S_ISREG(before.st_mode) or is_link_metadata(before):
+        raise ValueError("not a regular file")
+    flags = (_os.O_RDONLY | getattr(_os, "O_NONBLOCK", 0)
+             | getattr(_os, "O_BINARY", 0) | getattr(_os, "O_NOFOLLOW", 0))
+    fd = _os.open(native, flags)
+    try:
+        info = _os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or is_link_metadata(info)
+                or (before.st_dev, before.st_ino) != (info.st_dev, info.st_ino)):
+            raise ValueError("file changed while opening")
+        return _os.fdopen(fd, "rb")
+    except BaseException:
+        _os.close(fd)
+        raise
+
+
 def read_user_state_bytes(path, *, limit: int) -> bytes:
     """Bounded regular-file read using the host's user-state metadata policy."""
     import stat
@@ -1914,6 +1936,7 @@ __all__ = [
     "process_alive",
     "process_start_token",
     "read_user_state_bytes",
+    "open_regular_binary",
     "user_private_metadata",
     "LOCK_EX",
     "LOCK_NB",

@@ -119,6 +119,15 @@ def test_budget_reason_survives_cancel_intent_persistence_failure(
         assert final.reason_code == "budget.runtime_exhausted"
         commands = runner._execution_store.list_commands(job_id)
         assert [c.kind.value for c in commands] == ["execution.cancel"]
+        # Canonical cancellation can become terminal before the resource
+        # observer finishes releasing the worker's admission lease.
+        def admission_released():
+            admission = runner._governor.ledger.connection().execute(
+                "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
+            ).fetchone()
+            return admission is not None and admission["state"] == "released"
+
+        assert wait_until(admission_released, timeout=10.0)
         row = runner._governor.ledger.connection().execute(
             "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
             (job_id,),

@@ -87,6 +87,7 @@ def _write_v2_archive(path: Path, *frames: str, tail: str = "") -> None:
         + "".join(frames)
         + tail,
         encoding="utf-8",
+        newline="\n",
     )
 
 

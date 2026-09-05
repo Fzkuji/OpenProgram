@@ -79,9 +79,10 @@ _SKIP_SUFFIXES = (".lock", ".pid", ".port", ".log", ".sock")
 # path-validation fallback below. This is a capability decision rather than a
 # platform-name decision: a future runtime that adds the APIs automatically
 # receives the stronger descriptor-relative implementation.
-# CPython exposes rename-at support under os.rename; os.replace shares it.
 _RESTORE_DIR_FD_CAPABLE = all(
     function in os.supports_dir_fd
+    # CPython records rename's capability; replace shares that implementation
+    # but is not itself included in supports_dir_fd on POSIX.
     for function in (os.open, os.stat, os.unlink, os.rename)
 )
 _OWNER_FD_CAPABLE = hasattr(os, "geteuid") and hasattr(os, "fchmod")

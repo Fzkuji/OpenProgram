@@ -39,6 +39,7 @@ def _write_private_json(path, data: dict) -> None:
     import json
     import os
     import tempfile
+    from openprogram._compat import restrict_to_user
 
     fd = -1
     temp_path = ""
@@ -47,13 +48,13 @@ def _write_private_json(path, data: dict) -> None:
             dir=path.parent,
             prefix=f".{path.name}.",
         )
-        os.fchmod(fd, 0o600)
+        restrict_to_user(temp_path)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             fd = -1
             json.dump(data, handle, ensure_ascii=False)
         os.replace(temp_path, path)
         temp_path = ""
-        os.chmod(path, 0o600)
+        restrict_to_user(path)
     except (OSError, TypeError):
         pass
     finally:

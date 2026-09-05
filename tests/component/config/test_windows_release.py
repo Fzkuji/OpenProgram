@@ -124,6 +124,11 @@ def test_managed_windows_upgrade_executes_tagged_powershell_installer(
     monkeypatch,
 ) -> None:
     from openprogram.cli.commands import upgrade
+    original_which = shutil.which
+    monkeypatch.setattr(
+        shutil, "which",
+        lambda name: "powershell.exe" if name == "powershell.exe" else original_which(name),
+    )
 
     monkeypatch.setattr(
         upgrade,

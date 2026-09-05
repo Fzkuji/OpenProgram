@@ -15,10 +15,10 @@ test "$(basename "$runtime_root")" = runtime || {
   printf 'OPENPROGRAM_RUNTIME_ROOT must end in /runtime: %s\n' "$runtime_root" >&2
   exit 1
 }
-test -n "$platform" && test -n "$arch" || {
+if test -z "$platform" || test -z "$arch"; then
   printf 'OPENPROGRAM_RUNTIME_PLATFORM and OPENPROGRAM_RUNTIME_ARCH are required\n' >&2
   exit 1
-}
+fi
 case "$platform" in
   linux|macos) ;;
   *) printf 'unsupported POSIX runtime platform: %s\n' "$platform" >&2; exit 1 ;;

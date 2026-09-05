@@ -349,12 +349,11 @@ def test_glob_regex_avoids_non_capturing_groups():
 def test_glob_to_regex_expands_home():
     import re
     rx = _glob_to_regex("~/.ssh/**")
-    target = os.path.expanduser("~/.ssh/id_rsa")
+    target = os.path.realpath(os.path.expanduser("~/.ssh/id_rsa"))
     if os.sep == "\\":
         target = target.replace("\\", "/")
     assert re.match(rx, target)
-    # Canonical path aliases are supplied by the policy layer, not the literal
-    # glob translator. Verify the public read check against the resolved path.
+    # Also verify the public policy check against the resolved path.
     assert sandbox.read_is_denied(
         os.path.realpath(os.path.expanduser("~/.ssh/id_rsa")),
         SandboxPolicy(deny_read=("~/.ssh/**",)),

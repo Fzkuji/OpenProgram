@@ -179,7 +179,7 @@ PY
 }
 
 # Invoked by the EXIT trap below.
-# shellcheck disable=SC2329
+# shellcheck disable=SC2329,SC2317
 cleanup() {
   cleanup_status=$?
   trap - 0 HUP INT TERM

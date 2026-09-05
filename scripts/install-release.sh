@@ -27,7 +27,7 @@ case "$OPENPROGRAM_REPOSITORY" in
     ;;
 esac
 
-script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd || true)
+script_dir=$(if CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null; then pwd; fi)
 checkout_installer="$script_dir/release/install-release.sh"
 if [ -f "$checkout_installer" ]; then
   exec sh "$checkout_installer" "$@"

@@ -92,6 +92,13 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Install locked Python dependencies
         run: uv sync --locked --extra dev
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install fixture build dependencies without launching Desktop
+        run: npm ci --ignore-scripts
       - name: Component tests
         run: uv run --locked --extra dev python -m pytest -q tests/component
 
@@ -124,8 +131,36 @@ jobs:
           enable-cache: true
       - name: Install locked Python dependencies
         run: uv sync --locked --extra dev
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install fixture build dependencies without launching Desktop
+        run: npm ci --ignore-scripts
       - name: Integration tests
         run: uv run --locked --extra dev python -m pytest -q tests/integration
+
+  macos-native-verification:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra dev
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Exercise the actual sandbox-exec verifier backend
+        run: uv run --locked --extra dev python -m pytest -q tests/component/self_update tests/integration/runtime/test_self_update_native_processes.py tests/integration/runtime/test_self_update_ui_object.py
 
   e2e:
     runs-on: ubuntu-latest
@@ -185,14 +220,20 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+      - name: Prepare native ARM64 OpenSSL
+        if: matrix.arch == 'arm64'
+        run: ./scripts/release/prepare-windows-native-deps.ps1 -Architecture arm64
       - name: Install locked Python dependencies
         run: uv sync --locked --extra dev
       - name: Windows platform contracts
         run: >-
           uv run --locked --extra dev python -m pytest -q
-          tests/unit/core/test_windows_install_contract.py
-          tests/unit/core/test_windows_process.py
-          tests/unit/core/test_windows_release.py
+          tests/component/config/test_windows_install_contract.py
+          tests/component/runtime/test_windows_process.py
+          tests/component/config/test_windows_release.py
+          tests/component/runtime/test_process_liveness.py
+          tests/component/runtime/test_local_backend_process_tree.py
+          tests/component/programs/test_pdf_import_isolation.py
           tests/unit/core/test_windows_worker_service.py
           tests/component/security/test_sandbox.py
           tests/component/config/test_formal_release_updates.py
@@ -203,6 +244,8 @@ jobs:
           tests/component/config/test_upgrade_cmd.py
           tests/component/store/test_backup_command.py
           tests/component/store/test_backup_staged_restore.py
+      - name: Complete Windows unit regression
+        run: uv run --locked --extra dev python -m pytest -n 4 -q tests/unit
 
   windows-desktop:
     strategy:

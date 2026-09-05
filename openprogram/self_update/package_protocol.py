@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+from openprogram._compat import open_regular_binary
 
 from .reopen import REOPEN_PROTOCOL
 
@@ -27,8 +28,7 @@ def _file(root: Path, relative: str) -> Path:
 
 
 def _read_or_hash(path: Path, *, limit: int, read: bool = False):
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
-    with os.fdopen(fd, "rb") as handle:
+    with open_regular_binary(path) as handle:
         info = os.fstat(handle.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
             raise ValueError("invalid reopen protocol file")

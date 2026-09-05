@@ -485,6 +485,8 @@ def _sbpl_str(s: str) -> str:
 def _glob_to_regex(pattern: str) -> str | None:
     """Anchored regex for one deny-read glob, or None if it is empty."""
     p = os.path.expanduser(pattern.strip())
+    if pattern.strip().startswith("~/"):
+        p = os.path.join(os.path.realpath(os.path.expanduser("~")), pattern.strip()[2:])
     if os.sep == "\\":
         p = p.replace("\\", "/")
     if not p:
@@ -770,10 +772,12 @@ def _regexes_for(patterns: tuple[str, ...]) -> list[str]:
     for pattern in patterns:
         variants = [pattern]
         prefix = os.path.expanduser(_static_prefix(pattern))
-        if prefix.startswith("/"):
+        if os.path.isabs(prefix):
             real = os.path.realpath(prefix)
-            if real != prefix.rstrip("/"):
-                variants.append(real + os.path.expanduser(pattern)[len(prefix):])
+            if real != prefix.rstrip("/\\"):
+                suffix = os.path.expanduser(pattern)[len(prefix):]
+                separator = os.sep if prefix.endswith(("/", "\\")) and suffix else ""
+                variants.append(real + separator + suffix)
         for v in variants:
             rx = _glob_to_regex(v)
             if rx and rx not in seen:

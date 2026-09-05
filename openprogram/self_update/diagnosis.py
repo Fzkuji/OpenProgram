@@ -381,7 +381,7 @@ def dispatch_pending():
                 _monitors[key] = thread
                 thread.start()
     except Exception as exc:
-        _log.warning("Self-update diagnosis unavailable: %s", type(exc).__name__)
+        _log.warning("Self-update diagnosis unavailable: %s", type(exc).__name__, exc_info=True)
         if record is not None:
             _failure(store, record, exc)
             if request is not None and config is not None and runner is not None:
