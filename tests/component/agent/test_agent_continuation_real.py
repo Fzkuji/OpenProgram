@@ -798,6 +798,8 @@ def test_permission_change_resumes_real_approval_without_repeating_provider(real
     from openprogram.agent.permissions import update_permission, reconcile_permission_waits
     import openprogram.agent.dispatcher.loop_runner as loop_runner
 
+    frames = []
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
     h = real_agent_chat
     monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
     actor = local_owner_authority()
@@ -820,6 +822,7 @@ def test_permission_change_resumes_real_approval_without_repeating_provider(real
     assert h.provider.call_count == 2
     from openprogram.execution.waits import DurableWaitStore, WaitStatus
     assert DurableWaitStore(h.store).get_wait(question.id).status is WaitStatus.RESOLVED
+    assert any(frame["type"] == "question.replied" and frame["data"]["id"] == question.id for frame in frames)
 
 
 def test_permission_change_before_tool_check_applies_to_running_turn(real_agent_chat, monkeypatch):

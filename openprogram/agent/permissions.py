@@ -106,6 +106,8 @@ async def reconcile_permission_waits(session_id: str, *, service=None) -> None:
     from openprogram.agent.production_driver import AgentActivationService
     from openprogram.agent.internals._approval import permission_decision
     from openprogram.execution import default_control_service
+    from openprogram.events import emit_ws_frame
+    from openprogram.execution.model import CommandStatus
     from openprogram.execution.store import ExecutionConflict
     from openprogram.execution.waits import DurableWaitStore
     from openprogram.worktree.context import set_worktree, reset_worktree
@@ -137,7 +139,7 @@ async def reconcile_permission_waits(session_id: str, *, service=None) -> None:
         if decision not in {"allow", "auto"}:
             continue
         try:
-            await service.request_wait_answer(
+            dispatch = await service.request_wait_answer(
                 command_id=f"permission:{wait.wait_id}:{version}", execution_id=wait.execution_id,
                 expected_version=execution.status_version, actor={
                     "principal_id": current.principal_id, "authority_tier": "owner",
@@ -145,6 +147,11 @@ async def reconcile_permission_waits(session_id: str, *, service=None) -> None:
                 }, wait_id=wait.wait_id, generation=wait.claim_generation,
                 answer={"answer": "approve", "scope": "once"},
             )
+            if dispatch.command.status is CommandStatus.APPLIED:
+                emit_ws_frame({"type": "question.replied", "data": {
+                    "id": wait.wait_id, "session_id": session_id,
+                    "execution_id": wait.execution_id,
+                }})
         except ExecutionConflict:
             # A concurrent answer, cancellation, or timeout owns the outcome.
             continue
