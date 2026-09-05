@@ -10,6 +10,7 @@
  * session refactor) carry a foreign ``session_id`` and fall back to
  * navigating to that session.
  */
+import type { ExecutionCommand } from "@/lib/execution-debugger";
 import { useEffect, useRef, useState } from "react";
 
 import type { ChatMsg } from "@/lib/session-store";
@@ -373,11 +374,13 @@ export function AttachCard({ msg }: { msg: ChatMsg }) {
             className="attach-card-cancel"
             onClick={() => {
               wsSend({
+                type: "execution.command",
                 action: "execution.cancel",
                 command_id: crypto.randomUUID(),
                 execution_id: executionId,
                 expected_version: expectedVersion,
-              });
+                payload: {},
+              } satisfies ExecutionCommand);
             }}
             title={text("Cancel execution", "取消运行")}
             aria-label={text("Cancel execution", "取消运行")}

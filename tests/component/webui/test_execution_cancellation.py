@@ -493,3 +493,36 @@ def test_canonical_continuation_restores_hydration_and_live_controls(
             server._sessions.pop(sid, None)
         with server._running_tasks_lock:
             server._running_tasks.pop(sid, None)
+
+
+def test_real_web_stop_envelope_is_applied_by_runtime_handler(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    from pathlib import Path
+    from openprogram.webui.ws_actions import runtime
+    from openprogram.webui import server
+
+    executions, record = _canonical_execution(tmp_path, execution_id="frontend-cancel")
+    _patch_canonical_store(monkeypatch, executions)
+    monkeypatch.setattr(server, "_broadcast", lambda payload: None)
+    monkeypatch.setattr(server, "_release_session_occupancy_for_execution", lambda execution: None)
+    root = Path(__file__).resolve().parents[3]
+    output = tmp_path / "frontend-command.json"
+    env = {
+        **os.environ,
+        "OPENPROGRAM_TEST_CANCEL_FRAME": str(output),
+        "OPENPROGRAM_TEST_CANCEL_TARGET": json.dumps({
+            "session_id": record.session_id, "msg_id": "user-canonical",
+            "execution_id": record.execution_id, "status_version": record.status_version,
+        }),
+    }
+    subprocess.run(
+        ["node", "--experimental-strip-types", "apps/web/scripts/check-send-queue.mjs"],
+        cwd=root, env=env, check=True, capture_output=True, text=True, timeout=30,
+    )
+    frame = json.loads(output.read_text())
+    ws = FakeWS()
+    asyncio.run(runtime.ACTIONS["execution.cancel"](ws, frame))
+    command = next(f["command"] for f in ws.frames if f["type"] == "execution.command.updated")
+    assert command["status"] == "applied", command
+    assert executions.get_execution(record.execution_id).status is ExecutionStatus.CANCELLED

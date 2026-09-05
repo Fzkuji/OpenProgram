@@ -9,6 +9,7 @@
  * Imported for side effects + `initChatPage()` by `useWS`.
  */
 
+import type { ExecutionCommand } from "@/lib/execution-debugger";
 import {
   extractMessagesFromTree,
   fetchBranches,
@@ -194,11 +195,13 @@ export function wsHandleChatAck(data: ChatAckData): void {
         } else {
           try {
             sock.send(JSON.stringify({
+              type: "execution.command",
               action: "execution.cancel",
               command_id: commandId,
               execution_id: data.execution_id,
               expected_version: data.status_version,
-            }));
+              payload: {},
+            } satisfies ExecutionCommand));
           } catch {
             delete runtimeState._optimisticCancels[commandId];
           }

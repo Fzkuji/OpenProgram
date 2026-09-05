@@ -12,7 +12,7 @@
  */
 import assert from "node:assert/strict";
 
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -401,3 +401,13 @@ restoreForegroundExecutionTask(null, { ...resumedTask, status: "paused" });
 assert.equal(useSessionStore.getState().runningTasks[A].execution_id, "new-owner", "resume projection preserves another foreground owner");
 store.setRunningTaskFor(A, null, "always");
 console.log("check-send-queue: ok");
+
+// Cross-language component acceptance submits this exact frontend envelope.
+if (process.env.OPENPROGRAM_TEST_CANCEL_FRAME) {
+  const target = JSON.parse(process.env.OPENPROGRAM_TEST_CANCEL_TARGET);
+  store.setRunningTaskFor(target.session_id, target);
+  stopSession(target.session_id, (frame) => {
+    writeFileSync(process.env.OPENPROGRAM_TEST_CANCEL_FRAME, JSON.stringify(frame));
+    return true;
+  });
+}
