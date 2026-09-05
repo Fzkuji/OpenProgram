@@ -81,6 +81,14 @@ under `%USERPROFILE%\.openprogram\runtime\cli\releases` and creates
 added to the user `PATH`; open a new terminal if the current one does not see
 it yet.
 
+Release and source installers provide both `openprogram.ps1` and
+`openprogram.cmd`. They support Unicode installation paths without changing
+the system locale. PowerShell uses the script launcher to preserve literal
+arguments; CMD uses the batch launcher and its usual quoting rules. Script
+execution policy is not changed: if your policy blocks the PowerShell launcher,
+invoke `openprogram.cmd` explicitly. The batch launcher restores the original
+console code page and preserves the command's exit status.
+
 Before switching `current`, the installer verifies the architecture-matched manifest and bundled Ink TUI, then runs a worker cold-start/health check on an operating-system-assigned loopback port. Installation is serialized by a per-user lock, files are staged outside the immutable release directory, and `current` is changed atomically only after every check passes. A failed probe leaves the previous version selected. After installation, run:
 
 ```bash
@@ -118,7 +126,7 @@ Set-Location OpenProgram
 The Windows development installer creates an isolated `.venv`, installs the
 frontend workspaces from the npm lockfile, builds the browser UI and full Ink
 terminal UI, and installs the optional browser and Channel dependencies. It also creates
-`%LOCALAPPDATA%\OpenProgram\bin\openprogram.cmd` and adds that directory to the
+`openprogram.cmd` and `openprogram.ps1` under `%LOCALAPPDATA%\OpenProgram\bin` and adds that directory to the
 user `PATH`, so a new PowerShell can invoke `openprogram` without activating
 the checkout environment. Node.js 22 LTS is the validated version. `-Minimal`
 installs only the Python CLI/server and does not install or build frontend

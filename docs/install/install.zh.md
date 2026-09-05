@@ -77,6 +77,12 @@ Windows installer 下载带 SHA-256 校验的 release ZIP，在解压前逐项�
 `%LOCALAPPDATA%\OpenProgram\bin\openprogram.cmd`。Installer 会把 launcher 目录加入
 用户 `PATH`；当前终端未识别时，请打开新的终端。
 
+Release 和源码 installer 都提供 `openprogram.ps1` 与 `openprogram.cmd`，
+无需修改系统语言即可支持中文等 Unicode 安装路径。PowerShell 使用脚本 launcher
+保留原始参数；CMD 使用 batch launcher 和 CMD 的常规引号规则。Installer 不修改
+脚本执行策略：如果策略阻止 PowerShell launcher，可以显式执行 `openprogram.cmd`。
+Batch launcher 会恢复原控制台代码页，并保留命令的退出码。
+
 installer 在切换 `current` 前会验证架构匹配的 manifest 和内置 Ink TUI，再使用操作系统分配的 loopback 端口执行 worker cold-start/health check。安装事务由每用户锁串行化，文件在不可变 release 目录之外暂存，所有检查通过后才原子切换 `current`；探测失败时旧版本仍保持选中。安装后可以执行：
 
 ```bash
@@ -113,7 +119,7 @@ Set-Location OpenProgram
 
 Windows 开发 installer 会创建隔离的 `.venv`，按 npm lockfile 安装 frontend
 workspaces，构建浏览器 UI 与完整 Ink 终端 UI，并安装可选的 Browser 和 Channel 依赖。它还会创建
-`%LOCALAPPDATA%\OpenProgram\bin\openprogram.cmd` 并把该目录加入用户 `PATH`，
+`%LOCALAPPDATA%\OpenProgram\bin` 下的 `openprogram.cmd` 与 `openprogram.ps1`，并把该目录加入用户 `PATH`，
 因此新的 PowerShell 无需激活 checkout 环境就能运行 `openprogram`。经过验证的
 版本是 Node.js 22 LTS。`-Minimal` 只安装 Python CLI/server，不安装或构建 frontend
 依赖。

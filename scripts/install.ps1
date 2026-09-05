@@ -251,8 +251,29 @@ function Install-CliLauncher {
   New-Item -ItemType Directory -Force -Path $binDir | Out-Null
   $launcher = Join-Path $binDir "openprogram.cmd"
   $quotedPython = $PY.Replace('%', '%%')
-  $content = "@echo off`r`n`"$quotedPython`" -m openprogram %*`r`n"
-  [System.IO.File]::WriteAllText($launcher, $content, [System.Text.Encoding]::ASCII)
+  # Parse embedded Unicode paths as UTF-8 even on legacy console code pages,
+  # then restore the caller's code page without losing Python's exit status.
+  $content = @"
+@echo off
+setlocal DisableDelayedExpansion
+for /f "tokens=2 delims=:" %%P in ('chcp') do set "_OPENPROGRAM_CODEPAGE=%%P"
+chcp 65001 >nul
+"$quotedPython" -m openprogram %*
+set "_OPENPROGRAM_EXIT=%ERRORLEVEL%"
+chcp %_OPENPROGRAM_CODEPAGE% >nul
+exit /b %_OPENPROGRAM_EXIT%
+"@
+  [System.IO.File]::WriteAllText($launcher, $content, [System.Text.UTF8Encoding]::new($false))
+
+  # PowerShell selects the native script so its argument array does not pass
+  # through CMD's extra metacharacter parsing. Keep CMD for CMD callers.
+  $psLauncher = [IO.Path]::ChangeExtension($launcher, '.ps1')
+  $psContent = @"
+`$ErrorActionPreference = 'Stop'
+& '$($PY.Replace("'", "''"))' -m openprogram @args
+exit `$LASTEXITCODE
+"@
+  [System.IO.File]::WriteAllText($psLauncher, $psContent, [System.Text.UTF8Encoding]::new($true))
 
   $separator = [IO.Path]::PathSeparator
   $currentParts = @($env:Path -split [Regex]::Escape([string]$separator))

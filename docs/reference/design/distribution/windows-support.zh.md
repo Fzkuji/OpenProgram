@@ -34,6 +34,13 @@ POSIX 的 `0600` 和 `0700` 不是 Windows 验收条件。Windows W1 使用用�
 Ink 终端界面，安装选定的 Python extras，并在用户 `PATH` 上提供稳定的
 `openprogram.cmd` launcher。`-Minimal` 只安装 Python CLI/server 路径。
 
+两种 CLI installer 同时提供原生 PowerShell launcher。生成的 PowerShell 脚本
+使用带 BOM 的 UTF-8，兼容 Windows PowerShell 5；batch 脚本使用不带 BOM 的
+UTF-8，并由 ASCII 前导语句选择代码页。Batch launcher 解析内嵌路径时关闭
+delayed expansion、转义百分号，并在退出时恢复调用者的代码页且保留 Python
+退出码。原生测试在 OEM、中文和 UTF-8 代码页下运行含 Unicode 与 shell 特殊字符
+路径的生成脚本，并检查 PowerShell 参数传递。Installer 不修改执行策略或系统语言。
+
 Ink 在所有操作系统上都按能力启动。Windows Terminal 和 ConPTY 能保留继承的 stdin
 console handle，因此进入完整全屏 TUI；MinTTY 等无法进入 raw input 的终端会在 UI
 边界失败，恢复 stdio 后再启动 Rich 回退。ConPTY 可能在一次 read 中同时交付可打印
