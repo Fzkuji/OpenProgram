@@ -1582,6 +1582,7 @@ def _build_ws_action_registry() -> dict:
         chat as _ws_chat,
         runtime as _ws_runtime,
         session as _ws_session,
+        permissions as _ws_permissions,
         context_commits as _ws_commits,
         turn_files as _ws_turn_files,
         files as _ws_files,
@@ -1598,6 +1599,7 @@ def _build_ws_action_registry() -> dict:
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
     table.update(_ws_session.ACTIONS)
+    table.update(_ws_permissions.ACTIONS)
     table.update(_ws_agent.ACTIONS)
     table.update(_ws_channel.ACTIONS)
     table.update(_ws_runtime.ACTIONS)

@@ -532,6 +532,15 @@ class RuntimeControlService:
         """
         from .waits import DurableWaitStore
 
+        from openprogram.agent.permissions import reconcile_permission_waits
+        permission_sessions = set()
+        for wait in DurableWaitStore(self.executions).list_open():
+            if wait.kind == "approval" and wait.request.get("approval_reason") == "MODE_APPROVAL":
+                execution = self.executions.get_execution(wait.execution_id)
+                if execution is not None:
+                    permission_sessions.add(execution.session_id)
+        for session_id in permission_sessions:
+            await reconcile_permission_waits(session_id, service=self)
         recovered: list[ExecutionRecord] = []
         for wait in DurableWaitStore(self.executions).list_outcomes():
             execution = self.executions.get_execution(wait.execution_id)

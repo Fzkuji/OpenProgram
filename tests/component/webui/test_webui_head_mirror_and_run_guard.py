@@ -406,7 +406,11 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
         def __init__(self, **_kwargs):
             pass
 
-        def admit(self, *_args, **_kwargs):
+        def admit(self, request, **kwargs):
+            from openprogram.agent.authority import decide_tool_authority
+            assert decide_tool_authority(request, "list", {}).allowed
+            assert request.permission_mode == "bypass"
+            assert request.permission_rules is not None
             return _Admission()
 
         def fail_admission(self, admission, *, reason_code):
@@ -427,10 +431,11 @@ def test_chat_startup_failure_fails_exact_admission_and_clears_task(
         session_config, "save_session_run_config",
         lambda *a, **kw: types.SimpleNamespace(
             tools_enabled=True, tools_override=None, web_search=False,
-            toolset=None, thinking_effort="medium", permission_mode="ask",
+            toolset=None, thinking_effort="medium", permission_mode=None,
             sandbox_enabled=None,
         ),
     )
+    monkeypatch.setattr(session_config, "project_defaults", lambda sid: {"permission_mode": "bypass"})
     monkeypatch.setattr(surface_context, "capture", lambda *_a, **_kw: {"window_id": "w1"})
     monkeypatch.setattr(surface_context, "release_bindings", lambda value: released.append(value))
     monkeypatch.setattr(

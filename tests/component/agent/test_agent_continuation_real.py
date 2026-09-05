@@ -789,3 +789,88 @@ def test_durable_wait_registration_publishes_checkpoint_before_tool_dispatch(
     assert real_agent_chat.tools.calls == []
     # Resolve it through the public canonical wait command.
     _question_action(real_agent_chat, "question_reject", question.id)
+
+
+def test_permission_change_resumes_real_approval_without_repeating_provider(real_agent_chat, monkeypatch):
+    from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
+    from openprogram.agent.authority import local_owner_authority
+    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions import update_permission, reconcile_permission_waits
+    import openprogram.agent.dispatcher.loop_runner as loop_runner
+
+    h = real_agent_chat
+    monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
+    actor = local_owner_authority()
+    update_permission(h.session_id, "ask", 0, actor)
+    h.provider.add_response(ScriptedToolCall("first", {}, "permission-first"), ScriptedToolCall("second", {}, "permission-second"))
+    h.provider.add_response(ScriptedText("done"))
+    execution = _chat(h)
+    question = _pending_question(h, kind="approval")
+    assert h.tools.calls == []
+    assert h.provider.call_count == 1
+    update_permission(h.session_id, "bypass", 1, actor)
+    asyncio.run(reconcile_permission_waits(h.session_id, service=h.control))
+    completed = _wait(lambda: (
+        item if (item := h.store.get_execution(execution.execution_id)).status in {
+            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
+        } else None
+    ), detail=lambda: {"errors": h.activation_errors, "outcomes": [str(x) for x in h.outcomes]})
+    assert completed.status is ExecutionStatus.COMPLETED, (h.activation_errors, [getattr(x, "error", str(x)) for x in h.outcomes])
+    assert h.tools.calls == ["first", "second"]
+    assert h.provider.call_count == 2
+    from openprogram.execution.waits import DurableWaitStore, WaitStatus
+    assert DurableWaitStore(h.store).get_wait(question.id).status is WaitStatus.RESOLVED
+
+
+def test_permission_change_before_tool_check_applies_to_running_turn(real_agent_chat, monkeypatch):
+    from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
+    from openprogram.agent.authority import local_owner_authority
+    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions import update_permission
+    import openprogram.agent.dispatcher.loop_runner as loop_runner
+
+    h = real_agent_chat
+    monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
+    actor = local_owner_authority()
+    h.provider.block_calls.add(0)
+    h.provider.add_response(ScriptedToolCall("first", {}, "permission-first"))
+    h.provider.add_response(ScriptedText("done"))
+    execution = _chat(h)
+    _wait(h.provider.entered.is_set)
+    update_permission(h.session_id, "ask", 0, actor)
+    h.provider.release.set()
+    question = _pending_question(h, kind="approval")
+    assert question.execution_id == execution.execution_id
+    assert h.tools.calls == []
+    _question_action(h, "question_reply", question.id, answer="approve")
+    _wait(lambda: h.store.get_execution(execution.execution_id).status in {
+        ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
+    })
+    assert h.tools.calls == ["first"]
+
+
+def test_permission_update_during_wait_publication_is_not_lost(real_agent_chat, monkeypatch):
+    from tests.component.providers.scripted_provider import ScriptedText, ScriptedToolCall
+    from openprogram.agent.authority import local_owner_authority
+    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions import update_permission
+    import openprogram.agent.dispatcher.loop_runner as loop_runner
+    h = real_agent_chat
+    actor = local_owner_authority()
+    monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
+    update_permission(h.session_id, "ask", 0, actor)
+    original = h.control.open_wait_at_safe_point
+    def open_after_update(**kwargs):
+        update_permission(h.session_id, "bypass", 1, actor)
+        return original(**kwargs)
+    monkeypatch.setattr(h.control, "open_wait_at_safe_point", open_after_update)
+    h.provider.add_response(ScriptedToolCall("first", {}, "publication-first"))
+    h.provider.add_response(ScriptedText("done"))
+    execution = _chat(h)
+    completed = _wait(lambda: (
+        item if (item := h.store.get_execution(execution.execution_id)).status in {
+            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
+        } else None
+    ), detail=lambda: {"errors": h.activation_errors, "outcomes": [str(x) for x in h.outcomes]})
+    assert completed.status is ExecutionStatus.COMPLETED, (h.activation_errors, [getattr(x, "error", str(x)) for x in h.outcomes])
+    assert h.tools.calls == ["first"]

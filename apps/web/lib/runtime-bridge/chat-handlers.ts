@@ -131,7 +131,8 @@ export function wsHandleChatAck(data: ChatAckData): void {
         history.pushState(null, "", "/s/" + sid);
       }
     }
-    if (typeof data.permission_mode === "string" && data.permission_mode) {
+    if (typeof data.permission_mode === "string" && data.permission_mode
+      && !useSessionStore.getState().composerSettingsBySession[sid]?.permission_version) {
       useSessionStore.getState().setComposerSettings(
         { effective_permission: data.permission_mode },
         sid,

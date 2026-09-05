@@ -429,7 +429,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
             return;
           }
           setPermissionMode(it.value);
-          pushSystem(`Permission mode set to ${it.value}.`);
+          pushSystem(`Permission mode change requested: ${it.value}.`);
           setPickerKind(null);
         }}
         onCancel={() => setPickerKind(null)}
@@ -448,7 +448,7 @@ export function buildPickerNode(ctx: PickerCtx): React.ReactElement | null {
         noLabel="Cancel"
         onConfirm={() => {
           setPermissionMode('bypass');
-          pushSystem('Permission mode set to bypass.');
+          pushSystem('Permission mode change requested: bypass.');
           setPickerKind(null);
         }}
         onCancel={() => setPickerKind('permission')}

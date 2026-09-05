@@ -827,6 +827,10 @@ class AgentProductionDriver:
             self._recover_owner_loss(attempt)
             return None
         self._finish_attempt(attempt, result, cancel_event)
+        # A settings update may race wait publication. Recheck only after
+        # _run_turn has released the old runtime and cancellation token.
+        from openprogram.agent.permissions import reconcile_permission_waits
+        await reconcile_permission_waits(request.session_id, service=self._control_service())
         return result
 
     def _run_turn(

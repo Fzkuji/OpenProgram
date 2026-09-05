@@ -1,5 +1,7 @@
 # Web UI
 
+工具审批行为及运行中切换请参见[工具权限模式](../capabilities/permissions.zh.md)。
+
 浏览器界面，覆盖 OpenProgram 的全部日常操作：聊天、管理函数与程序、配置 provider 和 MCP、查看记忆与项目。本页按路由逐个说明每个页面的用途，并详细介绍聊天页。
 
 启动：

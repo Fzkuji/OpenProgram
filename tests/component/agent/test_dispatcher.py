@@ -396,3 +396,20 @@ def test_await_user_approval_requires_prepublished_safe_point() -> None:
 
     with pytest.raises(RuntimeError, match="pre-dispatch durable wait"):
         asyncio.run(_drive())
+
+
+def test_ordinary_approval_cannot_authorize_sandbox_escalation(tmp_path, monkeypatch):
+    import asyncio
+    from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
+    store, service, _execution, _attempt, wait = _durable_approval_wait(tmp_path, monkeypatch)
+    _resolve_approval_wait(service, store, wait, {"answer": "approve", "scope": "once"})
+    req = D.TurnRequest(session_id="c1", user_text="test", agent_id="main", source="web")
+    token = set_preapproved_wait_id(wait.wait_id)
+    try:
+        allowed, reason, _ = asyncio.run(D._await_user_approval(
+            req=req, tool_name="bash:sandbox-escalation", args={}, on_event=lambda event: None,
+        ))
+    finally:
+        reset_preapproved_wait_id(token)
+    assert allowed is False
+    assert reason == "approval does not authorize this operation"

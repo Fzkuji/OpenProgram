@@ -70,13 +70,17 @@ def load_session_run_config(session_id: str) -> SessionRunConfig:
     except Exception:
         row = {}
 
+    return _config_from_row(row)
+
+
+def _config_from_row(row: dict) -> SessionRunConfig:
     return SessionRunConfig(
         tools_enabled=_as_bool_or_none(row.get("tools_enabled")),
         tools_override=_as_tools_override(row.get("tools_override")),
         web_search=_as_bool_or_none(row.get("web_search")),
         toolset=_as_nonempty_str(row.get("toolset")),
         thinking_effort=_normalize_thinking(row.get("thinking_effort")),
-        permission_mode=_normalize_permission(row.get("permission_mode")),
+        permission_mode=_normalize_permission((row.get("permission_state") or {}).get("mode") or row.get("permission_mode")),
         permission_rules=_as_permission_rules(row.get("permission_rules")),
         additional_working_dirs=_as_str_list(row.get("additional_working_dirs")),
         sandbox_enabled=_as_bool_or_none(row.get("sandbox_enabled")),
@@ -135,24 +139,15 @@ def save_session_run_config(
     if sandbox is not None:
         fields["sandbox_enabled"] = sandbox
 
-    if fields:
-        try:
-            from openprogram.agent.session_db import default_db
-            db = default_db()
-            # Only persist config when the session row already exists.
-            # Pre-creating an empty session just to hold tool / thinking
-            # prefs leaves a "ghost" row in SessionDB if the user never
-            # sends an actual message (refreshes / abandons the chat).
-            # The caller (server's _append_msg) folds these fields into
-            # create_session() when the first real message arrives, so
-            # nothing is lost — the config still lands on disk, just
-            # atomically with the first persisted message.
-            if db.get_session(session_id) is not None:
-                db.update_session(session_id, agent_id=agent_id, **fields)
-        except Exception:
-            pass
-
-    return load_session_run_config(session_id)
+    from openprogram.agent.session_db import default_db
+    db = default_db()
+    row = db.get_session(session_id)
+    if fields and row is not None:
+        db.update_session(session_id, agent_id=agent_id, **fields)
+        row = db.get_session(session_id)
+    # An unsent draft has no session row. Return its normalized settings to
+    # admission; the first message persists them without creating a ghost.
+    return _config_from_row({**(row or {}), **fields})
 
 
 def tools_override_from_config(cfg: SessionRunConfig) -> ToolsOverride:

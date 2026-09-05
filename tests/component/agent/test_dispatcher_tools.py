@@ -245,6 +245,7 @@ def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
             "prompt": "允许执行 dangerprobe？", "options": ["允许", "拒绝"],
             "multi": False, "allow_custom": False, "detail": "dangerprobe",
             "schema": {}, "questions": [], "tool": "dangerprobe", "args": {},
+            "tool_call_id": "call-dangerprobe",
         },
         policy_snapshot={
             "version": 1, "kind": "approval",

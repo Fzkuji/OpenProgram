@@ -1,3 +1,4 @@
+import { usePermissionSetting } from './repl/usePermissionSetting.js';
 import React, { useEffect, useState, useRef } from 'react';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -150,7 +151,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   // Permission tier for tool calls — the 5 modes shared with the web
   // Mode menu. Default ask (approval cards), matching web + Claude Code;
   // a resumed session restores its saved tier via session_loaded.
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>('ask');
   // Thinking effort cycle: off → minimal → low → medium → high → xhigh → off.
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort>('xhigh');
   const [connState, setConnState] = useState<ConnectionState>(client.getState());
@@ -211,6 +212,9 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   };
 
 
+  const setPermissionMode = usePermissionSetting(
+    client, conversationId, permissionMode, setPermissionModeState, pushSystem,
+  );
   useWsEvents({
     client,
     pushSystem, finishTurn,
@@ -223,7 +227,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     setQrAscii, setQrStatus,
     setPickerKind, setPendingDecisions, setChosenChannel, setChosenAccount,
     setConversationTitle, setConnState,
-    setToolsOn, setThinkingEffort, setPermissionMode,
+    setToolsOn, setThinkingEffort, setPermissionMode: setPermissionModeState,
     setSearchResults, setContextSearchQuery, setSessionLiveByConv,
     setChannelActivityByConv,
     agentSetRef, sessionAliasesPrintRef, sessionAliasesRef,

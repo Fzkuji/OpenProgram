@@ -1027,6 +1027,8 @@ async def handle_load_session(ws, cmd: dict):
         )
         from openprogram.sandbox import ui_state as _sandbox_ui
         run_cfg = load_session_run_config(conv["id"])
+        from openprogram.agent.permissions import permission_state
+        _permission_state = permission_state(session_id)
         _effective_permission = permission_from_config(
             run_cfg, default=project_defaults(conv["id"]).get("permission_mode"))
         refresh_context_after_load = not conv.get("_last_context_breakdown")
@@ -1060,6 +1062,7 @@ async def handle_load_session(ws, cmd: dict):
                     "tools_override": run_cfg.tools_override,
                     "thinking_effort": run_cfg.thinking_effort,
                     "permission_mode": _effective_permission,
+                    "permission_version": _permission_state["version"],
                     "additional_working_dirs": run_cfg.additional_working_dirs,
                     **_sandbox_ui(run_cfg.sandbox_enabled),
                 },

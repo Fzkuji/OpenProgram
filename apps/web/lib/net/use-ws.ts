@@ -11,6 +11,7 @@
  */
 import { useEffect } from "react";
 
+import { permissionSnapshotPatch } from "@/lib/session-store/permission-state";
 import { consumeCommandErrorFrame } from "@/lib/net/action-error";
 import type {
   PermissionRulesDetail,
@@ -562,6 +563,15 @@ export function useWS(): void {
               );
           });
           return true;
+        case "permission_changed": {
+          const value = d as { session_id?: string; mode?: unknown; version?: unknown };
+          if (value?.session_id) {
+            const store = useSessionStore.getState();
+            const patch = permissionSnapshotPatch(store.composerSettingsBySession[value.session_id] ?? {}, value);
+            if (patch) store.setComposerSettings(patch, value.session_id);
+          }
+          return true;
+        }
         case "sandbox_changed":
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const dd = (d || {}) as { session_id?: string; sandbox?: unknown };
@@ -621,10 +631,10 @@ export function useWS(): void {
                   store.setAdditionalWorkingDirs(sid, dirs as string[]);
                 }
                 if (typeof permissionMode === "string" && permissionMode) {
-                  store.setComposerSettings(
-                    { effective_permission: permissionMode },
-                    sid,
-                  );
+                  const patch = permissionSnapshotPatch(store.composerSettingsBySession[sid] ?? {}, {
+                    mode: permissionMode, version: settings?.permission_version ?? 0,
+                  });
+                  if (patch) store.setComposerSettings(patch, sid);
                 }
                 if (typeof settings?.sandbox === "boolean") {
                   store.setComposerSettings(

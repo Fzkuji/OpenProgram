@@ -424,7 +424,7 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         return true;
       }
       ctx.setPermissionMode(mode);
-      ctx.pushSystem(`Permission mode set to ${mode}.`);
+      ctx.pushSystem(`Permission mode change requested: ${mode}.`);
       return true;
     }
 

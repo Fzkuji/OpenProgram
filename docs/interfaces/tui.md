@@ -1,5 +1,7 @@
 # Terminal TUI
 
+See [tool permission modes and live changes](../capabilities/permissions.md) for approval behavior and changes during a task.
+
 The full chat interface for using OpenProgram without leaving the terminal. This page covers entering and exiting, keyboard shortcuts, and slash commands.
 
 ![Terminal TUI](../images/tui_hero.png)

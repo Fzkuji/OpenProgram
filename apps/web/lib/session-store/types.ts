@@ -115,6 +115,7 @@ export interface ComposerSettings {
   permission_mode: string;
   /** Last effective mode echoed by the backend (chat_ack / session_loaded). */
   effective_permission?: string;
+  permission_version?: number;
   /** Unattended: nobody watching → the agent's user-question tool is
    *  withheld so it never blocks on a prompt no one can answer. Web default
    *  is attended (false); toggled from the composer "+" menu, mirrored to

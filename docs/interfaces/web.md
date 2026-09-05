@@ -1,5 +1,7 @@
 # Web UI
 
+See [tool permission modes and live changes](../capabilities/permissions.md) for approval behavior and changes during a task.
+
 The browser interface covers all of OpenProgram's daily operations: chatting, managing functions and programs, configuring providers and MCP, browsing memory and projects. This page walks through each page by route and describes the chat page in detail.
 
 Start it:

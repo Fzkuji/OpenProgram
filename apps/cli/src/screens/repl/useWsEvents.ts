@@ -521,10 +521,7 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         ) {
           c.setThinkingEffort(effort);
         }
-        const mode = data.settings?.permission_mode;
-        if (mode && PERMISSION_MODES.includes(mode)) {
-          c.setPermissionMode(mode);
-        }
+
         const turns = (data.messages ?? [])
           .filter((m) => m.role && m.content)
           .map((m, i) => ({

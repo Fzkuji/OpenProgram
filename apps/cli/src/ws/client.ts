@@ -24,6 +24,7 @@ export type JsonSchemaOutput = {
 
 export type WsRequest =
   | ChatRequest
+  | { action: 'set_permission'; session_id: string; mode?: ChatRequest['permission_mode']; expected_version?: number; request_id?: string }
   | { action: 'stats' }
   | {
       action: 'execution.pause' | 'execution.continue' | 'execution.step' | 'execution.steer' | 'execution.cancel' | 'execution.fork' | 'execution.retry' | 'execution.wait.answer' | 'execution.wait.decline';
@@ -435,7 +436,13 @@ export interface QuestionClosedEnvelope {
   data: { id: string; [k: string]: unknown };
 }
 
+export type PermissionChangedEnvelope = {
+  type: 'permission_changed';
+  data: { session_id: string; mode?: NonNullable<ChatRequest['permission_mode']>; version?: number; error?: string; request_id?: string };
+};
+
 export type WsEnvelope =
+  | PermissionChangedEnvelope
   | ChatAck
   | ChatResponse
   | EventEnvelope

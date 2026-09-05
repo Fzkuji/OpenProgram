@@ -988,12 +988,15 @@ async def handle_chat(ws, cmd: dict):
         response_format.model_dump(mode="json")
         if hasattr(response_format, "model_dump") else response_format
     )
+    from openprogram.programs.permission_rule import load_merged_rules as _load_merged_rules
     _request_payload = {
         "session_id": session_id,
         "user_text": parsed.get("raw") or text,
         "agent_id": _db_agent_id(session_id),
         "source": "web",
-        "permission_mode": run_cfg.permission_mode or "ask",
+        "permission_mode": effective_permission,
+        "permission_rules": _load_merged_rules(session_id),
+        **_local_authority,
         "thinking_effort": run_cfg.thinking_effort,
         "service_tier": service_tier,
         "response_format": _response_format_payload,

@@ -199,10 +199,57 @@ def _persist_always_allow_rule(session_id: str, tool_name: str, args: dict) -> b
         return False
 
 
+
+def permission_decision(agent_tool, req, args: dict) -> tuple[str, str, str, object]:
+    """One synchronous decision for both wait publication and execution.
+
+    Auto classification runs only during execution. The final item carries
+    structured authority evidence when a capability check denies access.
+    """
+    name = agent_tool.name
+    violation = _hard_constraint_violation(name, args, req)
+    if violation:
+        return "deny", "HARD_CONSTRAINT_DENIED", f"hard constraint: {violation}", None
+    from openprogram.agent.authority import decide_tool_authority
+    authority = decide_tool_authority(req, name, args)
+    if not authority.allowed:
+        return "deny", authority.reason_code, f"authority tier does not allow {authority.capability}", authority
+    from openprogram.agent import plan_mode
+    from openprogram.programs import _unsafe_in_for
+    if (req.permission_mode == "plan" or plan_mode.is_plan_mode(req.session_id)) and "plan" in _unsafe_in_for(name):
+        return "deny", "PLAN_MODE_DENY", f"plan mode cannot execute {name}", None
+    verdict = _match_rule(getattr(req, "permission_rules", None), name, args)
+    if verdict == "deny":
+        return "deny", "PERMISSION_RULE_DENY", f"blocked by deny rule: {name}", None
+    if verdict == "ask" or name in _FORCE_APPROVAL_TOOLS:
+        reason = "PERMISSION_RULE_ASK" if verdict == "ask" else "MANDATORY_APPROVAL"
+    else:
+        if name == "web_use":
+            from openprogram.agent.surface_context import web_use_available
+            if web_use_available(getattr(req, "surface_context", None)):
+                return "allow", "SURFACE_GRANT", "", None
+        if req.permission_mode == "bypass" or verdict == "allow":
+            return "allow", "BYPASS" if req.permission_mode == "bypass" else "PERMISSION_RULE_ALLOW", "", None
+        if req.source in {"cron", "scheduler"} and name in _SCHEDULED_MEMORY_TOOLS:
+            return "allow", "SCHEDULED_MEMORY", "", None
+        from openprogram.agent.internals._auto_classifier import SAFE_AUTO_ALLOWLIST
+        if name in SAFE_AUTO_ALLOWLIST:
+            return "allow", "SAFE_TOOL", "", None
+        if req.permission_mode == "acceptEdits" and getattr(agent_tool, "_accept_edits_safe", False) and _path_is_safe(name, args, req):
+            return "allow", "SAFE_EDIT", "", None
+        if req.permission_mode == "auto":
+            return "auto", "AUTO_CLASSIFY", "", None
+        reason = "MODE_APPROVAL"
+    if req.source in _NON_INTERACTIVE_SOURCES:
+        return "deny", "APPROVAL_UNAVAILABLE_NON_INTERACTIVE", f"non-interactive {req.source} cannot approve {name}", None
+    return "ask", reason, "", None
+
 def wrap_with_approval(
     agent_tool,
     req: "TurnRequest",
     on_event: EventCallback,
+    *,
+    _live: bool = True,
 ):
     """Return a copy of ``agent_tool`` whose ``execute`` first checks
     approval, awaiting (not blocking) the user's response. Falls back
@@ -219,44 +266,20 @@ def wrap_with_approval(
     from openprogram.agent.types import AgentTool, AgentToolResult
     from openprogram.providers.types import TextContent
 
+    if _live:
+        from openprogram.agent.permissions import wrap_live_permission
+        return wrap_live_permission(agent_tool, req, on_event)
+
     orig_execute = agent_tool.execute
     name = agent_tool.name
 
     def _interaction_manifest(call_id: str, args: dict) -> dict | None:
         """Describe an approval before the Agent loop dispatches its effect."""
-        hard_violation = _hard_constraint_violation(name, args, req)
-        if hard_violation:
+        decision, reason, _, _ = permission_decision(agent_tool, req, args)
+        if decision != "ask":
             return None
-        from openprogram.agent.authority import decide_tool_authority
-        if not decide_tool_authority(req, name, args).allowed:
-            return None
-        verdict = _match_rule(getattr(req, "permission_rules", None), name, args)
-        if verdict == "deny" or req.source in _NON_INTERACTIVE_SOURCES:
-            return None
-        force_ask = name in _FORCE_APPROVAL_TOOLS
-        if name == "web_use":
-            from openprogram.agent.surface_context import web_use_available
-            if web_use_available(getattr(req, "surface_context", None)):
-                return None
-        if req.permission_mode == "bypass" or verdict == "allow":
-            return None
-        if req.source in {"cron", "scheduler"} and name in _SCHEDULED_MEMORY_TOOLS:
-            return None
-        from openprogram.agent.internals._auto_classifier import SAFE_AUTO_ALLOWLIST
-        if name in SAFE_AUTO_ALLOWLIST:
-            return None
-        if (
-            req.permission_mode == "acceptEdits"
-            and getattr(agent_tool, "_accept_edits_safe", False)
-            and _path_is_safe(name, args, req)
-        ):
-            return None
-        # Auto classification either permits or denies in the existing
-        # execution path; it never asks a human.
-        if req.permission_mode == "auto":
-            return None
-        if not (force_ask or verdict == "ask" or req.permission_mode != "auto"):
-            return None
+        from openprogram.worktree.context import current_worktree_path
+        import os
         return {
             "kind": "approval",
             "prompt": f"允许执行 {name}？",
@@ -266,6 +289,10 @@ def wrap_with_approval(
             "request_metadata": {
                 "tool": name, "args": args, "tool_call_id": str(call_id),
                 "risk_level": _risk_level(name, args),
+                "approval_reason": reason,
+                "permission_version": getattr(req, "_permission_version", 0),
+                "accept_edits_safe": bool(getattr(agent_tool, "_accept_edits_safe", False)),
+                "working_dir": current_worktree_path() or os.getcwd(),
             },
             "policy_snapshot": {
                 "version": 1, "kind": "approval", "on_answer": "continue",
@@ -375,6 +402,7 @@ def wrap_with_approval(
             tool_name=f"{name}:sandbox-escalation",
             args=approval_args,
             on_event=on_event,
+            tool_call_id=str(call_id),
         )
         if not approved:
             msg = (f"[denied] {reason.strip()}" if isinstance(reason, str)
@@ -404,7 +432,8 @@ def wrap_with_approval(
                 return _denied(f"[denied] {exc}", "SELF_UPDATE_RETRY_INVALID")
             approval_args = {**args, "candidate": preview}
         approved, reason, scope = await await_user_approval(
-            req=req, tool_name=name, args=approval_args, on_event=on_event)
+            req=req, tool_name=name, args=approval_args, on_event=on_event,
+            tool_call_id=str(call_id))
         if not approved:
             msg = (f"[denied] {reason.strip()}" if isinstance(reason, str)
                    and reason.strip() else f"[denied] user did not approve {name}")
@@ -414,118 +443,19 @@ def wrap_with_approval(
         return await _run_original(call_id, args, cancel, on_update)
 
     async def _gated_execute(call_id, args, cancel, on_update):
-        mode = req.permission_mode
-        force_ask = name in _FORCE_APPROVAL_TOOLS
-
-        # Non-interactive external turns have no approval surface. These
-        # constraints are evaluated before rules and bypass, so neither a
-        # stored allow rule nor permission_mode can remove them.
-        hard_violation = _hard_constraint_violation(name, args, req)
-        if hard_violation:
-            return _denied(
-                f"[denied] hard constraint: {hard_violation}",
-                "HARD_CONSTRAINT_DENIED",
-            )
-
-        # Tier is runtime-owned, not a model-visible label. The request carries
-        # one enum; capabilities are read only from the fixed process table.
-        # Missing/unknown tiers deny before rules, approval, or bypass.
-        from openprogram.agent.authority import decide_tool_authority
-        authority_decision = decide_tool_authority(req, name, args)
-        if not authority_decision.allowed:
-            return _denied(
-                "[denied] authority tier does not allow "
-                f"{authority_decision.capability}",
-                authority_decision.reason_code,
-                authority_decision,
-            )
-
-        # ① 规则层 deny/ask —— bypass 之前，最高安全优先级
-        verdict = _match_rule(getattr(req, "permission_rules", None), name, args)
-        if verdict == "deny":
-            return _denied(
-                f"[denied] blocked by deny rule: {name}",
-                "PERMISSION_RULE_DENY",
-            )
-        if verdict == "ask":
-            if req.source in _NON_INTERACTIVE_SOURCES:
-                return _denied(
-                    f"[denied] non-interactive {req.source} cannot approve {name}",
-                    "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
-                )
+        decision, code, message, authority = permission_decision(agent_tool, req, args)
+        if decision == "deny":
+            return _denied(f"[denied] {message}", code, authority)
+        if decision == "ask":
             return await _approve_then_run(call_id, args, cancel, on_update)
-
-        # ② force_ask（exit_plan_mode），bypass 也不能跳
-        if force_ask:
-            if req.source in _NON_INTERACTIVE_SOURCES:
-                return _denied(
-                    f"[denied] non-interactive {req.source} cannot approve {name}",
-                    "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
-                )
-            return await _approve_then_run(call_id, args, cancel, on_update)
-
-        # The owner granted this turn access to one exact in-app web surface
-        # when sending the message.  Requiring a second generic process
-        # approval here would make that explicit, turn-scoped grant unusable.
-        # Deny/ask rules, authority checks, and hard constraints above remain
-        # authoritative; this exception applies only to the bound public tool.
-        if name == "web_use":
-            from openprogram.agent.surface_context import web_use_available
-
-            if web_use_available(getattr(req, "surface_context", None)):
-                return await _run_original(call_id, args, cancel, on_update)
-
-        # ③ bypass：跳过普通审批与 Auto，不改变 Sandbox。
-        if mode == "bypass":
-            return await _run_original(call_id, args, cancel, on_update)
-
-        # ④ 规则层 allow —— bypass 之后
-        if verdict == "allow":
-            return await _run_original(call_id, args, cancel, on_update)
-
-        # A signed owner-created prompt task may keep its linked Memory record
-        # current without an approval UI. Explicit deny/ask rules above still
-        # win, and the hard constraint limits scheduled turns to these tools.
-        if req.source in {"cron", "scheduler"} and name in _SCHEDULED_MEMORY_TOOLS:
-            return await _run_original(call_id, args, cancel, on_update)
-
-        # ⑤ 只读安全工具全模式放行（对齐 CC：Ask / Accept edits / Plan 下
-        #    read/grep/glob 这类只读调用不弹卡，审批只留给会改状态的）。
-        #    复用 auto 分类器的白名单；deny/ask 规则在 ① 已优先兜住。
-        from openprogram.agent.internals._auto_classifier import (
-            auto_classify_tool, SAFE_AUTO_ALLOWLIST, RISKY_AUTO_DENYLIST,
-        )
-        if name in SAFE_AUTO_ALLOWLIST:
-            return await _run_original(call_id, args, cancel, on_update)
-
-        # ⑥ acceptEdits：写安全工具自动放行；命令类落审批
-        if mode == "acceptEdits" and getattr(agent_tool, "_accept_edits_safe", False) \
-                and _path_is_safe(name, args, req):
-            return await _run_original(call_id, args, cancel, on_update)
-
-        # ⑦ auto：LLM 分类器判定（对齐 CC "Auto mode"）。三级过滤省调用：
-        #    明显安全在 ⑤ 已放行；明显危险→拒；拿不准→问一次 haiku。
-        if mode == "auto":
+        if decision == "auto":
+            from openprogram.agent.internals._auto_classifier import auto_classify_tool, RISKY_AUTO_DENYLIST
             if name in RISKY_AUTO_DENYLIST:
-                return _denied(
-                    f"[denied] auto mode: risky tool blocked: {name}",
-                    "AUTO_RISK_DENY",
-                )
-            should_block, reason = await auto_classify_tool(name, args)
-            if should_block:
-                return _denied(
-                    f"[denied] auto classifier: {reason}",
-                    "AUTO_CLASSIFIER_DENY",
-                )
-            return await _run_original(call_id, args, cancel, on_update)
-
-        # ⑧ 弹卡片阻塞等答（ask / plan / acceptEdits 的命令类都落这里）
-        if req.source in _NON_INTERACTIVE_SOURCES:
-            return _denied(
-                f"[denied] non-interactive {req.source} cannot approve {name}",
-                "APPROVAL_UNAVAILABLE_NON_INTERACTIVE",
-            )
-        return await _approve_then_run(call_id, args, cancel, on_update)
+                return _denied(f"[denied] auto mode: risky tool blocked: {name}", "AUTO_RISK_DENY")
+            blocked, reason = await auto_classify_tool(name, args)
+            if blocked:
+                return _denied(f"[denied] auto classifier: {reason}", "AUTO_CLASSIFIER_DENY")
+        return await _run_original(call_id, args, cancel, on_update)
 
     wrapped = AgentTool(
         name=agent_tool.name,
@@ -583,6 +513,7 @@ async def await_user_approval(
     args: dict,
     on_event: EventCallback,
     timeout: float = 300.0,
+    tool_call_id: str | None = None,
 ) -> tuple[bool, "str | None", str]:
     """Consume the resolved approval wait selected by the Agent safe point.
     返回 (approved, reason, scope)：approved=是否放行；reason=拒绝理由（可为 None）；
@@ -602,6 +533,14 @@ async def await_user_approval(
         wait = DurableWaitStore(default_store()).get_wait(preapproved_wait_id)
         if wait is None or wait.kind != "approval":
             raise RuntimeError("preapproved wait is unavailable")
+        execution = default_store().get_execution(wait.execution_id)
+        from openprogram.agent.run_control import get_current_execution_id
+        current_execution = get_current_execution_id()
+        if (execution is None or execution.session_id != req.session_id
+                or wait.request.get("tool") != tool_name
+                or (current_execution and current_execution != wait.execution_id)
+                or (tool_call_id and wait.request.get("tool_call_id") != tool_call_id)):
+            return False, "approval does not authorize this operation", "once"
         if wait.status is WaitStatus.RESOLVED:
             value = wait.answer
             answer, scope = (

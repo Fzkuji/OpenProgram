@@ -99,9 +99,6 @@ def resolve_agent_runtime(
 
         tools = apply_tool_policy(tools or [], source=req.source)
         web_use_enabled = False
-    if tools and _plan_mode.is_plan_mode(req.session_id):
-        from openprogram.programs import apply_tool_policy as _apply_policy
-        tools = _apply_policy(tools, source="plan")
     from openprogram.programs import install_allowed_tool_names
     install_allowed_tool_names({tool.name for tool in tools or []})
     _log_resolved_tools(req, tools)
@@ -122,7 +119,7 @@ def resolve_agent_runtime(
         agent_profile,
         tools=tools,
         additional_working_dirs=getattr(req, "additional_working_dirs", None),
-        plan_mode=_plan_mode.is_plan_mode(req.session_id),
+        plan_mode=req.permission_mode == "plan" or _plan_mode.is_plan_mode(req.session_id),
     )
     system_prompt = recordable_prompt
     surface_prompt = _render_surface_context(
@@ -469,9 +466,26 @@ def run_loop_blocking(
             execution_context["safe_point_committed"] = True
         return handed_off
 
+    async def _permission_context(messages, _cancel):
+        from openprogram.providers.types import TextContent, UserMessage
+        from openprogram.agent.permissions import current_permission_request
+        current = current_permission_request(req)
+        version = getattr(current, "_permission_version", 0)
+        if not version:
+            return messages
+        return [*messages, UserMessage(
+            role="user", content=[TextContent(text=(
+                f"[Runtime permission setting, owner-confirmed version {version}] "
+                f"The current permission mode is {current.permission_mode}. "
+                "Use this current mode instead of earlier mode descriptions. "
+                "Authority, explicit rules, mandatory approvals, and Sandbox still apply."
+            ))], timestamp=0,
+        )]
+
     config = AgentLoopConfig(
         model=model,
         convert_to_llm=_default_convert_to_llm,
+        transform_context=_permission_context,
         # Pass session_id so providers that support it
         # (openai_codex/openai_responses/azure) set prompt_cache_key on
         # every request. Without it OpenAI prompt cache can only match
