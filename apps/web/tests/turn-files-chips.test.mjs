@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { build } from "esbuild";
@@ -10,6 +10,7 @@ import { parseHTML } from "linkedom";
 const webRoot = new URL("../", import.meta.url);
 const webPath = dirname(fileURLToPath(new URL("package.json", webRoot)));
 const bundleDir = await mkdtemp(join(webPath, ".turn-files-test-"));
+after(() => rm(bundleDir, { recursive: true, force: true }));
 const bundlePath = join(bundleDir, "turn-files-chips.mjs");
 await build({
   absWorkingDir: webPath,
@@ -38,7 +39,7 @@ globalThis.document = parsed.document;
 globalThis.Event = parsed.window.Event;
 globalThis.CustomEvent = parsed.window.CustomEvent;
 globalThis.localStorage = {
-  getItem() { return null; },
+  getItem(key) { return key === "agentic_locale" ? "en" : null; },
   setItem() {},
   removeItem() {},
 };
@@ -179,5 +180,4 @@ test("legacy file cards hide empty results, retry errors, and ignore stale respo
 
   await act(async () => { root.unmount(); });
   setSocket(null);
-  await rm(bundleDir, { recursive: true, force: true });
 });

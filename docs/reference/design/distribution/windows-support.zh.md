@@ -141,7 +141,9 @@ Desktop updater 按当前 x64 或 arm64 架构选择精确的
 installer；任一验证失败都会删除候选文件。安装仍是用户可见并确认的交接，不会在
 后台静默替换运行中的应用。
 
-Windows CI 安装包括原生 PTY 模块在内的 Desktop 依赖，并运行同一套 Desktop 契约。
+Windows x64 和 arm64 CI 安装包括原生 PTY 模块在内的 Desktop 与 Web 依赖，
+运行 Desktop 契约与 Web 单测。Web 测试夹具显式选择浏览器语言，并在依赖源码文本
+的断言中统一 checkout 换行格式。Desktop 契约
 覆盖范围包括 ConPTY 命令选择、浏览器导入、跨窗口 tab 事务、封装 worker 启动、
 release 选择、checksum 失败和签名失败。
 
