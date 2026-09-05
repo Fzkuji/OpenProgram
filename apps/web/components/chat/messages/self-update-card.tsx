@@ -138,14 +138,15 @@ export function SelfUpdateCard({ update }: { update: SelfUpdate }) {
         {update.source_repair_result?.candidate_sha && <div><dt>{text("Repaired revision", "修正版本")}</dt><dd><code>{update.source_repair_result.candidate_sha}</code></dd></div>}
         {iteration?.submission?.child_id && <div><dt>{text("Next update ID", "后继更新 ID")}</dt><dd><code>{iteration.submission.child_id}</code></dd></div>}
         {update.changed_paths.length > 0 && <div><dt>{text("Changed files", "变更文件")}</dt><dd><ul className={styles.paths}>{update.changed_paths.map((path) => <li key={path}>{path}</li>)}</ul></dd></div>}
+        {!update.verifier && <div><dt>{text("Evidence", "验证证据")}</dt><dd>{text("Not recorded", "暂无记录")}</dd></div>}
       </dl>
-      {update.verifier ? <>
+      {update.verifier && <>
         <ul>{update.verifier.assertions.map((assertion) => <li key={assertion.id}>
           {assertion.id}: {assertion.status}
           <ul>{assertion.evidence_refs.map((ref) => <li key={ref}><code>{ref}</code></li>)}</ul>
         </li>)}</ul>
         <Evidence key={`${update.session_id}:${update.update_id}:${update.snapshot_id}`} update={update} />
-      </> : <dl className={styles.facts}><div><dt>{text("Evidence", "验证证据")}</dt><dd>{text("Not recorded", "暂无记录")}</dd></div></dl>}
+      </>}
     </ExecutionStrip>
     </ExecutionStrip>
     {update.phase === "needs_manual_recovery" && <p className={styles.warning} role="status">{text("Automatic recovery did not complete. Inspect recovery evidence before another update.", "自动恢复未完成。再次更新前请检查恢复证据。")}</p>}

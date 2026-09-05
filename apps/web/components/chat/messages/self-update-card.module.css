@@ -1,14 +1,15 @@
 .card { min-width: 0; container-type: inline-size; overflow-wrap: anywhere; }
-.facts { margin: 0; padding: 8px 0; display: grid; gap: 8px; }
+.facts { --row-gap: 8px; margin: 0; padding: 8px 0; display: grid; gap: var(--row-gap); line-height: 1.6; }
 .facts > div { display: grid; grid-template-columns: 144px minmax(0, 1fr); gap: 16px; align-items: baseline; }
 .facts dt, .note, .annotation { color: var(--text-secondary); }
 .facts dd { margin: 0; min-width: 0; }
-.annotation { display: block; }
+.annotation { display: block; margin-top: var(--row-gap); }
+.facts code { font-size: inherit; line-height: inherit; }
 .card code, .card pre { font-family: var(--font-mono); }
 .card pre { background: var(--bg-secondary); padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .card ul { padding-left: 18px; margin: 8px 0; }
 .card .paths { list-style: none; padding: 0; margin: 0; }
-.card li + li { margin-top: 4px; }
+.card li + li { margin-top: 8px; }
 .warning { color: var(--accent-red); margin: 8px 0; }
 .history { min-width: 0; margin: 16px 60px; }
 .history > p { color: var(--text-secondary); }
