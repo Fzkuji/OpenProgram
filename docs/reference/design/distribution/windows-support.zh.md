@@ -72,6 +72,11 @@ Program、每条 WebSocket 连接重建 Python 的完整 import-to-distribution 
 Windows runtime 中该全量文件系统扫描代价尤其高，会让每次硬刷新后的会话与页面
 数据明显延迟，因此不进入连接热路径。
 
+Session store 关闭时取消待执行的索引计时器，在索引锁之外等待进行中的写入，
+再刷新最新 registry 快照。旧调用者复用已关闭的 store 时，后续写入改为同步，
+不重新启动后台计时器。失败的写入保留 dirty 状态与进程退出重试。这样可以避免
+Windows 退出流程遗留写入线程和文件句柄，同时保留存储一致性检查。
+
 Windows CI 分为两部分：
 
 - core job 覆盖兼容接缝、checkpoint history、backup/restore、升级行为、installer
