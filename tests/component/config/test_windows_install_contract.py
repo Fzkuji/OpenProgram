@@ -131,8 +131,13 @@ def test_desktop_upgrade_helper_stops_embedded_process_and_removes_long_file(
     assert command and powershell
     embedded = root / "resources" / "runtime" / "worker.exe"
     shutil.copy2(command, embedded)
+    # A cmd builtin blocks on our open stdin pipe without spawning a ping
+    # child outside the installation root or exiting naturally on a timer.
     worker = subprocess.Popen(
-        [str(embedded), "/d", "/c", "ping -n 30 127.0.0.1 >nul"],
+        [str(embedded), "/d", "/q", "/c", "set /p OPENPROGRAM_UPGRADE_FIXTURE=waiting"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     try:
@@ -158,7 +163,10 @@ def test_desktop_upgrade_helper_stops_embedded_process_and_removes_long_file(
             check=False,
             capture_output=True,
             text=True,
-            timeout=20,
+            # Allow cold PowerShell/CIM startup on loaded native runners,
+            # plus the helper's bounded CIM queries and process-exit window.
+            # The fixture waits on stdin, so natural exit cannot pass.
+            timeout=60,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         assert completed.returncode == 0, completed.stderr or completed.stdout
@@ -167,6 +175,8 @@ def test_desktop_upgrade_helper_stops_embedded_process_and_removes_long_file(
         assert "stopped 1 process(es)" in completed.stdout
         assert "removed 1 legacy long-path file(s)" in completed.stdout
     finally:
+        assert worker.stdin is not None
+        worker.stdin.close()
         if worker.poll() is None:
             worker.kill()
             worker.wait(timeout=5)

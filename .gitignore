@@ -103,6 +103,8 @@ docs/reference/provider-registry.md
 # Electron desktop shell
 apps/desktop/dist/
 apps/desktop/build/runtime/
+apps/desktop/build/.runtime-prepare.lock
+apps/desktop/build/.runtime-stage-*/
 
 references/codex-cli/
 openprogram/programs/workflow/llm_knowledge_research/

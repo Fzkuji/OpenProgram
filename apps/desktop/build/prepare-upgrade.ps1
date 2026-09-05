@@ -44,7 +44,7 @@ if (-not (Test-Path -LiteralPath $App -PathType Leaf) -or
 
 $RootPrefix = $Root + [IO.Path]::DirectorySeparatorChar
 $Owned = @(
-    Get-CimInstance Win32_Process -ErrorAction Stop |
+    Get-CimInstance Win32_Process -Property Name, ExecutablePath, ProcessId -OperationTimeoutSec 10 -ErrorAction Stop |
         Where-Object {
             $_.Name -ne "OpenProgram.exe" -and
             $_.ExecutablePath -and
@@ -61,7 +61,7 @@ foreach ($Process in $Owned) {
 $Deadline = [DateTime]::UtcNow.AddSeconds(5)
 do {
     $Remaining = @(
-        Get-CimInstance Win32_Process -ErrorAction Stop |
+        Get-CimInstance Win32_Process -Property Name, ExecutablePath, ProcessId -OperationTimeoutSec 10 -ErrorAction Stop |
             Where-Object {
                 $_.Name -ne "OpenProgram.exe" -and
                 $_.ExecutablePath -and

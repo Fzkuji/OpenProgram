@@ -74,13 +74,15 @@ if ($ActualUvVersion -ne $UvVersion) {
     throw "uv version mismatch: expected $UvVersion, got $ActualUvVersion"
 }
 
+$PreviousUv = $env:OPENPROGRAM_UV_BIN
+$PreviousBuildPython = $env:OPENPROGRAM_BUILD_PYTHON
 $env:OPENPROGRAM_UV_BIN = $Uv
 $env:OPENPROGRAM_BUILD_PYTHON = $BuildPython
 try {
     & (Join-Path $PSScriptRoot "stage-release-assets.ps1")
 } finally {
-    Remove-Item Env:OPENPROGRAM_UV_BIN -ErrorAction SilentlyContinue
-    Remove-Item Env:OPENPROGRAM_BUILD_PYTHON -ErrorAction SilentlyContinue
+    [Environment]::SetEnvironmentVariable("OPENPROGRAM_UV_BIN", $PreviousUv, "Process")
+    [Environment]::SetEnvironmentVariable("OPENPROGRAM_BUILD_PYTHON", $PreviousBuildPython, "Process")
 }
 
 Remove-Item -LiteralPath $RuntimeRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -98,12 +100,13 @@ foreach ($Directory in @(
 
 Invoke-Native $Uv build --wheel --out-dir (Join-Path $RuntimeRoot "wheel") $RepoRoot
 $ManagedPythonRoot = Join-Path $RuntimeRoot ".python-build"
+$PreviousPythonInstallDir = $env:UV_PYTHON_INSTALL_DIR
 $env:UV_PYTHON_INSTALL_DIR = $ManagedPythonRoot
 try {
     Invoke-Native $Uv python install $PythonVersion --install-dir $env:UV_PYTHON_INSTALL_DIR --no-bin
     $PythonBin = Invoke-NativeOutput $Uv python find --managed-python $PythonVersion
 } finally {
-    Remove-Item Env:UV_PYTHON_INSTALL_DIR -ErrorAction SilentlyContinue
+    [Environment]::SetEnvironmentVariable("UV_PYTHON_INSTALL_DIR", $PreviousPythonInstallDir, "Process")
 }
 $PythonBin = [IO.Path]::GetFullPath($PythonBin)
 if (-not (Test-Path -LiteralPath $PythonBin -PathType Leaf)) {
@@ -184,11 +187,12 @@ try {
 
 Invoke-Native $Uv pip install --python $PythonBin --strict --break-system-packages huggingface-hub
 $PlaywrightPath = Join-Path $RuntimeRoot "assets\playwright"
+$PreviousBrowserPath = $env:PLAYWRIGHT_BROWSERS_PATH
 $env:PLAYWRIGHT_BROWSERS_PATH = $PlaywrightPath
 try {
     Invoke-Native $PythonBin -m playwright install chromium
 } finally {
-    Remove-Item Env:PLAYWRIGHT_BROWSERS_PATH -ErrorAction SilentlyContinue
+    [Environment]::SetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH", $PreviousBrowserPath, "Process")
 }
 
 $Gpa = $Product.assets.gpa_detector

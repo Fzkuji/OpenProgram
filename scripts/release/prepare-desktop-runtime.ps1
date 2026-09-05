@@ -101,7 +101,7 @@ try {
             throw "refusing cleanup outside the runtime build directory"
         }
         try { Remove-Item -LiteralPath $Staging -Recurse -Force }
-        catch { Write-Warning "temporary runtime files retained at $Staging" }
+        catch { Write-Warning "temporary runtime files retained at ${Staging}: $($_.Exception.Message)" }
     }
     $Lock.Dispose()
 }
