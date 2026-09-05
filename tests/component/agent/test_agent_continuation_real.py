@@ -884,9 +884,16 @@ def test_cancel_resumed_local_shell_reaps_child_and_finalizes_chat(
 ):
     import shlex
     import sys
+    from importlib import import_module
     from openprogram.programs.tools.files.bash.bash import bash
     from tests.component.providers.scripted_provider import ScriptedToolCall
 
+    # The shell's real workspace must contain the files we observe. Linux
+    # isolation deliberately masks /tmp except for the bound working directory.
+    monkeypatch.setattr(
+        import_module('openprogram.programs.tools.files.bash.bash'),
+        'current_worktree_path', lambda: str(tmp_path),
+    )
     started = tmp_path / 'started'
     delayed = tmp_path / 'delayed'
     script = (

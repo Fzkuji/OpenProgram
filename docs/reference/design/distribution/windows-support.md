@@ -148,6 +148,8 @@ matches the desktop package. Failed publication restores the previous payload;
 if restoration also fails, its backup is retained with an explicit recovery path.
 Cleanup failure preserves the published runtime and reports both the retained
 staging path and the underlying error; the publication lock is still released.
+Cleanup handles deep and read-only build files with extended-length Windows
+paths. Directory links are removed without visiting their targets.
 This prepares packaging inputs only and does not replace the installed App.
 The shared `verify-release-version.py --installed-app` preflight accepts the
 Windows installation directory or its `OpenProgram.exe`. It reads PE product
