@@ -121,6 +121,13 @@ test("reopen notice ignores a stale initial reply after a live state event", asy
   } finally { delete window.openprogramDesktop; }
 });
 
+function fact(host, label) {
+  const term = [...host.querySelectorAll("dt")].find((node) => node.textContent === label);
+  assert.ok(term, `missing update fact: ${label}`);
+  assert.equal(term.nextElementSibling?.tagName, "DD");
+  return term.nextElementSibling;
+}
+
 test("Running renders the target separately from unknown verified runtime", async () => {
   respond = async () => response({ now: 210, items: [{
     kind: "self_update", id: update.update_id, session_id: update.session_id,
@@ -128,8 +135,7 @@ test("Running renders the target separately from unknown verified runtime", asyn
   }] });
   await mount(RunningPanel, { active: true }, async (host) => {
     assert.match(host.textContent, /Target revision/);
-    assert.match(host.textContent, /Last verified runtime/);
-    assert.match(host.textContent, /Unknown/);
+    assert.equal(fact(host, "Verified runtime").textContent, "Unknown");
     assert.match(host.textContent, /Verifying/);
     assert.ok(host.textContent.includes(update.candidate_revision));
     assert.doesNotMatch(host.textContent, /Process/);
@@ -192,7 +198,7 @@ test("history keeps stale evidence offline and accepts a new snapshot at the sam
     fail = false;
     item = { ...update, snapshot_id: "late", diagnosis: { status: "completed", at: 400 } };
     await act(async () => window.dispatchEvent(new Event("online")));
-    assert.match(host.textContent, /Diagnosis: completed/);
+    assert.equal(fact(host, "Diagnosis").textContent, "completed");
     assert.doesNotMatch(host.textContent, /may be stale/);
   });
 });
@@ -276,13 +282,12 @@ test("manual recovery is explicit and an old verified revision never becomes the
   } };
   await mount(SelfUpdateCard, { update: manual }, async (host) => {
     assert.match(host.textContent, /Manual recovery required/);
-    assert.match(host.textContent, /PID 1234/);
+    assert.equal(fact(host, "Worker PID").textContent, "1234");
     const expected = [update.candidate_revision, manual.last_verified_runtime.candidate_sha];
-    const versions = [...host.querySelectorAll("dd code")];
+    const versions = ["Target revision", "Verified runtime"].map((label) => fact(host, label).querySelector("code"));
     assert.deepEqual(versions.map((node) => node.textContent), expected.map((sha) => sha.slice(0, 8)));
     assert.deepEqual(versions.map((node) => node.title), expected);
-    const details = [...host.querySelectorAll("p code")].map((node) => node.textContent);
-    assert.ok(expected.every((sha) => details.includes(sha)), "details retain complete, distinct revision identities");
+    assert.deepEqual(["Full revision", "Runtime revision"].map((label) => fact(host, label).textContent), expected);
     assert.doesNotMatch(host.textContent, /Update committed/);
   });
 });
@@ -313,7 +318,9 @@ test("repair and child identities stay distinct from the failed original target"
     assert.ok(host.textContent.includes(repaired));
     assert.ok(host.textContent.includes(child));
     assert.ok(host.textContent.includes(update.candidate_revision));
-    assert.match(host.textContent, /Verifier verdict: fail/);
+    assert.equal(fact(host, "Verification").textContent, "fail");
+    assert.equal(fact(host, "Repaired revision").textContent, repaired);
+    assert.equal(fact(host, "Next update ID").textContent, child);
     assert.match(host.textContent, /Rolled back/);
     assert.doesNotMatch(host.textContent, /Update committed/);
     await act(async () => root.render(createElement(SelfUpdateCard, { update: {
@@ -322,6 +329,6 @@ test("repair and child identities stay distinct from the failed original target"
     } })));
     assert.ok(!host.textContent.includes(repaired));
     assert.ok(!host.textContent.includes(child));
-    assert.doesNotMatch(host.textContent, /Repaired candidate revision|Next update ID/);
+    assert.doesNotMatch(host.textContent, /Repaired revision|Next update ID/);
   });
 });
