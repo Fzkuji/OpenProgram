@@ -9,6 +9,7 @@ permission policy independently.
 | --- | --- |
 | `state.py` | Persisted modes, authenticated owner validation and atomic version checks |
 | `policy.py` | Shared decisions, explicit rules, Plan restrictions and hard constraints |
+| `classifier.py` | Auto-mode risk classification; only JSON boolean `true` grants approval |
 | `approval.py` | Approval manifests, exact wait consumption and authorized tool execution |
 | `lifecycle.py` | Per-call snapshots, confirmed live changes and durable wait reconciliation |
 

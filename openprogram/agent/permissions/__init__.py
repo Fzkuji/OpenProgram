@@ -1,7 +1,7 @@
 """Session permission policy and execution lifecycle.
 
 ``state`` owns persisted modes and compare-and-set updates; ``policy`` owns
-operation decisions; ``approval`` binds decisions to durable waits and tools;
+operation decisions; ``classifier`` evaluates Auto risk; ``approval`` binds decisions to durable waits and tools;
 ``lifecycle`` applies confirmed changes to subsequent operations and waits.
 Authenticated identity remains in ``agent.authority`` and process isolation
 remains in ``sandbox``. Interfaces use this package instead of duplicating policy.

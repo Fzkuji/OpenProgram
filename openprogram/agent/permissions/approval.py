@@ -255,7 +255,7 @@ def wrap_with_approval(
         if decision == "ask":
             return await _approve_then_run(call_id, args, cancel, on_update)
         if decision == "auto":
-            from openprogram.agent.internals._auto_classifier import auto_classify_tool, RISKY_AUTO_DENYLIST
+            from openprogram.agent.permissions.classifier import auto_classify_tool, RISKY_AUTO_DENYLIST
             if name in RISKY_AUTO_DENYLIST:
                 return _denied(f"[denied] auto mode: risky tool blocked: {name}", "AUTO_RISK_DENY")
             blocked, reason = await auto_classify_tool(name, args)

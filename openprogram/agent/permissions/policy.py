@@ -185,7 +185,7 @@ def permission_decision(agent_tool, req, args: dict) -> tuple[str, str, str, obj
             return "allow", "BYPASS" if req.permission_mode == "bypass" else "PERMISSION_RULE_ALLOW", "", None
         if req.source in {"cron", "scheduler"} and name in _SCHEDULED_MEMORY_TOOLS:
             return "allow", "SCHEDULED_MEMORY", "", None
-        from openprogram.agent.internals._auto_classifier import SAFE_AUTO_ALLOWLIST
+        from openprogram.agent.permissions.classifier import SAFE_AUTO_ALLOWLIST
         if name in SAFE_AUTO_ALLOWLIST:
             return "allow", "SAFE_TOOL", "", None
         if req.permission_mode == "acceptEdits" and getattr(agent_tool, "_accept_edits_safe", False) and _path_is_safe(name, args, req):

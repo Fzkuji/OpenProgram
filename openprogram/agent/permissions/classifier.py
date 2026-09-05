@@ -78,7 +78,7 @@ async def auto_classify_tool(tool_name: str, args: dict) -> tuple[bool, str]:
         start, end = text.find("{"), text.rfind("}")
         if start >= 0 and end > start:
             obj = json.loads(text[start:end + 1])
-            safe = bool(obj.get("safe", False))
+            safe = obj.get("safe") is True
             reason = str(obj.get("reason", "")) or "分类器判定"
             return (not safe), reason
         return True, f"分类器回复无法解析：{text[:60]}"
