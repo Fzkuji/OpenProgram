@@ -933,6 +933,18 @@ class ExecutionStore:
             created_at=created_at,
         )
         self._insert_execution_input(connection, child)
+        payload = connection.execute(
+            "SELECT payload_json, content_hash FROM execution_agent_turn_inputs WHERE execution_id = ?",
+            (source_execution_id,),
+        ).fetchone()
+        if payload is not None:
+            if hashlib.sha256(payload["payload_json"].encode("utf-8")).hexdigest() != payload["content_hash"]:
+                raise ExecutionConflict("agent_input_hash_mismatch", "branch source Agent input failed integrity validation")
+            connection.execute(
+                "INSERT INTO execution_agent_turn_inputs (execution_id, payload_json, content_hash, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (child_execution_id, payload["payload_json"], payload["content_hash"], created_at),
+            )
         return child
 
     @staticmethod

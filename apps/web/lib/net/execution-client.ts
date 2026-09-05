@@ -218,7 +218,7 @@ export function parseRevisionState(body: RevisionStateResponse): RevisionDraft {
     ...draft,
     status: draft.status === "discarded" ? "discarded"
       : manifest ? "published"
-        : approval?.status === "approved" ? "approved"
+        : (approval?.status === "approved" || approval?.status === "not_required") ? "approved"
           : validation ? "validated" : draft.status,
     validation: validation
       ? {

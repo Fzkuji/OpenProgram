@@ -104,6 +104,10 @@ class ExecutionProjectionReadModel:
                     ),
                 )
                 current_advanced = current_write.rowcount == 1
+        if item.projection_kind == "dag" and execution.status.value == "failed" and execution.reason_code == "agent_runner_error":
+            # This is an outbox projection: failure retries independently of
+            # canonical completion, including after a worker restart.
+            self._project_failed_assistant(execution)
         if item.projection_kind == "ui" and current_advanced:
             # The durable snapshot above remains the reconnect source of
             # truth.  This frame only updates already-connected clients.
@@ -113,6 +117,42 @@ class ExecutionProjectionReadModel:
             emit_ws_frame(execution_update_frame(
                 payload["execution"], payload["event_cursor"], data=payload,
             ))
+
+    def _project_failed_assistant(self, execution: ExecutionRecord) -> None:
+        from openprogram.agent.session_db import default_db
+        from openprogram.store import SessionNodeWriter
+
+        current = self.store.get_execution(execution.execution_id)
+        source = self.store.get_execution_input(execution.execution_id)
+        if (current is None or current.status_version != execution.status_version
+                or source is None or not source.assistant_message_id):
+            return
+        if execution.parent_execution_id:
+            parent = self.store.get_execution_input(execution.parent_execution_id)
+            if parent is not None and parent.assistant_message_id == source.assistant_message_id:
+                return  # A legacy shared anchor cannot authorize a parent write.
+        writer = SessionNodeWriter(default_db(), execution.session_id, advance_head=False)
+        node = writer.load().nodes.get(source.assistant_message_id)
+        if node is None or (node.metadata or {}).get("status") not in {None, "running", "error"}:
+            return
+        fields = {"metadata": {"status": "error", "error": "agent_runner_error",
+                               "finished_at": execution.terminal_at or execution.updated_at}}
+        if not node.output:
+            output = ""
+            if execution.checkpoint_head_id:
+                try:
+                    from openprogram.agent.continuation import AgentCheckpointV1
+                    from .checkpoints import ExecutionCheckpointStore
+                    checkpoint = ExecutionCheckpointStore(self.store).get(execution.checkpoint_head_id)
+                    state = AgentCheckpointV1.load(self.store, checkpoint)
+                    if state.payload["turn"]["assistant_message_id"] == source.assistant_message_id:
+                        message = state.read_json_ref(self.store, execution.execution_id, state.payload["assistant_message_delta_ref"])
+                        output = "".join(item["text"] for item in message.get("content", [])
+                                         if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str))
+                except Exception:
+                    _log.debug("failed reply has no readable assistant checkpoint", exc_info=True)
+            fields["output"] = output or "[error] Agent execution failed."
+        writer.update(source.assistant_message_id, **fields)
 
     def get_current(
         self, projection_kind: str, execution_id: str

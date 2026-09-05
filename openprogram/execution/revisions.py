@@ -344,7 +344,9 @@ class RevisionControlService:
                 return self._validation(existing)
             self._verify_draft_binding(connection, draft)
             checkpoint, proof = self._compatible_checkpoint_and_proof(connection, draft)
-            requires_approval = any(
+            # Instruction-only branches have already proved the original program and
+            # runtime unchanged; they have the same authority as a user steer.
+            requires_approval = self.instruction_editor(draft.changes) is None and any(
                 change["kind"] in {"tool_contract", "model_policy", "output_schema", "program_artifact"}
                 for change in draft.changes
             )

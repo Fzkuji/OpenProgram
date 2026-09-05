@@ -343,6 +343,15 @@ def agent_loop_resume(
                 tool_results = execution["tool_results"]
                 current_context.messages.extend(tool_results)
                 new_messages.extend(tool_results)
+                # The tool loop already consumed these durable steering
+                # inputs. Carry them into the next provider context rather
+                # than polling the now-empty queue and losing the messages.
+                steering = execution.get("steering_messages") or []
+                for message in steering:
+                    ev_stream.push(AgentEventMessageStart(message=message))
+                    ev_stream.push(AgentEventMessageEnd(message=message))
+                current_context.messages.extend(steering)
+                new_messages.extend(steering)
                 if execution.get("stop_at_safe_point"):
                     ev_stream.push(AgentEventAgentEnd(messages=new_messages))
                     ev_stream.end(new_messages)

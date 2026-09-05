@@ -488,7 +488,7 @@ export function DebuggerPanel({
             <div className={styles.cardHeader}><h4>Question and approval waits</h4><span>{selectedWaits.length} open</span></div>
             {selectedWaits.length ? selectedWaits.map((wait) => (
               <div className={styles.waitRow} key={wait.wait_id}>
-                <div><strong>{wait.kind}</strong><span>{shortId(wait.wait_id)} · generation {wait.claim_generation}</span><code>{wait.request_ref}</code></div>
+                <div><strong>{wait.kind === "approval" ? text("Approval needed", "需要授权") : text("Answer needed", "需要回答")}</strong><p>{wait.request?.prompt || text("This execution is waiting for your response.", "此执行正在等待你的回复。")}</p></div>
                 <div className={styles.waitControls}>
                   {wait.kind === "approval" ? (
                     <select aria-label="Approval scope" value={approvalScopes[waitKey(wait)] || ""} onChange={(event) => setApprovalScopes((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>
@@ -519,11 +519,11 @@ export function DebuggerPanel({
             <p className={styles.muted}>{text("Continue from this saved point with new instructions. The original execution stays unchanged.", "从此保存点按新指令继续，原执行保持不变。")}</p>
             {(!selectedDraft || selectedDraft.editor) ? <label className={styles.editorLabel}>
               {text("Instructions for the new branch", "新分支的指令")}
-              <Textarea maxLength={4096} value={draftText ?? selectedDraft?.editor?.instructions ?? ""} onChange={(event) => setDraftText(event.target.value)} disabled={draftPending || Boolean(selectedDraft && selectedDraft.status !== "draft")} />
+              <Textarea maxLength={4096} value={draftText ?? selectedDraft?.editor?.instructions ?? ""} onChange={(event) => setDraftText(event.target.value)} disabled={draftPending || Boolean(selectedDraft && ["published", "discarded"].includes(selectedDraft.status))} />
             </label> : <p className={styles.muted}>{text("This revision was prepared by another client.", "此修订由其他客户端准备。")}</p>}
             {selectedDraft && <p className={styles.muted}>{({ draft: "Draft", validated: "Validated", approved: "Approved", published: "Ready to create branch", discarded: "Discarded", rejected: "Needs changes" })[selectedDraft.status]}</p>}
             <div className={styles.revisionActions}>
-              {(!selectedDraft || (selectedDraft.status === "draft" && selectedDraft.editor)) && <Button variant="ghost" disabled={draftPending || (selectedDraft ? !onUpdateDraft : !onCreateDraft) || !(draftText ?? selectedDraft?.editor?.instructions ?? "").trim()} onClick={async () => {
+              {(!selectedDraft || (!["published", "discarded"].includes(selectedDraft.status) && selectedDraft.editor)) && <Button variant="ghost" disabled={draftPending || (selectedDraft ? !onUpdateDraft : !onCreateDraft) || !(draftText ?? selectedDraft?.editor?.instructions ?? "").trim()} onClick={async () => {
                 setDraftError(null); setDraftPending(true);
                 try {
                   const preparation = { instructions: (draftText ?? selectedDraft?.editor?.instructions ?? "").trim() };
