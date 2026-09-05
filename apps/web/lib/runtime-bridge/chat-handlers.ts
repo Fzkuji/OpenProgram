@@ -589,7 +589,16 @@ export function handleSessionUpdated(
 
 /** Restore a durable continuation after its initial transport task ended.
  * Called only after the canonical execution update passes ordering checks. */
-export function restoreForegroundExecutionTask(value: unknown): void {
+export function restoreForegroundExecutionTask(value: unknown, execution?: unknown): void {
+  const canonical = execution as { session_id?: string; execution_id?: string; status?: string } | undefined;
+  if (canonical?.status === "paused") {
+    const sid = canonical.session_id;
+    const eid = canonical.execution_id;
+    if (sid && eid && useSessionStore.getState().runningTasks[sid]?.execution_id === eid) {
+      handleRunningTaskClear(sid, { execution_id: eid });
+    }
+    return;
+  }
   if (!value || typeof value !== "object") return;
   const task = value as { session_id?: string; execution_id?: string; msg_id?: string; status_version?: number };
   const sid = task.session_id;
