@@ -85,13 +85,13 @@ function UpdateRequests({ update }: { update: SelfUpdate }) {
       {preInstall && <Button type="button" onClick={() => prepare(`self_update_cancel(update_id=${JSON.stringify(update.update_id)})`)}>{text("Prepare cancellation request", "准备取消请求")}</Button>}
       {iteration && !iteration.stopped && <Button type="button" onClick={() => prepare(`self_update_iteration_cancel(update_id=${JSON.stringify(update.update_id)})`)}>{text("Prepare stop-iteration request", "准备停止迭代请求")}</Button>}
     </div>}
-    {canRetry && <div className={styles.actions}>
-      <label>{text("Retry with a new revision", "使用新版本重试")}
+    {canRetry && <div className={styles.retry}>
+      <label><span>{text("New revision", "新版本")}</span>
         <Input aria-label={text("New candidate commit", "新候选提交")} value={candidate} onChange={(event) => setCandidate(event.target.value)} spellCheck={false} placeholder={text("40-character commit SHA", "40 位提交 SHA")} />
       </label>
       <Button type="button" disabled={!/^[0-9a-f]{40}$/.test(candidate)} onClick={() => prepare(`self_update_retry(update_id=${JSON.stringify(update.update_id)}, candidate_sha=${JSON.stringify(candidate)})`)}>{text("Prepare retry request", "准备重试请求")}</Button>
     </div>}
-    <p className={styles.note}>{text("Adds a draft to the original conversation. Send it there to request approval and execution.", "将请求加入原会话草稿；需在那里发送，按权限规则审批并执行。")}</p>
+    <p className={`${styles.note} ${styles.actionNote}`}>{text("Adds a draft to the original conversation. Send it there to request approval and execution.", "将请求加入原会话草稿；需在那里发送，按权限规则审批并执行。")}</p>
     {prepared && <p role="status">{text("Request added to the original conversation draft; not submitted.", "请求已加入原会话草稿，尚未发送。")}</p>}
     </div>
   </details>;
@@ -147,7 +147,7 @@ export function SelfUpdateCard({ update }: { update: SelfUpdate }) {
           <ul>{assertion.evidence_refs.map((ref) => <li key={ref}><code>{ref}</code></li>)}</ul>
         </li>)}</ul>
         <Evidence key={`${update.session_id}:${update.update_id}:${update.snapshot_id}`} update={update} />
-      </> : <p className={styles.note}>{text("No verification evidence recorded.", "尚无验证证据记录。")}</p>}
+      </> : <dl className={styles.facts}><div><dt>{text("Evidence", "验证证据")}</dt><dd>{text("Not recorded", "暂无记录")}</dd></div></dl>}
       </div>
     </details>
     <UpdateRequests key={`${update.session_id}:${update.update_id}`} update={update} />
