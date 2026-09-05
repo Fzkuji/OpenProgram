@@ -57,6 +57,12 @@ openprogram worker restart
 
 ## 恢复对话内自更新
 
+基于源码的对话式更新控制器目前要求 macOS。Windows 和 Linux 上的聊天准备、重试
+工具会在创建更新请求、占用活动更新位置之前明确说明这一点。这不影响已发布版本的
+升级：通过发布安装器安装的 CLI 使用 `openprogram upgrade`，Desktop 使用发布更新器。
+已有更新的状态查询和取消仍然可用；仅有 worker 服务并不代表已经具备源码更新控制器的
+构建、激活、验证和恢复流程。
+
 对话内打包离线执行。依赖基线必须与候选的 `uv.lock` 和
 `scripts/release/product-runtime.json` 完全一致；控制器使用保存 runtime 中固定版本的
 构建工具，以及既有 npm/uv/Electron-builder/node-gyp 缓存的私有副本。Electron 平台归档

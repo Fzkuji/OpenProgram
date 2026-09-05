@@ -234,6 +234,7 @@ jobs:
         run: >-
           uv run --locked --extra dev python -m pytest -q
           tests/component/config/test_windows_install_contract.py
+          tests/component/config/test_conversational_update_capability.py
           tests/component/config/test_windows_cli_launchers.py
           tests/component/config/test_windows_release_transaction.py
           tests/component/runtime/test_windows_process.py

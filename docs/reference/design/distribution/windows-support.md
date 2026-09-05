@@ -86,6 +86,11 @@ rest of the runtime. This makes state projection and recovery records portable;
 it does not establish support for the separate macOS-specific controller and
 installer pipeline, which still needs a Windows implementation and native
 end-to-end acceptance before it can be advertised as available.
+The chat prepare and retry entry points consult the controller capability in
+`_compat` before resolving turn context or creating state. When no controller
+adapter is implemented they explain the missing source-update workflow and
+point to the separate published CLI/Desktop updaters, without reserving an
+active update. Status and cancellation are not gated by this capability.
 
 Post-rollback diagnosis and isolated source repair use the same portable state
 checks. Model-provided LF edits match consistently CRLF source files while

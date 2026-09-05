@@ -1448,6 +1448,16 @@ def _posix_process_command_lines() -> dict[int, str]:
     return values
 
 
+def conversational_update_backend() -> str | None:
+    """Installed source-update controller adapter, not the release updater.
+
+    A worker service adapter alone is insufficient: packaging, activation,
+    recovery and native verification must all implement the same transaction.
+    Only the macOS controller currently supplies that complete adapter.
+    """
+    return "launchd" if _sys.platform == "darwin" else None
+
+
 def worker_service_backend() -> str | None:
     """Name of the per-user worker service adapter for this host."""
 
@@ -2033,6 +2043,7 @@ __all__ = [
     "install_asyncio_exception_handler",
     "interactive_pty_available",
     "can_open_browser",
+    "conversational_update_backend",
     "kill_processes_matching",
     "kill_process_tree",
     "managed_release_target",

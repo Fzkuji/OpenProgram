@@ -59,6 +59,14 @@ openprogram worker restart
 
 ## Recovering a conversational self-update
 
+The source-based conversational update controller currently requires macOS.
+On Windows and Linux, the chat prepare and retry tools report this before
+creating an update request or reserving its active slot. This does not disable
+published-version upgrades: use `openprogram upgrade` for a release-installed
+CLI, or the Desktop release updater. Existing update status and cancellation
+remain available; a worker service alone does not provide the source-update
+controller's build, activation, verification and recovery workflow.
+
 Conversational packaging is offline. Its dependency base must have exactly the
 candidate's `uv.lock` and `scripts/release/product-runtime.json`; the controller
 uses the saved runtime's pinned build tools and private copies of existing
