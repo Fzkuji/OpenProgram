@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ExecutionStrip } from "./execution-strip";
+import { ActionButton, SVG } from "./message-actions";
+import { showToast } from "@/lib/format-utils/toast";
 import { useTranslation } from "@/lib/i18n";
 import { jsonFetch } from "@/lib/net/fetch-client";
 import type { SelfUpdate } from "@/lib/self-update";
@@ -62,54 +64,52 @@ function Evidence({ update }: { update: SelfUpdate }) {
 
 function UpdateRequests({ update }: { update: SelfUpdate }) {
   const { text } = useTranslation();
-  const [candidate, setCandidate] = useState("");
-  const [prepared, setPrepared] = useState(false);
-  const prepare = (call: string) => {
-    const store = useSessionStore.getState();
-    const draft = store.composerDrafts[update.session_id] ?? "";
-    const instruction = text(
-      `Please request ${call} for this self-update through the normal tool approval flow.`,
-      `请通过正常工具审批流程，为本次自更新请求执行 ${call}。`,
-    );
-    store.setComposerInputFor(update.session_id, draft ? `${draft}\n\n${instruction}` : instruction);
-    setPrepared(true);
-  };
+  function editRequest(name: string, retry = false) {
+    useSessionStore.getState().openFnForm({
+      name,
+      category: "tool",
+      description: text(
+        "Prepare a request in the original conversation draft. Send the draft there for tool authorization and any required approval.",
+        "将请求加入原会话草稿。需在那里发送，按权限规则审批并执行。",
+      ),
+      params_detail: retry ? [{ name: "candidate_sha", label: text("New revision", "新版本"), placeholder: text("40-character commit SHA", "40 位提交 SHA"), type: "str", required: true, description: text("New candidate commit (40-character SHA)", "新候选提交（40 位 SHA）") }] : [],
+    }, null, {
+      label: text("Prepare request", "准备请求"),
+      submit: (kwargs) => {
+        const candidate = String(kwargs.candidate_sha ?? "").trim();
+        if (retry && !/^[0-9a-f]{40}$/.test(candidate)) return {
+          error: text("Enter a complete 40-character commit SHA.", "请输入完整的 40 位提交 SHA。"),
+          errorParam: "candidate_sha",
+        };
+        const call = `${name}(update_id=${JSON.stringify(update.update_id)}${retry ? `, candidate_sha=${JSON.stringify(candidate)}` : ""})`;
+        const instruction = text(
+          `Please request ${call} for this self-update through the normal tool approval flow.`,
+          `请通过正常工具审批流程，为本次自更新请求执行 ${call}。`,
+        );
+        const store = useSessionStore.getState();
+        const draft = store.composerDrafts[update.session_id] ?? "";
+        store.setComposerInputFor(update.session_id, draft ? `${draft}\n\n${instruction}` : instruction);
+        showToast(text("Request added to the original conversation draft; not submitted.", "请求已加入原会话草稿，尚未发送。"));
+      },
+    });
+  }
   const preInstall = ["preparing", "staging", "ready"].includes(update.phase);
   const canRetry = ["aborted", "rolled_back"].includes(update.phase);
-  const iteration = update.iteration;
-  if (!preInstall && !canRetry && (!iteration || iteration.stopped)) return null;
-  return <details className={styles.section}>
-    <summary><ChevronRight size={14} aria-hidden="true" />{text("Update actions", "更新操作")}</summary>
-    <div className={styles.sectionBody}>
-    {(preInstall || (iteration && !iteration.stopped)) && <div className={styles.actions}>
-      {preInstall && <Button type="button" onClick={() => prepare(`self_update_cancel(update_id=${JSON.stringify(update.update_id)})`)}>{text("Prepare cancellation request", "准备取消请求")}</Button>}
-      {iteration && !iteration.stopped && <Button type="button" onClick={() => prepare(`self_update_iteration_cancel(update_id=${JSON.stringify(update.update_id)})`)}>{text("Prepare stop-iteration request", "准备停止迭代请求")}</Button>}
-    </div>}
-    {canRetry && <div className={styles.retry}>
-      <label><span>{text("New revision", "新版本")}</span>
-        <Input aria-label={text("New candidate commit", "新候选提交")} value={candidate} onChange={(event) => setCandidate(event.target.value)} spellCheck={false} placeholder={text("40-character commit SHA", "40 位提交 SHA")} />
-      </label>
-      <Button type="button" disabled={!/^[0-9a-f]{40}$/.test(candidate)} onClick={() => prepare(`self_update_retry(update_id=${JSON.stringify(update.update_id)}, candidate_sha=${JSON.stringify(candidate)})`)}>{text("Prepare retry request", "准备重试请求")}</Button>
-    </div>}
-    <p className={`${styles.note} ${styles.actionNote}`}>{text("Adds a draft to the original conversation. Send it there to request approval and execution.", "将请求加入原会话草稿；需在那里发送，按权限规则审批并执行。")}</p>
-    {prepared && <p className={styles.actionNote} role="status">{text("Request added to the original conversation draft; not submitted.", "请求已加入原会话草稿，尚未发送。")}</p>}
-    </div>
-  </details>;
+  const canStop = update.iteration && !update.iteration.stopped;
+  if (!preInstall && !canRetry && !canStop) return null;
+  return <div className="message-actions-footer runtime-actions-footer"><div className="message-actions">
+    {canRetry && <ActionButton icon={SVG.pencil} title={text("Edit retry request", "编辑重试请求")} onClick={() => editRequest("self_update_retry", true)} />}
+    {preInstall && <ActionButton icon={<Square />} title={text("Prepare cancellation request", "准备取消请求")} onClick={() => editRequest("self_update_cancel")} />}
+    {canStop && <ActionButton icon={<Square />} title={text("Prepare stop-iteration request", "准备停止迭代请求")} onClick={() => editRequest("self_update_iteration_cancel")} />}
+  </div></div>;
 }
 
 export function SelfUpdateCard({ update }: { update: SelfUpdate }) {
   const { text } = useTranslation();
   const runtime = update.last_verified_runtime;
   const iteration = update.iteration;
-  return <article className={styles.card} aria-label={text("Self-update", "自更新")} data-update-id={update.update_id} data-phase={update.phase}>
-    <details className={styles.disclosure}>
-    <summary className={styles.header}>
-      <RefreshCw size={16} className={styles.icon} aria-hidden="true" />
-      <span className={styles.heading}><strong>{text("Self-update", "自更新")}</strong><span className={styles.note}>{text("Attempt", "尝试")} {update.attempt}</span></span>
-      <span className={styles.status}><span className={styles.dot} aria-hidden="true" />{text(...PHASES[update.phase])}</span>
-      <ChevronRight size={14} className={styles.chevron} aria-hidden="true" />
-    </summary>
-    <div className={styles.body}>
+  return <article className={`runtime-card-host ${styles.card}`} aria-label={text("Self-update", "自更新")} data-update-id={update.update_id} data-phase={update.phase}>
+    <ExecutionStrip label={`${text("Self-update", "自更新")} · ${text("Attempt", "尝试")} ${update.attempt} · ${text(...PHASES[update.phase])}`} after={<UpdateRequests key={`${update.session_id}:${update.update_id}`} update={update} />}>
     <dl className={styles.facts}>
       <div><dt>{text("Target revision", "目标版本")}</dt><dd><code title={update.candidate_revision}>{update.candidate_revision.slice(0, 8)}</code></dd></div>
       <div><dt>{text("Verified runtime", "已验证运行版本")}</dt><dd>{runtime ? <code title={runtime.candidate_sha}>{runtime.candidate_sha.slice(0, 8)}</code> : text("Unknown", "未知")}</dd></div>
@@ -124,9 +124,7 @@ export function SelfUpdateCard({ update }: { update: SelfUpdate }) {
         {iteration.submission && <div><dt>{text("Submission", "提交状态")}</dt><dd>{iteration.submission.status}</dd></div>}
       </>}
     </dl>
-    <details className={styles.section}>
-      <summary><ChevronRight size={14} aria-hidden="true" />{text("Details and evidence", "详情与证据")}</summary>
-      <div className={styles.sectionBody}>
+    <ExecutionStrip label={text("Details and evidence", "详情与证据")}>
       <dl className={styles.facts}>
         <div><dt>{text("Full revision", "完整版本")}</dt><dd><code>{update.candidate_revision}</code></dd></div>
         <div><dt>{text("Update ID", "更新 ID")}</dt><dd><code>{update.update_id}</code></dd></div>
@@ -140,19 +138,17 @@ export function SelfUpdateCard({ update }: { update: SelfUpdate }) {
         {update.source_repair_result?.candidate_sha && <div><dt>{text("Repaired revision", "修正版本")}</dt><dd><code>{update.source_repair_result.candidate_sha}</code></dd></div>}
         {iteration?.submission?.child_id && <div><dt>{text("Next update ID", "后继更新 ID")}</dt><dd><code>{iteration.submission.child_id}</code></dd></div>}
         {update.changed_paths.length > 0 && <div><dt>{text("Changed files", "变更文件")}</dt><dd><ul className={styles.paths}>{update.changed_paths.map((path) => <li key={path}>{path}</li>)}</ul></dd></div>}
+        {!update.verifier && <div><dt>{text("Evidence", "验证证据")}</dt><dd>{text("Not recorded", "暂无记录")}</dd></div>}
       </dl>
-      {update.verifier ? <>
+      {update.verifier && <>
         <ul>{update.verifier.assertions.map((assertion) => <li key={assertion.id}>
           {assertion.id}: {assertion.status}
           <ul>{assertion.evidence_refs.map((ref) => <li key={ref}><code>{ref}</code></li>)}</ul>
         </li>)}</ul>
         <Evidence key={`${update.session_id}:${update.update_id}:${update.snapshot_id}`} update={update} />
-      </> : <dl className={styles.facts}><div><dt>{text("Evidence", "验证证据")}</dt><dd>{text("Not recorded", "暂无记录")}</dd></div></dl>}
-      </div>
-    </details>
-    <UpdateRequests key={`${update.session_id}:${update.update_id}`} update={update} />
-    </div>
-    </details>
+      </>}
+    </ExecutionStrip>
+    </ExecutionStrip>
     {update.phase === "needs_manual_recovery" && <p className={styles.warning} role="status">{text("Automatic recovery did not complete. Inspect recovery evidence before another update.", "自动恢复未完成。再次更新前请检查恢复证据。")}</p>}
   </article>;
 }

@@ -155,6 +155,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   });
 
   const fnFormFunction = useSessionStore((s) => s.fnFormFunction);
+  const fnFormSubmitAction = useSessionStore((s) => s.fnFormSubmitAction);
   const closeFnFormStore = useSessionStore((s) => s.closeFnForm);
   const setFnFormClosing = useSessionStore((s) => s.setFnFormClosing);
   const setCurrentConv = useSessionStore((s) => s.setCurrentConv);
@@ -542,7 +543,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           `Fill required field${missingFnParams.length > 1 ? "s" : ""}: ${missingFnParams.join(", ")}`,
           `请填写必填字段：${missingFnParams.join(", ")}`,
         )
-      : text("Run", "运行")
+      : fnFormSubmitAction?.label ?? text("Run", "运行")
     : pasteMissing.size > 0
     ? text("Paste content lost. Remove the red chip and re-paste.", "粘贴内容已丢失。请移除红色标签后重新粘贴。")
     : text("Send message", "发送消息");

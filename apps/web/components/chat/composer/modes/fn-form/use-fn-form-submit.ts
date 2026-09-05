@@ -31,7 +31,7 @@ export function useFnFormSubmit({
   const { text } = useTranslation();
 
   return useCallback(() => {
-    if (!fnFormFunction) return;
+    if (!fnFormFunction || useSessionStore.getState().fnFormClosing) return;
     const enteredValues = Object.fromEntries(
       Object.entries(fnForm.values).filter(
         ([, value]) => typeof value !== "string" || value.trim() !== "",
@@ -47,6 +47,17 @@ export function useFnFormSubmit({
         `Invalid function call: ${normalized.error}`,
         `函数参数无效：${normalized.error}`,
       ), { tone: "error" });
+      return;
+    }
+    const localAction = useSessionStore.getState().fnFormSubmitAction;
+    if (localAction) {
+      const result = localAction.submit(normalized.kwargs);
+      if (result?.error) {
+        if (result.errorParam) fnForm.setError(result.errorParam);
+        showToast(result.error, { tone: "error" });
+      } else {
+        handleFnFormClose();
+      }
       return;
     }
     const accepted = dispatchFunction(

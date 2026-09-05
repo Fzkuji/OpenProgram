@@ -339,15 +339,16 @@ when present. It does not replace the separate CLI recovery inspection output.
 
 The conversation shows persisted self-update history grouped by update sequence
 and attempt; **Load older updates** reads another page. Running uses the same
-status card. Its compact summary shows the attempt and current phase; expand it for versions, evidence and actions. Expanded fields use aligned label–value rows; full identifiers, changed files and verification timestamps are grouped under Details and evidence. The card shares the conversation font and text-size token, and uses the common Button and Input controls. Target revision and last verified runtime are separate: an unknown
+status card. Its compact summary shows the attempt and current phase; expand it for versions, evidence and actions. Expanded fields use aligned label–value rows; full identifiers, changed files and verification timestamps are grouped under Details and evidence. The view reuses the execution trace disclosure and message action components without overriding their styles. Target revision and last verified runtime are separate: an unknown
 runtime stays **Unknown**, and a prior verification is not a live connection check.
 Expand **Details and evidence** to inspect assertions and load authenticated
 evidence as plain text. When status cannot be read, the view retains its last
 snapshot with an explicit stale warning and last-sync time, then retries.
 
-Under **Update actions**, cancellation, stopping iteration and retry
-buttons only append a request to the original conversation's unsent draft; they
-preserve existing draft text. Retry requires a complete new candidate commit SHA.
+The message action buttons open the same parameter editor as **Edit and re-run**.
+**Edit retry request** accepts a complete new candidate commit SHA. Cancellation
+and stop-iteration actions use that editor too. **Prepare request** only appends
+the request to the original conversation's unsent draft and preserves existing text.
 Send the draft in that conversation to request the tool operation. These buttons
 do not install, cancel or approve anything themselves, and normal tool authority
 and mandatory approvals still apply. The card changes only after the controller
