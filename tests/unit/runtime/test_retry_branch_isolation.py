@@ -13,6 +13,7 @@ persistence.save_messages) and re-runs. Assert:
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,12 +24,15 @@ from openprogram.store import SessionStore
 
 
 @pytest.fixture
-def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionStore:
+def db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SessionStore]:
     store = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
     monkeypatch.setattr("openprogram.store.session.session_store.default_store", lambda: store)
     monkeypatch.setattr("openprogram.store.default_store", lambda: store)
-    return store
+    try:
+        yield store
+    finally:
+        store.close()
 
 
 def _persist_user(db: SessionStore, sid: str, uid: str, text: str) -> None:

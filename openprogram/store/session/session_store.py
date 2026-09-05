@@ -286,6 +286,8 @@ class SessionStore:
         self._index: dict[str, dict[str, Any]] = {}
         self._index_dirty = False
         self._index_timer: Optional[threading.Timer] = None
+        self._index_flush_threads: set[threading.Timer] = set()
+        self._index_background_enabled = True
         self._index_generation = 0
         self._index_lock = threading.Lock()
         self._index_write_lock = threading.Lock()
@@ -524,24 +526,44 @@ class SessionStore:
     def _schedule_index_flush(self) -> None:
         with self._index_lock:
             self._index_dirty = True
-            if self._index_timer is not None:
+            if self._index_background_enabled:
+                if self._index_timer is not None:
+                    return
+                self._index_flush_threads = {
+                    thread for thread in self._index_flush_threads if thread.is_alive()
+                }
+                self._index_timer = threading.Timer(5.0, self._do_deferred_flush)
+                self._index_timer.daemon = True
+                self._index_flush_threads.add(self._index_timer)
+                self._index_timer.start()
                 return
-            self._index_timer = threading.Timer(5.0, self._do_deferred_flush)
-            self._index_timer.daemon = True
-            self._index_timer.start()
+        # close() stops background work. Legacy callers can still reuse the
+        # filesystem store, but subsequent registry writes are synchronous.
+        self._save_index()
 
     def _do_deferred_flush(self) -> None:
         with self._index_lock:
-            self._index_timer = None
+            if self._index_timer is threading.current_thread():
+                self._index_timer = None
             dirty = self._index_dirty
         if dirty:
             self._save_index()
 
     def _flush_index(self) -> None:
         with self._index_lock:
-            if self._index_timer is not None:
-                self._index_timer.cancel()
-                self._index_timer = None
+            threads = tuple(self._index_flush_threads)
+            for thread in threads:
+                thread.cancel()
+            self._index_timer = None
+        # Timer.cancel() only prevents callbacks that have not started. Keep
+        # handles for in-flight callbacks and join outside both index locks.
+        for thread in threads:
+            if thread is not threading.current_thread():
+                thread.join()
+        with self._index_lock:
+            self._index_flush_threads.difference_update(
+                thread for thread in threads if not thread.is_alive()
+            )
             dirty = self._index_dirty
         if dirty:
             self._save_index()
@@ -2011,7 +2033,15 @@ class SessionStore:
         return total
 
     def close(self) -> None:
-        return None
+        """Drain registry writes and stop this store's background timers."""
+        with self._index_lock:
+            self._index_background_enabled = False
+        self._flush_index()
+        with self._index_lock:
+            # A failed atomic write leaves the cache dirty. Retain the exit
+            # retry in that case instead of forgetting unsaved registry data.
+            if not self._index_dirty:
+                atexit.unregister(self._flush_index)
 
 
 # Singleton

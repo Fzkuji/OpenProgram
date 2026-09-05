@@ -113,6 +113,13 @@ for every Program or every WebSocket connection; that full filesystem walk is
 especially expensive in the complete Windows runtime and would delay session
 and page data after every hard refresh.
 
+Session store shutdown cancels pending index timers, waits for in-flight index
+writes outside the index locks, and flushes the latest registry snapshot. A
+closed store does not restart background timers if a legacy caller reuses it;
+those writes are synchronous. Failed writes remain dirty and retain the
+process-exit retry. This avoids lingering writers and file handles during
+Windows teardown without weakening the stored-data consistency checks.
+
 The Windows CI surface has two parts:
 
 - the core job covers compatibility seams, checkpoint history, backup/restore,
