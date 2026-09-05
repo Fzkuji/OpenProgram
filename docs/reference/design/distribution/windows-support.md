@@ -124,7 +124,9 @@ points, verifies the runtime capability manifest, and completes a worker cold
 start in isolated state. Only then does it atomically replace the active
 PowerShell launcher. Releases stay in versioned directories, and the previous
 launcher is retained; a failed installation never changes the active launcher.
-No installer step edits ACLs.
+No installer step edits ACLs. PowerShell build helpers restore the caller's
+workspace, toolchain, Python download, and browser-cache environment settings
+when their scoped build steps finish, including failure paths.
 
 Managed upgrades select the Windows ZIP and tagged PowerShell installer
 through the compatibility seam. `doctor` reports long-path registry state and

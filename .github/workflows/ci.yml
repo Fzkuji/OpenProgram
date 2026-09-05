@@ -232,6 +232,7 @@ jobs:
           tests/component/runtime/test_windows_process.py
           tests/component/config/test_windows_release.py
           tests/component/config/test_windows_runtime_preparation.py
+          tests/component/config/test_windows_build_environment.py
           tests/component/runtime/test_process_liveness.py
           tests/component/runtime/test_local_backend_process_tree.py
           tests/component/programs/test_pdf_import_isolation.py

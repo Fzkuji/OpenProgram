@@ -41,6 +41,10 @@ if (-not $Python) {
     throw "python is required to validate staged release assets"
 }
 
+$SavedBuildEnvironment = @{}
+foreach ($Name in @("npm_config_workspace", "npm_config_workspaces", "NEXT_IGNORE_INCORRECT_LOCKFILE")) {
+    $SavedBuildEnvironment[$Name] = [Environment]::GetEnvironmentVariable($Name, "Process")
+}
 Push-Location $RepoRoot
 try {
     Remove-Item Env:npm_config_workspace -ErrorAction SilentlyContinue
@@ -78,6 +82,9 @@ try {
     }
 } finally {
     Pop-Location
+    foreach ($Name in $SavedBuildEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($Name, $SavedBuildEnvironment[$Name], "Process")
+    }
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $SourceDir "index.html") -PathType Leaf)) {
