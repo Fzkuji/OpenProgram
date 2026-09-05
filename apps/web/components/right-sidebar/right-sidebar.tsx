@@ -26,6 +26,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { Bug } from "lucide-react";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { ContextCommitTimeline } from "./context-commit-timeline";
@@ -86,7 +87,6 @@ export function RightSidebar() {
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
   const runningIconRef = useRef<AnimatedNavIconHandle>(null);
-  const debuggerIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
   const activeTab = useCenterTabs((s) =>
@@ -266,15 +266,13 @@ export function RightSidebar() {
           }
           data-view={VIEW_DEBUGGER}
           onClick={() => onNavClick(VIEW_DEBUGGER)}
-          onMouseEnter={() => debuggerIconRef.current?.startAnimation?.()}
-          onMouseLeave={() => debuggerIconRef.current?.stopAnimation?.()}
           role="button"
           tabIndex={0}
           onKeyDown={activateOnKey(() => onNavClick(VIEW_DEBUGGER))}
           title={text("Execution debugger", "执行调试器")}
         >
           <span className={sidebarNavIconClass}>
-            <ActivityIcon ref={debuggerIconRef} size={20} />
+            <Bug size={20} aria-hidden="true" />
           </span>
           <span className={sidebarNavLabelClass}>
             {text("Debugger", "调试器")}

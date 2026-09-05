@@ -80,18 +80,20 @@ function UpdateRequests({ update }: { update: SelfUpdate }) {
   if (!preInstall && !canRetry && (!iteration || iteration.stopped)) return null;
   return <details className={styles.section}>
     <summary><ChevronRight size={14} aria-hidden="true" />{text("Update actions", "更新操作")}</summary>
-    <p className={styles.note}>{text("These buttons add a request to the original conversation draft. Send it there; tool authorization and any required approval still apply. Nothing runs on click.", "这些按钮只向原会话草稿添加请求。需在原会话发送；工具鉴权及所需审批仍然适用。点击不会执行操作。")}</p>
-    <div className={styles.actions}>
+    <div className={styles.sectionBody}>
+    {(preInstall || (iteration && !iteration.stopped)) && <div className={styles.actions}>
       {preInstall && <Button type="button" onClick={() => prepare(`self_update_cancel(update_id=${JSON.stringify(update.update_id)})`)}>{text("Prepare cancellation request", "准备取消请求")}</Button>}
       {iteration && !iteration.stopped && <Button type="button" onClick={() => prepare(`self_update_iteration_cancel(update_id=${JSON.stringify(update.update_id)})`)}>{text("Prepare stop-iteration request", "准备停止迭代请求")}</Button>}
-    </div>
+    </div>}
     {canRetry && <div className={styles.actions}>
-      <label>{text("New candidate commit (40-character SHA)", "新候选提交（40 位 SHA）")}
-        <Input aria-label={text("New candidate commit", "新候选提交")} value={candidate} onChange={(event) => setCandidate(event.target.value)} spellCheck={false} />
+      <label>{text("Retry with a new revision", "使用新版本重试")}
+        <Input aria-label={text("New candidate commit", "新候选提交")} value={candidate} onChange={(event) => setCandidate(event.target.value)} spellCheck={false} placeholder={text("40-character commit SHA", "40 位提交 SHA")} />
       </label>
       <Button type="button" disabled={!/^[0-9a-f]{40}$/.test(candidate)} onClick={() => prepare(`self_update_retry(update_id=${JSON.stringify(update.update_id)}, candidate_sha=${JSON.stringify(candidate)})`)}>{text("Prepare retry request", "准备重试请求")}</Button>
     </div>}
+    <p className={styles.note}>{text("Adds a draft to the original conversation. Send it there to request approval and execution.", "将请求加入原会话草稿；需在那里发送，按权限规则审批并执行。")}</p>
     {prepared && <p role="status">{text("Request added to the original conversation draft; not submitted.", "请求已加入原会话草稿，尚未发送。")}</p>}
+    </div>
   </details>;
 }
 
@@ -108,39 +110,44 @@ export function SelfUpdateCard({ update }: { update: SelfUpdate }) {
       <ChevronRight size={14} className={styles.chevron} aria-hidden="true" />
     </summary>
     <div className={styles.body}>
-    <dl className={styles.versions}>
+    <dl className={styles.facts}>
       <div><dt>{text("Target revision", "目标版本")}</dt><dd><code title={update.candidate_revision}>{update.candidate_revision.slice(0, 8)}</code></dd></div>
-      <div><dt>{text("Last verified runtime", "最近已验证运行版本")}</dt><dd>
-        {runtime ? <><code title={runtime.candidate_sha}>{runtime.candidate_sha.slice(0, 8)}</code><div>{new Date(runtime.verified_at * 1000).toLocaleString()} · PID {runtime.worker_pid} · {runtime.source}</div></> : text("Unknown", "未知")}
-      </dd></div>
+      <div><dt>{text("Verified runtime", "已验证运行版本")}</dt><dd>{runtime ? <code title={runtime.candidate_sha}>{runtime.candidate_sha.slice(0, 8)}</code> : text("Unknown", "未知")}</dd></div>
+      <div><dt>{text("Verification", "验证结论")}</dt><dd>{update.verifier_verdict ?? text("Not available", "暂无")}</dd></div>
+      <div><dt>{text("Rollback", "回退")}</dt><dd>{update.rollback_available ? text("Available", "可用") : text("Unavailable", "不可用")}</dd></div>
+      {update.diagnosis && <div><dt>{text("Diagnosis", "诊断")}</dt><dd>{update.diagnosis.status}</dd></div>}
+      {update.source_repair_result && <div><dt>{text("Source repair", "源码修复")}</dt><dd>{update.source_repair_result.status}</dd></div>}
+      {iteration && <>
+        <div><dt>{text("Remaining attempts", "剩余尝试次数")}</dt><dd>{Math.max(0, iteration.max_attempts - iteration.attempt)}</dd></div>
+        <div><dt>{text("Deadline", "截止时间")}</dt><dd>{new Date(iteration.deadline * 1000).toLocaleString()}</dd></div>
+        {iteration.stopped && <div><dt>{text("Iteration", "迭代")}</dt><dd>{text("Stopped", "已停止")}</dd></div>}
+        {iteration.submission && <div><dt>{text("Submission", "提交状态")}</dt><dd>{iteration.submission.status}</dd></div>}
+      </>}
     </dl>
-    {runtime && <p className={styles.note}>{text("Prior verification does not confirm the worker is still online.", "先前验证不代表 worker 当前仍在线。")}</p>}
-    <p>{text("Verifier verdict", "验证结论")}: {update.verifier_verdict ?? text("Not available", "暂无")}</p>
-    <p>{text("Rollback available", "可回退")}: {update.rollback_available ? text("Yes", "是") : text("No", "否")}</p>
-    {update.diagnosis && <p>{text("Diagnosis", "诊断")}: {update.diagnosis.status}</p>}
-    {update.source_repair_result && <p>{text("Source repair", "源码修复")}: {update.source_repair_result.status}</p>}
-    {update.source_repair_result?.candidate_sha && <p>{text("Repaired candidate revision", "修正候选版本")}: <code>{update.source_repair_result.candidate_sha}</code></p>}
-    {iteration && <p>
-      {text("Remaining attempts", "剩余尝试次数")}: {Math.max(0, iteration.max_attempts - iteration.attempt)} · {text("Deadline", "截止时间")}: {new Date(iteration.deadline * 1000).toLocaleString()}
-      {iteration.stopped && <> · {text("Iteration stopped", "迭代已停止")}</>}
-      {iteration.submission && <> · {text("Submission", "提交状态")}: {iteration.submission.status}</>}
-    </p>}
-    {iteration?.submission?.child_id && <p>{text("Next update ID", "后继更新 ID")}: {iteration.submission.child_id}</p>}
     <details className={styles.section}>
       <summary><ChevronRight size={14} aria-hidden="true" />{text("Details and evidence", "详情与证据")}</summary>
       <div className={styles.sectionBody}>
-      <p>{text("Target revision", "目标版本")}: <code>{update.candidate_revision}</code></p>
-      {runtime && <p>{text("Last verified runtime", "最近已验证运行版本")}: <code>{runtime.candidate_sha}</code></p>}
-      <p>{text("Update ID", "更新 ID")}: {update.update_id}</p>
-      <p>{text("Target app (not runtime proof)", "目标应用（不是运行证明）")}: {update.target_app}</p>
-      <ul>{update.changed_paths.map((path) => <li key={path}>{path}</li>)}</ul>
+      <dl className={styles.facts}>
+        <div><dt>{text("Full revision", "完整版本")}</dt><dd><code>{update.candidate_revision}</code></dd></div>
+        <div><dt>{text("Update ID", "更新 ID")}</dt><dd><code>{update.update_id}</code></dd></div>
+        <div><dt>{text("Target app", "目标应用")}</dt><dd>{update.target_app}<span className={styles.annotation}>{text("Installation target, not proof of the running version.", "安装目标，不代表实际运行版本。")}</span></dd></div>
+        {runtime && <>
+          <div><dt>{text("Runtime revision", "运行版本")}</dt><dd><code>{runtime.candidate_sha}</code></dd></div>
+          <div><dt>{text("Verified at", "验证时间")}</dt><dd>{new Date(runtime.verified_at * 1000).toLocaleString()}<span className={styles.annotation}>{text("Historical verification, not a live connection check.", "历史验证，不代表当前仍然在线。")}</span></dd></div>
+          <div><dt>{text("Worker PID", "Worker PID")}</dt><dd>{runtime.worker_pid}</dd></div>
+          <div><dt>{text("Evidence source", "证据来源")}</dt><dd>{runtime.source}</dd></div>
+        </>}
+        {update.source_repair_result?.candidate_sha && <div><dt>{text("Repaired revision", "修正版本")}</dt><dd><code>{update.source_repair_result.candidate_sha}</code></dd></div>}
+        {iteration?.submission?.child_id && <div><dt>{text("Next update ID", "后继更新 ID")}</dt><dd><code>{iteration.submission.child_id}</code></dd></div>}
+        {update.changed_paths.length > 0 && <div><dt>{text("Changed files", "变更文件")}</dt><dd><ul className={styles.paths}>{update.changed_paths.map((path) => <li key={path}>{path}</li>)}</ul></dd></div>}
+      </dl>
       {update.verifier ? <>
         <ul>{update.verifier.assertions.map((assertion) => <li key={assertion.id}>
           {assertion.id}: {assertion.status}
           <ul>{assertion.evidence_refs.map((ref) => <li key={ref}><code>{ref}</code></li>)}</ul>
         </li>)}</ul>
         <Evidence key={`${update.session_id}:${update.update_id}:${update.snapshot_id}`} update={update} />
-      </> : <p>{text("No verifier evidence is available.", "暂无验证证据。")}</p>}
+      </> : <p className={styles.note}>{text("No verification evidence recorded.", "尚无验证证据记录。")}</p>}
       </div>
     </details>
     <UpdateRequests key={`${update.session_id}:${update.update_id}`} update={update} />

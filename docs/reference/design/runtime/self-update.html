@@ -956,7 +956,7 @@
 
     <section id="surfaces" aria-labelledby="surfaces-title">
       <div class="section-head"><div class="section-num">11A</div><div><h2 id="surfaces-title">状态投影、原会话结果与重启定位</h2><p>request、事务状态和 controller 验证记录是事实来源。聊天卡、Running 面板和工具读取同一份白名单投影，不各自猜测安装结果。</p></div></div>
-      <p>聊天和 Running 共用紧凑状态卡：标题、尝试次数与状态常驻，默认折叠版本和证据。聊天卡对齐正文列；窄面板自动换行。按钮和输入框复用产品公共组件，字体、边框、圆角和状态色来自现有主题。完整提交、更新 ID、运行证明与操作放入可访问的详情，手动恢复警示始终可见。操作仍只生成原会话草稿，不改变审批语义。</p>
+      <p>聊天和 Running 共用紧凑状态卡：标题、尝试次数与状态常驻，默认折叠版本和证据。聊天卡对齐正文列；窄面板自动换行。展开后的摘要与技术详情采用同一标签—值布局，摘要只显示版本、验证结论与回退状态，完整标识符、路径与验证时间集中在详情区。操作区不渲染空按钮行，说明紧邻实际控件；所有文字保持聊天正文的字号。按钮和输入框复用产品公共组件，字体、边框、圆角和状态色来自现有主题。完整提交、更新 ID、运行证明与操作放入可访问的详情，手动恢复警示始终可见。操作仍只生成原会话草稿，不改变审批语义。</p>
       <div class="mapping-table">
         <div class="table-row table-head"><div>投影字段</div><div>写入者与来源</div><div>读取含义</div><div>缺失或过期</div></div>
         <div class="table-row"><div><code>update_id</code>、root/parent、origin session、attempt</div><div>已校验 request 与迭代关系。</div><div>定位同一次更新、原会话及父子 attempt；身份只由服务端提供。</div><div>归属不一致时拒绝读取；不能通过 renderer 传值改绑。</div></div>
