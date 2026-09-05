@@ -30,5 +30,3 @@ export * from "./icons-3";
 export * from "./icons-4";
 export * from "./icons-5";
 export * from "./icons-6";
-// Local adapter: shipped Lucide glyph with the same row-controlled motion API.
-export * from "./bug";

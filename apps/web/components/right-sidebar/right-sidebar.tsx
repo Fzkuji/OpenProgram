@@ -39,7 +39,7 @@ import {
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
   ActivityIcon,
-  BugIcon,
+  TerminalIcon,
   type AnimatedNavIconHandle,
   FolderOpenIcon,
   PanelLeftCloseIcon,
@@ -277,7 +277,7 @@ export function RightSidebar() {
           title={text("Execution debugger", "执行调试器")}
         >
           <span className={sidebarNavIconClass}>
-            <BugIcon ref={debuggerIconRef} size={20} />
+            <TerminalIcon ref={debuggerIconRef} size={20} />
           </span>
           <span className={sidebarNavLabelClass}>
             {text("Debugger", "调试器")}
