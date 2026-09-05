@@ -24,6 +24,7 @@ edits take effect without restarting anything.
 - **`base.py`** — Backend ABC + shared RunResult type
 - **`docker.py`** — Docker backend
 - **`local.py`** — Local backend
+- **`process.py`** — Collect a local command with execution cancellation and child cleanup
 - **`ssh.py`** — SSH backend
 
 _Auto-generated from `__init__.py` docstring — keep that as the source of truth; re-run `python scripts/gen_dir_readmes.py` from the repo root to refresh._
