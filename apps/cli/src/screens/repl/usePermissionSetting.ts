@@ -7,7 +7,10 @@ import type { PermissionMode } from './types.js';
 export function usePermissionSetting(
   client: BackendClient, sessionId: string | undefined, mode: PermissionMode,
   setMode: Dispatch<SetStateAction<PermissionMode>>, report: (text: string) => void,
-): Dispatch<SetStateAction<PermissionMode>> {
+): {
+  setPermissionMode: Dispatch<SetStateAction<PermissionMode>>;
+  permissionForSubmit: () => PermissionMode | 'inherit';
+} {
   const current = useRef(mode);
   current.current = mode;
   const reportRef = useRef(report);
@@ -43,7 +46,7 @@ export function usePermissionSetting(
       pending.current = null;
     };
   }, [client, sessionId, setMode]);
-  return useCallback((value: SetStateAction<PermissionMode>) => {
+  const setPermissionMode = useCallback((value: SetStateAction<PermissionMode>) => {
     const next = typeof value === 'function' ? value(current.current) : value;
     if (!sessionId || draft.current) { setMode(next); return; }
     if (pending.current) return;
@@ -61,4 +64,8 @@ export function usePermissionSetting(
     client.send({ action: 'set_permission', session_id: sessionId, mode: next,
       expected_version: version.current, request_id: id });
   }, [client, sessionId, setMode]);
+  return {
+    setPermissionMode,
+    permissionForSubmit: () => !sessionId || draft.current ? current.current : 'inherit',
+  };
 }

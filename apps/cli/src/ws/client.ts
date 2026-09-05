@@ -7,7 +7,7 @@ export type ChatRequest = {
   agent_id?: string;
   text: string;
   thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-  permission_mode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
+  permission_mode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass' | 'inherit';
   tools?: boolean;
   response_format?: JsonSchemaOutput | Record<string, unknown>;
 };
@@ -438,7 +438,7 @@ export interface QuestionClosedEnvelope {
 
 export type PermissionChangedEnvelope = {
   type: 'permission_changed';
-  data: { session_id: string; mode?: NonNullable<ChatRequest['permission_mode']>; version?: number; error?: string; request_id?: string };
+  data: { session_id: string; mode?: Exclude<NonNullable<ChatRequest['permission_mode']>, 'inherit'>; version?: number; error?: string; request_id?: string };
 };
 
 export type WsEnvelope =

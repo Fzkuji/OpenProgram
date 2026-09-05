@@ -212,7 +212,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   };
 
 
-  const setPermissionMode = usePermissionSetting(
+  const { setPermissionMode, permissionForSubmit } = usePermissionSetting(
     client, conversationId, permissionMode, setPermissionModeState, pushSystem,
   );
   useWsEvents({
@@ -360,7 +360,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
         text: chatText,
         tools: toolsOn,
         thinking_effort: thinkingEffort,
-        permission_mode: permissionMode,
+        permission_mode: permissionForSubmit(),
       } as never);
     };
     // Save EVERY submitted line — chat messages and slash commands —

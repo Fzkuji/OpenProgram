@@ -12,5 +12,8 @@ test('confirmed modes reject stale hydration and invalid payloads', () => {
   });
 });
 test('legacy and draft sessions start at version zero', () => {
-  assert.equal(permissionSnapshotPatch({}, { mode: 'ask', version: 0 }).permission_version, 0);
+  const patch = permissionSnapshotPatch({}, { mode: 'bypass', version: 0 });
+  assert.equal(patch.permission_version, 0);
+  assert.equal(patch.permission_mode, '');
+  assert.equal(patch.effective_permission, 'bypass');
 });

@@ -171,7 +171,7 @@ def _ensure_test_authority(req):
 
 def _run(tool, req, approve=True, scope="once"):
     """Wrap tool with approval under req, run its execute, return (result, ran)."""
-    async def _fake_approval(*, req, tool_name, args, on_event, timeout=300.0):
+    async def _fake_approval(*, req, tool_name, args, on_event, timeout=300.0, tool_call_id=None):
         return (approve, None, scope)
 
     _ensure_test_authority(req)

@@ -103,3 +103,18 @@ def test_first_message_retains_draft_permission_without_ghost_session(permission
     result = save_session_run_config("new-draft", agent_id="main", permission_mode="bypass")
     assert result.permission_mode == "bypass"
     assert permissions[0].get_session("new-draft") is None
+
+
+def test_reading_inherited_mode_does_not_pin_project_default(permissions, monkeypatch):
+    import openprogram.agent.session_config as config
+    db, actor = permissions
+    db.create_session("inherited", "main")
+    defaults = {"permission_mode": "bypass"}
+    monkeypatch.setattr(config, "project_defaults", lambda sid: defaults)
+    assert permission_state("inherited")["mode"] == "bypass"
+    config.save_session_run_config("inherited", agent_id="main", permission_mode="inherit")
+    assert db.get_session("inherited").get("permission_mode") is None
+    defaults["permission_mode"] = "ask"
+    assert permission_state("inherited")["mode"] == "ask"
+    update_permission("inherited", "bypass", 0, actor)
+    assert permission_state("inherited")["mode"] == "bypass"
