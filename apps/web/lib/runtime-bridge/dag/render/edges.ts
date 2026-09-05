@@ -19,8 +19,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { type GNode, COL_W, PAD_X, PAD_Y, ROW_H } from "../types";
-import { _branchColor, _edgePath, _svg } from "../shapes";
-import { _onEdgeDblclick } from "./interaction";
+import { _branchColor, _edgePath, _svg } from "./shapes";
+import { _onEdgeDblclick } from "../interaction/nodes";
 import { coversIds } from "../passes/fold-summaries";
 import { isChainNode, isSpawnRoot } from "../passes/thread";
 import type { Geometry } from "../layout/geometry";
@@ -56,7 +56,7 @@ export function drawEdges(
     // A spawn head hangs on its owner's thread; the thread line below
     // is its only edge. Execution nodes likewise — their ink is the
     // thread line, not a chain edge.
-    if (isSpawnRoot(node) || !isChainNode(node)) return;
+    if (isSpawnRoot(node) || !isChainNode(node, tree.byId)) return;
     let pid = node.predecessor || node.caller;
     if (pid && !tree.byId[pid]) {
       let cur = pid;

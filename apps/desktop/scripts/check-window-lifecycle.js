@@ -125,6 +125,46 @@ function checkSecondInstanceReusesGate() {
   assert.equal(ensures, 1);
 }
 
+async function checkMacEnablesAccessibilityBeforeWindowCreation() {
+  const calls = [];
+  const app = {
+    requestSingleInstanceLock: () => true,
+    on() {},
+    whenReady: () => Promise.resolve(),
+    setAccessibilitySupportEnabled(enabled) {
+      calls.push(["accessibility", enabled]);
+    },
+  };
+  registerSingleMainWindow({
+    app,
+    BrowserWindow: { getAllWindows: () => [], getFocusedWindow: () => null },
+    ensureMainWindow: () => { calls.push(["window"]); },
+    platform: "darwin",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, [["accessibility", true], ["window"]]);
+}
+
+async function checkOtherPlatformsLeaveAccessibilityUnchanged() {
+  const calls = [];
+  const app = {
+    requestSingleInstanceLock: () => true,
+    on() {},
+    whenReady: () => Promise.resolve(),
+    setAccessibilitySupportEnabled(enabled) {
+      calls.push(["accessibility", enabled]);
+    },
+  };
+  registerSingleMainWindow({
+    app,
+    BrowserWindow: { getAllWindows: () => [], getFocusedWindow: () => null },
+    ensureMainWindow: () => { calls.push(["window"]); },
+    platform: "linux",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, [["window"]]);
+}
+
 function checkSecondaryInstanceQuits() {
   const app = {
     requestSingleInstanceLock: () => false,
@@ -156,6 +196,8 @@ Promise.resolve()
   .then(checkRecreateAfterDestroy)
   .then(() => { checkFocusExisting(); })
   .then(checkSecondInstanceReusesGate)
+  .then(checkMacEnablesAccessibilityBeforeWindowCreation)
+  .then(checkOtherPlatformsLeaveAccessibilityUnchanged)
   .then(() => { checkSecondaryInstanceQuits(); })
   .then(() => { checkDestroyedIsNotLive(); })
   .then(() => {

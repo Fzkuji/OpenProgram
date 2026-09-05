@@ -67,3 +67,16 @@ def test_refresh_script_reads_build_files_instead_of_a_hand_list():
     assert "build.files" in refresh
     assert "main.js menu-geometry.js" not in refresh
     assert "window-lifecycle.js" in _whitelist()
+
+
+def test_refresh_script_rejects_stale_checkout_for_default_app():
+    refresh = (DESKTOP.parents[1] / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'test "$app_path" = "/Applications/OpenProgram.app"' in refresh
+    assert "merge-base --is-ancestor" in refresh
+    assert "refs/remotes/origin/main HEAD" in refresh
+    assert "refusing to refresh the default App" in refresh
+    assert "OPENPROGRAM_APP_PATH to a separate App" in refresh
+    assert 'test -n "$desktop_file" || continue' in refresh

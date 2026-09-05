@@ -12,33 +12,26 @@ import asyncio
 import importlib
 import inspect
 import json
+import uuid
 import os
 import queue
 import sys
 import threading
 import time
 import traceback
-import uuid
 from typing import Any, Optional
 
 from openprogram.programs.workflow.ask_user import set_ask_user, ask_user
 from openprogram.agentic_programming.function import agentic_function
 from openprogram.agentic_programming.runtime import Runtime
 
-# Pause / stop / cancel primitives live in openprogram.agent.run_control
+# Stop / cancel primitives live in openprogram.agent.run_control
 from openprogram.agent.run_control import (
-    pause_execution,
-    resume_execution,
-    wait_if_paused,
-    mark_cancelled as _mark_cancelled,
     is_cancelled as _is_cancelled,
     clear_cancel as _clear_cancel,
     register_active_runtime as _register_active_runtime,
     unregister_active_runtime as _unregister_active_runtime,
     kill_active_runtime as _kill_active_runtime,
-    claim_cancel_event as _claim_cancel_event,
-    unregister_cancel_event as _unregister_cancel_event,
-    current_token as _current_token,
     has_active_runtime as _has_active_runtime,
     set_current_session_id as _set_current_session_id,
     reset_current_session_id as _reset_current_session_id,
@@ -253,6 +246,7 @@ def _emit_running_task_event(
                     "started_at": task.get("started_at"),
                     "display_params": task.get("display_params", ""),
                     "execution_id": task.get("execution_id"),
+                    "status_version": task.get("status_version"),
                 },
             }
         else:
@@ -635,15 +629,39 @@ def _load_agent_session_meta(session_key: str) -> Optional[dict]:
 
 def _broadcast(msg: str):
     """Send a message to all connected WebSocket clients."""
-    if not _ws_connections or _loop is None:
+    if not _ws_connections:
         return
+    from openprogram.webui.ws_delivery import send_to_connection
+
     with _ws_lock:
         conns = list(_ws_connections)
     for ws in conns:
+        send_to_connection(ws, msg, _loop)
+
+
+def _broadcast_to_principal(
+    msg: str,
+    principal_id: str,
+    *,
+    exclude=None,
+) -> None:
+    """Send one owner-scoped state transition to matching connections."""
+    if not _ws_connections:
+        return
+    from openprogram.webui.ws_delivery import send_to_connection
+    from openprogram.webui.ws_errors import principal_id_for_websocket
+
+    with _ws_lock:
+        conns = list(_ws_connections)
+    for ws in conns:
+        if ws is exclude:
+            continue
         try:
-            asyncio.run_coroutine_threadsafe(ws.send_text(msg), _loop)
-        except Exception:
-            pass
+            matches = principal_id_for_websocket(ws) == principal_id
+        except PermissionError:
+            matches = False
+        if matches:
+            send_to_connection(ws, msg, _loop)
 
 
 def _log(text: str):
@@ -822,6 +840,13 @@ def _is_run_active(session_id: str) -> bool:
     # Drop it so subsequent calls don't keep blocking Edit/Retry/etc.
     if not _has_active_runtime(session_id):
         with _running_tasks_lock:
+            current = _running_tasks.get(session_id)
+            if current is not task:
+                # A concurrent observer may already have removed the stale
+                # owner and admitted another turn. Never clear its reservation.
+                return current is not None or _has_active_runtime(session_id)
+            if _has_active_runtime(session_id):
+                return True
             zombie = _running_tasks.pop(session_id, None)
         _emit_running_task_event(
             session_id,
@@ -848,7 +873,9 @@ def _try_reserve_run(session_id: str, msg_id: str) -> bool:
             "display_params": "",
             "loaded_func_ref": None,
             "stream_events": [],
-            "execution_id": f"{msg_id}_reply",
+            # Admission mints the canonical execution id. A provisional
+            # reservation must not publish or derive one from msg_id.
+            "execution_id": None,
             "_reserved": True,
         }
     return True
@@ -869,9 +896,9 @@ def _activate_run_reservation(session_id: str, msg_id: str, runtime) -> bool:
         if not (task and task.get("_reserved")
                 and task.get("msg_id") == msg_id):
             return False
-        # run_control uses a separate lock and never acquires
-        # _running_tasks_lock, so the two state writes can remain one visible
-        # transition without a lock-order cycle.
+        # Publish the runtime handoff before clearing the provisional marker.
+        # This closes the observer window in which _is_run_active could treat
+        # an admitted turn as a zombie and allow a duplicate start.
         _register_active_runtime(session_id, runtime)
         task.pop("_reserved", None)
         task["started_at"] = time.time()
@@ -885,8 +912,11 @@ def _finish_owned_run(session_id: str, msg_id: str) -> bool:
         task = _running_tasks.get(session_id)
         if not (task and task.get("msg_id") == msg_id):
             return False
-        _unregister_active_runtime(session_id)
         _running_tasks.pop(session_id, None)
+    # The active-runtime registration is the handoff counterpart to the
+    # provisional reservation.  Retire it only after ownership was matched;
+    # a late finisher must not clear a newer run in the same session.
+    _unregister_active_runtime(session_id)
     return True
 
 
@@ -911,12 +941,10 @@ def _release_session_occupancy_for_execution(execution: dict) -> bool:
         task_msg = task.get("msg_id") if task else None
         task_exec = task.get("execution_id") if task else None
     if task_msg:
-        if task_exec == execution_id or f"{task_msg}_reply" == execution_id:
+        if task_exec == execution_id:
             msg_id = task_msg
         else:
             return False
-    elif execution_id.endswith("_reply"):
-        msg_id = execution_id[:-len("_reply")]
     else:
         return False
     released = _finish_owned_run(session_id, msg_id)
@@ -936,25 +964,7 @@ def _release_session_occupancy_for_execution(execution: dict) -> bool:
             cleared_execution_id=execution_id,
             cleared_msg_id=msg_id,
         )
-    # Occupancy without retiring the token leaves (session, None) cancelled.
-    # The next claim_cancel_event fails, or a reused {msg}_reply is
-    # immediately re-stopped. The old stream still sees its own Event.
-    _retire_execution_cancel_token(session_id, execution_id)
     return released
-
-
-def _retire_execution_cancel_token(session_id: str, execution_id: str) -> None:
-    """Drop this execution's cancel token so a successor can claim."""
-    token = _current_token(session_id, execution_id=execution_id)
-    if token is None:
-        fg = _current_token(session_id)
-        if fg is not None and fg.execution_id == execution_id:
-            token = fg
-    if token is None:
-        return
-    _unregister_cancel_event(
-        session_id, token.event, execution_id=execution_id,
-    )
 
 
 # One wording for every "you can't move HEAD right now" rejection, so
@@ -1395,11 +1405,80 @@ from openprogram.webui._chat_helpers import (
 # WebSocket handler (module-level to avoid FastAPI closure issues)
 # ---------------------------------------------------------------------------
 
+async def _send_operation_error(
+    ws,
+    cmd: object,
+    *,
+    code: str,
+    retryable: bool = False,
+    scope: str | None = None,
+    severity: str = "error",
+    exc=None,
+) -> None:
+    """Persist one safe command failure before enqueueing its wire frame."""
+    from starlette.websockets import WebSocketDisconnect
+    from openprogram.webui.ws_errors import (
+        operation_error_frame,
+        persist_operation_error_frame,
+    )
+
+    frame = operation_error_frame(
+        cmd,
+        code=code,
+        retryable=retryable,
+        scope=scope,
+        severity=severity,
+    )
+    metadata = frame["data"]
+    import logging
+    logger = logging.getLogger("openprogram.webui")
+    if exc is None:
+        logger.warning(
+            "[ws] command failed correlation_id=%s action=%r session_id=%r "
+            "code=%s",
+            metadata["correlation_id"],
+            metadata["action"],
+            metadata["session_id"],
+            metadata["code"],
+        )
+    else:
+        logger.error(
+            "[ws] action failed correlation_id=%s action=%r session_id=%r "
+            "error_type=%s",
+            metadata["correlation_id"],
+            metadata["action"],
+            metadata["session_id"],
+            type(exc).__name__,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+    try:
+        persist_operation_error_frame(ws, frame)
+    except Exception as store_exc:
+        logger.critical(
+            "[ws] user error persistence failed correlation_id=%s "
+            "error_type=%s",
+            metadata["correlation_id"],
+            type(store_exc).__name__,
+            exc_info=(type(store_exc), store_exc, store_exc.__traceback__),
+        )
+        try:
+            await ws.close(code=1011, reason="state_recovery_required")
+        except Exception:
+            pass
+        raise WebSocketDisconnect(1011) from store_exc
+    await ws.send_text(json.dumps(frame))
+
 async def _websocket_handler(ws):
     """WebSocket endpoint for real-time chat streaming."""
     from starlette.websockets import WebSocketDisconnect
+    from openprogram.webui.ws_errors import OperationError
 
     await ws.accept()
+
+    from openprogram.webui.ws_delivery import QueuedWebSocket
+
+    ws = QueuedWebSocket(ws, asyncio.get_running_loop())
+    ws.start()
 
     with _ws_lock:
         _ws_connections.append(ws)
@@ -1422,36 +1501,41 @@ async def _websocket_handler(ws):
                 try:
                     cmd = json.loads(data)
                 except json.JSONDecodeError:
+                    await _send_operation_error(
+                        ws,
+                        {},
+                        code="invalid_request",
+                        scope="system",
+                    )
+                    continue
+                if not isinstance(cmd, dict):
+                    await _send_operation_error(
+                        ws,
+                        {},
+                        code="invalid_request",
+                        scope="system",
+                    )
                     continue
                 try:
                     await _handle_ws_command(ws, cmd)
                 except WebSocketDisconnect:
                     raise
+                except OperationError as operation_error:
+                    await _send_operation_error(
+                        ws,
+                        cmd,
+                        code=operation_error.code,
+                        retryable=operation_error.retryable,
+                        scope=operation_error.scope,
+                        severity=operation_error.severity,
+                    )
                 except Exception as exc:
-                    raw_action = cmd.get("action") if isinstance(cmd, dict) else None
-                    raw_session_id = (
-                        cmd.get("session_id") if isinstance(cmd, dict) else None
+                    await _send_operation_error(
+                        ws,
+                        cmd,
+                        code="handler_error",
+                        exc=exc,
                     )
-                    action = raw_action if isinstance(raw_action, str) else None
-                    session_id = (
-                        raw_session_id if isinstance(raw_session_id, str) else None
-                    )
-                    import logging
-                    logging.getLogger("openprogram.webui").exception(
-                        "[ws] action failed action=%r session_id=%r error_type=%s",
-                        action,
-                        session_id,
-                        type(exc).__name__,
-                    )
-                    await ws.send_text(json.dumps({
-                        "type": "action_error",
-                        "data": {
-                            "action": action,
-                            "session_id": session_id,
-                            "code": "handler_error",
-                            "error": "action failed",
-                        },
-                    }))
 
     except WebSocketDisconnect as e:
         # Normal client departure (refresh/close, codes 1000/1001/1005) —
@@ -1483,6 +1567,7 @@ async def _websocket_handler(ws):
                     follow_up_queue.put_nowait(_FOLLOW_UP_DISCONNECTED)
                 except queue.Full:
                     pass
+        await ws.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -1504,6 +1589,7 @@ def _build_ws_action_registry() -> dict:
         chat as _ws_chat,
         runtime as _ws_runtime,
         session as _ws_session,
+        permissions as _ws_permissions,
         context_commits as _ws_commits,
         turn_files as _ws_turn_files,
         files as _ws_files,
@@ -1513,11 +1599,14 @@ def _build_ws_action_registry() -> dict:
         worktree as _ws_worktree,
         project as _ws_project,
         settings as _ws_settings,
+        user_error as _ws_user_error,
         webtab as _ws_webtab,
+        self_update as _ws_self_update,
     )
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
     table.update(_ws_session.ACTIONS)
+    table.update(_ws_permissions.ACTIONS)
     table.update(_ws_agent.ACTIONS)
     table.update(_ws_channel.ACTIONS)
     table.update(_ws_runtime.ACTIONS)
@@ -1531,23 +1620,79 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_worktree.ACTIONS)
     table.update(_ws_project.ACTIONS)
     table.update(_ws_settings.ACTIONS)
+    table.update(_ws_user_error.ACTIONS)
     table.update(_ws_webtab.ACTIONS)
+    table.update(_ws_self_update.ACTIONS)
     return table
 
 
 WS_ACTIONS: dict = _build_ws_action_registry()
 
+_FILE_REQUEST_ACTIONS = frozenset({
+    "project_file_tree", "project_file_search", "project_file_read",
+    "project_file_operation_status",
+    "project_file_write", "project_file_create", "project_file_rename",
+    "project_file_copy", "project_file_delete", "project_file_reveal",
+    "review_scope", "review_file_diff",
+    "turn_history_state", "revert_turn", "reapply_turn",
+    "turn_operation_status",
+})
+_FILE_MUTATION_ACTIONS = frozenset({
+    "project_file_write", "project_file_create", "project_file_rename",
+    "project_file_copy", "project_file_delete", "revert_turn", "reapply_turn",
+})
+
+
+def _valid_uuid_request_id(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        return str(uuid.UUID(value)) == value
+    except (ValueError, AttributeError):
+        return False
+
+
+def _validate_file_request(cmd: dict, action: str) -> None:
+    """Reject file requests before a handler can start filesystem work."""
+    from openprogram.webui.ws_errors import OperationError
+
+    if action not in _FILE_REQUEST_ACTIONS:
+        return
+    if not _valid_uuid_request_id(cmd.get("request_id")):
+        raise OperationError("invalid_request", scope="system")
+    if action in _FILE_MUTATION_ACTIONS:
+        key = cmd.get("idempotency_key")
+        if not _valid_uuid_request_id(key):
+            raise OperationError("invalid_request", scope="system")
+
 
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
-    raw_action = cmd.get("action") if isinstance(cmd, dict) else None
-    raw_session_id = cmd.get("session_id") if isinstance(cmd, dict) else None
-    action = raw_action if isinstance(raw_action, str) else None
-    session_id = raw_session_id if isinstance(raw_session_id, str) else None
+    from openprogram.self_update.ui_checks import permits_ws_command
+    if not permits_ws_command(ws, cmd):
+        await ws.send_text(json.dumps({
+            "type": "action_error",
+            "data": {"code": "ui_verification_active"},
+        }))
+        return
+    from openprogram.webui.ws_errors import safe_operation_metadata
+
+    action = safe_operation_metadata(cmd.get("action"))
+    if action is None:
+        from openprogram.webui.ws_errors import OperationError
+
+        raise OperationError("invalid_request", scope="system")
+    _validate_file_request(cmd, action)
     print(f"[ws] command received: action={action}")
 
     h = WS_ACTIONS.get(action)
     if h is not None:
+        # load_session cannot be moved wholesale to asyncio.to_thread: it
+        # awaits session_loaded, running_task, and question replay frames at
+        # different points. Its blocking models.dev lookup is SWR, and cold
+        # context accounting is offloaded inside the handler. The remaining
+        # DB/graph hydration stays synchronous until computation and sends can
+        # be separated without changing the frame contract.
         await h(ws, cmd)
         return
 
@@ -1556,15 +1701,7 @@ async def _handle_ws_command(ws, cmd: dict):
     # backend that is merely slow — no error, no log, no clue. Say so on
     # both channels. ``apps/web/scripts/check-ws-actions.mjs`` is the guard
     # that keeps this branch unreachable in practice.
-    _log(f"[ws] unknown action {action!r} — no handler registered")
-    await ws.send_text(json.dumps({
-        "type": "action_error",
-        "data": {
-            "action": action,
-            "session_id": session_id,
-            "error": f"unknown action {action!r}",
-        },
-    }, default=str))
+    await _send_operation_error(ws, cmd, code="unknown_action")
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -1589,6 +1726,24 @@ def _web_config() -> dict:
         "bind_host": bind_host,
         "allowed_origins": allowed_origins,
     }
+
+
+async def _recover_execution_control() -> None:
+    """Recover canonical executions and projections before legacy reconciliation."""
+    from openprogram.execution import default_store, recover_execution_startup
+    from openprogram.execution.projections import start_projection_worker
+
+    result = await asyncio.to_thread(
+        recover_execution_startup,
+    )
+    if result.canonical:
+        _log(f"[startup] recovered {len(result.canonical)} canonical execution(s)")
+    if result.projections.failed:
+        _log(
+            f"[startup] projection replay deferred for "
+            f"{result.projections.failed} item(s)"
+        )
+    start_projection_worker(default_store())
 
 
 def create_app(*, owner_auth=None, port: int = 18100):
@@ -1716,6 +1871,11 @@ def create_app(*, owner_auth=None, port: int = 18100):
         except Exception as e:  # noqa: BLE001
             _log(f"[mcp] shutdown failed: {type(e).__name__}: {e}")
 
+    async def _stop_execution_projection_worker():
+        from openprogram.execution.projections import stop_projection_worker
+
+        stop_projection_worker()
+
     # Startup runs in listed order, shutdown in reverse — same semantics
     # the eight @app.on_event handlers had before the deprecated API was
     # dropped. _capture_loop MUST stay first: everything downstream that
@@ -1723,13 +1883,14 @@ def create_app(*, owner_auth=None, port: int = 18100):
     _STARTUP = (
         _capture_loop,
         _subscribe_event_bus,
+        _recover_execution_control,
         _reconcile_interrupted_runs,
         _recover_interrupted_rewinds,
         _start_mcp_servers,
         _start_skills_watcher,
         _start_plugin_autoupdate,
     )
-    _SHUTDOWN = (_stop_mcp_servers,)
+    _SHUTDOWN = (_stop_mcp_servers, _stop_execution_projection_worker)
 
     @asynccontextmanager
     async def _lifespan(_app):
@@ -1855,6 +2016,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.webui.routes import lifecycle as _routes_lifecycle
     _routes_lifecycle.register(app)
 
+    # Durable Goal projection and pause/edit/resume/cancel actions.
+    from openprogram.webui.routes import goal as _routes_goal
+    _routes_goal.register(app)
+
     # Pending user-input questions list/reply/reject — routes.questions
     # (REST parity for runtime.ask; WS is the live path). Reconnect recovery.
     from openprogram.webui.routes import questions as _routes_questions
@@ -1874,6 +2039,9 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # Global running-work snapshot for the right-sidebar Running panel.
     from openprogram.webui.routes import running as _routes_running
     _routes_running.register(app)
+
+    from openprogram.webui.routes import self_updates as _routes_self_updates
+    _routes_self_updates.register(app)
 
     from openprogram.webui.routes import provider_login as _routes_provider_login
     _routes_provider_login.register(app)

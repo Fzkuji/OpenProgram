@@ -99,6 +99,9 @@ dependencies = [
     # Built-in `pdf` and `read` tools extract text with pypdf. This is a
     # complete-product capability, so release runtimes must always carry it.
     "pypdf>=5.0",
+    # Window-scoped GUI capture and Accessibility actions; no ML perception required.
+    "pyobjc-framework-ScreenCaptureKit>=10; sys_platform == 'darwin'",
+    "pyobjc-framework-ApplicationServices>=10; sys_platform == 'darwin'",
     # Windows ConPTY binding (import name ``winpty``). Drives the interactive
     # Claude-account browser login through a pseudo-terminal on Windows, where
     # stdlib ``pty`` doesn't exist (POSIX reuses ``pty``). Windows-only marker;
@@ -256,6 +259,7 @@ namespaces = false
     "_webui/_frontend/*",
     "_webui/_frontend/**/*",
 ]
+"openprogram_cli" = ["dist/*.mjs"]
 
 [tool.setuptools.exclude-package-data]
 "openprogram.webui" = [

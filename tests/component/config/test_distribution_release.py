@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
+import platform
 import plistlib
 import re
 import runpy
@@ -42,6 +44,8 @@ def test_desktop_targets_and_embedded_runtime_are_declared() -> None:
     assert "linux" not in build
     assert "dist:linux" not in package["scripts"]
     assert {item["to"] for item in build["extraResources"]} >= {"runtime"}
+    resources = {item["to"]: item["from"] for item in build["extraResources"]}
+    assert resources["update/install-app.sh"] == "scripts/install-app.sh"
     assert "worker-recovery-state.js" in build["files"]
     assert "tab-transfer-validation.js" in build["files"]
     assert package["desktopName"] == "ai.openprogram.OpenProgram.desktop"
@@ -63,6 +67,16 @@ def _fake_desktop_app(root: Path, version: str, *, app_id: str = "ai.openprogram
         encoding="utf-8",
     )
     runtime_python.chmod(0o755)
+    metadata = (
+        runtime
+        / "python/lib/python3.12/site-packages"
+        / f"openprogram-{version}.dist-info/METADATA"
+    )
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text(
+        f"Metadata-Version: 2.4\nName: openprogram\nVersion: {version}\n",
+        encoding="utf-8",
+    )
     (runtime / "runtime-manifest.json").write_text(
         json.dumps(
             {
@@ -531,6 +545,11 @@ def test_local_desktop_install_compares_the_staged_candidate(
             encoding="utf-8",
         )
         runtime_python.chmod(0o755)
+        metadata_path = next(runtime.rglob("openprogram-*.dist-info/METADATA"))
+        metadata_path.write_text(
+            "Metadata-Version: 2.4\nName: openprogram\nVersion: 0.6.2\n",
+            encoding="utf-8",
+        )
     finally:
         release.touch()
         install_stdout, install_stderr = installing.communicate(timeout=10)
@@ -571,6 +590,414 @@ def test_packager_honors_one_stable_user_lock_across_worktrees(
     assert competing.returncode != 0
     assert "another OpenProgram App package is running" in competing.stderr
     assert lock_file.read_text(encoding="utf-8").strip() == str(os.getpid())
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
+def test_packager_build_only_writes_artifact_without_installing(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    source = _fake_desktop_app(tmp_path / "built", "0.6.4")
+    installed_marker = tmp_path / "installer-called"
+
+    fake_npm = fake_bin / "npm"
+    fake_npm.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "for arg in \"$@\"; do\n"
+        "  case \"$arg\" in\n"
+        "    --config.directories.output=*)\n"
+        "      output=${arg#*=}\n"
+        "      mkdir -p \"$output/mac\"\n"
+        "      /usr/bin/ditto \"$FAKE_BUILT_APP\" \"$output/mac/OpenProgram.app\"\n"
+        "      ;;\n"
+        "  esac\n"
+        "done\n",
+        encoding="utf-8",
+    )
+    fake_npm.chmod(0o755)
+    fake_bash = fake_bin / "bash"
+    fake_bash.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  */smoke-packaged-runtime.sh) exit 0 ;;\n"
+        "  */install-app.sh) touch \"$INSTALL_CALLED\"; exit 99 ;;\n"
+        "esac\n"
+        "exec /bin/bash \"$@\"\n",
+        encoding="utf-8",
+    )
+    fake_bash.chmod(0o755)
+
+    output = tmp_path / "artifact" / "OpenProgram.app"
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            str(ROOT / "apps" / "desktop" / "scripts" / "package-and-install-app.sh"),
+            "--output",
+            str(output),
+        ],
+        check=False,
+        env={
+            "FAKE_BUILT_APP": str(source),
+            "HOME": str(tmp_path / "home"),
+            "INSTALL_CALLED": str(installed_marker),
+            "PATH": f"{fake_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "TMPDIR": str(tmp_path),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert output.is_dir()
+    assert not installed_marker.exists()
+    assert f"OpenProgram App artifact written to {output}" in completed.stdout
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
+def test_deferred_install_can_rollback_or_commit(tmp_path: Path) -> None:
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.1")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+    activated = subprocess.run(
+        ["bash", str(installer), "--defer-commit", str(candidate)],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    transaction = Path(
+        next(
+            line.removeprefix("OPENPROGRAM_TRANSACTION_DIR=")
+            for line in activated.stdout.splitlines()
+            if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
+        )
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    assert transaction.parent == target.parent
+    assert (transaction / "previous.app").is_dir()
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+    subprocess.run(
+        ["bash", str(installer), "--rollback", str(transaction)],
+        check=True,
+        env=env,
+    )
+    assert not transaction.exists()
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.1"
+
+    replacement = _fake_desktop_app(tmp_path / "replacement", "0.6.3")
+    activated = subprocess.run(
+        ["bash", str(installer), "--defer-commit", str(replacement)],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    transaction = Path(
+        next(
+            line.removeprefix("OPENPROGRAM_TRANSACTION_DIR=")
+            for line in activated.stdout.splitlines()
+            if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
+        )
+    )
+    subprocess.run(
+        ["bash", str(installer), "--commit", str(transaction)],
+        check=True,
+        env=env,
+    )
+    assert not transaction.exists()
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.3"
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
+def test_deferred_install_rejects_commit_after_active_app_changes(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.1")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+    activated = subprocess.run(
+        ["bash", str(installer), "--defer-commit", str(candidate)],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    transaction = Path(
+        next(
+            line.removeprefix("OPENPROGRAM_TRANSACTION_DIR=")
+            for line in activated.stdout.splitlines()
+            if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
+        )
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    (target / ".unexpected-change").write_text("changed", encoding="utf-8")
+
+    rejected = subprocess.run(
+        ["bash", str(installer), "--commit", str(transaction)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "active OpenProgram app does not match the deferred transaction" in rejected.stderr
+    assert (transaction / "previous.app").is_dir()
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
+@pytest.mark.parametrize("terminal_action", ["commit", "rollback"])
+def test_deferred_actions_do_not_execute_candidate_runtime(
+    tmp_path: Path,
+    terminal_action: str,
+) -> None:
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.1")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+    marker = tmp_path / "candidate-executed"
+    runtime_python = candidate / "Contents/Resources/runtime/python/bin/python3"
+    runtime_python.write_text(
+        "#!/bin/sh\n"
+        f"rm -rf {env['DESTDIR']}/Applications/.openprogram-app-install.*/previous.app\n"
+        f"touch {marker!s}\n"
+        "printf '%s\\n' '0.6.2'\n",
+        encoding="utf-8",
+    )
+    runtime_python.chmod(0o755)
+    activated = subprocess.run(
+        ["bash", str(installer), "--defer-commit", str(candidate)],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    transaction = Path(
+        next(
+            line.removeprefix("OPENPROGRAM_TRANSACTION_DIR=")
+            for line in activated.stdout.splitlines()
+            if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
+        )
+    )
+    assert not marker.exists()
+    assert (transaction / "previous.app").is_dir()
+
+    subprocess.run(
+        ["bash", str(installer), f"--{terminal_action}", str(transaction)],
+        check=True,
+        env=env,
+    )
+
+    assert not marker.exists()
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
+def test_installer_rejects_candidate_package_metadata_version_mismatch(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.1")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+    metadata = next(candidate.rglob("openprogram-*.dist-info/METADATA"))
+    metadata.write_text(
+        "Metadata-Version: 2.4\nName: openprogram\nVersion: 0.6.1\n",
+        encoding="utf-8",
+    )
+
+    rejected = subprocess.run(
+        ["bash", str(installer), str(candidate)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "invalid OpenProgram app bundle" in rejected.stderr
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.1"
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
+def test_deferred_rollback_preserves_candidate_when_previous_is_missing(
+    tmp_path: Path,
+) -> None:
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.1")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+    activated = subprocess.run(
+        ["bash", str(installer), "--defer-commit", str(candidate)],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    transaction = Path(
+        next(
+            line.removeprefix("OPENPROGRAM_TRANSACTION_DIR=")
+            for line in activated.stdout.splitlines()
+            if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
+        )
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    previous = transaction / "previous.app"
+    subprocess.run(["/bin/rm", "-rf", str(previous)], check=True)
+
+    rejected = subprocess.run(
+        ["bash", str(installer), "--rollback", str(transaction)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "invalid OpenProgram App transaction" in rejected.stderr
+    assert transaction.is_dir()
+    assert target.is_dir()
+    with (target / "Contents" / "Info.plist").open("rb") as stream:
+        assert plistlib.load(stream)["CFBundleShortVersionString"] == "0.6.2"
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
+@pytest.mark.parametrize("marker_kind", ["missing", "symlink"])
+def test_deferred_rollback_rejects_invalid_previous_marker(
+    tmp_path: Path,
+    marker_kind: str,
+) -> None:
+    installer = ROOT / "apps" / "desktop" / "scripts" / "install-app.sh"
+    env = {
+        "DESTDIR": str(tmp_path / "root"),
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path / "tmp"),
+    }
+    Path(env["TMPDIR"]).mkdir()
+    original = _fake_desktop_app(tmp_path / "original", "0.6.1")
+    subprocess.run(["bash", str(installer), str(original)], check=True, env=env)
+    candidate = _fake_desktop_app(tmp_path / "candidate", "0.6.2")
+    activated = subprocess.run(
+        ["bash", str(installer), "--defer-commit", str(candidate)],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    transaction = Path(
+        next(
+            line.removeprefix("OPENPROGRAM_TRANSACTION_DIR=")
+            for line in activated.stdout.splitlines()
+            if line.startswith("OPENPROGRAM_TRANSACTION_DIR=")
+        )
+    )
+    target = Path(env["DESTDIR"]) / "Applications" / "OpenProgram.app"
+    marker = transaction / "had-previous"
+    marker.unlink()
+    if marker_kind == "symlink":
+        subprocess.run(["/bin/rm", "-rf", str(transaction / "previous.app")], check=True)
+        (transaction / "previous.sha256").unlink()
+        marker.symlink_to(target)
+
+    rejected = subprocess.run(
+        ["bash", str(installer), "--rollback", str(transaction)],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert rejected.returncode != 0
+    assert "invalid OpenProgram App transaction" in rejected.stderr
+    assert transaction.is_dir()
+    assert target.is_dir()
+
+
+@pytest.mark.macos
+@MACOS_DESKTOP_INSTALL
+def test_packager_rejects_canonical_aliases_and_cleanup_owned_outputs(
+    tmp_path: Path,
+) -> None:
+    packager = ROOT / "apps" / "desktop" / "scripts" / "package-and-install-app.sh"
+    applications_alias = tmp_path / "applications"
+    applications_alias.symlink_to("/Applications", target_is_directory=True)
+    outputs = [
+        "/Applications/./OpenProgram.app",
+        str(applications_alias / "OpenProgram.app"),
+        str(ROOT / "build" / "OpenProgram.app"),
+        str(ROOT / "apps" / "desktop" / "build" / "runtime" / "OpenProgram.app"),
+    ]
+    env = {
+        "HOME": str(tmp_path / "home"),
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "TMPDIR": str(tmp_path),
+    }
+
+    for output in outputs:
+        rejected = subprocess.run(
+            ["/bin/bash", str(packager), "--output", output],
+            check=False,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        assert rejected.returncode != 0, output
+        assert "build output" in rejected.stderr, output
 
 
 def test_launchd_replacement_unloads_keepalive_before_stopping_worker(
@@ -1573,6 +2000,56 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     assert "worker stop >/dev/null 2>&1 || true" not in final_window
 
 
+def test_local_app_refresh_hydrates_embedded_runtime_dependencies() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    hydrate = refresh.index('hydrate_wheel_dependencies "$app_python"')
+    reinstall = refresh.index(
+        '"$app_python" -I -m pip install --disable-pip-version-check'
+    )
+    assert hydrate < reinstall
+    assert '--force-reinstall "$wheel"' in refresh[reinstall:]
+
+
+def test_local_app_refresh_installs_committed_gui_harness_snapshot() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'git -C "$gui_harness_repo" archive' in refresh
+    assert '"$gui_harness_revision"' in refresh
+    assert '"$local_python" -m pip install' in refresh
+    assert '"$app_python" -I -m pip install' in refresh
+    assert '--force-reinstall "$gui_harness_stage"' in refresh
+    assert "from gui_harness.adapters.mac_window import window_support" in refresh
+    assert 'json.load(stream)["programs"]["gui"]["commit"]' in refresh
+    assert 'test "$gui_harness_revision" = "$gui_harness_pin"' in refresh
+    snapshot = refresh.index('cp "$product_runtime_config" "$product_runtime_stage"')
+    validate = refresh.index('"$local_python" - "$product_runtime_stage"')
+    install = refresh.index('cp "$product_runtime_stage" "$installed_product_runtime"')
+    assert snapshot < validate < install
+
+
+def test_product_runtime_verifier_probes_macos_window_dependencies(
+    monkeypatch,
+) -> None:
+    helper = runpy.run_path(
+        str(ROOT / "scripts/release/verify-product-runtime.py")
+    )
+    imported: list[str] = []
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(importlib, "import_module", imported.append)
+
+    helper["_probe_macos_window_control"]()
+
+    assert imported == [
+        "AppKit",
+        "ApplicationServices",
+        "Quartz",
+        "ScreenCaptureKit",
+    ]
+
+
 def test_local_app_refresh_removes_stale_package_layout_before_install() -> None:
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
@@ -1772,6 +2249,10 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     desktop = repo / "apps" / "desktop"
     release_scripts.mkdir(parents=True)
     desktop.mkdir(parents=True)
+    (desktop / "scripts").mkdir()
+    (desktop / "scripts/install-app.sh").write_bytes(
+        (ROOT / "apps/desktop/scripts/install-app.sh").read_bytes()
+    )
     (scripts / "refresh-local-app.sh").write_text(
         (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8"),
         encoding="utf-8",
@@ -1850,6 +2331,9 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         'test -f "$3/tab-transfer-validation.js" || exit 94; '
         'test -f "$3/window-state.js" || exit 95; '
         'test -f "$3/theme-chrome.js" || exit 96; : > "$4" ;;\n'
+        # The real descriptor writer is covered by test_package_protocol;
+        # this fixture isolates refresh version/lock/signal behavior.
+        '  --resources) exit 0 ;;\n'
         '  *) printf "unexpected node call: %s\\n" "$*" >&2; exit 91 ;;\n'
         "esac\n",
         encoding="utf-8",
@@ -2102,6 +2586,9 @@ if [ "$1" = "run" ] && [ "$2" = "build" ]; then
   mkdir -p "$PWD/apps/web/out"
   printf '<html>web</html>\\n' > "$PWD/apps/web/out/index.html"
   printf '<body><div id="sidebar"></div></body>\\n' > "$PWD/apps/web/out/chat.html"
+elif [ "$1" = "run" ] && [ "$2" = "build:release" ]; then
+  mkdir -p "$PWD/apps/cli/python/openprogram_cli/dist"
+  printf '// terminal bundle\\n' > "$PWD/apps/cli/python/openprogram_cli/dist/index.mjs"
 fi
 if [ "$1" = "run" ] && [ "$2" = "build:standalone" ]; then
   mkdir -p "$PWD/apps/cli/dist"
@@ -2144,6 +2631,7 @@ printf '<html>docs</html>\\n' > "$PWD/docs/_site/index.html"
         repo / "apps" / "server" / "openprogram_server" / "_webui" / "_frontend" / "chat.html"
     )
     assert 'id="sidebar"' in staged_chat.read_text(encoding="utf-8")
+    assert (repo / "apps/cli/python/openprogram_cli/dist/index.mjs").is_file()
 
     fake_npm.write_text(
         """#!/bin/sh
@@ -2208,8 +2696,8 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert '"pypdf>=5.0"' in pyproject
     assert '"rich>=13.0"' in pyproject
     assert '"sentence_transformers"' not in verifier
-    assert "_reject_torch_wheels()" in verifier
-    assert "product runtime must not ship torch or CUDA wheels" in verifier
+    assert "_reject_excluded_runtime_wheels()" in verifier
+    assert "product runtime must not ship excluded distributions or wheels" in verifier
     assert '"pypdf",' in verifier
     assert "_probe_pdf_tools()" in verifier
     assert "_probe_rich_terminal()" in verifier
@@ -2256,6 +2744,43 @@ def test_product_runtime_pdf_tool_probe() -> None:
 def test_product_runtime_rich_terminal_probe() -> None:
     verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
     verifier["_probe_rich_terminal"]()
+
+
+def test_immutable_runtime_doctor_does_not_require_node_or_npm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openprogram.cli.commands import doctor
+
+    monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
+    monkeypatch.setattr(doctor.shutil, "which", lambda _name: None)
+
+    assert doctor._check_node() == (
+        True,
+        "node available",
+        "not required in immutable product runtime",
+    )
+    assert doctor._check_npm() == (
+        True,
+        "npm available",
+        "not required in immutable product runtime",
+    )
+    assert doctor._check_git() == (False, "git available", "not on PATH")
+
+
+def test_packaged_cli_resolves_bundled_tui_without_source(tmp_path, monkeypatch) -> None:
+    import tomllib
+    import openprogram
+    from openprogram.cli import ink as cli_ink
+
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "dist/*.mjs" in config["tool"]["setuptools"]["package-data"]["openprogram_cli"]
+    package = tmp_path / "openprogram_cli"
+    entry = package / "dist" / "index.mjs"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("// bundled terminal entry\n", encoding="utf-8")
+    monkeypatch.setattr(openprogram, "__file__", str(tmp_path / "openprogram" / "__init__.py"))
+    monkeypatch.setattr(cli_ink, "__file__", str(package / "_impl" / "ink.py"))
+    assert cli_ink._resolve_cli_entry() == entry
 
 
 def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
@@ -2323,7 +2848,43 @@ def test_missing_bundled_pdf_dependency_requires_complete_reinstall(
         assert "pip install" not in result
 
 
-def test_product_runtime_rejects_torch_wheels(
+@pytest.mark.parametrize(
+    "excluded_dist",
+    [
+        "easyocr",
+        "opencv-contrib-python",
+        "opencv-contrib-python-headless",
+        "opencv-python",
+        "opencv-python-headless",
+        "torch",
+        "torchvision",
+        "sentence-transformers",
+        "triton",
+        "nvidia-cublas",
+        "cuda-runtime",
+        "opencv_python_headless",
+    ],
+)
+def test_product_runtime_rejects_excluded_distributions(
+    monkeypatch: pytest.MonkeyPatch,
+    excluded_dist: str,
+) -> None:
+    verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
+
+    class _Dist:
+        def __init__(self, name: str) -> None:
+            self.metadata = {"Name": name}
+
+    monkeypatch.setattr(
+        verifier["importlib"].metadata,
+        "distributions",
+        lambda: [_Dist(excluded_dist), _Dist("pypdf")],
+    )
+    with pytest.raises(RuntimeError, match="must not ship excluded distributions"):
+        verifier["_reject_excluded_runtime_wheels"]()
+
+
+def test_product_runtime_accepts_runtime_without_excluded_distributions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
@@ -2335,25 +2896,9 @@ def test_product_runtime_rejects_torch_wheels(
     monkeypatch.setattr(
         verifier["importlib"].metadata,
         "distributions",
-        lambda: [_Dist("torch"), _Dist("pypdf")],
-    )
-    with pytest.raises(RuntimeError, match="must not ship torch"):
-        verifier["_reject_torch_wheels"]()
-
-    monkeypatch.setattr(
-        verifier["importlib"].metadata,
-        "distributions",
-        lambda: [_Dist("nvidia-cublas"), _Dist("pypdf")],
-    )
-    with pytest.raises(RuntimeError, match="must not ship torch"):
-        verifier["_reject_torch_wheels"]()
-
-    monkeypatch.setattr(
-        verifier["importlib"].metadata,
-        "distributions",
         lambda: [_Dist("pypdf")],
     )
-    verifier["_reject_torch_wheels"]()
+    verifier["_reject_excluded_runtime_wheels"]()
 
 
 def test_product_runtime_rejects_installed_openprogram_version_mismatch(
@@ -2663,7 +3208,36 @@ def test_linux_install_docs_do_not_claim_a_desktop_artifact() -> None:
         assert expected in contents
 
 
-def test_public_docs_describe_one_complete_release_product() -> None:
+def test_public_install_docs_pin_current_product_version() -> None:
+    version = _desktop_package()["version"]
+    english = (ROOT / "docs" / "install" / "install.md").read_text(encoding="utf-8")
+    chinese = (ROOT / "docs" / "install" / "install.zh.md").read_text(
+        encoding="utf-8"
+    )
+    design = (
+        ROOT
+        / "docs"
+        / "reference"
+        / "design"
+        / "distribution"
+        / "installation-packaging.html"
+    ).read_text(encoding="utf-8")
+    plan = (
+        ROOT
+        / "docs"
+        / "reference"
+        / "design"
+        / "distribution"
+        / "implementation-plan.md"
+    ).read_text(encoding="utf-8")
+
+    assert f"OPENPROGRAM_VERSION={version} sh" in english
+    assert f"OPENPROGRAM_VERSION={version} sh" in chinese
+    assert f"正式版本</strong>：v{version}" in design
+    assert f"### Current v{version} release acceptance" in plan
+
+
+def test_public_docs_describe_one_release_product_runtime() -> None:
     public_docs = [
         ROOT / "README.md",
         ROOT / "docs" / "README.md",
@@ -2719,8 +3293,21 @@ def test_public_docs_describe_one_complete_release_product() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in public_docs)
     for phrase in forbidden:
         assert phrase not in combined
-    assert "same complete product capabilities" in combined
-    assert "相同的完整产品能力" in combined
+    assert "same product runtime" in combined
+    assert "相同的 product runtime" in combined
+    assert "PyTorch, OpenCV, and EasyOCR are not in the product runtime" in combined
+    assert "product runtime 明确不含 PyTorch、OpenCV 和 EasyOCR" in combined
+    assert "Program packages and their supported runtime assets" in combined
+    assert "Program package 与受支持的 runtime 资产" in combined
+    for inaccurate_claim in (
+        "default OCR/model data",
+        "默认 OCR/模型数据",
+        "Their Python dependencies, default OCR data",
+        "它们的 Python 依赖、默认 OCR 数据",
+        "their dependencies, and their default runtime assets",
+        "三项第一方 Programs、依赖和默认 runtime 资产",
+    ):
+        assert inaccurate_claim not in combined
 
 
 def test_public_product_surfaces_do_not_offer_python_package_install() -> None:

@@ -11,7 +11,7 @@
  */
 import React, { useRef, useState } from "react";
 import { Menu } from "@base-ui-components/react/menu";
-import { Paperclip, Settings } from "lucide-react";
+import { CornerDownRight, Paperclip, Settings } from "lucide-react";
 
 import {
   type AnimatedNavIconHandle,
@@ -69,6 +69,8 @@ export interface ControlsClusterProps {
   fastEnabled: boolean;
   fastSupported: boolean;
   toggleFast(): void;
+  runningMessageMode: "queue" | "steer";
+  toggleRunningMessageMode(): void;
   unattended: boolean;
   toggleUnattended(): void;
   sandboxEnabled: boolean;
@@ -104,6 +106,8 @@ export function ControlsCluster({
   fastEnabled,
   fastSupported,
   toggleFast,
+  runningMessageMode,
+  toggleRunningMessageMode,
   unattended,
   toggleUnattended,
   sandboxEnabled,
@@ -329,6 +333,21 @@ export function ControlsCluster({
                     </Menu.Item>
 
                     <Menu.Separator className={styles.plusMenuDivider} />
+
+                    <Menu.Item
+                      className={styles.plusMenuRow}
+                      closeOnClick={false}
+                      onClick={() => toggleRunningMessageMode()}
+                    >
+                      <PlusMenuItem
+                        active={runningMessageMode === "steer"}
+                        onClick={noop}
+                        icon={<CornerDownRight size={16} />}
+                        label={runningMessageMode === "steer"
+                          ? text("While running: Steer", "运行中：注入当前轮次")
+                          : text("While running: Queue", "运行中：排队到下一轮")}
+                      />
+                    </Menu.Item>
 
                     {/* Unattended — a toggle; keep the menu open. */}
                     <Menu.Item

@@ -358,7 +358,7 @@ def test_empty_recorded_tool_snapshot_does_not_read_live_registry(monkeypatch):
 
 
 def test_approval_wrapped_mcp_tool_keeps_server_in_recorded_snapshot(monkeypatch):
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.types import AgentTool
     from openprogram.context.tool_snapshot_node import record_tool_snapshot
 

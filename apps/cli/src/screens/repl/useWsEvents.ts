@@ -11,6 +11,8 @@ import {
   WsEnvelope,
   StatsEnvelope,
   ConnectionState,
+  JobResource,
+  JobResourceView,
   JobRow,
 } from '../../ws/client.js';
 import { Turn } from '../../components/Turn.js';
@@ -103,6 +105,7 @@ export interface WsEventsCtx {
   sessionAliasesPrintRef: React.MutableRefObject<boolean>;
   sessionAliasesRef: React.MutableRefObject<SessionAliasRow[]>;
   executionIdRef: React.MutableRefObject<string | undefined>;
+  executionVersionRef: React.MutableRefObject<number | undefined>;
 }
 
 type JobEnvelopeCtx = Pick<
@@ -122,30 +125,108 @@ export function handleJobEnvelope(ev: WsEnvelope, ctx: JobEnvelopeCtx): boolean 
     ctx.pushSystem(formatJobResourceMessage('job', ev.data));
     return true;
   }
-  if (ev.type !== 'job_status' && ev.type !== 'cancel_job_result') return false;
+  if (ev.type !== 'job_status' && ev.type !== 'execution.command.updated') return false;
+
+  if (ev.type === 'execution.command.updated') {
+    const data = ev.data ?? ev;
+    const execution = data.execution as Record<string, unknown> | undefined;
+    const command = data.command as Record<string, unknown> | undefined;
+    const event_cursor = data.event_cursor as { next_sequence?: number } | undefined;
+    const executionId = String(
+      execution?.execution_id ?? command?.execution_id ?? '',
+    );
+    if (!executionId) return true;
+    ctx.setJobsList((rows) => rows.map((job) => (
+      (job.execution_id ?? job.id) === executionId
+        ? {
+            ...job,
+            execution_id: executionId,
+            status: String(execution?.status ?? job.status),
+            status_version: typeof execution?.status_version === 'number'
+              ? execution.status_version : job.status_version,
+            event_cursor,
+            resource: {
+              ...(job.resource || {}),
+              execution_id: executionId,
+              status: String(execution?.status ?? job.status),
+              status_version: typeof execution?.status_version === 'number'
+                ? execution.status_version : job.status_version,
+              event_cursor: event_cursor as JobResourceView["event_cursor"],
+              execution,
+              resource: execution?.resource as JobResource | null | undefined,
+              job_id: job.resource?.job_id ?? job.id,
+            },
+          }
+        : job
+    )));
+    ctx.setSelectedJob((job) => (
+      job && (job.execution_id ?? job.id) === executionId
+        ? {
+            ...job,
+            status: String(execution?.status ?? job.status),
+            status_version: typeof execution?.status_version === 'number'
+              ? execution.status_version : job.status_version,
+          }
+        : job
+    ));
+    return true;
+  }
 
   const patch: Partial<JobRow> = {
     status: ev.data.status ?? 'unknown',
     ...(ev.data.resource ? { resource: ev.data.resource } : {}),
-    ...('reason_code' in ev.data ? { reason_code: ev.data.reason_code } : {}),
   };
   ctx.setJobsList((rows) => rows.map((job) => (
     job.id === ev.data.job_id ? { ...job, ...patch } : job
   )));
   ctx.setSelectedJob((job) => (
-    job?.id === ev.data.job_id
-      ? { ...job, ...patch }
-      : ev.type === 'cancel_job_result'
-        ? { id: ev.data.job_id, ...patch } as JobRow
-        : job
+    job?.id === ev.data.job_id ? { ...job, ...patch } : job
   ));
   return true;
 }
 
 type RunningTaskEnvelopeCtx = Pick<
   WsEventsCtx,
-  'conversationId' | 'executionIdRef' | 'setStreaming'
+  'conversationId' | 'executionIdRef' | 'executionVersionRef' | 'setStreaming'
 >;
+
+type OperationErrorEnvelopeCtx = Pick<
+  WsEventsCtx,
+  'conversationId' | 'finishTurn' | 'setCommitted'
+>;
+
+function safeOperationMetadata(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value || [...value].length > 128) return undefined;
+  return [...value].some((char) => char !== ' ' && /[\p{C}\p{Z}]/u.test(char))
+    ? undefined
+    : value;
+}
+
+export function handleOperationErrorEnvelope(
+  ev: WsEnvelope,
+  ctx: OperationErrorEnvelopeCtx,
+): boolean {
+  if (ev.type !== 'operation_error' && ev.type !== 'action_error') return false;
+  const rawSessionId = ev.data?.session_id;
+  const sessionId = safeOperationMetadata(rawSessionId);
+  if (sessionId && sessionId !== ctx.conversationId) return true;
+  const action = safeOperationMetadata(ev.data?.action) ?? '?';
+  const unknownAction = ev.data?.code === 'unknown_action'
+    || (ev.type === 'action_error' && !ev.data?.code);
+  const text = unknownAction
+    ? `error: unknown action ${action}`
+    : `error: action ${action} failed`;
+  ctx.setCommitted((turns) => [
+    ...turns,
+    { id: `e-${Date.now()}`, role: 'system', text },
+  ]);
+  const sessionMatches = sessionId !== undefined
+    ? sessionId === ctx.conversationId
+    : (rawSessionId === undefined || rawSessionId === null)
+      && ctx.conversationId === undefined;
+  if (action === 'chat' && sessionMatches) ctx.finishTurn();
+  return true;
+}
 
 export function handleRunningTaskEnvelope(
   ev: WsEnvelope,
@@ -156,6 +237,9 @@ export function handleRunningTaskEnvelope(
   const executionId = ev.data.execution_id;
   if (executionId) {
     ctx.executionIdRef.current = executionId;
+    if (typeof ev.data.status_version === 'number') {
+      ctx.executionVersionRef.current = ev.data.status_version;
+    }
     ctx.setStreaming((streaming) => (
       streaming ? { ...streaming, executionId } : streaming
     ));
@@ -178,6 +262,8 @@ export function useWsEvents(ctx: WsEventsCtx): void {
       };
       if (handleJobEnvelope(ev, c)) {
         return;
+      } else if (handleOperationErrorEnvelope(ev, c)) {
+        return;
       } else if (handleRunningTaskEnvelope(ev, c)) {
         return;
       } else if (ev.type === 'chat_ack') {
@@ -185,12 +271,18 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         const executionId = ev.data.execution_id;
         if (executionId) {
           c.executionIdRef.current = executionId;
+          if (typeof ev.data.status_version === 'number') {
+            c.executionVersionRef.current = ev.data.status_version;
+          }
           c.setStreaming((s) => (s ? { ...s, executionId } : s));
         }
       } else if (ev.type === 'execution.updated') {
         const execution = ev.execution;
         const currentId = c.executionIdRef.current;
         if (execution?.execution_id && currentId && execution.execution_id === currentId) {
+          if (typeof execution.status_version === 'number') {
+            c.executionVersionRef.current = execution.status_version;
+          }
           if (
             execution.status === 'cancelled'
             || execution.status === 'failed'
@@ -200,6 +292,17 @@ export function useWsEvents(ctx: WsEventsCtx): void {
           ) {
             c.finishTurn();
           }
+        }
+      } else if (ev.type === 'execution.command.updated') {
+        const command = ev.command ?? ev.data?.command;
+        const snapshot = command?.latest_snapshot;
+        if (
+          command?.status === 'rejected'
+          && snapshot
+          && snapshot?.execution_id === c.executionIdRef.current
+          && typeof snapshot.status_version === 'number'
+        ) {
+          c.executionVersionRef.current = snapshot.status_version;
         }
       } else if (ev.type === 'chat_response') {
         handleChatResponse(ev.data, c, markSessionLive);
@@ -234,11 +337,6 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         const d = (ev as { data: { attended?: boolean } }).data;
         c.pushSystem(`[mode] ${d.attended ? 'attended — the agent may ask you questions'
           : 'unattended — questions are withheld'}`);
-      } else if (ev.type === 'steer_ack') {
-        const d = (ev as { data: { queued?: boolean; message?: string } }).data;
-        c.pushSystem(d.queued
-          ? `[steer] queued: ${d.message ?? ''} — the run will pick it up at its next step.`
-          : `[steer] could not queue (no live run for this session?).`);
       } else if (ev.type === 'browser_result') {
         const data = (ev as { data: { verb: string; result: string } }).data;
         c.pushSystem(`[browser ${data.verb}] ${data.result}`);
@@ -423,10 +521,7 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         ) {
           c.setThinkingEffort(effort);
         }
-        const mode = data.settings?.permission_mode;
-        if (mode && PERMISSION_MODES.includes(mode)) {
-          c.setPermissionMode(mode);
-        }
+
         const turns = (data.messages ?? [])
           .filter((m) => m.role && m.content)
           .map((m, i) => ({
@@ -504,7 +599,14 @@ export function useWsEvents(ctx: WsEventsCtx): void {
         c.finishTurn();
       }
     });
-    const offState = client.onState((s) => ctxRef.current.setConnState(s));
+    const onConnection = (state: ConnectionState) => {
+      const current = ctxRef.current;
+      current.setConnState(state);
+      if (state === 'connected' && current.conversationId) {
+        client.send({ action: 'load_session', session_id: current.conversationId });
+      }
+    };
+    const offState = client.onState(onConnection);
     client.send({ action: 'stats' });
     client.send({ action: 'list_agents' });
     // Boot-time prefetch of alias rows into sessionAliasesRef.

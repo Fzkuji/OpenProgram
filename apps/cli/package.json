@@ -7,6 +7,7 @@
     "openprogram-cli": "dist/index.js"
   },
   "scripts": {
+    "build:release": "esbuild src/index.tsx --bundle --platform=node --target=node20 --format=esm --outfile=python/openprogram_cli/dist/index.mjs --jsx=automatic --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
     "build": "esbuild src/index.tsx --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --packages=external --jsx=automatic --banner:js=\"#!/usr/bin/env node\\nimport { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
     "build:standalone": "esbuild src/index.tsx --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index-standalone.cjs --jsx=automatic --banner:js=\"#!/usr/bin/env node\"",
     "dev": "esbuild src/index.tsx --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --packages=external --jsx=automatic --watch",

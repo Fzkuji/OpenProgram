@@ -118,15 +118,14 @@ into registration hooks, mirroring `add_pre_invocation_hook`:
 
 | Seam | Core default | Platform registration |
 |---|---|---|
-| `set_cancellation_check` | no-op — nothing cancels | `webui/_pause_stop.py` registers its pause/cancel check at import |
-| `set_session_id_provider` | `None` — `runtime.can_ask()` is `False` | same module provides the active session id |
+| `set_cancellation_check` | no-op — nothing cancels | `openprogram.agent.run_control` registers the exact execution check at import |
+| `set_session_id_provider` | `None` — `runtime.can_ask()` is `False` | `openprogram.agent.run_control` provides the active session id |
 | `session_scope(store, id)` | unset — no persistence | the dispatcher binds the per-turn store itself |
 
-**Why hooks instead of the previous lazy `import webui._pause_stop`?** That
-import made the core depend on the web UI and formed a cycle
-(`webui/_pause_stop` imports from `function.py`), survivable only because both
-sides happened to import lazily. The hook keeps the dependency one-way:
-platform → core.
+**Why hooks instead of a web UI cancellation module?** The previous
+session-scoped module duplicated cancellation state and made the core depend
+on the Web UI. The hook keeps the dependency one-way while `run_control`
+checks the exact execution token.
 
 **`ImportError` during `exec()` is permanent, not transient.** The retry loop
 classifies it as non-retryable: a missing subsystem does not appear by

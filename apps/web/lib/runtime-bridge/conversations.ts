@@ -11,6 +11,7 @@ import {
   switchDraftChannelChoice,
 } from "./draft-channel-choice";
 import { runtimeState, getSocket, type TreeEntry } from "./state";
+import { updateSessionGoal } from "./goal-state";
 import {
   formatProgramResultContent,
   scrollToBottom,
@@ -192,29 +193,9 @@ function spliceCompactionFromGraph(
 
 /* ===== Channel icons ============================================= */
 
-// simple-icons CDN brand marks, each embedding the platform's own hue.
-const CHANNEL_ICON_URL: Record<string, string> = {
-  wechat: "https://cdn.simpleicons.org/wechat/07C160",
-  discord: "https://cdn.simpleicons.org/discord/5865F2",
-  telegram: "https://cdn.simpleicons.org/telegram/26A5E4",
-  slack: "https://cdn.simpleicons.org/slack/4A154B",
-};
-
 export function channelIcon(plat: string): string {
-  const lc = String(plat || "").toLowerCase();
-  const url = CHANNEL_ICON_URL[lc];
   const letter = ((plat || "?")[0] || "?").toUpperCase();
-  const letterSpan = '<span class="provider-icon-letter">' + letter + "</span>";
-  if (!url) return letterSpan;
-  // Guard `parentNode`: if the icon errors after the menu closed the
-  // <img> is detached and setting outerHTML throws NoModificationAllowed.
-  return (
-    '<img src="' +
-    url +
-    '" alt="" onerror="if(this.parentNode)this.outerHTML=&quot;' +
-    letterSpan.replace(/"/g, "&amp;quot;") +
-    '&quot;">'
-  );
+  return '<span class="provider-icon-letter">' + letter + "</span>";
 }
 
 /* ===== Channel health poll ======================================= */
@@ -585,18 +566,16 @@ export function loadSessionData(data: LegacyConv): void {
   // 不该被覆盖为 undefined; 显式 filter 一下 data 里的 undefined 值.
   const cleanedData: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(data)) {
-    if (v !== undefined) cleanedData[k] = v;
+    if (v !== undefined && k !== "goal") cleanedData[k] = v;
   }
   map[id] = Object.assign({}, map[id] || {}, cleanedData);
   // Keep the sidebar's store entry in sync with the freshly-loaded
   // session's summary fields (title / channel / preview / flags).
   mirrorUpsertConv(map[id] as Record<string, unknown>);
-  // Announce the session's /goal state so the composer GoalChip can
-  // hydrate after a reload (live changes ride `goal_update` frames).
+  // A slow session load must not overwrite a newer HTTP or live Goal update.
   try {
-    window.dispatchEvent(new CustomEvent("op:goal-state", {
-      detail: { session_id: id, goal: (map[id] as { goal?: unknown }).goal ?? null },
-    }));
+    const loaded = data as { goal?: { version?: number } | null };
+    if (loaded.goal !== undefined) updateSessionGoal(id, loaded.goal);
   } catch { /* defensive */ }
   // 清 transcript skeleton — 不能只在 currentSessionId 分支里清:
   // 回包晚到、用户已切走时, loading 态若还指着这个 id 也要释放。

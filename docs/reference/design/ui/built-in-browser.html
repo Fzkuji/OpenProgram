@@ -207,7 +207,7 @@
       <div class="eyebrow">OpenProgram · UI design specification</div>
       <h1>内置浏览器、资料导入与新建 Pane</h1>
       <p class="lede">新建 Pane 只负责选择内容类型；进入 Browser 后才显示网页导航、书签、History 和资料导入。浏览器工具栏只处理当前网页和浏览资料，整个窗口的菜单只处理 OpenProgram 与 Pane。两类设置共用同一 Settings 页面，但使用不同入口。</p>
-      <div class="meta"><span class="pill"><span class="dot"></span>当前基线已实现</span><span class="pill">桌面 App</span><span class="pill">独立浏览器 profile</span><span class="pill">Browser chrome 已对齐</span></div>
+      <div class="meta"><span class="pill"><span class="dot"></span>当前基线已实现</span><span class="pill">桌面 App</span><span class="pill">独立浏览器 profile</span><span class="pill">Browser chrome 已对齐</span><span class="pill">popup 激活 · 网页右键菜单已实现</span></div>
       <details class="mobile-toc">
         <summary>本页目录</summary>
         <nav aria-label="移动端页内导航"><a href="#decisions">产品决策</a><a href="#toolbar">工具栏与菜单</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
@@ -226,6 +226,8 @@
       <div class="decision"><strong>New pane 只做选择</strong><p>空白 Pane 只显示 Files、New chat、Browser、Terminal。地址栏、快捷网站、Bookmarks 和 History 不出现在这里。</p></div>
       <div class="decision"><strong>四个入口使用同级彩色识别</strong><p>Files、New chat、Browser、Terminal 都使用相同尺寸的圆角图标容器和 Lucide 线性图标；Files 使用蓝色、New chat 使用绿色、Browser 保留橙紫色、Terminal 使用紫色。颜色只帮助识别内容类型，不改变卡片层级、交互状态或可访问名称，也不引入品牌 Logo、外部素材和额外动画。</p></div>
       <div class="decision"><strong>Browser home 复用完整 Browser chrome</strong><p>选择 Browser 后原位进入浏览器主页；主页与实际网页使用同一套地址栏和书签栏结构。主页中无当前网页语义的 Back、Forward、Reload、Home、Bookmark 和外部打开保持可见但禁用，地址输入、Bookmarks、Import 和 Browser <code>⋯</code> 可用。</p></div>
+      <div class="decision"><strong>页面决定导航还是 popup</strong><p>普通链接、表单提交、脚本赋值和同文档导航继续由当前 <code>WebContentsView</code> 提交，并只更新当前 WebTab 的 URL、标题和 History；不得新建标签。只有页面明确请求新浏览上下文（<code>target="_blank"</code> 或 <code>window.open</code>）时，main 进程才把经过校验的 HTTP(S) URL 转换为一个具有独立 id 的 WebTab。新 WebTab 立即成为活动标签；当前已经位于 <code>/chat</code> 或 <code>/s/&lt;id&gt;</code> 时不得再推送 <code>/chat</code>，避免会话路由同步覆盖 popup 的活动状态。</p></div>
+      <div class="decision"><strong>网页右键菜单绑定命中内容</strong><p>原生网页区域直接使用 Electron <code>context-menu</code> 命中参数。HTTP(S) 链接显示 Open Link in New Tab 和 Copy Link Address；可编辑内容显示 Undo、Redo、Cut、Copy、Paste 和 Select All；普通页面显示 Back、Forward 和 Reload。Open Link in New Tab 复用同一 popup 入口，因此与页面自己的 <code>window.open</code> 具有相同的 URL 校验、唯一标签和立即激活语义。菜单动作只作用于产生该菜单且仍由同一窗口拥有的 WebTab。</p></div>
       <div class="decision"><strong>悬浮网页预览属于发起会话</strong><p>Agent 在聊天中打开的悬浮网页预览记录创建时的 session tab。它只在该会话作为当前中心内容时显示；切换到其他聊天、普通 Browser tab 或非聊天页面时，renderer 必须从原生可见集合移除该 WebTab 并恢复用户网页缩放。返回原会话时复用同一 WebTab、URL、滚动和表单状态，不重新加载。用户关闭预览后，恢复入口也只出现在所属会话。</p></div>
       <div class="decision"><strong>书签分为保存与管理</strong><p>地址栏右侧的星标只保存或移除当前页；相邻的 Bookmarks 按钮打开完整书签页。Browser home 只显示用户维护的快捷网站，不展开全部书签。</p></div>
       <div class="decision"><strong>Bookmarks manager 采用 Chrome 式两栏结构</strong><p>完整书签页顶部固定页面标题、搜索框和页级菜单；左栏只显示可折叠的文件夹树并高亮当前目录，右栏只显示当前目录的直接子项。书签行使用 favicon、标题和单一 <code>⋮</code> 菜单，文件夹行进入对应目录；不再把整棵树、URL 和编辑/删除按钮同时铺在一个列表里。左右列表行统一为 <code>36px</code>，搜索框沿用全局 <code>30px</code> 控件高度，行内图标按钮为 <code>28px</code>，页头为 <code>52px</code>；右侧列表的首屏内边距为 <code>16px</code>。Pane 变窄时目录树移到内容列表上方，不能直接消失。</p></div>
@@ -367,6 +369,8 @@
         <article class="compare-card"><span class="label">Browser profile</span><h3>独立浏览状态</h3><p>内置浏览器保持自己的 profile。需要既有资料时，由用户明确发起导入。</p><span class="choice modified">修改后采用</span></article>
         <article class="compare-card"><span class="label">Bookmark access</span><h3>Chrome 的分层入口</h3><p>星标保存当前页；书签栏可开关；完整管理器独立存在。OpenProgram 保留三层，但针对分屏定义更严格的收缩规则。</p><span class="choice modified">修改后采用</span></article>
         <article class="compare-card"><span class="label">Settings ownership</span><h3>OpenAI 的 App Settings</h3><p>内置浏览器保持独立状态，Cookies 与历史清理归桌面 App Settings。OpenProgram 增加 Browser <code>⋯</code> 深链，但不复制设置存储。</p><span class="choice modified">修改后采用</span></article>
+        <article class="compare-card"><span class="label">Page intent</span><h3>Chrome 的导航与 popup 区分</h3><p>当前浏览上下文中的导航原位提交；页面明确请求新浏览上下文时创建并激活新标签。OpenProgram 保留这一区分，但把 native popup 转换为受中心标签状态管理的 WebTab。</p><span class="choice modified">修改后采用</span></article>
+        <article class="compare-card"><span class="label">Page menu</span><h3>Electron 原生 context menu</h3><p><code>webContents</code> 提供链接、选择区、编辑状态和 frame 命中参数；<code>Menu.popup</code> 提供当前 OS 的原生菜单。OpenProgram 采用有限动作集，不暴露 DevTools 或任意协议打开。</p><span class="choice modified">修改后采用</span></article>
         <article class="compare-card"><span class="label">Importer</span><h3>Chromium C++ importer</h3><p>组件不作为 Electron JavaScript API 暴露，且不提供通用 Cookies import 实现。</p><span class="choice rejected">不复制</span></article>
       </div>
       <ul class="source-list">
@@ -376,6 +380,8 @@
         <li><a href="https://chromium.googlesource.com/chromium/src/+/main/docs/user_data_dir.md">Chromium user data directory</a>：确认 History、Bookmarks、Cookies 的 profile 存储位置。</li>
         <li><a href="https://chromium.googlesource.com/chromium/src/+/refs/tags/145.0.7573.1/components/user_data_importer/">Chromium user_data_importer</a>：确认原生导入组件的能力与 Electron 暴露边界。</li>
         <li><a href="https://www.electronjs.org/docs/latest/api/session">Electron session</a> 与 <a href="https://www.electronjs.org/docs/latest/api/cookies">Cookies</a>：确认持久化 partition 和逐条 Cookie 写入接口。</li>
+        <li><a href="https://www.electronjs.org/docs/latest/api/web-contents">Electron webContents</a> 与 <a href="https://www.electronjs.org/docs/latest/api/window-open">renderer window.open</a>：确认 <code>setWindowOpenHandler</code> 接收已解析 popup URL，<code>context-menu</code> 提供链接、选择区和编辑命中参数。</li>
+        <li><a href="https://www.electronjs.org/docs/latest/api/menu">Electron Menu</a>：确认 <code>Menu.buildFromTemplate</code> 和绑定所属 <code>BaseWindow</code> 的 <code>menu.popup</code> 是 main 进程的原生上下文菜单入口。</li>
       </ul>
     </section>
 
@@ -406,15 +412,27 @@
         <article class="type-card"><h3>Bookmarks</h3><ul><li>解析 Chromium Bookmarks JSON</li><li>保留根目录、嵌套文件夹与同级顺序</li><li>同 URL 不重复添加并删除空文件夹</li><li>只在 Bookmarks 页面展示和管理</li></ul></article>
         <article class="type-card"><h3>Cookies</h3><ul><li>禁止直接复制 Cookie 数据库</li><li>由源浏览器临时进程解密</li><li>逐条校验后写入 partition</li><li>任何日志都不记录值</li></ul></article>
       </div>
+      <h3>网页导航、popup 与右键动作流</h3>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="网页导航、popup 与右键动作数据流，可横向滚动">
+        <table class="acceptance-table">
+          <thead><tr><th>页面意图</th><th>main 进程</th><th>renderer 状态</th></tr></thead>
+          <tbody>
+            <tr><td>当前上下文导航</td><td><code>did-navigate</code> / <code>did-navigate-in-page</code> 回报同一 record 的状态；不发送 popup 事件。</td><td><code>updateWebTab</code> 原位更新 URL、标题和 favicon，id 与活动标签不变。</td></tr>
+            <tr><td><code>target="_blank"</code> / <code>window.open</code></td><td><code>setWindowOpenHandler</code> 拒绝 native 子窗口；仅将有效 HTTP(S) URL 和 opener id 发给拥有该 View 的窗口。</td><td><code>openPopupWebTab</code> 创建唯一 id 并立即设为 active；已在聊天 surface 时保持当前 route。</td></tr>
+            <tr><td>网页右键链接 → Open Link in New Tab</td><td><code>context-menu</code> 校验 exact owner 和 URL 后复用上述 popup 事件；Copy/Edit/Navigation 动作直接绑定产生菜单的 <code>webContents</code>。</td><td>新标签与页面 popup 相同；菜单关闭或 stale owner 时不执行跨标签动作。</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="section" id="boundaries">
       <div class="section-head"><span class="section-no">06</span><h2>信任边界与失败行为</h2></div>
-      <p class="section-intro">导入不是 profile 迁移。它只复制已选择的数据，并且不承诺所有网站登录态都能恢复。</p>
+      <p class="section-intro">网页内容、renderer 与 main 进程之间只传递完成动作所需的有界状态；资料导入不是 profile 迁移，只复制用户明确选择的数据。</p>
       <table class="boundary-table">
         <thead><tr><th>边界</th><th>约束</th><th>失败结果</th></tr></thead>
         <tbody>
           <tr><td>renderer → main</td><td>source/profile 使用 main 返回的 opaque id；数据类型使用 allowlist；renderer 不能传文件路径或可执行路径。</td><td><span class="risk">拒绝请求</span></td></tr>
+          <tr><td>网页内容 → main</td><td>popup 和右键链接只接受解析后的 HTTP(S) URL；动作绑定产生事件的 exact WebTab owner。<code>file:</code>、<code>javascript:</code>、已转移/关闭的 record 和伪造 opener 均不得创建标签或导航其他 View。</td><td><span class="risk">deny / no-op</span></td></tr>
           <tr><td>源 profile</td><td>只读发现；真实路径必须位于已发现 browser root 内；拒绝符号链接逃逸。</td><td><span class="risk">source_invalid</span></td></tr>
           <tr><td>临时数据</td><td>目录 0700、文件 0600；成功、失败或超时后都删除；日志只记录来源标签、类型、计数和错误码。</td><td><span class="risk">cleanup + stable error</span></td></tr>
           <tr><td>目标 profile</td><td>History 和 Bookmarks 合并；Cookies 通过 Electron API 写入，不替换目标数据库。</td><td><span class="risk">保留导入前数据</span></td></tr>
@@ -427,6 +445,7 @@
         <div class="exclusion">不实现密码管理器、系统 Credential Store、自动填充或对运行中的源浏览器进行远程调试。</div>
         <div class="exclusion">Cookie 导入可以减少重复登录，但设备绑定、过期、二次验证或服务端撤销仍会要求重新登录。</div>
         <div class="exclusion">本地浏览器导入仅属于桌面 App；Web-only 模式不得显示为可用能力。</div>
+        <div class="exclusion">本轮网页右键菜单不实现 Save page、Save image、Download linked file、View source、Inspect element 或扩展注入项；需要这些动作时另行定义下载、文件授权和开发者模式边界。</div>
       </div>
     </section>
 
@@ -437,6 +456,7 @@
       <table class="acceptance-table">
         <thead><tr><th>可观察结果</th><th>当前状态</th><th>实现证据</th></tr></thead>
         <tbody>
+          <tr><td>普通页面导航保持当前 WebTab id 与活动状态；<code>target="_blank"</code> / <code>window.open</code> 创建唯一 WebTab，并在创建后持续保持活动，不被原聊天 route 覆盖。网页链接右键显示 Open Link in New Tab 与 Copy Link Address；普通/编辑上下文显示对应 Navigation 或 Edit 动作，所有动作只作用于 exact owner。</td><td><span class="status">已实现并通过默认 App 验收</span></td><td><code>desktop-bridge.ts</code> popup route contract；<code>apps/desktop/main.js</code> WebContentsView context menu；<code>check-web-split.mjs</code>；<code>check-webtab-navigation.js</code>。独立 specification 与 quality review 均通过；安装版中 popup 在创建后连续观察 2 秒保持 active 且 <code>/s/&lt;id&gt;</code> 不变，普通导航保持 tab 数量与 id，HTTP(S) 链接原生右键菜单显示 Open/Copy 与页面导航动作。</td></tr>
           <tr><td>新建 Pane 只显示 Files、New chat、Browser、Terminal；四个入口使用同尺寸、不同语义色的圆角图标容器，DOM 中不存在浏览器专属控件。</td><td><span class="status">已实现并通过默认 App 深浅主题验收</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/new-tab-page.tsx"><code>new-tab-page.tsx</code></a>；<code>check-built-in-browser.mjs</code> 的有效级联与语义色 mutation 检查</td></tr>
           <tr><td>选择 Browser 后原位显示与网页页签相同的地址栏和书签栏结构、导入入口和快捷网站；无当前网页语义的动作保持可见但禁用。</td><td><span class="status">已实现并通过默认 App 验收</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser-home-page.tsx"><code>browser-home-page.tsx</code></a>；<code>check-built-in-browser.mjs</code>；实际 App 中 toolbar / bookmarks bar 为 <code>40px / 30px</code></td></tr>
           <tr><td>标准宽度的 Browser toolbar 按顺序显示 Back、Forward、Reload/Stop、Home、地址栏、当前页星标、Bookmarks、外部打开和 Browser <code>⋯</code>；不显示分屏与 Settings 齿轮。</td><td><span class="status">已实现</span></td><td><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/web-tab-pane.tsx"><code>web-tab-pane.tsx</code></a>；<code>check-built-in-browser.mjs</code>；<code>check-web-split.mjs</code></td></tr>

@@ -7,7 +7,7 @@
  *
  * 两个场景共用（真 pending ask 优先，路由在 index.tsx）：
  *   - ask_user_question（runtime.ask/confirm）：点选项 pill = 立即
- *     question_reply；在下方输入框打字回车也作为答案改道 question_reply。
+ *     canonical wait answer；在下方输入框打字回车也作为同一命令的答案。
  *     goal waiting_user 的提问经 runtime.ask → question.asked 走同一路径。
  *   - goal 面板独立出现（question.asked 尚未到达 / 已丢失）：没有 qid 可以
  *     回答，选项禁用（disabled），等事件到达后转为 ask 面板。

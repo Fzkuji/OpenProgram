@@ -11,6 +11,7 @@ chat + run paths share the same cancellation / error handling.
 """
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 
@@ -105,44 +106,8 @@ def run_query(
     # The dispatcher emits chat_response envelopes that we
     # forward to the existing _broadcast_chat_response so
     # the WS contract stays unchanged.
-    from openprogram.agent.dispatcher import (
-        TurnRequest as _TurnRequest,
-        process_user_turn as _process_user_turn,
-    )
+    from openprogram.agent.dispatcher import TurnRequest as _TurnRequest
     from openprogram.programs.permission_rule import load_merged_rules as _load_merged_rules
-
-    # One turn per session: claiming the token fails closed when another
-    # turn (chat, job worker, MCP, ACP) already owns this session, so a
-    # second turn can never displace the live one mid-flight.
-    _chat_cancel_event = threading.Event()
-    _chat_execution_id = msg_id + "_reply"
-    with _s._running_tasks_lock:
-        task = _s._running_tasks.get(session_id)
-        if isinstance(task, dict):
-            task["execution_id"] = _chat_execution_id
-    _s._emit_running_task_event(session_id)
-    if not _s._claim_cancel_event(
-        session_id, _chat_cancel_event,
-        execution_id=_chat_execution_id, foreground=True,
-    ):
-        from openprogram.agent.run_control import mark_execution_terminal
-        mark_execution_terminal(_chat_execution_id, "interrupted")
-        with _s._running_tasks_lock:
-            _s._running_tasks.pop(session_id, None)
-        _s._emit_running_task_event(
-            session_id,
-            cleared_msg_id=msg_id,
-            cleared_execution_id=_chat_execution_id,
-        )
-        _s._broadcast_chat_response(session_id, msg_id, {
-            "type": "error",
-            "content": "A prompt turn is already active for this session.",
-            "display": "chat",
-        })
-        return
-    # Only after the claim succeeds: a rejected turn must not tear down
-    # the runtime the turn that actually owns the session is using.
-    _s._register_active_runtime(session_id, runtime)
 
     tool_calls_collected: list[dict] = []
     # Live block accumulator. Each tool_use opens a new
@@ -165,20 +130,23 @@ def run_query(
         # so the existing reconnect/replay logic works.
         if payload.get("type") == "stream_event":
             evt = payload.get("event") or {}
-            if evt.get("type") == "structured_output_end":
+            _event_msg_id = payload.get("msg_id") or msg_id
+            if (evt.get("type") == "structured_output_end"
+                    and _event_msg_id == msg_id):
                 structured_result.update(
                     structured_output=evt.get("value"),
                     structured_output_mode=evt.get("mode"),
                     attempt=evt.get("attempt"),
                 )
-            with _s._running_tasks_lock:
-                ti = _s._running_tasks.get(session_id)
-                if ti and "stream_events" in ti:
-                    ti["stream_events"].append(evt)
-                    if len(ti["stream_events"]) > 200:
-                        ti["stream_events"] = ti["stream_events"][-200:]
-                    ti["last_event_at"] = time.time()
-            if evt.get("type") == "tool_use":
+            if _event_msg_id == msg_id:
+                with _s._running_tasks_lock:
+                    ti = _s._running_tasks.get(session_id)
+                    if ti and "stream_events" in ti:
+                        ti["stream_events"].append(evt)
+                        if len(ti["stream_events"]) > 200:
+                            ti["stream_events"] = ti["stream_events"][-200:]
+                        ti["last_event_at"] = time.time()
+            if evt.get("type") == "tool_use" and _event_msg_id == msg_id:
                 _tid = evt.get("tool_call_id")
                 blk = {
                     "type": "tool",
@@ -191,7 +159,7 @@ def run_query(
                 tool_blocks_collected.append(blk)
                 if _tid:
                     tool_blocks_by_id[_tid] = blk
-            if evt.get("type") == "tool_result":
+            if evt.get("type") == "tool_result" and _event_msg_id == msg_id:
                 _tid = evt.get("tool_call_id")
                 blk = tool_blocks_by_id.get(_tid)
                 if blk is None:
@@ -218,7 +186,7 @@ def run_query(
                 })
             # Fan out to WS clients with the same envelope
             # shape the legacy on_stream hook used.
-            _s._broadcast_chat_response(session_id, msg_id, {
+            _s._broadcast_chat_response(session_id, _event_msg_id, {
                 "type": "stream_event",
                 "event": evt,
                 "function": "_chat",
@@ -234,6 +202,11 @@ def run_query(
             if payload.get("display") == "runtime":
                 _s._broadcast_chat_response(
                     session_id, payload.get("msg_id") or msg_id, payload,
+                )
+            elif payload.get("msg_id") and payload.get("msg_id") != msg_id:
+                payload = {**payload, "turn_continues": True}
+                _s._broadcast_chat_response(
+                    session_id, payload["msg_id"], payload,
                 )
         elif payload.get("display") == "runtime":
             # Runtime-block placeholder / tree_update envelopes emitted
@@ -325,23 +298,38 @@ def run_query(
             surface_context=surface_context,
             **_authority,
         )
-        turn_result = _process_user_turn(
-            req_obj, on_event=_on_dispatcher_event,
-            cancel_event=_chat_cancel_event,
+        from openprogram.agent.production_driver import CanonicalAgentAdapter
+        _adapter = CanonicalAgentAdapter(event_sink=_on_dispatcher_event)
+        _admission = _adapter.admit(
+            req_obj,
+            trusted_actor=_authority,
+            user_message_id=msg_id,
+            config_snapshot_ref=f"session:{session_id}",
+        )
+        with _s._running_tasks_lock:
+            task = _s._running_tasks.get(session_id)
+            if isinstance(task, dict):
+                task["execution_id"] = _admission.execution_id
+                task["status_version"] = _admission.status_version
+        _s._emit_running_task_event(session_id)
+        def _publish_activation(active):
+            with _s._running_tasks_lock:
+                task = _s._running_tasks.get(session_id)
+                if task and task.get("execution_id") == active.admission.execution_id:
+                    task["status_version"] = active.status_version
+            _s._emit_running_task_event(session_id)
+        _active, turn_result = asyncio.run(
+            _adapter.activate(_admission, on_activated=_publish_activation)
         )
     finally:
         _release_surface_bindings(surface_context)
+        _chat_execution_id = locals().get("_admission").execution_id if locals().get("_admission") else None
         if _s._finish_owned_run(session_id, msg_id):
             _s._emit_running_task_event(
                 session_id,
                 cleared_msg_id=msg_id,
                 cleared_execution_id=_chat_execution_id,
             )
-        # Pass our Event so a newer turn's registration (if any) is
-        # left intact — see unregister_cancel_event.
-        _s._unregister_cancel_event(
-            session_id, _chat_cancel_event, execution_id=_chat_execution_id,
-        )
         # Status dot: a turn just finished. If no connected client is
         # currently viewing this session, light its blue "unread" dot so the
         # background result gets noticed; cleared when the user opens it

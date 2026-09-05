@@ -297,7 +297,8 @@ def test_verify_without_a_value_probes_the_stored_credential(secret_flow):
 def test_frontend_secret_guard_script_passes(secret_flow):
     """The committed node guard must still hold against the live sources."""
     script = _WEB_ROOT / "scripts" / "check-secret-non-retrieval.mjs"
-    if not (_WEB_ROOT / "node_modules" / "typescript" / "lib" / "typescript.js").is_file():
+    if not any((root / "node_modules" / "typescript" / "lib" / "typescript.js").is_file()
+               for root in (_WEB_ROOT, _WEB_ROOT.parent.parent)):
         pytest.skip("web dependencies are not installed")
 
     completed = subprocess.run(

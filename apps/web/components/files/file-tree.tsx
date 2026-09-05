@@ -6,17 +6,13 @@
  * focuses) its center file tab.
  *
  * Lazily loads one directory listing per expand via the worker's
- * ``project_file_tree`` action (root "" on mount). Search is local to
- * already-loaded nodes and preserves the tree hierarchy.
+ * ``project_file_tree`` action (root "" on mount). Filter search is served
+ * by the worker; highlight mode preserves the real tree hierarchy.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   File,
-  FileCode,
-  FileImage,
-  FileJson,
   FilePlus,
-  FileText,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -25,12 +21,23 @@ import {
 
 import { useTranslation } from "@/lib/i18n";
 import {
-  filesWsRequest,
-  latestFileMtime,
+  clearFileDraftsForPath,
+  fileResponseMatchesOwner,
+  invalidateFileRead,
+  loadFileDraftsForPath,
+  noteFileMtime,
+  runServerRenameWithDrafts,
   type Project,
+  type ServerRenameResult,
 } from "@/lib/state/files-shared";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { wsRequest } from "@/lib/net/ws-request";
+import {
+  idempotencyKeyFor,
+  MutationRegistryCapacityError,
+  reconcileWsMutation,
+  wsMutationRequest,
+  wsRequest,
+} from "@/lib/net/ws-request";
 import { navigate } from "@/lib/navigate";
 import { useSessionStore } from "@/lib/session-store";
 import {
@@ -52,6 +59,9 @@ import {
   matchingIndexes,
   visibleSearchPaths,
 } from "./explorer-search";
+import { baseOf, joinPath, parentOf } from "./file-tree-query";
+import { asServerRenameResult, type FileOperationResult } from "./file-tree-operation";
+import { FileGlyph, InlineNameInput } from "./file-tree-render";
 import styles from "./files-panel.module.css";
 
 export interface TreeEntry {
@@ -65,24 +75,37 @@ interface TreeResult {
   project_id: string;
   path: string;
   entries?: TreeEntry[];
+  snapshot_id?: string | null;
+  next_cursor?: string | null;
+  error_code?: string | null;
+  error?: string;
+}
+
+interface SearchResult extends TreeEntry {
+  path: string;
+  project_id?: string;
+  project_name?: string;
+}
+
+interface DirectoryPage {
+  snapshotId: string | null;
+  nextCursor: string | null;
+}
+
+interface SearchResultPayload {
+  project_id: string;
+  path: string;
+  results?: SearchResult[];
+  snapshot_id?: string | null;
+  next_cursor?: string | null;
+  error_code?: string | null;
   error?: string;
 }
 
 /** Dirs rendered dimmed (still expandable — just visually de-emphasised). */
 const DIM_DIRS = new Set([".git", "node_modules", ".venv", "__pycache__"]);
+const MAX_SEARCH_RESULTS = 500;
 
-function joinPath(dir: string, name: string): string {
-  return dir ? `${dir}/${name}` : name;
-}
-
-function parentOf(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i > 0 ? path.slice(0, i) : "";
-}
-
-function baseOf(path: string): string {
-  return path.split("/").pop() || path;
-}
 
 /** Absolute project root per project id — fetched once via
  *  ``list_projects`` (the tree itself only knows the project id). */
@@ -111,88 +134,6 @@ const TREE_BASE_PAD = EXPLORER_BASE_PAD;
 const TREE_LABEL_OFFSET = 44;
 
 /** Extension bucket → icon + colour (existing accent tokens only). */
-const ICON_BUCKETS: [Set<string>, typeof File, string | undefined][] = [
-  [
-    new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "c", "cpp", "h", "hpp", "java", "sh"]),
-    FileCode,
-    "var(--accent-cyan)",
-  ],
-  [new Set(["json", "yaml", "yml", "toml", "csv"]), FileJson, "var(--accent-yellow)"],
-  [new Set(["md", "markdown", "txt", "rst", "log"]), FileText, undefined],
-  [new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"]), FileImage, "var(--accent-purple)"],
-  [new Set(["pdf"]), FileText, "var(--accent-red)"],
-];
-
-function FileGlyph({ name }: { name: string }) {
-  const dot = name.lastIndexOf(".");
-  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-  for (const [exts, Icon, color] of ICON_BUCKETS) {
-    if (exts.has(ext)) {
-      return (
-        <Icon size={15} className={styles.treeIcon} style={color ? { color } : undefined} />
-      );
-    }
-  }
-  return <File size={15} className={styles.treeIcon} />;
-}
-
-/** Editable row label for inline create / rename (VS Code style):
- *  Enter commits, Escape or blur cancels. Name validation (non-empty,
- *  no "/") happens here — an invalid Enter just keeps the input open. */
-function InlineNameInput({
-  initial,
-  onCommit,
-  onCancel,
-}: {
-  initial: string;
-  onCommit: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(initial);
-  const ref = useRef<HTMLInputElement>(null);
-  // Guards the Enter-then-blur double fire: committing unmounts the
-  // input, which fires a native blur that must not also cancel.
-  const done = useRef(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.focus();
-    const dot = initial.lastIndexOf(".");
-    el.setSelectionRange(0, dot > 0 ? dot : initial.length);
-  }, [initial]);
-
-  const finish = (fn: () => void) => {
-    if (done.current) return;
-    done.current = true;
-    fn();
-  };
-
-  return (
-    <input
-      ref={ref}
-      className={styles.treeInput}
-      value={value}
-      spellCheck={false}
-      onChange={(e) => setValue(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onBlur={() => finish(onCancel)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const v = value.trim();
-          if (!v) return finish(onCancel);
-          if (v.includes("/")) return;
-          finish(() => onCommit(v));
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          finish(onCancel);
-        }
-      }}
-    />
-  );
-}
-
 type DirState = TreeEntry[] | "loading" | "error";
 
 export function FileTree({
@@ -219,8 +160,15 @@ export function FileTree({
     navigate("/chat");
   };
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
+  const [directoryPages, setDirectoryPages] = useState<Record<string, DirectoryPage>>({});
+  const [loadingMore, setLoadingMore] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("filter");
   const [fuzzySearch, setFuzzySearch] = useState(true);
@@ -235,31 +183,142 @@ export function FileTree({
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; type: "file" | "dir" } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
+  const queryControllers = useRef(new Set<AbortController>());
+  const mutationControllers = useRef(new Set<AbortController>());
+  const mutationRequestControllers = useRef(new Set<AbortController>());
+  const mutationKeys = useRef(new Set<string>());
+  const queryGeneration = useRef(0);
+  const mutationLifecycleGeneration = useRef(0);
+  const searchGeneration = useRef(0);
+  const searchCursor = useRef<string | null>(null);
+  const searchSnapshot = useRef<string | null>(null);
+  const searchQuery = useRef("");
+  const searchModeRef = useRef<"fuzzy" | "contains">("contains");
+  const searchRows = useRef(new Map<string, SearchResult>());
+  const searchLoadingRef = useRef(false);
+  const searchLoadingGeneration = useRef<number | null>(null);
+  const searchControllers = useRef(new Set<AbortController>());
+  const revealTarget = useRef<string | null>(null);
+  const revealScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revealFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function abortSearchQueries(): void {
+    for (const controller of searchControllers.current) controller.abort();
+    searchControllers.current.clear();
+  }
+
+  function abortMutationRequests(): void {
+    for (const controller of mutationControllers.current) controller.abort();
+    for (const key of mutationKeys.current) reconcileWsMutation(key);
+    mutationControllers.current.clear();
+  }
+
+  useEffect(() => {
+    directoryPagesRef.current = directoryPages;
+  }, [directoryPages]);
+
+  function fileQuery<T>(
+    action: string,
+    payload: Record<string, unknown>,
+    responseType: string,
+    canRun: () => boolean,
+    outerSignal?: AbortSignal,
+    controllerSet: Set<AbortController> = queryControllers.current,
+  ): Promise<T | null> {
+    if (!canRun()) return Promise.resolve(null);
+    const controller = new AbortController();
+    const onAbort = () => controller.abort();
+    outerSignal?.addEventListener("abort", onAbort, { once: true });
+    controllerSet.add(controller);
+    return wsRequest<T>(
+      action,
+      payload,
+      responseType,
+      (data) => fileResponseMatchesOwner(data as unknown as Record<string, unknown>, payload),
+      4000,
+      { signal: controller.signal },
+    ).finally(() => {
+      controllerSet.delete(controller);
+      outerSignal?.removeEventListener("abort", onAbort);
+    });
+  }
 
   const load = useCallback(
-    async (path: string) => {
-      setDirs((d) => ({ ...d, [path]: "loading" }));
-      const data = await filesWsRequest<TreeResult>(
+    async (path: string, cursor?: string | null, retry = true): Promise<TreeResult | null> => {
+      const generation = queryGeneration.current;
+      if (cursor) {
+        setLoadingMore((previous) => new Set(previous).add(path));
+      } else {
+        setDirs((d) => ({ ...d, [path]: "loading" }));
+      }
+      const page = directoryPagesRef.current[path];
+      const data = await fileQuery<TreeResult>(
         "project_file_tree",
-        { project_id: projectId, path },
+        {
+          project_id: projectId,
+          path,
+          ...(cursor ? { cursor, snapshot_id: page?.snapshotId } : {}),
+        },
         "project_file_tree_result",
+        () => generation === queryGeneration.current,
       );
-      if (!data || data.error || data.path !== path || !data.entries) {
-        setDirs((d) => ({ ...d, [path]: "error" }));
-        return;
+      if (cursor) {
+        setLoadingMore((previous) => {
+          const next = new Set(previous);
+          next.delete(path);
+          return next;
+        });
+      }
+      if (generation !== queryGeneration.current) return null;
+      if (data?.error_code === "STALE_SNAPSHOT" && cursor && retry) {
+        setDirs((d) => ({ ...d, [path]: "loading" }));
+        const nextPages = { ...directoryPagesRef.current };
+        delete nextPages[path];
+        directoryPagesRef.current = nextPages;
+        setDirectoryPages((pages) => {
+          const next = { ...pages };
+          delete next[path];
+          return next;
+        });
+        return load(path, null, false);
+      }
+      if (!data || data.project_id !== projectId || data.error || data.error_code
+        || data.path !== path || !data.entries) {
+        setDirs((d) => ({ ...d, [path]: cursor && Array.isArray(d[path]) ? d[path] : "error" }));
+        return data;
       }
       for (const e of data.entries) {
-        if (e.type === "file") latestFileMtime.set(joinPath(path, e.name), e.mtime);
+        if (e.type === "file") noteFileMtime(projectId, joinPath(path, e.name), e.mtime);
       }
-      const entries = data.entries;
-      setDirs((d) => ({ ...d, [path]: entries }));
+      setDirs((d) => {
+        const existing = cursor && Array.isArray(d[path]) ? d[path] : [];
+        const entries = [...existing, ...data.entries!].filter(
+          (entry, index, all) => all.findIndex((candidate) => candidate.name === entry.name) === index,
+        );
+        return { ...d, [path]: entries };
+      });
+      const nextPage = {
+        snapshotId: data.snapshot_id ?? null,
+        nextCursor: data.next_cursor ?? null,
+      };
+      directoryPagesRef.current = { ...directoryPagesRef.current, [path]: nextPage };
+      setDirectoryPages((pages) => ({ ...pages, [path]: nextPage }));
+      return data;
     },
     [projectId],
   );
 
   // (Re)load the root whenever the project changes.
   useEffect(() => {
+    abortSearchQueries();
+    for (const controller of queryControllers.current) controller.abort();
+    queryGeneration.current += 1;
+    searchGeneration.current += 1;
     setDirs({});
+    setDirectoryPages({});
+    directoryPagesRef.current = {};
+    setLoadingMore(new Set());
     setExpanded(new Set());
     // 组件跨项目复用（右栏不带 key 渲染）：上一个项目的选中行、
     // 内联新建/重命名、筛选词都指向旧根目录下的相对路径，留着会
@@ -269,8 +328,24 @@ export function FileTree({
     setRenaming(null);
     setMenu(null);
     setFilter("");
+    setSearchResults([]);
+    setSearchPage(1);
+    setSearchHasMore(false);
+    setSearchLoading(false);
+    setSearchError(null);
     setSearchOpen(false);
-    load("");
+    revealTarget.current = null;
+    if (revealScrollTimer.current) clearTimeout(revealScrollTimer.current);
+    if (revealFlashTimer.current) clearTimeout(revealFlashTimer.current);
+    revealScrollTimer.current = null;
+    revealFlashTimer.current = null;
+    void load("");
+    return () => {
+      for (const controller of queryControllers.current) controller.abort();
+      abortMutationRequests();
+      queryGeneration.current += 1;
+      mutationLifecycleGeneration.current += 1;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -303,11 +378,53 @@ export function FileTree({
     if (dirs[path] === undefined) load(path);
   }
 
-  function refetchRoot() {
-    setDirs({});
-    setExpanded(new Set());
-    load("");
+  function loadMore(path: string) {
+    const page = directoryPagesRef.current[path];
+    if (!page?.nextCursor || loadingMore.has(path)) return;
+    void load(path, page.nextCursor);
   }
+
+  function refetchRoot() {
+    abortSearchQueries();
+    for (const controller of queryControllers.current) controller.abort();
+    queryGeneration.current += 1;
+    searchGeneration.current += 1;
+    setSearchResults([]);
+    setSearchPage(1);
+    setSearchHasMore(false);
+    setSearchError(null);
+    setSearchLoading(false);
+    setDirs({});
+    setDirectoryPages({});
+    directoryPagesRef.current = {};
+    setLoadingMore(new Set());
+    setExpanded(new Set());
+    revealTarget.current = null;
+    if (revealScrollTimer.current) clearTimeout(revealScrollTimer.current);
+    if (revealFlashTimer.current) clearTimeout(revealFlashTimer.current);
+    revealScrollTimer.current = null;
+    revealFlashTimer.current = null;
+    void load("");
+  }
+
+  useEffect(() => {
+    const invalidate = (event: Event) => {
+      const detail = (event as CustomEvent<{ project_id?: string }>).detail;
+      if (detail?.project_id !== projectId) return;
+      abortSearchQueries();
+      for (const controller of queryControllers.current) controller.abort();
+      queryGeneration.current += 1;
+      searchGeneration.current += 1;
+      setSearchResults([]);
+      setSearchPage(1);
+      setSearchHasMore(false);
+      setSearchError(null);
+      setSearchLoading(false);
+      refetchRoot();
+    };
+    window.addEventListener("project-files-changed", invalidate);
+    return () => window.removeEventListener("project-files-changed", invalidate);
+  }, [projectId]);
 
   /* ---- file management ops ---------------------------------------- */
 
@@ -315,22 +432,83 @@ export function FileTree({
    *  broadcast ``project-files-changed`` (reveal mutates nothing, so it
    *  passes no dirs and skips the event). */
   async function fileOp(
-    op: "create" | "rename" | "copy" | "delete" | "reveal",
+    op: "create" | "rename" | "copy" | "delete" | "write" | "reveal",
     payload: Record<string, unknown>,
     refreshDirs: string[],
-  ): Promise<boolean> {
-    const data = await filesWsRequest<{ ok?: boolean; error?: string }>(
-      `project_file_${op}`,
-      { project_id: projectId, ...payload },
-      `project_file_${op}_result`,
-    );
-    if (!data || data.error) {
-      if (data?.error) window.alert(data.error);
-      return false;
+  ): Promise<FileOperationResult> {
+    const lifecycleGeneration = mutationLifecycleGeneration.current;
+    const operationPayload = { project_id: projectId, ...payload };
+    if (op === "reveal") {
+      const data = await fileQuery<FileOperationResult>(
+        "project_file_reveal", operationPayload, "project_file_reveal_result",
+        () => true,
+      );
+      return data
+        ? { ...data, status: data.status ?? (data.ok ? "ready" : "error") }
+        : { status: "error", error_code: "TRANSPORT_ERROR" };
     }
-    for (const d of new Set(refreshDirs)) load(d);
-    if (op !== "reveal") window.dispatchEvent(new Event("project-files-changed"));
-    return true;
+    let operationKey: string;
+    try {
+      operationKey = idempotencyKeyFor(`project_file_${op}`, operationPayload);
+    } catch (error) {
+      if (error instanceof MutationRegistryCapacityError) {
+        window.alert(text("Too many file operations are still pending.", "仍有太多文件操作未完成。"));
+      }
+      return { status: "error", error_code: "MUTATION_REGISTRY_CAPACITY" };
+    }
+    const operationController = new AbortController();
+    mutationKeys.current.add(operationKey);
+    mutationControllers.current.add(operationController);
+    let data: FileOperationResult | null = null;
+    try {
+      data = await wsMutationRequest<FileOperationResult>(
+        operationKey,
+        (signal) => fileQuery<FileOperationResult>(
+          `project_file_${op}`,
+          { ...operationPayload, idempotency_key: operationKey },
+          `project_file_${op}_result`,
+          // Durable mutations must keep their own request lifecycle. A
+          // project-files-changed event invalidates query generations, but it
+          // cannot cancel a mutation receipt that may still be in progress.
+          () => true,
+          signal,
+          mutationRequestControllers.current,
+        ),
+        { signal: operationController.signal },
+      );
+    } catch {
+      data = null;
+    } finally {
+      mutationControllers.current.delete(operationController);
+      mutationKeys.current.delete(operationKey);
+    }
+    const result: FileOperationResult = data
+      ? { ...data, status: data.status ?? (data.ok ? "ready" : "error") }
+      : { status: "error", error_code: "TRANSPORT_ERROR" };
+    // The server may still have accepted the durable operation after this
+    // component was replaced. Keep its idempotency key for replay, but do not
+    // let the old component alert or broadcast into the new project view.
+    if (operationController.signal.aborted
+      || lifecycleGeneration !== mutationLifecycleGeneration.current) return result;
+    if (!data || data.project_id !== projectId || data.path !== payload.path
+      || result.error || result.status === "conflict" || result.status === "recovery_required"
+      || result.status === "error" || result.status === "in_progress") {
+      if (data?.error || data?.error_code) window.alert(data.error ?? data.error_code);
+      return result;
+    }
+    // The project-files-changed listener performs one generation-safe refresh;
+    // avoid starting directory requests that the event would immediately abort.
+    void refreshDirs;
+    if (op === "rename") {
+      invalidateFileRead(projectId, String(payload.path ?? ""));
+      invalidateFileRead(projectId, String(payload.new_path ?? ""));
+    } else if (op === "delete" || op === "write") {
+      invalidateFileRead(projectId, String(payload.path ?? ""));
+    }
+    window.dispatchEvent(new CustomEvent("project-files-changed", {
+      detail: { project_id: projectId },
+    }));
+    return result;
   }
 
   /** Expand + lazily load every dir along the "/"-chain ending at
@@ -354,13 +532,51 @@ export function FileTree({
     for (const d of chain) if (dirs[d] === undefined) load(d);
   }
 
+  async function locateTreePath(path: string, type: "file" | "dir"): Promise<boolean> {
+    const parts = path.split("/");
+    let directory = "";
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const child = parts[index];
+      const page = await load(directory);
+      let loaded = page;
+      while (
+        loaded?.next_cursor &&
+        !loaded.entries?.some((entry) => entry.name === child && entry.type === "dir")
+      ) {
+        loaded = await load(directory, loaded.next_cursor);
+      }
+      if (!loaded?.entries?.some((entry) => entry.name === child && entry.type === "dir")) {
+        return false;
+      }
+      setExpanded((previous) => new Set(previous).add(joinPath(directory, child)));
+      directory = joinPath(directory, child);
+    }
+    const target = parts[parts.length - 1];
+    let loaded = await load(directory);
+    while (
+      loaded?.next_cursor &&
+      !loaded.entries?.some((entry) => entry.name === target && entry.type === type)
+    ) {
+      loaded = await load(directory, loaded.next_cursor);
+    }
+    return Boolean(loaded?.entries?.some((entry) => entry.name === target && entry.type === type));
+  }
+
+  async function revealSearchResult(path: string, type: "file" | "dir") {
+    setFilter("");
+    setSearchOpen(false);
+    if (!(await locateTreePath(path, type))) return;
+    setSelected({ path, type });
+    revealTarget.current = path;
+    if (type === "file") openFile(path);
+  }
+
   /** "Reveal in file tree" from elsewhere in the app (the per-turn file
    *  edit card): expand every ancestor, select the row, then — once the
    *  async dir loads have actually rendered it — scroll it into view and
    *  flash it, so a deeply nested file is findable without hunting.
    *  Wired as a window CustomEvent so the caller needs no ref into this
    *  tree. ponytail: reuses expandChain + the existing `selected` state. */
-  const revealTarget = useRef<string | null>(null);
   useEffect(() => {
     const onReveal = (ev: Event) => {
       const d = (ev as CustomEvent<{ projectId?: string; path?: string }>).detail;
@@ -386,7 +602,11 @@ export function FileTree({
     revealTarget.current = null;
     row.scrollIntoView({ block: "center" });
     row.classList.add(styles.treeRowFlash);
-    setTimeout(() => row.classList.remove(styles.treeRowFlash), 1200);
+    if (revealFlashTimer.current) clearTimeout(revealFlashTimer.current);
+    revealFlashTimer.current = setTimeout(() => {
+      row.classList.remove(styles.treeRowFlash);
+      revealFlashTimer.current = null;
+    }, 1200);
   });
 
   /** Directory a create targets: selected dir → itself, selected file
@@ -405,8 +625,8 @@ export function FileTree({
     const { dir, kind } = creating;
     setCreating(null);
     const full = joinPath(dir, name);
-    const ok = await fileOp("create", { path: full, kind }, [dir]);
-    if (ok && kind === "file") openFile(full);
+    const result = await fileOp("create", { path: full, kind }, [dir]);
+    if (result.status === "ready" && kind === "file") openFile(full);
   }
 
   /** After a rename/move, any open center file tab at the old path —
@@ -428,8 +648,21 @@ export function FileTree({
     if (name === baseOf(oldPath)) return;
     const dir = parentOf(oldPath);
     const newPath = joinPath(dir, name);
-    const ok = await fileOp("rename", { path: oldPath, new_path: newPath }, [dir]);
-    if (ok) retargetOpenTabs(oldPath, newPath);
+    const result = await runServerRenameWithDrafts(
+      projectId,
+      oldPath,
+      newPath,
+      async (): Promise<ServerRenameResult> => {
+        const result = await fileOp("rename", { path: oldPath, new_path: newPath }, [dir]);
+        return asServerRenameResult(result);
+      },
+      async (): Promise<ServerRenameResult> => {
+        const result = await fileOp("rename", { path: newPath, new_path: oldPath }, [dir]);
+        return asServerRenameResult(result, "recovery_required");
+      },
+    );
+    if (result.ok) retargetOpenTabs(oldPath, newPath);
+    else if (result.message) window.alert(result.message);
   }
 
   async function copyPathTo(rel: string, absolute: boolean) {
@@ -446,23 +679,74 @@ export function FileTree({
     const dest = joinPath(targetDir, baseOf(clip.path));
     if (dest === clip.path) return;
     if (clip.op === "cut") {
-      const ok = await fileOp(
-        "rename",
-        { path: clip.path, new_path: dest },
-        [parentOf(clip.path), targetDir],
+      const result = await runServerRenameWithDrafts(
+        projectId,
+        clip.path,
+        dest,
+        async (): Promise<ServerRenameResult> => {
+          const result = await fileOp("rename", { path: clip.path, new_path: dest }, [parentOf(clip.path), targetDir]);
+          return asServerRenameResult(result);
+        },
+        async (): Promise<ServerRenameResult> => {
+          const result = await fileOp("rename", { path: dest, new_path: clip.path }, [parentOf(clip.path), targetDir]);
+          return asServerRenameResult(result, "recovery_required");
+        },
       );
-      if (ok) {
+      if (result.ok) {
         treeClipboard.current = null;
         retargetOpenTabs(clip.path, dest);
-      }
+      } else if (result.message) window.alert(result.message);
     } else {
       await fileOp("copy", { path: clip.path, new_path: dest }, [targetDir]);
     }
   }
 
   async function doDelete(path: string) {
-    const ok = await fileOp("delete", { path }, [parentOf(path)]);
-    if (!ok) return;
+    const drafts = await loadFileDraftsForPath(projectId, path);
+    const hasDraft = drafts.length > 0;
+    if (hasDraft) {
+      const choice = window.prompt(text(
+        "Unsaved changes: type save, export, or discard to continue deleting.",
+        "存在未保存修改：请输入 save（保存）、export（导出保留）或 discard（丢弃）后继续删除。",
+      ), "discard")?.trim().toLowerCase();
+      if (choice === "save") {
+        for (const entry of drafts) {
+          const saved = await fileOp("write", {
+            path: entry.path,
+            content: entry.draft.draft,
+            expected_mtime: entry.draft.baselineMtime,
+            baseline_revision: entry.draft.baselineRevision,
+          }, [parentOf(entry.path)]);
+          if (saved.status !== "ready") return;
+        }
+      } else if (choice === "export") {
+        try {
+          for (const entry of drafts) {
+            const blob = new Blob([entry.draft.draft], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = entry.path.replaceAll("/", "__");
+            anchor.click();
+            URL.revokeObjectURL(url);
+          }
+        } catch {
+          window.alert(text("Unable to export every local draft; deletion was cancelled.", "无法导出全部本地草稿；已取消删除。"));
+          return;
+        }
+      } else if (choice !== "discard") {
+        return;
+      }
+    }
+    const deleted = await fileOp("delete", { path }, [parentOf(path)]);
+    if (deleted.status !== "ready") return;
+    if (hasDraft) {
+      const cleared = await clearFileDraftsForPath(projectId, path);
+      if (!cleared.ok) {
+        window.alert(cleared.message ?? text("Unable to discard the local draft; tabs remain open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
+        return;
+      }
+    }
     // Close any center tab now pointing at a deleted file (the path
     // itself, or anything under a deleted dir).
     const s = useCenterTabs.getState();
@@ -500,18 +784,118 @@ export function FileTree({
     }
     return [...entries].map(([path, entry]) => ({ path, entry }));
   }, [dirs]);
+  const fetchSearchPage = useCallback(async (generation: number, reset = false) => {
+    const query = searchQuery.current;
+    if (!query || generation !== searchGeneration.current || searchLoadingRef.current) return;
+    searchLoadingRef.current = true;
+    searchLoadingGeneration.current = generation;
+    setSearchLoading(true);
+    try {
+      if (reset) {
+        searchCursor.current = null;
+        searchSnapshot.current = null;
+        searchRows.current.clear();
+        setSearchResults([]);
+      }
+      let cursor = searchCursor.current;
+      let snapshotId = searchSnapshot.current;
+      let retriedStale = false;
+      while (generation === searchGeneration.current) {
+        const data: SearchResultPayload | null = await fileQuery<SearchResultPayload>(
+          "project_file_search",
+          {
+            project_id: projectId,
+            path: "",
+            query,
+            mode: searchModeRef.current,
+            type: "all",
+            page_size: 100,
+            ...(cursor ? { cursor, snapshot_id: snapshotId } : {}),
+          },
+          "project_file_search_result",
+          () => generation === searchGeneration.current,
+          undefined,
+          searchControllers.current,
+        );
+        if (generation !== searchGeneration.current) return;
+        if (data?.error_code === "STALE_SNAPSHOT" && cursor && !retriedStale) {
+          cursor = null;
+          snapshotId = null;
+          searchCursor.current = null;
+          searchSnapshot.current = null;
+          searchRows.current.clear();
+          setSearchResults([]);
+          retriedStale = true;
+          continue;
+        }
+        if (!data || data.project_id !== projectId || data.error_code || !data.results) {
+          setSearchError(data?.error_code ?? "IO_ERROR");
+          setSearchResults([]);
+          break;
+        }
+        for (const result of data.results) {
+          if (searchRows.current.size >= MAX_SEARCH_RESULTS) break;
+          searchRows.current.set(result.path, result);
+        }
+        searchCursor.current = data.next_cursor ?? null;
+        searchSnapshot.current = data.snapshot_id ?? null;
+        setSearchResults([...searchRows.current.values()]);
+        setSearchHasMore(Boolean(searchCursor.current)
+          && searchRows.current.size < MAX_SEARCH_RESULTS);
+        break;
+      }
+    } finally {
+      if (searchLoadingGeneration.current === generation) {
+        searchLoadingRef.current = false;
+        searchLoadingGeneration.current = null;
+        if (generation === searchGeneration.current) setSearchLoading(false);
+      }
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    for (const controller of searchControllers.current) controller.abort();
+    searchControllers.current.clear();
+    const query = filter.trim();
+    const generation = ++searchGeneration.current;
+    searchQuery.current = query;
+    searchModeRef.current = fuzzySearch ? "fuzzy" : "contains";
+    setSearchResults([]);
+    setSearchHasMore(false);
+    setSearchError(null);
+    searchCursor.current = null;
+    searchSnapshot.current = null;
+    searchRows.current.clear();
+    searchLoadingRef.current = false;
+    setSearchLoading(false);
+    if (!query) {
+      setSearchLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => void fetchSearchPage(generation, true), 200);
+    return () => {
+      clearTimeout(timer);
+      for (const controller of searchControllers.current) controller.abort();
+      searchControllers.current.clear();
+      searchGeneration.current += 1;
+    };
+  }, [fetchSearchPage, filter, fuzzySearch, projectId]);
+
   const searchMatches = useMemo(() => {
-    if (!filter.trim()) return [];
+    if (filter.trim()) return searchResults.map((entry) => ({ path: entry.path, entry }));
     return searchableEntries
       .filter(({ entry }) => matchingIndexes(entry.name, filter, fuzzySearch))
       .sort((left, right) => left.path.localeCompare(right.path));
-  }, [filter, fuzzySearch, searchableEntries]);
+  }, [filter, fuzzySearch, searchableEntries, searchResults]);
   const visiblePaths = useMemo(
     () => visibleSearchPaths(searchableEntries.map(({ path }) => path), filter, fuzzySearch),
     [filter, fuzzySearch, searchableEntries],
   );
   const currentSearchPath = searchMatches.length
     ? searchMatches[searchMatchIndex % searchMatches.length].path
+    : null;
+  const currentSearchType = searchMatches.length
+    ? searchMatches[searchMatchIndex % searchMatches.length].entry.type
     : null;
 
   useEffect(() => {
@@ -520,6 +904,13 @@ export function FileTree({
 
   useEffect(() => {
     if (!currentSearchPath) return;
+    const generation = queryGeneration.current;
+    if (filter.trim() && searchMode === "highlight") {
+      void locateTreePath(
+        currentSearchPath,
+        currentSearchType ?? "file",
+      );
+    }
     const parents: string[] = [];
     let parent = parentOf(currentSearchPath);
     while (parent) {
@@ -530,16 +921,82 @@ export function FileTree({
       setExpanded((previous) => new Set([...previous, ...parents]));
     }
     const timer = setTimeout(() => {
+      if (generation !== queryGeneration.current) return;
       rootRef.current?.querySelector<HTMLElement>(
         `[data-tree-path="${CSS.escape(currentSearchPath)}"]`,
       )?.scrollIntoView({ block: "nearest" });
     });
-    return () => clearTimeout(timer);
-  }, [currentSearchPath]);
+    revealScrollTimer.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (revealScrollTimer.current === timer) revealScrollTimer.current = null;
+    };
+  }, [currentSearchPath, currentSearchType, filter, searchMode]);
 
   function moveSearchResult(delta: number) {
     if (!searchMatches.length) return;
     setSearchMatchIndex((index) => (index + delta + searchMatches.length) % searchMatches.length);
+  }
+
+  function renderSearchError(): React.ReactNode {
+    if (!searchError) return null;
+    const message =
+      searchError === "LIMIT_EXCEEDED"
+        ? text("Search results exceed the limit", "搜索结果超过限制")
+        : searchError === "PERMISSION"
+          ? text("Search permission denied", "搜索权限不足")
+          : searchError === "IO_ERROR"
+            ? text("Search failed due to an I/O error", "搜索发生 I/O 错误")
+            : searchError === "INVALID_REQUEST"
+              ? text("Invalid search request", "搜索请求无效")
+              : text("Search failed", "搜索失败");
+    return <div className={styles.treeHint}>{message}</div>;
+  }
+
+  function renderSearchResults(): React.ReactNode {
+    return (
+      <div role="list" aria-label={text("Project search results", "项目搜索结果")}>
+        {searchMatches.map(({ path, entry }) => (
+          <div key={path} role="listitem">
+            <button
+              type="button"
+              className={styles.treeRow}
+              data-tree-path={path}
+              title={path}
+              onClick={() => void revealSearchResult(path, entry.type)}
+            >
+              {entry.type === "dir" ? (
+                <Folder size={15} className={styles.treeIconFolder} />
+              ) : (
+                <FileGlyph name={entry.name} />
+              )}
+              <ExplorerMatchText
+                className={styles.treeName}
+                value={entry.name}
+                query={filter}
+                fuzzy={fuzzySearch}
+                current={currentSearchPath === path}
+              />
+              <span className={styles.treeHint}>{path}</span>
+            </button>
+          </div>
+        ))}
+        {searchHasMore ? (
+          <button
+            type="button"
+            className={styles.treeRow}
+            aria-label={text("Load more search results", "加载更多搜索结果")}
+            disabled={searchLoading}
+            onClick={() => {
+              setSearchPage((page) => Math.min(page + 1, 5));
+              void fetchSearchPage(searchGeneration.current);
+            }}
+          >
+            {searchLoading ? text("Loading…", "加载中…") : text("Load more", "加载更多")}
+          </button>
+        ) : null}
+      </div>
+    );
   }
 
   function renderDir(dir: string, depth: number): React.ReactNode {
@@ -665,6 +1122,20 @@ export function FileTree({
       <>
         {createRow}
         {rows}
+        {directoryPages[dir]?.nextCursor ? (
+          <button
+            type="button"
+            className={styles.treeRow}
+            style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
+            aria-label={text("Load more entries", "加载更多条目")}
+            disabled={loadingMore.has(dir)}
+            onClick={() => loadMore(dir)}
+          >
+            {loadingMore.has(dir)
+              ? text("Loading…", "加载中…")
+              : text("Load more", "加载更多")}
+          </button>
+        ) : null}
       </>
     );
   }
@@ -716,9 +1187,20 @@ export function FileTree({
         }
       />
       <div className={styles.treeBody}>
-        {filter.trim() && searchMode === "filter" && searchMatches.length === 0
-          ? <div className={styles.treeHint}>{text("No matches", "无匹配")}</div>
-          : renderDir("", 0)}
+        {filter.trim() && searchMode === "filter" ? (
+          searchLoading && searchMatches.length === 0 ? (
+            <div className={styles.treeHint}>{text("Searching…", "搜索中…")}</div>
+          ) : searchError ? (
+            renderSearchError()
+          ) : searchMatches.length === 0 ? (
+            <div className={styles.treeHint}>{text("No matches", "无匹配")}</div>
+          ) : renderSearchResults()
+        ) : (
+          <>
+            {filter.trim() ? renderSearchError() : null}
+            {renderDir("", 0)}
+          </>
+        )}
       </div>
 
       {/* Right-click context menu — same Popover/MENU_PANEL pattern as

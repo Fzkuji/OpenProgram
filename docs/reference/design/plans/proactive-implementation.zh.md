@@ -21,7 +21,7 @@
 | 设计中的角色 | 现有机制 | 位置 |
 |---|---|---|
 | 进程内事件扇出 | `EventBus`——已实现但闲置，dispatcher 和 agent_loop 用直接回调绕过了它 | `openprogram/events/bus.py` |
-| gate 的 `ask` 路径 | `ApprovalRegistry` + `_wrap_with_approval`：发起请求、阻塞等待、批准或拒绝，拒绝时回一个 is_error 的 tool result | `openprogram/agent/internals/_approval.py` |
+| gate 的 `ask` 路径 | `ApprovalRegistry` + `_wrap_with_approval`：发起请求、阻塞等待、批准或拒绝，拒绝时回一个 is_error 的 tool result | `openprogram/agent/permissions/approval.py` |
 | observer 的 `Prepare` 后台 task | `JobRunner.spawn_job`——ThreadPoolExecutor、状态机、job_status 广播 | `openprogram/agent/job/runner.py` |
 | `Inject` 的落地槽位 | 注入 system prompt 的 memory prefetch，以及 steering messages | `openprogram/agent/agent_loop.py` |
 | 事件因果、rewind、分支 | session git DAG，节点带 parent_id / caller | `openprogram/context/git/` |
@@ -40,7 +40,7 @@
 | `tool.before` | `agent_loop.py`，每次 `tool.execute()` 之前 | 一份事件同时喂 notify emit 与 gate 问询 |
 | `tool.after` | `agent_loop.py`，每次工具调用结束之后 | notify emit，附结果文本通道 |
 | `subagent.started` / `completed` | `task/runner.py` 的 job_status 广播 | 转换，经 `_broadcast_job_status` 汇总 |
-| `permission.requested` | `_approval.py` 的 approval_request 信封 | 新增 tap |
+| `permission.requested` | `permissions/approval.py` 的 approval_request 信封 | 新增 tap |
 | `artifact.file.changed` | `file_backup.backup_before_edit` 与 `project_commit` | 写成功后新增发送 |
 
 ## 4. gate 的挂载点与如实声明的覆盖率

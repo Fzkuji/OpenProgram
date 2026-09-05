@@ -371,6 +371,94 @@ def test_handle_chat_releases_reservation_when_setup_fails(monkeypatch):
         assert session_id not in _s._running_tasks
 
 
+@pytest.mark.parametrize("failure_phase", ["construct", "start"])
+def test_chat_startup_failure_fails_exact_admission_and_clears_task(
+    monkeypatch, failure_phase,
+):
+    """A post-ACK thread failure must not leave a queued execution or task."""
+    from openprogram.webui import server as _s
+    from openprogram.webui.ws_actions import chat as chat_actions
+    from openprogram.webui.ws_actions.chat import handle_chat
+    import openprogram.agent.session_config as session_config
+    import openprogram.agent.session_db as session_db
+    import openprogram.agent.surface_context as surface_context
+    import openprogram.webui.ws_actions.session as session_actions
+    import threading
+
+    session_id = f"startup-failure-{failure_phase}"
+    conv = {"id": session_id, "messages": []}
+    failures: list[tuple[str, str]] = []
+    released: list[object] = []
+    events: list[dict] = []
+
+    class _DB:
+        def get_session(self, _sid):
+            return {"extra_meta": {"_user_titled": True}}
+
+        def update_session(self, _sid, **_fields):
+            return None
+
+    class _Admission:
+        execution_id = "exec_startup_failure"
+        status_version = 0
+
+    class _Adapter:
+        def __init__(self, **_kwargs):
+            pass
+
+        def admit(self, request, **kwargs):
+            from openprogram.agent.authority import decide_tool_authority
+            assert decide_tool_authority(request, "list", {}).allowed
+            assert request.permission_mode == "bypass"
+            assert request.permission_rules is not None
+            return _Admission()
+
+        def fail_admission(self, admission, *, reason_code):
+            failures.append((admission.execution_id, reason_code))
+
+    class _StartFailureThread:
+        def start(self):
+            if failure_phase == "start":
+                raise RuntimeError("thread start unavailable")
+
+    monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
+    monkeypatch.setattr(chat_actions, "_db_agent_id", lambda _sid: "main")
+    monkeypatch.setattr(_s, "_append_msg", lambda target, msg: target["messages"].append(msg))
+    monkeypatch.setattr(_s, "_emit_running_task_event", lambda _sid, **kw: events.append(kw))
+    monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
+    monkeypatch.setattr(session_db, "default_db", lambda: _DB())
+    monkeypatch.setattr(
+        session_config, "save_session_run_config",
+        lambda *a, **kw: types.SimpleNamespace(
+            tools_enabled=True, tools_override=None, web_search=False,
+            toolset=None, thinking_effort="medium", permission_mode=None,
+            sandbox_enabled=None,
+        ),
+    )
+    monkeypatch.setattr(session_config, "project_defaults", lambda sid: {"permission_mode": "bypass"})
+    monkeypatch.setattr(surface_context, "capture", lambda *_a, **_kw: {"window_id": "w1"})
+    monkeypatch.setattr(surface_context, "release_bindings", lambda value: released.append(value))
+    monkeypatch.setattr(
+        "openprogram.agent.production_driver.CanonicalAgentAdapter", _Adapter,
+    )
+    monkeypatch.setattr(
+        threading, "Thread",
+        (lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("thread constructor unavailable")))
+        if failure_phase == "construct" else (lambda **_kwargs: _StartFailureThread()),
+    )
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(handle_chat(
+            _FakeWS(), {"text": "hi", "session_id": session_id},
+        ))
+
+    assert failures == [("exec_startup_failure", "agent_runner_error")]
+    assert released == [{"window_id": "w1"}]
+    assert events and events[-1]["cleared_execution_id"] == "exec_startup_failure"
+    with _s._running_tasks_lock:
+        assert session_id not in _s._running_tasks
+
+
 def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch):
     from openprogram.webui import server as _s
     from openprogram.webui.ws_actions import chat as chat_actions
@@ -448,7 +536,8 @@ def test_handle_chat_starts_turn_when_ack_socket_is_gone(monkeypatch):
 def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     monkeypatch, tmp_path,
 ):
-    from openprogram.agent import run_control
+    from openprogram.agent.authority import owner_authority
+    from openprogram.execution import default_store
     from openprogram.store.session.session_store import SessionStore
     from openprogram.webui import server as _s
     from openprogram.webui.ws_actions import chat as chat_actions
@@ -467,7 +556,19 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
     monkeypatch.setattr(store_module, "_default_store", store)
     monkeypatch.setattr(_s, "_get_or_create_session", lambda sid, **kw: conv)
     monkeypatch.setattr(chat_actions, "_db_agent_id", lambda sid: "main")
-    monkeypatch.setattr(_s, "_emit_running_task_event", lambda sid: None)
+    running_frames: list[dict] = []
+
+    def _emit_running_task_event(sid, **_kwargs):
+        with _s._running_tasks_lock:
+            task = dict(_s._running_tasks.get(sid) or {})
+        if task:
+            running_frames.append({"type": "running_task", "data": {
+                "session_id": sid,
+                "execution_id": task.get("execution_id"),
+                "status_version": task.get("status_version"),
+            }})
+
+    monkeypatch.setattr(_s, "_emit_running_task_event", _emit_running_task_event)
     monkeypatch.setattr(session_actions, "broadcast_sessions_list", lambda: None)
     monkeypatch.setattr(
         session_config,
@@ -500,10 +601,8 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
                 return
             execution_id = frame["data"]["execution_id"]
             observed["execution_id"] = execution_id
-            observed["record_exists"] = store.message_exists(
-                session_id, execution_id,
-            )
-            observed["cancel"] = run_control.cancel_execution(execution_id)
+            observed["status_version"] = frame["data"]["status_version"]
+            observed["record_exists"] = default_store().get_execution(execution_id) is not None
 
     try:
         asyncio.run(handle_chat(
@@ -515,7 +614,34 @@ def test_chat_ack_exposes_only_a_durable_cancellable_execution(
 
     assert observed["execution_id"]
     assert observed["record_exists"] is True
-    assert observed["cancel"]["status"] == "cancelled"
+    assert running_frames[-1]["data"] == {
+        "session_id": session_id,
+        "execution_id": observed["execution_id"],
+        "status_version": observed["status_version"],
+    }
+
+    class _ControlWS:
+        def __init__(self):
+            self.scope = {"state": {
+                "authority": owner_authority("owner/install/0123456789abcdef"),
+            }}
+            self.sent: list[dict] = []
+
+        async def send_text(self, text: str) -> None:
+            self.sent.append(json.loads(text))
+
+    control_ws = _ControlWS()
+    from openprogram.webui.ws_actions import runtime
+    asyncio.run(runtime.ACTIONS["execution.cancel"](control_ws, {
+        "type": "execution.command",
+        "action": "execution.cancel",
+        "command_id": "chat-ack-stop",
+        "execution_id": running_frames[-1]["data"]["execution_id"],
+        "expected_version": running_frames[-1]["data"]["status_version"],
+    }))
+    command = next(frame for frame in control_ws.sent
+                   if frame["type"] == "execution.command.updated")
+    assert command["command"]["status"] == "applied"
 
 
 def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
@@ -556,6 +682,7 @@ def test_chat_ack_echoes_ask_when_permission_mode_missing_or_invalid(
         finally:
             with _s._running_tasks_lock:
                 _s._running_tasks.pop(session_id, None)
+            _s._unregister_active_runtime(session_id)
         return observed.get("permission_mode")
 
     assert _ack_mode({"text": "hi", "session_id": session_id}) == "ask"

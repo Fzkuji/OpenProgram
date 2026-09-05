@@ -235,45 +235,6 @@ def test_no_project_no_workdir_uses_common_ancestor(store, tmp_path):
         assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
 
 
-def test_turn_file_diff_is_exact_after_fallback_commit(store, tmp_path, monkeypatch):
-    """End to end: the fallback stamp makes turn_file_diff exact.
-
-    This is the bug the fallback exists to fix — without a stamp the
-    handler falls through to difflib and flags ``approximate``.
-    """
-    from openprogram.webui.ws_actions.turn_files import _turn_file_diff
-
-    session_id, msg_id = "s_fin_diff", "u1_reply"
-    _seed(store, session_id, msg_id)
-
-    project = tmp_path / "workroot"
-    project.mkdir()
-    target = project / "app.py"
-    target.write_text("first\n")
-    journal = CheckpointStore(store._session_dir(session_id))
-    journal.backup_before_edit(msg_id, str(target))
-    target.write_text("first\nsecond\n")
-    journal.commit_after_edit(msg_id, str(target), operation="edit")
-
-    shadow_root = tmp_path / "shadow"
-    shadow_root.mkdir()
-    monkeypatch.setattr(
-        "openprogram.store.session.session_store.default_store",
-        lambda: store, raising=False,
-    )
-    with patch("openprogram.store.shadow_git.store._shadow_root",
-               return_value=shadow_root), \
-         patch("openprogram.store.project.project_commit._project_for",
-               return_value=None), \
-         patch("openprogram.worktree.context.current_worktree_path",
-               return_value=str(project)):
-        assert commit_turn_to_shadow_git(session_id, msg_id, "edit")
-        result = _turn_file_diff(session_id, msg_id, str(target))
-
-    assert result.get("error") is None
-    assert "+second" in result["diff"]
-
-
 def test_turn_touching_no_files_is_noop(store, tmp_path):
     session_id, msg_id = "s_fin_nofiles", "u1_reply"
     _seed(store, session_id, msg_id)

@@ -124,7 +124,7 @@ def send_to_branch(target_branch: str, message: str, wait_reply: bool = False) -
 | 合并 UI | `apps/web/components/right-sidebar/branches/merge-modal.tsx` |
 | attach 解析 | `openprogram/webui/ws_actions/branch.py` `_attach_info` |
 | DAG 连线 | `apps/web/lib/runtime-bridge/dag/render/edges.ts` |
-| DAG 形状 | `apps/web/lib/runtime-bridge/dag/shapes.ts` |
+| DAG 形状 | `apps/web/lib/runtime-bridge/dag/render/shapes.ts` |
 | 布局（merge 节点 lane） | `openprogram/webui/graph_layout/{lane,__init__}.py` |
 | send_to_branch 工具 | 待在 `openprogram/programs/tools/` 下新建 |
 | 验证 | `scripts/dag_dump.py` |
@@ -140,6 +140,6 @@ def send_to_branch(target_branch: str, message: str, wait_reply: bool = False) -
 | attach（嵌入） | 已实现 | `_merge.py` + `branch.py` `_attach_info` + generator |
 | attach 连线（attach_ref 虚线，源 tip → attach 节点） | 已实现 | `dag/render/edges.ts` |
 | worktree merge（另一套：git worktree ff-only 合并文件） | 已实现 | `worktree-item.tsx` |
-| 合并节点画法（形状、lane、汇入线） | 规范见 `rendering.md` 场景 10 | `dag/shapes.ts`、`dag/render/edges.ts` |
+| 合并节点画法（形状、lane、汇入线） | 规范见 `rendering.md` 场景 10 | `dag/render/shapes.ts`、`dag/render/edges.ts` |
 | 分支间发消息（`send_to_branch`） | 尚未实现 | 待新增 |
 | 子分支服务链路（spawn_branch → attach 回流） | 部分：/task 子 agent 已有，回流仍需串通 | 复用 merge |

@@ -86,13 +86,35 @@ if ($Remaining.Count -gt 0) {
 # Remove only those old, product-owned deep files through the extended-length
 # API; the new runtime uses a short `runtime\py` root and does not recreate the
 # legacy layout.
-$LegacyLongFiles = @(
-    Get-ChildItem -LiteralPath $Root -Recurse -Force -File |
-        Where-Object { $_.FullName.Length -ge 248 } |
-        Sort-Object { $_.FullName.Length } -Descending
-)
+$ExtendedRoot = ConvertTo-ExtendedPath $Root
+$ExtendedPrefix = $ExtendedRoot + [IO.Path]::DirectorySeparatorChar
+$LegacyLongFiles = [Collections.Generic.List[string]]::new()
+$PendingDirectories = [Collections.Generic.Stack[string]]::new()
+$PendingDirectories.Push($ExtendedRoot)
+while ($PendingDirectories.Count -gt 0) {
+    $Directory = $PendingDirectories.Pop()
+    if (([IO.File]::GetAttributes($Directory) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        continue
+    }
+    # Windows PowerShell 5's Get-ChildItem can fail before returning a deep
+    # entry. Keep enumeration itself on the extended-length .NET API too.
+    foreach ($Entry in [IO.Directory]::EnumerateFileSystemEntries($Directory)) {
+        if (-not $Entry.StartsWith($ExtendedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "enumerated path escapes the installation root: $Entry"
+        }
+        $Attributes = [IO.File]::GetAttributes($Entry)
+        if (($Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            continue
+        }
+        if (($Attributes -band [IO.FileAttributes]::Directory) -ne 0) {
+            $PendingDirectories.Push($Entry)
+        } elseif (($Root.Length + $Entry.Length - $ExtendedRoot.Length) -ge 248) {
+            $LegacyLongFiles.Add($Entry)
+        }
+    }
+}
 foreach ($File in $LegacyLongFiles) {
-    [IO.File]::Delete((ConvertTo-ExtendedPath $File.FullName))
+    [IO.File]::Delete($File)
 }
 
 Write-Output (

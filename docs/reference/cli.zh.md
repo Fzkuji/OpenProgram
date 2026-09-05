@@ -187,4 +187,4 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | `diagnostics` | 生成脱敏支持包 zip（版本、配置、日志、探测），可直接附在故障报告里，见[诊断包](diagnostics.zh.md) | `--output PATH`（默认 `./openprogram-diagnostics-<日期>.zip`） |
 | `logs` | 查看日志 | `list`；`tail [name]`（`-n` 行数、`-f` 跟踪）；`path [name]`。name 为 worker / runtime / ink，默认 worker |
 | `update` | 检查并应用更新 | `--check` 只检查；`--force` 绕过 6 小时节流 |
-| `scheduler-worker`（兼容别名 `cron-worker`） | 前台循环，触发一次性、周期和监控 Scheduler 任务 | `--once` 只评估一个 tick 就退出；`--list` 显示当前任务匹配状态 |
+| `scheduler-worker`（兼容别名 `cron-worker`） | 前台循环，触发一次性、周期和监控 Scheduler 任务；daemon 的普通 tick 失败会把 warning 和 traceback 写入 stderr，并在下一分钟边界继续，不重放失败的初始 `@reboot` tick（常驻 worker 重定向后的 stderr 进入其 worker 日志） | `--once` 只评估一个 tick，失败原样传播后退出；`--list` 显示当前任务匹配状态 |

@@ -7,7 +7,7 @@ export type ChatRequest = {
   agent_id?: string;
   text: string;
   thinking_effort?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-  permission_mode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass';
+  permission_mode?: 'ask' | 'acceptEdits' | 'plan' | 'auto' | 'bypass' | 'inherit';
   tools?: boolean;
   response_format?: JsonSchemaOutput | Record<string, unknown>;
 };
@@ -24,10 +24,16 @@ export type JsonSchemaOutput = {
 
 export type WsRequest =
   | ChatRequest
+  | { action: 'set_permission'; session_id: string; mode?: ChatRequest['permission_mode']; expected_version?: number; request_id?: string }
   | { action: 'stats' }
-  | { action: 'stop'; session_id: string; mode?: 'graceful' | 'force' }
-  | { action: 'execution.cancel'; execution_id: string }
-  | { action: 'steer'; session_id: string; message: string }
+  | {
+      action: 'execution.pause' | 'execution.continue' | 'execution.step' | 'execution.steer' | 'execution.cancel' | 'execution.fork' | 'execution.retry' | 'execution.wait.answer' | 'execution.wait.decline';
+      type: 'execution.command';
+      command_id: string;
+      execution_id: string;
+      expected_version: number;
+      payload?: Record<string, unknown>;
+    }
   | { action: 'set_attended'; session_id: string; attended: boolean }
   | { action: 'browser'; verb: string; args?: Record<string, unknown> }
   | { action: 'list_models' }
@@ -66,12 +72,6 @@ export type WsRequest =
   | { action: 'detach_session'; channel: string; account_id: string; peer: string }
   | { action: 'get_settings'; session_id?: string }
   | { action: 'set_setting'; key: string; value: unknown }
-  // runtime.ask / confirm / approval reply. answer is a string (single
-  // choice / confirm / free text) or string[] (multi). Mirrors the web
-  // composer's question_reply / question_reject (question-mode.tsx) so
-  // both surfaces resolve through the same backend _resolve_question.
-  | { action: 'question_reply'; id: string; answer: string | string[]; scope?: 'always' }
-  | { action: 'question_reject'; id: string; reason?: string }
   | { action: 'sandbox'; session_id?: string }
   | { action: 'context'; session_id?: string }
   | { action: 'compact'; session_id: string }
@@ -86,56 +86,78 @@ export type WsRequest =
   | { action: 'delete_branch'; session_id: string; head_msg_id?: string }
   | { action: 'list_jobs'; session_id: string }
   | { action: 'get_job'; job_id: string }
-  | { action: 'cancel_job'; job_id: string; reason?: string };
+  | { action: 'execution.replay'; execution_id: string; after_sequence: number };
 
-export interface JobResourceView {
-  job_id: string;
-  status: string;
+export interface JobResource {
+  admission_id?: string | null;
   resource_state: string;
-  reason_code: string | null;
-  reason_key: string | null;
-  retryable: boolean;
+  queue_wait?: {
+    state: string;
+    reason_code?: string | null;
+    since?: number | null;
+    position?: number | null;
+  } | null;
+  resource_lease_generation?: number | null;
+  owner_instance_id?: string | null;
   limits: Record<string, unknown>;
-  capacity: {
-    scheduler_capacity: number;
-    session_live: { used: number; limit: number | null };
-    session_queued: { used: number; limit: number | null };
-    session_jobs: { used: number; limit: number | null };
-    queue_position: number | null;
-  };
-  budget: {
-    scope: string;
-    tokens: { actual: number | null; reserved: number | null; limit: number | null };
-    cost_usd: {
+  usage: {
+    scope?: string;
+    tokens?: { actual: number | null; reserved: number | null; limit: number | null };
+    cost_usd?: {
       actual: string | null;
       reserved: string | null;
       limit: string | null;
       known: boolean | null;
       unknown_events: number | null;
     };
-    runtime_seconds: { used: number | null; limit: number | null };
-    idle_seconds: { used: number | null; limit: number | null };
-    shared_remaining: {
+    runtime_seconds?: { used: number | null; limit: number | null };
+    idle_seconds?: { used: number | null; limit: number | null };
+    shared_remaining?: {
       tokens: number | null;
       cost_usd: string | null;
       cost_unknown_events: number | null;
     };
   };
+  reservation?: Record<string, unknown> | null;
+}
+
+export interface JobResourceView {
+  job_id: string;
+  execution_id?: string;
+  project_id?: string;
+  session_id?: string;
+  parent_execution_id?: string | null;
+  status_version?: number;
+  capabilities?: {
+    pause: boolean; step: boolean; steer: boolean; fork: boolean; retry: boolean;
+    safe_point_kinds: string[]; state_schema_version: number | null;
+  };
+  checkpoint_head_id?: string | null;
+  event_cursor?: { execution_id: string; next_sequence: number; snapshot_status_version: number };
+  execution?: Record<string, unknown>;
+  resource?: JobResource | null;
+  status: string;
 }
 
 export interface JobRow {
   id: string;
+  execution_id?: string;
   status: string;
+  status_version?: number;
   subject?: string;
   parent_session_id?: string;
-  reason_code?: string | null;
   resource?: JobResourceView;
   [key: string]: unknown;
 }
 
 export interface ChatAck {
   type: 'chat_ack';
-  data: { session_id: string; msg_id: string; execution_id?: string };
+  data: {
+    session_id: string;
+    msg_id: string;
+    execution_id?: string;
+    status_version?: number;
+  };
 }
 
 export interface ChatResponse {
@@ -150,6 +172,9 @@ export interface ChatResponse {
     attempts?: number;
     issues?: Array<{ code: string; path?: string; schema_path?: string; message?: string }>;
     session_id?: string;
+    execution_id?: string;
+    wait_generation?: number;
+    expected_version?: number;
     msg_id?: string;
     [k: string]: unknown;
   };
@@ -299,6 +324,23 @@ export interface ErrorEnvelope {
   data?: { message?: string };
 }
 
+export interface OperationErrorEnvelope {
+  type: 'operation_error';
+  data?: {
+    action?: unknown;
+    code?: unknown;
+    request_id?: unknown;
+    session_id?: unknown;
+    retryable?: unknown;
+    message?: unknown;
+  };
+}
+
+export interface LegacyActionErrorEnvelope {
+  type: 'action_error';
+  data?: OperationErrorEnvelope['data'];
+}
+
 /**
  * A complete inbound channel turn (user message + assistant reply) just
  * landed for some session. Emitted by the channels worker after it
@@ -371,7 +413,7 @@ export interface QuestionAskedEnvelope {
   type: 'question.asked';
   data: {
     id: string;
-    kind?: 'ask' | 'confirm' | 'approval';
+    kind?: 'ask' | 'confirm' | 'approval' | 'form' | 'ask_many';
     prompt?: string;
     options?: string[];
     multi?: boolean;
@@ -394,7 +436,13 @@ export interface QuestionClosedEnvelope {
   data: { id: string; [k: string]: unknown };
 }
 
+export type PermissionChangedEnvelope = {
+  type: 'permission_changed';
+  data: { session_id: string; mode?: Exclude<NonNullable<ChatRequest['permission_mode']>, 'inherit'>; version?: number; error?: string; request_id?: string };
+};
+
 export type WsEnvelope =
+  | PermissionChangedEnvelope
   | ChatAck
   | ChatResponse
   | EventEnvelope
@@ -416,6 +464,8 @@ export type WsEnvelope =
   | QrLoginEnvelope
   | SearchResultsEnvelope
   | ErrorEnvelope
+  | OperationErrorEnvelope
+  | LegacyActionErrorEnvelope
   | { type: 'jobs_list'; data: { session_id?: string | null; jobs: JobRow[] } }
   | { type: 'job'; data: { job: JobRow | null; error?: string } }
   | {
@@ -424,16 +474,16 @@ export type WsEnvelope =
         job_id: string;
         session_id?: string;
         status: string;
-        reason_code?: string | null;
         resource?: JobResourceView;
       };
     }
   | {
-      type: 'cancel_job_result';
+      type: 'execution.replay';
       data: {
-        job_id: string;
-        status: string | null;
-        resource?: JobResourceView;
+        execution_id: string;
+        snapshot?: Record<string, unknown>;
+        events?: Array<Record<string, unknown>>;
+        event_cursor?: { execution_id: string; next_sequence: number; snapshot_status_version: number };
         error?: string;
       };
     }
@@ -443,8 +493,16 @@ export type WsEnvelope =
       data: { key: string; applied?: string; value?: unknown; note?: string; error?: string };
     }
   | { type: 'attended_changed'; data: { session_id: string; attended: boolean } }
-  | { type: 'steer_ack'; data: { session_id: string; queued: boolean; message?: string } }
-  | { type: 'running_task'; data: { session_id: string; msg_id?: string; func_name?: string; execution_id?: string } }
+  | {
+      type: 'running_task';
+      data: {
+        session_id: string;
+        msg_id?: string;
+        func_name?: string;
+        execution_id?: string;
+        status_version?: number;
+      };
+    }
   | { type: 'running_task_clear'; data: { session_id: string } }
   | {
       type: 'execution.updated';
@@ -453,6 +511,28 @@ export type WsEnvelope =
         session_id?: string;
         status?: string;
         reason_code?: string;
+        status_version?: number;
+      };
+    }
+  | {
+      type: 'execution.command.updated';
+      command?: {
+        command_id?: string;
+        execution_id?: string;
+        status?: string;
+        latest_snapshot?: { execution_id?: string; status_version?: number };
+      };
+      execution?: Record<string, unknown>;
+      event_cursor?: { execution_id?: string; next_sequence?: number; snapshot_status_version?: number };
+      data?: {
+        command?: {
+          command_id?: string;
+          execution_id?: string;
+          status?: string;
+          latest_snapshot?: { execution_id?: string; status_version?: number };
+        };
+        execution?: Record<string, unknown>;
+        event_cursor?: { execution_id?: string; next_sequence?: number; snapshot_status_version?: number };
       };
     }
   | { type: 'spawn_job_result'; data: Record<string, unknown> }
@@ -480,6 +560,7 @@ export class BackendClient {
   private hasConnected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
+  private executionCursors = new Map<string, number>();
 
   constructor(url: string) {
     this.url = url;
@@ -510,11 +591,15 @@ export class BackendClient {
       this.retry = 0;
       const q = this.queue.splice(0);
       for (const a of q) this.send(a);
+      for (const [execution_id, after_sequence] of this.executionCursors) {
+        this.send({ action: 'execution.replay', execution_id, after_sequence });
+      }
     });
     this.ws.on('message', (raw) => {
       try {
         const parsed = JSON.parse(String(raw));
         if (parsed && typeof parsed === 'object' && typeof parsed.type === 'string') {
+          this.trackExecutionCursor(parsed as Record<string, unknown>);
           for (const l of this.listeners) l(parsed as WsEnvelope);
         }
       } catch {
@@ -542,6 +627,20 @@ export class BackendClient {
       return;
     }
     this.ws.send(JSON.stringify(req));
+  }
+
+  private trackExecutionCursor(frame: Record<string, unknown>): void {
+    const data = (frame.data && typeof frame.data === 'object' ? frame.data : frame) as Record<string, unknown>;
+    const raw = data.event_cursor;
+    if (!raw || typeof raw !== 'object') return;
+    const cursor = raw as { execution_id?: unknown; next_sequence?: unknown };
+    if (typeof cursor.execution_id !== 'string' || !Number.isSafeInteger(cursor.next_sequence)) return;
+    const next = Number(cursor.next_sequence);
+    const previous = this.executionCursors.get(cursor.execution_id);
+    this.executionCursors.set(cursor.execution_id, next - 1);
+    if (previous !== undefined && next > previous + 2) {
+      this.send({ action: 'execution.replay', execution_id: cursor.execution_id, after_sequence: previous });
+    }
   }
 
   on(listener: WsListener): () => void {

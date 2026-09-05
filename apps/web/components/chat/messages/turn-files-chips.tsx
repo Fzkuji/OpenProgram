@@ -1,14 +1,19 @@
 "use client";
 
 /** Compact per-turn file card. Diffs live in the center Review tab. */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import {
   FeatherIcon,
   UndoIcon,
 } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
-import { getSocket } from "@/lib/runtime-bridge/state";
+import {
+  idempotencyKeyFor,
+  MutationRegistryCapacityError,
+  wsMutationRequest,
+  wsRequest,
+} from "@/lib/net/ws-request";
 import { useSessionStore } from "@/lib/session-store";
 import type {
   AssistantBlock,
@@ -20,8 +25,15 @@ import { useCurrentProject } from "@/lib/state/files-shared";
 
 import {
   historyPresentation,
+  type TurnHistoryOperation,
   type TurnHistoryState,
 } from "./turn-files-history-state";
+import {
+  fileWriteState,
+  initialLegacyTurnFilesLoadState,
+  legacyTurnFilesLoadReducer,
+  type FileWriteState,
+} from "./turn-files-presentation";
 
 const COLLAPSE_AFTER = 3;
 const MAX_CARD_FILES = 20;
@@ -35,17 +47,6 @@ interface TurnFile {
   binary?: boolean;
   diff_state?: string;
   recoverability?: string;
-}
-
-const FILE_WRITING_TOOLS = new Set(["write", "edit", "apply_patch"]);
-
-function allFileWritesFailed(blocks?: AssistantBlock[]): boolean {
-  if (!blocks) return false;
-  const writes = blocks.filter(
-    (block) => block.type === "tool"
-      && FILE_WRITING_TOOLS.has((block.tool || "").toLowerCase()),
-  );
-  return writes.length > 0 && writes.every((block) => block.is_error === true);
 }
 
 function basename(path: string): string {
@@ -66,25 +67,20 @@ function summaryFiles(summary?: TurnFileSummary, projectRoot?: string): TurnFile
   }));
 }
 
-function send(payload: unknown): boolean {
-  const socket = getSocket();
-  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-  socket.send(JSON.stringify(payload));
-  return true;
-}
-
 export function TurnFilesChips({
   assistantMsgId,
   blocks,
   summary,
   initiallyReverted = false,
   sessionIdOverride,
+  writeState,
 }: {
   assistantMsgId: string;
   blocks?: AssistantBlock[];
   summary?: TurnFileSummary;
   initiallyReverted?: boolean;
   sessionIdOverride?: string;
+  writeState?: FileWriteState;
 }) {
   const { text } = useTranslation();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -95,7 +91,10 @@ export function TurnFilesChips({
     () => summaryFiles(summary, project?.path),
     [project?.path, summary],
   );
-  const [files, setFiles] = useState<TurnFile[] | null>(embedded);
+  const writesFailed = (writeState ?? fileWriteState(blocks)) === "failed";
+  const [files, setFiles] = useState<TurnFile[] | null>(
+    embedded ?? (writesFailed ? [] : null),
+  );
   const [fileCount, setFileCount] = useState(summary?.file_count ?? embedded?.length ?? 0);
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<"undo" | "redo" | null>(null);
@@ -104,13 +103,19 @@ export function TurnFilesChips({
   const [visible, setVisible] = useState(false);
   const [historyNonce, setHistoryNonce] = useState(0);
   const [historyState, setHistoryState] = useState<TurnHistoryState | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [legacyLoad, dispatchLegacyLoad] = useReducer(
+    legacyTurnFilesLoadReducer,
+    initialLegacyTurnFilesLoadState,
+  );
+  const historyControllerRef = useRef<AbortController | null>(null);
   const probeRef = useRef<HTMLDivElement>(null);
   const openReviewTab = useCenterTabs((state) => state.openReviewTab);
 
   useEffect(() => {
     setReverted(initiallyReverted);
   }, [initiallyReverted]);
+
+  useEffect(() => () => historyControllerRef.current?.abort(), [assistantMsgId, sessionId]);
 
   useEffect(() => {
     if (embedded) setFileCount(summary?.file_count ?? embedded.length);
@@ -131,101 +136,114 @@ export function TurnFilesChips({
 
   useEffect(() => {
     if (!visible || !sessionId) return;
-    const socket = getSocket();
-    if (!socket) return;
-    const requestId = crypto.randomUUID();
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (
-          frame?.type !== "turn_history_state_result"
-          || data.request_id !== requestId
-          || data.assistant_msg_id !== assistantMsgId
-        ) return;
-        socket.removeEventListener("message", onMessage);
+    const controller = new AbortController();
+    void wsRequest<{ status?: string; action?: TurnHistoryOperation | null; error?: string; session_id?: string; assistant_msg_id?: string }>(
+      "turn_history_state",
+      { session_id: sessionId, assistant_msg_id: assistantMsgId },
+      "turn_history_state_result",
+      (data) => data.session_id === sessionId && data.assistant_msg_id === assistantMsgId,
+      4000,
+      { signal: controller.signal, requestId: true },
+    ).then((data) => {
+      if (!data || controller.signal.aborted) return;
         setHistoryError("");
         setHistoryState({
           status: data.status ?? "error",
           operation: data.action ?? null,
           error: data.error,
         });
-      } catch {
-        /* ignore unrelated frames */
-      }
-    };
-    socket.addEventListener("message", onMessage);
-    if (!send({
-      action: "turn_history_state",
-      session_id: sessionId,
-      assistant_msg_id: assistantMsgId,
-      request_id: requestId,
-    })) socket.removeEventListener("message", onMessage);
-    return () => socket.removeEventListener("message", onMessage);
+    });
+    return () => controller.abort();
   }, [assistantMsgId, historyNonce, sessionId, visible]);
 
   useEffect(() => {
     if (embedded) {
       setFiles(embedded);
-      return;
     }
-    if (!visible) return;
-    if (!sessionId || !assistantMsgId) return;
-    const socket = getSocket();
-    if (!socket) return;
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (
-          frame?.type !== "list_turn_files_result"
-          || data.assistant_msg_id !== assistantMsgId
-        ) return;
-        socket.removeEventListener("message", onMessage);
-        setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
-        setFileCount(data.file_count ?? data.files?.length ?? 0);
-        setReverted(Boolean(data.reverted));
-      } catch {
-        /* ignore unrelated frames */
+  }, [embedded]);
+
+  useEffect(() => {
+    if (embedded || writesFailed || !visible || !sessionId || !assistantMsgId) return;
+    const controller = new AbortController();
+    void wsRequest<{
+      files?: TurnFile[];
+      file_count?: number;
+      reverted?: boolean;
+      error?: string;
+      session_id?: string;
+      assistant_msg_id?: string;
+    }>(
+      "review_scope",
+      { session_id: sessionId, assistant_msg_id: assistantMsgId, scope: "turn" },
+      "review_scope_result",
+      (data) => data.session_id === sessionId && data.assistant_msg_id === assistantMsgId,
+      4000,
+      { signal: controller.signal, requestId: true },
+    ).then((data) => {
+      if (controller.signal.aborted) return;
+      if (!data || data.error) {
+        dispatchLegacyLoad({ type: "resolved", ok: false });
+        return;
       }
-    };
-    socket.addEventListener("message", onMessage);
-    if (!send({
-      action: "list_turn_files",
-      session_id: sessionId,
-      assistant_msg_id: assistantMsgId,
-    })) {
-      socket.removeEventListener("message", onMessage);
-    }
-    return () => socket.removeEventListener("message", onMessage);
-  }, [assistantMsgId, embedded, sessionId, visible]);
+      setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
+      setFileCount(data.file_count ?? data.files?.length ?? 0);
+      setReverted(Boolean(data.reverted));
+      dispatchLegacyLoad({ type: "resolved", ok: true });
+    });
+    return () => controller.abort();
+  }, [assistantMsgId, embedded, legacyLoad.attempt, sessionId, visible, writesFailed]);
 
   function historyAction(direction: "undo" | "redo") {
     if (!sessionId || busy) return;
     setBusy(direction);
+    historyControllerRef.current?.abort();
+    const controller = new AbortController();
+    historyControllerRef.current = controller;
     const action = direction === "undo" ? "revert_turn" : "reapply_turn";
     const responseType = direction === "undo"
       ? "revert_turn_result"
       : "reapply_turn_result";
-    const socket = getSocket();
-    if (!socket || !send({
-      action,
-      session_id: sessionId,
-      msg_id: assistantMsgId,
-      idempotency_key: crypto.randomUUID(),
-    })) {
+    const operationPayload = { session_id: sessionId, msg_id: assistantMsgId };
+    let operationKey: string;
+    try {
+      operationKey = idempotencyKeyFor(`${action}:${sessionId}`, operationPayload);
+    } catch (error) {
       setBusy(null);
-      showToast(text("History action failed: not connected", "历史操作失败：连接已断开"));
+      if (error instanceof MutationRegistryCapacityError) {
+        showToast(text("Too many file operations are still pending.", "仍有太多文件操作未完成。"));
+      }
       return;
     }
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (frame?.type !== responseType || data.msg_id !== assistantMsgId) return;
-        socket.removeEventListener("message", onMessage);
+    void wsMutationRequest<{ session_id?: string; msg_id?: string; status?: string; errors?: string[]; error?: string; error_code?: string; request_id?: string }>(
+      operationKey,
+      (signal) => wsRequest(
+        action,
+        { ...operationPayload, idempotency_key: operationKey },
+        responseType,
+        (data) => data.session_id === sessionId && data.msg_id === assistantMsgId,
+        4000,
+        { requestId: true, signal },
+      ),
+      { signal: controller.signal },
+    ).then((data) => {
+      if (controller.signal.aborted) return;
+      if (!data) {
         setBusy(null);
-        const errors: string[] = data.errors ?? [];
+        showToast(text("History action failed: not connected", "历史操作失败：连接已断开"));
+        return;
+      }
+      if (data.status === "in_progress") {
+        setBusy(null);
+        setHistoryState({
+          status: "in_progress",
+          operation: null,
+          error: text("History action is still in progress.", "历史操作仍在进行中。"),
+        });
+        return;
+      }
+        setBusy(null);
+        const errors: string[] = data.errors ?? (data.error
+          ? [data.error_code ?? data.error] : []);
         if (errors.length) {
           const message = errors.join("; ");
           setHistoryError(message);
@@ -250,51 +268,29 @@ export function TurnFilesChips({
         showToast(direction === "undo"
           ? text("Changes reverted", "修改已撤回")
           : text("Changes reapplied", "修改已重做"));
-      } catch {
-        /* ignore unrelated frames */
-      }
-    };
-    socket.addEventListener("message", onMessage);
-  }
-
-  function loadMore() {
-    if (!sessionId || loadingMore) return;
-    const socket = getSocket();
-    if (!socket) return;
-    setLoadingMore(true);
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (
-          frame?.type !== "list_turn_files_result"
-          || data.assistant_msg_id !== assistantMsgId
-        ) return;
-        socket.removeEventListener("message", onMessage);
-        setLoadingMore(false);
-        setFiles((data.files ?? []).slice(0, MAX_CARD_FILES));
-        setFileCount(data.file_count ?? data.files?.length ?? 0);
-        setShowAll(true);
-      } catch {
-        /* ignore unrelated frames */
-      }
-    };
-    socket.addEventListener("message", onMessage);
-    if (!send({
-      action: "list_turn_files",
-      session_id: sessionId,
-      assistant_msg_id: assistantMsgId,
-    })) {
-      socket.removeEventListener("message", onMessage);
-      setLoadingMore(false);
-    }
+    });
   }
 
   if (!files) {
-    return <div ref={probeRef} className="turn-files-probe" aria-hidden="true" />;
+    if (legacyLoad.status === "error") {
+      return (
+        <div className="turn-files-load-error" role="status">
+          <span>{text("Could not load file changes.", "无法加载文件修改。")}</span>
+          <button
+            type="button"
+            onClick={() => dispatchLegacyLoad({ type: "retry" })}
+          >
+            {text("Retry", "重试")}
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div ref={probeRef} className="turn-files-probe" aria-hidden="true" />
+    );
   }
   if (files.length === 0) {
-    if (allFileWritesFailed(blocks)) {
+    if (writesFailed) {
       return (
         <div className="turn-files-failed-note">
           {text("File changes in this turn did not go through.", "本轮文件操作未成功执行。")}
@@ -424,20 +420,15 @@ export function TurnFilesChips({
         ))}
       </div>
 
-      {!showAll && (files.length > COLLAPSE_AFTER || fileCount > files.length) ? (
+      {!showAll && files.length > COLLAPSE_AFTER ? (
         <button
           type="button"
           className="turn-files-more"
-          disabled={loadingMore}
-          onClick={() => fileCount > files.length ? loadMore() : setShowAll(true)}
+          onClick={() => setShowAll(true)}
         >
           {text(
-            loadingMore
-              ? "Loading more files…"
-              : `Show ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} more files`,
-            loadingMore
-              ? "正在加载更多文件…"
-              : `再显示 ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} 个文件`,
+            `Show ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} more files`,
+            `再显示 ${Math.min(MAX_CARD_FILES - COLLAPSE_AFTER, fileCount - COLLAPSE_AFTER)} 个文件`,
           )}
         </button>
       ) : showAll ? (

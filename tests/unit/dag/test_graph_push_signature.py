@@ -75,4 +75,12 @@ def test_frontend_structural_fields_change_signature():
         [_node(spawned_from={"label": "agent"})])
     assert _graph_push_signature(base) != _graph_push_signature(
         [_node(branch_name="fork")])
+    assert _graph_push_signature(base) != _graph_push_signature(
+        [_node(
+            spawn_remote=True,
+            spawn_remote_session="source",
+            spawn_remote_id="source-node",
+        )])
+    assert _graph_push_signature(base) != _graph_push_signature(
+        [_node(spawn_out=True, spawn_out_session="target", spawn_out_head="h")])
     assert _graph_push_signature([]) == _graph_push_signature(None)

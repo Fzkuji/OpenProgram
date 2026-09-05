@@ -4,6 +4,9 @@
 semantics around it live in test_goal_loop.py."""
 from __future__ import annotations
 
+import importlib
+from types import SimpleNamespace
+
 import pytest
 
 from openprogram.agent.sub_agent_run import AgentTurnResult
@@ -24,9 +27,9 @@ def stub_view(monkeypatch):
 def test_parse_decision_fenced_json() -> None:
     ok = GJ._parse_decision(
         '```json\n{"met": false, "reason": "missing"}\n```')
-    assert ok == {"met": False, "reason": "missing",
+    assert ok == {"verdict": "unmet", "met": False, "reason": "missing",
                   "need_user": False, "question": "", "options": [],
-                  "checklist": None}
+                  "can_continue": False, "checklist": None}
 
 
 def test_parse_decision_invalid_raises() -> None:
@@ -34,6 +37,45 @@ def test_parse_decision_invalid_raises() -> None:
         GJ._parse_decision("no braces here")
     with pytest.raises(ValueError):
         GJ._parse_decision('{"met": "yes"}')  # met must be bool
+
+
+def test_judge_has_read_only_web_tools_for_source_verification() -> None:
+    assert {"web_fetch", "web_search"} <= set(GJ.DECISION_TOOLS)
+    assert not {"write", "edit", "ask_user_question", "agent"} & set(GJ.DECISION_TOOLS)
+
+
+def test_failed_inspection_receipt_cannot_confirm_completion() -> None:
+    failed = [{"type": "tool", "tool": "bash", "is_error": True}]
+    with pytest.raises(ValueError, match="failed inspection tools: bash"):
+        GJ._check_inspection_errors('{"met":true,"reason":"memory says valid"}', failed)
+    blocked = '{"verdict":"blocked","reason":"network unavailable"}'
+    assert GJ._check_inspection_errors(blocked, failed) == blocked
+    completed = '{"met":true,"reason":"verified"}'
+    assert GJ._check_inspection_errors(completed, [
+        {"type": "tool", "tool": "read", "is_error": False},
+    ]) == completed
+
+
+@pytest.mark.parametrize("session_id", ["", "s1"])
+def test_judge_rejects_met_with_actual_turn_error_receipts(monkeypatch, session_id) -> None:
+    from openprogram.agentic_programming.function import _current_runtime
+    reply = '{"met":true,"reason":"done"}'
+    blocks = [{"type": "tool", "tool": "bash", "is_error": True}]
+    monkeypatch.setattr(GJ, "current_session_id", lambda: "")
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    monkeypatch.setattr(agent_module, "agent", lambda **_kw: reply)
+    monkeypatch.setattr("openprogram.programs.agent_tools", lambda **_kw: [])
+    monkeypatch.setattr("openprogram.agent.sub_agent_run.run_agent_turn", lambda **_kw:
+                        AgentTurnResult(head_id="judge-turn", final_text=reply))
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: SimpleNamespace(
+        get_messages=lambda _sid: [{"id": "judge-turn", "extra": {"blocks": blocks}}],
+    ))
+    token = _current_runtime.set(SimpleNamespace(last_blocks=blocks))
+    try:
+        with pytest.raises(ValueError, match="failed inspection tools"):
+            GJ.judge_goal("verify sources", session_id=session_id, session_view="evidence")
+    finally:
+        _current_runtime.reset(token)
 
 
 def test_parse_decision_checklist_cleaning() -> None:
@@ -77,9 +119,9 @@ def test_goal_decision_parses_and_forwards(monkeypatch, stub_view) -> None:
     monkeypatch.setattr(GJ, "_run_decision_turn", _fake_turn)
     out = GJ.judge_goal(goal="MY-GOAL", session_id="s1",
                   spawn_caller="a1", agent_id="main")
-    assert out == {"met": True, "reason": "done",
+    assert out == {"verdict": "met", "met": True, "reason": "done",
                    "need_user": False, "question": "", "options": [],
-                   "checklist": None}
+                   "can_continue": False, "checklist": None}
     sid, prompt, agent_id, spawn_caller = calls[0]
     assert (sid, agent_id, spawn_caller) == ("s1", "main", "a1")
     assert "completion judge" in prompt              # docstring is the prompt
@@ -92,9 +134,9 @@ def test_goal_decision_optional_fields_default(monkeypatch, stub_view) -> None:
     monkeypatch.setattr(GJ, "_run_decision_turn",
                         lambda *a, **k: '{"met": false, "reason": "not yet"}')
     out = GJ.judge_goal(goal="g", session_id="s1")
-    assert out == {"met": False, "reason": "not yet",
+    assert out == {"verdict": "unmet", "met": False, "reason": "not yet",
                    "need_user": False, "question": "", "options": [],
-                   "checklist": None}
+                   "can_continue": False, "checklist": None}
 
 
 def test_goal_decision_checklist_in_prompt_and_reply(monkeypatch,
@@ -156,6 +198,64 @@ def test_run_decision_turn_passes_judge_model(monkeypatch) -> None:
     assert captured["model_override"] is None
 
 
+def test_headless_decision_uses_an_independent_read_only_turn(monkeypatch) -> None:
+    captured = {}
+    resolved_tools = [object()]
+
+    def resolve_tools(*, names):
+        assert names == list(GJ.DECISION_TOOLS)
+        return resolved_tools
+
+    monkeypatch.setattr("openprogram.programs.agent_tools", resolve_tools)
+
+    def fake_agent(**kwargs):
+        captured.update(kwargs)
+        return "judge reply"
+
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    monkeypatch.setattr(agent_module, "agent", fake_agent)
+    assert GJ._run_decision_turn(
+        "", "judge prompt", agent_id="main", spawn_caller=None,
+    ) == "judge reply"
+    assert captured["execution_kind"] == "goal_judge"
+    assert captured["tools"] is resolved_tools
+
+
+@pytest.mark.parametrize("phase", ["refine", "judge"])
+def test_session_goal_inspects_in_current_runtime_without_starting_jobs(monkeypatch, phase):
+    from openprogram.agentic_programming.function import _current_runtime
+    captured = {}
+    runtime = SimpleNamespace(last_blocks=[])
+    reply = '{"verdict":"met","reason":"verified"}'
+
+    def unexpected_spawn(**_kwargs):
+        pytest.fail("Goal inspection must not initialize a JobRunner")
+
+    def fake_agent(**kwargs):
+        captured.update(kwargs)
+        runtime.last_blocks = [{"type": "tool", "tool": "read", "is_error": False}]
+        return reply
+
+    monkeypatch.setattr("openprogram.agent.sub_agent_run.run_agent_turn", unexpected_spawn)
+    monkeypatch.setattr(importlib.import_module("openprogram.agentic_programming.agent"), "agent", fake_agent)
+    monkeypatch.setattr("openprogram.programs.agent_tools", lambda *, names: names)
+    monkeypatch.setattr("openprogram.programs.workflow.goal.judge_model", lambda: "judge/model")
+    token = _current_runtime.set(runtime)
+    try:
+        if phase == "judge":
+            result = GJ._run_decision_turn("s1", "inspect", agent_id="main", spawn_caller="goal")
+            assert captured["model"] == "judge/model"
+            assert captured["tools"] == list(GJ.DECISION_TOOLS)
+        else:
+            result = GR._run_refine_turn("s1", "inspect", agent_id="main", spawn_caller="goal")
+            assert captured["tools"] == list(GR.REFINE_TOOLS)
+        assert result == reply
+        assert captured["execution_kind"] == ("goal_judge" if phase == "judge" else "goal_refiner")
+        assert captured["timeout_s"] > 0
+    finally:
+        _current_runtime.reset(token)
+
+
 # ---------------------------------------------------------------------------
 # Spec refinement — the internal `refine` entry
 # ---------------------------------------------------------------------------
@@ -207,12 +307,48 @@ def test_refine_parses_and_forwards(monkeypatch) -> None:
     assert "<goal>\ntests pass\n</goal>" in prompt
 
 
+def test_refinement_prompt_preserves_user_scope(monkeypatch) -> None:
+    prompts = []
+    def fake_turn(_sid, prompt, **_kwargs):
+        prompts.append(prompt)
+        return '{"spec":"Write about 600 Chinese characters","checklist":["Write the requested comparison"]}'
+    monkeypatch.setattr(GR, "_run_refine_turn", fake_turn)
+    GR.refine_goal_spec_candidate("Write about 600 Chinese characters", session_id="s1")
+    assert "Do not add requirements" in prompts[0]
+    assert "Preserve approximate constraints as approximate" in prompts[0]
+    assert "MEET OR EXCEED" not in prompts[0]
+    assert "under 10%" not in prompts[0]
+
+
 def test_refine_turn_failure_propagates(monkeypatch) -> None:
     monkeypatch.setattr(
         GR, "_run_refine_turn",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn down")))
     with pytest.raises(RuntimeError):
         GR.refine_goal_spec_candidate("g", session_id="s1")
+
+
+def test_headless_refinement_uses_an_independent_read_only_turn(monkeypatch) -> None:
+    captured = {}
+    resolved_tools = [object()]
+
+    def resolve_tools(*, names):
+        assert names == list(GR.REFINE_TOOLS)
+        return resolved_tools
+
+    monkeypatch.setattr("openprogram.programs.agent_tools", resolve_tools)
+
+    def fake_agent(**kwargs):
+        captured.update(kwargs)
+        return "refinement reply"
+
+    agent_module = importlib.import_module("openprogram.agentic_programming.agent")
+    monkeypatch.setattr(agent_module, "agent", fake_agent)
+    assert GR._run_refine_turn(
+        "", "refine prompt", agent_id="main", spawn_caller=None,
+    ) == "refinement reply"
+    assert captured["execution_kind"] == "goal_refiner"
+    assert captured["tools"] is resolved_tools
 
 
 # ---------------------------------------------------------------------------
@@ -265,3 +401,24 @@ def test_goal_decision_mode_in_prompt(monkeypatch, stub_view) -> None:
     assert "<mode>\nunattended\n</mode>" in prompts[1]
     # Both policies are spelled out in the docstring prompt.
     assert "unattended — nobody is watching" in prompts[0]
+
+
+def test_evaluator_includes_pending_questions_to_prevent_reasking(monkeypatch) -> None:
+    captured = {}
+
+    def judge(**kwargs):
+        captured.update(kwargs)
+        return {"verdict": "unmet", "reason": "independent work remains"}
+
+    monkeypatch.setattr(GJ._goal, "judge_goal", judge)
+    GJ.evaluate_goal("s1", {
+        "text": "research",
+        "questions": [{
+            "id": "scope", "prompt": "Which scope?", "status": "pending",
+            "reason": "The requested scope is ambiguous",
+        }],
+    }, agent_id="main", session_view="EVIDENCE")
+
+    assert captured["session_view"].startswith("EVIDENCE")
+    assert "<pending_user_questions>" in captured["session_view"]
+    assert "Which scope?" in captured["session_view"]

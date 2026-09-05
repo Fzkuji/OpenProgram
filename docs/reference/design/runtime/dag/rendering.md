@@ -57,7 +57,7 @@ the user drives directly.
 | drag on empty canvas | pan |
 | drag starting on a node | the node's — click and double-click still work |
 
-**Wheel triage** (`canvas.ts`): ctrl/⌘ + wheel zooms — browsers deliver a
+**Wheel triage** (`interaction/canvas.ts`): ctrl/⌘ + wheel zooms — browsers deliver a
 trackpad pinch as a wheel event with `ctrlKey` set, and ⌘+wheel is the
 explicit zoom chord — at a rate tuned for a pinch's small continuous deltas.
 A mouse wheel zooms at wheel rate — a mouse has no pinch. macOS scroll
@@ -94,7 +94,7 @@ it sits and however tall it grows, rendered only while the DAG perspective is
 showing. The zoom cluster is one pill holding − · readout · +: the buttons
 step by exactly one wheel notch (`ZOOM_STEP`), and clicking the readout
 resets to 100% — both anchored on the pane's centre, since a button has no
-cursor to anchor on. The readout is written imperatively by `canvas.ts` on
+cursor to anchor on. The readout is written imperatively by `interaction/canvas.ts` on
 every view change, because routing a gesture's every wheel event through
 React state would repaint the tree sixty times a second.
 
@@ -108,7 +108,7 @@ cluster's segments, the legend's upward anchoring and rows).
 
 | Piece | Where |
 |---|---|
-| Pan / zoom / fit | `apps/web/lib/runtime-bridge/dag/canvas.ts` (`zoomStep` / `resetZoom` for the HUD buttons) |
+| Pan / zoom / fit | `apps/web/lib/runtime-bridge/dag/interaction/canvas.ts` (`zoomStep` / `resetZoom` for the HUD buttons) |
 | View state | `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` in `dag/store/globals.ts` |
 | Surface + lattice | `.history-body` in `apps/web/app/styles/dag/canvas.css` |
 | HUD | `DagHud` in `apps/web/components/chat/dag-view.tsx`; pill look from the env-pill rule in `composer.module.css`, legend frame from `MENU_PANEL`, internals in `styles/dag/hud.css` |
@@ -135,7 +135,7 @@ order does the rest — the graph sits under the composer's `z-index: 5`. Shrink
 
 The canvas runs edge to edge under the composer — panning past it is one
 gesture, and the fit centres the graph in the strip above it
-(`canvas.ts::fitCanvas`), so nothing needs a reserved padding band.
+(`interaction/canvas.ts::fitCanvas`), so nothing needs a reserved padding band.
 
 ### Branch switching lives in the graph
 
@@ -363,7 +363,7 @@ placeholder box:
 | Badge | Meaning |
 |---|---|
 | fold count (upper-right shoulder, annotation grey) | the size of the node's folded call thread — §12. Digits glued to the glyph, no enclosing shape: anything shaped would read as a node. Open, it disappears — the calls are on screen and countable |
-| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: the branch root in the target session (caller lives in another session's graph, hangs on ROOT here, tooltip "spawned from <source session>"); and the initiating node in the source session (tooltip "dispatched to <target session>" — otherwise the dispatch leaves no trace in its own graph). Click jumps to the peer session (implementation may come later). **Cross-session only**: a same-session spawn has both ends in the graph and the head's place on the thread already expresses the relationship — no ↗ there |
+| `↗` (top-right corner) | marked on **both sides** of a cross-session spawn: `spawn_remote` on the first target-session user node and `spawn_out` on the initiating source-session node. The target projection places the external caller at ROOT; the source attach card stores the target session and branch head. A cross-session attach does not create an in-graph `attach_returns` edge because its endpoint belongs to another graph. The glyph currently indicates the cross-session relation only; clicking it does not navigate. **Cross-session only**: a same-session spawn has both ends in one graph and keeps the ordinary return edge, so it has no ↗ |
 
 ---
 
@@ -428,7 +428,7 @@ historical multi-generation delegation chains remain drawable.
 ```
 apps/web/lib/runtime-bridge/dag/
   pipeline.ts        orchestration: passes → layout → edges → nodes → badges → canvas
-  canvas.ts          the infinite canvas: pan / zoom / fit, and the dot lattice
+  interaction/canvas.ts  the infinite canvas: pan / zoom / fit, and the dot lattice
                      that makes the grid visible
   passes/            data transforms, applied in order:
     merge-runs.ts               merge consecutive runs of the same node
@@ -655,7 +655,7 @@ currently looking at, before you have retried it. Off-HEAD alone would grey
 every sibling branch. The node has to be a failure *and* abandoned.
 
 `status` is the store's own terminal marker, written by the turn machinery
-([Execution cancellation](../execution/turn-cancellation.html) for the cancel case, which stays
+([Unified execution control](../execution/execution-control.html) for the cancel case, which stays
 `cancelled` and keeps its own 50% grey). The graph reads it; it never decides
 it.
 
@@ -679,7 +679,7 @@ Nothing else — no window competes with the expansion. The right rail's
 Details view still fills quietly for whenever the user opens it.
 
 **Right-click → the SAME card expands in place.** Not a second window: the
-one card element deepens where it stands (`tooltip.ts expandTooltip`) — every
+one card element deepens where it stands (`interaction/tooltip.ts expandTooltip`) — every
 field, longer previews, coverage state, context standing, id — and the verbs
 join at its bottom: checkout to this branch · fork from this node · fork and
 edit this message (user turns only) · copy node id · view raw JSON. One row
@@ -783,27 +783,27 @@ The whole spec is implemented. Where each part lives:
 
 | Spec item | Implementation |
 |---|---|
-| Infinite canvas (pan / zoom / fit / dot lattice) | `dag/canvas.ts` + `.history-body` in `styles/dag/canvas.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
+| Infinite canvas (pan / zoom / fit / dot lattice) | `dag/interaction/canvas.ts` + `.history-body` in `styles/dag/canvas.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
 | §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement that inserts later chain rows and reserves thread columns); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `apps/web/scripts/check-dag-subagent.mjs` |
 | §2 rule ③ glyphs are cells | no shape is sized from text, and no text draws on the canvas beyond the shoulder count and the capsule note |
-| §4 HEAD breathing glow | `render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `styles/dag/nodes.css` (reduced-motion → steady glow); every glyph stays hollow (`shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
+| §4 HEAD breathing glow | `render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `styles/dag/nodes.css` (reduced-motion → steady glow); every glyph stays hollow (`render/shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
 | §0/§12 call-thread aggregation | `passes/thread.ts` (`buildThreadModel`: anchor merge, event attribution, recursive visibility); `render/nodes.ts` draws the shoulder count (`history-thread-count`); `_threadOpen` in `store/globals.ts` |
-| Rule ② corollary (no placeholder box) | `shapes.ts`: no `square_outline`; task renders as a plain square |
+| Rule ② corollary (no placeholder box) | `render/shapes.ts`: no `square_outline`; task renders as a plain square |
 | §4 status on the stroke | `graph_builder` emits status; `nodes.ts` draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
 | §5 badge anchoring | `render/badges.ts`: anchor at last conversation-layer node, half-column left shift when a line crosses the anchor cell, measured-pixel-box collision slides down one row |
-| Scene 8 merge shape and lines | `shapes.ts` `merge_dot` (◉); `edges.ts` merge-in line peer-colored 2.4px solid |
+| Scene 8 merge shape and lines | `render/shapes.ts` `merge_dot` (◉); `edges.ts` merge-in line peer-colored 2.4px solid |
 | Scenes 8/10 attach pointer | backend filters it (display=runtime) + `graph_builder` stamps the ref onto the embed host (`attach_returns`); `edges.ts` draws the long-dash return line |
-| §4 cross-session ↗ | `graph_builder` stamps `spawn_remote` (target side); `nodes.ts` draws ↗ (source-side `spawn_out` rendering is ready, awaiting a data source that stamps it) |
+| §4 cross-session ↗ | `graph_builder` stamps `spawn_remote` from target-root provenance and `spawn_out` from the source attach's target session; `nodes.ts` draws ↗ on both sides. Cross-session badge navigation is not implemented |
 | §1 spawn root tier | `graph_layout`: tier=1 / same-row depth / new lane; `task_followup` without an attach pointer re-parents onto the receiving turn (`filter.py` fallback) |
 | Composer shared by both perspectives | `styles/chat/center-pane.css` hides `#chatArea`, not `#chatView`; asserted by `apps/web/scripts/check-center-tabs.mjs` |
 | In-graph branch tags (checkout buttons) | `render/badges.ts`; hover styles on `.history-branch-tag` in `styles/dag/badges.css` |
 | §8 coverage query | `routes/tree.py::_coverage_nodes` fills `/context-range`'s `nodes`; tested in `tests/unit/context/test_context_range_coverage.py` |
 | §8 aged / spilled drawing | `render/nodes.ts` (stroke-opacity + `▤`), fed by `_coverageSet` in `store/globals.ts` |
 | §9 `covers_ids` on the wire | `webui/graph_builder.py` resolves `metadata.covers` to ids; tested in `tests/unit/dag/test_graph_builder_covers.py` |
-| §9 capsule shape | `shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
+| §9 capsule shape | `render/shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
 | §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `apps/web/scripts/check-dag-summary.mjs` |
 | §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
-| §11 one card, two states / fork & edit | `dag/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `render/interaction.ts`; the actions go through `POST /api/chat/checkout` |
+| §11 one card, two states / fork & edit | `dag/interaction/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `interaction/nodes.ts`; the actions go through `POST /api/chat/checkout` |
 | §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `styles/dag/hud.css` |
-| §12 call thread + agent spawn | `shapes.ts` (spawn → square), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `render/interaction.ts` (`toggleThreadOpen`); executed by `apps/web/scripts/check-dag-subagent.mjs` |
+| §12 call thread + agent spawn | `render/shapes.ts` (spawn → square), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `interaction/nodes.ts` (`toggleThreadOpen`); executed by `apps/web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

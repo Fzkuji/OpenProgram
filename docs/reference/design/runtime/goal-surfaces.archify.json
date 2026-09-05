@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Goal 在 Web 与 TUI 的一致交互",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {"id": "web", "label": "Web"},
+    {"id": "tui", "label": "TUI"},
+    {"id": "contract", "label": "Shared Goal Actions"},
+    {"id": "state", "label": "Durable State"}
+  ],
+  "mainPath": ["chip", "panel", "action", "transition", "repository", "projection"],
+  "nodes": [
+    {"id": "chip", "lane": "web", "col": 0, "type": "frontend", "label": "底部 Goal 状态条", "sublabel": "状态 · 进度 · 用量", "width": 150},
+    {"id": "panel", "lane": "web", "col": 1, "type": "frontend", "label": "Goal 详情面板", "sublabel": "prompt · checklist · 问题队列", "width": 154},
+    {"id": "tui_status", "lane": "tui", "col": 0, "type": "frontend", "label": "/goal status", "sublabel": "完整状态与原因", "width": 150},
+    {"id": "tui_action", "lane": "tui", "col": 1, "type": "frontend", "label": "/goal action", "sublabel": "edit · answer · resume · clear", "width": 154},
+    {"id": "action", "lane": "contract", "col": 2, "type": "backend", "label": "Goal Action API", "sublabel": "同一校验与错误合同", "width": 154},
+    {"id": "transition", "lane": "contract", "col": 3, "type": "security", "label": "版本化转移", "sublabel": "expected_version · lease", "width": 154},
+    {"id": "repository", "lane": "state", "col": 4, "type": "database", "label": "Goal Snapshot", "sublabel": "checkpoint + question queue", "width": 154},
+    {"id": "projection", "lane": "state", "col": 5, "type": "messagebus", "label": "Goal Projection", "sublabel": "hydrate + goal_update", "width": 154}
+  ],
+  "edges": [
+    {"id": "chip_panel", "from": "chip", "to": "panel", "label": "click / keyboard"},
+    {"id": "panel_action", "from": "panel", "to": "action", "label": "typed action", "variant": "emphasis"},
+    {"id": "status_action", "from": "tui_status", "to": "tui_action"},
+    {"id": "tui_api", "from": "tui_action", "to": "action", "label": "same action", "variant": "emphasis"},
+    {"id": "action_transition", "from": "action", "to": "transition", "label": "validate"},
+    {"id": "transition_repo", "from": "transition", "to": "repository", "label": "atomic save", "variant": "security"},
+    {"id": "repo_projection", "from": "repository", "to": "projection", "label": "committed state", "variant": "dashed"},
+    {"id": "projection_chip", "from": "projection", "to": "panel", "label": "reload / live update", "variant": "dashed", "role": "return"}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "Web 面板", "items": ["状态条打开完整 Goal，不是静态标签", "问题可累计并按 question ID 异步回答"]},
+    {"dot": "violet", "title": "TUI 命令", "items": ["/goal answer 与 Web 使用同一动作合同", "回答不打断仍在进行的独立工作"]},
+    {"dot": "amber", "title": "重启后", "items": ["页面 hydration 立即恢复 Goal 内容", "运行中断显示 paused_recoverable，并提供继续按钮"]}
+  ]
+}

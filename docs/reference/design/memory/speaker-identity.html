@@ -1185,7 +1185,7 @@
     <code>owner/install/&lt;16 hex&gt;</code>只从实例状态目录的<code>owner.json</code>读取或首次创建，不从发言人推导。
     运行时只有两档：本地owner取得完整集合；已配对渠道只有<code>reply</code>与
     <code>memory.source.append</code>。未配对消息不是第三档，不进入agent；未配对群聊正文仅以pending来源归档且不参与主动提炼。
-    唯一的工具执行检查位于<code>openprogram/agent/internals/_approval.py::_gated_execute</code>，顺序是不可配置的
+    唯一的工具执行检查位于<code>openprogram/agent/permissions/approval.py::_gated_execute</code>，顺序是不可配置的
     hard constraint之后、permission rules、审批与<code>bypass</code>之前；它只读取<code>principal_id</code>和
     <code>authority_tier</code>，不读取正文speaker。同步continuation、Task、inbox、subagent及spawn子进程都通过
     可序列化字段显式传播并只能继承现有tier。paired的<code>memory_update</code>在工作区层强制为新建或字节追加；

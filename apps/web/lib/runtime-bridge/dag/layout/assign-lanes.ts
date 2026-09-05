@@ -19,8 +19,10 @@ export function _headAncestors(
   headId: string | null,
 ): string[] {
   const out: string[] = [];
+  const seen = new Set<string>();
   let cur = headId;
-  while (cur && byId[cur]) {
+  while (cur && byId[cur] && !seen.has(cur)) {
+    seen.add(cur);
     out.push(cur);
     cur = layoutParent(byId[cur]) || null;
   }

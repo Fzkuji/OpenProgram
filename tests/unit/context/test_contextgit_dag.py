@@ -14,6 +14,7 @@ from openprogram.context.git import (
     linear_history,
     normalize_parent_pointers,
     sibling_index,
+    sibling_navigation_index,
     siblings,
 )
 
@@ -144,6 +145,120 @@ def test_siblings_same_predecessor_user_turns_still_group():
         _msg("a3", "u1", ts=4),
     ]
     assert [s["id"] for s in siblings(msgs, "a2")] == ["a1", "a2", "a3"]
+
+
+def test_siblings_stable_sort_does_not_search_source_positions():
+    class EqualityCountingMessage(dict):
+        comparisons = 0
+
+        def __eq__(self, other):
+            type(self).comparisons += 1
+            return super().__eq__(other)
+
+    msgs = [
+        EqualityCountingMessage(
+            id=f"a{i}", predecessor="u1", created_at=10,
+        )
+        for i in range(64)
+    ]
+
+    ordered = siblings(msgs, "a63")
+
+    # Equal timestamps retain source order, without a quadratic list.index
+    # search for each sort key.
+    assert [m["id"] for m in ordered] == [f"a{i}" for i in range(64)]
+    assert EqualityCountingMessage.comparisons <= len(msgs) * 4, (
+        "stable sibling ordering must carry source positions instead of "
+        f"searching the list: {EqualityCountingMessage.comparisons} "
+        f"comparisons for {len(msgs)} messages"
+    )
+
+
+def test_sibling_navigation_index_only_sorts_requested_groups():
+    class CreatedAtCountingMessage(dict):
+        reads = 0
+
+        def get(self, key, default=None):
+            if key == "created_at":
+                type(self).reads += 1
+            return super().get(key, default)
+
+    msgs = [
+        CreatedAtCountingMessage(
+            id="active", role="assistant", predecessor="active-parent",
+            created_at=1,
+        ),
+        *[
+            CreatedAtCountingMessage(
+                id=f"offscreen-{i}", role="assistant",
+                predecessor="offscreen-parent", created_at=i,
+            )
+            for i in range(64)
+        ],
+    ]
+
+    navigation = sibling_navigation_index(msgs, target_ids={"active"})
+
+    assert navigation == {"active": (1, 1, None, None)}
+    assert CreatedAtCountingMessage.reads <= 4, (
+        "request-local navigation must not sort unrelated sibling groups: "
+        f"created_at was read {CreatedAtCountingMessage.reads} times"
+    )
+
+
+def test_sibling_navigation_index_matches_existing_edge_case_contracts():
+    msgs = [
+        {"id": "root", "role": "user", "predecessor": None, "created_at": 0},
+        {"id": "retry-a", "role": "assistant", "predecessor": "root",
+         "created_at": 1},
+        {"id": "retry-b", "role": "assistant", "predecessor": "root",
+         "created_at": 2},
+        {"id": "retry-b", "role": "assistant", "predecessor": "root",
+         "created_at": 3},
+        {"id": "left", "role": "assistant", "predecessor": "cycle-root",
+         "created_at": 1},
+        {"id": "cycle-a", "role": "assistant", "predecessor": "cycle-root",
+         "created_at": 2},
+        {"id": "cycle-b", "role": "assistant", "predecessor": "cycle-a",
+         "created_at": 3},
+        {"id": "cycle-a", "role": "assistant", "predecessor": "cycle-b",
+         "created_at": 4},
+        {"id": "spawn-a", "role": "user", "predecessor": None,
+         "caller": "root", "source": "agent_spawn", "created_at": 5},
+        {"id": "spawn-b", "role": "user", "predecessor": None,
+         "caller": "root", "source": "agent_spawn", "created_at": 6},
+        {"id": "runtime", "role": "assistant", "predecessor": None,
+         "display": "runtime", "created_at": 7},
+        {"id": "tool", "role": "tool", "predecessor": None,
+         "created_at": 8},
+        {"id": "code", "role": "code", "predecessor": None,
+         "created_at": 9},
+        {"id": "dangling", "role": "assistant", "predecessor": "missing",
+         "created_at": 10},
+        {"id": None, "role": "tool", "predecessor": None,
+         "created_at": 11},
+    ]
+    target_ids = {message.get("id") for message in msgs if message.get("id")}
+
+    navigation = sibling_navigation_index(msgs, target_ids=target_ids)
+
+    for message_id in target_ids:
+        group_ids = [message["id"] for message in siblings(msgs, message_id)]
+        position = group_ids.index(message_id)
+        index, total = sibling_index(msgs, message_id)
+        expected = (
+            index,
+            total,
+            deepest_leaf(msgs, group_ids[position - 1]) if position > 0 else None,
+            deepest_leaf(msgs, group_ids[position + 1])
+            if position < len(group_ids) - 1 else None,
+        )
+        assert navigation[message_id] == expected
+
+    assert navigation["runtime"] == (1, 1, None, None)
+    assert navigation["tool"] == (1, 1, None, None)
+    assert navigation["code"] == (1, 1, None, None)
+    assert None not in navigation
 
 
 # ---- children ------------------------------------------------------------

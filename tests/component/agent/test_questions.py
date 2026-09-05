@@ -1,288 +1,248 @@
-"""QuestionRegistry + runtime.ask/confirm 三态语义。"""
+"""Runtime interaction APIs consume only a durable pre-wait outcome."""
 from __future__ import annotations
 
-import threading
-import time
+import asyncio
 
 import pytest
 
+import openprogram.execution as execution_module
+from openprogram.execution.attempts import AttemptStore
 from openprogram.agent.questions import (
-    AskTimeout, PendingQuestion, QuestionRegistry, UserDeclined,
-    ask_blocking, get_question_registry, new_question_id,
+    DurableWaitSafePointRequired, PendingQuestion, QuestionRegistry,
+    get_question_registry,
 )
 
 
 @pytest.fixture(autouse=True)
-def _fresh_registry(monkeypatch):
-    import openprogram.agent.questions as Q
-    monkeypatch.setattr(Q, "_registry", QuestionRegistry())
-    yield
+def _execution(monkeypatch, tmp_path):
+    import openprogram.agent.questions as questions
+    from openprogram.agent.run_control import (
+        reset_current_execution_id, set_current_execution_id,
+    )
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.execution.model import CapabilitySet
+    from openprogram.execution.store import ExecutionStore
 
+    store = ExecutionStore(tmp_path / "questions.db")
+    revision = store.create_revision(manifest={"entrypoint": "test"})
+    execution = store.create_execution(
+        execution_id="exec_questions", run_id="run_questions", session_id="s",
+        revision_id=revision.revision_id,
+        capabilities=CapabilitySet(pause=True, safe_point_kinds=("agent.wait.before_tool",)),
+    )
+    leased, reserved = AttemptStore(store).lease(
+        execution.execution_id, expected_version=execution.status_version,
+        owner_id="test", ttl_seconds=30,
+    )
+    AttemptStore(store).activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    monkeypatch.setattr(execution_module, "default_store", lambda: store)
+    monkeypatch.setattr(questions, "_registry", QuestionRegistry())
+    token = set_current_execution_id(execution.execution_id)
+    yield store, execution.execution_id, leased
+    reset_current_execution_id(token)
 
-# registry
-
-def test_resolve_sets_event_and_value():
-    reg = get_question_registry()
-    q = PendingQuestion(id="q1", session_id="s", kind="ask", prompt="?")
-    ev = reg.register(q)
-    assert not ev.is_set()
-    assert reg.resolve("q1", "answered", "luxon") is True
-    assert ev.is_set()
-    assert reg.consume("q1") == ("answered", "luxon")
-
-
-def test_resolve_claim_once():
-    reg = get_question_registry()
-    reg.register(PendingQuestion(id="q1", session_id="s", kind="ask", prompt="?"))
-    assert reg.resolve("q1", "answered", "a") is True
-    assert reg.resolve("q1", "answered", "b") is False   # 第二次领取失败
-
-
-def test_resolve_unknown_id():
-    assert get_question_registry().resolve("nope", "answered", "x") is False
-
-
-def test_list_and_cancel_session():
-    reg = get_question_registry()
-    reg.register(PendingQuestion(id="a", session_id="s1", kind="ask", prompt="?"))
-    reg.register(PendingQuestion(id="b", session_id="s2", kind="ask", prompt="?"))
-    assert {p.id for p in reg.list_pending("s1")} == {"a"}
-    reg.cancel_session("s1")
-    assert reg.list_pending("s1") == []
-    assert reg.consume("a") == ("declined", None)
-
-
-# ask_blocking 三态
-
-def test_ask_blocking_answered_from_other_thread():
-    captured = {}
-    def on_asked(q): captured["id"] = q.id
-
-    def answer_later():
-        time.sleep(0.05)
-        get_question_registry().resolve(captured["id"], "answered", "dayjs")
-
-    threading.Thread(target=answer_later, daemon=True).start()
-    outcome, value = ask_blocking(
-        session_id="s", kind="ask", prompt="lib?", timeout=5, on_asked=on_asked)
-    assert (outcome, value) == ("answered", "dayjs")
-
-
-def test_ask_blocking_timeout():
-    outcome, value = ask_blocking(
-        session_id="s", kind="ask", prompt="?", timeout=0.05,
-        on_asked=lambda q: None)
-    assert outcome == "timeout" and value is None
-
-
-def test_ask_blocking_timeout_retracts_card(monkeypatch):
-    """超时要经 transport 收回前端卡片（广播 question.rejected），否则卡片挂死。"""
-    import openprogram.events as EB
-    frames = []
-    monkeypatch.setattr(EB, "emit_ws_frame", lambda f: frames.append(f))
-    monkeypatch.setattr(EB, "emit_safe", lambda *a, **k: None)
-    outcome, _ = ask_blocking(
-        session_id="s", kind="ask", prompt="?", timeout=0.05,
-        on_asked=lambda q: None)
-    assert outcome == "timeout"
-    assert any(f.get("type") == "question.rejected" for f in frames)
-
-
-# runtime.ask / confirm（用 fake runtime 不依赖 webui/LLM）
 
 class _FakeRuntime:
-    """只复用 Runtime 的 ask/confirm/form，跳过 __init__ 的 provider 解析。"""
     from openprogram.agentic_programming.runtime import Runtime
     ask = Runtime.ask
     confirm = Runtime.confirm
     form = Runtime.form
-    can_ask = Runtime.can_ask
     _ask_raw = Runtime._ask_raw
-    _ui_session_id = lambda self: "s"   # 假装有前端
+    _ui_session_id = lambda self: "s"
 
 
-def _answer_with(qid_box, outcome, value):
-    def on_asked_capture():
-        # by polling registry for the just-registered question
-        pass
-    def worker():
-        time.sleep(0.05)
-        reg = get_question_registry()
-        ps = reg.list_pending()
-        if ps:
-            reg.resolve(ps[0].id, outcome, value)
-    threading.Thread(target=worker, daemon=True).start()
+def _resolved_wait(store, execution_id, attempt, *, kind, request, answer):
+    """Install the result a prior safe-point handoff would make available."""
+    from openprogram.agent.run_control import set_preapproved_wait_id
+    from openprogram.execution.model import CommandKind
+    from openprogram.execution.waits import DurableWaitStore
+
+    wait_id = f"wait_{kind}_{len(DurableWaitStore(store).list_open())}"
+    wait = DurableWaitStore(store).open_wait(
+        wait_id=wait_id, execution_id=execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind=kind, request=request,
+        policy_snapshot={"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
+        expires_at=9_999_999_999, checkpoint_id=None,
+    )
+    execution = store.get_execution(execution_id)
+    assert execution is not None
+    DurableWaitStore(store).resolve_with_command(
+        command_id=f"answer-{wait_id}", execution_id=execution_id,
+        expected_version=execution.status_version, actor={"surface": "test"},
+        kind=CommandKind.WAIT_ANSWER, wait_id=wait.wait_id,
+        generation=wait.claim_generation, answer=answer,
+    )
+    return set_preapproved_wait_id(wait_id)
 
 
-def test_runtime_ask_returns_answer(monkeypatch):
-    rt = _FakeRuntime()
-    _answer_with(None, "answered", "luxon")
-    assert rt.ask("lib?", timeout=5) == "luxon"
+def test_runtime_ask_requires_declared_safe_point(_execution):
+    with pytest.raises(DurableWaitSafePointRequired) as raised:
+        _FakeRuntime().ask("lib?")
+    assert raised.value.code == "runtime_interaction_requires_safe_point"
 
 
-def test_runtime_ask_declined_raises(monkeypatch):
-    rt = _FakeRuntime()
-    _answer_with(None, "declined", None)
-    with pytest.raises(UserDeclined):
-        rt.ask("lib?", timeout=5)
+@pytest.mark.parametrize(("kind", "wait_request", "answer", "invoke", "expected"), [
+    ("ask", {"prompt": "lib?", "options": [], "multi": False, "allow_custom": True, "detail": "", "schema": {}, "questions": []}, "luxon", lambda rt: rt.ask("lib?"), "luxon"),
+    ("ask_many", {"prompt": "", "options": [], "multi": False, "allow_custom": False, "detail": "", "schema": {}, "questions": [{"prompt": "role?", "options": ["a"], "multi": False, "allow_custom": True}]}, ["a"], lambda rt: rt.ask(questions=[{"prompt": "role?", "options": ["a"]}]), ["a"]),
+    ("confirm", {"prompt": "go?", "options": ["确认", "取消"], "multi": False, "allow_custom": False, "detail": "", "schema": {}, "questions": []}, "确认", lambda rt: rt.confirm("go?"), True),
+    ("form", {"prompt": "config", "options": [], "multi": False, "allow_custom": False, "detail": "", "schema": {"name": {"type": "string"}}, "questions": []}, {"name": "Ada"}, lambda rt: rt.form("config", {"name": {"type": "string"}}), {"name": "Ada"}),
+])
+def test_runtime_interaction_consumes_exact_pre_wait(
+    _execution, kind, wait_request, answer, invoke, expected,
+):
+    store, execution_id, attempt = _execution
+    from openprogram.agent.run_control import reset_preapproved_wait_id
 
-
-def test_runtime_ask_timeout_default():
-    rt = _FakeRuntime()
-    assert rt.ask("lib?", timeout=0.05, default="fallback") == "fallback"
-
-
-def test_runtime_ask_timeout_no_default_raises():
-    rt = _FakeRuntime()
-    with pytest.raises(AskTimeout):
-        rt.ask("lib?", timeout=0.05)
-
-
-def test_runtime_confirm_true():
-    rt = _FakeRuntime()
-    _answer_with(None, "answered", "确认")
-    assert rt.confirm("go?", timeout=5) is True
-
-
-def test_runtime_confirm_declined_false():
-    rt = _FakeRuntime()
-    _answer_with(None, "declined", None)
-    assert rt.confirm("go?", timeout=5) is False
-
-
-def test_runtime_confirm_timeout_default():
-    rt = _FakeRuntime()
-    assert rt.confirm("go?", timeout=0.05, default=False) is False
-
-
-# runtime.form 三态（Phase 4a：多字段表单，答案是 dict）
-
-def test_runtime_form_returns_dict():
-    rt = _FakeRuntime()
-    _answer_with(None, "answered", {"name": "Ada", "count": 3})
-    assert rt.form("配置", {"name": {"type": "string"}}, timeout=5) == {
-        "name": "Ada", "count": 3,
-    }
-
-
-def test_runtime_form_declined_raises():
-    rt = _FakeRuntime()
-    _answer_with(None, "declined", None)
-    with pytest.raises(UserDeclined):
-        rt.form("配置", {"name": {"type": "string"}}, timeout=5)
-
-
-def test_runtime_form_timeout_default():
-    rt = _FakeRuntime()
-    assert rt.form("配置", {}, timeout=0.05, default={"name": "x"}) == {"name": "x"}
-
-
-def test_runtime_form_timeout_no_default_raises():
-    rt = _FakeRuntime()
-    with pytest.raises(AskTimeout):
-        rt.form("配置", {}, timeout=0.05)
-
-
-def test_runtime_form_non_dict_answer_coerced_to_empty():
-    """form 收到非 dict 答案（异常前端）时返回 {}，不把脏数据塞给调用方。"""
-    rt = _FakeRuntime()
-    _answer_with(None, "answered", "oops-not-a-dict")
-    assert rt.form("配置", {"x": {"type": "string"}}, timeout=5) == {}
-
-
-# runtime.ask(questions=[...])（一组问题打包，答案是 list）
-
-def test_runtime_ask_questions_returns_list():
-    rt = _FakeRuntime()
-    _answer_with(None, "answered", ["全栈", ["AWS", "GCP"]])
-    out = rt.ask(questions=[
-        {"prompt": "角色?", "options": ["前端", "全栈"]},
-        {"prompt": "云?", "options": ["AWS", "GCP"], "multi": True},
-    ], timeout=5)
-    assert out == ["全栈", ["AWS", "GCP"]]
-
-
-def test_runtime_ask_questions_declined_raises():
-    rt = _FakeRuntime()
-    _answer_with(None, "declined", None)
-    with pytest.raises(UserDeclined):
-        rt.ask(questions=[{"prompt": "q?"}], timeout=5)
-
-
-def test_runtime_ask_questions_timeout_default():
-    rt = _FakeRuntime()
-    assert rt.ask(questions=[{"prompt": "q?"}], timeout=0.05, default=["x"]) == ["x"]
-
-
-def test_ask_questions_reach_pending():
-    """ask(questions=[...]) 的问题数组进了 PendingQuestion.questions（前端据此渲染切换）。"""
-    captured = {}
-    def worker():
-        time.sleep(0.05)
-        reg = get_question_registry()
-        ps = reg.list_pending()
-        if ps:
-            captured["kind"] = ps[0].kind
-            captured["questions"] = ps[0].questions
-            reg.resolve(ps[0].id, "answered", ["a", "b"])
-    threading.Thread(target=worker, daemon=True).start()
-    rt = _FakeRuntime()
-    rt.ask(questions=[{"prompt": "q1", "options": ["a"]}, {"prompt": "q2"}], timeout=5)
-    assert captured["kind"] == "ask_many"
-    assert [q["prompt"] for q in captured["questions"]] == ["q1", "q2"]
-
-
-def test_form_schema_reaches_pending_question():
-    """form 的字段 schema 进了 PendingQuestion（前端据此渲染多字段表单）。"""
-    fields = {"name": {"type": "string", "title": "名字"},
-              "mode": {"type": "string", "enum": ["fast", "slow"]}}
-    captured = {}
-    def worker():
-        time.sleep(0.05)
-        reg = get_question_registry()
-        ps = reg.list_pending()
-        if ps:
-            captured["kind"] = ps[0].kind
-            captured["schema"] = ps[0].schema
-            reg.resolve(ps[0].id, "answered", {"name": "x", "mode": "fast"})
-    threading.Thread(target=worker, daemon=True).start()
-    rt = _FakeRuntime()
-    rt.form("配置", fields, timeout=5)
-    assert captured["kind"] == "form"
-    assert captured["schema"] == fields
-
-
-# ask_user 内置原语接到 runtime.ask（复活老接口 + clarify 工具）
-
-def test_ask_user_routes_to_runtime_ask(monkeypatch):
-    """有前端执行上下文（runtime.can_ask）时，ask_user 走 runtime.ask 活链路，
-    不再返回 None。"""
-    import openprogram.programs.workflow.ask_user as A
-    from openprogram.agentic_programming.function import _current_runtime
-
-    # 没有旧全局 handler（webui 路径本来就没注册）
-    A.set_ask_user(None)
-
-    class _RT:
-        def can_ask(self): return True
-        def ask(self, q, **kw): return "来自 runtime.ask 的答案"
-
-    token = _current_runtime.set(_RT())
+    token = _resolved_wait(
+        store, execution_id, attempt, kind=kind, request=wait_request, answer=answer,
+    )
     try:
-        assert A.ask_user("随便问点啥？") == "来自 runtime.ask 的答案"
+        assert invoke(_FakeRuntime()) == expected
     finally:
-        _current_runtime.reset(token)
+        reset_preapproved_wait_id(token)
 
 
-def test_ask_user_no_runtime_no_handler_returns_none(monkeypatch):
-    """无 handler、无可问 runtime、非 TTY → 老语义 None（不崩）。"""
-    import openprogram.programs.workflow.ask_user as A
-    from openprogram.agentic_programming.function import _current_runtime
+def test_runtime_rejects_pre_wait_with_different_request(_execution):
+    store, execution_id, attempt = _execution
+    from openprogram.agent.run_control import reset_preapproved_wait_id
 
-    A.set_ask_user(None)
-    token = _current_runtime.set(None)
-    monkeypatch.setattr(A.sys, "stdin", None)
+    token = _resolved_wait(
+        store, execution_id, attempt, kind="ask",
+        request={"prompt": "declared", "options": [], "multi": False, "allow_custom": True, "detail": "", "schema": {}, "questions": []},
+        answer="a",
+    )
     try:
-        assert A.ask_user("没人能答") is None
+        with pytest.raises(DurableWaitSafePointRequired):
+            _FakeRuntime().ask("different")
     finally:
-        _current_runtime.reset(token)
+        reset_preapproved_wait_id(token)
+
+
+def test_registry_is_only_a_wake_notifier(_execution):
+    store, execution_id, attempt = _execution
+    from openprogram.execution.waits import DurableWaitStore
+
+    reg = get_question_registry()
+    with pytest.raises(DurableWaitSafePointRequired):
+        reg.register(PendingQuestion(id="missing", session_id="s", kind="ask", prompt="?"))
+    wait = DurableWaitStore(store).open_wait(
+        wait_id="wait_notifier", execution_id=execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind="ask", request={"prompt": "?"}, policy_snapshot={"version": 1},
+        expires_at=9_999_999_999, checkpoint_id=None,
+    )
+    event = reg.register(PendingQuestion(
+        id=wait.wait_id, session_id="s", kind="ask", prompt="?",
+        execution_id=execution_id,
+    ))
+    assert not event.is_set()
+    reg.wake(wait.wait_id)
+    assert event.is_set()
+
+
+def test_registry_removes_terminal_event_after_consume(_execution):
+    store, execution_id, attempt = _execution
+    from openprogram.execution.model import CommandKind
+    from openprogram.execution.waits import DurableWaitStore
+
+    waits = DurableWaitStore(store)
+    wait = waits.open_wait(
+        wait_id="wait_cleanup", execution_id=execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind="ask", request={"prompt": "?"},
+        policy_snapshot={"version": 1}, expires_at=9_999_999_999,
+    )
+    registry = get_question_registry()
+    registry.register(PendingQuestion(
+        id=wait.wait_id, session_id="s", kind="ask", prompt="?",
+        execution_id=execution_id,
+    ))
+    current = store.get_execution(execution_id)
+    assert current is not None
+    waits.resolve_with_command(
+        command_id="answer-cleanup", execution_id=execution_id,
+        expected_version=current.status_version, actor={"surface": "test"},
+        kind=CommandKind.WAIT_ANSWER, wait_id=wait.wait_id,
+        generation=wait.claim_generation, answer="done",
+    )
+    assert registry.consume(wait.wait_id) == ("answered", "done")
+    assert wait.wait_id not in registry._events
+
+
+def test_wait_command_requires_authorized_actor(_execution):
+    store, execution_id, attempt = _execution
+    from openprogram.execution import DriverRegistry, RuntimeControlService, submit_wait_command
+    from openprogram.execution.authorization import ExecutionAuthorizationError
+    from openprogram.execution.waits import DurableWaitStore
+
+    wait = DurableWaitStore(store).open_wait(
+        wait_id="wait_auth", execution_id=execution_id,
+        attempt_id=attempt.attempt_id, generation=attempt.generation,
+        kind="ask", request={"prompt": "?"},
+        policy_snapshot={"version": 1}, expires_at=9_999_999_999,
+    )
+    current = store.get_execution(execution_id)
+    assert current is not None
+    service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    with pytest.raises(ExecutionAuthorizationError):
+        asyncio.run(submit_wait_command(
+            service, action="execution.wait.answer", command_id="unauth-wait",
+            execution_id=execution_id, expected_version=current.status_version,
+            actor={"surface": "untrusted"}, wait_id=wait.wait_id,
+            generation=wait.claim_generation, value="nope",
+        ))
+    assert store.get_command("unauth-wait") is None
+
+
+def test_agent_loop_stops_before_a_declared_interaction_effect():
+    import asyncio
+    import time
+    from openprogram.agent.agent_loop import _execute_tool_calls
+    from openprogram.agent.types import AgentTool, AgentToolResult
+    from openprogram.providers.types import AssistantMessage, TextContent, ToolCall
+    from openprogram.providers.utils.event_stream import EventStream
+
+    ran = False
+    seen = []
+
+    async def execute(*_args):
+        nonlocal ran
+        ran = True
+        return AgentToolResult(content=[TextContent(text="unexpected")], details={}, is_error=False)
+
+    tool = AgentTool(
+        name="ask-tool", description="declares a question",
+        parameters={"type": "object", "properties": {}}, label="ask-tool",
+        execute=execute,
+    )
+    object.__setattr__(tool, "_interaction_manifest", lambda _id, _args: {
+        "kind": "ask", "prompt": "Continue?", "options": ["yes", "no"],
+        "allow_custom": False, "detail": "", "request_metadata": {},
+        "policy_snapshot": {"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
+        "timeout": 30.0,
+    })
+
+    async def safe_point(kind, payload):
+        seen.append((kind, payload["pre_wait"]))
+        return True
+
+    message = AssistantMessage(
+        content=[ToolCall(id="call-ask", name="ask-tool", arguments={})],
+        api="openai-completions", provider="openai", model="fake",
+        stop_reason="toolUse", timestamp=int(time.time() * 1000),
+    )
+    outcome = asyncio.run(_execute_tool_calls(
+        [tool], message, None, EventStream(), safe_point_hook=safe_point,
+    ))
+    assert outcome["stop_at_safe_point"] is True
+    assert ran is False
+    assert seen == [("tool.before", {
+        "kind": "ask", "prompt": "Continue?", "options": ["yes", "no"],
+        "allow_custom": False, "detail": "", "request_metadata": {},
+        "policy_snapshot": {"version": 1, "on_answer": "continue", "on_decline": "fail", "on_timeout": "fail"},
+        "timeout": 30.0,
+    })]

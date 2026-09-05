@@ -133,14 +133,9 @@ export function Avatar({
   // mode so toggling modes in settings doesn't lose its memo cache.
   // The SVG string is ~1 KB, cheap to keep around.
   //
-  // ``backgroundColor`` is set for every style — some styles
-  // (notionists, lorelei) default to ``transparent`` and render
-  // their characters in dark line art, which on a dark page makes
-  // the entire avatar invisible. The palette below is DiceBear's
-  // own pastel default; the seed picks deterministically so the
-  // same seed always gets the same colour. Styles that already
-  // fill their circle (shapes, bottts, initials) draw on top of
-  // the background colour, so this is a safe no-op for them.
+  // Most styles use a deterministic pastel background so transparent
+  // artwork stays visible on both themes. Thumbs is handled separately
+  // below because its circular portrait requires no additional background.
   const svg = useMemo(() => {
     try {
       // Don't pass ``size`` to createAvatar — some styles
@@ -151,15 +146,6 @@ export function Avatar({
       // viewBox; the wrapping ``<span>`` then scales it down with
       // ``width: 100%; height: 100%`` so the whole character is
       // visible regardless of container size.
-      //
-      // ``backgroundColor`` is set for every style — some styles
-      // (notionists, lorelei) default to transparent and render
-      // their characters in dark line art, which on a dark page
-      // makes the entire avatar invisible. The palette is DiceBear's
-      // own pastel default; the seed picks deterministically so the
-      // same seed always gets the same colour. Styles that already
-      // fill their circle (shapes, bottts, initials) draw on top of
-      // the background colour, so this is a safe no-op for them.
       const raw = createAvatar(STYLES[style] as never, {
         seed,
         // Render at 200px internally — some character styles
@@ -168,7 +154,10 @@ export function Avatar({
         // bake leaves a 4-px head that visually disappears. Big
         // canvas + CSS-driven shrink keeps the head readable.
         size: 200,
-        backgroundColor: [
+        // Thumbs already draws a complete circular portrait. Its generated
+        // rectangular background remains visible around that inset circle,
+        // so suppress that layer instead of cropping or scaling the artwork.
+        backgroundColor: style === "thumbs" ? ["transparent"] : [
           "b6e3f4",
           "c0aede",
           "d1d4f9",

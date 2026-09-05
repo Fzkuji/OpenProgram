@@ -184,9 +184,12 @@ def _build_items_from_node(
 
     # Attach pointer
     attach = _parse_attach_blob(node)
+    if str(attach.get("status") or "").strip().lower() == "running":
+        return []
     label = (attach.get("label") if isinstance(attach, dict) else "") or ""
     label = label.strip()
     source_commit_id = (attach.get("source_commit_id") or "").strip() or None
+    source_session_id = (attach.get("session_id") or "").strip() or None
     # ``is_base`` (set by merge prompt prep) tells the generator to
     # lock the attached items so summarize/aging can't drop the base
     # branch's content out of the merge prompt — see scenario D in
@@ -202,15 +205,16 @@ def _build_items_from_node(
         try:
             from .store import load_commit
             src_commit = load_commit(
-                store, source_commit_id, session_id=session_id,
+                store,
+                source_commit_id,
+                session_id=source_session_id or session_id,
             )
         except Exception:
             src_commit = None
-        # Cross-session: source lives in a different session_id than
-        # the one we're committing into. Caller didn't pass that
-        # session id; ``load_commit`` falls back to a global scan
-        # which already works, so no extra plumbing needed.
-        if src_commit is None:
+        # Legacy rows may not name the source session. Only those require the
+        # global fallback; current cross-session pointers resolve O(1) from
+        # attach.session_id instead of scanning every session repository.
+        if src_commit is None and source_session_id is None:
             try:
                 from .store import load_commit
                 src_commit = load_commit(store, source_commit_id)

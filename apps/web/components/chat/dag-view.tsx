@@ -40,13 +40,13 @@ import { Maximize2, Minus, Plus, Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
-import { fitCanvas, resetZoom, zoomStep } from "@/lib/runtime-bridge/dag/canvas";
+import { fitCanvas, resetZoom, zoomStep } from "@/lib/runtime-bridge/dag/interaction/canvas";
 import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
 
 const STROKE = "var(--accent-primary, #4a7dfc)";
 const GHOST = "var(--dag-ghost, #c9c7bf)";
 
-/** Shape swatches, drawn with the same primitives `shapes.ts` uses so
+/** Shape swatches, drawn with the same primitives `render/shapes.ts` uses so
  *  the key and the canvas can never drift apart. */
 const SHAPES: Record<string, React.ReactNode> = {
   root: <rect x="3" y="3" width="9" height="9" transform="rotate(45 7.5 7.5)"
@@ -147,7 +147,7 @@ function DagLegend() {
  *  into the composer's `#dagHudSlot` so they ride the composer wherever
  *  it sits and however tall it grows. Rendered only while the DAG
  *  perspective is showing — the slot stays an empty div in chat. The
- *  zoom readout is written by `dag/canvas.ts` on every view change — it
+ *  zoom readout is written by `dag/interaction/canvas.ts` on every view change — it
  *  is the camera's number, and routing it through React state would
  *  repaint the tree on every wheel event of a gesture. */
 function DagHud({ active }: { active: boolean }) {
@@ -186,7 +186,7 @@ function DagHud({ active }: { active: boolean }) {
       </button>
       {/* 缩放簇：一颗胶囊里 [−] [倍率] [+]。−/+ 步进一个滚轮格，
           倍率数字本身点击重置 100%——都以画布中心为锚
-          （canvas.ts::zoomStep / resetZoom）。 */}
+          （interaction/canvas.ts::zoomStep / resetZoom）。 */}
       <div className="dag-hud-chip dag-hud-zoomctl">
         <button
           type="button"

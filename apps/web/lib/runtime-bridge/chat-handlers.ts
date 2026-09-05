@@ -86,6 +86,7 @@ interface ChatAckData {
   session_id?: string;
   msg_id?: string;
   execution_id?: string;
+  status_version?: number;
   /** Effective permission mode the backend adopted for this turn. */
   permission_mode?: string;
   /** Set by a function dispatch (retry_function) whose top-level code node
@@ -130,7 +131,8 @@ export function wsHandleChatAck(data: ChatAckData): void {
         history.pushState(null, "", "/s/" + sid);
       }
     }
-    if (typeof data.permission_mode === "string" && data.permission_mode) {
+    if (typeof data.permission_mode === "string" && data.permission_mode
+      && !useSessionStore.getState().composerSettingsBySession[sid]?.permission_version) {
       useSessionStore.getState().setComposerSettings(
         { effective_permission: data.permission_mode },
         sid,
@@ -165,14 +167,54 @@ export function wsHandleChatAck(data: ChatAckData): void {
     // it's idempotent with the incoming running_task broadcast (which
     // overwrites the same key with a richer payload). Without this the
     // sending tab's row appears but doesn't flow until that round-trip.
-    useSessionStore
-      .getState()
-      .setRunningTaskFor(sid, {
-        session_id: sid,
-        msg_id: data.msg_id || "",
-        execution_id: data.execution_id
-          || (data.msg_id ? `${data.msg_id}_reply` : undefined),
-      });
+    const optimisticStop = runtimeState._optimisticStops[sid];
+    const stoppedOptimistically = Boolean(optimisticStop);
+    if (optimisticStop) {
+      delete runtimeState._optimisticStops[sid];
+      const replyId = data.execution_id || (data.msg_id ? `${data.msg_id}_reply` : "");
+      if (replyId && useSessionStore.getState().messagesById[replyId]) {
+        useSessionStore.getState().updateMessage(sid, replyId, { status: "cancelled" });
+      }
+      if (data.execution_id && typeof data.status_version === "number") {
+        const commandId = crypto.randomUUID();
+        runtimeState._optimisticCancels[commandId] = {
+          sessionId: sid,
+          task: {
+            session_id: sid,
+            msg_id: data.msg_id || "",
+            execution_id: data.execution_id,
+            status_version: data.status_version,
+          },
+          messageId: optimisticStop.messageId || replyId || undefined,
+          previousMessageStatus: optimisticStop.previousMessageStatus,
+        };
+        const sock = getSocket();
+        if (!sock || sock.readyState !== WebSocket.OPEN) {
+          delete runtimeState._optimisticCancels[commandId];
+        } else {
+          try {
+            sock.send(JSON.stringify({
+              action: "execution.cancel",
+              command_id: commandId,
+              execution_id: data.execution_id,
+              expected_version: data.status_version,
+            }));
+          } catch {
+            delete runtimeState._optimisticCancels[commandId];
+          }
+        }
+      }
+      if (isActive) setRunning(false);
+    } else {
+      useSessionStore
+        .getState()
+        .setRunningTaskFor(sid, {
+          session_id: sid,
+          msg_id: data.msg_id || "",
+          execution_id: data.execution_id,
+          status_version: data.status_version,
+        });
+    }
     if (isActive) {
       void loadAgentSettings();
       refreshChannelBadge();
@@ -183,7 +225,7 @@ export function wsHandleChatAck(data: ChatAckData): void {
     fetchBranches(sid).then(() => {
       if (isActive) refreshBranchBadge();
     });
-    if (isActive) setRunActive(true);
+    if (isActive && !stoppedOptimistically) setRunActive(true);
   }
 
   // Function dispatch (Retry): the top-level code node is already on disk
@@ -193,7 +235,7 @@ export function wsHandleChatAck(data: ChatAckData): void {
   // and is a no-op once this load_session lands the card. Guarded on
   // function_run so a plain chat ack is untouched.
   if (data.function_run && data.session_id === runtimeState.currentSessionId) {
-    runtimeState.__reloadOnTaskClear = data.session_id;
+    runtimeState.__reloadOnTaskClear.add(data.session_id);
     const sock = getSocket();
     if (sock && sock.readyState === WebSocket.OPEN) {
       sock.send(
@@ -262,6 +304,147 @@ export function wsHandleStatus(msg: StatusMsg): void {
     }
   }
   updatePauseBtn();
+}
+
+type ExecutionCommandFrame = {
+  command?: {
+    command_id?: unknown;
+    execution_id?: unknown;
+    status?: unknown;
+    result_version?: unknown;
+    latest_snapshot?: {
+      execution_id?: unknown;
+      session_id?: unknown;
+      status?: unknown;
+      status_version?: unknown;
+    };
+  };
+};
+
+const executionMessageStatuses = new Set([
+  "pending", "running", "streaming", "done", "completed", "error",
+  "cancelled", "cancelling", "interrupted",
+]);
+
+function messageStatusForExecution(status: unknown): string {
+  const value = String(status || "").toLowerCase();
+  if (value === "cancelled") return "cancelled";
+  if (value === "completed") return "completed";
+  if (value === "failed" || value === "reconciliation_required") return "error";
+  if (value === "interrupted") return "interrupted";
+  if (value === "cancelling") return "cancelling";
+  return "running";
+}
+
+/** Apply the canonical exact-command acknowledgement before its paired
+ * `execution.updated` frame. A stale rejection carries the authoritative
+ * execution snapshot and must undo the local stop for that exact command. */
+export function handleExecutionCommandUpdated(frame: unknown): void {
+  const command = (frame as ExecutionCommandFrame | null)?.command;
+  if (!command || typeof command !== "object") return;
+  const commandId = typeof command.command_id === "string"
+    ? command.command_id : "";
+  const executionId = typeof command.execution_id === "string"
+    ? command.execution_id : "";
+  const status = String(command.status || "").toLowerCase();
+  if (!commandId || !executionId) return;
+  const pending = runtimeState._optimisticCancels[commandId];
+  if (status !== "accepted" && status !== "applied" && status !== "rejected") {
+    return;
+  }
+  if (status !== "rejected") {
+    const resultVersion = typeof command.result_version === "number"
+      ? command.result_version
+      : command.latest_snapshot?.status_version;
+    const store = useSessionStore.getState();
+    const sessionId = pending?.sessionId
+      || (typeof command.latest_snapshot?.session_id === "string"
+        ? command.latest_snapshot.session_id
+        : undefined)
+      || Object.entries(store.runningTasks)
+      .find(([, task]) => task.execution_id === executionId)?.[0];
+    if (sessionId && typeof resultVersion === "number") {
+      const current = store.runningTasks[sessionId];
+      if (
+        current
+        && current.execution_id === executionId
+        && !(current && typeof current.status_version === "number"
+          && current.status_version > resultVersion)
+      ) {
+        store.setRunningTaskFor(sessionId, {
+          ...current,
+          execution_id: executionId,
+          status_version: resultVersion,
+        }, "never");
+      }
+    }
+    // Accepted may be an intermediate command lifecycle frame; only the
+    // terminal applied frame closes the optimistic entry.
+    if (status === "applied") delete runtimeState._optimisticCancels[commandId];
+    return;
+  }
+
+  const snapshot = command.latest_snapshot;
+  const snapshotExecutionId = typeof snapshot?.execution_id === "string"
+    ? snapshot.execution_id : "";
+  const snapshotSessionId = typeof snapshot?.session_id === "string"
+    ? snapshot.session_id : "";
+  const snapshotVersion = snapshot?.status_version;
+  // `latest_snapshot` is the canonical recovery payload. Without it a
+  // rejection cannot prove that the execution still exists, so preserve the
+  // optimistic stop and let the normal transcript/run-state reload settle it.
+  if (
+    !pending
+    || snapshotExecutionId !== executionId
+    || !snapshotSessionId
+    || snapshotSessionId !== pending.sessionId
+    || typeof snapshotVersion !== "number"
+  ) {
+    delete runtimeState._optimisticCancels[commandId];
+    return;
+  }
+  const store = useSessionStore.getState();
+  const current = store.runningTasks[snapshotSessionId];
+  // A queued follow-up may already own the session. An old rejection must
+  // never replace that newer execution with the cancelled command's task.
+  if (current?.execution_id && current.execution_id !== executionId) {
+    delete runtimeState._optimisticCancels[commandId];
+    return;
+  }
+  if (
+    current
+    && typeof current.status_version === "number"
+    && current.status_version > snapshotVersion
+  ) {
+    delete runtimeState._optimisticCancels[commandId];
+    return;
+  }
+  const restoredTask = {
+    ...pending.task,
+    session_id: snapshotSessionId,
+    execution_id: executionId,
+    status_version: snapshotVersion,
+    cancelling: false,
+  };
+  store.setRunningTaskFor(snapshotSessionId, restoredTask, "never");
+  const messageId = pending.messageId || executionId;
+  if (store.messagesById[messageId]) {
+    const messageStatus = messageStatusForExecution(
+      snapshot?.status ?? pending.previousMessageStatus,
+    );
+    if (executionMessageStatuses.has(messageStatus)) {
+      store.updateMessage(snapshotSessionId, messageId, {
+        status: messageStatus as never,
+      });
+    }
+  }
+  if (snapshotSessionId === runtimeState.currentSessionId) {
+    runtimeState.isPaused = String(snapshot?.status || "") === "paused";
+    setRunning(true);
+    setRunActive(true);
+    updatePauseBtn();
+  }
+  delete runtimeState._optimisticCancels[commandId];
 }
 
 /* ===== sessions_list / running_task ============================== */
@@ -414,6 +597,7 @@ export function handleRunningTask(rt: unknown): void {
     display_params?: string;
     stream_events?: unknown[];
     execution_id?: string;
+    status_version?: number;
   };
 
   // 先做 cancelled 守卫，再碰任何 occupancy。旧代码先 setRunning(true)
@@ -424,7 +608,11 @@ export function handleRunningTask(rt: unknown): void {
   const mid = t.msg_id;
   const store = useSessionStore.getState();
   const replyId = mid ? mid + "_reply" : "";
-  const executionId = t.execution_id || replyId;
+  const priorTask = sid ? store.runningTasks[sid] : undefined;
+  const executionId = t.execution_id || priorTask?.execution_id || replyId;
+  const statusVersion = typeof t.status_version === "number"
+    ? t.status_version
+    : priorTask?.status_version;
   const targetId = executionId && store.messagesById[executionId]
     ? executionId
     : replyId && store.messagesById[replyId]
@@ -461,6 +649,7 @@ export function handleRunningTask(rt: unknown): void {
     func_name: t.func_name,
     started_at: t.started_at,
     execution_id: executionId,
+    status_version: statusVersion,
   });
 }
 
@@ -492,6 +681,32 @@ export function clearHydratedTreePaths(): void {
   hydratedTreePaths.clear();
 }
 
+const terminalFunctionStatuses = new Set([
+  "cancelled",
+  "completed",
+  "done",
+  "error",
+  "failed",
+  "interrupted",
+  "succeeded",
+  "timeout",
+]);
+
+/** A terminal persisted head proves a function run finished before its HTTP
+ *  acknowledgement registered the completion reload. `run_active=false` is
+ *  insufficient: it can precede the final node write by a few milliseconds. */
+export function settleFunctionReloadAfterSessionLoad(
+  sessionId: string,
+  headStatus: unknown,
+): void {
+  if (
+    typeof headStatus === "string"
+    && terminalFunctionStatuses.has(headStatus.trim().toLowerCase())
+  ) {
+    runtimeState.__reloadOnTaskClear.delete(sessionId);
+  }
+}
+
 function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
   const sid = (data as { session_id?: string }).session_id;
   const path = ((data as { tree?: { path?: string } }).tree || {}).path;
@@ -509,7 +724,7 @@ function hydrateTranscriptForTreeUpdate(data: ChatResponseData): void {
   ) {
     return;
   }
-  runtimeState.__reloadOnTaskClear = sid;
+  runtimeState.__reloadOnTaskClear.add(sid);
   const sock = getSocket();
   if (sock && sock.readyState === WebSocket.OPEN) {
     sock.send(JSON.stringify({ action: "load_session", session_id: sid }));
@@ -537,11 +752,12 @@ export function handleRunningTaskClear(
   // retried run is a sibling branch whose HEAD lands at run completion,
   // so re-hydrate now — the branch view then renders only the active
   // version and the old run moves behind the < N/M > switcher.
-  if (runtimeState.__reloadOnTaskClear === sessionId) {
-    runtimeState.__reloadOnTaskClear = null;
-    const sock = getSocket();
-    if (sock && sock.readyState === WebSocket.OPEN) {
-      sock.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
+  if (runtimeState.__reloadOnTaskClear.delete(sessionId)) {
+    if (runtimeState.currentSessionId === sessionId) {
+      const sock = getSocket();
+      if (sock && sock.readyState === WebSocket.OPEN) {
+        sock.send(JSON.stringify({ action: "load_session", session_id: sessionId }));
+      }
     }
   }
   return true;
@@ -695,7 +911,7 @@ export function handleChatResponse(data: ChatResponseData): void {
     && !!runningTask?.msg_id
     && !!data.msg_id
     && data.msg_id !== runningTask.msg_id;
-  if (!nestedRuntimeResult) {
+  if (!nestedRuntimeResult && data.turn_continues !== true) {
     handleRunningTaskClear(sid ?? undefined, {
       execution_id: typeof data.execution_id === "string" ? data.execution_id : undefined,
       msg_id: typeof data.msg_id === "string" ? data.msg_id : undefined,

@@ -182,7 +182,7 @@ export function useFnFormWrapper({
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["data-expanded", "class"],
+      attributeFilter: ["data-expanded", "class", "open"],
     });
     const onResize = () => apply();
     window.addEventListener("resize", onResize);
@@ -373,7 +373,8 @@ function formChromeHeight(el: HTMLDivElement): number {
   const wrapPad = parseFloat(getComputedStyle(el).paddingBottom) || 0;
   const line = labelLineHeight(body);
   const labels = body
-    ? Array.from(body.querySelectorAll("[data-fn-field-label]")) as HTMLElement[]
+    ? (Array.from(body.querySelectorAll("[data-fn-field-label]")) as HTMLElement[])
+      .filter((label) => !label.closest("details:not([open])"))
     : [];
   let fields = 0;
   if (labels.length === 0) {
@@ -390,14 +391,17 @@ function formChromeHeight(el: HTMLDivElement): number {
       fields += parseFloat(bcs.gap || "0") * (labels.length - 1);
     }
   }
-  return headerH + pad + fields + wrapPad;
+  const summaries = body ? Array.from(body.querySelectorAll("details > summary")) as HTMLElement[] : [];
+  const advancedChrome = summaries.reduce((sum, summary) => sum + (summary.parentElement?.offsetHeight || summary.offsetHeight)
+    + (parseFloat(bcs?.gap || "0") || 0), 0);
+  return headerH + pad + fields + advancedChrome + wrapPad;
 }
 
 function targetFnFormHeight(el: HTMLDivElement): number {
   const host = hostViewHeight(el);
   const avail = availableComposerHeight(el);
   // Decision (question/approval/form): size to header + body content.
-  if (el.querySelector("[data-decision]")) {
+  if (el.querySelector("[data-decision], details[open]")) {
     return Math.min(measureDecisionHeight(el), avail);
   }
   const expanded = !!el.querySelector("[data-expanded]");
@@ -449,4 +453,3 @@ function availableComposerHeight(el: HTMLDivElement): number {
   if (hostH < 80) hostH = window.innerHeight;
   return Math.max(160, hostH - envH - controlsH - pad);
 }
-

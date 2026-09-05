@@ -79,6 +79,10 @@ def stream_openai_responses(
             client = _create_client(
                 model, context, api_key, opts.get("headers"),
                 conn_base_url=conn_base_url, conn_headers=conn_headers,
+                idempotency_key=(
+                    opts.get("idempotency_key")
+                    if opts.get("supports_idempotency_key") else None
+                ),
             )
             params = _build_params(model, context, opts)
 
@@ -169,6 +173,7 @@ def _create_client(
     options_headers: dict[str, str] | None = None,
     conn_base_url: str | None = None,
     conn_headers: dict[str, str] | None = None,
+    idempotency_key: str | None = None,
 ) -> Any:
     import openai
 
@@ -188,6 +193,8 @@ def _create_client(
     base_url = conn_base_url or getattr(model, "base_url", None) or ""
     if "copilot" in base_url.lower() or "githubcopilot" in base_url.lower():
         headers.update(copilot_headers)
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
 
     # OpenAI SDK has its own exponential-backoff retry for 429 /
     # 5xx / connection errors. Default is 2; we raise to 3 to match

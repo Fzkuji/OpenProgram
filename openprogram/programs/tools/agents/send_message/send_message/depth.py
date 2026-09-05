@@ -115,8 +115,8 @@ def budget_left(used: int, limit: int) -> bool:
 
 
 def delegation_budget_left() -> bool:
-    """Whether ``agent`` / ``job_output`` / ``job_stop`` still belong
-    in the tool list: true while the MESSAGE budget has room.
+    """Whether delegation tools still belong in the tool list: true
+    while the MESSAGE budget has room.
 
     Every form of delegation hands a message over — a spawn, an
     ``agent(to=…)`` dispatch and a ``send_message`` each cost one — so a

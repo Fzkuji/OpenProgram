@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .topology import build_maps
-from ._common import is_root, ts, predecessor_of as pred_of
+from ._common import is_root, retry_source, ts, predecessor_of as pred_of
 
 
 class LaneAllocator:
@@ -60,6 +60,9 @@ def compute_lane(
     def _same_lane(kid: str) -> bool:
         """A child stays in the parent's lane unless it's a later fork
         sibling (those start a new branch)."""
+        source = retry_source(by_id[kid])
+        if source and source in by_id:
+            return False
         return is_fork_continuation.get(kid, True)
 
     def _claim(start: str, my_lane: int) -> None:

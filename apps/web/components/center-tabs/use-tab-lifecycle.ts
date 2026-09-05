@@ -17,7 +17,10 @@ import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/conversations";
-import { fileDraftKey, fileDrafts } from "@/lib/state/files-shared";
+import {
+  collectDirtyFileTabs,
+  discardFileDraftsBeforeClose,
+} from "@/lib/state/files-shared";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   draftChannelChoiceHost,
@@ -258,17 +261,26 @@ export function useTabLifecycle({
     );
   }
 
-  function onTabsClose(e: React.SyntheticEvent, tabsToClose: CenterTab[]) {
+  async function onTabsClose(e: React.SyntheticEvent, tabsToClose: CenterTab[]) {
     e.stopPropagation();
     cancelDrag();
-    if (tabsToClose.some((tab) => tab.dirty)) {
+    const fileTabs = tabsToClose.filter((tab) => tab.kind === "file");
+    const dirtyFileTabs = await collectDirtyFileTabs(fileTabs);
+    const dirtyTabs = tabsToClose.some((tab) => tab.dirty) || dirtyFileTabs.length > 0;
+    if (dirtyTabs) {
       if (!window.confirm(text("Discard unsaved changes?", "放弃未保存的修改？")))
         return;
       // Discard confirmed — drop the surviving draft buffer too, so
       // reopening the file starts from disk, not the "discarded" edit.
-      for (const tab of tabsToClose) {
-        if (tab.kind === "file" && tab.projectId && tab.path)
-          fileDrafts.delete(fileDraftKey(tab.projectId, tab.path));
+      const dirtyFileTabIds = new Set(dirtyFileTabs.map((tab) => tab.id));
+      const discarded = await discardFileDraftsBeforeClose(
+        tabsToClose.filter((tab) => dirtyFileTabIds.has(tab.id)),
+        undefined,
+        async () => true,
+      );
+      if (!discarded) {
+        window.alert(text("Unable to discard the local draft; the tab remains open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
+        return;
       }
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next

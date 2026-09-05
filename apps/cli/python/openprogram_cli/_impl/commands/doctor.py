@@ -22,6 +22,8 @@ def _check_python_version() -> tuple[bool, str, str]:
 
 
 def _check_node() -> tuple[bool, str, str]:
+    if os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        return True, "node available", "not required in immutable product runtime"
     n = shutil.which("node")
     if n is None and os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
         return True, "node available", "not required by managed runtime"
@@ -29,6 +31,8 @@ def _check_node() -> tuple[bool, str, str]:
 
 
 def _check_npm() -> tuple[bool, str, str]:
+    if os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
+        return True, "npm available", "not required in immutable product runtime"
     n = shutil.which("npm")
     if n is None and os.environ.get("OPENPROGRAM_IMMUTABLE_RUNTIME") == "1":
         return True, "npm available", "not required by managed runtime"
@@ -327,7 +331,7 @@ def run_checks() -> list[dict]:
             ok, label, detail = fn()
         except Exception as e:  # never let a buggy check kill /doctor
             ok, label, detail = False, fn.__name__, f"{type(e).__name__}: {e}"
-        results.append({"ok": ok, "label": label, "detail": detail})
+        results.append({"id": fn.__name__, "ok": ok, "label": label, "detail": detail})
     # The five Runtime HTTP rows share one source inventory. Compute it once;
     # rescanning the installed tree per row is especially costly on Defender.
     try:

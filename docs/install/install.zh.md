@@ -1,6 +1,6 @@
 # 安装
 
-OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。所有受支持的 release 安装都具有相同的完整产品能力，只有启动外壳不同。source checkout 安装只用于开发。
+OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。所有受支持的 release 安装都包含相同的 product runtime，只有启动外壳不同。可选 backend 依赖的边界见下文。source checkout 安装只用于开发。
 
 ## 支持矩阵
 
@@ -16,7 +16,7 @@ OpenProgram 分别提供桌面 release 安装和 CLI/server release 安装。所
 
 ## 桌面安装
 
-受支持的 macOS 与 Windows 桌面产物包含 Electron 和完整的平台 product runtime。runtime 内含受控 CPython、OpenProgram、预构建 Web UI、providers、channels、search、Playwright Chromium、默认 OCR/模型数据，以及 GUI、Research、Wiki 三项第一方 Programs；运行时不读取系统 Python 或 Node.js。Session 与 Memory 历史需要 Git，`openprogram doctor` 会检查 Git。Linux 当前使用完整 CLI/server release，因为完整 AppImage 未通过打包门禁；不发布精简的 Linux 桌面产物。
+受支持的 macOS 和 Windows 桌面产物包含 Electron 和平台 product runtime。runtime 内含受控 CPython、OpenProgram、预构建 Web UI、providers、channels、search、Playwright Chromium、GPA detector 权重，以及 GUI、Research、Wiki 三项第一方 Programs。GUI Program 已注册，但 product runtime 明确不含 PyTorch、OpenCV 和 EasyOCR；需要这些依赖的 GUI perception 路径必须单独配置 backend 或 development overlay。runtime 不读取系统 Python 或 Node.js。Session 与 Memory 历史需要 Git，`openprogram doctor` 会检查 Git。Linux 当前使用同一套 CLI/server runtime，因为 AppImage 未通过打包门禁；不发布精简的 Linux 桌面产物。
 
 ### macOS
 
@@ -47,7 +47,7 @@ curl -fsSL https://openprogram.io/install | sh
 短 bootstrap 先解析最新 stable GitHub Release，再执行该不可变 tag 下的 installer。需要可复现地安装指定版本时，把版本传给 shell 进程：
 
 ```bash
-curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.7.0 sh
+curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.8.1 sh
 ```
 
 命令创建 `~/.local/bin/openprogram`。如果该目录不在 `PATH`，可以使用绝对路径，或把它加入 shell 配置。
@@ -85,13 +85,13 @@ installer 在切换 `current` 前会验证架构匹配的 manifest 和内置 Ink
 ~/.local/bin/openprogram doctor
 ```
 
-Web UI 地址是 `http://localhost:18100`。runtime 已包含预构建 Web UI、私有 Node.js 可执行文件和编译后的 Ink 应用，因此 Web UI 与 TUI 都不需要系统 Node.js。激活前，installer 会验证 Web、providers、MCP、memory、channels、search、Ink、Chromium、OCR/模型数据和三项第一方 Programs。`doctor` 仍可能报告尚未配置 provider credential 等用户配置问题。
+Web UI 地址是 `http://localhost:18100`。runtime 已包含预构建 Web UI，不需要 Node.js。激活前，installer 会验证 Web、providers、MCP、memory、channels、search、Chromium、GPA detector 权重，以及三项第一方 Programs 的注册和导入。`doctor` 仍可能报告尚未配置 provider credential 等用户配置问题。
 
 ## 已包含产品能力与额外扩展
 
-GUI Agent、Research Agent 和 Wiki Agent 属于每个受支持的 release 安装。它们的 Python 依赖、默认 OCR 数据、GPA detector 模型和 Playwright Chromium 已包含，不需要首次使用时补装。
+GUI Agent、Research Agent 和 Wiki Agent 属于每个受支持的 release 安装。其 Program package、GPA detector 权重和 Playwright Chromium 已包含。GUI Program 使用不解析依赖的方式安装：product runtime 不含 PyTorch、OpenCV 和 EasyOCR，因此使用这些依赖的 GUI perception 路径需要单独配置 backend 或 development overlay。
 
-第三方 Program 是用户主动增加的额外功能，存放在只读 product runtime 之外。第一方 Program editable source、诊断工具、本地前端构建，以及 OCR/Browser 后端替换属于开发者附加能力，不用于补齐普通安装。
+第三方 Program 是用户主动增加的额外功能，存放在只读 product runtime 之外。第一方 Program editable source、诊断工具、本地前端构建，以及 OCR/Browser 后端替换属于开发者附加能力。只有使用 product runtime 未包含依赖的 GUI perception 路径才需要替换 backend 或补充依赖；这些附加项不会改变基础 runtime manifest。
 
 ## 开发 checkout
 

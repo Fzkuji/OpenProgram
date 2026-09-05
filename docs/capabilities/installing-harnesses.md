@@ -2,8 +2,9 @@
 
 A **harness** (an *agentic program*) is a self-contained git repo of
 agentic functions. Every supported release already contains the GUI, Research,
-and Wiki first-party Programs, their dependencies, and their default runtime
-assets. `openprogram programs install` is for additional third-party Programs
+and Wiki first-party Program packages and their supported runtime assets.
+The GUI package is installed without PyTorch, OpenCV, or EasyOCR, as described
+below. `openprogram programs install` is for additional third-party Programs
 or developer source overlays; it is not a step required to complete a release
 installation. The immutable product runtime rejects in-place Program install,
 upgrade, and uninstall operations.
@@ -64,8 +65,8 @@ never the checkout it points to.
 
 | Program | Release status | Notes |
 |---|---|---|
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | Fixed source commit and dependencies are recorded in the product manifest. |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | Fixed source commit and dependencies are recorded in the product manifest. |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Included | The product manifest records the fixed source commit; the builder installs the declared PDF dependencies, and the runtime manifest records the resolved distributions. |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Included | The product manifest records the fixed source commit; the builder installs the declared dependencies, and the runtime manifest records the resolved distributions. |
 | [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Included | The Program is registered and the GPA detector weight is shipped. PyTorch, OpenCV, and EasyOCR are not in the product runtime. |
 
 Release users do not run `programs install all`, a first-run Program wizard,

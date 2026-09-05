@@ -30,15 +30,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Download } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
+import { wsRequest } from "@/lib/net/ws-request";
 import { Markdown } from "@/lib/format-utils/markdown";
 import {
   absFileReadUrl,
   absRawFileUrl,
+  cacheFileRead,
   type FileReadResult,
-  filesWsRequest,
+  fileResponseMatchesOwner,
+  getCachedFileRead,
   latestFileMtime,
   rawFileUrl,
-  readCache,
 } from "@/lib/state/files-shared";
 import styles from "./files-panel.module.css";
 
@@ -149,6 +151,7 @@ function TextViewer({
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setFailed(false);
     if (abs) {
       // No readCache / mtime here: an attachment is immutable in
@@ -176,32 +179,38 @@ function TextViewer({
         cancelled = true;
       };
     }
-    const key = `${projectId}:${path}`;
-    const knownMtime = latestFileMtime.get(path);
-    const hit = readCache.get(key);
-    if (hit && (knownMtime === undefined || hit.mtime === knownMtime)) {
+    const knownMtime = latestFileMtime.get(`${projectId}:${path}`);
+    const hit = getCachedFileRead(projectId, path, knownMtime);
+    if (hit) {
       setData(hit);
       onLoadedRef.current?.(hit);
       return;
     }
     setData(null);
-    filesWsRequest<FileReadResult>(
+    wsRequest<FileReadResult>(
       "project_file_read",
       { project_id: projectId, path },
       "project_file_read_result",
+      (data) => fileResponseMatchesOwner(data as unknown as Record<string, unknown>, {
+        project_id: projectId,
+        path,
+      }),
+      4000,
+      { signal: controller.signal },
     ).then((res) => {
       if (cancelled) return;
-      if (!res || res.error || res.path !== path) {
+      if (!res || res.project_id !== projectId || res.error || res.path !== path) {
         setFailed(true);
         onLoadedRef.current?.(null);
         return;
       }
-      readCache.set(key, res);
+      cacheFileRead(res);
       setData(res);
       onLoadedRef.current?.(res);
     });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [projectId, path, abs, sessionId]);
 

@@ -109,6 +109,13 @@ def clear_runtime_http_audit() -> None:
 
 BOUNDARY_MANIFEST = (
     BoundaryExclusion(
+        path="self_update/system_probe.py",
+        boundary_owner="owner-control-plane",
+        reason="self-update WS probes use an authenticated fixed numeric loopback socket; HTTP remains managed",
+        kinds=frozenset({"socket.create_connection"}),
+        call_counts=(("socket.create_connection", 1),),
+    ),
+    BoundaryExclusion(
         path="security/safe_http.py",
         boundary_owner="runtime-http-managed-transport",
         reason="the peer-constrained transport implementation owns these httpcore pools",

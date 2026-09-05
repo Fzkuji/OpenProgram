@@ -13,6 +13,7 @@ See docs/design/runtime/dispatcher-split.md.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Optional
 
@@ -27,6 +28,19 @@ def _noop(_: dict) -> None:
     next to ``EventCallback`` so titles/forced_tool/__init__ share one
     definition instead of three copies."""
     pass
+
+
+def _subprocess_terminal_status(out: dict, metadata: dict | None = None) -> str:
+    """Classify one subprocess result without overriding cancel intent."""
+    if out.get("timed_out") or out.get("error"):
+        return "error"
+    if out.get("killed"):
+        cancellation_requested = bool(
+            (metadata or {}).get("cancellation_requested_at")
+            or (metadata or {}).get("status") in {"cancelling", "cancelled"}
+        )
+        return "cancelled" if cancellation_requested else "interrupted"
+    return "completed"
 
 
 # Sentinel: "caller did not specify predecessor, dispatcher should pick"
@@ -139,6 +153,18 @@ class TurnRequest:
     # Validated, turn-scoped descriptor and DOM/ARIA preview for a visible
     # OpenProgram desktop surface. Raw renderer refs never reach providers.
     surface_context: Optional[dict[str, Any]] = None
+    # Session that owns ``spawn_caller`` when it is outside this turn's
+    # session.  Appended for positional-constructor compatibility.  The node
+    # id remains the real caller edge; this field supplies its namespace for
+    # persisted provenance and cross-session rendering.
+    spawned_from_session: Optional[str] = None
+    profile_snapshot: Optional[dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        if self.profile_snapshot is not None:
+            if not isinstance(self.profile_snapshot, dict):
+                raise ValueError("profile_snapshot must be a dict")
+            self.profile_snapshot = deepcopy(self.profile_snapshot)
 
 
 @dataclass

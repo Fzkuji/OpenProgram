@@ -9,9 +9,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
 TOP_LEVEL_DIRECTORIES = {
-    ".codegraph",
     ".github",
-    ".superpowers",
     "apps",
     "docs",
     "openprogram",
@@ -32,6 +30,7 @@ TOP_LEVEL_FILES = {
     "package.json",
     "README.md",
     "pyproject.toml",
+    "setup.py",
     "uv.lock",
 }
 
@@ -132,6 +131,7 @@ def test_developer_scripts_do_not_live_at_the_repository_root() -> None:
         relative
         for relative in _tracked_paths()
         if "/" not in relative
+        and relative != "setup.py"  # Canonical setuptools entry, not a developer utility.
         and (ROOT / relative).is_file()
         and Path(relative).suffix in script_suffixes
     )

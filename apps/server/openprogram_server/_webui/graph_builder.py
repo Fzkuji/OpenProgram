@@ -28,6 +28,8 @@ def build_session_graph(
         _extract_tool_is_error,
         _extract_llm_meta,
         _extract_attach_label,
+        _extract_attach_session_id,
+        _is_merge_temp_attach,
     )
     from openprogram.webui.graph_layout import annotate_graph
 
@@ -45,6 +47,7 @@ def build_session_graph(
     # list_branches, which only returns live tips). Unnamed branches
     # (no `name`) get no label.
     caller_map: dict[str, str] = {}
+    metadata_map: dict[str, dict] = {}
     nodes = []
     try:
         nodes = db.get_nodes(session_id) or []
@@ -64,6 +67,7 @@ def build_session_graph(
             m for m in full_msgs if m.get("id") not in hidden_ids
         ]
         for n in nodes:
+            metadata_map[n.id] = dict(n.metadata or {})
             if n.caller:
                 caller_map[n.id] = n.caller
     except Exception:
@@ -163,7 +167,10 @@ def build_session_graph(
         if len(preview) > 80:
             preview = preview[:77] + "…"
         aref, amanual, asrc_commit = _attach_info(m)
-        aembed_n, aembed_tok = _attach_embed_stats(db, session_id, asrc_commit)
+        attach_session_id = _extract_attach_session_id(m)
+        aembed_n, aembed_tok = _attach_embed_stats(
+            db, attach_session_id or session_id, asrc_commit,
+        )
         mid = m.get("id") or ""
         row = {
             "id": mid,
@@ -182,8 +189,10 @@ def build_session_graph(
             "created_at": m.get("created_at"),
             "attach_ref": aref,
             "attach_manual": amanual,
+            "attach_merge_temp": _is_merge_temp_attach(m),
             "attach_label": _extract_attach_label(m),
             "attach_source_commit_id": asrc_commit,
+            "attach_session_id": attach_session_id,
             "attach_embed_count": aembed_n,
             "attach_embed_tokens": aembed_tok,
         }
@@ -191,6 +200,9 @@ def build_session_graph(
             row["covers_ids"] = covers_ids[mid]
         if mid in superseded:
             row["superseded_summary"] = True
+        retry_of = metadata_map.get(mid, {}).get("retry_of")
+        if isinstance(retry_of, str) and retry_of:
+            row["retry_of"] = retry_of
         for key in (
             "tokens_before", "tokens_after",
             "summarised_count", "compacted_at",
@@ -199,6 +211,21 @@ def build_session_graph(
                 row[key] = m[key]
         if mid in branch_names:
             row["branch_name"] = branch_names[mid]
+        spawned_from_session = m.get("spawned_from_session")
+        if (
+            m.get("source") == "agent_spawn"
+            and isinstance(spawned_from_session, str)
+            and spawned_from_session
+            and spawned_from_session != session_id
+        ):
+            row["spawn_remote"] = True
+            row["spawn_remote_session"] = spawned_from_session
+            row["spawn_remote_id"] = row.get("caller") or ""
+            # ``caller`` is namespaced by spawn_remote_session and must not
+            # accidentally bind to an equal node id in the target graph.
+            # Keep the remote id above and normalize the local drawing edge.
+            if root_node is not None:
+                row["caller"] = root_node.id
         graph.append(row)
 
     # attach 指针不画节点（rendering.md 场景 8/10），但回流长虚线需要
@@ -206,10 +233,23 @@ def build_session_graph(
     # 前端从子分支 tip 画回这里。attach 行本身随 display=runtime 被过滤。
     by_id_row = {n["id"]: n for n in graph}
     for n in graph:
-        if n.get("function") != "attach" or not n.get("attach_ref"):
+        if n.get("function") != "attach":
             continue
         host = by_id_row.get(n.get("predecessor") or "")
         if host is None:
+            continue
+        attach_session_id = n.get("attach_session_id")
+        if attach_session_id and attach_session_id != session_id:
+            if not n.get("attach_manual") and not n.get("attach_merge_temp"):
+                host["spawn_out"] = True
+                host["spawn_out_session"] = attach_session_id
+                if n.get("attach_ref"):
+                    host["spawn_out_head"] = n["attach_ref"]
+            # Every cross-session attach endpoint belongs to another graph,
+            # so none of them can produce an in-session return edge. Only
+            # agent-spawn pointers additionally mark the source node.
+            continue
+        if not n.get("attach_ref"):
             continue
         host.setdefault("attach_returns", []).append(n["attach_ref"])
 
@@ -235,8 +275,13 @@ def build_session_graph(
             if not pred_in and not caller_in:
                 # 跨会话 spawn 根：caller 在另一个会话的图里。挂回 ROOT
                 # 之前打标，前端画 ↗ 角标（rendering.md 第四节徽标）。
-                if n.get("source") == "agent_spawn" and caller:
+                if (
+                    n.get("source") == "agent_spawn"
+                    and caller
+                    and not n.get("spawn_remote")
+                ):
                     n["spawn_remote"] = True
+                    n["spawn_remote_id"] = caller
                 n["caller"] = rid
 
     return annotate_graph(graph, head_id)

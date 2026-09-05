@@ -1,18 +1,18 @@
 """The single Goal Workflow and its ``/goal`` command adapter.
 
 Programs and Python call :func:`goal` with isolated pre-call context.
-``/goal <condition>`` invokes the same function with the current session
+``/goal <prompt>`` invokes the same function with the current session
 view as initial evidence. The function owns refinement, work rounds,
-judgment, user questions, state writes and terminal behavior.
+judgment, the asynchronous question queue, state writes and terminal behavior.
 
 Evaluation is one decision agent turn: :func:`judge_goal` (prompt in
 its docstring) reads the session's compacted context view plus the
-goal text and answers strict JSON
-``{"met", "reason", "need_user", "question"}``. Only its "met" counts
+goal text and answers strict JSON with a typed verdict, reason, optional
+question, independent-work flag, options, and checklist. Only its ``met`` counts
 as completion. Deterministic responsibilities are split as
 
 * ``goal``: public :func:`goal` entry
-* ``command``: ``/goal`` parsing plus clear / status
+* ``command``: ``/goal`` parsing plus status and mutation actions
 * ``judge``: :func:`judge_goal` and :func:`evaluate_goal`
 * ``refinement``: the one refinement operation used by :func:`goal`
 * ``loop``: deterministic transitions and next-round instructions
@@ -22,22 +22,14 @@ as completion. Deterministic responsibilities are split as
 The judge is separate from the working model on purpose: agents that
 self-report completion (Codex / Cline style) systematically declare
 victory early, so the verdict must come from outside the working
-context. Design doc: docs/reference/design/runtime/goal.md.
+context. Design doc:
+docs/reference/design/runtime/goal-framework-implementation-comparison.html.
 
-Goal meta shape (``session extra_meta["goal"]``)::
-
-    {"text": str, "spec": str (refined specification; absent until the
-     refinement step lands, judging falls back to text),
-     "checklist": [{"text": str, "done": bool}, …] (refinement-fixed
-     acceptance items; absent when refinement produced none — the
-     judge only flips "done", never edits the list),
-     "status": "active" | "waiting_user" | "achieved" |
-     "cleared" | "capped" | "error", "created_at": float,
-     "turns_used": int, "max_turns": int | None (None = unlimited;
-     default 150 when unset in config), "idle_rounds": int (consecutive
-     zero-tool unmet rounds; two in a row stop the loop),
-     "last_reason": str, "last_question": str,
-     "last_question_at": float, "judge_parse_failures": int}
+Goal state is one versioned session snapshot. It contains the objective and
+refined checklist, typed lifecycle status, controller checkpoint, cumulative
+budgets and usage, an ordered question queue, and answers waiting for the next
+controller boundary. ``goal_id`` is stable across resume; each execution has a
+new ``run_id``. See the design document for the complete schema and states.
 
 Tests monkeypatch functions ON THIS PACKAGE (``monkeypatch.setattr(G,
 "evaluate_goal", ...)`` with ``G = openprogram.programs.workflow.goal``); the
@@ -58,21 +50,43 @@ from openprogram.programs.workflow.goal.judge import (  # noqa: F401
 )
 from openprogram.programs.workflow.goal.state import (  # noqa: F401
     DEFAULT_MAX_TURNS,
+    DEFAULT_PHASE_TIMEOUT_S,
+    GOAL_SCHEMA_VERSION,
+    GoalConflictError,
+    GoalStateUnavailable,
     IDLE_ROUND_LIMIT,
     JUDGE_PARSE_FAILURE_LIMIT,
+    RESUMABLE_STATUSES,
+    RUNNING_STATUSES,
     STALL_ROUND_LIMIT,
+    TERMINAL_STATUSES,
+    WAITING_STATUSES,
     _CLEAR_VERBS,
     _db,
     _emit_goal_update,
+    accumulate_goal_usage,
+    budget_exhausted,
+    checkpoint_active_elapsed,
+    check_goal_preconditions,
     default_max_turns,
+    goal_usage,
     judge_model,
     load_goal,
+    normalize_goal,
+    reset_goal_usage_cursor,
     save_goal,
+    save_goal_progress,
 )
 from openprogram.programs.workflow.goal.notices import (  # noqa: F401
     _TERMINAL_LABELS,
     _emit_goal_notice,
     _finish,
+)
+from openprogram.programs.workflow.goal.execution import (  # noqa: F401
+    GoalStopUnconfirmed,
+    goal_execution_state,
+    request_goal_stop,
+    require_goal_execution_finished,
 )
 from openprogram.programs.workflow.goal.refinement import (  # noqa: F401
     REFINE_TOOLS,
@@ -88,7 +102,9 @@ from openprogram.programs.workflow.goal.loop import (  # noqa: F401
     next_work_prompt,
 )
 from openprogram.programs.workflow.goal.command import (  # noqa: F401
+    _resume_invocation,
     _status_text,
+    apply_goal_action,
     goal_builtin_handler,
     handle_goal_command,
 )

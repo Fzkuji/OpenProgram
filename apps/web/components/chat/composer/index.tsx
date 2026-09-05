@@ -3,10 +3,12 @@
  *
  * Owns: input value, attachments, slash menu, plus menu (Tools / Web
  * Search), thinking-effort selector, token badge, send/stop button.
- * Submits chat turns directly via the WS channel; no legacy globals.
+ * Submits chat turns through WS and exact function expressions through the
+ * same HTTP dispatcher as the inline FunctionForm.
  *
  * The pieces are grouped by responsibility: ./submit (submit + stop),
- * ./modes/fn-form/use-fn-form-submit (function dispatch),
+ * ./modes/fn-form/use-function-dispatch (function dispatch),
+ * ./modes/fn-form/use-fn-form-submit (form normalization),
  * ./paste/use-paste-tokens (long-paste chips), ./input (textarea,
  * history recall and key precedence),
  * ./controls/controls-cluster (the bottom control row),
@@ -31,8 +33,7 @@ import { useTranslation } from "@/lib/i18n";
 // Session-scope chips relocated from the dismantled 48px topbar row —
 // each carries its own popover menu (project-menu / agent-selector /
 // permission-menu submodules under ../top-bar).
-import { useSessionGoal } from "../goal-chip";
-import { CircleHelp, Target } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import { visibleParams } from "./modes/fn-form/fn-form";
 import { resolveComposerMode } from "./modes/resolve-mode";
 import { SendIcon, StopIcon } from "./icons";
@@ -46,6 +47,7 @@ import { ImageAttachStrip } from "./attach/image-attach-strip";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
 import { useFnFormSubmit } from "./modes/fn-form/use-fn-form-submit";
+import { useFunctionDispatch } from "./modes/fn-form/use-function-dispatch";
 import { useSlashMenu } from "./slash/use-slash-menu";
 import { useThinkingEffort } from "./controls/use-thinking-effort";
 import { useToolsToggles } from "./controls/use-tools-toggles";
@@ -165,31 +167,26 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const pendingDecision =
     pendingDecisions.find((d) => d.sessionId === currentSessionId) ?? null;
 
-  // 提问路由：ask/confirm（含 ask_user_question）和 goal waiting_user 都走
-  // 输入框顶部的 QuestionPanel —— composer 的 textarea/底栏/env-chip 行原样
-  // 不动，wrapper 只因多了这块面板向上长高。approval/form/ask_many 仍走旧的
-  // morphed QuestionMode（activeDecision 路径）。真 ask 优先于 goal。
+  // ask/confirm（含 ask_user_question）走输入框顶部的 QuestionPanel。
+  // Goal 的问题是异步队列，只在 Goal 详情面板回答，不占用 composer。
   const askDecision =
     pendingDecision &&
     (pendingDecision.kind === "ask" || pendingDecision.kind === "confirm")
       ? pendingDecision
       : null;
   const activeDecision = askDecision ? null : pendingDecision;
-  // goal 挂起：answeredKey = 乐观收起（经 question_reply 回答对应提问后
-  // 立即收，不等 goal_update 把 status 翻走）；按「会话:提问时刻:轮数:问题」
-  // 记 key。有效回答会把 turns_used 归零，同一句再问时靠 last_question_at
-  // 区分；离开 waiting_user 时清掉 key。刷新后水合仍是 waiting_user → 面板重现。
-  const goal = useSessionGoal(currentSessionId);
-  const [goalAnsweredKey, setGoalAnsweredKey] = useState<string | null>(null);
-  const goalKey =
-    goal?.status === "waiting_user" && goal.last_question && currentSessionId
-      ? `${currentSessionId}:${goal.last_question_at ?? 0}:${goal.turns_used ?? 0}:${goal.last_question}`
-      : null;
-  const goalWaiting = goalKey !== null && goalAnsweredKey !== goalKey;
-  useEffect(() => {
-    if (goal?.status !== "waiting_user") setGoalAnsweredKey(null);
-  }, [goal?.status]);
   const send = wsSend;
+  const sendWaitCommand = useCallback((decision: NonNullable<typeof pendingDecision>, action: "execution.wait.answer" | "execution.wait.decline", value?: unknown) => {
+    if (!decision.executionId || !Number.isInteger(decision.expectedVersion)) return;
+    send({
+      type: "execution.command", action,
+      command_id: `web-wait-${crypto.randomUUID()}`,
+      execution_id: decision.executionId, expected_version: decision.expectedVersion,
+      payload: action === "execution.wait.answer"
+        ? { wait_id: decision.id, generation: decision.waitGeneration, answer: value }
+        : { wait_id: decision.id, generation: decision.waitGeneration, reason: value },
+    });
+  }, [send]);
 
   const isRunning = runningTask !== null;
   const isCancelling = Boolean(runningTask?.cancelling);
@@ -265,6 +262,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const fastSupported = useSessionStore((s) => !!s.agentSettings?.chat?.fast);
   const setComposerSettings = useSessionScope((s) => s.patchSettings);
   const toggleFast = () => setComposerSettings({ fast: !fastEnabled });
+  const runningMessageMode = useSessionScope(
+    (s) => s.settings.runningMessageMode ?? "queue",
+  );
+  const toggleRunningMessageMode = () => setComposerSettings({
+    runningMessageMode: runningMessageMode === "steer" ? "queue" : "steer",
+  });
   const { unattended, toggleUnattended } = useUnattendedMode(
     currentSessionId,
     send,
@@ -364,6 +367,17 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   /* ---- Submit -------------------------------------------------------- */
 
+  const dispatchFunction = useFunctionDispatch({
+    currentSessionId,
+    activeChatKey,
+    background: bound !== null,
+    isRunning,
+    noEnabledModels,
+    promptNeedModel,
+    send,
+    setCurrentConv,
+  });
+
   const { submit, stop } = useChatSubmit({
     bound,
     input,
@@ -385,29 +399,19 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     webSearchEnabled,
     fastEnabled,
     fastSupported,
+    runningMessageMode,
+    dispatchFunction,
   });
 
-  // 顶部提问面板在场时的提交改道（唯一允许改输入框提交行为的地方，样式
-  // 不动）：ask / confirm —— 含 goal waiting_user 经 runtime.ask 发来的
-  // 提问 —— 输入文本作为答案走 question_reply（回答后端阻塞的 PendingQuestion，
-  // 普通聊天解不开它）。goal 面板独立出现（question.asked 尚未到达 / 已丢失）
-  // 时拿不到 qid，此时不把文本当聊天发出去 —— 等 question.asked 到达。
+  // 顶部 ask / confirm 面板在场时，输入文本作为 PendingQuestion 的答案。
   const submitWithPanel = useCallback(async () => {
     const trimmed = input.trim();
     if (askDecision && trimmed && askDecision.allow_custom) {
-      send({
-        action: "question_reply",
-        id: askDecision.id,
-        answer: askDecision.multi ? [trimmed] : trimmed,
-      });
+      sendWaitCommand(askDecision, "execution.wait.answer", askDecision.multi ? [trimmed] : trimmed);
       dequeueDecision(askDecision.id);
       setComposerInputFor(activeChatKey ?? currentSessionId, "");
-      // goal 的提问经同一通道回答后，乐观收起 goal 面板（不等 goal_update
-      // 把 waiting_user 翻走）。
-      if (goalKey) setGoalAnsweredKey(goalKey);
       return;
     }
-    if (!askDecision && goalWaiting && !morphed) return;
     await submit();
   }, [
     input,
@@ -417,9 +421,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     setComposerInputFor,
     activeChatKey,
     currentSessionId,
-    goalWaiting,
-    morphed,
-    goalKey,
     submit,
   ]);
 
@@ -473,13 +474,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const submitFnForm = useFnFormSubmit({
     fnFormFunction,
     fnForm,
-    currentSessionId,
-    activeChatKey,
-    isRunning,
-    noEnabledModels,
-    promptNeedModel,
-    send,
-    setCurrentConv,
+    dispatchFunction,
     handleFnFormClose,
   });
 
@@ -487,17 +482,13 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
   const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
 
-  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。发 question_reject 并即时出队
-  // （后端 _resolve_question 收口 + 广播）。
+  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。提交 canonical wait decline 并即时出队。
   const rejectDecision = useCallback(() => {
     const d = activeDecision;
     if (!d) return;
-    const sock = getSocket();
-    if (sock && sock.readyState === WebSocket.OPEN) {
-      sock.send(JSON.stringify({ action: "question_reject", id: d.id }));
-    }
+    sendWaitCommand(d, "execution.wait.decline");
     dequeueDecision(d.id);
-  }, [activeDecision, dequeueDecision]);
+  }, [activeDecision, dequeueDecision, sendWaitCommand]);
 
   // 顶部提问面板的内容（真 ask 优先；morphed 时不叠面板 —— approval/form
   // 占着输入区，答完再出）。点 pill = 立即提交（点击即时反馈）。
@@ -513,34 +504,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         options: askDecision.options.map((label) => ({ label })),
         disabled: false,
         onPick: (label: string) => {
-          send({
-            action: "question_reply",
-            id: askDecision.id,
-            answer: askDecision.multi ? [label] : label,
-          });
+          sendWaitCommand(askDecision, "execution.wait.answer", askDecision.multi ? [label] : label);
           dequeueDecision(askDecision.id);
-          // goal 的提问也走这里回答 —— 乐观收起 goal 面板。
-          if (goalKey) setGoalAnsweredKey(goalKey);
         },
-      }
-    : goalWaiting && !morphed
-    ? {
-        // goal 面板独立出现 = 对应的 question.asked 还没到达（或已丢失），
-        // 没有 qid 可以 question_reply，选项先禁用，等 askDecision 到达后
-        // 上面的分支接管（真 ask 优先）。
-        badge: (
-          <>
-            <Target size={13} strokeWidth={2} />
-            <span>{text("goal — waiting for your answer", "goal · 等你回答")}</span>
-          </>
-        ),
-        prompt: goal!.last_question!,
-        options: (goal!.last_question_options ?? []).map((o) => ({
-          label: o.label,
-          description: o.description || undefined,
-        })),
-        disabled: true,
-        onPick: () => {},
       }
     : null;
   // In chat mode: disabled when textarea is empty OR when a paste
@@ -567,12 +533,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // let submitFnForm's setError path light up the missing field's red
   // border instead. The button still LOOKS dim (data-fn-missing) and
   // its title spells out which field is blocking.
-  // goal 面板独立在场（qid 未知）时禁发：文本当聊天发出去解不开后端阻塞
-  // 的 runtime.ask，等 question.asked 到达后转为 ask 面板即可正常回答。
-  const goalPanelBlocked = !askDecision && goalWaiting && !morphed;
   const sendDisabled = fnFormActive
     ? false
-    : !input.trim() || pasteMissing.size > 0 || goalPanelBlocked;
+    : !input.trim() || pasteMissing.size > 0;
   const sendTitle = fnFormActive
     ? missingFnParams.length > 0
       ? text(
@@ -582,8 +545,6 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       : text("Run", "运行")
     : pasteMissing.size > 0
     ? text("Paste content lost. Remove the red chip and re-paste.", "粘贴内容已丢失。请移除红色标签后重新粘贴。")
-    : goalPanelBlocked
-    ? text("Waiting for the question channel…", "等待提问通道就绪…")
     : text("Send message", "发送消息");
 
   /* ---- Render -------------------------------------------------------- */
@@ -608,6 +569,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       fastEnabled={fastEnabled}
       fastSupported={fastSupported}
       toggleFast={toggleFast}
+      runningMessageMode={runningMessageMode}
+      toggleRunningMessageMode={toggleRunningMessageMode}
       unattended={unattended}
       toggleUnattended={toggleUnattended}
       sandboxEnabled={sandbox}
@@ -678,7 +641,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
         }}
         className={`${styles.inputWrapper} ${morphed ? styles.morphed : ""}`}
       >
-        {/* 提问面板 —— wrapper 顶部向上生长的附加区（goal 挂起 / 真 ask）。
+        {/* 提问面板 —— wrapper 顶部向上生长的附加区（ask / confirm）。
             下面的 textarea / 底栏 / 圆形发送按钮全部原样。 */}
         {panel && (
           <QuestionPanel
@@ -714,8 +677,12 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           setInput={setInput}
           isRunning={isRunning}
           runningPlaceholder={text(
-            "type to queue the next message…",
-            "输入下一条消息，本轮结束后自动发送…",
+            runningMessageMode === "steer"
+              ? "type to steer the current turn…"
+              : "type to queue the next message…",
+            runningMessageMode === "steer"
+              ? "输入消息并注入当前轮次…"
+              : "输入下一条消息，本轮结束后自动发送…",
           )}
           onKeyDown={onKeyDown}
           onPaste={onPaste}

@@ -6,7 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
 import json
+import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -295,6 +297,143 @@ def test_worker_persists_each_claim_and_continues_after_spawn_failure(
     persisted = worker._load_state()
     assert first["id"] not in persisted
     assert persisted[second["id"]]["last_fired_minute"] == "2026-08-14T10:00"
+
+
+@pytest.mark.parametrize(
+    ("failure_call", "expected_calls", "expected_sleeps"),
+    [
+        (1, [True, False], [1.0, 1.0]),
+        (2, [True, False, False], [1.0, 1.0, 1.0, 1.0]),
+    ],
+)
+def test_worker_loop_recovers_from_one_transient_tick_failure(
+    scheduler_env,
+    monkeypatch,
+    caplog,
+    failure_call,
+    expected_calls,
+    expected_sleeps,
+):
+    from openprogram.programs.tools.jobs.cron import worker
+
+    stop = threading.Event()
+    tick_calls = []
+    sleeps = []
+    elapsed = 0.0
+
+    class NearMinute(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 8, 14, 10, 0, 58)
+            return value if tz is None else value.replace(tzinfo=tz)
+
+    def tick(_state, *, reboot=False):
+        tick_calls.append(reboot)
+        if len(tick_calls) == failure_call:
+            raise RuntimeError("transient tick")
+        if len(tick_calls) == failure_call + 1:
+            stop.set()
+        return 0
+
+    monkeypatch.setattr(worker, "_load_state", lambda: {})
+    monkeypatch.setattr(worker, "_tick", tick)
+    def sleep(seconds):
+        nonlocal elapsed
+        sleeps.append(seconds)
+        elapsed += seconds
+
+    monkeypatch.setattr(worker, "dt", SimpleNamespace(datetime=NearMinute))
+    monkeypatch.setattr(
+        worker,
+        "time",
+        SimpleNamespace(monotonic=lambda: elapsed, sleep=sleep),
+    )
+
+    with caplog.at_level("WARNING", logger=worker.__name__):
+        worker.run_forever(stop)
+
+    assert tick_calls == expected_calls
+    assert sleeps == expected_sleeps
+    records = [record for record in caplog.records if record.name == worker.__name__]
+    assert len(records) == 1
+    assert records[0].getMessage() == (
+        "scheduler tick failed: RuntimeError: transient tick"
+    )
+    assert records[0].exc_info is not None
+    assert records[0].exc_info[0] is RuntimeError
+
+
+def test_worker_loop_rechecks_elapsed_time_after_oversleep(
+    scheduler_env, monkeypatch,
+):
+    from openprogram.programs.tools.jobs.cron import worker
+
+    stop = threading.Event()
+    tick_calls = []
+    sleeps = []
+    elapsed = 0.0
+
+    class StartOfMinute(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 8, 14, 10, 0, 0)
+            return value if tz is None else value.replace(tzinfo=tz)
+
+    def tick(_state, *, reboot=False):
+        tick_calls.append(reboot)
+        if len(tick_calls) == 1:
+            raise RuntimeError("transient tick")
+        stop.set()
+        return 0
+
+    def sleep(seconds):
+        nonlocal elapsed
+        sleeps.append(seconds)
+        elapsed += 70.0
+
+    monkeypatch.setattr(worker, "_load_state", lambda: {})
+    monkeypatch.setattr(worker, "_tick", tick)
+    monkeypatch.setattr(worker, "dt", SimpleNamespace(datetime=StartOfMinute))
+    monkeypatch.setattr(
+        worker,
+        "time",
+        SimpleNamespace(monotonic=lambda: elapsed, sleep=sleep),
+    )
+
+    worker.run_forever(stop)
+
+    assert tick_calls == [True, False]
+    assert sleeps == [1.0]
+
+
+def test_worker_loop_does_not_swallow_base_exception(
+    scheduler_env, monkeypatch,
+):
+    from openprogram.programs.tools.jobs.cron import worker
+
+    monkeypatch.setattr(worker, "_load_state", lambda: {})
+
+    def interrupt(_state, *, reboot=False):
+        raise KeyboardInterrupt(f"interrupt reboot={reboot}")
+
+    monkeypatch.setattr(worker, "_tick", interrupt)
+
+    with pytest.raises(KeyboardInterrupt, match="interrupt reboot=True"):
+        worker.run_forever(threading.Event())
+
+
+def test_run_once_keeps_tick_fail_fast(scheduler_env, monkeypatch):
+    from openprogram.programs.tools.jobs.cron import worker
+
+    monkeypatch.setattr(worker, "_load_state", lambda: {})
+
+    def fail(_state):
+        raise RuntimeError("once failed")
+
+    monkeypatch.setattr(worker, "_tick", fail)
+
+    with pytest.raises(RuntimeError, match="once failed"):
+        worker.run_once()
 
 
 def test_two_workers_claim_a_once_task_only_once(scheduler_env, monkeypatch):

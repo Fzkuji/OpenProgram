@@ -974,6 +974,7 @@ def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
     context = {
         "context_id": "ctx-pages",
         "window_id": "window-1",
+        "primary_surface_key": "p4",
         "inventory_revision": 9,
         "active_tab_entry_id": "group:g3",
         "focused_page": "p4",
@@ -1010,12 +1011,12 @@ def test_list_pages_returns_group_aware_snapshot_with_page_tokens():
     assert result["focused_page"] == "p4"
     assert result["tab_entries"] == context["tab_entries"]
     assert result["windows"] == context["windows"]
-    assert [page["page"] for page in result["pages"]] == ["p3", "p4"]
+    assert [page["page"] for page in result["pages"]] == ["p4", "p3"]
     assert [page["window_id"] for page in result["pages"]] == [
         "window-1", "window-1",
     ]
     assert all(page["page_context_token"].startswith("pct_") for page in result["pages"])
-    assert result["pages"][1]["placement"] == {
+    assert result["pages"][0]["placement"] == {
         "mode": "split", "pane_id": "pane:g3:1", "order": 1,
     }
 
@@ -1162,7 +1163,6 @@ def test_sync_mcp_client_cleans_thread_when_start_fails(monkeypatch):
 
 def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
     from openprogram.programs import _runtime
-    from openprogram.programs.workflow import browser as browser_module
     from openprogram.programs.gui_harness_bridge import (
         install_gui_harness_web_use,
     )
@@ -1171,15 +1171,7 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
 
     def original(**kwargs):
         calls.append(("original", kwargs))
-        return {"mode": "desktop"}
-
-    monkeypatch.setattr(
-        browser_module,
-        "_run_browser_task_commands",
-        lambda **kwargs: calls.append(("web_use", kwargs)) or {
-            "mode": "web_use", "backend": kwargs["backend"],
-        },
-    )
+        return {"status": "succeeded", "mode": "unified"}
     wrapped = install_gui_harness_web_use(original)
     tool = _runtime.get("gui_agent")
     assert tool is not None
@@ -1188,8 +1180,855 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
         task="click Save", backend="chrome_devtools_mcp",
         runtime=SimpleNamespace(),
     )
-    assert result == {"mode": "web_use", "backend": "chrome_devtools_mcp"}
-    assert calls[0][0] == "web_use"
+    assert result["status"] == "succeeded"
+    assert result["success"] is True
+    assert result["infeasible_declared"] is False
+    assert calls[0][0] == "original"
+    assert calls[0][1]["browser_backend"] == "chrome_devtools_mcp"
+    assert calls[0][1]["preferred_capability"] == "browser_use"
+
+
+def test_programs_cli_resolves_registered_gui_agent(monkeypatch, capsys):
+    from openprogram.agentic_programming.function import _registry
+    from openprogram.cli.commands.programs import _cmd_run
+    from openprogram.programs import gui_harness_bridge
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    monkeypatch.setitem(_registry, "gui_agent", _registry.get("gui_agent"))
+    monkeypatch.setattr(
+        gui_harness_bridge,
+        "gui_agent",
+        getattr(gui_harness_bridge, "gui_agent", None),
+        raising=False,
+    )
+
+    wrapped = install_gui_harness_web_use(
+        lambda **_kwargs: {
+            "status": "succeeded",
+            "success": True,
+            "summary": "inspected",
+        },
+    )
+
+    _cmd_run("gui_agent", ["task=inspect"])
+
+    assert gui_harness_bridge.gui_agent is wrapped
+    assert "'status': 'succeeded'" in capsys.readouterr().out
+
+
+def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
+    from openprogram.programs.gui_harness_bridge import (
+        DEFAULT_MAX_STEPS,
+        install_gui_harness_web_use,
+    )
+
+    calls = []
+
+    def original(**kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "succeeded",
+            "reason_code": "verified",
+            "summary": "done",
+        }
+
+    runtime = object()
+    wrapped = install_gui_harness_web_use(original)
+    result = wrapped(task="inspect the page", surface="browser", runtime=runtime)
+
+    assert result["success"] is True
+    assert calls == [{
+        "task": "inspect the page",
+        "max_steps": DEFAULT_MAX_STEPS,
+        "app_name": "desktop",
+        "max_seconds": None,
+        "runtime": runtime,
+        "allow_general": False,
+        "browser_backend": "",
+        "vm_url": "",
+        "preferred_capability": "browser_use",
+    }]
+
+
+@pytest.mark.parametrize(
+    (
+        "close_result", "runtime_behavior", "teardown_raises",
+        "expected_status", "expected_success",
+    ),
+    [
+        ({"ok": True}, "verify", False, "succeeded", True),
+        ({"ok": True}, "raise", False, None, None),
+        (
+            {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "the background Page could not be closed",
+            },
+            "verify",
+            False,
+            "infeasible",
+            False,
+        ),
+        (
+            {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "the background Page could not be closed",
+            },
+            "timeout",
+            False,
+            "infeasible",
+            False,
+        ),
+        (
+            {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "the background Page could not be closed",
+            },
+            "miss",
+            False,
+            "infeasible",
+            False,
+        ),
+        (
+            {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "the background Page could not be closed",
+            },
+            "raise",
+            False,
+            "infeasible",
+            False,
+        ),
+        (
+            {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "the background Page could not be closed",
+            },
+            "observe_cancel",
+            True,
+            "infeasible",
+            False,
+        ),
+        (
+            {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "the background Page could not be closed",
+            },
+            "screenshot_timeout",
+            True,
+            "infeasible",
+            False,
+        ),
+        (
+            {"ok": True},
+            "observe_cancel",
+            True,
+            None,
+            None,
+        ),
+        (
+            {
+                "ok": False,
+                "reason_code": "desktop_unavailable",
+                "error": "the background Page could not be closed",
+            },
+            "cancel",
+            True,
+            "infeasible",
+            False,
+        ),
+        ({"ok": True}, "cancel", True, None, None),
+    ],
+)
+def test_browser_capability_without_page_opens_background_page(
+    monkeypatch, close_result, runtime_behavior, teardown_raises,
+    expected_status, expected_success,
+):
+    from openprogram.agent import surface_context
+    from openprogram.agentic_programming.function import CancelledError
+    from openprogram.programs._execution_common import ToolReturn
+    from openprogram.programs.workflow import browser as browser_module
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
+    from openprogram.providers.utils.errors import ExecInterrupt
+
+    context = {
+        "context_id": "ctx-empty",
+        "window_id": "window-1",
+        "surfaces": [],
+    }
+    opened_context = {
+        "context_id": "ctx-opened",
+        "window_id": "window-1",
+        "surfaces": [{
+            "binding_id": "surface-opened",
+            "page_key": "page-opened",
+            "capabilities": ["observe", "interact", "navigate"],
+        }],
+    }
+    opens = []
+    closed = []
+    released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def execute(self, **kwargs):
+            if kwargs["command"] == "observe":
+                if runtime_behavior == "observe_cancel":
+                    raise CancelledError("cancelled during first observe")
+                return {"frame_id": "f1", "web_session_id": "cs-opened"}
+            if kwargs["command"] == "verify":
+                return {"passed": True}
+            if (
+                kwargs["command"] == "act"
+                and kwargs.get("arguments", {}).get("action") == "screenshot"
+            ):
+                return ToolReturn(
+                    images=[b"png"],
+                    json_data={"frame_id": "f1"},
+                )
+            if kwargs["command"] == "close" and teardown_raises:
+                raise RuntimeError("registry close failed")
+            return {"ok": True, "closed": True}
+
+        def revoke_screenshot(self, _session_id):
+            if runtime_behavior == "screenshot_timeout":
+                raise RuntimeError("screenshot revoke failed")
+
+        def release_owner(self, _owner_id):
+            if teardown_raises:
+                raise RuntimeError("registry owner close failed")
+            return None
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            if runtime_behavior == "raise":
+                raise RuntimeError("model transport failed")
+            if runtime_behavior == "cancel":
+                raise ExecInterrupt("cancelled during model execution")
+            if runtime_behavior == "screenshot_timeout":
+                asyncio.run(kwargs["tools"][0].execute(
+                    "call-1",
+                    {"action": "screenshot", "expected_frame_id": "f1"},
+                    asyncio.Event(),
+                    None,
+                ))
+                return "The screenshot was captured."
+            if runtime_behavior == "verify":
+                asyncio.run(kwargs["tools"][0].execute(
+                    "call-1",
+                    {
+                        "action": "verify",
+                        "expected_frame_id": "f1",
+                        "assertion": "title_contains",
+                        "value": "Google",
+                    },
+                    asyncio.Event(),
+                    None,
+                ))
+            return "The background Page title is Google."
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: context,
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda url, **kwargs: opens.append((url, kwargs)) or opened_context,
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_binding", lambda _page="": "surface-opened",
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_page_key", lambda _page="": "page-opened",
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "close_page",
+        lambda value: closed.append(value) or close_result,
+    )
+
+    call_kwargs = {
+        "task": "inspect the page",
+        "backend": DEFAULT_BACKEND,
+        "max_steps": 150,
+        "max_seconds": None,
+        "runtime": _Runtime(),
+    }
+    if runtime_behavior in {"screenshot_timeout", "timeout"}:
+        ticks = iter(
+            (0.0, 0.0, 2.0)
+            if runtime_behavior == "screenshot_timeout" else
+            (0.0, 2.0)
+        )
+        release_screenshot = browser_module._release_screenshot_payload
+
+        def fail_after_screenshot_release(content, result):
+            release_screenshot(content, result)
+            raise RuntimeError("screenshot payload release failed")
+
+        monkeypatch.setattr(
+            browser_module,
+            "time",
+            SimpleNamespace(monotonic=lambda: next(ticks, 2.0)),
+        )
+        if runtime_behavior == "screenshot_timeout":
+            monkeypatch.setattr(
+                browser_module,
+                "_release_screenshot_payload",
+                fail_after_screenshot_release,
+            )
+        call_kwargs["max_seconds"] = 1
+    if expected_status is None:
+        expected_error = (
+            CancelledError
+            if runtime_behavior == "observe_cancel"
+            else ExecInterrupt
+            if runtime_behavior == "cancel"
+            else RuntimeError
+        )
+        with pytest.raises(expected_error, match="cancelled|model transport"):
+            browser_module._run_browser_task_commands(**call_kwargs)
+        result = None
+    else:
+        result = browser_module._run_browser_task_commands(**call_kwargs)
+
+    if result is not None:
+        assert result["status"] == expected_status
+        assert result["backend"] == DEFAULT_BACKEND
+    assert opens == [(
+        "https://www.google.com/",
+        {"window_id": "window-1", "background": True},
+    )]
+    assert closed == [opened_context]
+    assert context in released
+    if expected_success is False:
+        assert result["reason_code"] == "page_cleanup_failed"
+        previous_reason = {
+            "verify": "verified",
+            "miss": "tool_not_executed",
+            "raise": "runtime_error",
+            "observe_cancel": "cancelled",
+            "screenshot_timeout": "timeout",
+            "timeout": "timeout",
+            "cancel": "cancelled",
+        }[runtime_behavior]
+        expected_ending = (
+            "after the GUI task was verified"
+            if previous_reason == "verified" else
+            f"after the GUI task ended with {previous_reason}"
+        )
+        assert expected_ending in result["summary"]
+        assert "Close the remaining background Page" in result[
+            "handoff_instruction"
+        ]
+
+
+def test_browser_capability_reuses_existing_origin_page(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as browser_module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    window_context = surface_context.window_context("window-1")
+    existing_context = {
+        "context_id": "ctx-existing",
+        "window_id": "window-1",
+        "primary_surface_key": "p1",
+        "surfaces": [{
+            "surface_key": "p1",
+            "window_id": "window-1",
+            "tab_id": "tab-existing",
+            "binding_id": "surface-existing",
+            "page_key": "page-existing",
+            "capabilities": ["observe", "interact", "navigate"],
+        }],
+    }
+    captures = []
+    opened = []
+
+    class _Registry:
+        def list_pages(self, **kwargs):
+            assert kwargs["context"] is existing_context
+            return {
+                "ok": True,
+                "pages": [
+                    {
+                        "window_id": "window-1",
+                        "tab_id": "tab-existing",
+                        "title": "Existing",
+                        "visible": True,
+                        "focused": False,
+                        "page_context_token": "pct-existing",
+                    },
+                    {
+                        "window_id": "window-1",
+                        "tab_id": "tab-other",
+                        "title": "Other",
+                        "visible": True,
+                        "focused": True,
+                        "page_context_token": "pct-other",
+                    },
+                ],
+            }
+
+        def execute(self, **kwargs):
+            if kwargs["command"] == "observe":
+                assert kwargs["page_context_token"] == "pct-existing"
+                return {"frame_id": "f1", "web_session_id": "cs-existing"}
+            if kwargs["command"] == "verify":
+                return {"passed": True}
+            return {"ok": True, "closed": True}
+
+        def release_owner(self, _owner_id):
+            return None
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            asyncio.run(kwargs["tools"][0].execute(
+                "call-1",
+                {
+                    "action": "verify",
+                    "expected_frame_id": "f1",
+                    "assertion": "title_contains",
+                    "value": "Existing",
+                },
+                asyncio.Event(),
+                None,
+            ))
+            return "The existing Page was verified."
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: window_context)
+
+    def capture(context=None):
+        captures.append(context)
+        return existing_context
+
+    monkeypatch.setattr(surface_context, "capture_pages", capture)
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda *_args, **_kwargs: opened.append((_args, _kwargs)) or {},
+    )
+
+    result = browser_module._run_browser_task_commands(
+        task="inspect the page", backend="playwright_mcp",
+        max_steps=150, max_seconds=None, runtime=_Runtime(),
+    )
+
+    assert result["status"] == "succeeded"
+    assert captures[0] is window_context
+    assert opened == []
+
+
+def test_gui_agent_inventory_failure_does_not_open_another_page(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    context = surface_context.window_context("window-1")
+    opened = []
+
+    class _Registry:
+        def release_owner(self, _owner_id):
+            return None
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: context)
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages",
+        lambda _context=None: (_ for _ in ()).throw(
+            RuntimeError("Page inventory transport failed")
+        ),
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda *_args, **_kwargs: opened.append((_args, _kwargs)) or {},
+    )
+
+    result = module._run_browser_task_commands(
+        task="inspect", backend="playwright_mcp",
+        max_steps=1, max_seconds=10, runtime=SimpleNamespace(),
+    )
+
+    assert result["status"] == "failed"
+    assert result["reason_code"] == "page_context_stale"
+    assert "inventory" in result["summary"].lower()
+    assert result["handoff_instruction"]
+    assert opened == []
+
+
+def test_gui_agent_preserves_background_open_timeout_handoff(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as browser_module
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.webui.ws_actions import webtab
+
+    context = surface_context.window_context("window-1")
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def release_owner(self, _owner_id):
+            return None
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: context)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: context,
+    )
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(webtab, "_request", lambda *_args, **_kwargs: {
+        "ok": False,
+        "reason_code": webtab.RESPONSE_TIMEOUT_REASON_CODE,
+        "error": "timeout: no desktop shell replied within 15s",
+    })
+
+    result = browser_module._run_browser_task_commands(
+        task="inspect", backend="playwright_mcp", max_steps=1, max_seconds=10,
+        runtime=SimpleNamespace(),
+    )
+
+    assert result["status"] == "infeasible"
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
+
+
+def test_gui_agent_does_not_release_a_borrowed_empty_context(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    borrowed = {"context_id": "ctx-borrowed-empty", "surfaces": []}
+    released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def release_owner(self, _owner_id):
+            return None
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: borrowed)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: borrowed,
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "reason_code": "desktop_unavailable",
+            "error": "desktop app unavailable",
+        },
+    )
+
+    result = module._run_browser_task_commands(
+        task="inspect", backend="playwright_mcp",
+        max_steps=1, max_seconds=10, runtime=SimpleNamespace(),
+    )
+
+    assert result["status"] == "infeasible"
+    assert result["reason_code"] == "desktop_unavailable"
+    assert released == []
+
+
+def test_browser_capability_without_desktop_returns_infeasible_handoff(
+    monkeypatch,
+):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as browser_module
+
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("desktop unavailable")
+        ),
+    )
+    opens = []
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda *_args, **_kwargs: opens.append((_args, _kwargs)) or {
+            "ok": False,
+            "reason_code": "desktop_unavailable",
+            "error": "OpenProgram desktop app is not connected.",
+        },
+    )
+    result = browser_module._run_browser_task_commands(
+        task="inspect the page", backend="playwright_mcp",
+        max_steps=150, max_seconds=None, runtime=SimpleNamespace(),
+    )
+
+    assert result["status"] == "infeasible"
+    assert result["reason_code"] == "desktop_unavailable"
+    assert "Launch or reconnect" in result["handoff_instruction"]
+    assert opens == []
+
+
+def test_gui_agent_failed_first_observe_releases_its_owner(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    context = {
+        "context_id": "ctx-first-observe",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe"],
+        }],
+    }
+    inventory = {
+        "context_id": "ctx-first-inventory",
+        "surfaces": [{
+            "binding_id": "binding-2",
+            "capabilities": ["observe"],
+        }],
+    }
+    released = []
+
+    class _Registry:
+        def __init__(self):
+            self.calls = []
+            self.released_owners = []
+
+        def list_pages(self, **_kwargs):
+            return {
+                "ok": True,
+                "pages": [{
+                    "page_context_token": "pct-first",
+                    "focused": True,
+                }],
+            }
+
+        def execute(self, **kwargs):
+            self.calls.append(kwargs)
+            if kwargs["command"] == "observe":
+                return {
+                    "web_session_id": "cs-first",
+                    "reason_code": "target_lost",
+                }
+            return {"ok": True, "closed": True}
+
+        def release_owner(self, owner_id):
+            self.released_owners.append(owner_id)
+
+    registry = _Registry()
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages",
+        lambda current=None: context if current is None else inventory,
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda value: released.append(value),
+    )
+
+    result = module._run_browser_task_commands(
+        task="observe", backend="playwright_mcp",
+        max_steps=1, max_seconds=10, runtime=SimpleNamespace(),
+    )
+
+    assert result["status"] == "failed"
+    assert result["reason_code"] == "target_lost"
+    assert any(call["command"] == "close" for call in registry.calls)
+    assert registry.released_owners == ["harness:ctx-first-observe"]
+    assert released == [context]
+
+
+def test_gui_agent_close_error_still_releases_its_owner(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    context = {
+        "context_id": "ctx-close-error",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe"],
+        }],
+    }
+
+    class _Registry:
+        def __init__(self):
+            self.released_owners = []
+
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def execute(self, **kwargs):
+            if kwargs["command"] == "observe":
+                return {"frame_id": "f1", "web_session_id": "cs-close"}
+            if kwargs["command"] == "verify":
+                return {"passed": True}
+            if kwargs["command"] == "close":
+                raise RuntimeError("close failed")
+            return {"ok": True}
+
+        def release_owner(self, owner_id):
+            self.released_owners.append(owner_id)
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            asyncio.run(kwargs["tools"][0].execute(
+                "call-1",
+                {
+                    "action": "verify",
+                    "expected_frame_id": "f1",
+                    "assertion": "text_contains",
+                    "value": "done",
+                },
+                asyncio.Event(),
+                None,
+            ))
+            return "verified"
+
+    registry = _Registry()
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: context)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: context,
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_binding", lambda _page="": "binding-1",
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_page_key", lambda _page="": "page-1",
+    )
+
+    with pytest.raises(RuntimeError, match="close failed"):
+        module._run_browser_task_commands(
+            task="verify", backend="playwright_mcp",
+            max_steps=1, max_seconds=10, runtime=_Runtime(),
+        )
+
+    assert registry.released_owners == ["harness:ctx-close-error"]
+
+
+def test_gui_agent_releases_only_the_failed_inventory_refresh(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+
+    borrowed = {
+        "context_id": "ctx-borrowed",
+        "surfaces": [{
+            "binding_id": "binding-borrowed",
+            "capabilities": ["observe"],
+        }],
+    }
+    inventory = {
+        "context_id": "ctx-inventory",
+        "surfaces": [{
+            "binding_id": "binding-inventory",
+            "capabilities": ["observe"],
+        }],
+    }
+    released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            raise RuntimeError("inventory registration failed")
+
+        def execute(self, **kwargs):
+            if kwargs["command"] == "observe":
+                return {"frame_id": "f1", "web_session_id": "cs-refresh"}
+            if kwargs["command"] == "verify":
+                return {"passed": True}
+            return {"ok": True, "closed": True}
+
+        def release_owner(self, _owner_id):
+            return None
+
+    class _Runtime:
+        def exec(self, **kwargs):
+            asyncio.run(kwargs["tools"][0].execute(
+                "call-1",
+                {
+                    "action": "verify",
+                    "expected_frame_id": "f1",
+                    "assertion": "text_contains",
+                    "value": "done",
+                },
+                asyncio.Event(),
+                None,
+            ))
+            return "verified"
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: borrowed)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: inventory,
+    )
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda context: released.append(context),
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_binding", lambda _page="": "binding-borrowed",
+    )
+    monkeypatch.setattr(
+        surface_context, "resolve_page_key", lambda _page="": "page-borrowed",
+    )
+
+    result = module._run_browser_task_commands(
+        task="verify", backend="playwright_mcp",
+        max_steps=1, max_seconds=10, runtime=_Runtime(),
+    )
+
+    assert result["status"] == "succeeded"
+    assert released == [inventory]
+
+
+def test_gui_agent_app_name_does_not_select_browser_surface(monkeypatch):
+    from openprogram.programs.workflow import browser as browser_module
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    calls = []
+
+    def original(**kwargs):
+        calls.append(kwargs)
+        return {"status": "succeeded", "summary": "desktop"}
+
+    monkeypatch.setattr(
+        browser_module,
+        "_run_browser_task_commands",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("app_name must not select the browser route")
+        ),
+    )
+
+    wrapped = install_gui_harness_web_use(original)
+    result = wrapped(task="inspect", app_name="browser", runtime=object())
+
+    assert result["success"] is True
+    assert calls[0]["app_name"] == "browser"
 
 
 def test_gui_agent_wrapper_resolves_step_budget():
@@ -1213,6 +2052,83 @@ def test_gui_agent_wrapper_resolves_step_budget():
     assert seen[-1]["max_steps"] == 0
     wrapped(task="t", max_steps=20)
     assert seen[-1]["max_steps"] == 20
+
+
+def test_gui_agent_wrapper_forces_success_false_when_infeasible_declared():
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    def original(**kwargs):
+        return {
+            "status": "succeeded",
+            "infeasible_declared": True,
+            "success": True,
+            "summary": "Human must log in and retry.",
+        }
+
+    wrapped = install_gui_harness_web_use(original)
+    result = wrapped(task="t")
+    assert result["success"] is False
+    assert result["status"] == "infeasible"
+    assert result["infeasible_declared"] is True
+    assert result["handoff_instruction"] == "Human must log in and retry."
+    assert result["summary"] == "Human must log in and retry."
+
+
+def test_gui_agent_wrapper_calls_raw_harness_function_once():
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+
+    calls = []
+
+    def raw_harness(**kwargs):
+        calls.append(kwargs)
+        return {"success": True, "summary": "done"}
+
+    def decorated_harness(**_kwargs):
+        raise AssertionError("bridge called the decorated harness wrapper")
+
+    decorated_harness.__wrapped__ = raw_harness
+    wrapped = install_gui_harness_web_use(decorated_harness)
+
+    result = wrapped(task="t")
+    assert result["status"] == "succeeded"
+    assert result["success"] is True
+    assert result["summary"] == "done"
+    assert len(calls) == 1
+
+
+def test_gui_agent_wrapper_records_one_public_gui_agent_node(tmp_path):
+    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.agentic_programming.runtime import Runtime
+    from openprogram.programs.gui_harness_bridge import (
+        install_gui_harness_web_use,
+    )
+    from openprogram.store import SessionNodeWriter, SessionStore, _store
+
+    @agentic_function
+    def gui_step(task, runtime=None):
+        return {"task": task, "success": True, "summary": "done"}
+
+    @agentic_function
+    def gui_agent(task, runtime=None, **_kwargs):
+        return gui_step(task, runtime=runtime)
+
+    store = SessionStore(tmp_path / "sessions")
+    store.create_session("s1", agent_id="main")
+    writer = SessionNodeWriter(store, "s1")
+    token = _store.set(writer)
+    try:
+        wrapped = install_gui_harness_web_use(gui_agent)
+        wrapped(task="t", runtime=Runtime(call=lambda *_a, **_k: "", model="dummy"))
+    finally:
+        _store.reset(token)
+
+    names = [node.name for node in writer.load() if node.is_code()]
+    assert names.count("gui_agent") == 1
+    assert names.count("gui_step") == 1
 
 
 def test_direct_list_pages_releases_capture_when_registry_rejects(monkeypatch):
@@ -1345,7 +2261,13 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
         web_use_runtime,
     )
 
-    context = {"context_id": "ctx-temp", "surfaces": [{}]}
+    context = {
+        "context_id": "ctx-temp",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe"],
+        }],
+    }
     released = []
 
     class _Registry:
@@ -1458,9 +2380,25 @@ def test_temporary_page_capture_is_released_when_binding_resolution_fails(
 ):
     from openprogram.agent import surface_context
     from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
 
-    context = {"context_id": "ctx-temp", "surfaces": [{}]}
+    context = {
+        "context_id": "ctx-temp",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe"],
+        }],
+    }
     released = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def execute(self, **_kwargs):
+            raise AssertionError("binding resolution must happen first")
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
     monkeypatch.setattr(surface_context, "current", lambda: None)
     monkeypatch.setattr(
         surface_context,
@@ -1536,7 +2474,13 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    context = {"context_id": "ctx-1", "surfaces": [{}]}
+    context = {
+        "context_id": "ctx-1",
+        "surfaces": [{
+            "binding_id": "binding-1",
+            "capabilities": ["observe", "interact", "navigate"],
+        }],
+    }
     monkeypatch.setattr(surface_context, "current", lambda: context)
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "binding-1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "page-1")
@@ -1548,6 +2492,7 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
                 "call-1",
                 {
                     "action": "verify", "expected_frame_id": "frame-1",
+                    "page_context_token": "pct-current",
                     "assertion": "text_contains", "value": "done",
                 },
                 asyncio.Event(),
@@ -1561,6 +2506,10 @@ def test_gui_agent_harness_uses_selected_computer_use_backend(monkeypatch):
         runtime=_Runtime(),
     )
     assert result["status"] == "succeeded"
+    verify_call = next(
+        call for call in registry.calls if call["command"] == "verify"
+    )
+    assert "page_context_token" not in verify_call["arguments"]
     assert registry.calls[0] == {
         "command": "observe",
         "backend": "chrome_devtools_mcp",
@@ -1686,10 +2635,11 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
     initial = {"context_id": "ctx-pages", "surfaces": [{"surface_key": "p1"}]}
     popup = {"context_id": "ctx-popup", "surfaces": [{"surface_key": "p2"}]}
     captures = []
+    released = []
 
     def capture_pages(context=None):
         captures.append(context)
-        return initial if len(captures) == 1 else popup
+        return initial if len(captures) <= 2 else popup
 
     class _Registry:
         def __init__(self):
@@ -1729,8 +2679,11 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: initial)
+    monkeypatch.setattr(surface_context, "current", lambda: None)
     monkeypatch.setattr(surface_context, "capture_pages", capture_pages)
+    monkeypatch.setattr(
+        surface_context, "release_bindings", lambda context: released.append(context),
+    )
 
     class _Runtime:
         calls = 0
@@ -1765,6 +2718,8 @@ def test_gui_agent_discovers_popup_and_switches_by_exact_page_token(monkeypatch)
         call["command"] == "close" and call.get("web_session_id") == "cs-a"
         for call in registry.calls
     )
+    assert captures[:2] == [None, initial]
+    assert released == [initial]
 
 
 def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
@@ -1794,7 +2749,13 @@ def test_gui_harness_screenshot_capability_is_one_request_only(monkeypatch):
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
+    monkeypatch.setattr(surface_context, "current", lambda: {
+        "context_id": "ctx",
+        "surfaces": [{
+            "binding_id": "b1",
+            "capabilities": ["observe"],
+        }],
+    })
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
 
@@ -1868,7 +2829,13 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
+    monkeypatch.setattr(surface_context, "current", lambda: {
+        "context_id": "ctx",
+        "surfaces": [{
+            "binding_id": "b1",
+            "capabilities": ["observe"],
+        }],
+    })
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
 
@@ -1877,9 +2844,9 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
 
         def exec(self, **kwargs):
             self.calls += 1
-            if self.calls == 6:
+            if self.calls == 1:
                 asyncio.run(kwargs["tools"][0].execute(
-                    "c6", {"action": "screenshot", "expected_frame_id": "f1"},
+                    "c1", {"action": "screenshot", "expected_frame_id": "f1"},
                     asyncio.Event(), None,
                 ))
             return ""
@@ -1889,7 +2856,10 @@ def test_gui_harness_releases_unsent_final_screenshot(monkeypatch):
         max_steps=1, max_seconds=30, runtime=_Runtime(),
     )
 
-    assert result["reason_code"] == "verification_missing"
+    assert result["reason_code"] == "tool_not_executed"
+    assert result["summary"] == (
+        "The model did not execute the required browser_page tool call."
+    )
     assert captured["result"].images == []
     assert registry.revoked == 1
 
@@ -1927,7 +2897,13 @@ def test_gui_harness_releases_same_request_screenshot_on_runtime_error(
 
     registry = _Registry()
     monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
-    monkeypatch.setattr(surface_context, "current", lambda: {"context_id": "ctx"})
+    monkeypatch.setattr(surface_context, "current", lambda: {
+        "context_id": "ctx",
+        "surfaces": [{
+            "binding_id": "b1",
+            "capabilities": ["observe"],
+        }],
+    })
     monkeypatch.setattr(surface_context, "resolve_binding", lambda _page="": "b1")
     monkeypatch.setattr(surface_context, "resolve_page_key", lambda _page="": "p1")
 
@@ -2115,3 +3091,36 @@ def test_act_with_url_reports_desktop_unavailable(monkeypatch):
     assert result["reason_code"] == "desktop_unavailable"
     assert "Launch the desktop app" in result["error"]
     assert "background web tab" in result["error"]
+
+
+@pytest.mark.parametrize("entry", ["web_use", "direct"])
+def test_open_page_cleanup_contract_reaches_public_web_use_entries(
+    monkeypatch, entry,
+):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+
+    cleanup = {
+        "ok": False,
+        "status": "infeasible",
+        "success": False,
+        "infeasible_declared": True,
+        "reason_code": "page_cleanup_failed",
+        "error": "close rejected",
+        "summary": "The background Page could not be closed.",
+        "handoff_instruction": "Close the remaining background Page.",
+    }
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(surface_context, "open_page", lambda _url: cleanup)
+    arguments = {
+        "command": "act",
+        "arguments": {"action": "navigate", "url": "https://example.test/"},
+    }
+
+    result = (
+        module.web_use(**arguments)
+        if entry == "web_use"
+        else module.execute_direct_web_use(arguments, owner_id="owner-test")
+    )
+
+    assert result == cleanup

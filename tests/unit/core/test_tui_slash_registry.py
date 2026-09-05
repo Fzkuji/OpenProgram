@@ -90,7 +90,6 @@ def test_rich_repl_goal_invokes_the_public_workflow(clean_registry, monkeypatch)
 
     assert calls == [{
         "prompt": "tests pass",
-        "condition": "tests pass",
         "context_mode": "session",
         "runtime": runtime,
     }]

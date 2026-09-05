@@ -11,7 +11,8 @@ export type LogicNode = {
 export type LogicResponse = {
   root: string;
   nodes: LogicNode[];
-  edges: Array<{ source: string; target: string }>;
+  edges: Array<{ source: string; target: string; kind?: string }>;
+  analysis_kind?: string;
   analysis_complete?: boolean;
   analysis_warnings?: string[];
 };
@@ -24,6 +25,9 @@ export type CallTreeRow = {
   cycle: boolean;
   ancestorContinuations: boolean[];
   isLast: boolean;
+  conditional?: boolean;
+  expandable: boolean;
+  isExpanded: boolean;
 };
 
 export type GraphLayoutNode = LogicNode & { x: number; y: number };
@@ -37,7 +41,7 @@ export type GraphLayout = {
 export const GRAPH_NODE_WIDTH = 164;
 export const GRAPH_NODE_HEIGHT = 64;
 
-export function buildCallTreeRows(logic: LogicResponse, limit = 256) {
+export function buildCallTreeRows(logic: LogicResponse, limit = 256, expansion?: ReadonlyMap<string, boolean>) {
   const nodes = new Map(logic.nodes.map((node) => [node.id, node]));
   const adjacency = new Map<string, string[]>();
   for (const edge of logic.edges) {
@@ -54,6 +58,7 @@ export function buildCallTreeRows(logic: LogicResponse, limit = 256) {
     key: string,
     ancestorContinuations: boolean[],
     isLast: boolean,
+    parent?: string,
   ) {
     if (rows.length >= limit) {
       truncated = true;
@@ -63,11 +68,16 @@ export function buildCallTreeRows(logic: LogicResponse, limit = 256) {
     if (!node) return;
     const cycle = ancestry.has(id);
     const reference = cycle || expanded.has(id);
-    rows.push({ key, node, depth, reference, cycle, ancestorContinuations, isLast });
+    const targets = adjacency.get(id) ?? [];
+    const expandable = !reference && targets.length > 0;
+    const isExpanded = expandable && (expansion?.get(id) ?? (expansion === undefined || depth < 3));
+    rows.push({ key, node, depth, reference, cycle, ancestorContinuations, isLast, expandable, isExpanded,
+      conditional: logic.edges.some((edge) => edge.target === id && edge.source === parent && edge.kind === "conditional"),
+    });
     if (reference) return;
     expanded.add(id);
+    if (!isExpanded) return;
     const nextAncestry = new Set(ancestry).add(id);
-    const targets = adjacency.get(id) ?? [];
     for (const [index, target] of targets.entries()) {
       visit(
         target,
@@ -76,6 +86,7 @@ export function buildCallTreeRows(logic: LogicResponse, limit = 256) {
         `${key}/${index}:${target}`,
         depth === 0 ? [] : [...ancestorContinuations, !isLast],
         index === targets.length - 1,
+        id,
       );
     }
   }

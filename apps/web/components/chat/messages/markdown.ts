@@ -6,8 +6,6 @@
  * no second markdown engine. Falls back to escaped plain text on SSR,
  * where `renderMd` would touch `window`.
  */
-import { useEffect, useState } from "react";
-
 import { renderMd } from "@/lib/runtime-bridge/helpers";
 
 export function renderMarkdown(src: string): string {
@@ -19,47 +17,9 @@ export function renderMarkdown(src: string): string {
   }
 }
 
-/**
- * Re-render gate for markdown.
- *
- * `renderMd` needs the `marked` CDN lib on `window` — an async load
- * (app-shell's `__sharedScriptsReady`) that usually finishes *after*
- * the first bubble paints, and until then `renderMd` emits a `<pre>`
- * escaped-text fallback. Without this hook a bubble rendered early
- * would keep that fallback forever. The hook flips to `true` once
- * `marked` lands, forcing the consuming bubble to re-render and pick
- * up real markdown.
- */
+/** Compatibility hook retained for callers that used to wait for CDN marked. */
 export function useMarkdownReady(): boolean {
-  const has = () => typeof window !== "undefined" && !!window.marked;
-  const [ready, setReady] = useState<boolean>(has);
-
-  useEffect(() => {
-    if (ready) return;
-    let cancelled = false;
-    if (has()) {
-      setReady(true);
-      return;
-    }
-    const done = () => {
-      if (!cancelled && has()) setReady(true);
-    };
-    // Polling is the only signal: `window.__sharedScriptsReady` came from
-    // the legacy public/js bundle (now gone), so that promise never
-    // existed and this was already the path that fired.
-    const t = setInterval(() => {
-      if (has()) {
-        done();
-        clearInterval(t);
-      }
-    }, 120);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [ready]);
-
-  return ready;
+  return true;
 }
 
 /** SSR/no-`marked` fallback escape. Deliberately NOT

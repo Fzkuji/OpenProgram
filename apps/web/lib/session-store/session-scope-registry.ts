@@ -36,6 +36,7 @@ export const DEFAULT_SCOPE_SETTINGS: ComposerSettings = {
   tools: true,
   webSearch: false,
   fast: false,
+  runningMessageMode: "queue",
   unattended: false,
   permission_mode: "",
   effective_permission: "",

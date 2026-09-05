@@ -235,6 +235,7 @@ def create_pending_call_node(
     docstring: str = "",
     caller: Optional[str] = None,
     forced_predecessor: Optional[str] = None,
+    retry_of: Optional[str] = None,
     store=None,
 ):
     """Build the placeholder code ``Call`` for an @agentic_function run.
@@ -285,6 +286,8 @@ def create_pending_call_node(
         "expose": expose,
         "status": "running",
     }
+    if retry_of:
+        meta["retry_of"] = retry_of
     if render_range:
         meta["render_range"] = dict(render_range)
     # The function's docstring travels on the node so it renders into
@@ -741,6 +744,8 @@ class agentic_function:
                       multiline    — True for textarea, False for single-line input
                       options      — list of allowed values (renders as dropdown)
                       hidden       — True to hide from the form (e.g. runtime)
+                      advanced     — True for a user-settable field collapsed
+                                     below the form's primary fields
 
                     Parameters not listed inherit defaults from the function
                     signature (type hints, defaults, docstring Args:).

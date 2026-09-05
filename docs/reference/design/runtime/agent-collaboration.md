@@ -155,6 +155,23 @@ inheriting the chain up to it. `run_in_background=true` returns a `job_id`; its
 companions `job_output(job_id)` (block for the result) and
 `job_stop(job_id)` (cancel) manage the background form.
 
+`"SID:MSG_ID"` is an exact fork address. Both the session and the message must
+exist before the spawn is admitted; the message is not snapped to a branch's
+current tip. An archived branch may still be used because this operation reads
+recorded history and creates a new branch rather than delivering work to the
+archived branch.
+
+When the address names another session, keep the two session roles separate.
+If session S at node A starts from `"T:M"`, the new branch and the canonical
+Job run in target session T, with M as the exact predecessor. The Job records
+`parent_session_id=T`, `parent_msg_id=M`, `caller_session_id=S`, and
+`caller_msg_id=A`. Its attach card is stored beside A in source session S, but
+the card's `attach.session_id` is T and its terminal `head_id` is the new target
+branch tip. Writing or finalising that card does not move S's HEAD, and the
+spawned turn uses `advance_head=false`, so it does not replace T's selected
+HEAD either. An asynchronous completion may subsequently advance S's HEAD by
+writing the ordinary reply-back turn described in §2.5.
+
 **`to=` — dispatch a tracked task to an EXISTING agent.** With `to` set the
 tool creates no branch: the prompt is handed to the named existing branch
 as a formal task. Addressing is send_message's, verbatim (`"SID:HEAD"`
@@ -309,6 +326,18 @@ pointer** written at spawn time does hang off
 sub-branch forked from and which branch each result flowed back from.
 The sub-branch itself stays a parallel independent branch and **does not
 merge back into the mainline**.
+
+For a cross-session spawn, the pointer remains in the initiator's session but
+references the target `(session_id, head_id)`. Terminal finalisation reads the
+target branch and its ContextCommit in the target session, then patches the
+card in the initiator's session. The source-side initiating node is marked
+`spawn_out`; the target-side first `agent_spawn` user node records
+`caller=<source node>` plus `metadata.spawned_from_session=<source session>`
+and is projected as `spawn_remote`. Because the source session has a real
+attach pointer, its asynchronous follow-up consumes the result through attach
+expansion rather than duplicating the reply inline. `send_message` and
+`agent(to=...)` create no branch and no attach pointer, so their replies remain
+inline and receive neither spawn marker.
 
 ### 2.6 Archiving: removing an agent from the agent list
 
@@ -782,7 +811,7 @@ session event log.
 | Listing | `list_agents` lists the real multiple sessions and each one's branches |
 | Archiving (§2.6) | An archived agent leaves `list_agents` and shows up under `scope="archived"`; `send_message` and `agent(to=)` refuse it while `read_conversation` and `agent(start_from=…)` still work; any session may archive any agent, and the flag is one-way; a spawn that completed and was merged is still listed under `scope="archived"`, and its head still addresses its own branch |
 | Send to an existing branch in the same session | A sends to branch B of the same session, A does not block, B runs a turn, the reply returns to A automatically |
-| Cross-session | A sending to another session takes the same path; both sides update live |
+| Cross-session | A delivery to another session updates both sides live. `send_message` / `agent(to=...)` remain message-only. `agent(start_from="T:M")` creates the branch and canonical Job in T, keeps its card in the initiating session, and marks the source and target DAG nodes `spawn_out` / `spawn_remote` without moving either selected HEAD |
 | Robustness (§5) | A↔B back-and-forth stops when the chain's message budget runs out, and a budget of 0 never stops it; spawning 30 at once queues instead of overloading; cancelling the parent stops every child; messaging a busy B queues and is delivered when its turn ends; the parent is told when a child fails; oversized results are truncated with a file path |
 | Safety (§5.7-5.9) | Under a deny policy a delivery is held for confirmation; a nonexistent `to` raises an error; sub-branches have no more privilege than the parent and stay out of the UI picker |
 | Frontend | Pick a branch in the web UI and send a message; the DAG shows the communication node plus the return-flow edge on hover |

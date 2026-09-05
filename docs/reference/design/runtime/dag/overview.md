@@ -196,18 +196,25 @@ successor. Two consequences follow from the ordinary rules:
 ### Spawn
 
 `SessionStore.spawn_branch(session_id, caller_node_id, *, source, name=…)` is
-the **only** way to open a spawn branch. It creates the branch-root user node
+the **only** way to open a clean spawn root. It creates the branch-root user node
 (`predecessor=None`, `caller=caller_node_id`, `metadata.source`,
 `metadata.spawn_branch_root=True`), registers it as head, and returns its id.
 Spawn call sites (task runner, collaboration messages, background agents) call
-the primitive and never hand-assemble edges, so a new call site cannot get the
-edge wrong.
+the primitive for clean starts. An inherited spawn is an ordinary exact fork:
+its first user node has the requested node as `predecessor`.
 
 A spawn branch root does **not** hang on ROOT: its `caller` points at the node
 that initiated it, which keeps the single-connected-graph invariant via that
-node. (Exception: a cross-session spawn's branch root points into another
-session's graph; within this session it hangs on ROOT and the renderer marks
-it with a ↗ badge — see the legend in [`rendering.md`](rendering.md).)
+node. For a cross-session exact fork, source session S retains the attach card
+beside its initiating node A, while target session T stores the new user node
+with `predecessor=M`, `caller=A`, and
+`metadata.spawned_from_session=S`. The graph projection cannot draw an edge to
+a node in another session, so it places that external caller at ROOT for the
+target view and marks the node `spawn_remote`; the source node is marked
+`spawn_out`. The source card points to `attach.session_id=T` and the target
+branch head. Cross-session spawning does not move either session's selected
+HEAD; the target result is registered as a branch tip, and a later asynchronous
+reply-back advances the source HEAD as an ordinary turn.
 
 Spawn branches have clean context: `get_branch` on a spawn branch stops at the
 spawn root and does not leak into the parent branch via the caller edge. The
@@ -253,12 +260,15 @@ includes the first answer.
   session.
 - **get_branch(session_id, head_id)**: walks the predecessor chain from head to
   its terminus and returns the linear history of that branch.
-- **list_branches(session_id)**: enumerates branch tips (conversation nodes
-  with no conversation child). The "main" tip is found by walking from the
-  earliest conversation root down the primary-child path — matching the lane-0
-  trunk the user visually identifies as main. Spawn roots never appear among
-  predecessor children (their predecessor is None), so no special-casing is
-  needed. Branch names live in the session meta under `branches: {head_id: name}`.
+- **list_branches(session_id)**: enumerates leaves in the conversation
+  predecessor graph. Conversation nodes include user and LLM turns plus
+  top-level Program actions whose caller is empty or `ROOT`. A node with any
+  such successor is an ancestor, not another branch tip. Internal execution
+  children, runtime/attach rows, and context rows do not continue the
+  conversation and therefore do not remove their owner's tip. Parallel
+  top-level Programs sharing one predecessor remain separate leaves. There is
+  no special main-tip fallback: merged and non-conversation nodes stay excluded.
+  Branch names live in session meta under `branches: {head_id: name}`.
 
 ## 6. Context Rendering
 

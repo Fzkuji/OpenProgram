@@ -85,7 +85,7 @@ def register(app):
             fn = getattr(_s, name, None)
         if fn is not None and callable(fn):
             try:
-                inner = getattr(fn, '__wrapped__', None) or getattr(fn, '_fn', None) or fn
+                inner = inspect.unwrap(getattr(fn, '_fn', None) or fn)
                 source = inspect.getsource(inner)
                 return JSONResponse(content={
                     "name": name,
@@ -98,7 +98,7 @@ def register(app):
         # @agentic_function registry
         from openprogram.agentic_programming.function import _registry
         if name in _registry:
-            reg_fn = _registry[name]._fn
+            reg_fn = inspect.unwrap(_registry[name]._fn)
             try:
                 source = inspect.getsource(reg_fn)
                 return JSONResponse(content={

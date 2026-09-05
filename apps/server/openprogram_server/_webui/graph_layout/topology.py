@@ -10,7 +10,9 @@ Three maps (see docs/design/runtime/dag-layout-algorithm.md):
 """
 from __future__ import annotations
 
-from ._common import predecessor_of, caller_of, ts, is_root
+from ._common import (
+    predecessor_of, caller_of, is_root, is_top_program_run, retry_source, ts,
+)
 
 
 def build_maps(
@@ -31,11 +33,24 @@ def build_maps(
             # reply 后继续问），即便建库时 caller 也写了 ROOT，它也该跟着
             # predecessor 待在原分支 lane，而不是被误当成新分支拉走。
             # turn 内 sub-call（caller 指向 llm，非 root）同样不在此列。
-            if is_root(by_id.get(c) or {}) and not (p and p in by_id):
+            independent_program = (
+                is_root(by_id.get(c) or {})
+                and is_top_program_run(m)
+                and not retry_source(m)
+            )
+            if (is_root(by_id.get(c) or {})
+                    and not (p and p in by_id)
+                    and not independent_program):
                 fork_siblings.setdefault(c, []).append(nid)
         if p:
             pred_children.setdefault(p, []).append(nid)
-            fork_siblings.setdefault(p, []).append(nid)
+            independent_program = (
+                is_root(by_id.get(p) or {})
+                and is_top_program_run(m)
+                and not retry_source(m)
+            )
+            if not independent_program:
+                fork_siblings.setdefault(p, []).append(nid)
     for kids in caller_children.values():
         kids.sort(key=lambda x: ts(by_id, x))
     for kids in pred_children.values():

@@ -14,22 +14,12 @@ See docs/design/runtime/dispatcher-split.md.
 from __future__ import annotations
 
 import logging
-import time
 from typing import Optional
+import threading
 
 from openprogram.agent.dispatcher.types import EventCallback, _noop
 
 _log = logging.getLogger(__name__)
-
-
-def _execution_id_from_anchor(anchor_msg_id: str | None) -> str | None:
-    if not isinstance(anchor_msg_id, str):
-        return None
-    marker = "|node:"
-    if marker not in anchor_msg_id:
-        return None
-    node_id = anchor_msg_id.rsplit(marker, 1)[-1].strip()
-    return node_id or None
 
 
 def dispatch_forced_tool_call(
@@ -46,6 +36,10 @@ def dispatch_forced_tool_call(
     response_format=None,
     on_event: Optional[EventCallback] = None,
     execution_id: Optional[str] = None,
+    attempt_id: Optional[str] = None,
+    generation: Optional[int] = None,
+    cancel_event: Optional[threading.Event] = None,
+    surface_context_snapshot: Optional[dict] = None,
 ) -> dict:
     """Run a single @agentic_function without invoking the LLM.
 
@@ -58,6 +52,10 @@ def dispatch_forced_tool_call(
     command message under ``anchor_msg_id`` — this function only adds
     the runtime-block row + the DAG subtree.
     """
+    if (attempt_id is None) != (generation is None):
+        raise ValueError("attempt_id and generation must be supplied together")
+    if attempt_id is not None and not execution_id:
+        raise ValueError("exact execution_id is required with attempt binding")
     on_event = on_event or _noop
 
     # Look up by registry name so user-only tools (expose=False) can still
@@ -91,22 +89,49 @@ def dispatch_forced_tool_call(
             "agentic tools can be forced via this path"
         )
 
-    # New path: forked subprocess so handle_stop can SIGKILL the
+    # New path: forked subprocess so canonical execution cancellation can
+    # SIGKILL the
     # entire process group in milliseconds. The child re-installs the
     # session ContextVars and re-wraps the tool with
     # _wrap_agentic_runtime_block; events are bridged back via an
     # mp.Queue so WS clients see the same envelopes as before.
-    from openprogram.agent.process_runner import run_agentic_in_subprocess
+    from openprogram.agent.process_runner import (
+        agentic_subprocess_timeout_seconds,
+        run_agentic_in_subprocess,
+    )
     from openprogram.agent.run_control import (
         set_current_session_id as _set_cid,
         reset_current_session_id as _reset_cid,
-        clear_cancel as _clear_cancel,
     )
     _cid_token = _set_cid(session_id)
+    captured_surface = None
+    out = None
     try:
-        resolved_execution_id = (
-            execution_id or _execution_id_from_anchor(anchor_msg_id)
+        # The canonical execution identity is supplied by AgentDriver. The
+        # DAG anchor is content provenance only and can never own lifecycle.
+        resolved_execution_id = execution_id
+        browser_surface = (
+            tool_name == "browser_agent"
+            or (
+                tool_name == "gui_agent"
+                and (
+                    str((tool_input or {}).get("surface") or "desktop")
+                    .strip()
+                    .lower()
+                    == "browser"
+                    or bool((tool_input or {}).get("backend"))
+                )
+            )
         )
+        surface_snapshot = surface_context_snapshot
+        if browser_surface and surface_snapshot is None:
+            from openprogram.agent import surface_context
+
+            try:
+                captured_surface = surface_context.capture_pages()
+            except RuntimeError:
+                captured_surface = surface_context.window_context()
+            surface_snapshot = captured_surface
         out = run_agentic_in_subprocess(
             tool_name=tool_name,
             kwargs=dict(tool_input or {}),
@@ -115,18 +140,27 @@ def dispatch_forced_tool_call(
             work_dir=work_dir,
             on_event=on_event,
             execution_id=resolved_execution_id,
+            attempt_id=attempt_id,
+            generation=generation,
+            cancel_event=cancel_event,
             provider=provider,
             model=model,
             response_format=response_format,
+            timeout_seconds=agentic_subprocess_timeout_seconds(
+                tool_name, tool_input,
+            ),
+            surface_context_snapshot=surface_snapshot,
         )
     finally:
+        if captured_surface is not None:
+            from openprogram.agent.surface_context import release_bindings
+
+            release_bindings(captured_surface)
         try:
             _reset_cid(_cid_token)
         except ValueError:
             _log.debug("call-id contextvar reset in foreign context",
                        exc_info=True)
-        # Retires this turn's cancel token; the next turn opens its own.
-        _clear_cancel(session_id)
         # Subprocess wrote every nested Call directly to the per-session
         # git history via its OWN SessionStore. Parent worker's cached
         # SessionMemoryIndex never observed those writes — drop the
@@ -159,107 +193,22 @@ def dispatch_forced_tool_call(
                 _log.warning("failed to advance head for session %s",
                              session_id, exc_info=True)
 
-    _terminal_status = "interrupted"
-    if resolved_execution_id:
-        from openprogram.agent.run_control import mark_execution_terminal
-        if out.get("killed"):
-            _cancel_intent = False
-            try:
-                from openprogram.agent.session_db import default_db as _ddb
-                _record = next(
-                    (
-                        node for node in _ddb().get_nodes(session_id)
-                        if node.id == resolved_execution_id
-                    ),
-                    None,
-                )
-                _meta = (_record.metadata or {}) if _record is not None else {}
-                _cancel_intent = bool(
-                    _meta.get("cancellation_requested_at")
-                    or _meta.get("status") in {"cancelling", "cancelled"}
-                )
-            except Exception:
-                _log.debug(
-                    "failed to read cancellation intent for %s",
-                    resolved_execution_id,
-                    exc_info=True,
-                )
-            _terminal_status = (
-                "cancelled" if _cancel_intent else "interrupted"
-            )
-        elif out.get("error"):
-            _terminal_status = "error"
-        else:
-            _terminal_status = "completed"
-        mark_execution_terminal(resolved_execution_id, _terminal_status)
-
-    if out.get("killed"):
-        # If the subprocess was SIGKILLed before it could finalize the
-        # runtime-block, patch the placeholder so the UI doesn't show
-        # a stuck spinner. handle_stop also patches running rows, so
-        # this is a belt-and-suspenders cleanup.
-        try:
-            from openprogram.agent.session_db import default_db as _ddb
-            from openprogram.store import SessionNodeWriter as _GS
-            _db = _ddb()
-            _shim = _GS(_db, session_id)
-            for _m in (_db.get_messages(session_id) or []):
-                if (_m.get("status") or "done") == "running":
-                    _shim.update(
-                        _m["id"],
-                        metadata={
-                            "status": _terminal_status,
-                            "last_update_at": time.time(),
-                            **(
-                                {"_cancelled_reason": "user_stop"}
-                                if _terminal_status == "cancelled" else {}
-                            ),
-                        },
-                    )
-        except Exception:
-            # Rows left at "running" never clear in the UI — log loudly.
-            _log.warning(
-                "failed to mark running rows cancelled for session %s",
-                session_id, exc_info=True)
+    # Canonical AgentDriver is the only owner allowed to finish the durable
+    # execution. This leaf reports subprocess facts only; it never writes a
+    # terminal state or patches lifecycle rows itself.
+    if out.get("page_cleanup_failed"):
         return {
-            "runtime_msg_id": None,
+            "runtime_msg_id": resolved_execution_id or out.get("runtime_msg_id"),
             "ok": False,
-            "killed": True,
+            "error": out.get("error") or "page cleanup failed",
+            "page_cleanup_result": out.get("page_cleanup_result"),
         }
-    if out.get("error"):
-        # The child errored — possibly BEFORE its wrapper's finally could
-        # flip the node's status (spawn crash, kwargs pickle error, tool
-        # not found). If the parent pre-created the top-level card (see
-        # run_agentic_function_call), it is stuck at "running"; without a
-        # terminal flip the UI spins forever. Patch any leftover running
-        # row to "error" so the card resolves. In-process runs (no
-        # pre-create, wrapper always finalizes) have no running rows here,
-        # so this is a no-op for them.
-        try:
-            from openprogram.agent.session_db import default_db as _ddb
-            from openprogram.store import SessionNodeWriter as _GS
-            _db = _ddb()
-            _db.invalidate_cache(session_id)
-            _shim = _GS(_db, session_id)
-            for _m in (_db.get_messages(session_id) or []):
-                if (
-                    (_m.get("status") or "done") == "running"
-                    or _m.get("id") == resolved_execution_id
-                ):
-                    _shim.update(
-                        _m["id"],
-                        output={"error": out["error"]},
-                        metadata={
-                            "status": "error",
-                            "error": out["error"],
-                            "last_update_at": time.time(),
-                        },
-                    )
-        except Exception:
-            _log.warning(
-                "failed to mark running rows errored for session %s",
-                session_id, exc_info=True)
-        return {"runtime_msg_id": None, "ok": False, "error": out["error"]}
+    if out.get("killed") or out.get("error"):
+        return {
+            "runtime_msg_id": out.get("runtime_msg_id"),
+            "ok": False,
+            **{key: out[key] for key in ("error", "killed", "timed_out") if key in out},
+        }
     return {
         "runtime_msg_id": out.get("runtime_msg_id"),
         "ok": True,

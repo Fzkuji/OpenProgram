@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace
 
 from openprogram.agent.job.types import Job, JobStatus
+from openprogram.execution import EventCursor, JobResourceDTO
 
 
 class _WS:
@@ -18,23 +19,59 @@ class _ResourceView:
         self.job_id = job_id
 
     def to_dict(self) -> dict:
-        return {
-            "job_id": self.job_id,
-            "status": "queued",
+        resource = {
+            "admission_id": "admission-job-1",
             "resource_state": "queued",
-            "reason_code": "quota.queue_full",
-            "reason_key": "resource.reason.quota.queue_full",
-            "retryable": True,
-            "limits": {"scheduler_capacity": 4, "limits": {}},
-            "capacity": {
-                "scheduler_capacity": 4,
-                "session_live": {"used": 1, "limit": 2},
-                "session_queued": {"used": 2, "limit": 8},
-                "session_jobs": {"used": 3, "limit": 100},
-                "queue_position": 2,
+            "queue_wait": {
+                "state": "queued",
+                "reason_code": "quota.queue_full",
+                "since": 1.0,
+                "position": 2,
             },
-            "budget": {},
+            "resource_lease_generation": None,
+            "owner_instance_id": None,
+            "limits": {"scheduler_capacity": 4, "limits": {}},
+            "usage": {},
+            "reservation": None,
         }
+        return JobResourceDTO(
+            job_id=self.job_id,
+            execution_id=self.job_id,
+            project_id="default",
+            session_id="session-1",
+            parent_execution_id=None,
+            label="work",
+            subject="work",
+            prompt_summary="work",
+            relation="owned",
+            origin_turn_id=None,
+            status="queued",
+            status_version=0,
+            capabilities={
+                "pause": True,
+                "step": True,
+                "steer": False,
+                "fork": False,
+                "retry": False,
+                "safe_point_kinds": [],
+                "state_schema_version": 1,
+            },
+            checkpoint_head_id=None,
+            resource=resource,
+            event_cursor=EventCursor(
+                execution_id=self.job_id,
+                next_sequence=1,
+                snapshot_status_version=0,
+            ),
+            execution={
+                "execution_id": self.job_id,
+                "job_id": self.job_id,
+                "session_id": "session-1",
+                "status": "queued",
+                "status_version": 0,
+                "resource": resource,
+            },
+        ).to_dict()
 
 
 def _job(*, status: JobStatus = JobStatus.QUEUED) -> Job:
@@ -47,14 +84,12 @@ def _job(*, status: JobStatus = JobStatus.QUEUED) -> Job:
     )
 
 
-def test_job_ws_list_get_and_cancel_return_the_canonical_resource_view(
+def test_job_ws_list_and_get_return_the_canonical_resource_dto(
     monkeypatch,
 ) -> None:
     from openprogram.webui.ws_actions import job as job_actions
 
     queued = _job()
-    cancelled = _job(status=JobStatus.CANCELLED)
-
     class Runner:
         def __init__(self) -> None:
             self.resource_reads: list[str] = []
@@ -64,9 +99,6 @@ def test_job_ws_list_get_and_cancel_return_the_canonical_resource_view(
 
         def get_job(self, _job_id):
             return queued
-
-        def cancel_job(self, _job_id, *, reason=None):
-            return cancelled
 
         def get_job_resource_view(self, job_id):
             self.resource_reads.append(job_id)
@@ -78,13 +110,13 @@ def test_job_ws_list_get_and_cancel_return_the_canonical_resource_view(
 
     asyncio.run(job_actions.handle_list_jobs(ws, {"session_id": "session-1"}))
     asyncio.run(job_actions.handle_get_job(ws, {"job_id": "job-1"}))
-    asyncio.run(job_actions.handle_cancel_job(ws, {"job_id": "job-1"}))
 
     expected = _ResourceView("job-1").to_dict()
-    assert ws.messages[0]["data"]["jobs"][0]["resource"] == expected
-    assert ws.messages[1]["data"]["job"]["resource"] == expected
-    assert ws.messages[2]["data"]["resource"] == expected
-    assert runner.resource_reads == ["job-1", "job-1", "job-1"]
+    assert ws.messages[0]["data"]["jobs"][0]["resource"] == expected["resource"]
+    assert ws.messages[0]["data"]["jobs"][0]["event_cursor"] == expected["event_cursor"]
+    assert ws.messages[1]["data"]["job"]["resource"] == expected["resource"]
+    assert ws.messages[1]["data"]["job"]["event_cursor"] == expected["event_cursor"]
+    assert runner.resource_reads == ["job-1", "job-1"]
 
 
 def test_job_status_broadcast_uses_canonical_resource_and_omits_failed_read(
@@ -110,6 +142,39 @@ def test_job_status_broadcast_uses_canonical_resource_and_omits_failed_read(
 
     assert "resource" not in sent[-1]["data"]
     assert sent[-1]["data"]["status"] == "queued"
+
+
+def test_runtime_snapshot_uses_the_nested_resource_projection(monkeypatch):
+    from openprogram.webui.ws_actions import runtime
+
+    resource = {"resource_state": "active"}
+    execution = SimpleNamespace(
+        execution_id="job-1",
+        to_dict=lambda: {"execution_id": "job-1"},
+    )
+    runner = SimpleNamespace(
+        get_job_resource_view=lambda _job_id: SimpleNamespace(resource=resource),
+        get_job=lambda _job_id: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.default_store", lambda: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.job.runner.runner_for_execution_store",
+        lambda _store: runner,
+    )
+
+    def fake_snapshot(_execution, **kwargs):
+        assert kwargs["resource"] is resource
+        return SimpleNamespace(to_dict=lambda: {
+            "execution_id": "job-1", "resource": kwargs["resource"],
+        })
+
+    monkeypatch.setattr(
+        "openprogram.execution.public.execution_snapshot", fake_snapshot,
+    )
+    snapshot, _cursor = runtime._public_execution_snapshot(execution)
+    assert snapshot["resource"] == resource
 
 
 def test_tui_settings_keep_configured_value_and_add_session_effective_source(

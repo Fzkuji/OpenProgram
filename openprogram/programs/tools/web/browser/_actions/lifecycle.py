@@ -51,6 +51,12 @@ def _close(session_id: str) -> str:
                         errors.append(str(reply["error"]))
                 except Exception as e:
                     errors.append(f"close: {e}")
+        elif sess.get("is_app") and not sess.get("app_agent_opened"):
+            binding_id = sess.get("app_binding_id") or sess.get("binding_id")
+            if isinstance(binding_id, str) and binding_id:
+                from openprogram.webui.ws_actions.webtab import release_binding
+
+                release_binding(binding_id)
         page = None if sess.get("is_app") else sess.get("page")
         if page is not None:
             try:

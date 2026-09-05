@@ -172,6 +172,11 @@ export function UserBubble({ msg }: { msg: ChatMsg }) {
           assistant's bottom-left). */}
       {!editing ? (
         <div className="message-actions-footer">
+          {msg.steering ? (
+            <span className="steering-badge">
+              {text("Steered", "已注入")}
+            </span>
+          ) : null}
           <MessageActions msg={msg} onEdit={() => setEditing(true)} />
         </div>
       ) : null}

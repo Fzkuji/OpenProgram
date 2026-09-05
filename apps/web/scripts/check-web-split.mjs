@@ -2107,6 +2107,16 @@ assert.match(desktopBridgeSource, /revealAgentWebTab\(d\.tab_id\)/);
 assert.match(desktopBridgeSource, /state\.ensureWebTab\(d\.url\)/);
 assert.match(desktopBridgeSource, /pipOpenMustFork\(d\.url, active\.id\)/);
 assert.match(desktopBridgeSource, /ensureExclusiveWebTab\(d\.url\)/);
+assert.match(
+  desktopBridgeSource,
+  /if \(d\.background\)[\s\S]*?ensureExclusiveWebTab\(d\.url\)[\s\S]*?ensureWebView\(bridge, id, d\.url\)[\s\S]*?bridge\.webTab\.resolve\?\.\(id\)/,
+  "a background agent open must create and resolve a hidden exclusive Page without activating it",
+);
+assert.match(
+  desktopBridgeSource,
+  /if \(d\.op === "close"\)[\s\S]*?d\.window_id !== bridge\.windowId[\s\S]*?closeAgentWebTabResult/,
+  "an exact background Page close must reject another desktop window",
+);
 assert.match(desktopBridgeSource, /useWebTabPip\.getState\(\)\.show\(id, active\.id\)/);
 assert.match(desktopBridgeSource, /waitForWebTabReady\(id, 2000\)/);
 assert.match(desktopBridgeSource, /subscribeWebTabPopups\(bridge\)/);
@@ -3155,6 +3165,10 @@ assert.equal(restoredInvalidSplit.getState().splitRatio, 0.30);
 // center-tabs/session-store instances, so drive those here.
 
 globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "main" };
+const navigateModule = await import("../lib/navigate.ts");
+const popupNavigations = [];
+navigateModule.setNavigate((path) => popupNavigations.push(path));
+globalThis.window.location.pathname = "/s/popup-chat";
 const bridgeModule = await import("../lib/desktop-bridge.ts");
 const plainTabsModule = await import("../lib/state/center-tabs-store.ts");
 const plainSessionModule = await import("../lib/session-store/index.ts");
@@ -3213,13 +3227,31 @@ assert.ok(plainTabs.getState().tabs.some((tab) => tab.id === "w:opener"));
 assert.equal(plainTabs.getState().activeId, popupTwo);
 assert.deepEqual(plainTabs.getState().groups, [popupOpenerGroup]);
 assert.equal(plainTabs.getState().splitWebTabId, "w:opener");
+assert.deepEqual(
+  popupNavigations,
+  [],
+  "a popup opened from an existing /s route must not navigate through /chat and reactivate the session",
+);
 assert.equal(
   plainTabs.getState().tabs.filter((tab) => tab.url === "https://popup.test/").length,
   2,
   "popup URLs must not reuse a normal deterministic web tab",
 );
+globalThis.window.location.pathname = "/settings/general";
+popupCallback({ openerId: "w:opener", url: "https://off-route-popup.test/" });
+assert.deepEqual(
+  popupNavigations,
+  ["/chat"],
+  "a popup received off the center surface must navigate to /chat exactly once",
+);
+assert.equal(
+  plainTabs.getState().tabs.find((tab) => tab.id === plainTabs.getState().activeId)?.url,
+  "https://off-route-popup.test/",
+);
 unsubscribePopup();
 assert.equal(popupCallback, null);
+navigateModule.setNavigate(null);
+globalThis.window.location.pathname = "/chat";
 
 const scopedPipTabs = [
   { id: "s:pip-owner", kind: "session", title: "Owner", sessionId: "pip-owner" },
@@ -3468,6 +3500,10 @@ plainTabsModule.replaceCenterTabsPayload({
   splitRatio: 0.5,
 }, { persist: false });
 assert.equal(bridgeModule.surfaceRefForChat("surface-chat", true), null);
+assert.deepEqual(
+  bridgeModule.surfaceOriginForChat("surface-chat", true),
+  { version: 1, window_id: "main", access: "enabled" },
+);
 const hiddenLegacyPreview = bridgeModule.finalizeWebTabPreview(
   "w:surface-page",
   0,

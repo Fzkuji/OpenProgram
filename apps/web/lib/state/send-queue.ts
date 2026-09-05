@@ -53,6 +53,8 @@ export interface QueuedMessage {
   serviceTier?: string;
   background: boolean;
   queuedAt: number;
+  /** A steer request is in flight; drain must wait for its acknowledgement. */
+  injecting?: boolean;
 }
 
 /** What the composer hands over; the store stamps id + queuedAt. */
@@ -63,6 +65,7 @@ interface SendQueueState {
   queues: Record<string, QueuedMessage[]>;
   enqueue: (sessionId: string, draft: QueueDraft) => string;
   remove: (sessionId: string, id: string) => void;
+  setInjecting: (sessionId: string, id: string, injecting: boolean) => void;
   /** Send the head entry if the session is idle. No-op otherwise. */
   drain: (sessionId: string) => void;
 }
@@ -99,9 +102,24 @@ export const useSendQueue = create<SendQueueState>((set, get) => ({
       return { queues };
     }),
 
+  setInjecting: (sessionId, id, injecting) =>
+    set((s) => {
+      const cur = s.queues[sessionId];
+      if (!cur?.some((message) => message.id === id)) return {};
+      return {
+        queues: {
+          ...s.queues,
+          [sessionId]: cur.map((message) =>
+            message.id === id ? { ...message, injecting } : message
+          ),
+        },
+      };
+    }),
+
   drain: (sessionId) => {
     const head = (get().queues[sessionId] ?? EMPTY)[0];
     if (!head || !sendImpl) return;
+    if (head.injecting) return;
     // Still busy — the next running-task clear will call us again.
     if (useSessionStore.getState().runningTasks[sessionId]) return;
     // Pop BEFORE sending: sendChatMessage re-enters the store (running

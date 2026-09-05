@@ -4,9 +4,9 @@ Pulls the public JSON catalogue at https://models.dev/api.json (the
 same data OpenCode and several other AI-tooling projects use) and
 normalises it into the schema described in ``sources.__init__``.
 
-Single-process in-memory cache with a 1-hour TTL — the catalogue
-itself only updates daily, and we don't want every Fetch click to add
-a ~300KB GET on top of the per-provider ``/v1/models`` call.
+Single-process stale-while-revalidate cache with a 1-hour fresh TTL.
+Expired memory or disk data is served immediately while one background
+thread refreshes it; only a first start with no cache waits for the network.
 """
 from __future__ import annotations
 
@@ -23,51 +23,127 @@ _TTL_SECONDS = 3600  # 1 hour on success
 _FAIL_TTL_SECONDS = 60  # short retry window on failure/empty
 
 _cache_lock = threading.Lock()
-_cache: dict[str, Any] = {"data": None, "fetched_at": 0.0}
+_cache: dict[str, Any] = {
+    "data": None,
+    "fetched_at": 0.0,
+    "last_attempt_at": 0.0,
+    "refreshing": False,
+}
 _logger = logging.getLogger(__name__)
 
 
-def _load() -> dict[str, Any]:
-    """Return the parsed catalogue, fetching it (or refreshing on TTL
-    expiry) if needed.
-
-    A successful fetch (non-empty dict) is cached for the full
-    ``_TTL_SECONDS``. A failure or an EMPTY result is only held for
-    ``_FAIL_TTL_SECONDS`` — an empty models.dev response must NOT be
-    cached as a success, or a transient blip at server startup would
-    hide the entire community-provider tier for the whole hour. The
-    short window still absorbs a burst of calls (a settings-page load
-    fanning out) without hammering the endpoint, then retries.
-    """
-    with _cache_lock:
-        data = _cache["data"]
-        if data:  # non-empty success cached
-            if time.time() - _cache["fetched_at"] < _TTL_SECONDS:
-                return data
-        elif data is not None:  # empty/failed result — short retry window
-            if time.time() - _cache["fetched_at"] < _FAIL_TTL_SECONDS:
-                return data
-        try:
-            with safe_http.safe_client("webui.model_listing.fixed") as client:
-                response = client.get(_CATALOGUE_URL, timeout=10)
-                response.raise_for_status()
-                safe_http.require_json_mime(response)
-                data = response.json()
-            if not isinstance(data, dict):
-                data = {}
-        except Exception:
-            data = {}
+def _fetch_catalogue(timeout: float) -> dict[str, Any]:
+    try:
+        with safe_http.safe_client("webui.model_listing.fixed") as client:
+            response = client.get(_CATALOGUE_URL, timeout=timeout)
+            response.raise_for_status()
+            safe_http.require_json_mime(response)
+            data = response.json()
+        if not isinstance(data, dict):
+            return {}
         if data:
             _write_disk_cache(data)
-        else:
-            # models.dev is unreachable from some networks (CN direct
-            # connections get reset) and the worker often starts without
-            # proxy env (desktop spawn, launchd). Any previously
-            # successful fetch is better than an empty catalogue.
-            data = _read_disk_cache()
-        _cache["data"] = data
-        _cache["fetched_at"] = time.time()
         return data
+    except Exception:
+        return {}
+
+
+def _finish_refresh(data: dict[str, Any]) -> None:
+    now = time.time()
+    with _cache_lock:
+        if data:
+            _cache.update(
+                data=data,
+                fetched_at=now,
+                last_attempt_at=now,
+                refreshing=False,
+            )
+        else:
+            # Preserve stale success data. With no cache, remember the empty
+            # failure briefly so a cold-start burst does not retry immediately.
+            if not _cache["data"]:
+                _cache.update(data={}, fetched_at=now)
+            _cache.update(last_attempt_at=now, refreshing=False)
+
+
+def _refresh_cache() -> None:
+    _finish_refresh(_fetch_catalogue(timeout=3))
+
+
+def _start_background_refresh() -> None:
+    try:
+        threading.Thread(
+            target=_refresh_cache,
+            name="models-dev-refresh",
+            daemon=True,
+        ).start()
+    except Exception:
+        with _cache_lock:
+            _cache.update(last_attempt_at=time.time(), refreshing=False)
+
+
+def _load() -> dict[str, Any]:
+    """Return fresh catalogue data, or stale data while it revalidates."""
+    now = time.time()
+    start_refresh = False
+    with _cache_lock:
+        data = _cache["data"]
+        if data and now - _cache["fetched_at"] < _TTL_SECONDS:
+            return data
+        if data:
+            if (
+                not _cache["refreshing"]
+                and now - _cache["last_attempt_at"] >= _FAIL_TTL_SECONDS
+            ):
+                _cache.update(refreshing=True, last_attempt_at=now)
+                start_refresh = True
+            stale = data
+        else:
+            stale = None
+            failed_recently = (
+                data is not None
+                and now - _cache["fetched_at"] < _FAIL_TTL_SECONDS
+            )
+
+    if stale is not None:
+        if start_refresh:
+            _start_background_refresh()
+        return stale
+
+    # Disk data is usable stale data regardless of its age. Reading it before
+    # the cold network path is what keeps session hydration non-blocking.
+    disk_data = _read_disk_cache()
+    if disk_data:
+        with _cache_lock:
+            current = _cache["data"]
+            if current:
+                return current
+            _cache.update(data=disk_data, fetched_at=0.0)
+            if not _cache["refreshing"]:
+                _cache.update(refreshing=True, last_attempt_at=now)
+                start_refresh = True
+        if start_refresh:
+            _start_background_refresh()
+        return disk_data
+
+    if failed_recently:
+        return {}
+
+    # A first start with no memory or disk cache is the only synchronous
+    # network path. Coordinate concurrent callers so only one request starts.
+    with _cache_lock:
+        data = _cache["data"]
+        if data:
+            return data
+        if data is not None and time.time() - _cache["fetched_at"] < _FAIL_TTL_SECONDS:
+            return data
+        if _cache["refreshing"]:
+            return {}
+        _cache.update(refreshing=True, last_attempt_at=time.time())
+
+    data = _fetch_catalogue(timeout=3)
+    _finish_refresh(data)
+    return data
 
 
 def _disk_cache_path():

@@ -19,6 +19,28 @@ from openprogram.security import safe_http
 from openprogram.security.safe_http import OutboundSecurityConfig
 
 
+def _reset_models_dev_cache(models_dev) -> None:
+    with models_dev._cache_lock:
+        models_dev._cache.update({
+            "data": None,
+            "fetched_at": 0.0,
+            "last_attempt_at": 0.0,
+            "refreshing": False,
+        })
+
+
+@pytest.fixture
+def _isolated_models_dev_cache(monkeypatch, tmp_path):
+    from openprogram.providers.sources import models_dev
+
+    monkeypatch.setattr(
+        models_dev, "_disk_cache_path", lambda: tmp_path / "models_dev.json"
+    )
+    _reset_models_dev_cache(models_dev)
+    yield models_dev
+    _reset_models_dev_cache(models_dev)
+
+
 def _repo_zip() -> bytes:
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
@@ -493,12 +515,9 @@ def test_model_listing_fixed_google_probe_uses_fixed_registry_client(
 
 
 def test_models_dev_public_loader_uses_fixed_registry_client(
-    monkeypatch, managed_clients
+    monkeypatch, managed_clients, _isolated_models_dev_cache
 ):
-    from openprogram.providers.sources import models_dev
-
-    monkeypatch.setattr(models_dev, "_read_disk_cache", lambda: {})
-    models_dev._cache.update({"data": None, "fetched_at": 0.0})
+    models_dev = _isolated_models_dev_cache
 
     models_dev.lookup("openai", "gpt-test")
 

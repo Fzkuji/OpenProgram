@@ -215,8 +215,16 @@ class WebUseSessionRegistry:
         with self._lock:
             if self._closing_all or owner_id in self._closing_owners:
                 return {"ok": False, "reason_code": "owner_closing", "pages": []}
-            for item in context.get("surfaces") or []:
-                if not isinstance(item, dict) or not item.get("binding_id"):
+            primary_surface_key = str(context.get("primary_surface_key") or "")
+            surfaces = [
+                item for item in context.get("surfaces") or []
+                if isinstance(item, dict)
+            ]
+            surfaces.sort(
+                key=lambda item: item.get("surface_key") != primary_surface_key
+            )
+            for item in surfaces:
+                if not item.get("binding_id"):
                     continue
                 token = "pct_" + uuid.uuid4().hex
                 binding_id = str(item["binding_id"])

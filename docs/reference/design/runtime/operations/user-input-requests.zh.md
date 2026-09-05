@@ -18,7 +18,7 @@
 |---|---|
 | `ask_user` / `set_ask_user` / `FollowUp`（`openprogram/programs/workflow/ask_user/`） | 原语完整，DAG awaiting-node 簿记完整；但 worker 里没注册 handler，且 agentic 子进程桥是单向的——实际上返回 `None` |
 | webui follow-up 往返（`webui/server.py:234-270`、WS `follow_up_answer` action、web `handleFollowUpQuestion`） | 三段都在；发起方 `_web_follow_up` 已经没有调用者——死代码。Web UI 那侧是往 `#runtime_pending` 做的旧式 DOM 注入（只在 runtime 块流式输出期间存在）。TUI 给信封定了类型却从不处理它 |
-| 审批门（`openprogram/agent/internals/_approval.py`，已接进 dispatcher） | 等待机制完整且活着，但 `resolve()` 只在测试里被调用；没有 web/TUI UI；默认 `bypass` 把它遮住了；子 agent 强制 bypass 以避免 300s 挂起 |
+| 审批门（`openprogram/agent/permissions/approval.py`，已接进 dispatcher） | 等待机制完整且活着，但 `resolve()` 只在测试里被调用；没有 web/TUI UI；默认 `bypass` 把它遮住了；子 agent 强制 bypass 以避免 300s 挂起 |
 
 所以骨架（阻塞队列、WS action、stop 哨兵解除阻塞、DAG awaiting 节点）已经具备。
 本设计补上的是 registry 的形态（按请求一份，而非一个全局 handler 槽位）、子进程
@@ -111,7 +111,7 @@ runtime.can_ask()  # -> bool；无头运行时为 False，作者可据此分支
    问题待答期间输入框兼作答案框；TUI 把问题渲染在输入槽位里
    （tui-upgrade.md P2）。跨界面以第一个答案为准；`question.replied` 会撤回
    其他界面上的 UI。
-6. **审批合流**：`_approval.py` 迁移到同一个 registry，`kind="approval"`，
+6. **审批合流**：`permissions/approval.py` 迁移到同一个 registry，`kind="approval"`，
    给原本无从触达的 `ask` 权限模式一个真 UI，采用 opencode 的 reply 形态
    （allow once / always / reject 并带一条会成为 tool error 文本的反馈）。
 7. **Channels**：按钮即文本命令（`/answer <id> <choice>`）；对于 channel

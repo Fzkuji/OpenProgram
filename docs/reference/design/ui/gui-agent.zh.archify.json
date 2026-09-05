@@ -1,0 +1,342 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "GUI Agent 自主能力调用循环",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "gui-agent.zh.html"
+  },
+  "lanes": [
+    {
+      "id": "orchestration",
+      "label": "GUI Agent 控制层"
+    },
+    {
+      "id": "capabilities",
+      "label": "能力函数",
+      "variant": "exception"
+    },
+    {
+      "id": "context",
+      "label": "上下文"
+    },
+    {
+      "id": "terminal",
+      "label": "终态",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "任务与上下文",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "decision",
+      "label": "模型决策",
+      "fromCol": 1,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "execution",
+      "label": "能力执行",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "capability_group",
+      "label": "能力选择",
+      "lane": "capabilities",
+      "fromCol": 3,
+      "toCol": 5,
+      "variant": "emphasis"
+    },
+    {
+      "id": "context_group",
+      "label": "调用记录",
+      "lane": "context",
+      "fromCol": 0,
+      "toCol": 4,
+      "variant": "dashed"
+    },
+    {
+      "id": "terminal_group",
+      "label": "终态判断",
+      "lane": "terminal",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "build_context",
+    "model_decision",
+    "dispatch",
+    "computer_use",
+    "record_result"
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "build_context"
+    ],
+    "allowedTerminals": [
+      "normalized_result",
+      "runtime_stop"
+    ],
+    "requiredPaths": [
+      {
+        "from": "build_context",
+        "to": "record_result"
+      },
+      {
+        "from": "model_decision",
+        "to": "normalized_result"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "build_context",
+      "lane": "orchestration",
+      "col": 0,
+      "type": "frontend",
+      "label": "gui_agent(task)",
+      "sublabel": "task + history",
+      "width": 132
+    },
+    {
+      "id": "model_decision",
+      "lane": "orchestration",
+      "col": 1,
+      "type": "backend",
+      "label": "plan_next_capability",
+      "sublabel": "llm() 复用共享 Runtime 上下文",
+      "tag": "能力调用或终态",
+      "width": 150
+    },
+    {
+      "id": "dispatch",
+      "lane": "orchestration",
+      "col": 2,
+      "type": "messagebus",
+      "label": "call_capability",
+      "sublabel": "调用选中函数",
+      "width": 150
+    },
+    {
+      "id": "computer_use",
+      "lane": "capabilities",
+      "col": 3,
+      "type": "backend",
+      "label": "computer_use(task)",
+      "sublabel": "gui_step → llm()",
+      "width": 158
+    },
+    {
+      "id": "browser_use",
+      "lane": "capabilities",
+      "col": 4,
+      "type": "cloud",
+      "label": "browser_use(task)",
+      "sublabel": "agent() + 后台 Page",
+      "width": 158
+    },
+    {
+      "id": "vm_use",
+      "lane": "capabilities",
+      "col": 5,
+      "type": "external",
+      "label": "vm_use(task)",
+      "sublabel": "gui_step → llm() + OSWorld API",
+      "tag": "需要配置 endpoint",
+      "width": 158
+    },
+    {
+      "id": "record_result",
+      "lane": "context",
+      "col": 4,
+      "type": "database",
+      "label": "记录输入输出",
+      "sublabel": "history + DAG + evidence",
+      "width": 132
+    },
+    {
+      "id": "terminal_decision",
+      "lane": "terminal",
+      "col": 2,
+      "type": "security",
+      "label": "TerminalDecision",
+      "sublabel": "succeeded / infeasible / failed",
+      "width": 160
+    },
+    {
+      "id": "validate_terminal",
+      "lane": "terminal",
+      "col": 3,
+      "type": "security",
+      "label": "终态证据校验",
+      "sublabel": "证据不足时继续规划",
+      "width": 156
+    },
+    {
+      "id": "normalized_result",
+      "lane": "terminal",
+      "col": 4,
+      "type": "backend",
+      "label": "normalize_gui_result",
+      "sublabel": "统一公开终态契约",
+      "width": 132
+    },
+    {
+      "id": "runtime_stop",
+      "lane": "terminal",
+      "col": 4,
+      "type": "security",
+      "label": "Runtime 安全停止",
+      "sublabel": "取消 / 超时 / 成本限制",
+      "width": 132,
+      "yOffset": 74
+    }
+  ],
+  "edges": [
+    {
+      "id": "context_decision",
+      "from": "build_context",
+      "to": "model_decision",
+      "label": "本轮上下文",
+      "role": "branch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decision_dispatch",
+      "from": "model_decision",
+      "to": "dispatch",
+      "label": "CapabilityCall",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dispatch_computer",
+      "from": "dispatch",
+      "to": "computer_use",
+      "label": "本地屏幕",
+      "role": "main",
+      "variant": "default"
+    },
+    {
+      "id": "dispatch_browser",
+      "from": "dispatch",
+      "to": "browser_use",
+      "label": "后台页面",
+      "role": "branch",
+      "variant": "default"
+    },
+    {
+      "id": "dispatch_vm",
+      "from": "dispatch",
+      "to": "vm_use",
+      "label": "独立虚拟机",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "computer_record",
+      "from": "computer_use",
+      "to": "record_result",
+      "label": "ToolResult",
+      "role": "main",
+      "variant": "default"
+    },
+    {
+      "id": "browser_record",
+      "from": "browser_use",
+      "to": "record_result",
+      "label": "ToolResult",
+      "role": "return",
+      "variant": "default"
+    },
+    {
+      "id": "vm_record",
+      "from": "vm_use",
+      "to": "record_result",
+      "label": "ToolResult",
+      "role": "return",
+      "variant": "dashed"
+    },
+    {
+      "id": "next_iteration",
+      "from": "record_result",
+      "to": "build_context",
+      "label": "下一轮",
+      "role": "return",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decision_terminal",
+      "from": "model_decision",
+      "to": "terminal_decision",
+      "label": "TerminalDecision",
+      "role": "branch",
+      "variant": "security"
+    },
+    {
+      "id": "terminal_validate",
+      "from": "terminal_decision",
+      "to": "validate_terminal",
+      "label": "校验",
+      "role": "main",
+      "variant": "security"
+    },
+    {
+      "id": "terminal_result",
+      "from": "validate_terminal",
+      "to": "normalized_result",
+      "label": "接受终态",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "terminal_rejected",
+      "from": "validate_terminal",
+      "to": "record_result",
+      "label": "拒绝并记录",
+      "role": "return",
+      "variant": "dashed"
+    },
+    {
+      "id": "runtime_boundary",
+      "from": "model_decision",
+      "to": "runtime_stop",
+      "label": "安全边界",
+      "role": "error",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "循环与上下文",
+      "items": [
+        "没有面向任务的固定 max_steps；模型提交终态并通过证据校验后结束",
+        "每次能力调用的准确输入与输出写入 history 和 DAG",
+        "下一轮重新读取原始 task 与此前全部可见调用记录"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "实现状态",
+      "items": [
+        "根循环每轮选择 computer_use、browser_use 或 vm_use",
+        "规划器与 Harness 叶子调用使用 llm()；浏览器动作循环使用 agent()；GUI workflow 不直接调用 Runtime.exec",
+        "vm_use 需要兼容 OSWorld 的 endpoint，并在每次调用后恢复本地输入与截图目标"
+      ]
+    }
+  ]
+}

@@ -104,7 +104,7 @@ def test_job_binds_worktree_in_worker(
 
     seen: dict = {}
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         from openprogram.worktree.context import current_worktree_path
         seen["worktree_path"] = current_worktree_path()
@@ -112,7 +112,8 @@ def test_job_binds_worktree_in_worker(
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
@@ -146,23 +147,23 @@ def test_job_cancel_discards_worktree(
     started = threading.Event()
     can_release = threading.Event()
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        from openprogram.agent.run_control import is_cancelled
         started.set()
         # Poll for cancel up to ~3s
         for _ in range(150):
-            if can_release.is_set() or is_cancelled(session_id):
+            if can_release.is_set() or cancel_event.is_set():
                 break
             time.sleep(0.02)
-        if is_cancelled(session_id):
+        if cancel_event.is_set():
             return AgentTurnResult(head_id="head_x", final_text="",
                                    failed=True, error="cancelled")
         return AgentTurnResult(head_id="head_ok", final_text="ok",
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()
@@ -171,7 +172,7 @@ def test_job_cancel_discards_worktree(
         parent_msg_id="a1", worktree_id=wt.id,
     )
     assert started.wait(timeout=3.0)
-    runner.cancel_job(tid)
+    runner.cancel_execution(tid)
     final = runner.await_job(tid, timeout=5.0)
     assert final is not None
     assert final.status == JobStatus.CANCELLED
@@ -203,13 +204,14 @@ def test_job_complete_leaves_worktree_alone(
     mgr = get_wt_mgr()
     wt = mgr.create_worktree(str(repo), label="completewt")
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
         return AgentTurnResult(head_id="head_ok", final_text="ok",
                                failed=False, error=None)
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     from openprogram.agent.job import get_runner, JobStatus
     runner = get_runner()

@@ -13,6 +13,8 @@
  * because the payload arrives as untrusted JSON off the socket.
  */
 
+import type { EventCursor, ExecutionSnapshot } from "@/lib/execution-debugger";
+
 /** `openprogram/webui/ws_actions/session.py:_broadcast_permission_rules` */
 export interface PermissionRulesDetail {
   project_id?: string;
@@ -22,59 +24,64 @@ export interface PermissionRulesDetail {
 }
 
 /** `openprogram/agent/job/runner.py:_broadcast_job_status` */
-export type JobResourceLimitName =
-  | "max_live_per_session"
-  | "max_queued_per_session"
-  | "max_jobs_per_session"
-  | "max_total_tokens"
-  | "max_runtime_seconds"
-  | "idle_timeout_seconds"
-  | "max_cost_usd";
-
-export interface JobResourceView {
-  job_id: string;
-  status: string;
+export interface JobResource {
+  admission_id?: string | null;
   resource_state: string;
-  reason_code: string | null;
-  reason_key: string | null;
-  retryable: boolean;
-  limits: {
-    scheduler_capacity: number;
-    limits: Record<JobResourceLimitName, {
-      configured: number | string | null;
-      effective: number | string | null;
-      source: string;
-    }>;
-  };
-  capacity: {
-    scheduler_capacity: number;
-    session_live: { used: number; limit: number | null };
-    session_queued: { used: number; limit: number | null };
-    session_jobs: { used: number; limit: number | null };
-    queue_position: number | null;
-  };
-  budget: {
-    scope: string;
-    tokens: {
-      actual: number | null;
-      reserved: number | null;
-      limit: number | null;
-    };
-    cost_usd: {
+  queue_wait?: {
+    state: string;
+    reason_code?: string | null;
+    since?: number | null;
+    position?: number | null;
+  } | null;
+  resource_lease_generation?: number | null;
+  owner_instance_id?: string | null;
+  limits: Record<string, unknown>;
+  usage: {
+    scope?: string;
+    tokens?: { actual: number | null; reserved: number | null; limit: number | null };
+    cost_usd?: {
       actual: string | null;
       reserved: string | null;
       limit: string | null;
       known: boolean | null;
       unknown_events: number | null;
     };
-    runtime_seconds: { used: number | null; limit: number | null };
-    idle_seconds: { used: number | null; limit: number | null };
-    shared_remaining: {
+    runtime_seconds?: { used: number | null; limit: number | null };
+    idle_seconds?: { used: number | null; limit: number | null };
+    shared_remaining?: {
       tokens: number | null;
       cost_usd: string | null;
       cost_unknown_events: number | null;
     };
   };
+  reservation?: Record<string, unknown> | null;
+}
+
+export interface JobResourceView {
+  job_id: string;
+  execution_id?: string;
+  project_id?: string;
+  session_id?: string;
+  parent_execution_id?: string | null;
+  status_version?: number;
+  capabilities?: {
+    pause: boolean;
+    step: boolean;
+    steer: boolean;
+    fork: boolean;
+    retry: boolean;
+    safe_point_kinds: string[];
+    state_schema_version: number | null;
+  };
+  checkpoint_head_id?: string | null;
+  event_cursor?: {
+    execution_id: string;
+    next_sequence: number;
+    snapshot_status_version: number;
+  };
+  execution?: Record<string, unknown>;
+  resource?: JobResource | null;
+  status: string;
 }
 
 export interface JobStatusDetail {
@@ -91,6 +98,11 @@ export interface JobStatusDetail {
   started_at?: number | string | null;
   completed_at?: number | string | null;
   resource?: JobResourceView | null;
+}
+
+export interface ExecutionUpdateDetail {
+  execution?: ExecutionSnapshot;
+  event_cursor?: EventCursor;
 }
 
 /**
@@ -110,6 +122,7 @@ declare global {
     "op:job-status": CustomEvent<JobStatusDetail>;
     "op:job-message": CustomEvent<WsEnvelopeDetail>;
     "op:ws-message": CustomEvent<WsEnvelopeDetail>;
+    "op:execution-update": CustomEvent<ExecutionUpdateDetail>;
   }
 }
 

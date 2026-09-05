@@ -449,7 +449,9 @@ def _replace_header(
     headers.append((name, value))
 
 
-def _shell_content_security_policy(body: bytes = b"") -> bytes:
+def _shell_content_security_policy(
+    body: bytes = b"", *, frame_ancestors: str = "'none'"
+) -> bytes:
     hashes = []
     for match in _INLINE_SCRIPT_RE.finditer(body):
         if re.search(rb"\bsrc\s*=", match.group("attributes"), re.IGNORECASE):
@@ -460,12 +462,12 @@ def _shell_content_security_policy(body: bytes = b"") -> bytes:
         hashes.append(f"'sha256-{digest}'")
     script_sources = " ".join(("'self'", *hashes))
     return (
-        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+        f"object-src 'none'; base-uri 'none'; frame-ancestors {frame_ancestors}; "
         f"script-src {script_sources}; connect-src 'self'"
     ).encode("ascii")
 
 
-def _response_sender(send, *, no_store: bool, shell: bool):
+def _response_sender(send, *, no_store: bool, shell: bool, frameable: bool = False):
     pending_start = None
     html_body = bytearray()
 
@@ -476,7 +478,11 @@ def _response_sender(send, *, no_store: bool, shell: bool):
             if no_store:
                 _replace_header(headers, b"cache-control", b"no-store")
             if shell:
-                _replace_header(headers, b"x-frame-options", b"DENY")
+                _replace_header(
+                    headers,
+                    b"x-frame-options",
+                    b"SAMEORIGIN" if frameable else b"DENY",
+                )
                 _replace_header(headers, b"referrer-policy", b"no-referrer")
                 _replace_header(headers, b"x-content-type-options", b"nosniff")
                 content_type = next(
@@ -493,7 +499,9 @@ def _response_sender(send, *, no_store: bool, shell: bool):
                 _replace_header(
                     headers,
                     b"content-security-policy",
-                    _shell_content_security_policy(),
+                    _shell_content_security_policy(
+                        frame_ancestors="'self'" if frameable else "'none'"
+                    ),
                 )
             message = {**message, "headers": headers}
         elif pending_start is not None and message.get("type") == "http.response.body":
@@ -504,7 +512,10 @@ def _response_sender(send, *, no_store: bool, shell: bool):
             _replace_header(
                 headers,
                 b"content-security-policy",
-                _shell_content_security_policy(bytes(html_body)),
+                _shell_content_security_policy(
+                    bytes(html_body),
+                    frame_ancestors="'self'" if frameable else "'none'",
+                ),
             )
             await send({**pending_start, "headers": headers})
             pending_start = None
@@ -536,6 +547,11 @@ class OwnerAuthMiddleware:
             return
 
         path = str(scope.get("path") or "")
+        if scope["type"] == "http" and "x-openprogram-ui-check" in headers:
+            # No API/bootstrap traffic is needed by current UI checks. This
+            # rejection precedes every handler, including cookie bootstrap.
+            await _http_response(send, 409, "ui_verification_active")
+            return
         if scope["type"] == "http" and path == "/api/auth/challenge":
             await self._challenge(scope, send)
             return
@@ -551,7 +567,10 @@ class OwnerAuthMiddleware:
                 scope,
                 receive,
                 _response_sender(
-                    send, no_store=path == "/healthz", shell=path != "/healthz"
+                    send,
+                    no_store=path == "/healthz",
+                    shell=path != "/healthz",
+                    frameable=path.startswith("/docs/") and path.endswith(".raw.html"),
                 ),
             )
             return

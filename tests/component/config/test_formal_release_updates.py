@@ -181,16 +181,23 @@ def test_automatic_update_design_is_one_accessible_review_page():
     ).exists()
 
     source_design = Path(
-        "docs/reference/design/runtime/self-update.md"
+        "docs/server/upgrading.md"
     ).read_text(encoding="utf-8")
+    source_contract = " ".join(source_design.split())
     faq = Path("docs/start/faq.md").read_text(encoding="utf-8")
-    assert "Automatic updates" in source_design
-    assert "stable` channel intentionally resolves to" in source_design
-    assert "never\nfalls back to Git, PyPI, a wheel, or an npm package" in source_design
+    assert "Upgrading a release installation" in source_contract
+    assert "`stable` follows `origin/main`" in source_contract
+    assert (
+        "Managed releases use the stable GitHub Release path; source checkouts "
+        "use the gated Git pipeline"
+    ) in source_contract
     assert "first updater-enabled release" in faq
     assert "managed CLI/server and source-checkout users both run" in faq
-    assert "Supplying `--channel` still persists" in source_design
-    assert "in normal text output it also prints" in source_design
+    assert (
+        "an explicit `--channel`, that source-channel choice is still persisted"
+    ) in source_contract
+    assert "Automatic rollback is not implemented yet" in source_contract
+    assert "command prints the manual escape hatch" in source_contract
     assert 'class="diagram-mobile" aria-hidden' not in design
 
     design_index = Path("docs/reference/design/README.md").read_text(encoding="utf-8")
@@ -199,8 +206,8 @@ def test_automatic_update_design_is_one_accessible_review_page():
     )
     assert "distribution/automatic-updates.html" in design_index
     assert "distribution/automatic-updates.html" in design_index_zh
-    assert "Source-checkout upgrades" in design_index
-    assert "Source checkout 升级" in design_index_zh
+    assert "Conversational self-update" in design_index
+    assert "对话内自主更新" in design_index_zh
 
 
 def test_upgrade_help_discloses_channel_persistence_during_read_only_actions():

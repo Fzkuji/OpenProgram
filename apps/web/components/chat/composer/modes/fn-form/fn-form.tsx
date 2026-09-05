@@ -8,21 +8,14 @@
 "use client";
 
 import type { AgenticFunction, FnParam } from "@/lib/session-store";
+import { userFunctionParams } from "@/lib/function-invocation";
+import { useTranslation } from "@/lib/i18n";
 
 import { FieldRow } from "./fn-form-fields";
 import styles from "./fn-form.module.css";
 
-const RUNTIME_PARAM_NAMES = new Set([
-  "runtime",
-  "callback",
-  "exec_runtime",
-  "review_runtime",
-]);
-
 export function visibleParams(fn: AgenticFunction): FnParam[] {
-  return (fn.params_detail || []).filter(
-    (p) => !RUNTIME_PARAM_NAMES.has(p.name) && !p.hidden,
-  );
+  return userFunctionParams(fn);
 }
 
 export function defaultParamValue(p: FnParam): string {
@@ -60,6 +53,20 @@ export function FunctionForm({
   ghost,
 }: FunctionFormProps) {
   const params = visibleParams(fn);
+  const primary = params.filter((p) => !p.advanced);
+  const advanced = params.filter((p) => p.advanced);
+  const { text } = useTranslation();
+
+  const rows = (items: FnParam[]) => items.map((p) => (
+    <FieldRow
+      key={p.name}
+      param={p}
+      value={values[p.name] ?? ""}
+      setValue={(v) => setValue(p.name, v)}
+      error={errorParam === p.name}
+      noId={ghost}
+    />
+  ));
 
   // The panel's height is its natural content height — no max-height
   // transition. The composer's wrapper height transition (driven from
@@ -135,16 +142,17 @@ export function FunctionForm({
             No parameters needed — click run to execute
           </div>
         ) : (
-          params.map((p) => (
-            <FieldRow
-              key={p.name}
-              param={p}
-              value={values[p.name] ?? ""}
-              setValue={(v) => setValue(p.name, v)}
-              error={errorParam === p.name}
-              noId={ghost}
-            />
-          ))
+          <>
+            {rows(primary)}
+            {advanced.length > 0 ? (
+              <details className={styles.advanced}>
+                <summary className={styles.advancedSummary}>
+                  {text("Advanced", "高级参数")}
+                </summary>
+                <div className={styles.advancedFields}>{rows(advanced)}</div>
+              </details>
+            ) : null}
+          </>
         )}
       </div>
     </>

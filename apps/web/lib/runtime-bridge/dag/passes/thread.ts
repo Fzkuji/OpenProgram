@@ -27,7 +27,19 @@
  */
 
 import type { GNode } from "../types";
+import { _headAncestors } from "../layout/assign-lanes";
 import { _threadOpen } from "../store/globals";
+import {
+  isChainNode,
+  isFollowup,
+  isSpawnRoot,
+} from "./thread-nodes";
+export {
+  isChainNode,
+  isIndependentRootProgram,
+  isSpawnRoot,
+  isTopProgramRun,
+} from "./thread-nodes";
 
 export interface ThreadEvent {
   t: number;
@@ -52,58 +64,8 @@ export interface ThreadModel {
   anchorOf: (id: string) => string;
 }
 
-function _isRootRef(id: string | null | undefined): boolean {
-  return !id || id === "ROOT";
-}
-
-/** A spawn branch root: ``source=agent_spawn`` with no conversation
- *  predecessor (dag/overview.md §4). The ROOT sentinel is the same as
- *  empty — a composer-run fallback used to write predecessor=ROOT. */
-export function isSpawnRoot(n: GNode): boolean {
-  return (
-    (n as Record<string, unknown>).source === "agent_spawn"
-    && _isRootRef(n.predecessor)
-  );
-}
-
-function _hangsOnRoot(n: GNode): boolean {
-  return _isRootRef(n.caller) && _isRootRef(n.predecessor);
-}
-
-/** A conversation-layer node: something the chain itself is made of.
- *  ``merge`` stays on the chain (it is a chain operation); everything
- *  with a caller-tree pedigree (runtime rows, tools, run nodes,
- *  function placeholders) is execution — except a composer-launched
- *  function hung on ROOT, which is the user's explicit action and
- *  sits as a main-lane square under the diamond. */
-export function isChainNode(n: GNode): boolean {
-  if (n.display === "root") return true;
-  if (isSpawnRoot(n)) return false;
-  // An agent-internal turn surfaced as a THREAD item (stamped by the
-  // thread pass on its visible clone): it keeps its own shape and
-  // colour but lays out on the agent's thread, not as a lane.
-  if ((n as Record<string, unknown>)._agentTurn) return false;
-  if (n.function === "merge") return true;
-  if ((n.role === "tool" || n._runNode) && _hangsOnRoot(n)
-      && (n.function || n.name)) {
-    return true;
-  }
-  return (
-    (n.role === "user" || n.role === "assistant")
-    && n.display !== "runtime"
-    && !n._runNode
-    && !n.function
-  );
-}
-
-/** The reply a followup chain hangs off: climb ``predecessor`` past
- *  every ``job_followup`` reply. Scarred data — a followup whose
- *  predecessor an old bug rewound — resolves to the same anchor, which
- *  is why the scar stops rendering as a fork. */
-function isFollowup(n: GNode | undefined): boolean {
-  return !!n
-    && (n as Record<string, unknown>).source === "job_followup"
-    && n.role === "assistant";
+function nodeTime(n: GNode): number {
+  return (n.created_at ?? n.timestamp ?? 0) as number;
 }
 
 /** The agent's name for a spawn root — tooltip/inspector material.
@@ -124,36 +86,48 @@ function _spawnName(
   return hit && hit.id !== root.id ? hit.name : "";
 }
 
-function _composerBefore(
+function _latestBefore(
+  rows: GNode[],
   composerFns: GNode[],
   spawn: GNode,
+  order: Map<string, number>,
 ): GNode | undefined {
-  const t = spawn.created_at || 0;
-  let lo = 0;
-  let hi = composerFns.length - 1;
-  let idx = -1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if ((composerFns[mid].created_at || 0) <= t) {
-      idx = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  if (idx < 0) return undefined;
-  const bestT = composerFns[idx].created_at || 0;
-  while (idx > 0 && (composerFns[idx - 1].created_at || 0) === bestT) idx--;
-  return composerFns[idx];
+  const t = nodeTime(spawn);
+  const spawnOrder = order.get(spawn.id) ?? Number.MAX_SAFE_INTEGER;
+  const beforeSpawn = (row: GNode): boolean => {
+    const rt = nodeTime(row);
+    return rt < t || (rt === t && (order.get(row.id) ?? -1) < spawnOrder);
+  };
+  const later = (row: GNode, current: GNode | undefined): boolean => {
+    if (!current) return true;
+    const rt = nodeTime(row);
+    const ct = nodeTime(current);
+    return rt > ct || (rt === ct
+      && (order.get(row.id) ?? -1) > (order.get(current.id) ?? -1));
+  };
+  let best: GNode | undefined;
+  composerFns.forEach((row) => {
+    if (beforeSpawn(row) && later(row, best)) best = row;
+  });
+  let cut: GNode | undefined;
+  rows.forEach((row) => {
+    if (beforeSpawn(row) && later(row, cut)) cut = row;
+  });
+  return best && later(best, cut) ? best : cut;
 }
 
-export function buildThreadModel(graph: GNode[]): ThreadModel {
+export function buildThreadModel(
+  graph: GNode[],
+  headId?: string | null,
+): ThreadModel {
   const byId: Record<string, GNode> = Object.create(null);
   const laneSpawn: Record<number, string> = Object.create(null);
   const laneFirstName: Record<number, { id: string; name: string }> =
     Object.create(null);
   const composerFns: GNode[] = [];
-  graph.forEach((n) => {
+  const order = new Map<string, number>();
+  graph.forEach((n, index) => {
+    order.set(n.id, index);
     byId[n.id] = n;
     if (isSpawnRoot(n)) laneSpawn[n._lane || 0] = n.id;
     const nm = ((n as Record<string, unknown>).branch_name as string) || "";
@@ -161,15 +135,27 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
     if (trimmed && !laneFirstName[n._lane || 0]) {
       laneFirstName[n._lane || 0] = { id: n.id, name: trimmed };
     }
+  });
+  graph.forEach((n) => {
     if (
-      isChainNode(n)
+      isChainNode(n, byId)
       && n.display !== "root"
       && (n.role === "tool" || n._runNode)
     ) {
       composerFns.push(n);
     }
   });
-  composerFns.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
+  composerFns.sort((a, b) => nodeTime(a) - nodeTime(b));
+  const onHead = new Set(_headAncestors(byId, headId ?? null));
+  const talkCuts = graph.filter((n) => {
+    if (!isChainNode(n, byId) || n.display === "root") return false;
+    if (n.role !== "user" && n.role !== "assistant") return false;
+    if (isFollowup(n)) return false;
+    if ((n as Record<string, unknown>).source === "agent_spawn") return false;
+    const laneRoot = laneSpawn[n._lane || 0];
+    if (laneRoot && n.id !== laneRoot) return false;
+    return !headId || onHead.has(n.id);
+  });
 
   // ── anchor resolution ──
   // agent-internal chain node → its lane's spawn root; followup reply →
@@ -211,12 +197,12 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
         // of the composer-launched function. Attach to that function
         // so the diamond is not four fork lanes.
         if (isSpawnRoot(n) || (n as Record<string, unknown>).source === "agent_spawn") {
-          const fn = _composerBefore(composerFns, n);
+          const fn = _latestBefore(talkCuts, composerFns, n, order);
           if (fn) return anchorOf(fn.id);
         }
         return null;
       }
-      if (isChainNode(p) || isSpawnRoot(p)) return anchorOf(p.id);
+      if (isChainNode(p, byId) || isSpawnRoot(p)) return anchorOf(p.id);
       cur = p;
       hops++;
     }
@@ -233,12 +219,12 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
       if (o) {
         spawnOwnerOf[n.id] = o;
         (events[o] = events[o] || []).push(
-          { t: n.created_at || 0, kind: "spawn", id: n.id });
+          { t: nodeTime(n), kind: "spawn", id: n.id });
       }
       nameOf[n.id] = _spawnName(n, laneFirstName);
       return;
     }
-    if (isChainNode(n)) {
+    if (isChainNode(n, byId)) {
       // An agent-internal turn (its lane merged into a spawn root) is
       // the agent's own activity: an event on the AGENT's thread. Once
       // the square opens, its replies come back as triangles in the
@@ -248,14 +234,14 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
       const a = anchorOf(n.id);
       if (a !== n.id && byId[a] && isSpawnRoot(byId[a])) {
         (events[a] = events[a] || []).push(
-          { t: n.created_at || 0, kind: "exec", id: n.id });
+          { t: nodeTime(n), kind: "exec", id: n.id });
       }
       return;
     }
     const o = ownerOf(n);
     if (o) {
       (events[o] = events[o] || []).push(
-        { t: n.created_at || 0, kind: "exec", id: n.id });
+        { t: nodeTime(n), kind: "exec", id: n.id });
     }
   });
   Object.values(events).forEach((evs) => evs.sort((a, b) => a.t - b.t));
@@ -288,14 +274,17 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
   // A spawn root shows only while every thread above it is open; its
   // items likewise. Chain nodes show unless they merged into an anchor.
   const openCache: Record<string, boolean> = Object.create(null);
-  function chainOpen(id: string): boolean {
+  function chainOpen(id: string, visiting = new Set<string>()): boolean {
     if (id in openCache) return openCache[id];
+    if (visiting.has(id)) return false;
+    visiting.add(id);
     let ok = !!_threadOpen[id];
     if (ok) {
       const owner = spawnOwnerOf[id];
-      if (owner) ok = chainOpen(owner);
+      if (owner) ok = chainOpen(owner, visiting);
       // a chain anchor is always reachable — nothing above it folds it
     }
+    visiting.delete(id);
     openCache[id] = ok;
     return ok;
   }
@@ -309,7 +298,7 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
   const visible = graph.filter((n) => {
     if (n.display === "root") return true;
     if (isSpawnRoot(n)) return spawnVisible(n.id);
-    if (isChainNode(n)) {
+    if (isChainNode(n, byId)) {
       const a = anchorOf(n.id);
       if (a === n.id) return true;
       // Agent-internal turn: a thread item while the agent is open.
@@ -324,7 +313,7 @@ export function buildThreadModel(graph: GNode[]): ThreadModel {
     // Stamp the surfaced agent turns so downstream passes lay them out
     // as thread items (isChainNode above keys on the stamp). View-only
     // clones — the graph rows themselves stay untouched.
-    if (!isChainNode(n) || n.display === "root") return n;
+    if (!isChainNode(n, byId) || n.display === "root") return n;
     const a = anchorOf(n.id);
     if (a !== n.id && byId[a] && isSpawnRoot(byId[a])) {
       return { ...n, _agentTurn: true } as GNode;

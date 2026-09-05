@@ -170,55 +170,8 @@ def clear_pid_file() -> None:
 
 
 def _process_alive(pid: int) -> bool:
-    """Cross-platform "is process ``pid`` still running?" probe.
-
-    POSIX uses the conventional ``os.kill(pid, 0)`` no-op signal —
-    ``ProcessLookupError`` means gone, ``PermissionError`` means alive
-    but owned by another user (still "exists"), success means alive.
-
-    Windows doesn't support signal 0. ``os.kill(pid, 0)`` raises
-    ``OSError [WinError 87] The parameter is incorrect`` regardless
-    of whether the process exists, which would make every
-    ``worker status`` invocation crash post-Commit-6 (the
-    ``find_running_webui`` path now calls this eagerly). Use
-    ``OpenProcess`` via ``ctypes`` and check ``GetExitCodeProcess``
-    — STILL_ACTIVE means alive, anything else means terminated.
-    """
-    if sys.platform.startswith("linux"):
-        try:
-            stat_tail = Path(f"/proc/{pid}/stat").read_text(
-                encoding="utf-8"
-            ).rsplit(")", 1)[-1].split()
-            if stat_tail and stat_tail[0] == "Z":
-                return False
-        except OSError:
-            pass
-    if sys.platform == "win32":
-        import ctypes
-        from ctypes import wintypes
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        STILL_ACTIVE = 259
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION, False, pid,
-        )
-        if not handle:
-            return False
-        try:
-            exit_code = wintypes.DWORD()
-            ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
-            if not ok:
-                return False
-            return exit_code.value == STILL_ACTIVE
-        finally:
-            kernel32.CloseHandle(handle)
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+    from openprogram._compat import process_alive
+    return process_alive(pid)
 
 
 def current_worker_pid() -> Optional[int]:

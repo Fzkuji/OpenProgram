@@ -54,9 +54,9 @@ const { COL_W, ROW_H, PAD_X, PAD_Y } =
 const nodesSrc = readFileSync(
   new URL("../lib/runtime-bridge/dag/render/nodes.ts", import.meta.url), "utf8");
 const shapesSrc = readFileSync(
-  new URL("../lib/runtime-bridge/dag/shapes.ts", import.meta.url), "utf8");
+  new URL("../lib/runtime-bridge/dag/render/shapes.ts", import.meta.url), "utf8");
 const interactionSrc = readFileSync(
-  new URL("../lib/runtime-bridge/dag/render/interaction.ts", import.meta.url), "utf8");
+  new URL("../lib/runtime-bridge/dag/interaction/nodes.ts", import.meta.url), "utf8");
 const inspectorSrc = readFileSync(
   new URL("../lib/runtime-bridge/dag/render/inspector.ts", import.meta.url), "utf8");
 const pipelineSrc = readFileSync(
@@ -64,7 +64,7 @@ const pipelineSrc = readFileSync(
 const edgesSrc = readFileSync(
   new URL("../lib/runtime-bridge/dag/render/edges.ts", import.meta.url), "utf8");
 const canvasSrc = readFileSync(
-  new URL("../lib/runtime-bridge/dag/canvas.ts", import.meta.url), "utf8");
+  new URL("../lib/runtime-bridge/dag/interaction/canvas.ts", import.meta.url), "utf8");
 
 /* ---- 1. the thread pass ---- */
 
@@ -585,7 +585,7 @@ assert.match(
 );
 assert.match(
   pipelineSrc,
-  /_foldSummaries\(graph, headId\)[\s\S]{0,900}buildThreadModel\(graph\)/,
+  /_foldSummaries\(graph, headId\)[\s\S]{0,900}buildThreadModel\(graph(?:, headId)?\)/,
   "threads fold after summaries so the two passes compose",
 );
 assert.match(

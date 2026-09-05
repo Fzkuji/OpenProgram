@@ -143,7 +143,7 @@
     <li>Fresh whole-branch review across the five tracked dimensions: <code>PASS</code>, zero findings. The commitments, resource-governance, and credential-hardening scoped specification and quality reviews are each <code>PASS</code> with zero remaining findings.</li>
     <li>Documentation build: <code>490 pages</code>; link checker: <code>0 broken</code>. CLI tests: <code>134 passed, 2 skipped</code>; CLI typecheck passed. Web contract checks, <code>tsc</code>, and <code>next build --no-lint</code> passed.</li>
     <li>The whole Web npm lint command still fails on files unchanged from <code>origin/main</code>; the same failure was reproduced there, so this page does not claim that the whole Web lint gate passed.</li>
-    <li>Mechanical feature-matrix result remains <code>160 features, 84.5 score, 67 gaps, 6 OpenProgram-only</code>. Changed Python Ruff and <code>py_compile</code>, locked dependency checks, and <code>git diff --check</code> passed on the reviewed candidate.</li>
+    <li>Mechanical feature-matrix result is <code>160 features, 88.5 score, 63 gaps, 6 OpenProgram-only</code>. This canonical count includes the currently verified OpenProgram rows for cross-channel session attachment, documentation Q&amp;A, PR worktree creation, <code>.worktreeinclude</code> synchronization, and diff security review; other gate metrics on this page remain unchanged.</li>
   </ul>
 
   <p class="note">This is a reviewed integration snapshot, not a release declaration. <code>33dd7d2c</code> is the implementation evidence; later documentation commits do not replace it.</p>

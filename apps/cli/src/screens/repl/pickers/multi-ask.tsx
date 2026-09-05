@@ -13,7 +13,7 @@
  *   - Esc           reject the group
  *
  * Answer is a list (one per question): str for single / free-text,
- * string[] for multi. Sent as question_reply { id, answer: [...] }.
+ * string[] for multi. Sent through execution.wait.answer.
  */
 import React, { useState } from 'react';
 import { Box, RawAnsi, useInput } from '../../../runtime/index';
@@ -61,13 +61,13 @@ export function MultiAskPicker({ client, decision: q, onResolve }: MultiAskPicke
 
   const submit = (): void => {
     const value = questions.map((qq, i) => finalize(qq, answers[i]!));
-    client.send(replyAction(q.id, value as never));
+    client.send(replyAction(q, value));
     onResolve(q.id);
   };
 
   useInput((input, key) => {
     if (key.escape) {
-      client.send(rejectAction(q.id));
+      client.send(rejectAction(q));
       onResolve(q.id);
       return;
     }

@@ -78,7 +78,7 @@ def test_mcp_outside_writes_are_denied_before_allow_and_bypass(
     tool_name,
     arguments,
 ):
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.worktree.context import reset_worktree, set_worktree
 
     project = tmp_path / "project"
@@ -106,7 +106,7 @@ def test_mcp_write_in_additional_working_directory_reaches_authority_gate(
     monkeypatch,
     mcp_authority,
 ):
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.worktree.context import reset_worktree, set_worktree
 
     project = tmp_path / "project"
@@ -145,7 +145,7 @@ def test_mcp_relative_write_in_bound_worktree_reaches_authority_gate(
     monkeypatch,
     mcp_authority,
 ):
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.worktree.context import reset_worktree, set_worktree
 
     project = tmp_path / "project"
@@ -183,7 +183,7 @@ def test_mcp_cannot_keep_worktree_before_authority_or_bypass(
     authority_kind,
 ):
     from openprogram.agent import authority
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.questions import get_question_registry
 
     request_authority = mcp_authority

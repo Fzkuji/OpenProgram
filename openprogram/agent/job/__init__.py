@@ -39,4 +39,7 @@ __all__ = [
     "can_transition",
     "JobRunner",
     "get_runner",
+    "ExecutionSnapshot",
+    "EventCursor",
+    "JobResourceDTO",
 ]

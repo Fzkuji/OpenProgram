@@ -50,6 +50,14 @@ mode 容器，由它选一种变换来呈现。一个后端 registry（QuestionR
 监听 `op:question-asked` window 事件、发 `question_reply`/`question_reject`）。
 本设计让它退役，改成一种 mode。
 
+函数调用有两种前端输入形式。选择一个已注册函数会打开 `FunctionForm`；在 idle
+composer 中输入完整且精确的表达式，例如
+`gui_agent(task="查看当前内置浏览器页面标题，但不要修改页面")`，则不打开表单，
+直接调用同一个函数。只有去除首尾空白后的全部输入恰好是一个已注册的
+`name(parameter=literal, ...)` 调用时，才识别为函数表达式。两种输入都会经过同一套
+参数归一化和 schema 校验，再交给同一个 `FunctionInvocation` dispatcher。包含
+函数调用的说明文本，以及被行内或代码块反引号包裹的调用文本，仍作为普通聊天输入。
+
 ## 模型：容器 + 变换（mode）
 
 ### 容器（composer）
@@ -128,12 +136,14 @@ apps/web/components/chat/composer/
 | 形态 | 通道 | 例子 | 为什么 |
 |---|---|---|---|
 | **直接 store** | Zustand action，同一处前端状态 | 点侧边栏函数 → `openFnForm(fn)` 进 fn-form | 没跨任何边界，就是前端自己换个形态；上总线是多此一举 |
-| **请求（command）** | HTTP POST / RPC，一来一回 | fn-form 点"运行" → `POST /api/function/{name}`；mode 答复 → `question_reply` WS action | "我要你做件事 + 给我答复"（运行后回 `session_id`、resolve 哪个问题）。请求/响应模型最贴，总线是 fire-and-forget 拿不到回话 |
+| **请求（command）** | HTTP POST / RPC，一来一回 | FunctionForm 或精确函数表达式 → `POST /api/function/{name}`；mode 答复 → `question_reply` WS action | "我要你做件事 + 给我答复"（运行后回 `session_id`、resolve 哪个问题）。请求/响应模型最贴，总线是 fire-and-forget 拿不到回话 |
 | **广播（event）** | 事件总线 → WS | 函数运行的进度/产出/`question.asked`/`file.changed` | 后端单向吐出"发生了什么"，谁关心谁接、不等回话 |
 
-**fn-form 一条线看全**：点函数（直接 store，开表单）→ 填参数（前端本地 state）→
-点运行（**请求**：POST 发起，回 session_id）→ 函数在子进程跑、动态回流（**广播**：
-运行事件 / 中途 `runtime.ask` 都经事件层 → WS）。三段三种通道，各取最贴的工具。
+**函数调用的完整链路**：入口可以是选择函数（直接 store，打开 FunctionForm，填写
+参数），也可以是在 idle composer 输入精确的已注册函数表达式（在前端解析并校验）。
+两条入口都生成相同的 `FunctionInvocation`，再调用共享 dispatcher（**请求**：POST
+发起并返回 `session_id`），不会调用聊天消息发送器，也不会创建用户聊天回合。随后函数
+在子进程运行；运行事件和中途 `runtime.ask` 更新经事件层 → WS 返回（**广播**）。
 
 反例（防以后踩）：别把"发起运行"做成 fire-and-forget 的总线事件——那就拿不到
 `session_id`，前端无从跳转/绑定会话。发起用请求、过程用广播。
@@ -170,7 +180,7 @@ apps/web/components/chat/composer/
 ## 后端：审批合流到 QuestionRegistry
 
 为了让"审批"也走同一条事件路径 → 落到同一个 composer 承接点，后端把
-`_approval.py` 合流到 `QuestionRegistry`（user-input-requests.md 点 6）：
+`permissions/approval.py` 合流到 `QuestionRegistry`（user-input-requests.md 点 6）：
 
 * `await_user_approval` 不再用独立的 `ApprovalRegistry` + 自定义
   `approval_request` 信封，而是注册一个 `kind="approval"` 的 PendingQuestion
@@ -188,7 +198,7 @@ apps/web/components/chat/composer/
 ## 退役（已完成）
 
 * `apps/web/components/ui/question-prompt.tsx` 浮窗 + app-shell 挂载 → 已删。
-* `_approval.py` 的 `ApprovalRegistry` / `approval_request` 信封 → 已删；
+* `permissions/approval.py` 的 `ApprovalRegistry` / `approval_request` 信封 → 已删；
   `approval_registry()` 返回统一 QuestionRegistry。
 
 ## 落地顺序（每步独立验证，全部完成）

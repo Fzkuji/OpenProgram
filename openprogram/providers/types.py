@@ -135,6 +135,10 @@ class StreamOptions(BaseModel):
     # ``None`` / False = no web search. Read via ``opts.get("web_search")``.
     web_search: bool | None = None
     response_format: JsonSchemaOutput | None = None
+    # Request-scoped effect retry contract. A key is meaningful only when the
+    # resolved provider explicitly advertises support for it.
+    supports_idempotency_key: bool = False
+    idempotency_key: str | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 

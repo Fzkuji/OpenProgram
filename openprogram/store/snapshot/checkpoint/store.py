@@ -10,6 +10,7 @@ import stat
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from openprogram._compat import is_link_metadata
 
 from . import manifest
 from .paths import (
@@ -21,9 +22,16 @@ from .paths import (
 
 
 _STATS_MAX_BYTES = 1024 * 1024
-_DIR_FD_CAPABLE = all(
-    function in os.supports_dir_fd
-    for function in (os.open, os.stat, os.unlink, os.rename, os.link)
+_DIR_FD_APPLY_SUPPORTED = (
+    hasattr(os, "O_DIRECTORY")
+    and hasattr(os, "O_NOFOLLOW")
+    and os.open in os.supports_dir_fd
+    and os.stat in os.supports_dir_fd
+    and os.stat in os.supports_follow_symlinks
+    and os.rename in os.supports_dir_fd
+    and os.link in os.supports_dir_fd
+    and os.link in os.supports_follow_symlinks
+    and os.unlink in os.supports_dir_fd
 )
 
 
@@ -55,14 +63,6 @@ def _file_kind(mode: int) -> str:
     if stat.S_ISDIR(mode):
         return "directory"
     return "special"
-
-
-def _is_reparse_point(info: os.stat_result) -> bool:
-    """Return whether a Windows directory entry redirects path traversal."""
-
-    attributes = getattr(info, "st_file_attributes", 0)
-    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-    return bool(reparse_flag and attributes & reparse_flag)
 
 
 def _has_nul(path: Path) -> bool:
@@ -287,14 +287,16 @@ class CheckpointStore:
     def _inspect_state(self, path: str) -> dict:
         try:
             chain = self._capture_parent_chain(path)
-            if not _DIR_FD_CAPABLE:
-                self._verify_parent_chain(path, chain)
-                return self._inspect_state_path(Path(path))
-            descriptor = self._open_verified_parent(path, chain)
+            if not _DIR_FD_APPLY_SUPPORTED:
+                parent = self._verify_parent_path(path, chain)
+            else:
+                descriptor = self._open_verified_parent(path, chain)
         except (FileNotFoundError, NotADirectoryError):
             return {"kind": "absent"}
         except OSError:
             return {"kind": "unsafe_parent"}
+        if not _DIR_FD_APPLY_SUPPORTED:
+            return self._inspect_state_path(parent / Path(path).name)
         try:
             return self._inspect_state_at(descriptor, Path(path).name)
         finally:
@@ -310,21 +312,13 @@ class CheckpointStore:
             raise OSError(f"history path has no parent: {path}")
         current = Path(parts[0])
         root_info = os.lstat(current)
-        if (
-            not stat.S_ISDIR(root_info.st_mode)
-            or stat.S_ISLNK(root_info.st_mode)
-            or _is_reparse_point(root_info)
-        ):
+        if not stat.S_ISDIR(root_info.st_mode) or is_link_metadata(root_info):
             raise OSError(f"unsafe root for history path: {path}")
         components = []
         for name in parts[1:]:
             current = current / name
             info = os.lstat(current)
-            if (
-                not stat.S_ISDIR(info.st_mode)
-                or stat.S_ISLNK(info.st_mode)
-                or _is_reparse_point(info)
-            ):
+            if not stat.S_ISDIR(info.st_mode) or is_link_metadata(info):
                 raise OSError(f"unsafe parent for history path: {current}")
             components.append({"name": name, "dev": info.st_dev, "ino": info.st_ino})
         return {
@@ -335,23 +329,18 @@ class CheckpointStore:
         }
 
     @staticmethod
-    def _verify_parent_chain(path: str, chain: dict) -> None:
-        """Revalidate a captured chain on hosts without descriptor traversal.
-
-        CPython does not expose ``dir_fd`` directory traversal on Windows.
-        W1 therefore uses a capability-gated path fallback: every parent is
-        re-lstat'ed, junctions/reparse points are rejected, and the recorded
-        file identity must still match immediately before mutation.
-        """
-
+    def _verify_parent_path(path: str, chain: dict) -> Path:
+        # Windows has no equivalent dir_fd primitive. This fallback rechecks each
+        # parent with lstat but cannot prevent symlink-swap races; that weaker
+        # guarantee is an accepted tradeoff for making restore available there.
         current = Path(str(chain["root"]))
-        expected = (chain.get("root_dev"), chain.get("root_ino"))
         info = os.lstat(current)
         if (
             not stat.S_ISDIR(info.st_mode)
-            or stat.S_ISLNK(info.st_mode)
-            or _is_reparse_point(info)
-            or (info.st_dev, info.st_ino) != expected
+            or is_link_metadata(info)
+            or (info.st_dev, info.st_ino) != (
+                chain.get("root_dev"), chain.get("root_ino"),
+            )
         ):
             raise OSError(f"history root changed before apply: {path}")
         for component in chain.get("components", []):
@@ -359,31 +348,13 @@ class CheckpointStore:
             info = os.lstat(current)
             if (
                 not stat.S_ISDIR(info.st_mode)
-                or stat.S_ISLNK(info.st_mode)
-                or _is_reparse_point(info)
-                or (info.st_dev, info.st_ino)
-                != (component.get("dev"), component.get("ino"))
+                or is_link_metadata(info)
+                or (info.st_dev, info.st_ino) != (
+                    component.get("dev"), component.get("ino"),
+                )
             ):
                 raise OSError(f"history parent changed before apply: {path}")
-
-    @staticmethod
-    def _inspect_state_path(path: Path) -> dict:
-        try:
-            info = os.lstat(path)
-        except FileNotFoundError:
-            return {"kind": "absent"}
-        if _is_reparse_point(info):
-            return {"kind": "symlink"}
-        if not stat.S_ISREG(info.st_mode):
-            return {"kind": _file_kind(info.st_mode)}
-        if info.st_nlink != 1:
-            return {"kind": "hardlink", "links": info.st_nlink}
-        return {
-            "kind": "regular",
-            "digest": _digest(path),
-            "mode": f"{stat.S_IMODE(info.st_mode):04o}",
-            "size": info.st_size,
-        }
+        return current
 
     @staticmethod
     def _open_verified_parent(path: str, chain: dict) -> int:
@@ -412,6 +383,29 @@ class CheckpointStore:
         except Exception:
             os.close(descriptor)
             raise
+
+    @staticmethod
+    def _inspect_state_path(path: Path) -> dict:
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            return {"kind": "absent"}
+        if is_link_metadata(info):
+            return {"kind": "symlink"}
+        if not stat.S_ISREG(info.st_mode):
+            return {"kind": _file_kind(info.st_mode)}
+        if info.st_nlink != 1:
+            return {"kind": "hardlink", "links": info.st_nlink}
+        file_descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            return {
+                "kind": "regular",
+                "digest": _digest_fd(file_descriptor),
+                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
+                "size": info.st_size,
+            }
+        finally:
+            os.close(file_descriptor)
 
     @staticmethod
     def _inspect_state_at(descriptor: int, name: str) -> dict:
@@ -708,19 +702,21 @@ class CheckpointStore:
         transaction_id: str,
         expected_current: dict | None = None,
     ) -> str | None:
-        if not _DIR_FD_CAPABLE:
-            return self._apply_state_without_dir_fd(
-                path,
-                state,
-                backup_dir,
-                transaction_id,
-                expected_current,
-            )
         target = Path(path)
         tmp_name = f".{target.name}.{transaction_id}.tmp"
         guard_name = f".{target.name}.{transaction_id}.guard"
         expected = expected_current or self._inspect_state(path)
         chain = expected.get("parent_chain") or self._capture_parent_chain(path)
+        if not _DIR_FD_APPLY_SUPPORTED:
+            return self._apply_state_without_dir_fd(
+                target,
+                state,
+                backup_dir,
+                expected,
+                chain,
+                tmp_name,
+                guard_name,
+            )
         parent_descriptor = self._open_verified_parent(path, chain)
         try:
             if state.get("kind") == "regular":
@@ -801,73 +797,73 @@ class CheckpointStore:
 
     def _apply_state_without_dir_fd(
         self,
-        path: str,
+        target: Path,
         state: dict,
         backup_dir: Path,
-        transaction_id: str,
-        expected_current: dict | None = None,
+        expected: dict,
+        chain: dict,
+        tmp_name: str,
+        guard_name: str,
     ) -> str | None:
-        """Apply one journal state where CPython has no ``dir_fd`` support."""
-
-        target = Path(path)
-        temporary = target.parent / f".{target.name}.{transaction_id}.tmp"
-        guard = target.parent / f".{target.name}.{transaction_id}.guard"
-        expected = expected_current or self._inspect_state(path)
-        chain = expected.get("parent_chain") or self._capture_parent_chain(path)
-        self._verify_parent_chain(path, chain)
-        if not self._state_matches(self._inspect_state_path(target), expected):
-            raise OSError(f"stale current state for {path}")
-
-        if state.get("kind") == "regular":
-            blob = (
-                Path(str(state.get("blob_path")))
-                if state.get("blob_path")
-                else backup_dir / str(state.get("blob_ref") or "")
-            )
-            if not blob.is_file():
-                raise OSError(f"missing recovery blob for {path}")
-            if state.get("digest") and _digest(blob) != state.get("digest"):
-                raise OSError(f"recovery blob digest mismatch for {path}")
-            descriptor = os.open(
-                temporary,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL
-                | getattr(os, "O_BINARY", 0),
-                0o600,
-            )
-            try:
-                with blob.open("rb") as source:
-                    for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                        view = memoryview(chunk)
-                        while view:
-                            written = os.write(descriptor, view)
-                            view = view[written:]
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-
+        parent = self._verify_parent_path(str(target), chain)
+        tmp_path = parent / tmp_name
+        guard_path = parent / guard_name
         try:
-            self._verify_parent_chain(path, chain)
+            if state.get("kind") == "regular":
+                blob = Path(str(state.get("blob_path"))) \
+                    if state.get("blob_path") else (
+                        backup_dir / str(state.get("blob_ref") or "")
+                    )
+                if not blob.is_file():
+                    raise OSError(f"missing recovery blob for {target}")
+                if state.get("digest") and _digest(blob) != state.get("digest"):
+                    raise OSError(f"recovery blob digest mismatch for {target}")
+                tmp_descriptor = os.open(
+                    tmp_path,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                    0o600,
+                )
+                try:
+                    with blob.open("rb") as source:
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            view = memoryview(chunk)
+                            while view:
+                                written = os.write(tmp_descriptor, view)
+                                view = view[written:]
+                    os.chmod(tmp_path, int(str(state.get("mode") or "0644"), 8))
+                    os.fsync(tmp_descriptor)
+                finally:
+                    os.close(tmp_descriptor)
+
             if expected.get("kind") == "regular":
-                os.replace(target, guard)
-                moved = self._inspect_state_path(guard)
+                os.rename(target, guard_path)
+                moved = self._inspect_state_path(guard_path)
                 if not self._state_matches(moved, expected):
-                    if not target.exists():
-                        os.replace(guard, target)
-                    raise OSError(f"stale current state for {path}")
+                    try:
+                        os.rename(guard_path, target)
+                    except FileExistsError:
+                        pass
+                    raise OSError(f"stale current state for {target}")
             elif expected.get("kind") != "absent":
-                raise OSError(f"unsafe current state for {path}")
+                raise OSError(f"unsafe current state for {target}")
 
             if state.get("kind") == "regular":
                 try:
-                    os.link(temporary, target)
+                    os.link(tmp_path, target)
                 except FileExistsError as exc:
-                    raise OSError(f"external writer created {path}") from exc
-                temporary.unlink()
+                    raise OSError(f"external writer created {target}") from exc
+                os.unlink(tmp_path)
             elif state.get("kind") != "absent":
-                raise OSError(f"unsupported target state for {path}")
-            return str(guard) if guard.exists() else None
+                raise OSError(f"unsupported target state for {target}")
+
+            self._fsync_directory(parent)
+            guard_exists = self._inspect_state_path(guard_path).get("kind") != "absent"
+            return str(guard_path) if guard_exists else None
         finally:
-            temporary.unlink(missing_ok=True)
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
 
     def _restore_changed_guard(
         self,
@@ -875,16 +871,16 @@ class CheckpointStore:
         guard_path: str,
         transaction_id: str,
     ) -> None:
-        if not _DIR_FD_CAPABLE:
-            self._restore_changed_guard_without_dir_fd(
-                action, guard_path, transaction_id,
-            )
-            return
         target = Path(action["path"])
         guard = Path(guard_path)
         applied_name = f".{target.name}.{transaction_id}.applied"
         chain = action["expected_current"].get("parent_chain") \
             or self._capture_parent_chain(action["path"])
+        if not _DIR_FD_APPLY_SUPPORTED:
+            self._restore_changed_guard_without_dir_fd(
+                action, guard, applied_name, chain,
+            )
+            return
         descriptor = self._open_verified_parent(action["path"], chain)
         try:
             if self._inspect_state_at(descriptor, target.name).get("kind") != "absent":
@@ -906,23 +902,21 @@ class CheckpointStore:
     def _restore_changed_guard_without_dir_fd(
         self,
         action: dict,
-        guard_path: str,
-        transaction_id: str,
+        guard: Path,
+        applied_name: str,
+        chain: dict,
     ) -> None:
         target = Path(action["path"])
-        guard = Path(guard_path)
-        applied = target.parent / f".{target.name}.{transaction_id}.applied"
-        chain = (
-            action["expected_current"].get("parent_chain")
-            or self._capture_parent_chain(action["path"])
-        )
-        self._verify_parent_chain(action["path"], chain)
+        parent = self._verify_parent_path(action["path"], chain)
+        applied_path = parent / applied_name
+        guard_path = parent / guard.name
         if self._inspect_state_path(target).get("kind") != "absent":
-            os.replace(target, applied)
-            action["recovery_artifact"] = str(applied)
+            os.rename(target, applied_path)
+            action["recovery_artifact"] = str(applied_path)
         if self._inspect_state_path(target).get("kind") != "absent":
             raise OSError(f"external writer recreated {target}")
-        os.replace(guard, target)
+        os.rename(guard_path, target)
+        self._fsync_directory(parent)
 
     @staticmethod
     def _fsync_directory(path: Path) -> None:
@@ -947,6 +941,7 @@ class CheckpointStore:
             ] if committed else [],
             "conflicts": intent.get("conflicts", []),
             "unavailable": intent.get("unavailable", []),
+            "error_code": intent.get("error_code"),
             "error": intent.get("error"),
         }
 
@@ -962,6 +957,9 @@ class CheckpointStore:
             ] if committed else [],
             "conflicts": intent.get("conflicts", []),
             "unavailable": intent.get("unavailable", []),
+            "error_code": intent.get("error_code") or (
+                "RECOVERY_REQUIRED" if intent.get("status") == "recovery_required" else None
+            ),
             "error": intent.get("error"),
             "new_head_id": intent.get("target_head_id") if committed else None,
             "source_head_id": intent.get("expected_head_id"),
@@ -975,12 +973,31 @@ class CheckpointStore:
         }
 
     def read_rewind_intent(self, key: str) -> dict | None:
-        path = self._rewind_intent_path(key)
+        return self._read_intent(self._rewind_intent_path(key))
+
+    @staticmethod
+    def _read_intent(path: Path) -> dict | None:
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError, json.JSONDecodeError):
             return None
-        return value if isinstance(value, dict) else None
+        if not isinstance(value, dict):
+            return None
+        if value.get("status") == "recovery_required" and not value.get("error_code"):
+            value["error_code"] = "RECOVERY_REQUIRED"
+            try:
+                manifest.save(path, value)
+            except OSError:
+                # The normalized result remains actionable even if a read-only
+                # or damaged profile prevents the migration write.
+                pass
+        return value
+
+    def read_history_intent(
+        self, turn_id: str, direction: str, key: str,
+    ) -> dict | None:
+        """Read one single-turn history receipt without applying it."""
+        return self._read_intent(self._intent_path(turn_id, direction, key))
 
     def _recover_rewind_intent(
         self,
@@ -1021,6 +1038,7 @@ class CheckpointStore:
                     intent, expected_head, target_head,
                 ):
                     intent["status"] = "recovery_required"
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                     intent["error"] = "same-head transaction finalization failed"
                     manifest.save(intent_path, intent)
                     return self._rewind_intent_result(intent, replayed=True)
@@ -1030,6 +1048,7 @@ class CheckpointStore:
                 return self._rewind_intent_result(intent, replayed=True)
             if head not in {expected_head, target_head} or "external" in states:
                 intent["status"] = "recovery_required"
+                intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = "external state prevents deterministic recovery"
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent, replayed=True)
@@ -1043,7 +1062,7 @@ class CheckpointStore:
                     manifest.save(intent_path, intent)
                     rollback_guard = self._apply_state(
                         action["path"], action["rollback"], self.session_dir,
-                        str(intent.get("transaction_id") or "recovery"),
+                        str(intent.get("transaction_id") or "recovery") + "_rollback",
                         action["target"],
                     )
                     if rollback_guard:
@@ -1063,6 +1082,8 @@ class CheckpointStore:
             intent["status"] = (
                 "recovery_required" if recovery_required else "rolled_back"
             )
+            if recovery_required:
+                intent["error_code"] = "RECOVERY_REQUIRED"
             intent["error"] = (
                 "automatic rollback could not complete"
                 if recovery_required else "interrupted rewind rolled back"
@@ -1086,6 +1107,33 @@ class CheckpointStore:
                     get_head=get_head,
                     compare_and_set_head=compare_and_set_head,
                 ))
+        return results
+
+    def recover_history_intents(self) -> list[dict]:
+        """Terminalize ordinary history intents left during a crash.
+
+        A single-turn intent has no separate recovery coordinator.  Startup
+        therefore preserves its manifest and records an explicit recovery
+        state instead of exposing it forever as an in-progress operation.
+        """
+        results = []
+        roots = (
+            session_backup_root(self.session_dir),
+            Path(self.session_dir) / "file_backups",
+        )
+        paths = sorted({path for root in roots for path in root.glob("*/intents/*.json")})
+        for path in paths:
+            try:
+                intent = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(intent, dict) or intent.get("status") not in {"prepared", "applying"}:
+                continue
+            intent["status"] = "recovery_required"
+            intent["error_code"] = "RECOVERY_REQUIRED"
+            intent["error"] = "incomplete history intent requires explicit recovery"
+            manifest.save(path, intent)
+            results.append(self._intent_result(intent))
         return results
 
     def _validate_custom_history_actions(self, actions: list[dict]) -> dict:
@@ -1164,6 +1212,7 @@ class CheckpointStore:
                 return self._intent_result({
                     **existing,
                     "status": "recovery_required",
+                    "error_code": "RECOVERY_REQUIRED",
                     "error": "incomplete durable intent requires recovery",
                 })
             except (OSError, json.JSONDecodeError):
@@ -1251,7 +1300,7 @@ class CheckpointStore:
                             continue
                         rollback_guard = self._apply_state(
                             action["path"], action["rollback"], backup_dir,
-                            transaction_id, action["target"],
+                            transaction_id + "_rollback", action["target"],
                         )
                         if rollback_guard:
                             action["rollback_guard_path"] = rollback_guard
@@ -1266,6 +1315,8 @@ class CheckpointStore:
                 intent["status"] = (
                     "recovery_required" if recovery_required else "rolled_back"
                 )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = str(exc)
                 manifest.save(intent_path, intent)
                 return self._intent_result(intent)
@@ -1524,7 +1575,7 @@ class CheckpointStore:
                             continue
                         rollback_guard = self._apply_state(
                             action["path"], action["rollback"], self.session_dir,
-                            transaction_id, action["target"],
+                            transaction_id + "_rollback", action["target"],
                         )
                         if rollback_guard:
                             action["rollback_guard_path"] = rollback_guard
@@ -1539,6 +1590,8 @@ class CheckpointStore:
                 intent["status"] = (
                     "recovery_required" if recovery_required else "rolled_back"
                 )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
                 intent["error"] = str(exc)
                 manifest.save(intent_path, intent)
                 return self._rewind_intent_result(intent)

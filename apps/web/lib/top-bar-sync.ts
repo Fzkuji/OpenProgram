@@ -121,7 +121,13 @@ export function pushBranchInfo(): void {
 
 export function pushStatusBadge(override?: Partial<StatusBadgeInfo>): void {
   try {
-    useSessionStore.getState().setStatusBadge({ ...deriveStatusBadge(), ...override });
+    const store = useSessionStore.getState();
+    const socket = getSocket();
+    // Connection-dependent controls must follow transport state, not the
+    // running/paused badge or a refresh of the conversation's source label.
+    store.setWsStatus(socket?.readyState === WebSocket.OPEN ? "open"
+      : socket && socket.readyState === WebSocket.CONNECTING ? "connecting" : "closed");
+    store.setStatusBadge({ ...deriveStatusBadge(), ...override });
   } catch {
     /* ignore */
   }

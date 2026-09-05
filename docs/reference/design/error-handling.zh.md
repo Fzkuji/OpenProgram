@@ -128,5 +128,5 @@ ruff 的作用域仅限这道门禁。格式化与 import 顺序刻意不管—�
 
 ## 相关文件
 
-- [运行取消](runtime/execution/turn-cancellation.html) — 取消生命周期，以及 `CancelledError` 继承 `BaseException` 的原因
+- [统一运行控制](runtime/execution/execution-control.html) — 暂停、继续、单步、调整、取消，以及 `CancelledError` 继承 `BaseException` 的原因
 - [`runtime/dag/overview.zh.md`](runtime/dag/overview.zh.md) — error 作为节点终态

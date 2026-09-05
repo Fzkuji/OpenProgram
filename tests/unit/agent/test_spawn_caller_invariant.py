@@ -1,18 +1,16 @@
-"""spawn_caller invariant across the three spawn entry points.
+"""Spawn provenance invariant across the spawn entry points.
 
-dag/overview.md §2.3: a clean-mode spawn (new branch, branch_from=None)
-must pass ``spawn_caller=<spawning node>`` so its branch root's caller is
-the spawning turn and the DAG attaches the branch to that turn instead of
-forking it from ROOT. An inherit-mode spawn (branch_from set) passes
-``spawn_caller=None`` — the fork point is already the predecessor.
+The canonical Job Agent input records the spawning node in
+``turn_request.spawn_caller`` whenever a caller exists. ``branch_from``
+separately records whether the new turn starts from a specific branch tip.
 
 The sync agent() path (commit 1d1fe016) had dropped this; the async
 runner already had it. These tests pin the entry points so a refactor
 can't silently re-orphan a sub-branch at the root.
 
-Each entry imports ``run_agent_turn`` from
-``openprogram.agent.sub_agent_run`` at call time, so patching it there
-captures the kwargs for every path.
+The canonical runner path invokes ``AgentProductionDriver`` with a
+``TurnRequest``; patching its default runner captures the durable request
+fields without bypassing admission and activation.
 """
 from __future__ import annotations
 
@@ -154,15 +152,14 @@ def test_runner_clean_passes_spawn_caller(store, monkeypatch):
     Drive a real task through the pool with a fake worker that records it."""
     cap = {}
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None, advance_head=True,
-                 authority=None):
-        cap["branch_from"] = branch_from
-        cap["spawn_caller"] = spawn_caller
+    def fake_run(*, request, cancel_event, **_kwargs):
+        cap["branch_from"] = request.branch_from
+        cap["spawn_caller"] = request.spawn_caller
         return AgentTurnResult(head_id="head_ok", final_text="hello")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     monkeypatch.setattr(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
@@ -174,7 +171,7 @@ def test_runner_clean_passes_spawn_caller(store, monkeypatch):
     try:
         tid = runner.spawn_job(
             session_id="p1", prompt="go", agent_id="main",
-            context_mode="clean", caller_msg_id="a1", parent_msg_id="a1",
+            context_mode="clean", caller_msg_id="a1",
         )
         final = runner.await_job(tid, timeout=5.0)
         assert final is not None
@@ -184,18 +181,17 @@ def test_runner_clean_passes_spawn_caller(store, monkeypatch):
         runner_mod.shutdown_runner()
 
 
-def test_runner_inherit_passes_no_spawn_caller(store, monkeypatch):
+def test_runner_inherit_preserves_canonical_spawn_caller(store, monkeypatch):
     cap = {}
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None,
-                 label=None, spawn_caller=None, advance_head=True,
-                 authority=None):
-        cap["branch_from"] = branch_from
-        cap["spawn_caller"] = spawn_caller
+    def fake_run(*, request, cancel_event, **_kwargs):
+        cap["branch_from"] = request.branch_from
+        cap["spawn_caller"] = request.spawn_caller
         return AgentTurnResult(head_id="head_ok", final_text="hello")
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     monkeypatch.setattr(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
@@ -212,7 +208,7 @@ def test_runner_inherit_passes_no_spawn_caller(store, monkeypatch):
         final = runner.await_job(tid, timeout=5.0)
         assert final is not None
         assert cap["branch_from"] == "a1"
-        assert cap["spawn_caller"] is None
+        assert cap["spawn_caller"] == "a1"
     finally:
         runner_mod.shutdown_runner()
 
@@ -351,7 +347,7 @@ def test_agent_sync_child_sees_both_counts_incremented(store, monkeypatch):
 
 # ---- tool exposure follows the remaining budget ---------------------------
 
-_TOOLS_UNDER_TEST = ["agent", "job_output", "job_stop", "read"]
+_TOOLS_UNDER_TEST = ["agent", "read"]
 
 
 def _spawn_tool_names(depth: int) -> set:
@@ -377,27 +373,23 @@ def _spawn_tool_names(depth: int) -> set:
 
 
 def test_spawn_tools_visible_while_budget_remains():
-    """A spawned agent (spawn budget spent, messages left) keeps agent /
-    job_output / job_stop: it cannot spawn — the runtime guard refuses
-    that — but agent(to=…) and the task companions still work."""
+    """A spawned agent keeps the canonical agent tool while messages remain."""
     names = _spawn_tool_names(1)
-    assert {"agent", "job_output", "job_stop"} <= names
+    assert "agent" in names
 
 
 def test_spawn_tools_disappear_when_budget_spent():
-    """Both budgets spent → the three tools leave the listing entirely."""
+    """Both budgets spent → the agent tool leaves the listing entirely."""
     from openprogram.programs.tools.agents.send_message.send_message.depth import (
         MAX_MESSAGES,
     )
     names = _spawn_tool_names(MAX_MESSAGES)
     assert "agent" not in names
-    assert "job_output" not in names
-    assert "job_stop" not in names
     # Everything else is untouched.
     assert "read" in names
 
 
 def test_message_budget_zero_keeps_tools_forever(monkeypatch):
-    """agent.max_messages=0 = no limit, so the tools never disappear."""
+    """agent.max_messages=0 = no limit, so the agent tool stays visible."""
     _set_config(monkeypatch, max_messages=0)
-    assert {"agent", "job_output", "job_stop"} <= _spawn_tool_names(999)
+    assert "agent" in _spawn_tool_names(999)

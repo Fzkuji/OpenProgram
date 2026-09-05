@@ -1,3 +1,4 @@
+import { usePermissionSetting } from './repl/usePermissionSetting.js';
 import React, { useEffect, useState, useRef } from 'react';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -6,6 +7,7 @@ import type { ScrollBoxHandle } from '../runtime/index';
 import { Shell, ModalHost, ToastHost } from '../ui/index.js';
 import { StatsEnvelope, ConnectionState } from '../ws/client.js';
 import { BottomBar } from '../components/BottomBar.js';
+import { GoalStatus } from '../components/GoalStatus.js';
 import { Messages } from '../components/Messages.js';
 import { Spinner } from '../components/Spinner.js';
 import { Turn } from '../components/Turn.js';
@@ -155,7 +157,7 @@ export const REPL: React.FC<REPLProps> = ({
   // Permission tier for tool calls — the 5 modes shared with the web
   // Mode menu. Default ask (approval cards), matching web + Claude Code;
   // a resumed session restores its saved tier via session_loaded.
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>('ask');
   // Thinking effort cycle: off → minimal → low → medium → high → xhigh → off.
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort>('xhigh');
   const [connState, setConnState] = useState<ConnectionState>(client.getState());
@@ -205,15 +207,20 @@ export const REPL: React.FC<REPLProps> = ({
     setActivity({ verb, startedAt: Date.now() });
 
   const executionIdRef = useRef<string | undefined>(undefined);
+  const executionVersionRef = useRef<number | undefined>(undefined);
   const stopStageRef = useRef<0 | 1 | 2>(0);
 
   const finishTurn = () => {
     setActivity(null);
     stopStageRef.current = 0;  // reset three-stage stop for the next turn
     executionIdRef.current = undefined;
+    executionVersionRef.current = undefined;
   };
 
 
+  const { setPermissionMode, permissionForSubmit } = usePermissionSetting(
+    client, conversationId, permissionMode, setPermissionModeState, pushSystem,
+  );
   useWsEvents({
     client,
     pushSystem, finishTurn,
@@ -226,11 +233,12 @@ export const REPL: React.FC<REPLProps> = ({
     setQrAscii, setQrStatus,
     setPickerKind, setPendingDecisions, setChosenChannel, setChosenAccount,
     setConversationTitle, setConnState,
-    setToolsOn, setThinkingEffort, setPermissionMode,
+    setToolsOn, setThinkingEffort, setPermissionMode: setPermissionModeState,
     setSearchResults, setContextSearchQuery, setSessionLiveByConv,
     setChannelActivityByConv,
     agentSetRef, sessionAliasesPrintRef, sessionAliasesRef,
     executionIdRef,
+    executionVersionRef,
   });
 
   // ``openprogram --resume <id>`` seeds the id through the launcher
@@ -242,6 +250,22 @@ export const REPL: React.FC<REPLProps> = ({
       client.send({ action: 'load_session', session_id: initialConversation });
     }
   }, [client, initialConversation]);
+  const cancelCurrentExecution = () => {
+    const executionId = executionIdRef.current || streaming?.executionId;
+    const expectedVersion = executionVersionRef.current;
+    if (executionId && typeof expectedVersion === 'number') {
+      client.send({
+        type: 'execution.command',
+        action: 'execution.cancel',
+        command_id: randomLocalId(),
+        execution_id: executionId,
+        expected_version: expectedVersion,
+      });
+      return true;
+    }
+    pushSystem('Cancel unavailable: no current execution version');
+    return false;
+  };
 
 
   // Double-press Ctrl+C to exit (Claude Code / Hermes pattern).
@@ -276,13 +300,7 @@ export const REPL: React.FC<REPLProps> = ({
           }, 1500);
         } else {
           stopStageRef.current = 2;
-          const executionId = executionIdRef.current || streaming.executionId;
-          if (executionId) {
-            client.send({ action: 'execution.cancel', execution_id: executionId });
-          } else {
-            client.send({ action: 'stop', session_id: conversationId });
-          }
-          pushSystem('Cancel execution');
+          if (cancelCurrentExecution()) pushSystem('Cancel execution');
           exitTimerRef.current = setTimeout(() => {
             exitTimerRef.current = null;
             stopStageRef.current = 0;
@@ -357,7 +375,7 @@ export const REPL: React.FC<REPLProps> = ({
         text: chatText,
         tools: toolsOn,
         thinking_effort: thinkingEffort,
-        permission_mode: permissionMode,
+        permission_mode: permissionForSubmit(),
       } as never);
     };
     // Save EVERY submitted line — chat messages and slash commands —
@@ -477,6 +495,20 @@ export const REPL: React.FC<REPLProps> = ({
         currentAgent: agent,
         currentModel: model,
         currentConversation: conversationId,
+        submitExecutionCommand: (operation, payload) => {
+          const executionId = executionIdRef.current || streaming?.executionId;
+          const expectedVersion = executionVersionRef.current;
+          if (!executionId || typeof expectedVersion !== 'number') return false;
+          client.send({
+            type: 'execution.command',
+            action: `execution.${operation}` as 'execution.steer' | 'execution.fork' | 'execution.retry',
+            command_id: randomLocalId(),
+            execution_id: executionId,
+            expected_version: expectedVersion,
+            payload,
+          });
+          return true;
+        },
         setTheme: (name: string) => {
           if (!isThemeSetting(name)) return false;
           setThemeSetting(name);
@@ -509,13 +541,7 @@ export const REPL: React.FC<REPLProps> = ({
 
   const onCancel = () => {
     if (!conversationId) return;
-    const executionId = executionIdRef.current || streaming?.executionId;
-    if (executionId) {
-      client.send({ action: 'execution.cancel', execution_id: executionId });
-    } else {
-      client.send({ action: 'stop', session_id: conversationId });
-    }
-    pushSystem('Cancel execution');
+    if (cancelCurrentExecution()) pushSystem('Cancel execution');
   };
 
   const elapsed = activity ? (Date.now() - activity.startedAt) / 1000 : undefined;
@@ -586,6 +612,7 @@ export const REPL: React.FC<REPLProps> = ({
       {/* Toasts overlay any open modal — shown above PromptInput so
           they don't get clipped by the bottom-anchored chrome. */}
       <ToastHost />
+      <GoalStatus client={client} sessionId={conversationId} />
       {pickerNode ? (
         pickerNode
       ) : (

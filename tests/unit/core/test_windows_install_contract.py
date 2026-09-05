@@ -83,7 +83,9 @@ def test_desktop_upgrade_preparation_is_path_scoped_and_long_path_aware() -> Non
     assert "StartsWith(" in helper
     assert "[StringComparison]::OrdinalIgnoreCase" in helper
     assert "ConvertTo-ExtendedPath" in helper
-    assert "FullName.Length -ge 248" in helper
+    assert "[IO.Directory]::EnumerateFileSystemEntries" in helper
+    assert "$Entry.Length - $ExtendedRoot.Length) -ge 248" in helper
+    assert "[IO.FileAttributes]::ReparsePoint" in helper
     assert "prepare-upgrade.ps1" in installer
     assert "customCheckAppRunning" not in installer
 

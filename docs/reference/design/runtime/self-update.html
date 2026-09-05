@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenProgram 对话内自主更新</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #090d13;
+    --surface: #101722;
+    --surface-2: #151f2d;
+    --surface-3: #0c121b;
+    --line: #273548;
+    --line-strong: #3b506a;
+    --text: #d8e2ee;
+    --muted: #8c9bad;
+    --title: #f7f9fc;
+    --blue: #6ba7ff;
+    --cyan: #4fd8d0;
+    --green: #79d79b;
+    --amber: #f3bd69;
+    --red: #ff8295;
+    --violet: #b79bff;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+    --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --radius: 15px;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at 11% -5%, rgba(79, 216, 208, .11), transparent 30rem),
+      radial-gradient(circle at 92% 8%, rgba(107, 167, 255, .10), transparent 31rem),
+      var(--bg);
+    color: var(--text);
+    font: 15px/1.65 var(--sans);
+  }
+  a { color: var(--blue); text-underline-offset: 3px; }
+  a:hover { color: #a6cbff; }
+  code {
+    padding: 2px 6px;
+    border: 1px solid rgba(107, 167, 255, .18);
+    border-radius: 6px;
+    background: rgba(107, 167, 255, .07);
+    color: #afd0ff;
+    font: .84em/1.5 var(--mono);
+  }
+  pre {
+    margin: 0;
+    padding: 17px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-3);
+    color: #cbd6e4;
+    font: 12px/1.7 var(--mono);
+  }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+  .page {
+    display: grid;
+    grid-template-columns: 218px minmax(0, 1fr);
+    gap: 44px;
+    width: min(1320px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 42px 0 100px;
+  }
+  .rail {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+  }
+  .rail-mark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 22px;
+    color: var(--title);
+    font: 700 13px var(--mono);
+  }
+  .rail-mark::before {
+    width: 12px;
+    height: 12px;
+    border: 3px solid var(--cyan);
+    border-radius: 3px;
+    content: "";
+    box-shadow: 7px 7px 0 -4px var(--violet);
+  }
+  .rail nav { display: grid; gap: 3px; }
+  .rail a {
+    padding: 7px 10px;
+    border-left: 2px solid transparent;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 12px;
+  }
+  .rail a:hover,
+  .rail a[aria-current="true"] {
+    border-left-color: var(--cyan);
+    color: var(--title);
+    background: rgba(79, 216, 208, .05);
+  }
+  .rail-note {
+    margin-top: 22px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 11px;
+  }
+  main { min-width: 0; }
+  section { scroll-margin-top: 24px; margin-top: 70px; }
+  .hero { margin-top: 0; }
+  .eyebrow {
+    margin: 0 0 12px;
+    color: var(--cyan);
+    font: 700 11px/1.4 var(--mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  h1, h2, h3 { color: var(--title); }
+  h1 {
+    max-width: 900px;
+    margin: 0;
+    font-size: clamp(38px, 6vw, 72px);
+    line-height: 1.03;
+    letter-spacing: -.045em;
+  }
+  .lede {
+    max-width: 830px;
+    margin: 22px 0 0;
+    color: #b9c7d8;
+    font-size: 18px;
+  }
+  .principle {
+    margin-top: 24px;
+    padding: 15px 18px;
+    border: 1px solid rgba(243, 189, 105, .35);
+    border-left: 4px solid var(--amber);
+    border-radius: 10px;
+    background: rgba(243, 189, 105, .06);
+    color: #e7d2af;
+  }
+
+  .scope-strip, .brief, .cards, .boundary-grid, .reference-grid,
+  .evidence-grid, .api-grid, .task-grid {
+    display: grid;
+    gap: 14px;
+  }
+  .scope-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: 32px;
+  }
+  .scope-cell, .brief article, .card, .boundary, .reference-card,
+  .evidence, .api-card, .task-card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: linear-gradient(150deg, rgba(21, 31, 45, .95), rgba(16, 23, 34, .95));
+  }
+  .scope-cell { padding: 16px; }
+  .scope-cell .k, .label {
+    color: var(--muted);
+    font: 700 10px/1.4 var(--mono);
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .scope-cell .v { margin-top: 6px; color: var(--title); font-weight: 700; }
+  .scope-cell .detail { margin-top: 5px; color: var(--muted); font-size: 12px; }
+  .brief { grid-template-columns: 2fr 1fr 1fr; margin-top: 14px; }
+  .brief article { padding: 17px; }
+  .brief h2 { margin: 0 0 7px; font-size: 13px; }
+  .brief p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .section-head {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    margin-bottom: 24px;
+  }
+  .section-num {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--line-strong);
+    border-radius: 12px;
+    color: var(--cyan);
+    font: 700 11px var(--mono);
+  }
+  .section-head h2 { margin: 0; font-size: 27px; letter-spacing: -.02em; }
+  .section-head p { max-width: 840px; margin: 5px 0 0; color: var(--muted); }
+
+  .contract-table, .failure-table, .mapping-table {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .table-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr 1.55fr;
+  }
+  .mapping-table .table-row { grid-template-columns: 1fr 1fr 1.3fr 1.1fr; }
+  .failure-table .table-row { grid-template-columns: 1.05fr 1.45fr 1.25fr; }
+  .table-row + .table-row { border-top: 1px solid var(--line); }
+  .table-row > div { min-width: 0; padding: 14px 16px; }
+  .table-row > div + div { border-left: 1px solid var(--line); }
+  .table-head {
+    background: var(--surface-2);
+    color: var(--muted);
+    font: 700 10px/1.4 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .state-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text);
+    font: 700 11px var(--mono);
+  }
+  .state-tag::before { width: 8px; height: 8px; border-radius: 50%; content: ""; background: var(--amber); }
+  .state-tag.exists::before { background: var(--green); }
+  .state-tag.missing::before { background: var(--red); }
+  .small { color: var(--muted); font-size: 12px; }
+
+  .diagram {
+    overflow: auto;
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-3);
+  }
+  .diagram svg { display: block; width: 100%; min-width: 910px; height: auto; }
+  .diagram text { font-family: var(--mono); }
+  .diagram-mobile { display: none; }
+  .caption { margin: 14px 0 0; color: var(--muted); font-size: 12px; }
+
+  .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .card { padding: 18px; }
+  .card h3 { margin: 7px 0 8px; font-size: 16px; }
+  .card p { margin: 0; color: var(--muted); font-size: 13px; }
+  .card ul { margin: 12px 0 0; padding-left: 18px; color: #b8c6d7; font-size: 12px; }
+  .card li + li { margin-top: 5px; }
+  .accent-cyan { border-top: 3px solid var(--cyan); }
+  .accent-blue { border-top: 3px solid var(--blue); }
+  .accent-violet { border-top: 3px solid var(--violet); }
+  .accent-amber { border-top: 3px solid var(--amber); }
+  .accent-green { border-top: 3px solid var(--green); }
+  .accent-red { border-top: 3px solid var(--red); }
+
+  .experience {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .experience-tabs {
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    border-right: 1px solid var(--line);
+    background: var(--surface-3);
+  }
+  .experience-tab {
+    width: 100%;
+    padding: 11px 12px;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    text-align: left;
+    cursor: pointer;
+  }
+  .experience-tab[aria-selected="true"] {
+    border-left-color: var(--cyan);
+    background: rgba(79, 216, 208, .06);
+    color: var(--title);
+  }
+  .experience-stage { min-height: 350px; padding: 24px; }
+  .experience-panel { display: none; }
+  .experience-panel.active { display: block; }
+  .mock-window {
+    max-width: 720px;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: 13px;
+    background: #0d141f;
+  }
+  .mock-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 13px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font: 11px var(--mono);
+  }
+  .mock-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
+  .mock-chat { padding: 18px; }
+  .bubble { max-width: 90%; margin-bottom: 12px; padding: 12px 14px; border-radius: 11px; font-size: 13px; }
+  .bubble.user { margin-left: auto; background: #1c2a3d; }
+  .bubble.agent { background: #151e2a; }
+  .update-card {
+    margin-top: 12px;
+    padding: 15px;
+    border: 1px solid var(--line-strong);
+    border-radius: 11px;
+    background: rgba(107, 167, 255, .06);
+  }
+  .update-card .top { display: flex; justify-content: space-between; gap: 12px; color: var(--title); font-weight: 700; }
+  .phase { color: var(--cyan); font: 11px var(--mono); }
+  .progress { height: 6px; margin: 12px 0; overflow: hidden; border-radius: 99px; background: #202c3b; }
+  .progress span { display: block; width: var(--progress, 50%); height: 100%; background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+  .steps { display: grid; gap: 6px; color: var(--muted); font: 11px var(--mono); }
+  .steps .done { color: var(--green); }
+  .steps .bad { color: var(--red); }
+
+  .state-machine {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(116px, 1fr));
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .machine-node {
+    position: relative;
+    min-width: 116px;
+    padding: 13px 12px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--surface);
+  }
+  .machine-node:not(:last-child)::after {
+    position: absolute;
+    top: 50%;
+    right: -9px;
+    color: var(--line-strong);
+    content: "›";
+    transform: translateY(-50%);
+  }
+  .machine-node strong { display: block; color: var(--title); font: 12px var(--mono); }
+  .machine-node span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
+  .machine-node.critical { border-color: rgba(243, 189, 105, .55); }
+  .machine-node.success { border-color: rgba(121, 215, 155, .55); }
+
+  .schema-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 16px; }
+  .schema-note {
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .schema-note h3 { margin: 0 0 10px; font-size: 16px; }
+  .schema-note p, .schema-note li { color: var(--muted); font-size: 13px; }
+  .schema-note ul { margin: 10px 0 0; padding-left: 19px; }
+
+  .boundary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .boundary { padding: 18px; }
+  .boundary h3 { margin: 6px 0 8px; font-size: 16px; }
+  .boundary p { margin: 0; color: var(--muted); font-size: 13px; }
+  .boundary ul { margin: 11px 0 0; padding-left: 18px; font-size: 12px; }
+  .boundary.control { border-left: 3px solid var(--cyan); }
+  .boundary.candidate { border-left: 3px solid var(--violet); }
+  .boundary.state { border-left: 3px solid var(--amber); }
+  .boundary.verify { border-left: 3px solid var(--green); }
+
+  .api-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .api-card { padding: 18px; }
+  .api-card h3 { margin: 8px 0; font: 700 14px var(--mono); }
+  .api-card p { margin: 0; color: var(--muted); font-size: 12px; }
+
+  .check-list { display: grid; gap: 10px; }
+  .check-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 110px;
+    gap: 14px;
+    align-items: start;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--surface);
+  }
+  .check-row strong { color: var(--title); font-size: 13px; }
+  .check-row span { color: var(--muted); font-size: 12px; }
+  .owner { color: var(--cyan) !important; font: 11px var(--mono); }
+
+  .reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reference-card { padding: 17px; }
+  .reference-card h3 { margin: 7px 0 8px; font-size: 15px; }
+  .reference-card p { margin: 0; color: var(--muted); font-size: 12px; }
+  .choice { color: var(--green); }
+  .choice.modified { color: var(--amber); }
+  .choice.rejected { color: var(--red); }
+
+  .task-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .task-card { padding: 18px; }
+  .task-card .task-id { color: var(--cyan); font: 700 11px var(--mono); }
+  .task-card h3 { margin: 7px 0; font-size: 17px; }
+  .task-card p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  .task-card ul { margin: 0; padding-left: 18px; color: #b9c6d6; font-size: 12px; }
+  .task-card li + li { margin-top: 4px; }
+
+  .acceptance {
+    counter-reset: acceptance;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .acceptance article {
+    position: relative;
+    min-height: 92px;
+    padding: 15px 15px 15px 51px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--surface);
+    counter-increment: acceptance;
+  }
+  .acceptance article::before {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    display: grid;
+    place-items: center;
+    width: 25px;
+    height: 25px;
+    border-radius: 8px;
+    background: rgba(79, 216, 208, .10);
+    color: var(--cyan);
+    content: counter(acceptance, decimal-leading-zero);
+    font: 700 10px var(--mono);
+  }
+  .acceptance strong { color: var(--title); font-size: 13px; }
+  .acceptance p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+
+  .evidence-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .evidence { padding: 16px; }
+  .evidence h3 { margin: 6px 0 7px; font-size: 15px; }
+  .evidence p { margin: 0; color: var(--muted); font-size: 12px; }
+  .evidence.exists { border-top: 3px solid var(--green); }
+  .evidence.target { border-top: 3px solid var(--amber); }
+  .source-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+  .source-link {
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-3);
+    text-decoration: none;
+  }
+  .source-link span { display: block; color: var(--title); font: 11px var(--mono); overflow-wrap: anywhere; }
+  .source-link small { display: block; margin-top: 5px; color: var(--muted); }
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    margin-top: 70px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font: 11px var(--mono);
+  }
+
+  @media (max-width: 1050px) {
+    .page { grid-template-columns: 1fr; }
+    .rail {
+      position: static;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      max-height: none;
+      overflow-x: auto;
+      padding-bottom: 10px;
+    }
+    .rail-mark { flex: 0 0 auto; margin: 0; }
+    .rail nav { display: flex; flex: 0 0 auto; }
+    .rail a { white-space: nowrap; border-left: 0; border-bottom: 2px solid transparent; }
+    .rail a[aria-current="true"] { border-left-color: transparent; border-bottom-color: var(--cyan); }
+    .rail-note { display: none; }
+    .scope-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 760px) {
+    .page { width: min(100% - 24px, 720px); gap: 26px; padding-top: 20px; }
+    .rail { margin: 0 -12px; padding-left: 12px; padding-right: 12px; }
+    h1 { font-size: 41px; }
+    .lede { font-size: 16px; }
+    .scope-strip, .brief, .cards, .boundary-grid, .reference-grid,
+    .evidence-grid, .api-grid, .task-grid, .schema-grid, .acceptance,
+    .source-list { grid-template-columns: 1fr; }
+    .section-head { grid-template-columns: 38px minmax(0, 1fr); gap: 11px; }
+    .section-num { width: 34px; height: 34px; }
+    .section-head h2 { font-size: 23px; }
+    .contract-table .table-row, .failure-table .table-row, .mapping-table .table-row {
+      grid-template-columns: 1fr;
+    }
+    .table-row > div + div { border-left: 0; border-top: 1px dashed var(--line); }
+    .table-head { display: none; }
+    .diagram svg { display: none; }
+    .diagram-mobile { display: grid; gap: 8px; }
+    .diagram-mobile div { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 12px; }
+    .experience { grid-template-columns: 1fr; }
+    .experience-tabs { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    .experience-tab { width: auto; white-space: nowrap; border-left: 0; border-bottom: 2px solid transparent; }
+    .experience-tab[aria-selected="true"] { border-left-color: transparent; border-bottom-color: var(--cyan); }
+    .experience-stage { min-height: 390px; padding: 14px; }
+    .check-row { grid-template-columns: 1fr; gap: 5px; }
+    .footer { flex-direction: column; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page" data-document="self-update">
+  <aside class="rail" aria-label="文档目录">
+    <div class="rail-mark">OpenProgram / Self update</div>
+    <nav>
+      <a href="#overview">范围</a>
+      <a href="#current">现状</a>
+      <a href="#experience">用户过程</a>
+      <a href="#architecture">架构</a>
+      <a href="#workflow">Workflow</a>
+      <a href="#iteration-execution">失败后执行</a>
+      <a href="#iteration-activation">再次更新</a>
+      <a href="#decisions">设计结论</a>
+      <a href="#state">状态与存储</a>
+      <a href="#protocol">时序</a>
+      <a href="#verification">验收</a>
+      <a href="#verification-actions">验收工具</a>
+      <a href="#failures">失败恢复</a>
+      <a href="#security">安全边界</a>
+      <a href="#api">接口</a>
+      <a href="#surfaces">状态与会话恢复</a>
+      <a href="#references">参考</a>
+      <a href="#plan">实施计划</a>
+      <a href="#acceptance">完成条件</a>
+      <a href="#implementation-status">实现状态</a>
+    </nav>
+    <div class="rail-note">权威设计 · runtime<br>正式 Release 更新仍由 distribution/automatic-updates.html 定义。</div>
+  </aside>
+
+  <main>
+    <section class="hero" id="overview">
+      <p class="eyebrow">Runtime architecture · owner initiated · macOS v1</p>
+      <h1>对话内自主更新</h1>
+      <p class="lede">用户在 OpenProgram 中要求 Agent 修改 OpenProgram。Agent 在隔离 worktree 中完成修改、测试和提交；独立于 worker 的控制进程构建并安装完整 App；新 worker 启动后自动创建一次验收任务，依据原始目标检查结果。系统检查或目标验收失败时恢复旧 App。</p>
+      <div class="principle"><strong>核心约束：</strong>正在被替换的 worker 不能负责完成替换，也不能把重启后的执行描述为原 turn 的继续。重启前先持久化交接，重启后创建带来源标记的新验收任务。</div>
+
+      <div class="scope-strip" aria-label="设计范围">
+        <div class="scope-cell"><div class="k">Platform</div><div class="v">macOS 默认 App</div><div class="detail">/Applications/OpenProgram.app · :18100 · ~/.openprogram</div></div>
+        <div class="scope-cell"><div class="k">Candidate</div><div class="v">本地 Git commit</div><div class="detail">独立 worktree，禁止 dirty candidate</div></div>
+        <div class="scope-cell"><div class="k">Activation</div><div class="v">完整 App bundle</div><div class="detail">不在首版维护 wheel/asar 增量分支</div></div>
+        <div class="scope-cell"><div class="k">Concurrency</div><div class="v">单一活动更新</div><div class="detail">安装锁 + update id + 幂等恢复</div></div>
+      </div>
+
+      <div class="brief">
+        <article><h2>Question</h2><p>怎样让 owner 在聊天中授权 Agent 修改框架，并在修改完成后自动构建、停止旧实例、替换 App、重启、触发验收 Agent 和处理失败？</p></article>
+        <article><h2>Audience</h2><p>Runtime、Desktop、Job/DAG、权限和本地发布维护者。</p></article>
+        <article><h2>Exclusions</h2><p>Windows/Linux、远端 stable Release、后台无授权改码、多机部署、无限自动修复循环。</p></article>
+      </div>
+    </section>
+
+    <section id="current" aria-labelledby="current-title">
+      <div class="section-head"><div class="section-num">01</div><div><h2 id="current-title">当前实现与缺口</h2><p>自更新控制协议、重启后验收、受控修正及状态界面已进入组合候选。完整组合检查与默认 App 的成功、激活前失败、激活后回退验收仍是发布条件；代码存在不等于已安装可用。</p></div></div>
+      <div class="contract-table">
+        <div class="table-row table-head"><div>复用模块</div><div>原有行为</div><div>自更新实现职责</div></div>
+        <div class="table-row"><div><span class="state-tag exists">Agent 修改与 worktree</span></div><div>owner 会话可使用文件、shell 和 worktree 工具；写入受 permission、sandbox 和 read-before-edit 约束。</div><div>新增专用 <code>self_update_prepare</code>，只接受已提交 candidate，不允许通用 shell 隐式获得部署授权。</div></div>
+        <div class="table-row"><div><span class="state-tag exists">完整 App 构建</span></div><div><code>package-and-install-app.sh</code> 已构建 runtime、Electron App 并运行 packaged smoke。</div><div>把构建与激活交给 one-shot supervisor；构建阶段不停止当前 worker。</div></div>
+        <div class="table-row"><div><span class="state-tag exists">事务安装与恢复</span></div><div><code>install-app.sh</code> 已验证候选、保留 previous.app、失败恢复旧 App，并恢复原来的 App/worker/launchd 状态。</div><div>允许延迟删除 previous.app，直到重启后的系统检查和 Agent 目标验收都完成。</div></div>
+        <div class="table-row"><div><span class="state-tag exists">Source upgrade probe</span></div><div><code>openprogram upgrade</code> 已有 cold start、doctor、restart 和 expected revision 校验。</div><div>抽取公共 probe；候选来源改为本地不可变 commit，而不是 <code>origin/main</code>。</div></div>
+        <div class="table-row"><div><span class="state-tag exists">Session / Job 持久化</span></div><div>会话历史持久化；重启时普通 running turn 变为 interrupted，running Job 变为 worker_lost。</div><div>不能复用 running Job。必须在新 worker 中依据 update record 创建新的验证 Job。</div></div>
+        <div class="table-row"><div><span class="state-tag exists">Scheduler / JobRunner</span></div><div>Scheduler 面向 once、recurring、monitor 用户任务，按时间触发；JobRunner 提供持久化 Job、并发限制和资源治理。</div><div>自主更新不创建 Scheduler task；startup recovery 认领待验收记录，再通过 JobRunner 提交一次性验证 Job。</div></div>
+        <div class="table-row"><div><span class="state-tag exists">Updater detection</span></div><div><code>openprogram/updater/</code> 识别 managed release、source checkout 和 unsupported 安装方式，并禁止 worker startup 直接应用更新。</div><div>复用安装方式识别；startup hook 只检查、认领和调度验收，App 替换仍由外部 supervisor 执行。</div></div>
+        <div class="table-row"><div><span class="state-tag exists">跨重启交接</span></div><div><code>self_update/</code> 保存独立请求、状态、控制程序和验收证据，不复用 upgrade-state。</div><div>持久化 turn-end release、startup claim、稳定验证 Job、原会话结果投递及 Desktop reopen；真实重启验收独立记录。</div></div>
+      </div>
+    </section>
+
+    <section id="experience" aria-labelledby="experience-title">
+      <div class="section-head"><div class="section-num">02</div><div><h2 id="experience-title">用户在同一对话中看到什么</h2><p>更新过程允许 App 暂时关闭，但所有状态写入 session 和 update record；重新打开后回到原会话并显示自动验收结果。</p></div></div>
+      <div class="experience">
+        <div class="experience-tabs" role="tablist" aria-label="自主更新界面状态">
+          <button class="experience-tab" id="tab-ready" role="tab" aria-selected="true" aria-controls="panel-ready" tabindex="0" data-target="ready">准备与授权</button>
+          <button class="experience-tab" id="tab-build" role="tab" aria-selected="false" aria-controls="panel-build" tabindex="-1" data-target="build">构建候选</button>
+          <button class="experience-tab" id="tab-restart" role="tab" aria-selected="false" aria-controls="panel-restart" tabindex="-1" data-target="restart">重启窗口</button>
+          <button class="experience-tab" id="tab-verify" role="tab" aria-selected="false" aria-controls="panel-verify" tabindex="-1" data-target="verify">自动验收</button>
+          <button class="experience-tab" id="tab-result" role="tab" aria-selected="false" aria-controls="panel-result" tabindex="-1" data-target="result">完成或恢复</button>
+        </div>
+        <div class="experience-stage">
+          <article class="experience-panel active" id="panel-ready" role="tabpanel" aria-labelledby="tab-ready" data-panel="ready">
+            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 当前会话</div><div class="mock-chat">
+              <div class="bubble user">修改 Session DAG 的筛选行为，验证后更新本机 OpenProgram。</div>
+              <div class="bubble agent">候选提交和受影响测试已准备。更新会短暂关闭 App，并在重启后自动检查原始目标。</div>
+              <div class="update-card"><div class="top"><span>自主更新授权</span><span class="phase">AWAITING APPROVAL</span></div><div class="steps"><span>candidate · local commit</span><span>changed paths · 4</span><span>required checks · 6</span><span>rollback · enabled</span></div></div>
+            </div></div>
+          </article>
+          <article class="experience-panel" id="panel-build" role="tabpanel" aria-labelledby="tab-build" data-panel="build">
+            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 更新状态</div><div class="mock-chat">
+              <div class="update-card"><div class="top"><span>正在构建完整候选 App</span><span class="phase">STAGING</span></div><div class="progress" style="--progress:62%"><span></span></div><div class="steps"><span class="done">✓ candidate commit 已固定</span><span class="done">✓ affected tests</span><span>… runtime + Electron bundle</span><span>○ isolated packaged smoke</span></div></div>
+              <p class="small">旧 worker 继续服务。构建或 probe 失败不会关闭 App。</p>
+            </div></div>
+          </article>
+          <article class="experience-panel" id="panel-restart" role="tabpanel" aria-labelledby="tab-restart" data-panel="restart">
+            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 即将重启</div><div class="mock-chat">
+              <div class="update-card"><div class="top"><span>候选已通过重启前检查</span><span class="phase">HANDOFF READY</span></div><div class="steps"><span class="done">✓ 当前回复已持久化</span><span class="done">✓ 其他运行任务已结束</span><span class="done">✓ previous App 保留</span><span>下一步 · 关闭 App 并激活候选</span></div></div>
+              <p class="small">此时 supervisor 已由 launchd 托管，不属于 worker 的进程树。</p>
+            </div></div>
+          </article>
+          <article class="experience-panel" id="panel-verify" role="tabpanel" aria-labelledby="tab-verify" data-panel="verify">
+            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 已重新打开</div><div class="mock-chat">
+              <div class="update-card"><div class="top"><span>更新后自动验收</span><span class="phase">VERIFYING</span></div><div class="progress" style="--progress:78%"><span></span></div><div class="steps"><span class="done">✓ worker identity = candidate</span><span class="done">✓ doctor + packaged runtime</span><span>… Agent 正在检查原始目标</span><span>○ 保存证据和 verdict</span></div></div>
+              <p class="small">这是一个新的、标记为 <code>self_update_verify</code> 的 Agent turn，不伪装成被重启前的 continuation。</p>
+            </div></div>
+          </article>
+          <article class="experience-panel" id="panel-result" role="tabpanel" aria-labelledby="tab-result" data-panel="result">
+            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 当前会话</div><div class="mock-chat">
+              <div class="update-card"><div class="top"><span>自主更新完成</span><span class="phase">SUCCEEDED</span></div><div class="steps"><span class="done">✓ 新版本已激活</span><span class="done">✓ 原始目标通过</span><span class="done">✓ 验收证据已附到会话</span><span class="done">✓ previous App 已清理</span></div></div>
+              <p class="small">目标检查失败时，同一区域显示失败证据、恢复结果和保留的 candidate worktree。</p>
+            </div></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="architecture" aria-labelledby="architecture-title">
+      <div class="section-head"><div class="section-num">03</div><div><h2 id="architecture-title">目标架构</h2><p>控制进程与 candidate runtime 分离。当前 worker 只负责准备和交接；supervisor 决定激活与恢复；新 worker 只负责运行固定系统检查和新的验收 Agent。</p></div></div>
+      <div class="diagram">
+        <svg viewBox="0 0 1100 560" role="img" aria-labelledby="architecture-svg-title architecture-svg-desc">
+          <title id="architecture-svg-title">OpenProgram 对话内自主更新架构</title>
+          <desc id="architecture-svg-desc">Owner 对话驱动 Agent 在隔离 worktree 产生候选提交。一个由 launchd 托管的 supervisor 构建和探测完整 App，等待 turn-end handoff 后停止旧实例并安装候选。新 worker 运行系统验证并创建新的验收 Agent；通过后提交安装，失败则 supervisor 恢复旧 App。</desc>
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#73849a"/></marker>
+            <marker id="arrow-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#79d79b"/></marker>
+            <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ff8295"/></marker>
+          </defs>
+          <g fill="none" stroke="#73849a" stroke-width="2" marker-end="url(#arrow)">
+            <path d="M190 90H285"/><path d="M465 90H560"/><path d="M740 90H835"/>
+            <path d="M925 135V215"/><path d="M835 260H740"/><path d="M560 260H465"/>
+            <path d="M375 305V385"/><path d="M465 430H560"/><path d="M740 430H835"/>
+          </g>
+          <path d="M925 475V520H710" fill="none" stroke="#79d79b" stroke-width="2" marker-end="url(#arrow-ok)"/>
+          <path d="M835 456H770V520H465" fill="none" stroke="#ff8295" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow-bad)"/>
+          <g font-size="12" fill="#f7f9fc">
+            <rect x="20" y="45" width="170" height="90" rx="13" fill="#151f2d" stroke="#4fd8d0"/>
+            <text x="105" y="76" text-anchor="middle" font-weight="700">Owner chat</text><text x="105" y="98" text-anchor="middle" fill="#8c9bad" font-size="10">目标 + 更新授权</text><text x="105" y="116" text-anchor="middle" fill="#8c9bad" font-size="10">当前 session / agent</text>
+            <rect x="285" y="45" width="180" height="90" rx="13" fill="#151f2d" stroke="#6ba7ff"/>
+            <text x="375" y="76" text-anchor="middle" font-weight="700">Isolated worktree</text><text x="375" y="98" text-anchor="middle" fill="#8c9bad" font-size="10">修改 · 测试 · review</text><text x="375" y="116" text-anchor="middle" fill="#8c9bad" font-size="10">immutable candidate SHA</text>
+            <rect x="560" y="45" width="180" height="90" rx="13" fill="#151f2d" stroke="#f3bd69"/>
+            <text x="650" y="76" text-anchor="middle" font-weight="700">Update record</text><text x="650" y="98" text-anchor="middle" fill="#8c9bad" font-size="10">session · turn · criteria</text><text x="650" y="116" text-anchor="middle" fill="#8c9bad" font-size="10">atomic state + lock</text>
+            <rect x="835" y="45" width="180" height="90" rx="13" fill="#151f2d" stroke="#b79bff"/>
+            <text x="925" y="76" text-anchor="middle" font-weight="700">launchd supervisor</text><text x="925" y="98" text-anchor="middle" fill="#8c9bad" font-size="10">one-shot · outside worker</text><text x="925" y="116" text-anchor="middle" fill="#8c9bad" font-size="10">trusted current controller</text>
+            <rect x="835" y="215" width="180" height="90" rx="13" fill="#151f2d" stroke="#b79bff"/>
+            <text x="925" y="246" text-anchor="middle" font-weight="700">Build + cold probe</text><text x="925" y="268" text-anchor="middle" fill="#8c9bad" font-size="10">complete App bundle</text><text x="925" y="286" text-anchor="middle" fill="#8c9bad" font-size="10">packaged smoke · doctor</text>
+            <rect x="560" y="215" width="180" height="90" rx="13" fill="#151f2d" stroke="#f3bd69"/>
+            <text x="650" y="246" text-anchor="middle" font-weight="700">Turn-end handoff</text><text x="650" y="268" text-anchor="middle" fill="#8c9bad" font-size="10">final response durable</text><text x="650" y="286" text-anchor="middle" fill="#8c9bad" font-size="10">runtime quiescent</text>
+            <rect x="285" y="215" width="180" height="90" rx="13" fill="#151f2d" stroke="#ff8295"/>
+            <text x="375" y="246" text-anchor="middle" font-weight="700">Activate transaction</text><text x="375" y="268" text-anchor="middle" fill="#8c9bad" font-size="10">stop App / worker</text><text x="375" y="286" text-anchor="middle" fill="#8c9bad" font-size="10">retain previous.app</text>
+            <rect x="285" y="385" width="180" height="90" rx="13" fill="#151f2d" stroke="#6ba7ff"/>
+            <text x="375" y="416" text-anchor="middle" font-weight="700">New worker</text><text x="375" y="438" text-anchor="middle" fill="#8c9bad" font-size="10">expected identity</text><text x="375" y="456" text-anchor="middle" fill="#8c9bad" font-size="10">startup recovery</text>
+            <rect x="560" y="385" width="180" height="90" rx="13" fill="#151f2d" stroke="#4fd8d0"/>
+            <text x="650" y="416" text-anchor="middle" font-weight="700">System verification</text><text x="650" y="438" text-anchor="middle" fill="#8c9bad" font-size="10">revision · health · doctor</text><text x="650" y="456" text-anchor="middle" fill="#8c9bad" font-size="10">single dispatch claim</text>
+            <rect x="835" y="385" width="180" height="90" rx="13" fill="#151f2d" stroke="#79d79b"/>
+            <text x="925" y="416" text-anchor="middle" font-weight="700">Verification Agent</text><text x="925" y="438" text-anchor="middle" fill="#8c9bad" font-size="10">same agent profile</text><text x="925" y="456" text-anchor="middle" fill="#8c9bad" font-size="10">new self_update_verify turn</text>
+            <rect x="560" y="500" width="150" height="46" rx="20" fill="rgba(121,215,155,.10)" stroke="#79d79b"/>
+            <text x="635" y="527" text-anchor="middle" fill="#79d79b" font-weight="700">commit install</text>
+            <rect x="315" y="500" width="150" height="46" rx="20" fill="rgba(255,130,149,.09)" stroke="#ff8295"/>
+            <text x="390" y="527" text-anchor="middle" fill="#ff8295" font-weight="700">rollback + report</text>
+          </g>
+          <g font-size="10" fill="#8c9bad"><text x="780" y="512">pass</text><text x="724" y="453" fill="#ff8295">fail / timeout</text></g>
+        </svg>
+        <div class="diagram-mobile">
+          <div><strong>1 · 准备</strong><br>Agent 在隔离 worktree 修改、测试、复核并形成 candidate commit。</div>
+          <div><strong>2 · 交接</strong><br>owner 批准；update record 记录 session、turn、candidate 和验收条件；supervisor 由 launchd 托管。</div>
+          <div><strong>3 · 构建</strong><br>旧 worker 仍运行时构建完整 App，并完成 packaged smoke 与 cold probe。</div>
+          <div><strong>4 · 激活</strong><br>当前回复已持久化且其他任务结束后，停止 App/worker，保留 previous.app，激活候选。</div>
+          <div><strong>5 · 验收</strong><br>新 worker 校验 revision/doctor，再创建新的 self_update_verify Agent turn 检查原始目标。</div>
+          <div><strong>6 · 终态</strong><br>通过后删除 previous.app；失败或超时则恢复旧 App，并把证据写回原会话。</div>
+        </div>
+        <p class="caption">候选构建允许执行 candidate code，但必须在 sandbox 中拒绝写入默认状态目录、安装目录和 update record。激活与恢复只由当前已安装版本生成的 supervisor 执行。</p>
+      </div>
+    </section>
+
+    <section id="workflow" aria-labelledby="workflow-title">
+      <div class="section-head"><div class="section-num">04</div><div><h2 id="workflow-title">Workflow 与模型职责</h2><p>准备阶段复用普通聊天 Agent 的计划、实现和评审过程；提交后由 <code>self_update/</code> 的持久化控制逻辑转换状态，不新增通用 Workflow 引擎。验收、诊断、修正使用冻结的阶段 prompt 与结构化结果；模型输出不能直接停止进程、安装、回退或改变事务状态。</p></div></div>
+      <div class="mapping-table">
+        <div class="table-row table-head"><div>阶段与触发</div><div>LLM 工作</div><div>确定性系统动作</div><div>持久化输出</div></div>
+        <div class="table-row"><div><strong>PLAN</strong><br><span class="small">owner 提出目标</span></div><div>澄清目标；列出修改范围、风险和可观测验收条件。</div><div>记录会话合同；prepare 时冻结 checkout、base SHA、authority、预算和允许路径。</div><div>会话记录；提交后为<br><code>request.json</code> 的 goal/assertions</div></div>
+        <div class="table-row"><div><strong>IMPLEMENT</strong><br><span class="small">计划合同已接受</span></div><div>在隔离 worktree 修改源码和测试；说明未处理项。</div><div>限制文件、命令、网络和凭据；记录 diff、命令和退出码。</div><div>worktree<br>change manifest</div></div>
+        <div class="table-row"><div><strong>REVIEW</strong><br><span class="small">实现完成</span></div><div>检查正确性、安全、回退兼容性、schema、测试覆盖和无关改动。</div><div>执行计划约定的检查并保存证据；prepare 重新核对 clean Git 和 HEAD，不把 Git 检查当作评审证明。</div><div>会话/评审记录<br>candidate SHA</div></div>
+        <div class="table-row"><div><strong>AUTHORIZE</strong><br><span class="small">candidate 可构建</span></div><div>生成面向用户的变更、验证、中断和恢复说明，不代替用户授权。</div><div>强制 owner 审批后冻结 candidate/scope/iteration envelope 及阶段配置；启动 supervisor。</div><div><code>request.json</code><br>各阶段 config 与迭代授权</div></div>
+        <div class="table-row"><div><strong>STAGE / ACTIVATE</strong><br><span class="small">授权与 gate 通过</span></div><div>不调用 LLM。</div><div>构建完整 App、cold probe、maintenance、turn-end handoff、事务替换和重启。</div><div>artifact manifest<br>transaction journal</div></div>
+        <div class="table-row"><div><strong>VERIFY</strong><br><span class="small">新 worker 系统 gate 通过</span></div><div>调用冻结检查 ID；逐条给出 pass/fail/inconclusive 和证据。UI 计划要求真实默认 App。</div><div>startup recovery 原子认领；JobRunner 创建确定 ID 的受限 Job；监督超时和 lease。</div><div><code>verifier-result-{attempt}.json</code><br>签名 receipt 包含结构化结果</div></div>
+        <div class="table-row"><div><strong>DIAGNOSE</strong><br><span class="small">目标验收未通过</span></div><div>区分实现、测试、环境和目标问题；提出下一轮最小修改。</div><div>先恢复旧 App；检查迭代预算、授权范围和停止条件。</div><div><code>diagnosis-result-{attempt}.json</code><br>next-attempt plan</div></div>
+        <div class="table-row"><div><strong>FINALIZE</strong><br><span class="small">成功或停止</span></div><div>报告源码、artifact、live revision、验收和回退的实际状态。</div><div>成功时提交安装；失败时保留证据和 candidate；更新原会话。</div><div>terminal state<br>session result</div></div>
+      </div>
+      <div class="cards" style="margin-top:16px">
+        <article class="card accent-cyan"><div class="label">Restart dispatch</div><h3>不使用普通 Scheduler task</h3><p>Scheduler 的时间触发和用户任务 authority 不适合作为更新控制协议。新 worker 在 JobRunner、session store 和 owner-auth 可用后执行 <code>recover_pending_updates()</code>。</p></article>
+        <article class="card accent-blue"><div class="label">Exactly once</div><h3>稳定 Job ID + 原子 claim</h3><p>Job ID 使用 <code>self-update:{update_id}:verify:{attempt}</code>。claim 保存 owner、lease、attempt 和 job_id；重复启动发现已有 Job 或终态时不再提交。</p></article>
+        <article class="card accent-violet"><div class="label">Prompt contract</div><h3>阶段上下文与工具隔离</h3><p>实现 Agent 不能绕过安装审批；验收 Agent 没有源码写工具；诊断与修正 Agent 只读并提出结构化结果。<code>verifier_config.py</code>、<code>diagnosis.py</code>、<code>source_repair.py</code> 保存各阶段配置。新计划共享 goal、assertions、verification plan、迭代策略和期限，继承上下文不扩大工具权限。</p></article>
+      </div>
+      <div class="schema-grid" style="margin-top:16px">
+        <div class="schema-note"><h3>启动顺序</h3><ul><li>加载并迁移 self-update state schema，损坏时 fail closed。</li><li>完成 Job orphan reconciliation。</li><li>启动 JobRunner，确认 admission/resource governance 可用。</li><li>完成 revision、owner-auth、Web/WS 和 doctor 系统 gate。</li><li>CAS 认领 attempt，提交一次验证 Job，然后启动普通 Scheduler。</li></ul><p>普通 Scheduler 启动失败不阻止自主更新验收；JobRunner 或系统 gate 失败则请求 supervisor 回退。</p></div>
+        <div class="schema-note"><h3>受控迭代策略</h3><ul><li>默认 <code>approve_each_activation</code>：失败后回退并诊断；新 candidate 激活前重新授权。</li><li>可选 <code>bounded_auto</code>：owner 明确授权最多 3 次、总时限、允许路径和测试集合。</li><li>新增依赖、修改权限/审批、安装器/supervisor、扩大路径或改变目标时立即暂停并重新授权。</li><li>每轮使用新 SHA、attempt 和 Job ID，不覆盖上一轮证据。</li><li>连续相同失败、rollback 失败、环境型 inconclusive 或预算耗尽后停止。</li></ul></div>
+      </div>
+    </section>
+
+    <section id="iteration-execution" aria-labelledby="iteration-execution-title">
+      <div class="section-head"><div class="section-num">04a</div><div><h2 id="iteration-execution-title">失败后的执行流程</h2><p>恢复服务、诊断原因、修改源码和批准激活是不同阶段。诊断结果不直接授权安装。</p></div></div>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>阶段</div><div>执行与持久化</div><div>限制与后续动作</div></div>
+        <div class="table-row"><div>恢复完成后自动诊断</div><div>新请求在 owner 授权时同时冻结诊断模型、profile、只读工具和输出格式。可信控制器确认 ROLLED_BACK 及旧版本系统检查通过后，在解除维护前发布本 attempt 的诊断请求。worker 使用稳定 Job ID <code>self-update:{update_id}:diagnose:{attempt}</code> 创建新任务。</div><div>复用 JobRunner，不创建 Scheduler task；不延续原 turn，不移动原会话 head。仅允许 read、glob、grep、list，不允许源码写入、shell、MCP、安装或再次发起更新。</div></div>
+        <div class="table-row"><div>固定期限与恢复</div><div>诊断请求绑定原 update、candidate、attempt、失败证据和回退系统证据；期限最多为回退终态后的五分钟，有 bounded_auto 总期限时取更早值。重复 startup 复用原请求与 Job ID，已有终态或 orphan Job 不重跑。</div><div>worker 内的有界等待负责收集结果和取消超时任务，不依赖普通 Scheduler。新更新取代待诊断更新、owner 取消、模型缺失、期限届满或证据变化均停止诊断；不改变原 ROLLED_BACK 结论，也不重新限制已恢复的服务。</div></div>
+        <div class="table-row"><div>结构化诊断</div><div>记录实现、测试、环境、目标不清或证据不足的分类、原因、原证据引用及修正建议。结果附加到原会话的独立 Job，并保存为本 attempt 的诊断记录。</div><div>模型的分类和建议是待验证内容，不是测试证据或新的 owner 授权。环境问题、目标不清及证据不足不得自动修改或激活。</div></div>
+        <div class="table-row"><div>生成并应用源码修正</div><div>仅当新请求冻结修正配置、诊断属于 implementation 或 test、旧版本已恢复且预算有效时，创建稳定 ID 的独立 repair Job。模型使用原模型、profile 和只读工具，返回结构化文件修改；控制器在新建的隔离 worktree 校验原文本并应用修改，不让模型执行 shell 或 Git。</div><div>默认限制到原 changed_paths；bounded_auto 使用原 allowed_paths。权限、审批、更新控制器、安装脚本、依赖声明及 Git 配置等保护文件均不自动修改。路径越界、符号链接、重复替换或源文本不匹配均停止；不修改用户原 worktree。</div></div>
+        <div class="table-row"><div>新 candidate 与测试证据</div><div>控制器创建本地新 commit，记录与原 base 的完整 diff，再在无网络、无 App 写权限的沙箱执行冻结的 required_tests；记录命令、candidate SHA、退出码和有界日志。测试后再次检查 HEAD、Git 绑定及 tracked 文件；测试修改源码则证据无效。</div><div>修正 Job 和测试共享回退后的十分钟期限，原总期限更早时取更早值。新更新、owner 取消或超时终止该阶段及其测试进程组。终态、失败和部分写入保留证据与隔离 worktree；重启不重复编辑、提交或测试，不延长期限。</div></div>
+        <div class="table-row"><div>再次授权与激活</div><div>候选记录绑定原请求、诊断、修正 Job、完整 diff 和测试结果；控制器调用迭代策略重新核对次数、期限、路径、依赖和连续失败。approve_each_activation 等待 owner 对新 SHA 授权；bounded_auto 仅在原 envelope 内自动提交下一次更新。</div><div>候选记录不是安装授权。缺少必需测试或测试失败不得激活；环境、目标或 inconclusive 诊断不自动修正。下一 candidate 仍经过完整构建、系统 gate、新验收 Job 和失败回退。源码修正与测试阶段的完成不代表后续激活流程已实现。</div></div>
+      </div>
+      <p>未包含冻结诊断配置的旧更新保持原有恢复行为，不从当前可变 profile 补造配置。诊断请求、claim 和结果位于原更新目录，唯一待处理指针位于 self-updates 根目录；新更新在同一存储锁下撤销旧待处理指针。执行入口再次核对持久化 Job、当前 worker claim、冻结输入与未过期期限，拒绝伪造 source 或恢复旧队列时的输入漂移。owner 通过现有 Job 取消入口停止诊断，不使用只对激活前更新有效的 <code>self_update_cancel</code>。诊断记录不得覆盖原 verifier verdict、签名验收结果或回退结论。</p>
+      <p>修正阶段同样要求原请求中的独立冻结配置；旧请求不自动获得源码写入能力。默认首次授权说明包括“回退后在隔离 worktree 修正和执行所列测试”，不包括再次安装；只有显式选择 bounded_auto 且批准下述完整迭代授权的新请求，才允许范围内再次安装。修正输出最多 32 处文本编辑、总计 1 MiB；每处 old_text 必须在目标普通 UTF-8 文件中唯一匹配，null old_text 仅用于创建不存在的文件。new_text 为 null 时要求 old_text 等于整个文件才允许删除。修正 Job 使用 wait=true、不产生普通后续 Agent、不移动原会话 head。模型 Job 完成后，owner 在原会话调用 <code>self_update_repair_cancel(update_id)</code>，取消仍在执行的候选测试。新 SHA、完整 diff、全部已配置测试和测试后检查通过才记录 candidate_ready；未配置 required_tests 时记录 awaiting_tests。任何已配置测试缺失、失败或测试后检查失败均记录 failed；主动取消与期限届满分别记录 cancelled、expired。这些状态均不代表已安装。</p>
+    </section>
+
+    <section id="iteration-activation" aria-labelledby="iteration-activation-title">
+      <div class="section-head"><div class="section-num">04b</div><div><h2 id="iteration-activation-title">修正版本的授权与更新</h2><p>每次更新保留独立请求和证据；同一迭代序列共用原始目标、授权范围、次数和总期限。</p></div></div>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>约定</div><div>控制器行为</div><div>拒绝与恢复</div></div>
+        <div class="table-row"><div>原始授权与兼容</div><div>首次请求冻结 root update、owner、session、goal、assertions、原 base、model/profile、模式、路径、测试、max_attempts 和可选总 deadline。bounded_auto 必须有完整的总期限、路径和非空测试集合，审批说明明确包含限次再次安装；授权记录的摘要写入不可变请求。</div><div>旧请求没有该授权记录时，即使已有 policy.mode=bounded_auto，也不自动获得再次安装权限。当前 profile、模型建议或 candidate_ready 状态均不能补造授权。改变目标、扩大路径或增加依赖需要新的 owner 请求，不修改已有序列。</div></div>
+        <div class="table-row"><div>重新核验证据</div><div>候选来自本 attempt 的已完成修正 Job；请求、诊断、Job 输出、生成 intent、candidate manifest 和测试日志摘要一致。重新读取真实 Git：专用 worktree 仍归原 session，HEAD 等于待批准 SHA，工作区干净，SHA 是上一 candidate 的新后继，与原 base 的完整 diff 满足范围及保护路径检查。审批展示前和批准返回后、预留 child 之前均检查；supervisor 构建及激活前继续执行已有漂移检查。</div><div>必须存在非空 required_tests，且每项命令、SHA、退出码和日志匹配；不接受模型声明或只检查 manifest 的成功字段。缺失、漂移、失败或超出范围时停止提交并保留原因，不以重新批准绕过。此前未配置测试的 awaiting_tests 候选须由 owner 发起带明确测试的新请求。</div></div>
+        <div class="table-row"><div>两种批准方式</div><div>默认通过原会话中的 <code>self_update_retry(update_id, candidate_sha)</code> 对这一精确 SHA 强制单次审批，显示完整变化、测试和剩余预算；不能保存为长期 allow 规则。bounded_auto 由控制器按原授权和真实证据自动提交，无需模型再次调用工具。</div><div>owner 拒绝或审批超时不创建后继请求。两种方式都核对当前 owner、原 goal/assertions、回退成功、剩余次数及总期限。只有实现或测试类失败可以继续；环境、目标不清、inconclusive、回退未证实或连续相同失败均停止。失败指纹取可信失败类别和失败 assertion/check 标识，不取模型解释、时间戳、SHA 或随机 ID。</div></div>
+        <div class="table-row"><div>次数与不可变后继</div><div>第一次更新计为 attempt=1；后继使用新的 update_id、SHA、attempt 和各阶段 Job ID，并记录 root/parent 关系。原 goal、assertions、base、owner、model/profile、policy 不变；只重新绑定本次身份及输出 schema。最多 3 次包含首次更新。</div><div>在同一个存储锁下预留唯一后继和下一 attempt；一次预留消耗一次预算，提交失败、取消、重启均不退还或重置次数。同一 parent 不产生第二个后继。每次构建/验收保留原单次超时，且不得超过原总 deadline；达到期限后只允许必要的安全回退及恢复，不再修正或安装。</div></div>
+        <div class="table-row"><div>中断、并发与完整更新</div><div>candidate 结果之后、移除修正 pending 指针之前，持久化下一阶段请求。startup 从同一请求恢复等待审批或提交；先保存固定 child ID/预算预留，再发布 child 请求和 active 归属，再调用既有外部 supervisor。重复恢复只能完成这一提交，不能重新编辑、测试或扩大授权。</div><div>其他 active update 或 maintenance 阻止新的提交；新 owner 更新撤销旧序列待处理项。默认审批请求在批准 turn 持久化后 release；自动提交以已落盘授权、结果和提交记录作为 release 条件，不伪造聊天 turn。后继仍执行完整打包、cold probe、系统 gate、新 verifier、commit 或回退；提交失败保留可查记录，不跳过阶段。</div></div>
+        <div class="table-row"><div>取消与可见状态</div><div><code>self_update_iteration_cancel(update_id)</code> 在原 owner 会话持久化停止标记，停止整个序列尚未提交的审批或自动提交，并取消该序列仍运行的诊断、修正 Job 和候选测试。已创建但尚未激活的 child 使用现有取消路径；不影响其他序列或普通任务。状态显示 root、parent、当前 child、attempt/max_attempts、总期限及停止原因。</div><div>已进入激活/验收的事务不能通过删除请求强行中断；禁止后续 attempt，并由现有事务流程完成验证或安全回退。待提交阶段区分 awaiting_approval、submitting、submitted、stopped；submitted 只表示请求已交给 supervisor，不能显示为安装成功。成功仍以 child 的 SUCCEEDED 和验收证据为准。</div></div>
+      </div>
+      <p>该阶段复用 SelfUpdateStore 的进程锁、JobRunner、现有强制审批、可信 supervisor 和事务安装器，不创建第二套 Scheduler 或通用 workflow 执行器。<code>self_update/iteration.py</code> 保持无副作用策略判断；新的提交协调模块负责证据核验、预算预留、状态持久化和恢复。源码中的职责划分不能代替实际的重启、失败回退及多次尝试验收。</p>
+    </section>
+
+    <section id="decisions" aria-labelledby="decisions-title">
+      <div class="section-head"><div class="section-num">05</div><div><h2 id="decisions-title">设计结论</h2><p>首版只增加完成目标所必需的边界，不引入第二套 Job 系统、插件系统或更新依赖。</p></div></div>
+      <div class="cards">
+        <article class="card accent-cyan"><div class="label">Controller</div><h3>更新控制必须在 worker 外</h3><p>使用 macOS <code>launchctl submit</code> 启动 one-shot supervisor。它不属于 worker 进程树，worker/App 停止后仍可完成激活、验证超时和恢复。</p></article>
+        <article class="card accent-blue"><div class="label">Candidate</div><h3>只部署不可变 commit</h3><p>candidate 必须来自专用 worktree、状态干净、base 明确。构建期间再次读取 HEAD；变化则废弃 artifact，不尝试部署工作目录快照。</p></article>
+        <article class="card accent-violet"><div class="label">Artifact</div><h3>首版始终构建完整 App</h3><p>复用完整 runtime、Electron builder 和 packaged smoke。暂不根据 changed paths 选择 wheel、asar 或完整 App，以免维护多套完成语义。</p></article>
+        <article class="card accent-amber"><div class="label">Handoff</div><h3>工具调用不直接停止 worker</h3><p><code>self_update_prepare</code> 只持久化请求并启动 supervisor。dispatcher 在当前 assistant final、session commit 和变更归因完成后写入 <code>turn_released</code>。</p></article>
+        <article class="card accent-green"><div class="label">Continuation</div><h3>startup recovery 创建新验收 Job</h3><p>新 worker 原子认领 update，再复用 JobRunner 创建 <code>source=self_update_verify</code> 的后台任务。普通 Scheduler 不创建、不轮询也不重试这个 Job。</p></article>
+        <article class="card accent-red"><div class="label">Rollback</div><h3>目标失败也恢复旧 App</h3><p>previous.app 保留到系统检查和目标验收均通过。系统错误、Agent verdict=fail/inconclusive 或超时都会恢复旧 App；candidate worktree 和证据保留。</p></article>
+      </div>
+    </section>
+
+    <section id="state" aria-labelledby="state-title">
+      <div class="section-head"><div class="section-num">06</div><div><h2 id="state-title">状态机与持久化</h2><p>一个 update id 对应一个目录。每次状态变更使用临时文件、fsync 和 replace；<code>active.json</code> 只保存当前 update id。</p></div></div>
+      <div class="state-machine" aria-label="自主更新状态机">
+        <div class="machine-node"><strong>PREPARING</strong><span>请求、授权、candidate 固定</span></div>
+        <div class="machine-node"><strong>STAGING</strong><span>完整构建与隔离 probe</span></div>
+        <div class="machine-node"><strong>READY</strong><span>等待 turn release 与空闲</span></div>
+        <div class="machine-node critical"><strong>ACTIVATING</strong><span>停止并替换，保留 previous</span></div>
+        <div class="machine-node critical"><strong>VERIFYING</strong><span>新 worker + 验收 Agent</span></div>
+        <div class="machine-node success"><strong>SUCCEEDED</strong><span>提交安装，清理 previous</span></div>
+      </div>
+      <div class="cards" style="margin-top:12px">
+        <article class="card accent-amber"><div class="label">Pre-activation terminal</div><h3>ABORTED</h3><p>授权拒绝、构建失败、candidate 漂移、取消或等待空闲超时；旧 App 从未被替换。</p></article>
+        <article class="card accent-red"><div class="label">Recovered terminal</div><h3>ROLLED_BACK</h3><p>候选激活后系统或目标验收失败，旧 App 已恢复且旧 revision 已重新验证。</p></article>
+        <article class="card accent-violet"><div class="label">Operator terminal</div><h3>NEEDS_MANUAL_RECOVERY</h3><p>新旧 App 状态无法自动确定或 rollback 失败；停止自动动作并保留全部 transaction。</p></article>
+      </div>
+      <div class="schema-grid" style="margin-top:16px">
+        <pre><span style="color:#8c9bad">~/.openprogram/self-updates/</span>
+  active.json                 <span style="color:#8c9bad"># schema + update_id</span>
+  maintenance.json            <span style="color:#8c9bad"># admission ownership</span>
+  &lt;update_id&gt;/
+    request.json              <span style="color:#8c9bad"># immutable intent</span>
+    state.json                <span style="color:#8c9bad"># current phase + owner</span>
+    events.jsonl              <span style="color:#8c9bad"># append-only evidence</span>
+    verifier-config.json      <span style="color:#8c9bad"># frozen model / tools / optional plan</span>
+    diagnosis-config.json
+    source-repair-config.json
+    iteration-root.json       <span style="color:#8c9bad"># frozen root authority</span>
+    iteration-next.json       <span style="color:#8c9bad"># bound proposal + unique child reservation</span>
+    iteration-status.json     <span style="color:#8c9bad"># submission / stop evidence</span>
+    supervisor.sh             <span style="color:#8c9bad"># trusted copied controller</span>
+    supervisor.log
+    artifact.json             <span style="color:#8c9bad"># path + hashes</span>
+    verifier-result-{attempt}.json
+    diagnosis-result-{attempt}.json
+    source-repair-result-{attempt}.json
+    controller/               <span style="color:#8c9bad"># trusted runtime and installer</span>
+    bootstrap.json
+    recover.sh
+<span style="color:#8c9bad">/Applications/.openprogram-app-install.*/</span>
+  previous.app                <span style="color:#8c9bad"># transaction path bound in state.detail</span></pre>
+        <div class="schema-note">
+          <h3><code>request.json</code> 的稳定字段</h3>
+          <ul>
+            <li><code>schema</code>、<code>update_id</code>、<code>created_at</code></li>
+            <li><code>session_id</code>、<code>origin_turn_id</code>、<code>origin_assistant_id</code>、<code>agent_id</code></li>
+            <li><code>repo</code>、<code>worktree_id</code>、<code>base_sha</code>、<code>candidate_sha</code></li>
+            <li><code>changed_paths</code>、<code>pre_update_evidence</code></li>
+            <li><code>goal</code>、<code>assertions</code>、<code>timeout_seconds</code>；验收目标直接保存在 request，不另建 acceptance.json</li>
+            <li><code>iteration_policy</code>：mode、max_attempts、deadline、allowed_paths、required_tests</li>
+            <li><code>pre_update_evidence</code> 绑定迭代记录摘要；记录含 root/parent update、原授权摘要、全序列 attempt 和唯一 child ID。每个后继有独立目录，原请求和历史终态不改写。</li>
+            <li><code>app_path</code> 固定为规范化的 <code>/Applications/OpenProgram.app</code></li>
+          </ul>
+          <h3><code>state.json</code> 的可变字段</h3>
+          <ul>
+            <li><code>phase</code>、<code>revision</code>、<code>updated_at</code>、<code>detail</code></li>
+            <li><code>attempt</code>、<code>dispatch.job_id</code>、<code>dispatch.claimed_by</code>、<code>dispatch.lease_until</code></li>
+            <li><code>last_event</code>：状态先落盘而事件 append 中断时，用于确定性补齐最后一条事件</li>
+          </ul>
+          <p>不接受 URL、任意 installer 路径、任意 shell 命令、state dir 或端口覆盖。candidate 不能选择控制进程。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="protocol" aria-labelledby="protocol-title">
+      <div class="section-head"><div class="section-num">07</div><div><h2 id="protocol-title">完整时序</h2><p>构建占用主要时间，但不影响旧实例；只在激活和重启阶段进入短暂不可用状态。</p></div></div>
+      <div class="check-list">
+        <div class="check-row"><strong>1 · Agent 准备 candidate</strong><span>独立 worktree 内修改；执行受影响测试、完整 gate、spec review 和 quality review；提交后确认 worktree clean。</span><span class="owner">owner worker</span></div>
+        <div class="check-row"><strong>2 · 创建请求</strong><span><code>self_update_prepare</code> 从 Git 重新计算 base/candidate/changed paths，保存 acceptance，并显示精确授权卡。拒绝当前主 checkout、dirty candidate、版本不一致和第二个 active update。</span><span class="owner">owner worker</span></div>
+        <div class="check-row"><strong>3 · 启动 supervisor</strong><span>当前可信 runtime 生成固定 supervisor 文件，权限 0700；用 <code>launchctl submit</code> 启动 one-shot job。只传 update id 和状态目录。</span><span class="owner">launchd</span></div>
+        <div class="check-row"><strong>4 · 构建和 probe</strong><span>supervisor 在 candidate worktree 调用完整 App build；使用当前可信 smoke/probe 合同验证 manifest、assets、启动、doctor、<code>/chat</code> 和 expected revision。candidate build 被 sandbox 限制。</span><span class="owner">supervisor</span></div>
+        <div class="check-row"><strong>5 · turn-end release</strong><span>Agent 输出“候选已提交，更新已安排”。dispatcher 在 final node、session status、turn commit 和变更归因全部持久化后设置 <code>turn_released=true</code>。</span><span class="owner">dispatcher</span></div>
+        <div class="check-row"><strong>6 · 等待空闲</strong><span>拒绝新的写入 turn，等待其他 foreground turn 与 running Job 自然结束。默认最多十分钟；超时则在停止 worker 前终止本次更新，不取消其他任务。</span><span class="owner">maintenance gate</span></div>
+        <div class="check-row"><strong>7 · 激活</strong><span>记录 App/worker/launchd 原状态；停止 App 和 worker；移动旧 App 到 transaction/previous.app；移动 staged App 到规范路径；重新注册 Launch Services；恢复原启动状态。</span><span class="owner">supervisor</span></div>
+        <div class="check-row"><strong>8 · 系统验证</strong><span>新 worker 必须证明 owner identity 与 candidate revision，并通过 doctor、Web 和 WS gate。失败或超时由 supervisor 停止新实例并恢复 previous.app。</span><span class="owner">supervisor</span></div>
+        <div class="check-row"><strong>9 · 自动触发 Agent</strong><span>JobRunner ready 后，startup recovery 对当前 attempt 做原子 claim，用稳定 Job ID 创建 source=<code>self_update_verify</code> 的受限 Job。普通 Scheduler 不参与。</span><span class="owner">new worker</span></div>
+        <div class="check-row"><strong>10 · 提交、恢复或迭代</strong><span>pass 时提交安装；其他 verdict/timeout 时先恢复旧 App。默认等待新授权；bounded_auto 在原授权范围和剩余预算内创建下一 attempt。结果都回写原 session。</span><span class="owner">supervisor</span></div>
+      </div>
+    </section>
+
+    <section id="verification" aria-labelledby="verification-title">
+      <div class="section-head"><div class="section-num">08</div><div><h2 id="verification-title">两层验收合同</h2><p>确定性系统检查先证明新实例可识别、可启动、可服务；Agent 再判断用户要求的行为是否成立。任何一层都不能替代另一层。</p></div></div>
+      <div class="mapping-table">
+        <div class="table-row table-head"><div>层</div><div>执行者</div><div>必须检查</div><div>失败结果</div></div>
+        <div class="table-row"><div><strong>Pre-update evidence</strong></div><div>修改 Agent + review</div><div>RED/GREEN、affected/full tests、docs/checklinks、clean candidate、两个独立 review verdict。</div><div>不创建更新请求。</div></div>
+        <div class="table-row"><div><strong>Artifact gate</strong></div><div>supervisor</div><div>完整 runtime manifest、Electron bundle、version match、packaged smoke、isolated cold start。</div><div>旧实例保持运行。</div></div>
+        <div class="table-row"><div><strong>Live system gate</strong></div><div>supervisor</div><div>默认 18100、owner-auth identity、expected candidate revision、doctor、Web/WS 基础连接。</div><div>自动恢复旧 App。</div></div>
+        <div class="table-row"><div><strong>Goal acceptance</strong></div><div>verification Agent</div><div>逐条读取原始 assertions；检查真实公共入口。UI 改动必须操作规范 App；API/CLI 改动必须调用真实入口。</div><div>verdict=fail/inconclusive，自动恢复。</div></div>
+        <div class="table-row"><div><strong>Evidence binding</strong></div><div>controller</div><div>每条 assertion 保存命令/页面/节点、观察值、artifact revision 和时间；verdict 必须覆盖所有 required assertion。</div><div>缺字段即 inconclusive。</div></div>
+      </div>
+      <div class="cards" style="margin-top:16px">
+        <article class="card accent-green"><div class="label">Verifier authority</div><h3>读取和操作验收入口</h3><p>工具白名单为 read/glob/grep/list 与 <code>self_update_observe</code>。检查 ID 只能执行冻结的本地 API、CLI/test 或 UI 动作；不提供通用 Browser/Computer Use、shell、源码写入、提交、部署、外部消息或第二次更新权限。</p></article>
+        <article class="card accent-amber"><div class="label">Semantic limit</div><h3>Agent verdict 是证据判断</h3><p>candidate runtime 无法独立证明自身可信。系统 gate 由 supervisor 判断；Agent 只对用户目标给出结构化 pass/fail/inconclusive 与可检查证据。</p></article>
+        <article class="card accent-blue"><div class="label">Timeout</div><h3>没有无限等待</h3><p>系统启动 90 秒、Agent 验收默认 10 分钟、整体更新默认 30 分钟。超时不会被解释为通过。</p></article>
+      </div>
+    </section>
+
+    <section id="verification-actions" aria-labelledby="verification-actions-title">
+      <div class="section-head"><div class="section-num">08A</div><div><h2 id="verification-actions-title">真实 UI、API 与测试证据</h2><p>验收 Agent 使用同一个 JobRunner 和冻结配置。新增的是有限的验收能力，不是第二个 Agent、Scheduler 或通用浏览器控制服务。</p></div></div>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>验收入口</div><div>执行合同</div><div>不能替代的证据</div></div>
+        <div class="table-row"><div>默认 App 界面</div><div>受限适配层连接 <code>/Applications/OpenProgram.app</code> 的实际主窗口。绑定 App 进程、window、owner、<code>update_id</code>、attempt 和本次 worker identity；操作前后复核身份。模型不能指定 CDP 地址、任意 target、JS 或文件路径。</div><div>保存实际截图、可访问性树、当前路由、窗口标识和时间。只收到 <code>/chat</code> HTML、DOM 文本或内置 Web tab 的截图，不能证明 App 主界面的视觉和交互要求。</div></div>
+        <div class="table-row"><div>界面交互</div><div>冻结原会话主窗口检查：截图与可访问性树、聊天区滚动、session/dag 切换、实际 RenameDialog 内的临时测试对象重命名。候选与回退包分别要求 UI protocol 1/2/3/4；旧协议不获得新权限。</div><div>成功须绑定原会话、worker、Job 和目标窗口，并完成自有位置/视图/对象清理；用户输入中断时不覆盖用户选择。临时对象不修改真实会话名称，不能证明真实数据持久化。任意点击、消息、设置、外部导航、文件传输、剪贴板及执行代码均不授权。</div></div>
+        <div class="table-row"><div>本地 API</div><div>保留 owner-auth 和 loopback 限制；按冻结的 method、路径、参数和响应上限执行。禁止重定向、模型传入认证信息和任意 URL。调用前后核对同一 worker 与 candidate identity。</div><div>真实响应必须与 assertion 相关。健康检查通过不证明功能正确；HTTP 200、页面标题或模型自述均不能单独判定通过。</div></div>
+        <div class="table-row"><div>受限测试与 CLI</div><div>固定 CLI version/help 调用已安装 App 的 runtime；冻结 test:python 在 candidate worktree 执行。不接收模型 shell。原生验收沙箱限制为单进程，禁止 fork、posix_spawn 及子进程；这不改变独立 build/repair-test 的执行策略。</div><div>源码测试不能替代安装后验收，CLI help 不能证明任意功能。最小环境与无网络隔离，拒绝默认数据和 App 写入；超时、取消、输出超限、身份变化或清理失败不判 pass。不启动第二套 profile/App。</div></div>
+      </div>
+      <div class="cards" style="margin-top:16px">
+        <article class="card accent-blue"><div class="label">Frozen verification plan</div><h3>能力在更新前确定</h3><p>每条 assertion 绑定 evidence kind、检查 ID、允许目标/动作和预算。计划摘要进入 request evidence 和 verifier config 的摘要绑定。prepare 必须检查依赖与权限是否可用；旧配置不自动获得新增 UI 或 test 权限。</p></article>
+        <article class="card accent-green"><div class="label">Trusted evidence receipt</div><h3>由执行适配层保存证据</h3><p>沿用 controller 的受限观察与签名 receipt 协议，增加证据类型而不接受模型自签结果。每份证据绑定 update、attempt、SHA、worker、检查 ID、时间和内容摘要。截图及输出限量保存，认证信息不进入日志、截图导出或模型上下文。</p></article>
+        <article class="card accent-amber"><div class="label">Failure and cleanup</div><h3>缺失证据不判通过</h3><p>窗口关闭、身份变化、权限拒绝、对象消失、输出截断影响判断、provider 失败或超时均记录具体原因。适配层释放自有连接和测试资源，不关闭用户窗口；清理失败须记录并阻止 pass。总时限不因重连或重启重置。</p></article>
+      </div>
+      <p style="margin-top:16px">页面内容、测试输出和候选代码均是不可信数据，不能扩大工具权限。对允许动作的约束必须同时覆盖 UI、IPC 和后端写入口；仅凭 DOM selector、按钮文字或“只读”提示词不足以阻止副作用。自动验收不接触其他会话和个人浏览器资料；用户正在操作目标窗口时停止自动交互并保留已有证据，等待不得超过原验收时限。</p>
+    </section>
+
+    <section id="failures" aria-labelledby="failures-title">
+      <div class="section-head"><div class="section-num">09</div><div><h2 id="failures-title">失败语义与恢复</h2><p>失败状态必须说明候选是否被激活、当前运行哪个 revision、旧 App 是否保留，以及验收任务是否执行。</p></div></div>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>失败位置</div><div>系统动作</div><div>用户看到的结果</div></div>
+        <div class="table-row"><div>授权拒绝、dirty candidate、无 commit</div><div>不启动 supervisor，不改变 worker/App。</div><div>原会话显示稳定错误和修复条件。</div></div>
+        <div class="table-row"><div>build、tests、manifest、packaged smoke、cold probe</div><div>终止 staging；旧实例继续运行；清理未验证 artifact。</div><div>同一会话直接收到失败步骤和日志摘要，不发生重启。</div></div>
+        <div class="table-row"><div>其他任务在等待期限内未结束</div><div>退出 maintenance gate，终止更新；不取消其他 turn/Job。</div><div>显示 <code>quiescence-timeout</code> 和仍运行的任务列表。</div></div>
+        <div class="table-row"><div>旧 App/worker 无法停止</div><div>安装目录不变；恢复先前 maintenance 状态。</div><div>显示精确 PID/launchd 状态，不报告已激活。</div></div>
+        <div class="table-row"><div>App move、Launch Services 或新 worker 启动失败</div><div>移动新 App 到 failed.app，恢复 previous.app 和原启动状态。</div><div>App 重新打开旧版本；结果卡标记 ROLLED_BACK。</div></div>
+        <div class="table-row"><div>revision/doctor/Web/WS gate 失败</div><div>不创建 Agent 验收；立即恢复 previous.app。</div><div>原会话收到系统 gate 证据。</div></div>
+        <div class="table-row"><div>验收 Agent fail、inconclusive 或超时</div><div>保存 verifier-result，先恢复旧 App；具备冻结配置的新请求自动诊断。允许的实现/测试失败继续修正和测试；默认只在再次安装前等待授权，完整 bounded_auto 授权可在范围内自动提交。inconclusive、环境或目标问题停止再次安装。</div><div>显示逐条 assertion、恢复 revision、attempt 和剩余预算。</div></div>
+        <div class="table-row"><div>JobRunner、provider 或 model 不可用</div><div>不使用 Scheduler 延后执行；标记环境型 inconclusive，并恢复旧 App。</div><div>显示缺失依赖和可重试条件，不误报代码缺陷。</div></div>
+        <div class="table-row"><div>rollback 自身失败</div><div>停止所有自动迭代，保留 previous/candidate/transaction，进入 NEEDS_MANUAL_RECOVERY。</div><div>显示实际 App、revision、进程和只读恢复说明，不报告已经恢复。</div></div>
+        <div class="table-row"><div>supervisor 自身崩溃或机器重启</div><div>下一次 worker/App 启动前运行 recovery：依据 phase、规范 App、previous.app 和 revision 做幂等修复。</div><div>不新增 RECOVERED phase；恢复后依据真实结果保留 SUCCEEDED、ROLLED_BACK 或 ABORTED，无法确定时为 NEEDS_MANUAL_RECOVERY。恢复事件与恢复证据单独保存。</div></div>
+      </div>
+      <h3 id="recovery-bootstrap" style="margin-top:24px">独立于 App 的恢复入口</h3>
+      <p>激活候选前，可信当前版本除保存 controller/runtime/installer，还生成本次更新专用的 <code>~/.openprogram/self-updates/&lt;update_id&gt;/recover.sh</code>，并在本机用户的 <code>~/Library/LaunchAgents/</code> 写入对应的一次性登录任务。脚本、状态目录和 runtime 都位于 App 外；不依赖 PATH 中的 OpenProgram、待修复 App、普通 worker 或 Scheduler。没有完整可验证的保存副本时，不生成新的控制代码，也不尝试猜测恢复。</p>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>入口</div><div>行为</div><div>约束</div></div>
+        <div class="table-row"><div><code>recover.sh status</code><br>不传参数也只查状态</div><div>由保存的 runtime 读取本次更新、维护状态和人工恢复结果；返回固定恢复入口路径。</div><div>不执行模型、不修改 App、不新建更新；拒绝其他参数、任意命令、路径或 profile。</div></div>
+        <div class="table-row"><div><code>recover.sh repair</code></div><div>复用下述人工确认流程。App 或普通 CLI 无法启动时，owner 仍可在终端检查计划并授权恢复。</div><div>仍需交互式确认和原十分钟期限；原验收、journal、身份与权限约束不变。</div></div>
+        <div class="table-row"><div>用户下次登录<br>或 <code>recover.sh resume</code></div><div>重新校验保存的 bundle、请求和固定脚本，调用原 supervisor，按持久化 phase 继续已有交接或恢复；不合成 turn release。</div><div>沿用原更新、rollback、commit 和 repair 的期限与结果。没有人工授权的 manual 状态保持维护；不批准新 candidate，不创建第二个验收 Job。</div></div>
+      </div>
+      <p>登录文件名为 <code>ai.openprogram.self-update.recovery.&lt;update_id&gt;.plist</code>，在本用户每次登录时最多执行一次，完成后清除：<code>RunAtLoad=true</code>，不设置 <code>KeepAlive</code>、周期或常驻 daemon。写入 plist 不立即加载另一份控制进程；正常更新仍使用原 one-shot supervisor 和同一 controller lock。当前登录会话中，若 App 与控制进程都已不可用，终端恢复脚本是显式入口；机器重启后需本用户登录才触发自动恢复，不声称能在未登录或磁盘未解锁时执行。</p>
+      <p>发布恢复入口、固定参数和 plist 的绑定记录必须发生在原 supervisor 被提交、候选被激活之前。只操作本用户拥有的规范目录和本次更新的确切文件；已有同名但内容不匹配、符号链接、非普通文件或不安全权限均拒绝，不覆盖。重复准备校验原副本，不从已替换 App 重新复制。启动错误留下独立诊断，绝不解除维护或延长授权。</p>
+      <p>原更新已终止且不再拥有维护状态后，只清除内容仍与绑定记录一致的本次登录 plist；保存的 runtime、脚本、原更新证据和恢复结果继续保留，便于查询。清理失败保留诊断，不改变已验证的原结果；残留一次性任务再次运行也不得恢复已完成更新。该入口本身损坏、权限变化或原证据不足时仍需人工处理，不提供任意文件修复或强制清除维护的能力。</p>
+      <h3 id="owner-repair" style="margin-top:24px">显式人工恢复</h3>
+      <p><code>openprogram self-update status [update_id] --json</code> 在不执行模型、不创建更新、不修改 App 的情况下读取维护归属、原终态与恢复结果。<code>openprogram self-update repair &lt;update_id&gt;</code> 是本机 owner 的独立控制入口，不依赖普通聊天或 Scheduler；必须在交互式终端确认显示的 update id、目标 revision、恢复动作与计划摘要，不提供跳过确认参数。确认时重新比较原状态、维护归属、安装 journal 和可信 controller；发生变化则拒绝旧确认。</p>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>原事务证据</div><div>获准动作</div><div>通过条件</div></div>
+        <div class="table-row"><div>尚未不可逆提交，previous 身份及旧 revision 可确定</div><div>由原可信安装器幂等恢复旧 App；不激活新的 candidate。</div><div>规范旧 App 身份匹配，重启后的旧 revision、owner、doctor、Web 和 WS 检查全部通过。</div></div>
+        <div class="table-row"><div>已经 committing / committed，且原已接受的签名验收决定完整</div><div>只完成原不可逆提交；不能用本次确认补造 goal pass，也不能在 activated 阶段重新授权首次 commit。</div><div>原 grant/result/decision/journal 身份一致，规范 candidate 与重启后的实际运行版本通过新检查。</div></div>
+        <div class="table-row"><div>ABORTED 且仍为 prepared</div><div>只验证未变的旧 App 并恢复运行；不执行安装或回滚。</div><div>prepared journal 不变，运行的不是 candidate，系统检查全部通过。</div></div>
+        <div class="table-row"><div>身份不明、证据缺失、可信 controller 损坏或检查失败</div><div>保留维护限制和全部恢复文件，记录具体失败；不猜测路径、不删除旧 App、不继续自动迭代。</div><div>显示仍需人工处理，不将原目标标记为已达成。</div></div>
+      </div>
+      <p>每次确认生成独立、持久化的恢复请求，绑定原更新与事务身份，限时十分钟；重试和进程重启不延长这次期限。只复用已保存的 controller/runtime/installer，通过包含恢复请求 id 的 one-shot launchd label 启动；不从待修复 App 重新复制控制代码。恢复进程使用原安装事务校验规范 App 后重启默认 worker，再验证新进程，使启动检查和普通 Scheduler 按正常启动顺序恢复。中断时允许在同一期限内重复幂等恢复及 worker 重启，但不能创建 verifier Job 或第二次更新。</p>
+      <p>原终态、原验收结论与旧期限保持不变；人工恢复写入独立 resolution receipt，区分“旧版本恢复”“已接受版本恢复”和“未激活更新恢复”。只有该 receipt 与新系统证据匹配，才原子解除本次维护归属。失败、过期或未确认时继续禁止普通任务；后续再次尝试必须重新确认。此入口不是任意 shell、文件修复或强制清除 maintenance 的接口。</p>
+    </section>
+
+    <section id="security" aria-labelledby="security-title">
+      <div class="section-head"><div class="section-num">10</div><div><h2 id="security-title">权限与信任边界</h2><p>“允许改代码”和“允许替换当前运行产品”是两个授权。第二个授权只授予一个 candidate SHA，或一个显式有界的多轮 envelope。</p></div></div>
+      <h3 id="offline-build-inputs">离线构建输入</h3>
+      <p>控制器从已保存的可信完整 runtime 取得固定版本的 uv、managed Python 和依赖。复用前逐字节核对 candidate 的 <code>uv.lock</code> 与 <code>product-runtime.json</code>；不匹配或输入缺失时在激活前失败，不能悄悄沿用不匹配依赖或允许候选联网。依赖变化需要先提供匹配的完整 runtime 输入，不由候选自选下载源或继承 owner 凭据。</p>
+      <p>runtime 和既有 npm/uv/Electron-builder/node-gyp 构建缓存复制到本次私有 build-home；macOS 使用独立的 copy-on-write 副本，不共享可写缓存。Electron 平台 zip 由可信控制器按固定版本、架构和发布 SHA-256 选择，复制到 candidate 不可写的 update 输入目录并通过 <code>electronDist</code> 使用，不因缓存命中而跳过完整性校验。候选仍重新构建 Web、文档、wheel 和 Desktop archive，仅把新 wheel 安装到私有 runtime；正式 Release 的常规构建入口保持原有行为。复制、构建及检查共用原期限，缓存命中不是验收证据。</p>
+      <p>构建进程不访问外部网络、默认 App 或用户状态。packaged worker smoke 只获准绑定并访问控制器选择的单个私有 loopback 端口，明确排除默认端口 18100；其余网络访问继续被 sandbox 拒绝。需要宿主图形服务的固定检查不向 candidate sandbox 扩权：控制器使用固定参数调用系统 <code>sips</code> 检查四个固定图标源，并由固定的可信 runtime Python 执行 Playwright Chromium probe；执行前后都要求 candidate 浏览器资源与已保存可信 runtime 的资源树 hash 一致。worker、图标和浏览器检查都完成并写入 manifest/receipt 后才允许进入激活阶段，不能通过开放默认 worker 或跳过检查取得通过结果。实际打包及已安装 App 验收状态见文末。</p>
+      <div class="boundary-grid">
+        <article class="boundary control"><div class="label">Trusted controller</div><h3>控制逻辑来自当前已安装版本</h3><p>supervisor 和安装器在 candidate 激活前从当前 runtime 复制并 hash 固定。candidate 不提供 supervisor、App path、state path、命令或恢复策略。</p><ul><li>one-shot launchd label 包含 update id</li><li>0700 controller，0600 状态</li><li>固定默认 profile、18100 和规范 App path</li></ul></article>
+        <article class="boundary candidate"><div class="label">Candidate code</div><h3>构建可执行，权限受限</h3><p>candidate 的构建和 smoke 会执行源码，因此在 sandbox 内运行，并使用最小环境。拒绝访问 provider 凭据、默认 session state、安装目录和 update record。</p><ul><li>只写 candidate worktree 与 staging temp</li><li>不继承 token/API key</li><li>网络默认关闭；依赖必须来自 lockfile/cache</li></ul></article>
+        <article class="boundary state"><div class="label">User authority</div><h3>激活必须处于 owner 批准范围</h3><p><code>self_update_prepare</code> 加入不可由 bypass 跳过的强制审批集合。默认绑定 candidate；有界自动迭代绑定 goal、允许路径、最大次数、时限和禁止变化项。</p><ul><li>cron/scheduler/sub-agent/MCP 不能发起</li><li>审批不持久化为通用 allow rule</li><li>scope、依赖或权限变化后失效</li></ul></article>
+        <article class="boundary verify"><div class="label">Verification</div><h3>验收 Agent 权限单独收窄</h3><p>自动验收不能修改源码或再次更新。它只能读取证据、运行受限检查和操作本地 UI；需要额外副作用时返回 inconclusive。</p><ul><li>固定 agent/profile/model snapshot</li><li>每个 assertion 必须有 evidence</li><li>verdict 通过 supervisor 的一次性 token 提交</li></ul></article>
+      </div>
+    </section>
+
+    <section id="api" aria-labelledby="api-title">
+      <div class="section-head"><div class="section-num">11</div><div><h2 id="api-title">公共入口与内部边界</h2><p>用户仍然只需要聊天。工具参数保持结构化，不向模型开放安装命令。</p></div></div>
+      <div class="api-grid">
+        <article class="api-card"><div class="label">Mutating tool · forced approval</div><h3>self_update_prepare</h3><p><code>{worktree_id, candidate_sha, goal, assertions[], iteration_policy?, verification_plan?}</code>。强制审批后验证 candidate、冻结配置、写 request、启动 supervisor。返回 update_id、phase、candidate_sha、base_sha 和 changed_paths，不返回安装成功。</p></article>
+        <article class="api-card"><div class="label">Read-only tool</div><h3>self_update_status</h3><p><code>{update_id?}</code>。返回 phase、steps、current/candidate revision、active App、rollback availability 和 verifier verdict。</p></article>
+        <article class="api-card"><div class="label">Pre-activation control</div><h3>self_update_cancel</h3><p>只在 PREPARING/STAGING/READY 生效。ACTIVATING 之后拒绝 cancel，由 supervisor 完成 commit 或 rollback。</p></article>
+        <article class="api-card"><div class="label">Repair control</div><h3>self_update_repair_cancel</h3><p><code>{update_id}</code>。原 owner 会话取消该次回退后的源码修正或候选测试，不改写原验收和回退结论。</p></article>
+        <article class="api-card"><div class="label">Retry · forced one-shot approval</div><h3>self_update_retry</h3><p><code>{update_id, candidate_sha}</code>。在原会话批准通过真实证据核验的修正 SHA；审批前后均复核身份、候选和预算。返回固定 child ID 与提交状态，不返回虚假的安装成功。</p></article>
+        <article class="api-card"><div class="label">Iteration control</div><h3>self_update_iteration_cancel</h3><p><code>{update_id}</code>。停止整个迭代序列及其待执行/正在修正的任务。已激活事务继续必要验证或恢复，但不能创建后续 attempt。</p></article>
+      </div>
+      <div class="schema-grid" style="margin-top:16px">
+        <pre><span style="color:#8c9bad"># Job result; controller wraps it in a signed receipt</span>
+{
+  "schema": 1,
+  "update_id": "su_...",
+  "candidate_sha": "...",
+  "attempt": 1,
+  "verdict": "pass | fail | inconclusive",
+  "assertions": [
+    {
+      "id": "acceptance-1",
+      "status": "pass",
+      "entry": "default App",
+      "observation": "...",
+      "evidence_refs": ["observation-id"],
+      "observed_at": 1.0
+    }
+  ]
+}</pre>
+        <div class="schema-note"><h3>DAG 表达</h3><p>发起更新的 assistant node 记录 <code>self_update_id</code>。重启后的验证 branch 使用：</p><ul><li><code>source=self_update_verify</code></li><li><code>caller=origin_assistant_id</code></li><li><code>predecessor=null</code>，不改变用户主分支 HEAD</li><li>结果通过现有 Job completion/follow-up 机制回到主分支</li></ul><p>UI 将其渲染为“更新后自动验收”，不渲染成用户消息。</p></div>
+      </div>
+    </section>
+
+    <section id="surfaces" aria-labelledby="surfaces-title">
+      <div class="section-head"><div class="section-num">11A</div><div><h2 id="surfaces-title">状态投影、原会话结果与重启定位</h2><p>request、事务状态和 controller 验证记录是事实来源。聊天卡、Running 面板和工具读取同一份白名单投影，不各自猜测安装结果。</p></div></div>
+      <div class="mapping-table">
+        <div class="table-row table-head"><div>投影字段</div><div>写入者与来源</div><div>读取含义</div><div>缺失或过期</div></div>
+        <div class="table-row"><div><code>update_id</code>、root/parent、origin session、attempt</div><div>已校验 request 与迭代关系。</div><div>定位同一次更新、原会话及父子 attempt；身份只由服务端提供。</div><div>归属不一致时拒绝读取；不能通过 renderer 传值改绑。</div></div>
+        <div class="table-row"><div><code>phase</code>、<code>state_revision</code>、<code>updated_at</code></div><div>SelfUpdateStore 的持久化 phase、递增 <code>revision</code> 和时间。</div><div>事务进度；<code>state_revision</code> 是状态版本号，不是 Git SHA。</div><div>损坏/未来 schema 返回明确错误，不转为“没有更新”。读取不得初始化、修复或推进事务。</div></div>
+        <div class="table-row"><div><code>candidate_revision</code>、changed paths</div><div>prepare 从 Git 核验并冻结的 request。</div><div>目标源码版本与变更范围，不表示已安装或正在运行。</div><div>不能用 candidate SHA 填充运行版本。</div></div>
+        <div class="table-row"><div><code>last_verified_runtime</code></div><div>按 phase 选择并校验 controller 的 <code>system_gate</code>、<code>committed_system_gate</code>、<code>restored_system_gate</code>；激活前旧版本来自 <code>previous_system_gate</code>。人工恢复使用对应已校验恢复 receipt。</div><div>最后验证的 SHA、worker PID、验证时间及证据来源。SUCCEEDED 选提交证据，ROLLED_BACK 选恢复证据，VERIFYING 选候选证据。安装 journal 的 committed 不是另一个 update phase。</div><div>中间切换、ABORTED 或人工恢复状态没有匹配证据时为 unknown；不取“最近一个看似有效”的旧 gate。此字段不是持续在线证明。</div></div>
+        <div class="table-row"><div><code>target_app</code>、rollback 状态</div><div>request 的规范 App 路径、事务清单和对应恢复状态。</div><div>区分安装目标、可恢复副本、已恢复和需要人工恢复。</div><div>目标路径不命名为“实际活动 App”；不能因曾经保存 previous.app 就一直显示可回退。</div></div>
+        <div class="table-row"><div>验收、诊断、修正与下一次提交</div><div>对应已校验 result/receipt 及 next-candidate summary。</div><div>逐条 verdict 和证据、修正 SHA、待授权状态、预算及 child ID。verifier pass 不等于安装已提交；安装提交完成后 update phase 才是 SUCCEEDED。</div><div>还未产生结果显示 pending；无 evidence 显示 inconclusive。回退后继续修正不能覆盖原失败结论。</div></div>
+      </div>
+      <h3 id="projection-contract" style="margin-top:24px">共享读取合同</h3>
+      <p><code>openprogram/self_update/projection.py</code> 提供专用工具、Web 与 Running 的共享只读投影。owner-auth 路由为 <code>GET /api/self-updates?session_id=…</code> 与 <code>GET /api/self-updates/{update_id}?session_id=…</code>，并校验 origin session；历史列表使用有上限的稳定游标分页，不依赖 active 指针。证据经同一更新的 <code>/evidence?session_id=…&amp;evidence_id=…</code> 路由再次验证，只返回签名结果引用的观察记录。</p>
+      <p>投影只包含明确允许的字段、有限摘要和不透明 evidence ID，不返回配置、token、签名密钥、环境变量或任意日志路径。证据读取必须再次核验 owner、session、update 和 receipt 绑定；不支持任意文件读取。状态及关联结果在同一一致性边界内读取，无法形成一致快照时返回可重试错误。读操作不触发 claim、repair、Job 或 Scheduler。</p>
+      <p>首版复用 Running 的有界轮询，不新增事件总线。每个视图至多一个在途读取；会话切换取消旧请求，并用请求代次拒绝迟到响应。state revision 只排序状态变更，关联结果使用完整投影摘要判断变化。断线保留带“上次同步”时间的旧卡，明确显示离线；重连重新读取，不能因 WebSocket 断开、Job 消失或 App 打开就推断失败或成功。</p>
+      <div class="cards" style="margin-top:16px">
+        <article class="card accent-blue"><div class="label">Chat and Running</div><h3>一个更新，一份状态</h3><p>聊天以 root update 聚合各 attempt，显示当前阶段、目标/已验证版本、预算和证据。Running 使用同一投影显示非终态事务或仍待执行的迭代工作；所有 attempt 终止后从 Running 移除，原会话历史仍保留。操作按钮只把请求追加到原会话未发送草稿，保留已有文字；发送后仍须经过工具鉴权和强制审批，按钮本身不安装或取消。</p></article>
+        <article class="card accent-green"><div class="label">Durable result delivery</div><h3>结果不依赖窗口在线</h3><p>controller 先持久化终态，worker 通过已有 Job completion/follow-up 投递机制把有限结果写回原会话。以 update、attempt 和结果类型形成稳定投递键；重复启动或 ACK 丢失不产生重复消息。终态早于 verifier 创建、原会话未打开时也必须投递；会话删除则保留未投递状态，不改投其他会话或创建新的用户任务。</p></article>
+        <article class="card accent-amber"><div class="label">No false completion</div><h3>分别显示执行与安装结论</h3><p>自动验收任务完成、目标通过、安装提交、回退完成和后续修正分别显示。通知由确定性代码生成，不另起 LLM 来编写状态，也不因此触发再次安装。DAG 保留 origin caller 与验证 Job 的关系，不改写用户主分支 HEAD。</p></article>
+      </div>
+      <h3 id="desktop-reopen" style="margin-top:24px">Desktop 重启定位原会话</h3>
+      <p>复用 <code>apps/desktop/worker-start-url.js</code> 的 owner-auth 启动机制与现有 <code>/s/{session_id}</code> 路由。supervisor 在停止 App 前保存本次更新的受信任 reopen 意图，绑定 update、attempt、origin session、owner、期限和启动动作。Desktop 只接收不透明 update ID；由已认证服务解析经过核验的会话，再构造同源路由。候选、模型、CLI 参数和 renderer 不能指定任意 URL、文件路径或认证 fragment。</p>
+      <p>只在这次更新触发的重新打开中消费该意图，不改变普通启动、用户当前窗口、中心标签和稳定 Release updater。完成认证并确认原会话加载后才 ACK；ACK 前崩溃可重试定位，不能重新激活更新或重建 verifier Job。多窗口只由指定主窗口消费；重复消费是幂等定位，不重复建标签。用户主动离开原会话后不再强制跳回，保留可点击的结果提示。</p>
+      <p>owner 改变、session 不存在、意图过期、身份不匹配或恢复接口不可用时，保持普通启动并显示明确原因；不跳到其他会话，不自动创建会话，也不把定位失败判为安装成功。App 原本未打开时遵守保存的启动状态；若验收必须操作可见 App，应在 prepare 时显示并获得打开窗口的授权。更新与回退双方均须支持所需的最小读取/恢复协议，协议不兼容在激活前拒绝。</p>
+    </section>
+
+    <section id="references" aria-labelledby="references-title">
+      <div class="section-head"><div class="section-num">12</div><div><h2 id="references-title">参考实现与采用方式</h2><p>参考只用于确定进程、更新和 worktree 边界；OpenProgram 的候选来源、权限和验收仍由本设计定义。</p></div></div>
+      <div class="reference-grid">
+        <article class="reference-card"><span class="label choice">采用</span><h3><a href="https://git-scm.com/docs/git-worktree">Git worktree</a></h3><p>使用 linked worktree 隔离 candidate 的 HEAD/index/工作目录；serving checkout 和用户现有 dirty checkout 不作为构建输入。</p></article>
+        <article class="reference-card"><span class="label choice modified">修改采用</span><h3><a href="https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html">Apple launchd agent</a></h3><p>采用用户会话内独立进程边界。首版使用 one-shot <code>launchctl submit</code>，不安装常驻 updater daemon。</p></article>
+        <article class="reference-card"><span class="label choice modified">修改采用</span><h3><a href="https://www.electronjs.org/docs/latest/tutorial/updates">Electron update lifecycle</a></h3><p>采用 staged artifact、restart 和明确状态；候选来自本地 commit，不使用远端 update feed。</p></article>
+        <article class="reference-card"><span class="label choice rejected">不采用</span><h3><a href="https://www.electronjs.org/docs/latest/api/auto-updater/">Electron autoUpdater</a></h3><p>macOS 自动更新要求签名并围绕发布 feed 工作；不能覆盖本地未发布 candidate、Agent 验收和当前 unsigned 开发 App 合同。</p></article>
+        <article class="reference-card"><span class="label choice">复用仓库实现</span><h3><a href="../distribution/automatic-updates.html">正式版本自动更新</a></h3><p>复用完整 artifact、manifest、runtime probe 和平台安装边界；不改变 stable Release 的发现、下载和用户安装行为。</p></article>
+        <article class="reference-card"><span class="label choice">复用仓库实现</span><h3><a href="execution/agent-worktree.html">Agent worktree</a></h3><p>复用 worktree 归属、commit、merge/discard 和 approval 语义。自主更新只读取 candidate，不自动合并用户主分支。</p></article>
+      </div>
+    </section>
+
+    <section id="plan" aria-labelledby="plan-title">
+      <div class="section-head"><div class="section-num">13</div><div><h2 id="plan-title">分阶段实施计划</h2><p>每个任务独立 review；前一任务通过 specification 与 quality review 后才开始下一任务。所有生产文件名是目标位置，实施时先核对现有共享 primitive。</p></div></div>
+      <div class="task-grid">
+        <article class="task-card"><div class="task-id">TASK A · DURABLE CONTRACT</div><h3>状态模型与单实例锁</h3><p>新增 <code>openprogram/self_update/</code>，只使用 stdlib JSON、fcntl 和 atomic replace。</p><ul><li><code>types.py</code>：phase、request/result schema</li><li><code>store.py</code>：create/load/transition/claim/event journal</li><li>RED：损坏 JSON、并发 create、非法 transition、重复 claim、future schema</li><li>Gate：unit + component state recovery</li></ul></article>
+        <article class="task-card"><div class="task-id">TASK B · STAGE AND TRANSACTION</div><h3>完整 artifact 与延迟提交安装</h3><p>复用现有 Desktop 构建/安装脚本，不新增 updater dependency。</p><ul><li><code>package-and-install-app.sh</code>：分离 build-only 输出</li><li><code>install-app.sh</code>：prepare/commit/rollback 或等价 defer-commit 接口</li><li><code>upgrade.py</code>：抽取公共 identity/doctor probe</li><li>RED：build 失败不停止旧 worker；激活后失败恢复旧 App</li></ul></article>
+        <article class="task-card"><div class="task-id">TASK C · CHAT HANDOFF</div><h3>专用工具、审批与 turn-end release</h3><p>工具不执行停止动作，只提交持久化意图。</p><ul><li><code>programs/tools/system/self_update/</code>：prepare/status/cancel</li><li><code>agent/permissions/approval.py</code>：forced owner approval</li><li><code>agent/dispatcher/</code>：final durable 后 release</li><li>RED：拒绝 dirty SHA、非 owner source、并发 update、final 未落盘</li></ul></article>
+        <article class="task-card"><div class="task-id">TASK D · EXTERNAL SUPERVISOR</div><h3>launchd one-shot 控制进程</h3><p>当前可信版本生成固定 controller，candidate 只能提供 commit 内容。</p><ul><li><code>self_update/supervisor.py</code> 与固定 shell handoff</li><li>build sandbox、maintenance gate、quiescence timeout</li><li>状态/日志/transaction 目录生命周期</li><li>RED：worker 被停止后 supervisor 仍完成；重复启动幂等</li></ul></article>
+        <article class="task-card"><div class="task-id">TASK E · RESTART VERIFICATION</div><h3>startup claim、JobRunner 与受控迭代</h3><p>不恢复被中断的执行栈；重启后创建新 Job，普通 Scheduler 不参与控制。</p><ul><li><code>self_update/recovery.py</code>：system gate、lease、稳定 Job ID 和 exactly-once dispatch</li><li><code>worker/runner.py</code>：JobRunner ready 后、普通 Scheduler 前的启动 hook</li><li><code>agent/job/runner.py</code>：source/authority/tool/model snapshot</li><li><code>self_update/iteration.py</code>：attempt budget、scope diff 和停止条件</li><li>RED：重复启动、lease 过期、orphan verifier、provider 缺失、三轮耗尽和 scope 扩大</li></ul></article>
+        <article class="task-card"><div class="task-id">TASK F · UI AND FULL ACCEPTANCE</div><h3>状态卡、恢复结果与真实 App 验收</h3><p>按下述子任务实现；包含实际验收工具，不把任务缩减为状态卡。</p><ul><li>共享投影、持久化结果与 Web/Running</li><li>Desktop reopen 定位 origin session</li><li>受限真实 UI/API/CLI/test evidence</li><li>Python/Web/CLI/Desktop/full gate、文档与默认 App 三场景</li></ul></article>
+      </div>
+      <h3 id="task-f" style="margin-top:24px">Task F 的依赖与验证范围</h3>
+      <div class="failure-table">
+        <div class="table-row table-head"><div>子任务与目标位置</div><div>交付内容</div><div>必须通过的验收</div></div>
+        <div class="table-row"><div>F1 · <code>self_update/projection.py</code>、Web self-updates 路由、现有 status 工具和 Running 路由</div><div>先实现同源白名单投影、分页历史及权限合同；不引入新的控制入口。</div><div>公共 API/工具：跨 session 拒绝、无凭据泄漏、终态可读取、查询不写盘、损坏状态不伪装为空、候选/运行版本不同、旧恢复证据不能覆盖新状态。</div></div>
+        <div class="table-row"><div>F2 · 现有 Job result delivery、Web chat 与 Running 组件</div><div>依赖 F1；确定性持久化结果、root/attempt 聚合、断线/重连与证据展示。</div><div>结果先于订阅、窗口关闭、投递后崩溃、重复恢复、切换会话时迟到响应、待授权/回退/人工恢复、终态历史、键盘与窄屏。运行真实组件行为测试，不以源码字符串检查替代。</div></div>
+        <div class="table-row"><div>F3 · <code>apps/desktop/main.js</code>、<code>worker-start-url.js</code> 与 startup handoff</div><div>依赖 F1/F2；绑定更新的单次 reopen、原会话加载 ACK，普通启动保持原行为。</div><div>真实路由加载、错误 owner/session、过期意图、认证失败、ACK 丢失、多窗口、手动导航优先；不产生第二个 verifier 或自动修改会话。</div></div>
+        <div class="table-row"><div>F4 · <code>self_update/verifier_config.py</code>、现有受限观察/签名协议与 App/测试适配层</div><div>依赖已评审的重启验证与 F3；冻结验收计划并提供真实 UI/API/CLI/test 证据。各 Workflow 阶段 prompt 使用同一目标、assertion 与预算，工具权限由执行层强制限制。</div><div>真实 App 主窗口定位与截图、批准的交互、实际 CLI 检查；拒绝任意 JS/CDP/URL/shell、越权写入、跨会话、身份切换、伪造 receipt 和重放；旧配置不获得新权限，缺证据/清理失败不判 pass。</div></div>
+        <div class="table-row"><div>F5 · 主线集成、产品文档与发布验收</div><div>依赖 F1–F4；同步本页及英文/中文产品文档，保留并检查现有架构图；逐项核对整个目标与当前实现。</div><div>完整 Python、contracts、Web、CLI、Desktop、打包、docs/checklinks 和组合提交验证。随后仅用 <code>scripts/refresh-local-app.sh</code> 更新默认 App，实际验证成功、激活前失败、激活后回退；分别记录 local commit、main、remote 和 installed identity。</div></div>
+      </div>
+      <p style="margin-top:16px">每个子任务开始前从已评审的不可变 commit 创建隔离 worktree，写明 exact 文件、RED 和完整测试命令。通过相关检查的独立改动及时提交；评审通过不等于发布通过。已证实的基线失败保留为未通过状态，不能用较小测试集合替代完整 gate。文档机器检查、浏览器交互与桌面/窄屏视觉检查分别记录，不新增另一份设计文档。</p>
+    </section>
+
+    <section id="acceptance" aria-labelledby="acceptance-title">
+      <div class="section-head"><div class="section-num">14</div><div><h2 id="acceptance-title">产品级完成条件</h2><p>以下条件全部成立后，才能把“对话内自主更新”标记为 implemented。</p></div></div>
+      <div class="acceptance">
+        <article><strong>真实聊天入口</strong><p>owner 在默认 App 中提出修改；Agent 完成 worktree 修改、测试、提交并调用专用工具，不依赖开发者手工执行脚本。</p></article>
+        <article><strong>不可变 candidate</strong><p>request、artifact 和 live revision 绑定同一 SHA；dirty worktree、HEAD drift、version drift 均在停止旧实例前失败。</p></article>
+        <article><strong>进程边界</strong><p>旧 worker/App 停止后 supervisor 仍运行；当前 turn 已完成持久化，不产生永久 running node。</p></article>
+        <article><strong>无并发损失</strong><p>存在其他运行任务时只等待或中止更新，不隐式取消；maintenance gate 不丢失已提交用户输入。</p></article>
+        <article><strong>完整 artifact</strong><p>App bundle、embedded Python、Web/docs、Programs、Browser assets 和 capability manifest 都来自 candidate，并通过 packaged smoke。</p></article>
+        <article><strong>live identity</strong><p>重启后默认 18100 的 owner-auth challenge 证明 candidate revision；单独的匿名 health 结果不能满足该条件。</p></article>
+        <article><strong>自动验收</strong><p>新 worker 正好创建一个 self_update_verify Job；每条 required assertion 均有结果和证据，缺失即 inconclusive。</p></article>
+        <article><strong>调度隔离</strong><p>普通 Scheduler 停止、延迟或重复 tick 不影响验收触发；worker 重启、lease 接管和 orphan reconciliation 后，每个 attempt 仍至多一个验证 Job。</p></article>
+        <article><strong>受控迭代</strong><p>默认每次重新授权；bounded_auto 严格执行最大次数、总时限、路径和禁止变化项，任何越界都暂停。</p></article>
+        <article><strong>自动恢复</strong><p>系统 gate、目标验收和超时失败均恢复 previous.app，恢复后的 worker revision 可验证，并在原会话显示结果。</p></article>
+        <article><strong>崩溃恢复</strong><p>在 READY、ACTIVATING、VERIFYING 各阶段模拟进程/机器重启后，recovery 得到确定终态，不重复激活或重复发 Agent turn。</p></article>
+        <article><strong>仓库与可见状态一致</strong><p>设计、测试、review、candidate commit、App source marker、运行 worker identity 和 UI verdict 指向同一实现状态。</p></article>
+      </div>
+    </section>
+
+    <section id="implementation-status" aria-labelledby="status-title">
+      <div class="section-head"><div class="section-num">15</div><div><h2 id="status-title">实现状态附录</h2><p>本节描述主线及已安装产品的集成状态。功能分支实现与评审证据单独记录，不等于产品已经可用；目标合同不因当前缺口而降低。</p></div></div>
+      <div class="evidence-grid">
+        <article class="evidence exists"><div class="label">Implemented foundation</div><h3>Agent 修改与 worktree</h3><p>文件/shell/worktree 工具、approval、sandbox、read-before-edit、变更归因和 session DAG 已存在。</p></article>
+        <article class="evidence exists"><div class="label">Implemented foundation</div><h3>完整构建与 packaged smoke</h3><p>Desktop runtime preparation、Electron builder、runtime manifest 和隔离 smoke 已存在。</p></article>
+        <article class="evidence exists"><div class="label">Implemented foundation</div><h3>App 安装失败恢复</h3><p>现有 install-app transaction 已保存 previous App，并在激活或启动失败时恢复原状态。</p></article>
+        <article class="evidence exists"><div class="label">Implemented foundation</div><h3>Updater、Scheduler 与 JobRunner</h3><p>复用安装方式识别、source probe、Job 持久化及 orphan reconciliation；自更新启动认领使用 JobRunner，普通 Scheduler 不参与控制或兜底验收。</p></article>
+        <article class="evidence target"><div class="label">Integrated candidate · release verification pending</div><h3>Durable self-update protocol</h3><p>组合候选包含状态机、单活动锁、durable release、maintenance、外部 supervisor、延迟提交与回退，以及 owner repair 和 App 外登录恢复入口。离线私有构建输入、固定 SHA 的 Electron 分发、单端口 packaged worker smoke、固定图标渲染和可信 runtime browser probe 已通过修复后的完整实际打包；browser probe 只执行候选无权写入且已重新校验的保存 controller runtime，构建用可写 runtime 不会由控制器执行。独立评审、最终组合门禁、主线发布和实际安装/恢复验收尚未完成。</p></article>
+        <article class="evidence target"><div class="label">Integrated candidate · release pending</div><h3>自动验收与会话恢复</h3><p>startup claim、稳定 self_update_verify Job、签名结果、目标失败 rollback、持久化结果投递和 Desktop reopen 均已集成。旧 App 缺少打包协议时必须先显式完整刷新；不能以源码测试证明已安装 App 的重启、原会话 ACK 或自动验收。</p></article>
+        <article class="evidence target"><div class="label">Integrated candidate · release pending</div><h3>诊断与自动修正</h3><p>回退后诊断、受限编辑提案、隔离 worktree/commit、冻结测试、再次审批与 bounded_auto 已集成。重启不重置次数和期限；完整组合检查与真实更新序列仍待验收，不覆盖原失败结论。</p></article>
+        <article class="evidence target"><div class="label">Integrated candidate · release pending</div><h3>状态界面与受限观察</h3><p>共享投影、聊天/Running、原会话定位，以及有签名的 HTTP、CLI/test、截图、滚动、视图与临时测试对象操作已集成。能力严格限于冻结检查；任意 UI 交互和真实数据修改不在授权内。默认 App 三场景及实际目标证据完成前，整体保持未完成。</p></article>
+      </div>
+
+      <div class="source-list" aria-label="当前实现入口">
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/tools/system/self_update/__init__.py"><span>openprogram/programs/tools/system/self_update/</span><small>owner 工具、prepare/retry 审批与观察入口</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/supervisor.py"><span>openprogram/self_update/supervisor.py</span><small>外部事务控制、系统检查与回退</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/verifier_config.py"><span>openprogram/self_update/verifier_config.py</span><small>冻结配置、阶段 prompt 与工具白名单</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/verification_plan.py"><span>openprogram/self_update/verification_plan.py</span><small>固定检查、资源预算与 UI protocol 能力</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/next_candidate.py"><span>openprogram/self_update/next_candidate.py</span><small>下一候选授权、证据、预算与提交</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/self_update/projection.py"><span>openprogram/self_update/projection.py</span><small>工具、Web 和 Running 的共享只读状态</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/component/self_update"><span>tests/component/self_update/</span><small>控制协议、验收、恢复与迭代行为测试；非实际 App 发布证明</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/scripts/package-and-install-app.sh"><span>apps/desktop/scripts/package-and-install-app.sh</span><small>完整 App build、smoke 与安装入口</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/desktop/scripts/install-app.sh"><span>apps/desktop/scripts/install-app.sh</span><small>事务安装、previous App 和失败恢复</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/scripts/release/smoke-packaged-runtime.sh"><span>scripts/release/smoke-packaged-runtime.sh</span><small>packaged runtime 与 Web smoke</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/cli/python/openprogram_cli/_impl/commands/upgrade.py"><span>apps/cli/.../commands/upgrade.py</span><small>source checkout probe、restart 与 revision verify</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/worker/lifecycle.py"><span>openprogram/worker/lifecycle.py</span><small>worker stop/start/restart</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/job/store.py"><span>openprogram/agent/job/store.py</span><small>Job 持久化与 worker-lost 恢复语义</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/job/runner.py"><span>openprogram/agent/job/runner.py</span><small>一次性验证 Job 的执行和资源治理</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/scheduler/service.py"><span>openprogram/scheduler/service.py</span><small>普通 Scheduler 合同；自主更新不依赖此入口</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/updater/__init__.py"><span>openprogram/updater/__init__.py</span><small>安装方式识别和 startup 不应用更新的现有边界</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/_exec_dag.py"><span>apps/server/.../_exec_dag.py</span><small>startup interrupted-run reconciliation</small></a>
+        <a class="source-link" href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/permissions/approval.py"><span>openprogram/agent/permissions/approval.py</span><small>owner、source、工具审批与硬限制</small></a>
+      </div>
+    </section>
+
+    <footer class="footer"><span>Canonical design: runtime / conversational self-update</span><span>正式 Release 更新：distribution / automatic updates</span></footer>
+  </main>
+</div>
+
+<script>
+  (function () {
+    var tabs = Array.from(document.querySelectorAll('.experience-tab'));
+    var panels = Array.from(document.querySelectorAll('.experience-panel'));
+
+    function activate(tab, moveFocus) {
+      tabs.forEach(function (item) {
+        var selected = item === tab;
+        item.setAttribute('aria-selected', String(selected));
+        item.tabIndex = selected ? 0 : -1;
+      });
+      panels.forEach(function (panel) {
+        panel.classList.toggle('active', panel.dataset.panel === tab.dataset.target);
+      });
+      if (moveFocus) tab.focus();
+    }
+
+    tabs.forEach(function (tab, index) {
+      tab.addEventListener('click', function () { activate(tab, false); });
+      tab.addEventListener('keydown', function (event) {
+        var next = index;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % tabs.length;
+        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + tabs.length) % tabs.length;
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = tabs.length - 1;
+        else return;
+        event.preventDefault();
+        activate(tabs[next], true);
+      });
+    });
+
+    var links = Array.from(document.querySelectorAll('.rail nav a'));
+    var sections = links.map(function (link) { return document.querySelector(link.getAttribute('href')); }).filter(Boolean);
+    if ('IntersectionObserver' in window) {
+      var observer = new IntersectionObserver(function (entries) {
+        var visible = entries.filter(function (entry) { return entry.isIntersecting; })
+          .sort(function (a, b) { return b.intersectionRatio - a.intersectionRatio; })[0];
+        if (!visible) return;
+        links.forEach(function (link) {
+          if (link.getAttribute('href') === '#' + visible.target.id) link.setAttribute('aria-current', 'true');
+          else link.removeAttribute('aria-current');
+        });
+      }, { rootMargin: '-15% 0px -70% 0px', threshold: [0, .2, .5] });
+      sections.forEach(function (section) { observer.observe(section); });
+    }
+  }());
+</script>
+</body>
+</html>

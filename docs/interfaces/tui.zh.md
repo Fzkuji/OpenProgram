@@ -1,5 +1,7 @@
 # 终端 TUI
 
+工具审批行为及运行中切换请参见[工具权限模式](../capabilities/permissions.zh.md)。
+
 不离开终端使用 OpenProgram 的完整聊天界面。本页覆盖进入退出、按键和斜杠命令。
 
 ![终端 TUI](../images/tui_hero.png)

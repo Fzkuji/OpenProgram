@@ -28,7 +28,18 @@ from openprogram.providers import metadata as cat
 
 
 @pytest.fixture(autouse=True)
-def _clear_browse_cache():
+def _clear_browse_cache(monkeypatch):
+    from openprogram.providers.sources import models_dev
+
+    monkeypatch.setattr(cat, "_models_dev_info", lambda _provider_id: {})
+    monkeypatch.setattr(
+        models_dev,
+        "_start_background_refresh",
+        lambda: pytest.fail("browse unit tests must not refresh models.dev"),
+    )
+    # This module exercises the WebUI seams, not the models.dev cache. Keep
+    # an expired cache left by an earlier test from reaching the refresh path.
+    monkeypatch.setattr(models_dev, "_load", lambda: {})
     listing._reset_browse_cache()
     yield
     listing._reset_browse_cache()

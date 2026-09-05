@@ -20,6 +20,7 @@ import type { AssistantBlock, ChatMsg, DetailNode } from "@/lib/session-store";
 import { useSessionStore } from "@/lib/session-store";
 import type { TNode } from "./tree-types";
 import { useTranslation } from "@/lib/i18n";
+import { fetchFullToolOutput } from "@/lib/net/tool-output";
 import { getSocket } from "@/lib/runtime-bridge/state";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import {
@@ -99,13 +100,8 @@ function Collapse({ open, children }: {
 
 /** 时间线外壳：一行淡文字摘要 ›，点击展开竖线时间线。
  *
- *  流式进行中默认**展开**：助手干活时用户要能直接看到步骤在往下长，
- *  而不是盯着一条什么都不说的摘要条。小字摘要仍加 shimmer 扫光，新步骤
- *  在底部拼接，运行中的行用呼吸点。
- *
- *  落定后不强制收起——用户在流式期间的手动折叠/展开一律保留（收起后
- *  又冒出新步骤也不会被强行掀开）。只有"从没手动点过 + 流已结束"这一种
- *  情况回到折叠态，也就是历史消息的默认样子。 */
+ *  流式与历史消息都默认收起。流式摘要仍以 shimmer 表示进行中；用户手动
+ *  展开或收起后，本轮后续步骤和终态更新不覆盖该选择。 */
 export function ExecutionStrip({
   label,
   streaming,
@@ -121,9 +117,7 @@ export function ExecutionStrip({
   /** Branch heads owned by this strip, used to reopen the exact row on return. */
   subagentHeads?: Array<string | undefined>;
 }) {
-  const [userSet, setUserSet] = useState<boolean | null>(null);
-  const open = userSet ?? !!streaming;
-  const setOpen = (next: (o: boolean) => boolean) => setUserSet(next(open));
+  const [open, setOpen] = useState(false);
   const { text } = useTranslation();
   return (
     <div
@@ -201,6 +195,7 @@ export function StepRow({
   actions,
   copyText,
   detail,
+  onOpenDetail,
   inlineBody,
   subSteps,
   defaultKidsOpen,
@@ -215,6 +210,7 @@ export function StepRow({
   actions?: React.ReactNode;
   copyText?: string;
   detail?: DetailNode;
+  onOpenDetail?: () => void;
   inlineBody?: React.ReactNode;
   subSteps?: React.ReactNode;
   /** 仅当前行的直接子树初始展开。 */
@@ -229,6 +225,15 @@ export function StepRow({
   const toggleable = !!subSteps || !!inlineBody;
   const expanded = subSteps ? kidsOpen : open;
   const copyValue = copyText ?? [title, note].filter(Boolean).join(" · ");
+  useEffect(() => {
+    // Update the selected snapshot without changing the dock or its active tab.
+    if (!detail || onOpenDetail) return;
+    const store = useSessionStore.getState();
+    if (store.detailNode?.path === detail.path
+        && JSON.stringify(store.detailNode) !== JSON.stringify(detail)) {
+      store.populateDetail(detail);
+    }
+  }, [detail, onOpenDetail]);
   function copy(e: React.MouseEvent) {
     e.stopPropagation();
     const done = () => {
@@ -246,7 +251,8 @@ export function StepRow({
   function openDetail(e: React.MouseEvent) {
     if (!detail) return;
     e.stopPropagation();
-    useSessionStore.getState().showDetail(detail);
+    if (onOpenDetail) onOpenDetail();
+    else useSessionStore.getState().showDetail(detail);
   }
   const Icon = icon === "thinking" ? BrainIcon
     : icon === "subagent" ? BotIcon
@@ -367,37 +373,86 @@ export function FunctionStep({
   block,
   tree,
   running,
+  sessionId,
 }: {
   block: AssistantBlock;
   tree?: TNode | null;
   running?: boolean;
+  sessionId?: string;
 }) {
+  const [fullResult, setFullResult] = useState<string>();
+  const [loadingFull, setLoadingFull] = useState(false);
   const { text } = useTranslation();
   const isError = !!block.is_error;
   const name = block.tool || "?";
   const kids = tree?.children || [];
+  const result = fullResult ?? block.result;
   const detail: DetailNode = {
     path: `chat-tool:${block.tool_call_id || name}`,
     name,
-    status: running ? "running" : isError ? "error" : "completed",
+    status: running || loadingFull ? "running" : isError ? "error" : "completed",
     params: parseParams(block.input),
-    output: block.result === undefined || block.result === null
-      ? undefined : decodeEscapes(String(block.result)),
-    error: isError && block.result
-      ? decodeEscapes(String(block.result)) : undefined,
+    output: result === undefined || result === null
+      ? undefined : decodeEscapes(String(result)),
+    error: isError && result ? decodeEscapes(String(result)) : undefined,
   };
+  async function openDetail() {
+    const store = useSessionStore.getState();
+    const messageId = block.message_id;
+    const nodeId = block.node_id || block.tool_call_id;
+    if (!block.truncated || fullResult !== undefined
+        || !sessionId || !messageId || !nodeId) {
+      store.showDetail(detail);
+      return;
+    }
+    if (loadingFull) return;
+    setLoadingFull(true);
+    store.showDetail({
+      ...detail,
+      status: "running",
+      output: text("Loading...", "加载中..."),
+      error: undefined,
+    });
+    const response = await fetchFullToolOutput(sessionId, messageId, nodeId);
+    setLoadingFull(false);
+    const current = useSessionStore.getState().detailNode;
+    if (response && !response.error && response.result !== undefined) {
+      const complete = String(response.result);
+      setFullResult(complete);
+      if (current?.path === detail.path) {
+        store.showDetail({
+          ...detail,
+          status: isError ? "error" : "completed",
+          output: decodeEscapes(complete),
+          error: isError ? decodeEscapes(complete) : undefined,
+        });
+      }
+      return;
+    }
+    if (current?.path === detail.path) {
+      store.showDetail({
+        ...detail,
+        status: "error",
+        error: response?.error || text(
+          "Full tool output could not be loaded.",
+          "无法加载完整工具输出。",
+        ),
+      });
+    }
+  }
   return (
     <StepRow
       icon="function"
       title={text("Function call", "函数调用")}
       note={`${name}${block.input ? " · " + short(block.input, 60) : ""}${
-        block.result !== undefined && block.result !== null && block.result !== ""
-          ? " → " + short(String(block.result), 60) : ""}`}
+        result !== undefined && result !== null && result !== ""
+          ? " → " + short(String(result), 60) : ""}`}
       error={isError}
-      running={running}
+      running={running || loadingFull}
       copyText={JSON.stringify(
-        { tool: name, input: block.input, result: block.result }, null, 2)}
+        { tool: name, input: block.input, result }, null, 2)}
       detail={detail}
+      onOpenDetail={() => void openDetail()}
       subSteps={kids.length > 0
         ? kids.map((c, i) => <TreeStep key={c.path || i} node={c} />)
         : undefined}
@@ -412,6 +467,7 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
   actions?: React.ReactNode;
   defaultKidsOpen?: boolean;
 }) {
+  const { text } = useTranslation();
   const kids = node.children || [];
   const running = node.status === "running"
     && !(node.duration_ms || node.end_time);
@@ -423,7 +479,7 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
     : undefined;
   if (params && Object.keys(params).length) noteParts.push(short(params, 70));
   if (node.duration_ms) noteParts.push(`${Math.round(node.duration_ms)}ms`);
-  const outRaw = node.error || node.output;
+  const outRaw = node.error || (node.output ?? node.raw_reply);
   const out = (outRaw === undefined || outRaw === null
     || String(outRaw).trim() === "" || String(outRaw).trim() === "null")
     ? undefined : decodeEscapes(String(outRaw));
@@ -440,6 +496,9 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
   };
   const isLlm = node.node_type === "exec" || node.name === "LLM";
   if (out && !node.error) noteParts.push("→ " + short(out, 60));
+  if (isLlm && !out && !running && !isError) {
+    noteParts.push(text("No text output", "无文本输出"));
+  }
   return (
     <StepRow
       icon={isLlm ? "llm" : "function"}
@@ -449,7 +508,7 @@ export function TreeStep({ node, actions, defaultKidsOpen }: {
       running={running}
       actions={actions}
       copyText={JSON.stringify(
-        { name: node.name, params: node.params, output: node.output, error: node.error },
+        { name: node.name, params: node.params, output: node.output ?? node.raw_reply, error: node.error },
         null, 2)}
       detail={detail}
       subSteps={kids.length > 0
@@ -496,9 +555,15 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
   }
   function cancel(e: React.MouseEvent) {
     e.stopPropagation();
-    const executionId = attach.job_id || card.id;
-    if (executionId) {
-      wsSend({ action: "execution.cancel", execution_id: executionId });
+    const executionId = attach.execution_id;
+    const expectedVersion = attach.status_version;
+    if (executionId && typeof expectedVersion === "number") {
+      wsSend({
+        action: "execution.cancel",
+        command_id: crypto.randomUUID(),
+        execution_id: executionId,
+        expected_version: expectedVersion,
+      });
     }
   }
   const preview = card.content || "";
@@ -522,7 +587,9 @@ export function SubAgentStep({ card }: { card: ChatMsg }) {
       actions={
         <>
           <MessageTimestamp timestamp={card.timestamp} />
-          {(running || cancelling) && (attach.job_id || card.id) ? (
+          {(running || cancelling)
+            && attach.execution_id
+            && typeof attach.status_version === "number" ? (
             <button
               type="button"
               className="tl-btn"

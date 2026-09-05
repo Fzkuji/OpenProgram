@@ -6,7 +6,13 @@ import asyncio
 import json
 import threading
 
+import pytest
+
 from openprogram.context.nodes import Call, ROLE_CODE
+from openprogram.agent.authority import owner_authority
+from openprogram.execution import AttemptStore, ExecutionStore, RuntimeControlService
+from openprogram.execution.driver import DriverRegistry
+from openprogram.execution.model import CapabilitySet, ExecutionStatus
 from openprogram.store import SessionNodeWriter
 from openprogram.store.session.session_store import SessionStore
 
@@ -14,147 +20,222 @@ from openprogram.store.session.session_store import SessionStore
 class FakeWS:
     def __init__(self) -> None:
         self.frames: list[dict] = []
+        self.scope = {
+            "state": {"authority": owner_authority("owner/install/0123456789abcdef")},
+        }
 
     async def send_text(self, text: str) -> None:
         self.frames.append(json.loads(text))
 
 
-def test_execution_cancel_action_uses_the_public_execution_id(
+def _canonical_execution(tmp_path, *, execution_id="exec-web-cancel"):
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    revision = store.create_revision(
+        revision_id=f"revision-{execution_id}", manifest={"entrypoint": "agent"},
+    )
+    record = store.admit_execution(
+        execution_id=execution_id,
+        run_id=f"run-{execution_id}",
+        session_id="session-canonical",
+        revision_id=revision.revision_id,
+        input_ref=f"agent-turn:{execution_id}",
+        input_hash="hash",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "test", "session_id": "session-canonical"},
+        config_snapshot_ref="test",
+        user_message_id="user-canonical",
+        assistant_message_id=None,
+        capabilities=CapabilitySet(),
+        agent_turn_payload={
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "cancel me",
+                "agent_id": "main",
+                "source": "test",
+            },
+        },
+    )
+    return store, record
+
+
+def _patch_canonical_store(monkeypatch, store):
+    service = RuntimeControlService(store, AttemptStore(store), DriverRegistry())
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: store)
+    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
+    return service
+
+
+def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     tmp_path, monkeypatch,
 ):
-    from openprogram.agent import run_control
-    from openprogram.webui import server as server
+    store, record = _canonical_execution(tmp_path)
+    _patch_canonical_store(monkeypatch, store)
+    from openprogram.webui import server
     from openprogram.webui.ws_actions import runtime
 
-    store = SessionStore(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    import openprogram.store.session.session_store as store_module
-
-    monkeypatch.setattr(store_module, "_default_store", store)
-    with run_control._cancel_flags_lock:
-        run_control._current_tokens.clear()
-    run_control._owners.clear()
-    store.create_session("session-1", "main")
-    SessionNodeWriter(store, "session-1").append(Call(
-        id="execution-1",
-        role=ROLE_CODE,
-        name="cancellation_probe",
-        output="partial",
-        metadata={"status": "running", "execution_kind": "agentic_function"},
-    ))
-    event = threading.Event()
-    run_control.CANCEL_GRACE_S = 0.01
-    run_control.register_cancel_event(
-        "session-1", event, execution_id="execution-1",
-    )
+    released: list[str] = []
     broadcasts: list[dict] = []
     monkeypatch.setattr(
-        server, "_broadcast", lambda text: broadcasts.append(json.loads(text)),
+        server, "_release_session_occupancy_for_execution",
+        lambda execution: released.append(execution["execution_id"]),
     )
-
-    handler = runtime.ACTIONS["execution.cancel"]
+    monkeypatch.setattr(
+        server, "_broadcast", lambda payload: broadcasts.append(json.loads(payload)),
+    )
     ws = FakeWS()
-    try:
-        asyncio.run(handler(ws, {
+
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        ws, {
+            "type": "execution.command",
             "action": "execution.cancel",
-            "execution_id": "execution-1",
-        }))
-    finally:
-        for execution_id in list(run_control._owners):
-            run_control.retire_execution_owner(execution_id)
-        for thread in list(run_control._grace_threads.values()):
-            thread.join(1)
-        run_control._grace_threads.clear()
-        run_control._owners.clear()
-        run_control.CANCEL_GRACE_S = 4.0
+            "command_id": "cancel-web-1",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
+    ))
 
-    frames = broadcasts + ws.frames
-    update = next(frame for frame in frames if frame["type"] == "execution.updated")
-    execution = update["execution"]
-    assert execution["execution_id"] == "execution-1"
-    assert execution["status"] in {"cancelling", "cancelled"}
-    assert execution["reason_code"] == "cancel.user"
-    assert "stopped" not in update
-    assert "stopped" not in execution
-    assert event.is_set()
+    execution = store.get_execution(record.execution_id)
+    assert execution is not None
+    assert execution.status is ExecutionStatus.CANCELLED
+    update = next(frame for frame in broadcasts if frame["type"] == "execution.updated")
+    assert update["execution"]["execution_id"] == record.execution_id
+    assert update["event_cursor"]["execution_id"] == record.execution_id
+    assert update["data"]["execution"] == update["execution"]
+    assert update["data"]["event_cursor"] == update["event_cursor"]
+    command = next(frame for frame in ws.frames if frame["type"] == "execution.command.updated")
+    assert command["command"]["status"] == "applied"
+    assert released == [record.execution_id]
+    assert not any(frame["type"] == "error" for frame in ws.frames)
+
+    # Repeating the exact cancel is idempotent after the terminal transition.
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        ws, {
+            "type": "execution.command",
+            "action": "execution.cancel",
+            "command_id": "cancel-web-1",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
+    ))
+    assert not any(frame["type"] == "error" for frame in ws.frames)
+
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        ws, {
+            "type": "execution.command",
+            "action": "execution.cancel",
+            "command_id": "cancel-web-stale",
+            "execution_id": record.execution_id,
+            "expected_version": 999,
+        },
+    ))
+    rejected = ws.frames[-2]["command"]
+    assert rejected["status"] == "rejected"
+    assert rejected["latest_snapshot"]["status_version"] == execution.status_version
 
 
-def test_http_execution_cancel_runs_in_the_worker_handler(tmp_path, monkeypatch):
+def test_ws_rejected_control_does_not_publish_an_unauthorized_snapshot(
+    tmp_path, monkeypatch,
+):
+    store, record = _canonical_execution(tmp_path, execution_id="exec-private")
+    _patch_canonical_store(monkeypatch, store)
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import runtime
+
+    broadcasts: list[dict] = []
+    monkeypatch.setattr(
+        server, "_broadcast", lambda payload: broadcasts.append(json.loads(payload)),
+    )
+    ws = FakeWS()
+    ws.scope = {"state": {}}
+
+    asyncio.run(runtime.ACTIONS["execution.cancel"](
+        ws, {
+            "type": "execution.command",
+            "action": "execution.cancel",
+            "command_id": "cancel-private",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
+    ))
+
+    assert len(ws.frames) == 1
+    assert ws.frames[0]["type"] == "execution.command.updated"
+    assert ws.frames[0]["command"]["rejection_code"] == "unauthorized"
+    assert "execution" not in ws.frames[0]
+    assert "execution" not in ws.frames[0]["data"]
+    assert broadcasts == []
+
+
+def test_http_execution_cancel_returns_canonical_status_and_body(
+    tmp_path, monkeypatch,
+):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from openprogram.agent import run_control
+    store, record = _canonical_execution(tmp_path, execution_id="exec-http-cancel")
+    _patch_canonical_store(monkeypatch, store)
     from openprogram.webui.routes import lifecycle
 
-    store = SessionStore(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    import openprogram.store.session.session_store as store_module
-
-    monkeypatch.setattr(store_module, "_default_store", store)
-    with run_control._cancel_flags_lock:
-        run_control._current_tokens.clear()
-    run_control._owners.clear()
-    store.create_session("session-http", "main")
-    SessionNodeWriter(store, "session-http").append(Call(
-        id="http-exec",
-        role=ROLE_CODE,
-        name="cancellation_probe",
-        output="partial",
-        metadata={"status": "queued", "execution_kind": "agentic_function"},
-    ))
-    monkeypatch.setattr("openprogram.events.emit_ws_frame", lambda *a, **k: None)
+    released: list[str] = []
+    emitted: list[dict] = []
+    monkeypatch.setattr(lifecycle, "emit_ws_frame", emitted.append)
+    monkeypatch.setattr(
+        "openprogram.webui.server._release_session_occupancy_for_execution",
+        lambda execution: released.append(execution["execution_id"]),
+    )
     app = FastAPI()
+    app.state.owner_auth = type("OwnerAuth", (), {
+        "authority": owner_authority("owner/install/0123456789abcdef"),
+    })()
     lifecycle.register(app)
-    client = TestClient(app)
-    try:
-        response = client.post(
-            "/api/execution/cancel",
-            json={"execution_id": "http-exec"},
-        )
-    finally:
-        for execution_id in list(run_control._owners):
-            run_control.retire_execution_owner(execution_id)
-        run_control._owners.clear()
+    response = TestClient(app).post(
+        "/api/execution/cancel", json={
+            "type": "execution.command",
+            "action": "execution.cancel",
+            "command_id": "cancel-http-1",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
+    )
 
     assert response.status_code == 200
-    body = response.json()["execution"]
-    assert body["execution_id"] == "http-exec"
+    result = response.json()
+    body = result["execution"]
+    assert body["execution_id"] == record.execution_id
     assert body["status"] == "cancelled"
-    assert body["reason_code"] == "cancel.user"
-    node = next(
-        item for item in store.get_nodes("session-http") if item.id == "http-exec"
+    assert result["command"]["status"] == "applied"
+    update = next(frame for frame in emitted if frame["type"] == "execution.updated")
+    assert update["event_cursor"]["execution_id"] == record.execution_id
+    assert update["data"]["execution"] == update["execution"]
+    assert update["data"]["event_cursor"] == update["event_cursor"]
+    assert released == [record.execution_id]
+    repeated = TestClient(app).post(
+        "/api/execution/cancel", json={
+            "type": "execution.command",
+            "action": "execution.cancel",
+            "command_id": "cancel-http-1",
+            "execution_id": record.execution_id,
+            "expected_version": record.status_version,
+        },
     )
-    assert node.metadata["status"] == "cancelled"
+    assert repeated.status_code == 200
+    assert repeated.json()["execution"]["status"] == "cancelled"
 
-
-def test_execution_cancel_errors_for_terminal_and_missing(tmp_path, monkeypatch):
-    from openprogram.webui import server as server
-    from openprogram.webui.ws_actions import runtime
-
-    store = SessionStore(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    import openprogram.store.session.session_store as store_module
-
-    monkeypatch.setattr(store_module, "_default_store", store)
-    store.create_session("session-1", "main")
-    SessionNodeWriter(store, "session-1").append(Call(
-        id="done-1",
-        role=ROLE_CODE,
-        name="cancellation_probe",
-        metadata={"status": "completed", "execution_kind": "agentic_function"},
-    ))
-    monkeypatch.setattr(server, "_broadcast", lambda text: None)
-    handler = runtime.ACTIONS["execution.cancel"]
-
-    ws = FakeWS()
-    asyncio.run(handler(ws, {"execution_id": "done-1"}))
-    error = next(frame for frame in ws.frames if frame["type"] == "error")
-    assert error["data"]["code"] == "ExecutionNotCancellable"
-
-    ws = FakeWS()
-    asyncio.run(handler(ws, {"execution_id": "missing"}))
-    error = next(frame for frame in ws.frames if frame["type"] == "error")
-    assert error["data"]["code"] == "ExecutionNotFound"
+    stale = TestClient(app).post(
+        "/api/execution/cancel", json={
+            "type": "execution.command",
+            "action": "execution.cancel",
+            "command_id": "cancel-http-stale",
+            "execution_id": record.execution_id,
+            "expected_version": 999,
+        },
+    )
+    assert stale.status_code == 409
+    assert stale.json()["command"]["status"] == "rejected"
+    latest = store.get_execution(record.execution_id)
+    assert latest is not None
+    assert stale.json()["command"]["latest_snapshot"]["status_version"] == latest.status_version
 
 
 def test_session_reload_preserves_cancelling_execution_status(
@@ -216,74 +297,125 @@ def test_session_reload_preserves_cancelling_execution_status(
     assert loaded["data"]["run_active"] is True
 
 
-def test_cancel_releases_session_occupancy_for_next_turn(tmp_path, monkeypatch):
-    """Cancel intent must free the session slot before the turn thread dies."""
-    from openprogram.agent import run_control
-    from openprogram.webui import server as server
-    from openprogram.webui.ws_actions import runtime
+@pytest.mark.parametrize("quiet_seconds", [0, 600])
+def test_reload_checks_foreground_thread_liveness_and_preserves_cancel_identity(
+    tmp_path, monkeypatch, quiet_seconds,
+):
+    import time
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions.session import handle_load_session
+    from openprogram.agent.run_control import register_active_runtime, unregister_active_runtime
 
-    store = SessionStore(tmp_path / "sessions-git")
-    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    import openprogram.store.session.session_store as store_module
-
-    monkeypatch.setattr(store_module, "_default_store", store)
-    with run_control._cancel_flags_lock:
-        run_control._current_tokens.clear()
-    run_control._owners.clear()
-
-    session_id = "occ-session"
-    msg_id = "user-1"
-    execution_id = f"{msg_id}_reply"
-    store.create_session(session_id, "main")
-    SessionNodeWriter(store, session_id).append(Call(
-        id=execution_id,
-        role=ROLE_CODE,
-        name="_chat",
-        metadata={"status": "running", "execution_kind": "chat"},
-    ))
-
-    ev = threading.Event()
-    assert server._claim_cancel_event(
-        session_id, ev, execution_id=execution_id, foreground=True,
-    )
-    assert server._try_reserve_run(session_id, msg_id)
-    assert server._activate_run_reservation(session_id, msg_id, object())
-    assert server._is_run_active(session_id)
-
-    broadcasts: list[dict] = []
-    monkeypatch.setattr(
-        server, "_broadcast", lambda payload: broadcasts.append(json.loads(payload)),
-    )
-
-    handler = runtime.ACTIONS["execution.cancel"]
-    ws = FakeWS()
+    sessions = SessionStore(tmp_path / "reload-sessions")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.store.session.session_store._default_store", sessions)
+    execution_store = ExecutionStore(tmp_path / "reload-executions.sqlite3")
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: execution_store)
+    monkeypatch.setattr(server, "_get_provider_info", lambda sid=None: {})
+    monkeypatch.setattr(server, "refresh_context_stats", lambda sid: None)
+    monkeypatch.setattr(server, "_broadcast", lambda payload: None)
+    sid = "reload-thread-liveness"
+    sessions.create_session(sid, "main")
+    with server._sessions_lock:
+        server._sessions[sid] = {"id": sid}
+    release = threading.Event()
+    worker = threading.Thread(target=release.wait)
+    register_active_runtime(sid, worker)
     try:
-        asyncio.run(handler(ws, {
-            "action": "execution.cancel",
-            "execution_id": execution_id,
-        }))
-        assert server._is_run_active(session_id) is False
-        assert ev.is_set() is True
-        nxt = threading.Event()
-        assert server._claim_cancel_event(
-            session_id, nxt, execution_id="user-2_reply", foreground=True,
-        ), "next turn must claim after occupancy+token release"
-        assert nxt.is_set() is False
-        assert server._try_reserve_run(session_id, "user-2") is True
-        assert server._is_run_active(session_id) is True
-        clears = [
-            frame for frame in broadcasts
-            if frame.get("type") == "running_task_clear"
-        ]
-        assert clears, "cancel must broadcast running_task_clear"
-        assert clears[-1]["data"]["session_id"] == session_id
+        # Registration precedes start: this handoff must still block admission.
+        assert server._is_run_active(sid)
+        assert not server._try_reserve_run(sid, "other-user")
+        worker.start()
+        with server._running_tasks_lock:
+            server._running_tasks[sid] = {
+                "msg_id": "user-1", "func_name": "agent",
+                "execution_id": "execution-quiet", "status_version": 7,
+                "started_at": time.time() - quiet_seconds,
+                "last_event_at": time.time() - quiet_seconds,
+            }
+        ws = FakeWS()
+        asyncio.run(handle_load_session(ws, {"session_id": sid}))
+        loaded = next(f["data"] for f in ws.frames if f["type"] == "session_loaded")
+        assert loaded["run_active"] is True
+        replay = next((f["data"] for f in ws.frames if f["type"] == "running_task"), None)
+        assert replay is not None, "quiet live executions retain their cancellation controls"
+        assert (replay["execution_id"], replay["status_version"]) == ("execution-quiet", 7)
+        assert server._is_run_active(sid)
     finally:
-        server._finish_owned_run(session_id, "user-2")
-        server._finish_owned_run(session_id, msg_id)
-        for execution in list(run_control._owners):
-            run_control.retire_execution_owner(execution)
-        for thread in list(run_control._grace_threads.values()):
-            thread.join(1)
-        run_control._grace_threads.clear()
-        run_control._owners.clear()
+        release.set()
+        if worker.ident is not None:
+            worker.join(timeout=5)
+        unregister_active_runtime(sid)
+        with server._running_tasks_lock:
+            server._running_tasks.pop(sid, None)
+        with server._sessions_lock:
+            server._sessions.pop(sid, None)
 
+
+def test_reload_prunes_completed_orphan_foreground_thread(tmp_path, monkeypatch):
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions.session import handle_load_session
+    from openprogram.agent.run_control import register_active_runtime, unregister_active_runtime
+
+    sessions = SessionStore(tmp_path / "orphan-sessions")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.store.session.session_store._default_store", sessions)
+    execution_store = ExecutionStore(tmp_path / "orphan-executions.sqlite3")
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: execution_store)
+    monkeypatch.setattr(server, "_get_provider_info", lambda sid=None: {})
+    monkeypatch.setattr(server, "refresh_context_stats", lambda sid: None)
+    monkeypatch.setattr(server, "_broadcast", lambda payload: None)
+    sid = "reload-completed-orphan"
+    sessions.create_session(sid, "main")
+    with server._sessions_lock:
+        server._sessions[sid] = {"id": sid}
+    worker = threading.Thread(target=lambda: None)
+    worker.start()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    register_active_runtime(sid, worker)
+    try:
+        for _ in range(2):
+            ws = FakeWS()
+            asyncio.run(handle_load_session(ws, {"session_id": sid}))
+            loaded = next(f["data"] for f in ws.frames if f["type"] == "session_loaded")
+            assert loaded["run_active"] is False
+            assert not any(f["type"] == "running_task" for f in ws.frames)
+        assert server._try_reserve_run(sid, "new-user"), "orphan cleanup permits a new turn"
+    finally:
+        unregister_active_runtime(sid)
+        with server._running_tasks_lock:
+            server._running_tasks.pop(sid, None)
+        with server._sessions_lock:
+            server._sessions.pop(sid, None)
+
+
+def test_orphan_cleanup_preserves_new_reservation(monkeypatch):
+    from openprogram.webui import server as s
+    from openprogram.agent.run_control import register_active_runtime, unregister_active_runtime
+    sid = 'orphan-cleanup-replacement'
+    old = threading.Thread(target=lambda: None)
+    old.start()
+    old.join(timeout=5)
+    assert not old.is_alive()
+    register_active_runtime(sid, old)
+    s._running_tasks[sid] = {'msg_id': 'old', 'func_name': 'agent'}
+    original = s._has_active_runtime
+    injected = False
+    def check(session):
+        nonlocal injected
+        result = original(session)
+        if not result and not injected:
+            injected = True
+            # Another observer runs after the first liveness result, before
+            # its caller acquires the running-task lock for stale cleanup.
+            assert s._try_reserve_run(sid, 'new')
+        return result
+    monkeypatch.setattr(s, '_has_active_runtime', check)
+    monkeypatch.setattr(s, '_emit_running_task_event', lambda *a, **kw: None)
+    try:
+        assert s._is_run_active(sid)
+        assert s._running_tasks.get(sid, {}).get('msg_id') == 'new'
+    finally:
+        s._running_tasks.pop(sid, None)
+        unregister_active_runtime(sid)

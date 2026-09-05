@@ -401,13 +401,8 @@ const stripBody = strip.slice(
 assert.ok(stripBody.length > 0, "failed to locate the ExecutionStrip body");
 assert.match(
   stripBody,
-  /const\s+open\s*=\s*userSet\s*\?\?\s*!!streaming/,
-  "streaming turns must default to expanded, with a manual toggle winning",
-);
-assert.doesNotMatch(
-  stripBody,
-  /useState\(false\)/,
-  "the old always-collapsed default must be gone",
+  /const\s+\[open,\s*setOpen\]\s*=\s*useState\(false\)/,
+  "execution traces must default to collapsed, with a manual toggle winning",
 );
 
 // Every assistant-owned spawn uses the ordinary timeline row, including

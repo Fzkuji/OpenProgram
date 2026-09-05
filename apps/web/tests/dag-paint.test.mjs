@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,156 @@ registerHooks({
     }
     return nextResolve(specifier, context);
   },
+});
+
+test("DAG production TypeScript modules stay below 500 lines", () => {
+  const root = fileURLToPath(new URL("../lib/runtime-bridge/dag", import.meta.url));
+  const files = [];
+  const visit = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const path = `${dir}/${name}`;
+      if (statSync(path).isDirectory()) visit(path);
+      else if (name.endsWith(".ts")) files.push(path);
+    }
+  };
+  visit(root);
+  const oversized = files.flatMap((path) => {
+    const lines = readFileSync(path, "utf8").split("\n").length;
+    return lines > 500 ? [`${path.slice(root.length + 1)}: ${lines}`] : [];
+  });
+  assert.deepEqual(oversized, []);
+});
+
+test("DAG root contains only public entry and core pipeline modules", () => {
+  const root = fileURLToPath(new URL("../lib/runtime-bridge/dag", import.meta.url));
+  const rootModules = readdirSync(root)
+    .filter((name) => name.endsWith(".ts"))
+    .sort();
+  assert.deepEqual(rootModules, [
+    "index.ts",
+    "paint-gate.ts",
+    "pipeline.ts",
+    "types.ts",
+  ]);
+});
+
+test("Program internals are folded into the Program thread by default", async () => {
+  const { buildThreadModel } = await import(
+    "../lib/runtime-bridge/dag/passes/thread.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0, created_at: 0 },
+    { id: "program", role: "tool", function: "gui_agent", caller: "",
+      predecessor: "ROOT", _lane: 0, created_at: 1 },
+    { id: "internal-reply", role: "assistant", caller: "program",
+      predecessor: "", _lane: 0, created_at: 2 },
+    { id: "internal-step", role: "tool", function: "inspect",
+      caller: "internal-reply", predecessor: "", _lane: 0, created_at: 3 },
+  ];
+
+  const model = buildThreadModel(graph, "program");
+
+  assert.deepEqual(model.visible.map((node) => node.id), ["ROOT", "program"]);
+  assert.deepEqual(
+    model.events.program.map((event) => event.id),
+    ["internal-reply", "internal-step"],
+  );
+});
+
+test("Program LLM leaves stay folded even when predecessor is stamped", async () => {
+  const { buildThreadModel, isChainNode } = await import(
+    "../lib/runtime-bridge/dag/passes/thread.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0, created_at: 0 },
+    { id: "program", role: "tool", function: "gui_agent", caller: "",
+      predecessor: "ROOT", _lane: 0, created_at: 1 },
+    { id: "internal-reply", role: "assistant", caller: "program",
+      predecessor: "program", _lane: 0, created_at: 2 },
+    { id: "internal-step", role: "tool", function: "inspect",
+      caller: "internal-reply", predecessor: "internal-reply",
+      _lane: 0, created_at: 3 },
+  ];
+  const byId = Object.fromEntries(graph.map((node) => [node.id, node]));
+
+  assert.equal(isChainNode(byId["internal-reply"], byId), false);
+  const model = buildThreadModel(graph, "program");
+  assert.deepEqual(model.visible.map((node) => node.id), ["ROOT", "program"]);
+  assert.deepEqual(
+    model.events.program.map((event) => event.id),
+    ["internal-reply", "internal-step"],
+  );
+});
+
+test("Program overview projection preserves semantic edges and real forks", async () => {
+  const { projectTopPrograms } = await import(
+    "../lib/runtime-bridge/dag/passes/project-programs.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0, _tier: 0 },
+    { id: "prior", role: "assistant", predecessor: "ROOT", _lane: 0, _tier: 2 },
+    { id: "program", role: "tool", function: "gui_agent", caller: "",
+      predecessor: "prior", _lane: 6, _tier: 4 },
+    { id: "retry", role: "tool", function: "gui_agent", caller: "",
+      predecessor: "prior", retry_of: "program", _lane: 8, _tier: 1 },
+    { id: "fork", role: "user", predecessor: "prior", _lane: 10, _tier: 1 },
+    { id: "fork-reply", role: "assistant", predecessor: "fork",
+      _lane: 10, _tier: 2 },
+  ];
+
+  const projected = projectTopPrograms(graph);
+  const byId = Object.fromEntries(projected.map((node) => [node.id, node]));
+
+  assert.equal(byId.program._overview_parent, "ROOT");
+  assert.equal(byId.program._lane, 0);
+  assert.equal(byId.program._tier, 1);
+  assert.equal(byId.program.predecessor, "prior");
+  assert.equal(byId.retry._overview_parent, undefined);
+  assert.equal(byId.retry._lane, 8);
+  assert.equal(byId.fork._overview_parent, undefined);
+  assert.equal(byId.fork._lane, 10);
+  assert.equal(byId["fork-reply"].predecessor, "fork");
+});
+
+test("cyclic spawn ownership cannot overflow thread or HEAD traversal", async () => {
+  const { buildThreadModel } = await import(
+    "../lib/runtime-bridge/dag/passes/thread.ts"
+  );
+  const { setThreadOpen } = await import(
+    "../lib/runtime-bridge/dag/store/globals.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0 },
+    { id: "a", role: "user", source: "agent_spawn", predecessor: null,
+      caller: "b", _lane: 1 },
+    { id: "b", role: "user", source: "agent_spawn", predecessor: null,
+      caller: "a", _lane: 2 },
+  ];
+  setThreadOpen({ a: true, b: true });
+
+  const model = buildThreadModel(graph, "a");
+
+  assert.equal(model.isOpen("a"), false);
+  assert.equal(model.isOpen("b"), false);
+});
+
+test("equal legacy timestamps attach a clean spawn to the latest Program", async () => {
+  const { buildThreadModel } = await import(
+    "../lib/runtime-bridge/dag/passes/thread.ts"
+  );
+  const graph = [
+    { id: "ROOT", role: "user", display: "root", _lane: 0, timestamp: 0 },
+    { id: "user", role: "user", predecessor: "ROOT", caller: "ROOT",
+      _lane: 0, timestamp: 100 },
+    { id: "program", role: "tool", function: "gui_agent", predecessor: "ROOT",
+      caller: "", _lane: 0, timestamp: 100 },
+    { id: "spawn", role: "user", source: "agent_spawn", predecessor: "ROOT",
+      caller: "ROOT", _lane: 2, timestamp: 100 },
+  ];
+
+  const model = buildThreadModel(graph, "program");
+
+  assert.equal(model.spawnOwnerOf.spawn, "program");
 });
 
 function inputSig(over = {}) {
@@ -201,6 +351,22 @@ test("thread open, coverage, locale, or status change busts the signature", () =
   );
 });
 
+test("cross-session spawn marker change busts the paint signature", () => {
+  const base = inputSig();
+  assert.notEqual(
+    inputSig({
+      graph: [{ id: "a", role: "user", status: "", spawn_remote: true }],
+    }),
+    base,
+  );
+  assert.notEqual(
+    inputSig({
+      graph: [{ id: "a", role: "user", status: "", spawn_out: true }],
+    }),
+    base,
+  );
+});
+
 test("pipeline compares the input signature before expensive passes or SVG", () => {
   const src = readFileSync(
     new URL("../lib/runtime-bridge/dag/pipeline.ts", import.meta.url),
@@ -213,7 +379,7 @@ test("pipeline compares the input signature before expensive passes or SVG", () 
   const patch = renderSrc.indexOf("tryStatusPatch(");
   const merge = renderSrc.indexOf("const merged = _mergeRuns");
   const fold = renderSrc.indexOf("_foldSummaries");
-  const thread = renderSrc.indexOf("buildThreadModel(graph)");
+  const thread = renderSrc.indexOf("buildThreadModel(");
   const svg = renderSrc.indexOf('_svg("svg"');
   const replace = renderSrc.indexOf("replaceChildren");
   const attach = renderSrc.indexOf("attachCanvas");

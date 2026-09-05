@@ -10,11 +10,12 @@ These lock:
   2. the child (wrapper with ``_forced_node_id`` set) reuses that id and
      leaves exactly one top-level node — the exit update flips its status,
   3. ``create_pending_call_node`` builds the same shape the wrapper writes,
-  4. a child error marks the pre-created "running" node so it doesn't spin
-     forever.
+  4. child errors are reported to the canonical Agent driver; the forced
+     leaf does not own execution lifecycle state.
 """
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -37,8 +38,13 @@ def _head(store) -> str | None:
 
 def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_path):
     from openprogram.webui.routes import chat as routes_chat
+    from openprogram.webui import server as web_server
 
+    with web_server._running_tasks_lock:
+        web_server._running_tasks.pop("s1", None)
+    web_server._unregister_active_runtime("s1")
     store = _store(tmp_path)
+    real_is_run_active = web_server._is_run_active
     monkeypatch.setattr(
         "openprogram.agent.session_db.default_db", lambda: store)
     monkeypatch.setattr(
@@ -81,11 +87,104 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         captured["record_exists"] = store.message_exists(
             "s1", kw.get("execution_id") or "",
         )
+        captured["run_active"] = real_is_run_active("s1")
         captured["provider"] = kw.get("provider")
         captured["model"] = kw.get("model")
+        captured["surface_context_snapshot"] = kw.get(
+            "surface_context_snapshot"
+        )
         return {"runtime_msg_id": None, "ok": True}
+
     monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch)
+        "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch,
+    )
+
+    from openprogram.agent import production_driver
+    from openprogram.execution.model import ExecutionStatus
+    real_adapter = production_driver.CanonicalAgentAdapter
+
+    class _Adapter:
+        def __init__(self, *args, **kwargs):
+            self._real = real_adapter(*args, **kwargs)
+
+        def admit_payload(self, **kwargs):
+            payload = kwargs["payload"]
+            captured["anchor"] = payload.get("anchor_msg_id")
+            captured["provider"] = payload.get("provider")
+            captured["model"] = payload.get("model")
+            captured["surface_context_snapshot"] = payload.get(
+                "surface_context_snapshot"
+            )
+            admission = self._real.admit_payload(**kwargs)
+            captured["execution_id"] = admission.execution_id
+            captured["record_exists"] = store.message_exists(
+                "s1", admission.execution_id,
+            )
+            captured["run_active"] = real_is_run_active("s1")
+            return admission
+
+        async def activate(self, admission, *, on_activated=None):
+            service = self._real.driver._control_service()
+            attempt, leased = service.attempts.lease(
+                admission.execution_id,
+                expected_version=admission.status_version,
+                owner_id="unit-test",
+                ttl_seconds=30,
+            )
+            active, running = service.attempts.activate(
+                attempt.attempt_id,
+                generation=attempt.generation,
+                expected_execution_version=leased.status_version,
+            )
+            payload = self._real.store.get_agent_turn_input(
+                admission.execution_id,
+            ) or {}
+            try:
+                from openprogram.agent.dispatcher import dispatch_forced_tool_call
+
+                result = dispatch_forced_tool_call(
+                    session_id=admission.session_id,
+                    anchor_msg_id=str(payload.get("anchor_msg_id") or ""),
+                    tool_name=str(payload.get("tool_name") or ""),
+                    tool_input=dict(payload.get("tool_input") or {}),
+                    work_dir=payload.get("work_dir"),
+                    agent_id=str(payload.get("agent_id") or "main"),
+                    source=str(payload.get("source") or "web"),
+                    provider=payload.get("provider"),
+                    model=payload.get("model"),
+                    response_format=payload.get("response_format"),
+                    execution_id=admission.execution_id,
+                    attempt_id=active.attempt_id,
+                    generation=active.generation,
+                    cancel_event=threading.Event(),
+                    surface_context_snapshot=payload.get(
+                        "surface_context_snapshot"
+                    ),
+                )
+                target = ExecutionStatus.COMPLETED
+                outcome = "completed"
+            except BaseException as exc:
+                result = {"error": f"{type(exc).__name__}: {exc}"}
+                target = ExecutionStatus.FAILED
+                outcome = "failed"
+            service.finish_attempt(
+                attempt_id=active.attempt_id,
+                generation=active.generation,
+                expected_execution_version=running.status_version,
+                target=target,
+                outcome=outcome,
+            )
+            activation = SimpleNamespace(
+                admission=admission, status_version=running.status_version,
+            )
+            if on_activated is not None:
+                on_activated(activation)
+            return activation, result
+
+        def fail_admission(self, *args, **kwargs):
+            return self._real.fail_admission(*args, **kwargs)
+
+    monkeypatch.setattr(production_driver, "CanonicalAgentAdapter", _Adapter)
 
     # Run the dispatch thread inline so the assertions see a finished _run.
     def _inline_thread(target=None, args=(), kwargs=None, daemon=None):
@@ -102,7 +201,18 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
         routes_chat, "threading", SimpleNamespace(Thread=_inline_thread)
     )
 
-    res = routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
+    res = routes_chat.run_agentic_function_call(
+        "word_count",
+        {"text": "hi"},
+        "s1",
+        origin_window_id="window-2",
+        surface_ref={
+            "version": 1,
+            "window_id": "window-2",
+            "tab_id": "tab-submitted",
+            "access": "enabled",
+        },
+    )
     assert "error" not in res
 
     # A top-level code node exists on disk and HEAD points at it.
@@ -112,15 +222,49 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     node = tops[0]
     assert (node.metadata or {}).get("status") == "running"
     assert node.input == {"text": "hi"}
+    assert node.metadata["surface_origin"] == {
+        "version": 1,
+        "window_id": "window-2",
+        "tab_id": "tab-submitted",
+    }
+    assert set(node.metadata["surface_origin"]) == {
+        "version", "window_id", "tab_id",
+    }
     assert _head(store) == node.id
 
     # The child received the pre-created id as a ``|node:<id>`` anchor
     # suffix so its wrapper reuses it instead of appending a second node.
     assert captured["anchor"] == f"|node:{node.id}"
-    assert captured["execution_id"] == node.id
-    assert captured["record_exists"] is True
+    assert captured["execution_id"].startswith("exec_")
+    assert captured["execution_id"] != node.id
+    assert captured["record_exists"] is False
+    assert captured["run_active"] is True
     assert captured["provider"] == "minimax-cn-coding-plan"
     assert captured["model"] == "MiniMax-M3"
+    assert captured["surface_context_snapshot"]["origin_window_id"] == "window-2"
+    assert captured["surface_context_snapshot"]["origin_tab_id"] == "tab-submitted"
+
+    res = routes_chat.run_agentic_function_call(
+        "word_count",
+        {"text": "window only"},
+        "s1",
+        anchor_msg_id="pred:ROOT",
+        retry_of=node.id,
+        origin_window_id="window-2",
+        surface_ref={"version": 1, "window_id": "window-2"},
+    )
+    assert "error" not in res
+    window_only = next(
+        item for item in store.get_nodes("s1")
+        if item.input == {"text": "window only"}
+    )
+    assert window_only.metadata["retry_of"] == node.id
+    assert window_only.predecessor == "ROOT"
+    assert "retry_of" not in node.metadata
+    assert window_only.metadata["surface_origin"] == {
+        "version": 1,
+        "window_id": "window-2",
+    }
 
     from openprogram.agentic_programming import function as function_module
 
@@ -152,31 +296,27 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
 
     hidden_id = captured["execution_id"]
     assert res["execution_id"] == hidden_id
-    assert hidden_id
-    assert captured["record_exists"] is True
-    hidden_node = next(n for n in store.get_nodes("s1") if n.id == hidden_id)
+    assert hidden_id.startswith("exec_")
+    assert captured["record_exists"] is False
+    from openprogram.execution import default_store
+    assert default_store().get_execution(hidden_id) is not None
+    hidden_node = next(
+        n for n in store.get_nodes("s1")
+        if (n.metadata or {}).get("expose") == "hidden"
+    )
+    assert hidden_node.id != hidden_id
     assert hidden_node.input in (None, {})
     assert "do-not-persist" not in str(hidden_node)
     assert "do-not-persist" not in (store.get_session("s1") or {}).get("title", "")
     assert "do-not-persist" not in str(store.get_messages("s1"))
     assert hidden_node.metadata["expose"] == "hidden"
-    from openprogram.context.nodes import Call, ROLE_CODE
-    SessionNodeWriter(store, "s1").append(Call(
-        id="hidden-child",
-        role=ROLE_CODE,
-        name="nested_hidden_work",
-        input={"secret": "nested-do-not-persist"},
-        caller=hidden_id,
-        metadata={"status": "running"},
-    ))
     from openprogram.webui.graph_builder import build_session_graph
     from openprogram.webui._exec_dag import build_exec_dag_by_id
     graph = build_session_graph("s1")
-    assert all(row["id"] not in {hidden_id, "hidden-child"} for row in graph)
-    assert "nested-do-not-persist" not in str(graph)
+    assert all(row["id"] != hidden_id for row in graph)
+    assert "do-not-persist" not in str(graph)
     assert build_exec_dag_by_id("s1", hidden_id) is None
-    from openprogram.agent.run_control import cancel_execution
-    assert cancel_execution(hidden_id)["status"] == "cancelled"
+    assert default_store().get_execution(hidden_id).status.value == "completed"
 
     monkeypatch.setattr(
         "openprogram.programs.agent_tools", lambda names=None: [_Tool()])
@@ -206,8 +346,70 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     )
     assert "error" not in res
     assert captured["execution_id"]
-    assert captured["anchor"] == f"|node:{captured['execution_id']}"
-    assert captured["record_exists"] is True
+    assert captured["anchor"].startswith("|node:")
+    assert not captured["anchor"].endswith(captured["execution_id"])
+    assert captured["record_exists"] is False
+
+    class _StartFailureThread:
+        def start(self):
+            raise RuntimeError("thread unavailable")
+
+    monkeypatch.setattr(
+        routes_chat,
+        "threading",
+        SimpleNamespace(Thread=lambda **_kwargs: _StartFailureThread()),
+    )
+    captured.clear()
+
+    res = routes_chat.run_agentic_function_call(
+        "word_count", {"text": "thread cannot start"}, "s1",
+    )
+    assert res["code"] == "function_start_failed"
+    assert res["status_code"] == 500
+    assert captured["execution_id"].startswith("exec_")
+    from openprogram.execution import default_store as _execution_store
+    assert _execution_store().get_execution(
+        captured["execution_id"]
+    ).status.value == "failed"
+    from openprogram.webui import server as _server
+    with _server._running_tasks_lock:
+        assert "s1" not in _server._running_tasks
+    failed_node = next(
+        node for node in store.get_nodes("s1")
+        if node.input == {"text": "thread cannot start"}
+    )
+    # Admission succeeds before thread startup. A startup failure closes the
+    # parent-created DAG projection instead of leaving a permanent running
+    # node; the execution lifecycle is still finalized by AgentDriver.
+    assert failed_node.metadata["status"] == "failed"
+
+    monkeypatch.setattr(
+        routes_chat, "threading", SimpleNamespace(Thread=_inline_thread),
+    )
+    def _fail_dispatch(*_args, **_kwargs):
+        raise ImportError("dispatcher unavailable")
+
+    monkeypatch.setattr(
+        "openprogram.agent.dispatcher.dispatch_forced_tool_call",
+        _fail_dispatch,
+    )
+    captured.clear()
+    res = routes_chat.run_agentic_function_call(
+        "word_count", {"text": "dispatcher cannot import"}, "s1",
+    )
+
+    assert "error" not in res
+    assert captured["execution_id"].startswith("exec_")
+    assert _execution_store().get_execution(
+        captured["execution_id"]
+    ).status.value == "failed"
+    with _server._running_tasks_lock:
+        assert "s1" not in _server._running_tasks
+    import_failed_node = next(
+        node for node in store.get_nodes("s1")
+        if node.input == {"text": "dispatcher cannot import"}
+    )
+    assert import_failed_node.metadata["status"] == "failed"
 
     def _always_fail_precreate(**kwargs):
         raise RuntimeError("persistent pre-create failure")
@@ -223,6 +425,10 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     )
     assert res["code"] == "execution_record_failed"
     assert captured == {}
+    from openprogram.webui import server as _server
+    with _server._running_tasks_lock:
+        assert "s1" not in _server._running_tasks
+    _server._unregister_active_runtime("s1")
 
 
 def test_missing_session_model_refuses_before_dispatch(monkeypatch):
@@ -273,6 +479,9 @@ def test_missing_session_model_refuses_before_dispatch(monkeypatch):
     assert result["status_code"] == 409
     assert result["code"] == "no_model"
     assert dispatched == []
+    from openprogram.webui import server as web_server
+    with web_server._running_tasks_lock:
+        assert "s1" not in web_server._running_tasks
 
 
 # ---- 2. child reuse: wrapper with _forced_node_id set does not dupe -----
@@ -374,7 +583,7 @@ def test_create_pending_call_node_matches_wrapper_shape(tmp_path):
         expose="hidden", store=shim) is None
 
 
-# ---- 4. child error marks the pre-created running node -------------------
+# ---- 4. child error is reported to the canonical driver ------------------
 
 def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
     from openprogram.agent.dispatcher import forced_tool
@@ -417,8 +626,161 @@ def test_child_error_marks_precreated_running_node(monkeypatch, tmp_path):
     assert out["ok"] is False
     assert "pickle" in out["error"]
 
-    # The pre-created node no longer spins — flipped to error.
+    # The forced-tool leaf does not own lifecycle state; AgentDriver performs
+    # the terminal transition after receiving this result.
     node2 = next(n for n in store.get_nodes("s1") if n.id == "stuck1")
-    assert (node2.metadata or {}).get("status") == "error"
-    assert node2.output == {"error": "kwargs pickle failed"}
-    assert (node2.metadata or {}).get("error") == "kwargs pickle failed"
+    assert (node2.metadata or {}).get("status") == "running"
+    assert node2.output is None
+
+
+@pytest.mark.parametrize(
+    ("initial_status", "subprocess_out", "expected_status"),
+    [
+        ("running", {}, "completed"),
+        ("running", {"error": "child failed"}, "error"),
+        ("running", {"killed": True}, "interrupted"),
+        ("cancelling", {"killed": True}, "cancelled"),
+        ("completed", {"error": "late failure"}, "completed"),
+        ("error", {}, "error"),
+        ("interrupted", {}, "interrupted"),
+        ("cancelled", {}, "cancelled"),
+    ],
+)
+def test_parent_page_cleanup_failure_preserves_terminal_metadata(
+    monkeypatch, tmp_path, initial_status, subprocess_out, expected_status,
+):
+    from openprogram.agent.dispatcher import forced_tool
+    from openprogram.agentic_programming.function import create_pending_call_node
+
+    store = SessionStore(tmp_path / "sessions-git")
+    store.create_session("s1", "main", title="t")
+    shim = SessionNodeWriter(store, "s1")
+    node = create_pending_call_node(
+        pending_id="gui-cleanup",
+        function_name="gui_agent",
+        arguments={"task": "inspect", "surface": "browser"},
+        expose="io",
+        caller="",
+        store=shim,
+    )
+    shim.append(node)
+    original_result = {"status": "succeeded", "success": True}
+    original_metadata = {"status": initial_status}
+    if initial_status in {"cancelling", "cancelled"}:
+        original_metadata["reason_code"] = "cancel.user"
+    if initial_status == "error":
+        original_metadata["error"] = "original failure"
+    if initial_status in {"completed", "error", "interrupted", "cancelled"}:
+        original_metadata["finished_at"] = 123.0
+    shim.update(
+        "gui-cleanup",
+        output=original_result,
+        metadata=original_metadata,
+    )
+    cleanup_result = {
+        "status": "infeasible",
+        "success": False,
+        "infeasible_declared": True,
+        "reason_code": "page_cleanup_failed",
+        "summary": (
+            "The agent-created background Page could not be confirmed closed."
+        ),
+        "handoff_instruction": "Close the remaining background Page.",
+    }
+
+    monkeypatch.setattr(
+        "openprogram.agent.session_db.default_db", lambda: store,
+    )
+
+    class _Tool:
+        name = "gui_agent"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *args, **kwargs: _Tool() if name == _Tool.name else None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.process_runner.run_agentic_in_subprocess",
+        lambda **kwargs: {
+            "page_cleanup_failed": True,
+            "page_cleanup_result": cleanup_result,
+            **subprocess_out,
+        },
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.set_current_session_id", lambda _sid: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.reset_current_session_id", lambda _token: None,
+    )
+
+    result = forced_tool.dispatch_forced_tool_call(
+        session_id="s1",
+        anchor_msg_id="|node:gui-cleanup",
+        tool_name="gui_agent",
+        tool_input={"task": "inspect", "surface": "browser"},
+        surface_context_snapshot={"context_id": "ctx", "surfaces": []},
+    )
+
+    assert result["runtime_msg_id"] is None
+    assert result["ok"] is False
+    assert result["error"]
+    assert result["page_cleanup_result"] == cleanup_result
+    persisted = next(
+        item for item in store.get_nodes("s1") if item.id == "gui-cleanup"
+    )
+    assert persisted.metadata["status"] == initial_status
+    assert persisted.output == original_result
+    if initial_status in {"cancelling", "cancelled"}:
+        assert persisted.metadata["reason_code"] == "cancel.user"
+    if initial_status == "error":
+        assert persisted.metadata["error"] == "original failure"
+    if initial_status in {"completed", "error", "interrupted", "cancelled"}:
+        assert persisted.metadata["finished_at"] == 123.0
+    else:
+        assert "finished_at" not in persisted.metadata
+
+
+def test_browser_surface_capture_error_defers_to_child_handoff(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.agent.dispatcher import forced_tool
+
+    class _Tool:
+        name = "gui_agent"
+        _is_agentic = True
+
+    monkeypatch.setattr(
+        "openprogram.programs._runtime.get",
+        lambda name, *a, **k: _Tool() if name == _Tool.name else None,
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "capture_pages",
+        lambda: (_ for _ in ()).throw(RuntimeError("Page capture unavailable")),
+    )
+    seen = {}
+    monkeypatch.setattr(
+        "openprogram.agent.process_runner.run_agentic_in_subprocess",
+        lambda **kwargs: seen.update(kwargs) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.set_current_session_id", lambda _sid: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.reset_current_session_id", lambda _token: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.clear_cancel", lambda _sid: None,
+    )
+
+    result = forced_tool.dispatch_forced_tool_call(
+        session_id="s1",
+        anchor_msg_id="|node:gui-agent",
+        tool_name="gui_agent",
+        tool_input={"task": "inspect", "surface": "browser"},
+    )
+
+    assert result["ok"] is True
+    assert seen["surface_context_snapshot"]["surfaces"] == []
+    assert seen["surface_context_snapshot"]["origin_window_id"] == ""

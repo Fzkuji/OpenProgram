@@ -68,6 +68,16 @@ Windows CI 分为两部分：
 - installation smoke job 执行完整 PowerShell 安装，检查隔离环境与 Web build，启动
   worker，运行 `doctor`，然后停止 worker。
 
+进程存活与创建时间标识使用 Windows 原生只读查询，不使用信号零探测。
+文件操作日志使用共享跨进程锁适配器。正向应用与失败回滚使用不同的备份
+文件名，避免 Windows 的重命名规则阻断自动恢复。
+
+项目文件查询通过兼容层选择目录接口。工作区预览批量读取 Git 树、索引和
+不可变对象，并限制输出大小；回归测试约束 Git 调用次数，避免随变更文件数
+线性启动进程。自更新日志读取沿用 Windows 继承 ACL 的约定。这只证明状态
+展示和恢复记录可移植，不代表独立的 macOS 控制器与安装流程已支持 Windows；
+后者仍需 Windows 实现及原生端到端验收。
+
 ## W2 实现
 
 正式 Release matrix 在原生 Windows runner 上构建完整 Windows x86_64 与 arm64

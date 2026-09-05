@@ -27,7 +27,9 @@
 """
 from __future__ import annotations
 
-from ._common import predecessor_of, caller_of, ts, is_root
+from ._common import (
+    predecessor_of, caller_of, is_root, is_top_program_run, retry_source, ts,
+)
 
 
 def _is_spawn_root(m: dict) -> bool:
@@ -91,15 +93,19 @@ def compute_depth(
         for kid in kids:
             km = by_id[kid]
             is_conv_kid = predecessor_of(by_id, km) == nid
+            source = retry_source(km)
+            root_program = is_root(by_id[nid]) and is_top_program_run(km)
             # spawn 根与发起它的那轮同一行；但挂在 ROOT 下的（跨会话
             # spawn 落到目标会话）是本会话的头一条对话，照常往下一行走。
-            if _is_spawn_root(km) and not is_root(by_id[nid]):
+            if root_program:
+                start = depth[source] if source and source in depth else nxt
+            elif _is_spawn_root(km) and not is_root(by_id[nid]):
                 start = row              # 与发起 spawn 的那轮同一行
             elif is_conv_kid and fork_row is not None:
                 start = fork_row         # 与被改写的兄弟同一行
             else:
                 start = nxt
-            if is_conv_kid and fork_row is None:
+            if is_conv_kid and fork_row is None and not root_program:
                 fork_row = start
             nxt = max(nxt, _walk(kid, start))
         return nxt

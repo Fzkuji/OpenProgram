@@ -1095,6 +1095,9 @@ class Runtime:
                     "detail": q.detail,
                     "schema": q.schema,  # kind="form" 时非空
                     "questions": q.questions,  # kind="ask_many" 时非空
+                    "execution_id": q.execution_id,
+                    "wait_generation": q.wait_generation,
+                    "expected_version": q.execution_version,
                     "expires_at": q.expires_at,
                 },
                 transport,
@@ -2093,7 +2096,7 @@ class Runtime:
         if get_turn_request() is None:
             return agent_tools
         try:
-            from openprogram.agent.internals._approval import wrap_with_approval
+            from openprogram.agent.permissions.approval import wrap_with_approval
 
             req = inner_turn_request("program")
             if req is None:
@@ -2117,7 +2120,17 @@ class Runtime:
         content: list[dict],
         response_format: dict = None,
     ) -> Any:
-        return _run_async(self._async_call_via_providers(content, response_format))
+        call = self._async_call_via_providers(content, response_format)
+        # The lower transport layers consult the shared deadline before
+        # retrying, but a provider can remain silent after opening a stream.
+        # Bound the whole coroutine as well so Runtime.exec(timeout_s=...) is
+        # a real wall-clock limit rather than only a retry-boundary check.
+        from openprogram.providers.utils.deadline import remaining
+
+        time_left = remaining()
+        if time_left is not None:
+            call = asyncio.wait_for(call, timeout=max(0.0, time_left))
+        return _run_async(call)
 
     async def _async_call_via_providers(
         self,
@@ -2241,7 +2254,7 @@ class Runtime:
             # inside some agentic function body. Recover that function's
             # name from the recursion-depth tracker (innermost = deepest)
             # so the situational/self-recursion guidance is injected here
-            # too — otherwise standalone calls get no steering.
+            # too — otherwise standalone calls receive no situational guidance.
             standalone_prefix: list = []
             try:
                 from openprogram.agentic_programming.function import (

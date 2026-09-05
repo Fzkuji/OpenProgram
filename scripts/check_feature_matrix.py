@@ -32,7 +32,7 @@ HEADERS = (
 )
 FRAMEWORK_NAMES = HEADERS[1:]
 EXPECTED_SNAPSHOT = "2fb471b3"
-EXPECTED_INTEGRATION_SNAPSHOT = "33dd7d2c"
+EXPECTED_INTEGRATION_SNAPSHOT = "d91c3e66"
 JSON_SCHEMA_ROW = "按 JSON schema 约束输出"
 EXPECTED_SSRF_SNAPSHOT = "be5eaa3c"
 SSRF_ROW = "私网访问与 SSRF 防护"
@@ -208,6 +208,60 @@ def _visible_detail_rows(
     return rows
 
 
+def _validate_detail_group_counts(
+    source: str,
+    start_marker: str,
+    end_marker: str,
+    *,
+    label: str,
+) -> None:
+    start = source.index(start_marker)
+    end = source.index(end_marker, start)
+    declared: dict[str, int] = {}
+    actual: Counter[str] = Counter()
+    current_group: str | None = None
+
+    def plain(fragment: str) -> str:
+        return " ".join(unescape(re.sub(r"<[^>]+>", "", fragment)).split())
+
+    for attrs, body in re.findall(
+        r"<tr([^>]*)>(.*?)</tr>", source[start:end], re.DOTALL
+    ):
+        if re.search(
+            r"(?:^|\s)(?:hidden|aria-hidden\s*=)", attrs, re.IGNORECASE
+        ) or re.search(
+            r"(?:display\s*:\s*none|visibility\s*:\s*hidden)",
+            attrs,
+            re.IGNORECASE,
+        ):
+            raise MatrixError(f"hidden {label} row")
+        classes = re.search(r'class="([^"]*)"', attrs)
+        if classes and "grp" in classes.group(1).split():
+            heading = re.search(
+                r"<b[^>]*>(.*?)</b>\s*<span[^>]*>(\d+)\s*项</span>",
+                body,
+                re.DOTALL,
+            )
+            if not heading:
+                raise MatrixError(f"published {label} group heading is malformed")
+            current_group = plain(heading.group(1))
+            if current_group in declared:
+                raise MatrixError(f"duplicate published {label} group")
+            declared[current_group] = int(heading.group(2))
+        elif re.search(r'<td class="name">', body):
+            if current_group is None:
+                raise MatrixError(f"published {label} row appears before a group")
+            actual[current_group] += 1
+
+    if set(declared) != set(actual):
+        raise MatrixError(f"published {label} groups are incomplete")
+    for group, expected in declared.items():
+        if actual[group] != expected:
+            raise MatrixError(
+                f"published {label} group count for {group} does not match its rows"
+            )
+
+
 def _detail_identity(value: str) -> str:
     return "".join(value.split())
 
@@ -325,6 +379,12 @@ def check_matrix(path: Path) -> MatrixResult:
     )
     if published_gap_details != expected_gap_details:
         raise MatrixError("published gap detail rows do not match the canonical table")
+    _validate_detail_group_counts(
+        source,
+        '<h2 id="gaps"',
+        '<h3 id="newfound"',
+        label="gap detail",
+    )
 
     expected_only_details = Counter(
         (_detail_identity(row.name),)

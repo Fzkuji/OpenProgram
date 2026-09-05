@@ -33,6 +33,7 @@ from .dag import (
     normalize_parent_pointers,
     siblings,
     sibling_index,
+    sibling_navigation_index,
 )
 
 __all__ = [
@@ -47,4 +48,5 @@ __all__ = [
     "normalize_parent_pointers",
     "siblings",
     "sibling_index",
+    "sibling_navigation_index",
 ]

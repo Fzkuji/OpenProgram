@@ -7,8 +7,6 @@
  *  - `__centerTabs` / `__desktopTransfer` are debug handles for the
  *    desktop multi-window acceptance runs, which drive the renderer over
  *    CDP and can only reach the stores through `window`.
- *
- * CDN library globals (marked, KaTeX) are declared in `cdn-globals.d.ts`.
  */
 import type { DesktopBridge } from "./desktop-bridge";
 import type { useCenterTabs } from "./state/center-tabs-store";

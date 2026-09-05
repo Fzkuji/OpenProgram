@@ -3,10 +3,9 @@
 /**
  * Chat turn submit + stop.
  *
- * `submit` covers three outcomes in priority order: a mid-run QUEUE (a
- * message typed while a task runs is parked in the client-side send
- * queue and dispatched when the turn ends), a slash command, or a
- * normal turn. A normal turn
+ * `submit` first recognizes a whole-input registered function expression,
+ * then covers a mid-run queue/steer decision, a slash command, or a normal
+ * turn. A normal turn
  * expands long-paste tokens and `@path` mentions, converts pending docs
  * into path mentions plus `type:"document"` attachments, and hands the
  * payload to `sendChatMessage` — the bridge that fires the optimistic user
@@ -19,7 +18,12 @@
 import { useCallback } from "react";
 
 import { useSessionStore } from "@/lib/session-store";
+import { runtimeState } from "@/lib/runtime-bridge/state";
+import { parseFunctionInvocation } from "@/lib/function-invocation";
+import { showToast } from "@/lib/format-utils/toast";
 import { enqueueMessage } from "@/lib/state/send-queue";
+import { steerQueuedMessage } from "@/lib/state/steer-message";
+import { useFunctions } from "@/lib/state/functions-store";
 import { buildAttachmentEnvelope } from "@/lib/attachment-marker";
 import { expandAtMentions } from "../attach/at-mention";
 import { expandPasteTokens, missingPasteIds } from "../paste/paste-store";
@@ -27,6 +31,7 @@ import { sendChatMessage } from "./send-chat-message";
 import { resolveFnFormSessionId } from "../modes/fn-form/session-target";
 import type { useComposerAttachments } from "../attach/use-composer-attachments";
 import type { useSlashMenu } from "../slash/use-slash-menu";
+import type { FunctionDispatcher } from "../modes/fn-form/use-function-dispatch";
 
 type Attachments = ReturnType<typeof useComposerAttachments>;
 
@@ -51,6 +56,8 @@ export interface ChatSubmitOptions {
   webSearchEnabled: boolean;
   fastEnabled: boolean;
   fastSupported: boolean;
+  runningMessageMode: "queue" | "steer";
+  dispatchFunction: FunctionDispatcher;
 }
 
 export function useChatSubmit({
@@ -74,17 +81,39 @@ export function useChatSubmit({
   webSearchEnabled,
   fastEnabled,
   fastSupported,
+  runningMessageMode,
+  dispatchFunction,
 }: ChatSubmitOptions) {
   const submit = useCallback(async () => {
     const submitOwnerKey = activeChatKey ?? currentSessionId;
     const trimmed = input.trim();
-    // While a task is running, a sent message is QUEUED, not dispatched:
-    // the backend rejects a concurrent `chat` outright (`code:"run_active"`
-    // in ws_actions/chat.py), so the only honest options are "refuse" or
-    // "hold it until the turn ends". We hold it — the row appears in the
-    // transcript right away as a dimmed "queued" bubble and goes out on
-    // its own when the running task clears. The user can drop it or stop
-    // the current turn to jump it ahead from that row.
+    const invocation = parseFunctionInvocation(
+      trimmed,
+      useFunctions.getState().functions,
+    );
+    if (invocation.kind === "invalid") {
+      useSessionStore.getState().openFnForm(invocation.fn, invocation.prefill);
+      showToast(`Invalid function call: ${invocation.error}`, { tone: "error" });
+      return;
+    }
+    if (invocation.kind === "valid") {
+      if (pendingImages.length > 0 || pendingDocs.length > 0) {
+        showToast(
+          "Attachments cannot be added to a direct function call. Remove them or send a normal message.",
+          { tone: "error" },
+        );
+        return;
+      }
+      const accepted = dispatchFunction(invocation.fn, invocation.kwargs);
+      if (!accepted) return;
+      setComposerInputFor(submitOwnerKey, "");
+      setHistoryIndex(-1);
+      slash.close();
+      return;
+    }
+    // During a run every plain-text send first gets one retained queue row.
+    // Queue mode leaves it there; steer mode marks that same row injecting
+    // until steer_ack either accepts it or releases it back to normal drain.
     // (Plain text only — attachments / slash go through the normal path,
     // which is disabled while running.)
     if (isRunning) {
@@ -97,6 +126,7 @@ export function useChatSubmit({
         webSearchEnabled,
         serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
         background: bound !== null,
+        injecting: false,
       }, pendingImages.length + pendingDocs.length);
       if (!queuedId) {
         // 队列只收纯文本；带附件的草稿保持原样并提示，而不是无声 no-op
@@ -107,6 +137,9 @@ export function useChatSubmit({
       }
       setComposerInputFor(submitOwnerKey, "");
       setHistoryIndex(-1);
+      if (runningMessageMode === "steer") {
+        void steerQueuedMessage(submitOwnerKey, queuedId);
+      }
       return;
     }
     // Allow image-only submits — the LLM can answer "describe this
@@ -220,6 +253,8 @@ export function useChatSubmit({
     webSearchEnabled,
     fastEnabled,
     fastSupported,
+    runningMessageMode,
+    dispatchFunction,
     // ponytail: `bound` and `setHistoryIndex` are stable for a composer
     // instance, so the pre-split dep list omitted them; kept identical.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -250,19 +285,53 @@ export function stopSession(
 ): void {
   const store = useSessionStore.getState();
   const task = store.runningTasks[targetSessionId];
-  const executionId =
-    task?.execution_id
-    || (task?.msg_id ? `${task.msg_id}_reply` : "");
+  const executionId = task?.execution_id || "";
+  const expectedVersion = task?.status_version;
+  const commandId = crypto.randomUUID();
+  const direct = executionId ? store.messagesById[executionId] : undefined;
+  let optimisticMessage = direct;
+  if (!optimisticMessage) {
+    const ids = store.messageOrder[targetSessionId] || [];
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const m = store.messagesById[ids[i]];
+      if (!m || m.role !== "assistant") continue;
+      if (
+        m.status === "done" || m.status === "completed"
+        || m.status === "cancelled" || m.status === "error"
+        || m.status === "cancelling"
+      ) break;
+      optimisticMessage = m;
+      break;
+    }
+  }
   // 1. Tell the server first so the model HTTP stream can abort.
-  if (executionId) {
-    send({ action: "execution.cancel", execution_id: executionId });
-  } else {
-    send({ action: "stop", session_id: targetSessionId });
+  if (executionId && typeof expectedVersion === "number") {
+    runtimeState._optimisticCancels[commandId] = {
+      sessionId: targetSessionId,
+      task: { ...task },
+      messageId: optimisticMessage?.id,
+      previousMessageStatus: optimisticMessage?.status,
+    };
+    const sent = send({
+      action: "execution.cancel",
+      command_id: commandId,
+      execution_id: executionId,
+      expected_version: expectedVersion,
+    });
+    if (!sent) delete runtimeState._optimisticCancels[commandId];
+  } else if (task) {
+    // The Stop button can win the ACK/activation race while the task still
+    // has only its local placeholder. Keep a session-level pending-stop
+    // record so chat_ack
+    // cannot revive that turn without first issuing an exact cancel.
+    runtimeState._optimisticStops[targetSessionId] = {
+      messageId: optimisticMessage?.id,
+      previousMessageStatus: optimisticMessage?.status,
+    };
   }
   // 2. Patch the live assistant to cancelled. Keep streamed text.
-  //    优先补丁 runningTask 指向的那条（execution_id / {msg_id}_reply）：
-  //    从后往前扫在末尾有已完成 runtime 行时会提前 break，父气泡漏标。
-  const direct = executionId ? store.messagesById[executionId] : undefined;
+  //    Only the server-issued execution identity can identify the exact
+  //    assistant message. A message id is not an execution owner.
   if (direct) {
     const s = direct.status;
     if (s !== "done" && s !== "completed" && s !== "cancelled" && s !== "error") {
@@ -271,20 +340,10 @@ export function stopSession(
     store.setRunningTaskFor(targetSessionId, null, "always");
     return;
   }
-  const ids = store.messageOrder[targetSessionId] || [];
-  for (let i = ids.length - 1; i >= 0; i--) {
-    const m = store.messagesById[ids[i]];
-    if (!m) continue;
-    if (m.role !== "assistant") continue;
-    if (
-      m.status === "done" || m.status === "completed"
-      || m.status === "cancelled" || m.status === "error"
-      || m.status === "cancelling"
-    ) break;
-    store.updateMessage(targetSessionId, m.id, {
+  if (optimisticMessage) {
+    store.updateMessage(targetSessionId, optimisticMessage.id, {
       status: "cancelled",
     });
-    break;
   }
   // 3. Drop the running task so the send queue drains immediately.
   //    Leaving a cancelling flag on the task was the composer lock.

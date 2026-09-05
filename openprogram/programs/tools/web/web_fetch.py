@@ -34,7 +34,7 @@ import httpx
 from openprogram.security.safe_http import safe_client
 from openprogram.security.url_policy import URLPolicyError, normalize_origin
 from openprogram.programs._helpers import read_bool_param, read_int_param, read_string_param
-from openprogram.programs._runtime import function
+from openprogram.programs._runtime import ToolReturn, function
 
 
 NAME = "web_fetch"
@@ -366,6 +366,11 @@ def execute(
 
 
 
+def _execute_agent_tool(**kwargs) -> ToolReturn:
+    text = execute(**kwargs)
+    return ToolReturn(text=text, is_error=text.startswith("Error:"))
+
+
 # Register as an AgentTool. ``execute`` stays a plain callable so any
 # existing import-and-call sites keep working; the return value (an
 # AgentTool) is discarded — it's already in the registry.
@@ -377,6 +382,6 @@ function(
     max_result_chars=30_000,
     persist_full=True,
     url_params=["url"],
-)(execute)
+)(_execute_agent_tool)
 
 __all__ = ["NAME", "SPEC", "execute", "DESCRIPTION"]

@@ -15,7 +15,7 @@ import { type GNode } from "./types";
 import { runtimeState } from "../state";
 import { flushPendingHistoryEmit, render } from "./pipeline";
 import { _recomputeVisibility } from "./render/visibility";
-import { _installInteractionHandlers } from "./render/interaction";
+import { _installInteractionHandlers } from "./interaction/nodes";
 import {
   contextRangeUnchanged,
   type CoverageNode,
@@ -147,4 +147,3 @@ export function enterExclusiveCoverageMode(): void {
   if (sid) refreshHistoryContextRange(sid);
   else _recomputeVisibility();
 }
-

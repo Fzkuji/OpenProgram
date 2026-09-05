@@ -1,9 +1,20 @@
 """agent tool — same-session spawn from inside a turn."""
 from __future__ import annotations
 
+import atexit
 from contextvars import copy_context
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _runner_lifecycle():
+    """Close the singleton pool created by synchronous agent turns."""
+    from openprogram.agent.job import runner as runner_mod
+
+    runner_mod.shutdown_runner()
+    yield
+    runner_mod.shutdown_runner()
 
 
 @pytest.fixture
@@ -14,6 +25,12 @@ def store(tmp_path, monkeypatch):
     from openprogram import store as store_mod
 
     runner_mod.shutdown_runner()
+    # Pair the canonical execution database with this test's session store;
+    # runner startup must not recover executions left by unrelated tests.
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path",
+        lambda: tmp_path / "executions.db",
+    )
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
     monkeypatch.setattr(store_mod, "default_store", lambda: s)
@@ -30,8 +47,17 @@ def store(tmp_path, monkeypatch):
         "timestamp": 0, "predecessor": "u1",
     })
     s.commit_turn("p1", "init")
-    yield s
-    runner_mod.shutdown_runner()
+    try:
+        yield s
+    finally:
+        runner_mod.shutdown_runner()
+        timer = s._index_timer
+        try:
+            s._flush_index()
+        finally:
+            if timer is not None:
+                timer.join(timeout=1)
+            atexit.unregister(s._flush_index)
 
 
 @pytest.fixture
@@ -60,12 +86,23 @@ def fake_dispatcher(monkeypatch):
         s = default_db()
         u_id = "u_" + str(len(captured))
         a_id = "a_" + str(len(captured))
-        s.append_message(req.session_id, {
-            "id": u_id, "role": "user", "content": req.user_text,
-            "timestamp": 0, "predecessor": req.branch_from,
-            "source": req.source,
-            "agent_id": req.agent_id,
-        })
+        if req.branch_from is None and req.spawn_caller:
+            s.spawn_branch(
+                req.session_id,
+                req.spawn_caller,
+                source=req.source,
+                node_id=u_id,
+                prompt=req.user_text,
+                created_at=0,
+                register_head=req.advance_head,
+            )
+        else:
+            s.append_message(req.session_id, {
+                "id": u_id, "role": "user", "content": req.user_text,
+                "timestamp": 0, "predecessor": req.branch_from,
+                "source": req.source,
+                "agent_id": req.agent_id,
+            })
         s.append_message(req.session_id, {
             "id": a_id, "role": "assistant", "content": "(spawned reply)",
             "timestamp": 0, "predecessor": u_id,

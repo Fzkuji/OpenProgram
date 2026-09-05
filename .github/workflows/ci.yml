@@ -138,9 +138,9 @@ jobs:
         with:
           enable-cache: true
       - name: Install locked Python dependencies
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --extra dev --extra browser
       - name: Non-browser end-to-end tests
-        run: uv run --locked --extra dev python -m pytest -q -m "not browser" tests/e2e
+        run: uv run --locked --extra dev --extra browser python -m pytest -q -m "not browser" tests/e2e
 
   coverage:
     runs-on: ubuntu-latest
@@ -197,7 +197,9 @@ jobs:
           tests/component/security/test_sandbox.py
           tests/component/config/test_formal_release_updates.py
           tests/unit/dag
-          tests/unit/agent/test_finalize_shadow_git.py::test_turn_file_diff_is_exact_after_fallback_commit
+          tests/unit/agent/test_finalize_shadow_git.py
+          tests/component/webui/test_project_files.py
+          tests/component/webui/test_turn_files_ws.py
           tests/component/config/test_upgrade_cmd.py
           tests/component/store/test_backup_command.py
           tests/component/store/test_backup_staged_restore.py

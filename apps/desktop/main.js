@@ -2,10 +2,11 @@
 const {
   app,
   BrowserWindow,
+  clipboard,
   WebContentsView,
   Menu,
   dialog,
-  ipcMain,
+  ipcMain: nativeIpcMain,
   powerMonitor,
   session,
   shell,
@@ -18,6 +19,11 @@ const https = require("https");
 const path = require("path");
 const { Buffer } = require("buffer");
 const { resolveAuthenticatedStartUrl } = require("./worker-start-url");
+const { createSelfUpdateReopen, registerReopenIpc } = require("./self-update-reopen");
+const { registerUiVerificationIpc } = require("./self-update-ui");
+const { createUiVerificationGuard } = require("./self-update-ui-guard");
+const uiVerificationGuard = createUiVerificationGuard(nativeIpcMain);
+const { ipcMain } = uiVerificationGuard;
 const { resolvePackagedWorker } = require("./packaged-runtime");
 const { DesktopUpdateService, desktopUpdateFetch } = require("./update-service");
 const {
@@ -79,6 +85,7 @@ const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
 const START_URL =
   process.env.OPENPROGRAM_DESKTOP_URL || `http://127.0.0.1:${WEB_PORT}/chat`;
 const UI_ORIGIN = new URL(START_URL).origin;
+const selfUpdateReopen = createSelfUpdateReopen({ argv: process.argv, origin: UI_ORIGIN });
 const HEALTH_URL = new URL("/healthz", START_URL).toString();
 const WORKER_COMMAND = "openprogram worker start";
 const RECOVERY_INTERVAL_MS = 3_000;
@@ -340,7 +347,8 @@ async function runWindowRecoveryProbe(ctx) {
   } else if (action === "load" && !ctx.win.isDestroyed()) {
     if (state.timer !== null) clearInterval(state.timer);
     state.timer = null;
-    void ctx.win.loadURL(authenticated).catch(() => {});
+    const startUrl = await selfUpdateReopen.resolveStartUrl(ctx, authenticated);
+    if (!ctx.win.isDestroyed()) void ctx.win.loadURL(startUrl).catch(() => {});
   }
 }
 
@@ -1763,6 +1771,94 @@ function isTabUrl(u) {
   }
 }
 
+function sendWebTabPopup(record, popupUrl) {
+  if (!record || !isWebUrl(popupUrl) || tabTransfers.isLocked(record.id)) {
+    return false;
+  }
+  const owner = ownerOf(record);
+  if (!owner) return false;
+  owner.win.webContents.send("webtab:popup", {
+    openerId: record.id,
+    url: popupUrl,
+  });
+  return true;
+}
+
+function showWebTabContextMenu(record, params = {}) {
+  const owner = ownerOf(record);
+  if (!owner || tabTransfers.isLocked(record.id)) return false;
+  const ownerId = owner.id;
+  const wc = record.view.webContents;
+  const exact = (action) => () => {
+    const current = ownerOf(record);
+    if (
+      !current
+      || current.id !== ownerId
+      || tabTransfers.isLocked(record.id)
+      || wc.isDestroyed()
+    ) return;
+    action();
+  };
+  const template = [];
+  const linkUrl = isWebUrl(params.linkURL) ? params.linkURL : "";
+  if (linkUrl) {
+    template.push(
+      {
+        label: "Open Link in New Tab",
+        click: exact(() => { sendWebTabPopup(record, linkUrl); }),
+      },
+      {
+        label: "Copy Link Address",
+        click: exact(() => { clipboard.writeText(linkUrl); }),
+      },
+    );
+  }
+
+  const editFlags = params.editFlags || {};
+  if (params.isEditable) {
+    if (template.length) template.push({ type: "separator" });
+    template.push(
+      { label: "Undo", enabled: !!editFlags.canUndo, click: exact(() => wc.undo()) },
+      { label: "Redo", enabled: !!editFlags.canRedo, click: exact(() => wc.redo()) },
+      { type: "separator" },
+      { label: "Cut", enabled: !!editFlags.canCut, click: exact(() => wc.cut()) },
+      { label: "Copy", enabled: !!editFlags.canCopy, click: exact(() => wc.copy()) },
+      { label: "Paste", enabled: !!editFlags.canPaste, click: exact(() => wc.paste()) },
+      { label: "Select All", enabled: !!editFlags.canSelectAll, click: exact(() => wc.selectAll()) },
+    );
+  } else {
+    if (params.selectionText) {
+      if (template.length) template.push({ type: "separator" });
+      template.push({
+        label: "Copy",
+        enabled: editFlags.canCopy !== false,
+        click: exact(() => wc.copy()),
+      });
+    }
+    if (template.length) template.push({ type: "separator" });
+    template.push(
+      {
+        label: "Back",
+        enabled: wc.navigationHistory.canGoBack(),
+        click: exact(() => wc.navigationHistory.goBack()),
+      },
+      {
+        label: "Forward",
+        enabled: wc.navigationHistory.canGoForward(),
+        click: exact(() => wc.navigationHistory.goForward()),
+      },
+      { label: "Reload", click: exact(() => wc.reload()) },
+    );
+  }
+
+  Menu.buildFromTemplate(template).popup({
+    window: owner.win,
+    ...(params.frame ? { frame: params.frame } : {}),
+    ...(params.menuSourceType ? { sourceType: params.menuSourceType } : {}),
+  });
+  return true;
+}
+
 function loadView(record, url) {
   const pending = record.navigation;
   if (pending && pending.url === url) return pending.promise;
@@ -1790,6 +1886,8 @@ function loadView(record, url) {
 // re-mounts the renderer pane, which calls ensure again — reloading
 // here would throw away scroll/form/SPA state and defeat the whole
 // persistent-view design. Explicit navigation goes through navigate.
+const HIDDEN_WEBTAB_BOUNDS = { x: 0, y: 0, width: 1280, height: 800 };
+
 function ensureView(ctx, id, url) {
   if (!ctx || typeof id !== "string" || !id) return null;
   if (tabTransfers.isLocked(id)) return null;
@@ -1801,20 +1899,21 @@ function ensureView(ctx, id, url) {
     record = { id, view, ownerId: ctx.id, navigation: null, findRequestId: null };
     ctx.views.set(id, record);
     ctx.win.contentView.addChildView(view);
+    // A never-shown Page otherwise has a 0x0 viewport, so neither Electron
+    // nor CDP can capture it. Keep a real CSS viewport while the native view
+    // stays hidden; visible layouts replace these bounds before showing it.
+    view.setBounds(HIDDEN_WEBTAB_BOUNDS);
     view.setVisible(false);
     const wc = view.webContents;
     // Native popup windows are disabled. A valid web popup is delegated to
     // this record's renderer window, which creates a distinct Browser tab and
     // leaves the opener Page (and any exact-page agent session) unchanged.
     wc.setWindowOpenHandler(({ url: popupUrl }) => {
-      if (isWebUrl(popupUrl)) {
-        const owner = ownerOf(record);
-        owner?.win.webContents.send("webtab:popup", {
-          openerId: id,
-          url: popupUrl,
-        });
-      }
+      sendWebTabPopup(record, popupUrl);
       return { action: "deny" };
+    });
+    wc.on("context-menu", (_event, params) => {
+      showWebTabContextMenu(record, params);
     });
     for (const ev of [
       "did-navigate",
@@ -1971,8 +2070,13 @@ function stopFindView(ctx, id, action) {
 async function captureView(ctx, id) {
   const record = recordFor(ctx, id);
   if (!record) return null;
+  const contents = record.view.webContents;
   try {
-    const image = await record.view.webContents.capturePage();
+    const image = await contents.capturePage(
+      undefined,
+      { stayHidden: true },
+    );
+    if (recordFor(ctx, id) !== record || contents.isDestroyed()) return null;
     if (!image || (typeof image.isEmpty === "function" && image.isEmpty())) {
       return null;
     }
@@ -3489,6 +3593,9 @@ const ensureMainWindow = createMainWindowGate({
   windows,
   createWindow,
 });
+registerReopenIpc({ ipcMain, windows, recovery: selfUpdateReopen, origin: UI_ORIGIN });
+registerUiVerificationIpc({ ipcMain, windows, app, origin: UI_ORIGIN,
+  request: selfUpdateReopen.requestVerification, guard: uiVerificationGuard });
 
 async function createWindow(options = {}) {
   const state = loadWindowState();
@@ -3548,6 +3655,7 @@ async function createWindow(options = {}) {
   });
   // External links from the app itself (not web tabs) open in the system browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (uiVerificationGuard.blocked(win.webContents)) return { action: "deny" };
     try {
       const u = new URL(url);
       if (u.protocol === "http:" || u.protocol === "https:") shell.openExternal(url);
@@ -3560,6 +3668,7 @@ async function createWindow(options = {}) {
   // bridge is exposed to whatever document runs there. Remote links
   // (docs footer, message content) go to the system browser instead.
   win.webContents.on("will-navigate", (e, url) => {
+    if (uiVerificationGuard.blocked(win.webContents)) { e.preventDefault(); return; }
     try {
       const dest = new URL(url);
       if (dest.origin === UI_ORIGIN) return;
@@ -3579,8 +3688,14 @@ async function createWindow(options = {}) {
   );
   // Renderer reload (Cmd+R) resets the renderer's view bookkeeping —
   // orphaned WebContentsViews would leak until quit. Start clean.
-  win.webContents.on("did-navigate", () => clearOwnedViews(ctx));
-  const startUrl = await resolveStartUrl();
+  win.webContents.on("did-navigate", (_event, url) => {
+    clearOwnedViews(ctx);
+    selfUpdateReopen.observeNavigation(ctx, url);
+  });
+  win.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) selfUpdateReopen.observeNavigation(ctx, url);
+  });
+  const startUrl = await selfUpdateReopen.resolveStartUrl(ctx, await resolveStartUrl());
   void win.loadURL(startUrl).catch(() => {});
   if (isErrorPageUrl(startUrl)) {
     startWindowRecovery(ctx, false);

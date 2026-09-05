@@ -8,6 +8,7 @@ Agent execution runtime — the run loop, worktrees, async tasks, streaming/resu
 - [`execution/agent-call-flow.md`](execution/agent-call-flow.md) — the call-flow skeleton (turn / loop, orthogonal to the node model)
 - [`execution/agent-worktree.md`](execution/agent-worktree.md)
 - [`execution/async-job-lifecycle.md`](execution/async-job-lifecycle.md)
+- [`execution/execution-control.html`](execution/execution-control.html) — **authoritative**: unified pause, continue, step, steering, cancellation, checkpoint, revision, and recovery contract
 - [`execution/dispatcher-split.md`](execution/dispatcher-split.md) — break `agent/dispatcher.py` into a responsibility-scoped package (no-1000-line rule)
 - [`operations/file-management.html`](operations/file-management.html) — authoritative file attribution, Review, Undo, Restore, branch alignment, and multi-agent ownership
 - [`overview.md`](overview.md)

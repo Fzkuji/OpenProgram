@@ -80,16 +80,11 @@ export function removeShortcut(url: string): Shortcut[] {
   return save(readShortcuts().filter((item) => item.url !== url));
 }
 
-/** Bare host for favicon lookup / fallback colour; "" when unparseable. */
+/** Bare host for the local initial's fallback colour; "" when unparseable. */
 export function hostOf(url: string): string {
   try {
     return new URL(url.includes("://") ? url : `https://${url}`).hostname;
   } catch {
     return "";
   }
-}
-
-export function faviconUrl(url: string): string {
-  const host = hostOf(url);
-  return host ? `https://www.google.com/s2/favicons?domain=${host}&sz=64` : "";
 }

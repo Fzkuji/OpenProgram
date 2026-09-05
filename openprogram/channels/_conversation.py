@@ -21,6 +21,7 @@ dispatch 流程紧绑, 不适合拆出去因为需要在 closure 里共享 state
 """
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from typing import Optional
@@ -60,6 +61,11 @@ def _session_lock_for(session_key: str) -> threading.Lock:
         if lock is None:
             lock = _SESSION_LOCKS[session_key] = threading.Lock()
         return lock
+
+
+def execution_mapping(session_id: str, execution_id: str | None) -> dict[str, str | None]:
+    """Keep channel turn identity explicit for control/replay adapters."""
+    return {"session_id": session_id, "execution_id": execution_id}
 
 
 # ---------------------------------------------------------------------------
@@ -146,8 +152,19 @@ def dispatch_inbound(
     # /answer <qid> <choice> 文本消息回答（聊天软件没有网页那种问题卡片）。
     # 命中且该 qid 属于本 session 才 resolve 并回执，不走 agent dispatch；
     # 否则（不是命令 / qid 不属于本 session）返回 None，照常进 agent。
+    from openprogram.agent.authority import paired_channel_authority
+    _question_actor = paired_channel_authority(
+        channel, account_id, speaker_id or "", speaker_display or user_display,
+    )
+    _question_actor.update({
+        "project_ids": ["default"],
+        "session_ids": [session_key],
+        "execution_actions": ["execution.wait.answer", "execution.wait.decline"],
+    })
     from openprogram.channels._question_commands import try_handle_question_command
-    _receipt = try_handle_question_command(user_text, session_key)
+    _receipt = try_handle_question_command(
+        user_text, session_key, actor=_question_actor,
+    )
     if _receipt is not None:
         return _receipt
 
@@ -245,11 +262,10 @@ def _run_session_turn(
         except Exception:
             pass
 
-    # ---- dispatcher 调用 + stream event 监听 ----------------------------
-    from openprogram.agent.dispatcher import (
-        TurnRequest,
-        process_user_turn,
-    )
+    # ---- canonical Agent admission + stream event 监听 ------------------
+    from openprogram.agent.authority import paired_channel_authority
+    from openprogram.agent.dispatcher import TurnRequest
+    from openprogram.agent.production_driver import CanonicalAgentAdapter
 
     captured_user_id: list[str] = []
     captured_assistant_id: list[str] = []
@@ -285,7 +301,6 @@ def _run_session_turn(
                     break
             _maybe_edit("\n".join(progress_lines))
 
-    from openprogram.agent.authority import paired_channel_authority
     _authority = paired_channel_authority(
         channel, account_id, speaker_id or "",
         speaker_display or user_display,
@@ -306,20 +321,18 @@ def _run_session_turn(
         attachments=attachments or None,
         **_authority,
     )
-    # 让本 turn 期间的 runtime.ask 知道"有前端能答"（can_ask=True）且
-    # question.asked 带上正确的 channel session_id —— 否则裸 runtime.ask
-    # （不在 agentic 子进程里那条路径）会因没设会话而走 headless 分支。
-    # agentic function 走子进程时 _child_entry 另设同一个 session id。
+    adapter = CanonicalAgentAdapter(event_sink=_on_event)
     try:
-        from openprogram.agent.run_control import (
-            set_current_session_id as _set_cid,
-            reset_current_session_id as _reset_cid,
+        admission = adapter.admit(
+            req,
+            trusted_actor=_authority,
+            user_message_id=req.user_msg_id,
+            config_snapshot_ref=f"channel:{channel}",
         )
-        _cid_tok = _set_cid(session_key)
-    except Exception:
-        _cid_tok = None
-    try:
-        result = process_user_turn(req, on_event=_on_event)
+        _active, result = asyncio.run(adapter.activate(admission))
+        # Preserve the exact channel turn -> canonical execution association
+        # for reconnect/control adapters; do not infer it from peer ids.
+        execution = execution_mapping(session_key, admission.execution_id)
     except Exception as e:  # noqa: BLE001
         err_text = f"[error] {type(e).__name__}: {e}"
         if progress_handle is not None:
@@ -328,13 +341,9 @@ def _run_session_turn(
             _maybe_edit(err_text, force=True)
             return None
         return err_text
-    finally:
-        if _cid_tok is not None:
-            try:
-                _reset_cid(_cid_tok)
-            except Exception:
-                pass
 
+    if result is None:
+        return "[error] canonical Agent activation produced no result"
     reply_text = (result.final_text or "").strip() or "(empty reply)"
     user_msg_id = result.user_msg_id
     assistant_msg_id = result.assistant_msg_id

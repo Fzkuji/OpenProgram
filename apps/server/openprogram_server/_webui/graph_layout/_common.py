@@ -28,5 +28,21 @@ def is_root(m: dict) -> bool:
     return m.get("display") == "root"
 
 
+def is_top_program_run(m: dict) -> bool:
+    """A user-invoked Program entry, not an internal execution node."""
+    caller = m.get("caller") or ""
+    return bool(
+        not is_root(m)
+        and m.get("role") in ("tool", "code")
+        and caller in ("", "ROOT")
+        and (m.get("function") or m.get("name"))
+    )
+
+
+def retry_source(m: dict) -> Optional[str]:
+    value = m.get("retry_of")
+    return value if isinstance(value, str) and value else None
+
+
 def ts(by_id: dict[str, dict], nid: str) -> float:
     return (by_id.get(nid) or {}).get("created_at") or 0.0

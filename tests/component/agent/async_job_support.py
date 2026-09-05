@@ -13,29 +13,6 @@ from tests.support.waiting import wait_until
 # Defender latency can make a healthy pickup exceed the old one-second waits.
 WORKER_START_TIMEOUT = 5.0
 
-
-def _wait_for_stamped_cancel_reason(session_id: str) -> None:
-    """Hold the fake turn until cancel has a stored reason.
-
-    ``mark_cancelled`` trips the token before ``_cancel_single`` stamps
-    ``reason_code``. Returning on the token alone lets the runner finalize
-    as ``cancel.user`` even when the trigger was an idle/runtime budget.
-    """
-    from openprogram.agent.job.store import load_job
-    from openprogram.agent.run_control import get_current_execution_id
-
-    job_id = get_current_execution_id()
-    if not job_id:
-        return
-    wait_until(
-        lambda: (
-            (job := load_job(session_id, job_id)) is not None
-            and bool(job.reason_code)
-        ),
-        timeout=1.0,
-    )
-
-
 class _FakeMonotonic:
     def __init__(self) -> None:
         self._value = 0.0
@@ -87,12 +64,12 @@ def fake_worker(monkeypatch):
     cancel_seen = threading.Event()  # set inside fake when ev fires
     entered = threading.Event()  # set once the worker is INSIDE fake_run
 
-    def fake_run(*, session_id, prompt, agent_id, branch_from=None, label=None, spawn_caller=None, advance_head=True):
+    def fake_run(*, request, cancel_event, **_kwargs):
         from openprogram.agent.sub_agent_run import AgentTurnResult
-        from openprogram.agent.run_control import is_cancelled
         calls.append({
-            "session_id": session_id, "prompt": prompt,
-            "agent_id": agent_id, "branch_from": branch_from, "label": label,
+            "session_id": request.session_id, "prompt": request.user_text,
+            "agent_id": request.agent_id, "branch_from": request.branch_from,
+            "label": None,
         })
         # Signal "worker is past the pending→running transition and
         # actually executing fake_run". Tests that want to cancel
@@ -100,12 +77,9 @@ def fake_worker(monkeypatch):
         # the runner can flip pending→cancelled before the worker
         # picks up the future and the worker body never runs.
         entered.set()
-        # Hold until the test releases the barrier or this job is
-        # cancelled with a stamped reason. Returning on the token
-        # alone races the budget/user stamp and finalizes as cancel.user.
+        # Hold until the test releases the barrier or this job is cancelled.
         while not barrier.is_set():
-            if is_cancelled(session_id):
-                _wait_for_stamped_cancel_reason(session_id)
+            if cancel_event.is_set():
                 cancel_seen.set()
                 return AgentTurnResult(head_id="head_x", final_text="",
                                        failed=True, error="cancelled")
@@ -115,7 +89,8 @@ def fake_worker(monkeypatch):
 
     import openprogram.agent.job.runner as runner_mod
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", fake_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(fake_run),
     )
     yield calls, barrier, cancel_seen, entered
     # Cleanup any singleton runner so the next test gets a fresh pool.

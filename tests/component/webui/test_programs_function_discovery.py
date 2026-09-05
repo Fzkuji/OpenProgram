@@ -3,7 +3,34 @@ from pathlib import Path
 from openprogram.webui._functions import (
     _discover_workflow_functions,
     _extract_all_functions,
+    _extract_function_info,
 )
+
+
+def test_goal_launcher_keeps_original_prompt_schema_through_ownership_wrapper():
+    import openprogram.programs.workflow.goal  # register the public entry
+
+    row = next(row for row in _discover_workflow_functions(set()) if row["name"] == "goal")
+    assert "prompt" in row["params"]
+    assert row["filepath"].endswith("/goal/goal.py")
+
+
+def test_goal_source_endpoint_returns_goal_instead_of_ownership_wrapper(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from openprogram.programs.workflow.goal.goal import goal
+    from openprogram.webui import server
+    from openprogram.webui.routes import functions
+
+    monkeypatch.setattr(server, "_load_function", lambda _name: goal)
+    app = FastAPI()
+    functions.register(app)
+    response = TestClient(app).get("/api/function/goal/source")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["filepath"].endswith("/goal/goal.py")
+    assert "def goal(" in data["source"]
+    assert "def run(" not in data["source"]
 
 
 def test_workflow_category_exports_only_named_public_entries() -> None:
@@ -168,7 +195,7 @@ def test_programs_treats_workflow_as_category_not_program() -> None:
     assert not old_source.exists()
 
 
-def test_goal_form_exposes_only_prompt_and_condition() -> None:
+def test_goal_form_keeps_prompt_primary_and_preserves_explicit_controls() -> None:
     source = (
         Path(__file__).parents[3]
         / "openprogram/programs/workflow/goal/goal.py"
@@ -179,24 +206,65 @@ def test_goal_form_exposes_only_prompt_and_condition() -> None:
     )
     visible = [p["name"] for p in goal["params_detail"] if not p.get("hidden")]
     assert visible == ["prompt"]
+    advanced = {p["name"] for p in goal["params_detail"] if p.get("advanced")}
+    assert advanced == {
+        "model", "effort", "judge_model", "judge_effort", "judge_timeout_s",
+        "max_rounds", "max_tokens", "max_elapsed_s", "max_cost_usd",
+        "timeout_s", "context_mode",
+    }
+    assert not advanced.intersection({"runtime", "resume", "expected_goal"})
 
 
-def test_gui_agent_form_exposes_only_task() -> None:
-    root = Path(__file__).parents[3]
-    sources = [
-        root / "openprogram/programs/applications/gui_harness/gui_harness/main.py",
-        root / "openprogram/programs/gui_harness_bridge.py",
+def test_gui_agent_form_exposes_primary_and_advanced_parameters() -> None:
+    source = (
+        Path(__file__).parents[3]
+        / "openprogram/programs/gui_harness_bridge.py"
+    )
+    gui = next(
+        info for info in _extract_all_functions(str(source), "app")
+        if info["name"] == "gui_agent"
+    )
+
+    primary = [
+        param["name"] for param in gui["params_detail"]
+        if not param.get("hidden")
     ]
-    extracted = []
-    for source in sources:
-        extracted.extend(
-            info for info in _extract_all_functions(str(source), "app")
-            if info["name"] == "gui_agent"
-        )
-    assert extracted
-    for gui in extracted:
-        visible = [p["name"] for p in gui["params_detail"] if not p.get("hidden")]
-        assert visible == ["task"]
+    advanced = {
+        param["name"] for param in gui["params_detail"]
+        if param.get("advanced")
+    }
+    user_params = {
+        param["name"] for param in gui["params_detail"]
+        if not param.get("hidden") or param.get("advanced")
+    }
+
+    assert primary == ["task"]
+    assert advanced == {
+        "max_steps", "max_seconds", "app_name", "surface", "backend", "vm_url",
+    }
+    assert user_params == {*primary, *advanced}
+
+
+def test_function_info_preserves_advanced_input_metadata(tmp_path: Path) -> None:
+    source = tmp_path / "advanced_function.py"
+    source.write_text(
+        '@agentic_function(input={\n'
+        '    "max_steps": {"hidden": True, "advanced": True},\n'
+        '})\n'
+        'def advanced_function(task: str, max_steps: int = 3) -> str:\n'
+        '    """Run one task."""\n'
+        '    return task\n',
+        encoding="utf-8",
+    )
+
+    info = _extract_function_info(str(source), "advanced_function", "app")
+
+    assert info is not None
+    max_steps = next(
+        param for param in info["params_detail"] if param["name"] == "max_steps"
+    )
+    assert max_steps["hidden"] is True
+    assert max_steps["advanced"] is True
 
 
 def test_registered_workflow_is_available_to_favorites(

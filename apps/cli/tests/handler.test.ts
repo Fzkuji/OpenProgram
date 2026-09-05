@@ -110,6 +110,29 @@ describe('handleSlash', () => {
     expect(send).toHaveBeenCalledWith({ action: 'get_job', job_id: 't1' });
   });
 
+  it('submits steer, fork, and retry through the execution command callback', () => {
+    const submitExecutionCommand = vi.fn(() => true);
+    const ctx = makeCtx({ submitExecutionCommand });
+
+    expect(handleSlash('/steer prefer the approved source', ctx)).toBe(true);
+    expect(handleSlash('/retry checkpoint-1', ctx)).toBe(true);
+    expect(handleSlash(
+      '/fork checkpoint-1 manifest-1 proof-hash-1',
+      ctx,
+    )).toBe(true);
+
+    expect(submitExecutionCommand).toHaveBeenNthCalledWith(
+      1, 'steer', { message: 'prefer the approved source' },
+    );
+    expect(submitExecutionCommand).toHaveBeenNthCalledWith(
+      2, 'retry', { checkpoint_id: 'checkpoint-1' },
+    );
+    expect(submitExecutionCommand).toHaveBeenNthCalledWith(3, 'fork', {
+      checkpoint_id: 'checkpoint-1', manifest_id: 'manifest-1',
+      proof_hash: 'proof-hash-1',
+    });
+  });
+
   it('/clear empties committed', () => {
     const ctx = makeCtx();
     handleSlash('/clear', ctx);

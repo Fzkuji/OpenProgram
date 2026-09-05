@@ -5,12 +5,14 @@ action. It must re-dispatch the SAME function with the SAME kwargs the
 prior call used, in the SAME session — WITHOUT stripping any existing
 messages (the old broken ``retry_overwrite`` path silently deleted them).
 
-These cover ``ws_actions.chat._last_call_kwargs`` (kwargs lookup from the
-authoritative DAG node) and ``handle_retry_function`` (re-dispatch wiring).
+These cover exact authoritative DAG-node lookup and
+``handle_retry_function`` re-dispatch wiring.
 """
 from __future__ import annotations
 
 import asyncio
+import inspect
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -49,32 +51,32 @@ def _patch_db(monkeypatch, nodes):
     )
 
 
-# ---- _last_call_kwargs --------------------------------------------------
+# ---- exact call lookup --------------------------------------------------
 
-def test_last_call_kwargs_reads_latest_matching_node(monkeypatch):
-    nodes = [
-        Call(role=ROLE_CODE, name="word_count", input={"text": "old"}, seq=1),
-        Call(role=ROLE_USER, name="user", input=None, seq=2),
-        Call(role=ROLE_CODE, name="word_count", input={"text": "new"}, seq=3),
-    ]
-    _patch_db(monkeypatch, nodes)
-    assert chat._last_call_kwargs("s1", "word_count") == {"text": "new"}
-
-
-def test_last_call_kwargs_drops_injected_params(monkeypatch):
-    nodes = [
-        Call(role=ROLE_CODE, name="word_count",
-             input={"text": "hi", "runtime": object(), "callback": object()},
-             seq=1),
-    ]
-    _patch_db(monkeypatch, nodes)
-    assert chat._last_call_kwargs("s1", "word_count") == {"text": "hi"}
+@pytest.mark.parametrize("bad_node", [
+    Call(role=ROLE_CODE, name="other", input={"text": "hi"}, seq=1),
+    Call(role=ROLE_CODE, name="word_count", input=None, seq=1),
+    Call(role=ROLE_USER, name="word_count", input={"text": "hi"}, seq=1),
+])
+def test_retry_call_node_validates_role_name_and_input(monkeypatch, bad_node):
+    _patch_db(monkeypatch, [bad_node])
+    assert chat._retry_call_node(
+        "s1", bad_node.id, "word_count",
+    ) is None
 
 
-def test_last_call_kwargs_none_when_never_called(monkeypatch):
-    nodes = [Call(role=ROLE_CODE, name="other", input={"a": 1}, seq=1)]
-    _patch_db(monkeypatch, nodes)
-    assert chat._last_call_kwargs("s1", "word_count") is None
+def test_retry_call_node_rejects_nested_call(monkeypatch):
+    outer = _code("word_count", {"text": "outer"}, seq=1)
+    nested = Call(
+        role=ROLE_CODE,
+        name="word_count",
+        input={"text": "inner"},
+        seq=2,
+        caller=outer.id,
+    )
+    _patch_db(monkeypatch, [outer, nested])
+    assert chat._retry_call_node("s1", nested.id, "word_count") is None
+    assert chat._retry_call_node("s1", outer.id, "word_count") is outer
 
 
 # ---- handle_retry_function ---------------------------------------------
@@ -87,8 +89,9 @@ def test_retry_redispatches_with_original_kwargs(monkeypatch):
 
     calls = []
 
-    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
-        calls.append((name, kwargs, session_id, anchor_msg_id))
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT", **options):
+        calls.append((name, kwargs, session_id, anchor_msg_id,
+                      options.get("retry_of")))
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
@@ -97,15 +100,77 @@ def test_retry_redispatches_with_original_kwargs(monkeypatch):
 
     ws = _FakeWS()
     asyncio.run(chat.handle_retry_function(
-        ws, {"session_id": "s1", "function": "word_count"}
+        ws, {
+            "session_id": "s1",
+            "function": "word_count",
+            "node_id": nodes[0].id,
+        }
     ))
 
     # Re-dispatched exactly once, with the prior call's kwargs + session,
     # anchored at the original call's predecessor (ROOT here) so the
     # re-run forks as a SIBLING branch instead of stacking.
-    assert calls == [("word_count", {"text": "hello world"}, "s1", "pred:ROOT")]
+    assert calls == [(
+        "word_count", {"text": "hello world"}, "s1", "pred:ROOT",
+        nodes[0].id,
+    )]
     # Acked the new run over the WS (so the client can follow the stream).
     assert ws.sent and "chat_ack" in ws.sent[0]
+
+
+def test_retry_targets_clicked_node_and_acks_canonical_execution(monkeypatch):
+    older = _code("gui_agent", {"task": "older"}, seq=1)
+    newer = _code("gui_agent", {"task": "newer"}, seq=2)
+    _patch_db(monkeypatch, [older, newer])
+    calls = []
+
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT", **options):
+        calls.append((name, kwargs, session_id, anchor_msg_id))
+        return {
+            "session_id": session_id,
+            "msg_id": "transport-message",
+            "execution_id": "canonical-code-node",
+        }
+
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run,
+    )
+    ws = _FakeWS()
+    asyncio.run(chat.handle_retry_function(ws, {
+        "session_id": "s1",
+        "function": "gui_agent",
+        "node_id": older.id,
+    }))
+
+    assert calls == [
+        ("gui_agent", {"task": "older"}, "s1", "pred:ROOT"),
+    ]
+    ack = json.loads(ws.sent[0])
+    assert ack["data"]["execution_id"] == "canonical-code-node"
+    assert ack["data"]["msg_id"] == "transport-message"
+
+
+def test_retry_requires_exact_node_id_instead_of_latest_name(monkeypatch):
+    node = _code("word_count", {"text": "latest"}, seq=1)
+    _patch_db(monkeypatch, [node])
+    dispatched = []
+    errors = []
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call",
+        lambda *args, **kwargs: dispatched.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        "openprogram.webui.server._broadcast_chat_response",
+        lambda sid, mid, env: errors.append(env),
+    )
+
+    asyncio.run(chat.handle_retry_function(_FakeWS(), {
+        "session_id": "s1",
+        "function": "word_count",
+    }))
+
+    assert dispatched == []
+    assert errors and "call node" in errors[0]["content"].lower()
 
 
 def test_retry_anchors_at_original_calls_predecessor(monkeypatch):
@@ -121,24 +186,27 @@ def test_retry_anchors_at_original_calls_predecessor(monkeypatch):
 
     anchors = []
 
-    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
-        anchors.append(anchor_msg_id)
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT", **options):
+        anchors.append((anchor_msg_id, options.get("retry_of")))
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
         "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run
     )
     asyncio.run(chat.handle_retry_function(
-        _FakeWS(), {"session_id": "s1", "function": "word_count"}
+        _FakeWS(), {
+            "session_id": "s1",
+            "function": "word_count",
+            "node_id": nodes[0].id,
+        }
     ))
-    assert anchors == ["pred:llm_reply_9"]
+    assert anchors == [("pred:llm_reply_9", nodes[0].id)]
 
 
-def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
+def test_retry_targets_exact_top_level_call_not_nested(monkeypatch):
     # A function that calls itself writes nested code nodes of the same
-    # name; retry must re-run the OUTER (top-level) invocation, not an
-    # internal step. _last_call_node excludes nodes whose caller is
-    # itself a code node.
+    # name; the exact outer card may be retried, but its internal step may
+    # not be used as a Retry target.
     outer = _code("gui_agent", {"task": "outer"}, seq=1,
                   caller="ROOT", predecessor="ROOT")
     nested = Call(role=ROLE_CODE, name="gui_agent",
@@ -148,18 +216,245 @@ def test_retry_targets_latest_top_level_call_not_nested(monkeypatch):
 
     calls = []
 
-    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT"):
-        calls.append((kwargs, anchor_msg_id))
+    def _fake_run(name, kwargs, session_id, anchor_msg_id="ROOT", **options):
+        calls.append((kwargs, anchor_msg_id, options.get("retry_of")))
         return {"session_id": session_id, "msg_id": "abc"}
 
     monkeypatch.setattr(
         "openprogram.webui.routes.chat.run_agentic_function_call", _fake_run
     )
     asyncio.run(chat.handle_retry_function(
-        _FakeWS(), {"session_id": "s1", "function": "gui_agent"}
+        _FakeWS(), {
+            "session_id": "s1",
+            "function": "gui_agent",
+            "node_id": outer.id,
+        }
     ))
     # Outer kwargs, anchored at the outer call's predecessor (ROOT).
-    assert calls == [({"task": "outer"}, "pred:ROOT")]
+    assert calls == [({"task": "outer"}, "pred:ROOT", outer.id)]
+
+
+def test_retry_preserves_registered_origin_window(monkeypatch):
+    from openprogram.webui.ws_actions import webtab
+
+    node = _code("gui_agent", {"task": "inspect"}, seq=1)
+    _patch_db(monkeypatch, [node])
+    seen = {}
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call",
+        lambda *args, **kwargs: seen.update(kwargs) or {
+            "session_id": args[2], "msg_id": "abc",
+        },
+    )
+    ws = _FakeWS()
+    asyncio.run(webtab.handle_webtab_register(ws, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    try:
+        asyncio.run(chat.handle_retry_function(
+            ws, {
+                "session_id": "s1",
+                "function": "gui_agent",
+                "node_id": node.id,
+            },
+        ))
+        assert seen["origin_window_id"] == "window-2"
+        assert "surface_ref" not in seen
+    finally:
+        webtab.release_connection(ws)
+
+
+def test_retry_legacy_node_uses_click_time_origin_page(monkeypatch):
+    from openprogram.webui.ws_actions import webtab
+
+    node = _code("gui_agent", {"task": "inspect"}, seq=1)
+    _patch_db(monkeypatch, [node])
+    seen = {}
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call",
+        lambda *args, **kwargs: seen.update(kwargs) or {
+            "session_id": args[2], "msg_id": "abc",
+        },
+    )
+    ws = _FakeWS()
+    asyncio.run(webtab.handle_webtab_register(ws, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    try:
+        asyncio.run(chat.handle_retry_function(
+            ws,
+            {
+                "session_id": "s1",
+                "function": "gui_agent",
+                "node_id": node.id,
+                "surface_ref": {
+                    "window_id": "window-2",
+                    "tab_id": "page-exact",
+                },
+            },
+        ))
+        assert seen["origin_window_id"] == "window-2"
+        assert seen["surface_ref"] == {
+            "window_id": "window-2",
+            "tab_id": "page-exact",
+        }
+    finally:
+        webtab.release_connection(ws)
+
+
+@pytest.mark.parametrize(
+    ("stored_tab", "expected_surface"),
+    [
+        (
+            "page-original",
+            {
+                "version": 1,
+                "window_id": "window-2",
+                "tab_id": "page-original",
+            },
+        ),
+        (None, None),
+    ],
+)
+def test_retry_uses_versioned_persisted_origin_not_current_page(
+    monkeypatch, stored_tab, expected_surface,
+):
+    from openprogram.webui.ws_actions import webtab
+
+    node = _code("gui_agent", {"task": "inspect"}, seq=1)
+    node.metadata["surface_origin"] = {
+        "version": 1,
+        "window_id": "window-2",
+    }
+    if stored_tab:
+        node.metadata["surface_origin"]["tab_id"] = stored_tab
+    _patch_db(monkeypatch, [node])
+    seen = {}
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call",
+        lambda *args, **kwargs: seen.update(kwargs) or {
+            "session_id": args[2], "msg_id": "transport",
+            "execution_id": "execution",
+        },
+    )
+    ws = _FakeWS()
+    asyncio.run(webtab.handle_webtab_register(ws, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    try:
+        asyncio.run(chat.handle_retry_function(ws, {
+            "session_id": "s1",
+            "function": "gui_agent",
+            "node_id": node.id,
+            "surface_ref": {
+                "window_id": "window-2",
+                "tab_id": "page-current",
+            },
+        }))
+        assert seen["origin_window_id"] == "window-2"
+        if expected_surface is None:
+            assert "surface_ref" not in seen
+        else:
+            assert seen["surface_ref"] == expected_surface
+    finally:
+        webtab.release_connection(ws)
+
+
+@pytest.mark.parametrize(
+    ("stored_origin", "registered_window", "error_fragment"),
+    [
+        (
+            {
+                "version": 1,
+                "window_id": "window-original",
+                "tab_id": "page-original",
+            },
+            "window-current",
+            "original desktop window",
+        ),
+        (
+            {"version": 2, "window_id": "window-current"},
+            "window-current",
+            "invalid stored Page origin",
+        ),
+    ],
+)
+def test_retry_rejects_invalid_or_disconnected_persisted_origin(
+    monkeypatch, stored_origin, registered_window, error_fragment,
+):
+    from openprogram.webui.ws_actions import webtab
+
+    node = _code("gui_agent", {"task": "inspect"}, seq=1)
+    node.metadata["surface_origin"] = stored_origin
+    _patch_db(monkeypatch, [node])
+    dispatched = []
+    errors = []
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call",
+        lambda *args, **kwargs: dispatched.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        "openprogram.webui.server._broadcast_chat_response",
+        lambda sid, mid, env: errors.append(env),
+    )
+    ws = _FakeWS()
+    asyncio.run(webtab.handle_webtab_register(ws, {
+        "action": "webtab_register", "window_id": registered_window,
+    }))
+    try:
+        asyncio.run(chat.handle_retry_function(ws, {
+            "session_id": "s1",
+            "function": "gui_agent",
+            "node_id": node.id,
+            "surface_ref": {
+                "window_id": "window-current",
+                "tab_id": "page-current",
+            },
+        }))
+        assert dispatched == []
+        assert errors and error_fragment in errors[0]["content"]
+    finally:
+        webtab.release_connection(ws)
+
+
+def test_retry_rejects_surface_from_another_window(monkeypatch):
+    from openprogram.webui.ws_actions import webtab
+
+    node = _code("gui_agent", {"task": "inspect"}, seq=1)
+    _patch_db(monkeypatch, [node])
+    dispatched = []
+    monkeypatch.setattr(
+        "openprogram.webui.routes.chat.run_agentic_function_call",
+        lambda *args, **kwargs: dispatched.append((args, kwargs)) or {
+            "session_id": args[2], "msg_id": "abc",
+        },
+    )
+    errors = []
+    monkeypatch.setattr(
+        "openprogram.webui.server._broadcast_chat_response",
+        lambda sid, mid, env: errors.append(env),
+    )
+    ws = _FakeWS()
+    asyncio.run(webtab.handle_webtab_register(ws, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    try:
+        asyncio.run(chat.handle_retry_function(
+            ws,
+            {
+                "session_id": "s1",
+                "function": "gui_agent",
+                "node_id": node.id,
+                "surface_ref": {
+                    "window_id": "window-other",
+                    "tab_id": "page-other",
+                },
+            },
+        ))
+        assert dispatched == []
+        assert errors and "another desktop window" in errors[0]["content"]
+    finally:
+        webtab.release_connection(ws)
 
 
 def test_retry_never_strips_messages_and_errors_without_prior_call(monkeypatch):
@@ -181,12 +476,16 @@ def test_retry_never_strips_messages_and_errors_without_prior_call(monkeypatch):
 
     ws = _FakeWS()
     asyncio.run(chat.handle_retry_function(
-        ws, {"session_id": "s1", "function": "word_count"}
+        ws, {
+            "session_id": "s1",
+            "function": "word_count",
+            "node_id": "missing-node",
+        }
     ))
 
     assert dispatched == []               # never dispatched a bogus run
     assert errors and errors[0]["type"] == "error"
-    assert "no prior" in errors[0]["content"].lower()
+    assert "call node" in errors[0]["content"].lower()
 
 
 def test_retry_noop_on_missing_args(monkeypatch):
@@ -196,8 +495,12 @@ def test_retry_noop_on_missing_args(monkeypatch):
         lambda *a, **k: dispatched.append(a),
     )
     ws = _FakeWS()
-    asyncio.run(chat.handle_retry_function(ws, {"function": "word_count"}))
-    asyncio.run(chat.handle_retry_function(ws, {"session_id": "s1"}))
+    asyncio.run(chat.handle_retry_function(ws, {
+        "function": "word_count", "node_id": "node-1",
+    }))
+    asyncio.run(chat.handle_retry_function(ws, {
+        "session_id": "s1", "node_id": "node-1",
+    }))
     assert dispatched == []
     assert ws.sent == []
 
@@ -381,12 +684,49 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
         "openprogram.webui.server._default_agent_id", lambda: "main"
     )
 
-    def _stop_dispatch(**kw):
-        captured["anchor"] = kw.get("anchor_msg_id")
-        raise RuntimeError("stop-after-anchor")
-    monkeypatch.setattr(
-        "openprogram.agent.dispatcher.dispatch_forced_tool_call", _stop_dispatch
-    )
+    from openprogram.agent import production_driver
+    from openprogram.execution.model import ExecutionStatus
+    real_adapter = production_driver.CanonicalAgentAdapter
+
+    class _Adapter:
+        def __init__(self, *args, **kwargs):
+            self._real = real_adapter(*args, **kwargs)
+
+        def admit_payload(self, **kwargs):
+            captured.update(kwargs["payload"])
+            return self._real.admit_payload(**kwargs)
+
+        async def activate(self, admission, *, on_activated=None):
+            service = self._real.driver._control_service()
+            attempt, leased = service.attempts.lease(
+                admission.execution_id,
+                expected_version=admission.status_version,
+                owner_id="unit-test",
+                ttl_seconds=30,
+            )
+            active, running = service.attempts.activate(
+                attempt.attempt_id,
+                generation=attempt.generation,
+                expected_execution_version=leased.status_version,
+            )
+            service.finish_attempt(
+                attempt_id=active.attempt_id,
+                generation=active.generation,
+                expected_execution_version=running.status_version,
+                target=ExecutionStatus.COMPLETED,
+                outcome="completed",
+            )
+            activation = SimpleNamespace(
+                admission=admission, status_version=running.status_version,
+            )
+            if on_activated is not None:
+                on_activated(activation)
+            return activation, SimpleNamespace(failed=False, error=None)
+
+        def fail_admission(self, *args, **kwargs):
+            return self._real.fail_admission(*args, **kwargs)
+
+    monkeypatch.setattr(production_driver, "CanonicalAgentAdapter", _Adapter)
     monkeypatch.setattr(
         "openprogram.agentic_programming.function.create_pending_call_node",
         lambda **k: None,
@@ -411,7 +751,7 @@ def test_new_run_passes_empty_caller_so_decorator_stamps_head(monkeypatch):
 
     routes_chat.run_agentic_function_call("word_count", {"text": "hi"}, "s1")
     # Empty caller → decorator's top-level-call branch stamps the head.
-    assert captured.get("anchor") == ""
+    assert captured.get("anchor_msg_id") == ""
 
 
 def test_retry_run_is_sibling_and_only_active_head_renders(tmp_path):
@@ -436,3 +776,95 @@ def test_retry_run_is_sibling_and_only_active_head_renders(tmp_path):
     branch_ids = [m["id"] for m in store.get_branch("s1")]
     assert "call1" in branch_ids
     assert "call2" not in branch_ids
+
+
+def test_fn_run_siblings_sort_once_with_stable_source_positions():
+    from openprogram.webui.ws_actions import session as ws_session
+
+    messages = [
+        {"id": "internal", "role": "code", "predecessor": "p", "created_at": 1},
+        {"id": "run-late", "role": "code", "predecessor": "p", "created_at": 2},
+        {"id": "tool", "role": "tool", "predecessor": "p", "created_at": 0},
+        {"id": "run-early", "role": "code", "predecessor": "p", "created_at": 1},
+        {"id": "other", "role": "code", "predecessor": "other-p", "created_at": 0},
+        {"id": "run-tied", "role": "code", "predecessor": "p", "created_at": 1},
+    ]
+    by_id = {message["id"]: message for message in messages}
+    siblings_by_pred = {"p": [
+        (message, position)
+        for position, message in enumerate(messages)
+        if message["id"] in {"run-late", "run-early", "run-tied"}
+    ]}
+    ordered = ws_session._ordered_fn_run_siblings(
+        by_id,
+        siblings_by_pred,
+        "run-late",
+        lambda message: message.get("predecessor"),
+    )
+
+    assert ordered == ["run-early", "run-tied", "run-late"]
+    assert "other" not in ordered
+    assert "internal" not in ordered
+    assert "tool" not in ordered
+
+
+@pytest.mark.parametrize("message_id", ["unknown", None])
+def test_fn_run_siblings_handles_unknown_and_malformed_ids(message_id):
+    from openprogram.webui.ws_actions import session as ws_session
+
+    messages = [
+        {"id": "duplicate", "role": "code", "predecessor": None},
+        {"id": "duplicate", "role": "code", "predecessor": None},
+        {"role": "code", "predecessor": None},
+        object(),
+    ]
+    by_id = {"duplicate": messages[1], None: messages[2]}
+    siblings_by_pred = {None: [
+        (message, position)
+        for position, message in enumerate(messages)
+        if isinstance(message, dict)
+    ]}
+    result = ws_session._ordered_fn_run_siblings(
+        by_id,
+        siblings_by_pred,
+        message_id,
+        lambda message: message.get("predecessor"),
+    )
+
+    if message_id == "unknown":
+        assert result == []
+    else:
+        assert result == ["duplicate", "duplicate", None]
+
+
+def test_fn_run_siblings_does_not_call_list_index():
+    from openprogram.webui.ws_actions import session as ws_session
+
+    source = inspect.getsource(ws_session.handle_load_session)
+    assert "all_msgs.index" not in source
+
+    class IndexForbiddenList(list):
+        def index(self, value, *args):
+            raise AssertionError("sibling sorting must not scan with list.index")
+
+    messages = IndexForbiddenList([
+        {"id": "first", "role": "code", "predecessor": "p", "created_at": 1},
+        {"id": "second", "role": "code", "predecessor": "p", "created_at": 1},
+    ])
+    siblings_by_pred = {"p": [
+        (message, position) for position, message in enumerate(messages)
+    ]}
+    expected = ["first", "second"]
+    first = ws_session._ordered_fn_run_siblings(
+        {message["id"]: message for message in messages},
+        siblings_by_pred,
+        "second",
+        lambda message: message.get("predecessor"),
+    )
+    second = ws_session._ordered_fn_run_siblings(
+        {message["id"]: message for message in messages},
+        siblings_by_pred,
+        "first",
+        lambda message: message.get("predecessor"),
+    )
+    assert first == second == expected

@@ -298,9 +298,10 @@ def finalize_turn(
     ctx_win: Optional[int],
     on_event,
     head_id: Optional[str] = None,
-) -> None:
+) -> bool:
     """Run the phase-6 turn-finalization bookkeeping. All side effects;
-    returns nothing. Every sub-step is best-effort — the conversation
+    returns whether the session Git commit succeeded. Every other sub-step is
+    best-effort — the conversation
     persists regardless, and the next turn re-derives anything skipped.
 
     ``agent_profile`` / ``ctx_win`` are pre-resolved by the caller (under
@@ -473,12 +474,14 @@ def finalize_turn(
     # rewritten context/messages.json + context/commit.json + meta.json
     # in a single diff. Best-effort: if git fails the data is still
     # on disk, next turn's commit will sweep it up.
+    turn_committed = False
     try:
         from openprogram.store import default_store
         _store = default_store()
         if _store is db or hasattr(db, "commit_turn"):
             _msg = (req.user_text or "").strip().splitlines()[0][:60] or "turn"
             db.commit_turn(req.session_id, f"turn: {_msg}")
+            turn_committed = True
     except Exception:
         # The turn's data is on disk either way; next turn's commit sweeps
         # it up. A repeat means the session repo is no longer committing.
@@ -555,6 +558,7 @@ def finalize_turn(
     # generous (gc.MAX_TURNS); we run it every turn-end since it's a cheap
     # mtime sort + rmtree of only the excess. Best-effort.
     _evict_old_snapshots(req.session_id)
+    return turn_committed
 
 
 def _evict_old_snapshots(session_id: str) -> None:

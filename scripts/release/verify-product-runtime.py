@@ -70,24 +70,31 @@ def _probe_pdf_tools() -> None:
             raise RuntimeError("built-in read PDF support is unavailable")
 
 
-_FORBIDDEN_RUNTIME_DISTS = frozenset({
-    "torch",
-    "torchvision",
-    "sentence-transformers",
-    "triton",
-})
+_FORBIDDEN_RUNTIME_DISTS = frozenset(
+    {
+        "easyocr",
+        "opencv-contrib-python",
+        "opencv-contrib-python-headless",
+        "opencv-python",
+        "opencv-python-headless",
+        "torch",
+        "torchvision",
+        "sentence-transformers",
+        "triton",
+    }
+)
 
 
-def _reject_torch_wheels() -> None:
+def _reject_excluded_runtime_wheels() -> None:
     leftover = []
     for dist in importlib.metadata.distributions():
         name = dist.metadata["Name"] or ""
-        key = name.lower()
+        key = name.lower().replace("_", "-").replace(".", "-")
         if key in _FORBIDDEN_RUNTIME_DISTS or key.startswith(("nvidia-", "cuda-")):
             leftover.append(name)
     if leftover:
         raise RuntimeError(
-            "product runtime must not ship torch or CUDA wheels: "
+            "product runtime must not ship excluded distributions or wheels: "
             + ", ".join(sorted(leftover))
         )
 
@@ -137,11 +144,24 @@ def _probe_ink_terminal(root: Path) -> tuple[str, str]:
         raise RuntimeError(f"bundled Ink terminal UI probe failed: {detail}")
     return node_relative, entry_relative
 
+def _probe_macos_window_control() -> None:
+    if platform.system() != "Darwin":
+        return
+    for module in (
+        "AppKit",
+        "ApplicationServices",
+        "Quartz",
+        "ScreenCaptureKit",
+    ):
+        importlib.import_module(module)
+
 
 def _probe(
     root: Path,
     product: dict,
     expected_openprogram_version: object,
+    *,
+    browser: bool = True,
 ) -> dict[str, dict[str, object]]:
     _verify_openprogram_version(expected_openprogram_version)
     if os.name != "nt":
@@ -163,7 +183,7 @@ def _probe(
 
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_root)
     os.environ["GPA_MODEL_PATH"] = str(gpa_model)
-    _reject_torch_wheels()
+    _reject_excluded_runtime_wheels()
 
     importlib.import_module("openprogram")
     frontend = importlib.import_module("openprogram.webui.frontend")
@@ -187,22 +207,25 @@ def _probe(
     _probe_rich_terminal()
     _probe_ink_terminal(root)
 
-    from playwright.sync_api import sync_playwright
+    _probe_macos_window_control()
 
-    with sync_playwright() as playwright:
-        browser_executable = Path(playwright.chromium.executable_path).resolve()
-        browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.set_content("<title>OpenProgram runtime probe</title>")
-        if page.title() != "OpenProgram runtime probe":
-            raise RuntimeError("Playwright Chromium page probe failed")
-        browser.close()
-    if not browser_executable.is_file():
-        raise RuntimeError(f"Playwright Chromium is missing: {browser_executable}")
-    try:
-        browser_executable.relative_to(playwright_root.resolve())
-    except ValueError as exc:
-        raise RuntimeError("Playwright Chromium resolved outside the runtime") from exc
+    if browser:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            browser_executable = Path(playwright.chromium.executable_path).resolve()
+            chromium = playwright.chromium.launch(headless=True)
+            page = chromium.new_page()
+            page.set_content("<title>OpenProgram runtime probe</title>")
+            if page.title() != "OpenProgram runtime probe":
+                raise RuntimeError("Playwright Chromium page probe failed")
+            chromium.close()
+        if not browser_executable.is_file():
+            raise RuntimeError(f"Playwright Chromium is missing: {browser_executable}")
+        try:
+            browser_executable.relative_to(playwright_root.resolve())
+        except ValueError as exc:
+            raise RuntimeError("Playwright Chromium resolved outside the runtime") from exc
 
     from openprogram.programs._programs import import_installed_programs
 
@@ -218,10 +241,8 @@ def _probe(
         if function not in registered:
             raise RuntimeError(f"first-party Program did not register: {function}")
 
-    return {
-        capability: {"present": True, "verified": True}
-        for capability in product["capabilities"]
-    }
+    return {capability: {"present": True, "verified": browser or capability != "browser.playwright"}
+            for capability in product["capabilities"]}
 
 
 def _read_json(path: Path) -> dict:
@@ -238,6 +259,8 @@ def main() -> int:
     parser.add_argument("--python-relative")
     parser.add_argument("--openprogram-version")
     parser.add_argument("--uv-version")
+    parser.add_argument("--defer-browser", action="store_true")
+    parser.add_argument("--allow-deferred-browser", action="store_true")
     args = parser.parse_args()
 
     root = args.runtime_root.resolve()
@@ -254,7 +277,9 @@ def main() -> int:
         ):
             parser.error("--write requires Python, OpenProgram, and uv versions")
         _relative_file(root, args.python_relative, "managed Python")
-        capabilities = _probe(root, product, args.openprogram_version)
+        if args.allow_deferred_browser:
+            parser.error("--allow-deferred-browser is only valid while checking an artifact")
+        capabilities = _probe(root, product, args.openprogram_version, browser=not args.defer_browser)
         node_relative = "bin/node.exe" if os.name == "nt" else "bin/node"
         tui_relative = "assets/tui/index.cjs"
         manifest = {
@@ -270,6 +295,7 @@ def main() -> int:
             ).hexdigest(),
             "product_lock_sha256": hashlib.sha256(lock_path.read_bytes()).hexdigest(),
             "capabilities": capabilities,
+            "browser_probe": "deferred" if args.defer_browser else "complete",
             "programs": product["programs"],
             "distributions": {
                 distribution.metadata["Name"]: distribution.version
@@ -311,12 +337,16 @@ def main() -> int:
             raise RuntimeError("product dependency lock hash mismatch")
         expected = set(product["capabilities"])
         actual = manifest.get("capabilities", {})
-        if set(actual) != expected or not all(
-            value == {"present": True, "verified": True}
-            for value in actual.values()
-        ):
+        complete = {"present": True, "verified": True}
+        deferred = {"present": True, "verified": False}
+        if (set(actual) != expected
+                or any(value != complete for key, value in actual.items() if key != "browser.playwright")
+                or actual.get("browser.playwright") not in ((complete, deferred) if args.allow_deferred_browser else (complete,))
+                or manifest.get("browser_probe", "complete") != ("deferred" if actual.get("browser.playwright") == deferred else "complete")):
             raise RuntimeError("runtime capability manifest is incomplete")
-        _probe(root, product, manifest.get("openprogram"))
+        if args.defer_browser:
+            parser.error("--defer-browser is only valid while writing an artifact")
+        _probe(root, product, manifest.get("openprogram"), browser=not args.allow_deferred_browser)
 
     print(f"verified complete OpenProgram runtime: {root}")
     return 0

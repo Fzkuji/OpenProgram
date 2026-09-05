@@ -64,7 +64,6 @@ import {
   ownedActionId,
 } from "@/lib/browser-layout";
 import { useTranslation } from "@/lib/i18n";
-import { faviconUrl } from "@/lib/ntp-shortcuts";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import styles from "./center-tabs.module.css";
 
@@ -335,7 +334,7 @@ function folderItems(
   } : {
     id: `${prefix}bookmark:${node.id}`,
     label: node.title || node.url,
-    iconUrl: node.faviconUrl || faviconUrl(node.url),
+    iconUrl: node.faviconUrl,
   });
 }
 
@@ -388,7 +387,7 @@ function BookmarkMenuNodes({
 
 function BookmarkFavicon({ node }: { node: Extract<BookmarkNode, { kind: "bookmark" }> }) {
   const [broken, setBroken] = useState(false);
-  const icon = node.faviconUrl || faviconUrl(node.url);
+  const icon = node.faviconUrl;
   return !broken && icon ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={icon} alt="" width={14} height={14} className="shrink-0" onError={() => setBroken(true)} />

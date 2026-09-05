@@ -43,17 +43,36 @@ def _emit_goal_notice(session_id: str, content: str,
 # Terminal statuses, and how each reads in the transcript.
 _TERMINAL_LABELS = {
     "achieved": "已达成",
-    "error": "已终止",
-    "capped": "已达轮次上限",
+    "blocked": "已阻塞",
+    "impossible": "当前约束下无法完成",
+    "stalled": "已因无进展暂停",
+    "budget_exhausted": "已达资源上限",
+    "failed": "执行失败",
 }
 
 
-def _finish(session_id: str, goal: dict, on_event: Optional[Callable]) -> None:
+def _finish(session_id: str, goal: dict, on_event: Optional[Callable],
+            *, persist: Optional[Callable] = None) -> None:
     try:
-        _goal.save_goal(session_id, goal)
-    except Exception:
+        if persist is not None:
+            persist()
+        else:
+            _goal.accumulate_goal_usage(session_id, goal)
+            _goal.checkpoint_active_elapsed(goal, stop=True)
+            _goal.save_goal(session_id, goal)
+    except _goal.GoalConflictError:
+        latest = _goal.load_goal(session_id)
+        if latest:
+            goal.clear()
+            goal.update(latest)
+            _goal._emit_goal_update(on_event, session_id, goal)
+        return
+    except Exception as exc:
         _log.warning("goal terminal write failed for session %s",
                      session_id, exc_info=True)
+        raise _goal.GoalStateUnavailable(
+            "Goal state unavailable; completion was not saved."
+        ) from exc
     _goal._emit_goal_update(on_event, session_id, goal)
     # The chip alone leaves a stopped run looking like the assistant went
     # silent mid-conversation — the reason is already written to the goal

@@ -12,16 +12,16 @@
 <body><main>
   <p class="sub">OpenProgram / WebUI reliability / implementation handoff</p>
   <h1>WebSocket 命令与交互等待生命周期</h1>
-  <p class="sub">基线：<code>c1f10273</code>。本页限定单条 WebSocket 命令失败、连接断开和 legacy <code>ask_user</code> 等待的所有权与可观察行为；实现状态与验证证据见第 07 节。</p>
+  <p class="sub">本页限定单条 WebSocket 命令失败、连接断开和 legacy <code>ask_user</code> 等待的所有权与可观察行为；实现状态与验证证据见第 07 节。</p>
 
-  <div class="lead"><b>确定方案。</b> 单条命令异常在 receive loop 内隔离并返回稳定的 <code>action_error</code>；dispatcher 不清理 action 自己取得的 reservation，避免误删另一连接的 owner。连接断开时，仅当该 session 没有其他聚焦连接，才向 legacy follow-up queue 投递进程内 sentinel；等待者收到 sentinel 后返回 <code>None</code>，不能把断连解释为空字符串答案。</div>
+  <div class="lead"><b>确定方案。</b> 单条命令异常在 receive loop 内隔离并返回低敏 <code>operation_error</code>；新前端继续消费旧服务端的 <code>action_error</code>。dispatcher 不清理 action 自己取得的 reservation，避免误删另一连接的 owner。连接断开时，仅当该 session 没有其他聚焦连接，才向 legacy follow-up queue 投递进程内 sentinel；等待者收到 sentinel 后返回 <code>None</code>，不能把断连解释为空字符串答案。</div>
 
-  <h2>01 · 当前实现与已验证缺口</h2>
-  <div class="table"><table><thead><tr><th>入口</th><th>当前行为</th><th>缺口</th></tr></thead><tbody>
-    <tr><td><code>server._websocket_handler</code></td><td>receive loop 只捕获 JSON 解析异常；handler 异常由外层连接级捕获。</td><td class="bad">一条坏命令结束整条连接，后续有效命令无法处理。</td></tr>
-    <tr><td><code>server._handle_ws_command</code></td><td>未知 action 返回 <code>action_error</code>；已注册 handler 的异常直接传播。</td><td class="bad">错误协议不一致，并可能泄漏为连接级 traceback。</td></tr>
-    <tr><td><code>server._web_follow_up</code></td><td>使用 session queue 等待 300 秒；timeout 返回空字符串。</td><td class="bad">最后一个可回答页面断开后仍等待，且断连/超时与用户回答空字符串无法区分。</td></tr>
-    <tr><td>stop/delete</td><td>已有路径向 queue 投递取消对象或移除 queue。</td><td class="warn">行为未在 WebSocket 断连入口复用；取消对象仍可能被当作答案。</td></tr>
+  <h2>01 · 当前实现与边界</h2>
+  <div class="table"><table><thead><tr><th>入口</th><th>当前行为</th><th>边界</th></tr></thead><tbody>
+    <tr><td><code>server._websocket_handler</code></td><td>receive loop 分别隔离 JSON 解析和单条 handler 异常；handler failure 返回 <code>operation_error</code> 后继续接收后续命令。</td><td>transport disconnect 与错误帧发送失败仍结束连接；dispatcher 不推测 action 已取得资源的所有权。</td></tr>
+    <tr><td><code>server._handle_ws_command</code></td><td>未知 action 返回 <code>operation_error(code=unknown_action)</code>；已注册 handler 的异常传播到 receive loop，由同一构造器返回 <code>handler_error</code>。</td><td>wire 只含受约束的 action、session、request metadata 和注册错误分类；异常详情只写本地日志。</td></tr>
+    <tr><td><code>server._web_follow_up</code></td><td>使用 session queue 等待；最后观察者断开或取消时返回 <code>None</code>，真实空字符串保持 <code>""</code>。</td><td>legacy queue 仍是当前进程内状态，不承担 worker 重启后的持久恢复。</td></tr>
+    <tr><td>stop/delete</td><td>取消对象与断连 sentinel 统一解释为非答案；queue 由 owner 的 finally 清理。</td><td>通用 dispatcher 不按 session 清理 reservation；取得资源的 action 必须按自己的 owner token 回滚。</td></tr>
   </tbody></table></div>
 
   <h2>02 · 参考机制与取舍</h2>
@@ -35,7 +35,7 @@
   <h2>03 · 目标数据流</h2>
   <div class="flow">
     <b>1</b><div>收到文本；非法 JSON 记录低敏诊断并继续 receive。</div>
-    <b>2</b><div>解析为 object 后执行 action handler；未知 action 沿用现有 <code>action_error</code>。</div>
+    <b>2</b><div>解析为 object 后执行 action handler；未知 action 返回 <code>operation_error</code>，并回显合法 <code>request_id</code>。</div>
     <b>3</b><div>handler 异常写结构化日志，仅包含 action/session/type；向同一 socket 返回 <code>code=handler_error</code>，然后继续接收下一条命令。</div>
     <b>4</b><div>transport 断开后先从连接集合移除当前 socket，再检查其 focused session 是否仍有其他连接。</div>
     <b>5</b><div>若没有其他聚焦连接且存在 legacy follow-up queue，投递唯一 sentinel；queue 仍由 <code>_web_follow_up</code> 的 finally 删除。</div>
@@ -61,7 +61,7 @@
 
   <h2>06 · 验收矩阵</h2>
   <div class="table"><table><thead><tr><th>公共入口</th><th>场景</th><th>可观察断言</th></tr></thead><tbody>
-    <tr><td><code>_websocket_handler</code></td><td>第一条已注册 action 抛 <code>KeyError</code>，第二条为 ping</td><td>同一连接先收到低敏 <code>action_error</code>，再收到 pong；连接未因第一条关闭。</td></tr>
+    <tr><td><code>_websocket_handler</code></td><td>第一条已注册 action 抛 <code>KeyError</code>，第二条为 ping</td><td>同一连接先收到低敏 <code>operation_error</code>，再收到 pong；连接未因第一条关闭。</td></tr>
     <tr><td><code>_websocket_handler</code></td><td>非法 JSON</td><td>忽略该帧并继续处理下一条；不回显原文本。</td></tr>
     <tr><td><code>_web_follow_up</code> + disconnect</td><td>唯一聚焦连接断开</td><td>等待线程在测试时限内返回 <code>None</code>，不等待 300 秒；queue 最终删除。</td></tr>
     <tr><td>disconnect</td><td>同 session 仍有另一聚焦连接</td><td>不投 sentinel，等待保持；另一连接提交正常答案后返回该答案。</td></tr>
@@ -73,5 +73,5 @@
     <tr><td><code>openprogram/webui/server.py</code></td><td>命令级异常边界、低敏错误帧、连接观察者清理、follow-up sentinel 解释。</td></tr>
     <tr><td><code>tests/component/webui/test_websocket_command_lifecycle.py</code></td><td>真实 receive-loop、断连和等待线程的公共入口回归。</td></tr>
   </tbody></table></div>
-  <p class="note"><span class="ok">已实现并完成独立审查。</span> 实现提交：<code>4bc76c83</code>、<code>be307d4b</code>、<code>781de2b1</code>。最终定向验证：67 passed；Ruff 通过；文档构建 457 页；链接检查 0 broken links。</p>
+  <p class="note"><span class="ok">第一切片已实现并完成规格与质量独立审查。</span> 命令级隔离、低敏 <code>operation_error</code>、旧帧前端兼容和 follow-up 断连语义均由公共入口回归覆盖；持久 error store、acknowledge 和 reconnect recovery 不在本页实现范围。</p>
 </main></body></html>

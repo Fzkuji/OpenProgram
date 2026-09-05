@@ -41,6 +41,8 @@ Notes on Windows ``flock`` semantics:
 from __future__ import annotations
 
 import os as _os
+import os
+import errno
 import functools as _functools
 import signal as _signal
 import subprocess as _subprocess
@@ -1717,7 +1719,202 @@ def prompt_toolkit_usable() -> bool:
     return _PROMPT_TOOLKIT_USABLE_CACHE
 
 
+def is_link_metadata(info) -> bool:
+    """Recognize POSIX links and Windows directory junction/reparse entries."""
+    import stat
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & 0x400)
+
+
+def user_private_metadata(info, *, exact_mode: int | None = None) -> bool:
+    """POSIX ownership policy; Windows uses inherited profile ACLs unchanged."""
+    import stat
+    if _sys.platform == "win32":
+        return not bool(getattr(info, "st_file_attributes", 0) & 0x400)
+    if info.st_uid != _os.getuid():
+        return False
+    mode = stat.S_IMODE(info.st_mode)
+    return mode == exact_mode if exact_mode is not None else not bool(mode & 0o077)
+
+
+def read_user_state_bytes(path, *, limit: int) -> bytes:
+    """Bounded regular-file read using the host's user-state metadata policy."""
+    import stat
+    before = _os.lstat(path)
+    if not stat.S_ISREG(before.st_mode) or not user_private_metadata(before):
+        raise ValueError("invalid user-state file")
+    flags = (_os.O_RDONLY | getattr(_os, "O_NONBLOCK", 0)
+             | getattr(_os, "O_BINARY", 0) | getattr(_os, "O_NOFOLLOW", 0))
+    fd = _os.open(path, flags)
+    with _os.fdopen(fd, "rb") as stream:
+        info = _os.fstat(stream.fileno())
+        if (not stat.S_ISREG(info.st_mode) or not user_private_metadata(info)
+                or (before.st_dev, before.st_ino) != (info.st_dev, info.st_ino)
+                or info.st_size > limit):
+            raise ValueError("invalid user-state file")
+        raw = stream.read(limit + 1)
+        if len(raw) > limit:
+            raise ValueError("user-state file exceeds read limit")
+        return raw
+
+
+def process_start_token(pid: int) -> str | None:
+    """Return a creation-time identity, independent of executable spelling."""
+    if pid <= 0:
+        return None
+    if _sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+        kernel.GetProcessTimes.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return None
+        try:
+            times = [wintypes.FILETIME() for _ in range(4)]
+            if not kernel.GetProcessTimes(handle, *(ctypes.byref(value) for value in times)):
+                return None
+            created = times[0]
+            return f"win:{(created.dwHighDateTime << 32) | created.dwLowDateTime}"
+        finally:
+            kernel.CloseHandle(handle)
+    if _sys.platform.startswith("linux"):
+        from pathlib import Path
+        try:
+            # comm may contain spaces and parentheses; fields begin after its last ')'.
+            fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[-1].split()
+            return f"proc:{fields[19]}"
+        except (OSError, IndexError, UnicodeError):
+            return None
+    try:
+        result = _subprocess.run(["ps", "-p", str(pid), "-o", "lstart="],
+                                 capture_output=True, text=True, timeout=1, check=False)
+        value = result.stdout.strip()
+        return f"ps:{value}" if result.returncode == 0 and value else None
+    except (OSError, _subprocess.SubprocessError):
+        return None
+
+
+def process_alive(pid: int) -> bool:
+    """Probe without signalling: Windows kill(pid, 0) can terminate a process."""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    if _sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return ctypes.get_last_error() == 5  # Access denied is not evidence of exit.
+        try:
+            code = wintypes.DWORD()
+            if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True  # Conservatively retain an owner on query failure.
+            return code.value == 259
+        finally:
+            kernel.CloseHandle(handle)
+    if _sys.platform.startswith("linux"):
+        from pathlib import Path
+        try:
+            fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[-1].split()
+            if fields and fields[0] == "Z":
+                return False
+        except OSError:
+            pass  # Fall through to the conventional POSIX existence probe.
+    try:
+        _os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+_DIRECTORY_FD_SUPPORTED = os.open in os.supports_dir_fd and os.scandir in os.supports_fd
+
+
+def directory_handle(path):
+    """Open a no-follow directory; path fallback where dir_fd is unavailable.
+
+    The fallback validates ancestors on each operation but cannot provide POSIX
+    descriptor-relative atomicity against concurrent directory replacement.
+    It deliberately does not alter Windows ACLs or require directory open().
+    """
+    import stat
+    from pathlib import Path
+
+    if _DIRECTORY_FD_SUPPORTED:
+        return os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                       | getattr(os, "O_NOFOLLOW", 0))
+    target = Path(path).absolute()
+    for component in reversed((target, *target.parents)):
+        info = component.lstat()
+        if (not stat.S_ISDIR(info.st_mode)
+                or getattr(info, "st_file_attributes", 0) & 0x400):
+            raise OSError(errno.ELOOP, "directory is a link or not a directory")
+    return str(target)
+
+
+def directory_child(handle, name):
+    if isinstance(handle, str):
+        return directory_handle(os.path.join(handle, name))
+    return os.open(name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+                   | getattr(os, "O_NOFOLLOW", 0), dir_fd=handle)
+
+
+def directory_close(handle):
+    if not isinstance(handle, str):
+        os.close(handle)
+
+
+def directory_duplicate(handle):
+    return directory_handle(handle) if isinstance(handle, str) else os.dup(handle)
+
+
+def directory_read_file(handle, name):
+    """Return a binary file descriptor without following a reparse point."""
+    import stat
+
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    if not isinstance(handle, str):
+        return os.open(name, flags, dir_fd=handle)
+    directory_handle(handle)
+    path = os.path.join(handle, name)
+    before = os.lstat(path)
+    if (not stat.S_ISREG(before.st_mode)
+            or getattr(before, "st_file_attributes", 0) & 0x400):
+        raise OSError(errno.ELOOP, "file is a link or not a regular file")
+    fd = os.open(path, flags)
+    after = os.fstat(fd)
+    if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+        os.close(fd)
+        raise OSError(errno.ESTALE, "file changed while opening")
+    return fd
+
+
 __all__ = [
+    "directory_handle",
+    "directory_child",
+    "directory_close",
+    "directory_duplicate",
+    "directory_read_file",
+    "is_link_metadata",
+    "process_alive",
+    "process_start_token",
+    "read_user_state_bytes",
+    "user_private_metadata",
     "LOCK_EX",
     "LOCK_NB",
     "LOCK_UN",

@@ -44,6 +44,7 @@ class ApiProviderSnapshot:
 
     provider: ApiProvider | None
     structured_output: StructuredOutputCapabilities
+    supports_idempotency_key: bool = False
 
 
 # One registry entry owns both the provider and its verified capabilities.
@@ -58,7 +59,10 @@ _audited_originals: dict[str, ApiProvider] = {}
 def _entry(value: ApiProviderSnapshot | ApiProvider) -> ApiProviderSnapshot:
     if isinstance(value, ApiProviderSnapshot):
         return value
-    return ApiProviderSnapshot(value, StructuredOutputCapabilities())
+    return ApiProviderSnapshot(
+        value, StructuredOutputCapabilities(),
+        bool(getattr(value, "supports_idempotency_key", False)),
+    )
 
 
 def _rebuild_audited_accounting() -> None:
@@ -77,12 +81,19 @@ def register_api_provider(
     api: Api,
     provider: ApiProvider,
     structured_output: StructuredOutputCapabilities | None = None,
+    *,
+    supports_idempotency_key: bool | None = None,
 ) -> None:
     """Register an API provider implementation."""
     with _registry_lock:
         original = ApiProviderSnapshot(
             provider,
             structured_output or StructuredOutputCapabilities(),
+            (
+                bool(getattr(provider, "supports_idempotency_key", False))
+                if supports_idempotency_key is None
+                else supports_idempotency_key
+            ),
         )
         registered = (
             _provider_transform(api, provider)
@@ -91,7 +102,9 @@ def register_api_provider(
         )
         _audited_originals.pop(api, None)
         _original_registry[api] = original
-        _registry[api] = ApiProviderSnapshot(registered, original.structured_output)
+        _registry[api] = ApiProviderSnapshot(
+            registered, original.structured_output, original.supports_idempotency_key,
+        )
         _rebuild_audited_accounting()
 
 
@@ -118,7 +131,10 @@ def register_api_providers(
             if provider is not None and _provider_transform is not None:
                 provider = _provider_transform(api, provider)
             transformed[api] = (
-                ApiProviderSnapshot(provider, original.structured_output)
+                ApiProviderSnapshot(
+                    provider, original.structured_output,
+                    original.supports_idempotency_key,
+                )
                 if isinstance(value, ApiProviderSnapshot)
                 else provider
             )
@@ -149,7 +165,10 @@ def _register_builtin_api_providers(
                 else provider
             )
             transformed[api] = (
-                ApiProviderSnapshot(registered, original.structured_output)
+                ApiProviderSnapshot(
+                    registered, original.structured_output,
+                    original.supports_idempotency_key,
+                )
                 if isinstance(value, ApiProviderSnapshot)
                 else registered
             )
@@ -193,10 +212,12 @@ def resolve_api_provider_snapshot(model: Model) -> ApiProviderSnapshot:
                 with_tools=False,
                 schema_profile="none",
             ),
+            False,
         )
     return get_api_provider_snapshot(model.api) or ApiProviderSnapshot(
         None,
         StructuredOutputCapabilities(),
+        False,
     )
 
 
@@ -222,7 +243,10 @@ def configure_provider_transform(
             original = _entry(value)
             registered = transform(api, original.provider)
             transformed[api] = (
-                ApiProviderSnapshot(registered, original.structured_output)
+                ApiProviderSnapshot(
+                    registered, original.structured_output,
+                    original.supports_idempotency_key,
+                )
                 if isinstance(value, ApiProviderSnapshot)
                 else registered
             )
@@ -243,7 +267,10 @@ def _replace_provider_transform(
             original = _entry(value)
             registered = transform(api, original.provider)
             transformed[api] = (
-                ApiProviderSnapshot(registered, original.structured_output)
+                ApiProviderSnapshot(
+                    registered, original.structured_output,
+                    original.supports_idempotency_key,
+                )
                 if isinstance(value, ApiProviderSnapshot)
                 else registered
             )

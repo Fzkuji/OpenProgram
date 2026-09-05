@@ -6,7 +6,8 @@
 > TaskGet / TaskUpdate / TaskStop.
 >
 > The chassis it builds on already exists in the WebUI: one worker thread per
-> session (`_execute_in_context`), a `_cancel_events` dict (`_pause_stop.py`),
+> session (`_execute_in_context`) and the exact execution token registry in
+> `openprogram.agent.run_control`,
 > and a `_running_tasks` dict for the UI spinner. `run_agent_turn`
 > (`openprogram/agent/sub_agent_run.py`) is the synchronous path that the
 > `/task` tool, the `/spawn` WS action, and `_merge.process_merge_turn` all
@@ -97,9 +98,14 @@ Each running task has a `threading.Event` inside the runner (not stored in the
 entity). When the Cancel API fires:
 
 1. Write `cancel_requested_at` to the entity and transition status to `cancelled` (if still queued / pending), or keep it `running` and wait for the worker to exit naturally.
-2. `cancel_event.set()` — via the contract already defined by `_pause_stop.register_cancel_event`, this propagates to `process_user_turn(cancel_event=...)`.
+2. `cancel_event.set()` — via the exact execution registration in
+   `openprogram.agent.run_control`, this propagates to
+   `process_user_turn(cancel_event=...)`.
 3. `process_user_turn` already bridges cancel_event into an asyncio.Event (the `agent_loop` call), and the LLM provider stream checks for the cancel on the next chunk and then breaks.
-4. BashTool / other subprocesses: reuse `_pause_stop.kill_active_runtime` (already exists). Cancellation at the tool layer is cooperative: each `@agentic_function`'s pre-invocation hook checks `is_cancelled` (already exists), and the next tool-call entry raises `CancelledError`.
+4. BashTool / other subprocesses use the exact execution id with
+   `process_runner.kill_active_subprocess`. Cancellation at the tool layer is
+   cooperative: each `@agentic_function`'s pre-invocation hook checks
+   `is_cancelled`, and the next tool-call entry raises `CancelledError`.
 5. Fallback timeout: if the worker still hasn't exited 30 seconds after the cancel, the runner marks the entity `cancelled` (error="cancel timed out, worker may be stuck") and detaches the worker thread (no hard kill; let GC handle it).
 
 A tool's own atomic operation (e.g. a `Write` halfway through) is not
@@ -107,14 +113,17 @@ interrupted; it waits for the current atomic operation to finish before exiting.
 
 ### D6. The relationship between Task and session
 
-A task always runs on **one** parent session. Cross-session is conceptually
-equivalent to merge / attach (already exists) and is out of scope for tasks.
+A task always runs on **one** target session. A caller may live in another
+session, but that does not make execution multi-session: the canonical entity
+keeps `parent_session_id=<target>` and, when different, records
+`caller_session_id=<source>`.
 
 `task.parent_session_id` is exactly the one the sub-agent uses in
 `process_user_turn(session_id=...)` — consistent with how `run_agent_turn`
 behaves. The sub-agent's output lands as a branch of that session (or a new
 root, depending on `context_mode`), so the session repo holds both the task
-entity and the task's product, which is self-consistent.
+entity and the task's product. A linked mirror in the source session provides
+visibility and ownership checks; it is not a second execution identity.
 
 ### D7. The relationship between Task and sub-agent
 
@@ -134,7 +143,7 @@ LLM.
 The attach pointer (the `function="attach"` node) is written by `_run_spawn` /
 `_task_impl`:
 
-- On spawn, a **placeholder attach card** is written immediately (`function="attach"`, `extra.attach.job_id = <job_id>`, `extra.attach.status = "running"`), content="(running)", with `source_commit_id` left empty.
+- After admission succeeds and before dispatch starts, a **placeholder attach card** is written (`function="attach"`, `extra.attach.job_id = <job_id>`, `extra.attach.status = "running"`), content="(running)", with `source_commit_id` left empty. For a cross-session spawn the card is stored in the source session but its `attach.session_id` names the target.
 - When the task completes, the runner updates the same attach card node: fill in `head_id` / `source_commit_id`, replace content with `final_text`, and change `status` to `completed` / `cancelled` / `errored`.
 - When the generator sees an attach node with `status="running"`, it skips expansion (does not enter commit items) and only shows the card placeholder in the UI. When it sees `status="completed"`, it follows the existing attach-expansion path (see scenario B in `context.md`).
 
@@ -346,7 +355,7 @@ Stop in the UI or the agent decides to abort.
 - **Task priority / SLA**: FIFO is enough, with no high-priority preemption. A priority queue can be added later as needed.
 - **Resume / continuation**: cancelled / errored tasks can't "pick up where they left off." A user retry equals spawning a new task.
 - **Task retry policy**: the runner does not auto-retry; the upper-layer agent / plan decides for itself.
-- **Cross-session tasks**: a task binds to only one session. Use attach / merge for cross-session.
+- **Multi-target tasks**: one task has exactly one immutable execution session. A cross-session caller is supported through `caller_session_id` plus a source-side attach, but one entity never executes in several target sessions.
 - **DAG-shaped task dependencies**: `await_tasks(mode="all"|"any")` is already enough for plan mode; an explicit DAG / pipeline is left for later.
 - **Streaming subscription of task output**: the first version only retrieves final_text on task completion. Subscribing to the stream mid-flight (so the parent agent sees the sub-agent thinking out loud) is left for later.
 - **Resource quotas**: per-user concurrent task count / token caps are out of scope for this design and require a multi-tenant model first.

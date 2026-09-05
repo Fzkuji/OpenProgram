@@ -108,6 +108,7 @@ def handle_turn_error(
         _e_reason = _e_retryable = _e_retry_after = None
     on_event({"type": "chat_response",
               "data": {"type": "error", "session_id": req.session_id,
+                       "msg_id": user_msg_id,
                        "content": err_text, "reason": _e_reason,
                        "retryable": _e_retryable,
                        "retry_after_s": _e_retry_after}})

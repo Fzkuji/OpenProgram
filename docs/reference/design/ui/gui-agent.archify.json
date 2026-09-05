@@ -1,0 +1,342 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "GUI Agent autonomous capability loop",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "gui-agent.html"
+  },
+  "lanes": [
+    {
+      "id": "orchestration",
+      "label": "GUI Agent control"
+    },
+    {
+      "id": "capabilities",
+      "label": "Choose one capability function per iteration",
+      "variant": "exception"
+    },
+    {
+      "id": "context",
+      "label": "Context and evidence"
+    },
+    {
+      "id": "terminal",
+      "label": "Terminal and safety boundaries",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "intake",
+      "label": "Task and context",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "decision",
+      "label": "Model decision",
+      "fromCol": 1,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "execution",
+      "label": "Capability execution and recording",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "capability_group",
+      "label": "Choose one capability per iteration",
+      "lane": "capabilities",
+      "fromCol": 3,
+      "toCol": 5,
+      "variant": "emphasis"
+    },
+    {
+      "id": "context_group",
+      "label": "Records visible to the next iteration",
+      "lane": "context",
+      "fromCol": 0,
+      "toCol": 4,
+      "variant": "dashed"
+    },
+    {
+      "id": "terminal_group",
+      "label": "Model-directed termination",
+      "lane": "terminal",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "build_context",
+    "model_decision",
+    "dispatch",
+    "computer_use",
+    "record_result"
+  ],
+  "semanticChecks": {
+    "allowedRoots": [
+      "build_context"
+    ],
+    "allowedTerminals": [
+      "normalized_result",
+      "runtime_stop"
+    ],
+    "requiredPaths": [
+      {
+        "from": "build_context",
+        "to": "record_result"
+      },
+      {
+        "from": "model_decision",
+        "to": "normalized_result"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "build_context",
+      "lane": "orchestration",
+      "col": 0,
+      "type": "frontend",
+      "label": "gui_agent(task)",
+      "sublabel": "task + history",
+      "width": 132
+    },
+    {
+      "id": "model_decision",
+      "lane": "orchestration",
+      "col": 1,
+      "type": "backend",
+      "label": "plan_next_capability",
+      "sublabel": "llm() + Runtime context",
+      "tag": "Capability call or terminal decision",
+      "width": 154
+    },
+    {
+      "id": "dispatch",
+      "lane": "orchestration",
+      "col": 2,
+      "type": "messagebus",
+      "label": "call_capability",
+      "sublabel": "Invoke the selected function",
+      "width": 154
+    },
+    {
+      "id": "computer_use",
+      "lane": "capabilities",
+      "col": 3,
+      "type": "backend",
+      "label": "computer_use(task)",
+      "sublabel": "gui_step → llm()",
+      "width": 158
+    },
+    {
+      "id": "browser_use",
+      "lane": "capabilities",
+      "col": 4,
+      "type": "cloud",
+      "label": "browser_use(task)",
+      "sublabel": "agent() + background Page",
+      "width": 158
+    },
+    {
+      "id": "vm_use",
+      "lane": "capabilities",
+      "col": 5,
+      "type": "external",
+      "label": "vm_use(task)",
+      "sublabel": "gui_step → llm() + OSWorld API",
+      "tag": "Configured endpoint required",
+      "width": 158
+    },
+    {
+      "id": "record_result",
+      "lane": "context",
+      "col": 4,
+      "type": "database",
+      "label": "Record call I/O",
+      "sublabel": "history + DAG + evidence",
+      "width": 132
+    },
+    {
+      "id": "terminal_decision",
+      "lane": "terminal",
+      "col": 2,
+      "type": "security",
+      "label": "TerminalDecision",
+      "sublabel": "succeeded / infeasible / failed",
+      "width": 160
+    },
+    {
+      "id": "validate_terminal",
+      "lane": "terminal",
+      "col": 3,
+      "type": "security",
+      "label": "Evidence gate",
+      "sublabel": "Insufficient: continue",
+      "width": 156
+    },
+    {
+      "id": "normalized_result",
+      "lane": "terminal",
+      "col": 4,
+      "type": "backend",
+      "label": "normalize_gui_result",
+      "sublabel": "Public terminal contract",
+      "width": 132
+    },
+    {
+      "id": "runtime_stop",
+      "lane": "terminal",
+      "col": 4,
+      "type": "security",
+      "label": "Runtime safety stop",
+      "sublabel": "Cancel / timeout / cost",
+      "width": 132,
+      "yOffset": 74
+    }
+  ],
+  "edges": [
+    {
+      "id": "context_decision",
+      "from": "build_context",
+      "to": "model_decision",
+      "label": "Provider context for this iteration",
+      "role": "branch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decision_dispatch",
+      "from": "model_decision",
+      "to": "dispatch",
+      "label": "CapabilityCall",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dispatch_computer",
+      "from": "dispatch",
+      "to": "computer_use",
+      "label": "Select local screen",
+      "role": "main",
+      "variant": "default"
+    },
+    {
+      "id": "dispatch_browser",
+      "from": "dispatch",
+      "to": "browser_use",
+      "label": "Select background Page",
+      "role": "branch",
+      "variant": "default"
+    },
+    {
+      "id": "dispatch_vm",
+      "from": "dispatch",
+      "to": "vm_use",
+      "label": "Select independent VM",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "id": "computer_record",
+      "from": "computer_use",
+      "to": "record_result",
+      "label": "ToolResult",
+      "role": "main",
+      "variant": "default"
+    },
+    {
+      "id": "browser_record",
+      "from": "browser_use",
+      "to": "record_result",
+      "label": "ToolResult",
+      "role": "return",
+      "variant": "default"
+    },
+    {
+      "id": "vm_record",
+      "from": "vm_use",
+      "to": "record_result",
+      "label": "ToolResult",
+      "role": "return",
+      "variant": "dashed"
+    },
+    {
+      "id": "next_iteration",
+      "from": "record_result",
+      "to": "build_context",
+      "label": "Read new records in the next iteration",
+      "role": "return",
+      "variant": "emphasis"
+    },
+    {
+      "id": "decision_terminal",
+      "from": "model_decision",
+      "to": "terminal_decision",
+      "label": "TerminalDecision",
+      "role": "branch",
+      "variant": "security"
+    },
+    {
+      "id": "terminal_validate",
+      "from": "terminal_decision",
+      "to": "validate_terminal",
+      "label": "Validate terminal decision",
+      "role": "main",
+      "variant": "security"
+    },
+    {
+      "id": "terminal_result",
+      "from": "validate_terminal",
+      "to": "normalized_result",
+      "label": "Evidence accepted",
+      "role": "main",
+      "variant": "emphasis"
+    },
+    {
+      "id": "terminal_rejected",
+      "from": "validate_terminal",
+      "to": "record_result",
+      "label": "Record rejection and continue",
+      "role": "return",
+      "variant": "dashed"
+    },
+    {
+      "id": "runtime_boundary",
+      "from": "model_decision",
+      "to": "runtime_stop",
+      "label": "External safety boundary",
+      "role": "error",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Loop and context",
+      "items": [
+        "No task-semantic fixed max_steps; finish after an accepted terminal decision",
+        "Write every capability input and output to history and the DAG",
+        "The next iteration rereads the original task and all visible call records"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Implementation status",
+      "items": [
+        "The root loop selects computer_use, browser_use, or vm_use on every iteration",
+        "The planner and Harness leaves use llm(); the Browser action loop uses agent(); no GUI workflow calls Runtime.exec directly",
+        "vm_use requires an OSWorld-compatible endpoint and restores the local input and screenshot target after each call"
+      ]
+    }
+  ]
+}

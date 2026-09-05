@@ -21,7 +21,7 @@ import {
   _buildShapeEl,
   _shapeFor,
   _svg,
-} from "../shapes";
+} from "./shapes";
 import { _summaryExpanded } from "../store/globals";
 import type { ThreadModel } from "../passes/thread";
 

@@ -331,6 +331,7 @@ def test_public_docs_requests_only_read_prebuilt_files(tmp_path, monkeypatch):
     nested = site / "assets"
     nested.mkdir(parents=True)
     (site / "index.html").write_text("<h1>Docs</h1>", encoding="utf-8")
+    (site / "matrix.raw.html").write_text("<h1>Matrix</h1>", encoding="utf-8")
     (nested / "site.js").write_text("window.docs = true", encoding="utf-8")
     rebuild_checks = []
     monkeypatch.setattr(docs_route, "_site_dir", lambda: site)
@@ -348,6 +349,10 @@ def test_public_docs_requests_only_read_prebuilt_files(tmp_path, monkeypatch):
         assert head_root.status_code == 307
         assert head_root.headers["location"] == "/docs/"
         assert client.get("/docs/").status_code == 200
+        raw = client.get("/docs/matrix.raw.html")
+        assert raw.status_code == 200
+        assert raw.headers["x-frame-options"] == "SAMEORIGIN"
+        assert "frame-ancestors 'self'" in raw.headers["content-security-policy"]
         assert client.head("/docs/assets/site.js").status_code == 200
         assert client.post("/docs").status_code == 401
         assert client.get("/docs", headers={"host": "evil.example"}).status_code == 403
@@ -621,6 +626,16 @@ def test_create_app_enforces_owner_auth_and_public_health(monkeypatch):
         assert detailed.status_code == 200
         assert "uptime_seconds" in detailed.json()
         assert "revision" in detailed.json()
+        assert detailed.json()["websocket_delivery"] == {
+            "connections": 0,
+            "managed_connections": 0,
+            "queue_frames": 0,
+            "queue_bytes": 0,
+            "oldest_age": 0.0,
+            "coalesced": 0,
+            "dropped": 0,
+            "send_failures": 0,
+        }
         assert client.get("/api/providers/list").status_code == 401
         assert client.get(
             "/api/providers/list", headers=_bearer(state)

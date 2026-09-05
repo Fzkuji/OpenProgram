@@ -55,7 +55,7 @@ This file records the divergences between the design docs and the actual code, o
 
 The following docs were audited and are fully consistent with the code; no changes needed:
 
-- `runtime/controllability-and-three-surface-sync.md` — attended/unattended, graceful stop, and three-surface sync are all implemented
+- `runtime/execution/execution-control.html` — the current status appendix distinguishes implemented cancellation and steering foundations from the unimplemented unified control architecture
 - `runtime/operations/user-input-requests.md` — Phase 1+2 have landed (QuestionRegistry, the three Transports including the newly added TTYTransport)
 - `function/calling-unification.md` — already uses the "profiles" terminology, consistent with the code
 - `extension-gating/implementation.md` — paths are now correct

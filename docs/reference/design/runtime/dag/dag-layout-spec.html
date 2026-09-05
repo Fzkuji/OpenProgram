@@ -42,6 +42,48 @@ svg:hover .comm-line{opacity:.9}
   <span><b>状态=描边</b>（running虚线/error红/cancelled灰，场景12）</span>
 </div>
 
+<div class="note">
+<b style="color:var(--acc)">前端模块边界：</b><br>
+DAG TypeScript 按数据投影（<code>passes/</code>）、几何（<code>layout/</code>）、
+绘制（<code>render/</code>）、交互与相机（<code>interaction/</code>）分层。根目录只保留公共
+入口、类型、绘制门控与核心 pipeline。tooltip 的纯内容模型与 DOM 生命周期分离，pipeline
+的图准备与 SVG 提交分离，thread 的节点分类与归属计算分离。拆分不得改变公开入口、DOM
+class、SVG 结构、测试可见状态或相机行为；单个文件原则上不超过 500 行。
+</div>
+
+<div class="rule" style="margin-bottom:24px;border-left-color:var(--acc)">
+<b style="color:var(--acc)">阶段一：先固定 branch-head 数据合同，不修改图形：</b><br>
+<code>SessionStore.list_branches()</code> 只返回 conversation predecessor 图的真实叶子。
+conversation 节点包括 user、llm，以及 caller 为空或 ROOT 的顶层 Program；只要节点存在任一
+有效 conversation successor，它就是中间节点，不能再次作为 branch tip 返回。Program 内部
+execution child、runtime/attach 行与 context 行不延续 conversation，因此不取消其 owner 的
+叶子身份。共享同一 predecessor 且彼此不相连的多个 Program 是并行叶子，必须分别返回。<br>
+<b>阶段一生产文件：</b><code>openprogram/store/session/session_store.py</code>。<br>
+<b>公共入口 RED：</b><code>SessionStore.list_branches()</code> 对顺序顶层 Program 链只返回最后
+一个 Program；对并行 Program siblings 返回每个叶子；内部 execution child 不产生额外 tip。<br>
+<b>明确排除：</b>lane、坐标、边、颜色、badge、相机、展开/收起和任何前端渲染调整。底层合同
+通过 focused/affected/full gate、独立规格审查、独立质量审查及默认实例真实会话验收后，才进入
+图结构设计阶段。<br>
+<b>实现状态：</b>阶段一已实现统一 conversation-node predicate，successor 与 tip candidate
+使用同一语义；顺序顶层 Program 仅保留末端叶子，parallel siblings 分别保留，runtime/context、
+内部 execution child 与 merged head 均不会被 fallback 重新加入。公开入口 RED/GREEN、直接调用方、
+文档门禁、独立规格审查和独立质量审查已通过；前端图形代码尚未进入本阶段。
+</div>
+
+<div class="note">
+<b style="color:var(--acc)">阶段二 A：先修图布局使用的拓扑投影：</b><br>
+顶层 Program 仅因共同指向 <code>ROOT</code>，不能被解释为互相替代的 retry 分支。
+没有显式 <code>retry_of</code> 的顶层 Program 按时间顺序留在 ROOT 主 lane；只有
+持久化了 <code>retry_of</code> 的 Program 才建立新的 fork lane，并与被替代的运行同排。
+这条规则由公共入口 <code>build_session_graph()</code> 验证，且必须使真实会话的 lane
+连续、不会因为普通顺序运行产生横向空列。<br>
+<b>本小步明确排除：</b>节点造型、颜色、badge、相机、展开/收起和 CSS。拓扑 GREEN 后再进入视觉实现。
+<br><b>实现证据：</b><code>build_session_graph()</code> 已将无 <code>retry_of</code>
+的 ROOT Program 投影到同一 lane；Retry 入口把来源运行 ID 持久化为
+<code>metadata.retry_of</code>，显式 retry 保持独立 lane 并与来源运行同行。
+规格复审与质量复审均为 PASS。
+</div>
+
 <div class="rule" style="margin-bottom:18px">
 <b style="color:var(--acc)">颜色 = 分支身份，线型 = 连线类型（两者正交）：</b><br>
 <b>颜色永远跟着分支走</b>——每条 lane 一个颜色，一条线用它<b>所属/指向的那条分支</b>的颜色。

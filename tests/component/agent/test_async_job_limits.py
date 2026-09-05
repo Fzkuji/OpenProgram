@@ -1,8 +1,8 @@
 """Async Job limits component tests."""
 from __future__ import annotations
 
+import asyncio
 import threading
-import time
 
 import pytest
 
@@ -15,6 +15,21 @@ from tests.component.agent.async_job_support import (
 from tests.support.waiting import wait_until
 
 
+def _await_canonical_terminal(runner, execution_id, *, timeout=5.0):
+    execution = None
+
+    def terminal():
+        nonlocal execution
+        execution = runner._execution_store.get_execution(execution_id)
+        return execution is not None and execution.status.value in {
+            "completed", "cancelled", "failed", "interrupted",
+        }
+
+    assert wait_until(terminal, timeout=timeout)
+    assert execution is not None
+    return execution
+
+
 def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
@@ -22,13 +37,6 @@ def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
     store_fixture.create_session("p2", "main", title="parent2")
-    cancelled_sessions = []
-    monkeypatch.setattr(
-        "openprogram.agent.run_control.mark_cancelled", cancelled_sessions.append,
-    )
-    monkeypatch.setattr(
-        "openprogram.agent.run_control.kill_active_runtime", lambda _sid: None,
-    )
     from openprogram.agent.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
     )
@@ -50,16 +58,119 @@ def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
         )
         assert fake_worker[3].wait(WORKER_START_TIMEOUT)
 
-        runner.cancel_job(queued)
+        runner.cancel_execution(queued)
 
-        assert cancelled_sessions == []
+        execution = runner._execution_store.get_execution(queued)
+        assert execution is not None
+        assert execution.status.value == "cancelled"
+        assert runner._governor.ledger.connection().execute(
+            "SELECT state FROM job_admissions WHERE job_id = ?", (queued,),
+        ).fetchone()[0] == "released"
     finally:
         fake_worker[1].set()
         runner.shutdown()
 
-def test_runner_restart_dispatches_persisted_governed_queue(
+
+def test_budget_reason_survives_cancel_intent_persistence_failure(
     store_fixture, fake_worker, monkeypatch, tmp_path,
 ):
+    monkeypatch.setattr(
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent import resource_governance
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.job.types import JobStatus
+    from openprogram.usage.ledger import UsageLedger
+
+    clock = _FakeMonotonic()
+    resolved = resource_governance.resolve_resource_limits(
+        resource_governance.ResourceLimits(max_runtime_seconds=1),
+        scheduler_capacity=1,
+    )
+    runner = JobRunner(
+        max_workers=1,
+        governor=resource_governance.ResourceGovernor(
+            UsageLedger(tmp_path / "governance.db"),
+            limit_resolver=lambda _sid, _job: resolved,
+        ),
+        monotonic_clock=clock,
+        # This test drives the monitor explicitly after advancing fake time.
+        budget_poll_seconds=60,
+    )
+    try:
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="persist-failure", agent_id="main",
+        )
+        assert fake_worker[3].wait(10.0)
+        def monitor_ready():
+            with runner._lock:
+                entry = runner._jobs.get(job_id, {})
+                return (
+                    entry.get("started_monotonic") is not None
+                    and entry.get("attempt_id") is not None
+                )
+
+        assert wait_until(monitor_ready, timeout=10.0)
+        clock.advance(1.1)
+        runner._budget_tick()
+        final = runner.await_job(job_id, timeout=10.0)
+
+        assert final.status == JobStatus.CANCELLED
+        assert final.reason_code == "budget.runtime_exhausted"
+        commands = runner._execution_store.list_commands(job_id)
+        assert [c.kind.value for c in commands] == ["execution.cancel"]
+        row = runner._governor.ledger.connection().execute(
+            "SELECT state, reason_code FROM job_admissions WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        assert tuple(row) == ("released", "budget.runtime_exhausted")
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+def test_resource_saga_records_canonical_admission_before_dispatch(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    monkeypatch.setattr(
+        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
+    )
+    from openprogram.agent.resource_governance import (
+        ResourceGovernor, ResourceLimits, resolve_resource_limits,
+    )
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.usage.ledger import UsageLedger
+
+    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
+    governor = ResourceGovernor(
+        UsageLedger(tmp_path / "governance.db"),
+        limit_resolver=lambda _sid, _job: resolved,
+    )
+    runner = JobRunner(max_workers=1, governor=governor)
+    try:
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="resume me", agent_id="main",
+        )
+        assert fake_worker[3].wait(2.0)
+        intents = runner._execution_store.list_resource_intents(
+            execution_id=job_id,
+        )
+        assert {
+            (intent["kind"], intent["state"])
+            for intent in intents
+        } >= {
+            ("execution.admission.intent", "applied"),
+            ("resource.admission.intent", "applied"),
+        }
+        fake_worker[1].set()
+        assert _await_canonical_terminal(runner, job_id).status.value == "completed"
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
+
+def test_runner_startup_wakes_dispatcher_before_fallback_poll(
+    store_fixture, fake_worker, monkeypatch, tmp_path,
+):
+    """A persisted dispatch-ready job is claimed by the startup wake."""
     monkeypatch.setattr(
         "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
     )
@@ -68,7 +179,7 @@ def test_runner_restart_dispatches_persisted_governed_queue(
     )
     from openprogram.agent.job.runner import JobRunner
     from openprogram.agent.job.store import save_job
-    from openprogram.agent.job.types import Job, JobStatus
+    from openprogram.agent.job.types import Job
     from openprogram.usage.ledger import UsageLedger
 
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
@@ -77,119 +188,111 @@ def test_runner_restart_dispatches_persisted_governed_queue(
         limit_resolver=lambda _sid, _job: resolved,
     )
     job = Job(
-        id="restart_queued", parent_session_id="p1",
-        prompt="resume me", agent_id="main",
+        id="startup_wake", parent_session_id="p1",
+        prompt="start immediately", agent_id="main",
     )
-    governor.admit_job(job, persist=lambda accepted: save_job("p1", accepted))
 
-    runner = JobRunner(max_workers=1, governor=governor)
+    dispatch_gate = threading.Event()
+    dispatcher_entered = threading.Event()
+    captured_wake = {}
+    real_dispatch_loop = JobRunner._dispatch_loop
+
+    def blocked_dispatch_loop(runner):
+        captured_wake["event"] = runner._dispatch_wake
+        dispatcher_entered.set()
+        dispatch_gate.wait(timeout=5.0)
+        return real_dispatch_loop(runner)
+
+    monkeypatch.setattr(JobRunner, "_dispatch_loop", blocked_dispatch_loop)
+    runner = None
     try:
-        assert fake_worker[3].wait(WORKER_START_TIMEOUT)
-        fake_worker[1].set()
-        assert runner.await_job(job.id, timeout=5).status == JobStatus.COMPLETED
+        runner = JobRunner(max_workers=1, governor=governor)
+        runner._admit_canonical_job(job)
+        governor.admit_job(job, persist=lambda accepted: save_job("p1", accepted))
+        assert dispatcher_entered.wait(1.0)
+        wake = captured_wake.get("event")
+        assert wake is not None
+        assert wake.is_set()
+        dispatch_gate.set()
+        assert fake_worker[3].wait(1.0)
     finally:
+        dispatch_gate.set()
         fake_worker[1].set()
-        runner.shutdown()
+        if runner is not None:
+            runner.shutdown()
 
-def test_worker_lost_fence_prevents_stale_runner_from_writing_completed(
-    store_fixture, fake_worker, monkeypatch, tmp_path,
-):
+
+def test_canonical_driver_termination_returns_exact_receipt(monkeypatch, tmp_path):
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.execution import AttemptStore, ExecutionStore
+
+    class Questions:
+        def __init__(self):
+            self.cancelled = []
+
+        def cancel_execution(self, session_id, execution_id):
+            self.cancelled.append((session_id, execution_id))
+
+    store = ExecutionStore(tmp_path / "executions.sqlite3")
+    revision = store.create_revision(
+        revision_id="revision-1", manifest={"entrypoint": "agent"},
+    )
+    execution = store.admit_execution(
+        execution_id="job-1",
+        run_id="run-1",
+        session_id="session-1",
+        revision_id=revision.revision_id,
+        input_ref="input:job-1",
+        input_hash="input-hash-1",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "test"},
+        config_snapshot_ref="config:job-1",
+        agent_turn_payload={
+            "version": 1,
+            "kind": "chat",
+            "request": {
+                "user_text": "terminate",
+                "agent_id": "main",
+                "source": "test",
+            },
+        },
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="worker",
+        ttl_seconds=30,
+        attempt_id="attempt-1",
+    )
+    active, _running = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    questions = Questions()
     monkeypatch.setattr(
-        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
-    )
-    from openprogram.agent.resource_governance import (
-        ResourceGovernor, ResourceLimits, resolve_resource_limits,
-    )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.store import load_job
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
-
-    ledger = UsageLedger(tmp_path / "governance.db")
-    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
-    governor = ResourceGovernor(ledger, limit_resolver=lambda _sid, _job: resolved)
-    runner = JobRunner(max_workers=1, governor=governor)
-    try:
-        job_id = runner.spawn_job(
-            session_id="p1", prompt="stale", agent_id="main",
-        )
-        assert fake_worker[3].wait(WORKER_START_TIMEOUT)
-        ledger.connection().execute(
-            "UPDATE job_admissions SET lease_expires_at = 0 WHERE job_id = ?",
-            (job_id,),
-        )
-        ledger.connection().commit()
-
-        reconciled = governor.reconcile(
-            job_lookup=lambda session_id, current_job_id: load_job(
-                session_id, current_job_id,
-            ),
-            mark_worker_lost=runner._mark_worker_lost,
-            owner_is_alive=lambda _owner: False,
-            now=1,
-        )
-        fake_worker[1].set()
-        final = runner.await_job(job_id, timeout=5)
-
-        assert reconciled.released_worker_lost == 1
-        assert final.status == JobStatus.ERRORED
-        assert final.reason_code == "error.worker_lost"
-        assert final.result_text in (None, "")
-    finally:
-        fake_worker[1].set()
-        runner.shutdown()
-
-def test_cancel_watchdog_does_not_finalize_while_worker_is_still_running(
-    monkeypatch,
-):
-    from openprogram.agent.job import runner as runner_module
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import Job, JobStatus
-
-    job = Job(id="live", parent_session_id="s1", prompt="p", agent_id="a")
-    job.status = JobStatus.RUNNING
-    finalized = []
-
-    class ImmediateThread:
-        def __init__(self, *, target, **_kwargs):
-            self.target = target
-
-        def start(self):
-            self.target()
-
-    monkeypatch.setattr(runner_module.threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(runner_module.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(runner_module, "_store_load", lambda _sid, _tid: job)
-    runner = object.__new__(JobRunner)
-    runner._finalize_job_status = lambda *_args, **_kwargs: finalized.append(True)
-
-    runner._schedule_force_cancel("s1", job.id, 1)
-
-    assert finalized == []
-    assert job.status == JobStatus.RUNNING
-
-def test_runner_recognizes_its_lock_holding_instance(
-    store_fixture, fake_worker, tmp_path,
-):
-    from openprogram.agent.resource_governance import (
-        ResourceGovernor, ResourceLimits, resolve_resource_limits,
-    )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.usage.ledger import UsageLedger
-
-    resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=1)
-    runner = JobRunner(
-        max_workers=1,
-        governor=ResourceGovernor(
-            UsageLedger(tmp_path / "governance.db"),
-            limit_resolver=lambda _sid, _job: resolved,
+        "openprogram.agent.process_runner.kill_active_subprocess",
+        lambda session_id, *, execution_id: (
+            session_id == "session-1" and execution_id == "job-1"
         ),
     )
-    try:
-        assert runner._owner_holds_worker_lock(runner._instance_id) is True
-    finally:
-        fake_worker[1].set()
-        runner.shutdown()
+    monkeypatch.setattr(
+        "openprogram.agent.run_control.kill_active_runtime",
+        lambda *_args, **_kwargs: None,
+    )
+    driver = AgentProductionDriver(store, question_registry=questions)
+    binding = asyncio.run(driver.activate(active, None))
+    receipt = asyncio.run(
+        driver.terminate(binding.handle, "budget.runtime_exhausted"),
+    )
+    driver.activation_aborted(binding)
+    assert receipt.attempt_id == "attempt-1"
+    assert receipt.terminated is True
+    # Durable waits are closed by the canonical cancel transaction. Driver
+    # termination only stops the exact runtime owner and never mutates wait
+    # lifecycle through the process-local wake registry.
+    assert questions.cancelled == []
 
 def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
     store_fixture, monkeypatch, tmp_path,
@@ -209,7 +312,8 @@ def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
         )
 
     monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", stubborn_run,
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(stubborn_run),
     )
     from openprogram.agent.resource_governance import (
         ResourceGovernor, ResourceLimits, resolve_resource_limits,
@@ -243,10 +347,11 @@ def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
         assert wait_until(lambda: admission_state() == "stopping")
         state = admission_state()
         assert state == "stopping"
-        assert runner.get_job(job_id).status == JobStatus.RUNNING
+        execution = runner._execution_store.get_execution(job_id)
+        assert execution is not None and execution.status.value == "cancelling"
         release.set()
-        final = runner.await_job(job_id, timeout=5)
-        assert final.status == JobStatus.CANCELLED
+        final = _await_canonical_terminal(runner, job_id)
+        assert final.status.value == "cancelled"
         assert final.reason_code == "budget.runtime_exhausted"
     finally:
         release.set()
@@ -296,16 +401,13 @@ def test_idle_budget_resets_only_after_meaningful_activity(
         budget_polled.clear()
         clock.advance(0.75)
         assert budget_polled.wait(1.0)
-        assert runner.get_job(job_id).status == JobStatus.RUNNING
+        execution = runner._execution_store.get_execution(job_id)
+        assert execution is not None and execution.status.value == "running"
         budget_polled.clear()
         clock.advance(0.30)
         assert budget_polled.wait(1.0)
-        assert wait_until(
-            lambda: runner.get_job(job_id).reason_code == "budget.idle_exhausted",
-            timeout=2.0,
-        )
-        final = runner.await_job(job_id, timeout=5)
-        assert final.status == JobStatus.CANCELLED
+        final = _await_canonical_terminal(runner, job_id)
+        assert final.status.value == "cancelled"
         assert final.reason_code == "budget.idle_exhausted"
     finally:
         fake_worker[1].set()
@@ -359,102 +461,3 @@ def test_bounded_operation_timeout_clamps_and_rejects_unbounded_strict_work(
     finally:
         fake_worker[1].set()
         runner.shutdown()
-
-def test_nonpreemptible_operation_keeps_stable_job_terminal_reason(
-    store_fixture, monkeypatch, tmp_path,
-):
-    monkeypatch.setattr(
-        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
-    )
-
-    def failed_run(**_kwargs):
-        from openprogram.agent.sub_agent_run import AgentTurnResult
-        return AgentTurnResult(
-            failed=True,
-            error=(
-                "NonPreemptibleOperation: "
-                "error.nonpreemptible_operation"
-            ),
-        )
-
-    monkeypatch.setattr(
-        "openprogram.agent.sub_agent_run._execute_agent_turn", failed_run,
-    )
-    from openprogram.agent.resource_governance import (
-        ResourceGovernor, ResourceLimits, resolve_resource_limits,
-    )
-    from openprogram.agent.job.runner import JobRunner
-    from openprogram.agent.job.types import JobStatus
-    from openprogram.usage.ledger import UsageLedger
-
-    resolved = resolve_resource_limits(
-        ResourceLimits(max_runtime_seconds=10), scheduler_capacity=1,
-    )
-    runner = JobRunner(
-        max_workers=1,
-        governor=ResourceGovernor(
-            UsageLedger(tmp_path / "governance.db"),
-            limit_resolver=lambda _sid, _job: resolved,
-        ),
-    )
-    try:
-        job_id = runner.spawn_job(
-            session_id="p1", prompt="unsafe", agent_id="main",
-        )
-        final = runner.await_job(job_id, timeout=5)
-        assert final.status == JobStatus.ERRORED
-        assert final.reason_code == "error.nonpreemptible_operation"
-    finally:
-        runner.shutdown()
-
-def test_runner_releases_bookkeeping_after_completion(store_fixture, fake_worker,
-                                                      monkeypatch):
-    """Both _jobs AND _done_events must be emptied once a job ends.
-
-    _done_events used to be written on spawn and never popped, leaking
-    one threading.Event per job for the process lifetime. Popping it
-    is safe because await_job grabs its reference before waiting.
-    """
-    monkeypatch.setattr(
-        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
-    )
-    _, barrier, _, _ = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
-    runner = get_runner()
-    barrier.set()  # let workers run straight through
-    ids = [
-        runner.spawn_job(
-            session_id="p1", prompt=f"n{i}", agent_id="main",
-            parent_msg_id="a1",
-        )
-        for i in range(5)
-    ]
-    for t in ids:
-        assert runner.await_job(t, timeout=5.0).status == JobStatus.COMPLETED
-    assert wait_until(lambda: not runner._jobs and not runner._done_events)
-    assert runner._jobs == {}, "job entries leaked"
-    assert runner._done_events == {}, "done-events leaked"
-
-def test_runner_await_after_completion_still_returns(store_fixture, fake_worker,
-                                                     monkeypatch):
-    """await_job on an already-finished job works with no done-event.
-
-    Once _done_events is popped, a late waiter falls through to the
-    terminal-status check and returns immediately.
-    """
-    monkeypatch.setattr(
-        "openprogram.agent.job.runner._broadcast", lambda *a, **k: None,
-    )
-    _, barrier, _, _ = fake_worker
-    from openprogram.agent.job import get_runner, JobStatus
-    runner = get_runner()
-    barrier.set()
-    tid = runner.spawn_job(
-        session_id="p1", prompt="quick", agent_id="main", parent_msg_id="a1",
-    )
-    assert runner.await_job(tid, timeout=5.0).status == JobStatus.COMPLETED
-    # Second await, long after the event was dropped, must not hang.
-    started = time.time()
-    again = runner.await_job(tid, timeout=5.0)
-    assert again.status == JobStatus.COMPLETED
-    assert time.time() - started < 1.0

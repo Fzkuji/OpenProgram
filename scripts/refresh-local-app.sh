@@ -2,11 +2,32 @@
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$repo_root/openprogram/programs/applications/gui_harness}"
 app_path="${OPENPROGRAM_APP_PATH:-/Applications/OpenProgram.app}"
 runtime_root="$app_path/Contents/Resources/runtime"
 manifest="$runtime_root/runtime-manifest.json"
+product_runtime_config="$repo_root/scripts/release/product-runtime.json"
+installed_product_runtime="$runtime_root/product-runtime.json"
 installed_asar="$app_path/Contents/Resources/app.asar"
 uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
+
+# The default App is shared by every worktree. Refuse to replace it from a
+# checkout that predates the latest locally fetched main: otherwise an older
+# feature branch can silently restore already-fixed server or UI behavior.
+# A caller deliberately validating historical code must use a separate
+# OPENPROGRAM_APP_PATH, not replace the user's normal App.
+if test "$app_path" = "/Applications/OpenProgram.app" && \
+  git -C "$repo_root" rev-parse --verify --quiet refs/remotes/origin/main \
+    >/dev/null; then
+  if ! git -C "$repo_root" merge-base --is-ancestor \
+    refs/remotes/origin/main HEAD; then
+    printf '%s\n' \
+      'refusing to refresh the default App from a checkout behind origin/main' \
+      'fetch/rebase the branch, or set OPENPROGRAM_APP_PATH to a separate App' \
+      >&2
+    exit 1
+  fi
+fi
 
 if test -n "${OPENPROGRAM_LOCAL_PYTHON:-}"; then
   local_python="$OPENPROGRAM_LOCAL_PYTHON"
@@ -38,6 +59,10 @@ test -f "$installed_asar" || {
   printf 'the installed App archive was not found: %s\n' "$installed_asar" >&2
   exit 1
 }
+sync_gui_harness=0
+if test "$(git -C "$gui_harness_repo" rev-parse --is-inside-work-tree 2>/dev/null || :)" = true; then
+  sync_gui_harness=1
+fi
 
 "$local_python" "$repo_root/scripts/release/verify-release-version.py" \
   --installed-app "$app_path" --require-source-match
@@ -72,6 +97,12 @@ validate_stale_package_tree() {
   "$python_executable" -I \
     "$repo_root/scripts/release/remove-stale-openprogram-packages.py" \
     "$python_executable" --check
+}
+
+hydrate_wheel_dependencies() {
+  local python_executable="$1"
+  "$python_executable" -I -m pip install --disable-pip-version-check \
+    --break-system-packages "$wheel"
 }
 
 wheel_dir="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-local-wheel.XXXXXX")"
@@ -134,8 +165,38 @@ attempt=0
 while true; do
   attempt=$((attempt + 1))
   build_revision="$(git -C "$repo_root" rev-parse HEAD)"
+  gui_harness_revision=""
   attempt_dir="$wheel_dir/attempt-$attempt"
   mkdir -p "$attempt_dir"
+  product_runtime_stage="$attempt_dir/product-runtime.json"
+
+  gui_harness_stage="$attempt_dir/gui-harness"
+  if test "$sync_gui_harness" = 1; then
+    cp "$product_runtime_config" "$product_runtime_stage"
+    gui_harness_revision="$(git -C "$gui_harness_repo" rev-parse HEAD)"
+    gui_harness_pin="$("$local_python" - "$product_runtime_stage" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    print(json.load(stream)["programs"]["gui"]["commit"])
+PY
+)"
+    test "$gui_harness_revision" = "$gui_harness_pin" || {
+      printf 'GUI Harness checkout %s does not match product runtime pin %s\n' \
+        "$gui_harness_revision" "$gui_harness_pin" >&2
+      exit 1
+    }
+    gui_harness_archive="$attempt_dir/gui-harness.tar"
+    mkdir -p "$gui_harness_stage"
+    git -C "$gui_harness_repo" archive --format=tar \
+      --output="$gui_harness_archive" "$gui_harness_revision"
+    tar -C "$gui_harness_stage" -xf "$gui_harness_archive"
+    test -f "$gui_harness_stage/pyproject.toml" || {
+      printf 'the committed GUI Harness snapshot is incomplete\n' >&2
+      exit 1
+    }
+  fi
 
   rm -rf "$repo_root/apps/desktop/dist"
   "$repo_root/scripts/release/stage-release-assets.sh"
@@ -172,6 +233,7 @@ PY
   desktop_asar="$attempt_dir/app.asar"
   node "$asar_cli" extract "$installed_asar" "$desktop_stage"
   while IFS= read -r desktop_file; do
+    test -n "$desktop_file" || continue
     source_file="$repo_root/apps/desktop/$desktop_file"
     test -f "$source_file" || {
       printf 'desktop module listed in build.files is missing: %s\n' \
@@ -189,7 +251,14 @@ PY
   node "$asar_cli" pack "$desktop_stage" "$desktop_asar" \
     --unpack-dir node_modules/node-pty
 
-  test "$(git -C "$repo_root" rev-parse HEAD)" = "$build_revision" && break
+  gui_harness_head_changed=0
+  if test "$sync_gui_harness" = 1 && \
+    test "$(git -C "$gui_harness_repo" rev-parse HEAD)" != \
+      "$gui_harness_revision"; then
+    gui_harness_head_changed=1
+  fi
+  test "$(git -C "$repo_root" rev-parse HEAD)" = "$build_revision" && \
+    test "$gui_harness_head_changed" = 0 && break
   printf 'HEAD changed during packaging; rebuilding the current checkout\n'
 done
 
@@ -205,6 +274,16 @@ install_lock_owned=1
 # installer. The wheel is the immutable payload used by both pip operations.
 "$local_python" "$repo_root/scripts/release/verify-release-version.py" \
   --installed-app "$app_path" --require-source-match --wheel "$wheel"
+
+# Freeze the installer with this build before stopping the App. A new runtime
+# must not snapshot an obsolete installer on its next conversational update.
+installer_stage="$attempt_dir/install-app.sh"
+test ! -L "$app_path/Contents/Resources/update" && \
+  test ! -L "$app_path/Contents/Resources/update/install-app.sh" || {
+  printf 'the installed update resources must not be symlinks\n' >&2
+  exit 1
+}
+cp "$repo_root/apps/desktop/scripts/install-app.sh" "$installer_stage"
 
 if pgrep -x OpenProgram >/dev/null 2>&1; then
   osascript -e 'tell application "OpenProgram" to quit' >/dev/null 2>&1 || true
@@ -231,17 +310,43 @@ fi
 # validated package directories before reinstalling.
 validate_stale_package_tree "$local_python"
 validate_stale_package_tree "$app_python"
+# The embedded runtime may predate a newly declared production dependency.
+# Ask pip to resolve the wheel once before replacing the same-version package;
+# the second no-deps install below still performs the exact source refresh.
+hydrate_wheel_dependencies "$app_python"
+hydrate_wheel_dependencies "$local_python"
 remove_stale_package_tree "$local_python"
 remove_stale_package_tree "$app_python"
 "$local_python" -m pip install --disable-pip-version-check \
   --no-deps --force-reinstall "$wheel"
 "$app_python" -I -m pip install --disable-pip-version-check \
   --break-system-packages --no-deps --force-reinstall "$wheel"
+if test "$sync_gui_harness" = 1; then
+  "$local_python" -m pip install --disable-pip-version-check \
+    --no-deps --force-reinstall "$gui_harness_stage"
+  "$app_python" -I -m pip install --disable-pip-version-check \
+    --break-system-packages --no-deps --force-reinstall "$gui_harness_stage"
+fi
+if test "$(uname -s)" = Darwin; then
+  "$app_python" -I -c \
+    'import AppKit, ApplicationServices, Quartz, ScreenCaptureKit'
+  if test "$sync_gui_harness" = 1; then
+    "$app_python" -I -c \
+      'from gui_harness.adapters.mac_window import window_support'
+  fi
+fi
+if test "$sync_gui_harness" = 1; then
+  cp "$product_runtime_stage" "$installed_product_runtime"
+fi
 cp "$desktop_asar" "$installed_asar"
 if test -d "$desktop_asar.unpacked"; then
   rsync -a --delete "$desktop_asar.unpacked/" \
     "$app_path/Contents/Resources/app.asar.unpacked/"
 fi
+mkdir -p "$app_path/Contents/Resources/update"
+cp "$installer_stage" "$app_path/Contents/Resources/update/install-app.sh"
+node "$repo_root/apps/desktop/scripts/write-reopen-protocol.cjs" \
+  --resources "$app_path/Contents/Resources"
 
 revision="$build_revision"
 if test -n "$(git -C "$repo_root" status --porcelain --untracked-files=no)"; then

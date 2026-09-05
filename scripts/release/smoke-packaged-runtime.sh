@@ -37,11 +37,20 @@ test -x "$embedded_python" || {
 PLAYWRIGHT_BROWSERS_PATH="$resources/runtime/assets/playwright"
 GPA_MODEL_PATH="$resources/runtime/assets/gpa/model.pt"
 export PLAYWRIGHT_BROWSERS_PATH GPA_MODEL_PATH
+verify_args=()
+if test "${OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:-}" = 1; then
+  verify_args+=(--allow-deferred-browser)
+fi
 "$embedded_python" -I "$resources/runtime/bin/verify-product-runtime.py" \
-  "$resources/runtime"
+  "$resources/runtime" "${verify_args[@]}"
 "$resources/runtime/bin/node" "$resources/runtime/assets/tui/index.cjs" --probe
 
-port="$((19000 + RANDOM % 500))"
+port="${OPENPROGRAM_SMOKE_PORT:-$((19000 + RANDOM % 500))}"
+case "$port" in ''|*[!0-9]*) printf 'invalid packaged smoke port\n' >&2; exit 1 ;; esac
+test "$port" -ge 1024 && test "$port" -le 65535 && test "$port" != 18100 || {
+  printf 'invalid packaged smoke port\n' >&2
+  exit 1
+}
 cleanup() {
   HOME="$state_home" OPENPROGRAM_WEB_PORT="$port" OPENPROGRAM_IMMUTABLE_RUNTIME=1 \
     "$embedded_python" -I -B -m openprogram worker stop >/dev/null 2>&1 || true

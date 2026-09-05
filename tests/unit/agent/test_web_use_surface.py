@@ -435,6 +435,128 @@ def test_capture_active_without_page_tells_model_to_navigate(monkeypatch):
         surface_context.capture_active()
 
 
+def test_capture_preserves_origin_window_without_granting_page_access():
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    other = _WS()
+    asyncio.run(webtab.handle_webtab_register(owner, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    try:
+        context = surface_context.capture({
+            "version": 1,
+            "window_id": "window-2",
+            "access": "enabled",
+        }, owner)
+
+        assert context["origin_window_id"] == "window-2"
+        assert context["window_id"] == "window-2"
+        assert context["surfaces"] == []
+        assert surface_context.tool_enabled(context) is False
+        assert surface_context.capture({
+            "version": 1,
+            "window_id": "window-2",
+            "access": "enabled",
+        }, other) is None
+    finally:
+        webtab.release_connection(owner)
+
+
+def test_origin_window_page_inventory_only_lists_that_window(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    other = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner, other])
+    asyncio.run(webtab.handle_webtab_register(owner, {
+        "action": "webtab_register", "window_id": "window-1",
+    }))
+    asyncio.run(webtab.handle_webtab_register(other, {
+        "action": "webtab_register", "window_id": "window-2",
+    }))
+    calls = []
+
+    def inventory(ws, command, timeout=5.0):
+        calls.append((ws, command, timeout))
+        return {
+            "ok": True,
+            "window_id": "window-1",
+            "pages": [{
+                "tab_id": "tab-existing",
+                "target_id": "target-existing",
+                "url": "https://example.test/",
+                "title": "Existing",
+                "visible": True,
+                "focused": True,
+                "region": "center",
+            }],
+        }
+
+    monkeypatch.setattr(webtab, "request_on_ws", inventory)
+    try:
+        context = surface_context.capture_pages(
+            surface_context.window_context("window-1")
+        )
+
+        assert calls == [(owner, {"op": "list", "window_id": "window-1"}, 5.0)]
+        assert [window["window_id"] for window in context["windows"]] == [
+            "window-1",
+        ]
+        assert context["surfaces"][0]["tab_id"] == "tab-existing"
+        assert webtab.binding_connection(
+            context["surfaces"][0]["binding_id"]
+        ) is owner
+        surface_context.release_bindings(context)
+    finally:
+        webtab.release_connection(owner)
+        webtab.release_connection(other)
+
+
+def test_origin_window_page_inventory_uses_parent_bridge_in_child(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    expected = {
+        "context_id": "page-context",
+        "window_id": "window-1",
+        "surfaces": [{
+            "window_id": "window-1",
+            "tab_id": "tab-existing",
+            "binding_id": "surface-existing",
+        }],
+    }
+    sent = []
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(
+        webtab,
+        "_request",
+        lambda command, timeout: sent.append((command, timeout)) or {
+            "ok": True, "context": expected,
+        },
+    )
+    monkeypatch.setattr(
+        webtab,
+        "register_binding",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("child must not create parent Page bindings")
+        ),
+    )
+
+    context = surface_context.capture_pages(
+        surface_context.window_context("window-1")
+    )
+
+    assert context is expected
+    assert sent == [({
+        "op": "capture_pages",
+        "window_id": "window-1",
+    }, 5.0)]
+
+
 def test_open_page_opens_background_tab_on_registered_desktop(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server
@@ -470,6 +592,499 @@ def test_open_page_opens_background_tab_on_registered_desktop(monkeypatch):
         webtab.release_connection(owner)
 
 
+def test_open_page_forwards_background_contract_through_child_bridge(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    sent = []
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(
+        webtab,
+        "_request",
+        lambda command, timeout: sent.append((command, timeout)) or {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "tab-background",
+            "target_id": "target-background",
+            "created": True,
+            "reused": False,
+            "url": "https://example.test/",
+            "title": "Example",
+            "binding_id": "surface-background",
+            "page_key": "page-background",
+            "page_revision": 3,
+            "access_revision": 4,
+            "geometry_revision": 5,
+        },
+    )
+
+    context = surface_context.open_page(
+        "https://example.test/", window_id="window-1", background=True,
+    )
+
+    assert sent == [({
+        "op": "open",
+        "url": "https://example.test/",
+        "window_id": "window-1",
+        "background": True,
+    }, 15.0)]
+    surface = context["surfaces"][0]
+    assert surface["binding_id"] == "surface-background"
+    assert surface["page_key"] == "page-background"
+    assert surface["aliases"] == ["web:1"]
+    assert surface["region"] == "background"
+    assert surface["visible"] is False
+    assert surface["focused"] is False
+    assert surface["agent_owned"] is True
+
+
+def test_open_page_background_response_timeout_requires_manual_cleanup(
+    monkeypatch,
+):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    webtab.ensure_connection_revision(owner)
+    webtab._desktop_windows[owner] = "window-1"
+    sent = []
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=15.0: sent.append(
+            (ws, command, timeout)
+        ) or {
+            "ok": False,
+            "reason_code": webtab.RESPONSE_TIMEOUT_REASON_CODE,
+            "error": "timeout: no desktop shell replied within 15s",
+        },
+    )
+    try:
+        result = surface_context.open_page(
+            "https://example.test/", window_id="window-1", background=True,
+        )
+    finally:
+        webtab.release_connection(owner)
+
+    assert sent == [(owner, {
+        "op": "open",
+        "url": "https://example.test/",
+        "window_id": "window-1",
+        "background": True,
+    }, 15.0)]
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
+
+
+def test_open_page_preserves_parent_cleanup_failure(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(webtab, "_request", lambda *_args, **_kwargs: {
+        "ok": False,
+        "status": "infeasible",
+        "success": False,
+        "infeasible_declared": True,
+        "reason_code": "page_cleanup_failed",
+        "error": "close rejected",
+        "handoff_instruction": "Close the remaining background Page.",
+    })
+
+    result = surface_context.open_page(
+        "https://example.test/", window_id="window-1", background=True,
+    )
+
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert result["handoff_instruction"] == (
+        "Close the remaining background Page."
+    )
+
+
+def test_open_page_standardizes_renderer_cleanup_failure(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(webtab, "_request", lambda *_args, **_kwargs: {
+        "ok": False,
+        "reason_code": "page_cleanup_failed",
+        "error": "agent-created Page cleanup failed",
+        "created": True,
+        "reused": False,
+    })
+
+    result = surface_context.open_page(
+        "https://example.test/", window_id="window-1", background=True,
+    )
+
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
+
+
+@pytest.mark.parametrize("open_result", [
+    {
+        "ok": True,
+        "window_id": "window-2",
+        "tab_id": "tab-unusable",
+        "target_id": "target-unusable",
+        "created": True,
+        "reused": False,
+    },
+    {
+        "ok": True,
+        "tab_id": "tab-unusable",
+        "target_id": "target-unusable",
+        "created": True,
+        "reused": False,
+    },
+    {
+        "ok": True,
+        "window_id": "window-1",
+        "tab_id": "tab-unusable",
+        "created": True,
+        "reused": False,
+    },
+])
+def test_open_page_rolls_back_unusable_success_result(
+    monkeypatch, open_result,
+):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    sent = []
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(
+        webtab,
+        "registered_desktop_windows",
+        lambda: [(owner, "window-1", 7)],
+    )
+
+    def request(_ws, command, timeout=15.0):
+        sent.append((command, timeout))
+        if command["op"] == "open":
+            return open_result
+        return {"ok": True, "tab_id": command["tab_id"]}
+
+    monkeypatch.setattr(webtab, "request_on_ws", request)
+    monkeypatch.setattr(
+        webtab,
+        "register_binding",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("an unusable Page must not be bound")
+        ),
+    )
+
+    result = surface_context.open_page(
+        "https://example.test/", window_id="window-1", background=True,
+    )
+
+    assert result["ok"] is False
+    assert result["reason_code"] == "page_context_stale"
+    assert sent == [
+        ({
+            "op": "open",
+            "url": "https://example.test/",
+            "window_id": "window-1",
+            "background": True,
+        }, 15.0),
+        ({
+            "op": "close",
+            "window_id": "window-1",
+            "tab_id": "tab-unusable",
+        }, 15.0),
+    ]
+
+
+@pytest.mark.parametrize("close_results", [[False, True], [False, False]])
+def test_open_page_retries_rejected_identity_rollback(
+    monkeypatch, close_results,
+):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(
+        webtab,
+        "registered_desktop_windows",
+        lambda: [(owner, "window-1", 7)],
+    )
+    close_calls = []
+
+    def request(_ws, command, timeout=15.0):
+        del timeout
+        if command["op"] == "open":
+            return {
+                "ok": True,
+                "window_id": "window-2",
+                "tab_id": "tab-unusable",
+                "target_id": "target-unusable",
+                "created": True,
+                "reused": False,
+            }
+        close_calls.append(command["tab_id"])
+        succeeded = close_results[len(close_calls) - 1]
+        return {"ok": succeeded, "error": "close rejected"}
+
+    monkeypatch.setattr(webtab, "request_on_ws", request)
+
+    result = surface_context.open_page(
+        "https://example.test/", window_id="window-1", background=True,
+    )
+
+    assert result["ok"] is False
+    assert close_calls == ["tab-unusable", "tab-unusable"]
+    if close_results[-1]:
+        assert result["reason_code"] == "page_context_stale"
+    else:
+        assert result["status"] == "infeasible"
+        assert result["success"] is False
+        assert result["reason_code"] == "page_cleanup_failed"
+        assert "Close the remaining background Page" in result[
+            "handoff_instruction"
+        ]
+
+
+def test_open_page_rolls_back_when_binding_registration_fails(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    sent = []
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(
+        webtab,
+        "registered_desktop_windows",
+        lambda: [(owner, "window-1", 7)],
+    )
+
+    def request(_ws, command, timeout=15.0):
+        sent.append((command, timeout))
+        if command["op"] == "open":
+            return {
+                "ok": True,
+                "window_id": "window-1",
+                "tab_id": "tab-created",
+                "target_id": "target-created",
+                "created": True,
+                "reused": False,
+            }
+        return {"ok": True}
+
+    monkeypatch.setattr(webtab, "request_on_ws", request)
+    monkeypatch.setattr(
+        webtab,
+        "register_binding",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("connection changed")
+        ),
+    )
+
+    result = surface_context.open_page(
+        "https://example.test/", window_id="window-1", background=True,
+    )
+
+    assert result["ok"] is False
+    assert result["reason_code"] == "page_context_stale"
+    assert sent[-1] == ({
+        "op": "close",
+        "window_id": "window-1",
+        "tab_id": "tab-created",
+    }, 15.0)
+
+
+@pytest.mark.parametrize("ownership", [
+    {"created": False, "reused": True},
+    {"created": True},
+    {"created": True, "reused": True},
+    {"created": False, "reused": False},
+    {"created": 1, "reused": False},
+    {"created": True, "reused": 0},
+])
+def test_open_page_does_not_close_unowned_page_when_binding_fails(
+    monkeypatch, ownership,
+):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    sent = []
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(
+        webtab,
+        "registered_desktop_windows",
+        lambda: [(owner, "window-1", 7)],
+    )
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda _ws, command, timeout=15.0: sent.append((command, timeout)) or {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "tab-user",
+            "target_id": "target-user",
+            **ownership,
+        },
+    )
+    monkeypatch.setattr(
+        webtab,
+        "register_binding",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("connection changed")
+        ),
+    )
+
+    result = surface_context.open_page(
+        "https://example.test/", window_id="window-1",
+    )
+
+    assert result["ok"] is False
+    assert result["reason_code"] == "page_context_stale"
+    assert sent == [({
+        "op": "open",
+        "url": "https://example.test/",
+        "window_id": "window-1",
+    }, 15.0)]
+
+
+def test_close_page_forwards_exact_identity_through_child_bridge(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    sent = []
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(
+        webtab,
+        "_request",
+        lambda command, timeout: sent.append((command, timeout)) or {
+            "ok": True,
+            "tab_id": "tab-background",
+        },
+    )
+
+    result = surface_context.close_page({
+        "window_id": "window-1",
+        "surfaces": [{
+            "window_id": "window-1",
+            "tab_id": "tab-background",
+            "agent_owned": True,
+        }],
+    })
+
+    assert result["ok"] is True
+    assert sent == [({
+        "op": "close",
+        "window_id": "window-1",
+        "tab_id": "tab-background",
+    }, 5.0)]
+
+
+@pytest.mark.parametrize("close_result", [
+    {"ok": False, "reason_code": "desktop_unavailable", "error": "rejected"},
+    None,
+])
+def test_close_page_standardizes_cleanup_failure(monkeypatch, close_result):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1")
+    monkeypatch.setattr(webtab, "_request", lambda *_args, **_kwargs: close_result)
+
+    result = surface_context.close_page({
+        "window_id": "window-1",
+        "surfaces": [{
+            "window_id": "window-1",
+            "tab_id": "tab-background",
+            "agent_owned": True,
+        }],
+    })
+
+    assert result["ok"] is False
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
+
+
+def test_close_page_missing_exact_identity_requires_manual_cleanup():
+    from openprogram.agent import surface_context
+
+    result = surface_context.close_page({
+        "window_id": "window-1",
+        "surfaces": [{"agent_owned": True}],
+    })
+
+    assert result["ok"] is False
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["infeasible_declared"] is True
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result[
+        "handoff_instruction"
+    ]
+
+
+def test_close_page_only_releases_reused_page_binding(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    released = []
+    monkeypatch.setattr(
+        webtab,
+        "release_binding",
+        lambda binding_id: released.append(binding_id),
+    )
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("a reused Page must not be closed")
+        ),
+    )
+
+    result = surface_context.close_page({
+        "window_id": "window-1",
+        "surfaces": [{
+            "window_id": "window-1",
+            "tab_id": "tab-user",
+            "binding_id": "surface-user",
+            "agent_owned": False,
+        }],
+    })
+
+    assert result == {
+        "ok": True,
+        "closed": False,
+        "released": True,
+        "borrowed": True,
+    }
+    assert released == ["surface-user"]
+
+
 def test_open_page_rejects_non_http_scheme_without_desktop_ipc(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui.ws_actions import webtab
@@ -495,6 +1110,27 @@ def test_open_page_reports_missing_desktop(monkeypatch):
     assert result["ok"] is False
     assert result["reason_code"] == "desktop_unavailable"
     assert result["error"] == surface_context.DESKTOP_UNAVAILABLE_ERROR
+
+
+def test_open_page_requires_origin_window_when_multiple_desktops(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owners = [_WS(), _WS()]
+    for index, owner in enumerate(owners, start=1):
+        webtab.ensure_connection_revision(owner)
+        webtab._desktop_windows[owner] = f"window-{index}"
+    monkeypatch.setattr(server, "_ws_connections", owners)
+    try:
+        result = surface_context.open_page(
+            "https://example.test/", background=True,
+        )
+        assert result["ok"] is False
+        assert result["reason_code"] == "desktop_unavailable"
+    finally:
+        for owner in owners:
+            webtab.release_connection(owner)
 
 
 def test_direct_page_inventory_includes_background_and_popup_provenance(monkeypatch):
@@ -644,7 +1280,7 @@ def test_page_inventory_aggregates_registered_desktop_windows(monkeypatch):
     webtab.release_connection(secondary)
 
 
-def test_context_page_inventory_keeps_originating_window_primary(monkeypatch):
+def test_context_page_inventory_stays_in_originating_window(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server
     from openprogram.webui.ws_actions import webtab
@@ -680,14 +1316,73 @@ def test_context_page_inventory_keeps_originating_window_primary(monkeypatch):
     context = surface_context.capture_pages(accepted)
 
     assert context["window_id"] == "window-1"
-    assert [window["window_id"] for window in context["windows"]] == [
-        "window-1", "window-2",
-    ]
+    assert [window["window_id"] for window in context["windows"]] == ["window-1"]
+    assert [page["window_id"] for page in context["surfaces"]] == ["window-1"]
     surface_context.release_bindings(context)
     webtab.release_connection(secondary)
 
 
-def test_context_page_inventory_survives_originating_window_disconnect(monkeypatch):
+def test_context_page_inventory_keeps_submitted_page_primary(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    binding = webtab.register_binding(
+        owner,
+        "window-1",
+        "tab-submitted",
+        "target-submitted",
+        allow_background=True,
+    )
+    accepted = {
+        "context_id": "accepted",
+        "window_id": "window-1",
+        "surfaces": [{
+            "binding_id": binding,
+            "window_id": "window-1",
+            "tab_id": "tab-submitted",
+        }],
+    }
+    monkeypatch.setattr(webtab, "request_on_ws", lambda *_args, **_kwargs: {
+        "ok": True,
+        "window_id": "window-1",
+        "focused_tab_id": "tab-other",
+        "pages": [
+            {
+                "tab_id": "tab-other",
+                "target_id": "target-other",
+                "url": "https://other.test/",
+                "title": "Other",
+                "visible": True,
+                "focused": True,
+                "region": "center",
+            },
+            {
+                "tab_id": "tab-submitted",
+                "target_id": "target-submitted",
+                "url": "https://submitted.test/",
+                "title": "Submitted",
+                "visible": True,
+                "focused": False,
+                "region": "center",
+            },
+        ],
+    })
+    try:
+        context = surface_context.capture_pages(accepted)
+        primary = next(
+            page for page in context["surfaces"]
+            if page["surface_key"] == context["primary_surface_key"]
+        )
+        assert primary["tab_id"] == "tab-submitted"
+        surface_context.release_bindings(context)
+    finally:
+        webtab.release_connection(owner)
+
+
+def test_context_page_inventory_rejects_originating_window_disconnect(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui import server
     from openprogram.webui.ws_actions import webtab
@@ -728,12 +1423,9 @@ def test_context_page_inventory_survives_originating_window_disconnect(monkeypat
         },
     )
 
-    context = surface_context.capture_pages(accepted)
-    assert [window["window_id"] for window in context["windows"]] == ["window-2"]
-    assert context["surfaces"][0]["window_id"] == "window-2"
-    assert calls == [(secondary, {"op": "list", "window_id": "window-2"})]
-
-    surface_context.release_bindings(context)
+    with pytest.raises(RuntimeError, match="accepted Page binding is unavailable"):
+        surface_context.capture_pages(accepted)
+    assert calls == []
     webtab.release_connection(secondary)
 
 
@@ -914,9 +1606,10 @@ def test_frontend_and_electron_expose_turn_surface_preview_contract():
         / "apps/web/components/chat/composer/environment-row/chips/web-surface-chip.tsx"
     ).read_text(encoding="utf-8")
 
-    assert "surfaceRefForChat(sessionId, toolsEnabled)" in send
+    assert "surfaceOriginForChat(sessionId, toolsEnabled)" in send
     assert "payload.surface = surface" in send
     assert "export function surfaceRefForChat" in bridge
+    assert "export function surfaceOriginForChat" in bridge
     assert 'd.op === "preview"' in bridge
     assert "webTab.preview(tab.id)" in bridge
     control = bridge[bridge.index("export function installDesktopMenuHandlers"):]
@@ -1122,7 +1815,7 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
 
     from openprogram.agent.authority import local_owner_authority
     from openprogram.agent.dispatcher import TurnRequest
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.types import AgentTool, AgentToolResult
     from openprogram.providers.types import TextContent
 
@@ -1159,7 +1852,7 @@ def test_turn_surface_grant_allows_only_computer_use_after_rules(monkeypatch):
         raise AssertionError("unexpected approval")
 
     monkeypatch.setattr(
-        "openprogram.agent.internals._approval.await_user_approval",
+        "openprogram.agent.permissions.approval.await_user_approval",
         unexpected_approval,
     )
 
@@ -1179,7 +1872,7 @@ def test_subprocess_permission_snapshot_denies_nested_browser_page_before_bypass
 
     from openprogram.agent.authority import local_owner_authority
     from openprogram.agent.dispatcher import TurnRequest
-    from openprogram.agent.internals._approval import wrap_with_approval
+    from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.process_runner import _permission_rules_from_snapshot
     from openprogram.agent.types import AgentTool, AgentToolResult
     from openprogram.providers.types import TextContent

@@ -123,10 +123,24 @@ export type {
   DesktopTransferReceipt,
 } from "@/lib/desktop-transfer-types";
 
+export interface DesktopReopenState {
+  updateId: string | null;
+  sessionId: string | null;
+  status: "inactive" | "pending" | "acknowledged" | "unavailable" | "manual_navigation";
+  reason: string | null;
+}
+
 export interface DesktopBridge {
   readonly isDesktop: true;
   readonly platform?: "darwin" | "win32" | "linux";
   readonly windowId: string;
+  selfUpdateCapture?(nonce: string): Promise<{ ok: boolean; reason?: string }>;
+  /** Update-triggered original-session recovery; absent in older shells. */
+  selfUpdateReopen?: {
+    getState(): Promise<DesktopReopenState | null>;
+    sessionLoaded(sessionId: string): Promise<DesktopReopenState | null>;
+    onState(callback: (state: DesktopReopenState) => void): () => void;
+  };
   /** Absolute native path for a user-selected/dropped File. */
   getPathForFile?(file: File): string;
   /** shell.openExternal — http/https only. */
@@ -315,6 +329,11 @@ export function destroyStaleTerminals(
 let installed = false;
 
 function showCenterSurface(): boolean {
+  if (
+    typeof window !== "undefined"
+    && (window.location.pathname === "/chat"
+      || window.location.pathname.startsWith("/s/"))
+  ) return true;
   if (!hasNavigate()) return false;
   navigate("/chat");
   return true;
@@ -446,6 +465,35 @@ export function finalizeBoundWebTabActivation(
   };
 }
 
+function finalizeBoundWebTabScreenshot(
+  tabId: string,
+  startedGeometryRevision: number,
+  imageDataUrl: string | null,
+): Record<string, unknown> {
+  const tab = useCenterTabs.getState().tabs.find(
+    (item) => item.id === tabId && item.kind === "web",
+  );
+  const geometryRevision = webTabGeometryRevisions.get(tabId) ?? 0;
+  if (!tab || geometryRevision !== startedGeometryRevision) {
+    return {
+      ok: false,
+      error: "web tab changed during capture",
+      reason_code: "page_context_stale",
+      geometry_revision: geometryRevision,
+    };
+  }
+  if (!imageDataUrl) {
+    return { ok: false, error: "desktop web tab capture failed" };
+  }
+  return {
+    ok: true,
+    window_id: desktopBridge()?.windowId,
+    tab_id: tab.id,
+    geometry_revision: geometryRevision,
+    image_data_url: imageDataUrl,
+  };
+}
+
 export interface TurnSurfaceRef {
   version: 1;
   window_id: string;
@@ -456,6 +504,12 @@ export interface TurnSurfaceRef {
   title: string;
   url: string;
   geometry_revision: number;
+}
+
+export interface TurnWindowRef {
+  version: 1;
+  window_id: string;
+  access: "enabled" | "disabled";
 }
 
 export interface BrowserPageInventoryItem {
@@ -697,6 +751,26 @@ export function surfaceRefForChat(
   };
 }
 
+/** The exact Page when present, otherwise only the chat's desktop window. */
+export function surfaceOriginForChat(
+  sessionId: string | null,
+  toolsEnabled: boolean,
+): TurnSurfaceRef | TurnWindowRef | null {
+  const surface = surfaceRefForChat(sessionId, toolsEnabled);
+  if (surface) return surface;
+  const bridge = desktopBridge();
+  if (!bridge || !sessionId) return null;
+  const chat = useCenterTabs.getState().tabs.find(
+    (tab) => tab.kind === "session" && tab.sessionId === sessionId,
+  );
+  if (!chat) return null;
+  return {
+    version: 1,
+    window_id: bridge.windowId,
+    access: toolsEnabled ? "enabled" : "disabled",
+  };
+}
+
 export function restorePriorActiveTabAfterFailedWebOpen(
   priorActiveId: string | null,
   openedWebTabId: string | null,
@@ -726,6 +800,8 @@ function sendWebTabResult(
   reqId: string,
   active: { id: string; url?: string },
   targetId: string | null,
+  ownership?: { created: boolean; reused: boolean },
+  failure?: { error: string; reason_code?: string },
 ): void {
   const activeUrl = active.url || (active.id.startsWith("w:") ? active.id.slice(2) : "");
   const ok = !!activeUrl && !!targetId;
@@ -740,8 +816,38 @@ function sendWebTabResult(
       target_id: targetId,
       geometry_revision: webTabGeometryRevisions.get(active.id) ?? 0,
     } : {}),
-    ...(!ok ? { error: "desktop web tab did not expose a CDP target" } : {}),
+    ...ownership,
+    ...(!ok ? {
+      error: failure?.error || "desktop web tab did not expose a CDP target",
+      ...(failure?.reason_code ? { reason_code: failure.reason_code } : {}),
+    } : {}),
   }));
+}
+
+// The server drops a pending renderer request after 15 seconds. Finish locally
+// first so a late CDP target resolution cannot orphan an agent-created Page.
+const BACKGROUND_WEBTAB_RESOLVE_TIMEOUT_MS = 12_000;
+
+function rollbackCreatedAgentPage(
+  id: string,
+  created: boolean,
+): { error: string; reason_code: "page_cleanup_failed" } | undefined {
+  if (!created) return undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      useCenterTabs.getState().closeTab(id);
+      return undefined;
+    } catch {
+      // Retry once before declaring that the exact Page needs manual cleanup.
+    }
+  }
+  return {
+    error: (
+      "desktop web tab did not expose a CDP target; "
+      + "agent-created Page cleanup failed"
+    ),
+    reason_code: "page_cleanup_failed",
+  };
 }
 
 /**
@@ -774,13 +880,37 @@ export function installDesktopMenuHandlers(): void {
     const detail = e.detail;
     if (detail?.type !== "webtab.command") return;
     const d = detail.data as
-      | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; expected_geometry_revision?: number }
+      | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; background?: boolean; nonce?: string; expected_geometry_revision?: number }
       | undefined;
-    if (!d?.req_id || !["open", "active", "activate", "preview", "list", "resolve", "close"].includes(d.op || "")) return;
+    if (!d?.req_id || !["open", "active", "activate", "preview", "screenshot", "list", "resolve", "close", "self_update_capture"].includes(d.op || "")) return;
     const ws = getSocket();
     if (ws?.readyState !== WebSocket.OPEN) return;
 
+    if (d.op === "self_update_capture") {
+      const reply = (ok: boolean) => {
+        if (getSocket() === ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ action: "webtab_result", req_id: d.req_id, ok, window_id: "main" }));
+        }
+      };
+      if (bridge.windowId !== "main" || d.window_id !== "main" || !bridge.selfUpdateCapture ||
+          typeof d.nonce !== "string" || !/^[0-9a-f]{64}$/.test(d.nonce)) {
+        reply(false);
+      } else {
+        void bridge.selfUpdateCapture(d.nonce).then((result) => reply(result.ok === true)).catch(() => reply(false));
+      }
+      return;
+    }
+
     if (d.op === "close") {
+      if (d.window_id && d.window_id !== bridge.windowId) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "requested web tab belongs to another window",
+        }));
+        return;
+      }
       const state = useCenterTabs.getState();
       const closed = closeAgentWebTabResult(d.tab_id, state.tabs, state.groups);
       if (closed.ok) state.closeTab(d.tab_id!);
@@ -828,6 +958,67 @@ export function installDesktopMenuHandlers(): void {
         tab?.kind === "web" ? tab : { id: d.tab_id ?? "", url: "" },
         targetId,
       ));
+      return;
+    }
+
+    if (d.op === "screenshot") {
+      if (d.window_id && d.window_id !== bridge.windowId) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "requested web tab belongs to another window",
+        }));
+        return;
+      }
+      const tab = d.tab_id
+        ? useCenterTabs.getState().tabs.find(
+          (item) => item.id === d.tab_id && item.kind === "web",
+        )
+        : null;
+      if (!tab || !bridge.webTab.capture) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "requested web tab cannot be captured",
+        }));
+        return;
+      }
+      const geometryRevision = webTabGeometryRevisions.get(tab.id) ?? 0;
+      if (d.expected_geometry_revision
+          && d.expected_geometry_revision !== geometryRevision) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "web tab geometry changed",
+          reason_code: "page_context_stale",
+          geometry_revision: geometryRevision,
+        }));
+        return;
+      }
+      void bridge.webTab.capture(tab.id).then((imageDataUrl) => {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ...finalizeBoundWebTabScreenshot(
+            tab.id,
+            geometryRevision,
+            imageDataUrl,
+          ),
+        }));
+      }).catch(() => {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ...finalizeBoundWebTabScreenshot(
+            tab.id,
+            geometryRevision,
+            null,
+          ),
+        }));
+      });
       return;
     }
 
@@ -915,7 +1106,59 @@ export function installDesktopMenuHandlers(): void {
 
     if (d.op === "open") {
       if (!d.url) return;
+      if (d.window_id && d.window_id !== bridge.windowId) {
+        ws.send(JSON.stringify({
+          action: "webtab_result",
+          req_id: d.req_id,
+          ok: false,
+          error: "requested web tab belongs to another window",
+        }));
+        return;
+      }
+      if (d.background) {
+        const priorTabIds = new Set(
+          useCenterTabs.getState().tabs.map((tab) => tab.id),
+        );
+        const id = useCenterTabs.getState().ensureExclusiveWebTab(d.url);
+        const created = !priorTabIds.has(id);
+        const ownership = { created, reused: !created };
+        ensureWebView(bridge, id, d.url);
+        let settled = false;
+        let deadline: ReturnType<typeof setTimeout>;
+        const expiresAt = Date.now() + BACKGROUND_WEBTAB_RESOLVE_TIMEOUT_MS;
+        const finish = (targetId: string | null) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(deadline);
+          const tab = useCenterTabs.getState().tabs.find(
+            (item) => item.id === id && item.kind === "web",
+          );
+          const failure = targetId
+            ? undefined
+            : rollbackCreatedAgentPage(id, created);
+          sendWebTabResult(
+            ws,
+            d.req_id!,
+            tab?.kind === "web" ? tab : { id, url: d.url },
+            targetId,
+            ownership,
+            failure,
+          );
+        };
+        deadline = setTimeout(
+          () => finish(null),
+          BACKGROUND_WEBTAB_RESOLVE_TIMEOUT_MS,
+        );
+        void Promise.resolve()
+          .then(() => bridge.webTab.resolve?.(id) ?? null)
+          .then(
+            (targetId) => finish(Date.now() >= expiresAt ? null : targetId),
+            () => finish(null),
+          );
+        return;
+      }
       const state = useCenterTabs.getState();
+      const priorTabIds = new Set(state.tabs.map((tab) => tab.id));
       const active = state.tabs.find((tab) => tab.id === state.activeId);
       const priorActiveId = state.activeId;
       const activeGroup = active
@@ -944,16 +1187,23 @@ export function installDesktopMenuHandlers(): void {
         state.openWebTab(d.url);
         id = useCenterTabs.getState().activeId;
       }
+      const created = !!id && !priorTabIds.has(id);
+      const ownership = { created, reused: !!id && !created };
       if (!split && !routeVisible) {
         const routed = showCenterSurface();
         if (!routed) {
           restorePriorActiveTabAfterFailedWebOpen(priorActiveId, id);
-          ws.send(JSON.stringify({
-            action: "webtab_result",
-            req_id: d.req_id,
-            ok: false,
-            error: "center-tab navigation unavailable",
-          }));
+          const failure = id
+            ? rollbackCreatedAgentPage(id, created)
+            : undefined;
+          sendWebTabResult(
+            ws,
+            d.req_id!,
+            { id: id ?? "", url: d.url },
+            null,
+            ownership,
+            failure ?? { error: "center-tab navigation unavailable" },
+          );
           return;
         }
       }
@@ -973,11 +1223,16 @@ export function installDesktopMenuHandlers(): void {
         if (!targetId && !split) {
           restorePriorActiveTabAfterFailedWebOpen(priorActiveId, id);
         }
+        const failure = !targetId && id
+          ? rollbackCreatedAgentPage(id, created)
+          : undefined;
         sendWebTabResult(
           ws,
           d.req_id!,
           tab?.kind === "web" ? tab : { id: id ?? "", url: d.url },
           targetId,
+          ownership,
+          failure,
         );
       })();
       return;

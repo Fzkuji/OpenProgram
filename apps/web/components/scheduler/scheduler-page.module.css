@@ -7,11 +7,22 @@
   width: clamp(150px, 24vw, 320px);
 }
 
-.navButton {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  text-align: left;
+.layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
 }
 
 .navButton:focus-visible {
@@ -19,11 +30,12 @@
   outline-offset: -1px;
 }
 
-.layout {
+.filterLabel {
   min-width: 0;
 }
 
 .content {
+  flex: 1;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
@@ -40,8 +52,7 @@
   font-weight: 600;
 }
 
-.list,
-.suggestionList {
+.list {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -122,33 +133,36 @@
 }
 
 .suggestions {
-  max-width: 780px;
-  padding-top: 18px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: clamp(24px, 6cqi, 80px) 0 24px;
 }
 
 .emptyIntro {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
-  margin: 0 8px 24px;
-  color: var(--text-secondary);
+  gap: 18px;
+  margin-bottom: 40px;
+  text-align: center;
 }
 
 .emptyIntro > svg {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   color: var(--text-tertiary);
 }
 
 .emptyIntro div {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 8px;
 }
 
 .emptyIntro strong {
   color: var(--text-bright);
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 600;
 }
 
@@ -157,21 +171,53 @@
   font-size: 13px;
 }
 
+.suggestionList {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .suggestionRow {
-  min-height: 64px;
-  padding: 10px 14px 10px 12px;
-  border-color: var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--ui-list-radius);
   background: var(--bg-secondary);
+  overflow-wrap: anywhere;
 }
 
-.suggestionRow:hover {
-  border-color: var(--text-muted);
-  background: var(--bg-tertiary);
+.suggestionIcon {
+  color: var(--text-tertiary);
+  margin-bottom: 16px;
 }
 
-.suggestionRow svg {
-  width: 19px;
-  height: 19px;
+.suggestionIcon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.suggestionRow h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.suggestionSchedule {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.suggestionPrompt {
+  flex: 1;
+  margin: 12px 0 20px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .form {
@@ -239,29 +285,27 @@
   }
 }
 
-@container scheduler (max-width: 520px) {
-  .headerSearch {
-    width: 90px;
-  }
-
-  .layout {
+@container scheduler (max-width: 680px) {
+  .suggestionList {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .layout .nav {
-    position: static;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2px;
-    padding: 6px 8px;
-    overflow: visible;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
+  .nav {
+    padding: 10px 14px;
   }
 
   .navButton {
-    min-width: 0;
+    padding: 0 8px;
+  }
+
+  .emptyIntro {
+    margin-bottom: 28px;
+  }
+}
+
+@container scheduler (max-width: 520px) {
+  .headerSearch {
+    width: 90px;
   }
 }
 

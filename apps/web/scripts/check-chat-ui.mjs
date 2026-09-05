@@ -23,6 +23,7 @@ const chatHandlers = source("lib/runtime-bridge/chat-handlers.ts");
 const sessionStore = source("lib/session-store/index.ts");
 const assistantBubble = source("components/chat/messages/assistant-bubble.tsx");
 const queuedMessages = source("components/chat/messages/queued-messages.tsx");
+const userBubble = source("components/chat/messages/user-bubble.tsx");
 const runtimeBlock = source("components/chat/messages/runtime-block.tsx");
 const attachCard = source("components/chat/messages/attach-card.tsx");
 const executionStrip = source("components/chat/messages/execution-strip.tsx");
@@ -172,6 +173,20 @@ assert.doesNotMatch(
   /加载中|Loading…/,
   "the panel must never render a loading state; snapshots warm on session focus",
 );
+assert.match(
+  contextBreakdownPanel,
+  /className="scroll-overlay min-h-0 flex-1 overflow-y-auto"/,
+  "context breakdown content must scroll without a native scrollbar",
+);
+assert.match(
+  contextBreakdownPanel,
+  /className="shrink-0 border-t border-\[var\(--border\)\]"/,
+  "the compact action must live outside the scrolling content",
+);
+assert.match(contextBreakdownPanel, /message\.slot === "event"/);
+assert.match(contextBreakdownPanel, /!compacting && !recentlyCompacted/);
+assert.match(contextBreakdownPanel, /Recently compacted/);
+assert.match(contextBreakdownPanel, /Compacting…/);
 assert.match(source("components/chat/context-badge.tsx"), /warmContextBreakdown\(/);
 
 assert.match(
@@ -208,11 +223,10 @@ for (const themeCss of [lightTheme, beigeLightTheme]) {
 }
 assert.match(auroraTheme, /--focus-ring:\s*color-mix\(in srgb, var\(--accent-cyan\) 60%, transparent\);/);
 
-// Markdown must not depend on the optional CDN script. A missing/blocked CDN
-// previously left every assistant response in renderMd's bordered <pre>
-// fallback for the lifetime of the page.
+// Markdown and math rendering are production-bundled dependencies.
 assert.match(markdownRenderer, /import \{ marked as npmMarked \} from "marked";/);
-assert.match(markdownRenderer, /window\.marked\s*\?\?\s*npmMarked/);
+assert.match(markdownRenderer, /import renderMathInElement from "katex\/contrib\/auto-render";/);
+assert.doesNotMatch(markdownRenderer, /window\.(?:marked|renderMathInElement)/);
 assert.doesNotMatch(markdownRenderer, /return "<pre>" \+ escHtml\(str\) \+ "<\/pre>";/);
 
 assert.match(welcome, /src=["{]?["']\/icon\.svg["']/);
@@ -730,6 +744,132 @@ assert.match(
   "the live outer status must take precedence over a stale terminal payload",
 );
 
+for (const [payload, expected, objectOutput] of [
+  [
+    { status: "succeeded", success: false, summary: "The Page title is OpenProgram." },
+    "gui_agent · Succeeded · 00:00 · The Page title is OpenProgram.",
+    true,
+  ],
+  [
+    { status: "failed", success: true, summary: "No accessible built-in Page is open." },
+    "gui_agent · Failed · 00:00 · No accessible built-in Page is open.",
+  ],
+  [
+    {
+      status: "infeasible",
+      success: true,
+      summary: "Login is required.",
+      handoff_instruction: "Sign in, then retry this GUI task.",
+    },
+    "gui_agent · Needs takeover · 00:00 · Sign in, then retry this GUI task.",
+  ],
+]) {
+  assert.equal(
+    runtimeSummaryLabel({
+      fnName: "gui_agent",
+      status: "completed",
+      tree: {
+        duration_ms: 225,
+        output: objectOutput ? payload : JSON.stringify(payload),
+      },
+    }),
+    expected,
+    "the GUI task outcome must replace the internal completed transport status",
+  );
+}
+assert.match(
+  runtimeSummaryLabel({
+    fnName: "gui_agent",
+    status: "completed",
+    tree: {
+      duration_ms: 225,
+      output: JSON.stringify({ status: "cancelled", success: false }),
+    },
+  }),
+  /^gui_agent · Cancelled · 00:00 ·/,
+  "a returned GUI cancellation must remain distinct from failure and error",
+);
+for (const output of [
+  '{"status":',
+  { status: "mystery" },
+  { success: false },
+]) {
+  assert.match(
+    runtimeSummaryLabel({
+      fnName: "gui_agent",
+      status: "completed",
+      tree: { output },
+    }),
+    /^gui_agent · Error ·/,
+    "a terminal GUI node without a valid task outcome must not display Completed",
+  );
+}
+assert.match(
+  runtimeSummaryLabel({
+    fnName: "gui_agent",
+    status: "running",
+    tree: {
+      output: JSON.stringify({
+        status: "failed",
+        success: false,
+        summary: "stale terminal payload",
+      }),
+    },
+  }),
+  /^gui_agent · Running… ·/,
+  "a running GUI node must not expose a stale terminal payload",
+);
+assert.match(
+  runtimeSummaryLabel({
+    fnName: "gui_agent",
+    status: "error",
+    tree: {
+      error: "Worker crashed",
+      output: JSON.stringify({
+        status: "succeeded",
+        success: true,
+        summary: "stale successful payload",
+      }),
+    },
+  }),
+  /^gui_agent · Error · .*Worker crashed$/,
+  "a runtime exception must remain distinct from a returned task failure",
+);
+assert.match(
+  runtimeSummaryLabel({
+    fnName: "gui_agent",
+    status: "completed",
+    tree: {
+      error: "Persisted runner error",
+      output: { status: "succeeded", success: true, summary: "stale success" },
+    },
+  }),
+  /^gui_agent · Error · .*Persisted runner error$/,
+  "a stored tree error must take precedence over a returned GUI outcome",
+);
+assert.match(
+  runtimeSummaryLabel({
+    fnName: "status_probe",
+    status: "completed",
+    tree: { output: JSON.stringify({ status: "failed" }) },
+  }),
+  /^status_probe · Completed ·/,
+  "an arbitrary function's status field is data unless that function declares the outcome contract",
+);
+for (const fnName of ["status_probe", "auto_workflow"]) {
+  for (const outerStatus of ["succeeded", "infeasible"]) {
+    assert.match(
+      runtimeSummaryLabel({
+        fnName,
+        status: outerStatus,
+        tree: { output: "business result" },
+      }),
+      new RegExp(`^${fnName} · Completed ·`),
+      "GUI-only result labels must not alter other Function cards",
+    );
+  }
+}
+
 assert.deepEqual(
   runtimeConclusion({
     fnName: "auto_workflow",
@@ -911,6 +1051,11 @@ assert.match(
   /conclusion\.result \? \([\s\S]*runtime-program-conclusion-result/,
   "an explicitly requested direct result must render separately from the workflow handoff",
 );
+assert.match(
+  runtimeBlock,
+  /const retryPayload[\s\S]*node_id: msg\.id[\s\S]*surfaceOriginForChat\(sessionId, true\)[\s\S]*retryPayload\.surface_ref = surface[\s\S]*wsSend\(retryPayload\)/,
+  "Retry must submit the exact code node and retain a legacy Page fallback",
+);
 const runtimeAfterBlock = runtimeBlock.slice(
   runtimeBlock.indexOf("const runtimeAfter ="),
   runtimeBlock.indexOf("// LLM-initiated calls keep"),
@@ -955,6 +1100,12 @@ assert.match(
   /queuedAt:[\s\S]*className="message-timestamp"[\s\S]*new Date\(row\.queuedAt\)\.toLocaleTimeString/,
   "queued user messages must show their enqueue timestamp before dispatch",
 );
+assert.match(queuedMessages, /Steer now/);
+assert.match(queuedMessages, /Injecting…/);
+assert.match(controlsCluster, /While running: Steer/);
+assert.match(controlsCluster, /While running: Queue/);
+assert.match(userBubble, /msg\.steering[\s\S]*Steered/);
+assert.match(chatHandlers, /data\.turn_continues !== true/);
 assert.match(
   messageActions,
   /export function MessageTimestamp[\s\S]*className="message-timestamp"[\s\S]*aria-label=\{fullTime\}[\s\S]*tabIndex=\{0\}/,
@@ -1249,7 +1400,7 @@ const subagentCurrentState = chatVisualSpec.slice(subagentCurrentStart, subagent
 for (const state of ["T0 · 父级 RUNNING", "T1 · 子代理开始", "T2 · 子代理结束", "T3 · 父级 TERMINAL", "T4 · 用户重新展开"]) {
   assert.match(subagentCurrentState, new RegExp(state));
 }
-assert.match(subagentCurrentState, /open = userSet \?\? !!streaming/);
+assert.match(subagentCurrentState, /const \[open, setOpen\] = useState\(false\)/);
 assert.match(subagentCurrentState, /id="replay-subagent"[\s\S]*id="demo-subagent-row"/);
 assert.match(
   subagentCurrentState,
@@ -1259,7 +1410,7 @@ assert.match(
 assert.match(
   chatVisualSpec,
   /subagentLabel\.textContent='auto_workflow · 已完成';\s*setSubagentOpen\(false\)/,
-  "the slow replay must demonstrate the current parent-terminal auto-collapse",
+  "the slow replay must demonstrate the execution trace remaining collapsed at terminal state",
 );
 assert.match(
   chatVisualSpec,
@@ -1704,5 +1855,28 @@ assert.equal(
   }),
   "auto_workflow · 已完成 · 00:12 · 1 步",
 );
+for (const [status, summary, expected] of [
+  ["succeeded", "已确认页面标题。", "gui_agent · 成功 · 00:00 · 已确认页面标题。"],
+  ["failed", "没有可访问的内置页面。", "gui_agent · 失败 · 00:00 · 没有可访问的内置页面。"],
+  ["infeasible", "需要登录。", "gui_agent · 需要接手 · 00:00 · 请先登录。"],
+]) {
+  assert.equal(
+    runtimeSummaryLabel({
+      fnName: "gui_agent",
+      status: "completed",
+      tree: {
+        duration_ms: 225,
+        output: {
+          status,
+          success: status === "succeeded",
+          summary,
+          ...(status === "infeasible" ? { handoff_instruction: "请先登录。" } : {}),
+        },
+      },
+      text: zh,
+    }),
+    expected,
+  );
+}
 
 console.log("chat-ui checks passed");

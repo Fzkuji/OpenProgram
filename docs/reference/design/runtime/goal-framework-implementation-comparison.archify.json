@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OpenProgram Goal：当前控制器与剩余扩展",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1240, 800],
+    "views": [
+      {
+        "id": "primary-path",
+        "label": "主要完成路径",
+        "focus": ["entry", "controller", "worker", "gates", "evaluator", "terminal"],
+        "note": "从单一 prompt 开始，经过工作、确定性检查和语义判定后提交终态。"
+      },
+      {
+        "id": "wait-resume",
+        "label": "等待与恢复",
+        "focus": ["controller", "scheduler", "repository"],
+        "note": "等待状态不启动工作轮次，只由匹配事件或显式 resume 恢复。"
+      }
+    ]
+  },
+  "components": [
+    {"id": "entry", "type": "external", "label": "Goal entry", "sublabel": "Programs / API / /goal", "pos": [50, 300], "size": [160, 70]},
+    {"id": "spec", "type": "database", "label": "GoalSpec", "sublabel": "objective · contract · scope", "pos": [280, 90], "size": [190, 72], "tag": "target"},
+    {"id": "controller", "type": "backend", "label": "GoalController", "sublabel": "唯一状态转移所有者", "pos": [300, 300], "size": [190, 78], "tag": "target"},
+    {"id": "worker", "type": "backend", "label": "Working agent", "sublabel": "agent() / turn dispatcher", "pos": [570, 110], "size": [190, 72]},
+    {"id": "gates", "type": "security", "label": "Deterministic gates", "sublabel": "tests · commands · typed checks", "pos": [830, 110], "size": [200, 72], "tag": "target"},
+    {"id": "evaluator", "type": "backend", "label": "GoalEvaluator", "sublabel": "inspection judge + evidence refs", "pos": [830, 300], "size": [200, 78]},
+    {"id": "terminal", "type": "external", "label": "Terminal state", "sublabel": "achieved · blocked · failed", "pos": [1080, 300], "size": [140, 78]},
+    {"id": "questions", "type": "database", "label": "Async question queue", "sublabel": "pending · answered · dependency", "pos": [570, 420], "size": [190, 78], "tag": "implemented"},
+    {"id": "scheduler", "type": "messagebus", "label": "External wake adapter", "sublabel": "job · timer · event", "pos": [830, 590], "size": [200, 72], "tag": "target"},
+    {"id": "repository", "type": "database", "label": "Session Goal snapshot", "sublabel": "version · checkpoint · usage", "pos": [300, 590], "size": [190, 72], "tag": "implemented"},
+    {"id": "projection", "type": "frontend", "label": "Goal projection", "sublabel": "UI · goal.updated", "pos": [50, 590], "size": [190, 72]}
+  ],
+  "connections": [
+    {"id": "create-goal", "from": "entry", "to": "controller", "label": "create / resume / clear", "variant": "emphasis", "labelAt": [255, 400]},
+    {"id": "load-spec", "from": "spec", "to": "controller", "label": "completion contract", "fromSide": "bottom", "toSide": "top", "route": "orthogonal-v", "labelAt": [385, 230]},
+    {"id": "start-turn", "from": "controller", "to": "worker", "label": "start one work turn", "variant": "emphasis"},
+    {"id": "run-gates", "from": "worker", "to": "gates", "label": "new evidence"},
+    {"id": "gate-result", "from": "gates", "to": "evaluator", "label": "verified results", "fromSide": "bottom", "toSide": "top", "route": "orthogonal-v", "labelAt": [930, 210]},
+    {"id": "judge-result", "from": "evaluator", "to": "controller", "label": "typed verdict + evidence refs", "variant": "emphasis", "labelAt": [660, 286]},
+    {"id": "queue-question", "from": "evaluator", "to": "questions", "label": "needs_user + can_continue", "variant": "dashed"},
+    {"id": "question-boundary", "from": "questions", "to": "controller", "label": "answer / safe continuation", "variant": "dashed"},
+    {"id": "commit-terminal", "from": "evaluator", "to": "terminal", "label": "accepted terminal verdict", "labelAt": [1055, 400]},
+    {"id": "persist-run", "from": "controller", "to": "repository", "label": "CAS version + usage", "fromSide": "bottom", "toSide": "top", "route": "orthogonal-v", "labelAt": [330, 430]},
+    {"id": "resume-event", "from": "scheduler", "to": "controller", "label": "matching external event", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom", "via": [[930, 720], [520, 720], [520, 410], [395, 410]], "labelAt": [520, 560]},
+    {"id": "project-state", "from": "repository", "to": "projection", "label": "versioned projection", "labelAt": [270, 676]}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "保留", "items": ["单一 prompt 入口", "可使用检查工具的独立 evaluator", "现有 agent() 与 dispatcher"]},
+    {"dot": "amber", "title": "已加强", "items": ["Goal 快照使用 CAS version", "异步问题队列与重启恢复", "turn / token / active-time / cost 总预算"]},
+    {"dot": "violet", "title": "仍待实现", "items": ["deterministic gate executor", "waiting_external 自动唤醒", "多 worker execution lease"]}
+  ]
+}

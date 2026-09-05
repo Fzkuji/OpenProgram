@@ -54,7 +54,7 @@ export function computeGeometry(
   thread: ThreadModel,
 ): Geometry {
   const ids = Object.keys(byId);
-  const chainIds = ids.filter((id) => isChainNode(byId[id]));
+  const chainIds = ids.filter((id) => isChainNode(byId[id], byId));
 
   // ── Columns: pack lanes by their widest visible CHAIN tier ──
   // Thread items reserve no lane width — their column is chosen after
@@ -124,7 +124,7 @@ export function computeGeometry(
     const n = byId[id];
     const lane = n._lane || 0;
     const parent = layoutParent(n);
-    if (parent && byId[parent] && isChainNode(byId[parent])
+    if (parent && byId[parent] && isChainNode(byId[parent], byId)
         && (byId[parent]._lane || 0) === lane) {
       (kidsOf[parent] = kidsOf[parent] || []).push(id);
     } else {
@@ -164,7 +164,7 @@ export function computeGeometry(
   const forkRoots = chainIds
     .filter((id) => {
       const p = layoutParent(byId[id]);
-      return p && byId[p] && isChainNode(byId[p])
+      return p && byId[p] && isChainNode(byId[p], byId)
         && (byId[p]._lane || 0) !== (byId[id]._lane || 0);
     })
     .sort(byCallOrder);

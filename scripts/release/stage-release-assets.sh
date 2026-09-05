@@ -22,6 +22,7 @@ command -v npm >/dev/null 2>&1 || {
   rm -rf "$source_dir" "$next_build_dir"
   NEXT_IGNORE_INCORRECT_LOCKFILE=1 npm run build --workspace apps/web
   npm run build:standalone --workspace apps/cli
+  npm run build:release --workspace apps/cli
 )
 test -f "$source_dir/index.html" || {
   printf 'Next.js export did not produce %s/index.html\n' "$source_dir" >&2

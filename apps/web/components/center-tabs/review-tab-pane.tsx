@@ -1,83 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText } from "lucide-react";
 
 import { FeatherIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
-import { getSocket } from "@/lib/runtime-bridge/state";
 import { UnifiedDiff } from "@/components/chat/messages/unified-diff";
 import styles from "./review-tab-pane.module.css";
 
-type ReviewScope = "turn" | "branch" | "workspace";
-type ReviewCategory = "All" | "Code" | "Tests" | "Docs" | "Large";
-
-interface ReviewFile {
-  path: string;
-  rel: string;
-  op: string;
-  added: number | null;
-  removed: number | null;
-  binary?: boolean;
-  diff_state?: string;
-  turn_ids?: string[];
-  producer_turn_id?: string;
-  origin_turn_id?: string;
-  actor_id?: string;
-  actor_ids?: string[];
-  job_id?: string | null;
-  job_ids?: string[];
-}
-
-interface LinkedImpact {
-  job_id?: string;
-  relation?: string;
-  status?: string;
-  origin_turn_id?: string;
-  worktree_id?: string | null;
-}
-
-interface ScopeState {
-  loading: boolean;
-  status: string;
-  source?: string;
-  files: ReviewFile[];
-  file_count: number;
-  added: number | null;
-  removed: number | null;
-  snapshot_id?: string;
-  cursor?: number;
-  next_cursor?: number | null;
-  prev_cursor?: number | null;
-  error?: string;
-  linked_impacts: LinkedImpact[];
-}
-
-interface DiffState {
-  loading: boolean;
-  path?: string;
-  diff?: string;
-  diff_state?: string;
-  cursor?: number;
-  next_cursor?: number | null;
-  prev_cursor?: number | null;
-  line_count?: number;
-  error?: string;
-}
-
-function send(payload: unknown): boolean {
-  const socket = getSocket();
-  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-  socket.send(JSON.stringify(payload));
-  return true;
-}
-
-function categoryOf(file: ReviewFile): ReviewCategory {
-  if (file.diff_state && file.diff_state !== "available") return "Large";
-  if (/(^|\/)(tests?|specs?)(\/|_|-)/i.test(file.rel)) return "Tests";
-  if (/\.(md|mdx|rst|txt)$/i.test(file.rel)) return "Docs";
-  return "Code";
-}
+import type {
+  DiffState,
+  LinkedImpact,
+  ReviewCategory,
+  ReviewFile,
+  ReviewScope,
+  ReviewSort,
+  ScopeState,
+} from "./review-tab-types";
+import { requestReviewScope } from "./use-review-scope";
+import { requestReviewDiff } from "./use-review-diff";
 
 export function ReviewTabPane({
   sessionId,
@@ -93,11 +34,17 @@ export function ReviewTabPane({
   const { text } = useTranslation();
   const [scope, setScope] = useState<ReviewScope>(initialScope);
   const [selectedPath, setSelectedPath] = useState(initialPath ?? "");
-  const [fileCursor, setFileCursor] = useState(0);
-  const [diffCursor, setDiffCursor] = useState(0);
-  const [diffHistory, setDiffHistory] = useState<number[]>([]);
+  const [fileCursor, setFileCursor] = useState<string | null>(null);
+  const [diffCursor, setDiffCursor] = useState<string | null>(null);
+  const [diffHistory, setDiffHistory] = useState<string[]>([]);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [category, setCategory] = useState<ReviewCategory>("All");
+  // The protocol supports query/sort, but this pane currently keeps the
+  // default values without adding controls to the existing toolbar layout.
+  const query = "";
+  const sort: ReviewSort = "path";
+  const staleRecoveryRef = useRef<string | null>(null);
+  const diffCursorRecoveryRef = useRef<string | null>(null);
   const [scopeState, setScopeState] = useState<ScopeState>({
     loading: true,
     status: "loading",
@@ -109,26 +56,54 @@ export function ReviewTabPane({
   });
   const [diffState, setDiffState] = useState<DiffState>({ loading: false });
 
+  const clearReviewForStale = useCallback(() => {
+    setSelectedPath("");
+    setFileCursor(null);
+    setDiffCursor(null);
+    setDiffHistory([]);
+    setDiffState({ loading: false });
+    setScopeState((current) => ({
+      ...current,
+      loading: true,
+      status: "loading",
+      files: [],
+      file_count: 0,
+      added: null,
+      removed: null,
+      snapshot_id: undefined,
+      cursor: null,
+      next_cursor: null,
+      prev_cursor: null,
+      page: undefined,
+      error: undefined,
+    }));
+  }, []);
+
   useEffect(() => {
+    staleRecoveryRef.current = null;
+    diffCursorRecoveryRef.current = null;
     setScope(initialScope);
     setSelectedPath(initialPath ?? "");
-    setFileCursor(0);
-    setDiffCursor(0);
+    setFileCursor(null);
+    setDiffCursor(null);
     setDiffHistory([]);
+    setScopeState((current) => ({ ...current, snapshot_id: undefined }));
   }, [initialScope, initialPath, sessionId, assistantMsgId]);
 
   useEffect(() => {
     const refresh = (event: Event) => {
       const detail = (event as CustomEvent).detail ?? {};
-      if (detail.sessionId === sessionId) setRefreshNonce((value) => value + 1);
+      if (detail.sessionId === sessionId) {
+        staleRecoveryRef.current = null;
+        setRefreshNonce((value) => value + 1);
+      }
     };
     window.addEventListener("turn-files-history-changed", refresh);
     return () => window.removeEventListener("turn-files-history-changed", refresh);
   }, [sessionId]);
 
   useEffect(() => {
-    const socket = getSocket();
-    if (!socket || !sessionId || (scope === "turn" && !assistantMsgId)) {
+    if (!sessionId || (scope === "turn" && !assistantMsgId)) {
       setScopeState({
         loading: false,
         status: "error",
@@ -142,135 +117,172 @@ export function ReviewTabPane({
       return;
     }
     setScopeState((current) => ({ ...current, loading: true, error: undefined }));
-    const requestId = crypto.randomUUID();
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (frame?.type !== "review_scope_result") return;
-        if (data.request_id !== requestId) return;
-        if (data.session_id !== sessionId || data.scope !== scope) return;
-        if (scope === "turn" && data.assistant_msg_id !== assistantMsgId) return;
-        socket.removeEventListener("message", onMessage);
-        const files: ReviewFile[] = data.files ?? [];
-        setScopeState({
+    const controller = new AbortController();
+    void (async () => {
+const data = await requestReviewScope({
+        sessionId,
+        assistantMsgId,
+        scope,
+        category,
+        query,
+        sort,
+        cursor: fileCursor,
+        snapshotId: scopeState.snapshot_id,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      if (!data) {
+        setScopeState((current) => ({
+          ...current,
           loading: false,
-          status: data.status ?? "error",
-          source: data.source,
-          files,
-          file_count: data.file_count ?? files.length,
-          added: data.added ?? null,
-          removed: data.removed ?? null,
-          snapshot_id: data.snapshot_id,
-          cursor: data.cursor ?? 0,
-          next_cursor: data.next_cursor,
-          prev_cursor: data.prev_cursor,
-          error: data.error,
-          linked_impacts: data.linked_impacts ?? [],
-        });
-        setSelectedPath((current) => {
-          if (current && files.some((file) => file.path === current)) return current;
-          return files[0]?.path ?? "";
-        });
-      } catch {
-        /* ignore unrelated malformed frames */
+          status: "error",
+          error: text("Review request disconnected", "审阅请求连接已断开"),
+          category,
+          query,
+          sort,
+        }));
+        return;
       }
-    };
-    socket.addEventListener("message", onMessage);
-    const sent = send({
-      action: "review_scope",
-      session_id: sessionId,
-      assistant_msg_id: assistantMsgId,
-      scope,
-      cursor: fileCursor,
-      limit: 100,
-      request_id: requestId,
-    });
-    if (!sent) {
-      socket.removeEventListener("message", onMessage);
-      setScopeState((current) => ({
-        ...current,
+      const stale = data.status === "stale" || data.error === "STALE_SNAPSHOT";
+      if (stale) {
+        const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${fileCursor ?? ""}`;
+        const retry = staleRecoveryRef.current !== recoveryKey;
+        staleRecoveryRef.current = recoveryKey;
+        clearReviewForStale();
+        if (retry) {
+          setRefreshNonce((value) => value + 1);
+          return;
+        }
+        setScopeState((current) => ({
+          ...current,
+          loading: false,
+          status: "stale",
+          error: data.error ?? "STALE_SNAPSHOT",
+        }));
+        return;
+      }
+      const files: ReviewFile[] = data.files ?? [];
+      setScopeState({
         loading: false,
-        status: "error",
-        error: text("Not connected", "连接已断开"),
-      }));
-    }
-    return () => socket.removeEventListener("message", onMessage);
-  }, [assistantMsgId, fileCursor, refreshNonce, scope, sessionId, text]);
+        status: data.status ?? "error",
+        source: data.source,
+        files,
+        file_count: data.file_count ?? files.length,
+        added: data.added ?? null,
+        removed: data.removed ?? null,
+        snapshot_id: data.status === "ready" ? data.snapshot_id : undefined,
+        cursor: data.cursor ?? null,
+        next_cursor: data.next_cursor,
+        prev_cursor: data.prev_cursor,
+        page: data.page ?? 1,
+        error: data.error as string | undefined,
+        linked_impacts: (data.linked_impacts as LinkedImpact[] | undefined) ?? [],
+        category: data.category as ReviewCategory | undefined,
+        query: data.query as string | undefined,
+        sort: data.sort as ReviewSort | undefined,
+      });
+      setSelectedPath((current) => {
+        if (current && files.some((file) => file.path === current)) return current;
+        return files[0]?.path ?? "";
+      });
+    })();
+    return () => {
+      controller.abort();
+    };
+  }, [assistantMsgId, category, clearReviewForStale, fileCursor, query, refreshNonce, scope, sessionId, sort, text]);
 
   useEffect(() => {
-    const socket = getSocket();
-    if (!socket || !selectedPath || !scopeState.snapshot_id) {
+    if (!selectedPath || !scopeState.snapshot_id || scopeState.status !== "ready") {
       setDiffState({ loading: false });
       return;
     }
     setDiffState({ loading: true, path: selectedPath });
-    const requestId = crypto.randomUUID();
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const frame = JSON.parse(event.data);
-        const data = frame?.data ?? {};
-        if (frame?.type !== "review_file_diff_result") return;
-        if (data.request_id !== requestId) return;
-        if (
-          data.session_id !== sessionId
-          || data.scope !== scope
-          || data.path !== selectedPath
-        ) return;
-        socket.removeEventListener("message", onMessage);
+    const controller = new AbortController();
+    const snapshotId = scopeState.snapshot_id;
+    void (async () => {
+      const data = await requestReviewDiff({
+        sessionId,
+        assistantMsgId,
+        scope,
+        category,
+        query,
+        sort,
+        path: selectedPath,
+        cursor: diffCursor,
+        snapshotId,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      if (!data) {
         setDiffState({
           loading: false,
           path: selectedPath,
-          diff: data.diff ?? "",
-          diff_state: data.diff_state ?? "unavailable",
-          cursor: data.cursor ?? 0,
-          next_cursor: data.next_cursor,
-          prev_cursor: data.prev_cursor,
-          line_count: data.line_count,
-          error: data.error,
+          error: text("Diff request disconnected", "差异请求连接已断开"),
         });
-      } catch {
-        /* ignore unrelated malformed frames */
+        return;
       }
-    };
-    socket.addEventListener("message", onMessage);
-    if (!send({
-      action: "review_file_diff",
-      session_id: sessionId,
-      assistant_msg_id: assistantMsgId,
-      scope,
-      path: selectedPath,
-      cursor: diffCursor,
-      snapshot_id: scopeState.snapshot_id,
-      request_id: requestId,
-    })) {
-      socket.removeEventListener("message", onMessage);
+      if (data.error === "STALE_SNAPSHOT") {
+        const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}\u0000${diffCursor ?? ""}`;
+        const retry = staleRecoveryRef.current !== recoveryKey;
+        staleRecoveryRef.current = recoveryKey;
+        clearReviewForStale();
+        if (retry) setRefreshNonce((value) => value + 1);
+        else {
+          setScopeState((current) => ({
+            ...current,
+            loading: false,
+            status: "stale",
+            error: data.error,
+          }));
+        }
+        return;
+      }
+      if (data.error === "STALE_CURSOR") {
+        const recoveryKey = `${scope}\u0000${category}\u0000${query}\u0000${sort}\u0000${selectedPath}`;
+        const retry = diffCursorRecoveryRef.current !== recoveryKey;
+        diffCursorRecoveryRef.current = recoveryKey;
+        setDiffCursor(null);
+        setDiffHistory([]);
+        if (retry) {
+          setDiffState({ loading: true, path: selectedPath });
+        } else {
+          setDiffState({ loading: false, path: selectedPath, error: data.error });
+        }
+        return;
+      }
+      diffCursorRecoveryRef.current = null;
       setDiffState({
         loading: false,
         path: selectedPath,
-        error: text("Not connected", "连接已断开"),
+        diff: data.diff as string | undefined ?? "",
+        diff_state: data.diff_state as string | undefined ?? "unavailable",
+        cursor: data.cursor as string | null | undefined ?? null,
+        next_cursor: data.next_cursor as string | null | undefined,
+        prev_cursor: data.prev_cursor as string | null | undefined,
+        line_count: data.line_count as number | undefined,
+        error: data.error as string | undefined,
       });
-    }
-    return () => socket.removeEventListener("message", onMessage);
+    })();
+    return () => {
+      controller.abort();
+    };
   }, [
     assistantMsgId,
+    category,
     diffCursor,
+    query,
     scope,
     scopeState.snapshot_id,
     selectedPath,
     sessionId,
+    sort,
     text,
+    clearReviewForStale,
   ]);
 
   const selected = useMemo(
     () => scopeState.files.find((file) => file.path === selectedPath),
     [scopeState.files, selectedPath],
-  );
-  const visibleFiles = useMemo(
-    () => category === "All"
-      ? scopeState.files
-      : scopeState.files.filter((file) => categoryOf(file) === category),
-    [category, scopeState.files],
   );
   const sourceLabel = scopeState.source === "git"
     ? "Git workspace"
@@ -311,9 +323,11 @@ export function ReviewTabPane({
               className={scope === value ? styles.scopeActive : styles.scope}
               onClick={() => {
                 setScope(value);
-                setFileCursor(0);
-                setDiffCursor(0);
+                setSelectedPath("");
+                setFileCursor(null);
+                setDiffCursor(null);
                 setDiffHistory([]);
+                setScopeState((current) => ({ ...current, snapshot_id: undefined }));
               }}
               disabled={value === "turn" && !assistantMsgId}
             >
@@ -337,7 +351,15 @@ export function ReviewTabPane({
                 type="button"
                 key={value}
                 aria-pressed={category === value}
-                onClick={() => setCategory(value)}
+                onClick={() => {
+                  setCategory(value);
+                  staleRecoveryRef.current = null;
+                  setSelectedPath("");
+                  setFileCursor(null);
+                  setDiffCursor(null);
+                  setDiffHistory([]);
+                  setScopeState((current) => ({ ...current, snapshot_id: undefined }));
+                }}
               >
                 {value}
               </button>
@@ -347,16 +369,16 @@ export function ReviewTabPane({
             <div className={styles.empty}>{text("Loading files…", "正在加载文件…")}</div>
           ) : scopeState.error ? (
             <div className={styles.empty}>{scopeState.error}</div>
-          ) : visibleFiles.length === 0 ? (
+          ) : scopeState.files.length === 0 ? (
             <div className={styles.empty}>{text("No changes in this scope", "此范围没有修改")}</div>
-          ) : visibleFiles.map((file) => (
+          ) : scopeState.files.map((file) => (
             <button
               type="button"
               key={file.path}
               className={file.path === selectedPath ? styles.fileActive : styles.file}
               onClick={() => {
                 setSelectedPath(file.path);
-                setDiffCursor(0);
+                setDiffCursor(null);
                 setDiffHistory([]);
               }}
               title={file.path}
@@ -372,15 +394,15 @@ export function ReviewTabPane({
               <button
                 type="button"
                 disabled={scopeState.prev_cursor == null}
-                onClick={() => setFileCursor(scopeState.prev_cursor ?? 0)}
+                onClick={() => setFileCursor(scopeState.prev_cursor ?? null)}
               >
                 {text("Previous", "上一页")}
               </button>
-              <span>{Math.floor((scopeState.cursor ?? 0) / 100) + 1}</span>
+              <span>{scopeState.page ?? 1}</span>
               <button
                 type="button"
                 disabled={scopeState.next_cursor == null}
-                onClick={() => setFileCursor(scopeState.next_cursor ?? 0)}
+                onClick={() => setFileCursor(scopeState.next_cursor ?? null)}
               >
                 {text("Next", "下一页")}
               </button>
@@ -419,7 +441,7 @@ export function ReviewTabPane({
                   type="button"
                   disabled={diffHistory.length === 0 || diffState.loading}
                   onClick={() => {
-                    const prior = diffHistory[diffHistory.length - 1] ?? 0;
+                    const prior = diffHistory[diffHistory.length - 1] ?? null;
                     setDiffHistory((history) => history.slice(0, -1));
                     setDiffCursor(prior);
                   }}
@@ -430,8 +452,10 @@ export function ReviewTabPane({
                   type="button"
                   disabled={diffState.next_cursor == null || diffState.loading}
                   onClick={() => {
-                    setDiffHistory((history) => [...history, diffCursor]);
-                    setDiffCursor(diffState.next_cursor ?? 0);
+                    if (diffCursor) {
+                      setDiffHistory((history) => [...history, diffCursor]);
+                    }
+                    setDiffCursor(diffState.next_cursor ?? null);
                   }}
                 >
                   {text("Next", "下一页")}

@@ -1,347 +1,62 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenProgram 执行权限与沙箱设计</title>
-<style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Execution authority and sandbox</title><style>
 :root{color-scheme:dark;--bg:#111214;--panel:#17191c;--panel2:#1d2024;--line:#30343a;--text:#e8e9eb;--muted:#a3a7ae;--faint:#747981;--orange:#ee7d55;--cyan:#4bc6d8;--green:#67c78a;--yellow:#d8b35d;--red:#ef6b62;--purple:#ad8bea;--side:250px}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;overflow-x:hidden;background:var(--bg);color:var(--text);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}a{color:var(--cyan);text-underline-offset:3px}code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}code{color:#f0b29d}.sidebar{position:fixed;inset:0 auto 0 0;width:var(--side);padding:26px 18px;border-right:1px solid var(--line);background:#131518;overflow:auto}.brand{color:var(--faint);font-size:11px;letter-spacing:.1em;text-transform:uppercase}.docname{margin:8px 0 22px;font-size:18px;font-weight:680;line-height:1.35}.navlabel{margin:19px 10px 7px;color:var(--faint);font-size:10px;letter-spacing:.09em;text-transform:uppercase}nav a{display:block;padding:7px 10px;border-radius:7px;color:var(--muted);text-decoration:none;font-size:13px}nav a:hover,nav a:focus-visible{color:var(--text);background:var(--panel2);outline:none}.main{margin-left:var(--side)}.hero{padding:64px clamp(28px,6vw,86px) 48px;border-bottom:1px solid var(--line);background:radial-gradient(circle at 82% 15%,rgba(75,198,216,.10),transparent 31%),radial-gradient(circle at 55% 0,rgba(238,125,85,.08),transparent 32%)}.eyebrow{color:var(--orange);font-size:12px;font-weight:750;letter-spacing:.11em;text-transform:uppercase}h1{max-width:1000px;margin:12px 0 18px;font-size:clamp(34px,5vw,58px);line-height:1.08;letter-spacing:-.035em}.lead{max-width:940px;margin:0;color:var(--muted);font-size:18px}.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}.pill{padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(17,18,20,.55);color:var(--muted);font-size:12px}.pill.good{color:var(--green);border-color:rgba(103,199,138,.38)}.pill.warn{color:var(--yellow);border-color:rgba(216,179,93,.38)}.content{max-width:1260px;padding:28px clamp(28px,6vw,86px) 90px}section{padding-top:38px;scroll-margin-top:20px}h2{margin:0 0 11px;font-size:26px;letter-spacing:-.02em}h3{margin:25px 0 8px;font-size:17px}p{margin:8px 0 14px;color:var(--muted)}strong{color:var(--text)}.card{border:1px solid var(--line);border-radius:13px;background:var(--panel);padding:18px 20px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.concept{border-top-width:3px}.concept.auth{border-top-color:var(--purple)}.concept.perm{border-top-color:var(--orange)}.concept.sandbox{border-top-color:var(--cyan)}.tag{display:inline-block;margin-bottom:8px;font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.tag.auth{color:var(--purple)}.tag.perm{color:var(--orange)}.tag.sandbox{color:var(--cyan)}.tag.ok{color:var(--green)}.tag.partial{color:var(--yellow)}.tag.missing{color:var(--red)}.big{margin:0 0 8px;color:var(--text);font-size:19px;font-weight:680}.card p:last-child{margin-bottom:0}.diagram{max-width:100%;margin-top:18px;padding:20px;border:1px solid var(--line);border-radius:14px;background:#141619;overflow:auto}.diagram svg{display:block;width:100%;min-width:820px;height:auto}.caption{margin:9px 2px 0;color:var(--faint);font-size:12px}.callout{margin:16px 0;padding:14px 16px;border-left:3px solid var(--cyan);background:rgba(75,198,216,.09);color:var(--muted)}.callout.warn{border-left-color:var(--yellow);background:rgba(216,179,93,.08)}.callout.danger{border-left-color:var(--red);background:rgba(239,107,98,.08)}table{width:100%;border-collapse:separate;border-spacing:0;margin-top:16px;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:13px}th,td{padding:11px 13px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:var(--panel2);color:var(--text);font-weight:680}td{background:var(--panel);color:var(--muted)}tr:last-child td{border-bottom:0}.yes{color:var(--green)}.no{color:var(--red)}.maybe{color:var(--yellow)}pre{margin:15px 0;padding:17px 19px;border:1px solid var(--line);border-radius:12px;background:#0e1012;color:#d6d9de;overflow:auto;font-size:13px;line-height:1.6}.statusgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}.status{min-height:130px}.status strong{display:block;margin:2px 0 5px}.files{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}.file{padding:13px 15px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}.file code{display:block;margin-bottom:4px;color:var(--text);word-break:break-all}.file span{color:var(--muted);font-size:12px}.footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font-size:12px}.mobile-nav{display:none;margin-top:18px}.mobile-nav select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text)}@media(max-width:920px){:root{--side:0}.sidebar{display:none}.main{margin-left:0}.hero{padding-top:42px}.grid3,.grid2,.statusgrid,.files{grid-template-columns:1fr}.mobile-nav{display:block}}@media(max-width:640px){body{font-size:14px}.hero,.content{padding-left:20px;padding-right:20px}.lead{font-size:16px}h1{font-size:34px}th,td{padding:9px 10px}.diagram{padding:12px}table{display:block;max-width:100%;overflow-x:auto}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
-</style>
-</head>
-<body>
-<aside class="sidebar">
-  <div class="brand">OpenProgram Design</div><div class="docname">执行权限与沙箱</div>
-  <nav aria-label="文档目录">
-    <div class="navlabel">Contract</div>
-    <a href="#decision">结论与边界</a><a href="#model">三个独立问题</a><a href="#flow">完整判定顺序</a>
-    <div class="navlabel">Mechanisms</div>
-    <a href="#authority">Authority</a><a href="#permission">Permission</a><a href="#sandbox">Sandbox</a><a href="#sandbox-ui">界面入口</a><a href="#escalation">审批与升级</a>
-    <div class="navlabel">Evidence</div>
-    <a href="#sources">请求来源</a><a href="#comparison">框架对照</a><a href="#failures">失败语义</a><a href="#status">实现状态</a><a href="#files">代码地图</a>
-  </nav>
-</aside>
-<main class="main">
-<header class="hero">
-  <div class="eyebrow">Architecture · Canonical Design</div>
-  <h1>谁能做、这次准不准做、获准后能访问什么</h1>
-  <p class="lead">OpenProgram 把 Agent 执行控制拆成三个独立合同：<code>Authority</code> 给出请求的能力上限，<code>Permission</code> 对一次具体操作作出允许、询问或拒绝，<code>Sandbox</code> 在操作获准后实施宿主资源边界。三者按固定顺序组合，不能互相替代。</p>
-  <div class="meta"><span class="pill good">现状：核心执行边界已有实现</span><span class="pill warn">目标差异：Claude Code 风格 Auto 待实现</span><span class="pill">平台：macOS Seatbelt / Linux bubblewrap / Windows WSL2 委托</span><span class="pill">范围：Agent 工具与模型驱动执行面</span></div>
-  <div class="mobile-nav"><label for="jump" class="brand">跳到章节</label><select id="jump"><option value="">选择章节</option><option value="decision">结论与边界</option><option value="flow">完整判定顺序</option><option value="authority">Authority</option><option value="permission">Permission</option><option value="sandbox">Sandbox</option><option value="status">实现状态</option></select></div>
-</header>
-<div class="content">
-
-<section id="decision">
-  <h2>1. 结论与边界</h2>
-  <p>本文是 Agent 执行安全的唯一设计正文。它不讨论 provider 登录凭证管理；<code>openprogram/auth/</code> 解决“如何获得模型服务凭证”，本文解决“一个已经进入 Runtime 的请求如何被约束”。Authority、Permission、Sandbox 保持独立数据结构和独立判定点，任何一个机制都不承担另外两个机制的职责。</p>
-  <p><strong>固定顺序：</strong>越靠前的约束越不能被后续放宽。<code>tool_gate</code>、hard constraints 和 tier capability 在规则、审批、bypass 与执行之前完成；缺失身份或未知能力一律拒绝。</p>
-  <div class="callout danger"><strong><code>bypass</code> 的目标合同：</strong>只跳过 Permission 的普通审批与 Auto 后台判断，不改变 Sandbox。Authority、hard constraints 和显式 deny 仍然有效；显式 ask 不在 bypass 中产生确认。只有用户单独关闭 Sandbox，本地命令才使用宿主权限直接执行。</div>
-  <p><strong>不在本文范围：</strong>Windows 原生 AppContainer 沙箱、CPU/内存/进程数配额、OS Keychain/keyring/Credential Manager、把第三方 plugin 宣称为进程隔离、把远端 SSH/Docker 说成宿主原生沙箱。Windows 已实现的 WSL2 委托属于本文定义的本地命令边界。</p>
+</style></head><body><aside class="sidebar"><div class="docname">Execution permissions</div><nav><a href="#overview">Execution authority, permission, and sandbox</a><a href="#authority">Authenticated authority</a><a href="#flow">One operation decision</a><a href="#modes">Permission modes</a><a href="#permission-lifecycle">Versioned live permission lifecycle</a><a href="#boundaries">Tool and host boundaries</a><a href="#escalation">Sandbox escalation</a><a href="#comparison">Reference corpus and choices</a><a href="#failures">Failures and compatibility</a><a href="#files">Files and acceptance boundaries</a><a href="#status">Implementation status</a><a href="sandbox-architecture.zh.html">Chinese</a></nav></aside><main class="main"><header class="hero"><h1>Execution authority and sandbox</h1><p class="lead">Authenticated requests, consistent tool decisions, and live permission changes.</p>
+<details class="mobile-nav"><summary>Sections</summary><nav><a href="#overview">Execution authority, permission, and sandbox</a><a href="#authority">Authenticated authority</a><a href="#flow">One operation decision</a><a href="#modes">Permission modes</a><a href="#permission-lifecycle">Versioned live permission lifecycle</a><a href="#boundaries">Tool and host boundaries</a><a href="#escalation">Sandbox escalation</a><a href="#comparison">Reference corpus and choices</a><a href="#failures">Failures and compatibility</a><a href="#files">Files and acceptance boundaries</a><a href="#status">Implementation status</a><a href="sandbox-architecture.zh.html">Chinese</a></nav></details></header><div class="content"><section id="overview"><h2>Execution authority, permission, and sandbox</h2><p>This is the canonical engineering contract for request identity, tool approvals, live permission changes, and local process isolation. It covers Web, CLI, ACP, channels, nested Agents, scheduled tasks, and continuation. Permission changes do not redesign host isolation or add speculative capability tiers.</p>
+<div class="grid3"><div class="card">Authority: the authenticated principal and fixed capability ceiling.</div><div class="card">Permission: allow, ask, classify, or deny one operation.</div><div class="card">Sandbox: the resources an approved process can access.</div></div></section>
+<section id="authority"><h2>Authenticated authority</h2><p>Authenticated local entries attach the complete owner authority to TurnRequest before durable admission. The audit actor and the execution request are separate values; providing only an admission actor does not authorize tools. Paired channels retain the paired tier; browser MCP grants may use mcp_browser. Nested requests inherit and cannot expand authority. Missing or unknown authority fails closed with a stable reason code. Recovery never reconstructs owner authority from a source label or from model text.</p>
 </section>
-
-<section id="model">
-  <h2>2. 三个独立问题</h2>
-  <table><thead><tr><th>合同</th><th>输入</th><th>回答的问题</th><th>输出</th></tr></thead><tbody>
-    <tr><td><strong>Authority</strong></td><td>入口构造的 principal、tier、interaction</td><td>这个请求最多具备哪些 capability？</td><td>继续，或带 reason code 拒绝</td></tr>
-    <tr><td><strong>Permission</strong></td><td>tool、args、规则、会话模式、审批能力</td><td>这次具体操作是否获准？</td><td>allow、ask 或 deny</td></tr>
-    <tr><td><strong>Execution boundary</strong></td><td>获准操作及其执行面</td><td>该执行面实际能访问哪些资源？</td><td>结果，或该边界的结构化拒绝</td></tr>
-  </tbody></table>
-  <div class="diagram">
-    <svg viewBox="0 0 1120 430" role="img" aria-labelledby="trust-title trust-desc">
-      <title id="trust-title">请求来源与信任边界</title><desc id="trust-desc">本地 owner、配对渠道、MCP、cron 和 subagent 分别构造或继承 authority，进入统一 TurnRequest。模型只能看到序列化身份描述，不能修改运行时 authority。随后进入 tool gate 和 approval wrapper。</desc>
-      <defs><marker id="ta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker></defs>
-      <text x="30" y="34" fill="#747981" font-size="11" letter-spacing="1.4">REQUEST ENTRY</text>
-      <rect x="30" y="58" width="190" height="62" rx="8" fill="#17191c" stroke="#ad8bea"/><text x="125" y="84" text-anchor="middle" fill="#e8e9eb" font-size="13">Web / CLI / TUI</text><text x="125" y="104" text-anchor="middle" fill="#a3a7ae" font-size="10">local owner · interactive</text>
-      <rect x="30" y="136" width="190" height="62" rx="8" fill="#17191c" stroke="#ad8bea"/><text x="125" y="162" text-anchor="middle" fill="#e8e9eb" font-size="13">Paired channel / MCP</text><text x="125" y="182" text-anchor="middle" fill="#a3a7ae" font-size="10">paired · non-interactive</text>
-      <rect x="30" y="214" width="190" height="62" rx="8" fill="#17191c" stroke="#ad8bea"/><text x="125" y="240" text-anchor="middle" fill="#e8e9eb" font-size="13">Cron / subagent</text><text x="125" y="260" text-anchor="middle" fill="#a3a7ae" font-size="10">frozen or inherited authority</text>
-      <path d="M220 89H330M220 167H330M220 245H330" stroke="#747981" stroke-width="1.6" marker-end="url(#ta)"/>
-      <rect x="330" y="105" width="280" height="128" rx="10" fill="#201a29" stroke="#ad8bea"/><text x="470" y="136" text-anchor="middle" fill="#ad8bea" font-size="15">TurnRequest authority</text><text x="470" y="164" text-anchor="middle" fill="#a3a7ae" font-size="11">principal_id · authority_tier</text><text x="470" y="184" text-anchor="middle" fill="#a3a7ae" font-size="11">speaker_kind · interaction · source</text><text x="470" y="211" text-anchor="middle" fill="#ef6b62" font-size="10">missing / unknown → fail closed</text>
-      <path d="M610 169H705" stroke="#747981" stroke-width="1.8" marker-end="url(#ta)"/>
-      <rect x="705" y="80" width="180" height="76" rx="10" fill="#25191a" stroke="#ef6b62"/><text x="795" y="108" text-anchor="middle" fill="#ef6b62" font-size="14">tool_gate</text><text x="795" y="132" text-anchor="middle" fill="#a3a7ae" font-size="10">approval wrapper 外部</text>
-      <path d="M795 156V208" stroke="#747981" stroke-width="1.8" marker-end="url(#ta)"/>
-      <rect x="705" y="208" width="180" height="76" rx="10" fill="#241d1b" stroke="#ee7d55"/><text x="795" y="236" text-anchor="middle" fill="#ee7d55" font-size="14">approval wrapper</text><text x="795" y="260" text-anchor="middle" fill="#a3a7ae" font-size="10">hard · authority · rules · mode</text>
-      <path d="M885 246H1010" stroke="#747981" stroke-width="1.8" marker-end="url(#ta)"/>
-      <rect x="1010" y="208" width="80" height="76" rx="10" fill="#18241d" stroke="#67c78a"/><text x="1050" y="250" text-anchor="middle" fill="#67c78a" font-size="12">tool</text>
-      <path d="M330 320H610" stroke="#4bc6d8" stroke-width="1.5" stroke-dasharray="5 5"/><text x="470" y="346" text-anchor="middle" fill="#4bc6d8" font-size="11">模型输入可描述 speaker，但不能回写或扩大 authority</text>
-    </svg>
-  </div>
-  <div class="callout"><strong>“用户批准”不等于“取消沙箱”。</strong>普通批准只满足 Permission；进程仍按 SandboxPolicy 执行。只有单独的 sandbox escalation 才会使用放宽后的策略重试，而且仍保留不可取消的 hard floor 与凭证过滤。</div>
+<section id="flow"><h2>One operation decision</h2><p>The approval manifest and execution wrapper use the same policy decision. Order: hard constraints, authority, plan restrictions, explicit deny, explicit ask or mandatory approval, exact Web Use grant, bypass, explicit allow, scheduled Memory exception, safe reads, acceptEdits, Auto classification, ordinary approval. Non-interactive requests that require approval return a denial.</p>
+<p>Bypass skips ordinary approval and Auto classification. It does not override explicit ask/deny, mandatory approvals for plan exit or self-update, plugin tool gates, or Sandbox. Invalid mode values are rejected by configuration commands. Denials identify their reason and capability without exposing secrets.</p>
 </section>
-
-<section id="flow">
-  <h2>3. 完整判定顺序</h2>
-  <p>这张图描述目标 Permission 判定。Sandbox 不参与这张图；工具获准后才按照独立 Sandbox 开关选择执行边界。</p>
-  <div class="diagram">
-    <svg viewBox="0 0 1120 900" role="img" aria-labelledby="flow-title flow-desc">
-      <title id="flow-title">目标 Permission 判定顺序</title><desc id="flow-desc">请求先通过 tool gate、hard constraints、authority capability 和显式 deny。之后 bypass 可以不询问直接执行。非 bypass 请求继续检查 Web Use 精确授权、显式 ask、普通允许条件和 Auto 安全分类器，最后进入执行、审批或拒绝。</desc>
-      <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker><marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#67c78a"/></marker><marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#ef6b62"/></marker></defs>
-      <rect x="34" y="26" width="200" height="54" rx="8" fill="#17191c" stroke="#747981"/><text x="134" y="58" text-anchor="middle" fill="#e8e9eb" font-size="13">tool.before</text><path d="M234 53H286" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
-      <rect x="286" y="26" width="190" height="54" rx="8" fill="#25191a" stroke="#ef6b62"/><text x="381" y="58" text-anchor="middle" fill="#ef6b62" font-size="13">tool_gate</text><path d="M476 53H528" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
-      <rect x="528" y="18" width="326" height="70" rx="8" fill="#211719" stroke="#ef6b62"/><text x="691" y="45" text-anchor="middle" fill="#e8e9eb" font-size="13">不可绕过的前置约束</text><text x="691" y="67" text-anchor="middle" fill="#a3a7ae" font-size="10">hard constraints · Authority capability · explicit deny</text><path d="M854 53H958" stroke="#ef6b62" stroke-width="1.5" marker-end="url(#r)"/><text x="888" y="44" fill="#ef6b62" font-size="10">violation</text>
-      <rect x="958" y="18" width="132" height="70" rx="8" fill="#211719" stroke="#ef6b62"/><text x="1024" y="58" text-anchor="middle" fill="#ef6b62" font-size="13">DENY</text>
-      <path d="M691 88V130" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
-      <rect x="528" y="130" width="326" height="62" rx="8" fill="#25191a" stroke="#ef6b62"/><text x="691" y="156" text-anchor="middle" fill="#e8e9eb" font-size="13">bypass?</text><text x="691" y="177" text-anchor="middle" fill="#a3a7ae" font-size="10">skip prompts and Auto classifier; do not change Sandbox</text><path d="M854 161H958" stroke="#67c78a" stroke-width="1.5" marker-end="url(#g)"/><text x="892" y="152" fill="#67c78a" font-size="10">yes</text>
-      <rect x="958" y="130" width="132" height="70" rx="8" fill="#18241d" stroke="#67c78a"/><text x="1024" y="159" text-anchor="middle" fill="#67c78a" font-size="13">EXECUTE</text><text x="1024" y="181" text-anchor="middle" fill="#a3a7ae" font-size="10">tool chooses boundary</text>
-      <path d="M691 192V234" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/><text x="702" y="216" fill="#a3a7ae" font-size="10">no</text>
-      <rect x="528" y="234" width="326" height="62" rx="8" fill="#172326" stroke="#4bc6d8"/><text x="691" y="260" text-anchor="middle" fill="#e8e9eb" font-size="13">exact Web Use grant?</text><text x="691" y="281" text-anchor="middle" fill="#a3a7ae" font-size="10">bound surface only</text><path d="M854 265H930V165H958" fill="none" stroke="#67c78a" stroke-width="1.5" marker-end="url(#g)"/>
-      <path d="M691 296V338" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
-      <rect x="528" y="338" width="326" height="62" rx="8" fill="#241d1b" stroke="#ee7d55"/><text x="691" y="364" text-anchor="middle" fill="#e8e9eb" font-size="13">explicit ask or forced approval?</text><text x="691" y="385" text-anchor="middle" fill="#a3a7ae" font-size="10">interactive owner only</text><path d="M854 369H958" stroke="#ee7d55" stroke-width="1.5" marker-end="url(#a)"/>
-      <rect x="958" y="326" width="132" height="86" rx="8" fill="#241d1b" stroke="#ee7d55"/><text x="1024" y="354" text-anchor="middle" fill="#ee7d55" font-size="12">APPROVAL</text><text x="1024" y="376" text-anchor="middle" fill="#a3a7ae" font-size="10">approve → execute</text><text x="1024" y="396" text-anchor="middle" fill="#a3a7ae" font-size="10">deny → stop</text><path d="M1024 326V220H930V165H958" fill="none" stroke="#67c78a" stroke-width="1.3" marker-end="url(#g)"/>
-      <path d="M691 400V442" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
-      <rect x="528" y="442" width="326" height="62" rx="8" fill="#18241d" stroke="#67c78a"/><text x="691" y="468" text-anchor="middle" fill="#e8e9eb" font-size="13">allow · safe read · acceptEdits?</text><text x="691" y="489" text-anchor="middle" fill="#a3a7ae" font-size="10">scheduled exceptions remain explicit</text><path d="M854 473H930V165H958" fill="none" stroke="#67c78a" stroke-width="1.5" marker-end="url(#g)"/>
-      <path d="M691 504V546" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
-      <rect x="528" y="546" width="326" height="62" rx="8" fill="#201a29" stroke="#ad8bea"/><text x="691" y="572" text-anchor="middle" fill="#e8e9eb" font-size="13">auto?</text><text x="691" y="593" text-anchor="middle" fill="#a3a7ae" font-size="10">supported classifier required</text>
-      <path d="M691 608V650" stroke="#747981" stroke-width="1.6" marker-end="url(#a)"/>
-      <rect x="528" y="650" width="326" height="84" rx="8" fill="#201a29" stroke="#ad8bea"/><text x="691" y="677" text-anchor="middle" fill="#ad8bea" font-size="13">Auto safety classifier</text><text x="691" y="699" text-anchor="middle" fill="#a3a7ae" font-size="10">allow → execute · block → deny</text><text x="691" y="718" text-anchor="middle" fill="#a3a7ae" font-size="10">unavailable / uncertain → ask</text><path d="M854 692H930V165H958" fill="none" stroke="#67c78a" stroke-width="1.5" marker-end="url(#g)"/>
-      <path d="M528 577H408V789H958" fill="none" stroke="#ee7d55" stroke-width="1.5" marker-end="url(#a)"/><text x="418" y="568" fill="#ee7d55" font-size="10">no: ask/default</text>
-      <rect x="958" y="754" width="132" height="70" rx="8" fill="#241d1b" stroke="#ee7d55"/><text x="1024" y="783" text-anchor="middle" fill="#ee7d55" font-size="12">APPROVAL</text><text x="1024" y="805" text-anchor="middle" fill="#a3a7ae" font-size="10">or deny if unavailable</text><path d="M1090 789H1104V165H1090" fill="none" stroke="#67c78a" stroke-width="1.3" marker-end="url(#g)"/>
-      <path d="M528 692H488V53H958" fill="none" stroke="#ef6b62" stroke-width="1.2" stroke-dasharray="5 5" marker-end="url(#r)"/><text x="496" y="682" fill="#ef6b62" font-size="10">blocked</text>
-    </svg>
-  </div>
-  <p class="caption">关键区别：图的终点只是调用工具的 <code>execute</code>；该工具随后进入哪一种执行边界，由工具实现决定。</p>
+<section id="modes"><h2>Permission modes</h2><table><tr><th>Mode</th><th>Behavior</th></tr>
+<tr><td>ask</td><td>Safe reads proceed; other operations require approval.</td></tr>
+<tr><td>acceptEdits</td><td>Safe supported edits inside working roots proceed; commands still require approval.</td></tr>
+<tr><td>plan</td><td>Only the existing read-only plan tool policy is allowed.</td></tr>
+<tr><td>auto</td><td>Safe tools proceed; risky tools or classifier denials are blocked.</td></tr>
+<tr><td>bypass</td><td>Ordinary approvals and Auto classification are skipped.</td></tr>
+</table><p>Session settings take precedence over project defaults, then ask. The effective resolved mode is used for actual admission and UI acknowledgements.</p>
 </section>
-
-<section id="authority">
-  <h2>4. Authority：能力上限</h2>
-  <p>入口只携带一个固定 tier 枚举，capability 集合只存在于进程内常量表。模型正文、speaker display、工具参数和项目设置都不能创建或扩展 capability。</p>
-  <table><thead><tr><th>Tier</th><th>允许能力</th><th>明确禁止</th><th>交互</th></tr></thead><tbody>
-    <tr><td><code>owner</code></td><td>reply、memory、schedule、fs、process、network、approval、runtime、browser</td><td>仍受 hard constraints、规则和 sandbox 约束</td><td>本地认证入口为 interactive</td></tr>
-    <tr><td><code>paired</code></td><td><code>reply</code>、<code>memory.read</code>、<code>memory.source.append</code></td><td>文件、进程、网络、cron、审批升级、runtime control</td><td>non-interactive</td></tr>
-    <tr><td><code>mcp_browser</code></td><td><code>browser.control</code></td><td>其余全部</td><td>限定 first-class Web Use 路径</td></tr>
-  </tbody></table>
-  <div class="callout warn"><strong>恢复也不使用环境兜底：</strong>continuation、subagent、inbox 和 cron 必须显式携带或从签名记录恢复 authority。字段缺失或 tier 未知时拒绝，不把旧状态自动提升为 owner。</div>
+<section id="permission-lifecycle"><h2>Versioned live permission lifecycle</h2><p>The existing SessionStore owns a versioned permission_state dictionary. Atomic compare-and-set prevents stale clients from overwriting a newer selection. State includes mode and owner principal. The WebSocket settings command authenticates the owner, validates session scope, and returns the authoritative mode and version. No parallel approval database or generic policy engine is introduced.</p>
+<p>Interactive local requests read their principal-bound permission state at each tool approval check. One call retains that decision through dispatch; already authorized calls are not interrupted. Immutable admission input and continuation contracts remain unchanged. Non-interactive tasks, paired channels, and other sessions cannot adopt these live overrides.</p>
+<p>On a mode change, open ordinary permission approvals are re-evaluated using the shared decision. An operation now allowed is resolved through the existing canonical wait-answer command and resumed from its checkpoint. Explicit ask, mandatory approval, Sandbox escalation, and user questions remain waiting. A wait published concurrently with a settings change performs the same recheck after the old runtime releases its cancellation token. Startup recovery also re-evaluates persisted mode changes. Expired, cancelled, or completed work is never resurrected.</p>
+<p>The UI distinguishes a requested selection from an acknowledged mode. Updates carry a version; older acknowledgements and hydration snapshots cannot replace newer state. Transport errors remain visible. An unsent draft stores its selection locally without creating an empty session; initial submission supplies it. Existing sessions use confirmed server state.</p>
+<p>Plan restrictions are enforced at the tool boundary so switching into plan blocks writes already proposed by the model. Keeping the tool catalog stable permits switching out of plan during a running turn without invalidating continuation. Model-entered plan state still requires its approved exit operation.</p>
 </section>
-
-<section id="permission">
-  <h2>5. Permission：一次操作的决策</h2>
-  <table><thead><tr><th>模式</th><th>默认行为</th><th>不能绕过</th></tr></thead><tbody>
-    <tr><td><code>ask</code></td><td>安全只读自动执行；修改性操作询问</td><td rowspan="5">hard constraints、tier capability、显式 deny/ask 规则</td></tr>
-    <tr><td><code>acceptEdits</code></td><td>安全工作目录内的读写编辑自动执行；命令仍询问</td></tr>
-    <tr><td><code>plan</code></td><td>隐藏写工具；这是工具可见性控制，不是独立安全边界</td></tr>
-    <tr><td><code>auto</code></td><td>默认不询问；独立安全分类器在后台阻止明显危险、不可逆、越出用户任务或面向未知外部基础设施的操作</td></tr>
-    <tr><td><code>bypass</code></td><td>不询问并跳过 Auto 安全分类器；不改变 Sandbox 开关</td></tr>
-  </tbody></table>
-  <h3>规则作用域与优先级</h3>
-  <pre><code>deny  &gt; ask &gt; allow
-
-global config
-  &lt; project .openprogram/settings.json
-  &lt; session override</code></pre>
-  <p>“总是允许”持久化到项目规则，并保存规范化后的精确 operation；复杂 shell 只允许单次批准，不能把一次 bash 批准扩大成永久允许所有 bash。</p>
-  <h3>Auto 安全判断</h3>
-  <table><thead><tr><th>默认直接执行</th><th>默认阻止</th><th>阻止后的用户体验</th></tr></thead><tbody>
-    <tr><td>工作目录内的普通文件操作、测试、构建、当前分支的常规 Git 操作、只读网络请求</td><td>下载后直接执行未知代码、敏感数据外发、生产部署、数据库迁移、共享基础设施或权限变更、大量或不可逆删除、force push 或直接推送主分支</td><td>先让 Agent 改用安全替代方案；记录拒绝原因并允许用户手动重试。重复阻止后退出 Auto，回到 <code>ask</code></td></tr>
-  </tbody></table>
-  <p>Auto 分类器不可用、无法给出可靠判断或当前模型不受支持时，Auto 不得退化成 bypass；界面将模式标为不可用，正在运行的会话回到 <code>ask</code>。对话中“不要 push”“部署前等我确认”等限制参与后台判断，但需要强保证时仍使用正式 deny rule。</p>
-  <h3>Web 档位传递合同</h3>
-  <p>权限徽章显示会话的有效模式。未显式选择时继承项目默认值；项目也没有默认值时使用 <code>ask</code>。后端必须回传本次 turn 实际采用的模式，不能由前端自行推断。</p>
-  <table><thead><tr><th>阶段</th><th>必须携带或产生的值</th><th>失败处理</th></tr></thead><tbody>
-    <tr><td>Composer 选择</td><td><code>inherit | ask | acceptEdits | plan | auto | bypass</code></td><td>未知值不进入发送路径</td></tr>
-    <tr><td>普通发送、Goal 回答</td><td>发送当前会话的显式 override；没有 override 时发送 <code>inherit</code></td><td>发送失败保留草稿和会话选择</td></tr>
-    <tr><td>运行中排队、拒绝后重排队</td><td>真正开始执行时读取该会话的最新模式</td><td>用户从 bypass 切回 ask 后，未开始的消息不得继续使用旧 bypass</td></tr>
-    <tr><td>后端接收</td><td>计算 session override → project default → system <code>ask</code>，并回传 effective mode</td><td>字段缺失或非法时 fail-safe 到 <code>ask</code>，不得默认 <code>bypass</code></td></tr>
-  </tbody></table>
+<section id="boundaries"><h2>Tool and host boundaries</h2><p>File tools apply in-process guards. Local subprocesses use Seatbelt on macOS or bubblewrap on Linux. Browser/Web Use uses an exact surface grant. Docker and SSH use their own execution boundary; configured MCP processes are owner-configured trust and are not described as local sandbox isolation.</p>
+<p>workspace-write allows working roots, masks protected reads, filters credential environment variables, and disables network by default. danger-full-access uses host user permissions. Missing sandbox backends refuse by default; explicit warn is an acknowledged fallback. Auto-imported agentic application paths retain hard write restrictions.</p>
+<p>Sandbox is a session override resolved into an immutable turn snapshot. Changing its switch affects subsequent turns, not current processes, other sessions, scheduled tasks, or inherited child policy. Ordinary approval never disables Sandbox. Bypass does not offer automatic sandbox escalation.</p>
 </section>
-
-<section id="sandbox">
-  <h2>6. Sandbox：获准执行后的宿主边界</h2>
-  <p>“获准执行”之后没有一个覆盖所有工具的通用沙箱。OpenProgram 按执行面选择边界：进程内文件工具执行路径约束，本地命令进入宿主原生沙箱，Docker/SSH 使用自己的外部边界，Browser 与 MCP 使用各自的受管接口。</p>
-  <h3>Permission 与 Sandbox 的组合结果</h3>
-  <table><thead><tr><th>Permission</th><th>Sandbox</th><th>用户看到的效果</th></tr></thead><tbody>
-    <tr><td><code>ask</code></td><td>开启</td><td>需要确认；批准后在 Sandbox 内执行</td></tr>
-    <tr><td><code>auto</code></td><td>开启</td><td>默认不询问；通过后台安全判断后在 Sandbox 内执行，危险操作被阻止</td></tr>
-    <tr><td><code>bypass</code></td><td>开启</td><td>不询问、不经过 Auto 安全判断，直接在 Sandbox 内执行</td></tr>
-    <tr><td><code>bypass</code></td><td>关闭</td><td>不询问、不经过 Auto 安全判断，直接使用宿主权限执行</td></tr>
-  </tbody></table>
-  <p><strong>固定原则：</strong>Permission 只决定是否询问以及是否运行 Auto 安全判断；Sandbox 只决定本地命令的资源边界。开启 Sandbox 不增加审批，选择 bypass 不关闭 Sandbox。</p>
-  <div class="diagram">
-    <svg viewBox="0 0 1120 610" role="img" aria-labelledby="exec-title exec-desc">
-      <title id="exec-title">不同工具调用进入不同执行边界</title><desc id="exec-desc">Permission 允许操作后，文件工具进入进程内路径检查，本地进程进入 Seatbelt 或 bubblewrap，Docker 和 SSH 进入外部执行边界，浏览器进入绑定 surface，MCP 进入已配置 server。只有本地子进程使用 SandboxPolicy 包装。</desc>
-      <defs><marker id="ea" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#747981"/></marker></defs>
-      <rect x="410" y="20" width="300" height="62" rx="10" fill="#18241d" stroke="#67c78a"/><text x="560" y="47" text-anchor="middle" fill="#67c78a" font-size="15">Permission allowed</text><text x="560" y="67" text-anchor="middle" fill="#a3a7ae" font-size="10">call AgentTool.execute()</text>
-      <path d="M560 82V130M560 130H112M560 130H336M560 130H560M560 130H784M560 130H1008" fill="none" stroke="#747981" stroke-width="1.5"/>
-      <path d="M112 130V170M336 130V170M560 130V170M784 130V170M1008 130V170" stroke="#747981" stroke-width="1.5" marker-end="url(#ea)"/>
-      <rect x="24" y="170" width="176" height="76" rx="9" fill="#17191c" stroke="#ee7d55"/><text x="112" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">File tools</text><text x="112" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">read / write / edit</text><text x="112" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">apply_patch</text>
-      <rect x="248" y="170" width="176" height="76" rx="9" fill="#172326" stroke="#4bc6d8"/><text x="336" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">Local process</text><text x="336" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">bash / execute_code</text><text x="336" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">agentic subprocess</text>
-      <rect x="472" y="170" width="176" height="76" rx="9" fill="#17191c" stroke="#ad8bea"/><text x="560" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">Docker / SSH</text><text x="560" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">configured backend</text><text x="560" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">remote execution target</text>
-      <rect x="696" y="170" width="176" height="76" rx="9" fill="#17191c" stroke="#d8b35d"/><text x="784" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">Browser / Web Use</text><text x="784" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">bound surface</text><text x="784" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">browser-specific boundary</text>
-      <rect x="920" y="170" width="176" height="76" rx="9" fill="#17191c" stroke="#d8b35d"/><text x="1008" y="197" text-anchor="middle" fill="#e8e9eb" font-size="13">MCP / trusted hooks</text><text x="1008" y="219" text-anchor="middle" fill="#a3a7ae" font-size="10">owner configuration</text><text x="1008" y="235" text-anchor="middle" fill="#a3a7ae" font-size="10">declared trust boundary</text>
-      <path d="M112 246V310M336 246V310M560 246V310M784 246V310M1008 246V310" stroke="#747981" stroke-width="1.5" marker-end="url(#ea)"/>
-      <rect x="24" y="310" width="176" height="106" rx="9" fill="#21191a" stroke="#ee7d55"/><text x="112" y="339" text-anchor="middle" fill="#ee7d55" font-size="12">IN-PROCESS GUARDS</text><text x="112" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">working roots</text><text x="112" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">read-before-edit</text><text x="112" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">hard-floor paths</text>
-      <rect x="248" y="310" width="176" height="106" rx="9" fill="#142126" stroke="#4bc6d8"/><text x="336" y="339" text-anchor="middle" fill="#4bc6d8" font-size="12">SandboxPolicy</text><text x="336" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">macOS Seatbelt</text><text x="336" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">Linux bubblewrap</text><text x="336" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">env / net / fs / process</text>
-      <rect x="472" y="310" width="176" height="106" rx="9" fill="#201a29" stroke="#ad8bea"/><text x="560" y="339" text-anchor="middle" fill="#ad8bea" font-size="12">EXTERNAL BOUNDARY</text><text x="560" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">container or remote host</text><text x="560" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">not host Seatbelt/bwrap</text><text x="560" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">target selected by owner</text>
-      <rect x="696" y="310" width="176" height="106" rx="9" fill="#242117" stroke="#d8b35d"/><text x="784" y="339" text-anchor="middle" fill="#d8b35d" font-size="12">SURFACE BOUNDARY</text><text x="784" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">turn-scoped binding</text><text x="784" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">DOM / CDP backend</text><text x="784" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">download policy separate</text>
-      <rect x="920" y="310" width="176" height="106" rx="9" fill="#242117" stroke="#d8b35d"/><text x="1008" y="339" text-anchor="middle" fill="#d8b35d" font-size="12">CONFIGURED TRUST</text><text x="1008" y="366" text-anchor="middle" fill="#a3a7ae" font-size="10">stdio argv / env</text><text x="1008" y="384" text-anchor="middle" fill="#a3a7ae" font-size="10">plugin or hook source</text><text x="1008" y="402" text-anchor="middle" fill="#a3a7ae" font-size="10">must not claim isolation</text>
-      <rect x="24" y="472" width="1072" height="90" rx="9" fill="#141619" stroke="#30343a"/><text x="46" y="501" fill="#e8e9eb" font-size="13">共同部分</text><text x="46" y="526" fill="#a3a7ae" font-size="11">所有执行面在进入这里之前已经通过 tool_gate、hard constraints、tier capability、permission rules 与 mode。</text><text x="46" y="549" fill="#a3a7ae" font-size="11">不同之处是“实际执行边界”；只有 Local process 一列由 openprogram/sandbox 的 SandboxPolicy 包装。</text>
-    </svg>
-  </div>
-  <p class="caption">这张图纠正了旧图的核心错误：SandboxPolicy 不是所有 AgentTool 的统一终点。</p>
-  <h3>本地子进程的平台后端</h3>
-  <table><thead><tr><th>平台</th><th>实现</th><th>边界</th><th>已知限制</th></tr></thead><tbody>
-    <tr><td>macOS</td><td>Seatbelt deny-default profile</td><td>正则读路径、写根、网络、环境和同沙箱进程视图</td><td>setuid 可执行文件限制导致 <code>ps</code>/<code>top</code>不可用</td></tr>
-    <tr><td>Linux</td><td>bubblewrap mounts + namespaces + capability drop</td><td>路径遮蔽、隔离 tmp、network/PID/IPC/UTS namespace</td><td>中段 glob 无法直接表达，必须使用具体路径或确定前缀</td></tr>
-    <tr><td>Windows</td><td>默认 WSL2 发行版中的 bubblewrap</td><td>用 <code>wslpath</code> 转换路径后提供与 Linux 相同的 mounts、tmp 与 namespace 边界</td><td>可选后端；要求 WSL2 发行版、Bash 与 bubblewrap，不修改宿主 ACL</td></tr>
-  </tbody></table>
-  <table><thead><tr><th>资源</th><th><code>workspace-write</code></th><th><code>danger-full-access</code></th></tr></thead><tbody>
-    <tr><td>写入</td><td>cwd + explicit writable roots；agentic applications hard floor 禁写</td><td>宿主用户权限</td></tr>
-    <tr><td>读取</td><td>大部分宿主可读，减去 <code>deny_read</code>；更窄 <code>allow_read</code> 可重开，hard floor 除外</td><td>宿主用户权限</td></tr>
-    <tr><td>网络</td><td>默认关闭，可配置开启</td><td>不限制</td></tr>
-    <tr><td>环境变量</td><td>白名单；API key 默认不进入子进程</td><td>完整环境</td></tr>
-    <tr><td>后端不可用</td><td>显式 <code>workspace-write</code> 时 <code>refuse</code>；默认 <code>auto</code> 在能力探测失败时使用原生未沙箱执行</td><td>不需要沙箱后端</td></tr>
-  </tbody></table>
-  <div class="callout"><strong>网络隔离不能替代凭证拒读。</strong>子进程读取的内容可以通过 tool result 回到宿主 Runtime，再进入下一次模型请求；因此 deny-read、环境过滤和网络限制必须分别存在。</div>
-  <h3>状态可观测性合同</h3>
-  <p>界面不能用一个“Sandbox ON/OFF”值描述整个 Agent。必须分开显示配置状态、turn 的有效权限和具体工具实际采用的执行边界。</p>
-  <table><thead><tr><th>状态层</th><th>数据来源</th><th>界面表达</th><th>不得表达成</th></tr></thead><tbody>
-    <tr><td>Configured process policy</td><td>后端读取 <code>sandbox.mode</code>、backend availability 和 network</td><td>Plus 菜单显示开关和可用性；高级设置页显示具体策略</td><td>所有工具均已隔离</td></tr>
-    <tr><td>Effective turn permission</td><td>后端解析 session/project default 后的 <code>effective_permission</code></td><td>聊天 turn 状态显示实际采用的权限模式</td><td>仅回显前端本地选择</td></tr>
-    <tr><td>Effective tool boundary</td><td>工具分派和执行结果：in-process guard、Seatbelt/bwrap/WSL2 delegation、external、surface、configured trust</td><td>执行详情按工具显示边界类型；本地进程额外显示 sandboxed / bypassed / unavailable</td><td>统一的全局 Sandbox 徽章</td></tr>
-  </tbody></table>
-  <p>本文不定义 strict/balanced/open 组合预设，也不提供“沙盒内自动批准/沙盒内仍然询问”的第二套模式。Permission 已经负责审批策略；Sandbox 只有开启或关闭。高级配置只处理路径、网络、环境变量和后端不可用策略。</p>
-
-  <h3 id="sandbox-ui">Plus 菜单中的 Sandbox 入口</h3>
-  <p>Sandbox 的日常入口位于 Composer Plus 菜单，放在 <code>Web Search</code> 下方、<code>Unattended</code> 上方。普通用户只操作一个开关，不需要配置路径、网络或环境变量。由于入口位于会话 Composer，这个开关定义为<strong>会话级 override</strong>，不是进程全局开关。</p>
-  <pre><code>Add files or photos
-
-Tools                         ⚙  ✓
-Web Search
-Sandbox                          ✓
-──────────────────────────────────
-Unattended</code></pre>
-  <table><thead><tr><th>状态</th><th>菜单表现</th><th>点击行为</th></tr></thead><tbody>
-    <tr><td>开启</td><td><code>Sandbox ✓</code></td><td>只关闭当前会话后续 turn 的 Sandbox；不改变当前 Permission、其他会话或正在执行的 turn</td></tr>
-    <tr><td>关闭</td><td><code>Sandbox</code></td><td>只开启当前会话后续 turn 的 Sandbox；不改变当前 Permission、其他会话或正在执行的 turn</td></tr>
-    <tr><td>后端不可用</td><td><code>Sandbox · Unavailable</code>，禁用勾选</td><td>显示不可用原因和安装要求</td></tr>
-  </tbody></table>
-  <h3>作用域与并发</h3>
-  <table><thead><tr><th>层级</th><th>含义</th><th>生效时机</th></tr></thead><tbody>
-    <tr><td>系统默认</td><td>新会话没有项目或会话设置时采用的 SandboxPolicy</td><td>创建或恢复会话时解析</td></tr>
-    <tr><td>项目默认</td><td>该项目新会话的默认策略；不覆盖已有会话的显式选择</td><td>会话没有 override 时解析</td></tr>
-    <tr><td>会话 override</td><td>Plus 菜单开关及高级例外，只影响该 session</td><td>下一个尚未开始的 turn</td></tr>
-    <tr><td>turn snapshot</td><td>turn 开始时冻结的有效策略</td><td>整个 turn 及其子进程保持不变；中途切换不改写正在运行的任务</td></tr>
-  </tbody></table>
-  <p>并行会话分别持有自己的有效策略。一个会话关闭 Sandbox，不能让另一个会话、cron 或 subagent 改成宿主直执行；cron 使用创建时签名冻结的 SandboxPolicy，subagent 继承父 turn snapshot 且不能放宽。</p>
-  <p>菜单不增加常驻 Sandbox logo，不增加齿轮，也不在开关后引入额外审批。合法操作被 Sandbox 拒绝时，拒绝提示提供“仅本次放开”或“打开高级设置”；高级设置位于 Settings，不进入 Plus 菜单。</p>
-
-  <h3>兼容性例外</h3>
-  <p>默认 Sandbox 不开放宿主进程信息，因此 <code>ps</code>、<code>top</code> 和 <code>lsof</code> 可能失败；Docker socket 也不自动暴露。这些限制不能通过模型重复尝试解决。</p>
-  <table><thead><tr><th>场景</th><th>目标行为</th><th>不采用</th></tr></thead><tbody>
-    <tr><td><code>ps/top/lsof</code></td><td>返回结构化 <code>host_process_info_denied</code>，同一 turn 不重复尝试；高级设置可为当前会话显式开启宿主进程可见性</td><td>默认向所有沙盒命令暴露宿主进程列表</td></tr>
-    <tr><td>Docker socket</td><td>提示改用显式 Docker backend，或由 owner 为当前会话配置精确例外</td><td>自动把 <code>/var/run/docker.sock</code> 暴露给本地 Sandbox</td></tr>
-    <tr><td>bypass + Sandbox</td><td>不弹升级确认；显示拒绝原因和手动修改入口</td><td>自动关闭 Sandbox、自动重试宿主命令</td></tr>
-  </tbody></table>
-
-  <h3>域名级网络控制</h3>
-  <p>目标网络策略不再使用单一布尔值，而是 <code>off | allowlist | unrestricted</code>。默认 <code>off</code>；普通用户无需预先配置，命令需要联网时再按域名添加一次性或会话级例外。</p>
-  <table><thead><tr><th>模式</th><th>行为</th><th>界面</th></tr></thead><tbody>
-    <tr><td><code>off</code></td><td>阻止本地命令的全部网络访问</td><td>Sandbox 高级设置显示“Network off”</td></tr>
-    <tr><td><code>allowlist</code></td><td>只允许配置的域名和端口；重定向逐跳重新校验；直接 IP、未授权 DNS 路径、UDP 和 Unix socket 默认拒绝</td><td>拒绝时显示目标域名，并提供仅本次或当前会话允许</td></tr>
-    <tr><td><code>unrestricted</code></td><td>允许本地命令使用宿主网络，界面持续显示风险状态</td><td>只在高级设置中开启</td></tr>
-  </tbody></table>
-  <p>实现要求本地命令的出站连接只能到宿主侧受管代理，由代理执行域名、端口、解析结果和重定向校验；沙盒进程不能直接连接外网 IP。代理不做 TLS 内容检查，因此允许宽泛域名仍可能产生数据外发风险。Browser/Web Use、内置 HTTP 客户端和远程 backend 继续使用各自的网络边界，不继承这份 Bash 域名表。</p>
+<section id="escalation"><h2>Sandbox escalation</h2><p>A structured sandbox denial can request an exact retry only from an interactive local owner with approval.request. Approved escalation lifts configurable restrictions while retaining protected application paths and credential filtering. always_path adds only the specific permissible read path. An approval is bound to its session, execution, tool, and tool call. A normal tool approval cannot authorize a sandbox escalation. The current execution protocol has no post-tool escalation wait; such denials require an explicit settings change and a new call, and cannot silently reuse the ordinary approval. A second failure is returned without another retry. Paired channels, MCP clients, cron, and subagents cannot escalate.</p>
 </section>
-
-<section id="escalation">
-  <h2>7. 审批与 Sandbox escalation</h2>
-  <p>普通审批只改变 Permission 结果。Sandbox 执行返回结构化 denial 后，系统才进入独立升级流程。</p>
-  <table><thead><tr><th>条件</th><th>行为</th></tr></thead><tbody>
-    <tr><td>本地 interactive owner，且有 <code>approval.request</code></td><td>可批准一次精确重试；策略放开可配置限制，但保留 applications hard floor 和凭证环境过滤</td></tr>
-    <tr><td>paired、MCP 普通客户端、cron、subagent</td><td>不能发起或回答升级审批，直接拒绝</td></tr>
-    <tr><td>选择“总是允许此路径”</td><td>只把具体路径写入 <code>sandbox.allow_read</code>；不能重开 hard-floor 路径</td></tr>
-    <tr><td>Permission 为 bypass</td><td>不弹 Sandbox 升级确认；返回 denial 并显示手动关闭 Sandbox 或修改设置的入口</td></tr>
-    <tr><td>已经升级重试</td><td>不再弹第二次升级卡；返回原始 denial，避免重复执行同一策略</td></tr>
-  </tbody></table>
+<section id="comparison"><h2>Reference corpus and choices</h2><table><tr><th>Framework</th><th>Adopted or adapted</th><th>Boundary</th></tr>
+<tr><td>Claude Code</td><td>Permission modes, independent Sandbox, Auto classification</td><td>Keep authority and explicit rules ahead of bypass; a full background-classifier UX remains future work.</td></tr>
+<tr><td>Codex CLI</td><td>Structured violations and exact approved retry</td><td>Per-tool sandbox override is not implemented.</td></tr>
+<tr><td>OpenClaw</td><td>Credential filtering, backend refusal, nested tool classification</td><td>No automatic Docker selection.</td></tr>
+<tr><td>Hermes Agent</td><td>Hard rules before bypass, command normalization, non-interactive refusal</td><td>Normalize NFKC, ANSI, NUL, and environment wrappers.</td></tr>
+<tr><td>OpenCode</td><td>Per-tool and per-resource permission rules</td><td>Permission is not OS isolation.</td></tr>
+<tr><td>pi-mono</td><td>Extension interception and fail-closed non-interactive behavior</td><td>Reject silent project overrides of global security constraints.</td></tr>
+<tr><td>Aider</td><td>Git recovery as a separate facility</td><td>Recovery does not replace credential, network, or process boundaries.</td></tr>
+<tr><td>Goose / WeClaw adapters</td><td>Explicit backend distinctions</td><td>Reject external automatic owner approvals and optional isolation presented as default.</td></tr>
+</table><p>These are retained design comparisons, not newly verified claims about the latest upstream versions.</p>
 </section>
-
-<section id="sources">
-  <h2>8. 请求来源如何进入同一合同</h2>
-  <table><thead><tr><th>来源</th><th>Authority</th><th>Permission/审批</th><th>执行边界</th></tr></thead><tbody>
-    <tr><td>Web / CLI / TUI</td><td>认证本地 owner</td><td>会话模式 + 项目规则；可交互审批</td><td>配置 SandboxPolicy；Permission 模式不改变 Sandbox</td></tr>
-    <tr><td>已配对渠道</td><td>paired</td><td>无本地审批能力</td><td>通常在 capability 层即拒绝宿主副作用</td></tr>
-    <tr><td>subagent / continuation</td><td>显式继承 caller，不得扩大</td><td>non-interactive；ask 转 deny</td><td>受管工具与进程继续安装策略</td></tr>
-    <tr><td>cron</td><td>创建时固化 owner authority</td><td>触发时禁止交互与升级</td><td>签名 frozen execution spec 强制 sandbox</td></tr>
-    <tr><td>MCP client</td><td>默认 paired；Web Use 可缩窄为 mcp_browser</td><td>不能代替本地 owner 审批</td><td>调用公开工具边界，不直接获得宿主权限</td></tr>
-    <tr><td>Docker / SSH backend</td><td>仍先检查当前请求 authority</td><td>仍检查规则与审批</td><td>容器或远端主机是执行边界，不宣称宿主 Seatbelt/bwrap</td></tr>
-  </tbody></table>
+<section id="failures"><h2>Failures and compatibility</h2><p>Missing authority, stale settings versions, invalid modes, denied capability, explicit rules, classifier failure, and sandbox refusal remain distinguishable. No failure silently becomes owner or bypass. Existing stored permission_mode is readable when no versioned state exists. New authenticated submissions attach fresh authority; legacy admitted requests without authority must be resubmitted through an authenticated entry rather than elevated during recovery.</p>
+<p>Host process visibility may prevent ps, top, or lsof; Docker sockets are not exposed automatically. Linux wildcard masking has limitations. Domain/port network allowlists require a managed proxy and redirect checks and remain unimplemented. Browser and remote networking have separate controls.</p>
 </section>
-
-<section id="comparison">
-  <h2>9. 参考框架与取舍</h2>
-  <p>参考语料用于确定正式概念和已验证机制，不用于复制其默认值。OpenProgram 保留自己的三层合同。</p>
-  <table><thead><tr><th>参考</th><th>相关机制</th><th>OpenProgram 取舍</th></tr></thead><tbody>
-    <tr><td>Claude Code</td><td>Auto 后台安全分类器、permission modes、Sandbox 与 Permission 分层、受管代理域名白名单、<code>--dangerously-skip-permissions</code></td><td><span class="yes">采用并修改：</span>Auto 保留后台危险操作判断；bypass 跳过审批和分类器但不关闭 Sandbox；Bash 网络采用强制代理与域名/端口规则；Authority、hard constraints 和显式 deny 仍独立在前</td></tr>
-    <tr><td>Codex CLI</td><td>结构化 sandbox violation、per-command policy、批准后重试</td><td><span class="yes">采用：</span>结构化违规和精确升级；<span class="maybe">暂缺：</span>per-tool sandbox override</td></tr>
-    <tr><td>OpenClaw</td><td>容器隔离、凭证环境过滤、后端 doctor/refuse、嵌套工具分类</td><td><span class="yes">采用：</span>不可用默认拒绝和受管替代工具；不自动选择 Docker 作为宿主后端</td></tr>
-    <tr><td>Hermes Agent</td><td>bypass 前 hard rules、命令规范化、cron/subagent 非交互默认 deny</td><td><span class="yes">采用：</span>强制约束前置、NFKC/ANSI/NUL/env wrapper 规范化、ask→deny</td></tr>
-    <tr><td>OpenCode</td><td>per-tool/per-resource permission policy</td><td><span class="yes">采用：</span>operation 级规则；不把 Permission 当作 OS 隔离</td></tr>
-    <tr><td>pi-mono</td><td>扩展拦截器与示例 denyRead/denyWrite</td><td><span class="no">拒绝：</span>项目配置静默覆盖全局安全设置；保留非交互 fail-closed 思路</td></tr>
-    <tr><td>Aider</td><td>无系统级隔离，依赖 Git 与用户确认</td><td><span class="no">不采用：</span>Git 可恢复性不能替代凭证、网络与进程边界</td></tr>
-    <tr><td>Goose / WeClaw 类适配</td><td>部分适配器自动回答审批或仅提供可选 backend</td><td><span class="no">拒绝：</span>外部渠道不能替 owner 回答审批；可选 backend 不得显示为默认安全边界</td></tr>
-  </tbody></table>
+<section id="files"><h2>Files and acceptance boundaries</h2><table><tr><th>Module</th><th>Responsibility</th></tr>
+<tr><td>agent/authority.py</td><td>Identity and capability ceilings</td></tr>
+<tr><td>agent/permissions/state.py</td><td>Versioned session state, owner validation and atomic updates</td></tr>
+<tr><td>agent/permissions/policy.py</td><td>Shared operation decisions, explicit rules and hard constraints</td></tr>
+<tr><td>agent/permissions/classifier.py</td><td>Auto risk classification; only explicit JSON boolean true permits execution</td></tr>
+<tr><td>agent/permissions/approval.py</td><td>Approval manifests, exact wait consumption and tool execution</td></tr>
+<tr><td>agent/permissions/lifecycle.py</td><td>Live call snapshots and canonical wait reconciliation</td></tr>
+<tr><td>agent/session_config.py</td><td>Legacy and current settings resolution</td></tr>
+<tr><td>agent/production_driver.py</td><td>Durable admission, immutable recovery, wait publication</td></tr>
+<tr><td>server WebSocket permission handler</td><td>Authenticated settings and canonical wait re-evaluation</td></tr>
+<tr><td>Web permission state and composer</td><td>Confirmed mode, pending/error feedback, ordered hydration</td></tr>
+</table><p>Acceptance exercises actual chat admission and a safe tool; inherited bypass; running ask-to-bypass and bypass-to-ask; waiting approval continuation; explicit ask/deny and forced approvals; plan transitions; owner/session isolation; stale versions; reload/reconnect; and unchanged Sandbox denial.</p>
 </section>
-
-<section id="failures">
-  <h2>10. 失败语义</h2>
-  <table><thead><tr><th>失败</th><th>必须返回</th><th>禁止行为</th></tr></thead><tbody>
-    <tr><td>Authority 缺失或未知</td><td>稳定 reason code 与 capability</td><td>回退到 owner、interactive 或环境 ContextVar</td></tr>
-    <tr><td>non-interactive 命中 ask</td><td>明确的 approval unavailable denial</td><td>等待超时、自动批准或重算为 interactive</td></tr>
-    <tr><td>Auto 分类器不可用或无法可靠判断</td><td>Auto 不可用或回到 <code>ask</code></td><td>静默允许、退化成 bypass</td></tr>
-    <tr><td>Sandbox 后端不可用</td><td>默认 refuse 和后端原因</td><td>静默执行普通宿主命令</td></tr>
-    <tr><td>Sandbox 拒绝</td><td><code>sandbox.violation</code>，包含 backend、path/rule（可得时）</td><td>把普通非零退出误报为 sandbox denial</td></tr>
-    <tr><td>升级仍被 hard floor 拒绝</td><td>原始结构化 denial</td><td>再次弹相同审批并重复执行</td></tr>
-  </tbody></table>
+<section id="status"><h2>Implementation status</h2><p data-status="review-passed">The permission lifecycle implementation passes independent specification and quality review. Regression checks exercise authenticated chat admission, versioned updates and inheritance, operation snapshots, approval restoration, and approval-card dismissal through the production driver. Full repository verification and default installed-App acceptance are recorded separately from these scoped checks in the release evidence.</p>
+<p>Existing host isolation is retained. Domain allowlists, resource quotas, Windows sandbox support, per-tool sandbox overrides, and a full background Auto-classifier product remain outside this implementation.</p>
 </section>
-
-<section id="status">
-  <h2>11. 实现状态与当前缺口</h2>
-  <table><thead><tr><th>状态</th><th>能力或缺口</th><th>当前证据</th></tr></thead><tbody>
-    <tr><td><span class="yes">Implemented</span></td><td>固定 Authority tier 与 capability 表</td><td>owner、paired、mcp_browser；缺失/未知 tier 在工具执行前 fail closed</td></tr>
-    <tr><td><span class="yes">Implemented</span></td><td>Permission 规则、五种模式与审批</td><td>deny/ask 早于 bypass；精确 always allow、non-interactive deny、强制审批</td></tr>
-    <tr><td><span class="yes">Implemented</span></td><td>Seatbelt / bubblewrap / Windows WSL2 委托本地进程边界</td><td>workspace-write、deny-read、env allowlist、网络关闭；Windows 不修改 ACL</td></tr>
-    <tr><td><span class="yes">Implemented</span></td><td>Cron、execute_code 与嵌套 Agent</td><td>signed frozen policy、LocalBackend、禁用嵌套 CLI 内置副作用工具</td></tr>
-    <tr><td><span class="yes">Implemented</span></td><td>Web permission mode 端到端传递</td><td>session → project → ask 解析；inherit 语义；chat_ack 回传 effective mode</td></tr>
-    <tr><td><span class="no">Target not implemented</span></td><td>Claude Code 风格 Auto</td><td>当前 auto 不是本文定义的独立后台安全分类器，也没有支持矩阵、拒绝记录和重复阻止后回到 ask 的用户流程</td></tr>
-    <tr><td><span class="yes">Implemented</span></td><td>bypass 与 Sandbox 完全解耦</td><td>bypass 不再调用 unsandboxed_execution；apply_in_bypass 配置已删除</td></tr>
-    <tr><td><span class="yes">Implemented</span></td><td>Plus 菜单 Sandbox 开关</td><td>SessionRunConfig.sandbox_enabled；set_sandbox WS 通道；后端不可用时禁用勾选</td></tr>
-    <tr><td><span class="yes">Implemented</span></td><td>会话级 Sandbox 与 turn snapshot</td><td>SessionRunConfig.sandbox_enabled；bind_turn_policy 在 turn 开始时冻结策略</td></tr>
-    <tr><td><span class="no">Target not implemented</span></td><td>域名级网络 allowlist</td><td>当前 <code>SandboxPolicy.network</code> 只有布尔值；没有强制代理、域名/端口规则、直接 IP 拒绝和重定向逐跳校验</td></tr>
-    <tr><td><span class="maybe">Partial</span></td><td>宿主进程信息兼容性</td><td>当前默认 <code>host_process_info=false</code>，升级策略可临时设为 true；尚无会话级高级例外和稳定的 <code>host_process_info_denied</code> 用户流程</td></tr>
-    <tr><td><span class="no">Not implemented</span></td><td>有效执行边界状态协议与界面</td><td>现有 <code>/sandbox</code> 只能切换全局进程配置并返回一次性文本；没有 configured / effective turn / effective tool 三层结构化状态</td></tr>
-    <tr><td><span class="maybe">Platform limit</span></td><td>Linux 中段 glob</td><td><code>**/.env</code> 无法由 bubblewrap 遮蔽模型表达</td></tr>
-    <tr><td><span class="maybe">Future</span></td><td>资源配额与 Windows 原生后端</td><td>WSL2 委托已实现；CPU、内存、进程数配额与 AppContainer 原生隔离尚未实现</td></tr>
-  </tbody></table>
-  <div class="callout warn"><strong>实现证据边界：</strong>仓库定向测试覆盖 Authority、Permission、Seatbelt、Linux bubblewrap 与 Windows WSL2 命令构建和能力降级。真实 Windows 本机验证覆盖无 WSL2 发行版时的 <code>auto</code> 可用性；真实 WSL2 namespace 执行由具备该依赖的 CI/验收环境负责。</div>
-</section>
-
-<section id="files">
-  <h2>12. 代码地图与验收入口</h2>
-  <table><thead><tr><th>位置</th><th>职责</th></tr></thead><tbody>
-    <tr><td><code>openprogram/agent/authority.py</code></td><td>tier、principal、capability table、tool → capability 映射</td></tr>
-    <tr><td><code>openprogram/agent/internals/_approval.py</code></td><td>完整判定顺序、审批、sandbox escalation</td></tr>
-    <tr><td><code>openprogram/agent/session_config.py</code></td><td>permission mode 与 session rules</td></tr>
-    <tr><td><code>openprogram/programs/permission_rule.py</code></td><td>规则解析、规范化、项目/全局/session 合并</td></tr>
-    <tr><td><code>openprogram/sandbox/__init__.py</code></td><td>SandboxPolicy、Seatbelt/bwrap profile、bypass 与 escalation policy</td></tr>
-    <tr><td><code>openprogram/config_schema.py</code></td><td><code>sandbox.*</code> 配置、默认值和帮助文本</td></tr>
-    <tr><td><code>apps/server/openprogram_server/_webui/_execute/</code></td><td>Web TurnRequest、owner authority、effective permission</td></tr>
-    <tr><td><code>apps/web/components/chat/</code></td><td>permission menu、approval card、chat payload</td></tr>
-  </tbody></table>
-  <h3>最低验收集合</h3>
-  <pre><code>python -m pytest -q \
-  tests/unit/security/test_permission_rules.py \
-  tests/unit/security/test_sandbox_allow_read.py \
-  tests/unit/providers/test_authority_scope.py \
-  tests/unit/agent/test_spawn_hard_constraints.py \
-  tests/unit/programs/test_dispatch_sandbox_enforcement.py \
-  tests/unit/programs/test_cron_command.py
-
-python -m scripts.docs_site.checklinks</code></pre>
-</section>
-
-<div class="footer">Canonical engineering design · Conceptual contract is separated from implementation evidence · No migration timeline is embedded in this document.</div>
-</div>
-</main>
-<script>
-document.getElementById('jump').addEventListener('change',function(){if(this.value)document.getElementById(this.value)?.scrollIntoView()});
-</script>
-</body>
-</html>
+</div></main></body></html>

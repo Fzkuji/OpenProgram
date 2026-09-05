@@ -4,7 +4,7 @@ import { cloneElement, useEffect, useRef, useState } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import type { JobResourceView } from "@/lib/net/ws-events";
-import { queueResourceSummary, jobResourceDetails } from "@/lib/job-resource";
+import { canonicalExecutionId, queueResourceSummary, jobResourceDetails } from "@/lib/job-resource";
 import type { AnimatedNavIconHandle } from "@/components/animated-icons";
 
 import {
@@ -85,7 +85,22 @@ export function BranchItem({
   const isPending = branch.head_msg_id.startsWith("__pending_job__:");
   const queueSummary = chip ? null : queueResourceSummary(jobResource);
   const resourceDetails = jobResourceDetails(jobResource);
-  const finishingReason = finishing ? jobResource?.reason_code : null;
+  const finishingReason = finishing
+    ? (jobResource?.execution?.reason_code as string | null | undefined)
+    : null;
+  const executionId = canonicalExecutionId(jobResource);
+
+  function control(action: "pause" | "continue" | "step" | "cancel") {
+    if (!executionId) return;
+    wsSend({
+      type: "execution.command",
+      action: `execution.${action}`,
+      command_id: `web-${crypto.randomUUID()}`,
+      execution_id: executionId,
+      expected_version: jobResource?.status_version ?? 0,
+      payload: { reason_code: action === "cancel" ? "cancel.user" : undefined },
+    });
+  }
 
   function commitRename() {
     setEditing(false);
@@ -240,12 +255,29 @@ export function BranchItem({
             resources{resourceDetails.length ? ` · ${resourceDetails[0].value}` : ""}
           </summary>
           <pre>{JSON.stringify({
-            resource_state: jobResource.resource_state,
-            reason_code: jobResource.reason_code,
-            capacity: jobResource.capacity,
-            budget: jobResource.budget,
+            execution_id: executionId,
+            event_cursor: jobResource.event_cursor,
+            capabilities: jobResource.capabilities,
+            resource: jobResource.resource,
+            execution: jobResource.execution,
           }, null, 2)}</pre>
         </details>
+      ) : null}
+      {!chip && jobResource && executionId ? (
+        <span className="branch-item-controls" onClick={(event) => event.stopPropagation()}>
+          {jobResource.capabilities?.pause && jobStatus === "running" ? (
+            <button type="button" onClick={() => control("pause")} title="Pause execution">pause</button>
+          ) : null}
+          {jobResource.capabilities?.step && jobStatus === "paused" ? (
+            <button type="button" onClick={() => control("step")} title="Apply one step">step</button>
+          ) : null}
+          {jobResource.capabilities?.pause && jobStatus === "paused" ? (
+            <button type="button" onClick={() => control("continue")} title="Continue execution">continue</button>
+          ) : null}
+          {!["completed", "cancelled", "errored", "failed"].includes(jobStatus || "") ? (
+            <button type="button" onClick={() => control("cancel")} title="Cancel execution">cancel</button>
+          ) : null}
+        </span>
       ) : null}
       <span className="branch-item-actions">
         <span

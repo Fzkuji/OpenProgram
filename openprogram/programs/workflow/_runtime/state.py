@@ -71,13 +71,16 @@ def _mark_run_exception(instance: Path, state: dict, exc: BaseException) -> None
     state_path = instance / "state.json"
     if state_path.exists():
         state = _load_state(state_path)
-    if state.get("status") in {"completed", "failed", "interrupted", "capped"}:
+    if state.get("status") in {
+        "completed", "failed", "cancelled", "interrupted", "capped"
+    }:
         return
-    state["status"] = (
-        "interrupted"
-        if isinstance(exc, (KeyboardInterrupt, CancelledError))
-        else "failed"
-    )
+    if isinstance(exc, CancelledError):
+        state["status"] = "cancelled"
+    elif isinstance(exc, KeyboardInterrupt):
+        state["status"] = "interrupted"
+    else:
+        state["status"] = "failed"
     state["last_error"] = "".join(
         traceback.format_exception(type(exc), exc, exc.__traceback__)
     )

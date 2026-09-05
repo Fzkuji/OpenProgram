@@ -1,0 +1,1980 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Goal 功能实现对比与 OpenProgram 设计参考</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:#0d0f12; --panel:#15181d; --panel2:#1b1f25; --panel3:#111419;
+    --line:#2d333c; --line2:#424a56; --text:#edf0f4; --muted:#a8afb9; --faint:#747d89;
+    --blue:#6cb6ff; --cyan:#54d2cf; --green:#73d69a; --amber:#e6ba68; --red:#f07b72;
+    --violet:#b49cff; --sidebar:252px;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; font-size:15px; line-height:1.68; }
+  a { color:var(--blue); text-decoration-thickness:1px; text-underline-offset:3px; }
+  a:focus-visible,summary:focus-visible { outline:2px solid var(--cyan); outline-offset:3px; border-radius:4px; }
+  code,.mono { font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace; }
+  code { color:#f1b69f; }
+  .sidebar { position:fixed; inset:0 auto 0 0; width:var(--sidebar); padding:24px 17px 32px; border-right:1px solid var(--line); background:#101318; overflow:auto; }
+  .brand { color:var(--faint); font-size:11px; font-weight:750; letter-spacing:.13em; text-transform:uppercase; }
+  .doc-title { margin:8px 0 22px; font-size:18px; font-weight:700; line-height:1.35; }
+  .nav-label { margin:20px 9px 7px; color:var(--faint); font-size:10px; font-weight:750; letter-spacing:.11em; text-transform:uppercase; }
+  nav a { display:block; padding:6px 9px; border-radius:7px; color:var(--muted); text-decoration:none; font-size:12.5px; }
+  nav a:hover { color:var(--text); background:var(--panel2); }
+  .mobile-nav { display:none; }
+  main { min-width:0; margin-left:var(--sidebar); }
+  .hero { padding:64px clamp(28px,6vw,88px) 48px; border-bottom:1px solid var(--line); background:radial-gradient(circle at 77% 18%,rgba(84,210,207,.11),transparent 31%),radial-gradient(circle at 58% -5%,rgba(180,156,255,.09),transparent 30%); }
+  .eyebrow { color:var(--cyan); font-size:12px; font-weight:750; letter-spacing:.12em; text-transform:uppercase; }
+  h1 { max-width:1000px; margin:12px 0 18px; font-size:clamp(34px,5vw,58px); line-height:1.08; letter-spacing:-.04em; }
+  .lead { max-width:980px; margin:0; color:var(--muted); font-size:18px; }
+  .meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:26px; }
+  .pill,.badge { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--line); border-radius:999px; background:rgba(13,15,18,.55); color:var(--muted); font-size:11px; padding:4px 9px; }
+  .pill.native,.badge.native { color:var(--green); border-color:rgba(115,214,154,.38); background:rgba(115,214,154,.08); }
+  .pill.near,.badge.near { color:var(--amber); border-color:rgba(230,186,104,.38); background:rgba(230,186,104,.08); }
+  .badge.source { color:var(--cyan); }
+  .content { max-width:1320px; min-width:0; padding:28px clamp(28px,6vw,88px) 100px; overflow-x:hidden; }
+  section { padding-top:36px; scroll-margin-top:20px; }
+  h2 { margin:0 0 10px; font-size:26px; letter-spacing:-.025em; }
+  h3 { margin:0 0 8px; font-size:17px; }
+  h4 { margin:19px 0 7px; font-size:14px; }
+  p { margin:8px 0 14px; color:var(--muted); }
+  ul,ol { color:var(--muted); padding-left:19px; }
+  li { margin:5px 0; }
+  .callout { margin:17px 0; padding:15px 17px; border-left:3px solid var(--cyan); background:rgba(84,210,207,.075); color:var(--muted); }
+  .callout.warn { border-left-color:var(--amber); background:rgba(230,186,104,.07); }
+  .reading-line { display:grid; grid-template-columns:1.05fr 1.45fr 1fr; margin-top:30px; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:rgba(13,15,18,.58); }
+  .reading-line > div { min-height:112px; padding:16px 18px; border-right:1px solid var(--line); }
+  .reading-line > div:last-child { border-right:0; }
+  .reading-line small { display:block; margin-bottom:7px; color:var(--faint); font-size:10px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
+  .reading-line strong { display:block; color:var(--text); font-size:15px; line-height:1.35; }
+  .reading-line span { display:block; margin-top:6px; color:var(--muted); font-size:12px; line-height:1.45; }
+  .reading-line .current { box-shadow:inset 0 3px 0 var(--cyan); }
+  .reading-line .gap { box-shadow:inset 0 3px 0 var(--amber); }
+  .reading-line .target { box-shadow:inset 0 3px 0 var(--violet); }
+  .card { border:1px solid var(--line); border-radius:13px; background:var(--panel); padding:18px 20px; }
+  .card p:last-child,.card ul:last-child { margin-bottom:0; }
+  .scope-grid,.model-grid,.take-grid,.framework-grid { display:grid; min-width:0; gap:12px; margin-top:16px; }
+  .scope-grid > *,.model-grid > *,.take-grid > *,.framework-grid > * { min-width:0; }
+  .scope-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .model-grid { grid-template-columns:repeat(5,minmax(0,1fr)); }
+  .framework-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .take-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .model-card { min-height:172px; position:relative; overflow:hidden; }
+  .model-card::before { content:""; position:absolute; inset:0 auto 0 0; width:3px; background:var(--line2); }
+  .model-card:nth-child(1)::before { background:var(--faint); }
+  .model-card:nth-child(2)::before { background:var(--blue); }
+  .model-card:nth-child(3)::before { background:var(--cyan); }
+  .model-card:nth-child(4)::before { background:var(--violet); }
+  .model-card:nth-child(5)::before { background:var(--green); }
+  .model-card .letter { color:var(--faint); font:750 11px ui-monospace,monospace; }
+  .model-card strong { display:block; margin:7px 0 5px; }
+  .model-card p { margin:0; font-size:12.5px; }
+  .matrix-wrap { margin-top:17px; border:1px solid var(--line); border-radius:13px; overflow:auto; }
+  table { width:100%; border-collapse:collapse; min-width:1080px; font-size:12.5px; }
+  th,td { padding:11px 12px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  th:last-child,td:last-child { border-right:0; }
+  tr:last-child td { border-bottom:0; }
+  th { position:sticky; top:0; z-index:1; color:var(--text); background:var(--panel2); font-weight:700; }
+  td { color:var(--muted); background:var(--panel); }
+  td:first-child { color:var(--text); font-weight:700; min-width:138px; }
+  .yes { color:var(--green); } .partial { color:var(--amber); } .no { color:var(--faint); }
+  .flow { display:grid; width:100%; max-width:100%; min-width:0; grid-template-columns:repeat(7,minmax(105px,1fr)); gap:8px; align-items:stretch; margin:18px 0; overflow:auto; }
+  .step { position:relative; min-height:95px; padding:13px 12px; border:1px solid var(--line); border-radius:11px; background:var(--panel3); }
+  .step:not(:last-child)::after { content:"→"; position:absolute; right:-16px; top:34px; z-index:2; color:var(--faint); font-size:17px; }
+  .step b { display:block; margin-bottom:5px; color:var(--text); font-size:12.5px; }
+  .step span { display:block; color:var(--muted); font-size:11.5px; line-height:1.45; }
+  .framework { scroll-margin-top:20px; margin-top:18px; padding:22px; border:1px solid var(--line); border-radius:15px; background:linear-gradient(145deg,rgba(27,31,37,.96),rgba(19,22,27,.96)); }
+  .framework-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
+  .framework-head h3 { font-size:22px; }
+  .framework-head p { margin:2px 0 0; font-size:13px; }
+  .facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:17px 0; }
+  .fact { padding:12px 13px; border:1px solid var(--line); border-radius:10px; background:rgba(13,15,18,.45); }
+  .fact small { display:block; color:var(--faint); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+  .fact strong { display:block; margin-top:4px; color:var(--text); font-size:13px; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .mini { border-top:1px solid var(--line); padding-top:13px; }
+  .mini h4 { margin-top:0; }
+  .source-box { margin-top:14px; border:1px solid var(--line); border-radius:10px; background:rgba(13,15,18,.45); }
+  details summary { cursor:pointer; padding:11px 13px; color:var(--muted); font-size:12.5px; }
+  details[open] summary { border-bottom:1px solid var(--line); }
+  .source-list { margin:0; padding:10px 30px 13px; font-size:12px; }
+  .evidence-note { color:var(--faint); font-size:11.5px; }
+  .diagram-shell { margin:18px 0 22px; border:1px solid var(--line); border-radius:16px; background:#101318; overflow:hidden; }
+  .diagram-head { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; padding:16px 18px; border-bottom:1px solid var(--line); }
+  .diagram-head strong { display:block; font-size:14px; }
+  .diagram-head span { display:block; max-width:700px; margin-top:3px; color:var(--muted); font-size:12px; }
+  .legend { display:flex; flex-wrap:wrap; gap:12px; color:var(--muted); font-size:11px; white-space:nowrap; }
+  .legend i { width:10px; height:10px; margin-right:5px; display:inline-block; border-radius:3px; vertical-align:-1px; }
+  .legend .work { background:var(--blue); } .legend .judge { background:var(--cyan); }
+  .legend .wait { background:var(--amber); } .legend .stop { background:var(--red); }
+  .diagram-canvas { padding:20px; overflow:auto; }
+  svg.archify-inline { display:block; width:100%; min-width:760px; height:auto; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"PingFang SC","Microsoft YaHei",monospace; }
+  .archify-figure svg.archify-inline { min-width:760px; }
+  .archify-figure .archify-surface { padding:18px; overflow:auto; }
+  .archify-inline .c-grid { stroke:#1e293b; fill:none; }
+  .archify-inline .c-mask { fill:#0f172a; stroke:none; }
+  .archify-inline .c-lane { fill:rgba(15,23,42,.22); stroke:#334155; }
+  .archify-inline .c-frontend { fill:rgba(8,51,68,.4); stroke:#22d3ee; }
+  .archify-inline .c-backend { fill:rgba(6,78,59,.4); stroke:#34d399; }
+  .archify-inline .c-database { fill:rgba(76,29,149,.4); stroke:#a78bfa; }
+  .archify-inline .c-cloud { fill:rgba(120,53,15,.3); stroke:#fbbf24; }
+  .archify-inline .c-security { fill:rgba(136,19,55,.4); stroke:#fb7185; }
+  .archify-inline .c-messagebus { fill:rgba(251,146,60,.3); stroke:#fb923c; }
+  .archify-inline .c-external { fill:rgba(30,41,59,.5); stroke:#94a3b8; }
+  .archify-inline .t-primary { fill:#fff; }
+  .archify-inline .t-muted { fill:#94a3b8; }
+  .archify-inline .t-dim { fill:#64748b; }
+  .archify-inline .t-frontend { fill:#22d3ee; }
+  .archify-inline .t-backend { fill:#34d399; }
+  .archify-inline .t-database { fill:#a78bfa; }
+  .archify-inline .t-cloud { fill:#fbbf24; }
+  .archify-inline .t-security { fill:#fb7185; }
+  .archify-inline .t-messagebus { fill:#fb923c; }
+  .archify-inline .t-external { fill:#94a3b8; }
+  .archify-inline .m-default { fill:#64748b; }
+  .archify-inline .m-emphasis { fill:#34d399; }
+  .archify-inline .m-security { fill:#fb7185; }
+  .archify-inline .m-dashed { fill:#94a3b8; }
+  .archify-inline .semantic-sigil { fill:none; stroke:currentColor; stroke-width:1.35; stroke-linecap:round; stroke-linejoin:round; opacity:.76; pointer-events:none; }
+  .archify-inline .semantic-sigil > * { vector-effect:non-scaling-stroke; }
+  .archify-inline .semantic-sigil .sigil-fill { fill:currentColor; stroke:none; }
+  .archify-inline .s-frontend { color:#22d3ee; }
+  .archify-inline .s-backend { color:#34d399; }
+  .archify-inline .s-database { color:#a78bfa; }
+  .archify-inline .s-cloud { color:#fbbf24; }
+  .archify-inline .s-security { color:#fb7185; }
+  .archify-inline .s-messagebus { color:#fb923c; }
+  .archify-inline .s-external { color:#94a3b8; }
+  .archify-figure { margin:18px 0 22px; border:1px solid var(--line); border-radius:16px; background:#050916; overflow:hidden; }
+  .archify-figure figcaption { padding:12px 16px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+  .surface-grid { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr); gap:18px; margin:18px 0; }
+  .surface-preview { border:1px solid var(--line); border-radius:16px; background:#101318; overflow:hidden; }
+  .surface-preview header { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; border-bottom:1px solid var(--line); }
+  .surface-preview header strong { font-size:13px; }
+  .goal-demo-body { padding:18px; }
+  .goal-demo-chip { display:inline-flex; align-items:center; gap:8px; border:1px solid rgba(84,210,207,.38); border-radius:9px; padding:7px 10px; color:var(--text); background:rgba(84,210,207,.08); font-size:12px; }
+  .goal-demo-panel { margin-top:12px; border:1px solid var(--line2); border-radius:12px; background:var(--panel); overflow:hidden; }
+  .goal-demo-panel .panel-title { padding:14px 15px; border-bottom:1px solid var(--line); }
+  .goal-demo-panel .panel-title small { display:block; color:var(--faint); margin-top:4px; }
+  .goal-demo-row { display:grid; grid-template-columns:110px 1fr; gap:12px; padding:10px 15px; border-bottom:1px solid var(--line); font-size:12px; }
+  .goal-demo-row:last-child { border-bottom:0; }
+  .goal-demo-row span:first-child { color:var(--faint); }
+  .goal-demo-actions { display:flex; flex-wrap:wrap; gap:8px; padding:13px 15px; border-top:1px solid var(--line); }
+  .demo-button { border:1px solid var(--line2); border-radius:7px; padding:6px 10px; color:var(--text); background:var(--panel2); font-size:11px; }
+  .demo-button.primary { border-color:rgba(84,210,207,.5); color:var(--cyan); }
+  .terminal-demo { margin:0; padding:18px; min-height:330px; color:#d7dde5; background:#090b0e; font:12px/1.75 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; }
+  .model-stack { display:grid; width:100%; max-width:100%; grid-template-columns:150px repeat(5,minmax(120px,1fr)); margin-top:18px; border:1px solid var(--line); border-radius:14px; overflow:auto; min-width:0; }
+  .model-stack > div { min-height:82px; padding:13px 14px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--panel); }
+  .model-stack > div:nth-child(6n) { border-right:0; }
+  .model-stack > div:nth-last-child(-n+6) { border-bottom:0; }
+  .model-stack .row-name { background:var(--panel2); color:var(--text); font-weight:700; }
+  .model-stack .stack-head { min-height:48px; background:#101318; color:var(--faint); font-size:10px; font-weight:750; letter-spacing:.07em; text-transform:uppercase; }
+  .model-stack b { display:block; color:var(--text); font-size:12px; }
+  .model-stack span { display:block; margin-top:4px; color:var(--muted); font-size:11px; line-height:1.35; }
+  .model-stack .present { box-shadow:inset 0 3px 0 var(--cyan); }
+  .model-stack .partial-cell { box-shadow:inset 0 3px 0 var(--amber); }
+  details.data-details { margin-top:16px; border:1px solid var(--line); border-radius:13px; background:var(--panel3); overflow:hidden; }
+  details.data-details > summary { padding:13px 16px; color:var(--text); font-weight:700; list-style:none; }
+  details.data-details > summary::before { content:"＋"; display:inline-block; width:22px; color:var(--cyan); }
+  details.data-details[open] > summary::before { content:"−"; }
+  details.data-details > .matrix-wrap { margin:0; border:0; border-top:1px solid var(--line); border-radius:0; }
+  .baseline { min-height:210px; }
+  .baseline .kind { color:var(--violet); font-size:11px; font-weight:750; letter-spacing:.08em; text-transform:uppercase; }
+  .decision-list { counter-reset:d; list-style:none; padding:0; }
+  .decision-list li { counter-increment:d; position:relative; margin:10px 0; padding:13px 15px 13px 48px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+  .decision-list li::before { content:counter(d,decimal-leading-zero); position:absolute; left:14px; top:13px; color:var(--cyan); font:750 12px ui-monospace,monospace; }
+  .decision-list strong { color:var(--text); }
+  .do { border-color:rgba(115,214,154,.35); }
+  .adapt { border-color:rgba(230,186,104,.35); }
+  .avoid { border-color:rgba(240,123,114,.35); }
+  .take-label { font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+  .do .take-label { color:var(--green); } .adapt .take-label { color:var(--amber); } .avoid .take-label { color:var(--red); }
+  .footer { margin-top:48px; padding-top:20px; border-top:1px solid var(--line); color:var(--faint); font-size:12px; }
+  @media (max-width:1100px) { .model-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.facts{grid-template-columns:repeat(2,minmax(0,1fr))}.scope-grid,.take-grid{grid-template-columns:1fr}.flow{grid-template-columns:repeat(7,150px)}.reading-line{grid-template-columns:1fr}.reading-line>div{border-right:0;border-bottom:1px solid var(--line)}.reading-line>div:last-child{border-bottom:0}.model-stack{grid-template-columns:130px repeat(5,150px)} }
+  @media (max-width:820px) { :root{--sidebar:0px}.sidebar{display:none}main{margin-left:0}.mobile-nav{display:block;position:sticky;top:0;z-index:10;border-bottom:1px solid var(--line);background:rgba(16,19,24,.96);backdrop-filter:blur(10px)}.mobile-nav summary{padding:11px 19px;color:var(--text);font-size:12px;list-style:none}.mobile-nav summary::before{content:"目录 ＋"}.mobile-nav[open] summary::before{content:"目录 −"}.mobile-nav .mobile-links{display:flex;gap:7px;padding:0 19px 12px;overflow:auto}.mobile-nav a{flex:0 0 auto;padding:6px 9px;border:1px solid var(--line);border-radius:7px;color:var(--muted);font-size:11px;text-decoration:none}.hero{padding-top:36px}.framework-grid,.cols,.model-grid,.surface-grid{grid-template-columns:1fr}.content{padding-bottom:70px}.framework{padding:17px}.framework-head{display:block}.facts{grid-template-columns:1fr 1fr}.diagram-canvas{padding:0}.goal-demo-row{grid-template-columns:88px 1fr} }
+  @media (max-width:520px) { .facts{grid-template-columns:1fr}.hero,.content{padding-left:19px;padding-right:19px}h1{font-size:34px} }
+  @media (prefers-reduced-motion:reduce) { html{scroll-behavior:auto} }
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">OpenProgram Research</div>
+  <div class="doc-title">Goal 功能的实现方式</div>
+  <nav aria-label="文档目录">
+    <div class="nav-label">Framing</div>
+    <a href="#scope">范围与口径</a>
+    <a href="#control-loop">Goal 总控制流程</a>
+    <a href="#taxonomy">五类实现模型</a>
+    <a href="#native-map">四种原生架构</a>
+    <a href="#matrix">横向矩阵</a>
+    <a href="#hard-tasks">困难任务与停止机制</a>
+    <div class="nav-label">Native Goal</div>
+    <a href="#openprogram">OpenProgram</a>
+    <a href="#codex">Codex</a>
+    <a href="#claude">Claude Code</a>
+    <a href="#hermes">Hermes Agent</a>
+    <div class="nav-label">Adjacent</div>
+    <a href="#opencode">OpenCode</a>
+    <a href="#openclaw">OpenClaw</a>
+    <a href="#sdk-baselines">通用框架基线</a>
+    <div class="nav-label">Design</div>
+    <a href="#lessons">可参考的设计</a>
+    <a href="#target-contract">当前合同与扩展</a>
+    <a href="#surfaces">Web 与 TUI</a>
+    <a href="#implementation-evidence">实现与验收</a>
+    <a href="#status">实现状态与证据边界</a>
+  </nav>
+</aside>
+
+<main>
+  <details class="mobile-nav">
+    <summary aria-label="打开文档目录"></summary>
+    <nav class="mobile-links" aria-label="移动端文档目录">
+      <a href="#control-loop">总流程</a><a href="#native-map">原生架构</a><a href="#hard-tasks">困难任务</a><a href="#openprogram">当前实现</a><a href="#target-contract">当前合同</a><a href="#surfaces">Web 与 TUI</a><a href="#implementation-evidence">实现与验收</a><a href="#status">证据边界</a>
+    </nav>
+  </details>
+  <header class="hero">
+    <div class="eyebrow">Implementation Survey · Design Reference</div>
+    <h1>Agent Goal 功能：实现方式对比</h1>
+    <p class="lead">本文比较 Goal 在运行时中的真实职责：目标数据放在哪里、谁触发下一轮、谁判定完成、如何限制资源、如何处理等待与人工介入、进程重启后能否恢复。重点不是功能名称，而是控制流和状态所有权。</p>
+    <div class="meta">
+      <span class="pill native">4 个原生 Goal 实现</span>
+      <span class="pill near">2 个相邻机制实现</span>
+      <span class="pill">4 个通用框架基线</span>
+      <span class="pill">5 张 Archify SVG · 文档内嵌</span>
+    </div>
+    <div class="reading-line" aria-label="OpenProgram 当前判断">
+      <div class="current"><small>已经具备</small><strong>独立、可使用检查工具的完成判定</strong><span>工作 agent 产出结果，inspection judge 检查证据，再决定继续或完成。</span></div>
+      <div class="gap"><small>当前主要缺口</small><strong>外部事件唤醒尚未实现</strong><span><code>waiting_external</code> 仍需显式 resume；同机共享目录的 live Goal 由独占 controller 锁保护。</span></div>
+      <div class="target"><small>当前设计</small><strong>持久快照、异步问题、独立 judge 与硬预算共用一个 controller</strong><span>重启转为可恢复暂停；等待不消耗轮次或 active-time 预算。</span></div>
+    </div>
+  </header>
+
+  <div class="content">
+    <section id="scope">
+      <h2>1. 范围与比较口径</h2>
+      <p>一个系统只有在保存目标状态，并能在普通 agent turn 结束后根据该状态决定是否自动开始下一轮时，本文才把它记为“原生 Goal”。Todo、Plan、Task、Cron 可以参与 Goal，但单独存在时不等于 Goal。</p>
+      <div class="scope-grid">
+        <div class="card"><h3>比较对象</h3><p>OpenProgram、Codex、Claude Code、Hermes Agent；OpenCode 与 OpenClaw 作为相邻实现；OpenAI Agents SDK、LangGraph、AutoGen、CrewAI 作为通用框架基线。</p></div>
+        <div class="card"><h3>固定观察维度</h3><p>入口、状态结构、循环触发、完成判定、预算、等待、人工介入、持久化、恢复、并发控制、事件与 UI。</p></div>
+        <div class="card"><h3>证据优先级</h3><p>公开源码与本仓库源码优先；官方运行文档用于闭源实现；产品表象只用于说明接口，不用于推断内部数据结构。</p></div>
+      </div>
+      <div class="callout warn">Claude Code 的实现源码不公开。本文对它只记录官方文档明确给出的控制合同：<code>/goal</code> 是 session-scoped prompt Stop hook、判定器输入、三种 verdict、恢复和后台任务等待规则；不推断它的数据库表或内部类名。</div>
+    </section>
+
+    <section id="control-loop">
+      <h2>Goal 总控制流程</h2>
+      <p>四个原生实现都包含“工作完成后决定是否再开一轮”，差别集中在状态由谁保存、完成由谁判断，以及等待是否会暂停执行。</p>
+      <div class="diagram-shell">
+        <div class="diagram-head">
+          <div><strong>一个 Goal 从输入到终止的最小闭环</strong><span>实线是当前工作路径；虚线表示未完成或外部条件变化后的再次执行。</span></div>
+          <div class="legend" aria-label="图例"><span><i class="work"></i>工作</span><span><i class="judge"></i>判定</span><span><i class="wait"></i>等待</span><span><i class="stop"></i>停止</span></div>
+        </div>
+        <div class="diagram-canvas">
+          <svg class="archify-inline" viewBox="0 0 1087 776" role="img" lang="zh-CN" aria-labelledby="goal-control-loop-archify-diagram-title goal-control-loop-archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+        <title id="goal-control-loop-archify-diagram-title">OpenProgram Goal 控制流程</title>
+        <desc id="goal-control-loop-archify-diagram-description">由 Archify 生成的工作流图。</desc>
+        <!-- Definitions -->
+        <defs>
+          <marker id="goal-control-loop-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+          </marker>
+          <marker id="goal-control-loop-arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+          </marker>
+          <marker id="goal-control-loop-arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+          </marker>
+          <marker id="goal-control-loop-arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+          </marker>
+          <pattern id="goal-control-loop-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#goal-control-loop-grid)" />
+
+        <!-- Swimlanes -->
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="954" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / Web / TUI</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="176" width="954" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="198" class="t-dim" font-size="10" font-weight="600">02 / Goal Controller</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-2" x="40" y="300" width="954" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="322" class="t-dim" font-size="10" font-weight="600">03 / Agent Roles</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-3" x="40" y="424" width="954" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="446" class="t-dim" font-size="10" font-weight="600">04 / Evidence &amp; State</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-4" x="40" y="548" width="954" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="exception-lane" data-composition-frame-id="lane-4-exception" x="46" y="554" width="942" height="92" rx="8" class="c-security-group" stroke-width="1"/>
+        <text x="54" y="570" class="t-security" font-size="10" font-weight="600">EX / Wait / Stop</text>
+
+        <!-- Phase headers -->
+        <line x1="71" y1="35" x2="283" y2="35" class="a-default" stroke-width="1.1"/>
+        <rect x="71" y="27" width="212" height="16" rx="4" class="c-mask"/>
+        <text x="177" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">定义与恢复</text>
+        <line x1="311" y1="35" x2="739" y2="35" class="a-emphasis" stroke-width="1.1"/>
+        <rect x="311" y="27" width="428" height="16" rx="4" class="c-mask"/>
+        <text x="525" y="39" class="t-backend" font-size="8" font-weight="600" text-anchor="middle">执行与判定</text>
+        <line x1="864.8" y1="35" x2="956.8" y2="35" class="a-dashed" stroke-width="1.1"/>
+        <rect x="864.8" y="27" width="92" height="16" rx="4" class="c-mask"/>
+        <text x="910.8" y="39" class="t-messagebus" font-size="8" font-weight="600" text-anchor="middle">继续或终止</text>
+
+        <!-- Workflow groups -->
+
+
+        <!-- Edge paths -->
+        <path data-edge-from="commit" data-edge-to="work" data-edge-label="unmet → next round" data-edge-key="0" data-edge-id="commit_resume" data-composition-points="835.8,243;357,243;357,341" d="M 835.8 243 L 357 243 L 357 341" class="a-dashed" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead-dashed)"/>
+        <path data-edge-from="commit" data-edge-to="stop" data-edge-label="terminal verdict" data-edge-key="1" data-edge-id="commit_stop" data-composition-points="985.8,243;1068.601,243;1068.601,615;985.8,615" d="M 985.8 243 L 1068.601 243 L 1068.601 615 L 985.8 615" class="a-security" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead-security)"/>
+        <path data-edge-from="collect" data-edge-to="gate" data-edge-label="verifiable criteria" data-edge-key="2" data-edge-id="evidence_gate" data-composition-points="552,491;693,491;693,393" d="M 552 491 L 693 491 L 693 393" class="a-default" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead)"/>
+        <path data-edge-from="gate" data-edge-to="judge" data-edge-label="gate result" data-edge-key="3" data-edge-id="gate_judge" data-composition-points="693,393;693,409;910.8,409;910.8,393" d="M 693 393 L 693 409 L 910.8 409 L 910.8 393" class="a-default" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead)"/>
+        <path data-edge-from="goal_input" data-edge-to="persist" data-edge-label="create / edit / resume" data-edge-key="4" data-edge-id="input_state" data-composition-points="117,145;117,166;237,166;237,217" d="M 117 145 L 117 166 L 237 166 L 237 217" class="a-emphasis" stroke-width="1.8" marker-end="url(#goal-control-loop-arrowhead-emphasis)"/>
+        <path data-edge-from="judge" data-edge-to="commit" data-edge-label="typed verdict" data-edge-key="5" data-edge-id="judge_commit" data-composition-points="910.8,341;910.8,269" d="M 910.8 341 L 910.8 269" class="a-emphasis" stroke-width="1.8" marker-end="url(#goal-control-loop-arrowhead-emphasis)"/>
+        <path data-edge-from="judge" data-edge-to="questions" data-edge-label="needs_user" data-edge-key="6" data-edge-id="judge_questions" data-composition-points="984.8,367;1006,367;1006,573;477,573;477,589" d="M 984.8 367 L 1006 367 L 1006 573 L 477 573 L 477 589" class="a-dashed" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead-dashed)"/>
+        <path data-edge-from="judge" data-edge-to="wait" data-edge-label="waiting_external" data-edge-key="7" data-edge-id="judge_wait" data-composition-points="910.8,393;910.8,476;784,476;784,615;768,615" d="M 910.8 393 L 910.8 476 L 784 476 L 784 615 L 768 615" class="a-dashed" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead-dashed)"/>
+        <path data-edge-from="questions" data-edge-to="wait" data-edge-label="无独立工作" data-edge-key="8" data-edge-id="questions_wait" data-composition-points="477,641;477,657;693,657;693,641" d="M 477 641 L 477 657 L 693 657 L 693 641" class="a-dashed" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead-dashed)"/>
+        <path data-edge-from="questions" data-edge-to="work" data-edge-label="可继续 → 独立工作" data-edge-key="9" data-edge-id="questions_work" data-composition-points="477,641;477,668;357,668;357,393" d="M 477 641 L 477 668 L 357 668 L 357 393" class="a-dashed" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead-dashed)"/>
+        <path data-edge-from="persist" data-edge-to="work" data-edge-label="lease + checkpoint" data-edge-key="10" data-edge-id="state_work" data-composition-points="237,269;237,290;357,290;357,341" d="M 237 269 L 237 290 L 357 290 L 357 341" class="a-default" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead)"/>
+        <path data-edge-from="work" data-edge-to="collect" data-edge-label="result + tool evidence" data-edge-key="11" data-edge-id="work_evidence" data-composition-points="430,367;446,367;446,414;477,414;477,465" d="M 430 367 L 446 367 L 446 414 L 477 414 L 477 465" class="a-default" stroke-width="1.4" marker-end="url(#goal-control-loop-arrowhead)"/>
+
+        <!-- Nodes -->
+        <g id="goal-control-loop-node-goal_input" data-node-id="goal_input" data-node-label="Goal 输入" aria-label="聚焦Goal 输入，创建 / 编辑 / 继续, Web / TUI › 定义与恢复" data-node-kind="frontend" data-node-sublabel="创建 / 编辑 / 继续" data-node-context="Web / TUI › 定义与恢复">
+          <title>Goal 输入 · 创建 / 编辑 / 继续 · Web / TUI › 定义与恢复</title>
+          <rect x="48" y="93" width="138" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="93" width="138" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(54 99) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="117" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Goal 输入</text>
+          <text data-detail="context" x="117" y="131" class="t-muted" font-size="8" text-anchor="middle">创建 / 编辑 / 继续</text>
+        </g>
+
+        <g id="goal-control-loop-node-persist" data-node-id="persist" data-node-label="持久化状态" aria-label="聚焦持久化状态，goal_id · version · checkpoint, Goal Controller › 定义与恢复" data-node-kind="backend" data-node-sublabel="goal_id · version · checkpoint" data-node-context="Goal Controller › 定义与恢复">
+          <title>持久化状态 · goal_id · version · checkpoint · Goal Controller › 定义与恢复</title>
+          <rect x="162" y="217" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="162" y="217" width="150" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(168 223) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="237" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">持久化状态</text>
+          <text data-detail="context" x="237" y="255" class="t-muted" font-size="7.8" text-anchor="middle">goal_id · version · checkpoint</text>
+        </g>
+
+        <g id="goal-control-loop-node-commit" data-node-id="commit" data-node-label="原子状态转移" aria-label="聚焦原子状态转移，CAS version + event, Goal Controller › 继续或终止" data-node-kind="messagebus" data-node-sublabel="CAS version + event" data-node-context="Goal Controller › 继续或终止">
+          <title>原子状态转移 · CAS version + event · Goal Controller › 继续或终止</title>
+          <rect x="835.8" y="217" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="835.8" y="217" width="150" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(841.8 223) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="910.8" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">原子状态转移</text>
+          <text data-detail="context" x="910.8" y="255" class="t-muted" font-size="8" text-anchor="middle">CAS version + event</text>
+        </g>
+
+        <g id="goal-control-loop-node-work" data-node-id="work" data-node-label="Working Agent" aria-label="聚焦Working Agent，调用工具并推进任务, Agent Roles › 执行与判定" data-node-kind="backend" data-node-sublabel="调用工具并推进任务" data-node-context="Agent Roles › 执行与判定">
+          <title>Working Agent · 调用工具并推进任务 · Agent Roles › 执行与判定</title>
+          <rect x="284" y="341" width="146" height="52" rx="6" class="c-mask"/>
+          <rect x="284" y="341" width="146" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(290 347) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="357" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Working Agent</text>
+          <text data-detail="context" x="357" y="379" class="t-muted" font-size="8" text-anchor="middle">调用工具并推进任务</text>
+        </g>
+
+        <g id="goal-control-loop-node-gate" data-node-id="gate" data-node-label="确定性 Gate" aria-label="聚焦确定性 Gate，命令 · 文件 · 计数 · 权限, Agent Roles › 执行与判定" data-node-kind="security" data-node-sublabel="命令 · 文件 · 计数 · 权限" data-node-context="Agent Roles › 执行与判定">
+          <title>确定性 Gate · 命令 · 文件 · 计数 · 权限 · Agent Roles › 执行与判定</title>
+          <rect x="620" y="341" width="146" height="52" rx="6" class="c-mask"/>
+          <rect x="620" y="341" width="146" height="52" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(626 347) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="693" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">确定性 Gate</text>
+          <text data-detail="context" x="693" y="379" class="t-muted" font-size="8" text-anchor="middle">命令 · 文件 · 计数 · 权限</text>
+        </g>
+
+        <g id="goal-control-loop-node-judge" data-node-id="judge" data-node-label="Judge Agent" aria-label="聚焦Judge Agent，只读检查与语义判定, Agent Roles › 继续或终止" data-node-kind="backend" data-node-sublabel="只读检查与语义判定" data-node-context="Agent Roles › 继续或终止">
+          <title>Judge Agent · 只读检查与语义判定 · Agent Roles › 继续或终止</title>
+          <rect x="836.8" y="341" width="148" height="52" rx="6" class="c-mask"/>
+          <rect x="836.8" y="341" width="148" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(842.8 347) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="910.8" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Judge Agent</text>
+          <text data-detail="context" x="910.8" y="379" class="t-muted" font-size="8" text-anchor="middle">只读检查与语义判定</text>
+        </g>
+
+        <g id="goal-control-loop-node-collect" data-node-id="collect" data-node-label="证据与用量" aria-label="聚焦证据与用量，结果 · 文件 · token · 时间, Evidence &amp; State › 执行与判定" data-node-kind="database" data-node-sublabel="结果 · 文件 · token · 时间" data-node-context="Evidence &amp; State › 执行与判定">
+          <title>证据与用量 · 结果 · 文件 · token · 时间 · Evidence &amp; State › 执行与判定</title>
+          <rect x="402" y="465" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="402" y="465" width="150" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(408 471) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="477" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">证据与用量</text>
+          <text data-detail="context" x="477" y="503" class="t-muted" font-size="8" text-anchor="middle">结果 · 文件 · token · 时间</text>
+        </g>
+
+        <g id="goal-control-loop-node-questions" data-node-id="questions" data-node-label="异步问题队列" aria-label="聚焦异步问题队列，累计 · 去重 · 稍后回答, Wait / Stop › 执行与判定" data-node-kind="database" data-node-sublabel="累计 · 去重 · 稍后回答" data-node-context="Wait / Stop › 执行与判定">
+          <title>异步问题队列 · 累计 · 去重 · 稍后回答 · Wait / Stop › 执行与判定</title>
+          <rect x="402" y="589" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="402" y="589" width="150" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(408 595) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="477" y="610" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">异步问题队列</text>
+          <text data-detail="context" x="477" y="627" class="t-muted" font-size="8" text-anchor="middle">累计 · 去重 · 稍后回答</text>
+        </g>
+
+        <g id="goal-control-loop-node-wait" data-node-id="wait" data-node-label="等待边界" aria-label="聚焦等待边界，无独立工作 / 外部事件, Wait / Stop › 执行与判定" data-node-kind="external" data-node-sublabel="无独立工作 / 外部事件" data-node-context="Wait / Stop › 执行与判定">
+          <title>等待边界 · 无独立工作 / 外部事件 · Wait / Stop › 执行与判定</title>
+          <rect x="618" y="589" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="618" y="589" width="150" height="52" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(624 595) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="693" y="610" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">等待边界</text>
+          <text data-detail="context" x="693" y="627" class="t-muted" font-size="8" text-anchor="middle">无独立工作 / 外部事件</text>
+        </g>
+
+        <g id="goal-control-loop-node-stop" data-node-id="stop" data-node-label="停止并保留证据" aria-label="聚焦停止并保留证据，blocked · stalled · failed, Wait / Stop › 继续或终止" data-node-kind="security" data-node-sublabel="blocked · stalled · failed" data-node-context="Wait / Stop › 继续或终止">
+          <title>停止并保留证据 · blocked · stalled · failed · Wait / Stop › 继续或终止</title>
+          <rect x="835.8" y="589" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="835.8" y="589" width="150" height="52" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(841.8 595) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="910.8" y="610" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">停止并保留证据</text>
+          <text data-detail="context" x="910.8" y="627" class="t-muted" font-size="8" text-anchor="middle">blocked · stalled · failed</text>
+        </g>
+
+        <!-- Edge labels -->
+        <g data-detail="context" data-edge-from="commit" data-edge-to="work" data-edge-label="unmet → next round" data-edge-key="0" data-edge-id="commit_resume">
+          <rect x="548.1999999999999" y="223" width="96.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="596.4" y="233" class="t-database" font-size="8" text-anchor="middle">unmet → next round</text>
+        </g>
+        <g data-detail="context" data-edge-from="commit" data-edge-to="stop" data-edge-label="terminal verdict" data-edge-key="1" data-edge-id="commit_stop">
+          <rect x="983.8004999999999" y="223" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="1027.2005" y="233" class="t-security" font-size="8" text-anchor="middle">terminal verdict</text>
+        </g>
+        <g data-detail="context" data-edge-from="collect" data-edge-to="gate" data-edge-label="verifiable criteria" data-edge-key="2" data-edge-id="evidence_gate">
+          <rect x="571.9" y="471" width="101.2" height="14" rx="3" class="c-mask"/>
+          <text x="622.5" y="481" class="t-muted" font-size="8" text-anchor="middle">verifiable criteria</text>
+        </g>
+        <g data-detail="context" data-edge-from="gate" data-edge-to="judge" data-edge-label="gate result" data-edge-key="3" data-edge-id="gate_judge">
+          <rect x="770.5" y="389" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="801.9" y="399" class="t-muted" font-size="8" text-anchor="middle">gate result</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal_input" data-edge-to="persist" data-edge-label="create / edit / resume" data-edge-key="4" data-edge-id="input_state">
+          <rect x="119.2" y="146" width="115.6" height="14" rx="3" class="c-mask"/>
+          <text x="177" y="156" class="t-backend" font-size="8" text-anchor="middle">create / edit / resume</text>
+        </g>
+        <g data-detail="context" data-edge-from="judge" data-edge-to="commit" data-edge-label="typed verdict" data-edge-key="5" data-edge-id="judge_commit">
+          <rect x="874.5999999999999" y="321" width="72.4" height="14" rx="3" class="c-mask"/>
+          <text x="910.8" y="331" class="t-backend" font-size="8" text-anchor="middle">typed verdict</text>
+        </g>
+        <g data-detail="context" data-edge-from="judge" data-edge-to="questions" data-edge-label="needs_user" data-edge-key="6" data-edge-id="judge_questions">
+          <rect x="712.5" y="553" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="741.5" y="563" class="t-database" font-size="8" text-anchor="middle">needs_user</text>
+        </g>
+        <g data-detail="context" data-edge-from="judge" data-edge-to="wait" data-edge-label="waiting_external" data-edge-key="7" data-edge-id="judge_wait">
+          <rect x="804" y="456" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="847.4" y="466" class="t-database" font-size="8" text-anchor="middle">waiting_external</text>
+        </g>
+        <g data-detail="context" data-edge-from="questions" data-edge-to="wait" data-edge-label="无独立工作" data-edge-key="8" data-edge-id="questions_wait">
+          <rect x="556" y="637" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="585" y="647" class="t-database" font-size="8" text-anchor="middle">无独立工作</text>
+        </g>
+        <g data-detail="context" data-edge-from="questions" data-edge-to="work" data-edge-label="可继续 → 独立工作" data-edge-key="9" data-edge-id="questions_work">
+          <rect x="371.2" y="648" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="417" y="658" class="t-database" font-size="8" text-anchor="middle">可继续 → 独立工作</text>
+        </g>
+        <g data-detail="context" data-edge-from="persist" data-edge-to="work" data-edge-label="lease + checkpoint" data-edge-key="10" data-edge-id="state_work">
+          <rect x="248.8" y="270" width="96.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="297" y="280" class="t-muted" font-size="8" text-anchor="middle">lease + checkpoint</text>
+        </g>
+        <g data-detail="context" data-edge-from="work" data-edge-to="collect" data-edge-label="result + tool evidence" data-edge-key="11" data-edge-id="work_evidence">
+          <rect x="403.7" y="394" width="115.6" height="14" rx="3" class="c-mask"/>
+          <text x="461.5" y="404" class="t-muted" font-size="8" text-anchor="middle">result + tool evidence</text>
+        </g>
+
+        <!-- Legend -->
+        <g data-legend="" data-legend-bridge="">
+          <text x="20" y="676" class="t-primary" font-size="12" font-weight="650">图例</text>
+          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="用户界面" data-legend-x="20" data-legend-baseline="696" data-legend-width="78">
+            <rect x="20" y="688" width="14" height="9" rx="2" class="c-frontend" stroke-width="1"/>
+            <text x="42" y="696" class="t-muted" font-size="7.5" font-weight="500">用户界面</text>
+          </g>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Agent 逻辑" data-legend-x="105" data-legend-baseline="696" data-legend-width="87">
+            <rect x="105" y="688" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
+            <text x="127" y="696" class="t-muted" font-size="7.5" font-weight="500">Agent 逻辑</text>
+          </g>
+          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="策略" data-legend-x="199" data-legend-baseline="696" data-legend-width="61">
+            <rect x="199" y="688" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+            <text x="221" y="696" class="t-muted" font-size="7.5" font-weight="500">策略</text>
+          </g>
+          <g data-legend-semantic-kind="messagebus" data-legend-kind="messagebus" data-legend-label="工具操作" data-legend-x="267" data-legend-baseline="696" data-legend-width="78">
+            <rect x="267" y="688" width="14" height="9" rx="2" class="c-messagebus" stroke-width="1"/>
+            <text x="289" y="696" class="t-muted" font-size="7.5" font-weight="500">工具操作</text>
+          </g>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="上下文 / 追踪" data-legend-x="352" data-legend-baseline="696" data-legend-width="100">
+            <rect x="352" y="688" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+            <text x="374" y="696" class="t-muted" font-size="7.5" font-weight="500">上下文 / 追踪</text>
+          </g>
+          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="外部系统" data-legend-x="459" data-legend-baseline="696" data-legend-width="78">
+            <rect x="459" y="688" width="14" height="9" rx="2" class="c-external" stroke-width="1"/>
+            <text x="481" y="696" class="t-muted" font-size="7.5" font-weight="500">外部系统</text>
+          </g>
+        </g>
+      </svg>
+        </div>
+      </div>
+      <div class="callout">判断一套 Goal 是否完整，主要看黄色等待分支能否真正暂停、红色停止分支能否区分原因，以及控制状态能否跨 turn 和进程恢复。只实现中间的工作—判定循环还不够。</div>
+    </section>
+
+    <section id="taxonomy">
+      <h2>五类实现模型</h2>
+      <div class="model-stack" role="table" aria-label="五类 Goal 相关实现模型">
+        <div class="stack-head">层级</div><div class="stack-head">输入</div><div class="stack-head">进度</div><div class="stack-head">终止</div><div class="stack-head">跨 turn</div><div class="stack-head">代表系统</div>
+        <div class="row-name">Task input</div><div class="present"><b>用户消息</b><span>作为本轮任务</span></div><div><b>无要求</b></div><div><b>模型停止</b></div><div><b>否</b></div><div><b>普通 agent turn</b></div>
+        <div class="row-name">Progress ledger</div><div><b>任务 + items</b></div><div class="present"><b>Todo / Task</b><span>供提示和 UI 使用</span></div><div><b>不参与总体终止</b></div><div><b>不自动续轮</b></div><div><b>OpenCode Todo</b></div>
+        <div class="row-name">Graph termination</div><div><b>graph state</b></div><div><b>应用自定义</b></div><div class="present"><b>edge / condition</b></div><div class="partial-cell"><b>由应用实现</b></div><div><b>LangGraph · AutoGen</b></div>
+        <div class="row-name">Persisted controller</div><div><b>objective</b></div><div><b>usage / status</b></div><div><b>agent 声明</b></div><div class="present"><b>idle 时自动续轮</b></div><div><b>Codex</b></div>
+        <div class="row-name">Evaluator loop</div><div><b>Goal spec</b></div><div><b>evidence</b></div><div class="present"><b>独立 evaluator</b></div><div class="present"><b>未完成则续轮</b></div><div><b>OpenProgram · Claude · Hermes</b></div>
+      </div>
+      <p class="evidence-note">D 与 E 可以组合。Codex把完成声明交给工作 agent 自身，但控制面负责生命周期和预算；另外三个实现把完成判定交给独立 evaluator。</p>
+    </section>
+
+    <section id="native-map">
+      <h2>四种原生 Goal 架构放在同一张图里</h2>
+      <p>每一行都是一个完整实现。横向阅读可以直接看到它们把状态、工作、判定和续轮分别放在哪里。</p>
+      <div class="diagram-shell">
+        <div class="diagram-head"><div><strong>原生 Goal 的状态所有权和判定路径</strong><span>青色表示独立判定器，蓝色表示工作 agent，黄色表示等待或受限状态。</span></div></div>
+        <div class="diagram-canvas">
+          <svg class="archify-inline" viewBox="0 0 865 652" role="img" lang="zh-CN" aria-labelledby="goal-frameworks-archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+        <title id="goal-frameworks-archify-diagram-title">四种原生 Goal 的控制结构</title>
+        <desc id="goal-frameworks-archify-diagram-description">由 Archify 生成的工作流图。</desc>
+        <!-- Definitions -->
+        <defs>
+          <marker id="goal-frameworks-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+          </marker>
+          <marker id="goal-frameworks-arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+          </marker>
+          <marker id="goal-frameworks-arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+          </marker>
+          <marker id="goal-frameworks-arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+          </marker>
+          <pattern id="goal-frameworks-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#goal-frameworks-grid)" />
+
+        <!-- Swimlanes -->
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="goal-frameworks-lane-0" x="40" y="52" width="809" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / OpenProgram</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="goal-frameworks-lane-1" x="40" y="176" width="809" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="198" class="t-dim" font-size="10" font-weight="600">02 / Codex</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="goal-frameworks-lane-2" x="40" y="300" width="809" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="322" class="t-dim" font-size="10" font-weight="600">03 / Claude Code</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="goal-frameworks-lane-3" x="40" y="424" width="809" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="446" class="t-dim" font-size="10" font-weight="600">04 / Hermes Agent</text>
+
+        <!-- Phase headers -->
+        <line x1="84" y1="35" x2="296" y2="35" class="a-default" stroke-width="1.1"/>
+        <rect x="84" y="27" width="212" height="16" rx="4" class="c-mask"/>
+        <text x="190" y="39" class="t-muted" font-size="8" font-weight="600" text-anchor="middle">状态所有权</text>
+        <line x1="341" y1="35" x2="553" y2="35" class="a-emphasis" stroke-width="1.1"/>
+        <rect x="341" y="27" width="212" height="16" rx="4" class="c-mask"/>
+        <text x="447" y="39" class="t-backend" font-size="8" font-weight="600" text-anchor="middle">工作与判定</text>
+        <line x1="624.8" y1="35" x2="836.8" y2="35" class="a-dashed" stroke-width="1.1"/>
+        <rect x="624.8" y="27" width="212" height="16" rx="4" class="c-mask"/>
+        <text x="730.8" y="39" class="t-messagebus" font-size="8" font-weight="600" text-anchor="middle">续轮与等待</text>
+
+        <!-- Workflow groups -->
+
+
+        <!-- Edge paths -->
+        <path data-edge-from="goal-frameworks-claude_judge" data-edge-to="goal-frameworks-claude_next" data-edge-label="three verdicts" data-edge-key="0" data-edge-id="goal-frameworks-claude_continue" data-composition-points="472,367;590.8,367" d="M 472 367 L 590.8 367" class="a-default" stroke-width="1.4" marker-end="url(#goal-frameworks-arrowhead)"/>
+        <path data-edge-from="goal-frameworks-claude_state" data-edge-to="goal-frameworks-claude_judge" data-edge-label="on Stop" data-edge-key="1" data-edge-id="goal-frameworks-claude_decide" data-composition-points="212,367;302,367" d="M 212 367 L 302 367" class="a-default" stroke-width="1.4" marker-end="url(#goal-frameworks-arrowhead)"/>
+        <path data-edge-from="goal-frameworks-codex_judge" data-edge-to="goal-frameworks-codex_next" data-edge-label="self-report" data-edge-key="2" data-edge-id="goal-frameworks-codex_continue" data-composition-points="472,243;590.8,243" d="M 472 243 L 590.8 243" class="a-default" stroke-width="1.4" marker-end="url(#goal-frameworks-arrowhead)"/>
+        <path data-edge-from="goal-frameworks-codex_state" data-edge-to="goal-frameworks-codex_judge" data-edge-label="run turn" data-edge-key="3" data-edge-id="goal-frameworks-codex_decide" data-composition-points="212,243;302,243" d="M 212 243 L 302 243" class="a-default" stroke-width="1.4" marker-end="url(#goal-frameworks-arrowhead)"/>
+        <path data-edge-from="goal-frameworks-hermes_judge" data-edge-to="goal-frameworks-hermes_next" data-edge-label="done / blocked / wait" data-edge-key="4" data-edge-id="goal-frameworks-hermes_continue" data-composition-points="472,491;590.8,491" d="M 472 491 L 590.8 491" class="a-default" stroke-width="1.4" marker-end="url(#goal-frameworks-arrowhead)"/>
+        <path data-edge-from="goal-frameworks-hermes_state" data-edge-to="goal-frameworks-hermes_judge" data-edge-label="turn result" data-edge-key="5" data-edge-id="goal-frameworks-hermes_decide" data-composition-points="212,491;302,491" d="M 212 491 L 302 491" class="a-default" stroke-width="1.4" marker-end="url(#goal-frameworks-arrowhead)"/>
+        <path data-edge-from="goal-frameworks-op_judge" data-edge-to="goal-frameworks-op_next" data-edge-label="verdict" data-edge-key="6" data-edge-id="goal-frameworks-op_continue" data-composition-points="472,119;590.8,119" d="M 472 119 L 590.8 119" class="a-default" stroke-width="1.4" marker-end="url(#goal-frameworks-arrowhead)"/>
+        <path data-edge-from="goal-frameworks-op_state" data-edge-to="goal-frameworks-op_judge" data-edge-label="work + evidence" data-edge-key="7" data-edge-id="goal-frameworks-op_decide" data-composition-points="212,119;302,119" d="M 212 119 L 302 119" class="a-default" stroke-width="1.4" marker-end="url(#goal-frameworks-arrowhead)"/>
+
+        <!-- Nodes -->
+        <g id="goal-frameworks-node-op_state" data-node-id="goal-frameworks-op_state" data-node-label="Versioned Goal snapshot" aria-label="聚焦Versioned Goal snapshot，goal/run ID · CAS, OpenProgram › 状态所有权" data-node-kind="database" data-node-sublabel="goal/run ID · CAS" data-node-context="OpenProgram › 状态所有权">
+          <title>Versioned Goal snapshot · goal/run ID · CAS · OpenProgram › 状态所有权</title>
+          <rect x="48" y="93" width="164" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="93" width="164" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(54 99) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="130" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Versioned Goal snapshot</text>
+          <text data-detail="context" x="130" y="131" class="t-muted" font-size="8" text-anchor="middle">goal/run ID · CAS</text>
+        </g>
+
+        <g id="goal-frameworks-node-op_judge" data-node-id="goal-frameworks-op_judge" data-node-label="Working Agent → Judge" aria-label="聚焦Working Agent → Judge，独立且可只读检查, OpenProgram › 工作与判定" data-node-kind="security" data-node-sublabel="独立且可只读检查" data-node-context="OpenProgram › 工作与判定">
+          <title>Working Agent → Judge · 独立且可只读检查 · OpenProgram › 工作与判定</title>
+          <rect x="302" y="93" width="170" height="52" rx="6" class="c-mask"/>
+          <rect x="302" y="93" width="170" height="52" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(308 99) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="387" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Working Agent → Judge</text>
+          <text data-detail="context" x="387" y="131" class="t-muted" font-size="8" text-anchor="middle">独立且可只读检查</text>
+        </g>
+
+        <g id="goal-frameworks-node-op_next" data-node-id="goal-frameworks-op_next" data-node-label="Controller / Wait" aria-label="聚焦Controller / Wait，异步问题 · 重启恢复, OpenProgram › 续轮与等待" data-node-kind="messagebus" data-node-sublabel="异步问题 · 重启恢复" data-node-context="OpenProgram › 续轮与等待">
+          <title>Controller / Wait · 异步问题 · 重启恢复 · OpenProgram › 续轮与等待</title>
+          <rect x="590.8" y="93" width="160" height="52" rx="6" class="c-mask"/>
+          <rect x="590.8" y="93" width="160" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(596.8 99) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="670.8" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Controller / Wait</text>
+          <text data-detail="context" x="670.8" y="131" class="t-muted" font-size="8" text-anchor="middle">异步问题 · 重启恢复</text>
+        </g>
+
+        <g id="goal-frameworks-node-codex_state" data-node-id="goal-frameworks-codex_state" data-node-label="SQLite ThreadGoal" aria-label="聚焦SQLite ThreadGoal，typed status · usage, Codex › 状态所有权" data-node-kind="database" data-node-sublabel="typed status · usage" data-node-context="Codex › 状态所有权">
+          <title>SQLite ThreadGoal · typed status · usage · Codex › 状态所有权</title>
+          <rect x="48" y="217" width="164" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="217" width="164" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(54 223) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="130" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">SQLite ThreadGoal</text>
+          <text data-detail="context" x="130" y="255" class="t-muted" font-size="8" text-anchor="middle">typed status · usage</text>
+        </g>
+
+        <g id="goal-frameworks-node-codex_judge" data-node-id="goal-frameworks-codex_judge" data-node-label="Working Agent 自报" aria-label="聚焦Working Agent 自报，update_goal, Codex › 工作与判定" data-node-kind="backend" data-node-sublabel="update_goal" data-node-context="Codex › 工作与判定">
+          <title>Working Agent 自报 · update_goal · Codex › 工作与判定</title>
+          <rect x="302" y="217" width="170" height="52" rx="6" class="c-mask"/>
+          <rect x="302" y="217" width="170" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(308 223) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="387" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Working Agent 自报</text>
+          <text data-detail="context" x="387" y="255" class="t-muted" font-size="8" text-anchor="middle">update_goal</text>
+        </g>
+
+        <g id="goal-frameworks-node-codex_next" data-node-id="goal-frameworks-codex_next" data-node-label="Idle Controller" aria-label="聚焦Idle Controller，pause · resume · limits, Codex › 续轮与等待" data-node-kind="messagebus" data-node-sublabel="pause · resume · limits" data-node-context="Codex › 续轮与等待">
+          <title>Idle Controller · pause · resume · limits · Codex › 续轮与等待</title>
+          <rect x="590.8" y="217" width="160" height="52" rx="6" class="c-mask"/>
+          <rect x="590.8" y="217" width="160" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(596.8 223) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="670.8" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Idle Controller</text>
+          <text data-detail="context" x="670.8" y="255" class="t-muted" font-size="8" text-anchor="middle">pause · resume · limits</text>
+        </g>
+
+        <g id="goal-frameworks-node-claude_state" data-node-id="goal-frameworks-claude_state" data-node-label="Session Goal Prompt" aria-label="聚焦Session Goal Prompt，resume 保留, Claude Code › 状态所有权" data-node-kind="database" data-node-sublabel="resume 保留" data-node-context="Claude Code › 状态所有权">
+          <title>Session Goal Prompt · resume 保留 · Claude Code › 状态所有权</title>
+          <rect x="48" y="341" width="164" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="341" width="164" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(54 347) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="130" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Session Goal Prompt</text>
+          <text data-detail="context" x="130" y="379" class="t-muted" font-size="8" text-anchor="middle">resume 保留</text>
+        </g>
+
+        <g id="goal-frameworks-node-claude_judge" data-node-id="goal-frameworks-claude_judge" data-node-label="Stop Hook Evaluator" aria-label="聚焦Stop Hook Evaluator，小模型 · 无工具, Claude Code › 工作与判定" data-node-kind="security" data-node-sublabel="小模型 · 无工具" data-node-context="Claude Code › 工作与判定">
+          <title>Stop Hook Evaluator · 小模型 · 无工具 · Claude Code › 工作与判定</title>
+          <rect x="302" y="341" width="170" height="52" rx="6" class="c-mask"/>
+          <rect x="302" y="341" width="170" height="52" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(308 347) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="387" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Stop Hook Evaluator</text>
+          <text data-detail="context" x="387" y="379" class="t-muted" font-size="8" text-anchor="middle">小模型 · 无工具</text>
+        </g>
+
+        <g id="goal-frameworks-node-claude_next" data-node-id="goal-frameworks-claude_next" data-node-label="阻止停止或清除" aria-label="聚焦阻止停止或清除，后台任务 defer, Claude Code › 续轮与等待" data-node-kind="messagebus" data-node-sublabel="后台任务 defer" data-node-context="Claude Code › 续轮与等待">
+          <title>阻止停止或清除 · 后台任务 defer · Claude Code › 续轮与等待</title>
+          <rect x="590.8" y="341" width="160" height="52" rx="6" class="c-mask"/>
+          <rect x="590.8" y="341" width="160" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(596.8 347) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="670.8" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">阻止停止或清除</text>
+          <text data-detail="context" x="670.8" y="379" class="t-muted" font-size="8" text-anchor="middle">后台任务 defer</text>
+        </g>
+
+        <g id="goal-frameworks-node-hermes_state" data-node-id="goal-frameworks-hermes_state" data-node-label="GoalState + Contract" aria-label="聚焦GoalState + Contract，gates · waits, Hermes Agent › 状态所有权" data-node-kind="database" data-node-sublabel="gates · waits" data-node-context="Hermes Agent › 状态所有权">
+          <title>GoalState + Contract · gates · waits · Hermes Agent › 状态所有权</title>
+          <rect x="48" y="465" width="164" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="465" width="164" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(54 471) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="130" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">GoalState + Contract</text>
+          <text data-detail="context" x="130" y="503" class="t-muted" font-size="8" text-anchor="middle">gates · waits</text>
+        </g>
+
+        <g id="goal-frameworks-node-hermes_judge" data-node-id="goal-frameworks-hermes_judge" data-node-label="Gate → Judge" aria-label="聚焦Gate → Judge，机械检查优先, Hermes Agent › 工作与判定" data-node-kind="security" data-node-sublabel="机械检查优先" data-node-context="Hermes Agent › 工作与判定">
+          <title>Gate → Judge · 机械检查优先 · Hermes Agent › 工作与判定</title>
+          <rect x="302" y="465" width="170" height="52" rx="6" class="c-mask"/>
+          <rect x="302" y="465" width="170" height="52" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(308 471) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="387" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Gate → Judge</text>
+          <text data-detail="context" x="387" y="503" class="t-muted" font-size="8" text-anchor="middle">机械检查优先</text>
+        </g>
+
+        <g id="goal-frameworks-node-hermes_next" data-node-id="goal-frameworks-hermes_next" data-node-label="Queue / Wait Barrier" aria-label="聚焦Queue / Wait Barrier，事件唤醒, Hermes Agent › 续轮与等待" data-node-kind="messagebus" data-node-sublabel="事件唤醒" data-node-context="Hermes Agent › 续轮与等待">
+          <title>Queue / Wait Barrier · 事件唤醒 · Hermes Agent › 续轮与等待</title>
+          <rect x="590.8" y="465" width="160" height="52" rx="6" class="c-mask"/>
+          <rect x="590.8" y="465" width="160" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(596.8 471) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="670.8" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Queue / Wait Barrier</text>
+          <text data-detail="context" x="670.8" y="503" class="t-muted" font-size="8" text-anchor="middle">事件唤醒</text>
+        </g>
+
+        <!-- Edge labels -->
+        <g data-detail="context" data-edge-from="goal-frameworks-claude_judge" data-edge-to="goal-frameworks-claude_next" data-edge-label="three verdicts" data-edge-key="0" data-edge-id="goal-frameworks-claude_continue">
+          <rect x="492.79999999999995" y="347" width="77.2" height="14" rx="3" class="c-mask"/>
+          <text x="531.4" y="357" class="t-muted" font-size="8" text-anchor="middle">three verdicts</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-frameworks-claude_state" data-edge-to="goal-frameworks-claude_judge" data-edge-label="on Stop" data-edge-key="1" data-edge-id="goal-frameworks-claude_decide">
+          <rect x="235.2" y="347" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="257" y="357" class="t-muted" font-size="8" text-anchor="middle">on Stop</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-frameworks-codex_judge" data-edge-to="goal-frameworks-codex_next" data-edge-label="self-report" data-edge-key="2" data-edge-id="goal-frameworks-codex_continue">
+          <rect x="500" y="223" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="531.4" y="233" class="t-muted" font-size="8" text-anchor="middle">self-report</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-frameworks-codex_state" data-edge-to="goal-frameworks-codex_judge" data-edge-label="run turn" data-edge-key="3" data-edge-id="goal-frameworks-codex_decide">
+          <rect x="232.8" y="223" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="257" y="233" class="t-muted" font-size="8" text-anchor="middle">run turn</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-frameworks-hermes_judge" data-edge-to="goal-frameworks-hermes_next" data-edge-label="done / blocked / wait" data-edge-key="4" data-edge-id="goal-frameworks-hermes_continue">
+          <rect x="476" y="471" width="110.8" height="14" rx="3" class="c-mask"/>
+          <text x="531.4" y="481" class="t-muted" font-size="8" text-anchor="middle">done / blocked / wait</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-frameworks-hermes_state" data-edge-to="goal-frameworks-hermes_judge" data-edge-label="turn result" data-edge-key="5" data-edge-id="goal-frameworks-hermes_decide">
+          <rect x="225.6" y="471" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="257" y="481" class="t-muted" font-size="8" text-anchor="middle">turn result</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-frameworks-op_judge" data-edge-to="goal-frameworks-op_next" data-edge-label="verdict" data-edge-key="6" data-edge-id="goal-frameworks-op_continue">
+          <rect x="509.59999999999997" y="99" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="531.4" y="109" class="t-muted" font-size="8" text-anchor="middle">verdict</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-frameworks-op_state" data-edge-to="goal-frameworks-op_judge" data-edge-label="work + evidence" data-edge-key="7" data-edge-id="goal-frameworks-op_decide">
+          <rect x="216" y="99" width="82" height="14" rx="3" class="c-mask"/>
+          <text x="257" y="109" class="t-muted" font-size="8" text-anchor="middle">work + evidence</text>
+        </g>
+
+        <!-- Legend -->
+        <g data-legend="" data-legend-bridge="">
+          <text x="20" y="552" class="t-primary" font-size="12" font-weight="650">图例</text>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Agent 逻辑" data-legend-x="20" data-legend-baseline="572" data-legend-width="87">
+            <rect x="20" y="564" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
+            <text x="42" y="572" class="t-muted" font-size="7.5" font-weight="500">Agent 逻辑</text>
+          </g>
+          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="策略" data-legend-x="114" data-legend-baseline="572" data-legend-width="61">
+            <rect x="114" y="564" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+            <text x="136" y="572" class="t-muted" font-size="7.5" font-weight="500">策略</text>
+          </g>
+          <g data-legend-semantic-kind="messagebus" data-legend-kind="messagebus" data-legend-label="工具操作" data-legend-x="182" data-legend-baseline="572" data-legend-width="78">
+            <rect x="182" y="564" width="14" height="9" rx="2" class="c-messagebus" stroke-width="1"/>
+            <text x="204" y="572" class="t-muted" font-size="7.5" font-weight="500">工具操作</text>
+          </g>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="上下文 / 追踪" data-legend-x="267" data-legend-baseline="572" data-legend-width="100">
+            <rect x="267" y="564" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+            <text x="289" y="572" class="t-muted" font-size="7.5" font-weight="500">上下文 / 追踪</text>
+          </g>
+        </g>
+      </svg>
+        </div>
+      </div>
+    </section>
+
+    <section id="matrix">
+      <h2>横向实现矩阵</h2>
+      <p>图用于理解控制结构；表保留精确字段和边界，供设计核对。</p>
+      <details class="data-details">
+        <summary>查看完整横向矩阵</summary>
+        <div class="matrix-wrap">
+        <table>
+          <thead><tr><th>系统</th><th>Goal 表示</th><th>下一轮触发</th><th>完成判定</th><th>预算</th><th>等待 / 人工介入</th><th>持久化与恢复</th><th>关键性质</th></tr></thead>
+          <tbody>
+            <tr><td>OpenProgram</td><td>session <code>extra_meta.goal</code> 版本化快照；含 goal/run ID、spec、checklist、问题队列和 checkpoint</td><td><code>goal()</code> controller 在边界提交状态后启动下一次 <code>agent()</code></td><td>独立、可使用只读检查工具的 judge；typed verdict 与 <code>can_continue</code></td><td>默认 150 轮；可设 round/token/active-time/cost 总预算，resume 后累计</td><td>问题异步累积；继续独立工作；仅剩依赖答案的工作时进入 <code>waiting_user</code></td><td>CAS 写入 session；页面重载保持状态；worker 重启把执行中状态转为 <code>paused_recoverable</code></td><td>完成判定、停止、恢复和 UI 已统一；外部自动唤醒与多 worker lease 尚缺</td></tr>
+            <tr><td>Codex</td><td>SQLite <code>ThreadGoal</code>；有 <code>goal_id</code> 和 typed status</td><td>thread idle 生命周期读取 active Goal 并启动 turn</td><td>工作 agent 调 <code>update_goal(complete|blocked)</code> 自报；无独立 judge</td><td>可选 token budget；累计 tokens 与 elapsed time</td><td>pause/resume/usage-limit 由用户或系统控制；blocked 有三轮审计规则</td><td>SQLite 持久化；resume 恢复 active controller</td><td>控制面和数据模型最完整</td></tr>
+            <tr><td>Claude Code</td><td>每 session 一个 completion condition</td><td>prompt-based Stop hook 阻止停止并把 reason 作为下一轮指导</td><td>small fast model：not met / met / impossible；无工具</td><td>Goal 自身无结构化预算；条件可写停止条款；外层另有 max turns / USD</td><td>后台任务在运行时延后判定；idle check-in 退避且有限次</td><td>resume 恢复 active condition，但重置轮次、计时和 token 基线</td><td>复用通用 Hook 协议，表面最小</td></tr>
+            <tr><td>Hermes Agent</td><td><code>GoalState</code> + contract + subgoals + gates + wait barrier</td><td>CLI/gateway 在 turn 后排入普通 user-role continuation</td><td>先执行 deterministic gates，再由 auxiliary judge 判定 done/blocked/continue/wait</td><td>默认 20 个 Goal turn；gate 各自 timeout/retry</td><td>可等待 PID、process session 或时长；用户消息优先</td><td><code>SessionDB.state_meta</code>；resume 与 compression session migration</td><td>完成合同、确定性 gate 与 async wait 组合最完整</td></tr>
+            <tr><td>OpenCode</td><td>用户 task + SQLite Todo rows</td><td>同一 turn 内按 tool-call finish reason 继续</td><td>模型停止调用工具即结束；Todo 完成不控制总循环</td><td>agent <code>steps</code> 上限；默认无限</td><td>question/permission 属于 turn；没有 Goal pause/resume</td><td>session、message、todo 持久化；没有 active Goal controller</td><td>可靠的进度账本，不是 Goal</td></tr>
+            <tr><td>OpenClaw</td><td>automation job、heartbeat scratch、commitment、background task 分开建模</td><td>scheduler、事件或任务完成唤醒 session</td><td>run 成功/失败、脚本 exit code或模型本轮停止；无开放式 Goal evaluator</td><td>按 automation run 的 timeout/tool budget；非 Goal 总预算</td><td>天然支持定时等待、事件唤醒、delivery 与退避</td><td>调度定义、运行状态与历史持久化；可跨 gateway restart</td><td>适合长期调度，不负责开放式目标收敛</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </details>
+    </section>
+
+    <section id="hard-tasks">
+      <h2>任务无法完成时，控制器如何停止</h2>
+      <p>原生 Goal 会在普通 agent turn 结束后自动决定是否继续，因此必须同时处理“暂时没有完成”“缺少外部条件”“目标不可实现”和“持续没有有效进展”。只有轮数上限不能识别这些原因，只能限制最坏情况下的执行长度。</p>
+      <div class="diagram-shell">
+        <div class="diagram-head"><div><strong>困难任务的状态机</strong><span>绿色是成功；黄色状态必须停止自动工作并等待明确事件；红色状态需要修改目标、预算或运行环境后才能继续。</span></div><div class="legend"><span><i class="judge"></i>判断</span><span><i class="wait"></i>暂停</span><span><i class="stop"></i>终止</span></div></div>
+        <div class="diagram-canvas">
+          <svg class="archify-inline" viewBox="0 0 1040 760" role="img" lang="zh-CN" aria-labelledby="goal-lifecycle-archify-diagram-title goal-lifecycle-archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+        <title id="goal-lifecycle-archify-diagram-title">OpenProgram Goal 生命周期</title>
+        <desc id="goal-lifecycle-archify-diagram-description">由 Archify 生成的生命周期图。</desc>
+        <!-- Definitions -->
+        <defs>
+          <marker id="goal-lifecycle-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+          </marker>
+          <marker id="goal-lifecycle-arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+          </marker>
+          <marker id="goal-lifecycle-arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+          </marker>
+          <marker id="goal-lifecycle-arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+          </marker>
+          <pattern id="goal-lifecycle-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#goal-lifecycle-grid)" />
+
+        <!-- Lifecycle bands -->
+        <path d="M 72 112 L 968 112" class="a-default" stroke-width="0.8" stroke-dasharray="3,8"/>
+        <text x="72" y="100" class="t-dim" font-size="10" font-weight="600">01 / 主生命周期</text>
+        <path d="M 72 264 L 968 264" class="a-default" stroke-width="0.8" stroke-dasharray="3,8"/>
+        <text x="72" y="252" class="t-dim" font-size="10" font-weight="600">02 / 可恢复等待 + 困难任务分类</text>
+        <path d="M 72 436 L 968 436" class="a-default" stroke-width="0.8" stroke-dasharray="3,8"/>
+        <text x="72" y="424" class="t-dim" font-size="10" font-weight="600">03 / 终态</text>
+
+        <!-- Primary lifecycle rail -->
+        <path d="M 154 157 L 748 157" class="a-emphasis" stroke-width="2.2" marker-end="url(#goal-lifecycle-arrowhead-emphasis)"/>
+
+        <!-- Transition paths -->
+        <path data-edge-from="draft" data-edge-to="refining" data-edge-key="0" data-edge-id="draft_refine" data-composition-points="153,157;189,157" d="M 153 157 L 189 157" class="a-default" stroke-width="1.1" marker-end="url(#goal-lifecycle-arrowhead)"/>
+        <path data-edge-from="refining" data-edge-to="running" data-edge-key="1" data-edge-id="refine_run" data-composition-points="307,157;343,157" d="M 307 157 L 343 157" class="a-default" stroke-width="1.1" marker-end="url(#goal-lifecycle-arrowhead)"/>
+        <path data-edge-from="running" data-edge-to="evaluating" data-edge-key="2" data-edge-id="run_eval" data-composition-points="461,157;497,157" d="M 461 157 L 497 157" class="a-default" stroke-width="1.1" marker-end="url(#goal-lifecycle-arrowhead)"/>
+        <path data-edge-from="evaluating" data-edge-to="achieved" data-edge-key="3" data-edge-id="eval_done" data-composition-points="615,157;651,157" d="M 615 157 L 651 157" class="a-emphasis" stroke-width="2" marker-end="url(#goal-lifecycle-arrowhead-emphasis)"/>
+
+        <!-- States -->
+        <g id="goal-lifecycle-node-draft" data-node-id="draft" data-node-label="Draft" aria-label="聚焦Draft，目标已保存, 主生命周期" data-node-kind="start" data-node-sublabel="目标已保存" data-node-context="主生命周期">
+          <title>Draft · 目标已保存 · 主生命周期</title>
+          <rect x="35" y="126" width="118" height="62" rx="7" class="c-mask"/>
+          <rect x="35" y="126" width="118" height="62" rx="7" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="start" class="semantic-sigil s-frontend" transform="translate(136 132) scale(0.6875)">
+            <circle cx="8" cy="8" r="5"/>
+            <path d="m7 5.4 3.6 2.6L7 10.6Z" class="sigil-fill"/>
+          </g>
+        <text data-detail="fine" x="45" y="140" class="t-frontend" font-size="7" font-weight="700">01</text>
+          <text data-node-label="" data-detail-anchor="" x="94" y="147" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Draft</text>
+          <text data-detail="context" x="94" y="163" class="t-muted" font-size="7" text-anchor="middle">目标已保存</text>
+        </g>
+
+        <g id="goal-lifecycle-node-refining" data-node-id="refining" data-node-label="Refining" aria-label="聚焦Refining，形成 spec 与 checklist, 主生命周期" data-node-kind="active" data-node-sublabel="形成 spec 与 checklist" data-node-context="主生命周期">
+          <title>Refining · 形成 spec 与 checklist · 主生命周期</title>
+          <rect x="189" y="126" width="118" height="62" rx="7" class="c-mask"/>
+          <rect x="189" y="126" width="118" height="62" rx="7" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="active" class="semantic-sigil s-backend" transform="translate(290 132) scale(0.6875)">
+            <path d="M2 8h3l1.5-3.5L9 12l1.6-4H14"/>
+          </g>
+        <text data-detail="fine" x="199" y="140" class="t-backend" font-size="7" font-weight="700">02</text>
+          <text data-node-label="" data-detail-anchor="" x="248" y="147" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Refining</text>
+          <text data-detail="context" x="248" y="163" class="t-muted" font-size="7" text-anchor="middle">形成 spec 与 checklist</text>
+        </g>
+
+        <g id="goal-lifecycle-node-running" data-node-id="running" data-node-label="Running" aria-label="聚焦Running，独立工作继续，问题可累计, 主生命周期" data-node-kind="active" data-node-sublabel="独立工作继续，问题可累计" data-node-context="主生命周期">
+          <title>Running · 独立工作继续，问题可累计 · 主生命周期</title>
+          <rect x="343" y="126" width="118" height="62" rx="7" class="c-mask"/>
+          <rect x="343" y="126" width="118" height="62" rx="7" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="active" class="semantic-sigil s-backend" transform="translate(444 132) scale(0.6875)">
+            <path d="M2 8h3l1.5-3.5L9 12l1.6-4H14"/>
+          </g>
+        <text data-detail="fine" x="353" y="140" class="t-backend" font-size="7" font-weight="700">03</text>
+          <text data-node-label="" data-detail-anchor="" x="402" y="147" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Running</text>
+          <text data-detail="context" x="402" y="163" class="t-muted" font-size="7" text-anchor="middle">独立工作继续，问题可累计</text>
+        </g>
+
+        <g id="goal-lifecycle-node-evaluating" data-node-id="evaluating" data-node-label="Evaluating" aria-label="聚焦Evaluating，Gate + Judge, 主生命周期" data-node-kind="decision" data-node-sublabel="Gate + Judge" data-node-context="主生命周期">
+          <title>Evaluating · Gate + Judge · 主生命周期</title>
+          <rect x="497" y="126" width="118" height="62" rx="7" class="c-mask"/>
+          <rect x="497" y="126" width="118" height="62" rx="7" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="neutral" class="semantic-sigil s-external" transform="translate(598 132) scale(0.6875)">
+            <rect x="3" y="3" width="10" height="10" rx="2"/>
+            <circle cx="8" cy="8" r="1.2" class="sigil-fill"/>
+          </g>
+        <text data-detail="fine" x="507" y="140" class="t-security" font-size="7" font-weight="700">04</text>
+          <text data-node-label="" data-detail-anchor="" x="556" y="147" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Evaluating</text>
+          <text data-detail="context" x="556" y="163" class="t-muted" font-size="7" text-anchor="middle">Gate + Judge</text>
+        </g>
+
+        <g id="goal-lifecycle-node-achieved" data-node-id="achieved" data-node-label="Achieved" aria-label="聚焦Achieved，证据满足完成合同, 主生命周期" data-node-kind="success" data-node-sublabel="证据满足完成合同" data-node-context="主生命周期">
+          <title>Achieved · 证据满足完成合同 · 主生命周期</title>
+          <rect x="651" y="126" width="118" height="62" rx="7" class="c-mask"/>
+          <rect x="651" y="126" width="118" height="62" rx="7" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="success" class="semantic-sigil s-database" transform="translate(752 132) scale(0.6875)">
+            <circle cx="8" cy="8" r="5.3"/>
+            <path d="m5.2 8 1.8 1.8 3.8-4"/>
+          </g>
+        <text data-detail="fine" x="661" y="140" class="t-database" font-size="7" font-weight="700">05</text>
+          <text data-node-label="" data-detail-anchor="" x="710" y="147" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Achieved</text>
+          <text data-detail="context" x="710" y="163" class="t-muted" font-size="7" text-anchor="middle">证据满足完成合同</text>
+        </g>
+
+        <g id="goal-lifecycle-node-paused" data-node-id="paused" data-node-label="Paused" aria-label="聚焦Paused，用户暂停或重启恢复, 可恢复等待" data-node-kind="waiting" data-node-sublabel="用户暂停或重启恢复" data-node-tag="recoverable" data-node-context="可恢复等待">
+          <title>Paused · 用户暂停或重启恢复 · 可恢复等待 · recoverable</title>
+          <rect x="339" y="236" width="126" height="58" rx="7" class="c-mask"/>
+          <rect x="339" y="236" width="126" height="58" rx="7" class="c-cloud" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="waiting" class="semantic-sigil s-cloud" transform="translate(448 242) scale(0.6875)">
+            <path d="M4 2.5h8M4 13.5h8M5 3c0 2.8 2 3.2 3 5-1 1.8-3 2.2-3 5M11 3c0 2.8-2 3.2-3 5 1 1.8 3 2.2 3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="402" y="257" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Paused</text>
+          <text data-detail="context" x="402" y="273" class="t-muted" font-size="7" text-anchor="middle">用户暂停或重启恢复</text>
+        <text data-detail="fine" x="402" y="283" class="t-cloud" font-size="7" text-anchor="middle">recoverable</text>
+        </g>
+
+        <g id="goal-lifecycle-node-waiting_user" data-node-id="waiting_user" data-node-label="Waiting User" aria-label="聚焦Waiting User，仅剩依赖回答的工作, 可恢复等待" data-node-kind="waiting" data-node-sublabel="仅剩依赖回答的工作" data-node-tag="event" data-node-context="可恢复等待">
+          <title>Waiting User · 仅剩依赖回答的工作 · 可恢复等待 · event</title>
+          <rect x="493" y="236" width="126" height="58" rx="7" class="c-mask"/>
+          <rect x="493" y="236" width="126" height="58" rx="7" class="c-cloud" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="waiting" class="semantic-sigil s-cloud" transform="translate(602 242) scale(0.6875)">
+            <path d="M4 2.5h8M4 13.5h8M5 3c0 2.8 2 3.2 3 5-1 1.8-3 2.2-3 5M11 3c0 2.8-2 3.2-3 5 1 1.8 3 2.2 3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="556" y="257" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Waiting User</text>
+          <text data-detail="context" x="556" y="273" class="t-muted" font-size="7" text-anchor="middle">仅剩依赖回答的工作</text>
+        <text data-detail="fine" x="556" y="283" class="t-cloud" font-size="7" text-anchor="middle">event</text>
+        </g>
+
+        <g id="goal-lifecycle-node-waiting_external" data-node-id="waiting_external" data-node-label="Waiting External" aria-label="聚焦Waiting External，等待作业或外部状态, 可恢复等待" data-node-kind="external" data-node-sublabel="等待作业或外部状态" data-node-tag="event" data-node-context="可恢复等待">
+          <title>Waiting External · 等待作业或外部状态 · 可恢复等待 · event</title>
+          <rect x="647" y="236" width="126" height="58" rx="7" class="c-mask"/>
+          <rect x="647" y="236" width="126" height="58" rx="7" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(756 242) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="710" y="257" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Waiting External</text>
+          <text data-detail="context" x="710" y="273" class="t-muted" font-size="7" text-anchor="middle">等待作业或外部状态</text>
+        <text data-detail="fine" x="710" y="283" class="t-muted" font-size="7" text-anchor="middle">event</text>
+        </g>
+
+        <g id="goal-lifecycle-node-blocked" data-node-id="blocked" data-node-label="Blocked" aria-label="聚焦Blocked，缺少权限、依赖或输入, 困难任务分类" data-node-kind="failure" data-node-sublabel="缺少权限、依赖或输入" data-node-tag="recoverable" data-node-context="困难任务分类">
+          <title>Blocked · 缺少权限、依赖或输入 · 困难任务分类 · recoverable</title>
+          <rect x="339" y="354" width="126" height="58" rx="7" class="c-mask"/>
+          <rect x="339" y="354" width="126" height="58" rx="7" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="failure" class="semantic-sigil s-security" transform="translate(448 360) scale(0.6875)">
+            <circle cx="8" cy="8" r="5.3"/>
+            <path d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="402" y="375" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Blocked</text>
+          <text data-detail="context" x="402" y="391" class="t-muted" font-size="7" text-anchor="middle">缺少权限、依赖或输入</text>
+        <text data-detail="fine" x="402" y="401" class="t-security" font-size="7" text-anchor="middle">recoverable</text>
+        </g>
+
+        <g id="goal-lifecycle-node-stalled" data-node-id="stalled" data-node-label="Stalled" aria-label="聚焦Stalled，连续无有效进展, 困难任务分类" data-node-kind="failure" data-node-sublabel="连续无有效进展" data-node-tag="recoverable" data-node-context="困难任务分类">
+          <title>Stalled · 连续无有效进展 · 困难任务分类 · recoverable</title>
+          <rect x="493" y="354" width="126" height="58" rx="7" class="c-mask"/>
+          <rect x="493" y="354" width="126" height="58" rx="7" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="failure" class="semantic-sigil s-security" transform="translate(602 360) scale(0.6875)">
+            <circle cx="8" cy="8" r="5.3"/>
+            <path d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="556" y="375" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Stalled</text>
+          <text data-detail="context" x="556" y="391" class="t-muted" font-size="7" text-anchor="middle">连续无有效进展</text>
+        <text data-detail="fine" x="556" y="401" class="t-security" font-size="7" text-anchor="middle">recoverable</text>
+        </g>
+
+        <g id="goal-lifecycle-node-budget" data-node-id="budget" data-node-label="Budget Exhausted" aria-label="聚焦Budget Exhausted，turn · token · time · cost, 困难任务分类" data-node-kind="failure" data-node-sublabel="turn · token · time · cost" data-node-tag="recoverable" data-node-context="困难任务分类">
+          <title>Budget Exhausted · turn · token · time · cost · 困难任务分类 · recoverable</title>
+          <rect x="647" y="354" width="126" height="58" rx="7" class="c-mask"/>
+          <rect x="647" y="354" width="126" height="58" rx="7" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="failure" class="semantic-sigil s-security" transform="translate(756 360) scale(0.6875)">
+            <circle cx="8" cy="8" r="5.3"/>
+            <path d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="710" y="375" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Budget Exhausted</text>
+          <text data-detail="context" x="710" y="391" class="t-muted" font-size="7" text-anchor="middle">turn · token · time · cost</text>
+        <text data-detail="fine" x="710" y="401" class="t-security" font-size="7" text-anchor="middle">recoverable</text>
+        </g>
+
+        <g id="goal-lifecycle-node-impossible" data-node-id="impossible" data-node-label="Impossible" aria-label="聚焦Impossible，当前合同内无法满足, 终态" data-node-kind="failure" data-node-sublabel="当前合同内无法满足" data-node-tag="terminal" data-node-context="终态">
+          <title>Impossible · 当前合同内无法满足 · 终态 · terminal</title>
+          <rect x="343" y="450" width="118" height="58" rx="7" class="c-mask"/>
+          <rect x="343" y="450" width="118" height="58" rx="7" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="failure" class="semantic-sigil s-security" transform="translate(444 456) scale(0.6875)">
+            <circle cx="8" cy="8" r="5.3"/>
+            <path d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="402" y="471" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Impossible</text>
+          <text data-detail="context" x="402" y="487" class="t-muted" font-size="7" text-anchor="middle">当前合同内无法满足</text>
+        <text data-detail="fine" x="402" y="497" class="t-security" font-size="7" text-anchor="middle">terminal</text>
+        </g>
+
+        <g id="goal-lifecycle-node-failed" data-node-id="failed" data-node-label="Failed" aria-label="聚焦Failed，不可恢复执行错误, 终态" data-node-kind="failure" data-node-sublabel="不可恢复执行错误" data-node-tag="terminal" data-node-context="终态">
+          <title>Failed · 不可恢复执行错误 · 终态 · terminal</title>
+          <rect x="497" y="450" width="118" height="58" rx="7" class="c-mask"/>
+          <rect x="497" y="450" width="118" height="58" rx="7" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="failure" class="semantic-sigil s-security" transform="translate(598 456) scale(0.6875)">
+            <circle cx="8" cy="8" r="5.3"/>
+            <path d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="556" y="471" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Failed</text>
+          <text data-detail="context" x="556" y="487" class="t-muted" font-size="7" text-anchor="middle">不可恢复执行错误</text>
+        <text data-detail="fine" x="556" y="497" class="t-security" font-size="7" text-anchor="middle">terminal</text>
+        </g>
+
+        <g id="goal-lifecycle-node-cancelled" data-node-id="cancelled" data-node-label="Cancelled" aria-label="聚焦Cancelled，用户明确终止, 终态" data-node-kind="failure" data-node-sublabel="用户明确终止" data-node-tag="terminal" data-node-context="终态">
+          <title>Cancelled · 用户明确终止 · 终态 · terminal</title>
+          <rect x="651" y="450" width="118" height="58" rx="7" class="c-mask"/>
+          <rect x="651" y="450" width="118" height="58" rx="7" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="failure" class="semantic-sigil s-security" transform="translate(752 456) scale(0.6875)">
+            <circle cx="8" cy="8" r="5.3"/>
+            <path d="m5.7 5.7 4.6 4.6m0-4.6-4.6 4.6"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="710" y="471" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Cancelled</text>
+          <text data-detail="context" x="710" y="487" class="t-muted" font-size="7" text-anchor="middle">用户明确终止</text>
+        <text data-detail="fine" x="710" y="497" class="t-security" font-size="7" text-anchor="middle">terminal</text>
+        </g>
+
+        <!-- Transition labels -->
+
+
+
+
+
+        <!-- Legend -->
+        <g data-legend="" data-legend-bridge="">
+          <text x="40" y="704" class="t-primary" font-size="12" font-weight="650">图例</text>
+          <g data-legend-semantic-kind="start" data-legend-kind="start" data-legend-label="开始" data-legend-x="40" data-legend-baseline="724" data-legend-width="63">
+            <rect x="40" y="716" width="14" height="9" rx="2" class="c-frontend" stroke-width="1"/>
+            <text x="62" y="724" class="t-muted" font-size="10" font-weight="500">开始</text>
+          </g>
+          <g data-legend-semantic-kind="active" data-legend-kind="active" data-legend-label="活动状态" data-legend-x="125" data-legend-baseline="724" data-legend-width="83">
+            <rect x="125" y="716" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
+            <text x="147" y="724" class="t-muted" font-size="10" font-weight="500">活动状态</text>
+          </g>
+          <g data-legend-semantic-kind="waiting" data-legend-kind="waiting" data-legend-label="等待" data-legend-x="230" data-legend-baseline="724" data-legend-width="63">
+            <rect x="230" y="716" width="14" height="9" rx="2" class="c-cloud" stroke-width="1"/>
+            <text x="252" y="724" class="t-muted" font-size="10" font-weight="500">等待</text>
+          </g>
+          <g data-legend-semantic-kind="decision" data-legend-kind="decision" data-legend-label="决策" data-legend-x="315" data-legend-baseline="724" data-legend-width="63">
+            <rect x="315" y="716" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+            <text x="337" y="724" class="t-muted" font-size="10" font-weight="500">决策</text>
+          </g>
+          <g data-legend-semantic-kind="success" data-legend-kind="success" data-legend-label="成功终态" data-legend-x="400" data-legend-baseline="724" data-legend-width="83">
+            <rect x="400" y="716" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+            <text x="422" y="724" class="t-muted" font-size="10" font-weight="500">成功终态</text>
+          </g>
+          <g data-legend-semantic-kind="failure" data-legend-kind="failure" data-legend-label="失败 / 退出" data-legend-x="505" data-legend-baseline="724" data-legend-width="98">
+            <rect x="505" y="716" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+            <text x="527" y="724" class="t-muted" font-size="10" font-weight="500">失败 / 退出</text>
+          </g>
+          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="外部状态" data-legend-x="625" data-legend-baseline="724" data-legend-width="83">
+            <rect x="625" y="716" width="14" height="9" rx="2" class="c-external" stroke-width="1"/>
+            <text x="647" y="724" class="t-muted" font-size="10" font-weight="500">外部状态</text>
+          </g>
+        </g>
+      </svg>
+        </div>
+      </div>
+      <details class="data-details">
+        <summary>查看各框架的困难任务停止机制</summary>
+        <div class="matrix-wrap">
+        <table>
+          <thead><tr><th>系统</th><th>无法完成时的结果</th><th>确定性停止机制</th><th>是否仍可能长时间循环</th><th>主要缺口</th></tr></thead>
+          <tbody>
+            <tr><td>OpenProgram</td><td>typed verdict 区分 <code>blocked</code>、<code>impossible</code>、<code>waiting_external</code>、<code>needs_user</code>、<code>stalled</code>、<code>budget_exhausted</code> 与 <code>failed</code></td><td>默认最多 150 个工作轮次；可设 token/active-time/cost 预算；连续 judge 失败 3 次；checklist 停滞 3 次；连续 2 轮没有工具且仍未完成</td><td class="partial">不会无限执行，但配置较大预算时仍可能产生多轮低价值工作；当前停滞证据主要是 checklist 增量与工具使用</td><td>尚无通用 deterministic gate executor；<code>waiting_external</code> 没有自动事件唤醒</td></tr>
+            <tr><td>Codex</td><td>工作 agent 可声明 <code>blocked</code>；控制面可进入 <code>paused</code>、<code>usage_limited</code>、<code>budget_limited</code> 或 <code>complete</code></td><td>可选 token budget；同一阻塞条件需要连续三轮审计后才能认定 blocked；用户和系统可暂停</td><td class="partial">会。没有配置 token budget 且 agent 不声明 blocked/complete 时，Goal controller 仍会续轮</td><td>完成和阻塞依赖工作 agent 自报，没有独立 evaluator 验证是否真的没有进展</td></tr>
+            <tr><td>Claude Code</td><td>evaluator 返回 <code>impossible</code> 时清除 Goal；连续没有工具进展时停止续轮但保留 Goal</td><td>通用 Stop hook 连续阻止停止 8 次后强制结束；后台 idle check-in 最多 3 次；外层可设置 max turns 和 USD budget</td><td class="partial">会。Goal 自身没有结构化硬预算；持续产生工具行为且 evaluator 一直返回 <code>not met</code> 时依赖外层限制</td><td>判定器没有工具，无法直接验证文件、测试和外部状态；Goal 预算与 runner 预算分离</td></tr>
+            <tr><td>Hermes Agent</td><td>judge 可返回 <code>blocked</code> 或 <code>wait</code>；达到 Goal turn 上限后不再继续</td><td>默认最多 20 个 Goal turn；gate 有 timeout/retry；相同 workspace fingerprint 下不会重复执行同一个已失败 gate；等待不消耗工作轮次</td><td class="no">不会无限续轮，但可能在 20 轮内重复低价值工作</td><td>缺少已确认的 Goal 级 token/cost 总预算；语义 judge 仍可能连续返回 continue</td></tr>
+            <tr><td>OpenCode</td><td>模型停止调用工具后结束当前 turn；Todo 未完成不会自动开始下一轮</td><td>可配置 agent <code>steps</code> 上限</td><td class="partial">单个 turn 可能很长，因为 steps 默认可为无限；但 Todo 不形成跨 turn Goal 循环</td><td>没有跨 turn 的 stalled、blocked、budget 和恢复合同</td></tr>
+            <tr><td>OpenClaw</td><td>单次 automation 成功、失败或超时；之后是否再运行由显式 schedule 决定</td><td>每次 run 的 timeout/tool budget、调度退避和持久化 run state</td><td class="no">不会因“目标未完成”自动无限续轮；Cron 可以按用户配置永久重复</td><td>没有开放式 Goal evaluator，不能判断一个长期目标是否已经实现或不可实现</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </details>
+      <div class="framework-grid">
+        <div class="card">
+          <h3>为什么“调用了工具”不是进展</h3>
+          <p>工具调用只能证明 agent 执行了动作，不能证明验收条件更接近满足。停滞检测应比较连续轮次新增的 evidence refs、通过的 deterministic gates、未完成 checklist 项和外部状态变化。相同证据反复出现时，应进入 <code>stalled</code>，而不是重置停滞计数。</p>
+        </div>
+        <div class="card">
+          <h3>等待不能占用工作轮次</h3>
+          <p>问题先进入持久化异步队列；只要还有不依赖答案的安全工作，controller 就继续执行。仅当全部剩余工作依赖答案时才进入 <code>waiting_user</code>。CI、后台进程、时间或外部事件进入 <code>waiting_external</code>；当前需要显式 resume。</p>
+        </div>
+      </div>
+      <div class="callout warn"><strong>结论：</strong>这些实现都不能仅凭语义 evaluator 保证收敛。可靠的控制器需要硬预算、基于证据的停滞检测、明确的 blocked/impossible/waiting 分类，以及只有外部事件才能解除的等待状态。</div>
+    </section>
+
+    <section id="native-goals">
+      <h2>原生 Goal 实现细节</h2>
+
+      <article class="framework" id="openprogram">
+        <div class="framework-head"><div><h3>OpenProgram</h3><p>一个公开 Workflow 同时承担 Goal 执行、判定循环和 session 状态投影。</p></div><span class="badge native">原生 Goal · 开源源码</span></div>
+        <div class="facts">
+          <div class="fact"><small>Entry</small><strong><code>goal(prompt, ...)</code></strong></div>
+          <div class="fact"><small>State owner</small><strong>session <code>extra_meta.goal</code></strong></div>
+          <div class="fact"><small>Completion</small><strong>tool-capable judge</strong></div>
+          <div class="fact"><small>Resume</small><strong>checkpoint 保留，新 execution 继续</strong></div>
+        </div>
+        <div class="flow" aria-label="OpenProgram Goal 控制流">
+          <div class="step"><b>写 active</b><span>先持久化最小 GoalState，允许 status/clear 立即看到</span></div>
+          <div class="step"><b>refine</b><span>独立 inspection turn 生成 spec 与固定 checklist</span></div>
+          <div class="step"><b>work</b><span>公开 <code>agent()</code> 执行一个完整工具循环</span></div>
+          <div class="step"><b>collect</b><span>记录工具使用信号与本轮结果，更新 turns</span></div>
+          <div class="step"><b>judge</b><span>独立 sub-agent 读取证据，并可用 bash/read/grep 等检查</span></div>
+          <div class="step"><b>transition</b><span>typed verdict、异步问题、预算与停滞检查</span></div>
+          <div class="step"><b>repeat</b><span>继续独立工作，或写 waiting / achieved / stopped state</span></div>
+        </div>
+        <div class="cols">
+          <div class="mini"><h4>数据与判定</h4><ul><li>入口只有一段 <code>prompt</code>；同一文本交给工作 agent，并由 refinement 生成完成规格与 checklist。</li><li>schema v3 快照包含 goal/run ID、revision/version、typed status、预算/用量、checkpoint、问题队列和待消费答案。</li><li>session 入口把 refinement 与 judge 作为不推进主线的独立 agent turn；无 session 的 <code>programs run goal</code> 也在当前 runtime 中执行带只读工具约束的独立 refinement/judge turn。</li><li>judge 不只阅读工作 agent 的声明，还能检查文件、命令输出和清单项；严格 JSON 解析失败会重试一次，连续 3 轮判定失败进入 <code>failed</code>。</li></ul></div>
+          <div class="mini"><h4>停机与恢复</h4><ul><li>默认 150 个工作轮次，并支持 token、active-time 与 cost 总预算；清单停滞和连续无工具轮次会进入 <code>stalled</code>。</li><li><code>/goal clear</code> 写 <code>cancelled</code>，取消旧 execution；CAS version 防止旧 controller 覆盖新操作。</li><li><code>needs_user + can_continue</code> 把问题加入队列并继续独立工作；没有独立工作时才进入真正的 <code>waiting_user</code>。</li><li>worker 重启时执行中 Goal 进入 <code>paused_recoverable</code>；目标、checklist、用量、问题和 checkpoint 保留，resume 创建新 run。</li></ul></div>
+        </div>
+        <div class="callout">实现判断：OpenProgram 已具备独立 tool-capable judge、typed states、版本化持久快照、异步问题、硬预算和重启后显式恢复。仍未实现通用 deterministic gate executor、外部事件自动唤醒与独立 evidence repository；同机 multi-worker 由 OS 文件锁提供独占 ownership。</div>
+        <div class="source-box"><details><summary>源码证据</summary><ul class="source-list">
+          <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/goal/goal.py">公开入口与循环：goal.py</a></li>
+          <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/goal/judge.py">判定器、检查工具和 evidence view：judge.py</a></li>
+          <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/goal/loop.py">状态转移与停机守卫：loop.py</a></li>
+          <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/goal/state.py">session 状态与 goal.update：state.py</a></li>
+          <li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/programs/workflow/goal/command.py">/goal status / edit / pause / resume / answer / budget / clear：command.py</a></li>
+        </ul></details></div>
+      </article>
+
+      <article class="framework" id="codex">
+        <div class="framework-head"><div><h3>Codex</h3><p>Goal 是 thread 上的持久控制实体；工作 agent 通过工具声明完成或阻塞。</p></div><span class="badge native">原生 Goal · 开源源码</span></div>
+        <div class="facts">
+          <div class="fact"><small>Entry</small><strong>UI/API + <code>create_goal</code></strong></div>
+          <div class="fact"><small>State owner</small><strong>SQLite <code>ThreadGoal</code></strong></div>
+          <div class="fact"><small>Completion</small><strong>agent self-report tool</strong></div>
+          <div class="fact"><small>Resume</small><strong>idle lifecycle 恢复</strong></div>
+        </div>
+        <div class="flow" aria-label="Codex Goal 控制流">
+          <div class="step"><b>create/set</b><span>校验 objective 与可选 token budget；一条 thread 仅有一个未完成 Goal</span></div>
+          <div class="step"><b>persist</b><span>写 <code>goal_id</code>、status、usage 与时间字段</span></div>
+          <div class="step"><b>start turn</b><span>Goal active 且 thread idle 时注入 continuation steering</span></div>
+          <div class="step"><b>work</b><span>普通 Codex turn 使用现有工具、计划和上下文</span></div>
+          <div class="step"><b>account</b><span>turn 结束按基线累计 token 与 elapsed seconds</span></div>
+          <div class="step"><b>declare</b><span>agent 只可调用 <code>update_goal(complete|blocked)</code></span></div>
+          <div class="step"><b>idle again</b><span>仍为 active 就继续；外部控制可 pause/resume/clear</span></div>
+        </div>
+        <div class="cols">
+          <div class="mini"><h4>数据与权限分离</h4><ul><li><code>ThreadGoal</code> 是 typed record：<code>thread_id</code>、<code>goal_id</code>、objective、status、token budget、tokens used、time used、created/updated。</li><li>status 为 active、paused、blocked、usage_limited、budget_limited、complete。</li><li>模型工具只允许创建、读取以及把状态改为 complete/blocked；pause、resume、budget/usage limited 由用户或系统控制。</li><li>外部 app-server 提供 <code>thread/goal/set|get|clear</code> 与 updated/cleared 通知。</li></ul></div>
+          <div class="mini"><h4>并发与完成语义</h4><ul><li>Goal mutation 与 idle continuation 共用 semaphore，写入使用 <code>expected_goal_id</code> 避免旧 turn 更新新 Goal。</li><li>resume 读取持久 Goal；只有 active 才重新登记 idle continuation。</li><li>completion audit 写在 continuation prompt 中，由同一个工作 agent 基于实际证据决定是否调用 <code>update_goal</code>，没有独立模型复核。</li><li>blocked 要求同一阻塞连续出现至少 3 个 Goal turn；token budget 耗尽由系统转为 budget_limited。</li></ul></div>
+        </div>
+        <div class="callout">实现判断：Codex 的优势是 first-class state、权限边界、CAS 式更新、资源核算和 resume；风险是完成判断与执行者相同，主要依赖 prompt 约束和工具调用纪律。它累计 elapsed time，但当前结构没有 time budget，也没有等待外部进程的专门状态。</div>
+        <div class="source-box"><details><summary>源码与协议证据</summary><ul class="source-list">
+          <li><a href="https://github.com/openai/codex/blob/main/codex-rs/state/src/model/thread_goal.rs">ThreadGoal 与 status：thread_goal.rs</a></li>
+          <li><a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/spec.rs">get/create/update_goal 工具合同：spec.rs</a></li>
+          <li><a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/src/runtime.rs">usage accounting、resume、idle continuation：runtime.rs</a></li>
+          <li><a href="https://github.com/openai/codex/blob/main/codex-rs/ext/goal/templates/goals/continuation.md">continuation、completion 与 blocked audit：continuation.md</a></li>
+          <li><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md">thread/goal API 与事件：app-server README</a></li>
+        </ul></details></div>
+      </article>
+
+      <article class="framework" id="claude">
+        <div class="framework-head"><div><h3>Claude Code</h3><p><code>/goal</code> 是通用 Stop hook 机制的 session-scoped prompt evaluator 配置。</p></div><span class="badge native">原生 Goal · 官方运行合同</span></div>
+        <div class="facts">
+          <div class="fact"><small>Entry</small><strong><code>/goal &lt;condition&gt;</code></strong></div>
+          <div class="fact"><small>State owner</small><strong>session-scoped condition</strong></div>
+          <div class="fact"><small>Completion</small><strong>small fast model</strong></div>
+          <div class="fact"><small>Resume</small><strong>恢复 condition，重置计量基线</strong></div>
+        </div>
+        <div class="flow" aria-label="Claude Code Goal 控制流">
+          <div class="step"><b>set</b><span>每个 session 一个 condition；新值替换旧值并立即开始 turn</span></div>
+          <div class="step"><b>work</b><span>普通 Claude Code turn；Goal 不改变 permission mode</span></div>
+          <div class="step"><b>Stop event</b><span>主 agent 准备结束时触发 session-scoped prompt hook</span></div>
+          <div class="step"><b>defer</b><span>若 background task 仍在运行，本轮跳过 evaluator</span></div>
+          <div class="step"><b>evaluate</b><span>condition + conversation 交给 small fast model；不能调用工具</span></div>
+          <div class="step"><b>verdict</b><span>not met / met / impossible，均带 reason</span></div>
+          <div class="step"><b>continue/clear</b><span>not met 把 reason 反馈给下一轮；另两种清除 active Goal</span></div>
+        </div>
+        <div class="cols">
+          <div class="mini"><h4>复用 Hook 协议</h4><ul><li>普通 Stop hook 可返回 <code>decision:"block"</code> 和 <code>reason</code>；reason 进入 Claude 的下一轮上下文。</li><li>prompt hook 可由模型返回 <code>ok</code>、<code>reason</code>、<code>impossible</code>。<code>/goal</code> 在这一通用机制上增加 condition、状态显示和恢复。</li><li><code>stop_hook_active</code> 防止扩展脚本无条件递归；通用 Stop hook 连续阻止 8 次后由运行时强制结束。</li><li>Goal evaluator 只看对话中已经出现的证据，不读取文件或运行测试。</li></ul></div>
+          <div class="mini"><h4>等待、错误与预算</h4><ul><li>后台 shell/subagent 运行时不判定；完成结果会触发新 turn。长时间等待使用退避 check-in，交互会话每次用户输入之间最多自动发起 3 次 idle check-in。</li><li>连续多轮无工具进展时停止自动循环，但保留 Goal，等待下一次用户 prompt 后继续评估。</li><li>不可恢复的 auth、余额、无法压缩的 context overflow、模型不可用会清除 Goal；瞬时错误保留 Goal。</li><li>Goal 没有独立 typed budget；可把 turn/time 终止条件写进 condition。外层 print mode 另有 <code>--max-turns</code> 和 <code>--max-budget-usd</code>。</li></ul></div>
+        </div>
+        <div class="callout">实现判断：Claude Code 证明了 Goal 可以作为通用“停止拦截器”的特化，而不需要独立执行器。它对 background work 的 defer/check-in 处理完整，但 evaluator 无工具，可靠性依赖工作 agent 把验证证据写入 transcript。</div>
+        <div class="source-box"><details><summary>官方文档证据</summary><ul class="source-list">
+          <li><a href="https://code.claude.com/docs/en/goal">/goal 完整运行合同</a></li>
+          <li><a href="https://code.claude.com/docs/en/hooks#stop">Stop hook 输入、返回值与循环保护</a></li>
+          <li><a href="https://code.claude.com/docs/en/cli-reference">session resume、max turns 与 USD budget</a></li>
+          <li><a href="https://code.claude.com/docs/en/tools-reference">TaskCreate / TaskUpdate 等任务账本工具</a></li>
+        </ul></details></div>
+      </article>
+
+      <article class="framework" id="hermes">
+        <div class="framework-head"><div><h3>Hermes Agent</h3><p><code>GoalManager</code> 把自由文本目标、结构化完成合同、确定性 gate 和异步等待统一到 turn 边界。</p></div><span class="badge native">原生 Goal · 开源源码</span></div>
+        <div class="facts">
+          <div class="fact"><small>Entry</small><strong><code>/goal</code> / <code>/subgoal</code></strong></div>
+          <div class="fact"><small>State owner</small><strong><code>GoalState</code> in SessionDB</strong></div>
+          <div class="fact"><small>Completion</small><strong>gate → auxiliary judge</strong></div>
+          <div class="fact"><small>Resume</small><strong>session resume + wait release</strong></div>
+        </div>
+        <div class="flow" aria-label="Hermes Goal 控制流">
+          <div class="step"><b>set/draft</b><span>自由文本或 completion contract；可追加 subgoal</span></div>
+          <div class="step"><b>work</b><span>用普通 <code>run_conversation</code> 完成一轮</span></div>
+          <div class="step"><b>gate</b><span>先运行有 timeout/retry 的 shell quality gates</span></div>
+          <div class="step"><b>judge</b><span>auxiliary model 判定 done/blocked/continue/wait</span></div>
+          <div class="step"><b>wait</b><span>可绑定 PID、process session 或 deadline；等待不消耗 Goal turn</span></div>
+          <div class="step"><b>enqueue</b><span>continue 作为普通 user-role message 进入 CLI/gateway 队列</span></div>
+          <div class="step"><b>persist</b><span>每次转移写 <code>state_meta[goal:session]</code></span></div>
+        </div>
+        <div class="cols">
+          <div class="mini"><h4>完成合同与 gate</h4><ul><li><code>GoalContract</code> 把 outcome、verification、constraints、boundaries、stop_when 分开保存，并同时注入工作 prompt 与 judge prompt。</li><li><code>GoalGate</code> 在 LLM judge 之前执行；失败时跳过 judge，限制输出尾部并把失败证据作为 continuation。</li><li>gate 记录 attempts、exit code、output tail 和 workspace fingerprint；工作区未变化时复用失败结果，避免重复运行同一检查。</li><li>subgoal 是用户追加的验收条件，不重启主 Goal，也不重置原始目标。</li></ul></div>
+          <div class="mini"><h4>状态、等待和适配层</h4><ul><li><code>GoalState</code> 保存 status、turn budget、judge failure counters、subgoals、wait barrier、contract 与 gates。</li><li>judge 输出 done、blocked、continue 或 wait；wait 可指定 PID、process session 或秒数。</li><li>CLI 与 gateway 共用 <code>GoalManager</code>，但各自负责把 continuation 排进现有消息队列；不修改 system prompt 和 toolset。</li><li>Goal 状态随 session resume 恢复；context compression 造成 session id 轮换时迁移 Goal 并清理旧记录。</li></ul></div>
+        </div>
+        <div class="callout">实现判断：Hermes 当前方案把“可验证完成”和“外部工作尚未结束”分开：确定性 gate 对验证结果负责，judge 对开放式语义负责，wait barrier 对异步依赖负责。默认仍是单 session 单 Goal 与 turn budget；总 token/cost budget 不属于已确认的 GoalState 合同。</div>
+        <div class="source-box"><details><summary>源码与文档证据</summary><ul class="source-list">
+          <li><a href="https://github.com/NousResearch/Hermes-Agent/blob/main/hermes_cli/goals.py">GoalState、GoalManager、contract、gate、judge、wait：goals.py</a></li>
+          <li><a href="https://github.com/NousResearch/Hermes-Agent/blob/main/website/docs/user-guide/features/goals.md">Persistent Goals 用户与恢复合同</a></li>
+          <li><a href="https://github.com/NousResearch/Hermes-Agent/blob/main/agent/conversation_loop.py">普通工作 turn 的 tool loop：conversation_loop.py</a></li>
+          <li><a href="https://github.com/NousResearch/Hermes-Agent/blob/main/tools/todo_tool.py">独立 Todo 账本：todo_tool.py</a></li>
+        </ul></details></div>
+      </article>
+    </section>
+
+    <section id="adjacent">
+      <h2>没有原生 Goal 的相邻实现</h2>
+      <p>这两套系统提供了 Goal 所需的部分构件，但没有“一个开放式完成条件持续控制多个 turn，直到被独立判定为完成”的完整合同。</p>
+
+      <article class="framework" id="opencode">
+        <div class="framework-head"><div><h3>OpenCode</h3><p>持久 Todo + 单 turn agent loop；Todo 是进度记录，不是循环终止条件。</p></div><span class="badge near">相邻机制 · 开源源码</span></div>
+        <div class="facts">
+          <div class="fact"><small>Task source</small><strong>latest user message</strong></div>
+          <div class="fact"><small>Progress state</small><strong>SQLite Todo rows</strong></div>
+          <div class="fact"><small>Loop stop</small><strong>provider finish reason</strong></div>
+          <div class="fact"><small>Bound</small><strong><code>agent.steps</code></strong></div>
+        </div>
+        <div class="cols">
+          <div class="mini"><h4>实现方式</h4><ul><li><code>SessionPrompt.run</code> 循环读取最新消息；assistant 有非 tool-call finish reason 且不存在未处理 tool call 时退出。</li><li>每轮解析 agent profile，解析工具，处理 compaction/subtask，然后调用 provider。<code>agent.steps</code> 默认无限；最后一步把 max-steps 提示加入模型消息。</li><li>Plan 是一个 primary agent profile：主要通过 permission 禁止 edit，只允许写特定 plan 文件；它不是 Goal 状态。</li></ul></div>
+          <div class="mini"><h4>Todo 的边界</h4><ul><li>Todo item 只有 content、status、priority；按 session ID 存 SQLite，并发布 <code>todo.updated</code>。</li><li><code>todowrite</code> 每次替换完整列表，UI 展示 completed/total；subagent 默认禁用。</li><li>Todo 是否全部 completed 不参与 <code>SessionPrompt.run</code> 的退出判断，也不会在 session idle 后自动启动新 turn。</li><li>因此它适合成为 Goal 的 progress projection，但不能单独承担 Goal controller。</li></ul></div>
+        </div>
+        <div class="source-box"><details><summary>源码与官方文档证据</summary><ul class="source-list">
+          <li><a href="https://github.com/sst/opencode/blob/dev/packages/opencode/src/session/prompt.ts">session agent loop：prompt.ts</a></li>
+          <li><a href="https://github.com/sst/opencode/blob/dev/packages/opencode/src/session/todo.ts">Todo schema、SQLite 与事件：todo.ts</a></li>
+          <li><a href="https://github.com/sst/opencode/blob/dev/packages/opencode/src/agent/agent.ts">Build / Plan / subagent profiles：agent.ts</a></li>
+          <li><a href="https://opencode.ai/docs/tools/#todowrite">todowrite 官方合同</a></li>
+          <li><a href="https://opencode.ai/docs/agents/">agents、permissions 与 max steps</a></li>
+        </ul></details></div>
+      </article>
+
+      <article class="framework" id="openclaw">
+        <div class="framework-head"><div><h3>OpenClaw</h3><p>把持久工作拆成 scheduler、background task、heartbeat、standing instruction 与 commitment，而不是提供通用 Goal evaluator。</p></div><span class="badge near">相邻机制 · 开源源码</span></div>
+        <div class="facts">
+          <div class="fact"><small>Persistent intent</small><strong>automation / standing order</strong></div>
+          <div class="fact"><small>Wake owner</small><strong>Gateway scheduler</strong></div>
+          <div class="fact"><small>Execution</small><strong>agent turn / command / script</strong></div>
+          <div class="fact"><small>Completion</small><strong>per-run outcome</strong></div>
+        </div>
+        <div class="cols">
+          <div class="mini"><h4>调度与状态</h4><ul><li>Automation job 保存 id、name、enabled、schedule、session target、wake mode、typed payload、delivery、failure alert 和 run state。</li><li>payload 分为 system event、agent turn、command、script；session target 可为 main、current、isolated 或命名 session。</li><li>运行结果区分 execution 与 delivery；持久化 job、运行状态和历史，gateway restart 后继续调度。</li><li>脚本与 command 可以用 exit code 提供确定性成功，但这只判定一次 run，不判定开放式目标。</li></ul></div>
+          <div class="mini"><h4>Heartbeat 与 commitment</h4><ul><li>Heartbeat 是系统拥有的 monitor automation；读取 scratch 或 <code>HEARTBEAT.md</code>，无到期任务时跳过模型调用。</li><li>结构化 heartbeat task 只有 name、interval、prompt，按各自周期进入下一次 monitor turn。</li><li>Commitment 记录 agent promise 或从用户上下文推断的后续联系，包含 due window、confidence、status、attempts 与 delivery scope。</li><li>这些机制擅长“何时再次执行/通知”，但没有 met/unmet evaluator，也不会把多个 run 约束为同一个完成条件。</li></ul></div>
+        </div>
+        <div class="callout">实现判断：OpenClaw 最适合作为 Goal 的外部等待和调度参考。把它直接称为 Goal 会丢失完成判定语义；更合适的组合是 Goal controller 在需要未来时间或外部事件时创建/绑定 automation，收到事件后再恢复 Goal。</div>
+        <div class="source-box"><details><summary>源码与官方文档证据</summary><ul class="source-list">
+          <li><a href="https://github.com/openclaw/openclaw/blob/main/src/cron/types.ts">Automation/Cron job、payload 与 run state：types.ts</a></li>
+          <li><a href="https://github.com/openclaw/openclaw/blob/main/src/infra/heartbeat-runner.ts">Heartbeat 调度与投递：heartbeat-runner.ts</a></li>
+          <li><a href="https://github.com/openclaw/openclaw/blob/main/src/commitments/types.ts">Commitment typed record：commitments/types.ts</a></li>
+          <li><a href="https://docs.openclaw.ai/cron-jobs">Automations 的持久化、payload、session 与预算</a></li>
+          <li><a href="https://docs.openclaw.ai/gateway/heartbeat">Heartbeat 运行合同</a></li>
+          <li><a href="https://docs.openclaw.ai/automation/tasks">Background task ledger</a></li>
+        </ul></details></div>
+      </article>
+    </section>
+
+    <section id="sdk-baselines">
+      <h2>通用 Agent 框架基线</h2>
+      <div class="framework-grid">
+        <div class="card baseline"><div class="kind">Task input + runner limit</div><h3>OpenAI Agents SDK</h3><p>Agent 保存 instructions、tools、handoffs 与 output type；<code>Runner.run(input)</code> 驱动工具循环，最终输出或 <code>max_turns</code> 结束。Session/RunState 可保存对话和 HITL 状态，但 SDK 不定义 first-class Goal schema、completion evaluator 或 idle auto-continuation。</p><p><a href="https://openai.github.io/openai-agents-python/agents/">Agents</a> · <a href="https://openai.github.io/openai-agents-python/running_agents/">Running agents</a> · <a href="https://openai.github.io/openai-agents-python/human_in_the_loop/">HITL</a></p></div>
+        <div class="card baseline"><div class="kind">Graph state + conditional END</div><h3>LangGraph</h3><p>应用自行把 objective、plan、evidence 与 counters 放入 graph state；node 负责工作，conditional edge 决定下一 node 或 <code>END</code>。Checkpointer 保存每个 super-step，interrupt 负责暂停与恢复。它提供构建 Goal 的原语，但不规定 Goal 的字段或判定算法。</p><p><a href="https://docs.langchain.com/oss/python/langgraph/graph-api">Graph API</a> · <a href="https://docs.langchain.com/oss/python/langgraph/persistence">Persistence</a> · <a href="https://docs.langchain.com/oss/python/langgraph/interrupts">Interrupts</a></p></div>
+        <div class="card baseline"><div class="kind">Stateful termination object</div><h3>AutoGen AgentChat</h3><p>Task 是 team 的输入；停止条件是独立、可组合、带状态的 <code>TerminationCondition</code>，可按消息数、文本、token、timeout、handoff、source 或外部信号停止。Team 与 termination state 可保存/恢复。它把“何时停”从 agent 中分离，但没有持久化目标控制面。</p><p><a href="https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/termination.html">Termination</a> · <a href="https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/state.html">State</a></p></div>
+        <div class="card baseline"><div class="kind">Persona goal + executable task</div><h3>CrewAI</h3><p><code>Agent.goal</code> 是角色目标，主要进入 prompt；真正执行单位是 <code>Task(description, expected_output, guardrail)</code>，Process 决定任务顺序，Flow 提供 state 与 persistence。这里的 goal 更接近 agent persona，不是跨 turn completion controller。</p><p><a href="https://docs.crewai.com/en/concepts/agents">Agents</a> · <a href="https://docs.crewai.com/en/concepts/tasks">Tasks</a> · <a href="https://docs.crewai.com/en/concepts/flows">Flows</a></p></div>
+      </div>
+    </section>
+
+    <section id="lessons">
+      <h2>对 OpenProgram 后续设计有直接价值的实现</h2>
+      <div class="take-grid">
+        <div class="card do"><div class="take-label">已经采用</div><h3>Codex 的控制面数据模型</h3><p>当前快照已有稳定 <code>goal_id</code>、每次执行独立的 <code>run_id</code>、typed status、budget/usage、时间字段和 CAS version；用户操作负责 pause/resume/edit/answer/limit/clear，judge 只提交候选 verdict。</p></div>
+        <div class="card do"><div class="take-label">直接采用</div><h3>Hermes 的三段判定</h3><p>completion contract 明确定义 outcome/verification/constraints/boundaries/stop_when；确定性 gate 先执行；只有 gate 通过后才使用语义 judge。异步依赖进入 wait barrier，不重复启动工作 turn。</p></div>
+        <div class="card do"><div class="take-label">直接采用</div><h3>Claude Code 的后台任务 defer</h3><p>工作 turn 结束但存在 background task 时，不立即判定完成，也不立即续轮。由完成事件恢复；长期等待时使用有上限的退避 check-in，并把运行中任务列表交给 controller。</p></div>
+        <div class="card adapt"><div class="take-label">已经保留</div><h3>OpenProgram 的 tool-capable judge</h3><p>独立 judge 使用只读检查工具直接验证文件和命令结果，并返回 typed verdict。deterministic gate executor 仍是后续工作。</p></div>
+        <div class="card adapt"><div class="take-label">组合使用</div><h3>OpenCode Todo 作为进度投影</h3><p>Goal checklist 应有独立 typed item 表和事件，UI 可稳定显示。但 checklist 的 completed 状态只是 evidence，不应直接等价于整个 Goal complete，也不应由 UI 状态驱动 controller。</p></div>
+        <div class="card adapt"><div class="take-label">按需组合</div><h3>OpenClaw 调度作为等待适配器</h3><p>未来时间、CI、外部事件或后台作业不应消耗 Goal turn。GoalRun 保存 wait handle；scheduler/task subsystem 负责唤醒；Goal controller 收到事件后重新判定或继续。</p></div>
+        <div class="card avoid"><div class="take-label">不采用</div><h3>仅依据工作 agent 的完成声明</h3><p>Codex 的 self-report 适合低成本通用控制面，但 OpenProgram 已有独立判定器，不应退回到仅靠 <code>update_goal(complete)</code>。该工具可作为候选信号，最终状态仍由 evaluator/controller 提交。</p></div>
+        <div class="card adapt"><div class="take-label">当前边界</div><h3>版本化 session 快照</h3><p><code>extra_meta.goal</code> 已有 schema version、实体 ID、CAS 写入与迁移读取，足以承担当前单 session controller。它仍不是 append-only evidence repository；需要审计级证据历史时再拆分独立存储。</p></div>
+        <div class="card avoid"><div class="take-label">不采用</div><h3>把 Todo、Plan 或 Cron 命名为 Goal</h3><p>三者分别解决分解、变更权限和时序触发，不包含“完成条件 + 判定 + 自动续轮”的完整语义。API 与 UI 应保留这些边界。</p></div>
+      </div>
+    </section>
+
+    <section id="target-contract">
+      <h2>OpenProgram 当前合同与剩余扩展</h2>
+      <p>Goal 不新增第二套 agent loop。当前 controller 位于现有 session/dispatcher 之上，工作仍通过公开 <code>agent()</code> 执行；图中 <code>implemented</code> 是当前代码，<code>target</code> 是尚未实现的扩展。</p>
+      <figure class="archify-figure">
+        <div class="archify-surface"><svg class="archify-inline" viewBox="0 0 1240 800" role="img" lang="zh-CN" aria-labelledby="goal-runtime-archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+        <title id="goal-runtime-archify-diagram-title">OpenProgram Goal：当前控制器与剩余扩展</title>
+        <desc id="goal-runtime-archify-diagram-description">由 Archify 生成的架构图。</desc>
+        <!-- Definitions -->
+        <defs>
+          <marker id="goal-runtime-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+          </marker>
+          <marker id="goal-runtime-arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+          </marker>
+          <marker id="goal-runtime-arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+          </marker>
+          <marker id="goal-runtime-arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+          </marker>
+          <pattern id="goal-runtime-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#goal-runtime-grid)" />
+
+        <!-- Boundaries (behind everything) -->
+
+
+        <!-- Connection paths (before components for correct z-order) -->
+        <path data-edge-from="goal-runtime-entry" data-edge-to="goal-runtime-controller" data-edge-label="create / resume / clear" data-edge-key="0" data-edge-id="goal-runtime-create-goal" data-composition-points="210,335;234,335;234,355;276,355;276,339;300,339" d="M 210 335 L 226 335 Q 234 335 234 343 L 234 347 Q 234 355 242 355 L 268 355 Q 276 355 276 347 L 276 347 Q 276 339 284 339 L 300 339" class="a-emphasis" stroke-width="1.8" marker-end="url(#goal-runtime-arrowhead-emphasis)"/>
+        <path data-edge-from="goal-runtime-spec" data-edge-to="goal-runtime-controller" data-edge-label="completion contract" data-edge-key="1" data-edge-id="goal-runtime-load-spec" data-composition-points="375,162;375,231;395,231;395,300" d="M 375 162 L 375 223 Q 375 231 383 231 L 387 231 Q 395 231 395 239 L 395 300" class="a-default" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead)"/>
+        <path data-edge-from="goal-runtime-controller" data-edge-to="goal-runtime-worker" data-edge-label="start one work turn" data-edge-key="2" data-edge-id="goal-runtime-start-turn" data-composition-points="490,332;530,332;530,146;570,146" d="M 490 332 L 522 332 Q 530 332 530 324 L 530 154 Q 530 146 538 146 L 570 146" class="a-emphasis" stroke-width="1.8" marker-end="url(#goal-runtime-arrowhead-emphasis)"/>
+        <path data-edge-from="goal-runtime-worker" data-edge-to="goal-runtime-gates" data-edge-label="new evidence" data-edge-key="3" data-edge-id="goal-runtime-run-gates" data-composition-points="760,146;830,146" d="M 760 146 L 830 146" class="a-default" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead)"/>
+        <path data-edge-from="goal-runtime-gates" data-edge-to="goal-runtime-evaluator" data-edge-label="verified results" data-edge-key="4" data-edge-id="goal-runtime-gate-result" data-composition-points="930,182;930,241;930,241;930,300" d="M 930 182 L 930 241 L 930 241 L 930 300" class="a-default" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead)"/>
+        <path data-edge-from="goal-runtime-evaluator" data-edge-to="goal-runtime-controller" data-edge-label="typed verdict + evidence refs" data-edge-key="5" data-edge-id="goal-runtime-judge-result" data-composition-points="830,339;490,339" d="M 830 339 L 490 339" class="a-emphasis" stroke-width="1.8" marker-end="url(#goal-runtime-arrowhead-emphasis)"/>
+        <path data-edge-from="goal-runtime-evaluator" data-edge-to="goal-runtime-questions" data-edge-label="needs_user + can_continue" data-edge-key="6" data-edge-id="goal-runtime-queue-question" data-composition-points="830,339;795,339;795,459;760,459" d="M 830 339 L 803 339 Q 795 339 795 347 L 795 451 Q 795 459 787 459 L 760 459" class="a-dashed" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead-dashed)"/>
+        <path data-edge-from="goal-runtime-questions" data-edge-to="goal-runtime-controller" data-edge-label="answer / safe continuation" data-edge-key="7" data-edge-id="goal-runtime-question-boundary" data-composition-points="570,459;530,459;530,346;490,346" d="M 570 459 L 538 459 Q 530 459 530 451 L 530 354 Q 530 346 522 346 L 490 346" class="a-dashed" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead-dashed)"/>
+        <path data-edge-from="goal-runtime-evaluator" data-edge-to="goal-runtime-terminal" data-edge-label="accepted terminal verdict" data-edge-key="8" data-edge-id="goal-runtime-commit-terminal" data-composition-points="1030,339;1080,339" d="M 1030 339 L 1080 339" class="a-default" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead)"/>
+        <path data-edge-from="goal-runtime-controller" data-edge-to="goal-runtime-repository" data-edge-label="CAS version + usage" data-edge-key="9" data-edge-id="goal-runtime-persist-run" data-composition-points="395,378;395,484;395,484;395,590" d="M 395 378 L 395 484 L 395 484 L 395 590" class="a-default" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead)"/>
+        <path data-edge-from="goal-runtime-scheduler" data-edge-to="goal-runtime-controller" data-edge-label="matching external event" data-edge-key="10" data-edge-id="goal-runtime-resume-event" data-composition-points="930,662;930,720;520,720;520,410;395,410;395,378" d="M 930 662 L 930 712 Q 930 720 922 720 L 528 720 Q 520 720 520 712 L 520 418 Q 520 410 512 410 L 403 410 Q 395 410 395 402 L 395 378" class="a-dashed" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead-dashed)"/>
+        <path data-edge-from="goal-runtime-repository" data-edge-to="goal-runtime-projection" data-edge-label="versioned projection" data-edge-key="11" data-edge-id="goal-runtime-project-state" data-composition-points="300,626;240,626" d="M 300 626 L 240 626" class="a-default" stroke-width="1.5" marker-end="url(#goal-runtime-arrowhead)"/>
+
+        <!-- Components -->
+        <g id="goal-runtime-node-entry" data-node-id="goal-runtime-entry" data-node-label="Goal entry" aria-label="聚焦Goal entry，Programs / API / /goal, 架构组件" data-node-kind="external" data-node-sublabel="Programs / API / /goal" data-node-context="架构组件">
+          <title>Goal entry · Programs / API / /goal · 架构组件</title>
+          <rect x="50" y="300" width="160" height="70" rx="6" class="c-mask"/>
+          <rect x="50" y="300" width="160" height="70" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(56 306) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="130" y="333" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Goal entry</text>
+        <text data-detail="context" x="130" y="349" class="t-muted" font-size="9" text-anchor="middle">Programs / API / /goal</text>
+        </g>
+
+        <g id="goal-runtime-node-spec" data-node-id="goal-runtime-spec" data-node-label="GoalSpec" aria-label="聚焦GoalSpec，objective · contract · scope, 架构组件" data-node-kind="database" data-node-sublabel="objective · contract · scope" data-node-tag="target" data-node-context="架构组件">
+          <title>GoalSpec · objective · contract · scope · 架构组件 · target</title>
+          <rect x="280" y="90" width="190" height="72" rx="6" class="c-mask"/>
+          <rect x="280" y="90" width="190" height="72" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(286 96) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="375" y="124" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">GoalSpec</text>
+        <text data-detail="context" x="375" y="140" class="t-muted" font-size="9" text-anchor="middle">objective · contract · scope</text>
+        <text data-detail="fine" x="375" y="154" class="t-database" font-size="7" text-anchor="middle">target</text>
+        </g>
+
+        <g id="goal-runtime-node-controller" data-node-id="goal-runtime-controller" data-node-label="GoalController" aria-label="聚焦GoalController，唯一状态转移所有者, 架构组件" data-node-kind="backend" data-node-sublabel="唯一状态转移所有者" data-node-tag="target" data-node-context="架构组件">
+          <title>GoalController · 唯一状态转移所有者 · 架构组件 · target</title>
+          <rect x="300" y="300" width="190" height="78" rx="6" class="c-mask"/>
+          <rect x="300" y="300" width="190" height="78" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(306 306) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="395" y="337" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">GoalController</text>
+        <text data-detail="context" x="395" y="353" class="t-muted" font-size="9" text-anchor="middle">唯一状态转移所有者</text>
+        <text data-detail="fine" x="395" y="370" class="t-backend" font-size="7" text-anchor="middle">target</text>
+        </g>
+
+        <g id="goal-runtime-node-worker" data-node-id="goal-runtime-worker" data-node-label="Working agent" aria-label="聚焦Working agent，agent() / turn dispatcher, 架构组件" data-node-kind="backend" data-node-sublabel="agent() / turn dispatcher" data-node-context="架构组件">
+          <title>Working agent · agent() / turn dispatcher · 架构组件</title>
+          <rect x="570" y="110" width="190" height="72" rx="6" class="c-mask"/>
+          <rect x="570" y="110" width="190" height="72" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(576 116) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="665" y="144" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Working agent</text>
+        <text data-detail="context" x="665" y="160" class="t-muted" font-size="9" text-anchor="middle">agent() / turn dispatcher</text>
+        </g>
+
+        <g id="goal-runtime-node-gates" data-node-id="goal-runtime-gates" data-node-label="Deterministic gates" aria-label="聚焦Deterministic gates，tests · commands · typed checks, 架构组件" data-node-kind="security" data-node-sublabel="tests · commands · typed checks" data-node-tag="target" data-node-context="架构组件">
+          <title>Deterministic gates · tests · commands · typed checks · 架构组件 · target</title>
+          <rect x="830" y="110" width="200" height="72" rx="6" class="c-mask"/>
+          <rect x="830" y="110" width="200" height="72" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(836 116) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="930" y="144" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Deterministic gates</text>
+        <text data-detail="context" x="930" y="160" class="t-muted" font-size="9" text-anchor="middle">tests · commands · typed checks</text>
+        <text data-detail="fine" x="930" y="174" class="t-security" font-size="7" text-anchor="middle">target</text>
+        </g>
+
+        <g id="goal-runtime-node-evaluator" data-node-id="goal-runtime-evaluator" data-node-label="GoalEvaluator" aria-label="聚焦GoalEvaluator，inspection judge + evidence refs, 架构组件" data-node-kind="backend" data-node-sublabel="inspection judge + evidence refs" data-node-context="架构组件">
+          <title>GoalEvaluator · inspection judge + evidence refs · 架构组件</title>
+          <rect x="830" y="300" width="200" height="78" rx="6" class="c-mask"/>
+          <rect x="830" y="300" width="200" height="78" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(836 306) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="930" y="337" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">GoalEvaluator</text>
+        <text data-detail="context" x="930" y="353" class="t-muted" font-size="9" text-anchor="middle">inspection judge + evidence refs</text>
+        </g>
+
+        <g id="goal-runtime-node-terminal" data-node-id="goal-runtime-terminal" data-node-label="Terminal state" aria-label="聚焦Terminal state，achieved · blocked · failed, 架构组件" data-node-kind="external" data-node-sublabel="achieved · blocked · failed" data-node-context="架构组件">
+          <title>Terminal state · achieved · blocked · failed · 架构组件</title>
+          <rect x="1080" y="300" width="140" height="78" rx="6" class="c-mask"/>
+          <rect x="1080" y="300" width="140" height="78" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(1086 306) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="1150" y="337" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Terminal state</text>
+        <text data-detail="context" x="1150" y="353" class="t-muted" font-size="8.1" text-anchor="middle">achieved · blocked · failed</text>
+        </g>
+
+        <g id="goal-runtime-node-questions" data-node-id="goal-runtime-questions" data-node-label="Async question queue" aria-label="聚焦Async question queue，pending · answered · dependency, 架构组件" data-node-kind="database" data-node-sublabel="pending · answered · dependency" data-node-tag="implemented" data-node-context="架构组件">
+          <title>Async question queue · pending · answered · dependency · 架构组件 · implemented</title>
+          <rect x="570" y="420" width="190" height="78" rx="6" class="c-mask"/>
+          <rect x="570" y="420" width="190" height="78" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(576 426) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="665" y="457" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Async question queue</text>
+        <text data-detail="context" x="665" y="473" class="t-muted" font-size="9" text-anchor="middle">pending · answered · dependency</text>
+        <text data-detail="fine" x="665" y="490" class="t-database" font-size="7" text-anchor="middle">implemented</text>
+        </g>
+
+        <g id="goal-runtime-node-scheduler" data-node-id="goal-runtime-scheduler" data-node-label="External wake adapter" aria-label="聚焦External wake adapter，job · timer · event, 架构组件" data-node-kind="messagebus" data-node-sublabel="job · timer · event" data-node-tag="target" data-node-context="架构组件">
+          <title>External wake adapter · job · timer · event · 架构组件 · target</title>
+          <rect x="830" y="590" width="200" height="72" rx="6" class="c-mask"/>
+          <rect x="830" y="590" width="200" height="72" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(836 596) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="930" y="624" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">External wake adapter</text>
+        <text data-detail="context" x="930" y="640" class="t-muted" font-size="9" text-anchor="middle">job · timer · event</text>
+        <text data-detail="fine" x="930" y="654" class="t-messagebus" font-size="7" text-anchor="middle">target</text>
+        </g>
+
+        <g id="goal-runtime-node-repository" data-node-id="goal-runtime-repository" data-node-label="Session Goal snapshot" aria-label="聚焦Session Goal snapshot，version · checkpoint · usage, 架构组件" data-node-kind="database" data-node-sublabel="version · checkpoint · usage" data-node-tag="implemented" data-node-context="架构组件">
+          <title>Session Goal snapshot · version · checkpoint · usage · 架构组件 · implemented</title>
+          <rect x="300" y="590" width="190" height="72" rx="6" class="c-mask"/>
+          <rect x="300" y="590" width="190" height="72" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(306 596) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="395" y="624" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Session Goal snapshot</text>
+        <text data-detail="context" x="395" y="640" class="t-muted" font-size="9" text-anchor="middle">version · checkpoint · usage</text>
+        <text data-detail="fine" x="395" y="654" class="t-database" font-size="7" text-anchor="middle">implemented</text>
+        </g>
+
+        <g id="goal-runtime-node-projection" data-node-id="goal-runtime-projection" data-node-label="Goal projection" aria-label="聚焦Goal projection，UI · goal.updated, 架构组件" data-node-kind="frontend" data-node-sublabel="UI · goal.updated" data-node-context="架构组件">
+          <title>Goal projection · UI · goal.updated · 架构组件</title>
+          <rect x="50" y="590" width="190" height="72" rx="6" class="c-mask"/>
+          <rect x="50" y="590" width="190" height="72" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(56 596) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="145" y="624" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Goal projection</text>
+        <text data-detail="context" x="145" y="640" class="t-muted" font-size="9" text-anchor="middle">UI · goal.updated</text>
+        </g>
+
+        <!-- Connection labels -->
+        <g data-detail="context" data-edge-from="goal-runtime-entry" data-edge-to="goal-runtime-controller" data-edge-label="create / resume / clear" data-edge-key="0" data-edge-id="goal-runtime-create-goal">
+          <rect x="194.8" y="390" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="255" y="400" class="t-backend" font-size="8" text-anchor="middle">create / resume / clear</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-spec" data-edge-to="goal-runtime-controller" data-edge-label="completion contract" data-edge-key="1" data-edge-id="goal-runtime-load-spec">
+          <rect x="334.4" y="220" width="101.2" height="14" rx="3" class="c-mask"/>
+          <text x="385" y="230" class="t-muted" font-size="8" text-anchor="middle">completion contract</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-controller" data-edge-to="goal-runtime-worker" data-edge-label="start one work turn" data-edge-key="2" data-edge-id="goal-runtime-start-turn">
+          <rect x="479.4" y="219" width="101.2" height="14" rx="3" class="c-mask"/>
+          <text x="530" y="229" class="t-backend" font-size="8" text-anchor="middle">start one work turn</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-worker" data-edge-to="goal-runtime-gates" data-edge-label="new evidence" data-edge-key="3" data-edge-id="goal-runtime-run-gates">
+          <rect x="761.2" y="126" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="795" y="136" class="t-muted" font-size="8" text-anchor="middle">new evidence</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-gates" data-edge-to="goal-runtime-evaluator" data-edge-label="verified results" data-edge-key="4" data-edge-id="goal-runtime-gate-result">
+          <rect x="886.6" y="200" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="930" y="210" class="t-muted" font-size="8" text-anchor="middle">verified results</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-evaluator" data-edge-to="goal-runtime-controller" data-edge-label="typed verdict + evidence refs" data-edge-key="5" data-edge-id="goal-runtime-judge-result">
+          <rect x="585.4" y="276" width="149.2" height="14" rx="3" class="c-mask"/>
+          <text x="660" y="286" class="t-backend" font-size="8" text-anchor="middle">typed verdict + evidence refs</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-evaluator" data-edge-to="goal-runtime-questions" data-edge-label="needs_user + can_continue" data-edge-key="6" data-edge-id="goal-runtime-queue-question">
+          <rect x="730" y="379" width="130" height="14" rx="3" class="c-mask"/>
+          <text x="795" y="389" class="t-messagebus" font-size="8" text-anchor="middle">needs_user + can_continue</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-questions" data-edge-to="goal-runtime-controller" data-edge-label="answer / safe continuation" data-edge-key="7" data-edge-id="goal-runtime-question-boundary">
+          <rect x="462.6" y="382.5" width="134.8" height="14" rx="3" class="c-mask"/>
+          <text x="530" y="392.5" class="t-messagebus" font-size="8" text-anchor="middle">answer / safe continuation</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-evaluator" data-edge-to="goal-runtime-terminal" data-edge-label="accepted terminal verdict" data-edge-key="8" data-edge-id="goal-runtime-commit-terminal">
+          <rect x="990" y="390" width="130" height="14" rx="3" class="c-mask"/>
+          <text x="1055" y="400" class="t-muted" font-size="8" text-anchor="middle">accepted terminal verdict</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-controller" data-edge-to="goal-runtime-repository" data-edge-label="CAS version + usage" data-edge-key="9" data-edge-id="goal-runtime-persist-run">
+          <rect x="279.4" y="420" width="101.2" height="14" rx="3" class="c-mask"/>
+          <text x="330" y="430" class="t-muted" font-size="8" text-anchor="middle">CAS version + usage</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-scheduler" data-edge-to="goal-runtime-controller" data-edge-label="matching external event" data-edge-key="10" data-edge-id="goal-runtime-resume-event">
+          <rect x="459.8" y="550" width="120.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="520" y="560" class="t-messagebus" font-size="8" text-anchor="middle">matching external event</text>
+        </g>
+        <g data-detail="context" data-edge-from="goal-runtime-repository" data-edge-to="goal-runtime-projection" data-edge-label="versioned projection" data-edge-key="11" data-edge-id="goal-runtime-project-state">
+          <rect x="217" y="666" width="106" height="14" rx="3" class="c-mask"/>
+          <text x="270" y="676" class="t-muted" font-size="8" text-anchor="middle">versioned projection</text>
+        </g>
+
+        <!-- Boundary labels (foreground masks keep routes out of titles) -->
+
+
+        <!-- Legend -->
+        <g data-legend="" data-legend-bridge="">
+          <text x="40" y="764" class="t-primary" font-size="12" font-weight="650">图例</text>
+          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="前端" data-legend-x="40" data-legend-baseline="784" data-legend-width="63">
+            <rect x="40" y="775" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
+            <text x="62" y="784" class="t-muted" font-size="10" font-weight="500">前端</text>
+          </g>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="后端" data-legend-x="125" data-legend-baseline="784" data-legend-width="63">
+            <rect x="125" y="775" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
+            <text x="147" y="784" class="t-muted" font-size="10" font-weight="500">后端</text>
+          </g>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="数据库" data-legend-x="210" data-legend-baseline="784" data-legend-width="73">
+            <rect x="210" y="775" width="16" height="10" rx="2.5" class="c-database" stroke-width="1"/>
+            <text x="232" y="784" class="t-muted" font-size="10" font-weight="500">数据库</text>
+          </g>
+          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="安全" data-legend-x="305" data-legend-baseline="784" data-legend-width="63">
+            <rect x="305" y="775" width="16" height="10" rx="2.5" class="c-security" stroke-width="1"/>
+            <text x="327" y="784" class="t-muted" font-size="10" font-weight="500">安全</text>
+          </g>
+          <g data-legend-semantic-kind="messagebus" data-legend-kind="messagebus" data-legend-label="消息总线" data-legend-x="390" data-legend-baseline="784" data-legend-width="83">
+            <rect x="390" y="775" width="16" height="10" rx="2.5" class="c-messagebus" stroke-width="1"/>
+            <text x="412" y="784" class="t-muted" font-size="10" font-weight="500">消息总线</text>
+          </g>
+          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="外部系统" data-legend-x="495" data-legend-baseline="784" data-legend-width="83">
+            <rect x="495" y="775" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
+            <text x="517" y="784" class="t-muted" font-size="10" font-weight="500">外部系统</text>
+          </g>
+        </g>
+      </svg></div>
+        <figcaption>Archify architecture · showcase 结构验证 9/9，0 errors，0 warnings。图中直接嵌入可缩放 SVG；typed source 与本文档同目录保存。紫色虚线表示等待与恢复路径。</figcaption>
+      </figure>
+      <ol class="decision-list">
+        <li><strong>Spec 与 run 保存在一个版本化快照中。</strong><code>goal_id</code> 跨 resume 保持稳定，<code>run_id</code> 标识一次 execution；编辑生成新 revision，并重新完善 spec/checklist。refinement 只转述用户要求与必要正确性检查，保留“约”等近似约束，不自行增加格式比例、基准名、数量门槛或参考作品比较；重要歧义作为待确认问题保留。</li>
+        <li><strong>Stop policy 在阶段边界检查累计预算。</strong>rounds、tokens、active elapsed time 和 cost 在 resume 后累计；等待和暂停不消耗 active-time 预算。工作轮次默认限时 300 秒，provider 静默流受整个调用的截止时间约束；累计预算不是对当前阶段的精确抢占上限。</li>
+        <li><strong>Controller 是状态转移提交者。</strong>每个阶段保存 checkpoint；pause/edit/answer/cancel 与旧 controller 使用 CAS version 竞争，旧执行不能覆盖新状态。</li>
+        <li><strong>Evaluator 是独立 inspection agent。</strong>它输出 met、unmet、blocked、impossible、waiting_external、needs_user 和 <code>can_continue</code>。本地检查之外提供 <code>web_fetch</code>、<code>web_search</code>，沿用现有 URL 与网络权限检查；网页工具的失败通过结构化 <code>is_error</code> 回执传递。一次判定含失败的工具检查回执时，controller 不接受 <code>met</code>，先重新判定；持续失败报告 judge failure。该规则保守地要求一次无检查错误的验收，不证明成功回执本身足以满足全部语义要求；通用确定性 gate executor 尚未实现。</li>
+        <li><strong>异步问题队列不阻塞无关工作。</strong>问题可以累积并逐项回答；active execution 在下一个边界消费答案，只有所有剩余工作都依赖答案时才进入 <code>waiting_user</code>。问题只占用 Goal 详情面板，不替换或禁用普通 composer。</li>
+        <li><strong>重启恢复采用显式新 execution。</strong>启动 reconciliation 把遗留执行状态改成 <code>paused_recoverable</code>；恢复沿用快照而不尝试复活旧调用栈。</li>
+        <li><strong>外部 scheduler 是目标扩展。</strong><code>waiting_external</code> 已有状态，但 job/timer/event 的自动 wake handle 尚未实现。同机共享 session store 的 Goal controller 使用独立 OS 文件锁，启动恢复持相同锁，避免改写 live sibling 的状态。</li>
+      </ol>
+      <details class="data-details">
+        <summary>查看目标状态的完整转移表</summary>
+        <div class="matrix-wrap">
+        <table>
+          <thead><tr><th>状态</th><th>进入者</th><th>允许离开方式</th><th>是否自动运行</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td><code>active</code> / <code>running</code> / <code>evaluating</code></td><td>create/resume；controller</td><td>waiting_user / waiting_external / paused / blocked / impossible / stalled / achieved / budget_exhausted / failed / cancelled</td><td class="yes">是</td><td>单个 controller 顺序启动工作 turn 与 judge；每个边界保存状态。</td></tr>
+            <tr><td><code>waiting_user</code></td><td>evaluator/controller</td><td>任意新答案触发 resume，或 edit/cancel</td><td class="no">否</td><td>仅表示剩余工作全部依赖答案；部分答案可以解除部分依赖，其他问题保留。</td></tr>
+            <tr><td><code>waiting_external</code></td><td>evaluator</td><td>显式 resume / edit / cancel</td><td class="no">否</td><td>当前没有自动 wake handle；外部依赖变化后由用户恢复。</td></tr>
+            <tr><td><code>paused</code> / <code>paused_recoverable</code></td><td>用户 / startup reconciliation</td><td>resume / edit / cancel</td><td class="no">否</td><td>保留预算、问题、checklist 和 checkpoint；等待时间不计入 active time。</td></tr>
+            <tr><td><code>blocked</code></td><td>evaluator</td><td>依赖变化后 resume、edit 或 cancel</td><td class="no">否</td><td>不是成功；reason 记录当前阻塞事实。</td></tr>
+            <tr><td><code>impossible</code></td><td>evaluator</td><td>只读终态；可创建新 Goal</td><td class="no">否</td><td>当前目标与固定约束不能同时满足。</td></tr>
+            <tr><td><code>stalled</code></td><td>controller</td><td>resume / edit / cancel</td><td class="no">否</td><td>checklist 连续不增长或连续无工具工作达到阈值。</td></tr>
+            <tr><td><code>achieved</code></td><td>controller 接受 evaluator 结果</td><td>只读；新目标创建新 run</td><td class="no">否</td><td>保存 evidence refs、gate results 和最终 usage。</td></tr>
+            <tr><td><code>budget_exhausted</code> / <code>failed</code></td><td>controller / runtime</td><td>调整预算后 resume，或 edit/cancel</td><td class="no">否</td><td>预算耗尽与执行/判定错误分开记录。</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </details>
+    </section>
+
+    <section id="surfaces">
+      <h2>Web 与 TUI 使用同一 Goal 操作合同</h2>
+      <p>底部 Goal 状态条是详情入口，不是静态标签。重载页面或 worker 重启后，它从持久化 projection 恢复目标文本、状态、checklist、用量与最后原因；若先前 execution 已丢失，则显示 <code>paused_recoverable</code>，不显示为仍在运行。</p>
+      <figure class="archify-figure">
+        <div class="archify-surface"><svg class="archify-inline" viewBox="0 0 1166 652" role="img" lang="zh-CN" aria-labelledby="goal-surfaces-archify-diagram-title goal-surfaces-archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+        <title id="goal-surfaces-archify-diagram-title">Goal 在 Web 与 TUI 的一致交互</title>
+        <desc id="goal-surfaces-archify-diagram-description">由 Archify 生成的工作流图。</desc>
+        <!-- Definitions -->
+        <defs>
+          <marker id="goal-surfaces-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+          </marker>
+          <marker id="goal-surfaces-arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+          </marker>
+          <marker id="goal-surfaces-arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+          </marker>
+          <marker id="goal-surfaces-arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+          </marker>
+          <pattern id="goal-surfaces-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#goal-surfaces-grid)" />
+
+        <!-- Swimlanes -->
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="1110" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / Web</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="176" width="1110" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="198" class="t-dim" font-size="10" font-weight="600">02 / TUI</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-2" x="40" y="300" width="1110" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="322" class="t-dim" font-size="10" font-weight="600">03 / Shared Goal Actions</text>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-3" x="40" y="424" width="1110" height="104" rx="10" class="c-lane" stroke-width="1"/>
+        <text x="54" y="446" class="t-dim" font-size="10" font-weight="600">04 / Durable State</text>
+
+        <!-- Phase headers -->
+
+
+        <!-- Workflow groups -->
+
+
+        <!-- Edge paths -->
+        <path data-edge-from="action" data-edge-to="transition" data-edge-label="validate" data-edge-key="0" data-edge-id="action_transition" data-composition-points="566.8,367;623.2,367" d="M 566.8 367 L 623.2 367" class="a-default" stroke-width="1.4" marker-end="url(#goal-surfaces-arrowhead)"/>
+        <path data-edge-from="chip" data-edge-to="panel" data-edge-label="click / keyboard" data-edge-key="1" data-edge-id="chip_panel" data-composition-points="198,119;292.8,119" d="M 198 119 L 292.8 119" class="a-default" stroke-width="1.4" marker-end="url(#goal-surfaces-arrowhead)"/>
+        <path data-edge-from="panel" data-edge-to="action" data-edge-label="typed action" data-edge-key="2" data-edge-id="panel_action" data-composition-points="369.8,93;369.8,36;489.8,36;489.8,341" d="M 369.8 93 L 369.8 36 L 489.8 36 L 489.8 341" class="a-emphasis" stroke-width="1.8" marker-end="url(#goal-surfaces-arrowhead-emphasis)"/>
+        <path data-edge-from="projection" data-edge-to="panel" data-edge-label="reload / live update" data-edge-key="3" data-edge-id="projection_chip" data-composition-points="1064.2,465;1064.2,126;446.8,126" d="M 1064.2 465 L 1064.2 126 L 446.8 126" class="a-dashed" stroke-width="1.4" marker-end="url(#goal-surfaces-arrowhead-dashed)"/>
+        <path data-edge-from="repository" data-edge-to="projection" data-edge-label="committed state" data-edge-key="4" data-edge-id="repo_projection" data-composition-points="897.2,491;987.2,491" d="M 897.2 491 L 987.2 491" class="a-dashed" stroke-width="1.4" marker-end="url(#goal-surfaces-arrowhead-dashed)"/>
+        <path data-edge-from="tui_status" data-edge-to="tui_action" data-edge-key="5" data-edge-id="status_action" data-composition-points="198,243;292.8,243" d="M 198 243 L 292.8 243" class="a-default" stroke-width="1.4" marker-end="url(#goal-surfaces-arrowhead)"/>
+        <path data-edge-from="transition" data-edge-to="repository" data-edge-label="atomic save" data-edge-key="6" data-edge-id="transition_repo" data-composition-points="700.2,393;700.2,414;820.2,414;820.2,465" d="M 700.2 393 L 700.2 414 L 820.2 414 L 820.2 465" class="a-security" stroke-width="1.4" marker-end="url(#goal-surfaces-arrowhead-security)"/>
+        <path data-edge-from="tui_action" data-edge-to="action" data-edge-label="same action" data-edge-key="7" data-edge-id="tui_api" data-composition-points="369.8,269;369.8,290;489.8,290;489.8,341" d="M 369.8 269 L 369.8 290 L 489.8 290 L 489.8 341" class="a-emphasis" stroke-width="1.8" marker-end="url(#goal-surfaces-arrowhead-emphasis)"/>
+
+        <!-- Nodes -->
+        <g id="goal-surfaces-node-chip" data-node-id="chip" data-node-label="底部 Goal 状态条" aria-label="聚焦底部 Goal 状态条，状态 · 进度 · 用量, Web" data-node-kind="frontend" data-node-sublabel="状态 · 进度 · 用量" data-node-context="Web">
+          <title>底部 Goal 状态条 · 状态 · 进度 · 用量 · Web</title>
+          <rect x="48" y="93" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="93" width="150" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(54 99) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="123" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">底部 Goal 状态条</text>
+          <text data-detail="context" x="123" y="131" class="t-muted" font-size="8" text-anchor="middle">状态 · 进度 · 用量</text>
+        </g>
+
+        <g id="goal-surfaces-node-panel" data-node-id="panel" data-node-label="Goal 详情面板" aria-label="聚焦Goal 详情面板，prompt · checklist · 问题队列, Web" data-node-kind="frontend" data-node-sublabel="prompt · checklist · 问题队列" data-node-context="Web">
+          <title>Goal 详情面板 · prompt · checklist · 问题队列 · Web</title>
+          <rect x="292.8" y="93" width="154" height="52" rx="6" class="c-mask"/>
+          <rect x="292.8" y="93" width="154" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(298.8 99) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="369.8" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Goal 详情面板</text>
+          <text data-detail="context" x="369.8" y="131" class="t-muted" font-size="8" text-anchor="middle">prompt · checklist · 问题队列</text>
+        </g>
+
+        <g id="goal-surfaces-node-tui_status" data-node-id="tui_status" data-node-label="/goal status" aria-label="聚焦/goal status，完整状态与原因, TUI" data-node-kind="frontend" data-node-sublabel="完整状态与原因" data-node-context="TUI">
+          <title>/goal status · 完整状态与原因 · TUI</title>
+          <rect x="48" y="217" width="150" height="52" rx="6" class="c-mask"/>
+          <rect x="48" y="217" width="150" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(54 223) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="123" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">/goal status</text>
+          <text data-detail="context" x="123" y="255" class="t-muted" font-size="8" text-anchor="middle">完整状态与原因</text>
+        </g>
+
+        <g id="goal-surfaces-node-tui_action" data-node-id="tui_action" data-node-label="/goal action" aria-label="聚焦/goal action，edit · answer · resume · clear, TUI" data-node-kind="frontend" data-node-sublabel="edit · answer · resume · clear" data-node-context="TUI">
+          <title>/goal action · edit · answer · resume · clear · TUI</title>
+          <rect x="292.8" y="217" width="154" height="52" rx="6" class="c-mask"/>
+          <rect x="292.8" y="217" width="154" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(298.8 223) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="369.8" y="238" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">/goal action</text>
+          <text data-detail="context" x="369.8" y="255" class="t-muted" font-size="8" text-anchor="middle">edit · answer · resume · clear</text>
+        </g>
+
+        <g id="goal-surfaces-node-action" data-node-id="action" data-node-label="Goal Action API" aria-label="聚焦Goal Action API，同一校验与错误合同, Shared Goal Actions" data-node-kind="backend" data-node-sublabel="同一校验与错误合同" data-node-context="Shared Goal Actions">
+          <title>Goal Action API · 同一校验与错误合同 · Shared Goal Actions</title>
+          <rect x="412.8" y="341" width="154" height="52" rx="6" class="c-mask"/>
+          <rect x="412.8" y="341" width="154" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(418.8 347) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="489.8" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Goal Action API</text>
+          <text data-detail="context" x="489.8" y="379" class="t-muted" font-size="8" text-anchor="middle">同一校验与错误合同</text>
+        </g>
+
+        <g id="goal-surfaces-node-transition" data-node-id="transition" data-node-label="版本化转移" aria-label="聚焦版本化转移，expected_version · lease, Shared Goal Actions" data-node-kind="security" data-node-sublabel="expected_version · lease" data-node-context="Shared Goal Actions">
+          <title>版本化转移 · expected_version · lease · Shared Goal Actions</title>
+          <rect x="623.2" y="341" width="154" height="52" rx="6" class="c-mask"/>
+          <rect x="623.2" y="341" width="154" height="52" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(629.2 347) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="700.2" y="362" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">版本化转移</text>
+          <text data-detail="context" x="700.2" y="379" class="t-muted" font-size="8" text-anchor="middle">expected_version · lease</text>
+        </g>
+
+        <g id="goal-surfaces-node-repository" data-node-id="repository" data-node-label="Goal Snapshot" aria-label="聚焦Goal Snapshot，checkpoint + question queue, Durable State" data-node-kind="database" data-node-sublabel="checkpoint + question queue" data-node-context="Durable State">
+          <title>Goal Snapshot · checkpoint + question queue · Durable State</title>
+          <rect x="743.2" y="465" width="154" height="52" rx="6" class="c-mask"/>
+          <rect x="743.2" y="465" width="154" height="52" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(749.2 471) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="820.2" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Goal Snapshot</text>
+          <text data-detail="context" x="820.2" y="503" class="t-muted" font-size="8" text-anchor="middle">checkpoint + question queue</text>
+        </g>
+
+        <g id="goal-surfaces-node-projection" data-node-id="projection" data-node-label="Goal Projection" aria-label="聚焦Goal Projection，hydrate + goal_update, Durable State" data-node-kind="messagebus" data-node-sublabel="hydrate + goal_update" data-node-context="Durable State">
+          <title>Goal Projection · hydrate + goal_update · Durable State</title>
+          <rect x="987.2" y="465" width="154" height="52" rx="6" class="c-mask"/>
+          <rect x="987.2" y="465" width="154" height="52" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(993.2 471) scale(0.6875)">
+            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
+            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
+            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
+            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="1064.2" y="486" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Goal Projection</text>
+          <text data-detail="context" x="1064.2" y="503" class="t-muted" font-size="8" text-anchor="middle">hydrate + goal_update</text>
+        </g>
+
+        <!-- Edge labels -->
+        <g data-detail="context" data-edge-from="action" data-edge-to="transition" data-edge-label="validate" data-edge-key="0" data-edge-id="action_transition">
+          <rect x="570.8" y="347" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="595" y="357" class="t-muted" font-size="8" text-anchor="middle">validate</text>
+        </g>
+        <g data-detail="context" data-edge-from="chip" data-edge-to="panel" data-edge-label="click / keyboard" data-edge-key="1" data-edge-id="chip_panel">
+          <rect x="202" y="99" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="245.4" y="109" class="t-muted" font-size="8" text-anchor="middle">click / keyboard</text>
+        </g>
+        <g data-detail="context" data-edge-from="panel" data-edge-to="action" data-edge-label="typed action" data-edge-key="2" data-edge-id="panel_action">
+          <rect x="396" y="16" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="429.8" y="26" class="t-backend" font-size="8" text-anchor="middle">typed action</text>
+        </g>
+        <g data-detail="context" data-edge-from="projection" data-edge-to="panel" data-edge-label="reload / live update" data-edge-key="3" data-edge-id="projection_chip">
+          <rect x="702.5" y="106" width="106" height="14" rx="3" class="c-mask"/>
+          <text x="755.5" y="116" class="t-database" font-size="8" text-anchor="middle">reload / live update</text>
+        </g>
+        <g data-detail="context" data-edge-from="repository" data-edge-to="projection" data-edge-label="committed state" data-edge-key="4" data-edge-id="repo_projection">
+          <rect x="901.2" y="471" width="82" height="14" rx="3" class="c-mask"/>
+          <text x="942.2" y="481" class="t-database" font-size="8" text-anchor="middle">committed state</text>
+        </g>
+
+        <g data-detail="context" data-edge-from="transition" data-edge-to="repository" data-edge-label="atomic save" data-edge-key="6" data-edge-id="transition_repo">
+          <rect x="728.8000000000001" y="394" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="760.2" y="404" class="t-security" font-size="8" text-anchor="middle">atomic save</text>
+        </g>
+        <g data-detail="context" data-edge-from="tui_action" data-edge-to="action" data-edge-label="same action" data-edge-key="7" data-edge-id="tui_api">
+          <rect x="398.40000000000003" y="270" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="429.8" y="280" class="t-backend" font-size="8" text-anchor="middle">same action</text>
+        </g>
+
+        <!-- Legend -->
+        <g data-legend="" data-legend-bridge="">
+          <text x="20" y="552" class="t-primary" font-size="12" font-weight="650">图例</text>
+          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="用户界面" data-legend-x="20" data-legend-baseline="572" data-legend-width="78">
+            <rect x="20" y="564" width="14" height="9" rx="2" class="c-frontend" stroke-width="1"/>
+            <text x="42" y="572" class="t-muted" font-size="7.5" font-weight="500">用户界面</text>
+          </g>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Agent 逻辑" data-legend-x="105" data-legend-baseline="572" data-legend-width="87">
+            <rect x="105" y="564" width="14" height="9" rx="2" class="c-backend" stroke-width="1"/>
+            <text x="127" y="572" class="t-muted" font-size="7.5" font-weight="500">Agent 逻辑</text>
+          </g>
+          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="策略" data-legend-x="199" data-legend-baseline="572" data-legend-width="61">
+            <rect x="199" y="564" width="14" height="9" rx="2" class="c-security" stroke-width="1"/>
+            <text x="221" y="572" class="t-muted" font-size="7.5" font-weight="500">策略</text>
+          </g>
+          <g data-legend-semantic-kind="messagebus" data-legend-kind="messagebus" data-legend-label="工具操作" data-legend-x="267" data-legend-baseline="572" data-legend-width="78">
+            <rect x="267" y="564" width="14" height="9" rx="2" class="c-messagebus" stroke-width="1"/>
+            <text x="289" y="572" class="t-muted" font-size="7.5" font-weight="500">工具操作</text>
+          </g>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="上下文 / 追踪" data-legend-x="352" data-legend-baseline="572" data-legend-width="100">
+            <rect x="352" y="564" width="14" height="9" rx="2" class="c-database" stroke-width="1"/>
+            <text x="374" y="572" class="t-muted" font-size="7.5" font-weight="500">上下文 / 追踪</text>
+          </g>
+        </g>
+      </svg></div>
+        <figcaption>Web 面板和 TUI 命令都调用版本化 Goal Action API；状态迁移、并发检查和恢复规则不在界面层重复实现。</figcaption>
+      </figure>
+      <div class="surface-grid">
+        <article class="surface-preview" aria-label="Web Goal 面板设计">
+          <header><strong>Web · Composer Goal Panel</strong><span class="badge source">交互设计</span></header>
+          <div class="goal-demo-body">
+            <div class="goal-demo-chip">◎ Goal · Paused after restart · 4/9</div>
+            <div class="goal-demo-panel">
+              <div class="panel-title"><strong>调研并完成一篇大模型知识综述</strong><small>goal_7f2a · run 2 · version 18</small></div>
+              <div class="goal-demo-row"><span>状态</span><strong>可恢复暂停：worker 重启中断了上一轮</strong></div>
+              <div class="goal-demo-row"><span>进度</span><span>4 / 9 checklist · 7 rounds · 38k tokens</span></div>
+              <div class="goal-demo-row"><span>最近证据</span><span>新增 12 篇来源；方法分类 gate 已通过</span></div>
+              <div class="goal-demo-row"><span>恢复位置</span><span>从已保存 spec、checklist 与 session evidence 创建新 execution</span></div>
+              <div class="goal-demo-row"><span>待答问题</span><span>2 项；可以稍后逐项回答，不影响独立的来源核查</span></div>
+              <div class="goal-demo-actions"><span class="demo-button primary">继续</span><span class="demo-button">编辑目标</span><span class="demo-button">调整预算</span><span class="demo-button">终止</span></div>
+            </div>
+          </div>
+        </article>
+        <article class="surface-preview" aria-label="TUI Goal 命令设计">
+          <header><strong>TUI · /goal</strong><span class="badge source">同一合同</span></header>
+          <pre class="terminal-demo">$ /goal status
+Goal [paused_recoverable]
+  调研并完成一篇大模型知识综述
+  progress  4/9
+  usage     7 rounds · 38k tokens
+  reason    worker restarted during round 8
+
+$ /goal resume
+Goal resumed as execution goal-exec-02.
+
+$ /goal edit 收窄到知识编辑与持续学习
+Goal revision 3 saved; prior evidence retained.
+
+$ /goal pause
+Goal paused.
+
+$ /goal
+  pending questions: 2
+  [?] scope: 是否纳入知识编辑？
+  [?] date: 文献截止日期是什么？
+
+$ /goal answer scope 纳入
+Goal answer saved; resuming from the latest checkpoint.</pre>
+        </article>
+      </div>
+      <div class="callout">编辑 Goal 增加 revision，并重新生成当前 spec/checklist；旧 revision 的未答问题保留为 <code>superseded</code> 审计记录，不再阻塞新 revision。继续操作保留 goal_id、累计用量和问题历史，同时创建新的 run_id。暂停、等待和重启恢复不重置已消耗预算；等待时间不计入 active-time 限制。</div>
+    </section>
+
+    <section id="implementation-evidence">
+      <h2>实现与验收合同</h2>
+      <p>独立规格审查要求保证两项合同：真实人类依赖转入等待，不能被普通无进展计数覆盖；Web 操作成功后的 HTTP 快照立即更新可见状态与共享缓存，旧版本事件不能回退新状态。修复限定在 Goal 状态转换及前端投影，不改其他工作流。验收分别使用公开 Goal → 回答命令的回归测试，以及无 WebSocket 广播的操作响应与重新挂载测试；修复后需要原审查者复核，再做独立质量审查。</p>
+      <p>真实人类依赖不会被无进展计数错误覆盖，预算判断仍独立执行。前端通过共用 <code>updateSessionGoal</code> 按 session version 应用 HTTP、WebSocket 与 hydration 快照；无广播暂停、重新挂载、乱序消息、后台会话及迟到加载由 4 项组件测试覆盖。Web 测试合计 229 项通过，TypeScript、静态检查和 32 页生产构建通过；等待状态与前端修复的独立规格复核均通过。构建仍有既有 Next SWC lockfile 修复警告，未改依赖锁文件。</p>
+      <p>控制器保存使用 CAS；发生同运行并发更新时，以最近确认快照、本轮状态和磁盘最新状态合并，并在 session 写锁内提交，不执行无界重试。合并仅允许相同 <code>goal_id/run_id</code> 且最新状态仍在执行的情况；预算和新答案保留，本轮进度与已消费答案也保留。暂停、取消、替换运行仍拒绝旧控制器写入。终止保存共用此路径；新答案使旧终止判定失效，保存为 <code>paused_recoverable / answer_received</code>，用户可继续处理，不能误报 <code>achieved</code>。分批消费的答案共同进入后续工作提示；再次恢复时从当前 revision 的持久问题记录重建已确认决定，并恢复有长度上限的 evidence window。编辑目标隔离旧 revision 的决定和证据。</p>
+      <p>并发修复的独立质量复核为 <code>PASS</code>，覆盖原有“修改预算导致控制器退出但仍显示运行中”的复现。审查者独立执行 9 项针对性回归通过：预算/答案在 evaluating/terminal 的竞争、暂停/取消/替换运行、消费期间收到新答案及旧 CAS 拒绝。集成后的 Goal、存储和 Web API 相关测试通过，完整统计见下方全量验证。该结论限于已审修复，不能代替修复后全量验证、尚未实现的设计能力或默认 App 可视验收。</p>
+      <p>以下条目把设计要求绑定到公开入口和可观察结果。局部源码、测试及独立修复审查不代表完整验收：最终集成代码的全量测试已通过，默认 App 的刷新与可视验收单独记录。下表中的实现描述仅指工作树内已有代码，不表示已发布或已完成全部要求。</p>
+      <div class="matrix-wrap">
+        <table>
+          <thead><tr><th>要求</th><th>公开入口 / 证据</th><th>可观察结果</th><th>当前状态</th></tr></thead>
+          <tbody>
+            <tr><td>单 prompt Goal，工作与判定分离</td><td><code>goal(prompt, ...)</code>；<code>judge_goal()</code></td><td>Working Agent 执行；inspection judge 独立验证并返回 typed verdict</td><td class="yes">已实现，单元测试覆盖</td></tr>
+            <tr><td>困难任务不会无限续轮</td><td>round/token/active-time/cost budget；active-run usage cursor；stall 与 judge failure guards</td><td>分别进入 <code>budget_exhausted</code>、<code>stalled</code>、<code>failed</code>、<code>blocked</code> 或 <code>impossible</code>；等待期间其他 session 用量不计入 Goal</td><td class="yes">已实现，边界测试覆盖</td></tr>
+            <tr><td>无人值守时不打断，继续独立工作</td><td>judge 的 <code>needs_user + can_continue</code>；持久 <code>questions[]</code></td><td>问题累积；依赖答案的事项不执行；安全独立工作继续；全部受阻后才等待</td><td class="yes">已实现，队列与续轮测试覆盖</td></tr>
+            <tr><td>异步回答与并发安全</td><td>Goal Action API；SessionStore CAS version</td><td>active run 在边界消费答案；部分回答允许部分工作恢复；用户主动暂停保持暂停；旧 controller 不能覆盖新状态</td><td class="yes">已实现，竞争路径测试覆盖</td></tr>
+            <tr><td>重载与 worker 重启可恢复</td><td>session hydration；startup reconciliation；<code>/goal resume</code></td><td>重载后恢复完整投影；重启中断状态变为 <code>paused_recoverable</code>；resume 创建新 run</td><td class="yes">组件测试通过；默认 App 已验证重启恢复状态、编辑重载及 Resume 实际执行</td></tr>
+            <tr><td>Web 与 TUI 控制一致</td><td>Goal dialog；<code>/goal</code> 命令；同一 Action API</td><td>查看目标、checklist、用量、问题；编辑、暂停、回答、预算、继续、终止</td><td class="partial">类型检查与自动测试通过；默认 App 已验证编辑、预算、暂停、恢复和完成判定；异步回答完整界面流程尚未验收</td></tr>
+            <tr><td>外部事件自动唤醒</td><td>目标：持久 wait handle + scheduler event</td><td>CI/job/timer 完成后幂等恢复，无需用户 resume</td><td class="no">未实现</td></tr>
+            <tr><td>共享状态目录多 worker ownership</td><td><code>ownership.goal_owner()</code>；独立非阻塞 OS 文件锁</td><td>同机同 store 独占 controller；startup reconciliation 跳过 live sibling；崩溃释放锁</td><td class="yes">跨进程与异常退出测试覆盖；不支持跨主机分布式 lease</td></tr>
+            <tr><td>Deterministic gates 与独立证据仓库</td><td>目标：gate runner + evidence refs/repository</td><td>可复用命令检查先于 judge，完整证据不依赖 session 快照</td><td class="no">未实现</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="source-box"><details open><summary>当前验证命令</summary><ul class="source-list">
+        <li><code>python -m pytest tests/unit/agent/test_goal_loop.py tests/unit/agent/test_goal_functions.py tests/unit/agent/test_agentic_programming_goal.py tests/unit/agent/test_goal_single_workflow.py tests/component/webui/test_goal_command_workflow.py -q</code></li>
+        <li><code>cd apps/web &amp;&amp; npx tsc --noEmit</code></li>
+        <li><code>python -m scripts.docs_site.build</code>，随后 <code>python -m scripts.docs_site.checklinks</code></li>
+      </ul></details></div>
+      <p>网页核查：judge 具有网页读取和检索工具，失败回执标记为 <code>is_error=true</code>。已有真实模型检查受到 arXiv 的 <code>NON_GLOBAL_ADDRESS</code> 拒绝与 Tavily 缺少凭据的限制；没有绕过网络策略，不能把这次研究产物视为来源已核验的综述。</p>
+      <p>集成代码执行 <code>python -m pytest -q -n 4</code>：7015 项通过、18 项跳过、1 项预期失败，包含暂停的执行身份和 Runtime 内检查路径修复。全量发现的 Goal 包装函数源码定位问题已修复；两组 agent 合同测试的执行数据库已按测试隔离，避免启动恢复读取其他测试的记录。TUI 测试 148 项通过、2 项跳过，类型检查通过。默认 App 的实际运行证据与自动测试分开记录。</p>
+      <p>真实模型验证：通过公开 <code>programs run goal</code> 入口，MiniMax-M3 完成约 300 字中文文章写作、文件读取核对与判定，命令正常退出；产物内容已另行读取检查确认。此例仅使用给定事实，不调用网络，不能替代来源核验。已有综述尝试受到外部来源访问和检索凭据限制，仍不能作为已核验的综述交付。失败回执防护会阻止包含错误检查回执的 <code>met</code>，不证明全部语义判定可靠。</p>
+      <p>默认 App 已验证测试 Goal 的重启恢复状态、编辑保存、页面重载、预算修改、暂停和恢复。暂停使对应 canonical execution 进入 <code>cancelling</code>，随后以 <code>cancelled / cancel.user</code> 停止，Goal 保持可恢复的暂停状态。再次恢复后，判定先因多余输出拒绝达成，再接受修正后的输出；最终 Goal 显示 <code>achieved</code>、checklist 4/4，判定解析错误计数为 0。这是短文本任务的实际运行验收，不代表外部研究或全部任务类型均已验证。</p>
+      <p>Goal 在已有 Runtime 中的 refiner/judge 使用公共 <code>agent()</code>：各自保持工具、模型与阶段标签，共享当前执行所有者，不创建独立 Job，避免首次初始化 JobRunner 的全局启动恢复误判外层活跃执行。无 Runtime 的独立 session helper 保留原路径。该局部修复不解决其他进程调用全局恢复的风险。执行树摘要仍有字段映射缺陷：已持久化的 LLM 回复位于 <code>raw_reply</code>，摘要却读取 <code>output</code>；空输入参数不代表回复丢失。另有函数结果行显示 Completed、canonical execution 已 cancelled 的展示不一致，不能用该摘要标签证明执行成功。</p>
+      <p>完成验收还发现通用执行结束记录未一致收敛：Goal 为 <code>achieved</code>，但对应 canonical execution 的 completed 写入连续重试后留下 <code>finish_repair_stalled</code>，状态仍为 running。该未解决项不否定已生成的工作输出与 Goal 判定，但阻止“完整执行生命周期全部验收通过”的结论。</p>
+    </section>
+
+    <section id="status">
+      <h2>实现状态与证据边界</h2>
+      <div class="framework-grid">
+        <div class="card"><h3>当前代码已经具备</h3><ul><li>单 prompt Goal、Working Agent 与独立 inspection judge。</li><li>schema v3 版本化 session 快照、goal/run ID、checkpoint、CAS 写入和旧数据规范化。</li><li>typed stop states、round/token/active-time/cost 预算、checklist stall 与 idle-spin 检测。</li><li>异步问题队列、逐项回答、边界消费、有人/无人值守判定策略。</li><li>Web Goal dialog、TUI 操作、页面重载 hydration 与 worker 重启后的可恢复暂停。</li><li>五张 Archify typed source 生成并以内联 SVG 写入本文档。</li></ul></div>
+        <div class="card"><h3>仍未实现或尚未验收</h3><ul><li>deterministic gate executor、外部事件自动 wake handle 和 append-only evidence repository。</li><li>跨主机分布式 lease；同机共享目录的 Goal ownership 已实现。</li><li>默认 App 的已验收范围见上文；异步回答的完整界面操作与无障碍树尚未验收。</li><li>Goal 主体与运行修复已合入主分支并包含在默认 App；执行树摘要缺陷及通用跨进程启动恢复风险尚未修复。</li></ul></div>
+      </div>
+      <div class="callout warn"><strong>版本边界：</strong>本地参考仓库用于读取可复现的具体代码路径；官方在线文档与公开仓库 main 用于确认后续新增合同。Hermes 本地快照的基础 GoalManager 不含当前上游的 completion contract、quality gate 与 wait barrier，因此相关段落以公开上游源码为准。Claude Code 以官方文档为准。</div>
+      <p class="footer">OpenProgram Goal 的权威工程设计与实现对比。产品使用说明见 <a href="../../../capabilities/goal.html">Goal Workflow</a>；本文中的未验收项不能作为已发布或已部署的证明。</p>
+    </section>
+  </div>
+</main>
+</body>
+</html>

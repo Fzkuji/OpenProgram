@@ -166,6 +166,7 @@ def test_untrusted_clone_does_not_hide_installed_distribution(tmp_path, monkeypa
     monkeypatch.setattr(_programs, "applications_dir", lambda: str(base))
     monkeypatch.setattr(_programs, "_catalogued_clone_origin", lambda *_: None)
     monkeypatch.setattr(_programs, "_has_installed_distribution", lambda _: True)
+    monkeypatch.setattr(_programs.importlib.util, "find_spec", lambda _: object())
     program = _programs.Program(
         function="demo_agent",
         package="demo_pkg",
@@ -176,6 +177,25 @@ def test_untrusted_clone_does_not_hide_installed_distribution(tmp_path, monkeypa
     )
 
     assert program.is_installed()
+
+
+def test_stale_distribution_metadata_is_not_an_installed_program(monkeypatch):
+    from openprogram.programs import _programs
+
+    monkeypatch.setattr(
+        _programs.Program, "in_tree_pkg_dir", lambda _self, _base=None: None
+    )
+    monkeypatch.setattr(_programs, "_has_installed_distribution", lambda _: True)
+    monkeypatch.setattr(_programs.importlib.util, "find_spec", lambda _: None)
+    program = _programs.Program(
+        function="missing_agent",
+        package="missing_harness",
+        extra="missing",
+        repo="https://github.com/example/Missing-Harness",
+        summary="test",
+    )
+
+    assert not program.is_installed()
 
 
 def test_recorded_program_remains_available_after_runtime_relocation(

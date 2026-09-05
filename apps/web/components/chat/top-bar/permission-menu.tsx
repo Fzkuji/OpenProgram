@@ -67,7 +67,7 @@ const PERM_COLOR: Record<PermissionMode, string> = {
 
 export function PermissionBadge() {
   const { text } = useTranslation();
-  const { mode, options, set } = usePermissionMode();
+  const { mode, options, set, pending, error } = usePermissionMode();
   const [open, setOpen] = useState(false);
   const [bypassConfirm, setBypassConfirm] = useState(false);
   const iconRef = useRef<AnimatedNavIconHandle>(null);
@@ -98,6 +98,7 @@ export function PermissionBadge() {
   const label = current?.label ?? mode;
 
   function pick(value: PermissionMode) {
+    if (pending) return;
     // bypass 高危档：不直接切，先弹确认框。其余档直接切、关菜单。
     if (value === "bypass" && mode !== "bypass") {
       setBypassConfirm(true);
@@ -132,7 +133,7 @@ export function PermissionBadge() {
                 className="shrink-0 mr-[4px]"
                 aria-hidden="true"
               />
-              <span className="badge-details">{label}</span>
+              <span className="badge-details" aria-live="polite">{pending ? text("Updating permissions…", "正在更新权限…") : label}</span>
             </span>
           </PopoverTrigger>
         </HoverTip>
@@ -176,6 +177,7 @@ export function PermissionBadge() {
         </PopoverContent>
       </Popover>
 
+      {error ? <span role="alert" className="text-xs text-danger">{error}</span> : null}
       {bypassConfirm && chatPanel
         ? createPortal(
             <div
@@ -220,8 +222,8 @@ export function PermissionBadge() {
                   }}
                 >
                   {text(
-                    "Every tool runs without asking — including commands that can change or delete files. Only use this in a sandbox / disposable environment.",
-                    "所有工具都直接执行、不再询问——包括可改动或删除文件的命令。仅在沙箱 / 一次性环境里使用。",
+                    "Ordinary tools run without approval. Explicit rules, mandatory approvals, and sandbox restrictions still apply.",
+                    "普通工具不经审批直接执行。显式规则、强制审批和沙箱限制仍然生效。",
                   )}
                 </div>
                 <div

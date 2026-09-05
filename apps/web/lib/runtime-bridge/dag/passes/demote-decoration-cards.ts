@@ -41,8 +41,9 @@ export function _demoteDecorationCards(graph: GNode[]): void {
     // Caller kids are the EXECUTION subtree only. Reading
     // ``predecessor`` first made this map a duplicate of convKidsOf
     // (every chain node carries a predecessor), so the lane restamp
-    // dragged the whole downstream conversation along. Same rule
-    // apply-collapse.ts states: build caller kids from `caller` alone.
+    // dragged the whole downstream conversation along. Caller ownership
+    // is defined by `caller` alone; predecessor remains
+    // the conversation edge and must not duplicate this execution subtree.
     const ca = m.caller;
     if (ca && byId[ca]) {
       (callerKidsOf[ca] = callerKidsOf[ca] || []).push(m);

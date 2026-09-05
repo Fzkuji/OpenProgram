@@ -10,11 +10,18 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { fileURLToPath } from "node:url";
+const WEB_ROOT = new URL("../", import.meta.url);
 
 // Extensionless relative imports between source modules (Node needs the
 // extension; TypeScript and the Next build resolve them on their own).
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith("@/")) {
+      const base = new URL(specifier.slice(2), WEB_ROOT).href;
+      const file = `${base}.ts`;
+      const url = existsSync(fileURLToPath(file)) ? file : `${base}/index.ts`;
+      return { url, shortCircuit: true };
+    }
     if (specifier.startsWith(".") && !/\.[a-z]+$/.test(specifier)) {
       // Append to href, not to pathname: pathname is percent-encoded and
       // re-parsing it double-encodes any space in the repo path.
@@ -37,8 +44,8 @@ const globals =
 const { setSummaryExpanded, toggleSummaryExpanded } = globals;
 
 const nodesPath = new URL("../lib/runtime-bridge/dag/render/nodes.ts", import.meta.url);
-const shapesPath = new URL("../lib/runtime-bridge/dag/shapes.ts", import.meta.url);
-const interactionPath = new URL("../lib/runtime-bridge/dag/render/interaction.ts", import.meta.url);
+const shapesPath = new URL("../lib/runtime-bridge/dag/render/shapes.ts", import.meta.url);
+const interactionPath = new URL("../lib/runtime-bridge/dag/interaction/nodes.ts", import.meta.url);
 const inspectorPath = new URL("../lib/runtime-bridge/dag/render/inspector.ts", import.meta.url);
 const pipelinePath = new URL("../lib/runtime-bridge/dag/pipeline.ts", import.meta.url);
 
@@ -232,7 +239,7 @@ assert.match(
 );
 assert.match(
   pipelineSrc,
-  /_foldSummaries\(graph, headId\)[\s\S]{0,900}buildThreadModel\(graph\)/,
+  /_foldSummaries\(graph, headId\)[\s\S]{0,900}buildThreadModel\(graph(?:, headId)?\)/,
   "summaries fold BEFORE the thread pass so the two compose: a covered "
   + "turn is gone before threads attribute events to anchors",
 );

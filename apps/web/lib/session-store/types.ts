@@ -26,6 +26,10 @@ export interface FnParam {
   default?: string;
   placeholder?: string;
   hidden?: boolean;
+  /** User-settable but collapsed below the primary fields. Unlike hidden
+   *  internal runtime parameters, advanced fields are valid direct-call
+   *  arguments and appear in the FunctionForm's Advanced section. */
+  advanced?: boolean;
   multiline?: boolean;
   options?: string[];
   options_from?: string;
@@ -46,6 +50,10 @@ export interface ChatToolCall {
   tool: string;                // tool name
   input: string;               // raw args string
   result?: string;             // result text, once tool_result arrives
+  truncated?: boolean;
+  totalBytes?: number;
+  messageId?: string;
+  nodeId?: string;
   isError?: boolean;
   status: "running" | "done" | "error";
 }
@@ -58,6 +66,10 @@ export interface PendingDecision {
   /** 这条提问属于哪个会话 —— 卡片只在该会话的输入框里显示（输入框状态跟
    *  会话走，切到别的会话不该看到、更不该误答到别的会话上）。 */
   sessionId: string;
+  /** Exact canonical wait target.  A question card never infers these from a session. */
+  executionId: string;
+  waitGeneration: number;
+  expectedVersion: number;
   kind: "ask" | "confirm" | "approval" | "form" | "ask_many";
   prompt: string;
   options: string[];
@@ -95,12 +107,15 @@ export interface ComposerSettings {
   tools: boolean;
   webSearch: boolean;
   fast: boolean;
+  /** What Enter does while this session already has a running turn. */
+  runningMessageMode: "queue" | "steer";
   /** Permission mode for this session's tool calls: ask/acceptEdits/
    *  plan/auto/bypass. "" means inherit (backend resolves session →
    *  project → ask). */
   permission_mode: string;
   /** Last effective mode echoed by the backend (chat_ack / session_loaded). */
   effective_permission?: string;
+  permission_version?: number;
   /** Unattended: nobody watching → the agent's user-question tool is
    *  withheld so it never blocks on a prompt no one can answer. Web default
    *  is attended (false); toggled from the composer "+" menu, mirrored to
@@ -140,12 +155,14 @@ export interface ChatMsg {
   /** Tool calls made during this assistant turn, in emit order. */
   tools?: ChatToolCall[];
   status?: MessageStatus;
-  function?: string;           // if this was /run
+  function?: string;           // if this is a direct function run
   display?: "runtime" | "normal";
   /** Pass-through of metadata.source from the server so the client
    *  can distinguish "real user typed" vs internal synthetic turns
    *  (job_followup, merge_turn, agent_spawn). */
   source?: string;
+  /** User message injected into an already-running agent turn. */
+  steering?: boolean;
   /** Pass-through of the wire ``predecessor`` (conversation-chain
    *  edge) so we can correlate internal-source msgs (e.g.
    *  job_followup) and runtime/attach rows with the turn they hang
@@ -171,7 +188,7 @@ export interface ChatMsg {
   errorReason?: string;
   errorRetryable?: boolean;
   errorRetryAfterS?: number;
-  /** Execution tree captured with a `/run` result, rendered inside the
+  /** Execution tree captured with a function result, rendered inside the
    *  runtime block. */
   contextTree?: TreeNode;
   /** Provider usage for the runtime block footer. Opaque — passed
@@ -224,6 +241,9 @@ export interface ChatMsg {
       | "errored" | "cancelled";
     /** Cross-reference to the Job entity that owns this attach. */
     job_id?: string;
+    /** Canonical execution identity and optimistic-concurrency version. */
+    execution_id?: string;
+    status_version?: number;
   };
   /** Which agent produced this turn. Same-session multi-agent: a
    *  conversation can have N agents writing branches in the same
@@ -288,6 +308,10 @@ export interface AssistantBlock {
   tool_call_id?: string;
   input?: string;
   result?: string;
+  truncated?: boolean;
+  total_bytes?: number;
+  message_id?: string;
+  node_id?: string;
   is_error?: boolean;
 }
 
@@ -325,6 +349,7 @@ export interface RunningTask {
   func_name?: string;
   started_at?: number;
   execution_id?: string;
+  status_version?: number;
   cancelling?: boolean;
 }
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import json
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Any, Literal, Optional
@@ -53,6 +54,10 @@ _VALID_TRANSITIONS: frozenset[tuple[JobStatus, JobStatus]] = frozenset({
     (JobStatus.PENDING, JobStatus.CANCELLED),
     (JobStatus.PENDING, JobStatus.ERRORED),
     (JobStatus.QUEUED, JobStatus.RUNNING),
+    # Canonical executions no longer mirror their running transition into
+    # JobStore. The projection may therefore advance directly from queued to
+    # the canonical terminal outcome.
+    (JobStatus.QUEUED, JobStatus.COMPLETED),
     (JobStatus.QUEUED, JobStatus.CANCELLED),
     (JobStatus.QUEUED, JobStatus.ERRORED),
     (JobStatus.RUNNING, JobStatus.COMPLETED),
@@ -203,6 +208,22 @@ class Job:
     effective_limits: Optional[dict[str, Any]] = None
     resolved_limits_snapshot: Optional[dict[str, Any]] = None
     reason_code: Optional[str] = None
+    # Frozen admission project binding used by public projections/auth.
+    project_id: Optional[str] = None
+    source: str = "agent_spawn"
+    profile_snapshot: Optional[dict[str, Any]] = None
+    response_format: Optional[dict[str, Any]] = None
+
+    def __post_init__(self) -> None:
+        # These execution inputs must survive jobs.json and must not retain
+        # mutable containers owned by the submitting thread.
+        for name in ("profile_snapshot", "response_format", "tools_override"):
+            value = getattr(self, name)
+            if value is not None:
+                expected = list if name == "tools_override" else dict
+                if not isinstance(value, expected):
+                    raise ValueError(f"{name} must be a {expected.__name__}")
+                setattr(self, name, json.loads(json.dumps(value, allow_nan=False)))
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -228,4 +249,22 @@ __all__ = [
     "is_terminal",
     "can_transition",
     "mint_job_id",
+    "ExecutionSnapshot",
+    "EventCursor",
+    "JobResourceDTO",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy aliases for the canonical public execution DTOs."""
+    if name in {"ExecutionSnapshot", "EventCursor", "JobResourceDTO"}:
+        from openprogram.execution.model import (
+            EventCursor, ExecutionSnapshot, JobResourceDTO,
+        )
+
+        return {
+            "ExecutionSnapshot": ExecutionSnapshot,
+            "EventCursor": EventCursor,
+            "JobResourceDTO": JobResourceDTO,
+        }[name]
+    raise AttributeError(name)

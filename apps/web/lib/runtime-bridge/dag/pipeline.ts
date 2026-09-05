@@ -31,18 +31,19 @@
 import { type GNode } from "./types";
 import { runtimeState } from "../state";
 import { computeGeometry } from "./layout/geometry";
-import { _branchColor, _svg } from "./shapes";
-import { attachCanvas, detachCanvas } from "./canvas";
+import { _branchColor, _svg } from "./render/shapes";
+import { attachCanvas, detachCanvas } from "./interaction/canvas";
 import {
   hideTooltip as _hideTooltip,
   resetTooltip as _resetTooltip,
   showTooltip as _showTooltip,
-} from "./tooltip";
+} from "./interaction/tooltip";
 import { _collapseRuntimePairs } from "./passes/collapse-runtime-pairs";
 import { _mergeRuns } from "./passes/merge-runs";
 import { _demoteDecorationCards } from "./passes/demote-decoration-cards";
 import { _foldSummaries } from "./passes/fold-summaries";
 import { buildThreadModel } from "./passes/thread";
+import { projectTopPrograms } from "./passes/project-programs";
 import { _buildTree } from "./layout/build-tree";
 import { _assignDepth } from "./layout/depth";
 import { _assignLanes, _headAncestors } from "./layout/assign-lanes";
@@ -216,6 +217,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   headId = collapsedR.headId;
 
   _demoteDecorationCards(graph);
+  graph = projectTopPrograms(graph);
 
   // Stable leafOfNode from PRE-collapse graph for colouring. Collapsing
   // removes a leaf, which would otherwise make the spawn node itself
@@ -244,7 +246,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
       setThreadSession(sid);
     }
   }
-  const threadModel = buildThreadModel(graph);
+  const threadModel = buildThreadModel(graph, headId);
   graph = threadModel.visible;
 
   // HEAD may point at a reply that merged into its anchor (a followup,
@@ -377,7 +379,7 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   const geom = computeGeometry(tree.byId, threadModel);
 
   // The SVG fills the pane; everything is drawn inside ``world``, which
-  // carries the user's pan and zoom (``./canvas.ts``). Nothing here is
+  // carries the user's pan and zoom (``./interaction/canvas.ts``). Nothing here is
   // sized to the content — an infinite canvas has no content size, and
   // the graph is reached by moving the camera, not by scrolling a box.
   const svg = _svg("svg", { class: "history-svg" });

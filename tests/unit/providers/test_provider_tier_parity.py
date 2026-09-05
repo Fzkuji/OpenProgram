@@ -244,7 +244,7 @@ def test_manual_row_disable_keeps_row_and_reenables(mem_cfg, _offline, monkeypat
     assert "m1" in listing._enabled_ids(mem_cfg["acme"])
 
 
-def test_disabled_manual_row_excluded_from_runtime_registry(mem_cfg):
+def test_disabled_manual_row_excluded_from_runtime_registry(mem_cfg, _offline):
     from openprogram.providers.enabled_models import _build_model_from_row  # noqa: F401
     import openprogram.providers.enabled_models as mg
     import openprogram.providers._config_read as cr

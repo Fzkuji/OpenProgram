@@ -118,7 +118,7 @@
      内容高度后顶底 padding 严格对称、所见即所得。内容超长仍可内部滚动。 */
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   /* Keep the body scrollable but hide the scrollbar chrome — same
      treatment as `.slashMenu` / `.scroll-overlay` elsewhere in the app. */
   scrollbar-width: none; /* Firefox */
@@ -211,13 +211,13 @@
   font-size: var(--fs-base);
 }
 .field:has(.textareaWrap) {
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   min-height: 0;
 }
 .textareaWrap {
   position: relative;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 48px;
   display: flex;
   flex-direction: column;
 }
@@ -367,4 +367,23 @@
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   padding: 4px 0;
+}
+
+.advanced {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.advancedSummary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  user-select: none;
+}
+.advancedFields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
 }

@@ -1,6 +1,6 @@
 # 执行身份、权限与沙箱
 
-权限模型现已合并进唯一权威设计：[执行权限与沙箱设计](sandbox-architecture.html)。
+权限模型现已合并进唯一权威设计：[执行权限与沙箱设计](sandbox-architecture.zh.html)。
 
 该设计将三个合同分开：
 

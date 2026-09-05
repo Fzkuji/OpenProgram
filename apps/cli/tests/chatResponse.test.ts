@@ -91,10 +91,12 @@ describe('handleChatResponse', () => {
 describe('handleRunningTaskEnvelope', () => {
   it('does not replace the focused execution with another session', () => {
     const executionIdRef = { current: 'exec-a' };
+    const executionVersionRef = { current: 1 };
     const setStreaming = vi.fn();
     const ctx = {
       conversationId: 'session-a',
       executionIdRef,
+      executionVersionRef,
       setStreaming,
     } as unknown as WsEventsCtx;
 
@@ -112,6 +114,26 @@ describe('handleRunningTaskEnvelope', () => {
     }, ctx);
 
     expect(executionIdRef.current).toBe('exec-a-next');
+    expect(executionVersionRef.current).toBe(1);
     expect(setStreaming).toHaveBeenCalledOnce();
+  });
+
+  it('retains the latest exact version from chat and running frames', () => {
+    const executionIdRef = { current: undefined as string | undefined };
+    const executionVersionRef = { current: undefined as number | undefined };
+    const ctx = {
+      conversationId: 'session-a',
+      executionIdRef,
+      executionVersionRef,
+      setStreaming: vi.fn(),
+    } as unknown as WsEventsCtx;
+
+    handleRunningTaskEnvelope({
+      type: 'running_task',
+      data: { session_id: 'session-a', execution_id: 'exec-a', status_version: 7 },
+    }, ctx);
+
+    expect(executionIdRef.current).toBe('exec-a');
+    expect(executionVersionRef.current).toBe(7);
   });
 });

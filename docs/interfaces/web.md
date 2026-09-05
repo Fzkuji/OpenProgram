@@ -1,5 +1,7 @@
 # Web UI
 
+See [tool permission modes and live changes](../capabilities/permissions.md) for approval behavior and changes during a task.
+
 The browser interface covers all of OpenProgram's daily operations: chatting, managing functions and programs, configuring providers and MCP, browsing memory and projects. This page walks through each page by route and describes the chat page in detail.
 
 Start it:
@@ -19,6 +21,10 @@ Open `http://localhost:18100` in a browser. The page is a static export served b
 ### Message streaming
 
 Replies stream in over WebSocket: a placeholder reply appears immediately after sending, and text, thinking, and tool-call blocks render incrementally in arrival order. When several agents write into one session, each assistant message carries the producing agent's avatar and name.
+
+### Stopping and reconnecting
+
+Use **Cancel execution** in the composer to stop the current execution. Refreshing or reopening a session restores the active execution and its cancellation controls. An execution can remain active while no new output arrives; silence alone does not end it. Completed executions do not remain active because of an obsolete worker registration.
 
 ### Collapsible thinking
 

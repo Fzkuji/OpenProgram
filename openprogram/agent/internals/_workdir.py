@@ -81,6 +81,47 @@ def project_path_missing(session_id: str) -> Optional[str]:
     return None if p.is_dir() else proj.path
 
 
+def runtime_location_for(
+    session_id: str, *, use_context: bool = True,
+) -> dict[str, object]:
+    """Resolve the exact project/worktree binding used by one turn.
+
+    This is metadata for the continuation contract, not a fallback policy.
+    The returned paths remain byte-for-byte strings so a changed project or
+    worktree cannot be accepted under the same name.
+    """
+    from openprogram.paths import get_default_workdir
+    from openprogram.worktree.context import current_worktree_path
+    from openprogram.worktree.store import find_active_for_session
+
+    project = _main_project(session_id)
+    worktree = find_active_for_session(session_id) if session_id else None
+    bound_worktree = current_worktree_path() if use_context else None
+    if bound_worktree is None:
+        if worktree is not None:
+            bound_worktree = worktree.worktree_path
+        elif project is not None and project.path and Path(project.path).is_dir():
+            bound_worktree = project.path
+        else:
+            bound_worktree = str(get_default_workdir())
+    return {
+        "workdir": str(bound_worktree),
+        "project": None if project is None else {
+            "id": project.id,
+            "path": project.path,
+            "status": project.status,
+        },
+        "worktree": None if worktree is None else {
+            "id": worktree.id,
+            "source_repo": worktree.source_repo,
+            "worktree_path": worktree.worktree_path,
+            "branch_name": worktree.branch_name,
+            "base_ref": worktree.base_ref,
+            "status": worktree.status.value,
+        },
+    }
+
+
 def apply_default_workdir(runtime, session_id: str) -> Optional[Path]:
     """Point ``runtime`` at this session's default cwd.
 

@@ -85,9 +85,9 @@ def _resolve_cli_entry() -> Path:
     run the commands manually; "I just ran openprogram and nothing
     happened" was the most common first-run report.
 
-    Raises ``FileNotFoundError`` if ``apps/cli/`` is missing (e.g. wheel
-    install without the source tree) or if the build failed in a way
-    that didn't produce the expected output.
+    Wheel installs use the self-contained ``openprogram_cli/dist/index.mjs``
+    bundle without npm or a source checkout. Missing release assets or a
+    failed source build raise ``FileNotFoundError``.
     """
     runtime_root = _managed_runtime_root()
     if runtime_root is not None:
@@ -108,6 +108,9 @@ def _resolve_cli_entry() -> Path:
         return candidate
 
     if not cli_dir.exists():
+        bundled = Path(__file__).resolve().parents[1] / "dist" / "index.mjs"
+        if bundled.is_file():
+            return bundled
         raise FileNotFoundError(
             f"Ink TUI source missing: no {cli_dir} directory. "
             "Source checkouts prepare it with `uv sync`; packaged runtimes "
@@ -513,10 +516,9 @@ def run_ink_tui(
 ) -> None:
     """Connect the Node TUI to the live worker.
 
-    The agent / session_id / rt arguments are kept for signature compatibility
-    with the old Textual entry; the Node front-end discovers the default
-    agent over the ws ``list_agents`` action and picks its own session_id when
-    the user sends the first message.
+    The Node front-end discovers the default agent over WebSocket. A supplied
+    session_id is passed through OPENPROGRAM_CONV to restore that session;
+    otherwise the first message creates a session.
     """
     if not _has_interactive_tui_stdio():
         raise RuntimeError(

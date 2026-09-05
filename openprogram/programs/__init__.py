@@ -165,10 +165,7 @@ DEFERRED_DEFAULT_TOOLS: set = {
 RESIDENT_TOOLS: set = (
     (set(DEFAULT_TOOLS) - DEFERRED_DEFAULT_TOOLS)
     | {"web_use", "tool_search"}
-    # `agent` 是常驻的，而它自己的返回文本会写 "Call job_output(job_id=…) to
-    # retrieve result, or job_stop(job_id) to cancel"。这两个 defer 掉，模型
-    # 照着提示调用就撞 InputValidationError，得先 tool_search 才能接上，白费一轮。
-    | {"job_output", "job_stop"}
+    | {"job_output"}
 )
 
 
@@ -343,6 +340,22 @@ def _resolve_folder_toolset(folder_name: str) -> list[str] | None:
 
 # ---------------------------------------------------------------------------
 
+_VERIFIER_READ_IMPLEMENTATIONS = tuple(
+    (name, tool, tool.execute)
+    for name in ("read", "glob", "grep", "list", "self_update_observe")
+    for tool in (_get_agent_tool(name),)
+    if tool is not None
+)
+
+
+def _is_verifier_read_tool(tool: AgentTool) -> bool:
+    # Pin the callable too: the public registry's AgentTool objects are mutable.
+    return any(
+        tool.name == name and tool is registered and tool.execute is execute
+        for name, registered, execute in _VERIFIER_READ_IMPLEMENTATIONS
+    )
+
+
 def agent_tools(
     names: list[str] | None = None,
     *,
@@ -390,6 +403,9 @@ def agent_tools(
     if names is None and toolset is None:
         names = DEFAULT_TOOLS
     picked = _filter_agent_tools(names=names, toolset=toolset, source=source)
+    if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
+        picked = [t for t in picked if _is_verifier_read_tool(t)
+                  and (source == "self_update_verify" or t.name != "self_update_observe")]
     # Layer 2 — exposure. Anything registered with ``expose=False``
     # never reaches the LLM, no matter what preset, allow, or check_fn
     # says. This is the cascade's foundation: every later filter
@@ -452,6 +468,10 @@ def apply_tool_policy(
     # ``list`` builtin is shadowed by the ``.list`` subpackage import
     # above; use slice copy instead of ``list(...)``.
     out = [t for t in tools]
+    if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
+        # Ad-hoc tools are not trusted just because they reuse a read name.
+        out = [t for t in out if _is_verifier_read_tool(t)
+               and (source == "self_update_verify" or t.name != "self_update_observe")]
     # Layer 2 — same exposure whitelist that :func:`agent_tools`
     # applies. Anything not on the list never reaches the LLM.
     # Skipped for caller-supplied ad-hoc tools (exposure_filter=False).

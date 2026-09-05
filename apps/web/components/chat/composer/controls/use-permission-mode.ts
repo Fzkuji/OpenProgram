@@ -2,15 +2,18 @@
 
 /**
  * Permission-mode selector state (per-session, persisted in the store's
- * session scope's settings). Six fixed modes — no provider polling like thinking.
- * See docs/design/runtime/permission-model.md §2.1 / §4.5.
+ * session scope's settings). Five selectable modes; inherited defaults resolve server-side.
+ * See docs/capabilities/permissions.md and agent/permissions/state.py.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   useBoundComposerSettings,
   useBoundSetComposerSettings,
 } from "../state/use-composer-settings";
+import { wsRequest } from "@/lib/net/ws-request";
+import { useSessionScope } from "@/lib/session-store/session-scope";
+import { permissionSnapshotPatch } from "@/lib/session-store/permission-state";
 import { useTranslation } from "@/lib/i18n";
 
 export type PermissionMode =
@@ -39,8 +42,8 @@ const MODE_LABELS: {
     en: "Bypass permissions",
     zh: "跳过审批",
     key: "5",
-    enDesc: "No approval prompts; configured sandbox limits still apply.",
-    zhDesc: "不弹审批；已配置的沙箱限制仍然生效。",
+    enDesc: "Skips ordinary approvals; explicit rules and sandbox restrictions still apply.",
+    zhDesc: "跳过普通审批；显式规则和沙箱限制仍然生效。",
   },
 ];
 
@@ -48,6 +51,8 @@ const DEFAULT_MODE: PermissionMode = "ask";
 
 export interface PermissionModeHook {
   mode: PermissionMode;
+  pending: boolean;
+  error: string | null;
   options: PermissionModeOption[];
   menuOpen: boolean;
   setMenuOpen: (v: boolean | ((prev: boolean) => boolean)) => void;
@@ -57,6 +62,13 @@ export interface PermissionModeHook {
 export function usePermissionMode(): PermissionModeHook {
   // Bound to this composer subtree's session scope.
   const settings = useBoundComposerSettings();
+  const sid = useSessionScope((s) => s.sid);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const known = useRef(false);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const setComposerSettings = useBoundSetComposerSettings();
   const { text } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -71,12 +83,57 @@ export function usePermissionMode(): PermissionModeHook {
     key: m.key,
     description: m.enDesc ? text(m.enDesc, m.zhDesc ?? m.enDesc) : undefined,
   }));
-  const set = useCallback(
-    (m: PermissionMode) => setComposerSettings({
-      permission_mode: m,
-      effective_permission: m,
-    }),
-    [setComposerSettings],
-  );
-  return { mode, options, menuOpen, setMenuOpen, set };
+  const apply = useCallback((data: { mode?: unknown; version?: unknown } | null) => {
+    if (!data) return;
+    const patch = permissionSnapshotPatch(settingsRef.current, data);
+    if (patch) setComposerSettings(patch);
+  }, [setComposerSettings]);
+  useEffect(() => {
+    let active = true;
+    generation.current += 1;
+    known.current = false;
+    setError(null);
+    setPending(false);
+    void wsRequest<{ mode?: unknown; version?: unknown; error?: string }>(
+      "set_permission", { session_id: sid }, "permission_changed", { requestId: true },
+    ).then((data) => {
+      if (!active) return;
+      if (data && !data.error) { known.current = true; apply(data); }
+    });
+    return () => { active = false; };
+  }, [sid, apply]);
+  const set = useCallback((m: PermissionMode) => {
+    if (pending) return;
+    setError(null);
+    setPending(true);
+    const operationGeneration = generation.current;
+    const expectedVersion = settingsRef.current.permission_version;
+    void (async () => {
+      const current = await wsRequest<{ mode?: unknown; version?: number; error?: string }>(
+        "set_permission", { session_id: sid }, "permission_changed", { requestId: true },
+      );
+      if (operationGeneration !== generation.current) return;
+      if (current?.error === "session_not_found") {
+        setComposerSettings({ permission_mode: m, effective_permission: m });
+        return;
+      }
+      if (!current || current.error || current.version === undefined) {
+        setError(text("Could not read permission settings. Reconnect and retry.", "无法读取权限设置，请重新连接后重试。"));
+        return;
+      }
+      known.current = true;
+      const result = await wsRequest<{ mode?: unknown; version?: unknown; error?: string }>(
+        "set_permission", { session_id: sid, mode: m, expected_version: expectedVersion ?? current.version },
+        "permission_changed", { requestId: true },
+      );
+      if (operationGeneration !== generation.current) return;
+      apply(result ?? current);
+      if (!result || result.error) setError(result?.error === "permission_version_conflict"
+        ? text("Another window changed permissions; check the current mode and retry.", "另一个窗口已更改权限，请检查当前模式后重试。")
+        : text("Permission update was not confirmed. Reconnect and retry.", "权限更新尚未确认，请重新连接后重试。"));
+    })().finally(() => {
+      if (operationGeneration === generation.current) setPending(false);
+    });
+  }, [pending, sid, setComposerSettings, apply, text]);
+  return { mode, options, menuOpen, setMenuOpen, set, pending, error };
 }

@@ -31,11 +31,11 @@ import uuid
 from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 _log = logging.getLogger(__name__)
 
-from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM
+from openprogram.context.nodes import Call, ROLE_CODE, ROLE_USER, ROLE_LLM
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
 # tests covering edge cases (sub-call routing, extra_json roundtrip) still hold.
 from ._msg_adapter import (
@@ -905,6 +905,50 @@ class SessionStore:
             self._update_index_entry(session_id, **index_fields)
             self._save_index()
 
+    def compare_and_set_session_dict(
+        self,
+        session_id: str,
+        field: str,
+        *,
+        version: int,
+        value: dict[str, Any],
+    ) -> bool:
+        """Atomically replace one versioned session dictionary."""
+        return self.update_session_dict(
+            session_id, field,
+            lambda current: value if int(current.get("version") or 0) == int(version) else None,
+        ) is not None
+
+    def update_session_dict(
+        self,
+        session_id: str,
+        field: str,
+        update: Callable[[dict[str, Any]], dict[str, Any] | None],
+    ) -> dict[str, Any] | None:
+        """Read and transform a dictionary under the session's write lock.
+
+        The callback must not perform I/O or re-enter the store. Returning
+        None rejects the update without changing durable or cached state.
+        """
+        pair = self._open(session_id, create_if_missing=True)
+        if pair is None:
+            return None
+        git, idx = pair
+        with self._head_file_lock(git):
+            with idx._persist_lock:
+                meta = git.read_meta()
+                current = meta.get(field)
+                value = update(current if isinstance(current, dict) else {})
+                if value is None:
+                    return None
+                meta[field] = dict(value)
+                with idx._lock:
+                    idx.meta.clear()
+                    idx.meta.update(meta)
+                    idx.head_id = meta.get("head_id")
+                git.write_meta(meta)
+        return value
+
     def get_session(self, session_id: str) -> Optional[dict[str, Any]]:
         pair = self._open(session_id)
         if pair is None:
@@ -1135,6 +1179,8 @@ class SessionStore:
         node = idx.nodes_by_id.get(node_id)
         if node is None:
             return
+        old_predecessor = node.predecessor or None
+        old_caller = node.caller or None
         metadata = fields.pop("metadata", {})
         for key, value in fields.items():
             setattr(node, key, value)
@@ -1143,6 +1189,11 @@ class SessionStore:
         if isinstance(metadata, dict):
             current = node.metadata if isinstance(node.metadata, dict) else {}
             node.metadata = {**current, **metadata}
+        idx.reindex_edges(
+            node_id,
+            old_predecessor=old_predecessor,
+            old_caller=old_caller,
+        )
         self._rewrite_history_node(git, node)
 
     def merge_node_metadata_batch(
@@ -1410,92 +1461,47 @@ class SessionStore:
         # A branch tip is a conv node (no caller) with no conv-child.
         tips: list[dict[str, Any]] = []
         named = (idx.meta.get("branches") or {})
-        # Identify the session's "main" tip — the leaf reached by
-        # walking the earliest conv-root down its kids[0] primary
-        # path. This matches the DAG lane-0 trunk exactly, so the
-        # branch the user visually identifies as "the straight line
-        # down the middle" gets the "main" label.
-        roots = [
-            n for n in idx.all_nodes()
-            if (not n.caller or n.caller == "ROOT")
-            and (_node_conv_predecessor(n) or "ROOT") == "ROOT"
-            and (n.metadata or {}).get("display") != "root"
-            and not _is_spawn_root(n.metadata or {})
-        ]
-        # Pure predecessor-edge walk (dag/overview.md): from
-        # the earliest root, follow the primary (first-registered) conv
-        # child until the chain ends. Spawn branch roots never appear
-        # in ``children_by_predecessor`` (their predecessor is None),
-        # so no spawn/task special-casing is needed.
-        main_tip_id: Optional[str] = None
-        if roots:
-            cur = min(roots, key=lambda n: n.created_at).id
-            seen: set[str] = set()
-            while cur not in seen:
-                seen.add(cur)
-                kids = idx.children_by_predecessor.get(cur, [])
-                if not kids:
-                    break
-                cur = kids[0]
-            main_tip_id = cur
 
-        merged = self.merged_heads(session_id)
+        def _top_program_run(node: Call) -> bool:
+            """A caller-less Program is a conversation-layer action."""
+            md = node.metadata or {}
+            return (
+                node.role == ROLE_CODE
+                and (_node_caller(node) or "ROOT") == "ROOT"
+                and bool(node.name or md.get("function"))
+            )
 
-        def _conv_child(kid_id: str) -> bool:
-            """A child that CONTINUES the conversation. Execution-layer
-            rows (attach pointers, runtime nodes, sub-call replies) and
-            context machinery register under ``children_by_predecessor``
-            too, but hanging one off a turn does not stop that turn
-            being the branch tip — counting them dropped a branch from
-            the panel the moment its head spawned a task."""
-            ch = idx.nodes_by_id.get(kid_id)
-            if ch is None:
-                return False
-            if ch.role not in (ROLE_USER, ROLE_LLM):
-                return False
-            md = ch.metadata or {}
+        def _conversation_node(child: Call) -> bool:
+            """Whether a node participates in the predecessor conversation."""
+            md = child.metadata or {}
             if md.get("display") in ("root", "runtime"):
                 return False
             if md.get("function") == "attach":
                 return False
-            if str(ch.name or "").startswith("context/"):
+            if str(child.name or "").startswith("context/"):
                 return False
-            c = _node_caller(ch)
-            if c and c != "ROOT":
-                cn = idx.nodes_by_id.get(c)
-                if cn is not None and cn.role not in (ROLE_USER, ROLE_LLM):
-                    return False
-            return True
-
-        for node in idx.all_nodes():
-            # Skip sub-call nodes — anything living INSIDE a function
-            # run. Two shapes: a tool/code node with a real caller
-            # (nested sub-call), and a user/llm node whose caller is a
-            # code node (the LLM replies a run makes internally). The
-            # old user/llm exemption assumed chat-world callers (a conv
-            # predecessor or ROOT); with function runs it surfaced every
-            # internal LLM leaf as a phantom "branch" in the panel.
-            caller = _node_caller(node)
+            if _top_program_run(child):
+                return True
+            if child.role not in (ROLE_USER, ROLE_LLM):
+                return False
+            caller = _node_caller(child)
             if caller and caller != "ROOT":
-                if node.role not in (ROLE_USER, ROLE_LLM):
-                    continue
                 caller_node = idx.nodes_by_id.get(caller)
                 if caller_node is not None and caller_node.role not in (
                     ROLE_USER, ROLE_LLM,
                 ):
-                    continue
-            if (node.metadata or {}).get("display") == "root":
-                continue
-            # ``context/*`` nodes (system_prompt, summary) are context
-            # machinery, never a branch you can check out — dag/overview.md
-            # §7 reserves the name and hides them from the chat views.
-            if str(node.name or "").startswith("context/"):
-                continue
-            # Attach-pointer rows ride the assistant role but are
-            # side-calls, not real branch tips. Old writes didn't
-            # populate Call.caller so the ``node.caller`` check
-            # above misses them — fall back to metadata.function.
-            if (node.metadata or {}).get("function") == "attach":
+                    return False
+            return True
+
+        def _conv_child(kid_id: str) -> bool:
+            """Whether this predecessor child continues the conversation."""
+            child = idx.nodes_by_id.get(kid_id)
+            return child is not None and _conversation_node(child)
+
+        merged = self.merged_heads(session_id)
+
+        for node in idx.all_nodes():
+            if not _conversation_node(node):
                 continue
             kids = idx.children_by_predecessor.get(node.id, [])
             if any(_conv_child(k) for k in kids):
@@ -1517,26 +1523,6 @@ class SessionStore:
                 "updated_at": (label or {}).get("updated_at") if isinstance(label, dict) else node.created_at,
                 "archived": bool(label.get("archived")) if isinstance(label, dict) else False,
             })
-        # Main_tip may have children (the /task spawn it stopped at), so
-        # the leaf-only loop above won't include it. Push it in by hand so
-        # the right-rail Branches panel still lists the trunk you can
-        # checkout to "go back" to — but with its own name (or None →
-        # short-hex), no "main" special-case. See branch-naming.md 决策 3.
-        if main_tip_id and not any(t["head_msg_id"] == main_tip_id for t in tips):
-            main_node = idx.nodes_by_id.get(main_tip_id)
-            if main_node:
-                label = named.get(main_tip_id)
-                name = (
-                    label.get("name") if isinstance(label, dict)
-                    else label
-                )
-                tips.append({
-                    "head_msg_id": main_tip_id,
-                    "name": name,
-                    "created_at": main_node.created_at,
-                    "updated_at": main_node.created_at,
-                    "archived": bool(label.get("archived")) if isinstance(label, dict) else False,
-                })
         # Compaction no longer clones the kept tail (§8): a summary node
         # splices into the chain and the tail keeps its own ids, so the
         # branch tips need no translation. A summary node that ends up a

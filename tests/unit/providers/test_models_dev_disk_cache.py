@@ -6,20 +6,90 @@ from openprogram.providers.sources import models_dev
 
 
 def _reset_mem_cache():
-    models_dev._cache["data"] = None
-    models_dev._cache["fetched_at"] = 0.0
+    models_dev._cache.update({
+        "data": None,
+        "fetched_at": 0.0,
+        "last_attempt_at": 0.0,
+        "refreshing": False,
+    })
 
 
-def test_fetch_failure_falls_back_to_disk_cache(tmp_path, monkeypatch):
+def test_expired_disk_cache_returns_stale_and_schedules_refresh(
+    tmp_path, monkeypatch
+):
     cache = tmp_path / "cache" / "models_dev.json"
     cache.parent.mkdir(parents=True)
     cache.write_text(json.dumps({"openai": {"name": "OpenAI", "models": {"gpt": {}}}}))
     monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
-    monkeypatch.setattr(models_dev, "_CATALOGUE_URL", "http://127.0.0.1:1/nope")
+    request_called = False
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            nonlocal request_called
+            request_called = True
+            raise AssertionError("stale load must not make a synchronous request")
+
+    scheduled = []
+    monkeypatch.setattr(models_dev.safe_http, "safe_client", lambda *_a, **_k: _Client())
+    monkeypatch.setattr(
+        models_dev,
+        "_start_background_refresh",
+        lambda: scheduled.append(models_dev._refresh_cache),
+        raising=False,
+    )
     _reset_mem_cache()
     try:
         data = models_dev._load()
         assert "openai" in data
+        assert request_called is False
+        assert len(scheduled) == 1
+        attempt_started = models_dev._cache["last_attempt_at"]
+        scheduled[0]()
+        assert request_called is True
+        assert models_dev._cache["data"] == data
+        assert models_dev._cache["refreshing"] is False
+        assert models_dev._cache["last_attempt_at"] >= attempt_started
+    finally:
+        _reset_mem_cache()
+
+
+def test_cold_start_fetches_with_three_second_timeout(tmp_path, monkeypatch):
+    cache = tmp_path / "cache" / "models_dev.json"
+    monkeypatch.setattr(models_dev, "_disk_cache_path", lambda: cache)
+    calls = []
+
+    class _Resp:
+        headers = {"content-type": "application/json"}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"openai": {"name": "OpenAI", "models": {}}}
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return _Resp()
+
+    monkeypatch.setattr(models_dev.safe_http, "safe_client", lambda *_a, **_k: _Client())
+    _reset_mem_cache()
+    try:
+        data = models_dev._load()
+        assert "openai" in data
+        assert calls == [(models_dev._CATALOGUE_URL, {"timeout": 3})]
     finally:
         _reset_mem_cache()
 

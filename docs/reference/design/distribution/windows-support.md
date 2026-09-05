@@ -61,6 +61,23 @@ path-based fallback when CPython does not expose descriptor-relative directory
 operations. The fallback rejects symlinks and junction/reparse traversal,
 revalidates parent identity, and uses binary and atomic file operations.
 
+Process liveness and creation-time identity use read-only native Windows
+queries. Signal zero is never used on Windows; it is not a portable existence
+probe. File-operation journals use the shared cross-process lock adapter.
+Forward apply and rollback keep distinct guard files so Windows rename rules
+cannot turn a recoverable failure into a stranded transaction.
+
+Project-file queries use directory capabilities from the compatibility seam.
+Workspace review reads Git tree/index metadata and immutable objects in bounded
+batches, rather than starting Git for each changed file. The regression contract
+limits Git invocation count independently of the number of changed files.
+
+Self-update journal reads follow the same inherited-ACL Windows contract as the
+rest of the runtime. This makes state projection and recovery records portable;
+it does not establish support for the separate macOS-specific controller and
+installer pipeline, which still needs a Windows implementation and native
+end-to-end acceptance before it can be advertised as available.
+
 Local shell tools use Git Bash when it is installed and otherwise fall back to
 the Windows PowerShell included with the operating system; they never depend on
 `cmd.exe` parsing Bash-oriented commands. Background shell and process-tree

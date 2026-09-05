@@ -102,3 +102,24 @@ test("Agent and user settings share the picker and its style registry", () => {
   assert.equal(new Set(pickerStyleIds).size, pickerStyleIds.length);
   assert.deepEqual(new Set(pickerStyleIds), new Set(runtimeStyleIds));
 });
+
+test("Thumbs omits its generated outer background instead of cropping artwork", () => {
+  const avatar = readFileSync(
+    new URL("../components/avatar/Avatar.tsx", import.meta.url),
+    "utf8",
+  );
+  const chatCss = readFileSync(
+    new URL("../app/styles/chat/bubbles.css", import.meta.url),
+    "utf8",
+  );
+  const footerCss = readFileSync(
+    new URL("../components/user-menu-footer.module.css", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(avatar, /backgroundColor:\s*style === "thumbs" \? \["transparent"\]/);
+  assert.match(chatCss, /\.message-avatar\.user-avatar\s*\{[^}]*background:\s*transparent/s);
+  assert.match(footerCss, /\.avatar\s*\{[^}]*background:\s*transparent/s);
+  assert.doesNotMatch(chatCss, /\.user-avatar[^}]*transform:/s);
+  assert.doesNotMatch(footerCss, /\.avatar[^}]*transform:/s);
+});

@@ -254,7 +254,12 @@ assert.equal(useSendQueue.getState().queues[A], undefined);
 /* --- 11. stop-now drains the queue at 0ms (Claude Code) ----------- */
 sent.length = 0;
 useSendQueue.setState({ queues: {} });
-run(A);
+store.setRunningTaskFor(A, {
+  session_id: A,
+  msg_id: "m",
+  execution_id: "m_reply",
+  status_version: 7,
+});
 const stoppedId = enqueueMessage(A, draft("send-after-stop"));
 promoteToHead(A, stoppedId);
 const stopFrames = [];
@@ -266,6 +271,8 @@ await settle();
 assert.equal(stopFrames.length, 1, "cancel is sent immediately");
 assert.equal(stopFrames[0].action, "execution.cancel");
 assert.equal(stopFrames[0].execution_id, "m_reply");
+assert.equal(typeof stopFrames[0].command_id, "string");
+assert.equal(stopFrames[0].expected_version, 7);
 assert.deepEqual(
   sent.map((m) => m.text),
   ["send-after-stop"],
@@ -290,6 +297,83 @@ await settle();
 assert.ok(
   useSessionStore.getState().runningTasks[A],
   "clear naming the interrupted turn must not idle the new turn",
+);
+
+/* --- 12. an in-flight steer acknowledgement blocks normal drain ---- */
+sent.length = 0;
+useSendQueue.setState({ queues: {} });
+idle(A);
+const steerId = enqueueMessage(A, draft("inject-me"));
+useSendQueue.getState().setInjecting(A, steerId, true);
+useSendQueue.getState().drain(A);
+assert.equal(sent.length, 0, "an injecting row must not also send as a normal turn");
+useSendQueue.getState().setInjecting(A, steerId, false);
+useSendQueue.getState().drain(A);
+assert.deepEqual(
+  sent.map((m) => m.text),
+  ["inject-me"],
+  "not_running can release the same row into ordinary queue semantics",
+);
+
+/* --- 13. steer ACK accepts or releases the retained queue row ------- */
+const wsListeners = new Set();
+let steerResult = "accepted";
+setSocket({
+  readyState: 1,
+  addEventListener: (type, listener) => {
+    if (type === "message") wsListeners.add(listener);
+  },
+  removeEventListener: (type, listener) => {
+    if (type === "message") wsListeners.delete(listener);
+  },
+  send: (payload) => {
+    const frame = JSON.parse(payload);
+    if (frame.action !== "steer") {
+      sent.push(frame);
+      return;
+    }
+    queueMicrotask(() => {
+      const event = {
+        data: JSON.stringify({
+          type: "steer_ack",
+          data: {
+            session_id: frame.session_id,
+            request_id: frame.request_id,
+            result: steerResult,
+          },
+        }),
+      };
+      for (const listener of [...wsListeners]) listener(event);
+    });
+  },
+});
+const { steerQueuedMessage } = await import("../lib/state/steer-message.ts");
+sent.length = 0;
+useSendQueue.setState({ queues: {} });
+run(A);
+const acceptedId = enqueueMessage(A, draft("accepted-steer"));
+const acceptedPromise = steerQueuedMessage(A, acceptedId);
+assert.equal(
+  useSendQueue.getState().queues[A][0].injecting,
+  true,
+  "the retained row renders injecting before ACK",
+);
+assert.equal(await acceptedPromise, true);
+assert.equal(
+  useSendQueue.getState().queues[A],
+  undefined,
+  "accepted steer removes the temporary queued row",
+);
+
+store.setRunningTaskFor(A, null, "always");
+steerResult = "not_running";
+const fallbackId = enqueueMessage(A, draft("fallback-turn"));
+assert.equal(await steerQueuedMessage(A, fallbackId), false);
+await settle();
+assert.deepEqual(
+  sent.map((m) => m.text),
+  ["fallback-turn"],
+  "not_running sends the retained row through the normal chat sender",
 );
 
 console.log("check-send-queue: ok");

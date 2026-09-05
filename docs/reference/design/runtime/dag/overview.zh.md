@@ -168,14 +168,20 @@ shadow-git 提交、快照淘汰。那些以"已有完整回复"为前提的步�
 ### Spawn
 
 `SessionStore.spawn_branch(session_id, caller_node_id, *, source, name=…)` 是开
-spawn 分支的**唯一**原语。它创建分支根 user 节点（`predecessor=None`、
+干净 spawn 根的**唯一**原语。它创建分支根 user 节点（`predecessor=None`、
 `caller=caller_node_id`、`metadata.source`、`metadata.spawn_branch_root=True`），
 注册为 head，返回节点 id。spawn 调用方（task runner、协作消息、后台 agent）一律调
-用原语、绝不手工组装边，新调用点不可能把边写错。
+用该原语创建干净起点。继承式 spawn 是普通的精确 fork：它的第一个 user 节点以
+指定节点为 `predecessor`。
 
 spawn 分支根**不**挂在 ROOT 上：它的 `caller` 指向发起它的节点，经该节点维持单连通
-图不变量。（例外：跨会话 spawn 的分支根指向另一会话的图；在本会话内挂在 ROOT 上，
-渲染层打 ↗ 徽标——见 [`rendering.zh.md`](rendering.zh.md) 图例。）
+图不变量。对于跨会话精确 fork，源 session S 把 attach 卡片保留在发起节点 A 旁边，
+目标 session T 存储新 user 节点：`predecessor=M`、`caller=A`、
+`metadata.spawned_from_session=S`。单个 session 的图无法画出指向另一个 session 节点的边，
+所以目标图投影把该外部 caller 归到 ROOT，并把节点标记为 `spawn_remote`；源节点标记为
+`spawn_out`。源卡片指向 `attach.session_id=T` 和目标分支 head。跨会话 spawn 不移动任一
+session 当前选中的 HEAD；目标结果只注册为分支 tip，后续异步回送再作为普通 turn
+推进源 session 的 HEAD。
 
 spawn 分支的上下文是干净的：spawn 分支上的 `get_branch` 止步于 spawn 根，不会经
 caller 边漏进父分支。spawn 分支的聊天视图只显示本分支自己的历史。反向同样成立：从
@@ -210,10 +216,13 @@ HEAD 已经包含第一条的回答。
   head 会让分支行走不可达、会话渲染为空。
 - **get_branch(session_id, head_id)**：从 head 沿 predecessor 链走到终点，返回该分
   支的线性历史。
-- **list_branches(session_id)**：枚举分支末端（无对话子节点的对话节点）。"main"末
-  端由最早的对话根沿首子路径走到底得出——正好匹配用户视觉上认作主干的 lane-0 直
-  线。spawn 根从不出现在 predecessor 子节点表里（其 predecessor 为 None），无需特
-  判。分支名存在会话 meta 的 `branches: {head_id: name}`。
+- **list_branches(session_id)**：枚举 conversation predecessor 图中的叶子节点。
+  conversation 节点包括 user、llm，以及 caller 为空或 `ROOT` 的顶层 Program。节点只要
+  有任一此类 successor，就是祖先节点，不能再次作为 branch tip。内部 execution child、
+  runtime/attach 行与 context 行不延续 conversation，因此不取消其 owner 的 tip 身份。
+  共享同一 predecessor 的并行顶层 Program 仍是不同叶子。不存在特殊的主路径 tip
+  fallback：已合并节点和非 conversation 节点始终保持排除。分支名存在会话 meta 的
+  `branches: {head_id: name}`。
 
 ## 6. 上下文渲染
 

@@ -42,7 +42,7 @@ def test_workflow_can_call_all_three_tiers(
                     "def run_tiers():\n"
                     "    summary = llm('总结一下任务')\n"
                     "    agent('执行任务：' + summary)\n"
-                    "    return goal('优化结果', '测试通过')\n"
+                    "    return goal('优化结果，直到测试通过')\n"
                 ),
                 "__init__.py": (
                     "from .workflow import three_tier_workflow\n\n"
@@ -75,8 +75,8 @@ def test_workflow_can_call_all_three_tiers(
         agent_calls.append(prompt)
         return "执行完成"
 
-    def fake_goal(prompt, condition, **kwargs):
-        goal_calls.append((prompt, condition))
+    def fake_goal(prompt, **kwargs):
+        goal_calls.append(prompt)
         return "优化完成"
 
     monkeypatch.setattr(TL, "_run_planner_turn", _planner)
@@ -96,5 +96,5 @@ def test_workflow_can_call_all_three_tiers(
     assert result["status"] == "completed"
     assert llm_calls == ["总结一下任务"]
     assert agent_calls == ["执行任务：任务摘要"]
-    assert goal_calls == [("优化结果", "测试通过")]
+    assert goal_calls == ["优化结果，直到测试通过"]
     assert result["summary"] == "优化完成"

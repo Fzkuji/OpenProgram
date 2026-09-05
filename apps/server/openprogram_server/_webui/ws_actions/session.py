@@ -1,8 +1,138 @@
 """Session lifecycle WS actions: delete / clear / load / search / list / follow_up_answer."""
 from __future__ import annotations
 
+import asyncio
 import json
-import time
+
+
+# Keep ordinary tool results byte-for-byte compatible while preventing one
+# abnormal result from dominating the session_loaded JSON frame. The full
+# persisted node remains available through get_full_tool_output.
+TOOL_OUTPUT_INLINE_MAX_BYTES = 32 * 1024
+
+
+def _serialized_string_prefix(text: str) -> str:
+    """Longest leading substring whose JSON string stays within the cap."""
+    low, high = 0, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        size = len(json.dumps(
+            text[:middle], ensure_ascii=False,
+        ).encode("utf-8"))
+        if size <= TOOL_OUTPUT_INLINE_MAX_BYTES:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low]
+
+
+def _truncate_tool_record(
+    record: dict,
+    *,
+    message_id: str,
+    fallback_node_id: str | None = None,
+) -> dict:
+    result = record.get("result")
+    serialized = json.dumps(
+        result, ensure_ascii=False, default=str,
+    ).encode("utf-8")
+    if len(serialized) <= TOOL_OUTPUT_INLINE_MAX_BYTES:
+        return record
+    node_id = record.get("tool_call_id") or fallback_node_id
+    if not node_id:
+        return record
+    text = result if isinstance(result, str) else serialized.decode("utf-8")
+    prefix = _serialized_string_prefix(text)
+    return {
+        **record,
+        "result": prefix,
+        "truncated": True,
+        "total_bytes": len(serialized),
+        "message_id": message_id,
+        "node_id": node_id,
+    }
+
+
+def _truncate_tool_blocks(
+    blocks: list,
+    *,
+    message_id: str,
+    tool_node_ids: list[str],
+) -> tuple[list, bool]:
+    changed = False
+    tool_index = 0
+    output = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool":
+            output.append(block)
+            continue
+        fallback = (
+            tool_node_ids[tool_index] if tool_index < len(tool_node_ids) else None
+        )
+        tool_index += 1
+        truncated = _truncate_tool_record(
+            block, message_id=message_id, fallback_node_id=fallback,
+        )
+        changed = changed or truncated is not block
+        output.append(truncated)
+    return output, changed
+
+
+def _truncate_tool_outputs_for_wire(messages: list[dict]) -> list[dict]:
+    """Copy only messages whose inline tool result crosses the wire cap."""
+    output = []
+    for message in messages:
+        message_id = str(message.get("id") or "")
+        tool_calls = message.get("tool_calls")
+        tool_node_ids = [
+            str(call.get("tool_call_id"))
+            for call in (tool_calls or [])
+            if isinstance(call, dict) and call.get("tool_call_id")
+        ]
+        changed = False
+        copied = message
+        if isinstance(tool_calls, list):
+            truncated_calls = [
+                _truncate_tool_record(call, message_id=message_id)
+                if isinstance(call, dict) else call
+                for call in tool_calls
+            ]
+            if any(a is not b for a, b in zip(truncated_calls, tool_calls)):
+                copied = {**copied, "tool_calls": truncated_calls}
+                changed = True
+
+        blocks = message.get("blocks")
+        if isinstance(blocks, list):
+            truncated_blocks, blocks_changed = _truncate_tool_blocks(
+                blocks, message_id=message_id, tool_node_ids=tool_node_ids,
+            )
+            if blocks_changed:
+                copied = {**copied, "blocks": truncated_blocks}
+                changed = True
+
+        raw_extra = message.get("extra")
+        extra = raw_extra
+        if isinstance(raw_extra, str):
+            try:
+                extra = json.loads(raw_extra)
+            except (TypeError, json.JSONDecodeError):
+                extra = None
+        if isinstance(extra, dict) and isinstance(extra.get("blocks"), list):
+            extra_blocks, extra_changed = _truncate_tool_blocks(
+                extra["blocks"],
+                message_id=message_id,
+                tool_node_ids=tool_node_ids,
+            )
+            if extra_changed:
+                truncated_extra = {**extra, "blocks": extra_blocks}
+                if isinstance(raw_extra, str):
+                    truncated_extra = json.dumps(
+                        truncated_extra, ensure_ascii=False, default=str,
+                    )
+                copied = {**copied, "extra": truncated_extra}
+                changed = True
+        output.append(copied if changed else message)
+    return output
 
 
 def _annotate_spawn_origin(graph: list[dict]) -> None:
@@ -101,6 +231,29 @@ def _compaction_exec_at(
         if m.get("id") in before:
             at = i + 1
     return at
+
+
+def _ordered_fn_run_siblings(
+    by_id_all: dict,
+    siblings_by_pred: dict,
+    mid_,
+    norm_pred,
+) -> list:
+    """Return fn-run sibling ids in timestamp and source order."""
+    try:
+        src = by_id_all.get(mid_)
+    except TypeError:
+        return []
+    if not isinstance(src, dict):
+        return []
+    try:
+        sibs = siblings_by_pred.get(norm_pred(src), ())
+    except TypeError:
+        return []
+    ordered = sorted(
+        sibs, key=lambda item: (item[0].get("created_at") or 0, item[1])
+    )
+    return [item[0].get("id") for item in ordered]
 
 
 def splice_compaction_event_rows(
@@ -571,8 +724,7 @@ async def handle_load_session(ws, cmd: dict):
             active_branch_chain,
             deepest_leaf,
             head_or_tip,
-            sibling_index,
-            siblings as _siblings,
+            sibling_navigation_index,
         )
         from openprogram.agent.session_db import default_db as _db_for_load
         from openprogram.webui.persistence import aggregate_tool_messages
@@ -719,7 +871,14 @@ async def handle_load_session(ws, cmd: dict):
         # all root-level calls AND their predecessor-less sub-calls (the
         # "1/12" the user saw). Restrict the sibling set to fn-run entry
         # nodes so a fresh, model-anchored session shows exactly 2/2.
-        by_id_all = {mm.get("id"): mm for mm in all_msgs}
+        by_id_all = {}
+        for mm in all_msgs:
+            if not isinstance(mm, dict):
+                continue
+            try:
+                by_id_all[mm.get("id")] = mm
+            except TypeError:
+                continue
 
         def _norm_pred(mm):
             """The fork-point id of a run: its conversation predecessor,
@@ -729,26 +888,35 @@ async def handle_load_session(ws, cmd: dict):
             p = mm.get("predecessor") or mm.get("caller") or None
             return None if p == "ROOT" else p
 
-        _fn_run_ids = {
-            mm.get("id") for mm in all_msgs
-            if mm.get("role") in ("tool", "code")
-            and _is_top_function_run(mm, by_id_all)
-        }
+        _fn_run_ids = set()
+        _fn_run_siblings_by_pred = {}
+        for position, mm in enumerate(all_msgs):
+            if not isinstance(mm, dict):
+                continue
+            message_id = mm.get("id")
+            try:
+                if (
+                    mm.get("role") in ("tool", "code")
+                    and _is_top_function_run(mm, by_id_all)
+                ):
+                    _fn_run_ids.add(message_id)
+                    _fn_run_siblings_by_pred.setdefault(
+                        _norm_pred(mm), []
+                    ).append((mm, position))
+            except TypeError:
+                continue
 
         def _fn_run_siblings(mid_):
             """Ordered ids of the fn-run entries sharing ``mid_``'s
             predecessor (self included), by created_at then insertion."""
-            src = by_id_all.get(mid_)
-            if src is None:
-                return []
-            pred = _norm_pred(src)
-            sibs = [
-                mm for mm in all_msgs
-                if mm.get("id") in _fn_run_ids and _norm_pred(mm) == pred
-            ]
-            sibs.sort(key=lambda x: (x.get("created_at") or 0, all_msgs.index(x)))
-            return [mm.get("id") for mm in sibs]
+            return _ordered_fn_run_siblings(
+                by_id_all, _fn_run_siblings_by_pred, mid_, _norm_pred,
+            )
 
+        _chat_navigation = sibling_navigation_index(
+            all_msgs,
+            target_ids={m.get("id") for m in chain if m.get("id")},
+        )
         shown = []
         for m in chain:
             mid = m.get("id")
@@ -759,19 +927,15 @@ async def handle_load_session(ws, cmd: dict):
                 i = ids.index(mid) if mid in ids else -1
                 idx = (i + 1) if i >= 0 else 0
                 total = len(ids)
-            else:
-                idx, total = sibling_index(all_msgs, mid)
-                ids = None
-            prev_id = next_id = None
-            if total > 1:
-                if ids is None:
-                    sibs = _siblings(all_msgs, mid)
-                    ids = [s.get("id") for s in sibs]
-                i = ids.index(mid) if mid in ids else -1
+                prev_id = next_id = None
                 if i > 0:
                     prev_id = deepest_leaf(all_msgs, ids[i - 1])
-                if 0 <= i < len(ids) - 1:
+                if 0 <= i < total - 1:
                     next_id = deepest_leaf(all_msgs, ids[i + 1])
+            else:
+                idx, total, prev_id, next_id = _chat_navigation.get(
+                    mid, (0, 0, None, None),
+                )
             # Enrich attach pointer rows with embed stats so the
             # AttachCard can render "EMBEDS N messages · M tokens"
             # without a follow-up round trip. Cost = one O(1)
@@ -854,6 +1018,7 @@ async def handle_load_session(ws, cmd: dict):
             if sf:
                 m["spawned_from"] = sf
         shown = splice_compaction_event_rows(shown, graph, all_msgs)
+        shown = _truncate_tool_outputs_for_wire(shown)
         from openprogram.agent.session_config import (
             load_session_run_config,
             permission_from_config,
@@ -861,12 +1026,11 @@ async def handle_load_session(ws, cmd: dict):
         )
         from openprogram.sandbox import ui_state as _sandbox_ui
         run_cfg = load_session_run_config(conv["id"])
+        from openprogram.agent.permissions import permission_state
+        _permission_state = permission_state(session_id)
         _effective_permission = permission_from_config(
             run_cfg, default=project_defaults(conv["id"]).get("permission_mode"))
-        # Prefetch occupancy + /context breakdown on session focus so the
-        # client cache is full before the ring is clicked.
-        if not conv.get("_last_context_breakdown"):
-            _s.refresh_context_stats(session_id)
+        refresh_context_after_load = not conv.get("_last_context_breakdown")
         _stats = conv.get("_last_context_stats") or {}
         _bd = conv.get("_last_context_breakdown")
         if _bd and "breakdown" not in _stats:
@@ -897,6 +1061,7 @@ async def handle_load_session(ws, cmd: dict):
                     "tools_override": run_cfg.tools_override,
                     "thinking_effort": run_cfg.thinking_effort,
                     "permission_mode": _effective_permission,
+                    "permission_version": _permission_state["version"],
                     "additional_working_dirs": run_cfg.additional_working_dirs,
                     **_sandbox_ui(run_cfg.sandbox_enabled),
                 },
@@ -904,19 +1069,16 @@ async def handle_load_session(ws, cmd: dict):
                 "status": (_ddb().get_session(session_id) or {}).get("status", "idle"),
             },
         }, default=str))
-        # _is_run_active above already removed any non-reserved task without
-        # a live runtime. The remaining timeout also recovers a reservation
-        # whose setup thread died before runtime handoff.
+        # Cold context accounting is cache warming, not session hydration.
+        # refresh_context_stats broadcasts its own context_stats frame after
+        # the computation finishes, so the transcript can render first.
+        if refresh_context_after_load:
+            await asyncio.to_thread(_s.refresh_context_stats, session_id)
+        # The run guard owns stale runtime and reservation cleanup. A quiet
+        # live task must retain its execution identity for reconnect controls.
         with _s._running_tasks_lock:
-            task_info = _s._running_tasks.get(session_id)
-        if task_info:
-            _now = time.time()
-            _started = task_info.get("started_at", _now)
-            _last_evt_ts = task_info.get("last_event_at", _started)
-            if (_now - _started > 300) and (_now - _last_evt_ts > 300):
-                with _s._running_tasks_lock:
-                    _s._running_tasks.pop(session_id, None)
-                task_info = None
+            task = _s._running_tasks.get(session_id)
+            task_info = dict(task) if task else None
         if task_info:
             # Live partial-tree dump retired with the tree-Context
             # event system. The DAG nodes the function has produced so
@@ -928,6 +1090,7 @@ async def handle_load_session(ws, cmd: dict):
                     "msg_id": task_info["msg_id"],
                     "func_name": task_info["func_name"],
                     "execution_id": task_info.get("execution_id"),
+                    "status_version": task_info.get("status_version"),
                     "started_at": task_info["started_at"],
                     "display_params": task_info.get("display_params", ""),
                     "partial_tree": None,
@@ -941,16 +1104,22 @@ async def handle_load_session(ws, cmd: dict):
         # questions for this session as the SAME frame the live path sends,
         # so the frontend's existing card logic redraws with no extra round trip.
         try:
-            from openprogram.agent.questions import get_question_registry
-            for q in get_question_registry().list_pending(session_id):
+            from openprogram.execution import default_store
+            from openprogram.execution.waits import DurableWaitStore
+            for q in DurableWaitStore(default_store()).list_open(session_id=session_id):
+                request = dict(q.request)
+                execution = default_store().get_execution(q.execution_id)
                 await ws.send_text(json.dumps({
                     "type": "question.asked",
                     "data": {
-                        "id": q.id, "session_id": q.session_id, "kind": q.kind,
-                        "prompt": q.prompt, "options": q.options, "multi": q.multi,
-                        "allow_custom": q.allow_custom, "detail": q.detail,
-                        "schema": q.schema,        # kind="form": replay fields
-                        "questions": q.questions,  # kind="ask_many": replay too
+                        "id": q.wait_id, "session_id": session_id, "kind": q.kind,
+                        "execution_id": q.execution_id,
+                        "wait_generation": q.claim_generation,
+                        "expected_version": execution.status_version if execution is not None else 0,
+                        "prompt": request.get("prompt", ""), "options": request.get("options", []), "multi": request.get("multi", False),
+                        "allow_custom": request.get("allow_custom", True), "detail": request.get("detail", ""),
+                        "schema": request.get("schema", {}),
+                        "questions": request.get("questions", []),
                         "expires_at": q.expires_at,
                     },
                 }, default=str))
@@ -967,6 +1136,43 @@ async def handle_load_session(ws, cmd: dict):
                 "settings": {},
             },
         }, default=str))
+
+
+async def handle_get_full_tool_output(ws, cmd: dict) -> None:
+    """Return one persisted tool node's untruncated output."""
+    from openprogram.agent.session_db import default_db
+
+    session_id = cmd.get("session_id")
+    message_id = cmd.get("message_id")
+    node_id = cmd.get("node_id")
+    request_id = cmd.get("request_id")
+    data = {
+        "session_id": session_id,
+        "message_id": message_id,
+        "node_id": node_id,
+        "request_id": request_id,
+    }
+    row = None
+    if all(isinstance(value, str) and value for value in (
+        session_id, message_id, node_id,
+    )):
+        row = next(
+            (
+                message for message in default_db().get_messages(session_id)
+                if message.get("id") == node_id
+                and message.get("role") == "tool"
+                and message.get("caller") == message_id
+            ),
+            None,
+        )
+    if row is None:
+        data["error"] = "tool output not found"
+    else:
+        data["result"] = row.get("content", "")
+    await ws.send_text(json.dumps({
+        "type": "full_tool_output",
+        "data": data,
+    }, ensure_ascii=False, default=str))
 
 
 async def handle_get_run_state(ws, cmd: dict):
@@ -991,35 +1197,6 @@ async def handle_follow_up_answer(ws, cmd: dict):
         fq = _s._follow_up_queues.get(fq_session_id)
     if fq is not None:
         fq.put(answer)
-
-
-def _resolve_question(qid: str, outcome: str, value=None) -> None:
-    """收口：resolve registry + 广播收回别处 UI。共享实现在 questions.py
-    （channel 的 /answer 也走它），这里保留薄封装供 WS handler 调用。"""
-    from openprogram.agent.questions import resolve_question_and_broadcast
-    resolve_question_and_broadcast(qid, outcome, value)
-
-
-async def handle_question_reply(ws, cmd: dict):
-    """用户回答了 runtime.ask 的问题（user-input-requests.md Phase 1）。
-    approval 的"总是允许"带 scope="always"——打包进 value，await_user_approval
-    会拆出 scope 决定是否写回持久 allow 规则（permission-model.md §6.3）。"""
-    qid = cmd.get("id") or ""
-    answer = cmd.get("answer")
-    scope = cmd.get("scope")
-    if qid:
-        value = {"answer": answer, "scope": scope} if scope else answer
-        _resolve_question(qid, "answered", value)
-
-
-async def handle_question_reject(ws, cmd: dict):
-    """用户拒绝回答（runtime.ask 抛 UserDeclined / confirm 返回 False）。
-    approval 的拒绝可带 reason —— 作为 declined 值，让工具批准把它变成回给
-    模型的错误文本（opencode 做法）。"""
-    qid = cmd.get("id") or ""
-    reason = cmd.get("reason")
-    if qid:
-        _resolve_question(qid, "declined", reason)
 
 
 # 权限规则跟着**项目**走（见 permission-model.md §2.3）。请求可直接带
@@ -1328,10 +1505,9 @@ ACTIONS = {
     "update_session_flags": handle_update_session_flags,
     "clear_sessions": handle_clear_sessions,
     "load_session": handle_load_session,
+    "get_full_tool_output": handle_get_full_tool_output,
     "get_run_state": handle_get_run_state,
     "follow_up_answer": handle_follow_up_answer,
-    "question_reply": handle_question_reply,
-    "question_reject": handle_question_reject,
     "set_working_dirs": handle_set_working_dirs,
     "set_sandbox": handle_set_sandbox,
     "search_messages": handle_search_messages,

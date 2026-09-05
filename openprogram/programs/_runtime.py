@@ -1010,6 +1010,10 @@ def _build_and_register_tool(
     # the gating triad (_check_fn / _requires_env / _can_use) is read by
     # ``is_available_agent_tool`` for the 4th of the 6 selection layers.
     setattr(agent_tool, "_requires_approval", requires_approval)
+    from openprogram.agent.continuation import _callable_descriptor
+    implementation = _callable_descriptor(execute)
+    if implementation is not None:
+        setattr(agent_tool, "_runtime_implementation", implementation)
     # acceptEdits 档下自动放行的"写安全"工具（read/write/edit 等）。命令类
     # （bash/exec）保持 False，acceptEdits 下仍审批。见 permission-model.md §3.3。
     setattr(agent_tool, "_accept_edits_safe", bool(accept_edits_safe))

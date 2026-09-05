@@ -26,7 +26,7 @@ const markdownRenderer = source("lib/runtime-bridge/markdown-render.ts");
 // 1) renderMd — the chat bubble path — must sanitize what marked returns.
 assert.match(
   markdownRenderer,
-  /sanitizeHtml\(\s*markdown\.parse\(/,
+  /sanitizeHtml\(\s*(?:npmMarked|markdown)\.parse\(/,
   "renderMd must wrap marked.parse in sanitizeHtml — chat bubbles render "
     + "tool-relayed content and marked does not sanitize",
 );

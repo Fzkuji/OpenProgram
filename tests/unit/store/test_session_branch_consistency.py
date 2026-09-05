@@ -345,6 +345,28 @@ def test_attach_branch_invalidates_message_cache(store, srv):
                for m in store.get_messages("s1"))
 
 
+def test_manual_cross_session_attach_has_no_spawn_marker(store, srv):
+    """A user-authored cross-session embed is not an agent spawn."""
+    from openprogram.webui.graph_builder import build_session_graph
+    from openprogram.webui.ws_actions import branch as branch_actions
+
+    source_ids = _two_turns(store, "source")
+    anchor_ids = _two_turns(store, "anchor")
+    ws = FakeWS()
+    _run(branch_actions.handle_attach_branch(ws, {
+        "session_id": "source",
+        "target_head_msg_id": source_ids[-1],
+        "anchor_session_id": "anchor",
+        "anchor_head_msg_id": anchor_ids[-1],
+    }))
+    result = ws.of_type("attach_branch_result")[0]
+    assert result["ok"], result.get("error")
+
+    graph = build_session_graph("anchor", anchor_ids[-1])
+    anchor_row = next(row for row in graph if row["id"] == anchor_ids[-1])
+    assert "spawn_out" not in anchor_row
+
+
 def test_delete_branch_drops_deleted_rows_from_mirror(store, srv):
     from openprogram.webui.ws_actions import branch as branch_actions
 
@@ -525,8 +547,7 @@ def test_reconcile_finishes_a_durable_cancellation_intent(store):
 
 
 def test_reconcile_settles_zombie_goal_state(store):
-    """A goal loop frozen at active/waiting_user by a dead worker must be
-    settled to error on startup — nobody else will ever finish it."""
+    """An executing Goal becomes explicitly recoverable after restart."""
     from openprogram.webui import _exec_dag
 
     _two_turns(store)
@@ -535,13 +556,13 @@ def test_reconcile_settles_zombie_goal_state(store):
     })
     _exec_dag.reconcile_interrupted_runs()
     goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
-    assert goal["status"] == "error"
+    assert goal["status"] == "paused_recoverable"
+    assert goal["recoverable"] is True
     assert "worker restarted" in goal["last_reason"]
 
 
 def test_reconcile_settles_waiting_user_zombie_goal(store):
-    """waiting_user is the same zombie class as active: the ask is
-    blocked in a dead worker, so startup must settle it."""
+    """A durable async question remains answerable across worker restart."""
     from openprogram.webui import _exec_dag
 
     _two_turns(store)
@@ -551,8 +572,8 @@ def test_reconcile_settles_waiting_user_zombie_goal(store):
     })
     _exec_dag.reconcile_interrupted_runs()
     goal = (store.get_session("s1").get("extra_meta") or {}).get("goal")
-    assert goal["status"] == "error"
-    assert "worker restarted" in goal["last_reason"]
+    assert goal["status"] == "waiting_user"
+    assert goal["last_question"] == "A or B?"
 
 
 def test_reconcile_leaves_terminal_goal_alone(store):

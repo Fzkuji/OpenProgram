@@ -3,6 +3,41 @@ import test from "node:test";
 
 import { buildCallTreeRows, buildGraphLayout } from "../components/programs/programs-logic.ts";
 
+test("branches collapse, expand, and retain choices after refresh", () => {
+  const input = logic(5);
+  input.edges = input.nodes.slice(1).map((node, index) => ({source: `n${index}`, target: node.id}));
+  const choices = new Map();
+  let result = buildCallTreeRows(input, 256, choices);
+  assert.deepEqual(result.rows.map(row => row.node.id), ["n0", "n1", "n2", "n3"]);
+  assert.equal(result.rows[3].expandable, true);
+  assert.equal(result.rows[3].isExpanded, false);
+  assert.equal(result.truncated, false);
+  choices.set("n3", true);
+  result = buildCallTreeRows(structuredClone(input), 256, choices);
+  assert.equal(result.rows.length, 5);
+  assert.equal(result.rows[4].expandable, false);
+  choices.set("n1", false);
+  assert.deepEqual(buildCallTreeRows(input, 256, choices).rows.map(row => row.node.id), ["n0", "n1"]);
+});
+
+test("conditional function calls retain their meaning in the tree", () => {
+  const input = logic(2);
+  input.edges = [{source: "n0", target: "n1", kind: "conditional"}];
+  assert.equal(buildCallTreeRows(input).rows[1].conditional, true);
+});
+
+test("a shared child uses its incoming edge, not another ancestor edge", () => {
+  const input = logic(3);
+  input.edges = [
+    {source: "n0", target: "n1", kind: "call"},
+    {source: "n0", target: "n2", kind: "conditional"},
+    {source: "n1", target: "n2", kind: "call"},
+  ];
+  const rows = buildCallTreeRows(input).rows.filter(row => row.node.id === "n2");
+  assert.equal(rows[0].conditional, false);
+  assert.equal(rows[1].conditional, true);
+});
+
 function logic(size) {
   const nodes = Array.from({ length: size }, (_, index) => ({
     id: `n${index}`,

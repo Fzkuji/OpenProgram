@@ -11,10 +11,9 @@ effects by `apps/web/components/app-shell.tsx` via `./index`; exposes
 `setHistoryHighlightMode` / `getHistoryHighlightMode` on `window.*`
 (consumed by `../conversations.ts` and the WebSocket handlers).
 
-This module replaced the pre-split monolithic
-`apps/web/lib/runtime-bridge/history-graph.ts` (~1700 lines). That file now
-re-exports from here for back-compat; new code should import from
-`./dag` directly.
+This module replaced and removed the pre-split monolithic
+`apps/web/lib/runtime-bridge/history-graph.ts` (~1700 lines). Current code
+imports from `./dag` directly.
 
 ## Module layout
 
@@ -23,27 +22,33 @@ dag/
 ├── README.md                  (this file)
 ├── index.ts                   public entry + window bridges
 ├── types.ts                   GNode / HighlightMode / constants
-├── shapes.ts                  SVG primitives, branch colour, shape helpers
-├── tooltip.ts                 node hover tooltip (collapsed → expanded)
-├── pipeline.ts                main render() — the giant pass+layout+emit loop
+├── paint-gate.ts              cheap signatures and render gating
+├── pipeline.ts                main render() pass + layout + emit loop
 ├── passes/
 │   ├── collapse-runtime-pairs.ts        legacy user/asst runtime pair fold
 │   ├── merge-runs.ts                    fold tool wrapper into run-node
 │   ├── demote-decoration-cards.ts       suppress lane fork from LLM-triggered cards
-│   ├── apply-collapse.ts                user/auto subtree collapse
-│   └── fold-summaries.ts                elide the range a compaction capsule covers
+│   ├── fold-summaries.ts                elide the range a compaction capsule covers
+│   ├── project-programs.ts              project top-level Programs into overview
+│   ├── thread-nodes.ts                  Program-thread node classification
+│   └── thread.ts                        Program-thread ownership and folding
 ├── layout/
 │   ├── build-tree.ts                    flat list → parent/children
 │   ├── depth.ts                         row index (prefers backend _depth)
 │   ├── assign-lanes.ts                  column index (prefers backend _lane)
-│   └── tier.ts                          placeholder for tier helpers (currently inline)
+│   └── geometry.ts                      coordinates and graph bounds
+├── interaction/
+│   ├── canvas.ts                        pan / zoom / fit and view persistence
+│   ├── nodes.ts                         click / dblclick / contextmenu wiring
+│   ├── tooltip-content.ts               pure tooltip content model
+│   └── tooltip.ts                       tooltip DOM lifecycle and positioning
 ├── render/
-│   ├── nodes.ts                         node shapes, badges, coverage marks
+│   ├── nodes.ts                         node shapes and coverage marks
 │   ├── edges.ts                         conv / fork / attach / spawn edges
 │   ├── badges.ts                        branch-name badges
 │   ├── visibility.ts                    white-fill + chat-scroll/mutation sync
-│   ├── interaction.ts                   click / dblclick / contextmenu wiring
-│   └── inspector.ts                     node inspector popover + context menu
+│   ├── inspector.ts                     node inspector popover + context menu
+│   └── shapes.ts                        SVG primitives, branch colour, shape helpers
 └── store/
     └── globals.ts                       module-level state (HEAD, collapsed set, ...)
 ```
@@ -55,8 +60,8 @@ shorten those signatures; nothing depends on it happening.
 
 ## Node kinds and shapes
 
-See `docs/design/runtime/dag-node-model.md` for the full schema. Quick
-reference:
+See `docs/reference/design/runtime/dag/rendering.md` for the full schema.
+Quick reference:
 
 | node kind                      | role            | function field   | shape          |
 |--------------------------------|-----------------|------------------|----------------|
@@ -90,9 +95,10 @@ flat GNode[]
   → mergeRuns                       passes/merge-runs.ts
   → collapseRuntimePairs            passes/collapse-runtime-pairs.ts
   → demoteDecorationCards           passes/demote-decoration-cards.ts
+  → projectTopPrograms              passes/project-programs.ts
   → snapshot stable leafOfNode      layout/build-tree + assign-lanes
-  → applyCollapse                   passes/apply-collapse.ts
   → foldSummaries                   passes/fold-summaries.ts
+  → buildThreadModel                passes/thread.ts
   → buildTree + assignDepth + assignLanes
   → emit SVG
        conv-edges → attach-refs → spawn-edges → nodes → branch-tags
@@ -100,8 +106,8 @@ flat GNode[]
   → first _recomputeVisibility (+ rAF / 250ms / 700ms catch-up)
 ```
 
-State that survives across calls (per-session `_collapsed`,
-`_seenCollapsible`, `_lastSignature`, `_lastGraph`, the various
+State that survives across calls (`_threadOpen`, `_summaryExpanded`,
+`_lastSignature`, `_lastGraph`, the per-session canvas view, and the various
 "wired?" latches) lives in `store/globals.ts`.
 
 ## Known corner cases (locked in by tests + manual checks)
