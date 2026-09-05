@@ -115,6 +115,11 @@ cold-start。每个 runtime 的独占文件锁串行化验证、发布与激活�
 目录中，上一份 launcher 也会保留；候选验证失败既不发布版本，也不改变 active
 launcher。复用已缓存版本时仍会重新验证。Installer 全程不修改 ACL。
 
+激活前会准备两个 launcher 文件并保存原内容，再逐个原子替换。后续替换失败时，
+按逆序恢复已经发布的入口。恢复失败时，在报告的恢复路径保留原件，并返回明确错误。
+不需要 backup 参数的 .NET 文件替换使用 PowerShell `NullString`，避免 Windows
+PowerShell 5 把 `$null` 绑定成非法空路径。
+
 Managed upgrade 通过兼容接缝选择 Windows ZIP 和 tag 下的 PowerShell installer。
 `doctor` 将长路径注册表状态和 Defender 实时扫描/排除状态作为非阻断提示。这些查询
 均为只读，不会启用长路径或修改 Defender。

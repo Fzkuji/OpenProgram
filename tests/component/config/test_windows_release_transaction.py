@@ -55,8 +55,22 @@ function Test-WorkerHealth {
     if ($env:OP_TEST_FAILURE -eq 'publish') {
         [IO.File]::WriteAllText($env:OP_TEST_RELEASE, 'publication collision')
     }
+    if ($env:OP_TEST_FAILURE -in @('activate', 'rollback')) {
+        $script:TestCmdLock = [IO.File]::Open(
+            (Join-Path $env:OPENPROGRAM_BIN_DIR 'openprogram.cmd'), 'Open', 'Read', 'Read')
+    }
 }
 """
+    # Make rollback failure real: open the newly published PS1 without delete
+    # sharing after its atomic replacement, while CMD is already locked.
+    source = source.replace(
+        "[IO.File]::Replace($Source, $Destination, $Backup, $true)",
+        """[IO.File]::Replace($Source, $Destination, $Backup, $true)
+            if ($env:OP_TEST_FAILURE -eq 'rollback' -and $Destination.EndsWith('openprogram.ps1')) {
+                $script:TestPs1Lock = [IO.File]::Open($Destination, 'Open', 'Read', 'Read')
+            }""",
+        1,
+    )
     script = tmp_path / "install.ps1"
     script.write_text(source.replace("$Version = if", probe + "\n$Version = if", 1), encoding="utf-8-sig")
     env = {
@@ -126,6 +140,39 @@ def test_failed_publication_keeps_launchers_and_preserves_collision(install_fixt
     assert not list(release.parent.parent.glob(".staging-*"))
     for suffix in ("ps1", "cmd"):
         assert (bin_dir / f"openprogram.{suffix}").read_text() == "previous launcher"
+
+
+@pytest.mark.parametrize("existing_ps1", [True, False])
+def test_partial_activation_restores_both_original_entry_points(install_fixture, existing_ps1):
+    run, release, bin_dir, _events, _script = install_fixture
+    ps1 = bin_dir / "openprogram.ps1"
+    if not existing_ps1:
+        ps1.unlink()
+    failed = run(failure="activate")
+    assert failed.returncode != 0
+    assert release.is_dir(), "the verified runtime remains reusable"
+    assert b"manual recovery required" not in failed.stderr, failed.stderr
+    if existing_ps1:
+        assert ps1.read_text() == "previous launcher"
+    else:
+        assert not ps1.exists(), "rollback removes only its newly created launcher"
+    assert (bin_dir / "openprogram.cmd").read_text() == "previous launcher"
+    assert not list(bin_dir.glob(".openprogram-*"))
+    assert run(reuse=True).returncode == 0
+
+
+def test_activation_rollback_failure_retains_original_and_reports_recovery(install_fixture):
+    run, release, bin_dir, _events, _script = install_fixture
+    failed = run(failure="rollback")
+    assert failed.returncode != 0
+    assert b"manual recovery required" in failed.stderr
+    originals = list(bin_dir.glob(".openprogram-*.rollback.ps1"))
+    assert len(originals) == 1
+    assert originals[0].read_text() == "previous launcher"
+    assert (bin_dir / "openprogram.cmd").read_text() == "previous launcher"
+    assert str(release) in (bin_dir / "openprogram.ps1").read_text(encoding="utf-8-sig")
+    assert run(reuse=True).returncode == 0, "all native lock handles must be released"
+    assert originals[0].read_text() == "previous launcher", "a retry must not delete recovery material"
 
 
 def test_concurrent_install_is_rejected_before_extracting_or_activating(install_fixture, tmp_path):

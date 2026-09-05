@@ -150,6 +150,13 @@ which the installer atomically replaces the active PowerShell launcher.
 Releases stay in versioned directories and the previous launcher is retained;
 failed candidate verification neither publishes a version nor changes the
 active launcher. Cached versions are revalidated before activation.
+Activation prepares both launcher files and snapshots their original contents
+before publishing either entry point. Replacements are individually atomic;
+a later replacement failure restores already-published entries in reverse
+order. A failed restoration retains the original file under its reported
+recovery path and returns an explicit error. The installer uses PowerShell's
+`NullString` for the .NET replace operation without a backup argument, because
+Windows PowerShell 5 otherwise binds `$null` as an invalid empty path.
 No installer step edits ACLs. PowerShell build helpers restore the caller's
 workspace, toolchain, Python download, and browser-cache environment settings
 when their scoped build steps finish, including failure paths.

@@ -43,6 +43,12 @@ irm https://openprogram.io/install.ps1 | iex
 
 命令从不可变 release tag 取得版本化 installer。installer 下载同平台 runtime archive，在暂存目录验证 checksum 和完整 capability manifest，并在发布或激活该版本前执行 worker cold-start。macOS/Linux 会串行化升级并原子切换 `current` symlink；Windows 原子替换 PowerShell launcher，并保留上一份 launcher。激活前失败时，旧版本仍保持选中，尚未发布的暂存 runtime 会被删除。版本目录会保留，因此回滚时用上一版 `OPENPROGRAM_VERSION` 重跑同一命令即可；运行中的 worker 不会自动重启。
 
+Windows 会在激活前准备好 PowerShell 和 CMD 两个 launcher，再逐个原子替换。
+第二个替换失败时，installer 会恢复第一个入口。恢复也失败时，会报需手动恢复的
+错误，并在报告的路径保留原 launcher。在两个入口恢复可用之前，请保留该文件；
+后续安装成功也不会自动删除它。即使 launcher 激活失败，已验证 runtime 仍会保留，
+供重试复用。
+
 升级后重启登录服务：
 
 ```bash

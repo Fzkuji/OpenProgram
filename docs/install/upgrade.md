@@ -43,6 +43,14 @@ irm https://openprogram.io/install.ps1 | iex
 
 The command downloads the versioned installer from the immutable release tag. The installer downloads the platform runtime archive, verifies its checksum and complete capability manifest in a staging directory, and cold-starts the worker before publishing or activating that version. macOS and Linux serialize upgrades and atomically change the `current` symlink; Windows atomically replaces the PowerShell launcher and retains its previous launcher. A failure before activation leaves the previous version selected and removes an unpublished staging runtime. Version directories are retained, so rollback uses the same command with the previous `OPENPROGRAM_VERSION`. A running worker is not restarted automatically.
 
+On Windows, both PowerShell and CMD launchers are prepared before activation.
+Each file is replaced atomically; if the second replacement fails, the
+installer restores the first entry point. If restoration also fails, the
+installer stops with a manual-recovery error and retains the original launcher
+at the reported path. Keep that recovery file until both entry points work
+again; a later successful installation does not delete it. A validated runtime
+is retained for retry even when launcher activation fails.
+
 Restart a login service after upgrading:
 
 ```bash

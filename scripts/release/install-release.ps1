@@ -220,10 +220,79 @@ function Move-Atomic {
             Remove-Item -LiteralPath $Backup -Force -ErrorAction SilentlyContinue
             [IO.File]::Replace($Source, $Destination, $Backup, $true)
         } else {
-            [IO.File]::Replace($Source, $Destination, $null, $true)
+            # PowerShell 5 binds $null to an empty string for this .NET
+            # parameter. NullString requests a genuine null backup path.
+            [IO.File]::Replace($Source, $Destination, [NullString]::Value, $true)
         }
     } else {
         [IO.File]::Move($Source, $Destination)
+    }
+}
+
+function Publish-CliLaunchers {
+    param([string]$Ps1Source, [string]$Ps1Target, [string]$CmdSource, [string]$CmdTarget)
+
+    $Entries = @(
+        @{ Source = $Ps1Source; Target = $Ps1Target; Extension = 'ps1' },
+        @{ Source = $CmdSource; Target = $CmdTarget; Extension = 'cmd' }
+    )
+    foreach ($Entry in $Entries) {
+        $Directory = Split-Path -Parent $Entry.Target
+        $Entry.Previous = Join-Path $Directory "openprogram.previous.$($Entry.Extension)"
+        $Entry.Rollback = Join-Path $Directory ('.openprogram-' + [guid]::NewGuid().ToString('N') + ".rollback.$($Entry.Extension)")
+        $Entry.HadFile = $false
+        $Entry.Activated = $false
+        $Entry.KeepRollback = $false
+    }
+    try {
+        # Snapshot both entry points before either replacement. These private
+        # copies also survive a failed rollback; previous launchers remain the
+        # normal user-facing rollback aid after a successful installation.
+        foreach ($Entry in $Entries) {
+            if (Test-Path -LiteralPath $Entry.Target) {
+                if (-not (Test-Path -LiteralPath $Entry.Target -PathType Leaf)) {
+                    throw "CLI launcher target is not a file: $($Entry.Target)"
+                }
+                [IO.File]::Copy($Entry.Target, $Entry.Rollback, $false)
+                $Entry.HadFile = $true
+            }
+        }
+        foreach ($Entry in $Entries) {
+            Move-Atomic $Entry.Source $Entry.Target $Entry.Previous
+            $Entry.Activated = $true
+        }
+    } catch {
+        $ActivationError = $_
+        $Recovery = [Collections.Generic.List[string]]::new()
+        for ($Index = $Entries.Count - 1; $Index -ge 0; $Index--) {
+            $Entry = $Entries[$Index]
+            if (-not $Entry.Activated) { continue }
+            try {
+                if ($Entry.HadFile) {
+                    Move-Atomic $Entry.Rollback $Entry.Target
+                } else {
+                    # Delete only the new launcher this transaction created,
+                    # never an installation directory or a pre-existing file.
+                    [IO.File]::Delete($Entry.Target)
+                }
+            } catch {
+                $Entry.KeepRollback = $true
+                $RecoveryDetail = if ($Entry.HadFile) {
+                    "original retained at $($Entry.Rollback)"
+                } else { 'new launcher could not be removed' }
+                $Recovery.Add("$($Entry.Target) (${RecoveryDetail}; $($_.Exception.Message))")
+            }
+        }
+        if ($Recovery.Count -gt 0) {
+            throw "CLI launcher activation and rollback failed; manual recovery required: $($Recovery -join '; ')"
+        }
+        throw $ActivationError
+    } finally {
+        foreach ($Entry in $Entries) {
+            if (-not $Entry.KeepRollback) {
+                Remove-Item -LiteralPath $Entry.Rollback -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 }
 
@@ -383,13 +452,6 @@ $LauncherContent = @"
 & '$($PythonBin.Replace("'", "''"))' -I -m openprogram @args
 exit `$LASTEXITCODE
 "@
-# Windows PowerShell 5 otherwise decodes UTF-8 paths as the system ANSI page.
-[IO.File]::WriteAllText($LauncherTemporary, $LauncherContent, [Text.UTF8Encoding]::new($true))
-try {
-    Move-Atomic $LauncherTemporary $LauncherPs1 (Join-Path $BinDir "openprogram.previous.ps1")
-} finally {
-    Remove-Item -LiteralPath $LauncherTemporary -Force -ErrorAction SilentlyContinue
-}
 $CmdTemporary = Join-Path $BinDir (".openprogram-" + [guid]::NewGuid().ToString("N") + ".cmd")
 $CmdPython = ConvertTo-CmdBatchLiteral $PythonBin
 $CmdPlaywright = ConvertTo-CmdBatchLiteral (Join-Path $ReleaseDir "assets\playwright")
@@ -410,13 +472,17 @@ exit /b %_OPENPROGRAM_EXIT%
 # CMD needs BOM-free UTF-8 and an ASCII preamble selecting that code page
 # before it parses embedded paths. Restore the caller's console on return;
 # delayed expansion must not consume literal exclamation marks in paths.
-Write-Utf8NoBom $CmdTemporary $CmdContent
 try {
+    # Finish both files before changing either active entry point.
+    # Windows PowerShell 5 needs the BOM to decode Unicode paths correctly.
+    [IO.File]::WriteAllText($LauncherTemporary, $LauncherContent, [Text.UTF8Encoding]::new($true))
+    Write-Utf8NoBom $CmdTemporary $CmdContent
     # A managed install must replace launchers left by an older release or a
     # source checkout. Otherwise PATH can silently continue to run a stale
     # virtualenv even though the new runtime passed every activation probe.
-    Move-Atomic $CmdTemporary $LauncherCmd (Join-Path $BinDir "openprogram.previous.cmd")
+    Publish-CliLaunchers $LauncherTemporary $LauncherPs1 $CmdTemporary $LauncherCmd
 } finally {
+    Remove-Item -LiteralPath $LauncherTemporary -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $CmdTemporary -Force -ErrorAction SilentlyContinue
 }
 
