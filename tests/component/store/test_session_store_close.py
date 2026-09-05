@@ -4,7 +4,57 @@ import json
 from pathlib import Path
 import threading
 
+import pytest
+
 from openprogram.store.session.session_store import SessionStore
+
+
+@pytest.mark.parametrize("recover_threads", [False, True])
+def test_thread_start_failure_falls_back_to_synchronous_index_write(
+    tmp_path: Path, monkeypatch, recover_threads: bool,
+) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    store.create_session("s1", "main", title="initial")
+    store._update_index_entry("s1", title="saved without a thread")
+    original_timer = threading.Timer
+
+    def unavailable_timer(delay, callback):
+        timer = original_timer(delay, callback)
+
+        def fail_start():
+            raise RuntimeError("can't start new thread")
+
+        timer.start = fail_start
+        return timer
+
+    monkeypatch.setattr(threading, "Timer", unavailable_timer)
+    try:
+        store._schedule_index_flush()
+        assert store._index_timer is None
+        assert not store._index_flush_threads
+        assert not store._index_dirty
+        assert json.loads(store._index_path().read_text())["s1"]["title"] == "saved without a thread"
+        if recover_threads:
+            monkeypatch.setattr(threading, "Timer", original_timer)
+            store._update_index_entry("s1", title="background work resumed")
+            store._schedule_index_flush()
+            timer = store._index_timer
+            assert timer is not None and timer.is_alive()
+        store.close()  # Must never attempt to join a thread that did not start.
+        if recover_threads:
+            assert not timer.is_alive()
+            assert json.loads(store._index_path().read_text())["s1"]["title"] == "background work resumed"
+    finally:
+        # Keep cleanup valid when exercising the pre-fix implementation too.
+        with store._index_lock:
+            timers = tuple(store._index_flush_threads)
+            store._index_timer = None
+            store._index_flush_threads.clear()
+        for timer in timers:
+            timer.cancel()
+            if timer.ident is not None:
+                timer.join(timeout=5)
+        store.close()
 
 
 def test_close_flushes_pending_index_and_joins_timer(tmp_path: Path) -> None:

@@ -119,6 +119,9 @@ closed store does not restart background timers if a legacy caller reuses it;
 those writes are synchronous. Failed writes remain dirty and retain the
 process-exit retry. This avoids lingering writers and file handles during
 Windows teardown without weakening the stored-data consistency checks.
+If an index timer cannot start because threads are unavailable, its unstarted
+handle is discarded and the pending snapshot is saved synchronously. Later
+updates can resume background flushing when thread creation recovers.
 
 Push and pull-request checks supersede older runs for the same workflow and
 branch or pull request, so stale revisions do not monopolize native Windows
