@@ -95,8 +95,8 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
         <Button variant="ghost" className={styles.row} onClick={() => { state.selectExecution(item.execution_id); setSelection("agent"); }}>
           <Bot size={16} className={styles.symbol} aria-hidden="true" />
           <span className={styles.rowText}>
-            <span className={styles.name}>{title}</span>
-            <span className={styles.meta}>{statusLabel(item.status, text)}{descendants.length ? ` · ${descendants.length} ${text("branches", "分支")}` : ""}{owned.length ? ` · ${owned.filter(processIsActive).length}/${owned.length} ${text("programs running", "程序运行中")}` : ""}</span>
+            <span className={styles.name} title={title}>{title}</span>
+            <span className={styles.meta}>{statusLabel(item.status, text)}{descendants.length ? ` · ${descendants.length} ${text("branches", "分支")}` : ""}{owned.length ? ` · ${owned.length} ${text("programs", "程序")}${owned.some(processIsActive) ? ` (${owned.filter(processIsActive).length} ${text("active", "活动中")})` : ""}` : ""}{!["paused", "reconciliation_required"].includes(item.status) && needsAttention(item) ? ` · ${text("Child needs attention", "子项需要处理")}` : ""}</span>
           </span>
         </Button>
       </div>
