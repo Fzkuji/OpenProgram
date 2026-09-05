@@ -32,8 +32,8 @@ openprogram upgrade                 # 执行
 |---|---|
 | preflight | 拒绝脏工作区，解析目标提交，降级前先询问 |
 | checkout | 将检出快进到目标提交 |
-| deps | `pyproject.toml` 变了就刷新源码 checkout 的 Python 环境；根 `package-lock.json` 变了就在仓库根运行 `npm ci` |
-| build | `npx next build`，仅当 `web/` 下有改动时 |
+| deps | `pyproject.toml` 变了就刷新源码 checkout 的 Python 环境；`package-lock.json` 变了就安装 frontend workspaces |
+| build | `apps/web`、`apps/cli` 或 `package-lock.json` 变更时重建对应 frontend workspace |
 | probe | 用隔离 profile 在临时端口冷启动新代码，等待 `/healthz`，跑 doctor 检查，然后杀掉 |
 | restart | 重启真正的服务 |
 | verify | 轮询 `/healthz` 直到它报告新的提交 sha |

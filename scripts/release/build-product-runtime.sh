@@ -19,7 +19,7 @@ if test -n "${OPENPROGRAM_RUNTIME_ROOT:-}" && test -e "$runtime_root"; then
   exit 1
 fi
 
-for command_name in npm git; do
+for command_name in npm node git; do
   command -v "$command_name" >/dev/null 2>&1 || {
     printf 'missing build command: %s\n' "$command_name" >&2
     exit 1
@@ -61,6 +61,7 @@ rm -rf "$repo_root/build"
 mkdir -p \
   "$runtime_root/assets/playwright" \
   "$runtime_root/assets/gpa" \
+  "$runtime_root/assets/tui" \
   "$runtime_root/bin" \
   "$runtime_root/python" \
   "$runtime_root/wheel"
@@ -145,15 +146,27 @@ while IFS= read -r -d '' python_alias; do
 done < <(find "$runtime_root/python" -maxdepth 1 -type l -print0)
 
 cp "$uv_bin" "$runtime_root/bin/uv"
+cp "$(command -v node)" "$runtime_root/bin/node"
+cp "$repo_root/apps/cli/dist/index-standalone.cjs" \
+  "$runtime_root/assets/tui/index.cjs"
 cp "$product_config" "$runtime_root/product-runtime.json"
 cp "$repo_root/uv.lock" "$runtime_root/product-uv.lock"
 cp "$repo_root/scripts/release/verify-product-runtime.py" \
   "$runtime_root/bin/verify-product-runtime.py"
-chmod 0755 "$runtime_root/bin/uv" "$runtime_root/bin/verify-product-runtime.py"
+cp "$repo_root/scripts/release/smoke-ink-tui-pty.py" \
+  "$runtime_root/bin/smoke-ink-tui-pty.py"
+chmod 0755 "$runtime_root/bin/uv" "$runtime_root/bin/node" \
+  "$runtime_root/bin/verify-product-runtime.py" \
+  "$runtime_root/bin/smoke-ink-tui-pty.py"
 
 python_relative="${python_bin#"$runtime_root/"}"
 test "$python_relative" != "$python_bin" || {
   printf 'managed Python resolved outside runtime: %s\n' "$python_bin" >&2
+  exit 1
+}
+ln -s "../$python_relative" "$runtime_root/bin/python"
+test -x "$runtime_root/bin/python" || {
+  printf 'stable managed Python launcher is not executable\n' >&2
   exit 1
 }
 package_version="$("$python_bin" -I -c \

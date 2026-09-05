@@ -16,7 +16,7 @@
   <a href="https://github.com/Fzkuji/OpenProgram/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Fzkuji/OpenProgram?style=flat-square&color=blue"></a>
   <a href="https://github.com/Fzkuji/OpenProgram/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square"></a>
   <a href="https://www.python.org/"><img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue?style=flat-square"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-lightgrey?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
   <a href="https://github.com/Fzkuji/OpenProgram/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/Fzkuji/OpenProgram/ci.yml?branch=main&style=flat-square&label=build"></a>
 </p>
 
@@ -56,7 +56,13 @@
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-macOS 桌面从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下载 unsigned DMG。Linux 用同一套 CLI/server runtime 和 Web UI，当前不发布桌面包。Windows 原生打包不在本 release。
+Windows x86_64 CLI/server：
+
+```powershell
+irm https://openprogram.io/install.ps1 | iex
+```
+
+Desktop：macOS release 使用 unsigned DMG；Windows 在 [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases) 附带该产物时使用带签名的 `win-x64.exe`。Linux 与没有该 EXE 的 Windows 版本使用完整 CLI/server runtime 和 Web UI。
 
 平台矩阵、PATH、`openprogram doctor`、source checkout 见 **[安装](install/install.zh.md)**。
 
@@ -94,7 +100,7 @@ GUI Agent、Research Agent、Wiki Agent 已随每个受支持的 release 附带�
 
 ## 为什么是 OpenProgram？
 
-OpenProgram 当前 release 支持 macOS 和 Linux 安装、多 provider，以及 Web 界面（桌面 App 或 `openprogram web` → http://localhost:18100）。Windows 原生打包暂缓到后续 release 决策；目前 Windows 与移动设备可以作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
+OpenProgram 支持 macOS、Linux、原生 Windows x86_64 CLI/server、多 provider、完整终端 UI 和 Web 界面（Desktop App 或 `openprogram web` → http://localhost:18100）。Windows Desktop 发行路径会生成带签名的按用户 installer，并内置同一份完整 runtime；Windows 沙箱仍是单独层级。Windows release 自带 Ink TUI，只有终端无法提供 raw input 时才回退到 Python Rich 界面。移动设备可以作为浏览器客户端访问受支持的远程主机。harness 本体提供**三种构建 agent Program 的机制**。
 
 ### 1. DAG 上下文 —— 原生多 agent 系统的地基
 

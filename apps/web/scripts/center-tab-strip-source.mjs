@@ -29,6 +29,6 @@ export function readCenterTabStripSource(importMetaUrl) {
     readFileSync(
       new URL(`../components/center-tabs/${name}`, importMetaUrl),
       "utf8",
-    ),
+    ).replaceAll("\r\n", "\n"),
   ).join("\n");
 }

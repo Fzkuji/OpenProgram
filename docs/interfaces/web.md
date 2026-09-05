@@ -40,6 +40,16 @@ Function and tool calls within each reply turn render as an expandable execution
 
 Drag and drop images or text files onto the input box (pasting works too); they are attached to the next message you send.
 
+### Projects on headless or remote Linux
+
+Project folders and additional working directories refer to paths on the
+machine running the worker. OpenProgram normally opens that machine's native
+folder picker. If Linux has no X11 or Wayland display—for example, a server
+reached through SSH—the Web UI opens a manual server-path dialog instead.
+Enter an absolute path such as `/srv/projects/example`; the worker verifies
+that the directory exists before using it. Cancelling an available native
+picker remains a cancellation and does not trigger the manual dialog.
+
 ### Session branches and the DAG view
 
 Session history is stored as a DAG, not a flat list:

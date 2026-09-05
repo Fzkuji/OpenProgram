@@ -88,6 +88,32 @@ def make_text_stream_fn(chunks: list[str]):
 # Fake ACP client over in-memory pipes
 # ---------------------------------------------------------------------------
 
+def _pipe_readable(stream, timeout: float) -> bool:
+    """Wait for an anonymous pipe without assuming POSIX ``select``.
+
+    Windows ``select`` only accepts sockets.  ``PeekNamedPipe`` works for the
+    anonymous pipe handles returned by ``os.pipe`` without consuming data.
+    """
+    if os.name != "nt":
+        return bool(select.select([stream], [], [], timeout)[0])
+
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    handle = msvcrt.get_osfhandle(stream.fileno())
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        available = wintypes.DWORD()
+        if not ctypes.windll.kernel32.PeekNamedPipe(
+            handle, None, 0, None, ctypes.byref(available), None
+        ):
+            raise ctypes.WinError()
+        if available.value:
+            return True
+        time.sleep(0.01)
+    return False
+
 class FakeClient:
     """Drives an ACPServer over a real OS pipe pair, on a server thread.
 
@@ -172,7 +198,7 @@ class FakeClient:
             # Poll rather than block: after we answer a permission request
             # the server sets the gate's Event a moment later, with nothing
             # further to read — a blocking readline would hang past it.
-            if select.select([self._from_server], [], [], 0.1)[0]:
+            if _pipe_readable(self._from_server, 0.1):
                 self._handle_incoming(self._read_msg())
         return predicate()
 
@@ -983,7 +1009,7 @@ def test_tool_calls_are_reported(tmp_db, client, tmp_path) -> None:
     assert start["kind"] == "read"
     assert start["status"] == "in_progress"
     assert start["rawInput"] == {"path": "/work/a.py", "line": 3}
-    assert start["locations"][0]["path"].endswith("/work/a.py")
+    assert Path(start["locations"][0]["path"]).parts[-2:] == ("work", "a.py")
 
     end = c.updates("tool_call_update")[0]
     assert end["toolCallId"] == "tc1"

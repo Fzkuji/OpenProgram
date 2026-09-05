@@ -11,6 +11,7 @@ import { AlertTriangle, FolderSearch } from "lucide-react";
 
 import fx from "@/components/functions/functions-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
+import { useFolderPicker } from "@/components/ui/folder-picker";
 import styles from "./projects-page.module.css";
 import { managePageStyles as shared } from "@/components/ui/manage-page";
 import { useTranslation } from "@/lib/i18n";
@@ -60,6 +61,7 @@ export function ProjectsPage({
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [localQuery, setLocalQuery] = useState("");
+  const { pickFolder, folderPickerDialog } = useFolderPicker();
   const query = queryProp !== undefined ? queryProp : localQuery;
   const setQuery = setLocalQuery;
 
@@ -110,14 +112,13 @@ export function ProjectsPage({
   }, [tab, selectedId, loadSessions]);
 
   // 定位缺失项目的新目录：改项目 path、保留 id（relocate_project）。
-  const locateProject = useCallback(async (projectId: string) => {
+  const locateProject = useCallback(async (projectId: string, startPath = "") => {
     setError(null);
     try {
-      const r = await fetch("/api/pick-folder");
-      const j = await r.json();
-      if (!j?.path) return;
+      const path = await pickFolder(startPath);
+      if (!path) return;
       const d = await wsRequest<{ ok: boolean; error?: string | null }>(
-        "relocate_project", { project_id: projectId, path: j.path },
+        "relocate_project", { project_id: projectId, path },
         "project_relocated",
       );
       if (d && !d.ok) setError(d.error || text("Relocation failed.", "移动失败。"));
@@ -125,16 +126,15 @@ export function ProjectsPage({
     } catch (e) {
       setError(String(e));
     }
-  }, [refresh, text]);
+  }, [pickFolder, refresh, text]);
 
   const addProject = useCallback(async () => {
     setError(null);
     try {
-      const r = await fetch("/api/pick-folder");
-      const j = await r.json();
-      if (!j?.path) return;
+      const path = await pickFolder();
+      if (!path) return;
       const d = await wsRequest<{ ok: boolean; project?: Project; error?: string }>(
-        "create_project", { path: j.path }, "project_created",
+        "create_project", { path }, "project_created",
       );
       if (d?.error) setError(d.error);
       if (d?.project) setSelectedId(d.project.id);
@@ -142,10 +142,11 @@ export function ProjectsPage({
     } catch (e) {
       setError(String(e));
     }
-  }, [refresh]);
+  }, [pickFolder, refresh]);
 
   const view = (
       <div className={fx.view} style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
+        {folderPickerDialog}
         {(!embedded || queryProp === undefined) && (
           <div className={fx.topbar}>
             {!embedded && <span className={fx.title}>{text("Projects", "项目")}</span>}
@@ -224,7 +225,7 @@ export function ProjectsPage({
                     </span>
                     <button
                       type="button"
-                      onClick={() => locateProject(selected.id)}
+                      onClick={() => locateProject(selected.id, selected.path)}
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 4,
                         cursor: "pointer", background: "none",

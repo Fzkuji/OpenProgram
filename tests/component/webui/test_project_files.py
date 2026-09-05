@@ -21,7 +21,6 @@ import asyncio
 import errno
 import json
 import os
-import resource
 import types
 from pathlib import Path
 
@@ -46,7 +45,7 @@ def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "proj"
     (root / "src").mkdir(parents=True)
     (root / "Alpha_dir").mkdir()
-    (root / "src" / "x.py").write_text("print('hi')\n", encoding="utf-8")
+    (root / "src" / "x.py").write_bytes(b"print('hi')\n")
     (root / "zeta.txt").write_text("zzz", encoding="utf-8")
     (root / "apple.txt").write_text("aaa", encoding="utf-8")
     (root / ".hidden").write_text("dot", encoding="utf-8")
@@ -55,7 +54,11 @@ def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.txt").write_text("secret", encoding="utf-8")
-    os.symlink(outside / "secret.txt", root / "sneaky_link")
+    try:
+        os.symlink(outside / "secret.txt", root / "sneaky_link")
+    except OSError as exc:
+        if os.name != "nt" or getattr(exc, "winerror", None) != 1314:
+            raise
 
     def fake_get_project(project_id: str):
         if project_id == "p1":
@@ -83,14 +86,16 @@ def test_tree_root_dirs_first_case_insensitive(project_root):
     assert data["project_id"] == "p1" and data["path"] == ""
     assert "error" not in data
     names = [(e["name"], e["type"]) for e in data["entries"]]
-    assert names == [
+    expected = [
         ("Alpha_dir", "dir"),
         ("src", "dir"),
         (".hidden", "file"),
         ("apple.txt", "file"),
-        ("sneaky_link", "file"),
         ("zeta.txt", "file"),
     ]
+    if (project_root / "sneaky_link").is_symlink():
+        expected.insert(-1, ("sneaky_link", "file"))
+    assert names == expected
     by_name = {e["name"]: e for e in data["entries"]}
     assert by_name["zeta.txt"]["size"] == 3
     assert by_name["zeta.txt"]["mtime"] > 0
@@ -129,7 +134,9 @@ def test_tree_pages_use_opaque_stable_cursor(project_root):
     assert [e["name"] for e in second["entries"]] == [
         "item-096.txt", "item-097.txt", "item-098.txt", "item-099.txt",
         "item-100.txt", "item-101.txt", "item-102.txt",
-        "item-103.txt", "item-104.txt", "sneaky_link", "zeta.txt",
+        "item-103.txt", "item-104.txt",
+        *(["sneaky_link"] if (project_root / "sneaky_link").is_symlink() else []),
+        "zeta.txt",
     ]
     assert second["next_cursor"] is None
 
@@ -238,6 +245,17 @@ def test_project_search_does_not_follow_symlink(project_root):
     assert data["results"] == []
 
 
+@pytest.mark.parametrize("query_root", ["src", "src/deep", "src\\deep"])
+def test_project_search_relative_subdirectory(project_root, query_root):
+    (project_root / "src" / "deep").mkdir()
+    (project_root / "src" / "deep" / "needle.txt").write_bytes(b"needle")
+    data = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": query_root, "query": "needle",
+    })["data"]
+    assert data["error_code"] is None
+    assert [row["path"] for row in data["results"]] == ["src/deep/needle.txt"]
+
+
 @pytest.mark.parametrize("field,value", [
     ("query", {"needle": True}),
     ("mode", {"contains": True}),
@@ -264,12 +282,8 @@ def test_project_search_rejects_empty_query_explicitly(project_root):
 
 
 def test_project_query_reports_permission_without_partial_snapshot(project_root, monkeypatch):
-    original_scandir = ws_files.os.scandir
-
     def denied(path):
-        if isinstance(path, int):
-            raise PermissionError(errno.EACCES, "permission denied")
-        return original_scandir(path)
+        raise PermissionError(errno.EACCES, "permission denied")
 
     monkeypatch.setattr(ws_files.os, "scandir", denied)
     data = _run(ws_files.handle_project_file_search, {
@@ -301,15 +315,16 @@ def test_project_search_does_not_follow_directory_replaced_by_symlink(project_ro
     external = project_root.parent / "raced-external"
     external.mkdir()
     (external / "needle.txt").write_text("secret", encoding="utf-8")
-    original_open = ws_files.os.open
+    from openprogram.webui.ws_actions import files_query
+    original_open = files_query.directory_child
 
-    def racing_open(path, flags, *args, **kwargs):
-        if kwargs.get("dir_fd") is not None and path == "nested":
+    def racing_open(parent, path):
+        if path == "nested":
             nested.rmdir()
             nested.symlink_to(external, target_is_directory=True)
-        return original_open(path, flags, *args, **kwargs)
+        return original_open(parent, path)
 
-    monkeypatch.setattr(ws_files.os, "open", racing_open)
+    monkeypatch.setattr(files_query, "directory_child", racing_open)
     data = _run(ws_files.handle_project_file_search, {
         "project_id": "p1", "path": "", "query": "needle",
     })["data"]
@@ -423,6 +438,7 @@ def test_cursor_basis_enforces_snapshot_item_limit(project_root, monkeypatch):
 
 
 def test_search_closes_sibling_directory_fds_under_low_nofile_limit(project_root):
+    resource = pytest.importorskip("resource", reason="POSIX descriptor limits")
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     if hard < 256 or soft <= 256:
         pytest.skip("host file-descriptor limit cannot be lowered to 256")
@@ -596,6 +612,8 @@ def test_read_unknown_project(project_root):
 
 
 def test_read_symlink_escape_rejected(project_root):
+    if not (project_root / "sneaky_link").is_symlink():
+        pytest.skip("creating symlinks requires Windows Developer Mode or elevation")
     data = _run(ws_files.handle_project_file_read,
                 {"project_id": "p1", "path": "sneaky_link"})["data"]
     assert data["error"] == "path escapes project root"
@@ -697,7 +715,10 @@ def test_write_no_expected_mtime_creates_new_file(project_root):
 
 
 def test_write_traversal_rejected(project_root):
-    for bad in ("../outside/evil.txt", "/etc/evil", "sneaky_link"):
+    bad_paths = ["../outside/evil.txt", "/etc/evil"]
+    if (project_root / "sneaky_link").is_symlink():
+        bad_paths.append("sneaky_link")
+    for bad in bad_paths:
         data = _write({"project_id": "p1", "path": bad, "content": "x"})
         assert data["error"] == "path escapes project root", bad
     assert (project_root.parent / "outside" / "secret.txt").read_text() == "secret"
@@ -1041,8 +1062,11 @@ def test_raw_escape_403(client, project_root):
     r = client.get("/files/raw",
                    params={"project_id": "p1", "path": "../outside/secret.txt"})
     assert r.status_code == 403
-    r = client.get("/files/raw", params={"project_id": "p1", "path": "sneaky_link"})
-    assert r.status_code == 403
+    if (project_root / "sneaky_link").is_symlink():
+        r = client.get(
+            "/files/raw", params={"project_id": "p1", "path": "sneaky_link"}
+        )
+        assert r.status_code == 403
 
 
 def test_raw_missing_404(client, project_root):

@@ -149,6 +149,9 @@ def test_edit_resolves_relative_inside_worktree(worktree_root):
 
 
 def test_write_outside_worktree_is_blocked_by_default_sandbox(worktree_root, tmp_path):
+    from openprogram.sandbox import is_available
+    if not is_available():
+        pytest.skip("default sandbox backend is unavailable")
     from openprogram.programs.tools.files.write import write as write_tool
     target = tmp_path / "elsewhere.txt"
     out = _exec_tool(write_tool, file_path=str(target), content="x")

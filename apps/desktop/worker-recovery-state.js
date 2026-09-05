@@ -3,7 +3,22 @@ function createRecoveryState() {
 }
 
 function createRecoveryCoordinator() {
-  return { workerSpawned: false };
+  return {
+    workerSpawned: false,
+    startRejected: false,
+    restartIssued: false,
+    unreachableProbes: 0,
+  };
+}
+
+function recordWorkerCommandExit(coordinator, action, exitCode) {
+  if (exitCode === 0) return;
+  coordinator.workerSpawned = false;
+  if (action === "start") coordinator.startRejected = true;
+  if (action === "restart") {
+    coordinator.restartIssued = false;
+    coordinator.unreachableProbes = 0;
+  }
 }
 
 function startRecoveryCycle(state) {
@@ -29,10 +44,32 @@ function finishRecoveryProbe(
   state.probeInFlight = false;
   if (!state.active) return null;
   state.nextProbeAt = now + retryIntervalMs;
-  if (reachable) coordinator.workerSpawned = false;
+  if (reachable) {
+    coordinator.workerSpawned = false;
+    coordinator.startRejected = false;
+    coordinator.restartIssued = false;
+    coordinator.unreachableProbes = 0;
+  } else {
+    coordinator.unreachableProbes += 1;
+  }
   if (reachable && hasAuthenticatedUrl) {
     state.active = false;
     return "load";
+  }
+  if (
+    !reachable
+    && !coordinator.workerSpawned
+    && coordinator.startRejected
+  ) {
+    // ``worker start`` exits non-zero when the PID is alive.  Four failed
+    // health probes (~12 seconds at the production cadence) distinguish a
+    // genuinely unresponsive worker from a temporarily busy/startup phase.
+    if (coordinator.unreachableProbes >= 4 && !coordinator.restartIssued) {
+      coordinator.workerSpawned = true;
+      coordinator.restartIssued = true;
+      return "restart";
+    }
+    return null;
   }
   if (!reachable && !coordinator.workerSpawned) {
     coordinator.workerSpawned = true;
@@ -44,6 +81,7 @@ function finishRecoveryProbe(
 module.exports = {
   createRecoveryState,
   createRecoveryCoordinator,
+  recordWorkerCommandExit,
   startRecoveryCycle,
   beginRecoveryProbe,
   finishRecoveryProbe,

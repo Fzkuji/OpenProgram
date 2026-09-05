@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def _workflow() -> dict:
-    return yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    return yaml.safe_load(
+        (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
 
 
 def _run_commands(job: dict) -> str:
@@ -44,6 +46,8 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
     quality = _run_commands(jobs["quality"])
     assert "ruff check" in quality
     assert "tests/contracts" in quality
+    assert "systemd-analyze verify" in quality
+    assert "from openprogram.worker.services.systemd import _build_unit" in quality
     assert "scripts.docs_site.build" in quality
     assert "tests/unit" in _run_commands(jobs["unit"])
     assert "tests/component" in _run_commands(jobs["component"])
@@ -56,7 +60,11 @@ def test_ci_assigns_each_test_runtime_to_an_explicit_job() -> None:
     ))
     cli = _run_commands(jobs["cli"])
     assert all(command in cli for command in (
-        "npm run typecheck", "npm test", "npm run build",
+        "npm run typecheck",
+        "npm test",
+        "npm run build",
+        "npm run build:standalone",
+        "smoke-ink-tui-pty.py node dist/index-standalone.cjs",
     ))
     assert "npm run check" in _run_commands(jobs["desktop"])
     browser = _run_commands(jobs["browser"])
@@ -81,6 +89,8 @@ def test_ci_runs_every_cli_step_from_the_apps_workspace() -> None:
         "npm run typecheck",
         "npm test",
         "npm run build",
+        "npm run build:standalone",
+        "python3 ../../scripts/release/smoke-ink-tui-pty.py node dist/index-standalone.cjs",
     ]
     assert run_steps[0].get("working-directory") is None
     assert {step.get("working-directory") for step in run_steps[1:]} == {"apps/cli"}
@@ -129,7 +139,9 @@ def test_ci_enforces_the_verified_unit_coverage_floor() -> None:
 
 
 def test_contributor_commands_match_required_ci_entrypoints() -> None:
-    contributing = (ROOT / ".github" / "CONTRIBUTING.md").read_text()
+    contributing = (ROOT / ".github" / "CONTRIBUTING.md").read_text(
+        encoding="utf-8"
+    )
     for command in (
         "uv run --locked --extra dev python -m pytest -q tests/contracts",
         "uv run --locked --extra dev python -m pytest -q tests/unit",

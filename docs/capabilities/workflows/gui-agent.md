@@ -56,7 +56,9 @@ The Function card displays that task result directly: `Succeeded` for a verified
 
 - Product runtimes do not install PyTorch or EasyOCR.
 - The release capability probe rejects an artifact if the detector model is missing.
-- Supported product platforms are macOS and Linux.
+- Program registration is included on macOS, Linux, and Windows x86_64
+  runtimes; individual desktop backends still follow the harness's platform
+  and dependency support.
 - The runtime needs a working directory configured before running. Workflow records are stored under the OpenProgram state directory (`gui_harness/workflows/`), not in the source tree.
 
 Source and README: `openprogram/programs/applications/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).

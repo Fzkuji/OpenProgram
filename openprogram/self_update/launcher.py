@@ -99,11 +99,9 @@ def _wait_ready(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if _ready_pid(update_dir, update_id, installer_sha256) == expected_pid:
-            try:
-                os.kill(expected_pid, 0)
+            from openprogram._compat import process_alive
+            if process_alive(expected_pid):
                 return True
-            except OSError:
-                pass
         time.sleep(0.05)
     return False
 

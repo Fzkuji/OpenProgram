@@ -332,15 +332,25 @@ def test_user_docs_do_not_advertise_removed_bundled_skills() -> None:
 def test_formal_distribution_implementation_is_grouped_under_release() -> None:
     release_files = {
         "archive-product-runtime.sh",
+        "archive-product-runtime.ps1",
+        "archive-product-runtime.py",
         "build-product-runtime.sh",
+        "build-product-runtime.ps1",
         "create-release-manifest.py",
         "install-release.sh",
+        "install-release.ps1",
         "prepare-desktop-runtime.sh",
+        "prepare-desktop-runtime.ps1",
         "product-runtime.json",
         "smoke-packaged-runtime.sh",
+        "smoke-packaged-runtime.ps1",
+        "smoke-linux-runtime-baseline.sh",
         "stage-release-assets.sh",
+        "stage-release-assets.ps1",
         "verify-product-runtime.py",
         "verify-release-version.py",
+        "verify-staged-web.py",
+        "runtime-build-metadata.py",
     }
 
     assert all(
@@ -348,9 +358,10 @@ def test_formal_distribution_implementation_is_grouped_under_release() -> None:
     )
     assert all(
         not (ROOT / "scripts" / name).exists()
-        for name in release_files - {"install-release.sh"}
+        for name in release_files - {"install-release.sh", "install-release.ps1"}
     )
     assert (ROOT / "scripts" / "install-release.sh").is_file()
+    assert (ROOT / "scripts" / "install-release.ps1").is_file()
 
 
 def test_node_apps_share_one_root_npm_workspace_lock() -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import os
-import platform
 import re
 import socket
 import subprocess
@@ -84,21 +83,19 @@ def _installed_version() -> str:
 
 
 def _platform_runtime_names(version: str) -> tuple[str, str]:
-    system = platform.system()
-    machine = platform.machine().lower()
-    platform_name = {"Darwin": "macos", "Linux": "linux"}.get(system)
-    arch = {
-        "arm64": "arm64",
-        "aarch64": "arm64",
-        "x86_64": "x86_64",
-        "amd64": "x86_64",
-    }.get(machine)
-    if platform_name is None or arch is None:
+    from openprogram import _compat
+
+    target = _compat.managed_release_target()
+    if target is None:
+        import platform
+
         raise UpgradeError(
             "unsupported-platform",
-            f"managed releases do not support {system} {platform.machine()}",
+            "managed releases do not support "
+            f"{platform.system()} {platform.machine()}",
         )
-    archive = f"OpenProgram-{version}-runtime-{platform_name}-{arch}.tar.gz"
+    platform_name, arch, suffix, _installer_name = target
+    archive = f"OpenProgram-{version}-runtime-{platform_name}-{arch}{suffix}"
     return archive, f"{archive}.sha256"
 
 
@@ -213,7 +210,18 @@ def run_managed_release_upgrade(
             return 0
 
         target = status["latest_version"]
-        installer = github.release_installer(target)
+        from openprogram import _compat
+
+        installer_name = (
+            "install-release.ps1"
+            if status["archive"].endswith(".zip")
+            else "install-release.sh"
+        )
+        installer = (
+            github.release_installer(target, script_name=installer_name)
+            if installer_name.endswith(".ps1")
+            else github.release_installer(target)
+        )
         if installer is None:
             raise UpgradeError(
                 "installer-unavailable",
@@ -223,14 +231,17 @@ def run_managed_release_upgrade(
         try:
             with tempfile.NamedTemporaryFile(
                 prefix=f"openprogram-{target}-installer-",
-                suffix=".sh",
+                suffix=Path(installer_name).suffix,
                 delete=False,
             ) as temporary:
                 temporary.write(installer)
                 installer_path = temporary.name
-            os.chmod(installer_path, 0o700)
+            if installer_name.endswith(".sh"):
+                os.chmod(installer_path, 0o700)
             allowed_environment = {
                 "PATH", "HOME", "TMPDIR", "TMP", "TEMP",
+                "USERPROFILE", "LOCALAPPDATA", "APPDATA", "SystemRoot",
+                "SYSTEMROOT", "WINDIR", "ComSpec", "COMSPEC", "PATHEXT",
                 "LANG", "LC_ALL", "LC_CTYPE",
                 "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "NO_PROXY",
                 "https_proxy", "http_proxy", "all_proxy", "no_proxy",
@@ -244,12 +255,26 @@ def run_managed_release_upgrade(
             }
             env["OPENPROGRAM_VERSION"] = target
             env["OPENPROGRAM_REPOSITORY"] = PRODUCT_REPOSITORY
-            completed = subprocess.run(
-                ["sh", installer_path],
-                env=env,
-                capture_output=as_json,
-                text=as_json,
-            )
+            command = _compat.release_installer_command(installer_path)
+            try:
+                completed = subprocess.run(
+                    command,
+                    env=env,
+                    capture_output=as_json,
+                    text=as_json,
+                )
+            except FileNotFoundError:
+                fallback = _compat.release_installer_fallback_command(
+                    installer_path
+                )
+                if fallback is None:
+                    raise
+                completed = subprocess.run(
+                    fallback,
+                    env=env,
+                    capture_output=as_json,
+                    text=as_json,
+                )
         except (OSError, subprocess.SubprocessError) as exc:
             raise UpgradeError(
                 "installer-execution-failed",
@@ -571,17 +596,41 @@ def run_upgrade(*, channel: Optional[str] = None, dry_run: bool = False,
                          root, "deps-failed")
             done.append("pip install -e .")
         if "package-lock.json" in changed:
-            _run_or_fail(["npm", "ci"], root, "deps-failed")
-            done.append("npm ci")
+            _run_or_fail(
+                [
+                    "npm", "ci", "--include-workspace-root", "--ignore-scripts",
+                ],
+                root,
+                "deps-failed",
+                node_tool=True,
+            )
+            done.append("npm ci (frontend workspaces)")
         steps.record("deps", True, ", ".join(done) or "unchanged", started)
 
-        # 4. build — only when something under web/ moved.
+        # 4. build — only the frontend workspaces that changed.
         started = time.monotonic()
-        if any(f.startswith("apps/web/") for f in changed):
-            _run_or_fail(["npx", "next", "build"], root / "apps" / "web", "build-failed")
-            detail = "next build"
-        else:
-            detail = "unchanged"
+        builds: list[str] = []
+        if "package-lock.json" in changed or any(
+            f.startswith("apps/web/") for f in changed
+        ):
+            _run_or_fail(
+                ["npm", "run", "build", "--workspace", "apps/web"],
+                root,
+                "build-failed",
+                node_tool=True,
+            )
+            builds.append("apps/web")
+        if "package-lock.json" in changed or any(
+            f.startswith("apps/cli/") for f in changed
+        ):
+            _run_or_fail(
+                ["npm", "run", "build", "--workspace", "apps/cli"],
+                root,
+                "build-failed",
+                node_tool=True,
+            )
+            builds.append("apps/cli")
+        detail = f"npm run build ({', '.join(builds)})" if builds else "unchanged"
         steps.record("build", True, detail, started)
 
         # 5. probe — cold-start the new code in an isolated profile.
@@ -627,7 +676,13 @@ def run_upgrade(*, channel: Optional[str] = None, dry_run: bool = False,
         return finish(False, e.reason)
 
 
-def _run_or_fail(cmd: list[str], cwd: Path, reason: str) -> None:
+def _run_or_fail(
+    cmd: list[str], cwd: Path, reason: str, *, node_tool: bool = False
+) -> None:
+    if node_tool:
+        from openprogram._compat import node_tool_cmd
+
+        cmd = node_tool_cmd(cmd)
     res = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
     if res.returncode != 0:
         tail = (res.stderr or res.stdout or "").strip()[-500:]

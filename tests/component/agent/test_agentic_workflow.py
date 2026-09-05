@@ -329,7 +329,9 @@ def _snapshot_package(repo: Path, run_id: str, name: str = "research_workflow") 
 
 
 def _state(repo: Path, run_id: str) -> dict:
-    return json.loads((_instance(repo, run_id) / "state.json").read_text())
+    return json.loads(
+        (_instance(repo, run_id) / "state.json").read_text(encoding="utf-8")
+    )
 
 
 def _install_workflow_project(repo: Path, reply: str) -> tuple[dict, str]:
@@ -761,7 +763,7 @@ def test_auto_workflow_stops_when_create_fails_and_publishes_nothing(
     runs = session_repo / "workflows"
     if runs.exists():
         for state_path in runs.glob("*/state.json"):
-            assert json.loads(state_path.read_text())["status"] != "completed"
+            assert json.loads(state_path.read_text(encoding="utf-8"))["status"] != "completed"
 
 
 def test_agentic_workflow_is_not_registered() -> None:
@@ -1487,7 +1489,7 @@ def test_project_execution_failure_never_repairs_or_publishes(
 
     assert result["status"] == "failed"
     assert result["revisions"] == []
-    persisted = json.loads((instance / "state.json").read_text())
+    persisted = json.loads((instance / "state.json").read_text(encoding="utf-8"))
     assert "RuntimeError: broken" in persisted["last_error"]
 
 
@@ -1954,7 +1956,9 @@ def test_public_entry_executes_standard_agentic_function_package(
     assert (project / "steps" / "discover.py").exists()
     assert (project / "tests" / "test_workflow.py").exists()
     assert not (project / "workflow.json").exists()
-    metadata = TL.tomllib.loads((project / "pyproject.toml").read_text())
+    metadata = TL.tomllib.loads(
+        (project / "pyproject.toml").read_text(encoding="utf-8")
+    )
     assert metadata["project"]["entry-points"]["openprogram.workflows"] == {
         "literature_review": (
             "workflows.literature_review:literature_review"
@@ -2223,7 +2227,7 @@ def test_workflow_dependency_snapshot_keeps_resolved_commit(
     snapshot_source = (
         instance / "snapshot" / "workflows" / "paper_search"
         / "steps" / "search.py"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     assert "initial" in snapshot_source
     assert "revised" not in snapshot_source
 
@@ -2237,7 +2241,7 @@ def test_workflow_dependency_snapshot_keeps_resolved_commit(
     rebuilt_source = (
         instance / "snapshot" / "workflows" / "paper_search"
         / "steps" / "search.py"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     assert "initial" in rebuilt_source
     assert "revised" not in rebuilt_source
 
@@ -2492,7 +2496,7 @@ def test_revise_reads_full_active_project_and_preserves_unchanged_file(
     assert _git_output(project, "rev-list", "--count", "HEAD") == "2"
     assert _git_output(
         project, "show", f"{initial['revision']}:steps/shared.py",
-    ) == (project / "steps" / "shared.py").read_text().strip()
+    ) == (project / "steps" / "shared.py").read_text(encoding="utf-8").strip()
     assert "discover papers" in prompts[1]
     assert "steps/shared.py" in prompts[1]
     assert "Reusable research steps" in prompts[1]
@@ -2622,7 +2626,7 @@ def test_concurrent_process_publish_creates_two_git_commits(
     active = next(label for label, revision, _error in published
                   if revision == index["active_revision"])
     assert index["project_metadata"] == candidates[active]["project_metadata"]
-    assert (project / "README.md").read_text() == candidates[active]["readme"]
+    assert (project / "README.md").read_text(encoding="utf-8") == candidates[active]["readme"]
     assert len(_git_output(project, "worktree", "list", "--porcelain").split("worktree ")) == 2
 
 

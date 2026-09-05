@@ -475,8 +475,15 @@ class Agent:
                 stop_reason="aborted" if is_aborted else "error",
                 error_message=err_text,
                 error_reason=err_reason,
-                error_retryable=err_retryable,
+                error_retryable=(
+                    False
+                    if getattr(err, "transport_exhausted", False)
+                    else err_retryable
+                ),
                 error_retry_after_s=err_retry_after_s,
+                error_transport_exhausted=bool(
+                    getattr(err, "transport_exhausted", False)
+                ),
                 timestamp=int(time.time() * 1000),
             )
             self.append_message(error_msg)

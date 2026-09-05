@@ -57,6 +57,8 @@ def is_retryable_error(msg: Any, context_window: int = 0) -> bool:
         return False
     if context_window and is_context_overflow(msg, context_window):
         return False
+    if getattr(msg, "error_transport_exhausted", False):
+        return False
     verdict = getattr(msg, "error_retryable", None)
     if verdict is not None:
         return bool(verdict)

@@ -404,3 +404,17 @@ def test_bootstrap_lock_path_under_dot_openprogram():
     p = _bootstrap_lock_path()
     assert ".openprogram" in str(p)
     assert "browser-cdp.lock" in p.name
+
+
+def test_browser_state_paths_follow_the_active_profile(monkeypatch, tmp_path):
+    from openprogram import paths
+    from openprogram.programs.tools.web.browser import _chrome_bootstrap as boot
+    from openprogram.programs.tools.web.browser import browser
+
+    profile = tmp_path / ".openprogram-linux-ci"
+    monkeypatch.setattr(paths, "get_state_dir", lambda: profile)
+
+    assert boot.sidecar_dir() == profile / "chrome-profile"
+    assert boot.port_file() == profile / "browser-cdp-port"
+    assert boot._bootstrap_lock_path() == profile / "browser-cdp.lock"
+    assert browser._state_dir() == str(profile / "browser-states")

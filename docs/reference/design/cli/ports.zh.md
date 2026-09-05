@@ -80,7 +80,7 @@ openprogram ports --port 9100     # 设置并持久化
   无法取得 credential。可选 `expected_revision` 会把 proof 绑定到 upgrade target 当前
   提供的 revision。
 - **ownership** —— `describe_port_owner(port)` / `port_owner_hint(port)`：
-  用 `lsof` / `netstat` + `/proc` / `ps` / `wmic` 来标识占用的 PID 与命令
+  用 `lsof` / `netstat` + `/proc` / `ps` / Windows CIM 来标识占用的 PID 与命令
   行，并归类为我们的还是外部的。正是它让"端口被占用"错误能说出 *谁* 在
   占用。
 

@@ -61,9 +61,13 @@ _UNSUPPORTED_KEYWORDS: frozenset[str] = frozenset({
     "$ref",
     "$defs",
     "definitions",
-    # ``anyOf`` / ``oneOf`` / ``allOf`` ARE supported but only when
-    # they're at the property level and resolve to disjoint sets — we
-    # leave them in place and let the API reject if mis-formed.
+    # OpenAI's strict function-tool dialect rejects ``allOf`` outright
+    # (including at the root of an otherwise valid object schema).  Our
+    # canonical tools use it only for conditional validation such as
+    # ``if action == verify, then require ...``; the runtime validates those
+    # arguments again, so dropping the unsupported provider-side constraint
+    # preserves functionality instead of making every request fail with 400.
+    "allOf",
 })
 
 
@@ -135,9 +139,9 @@ def _rewrite_in_place(node: Any) -> None:
                 for it in items:
                     _rewrite_in_place(it)
 
-        # Recurse into combinator keywords if present. These are valid
-        # in strict but their sub-schemas need the same rewriting pass.
-        for combinator in ("anyOf", "oneOf", "allOf"):
+        # Recurse into the combinators that remain valid in strict. ``allOf``
+        # was removed above because the function-tool endpoint rejects it.
+        for combinator in ("anyOf", "oneOf"):
             if combinator in node and isinstance(node[combinator], list):
                 for sub in node[combinator]:
                     _rewrite_in_place(sub)

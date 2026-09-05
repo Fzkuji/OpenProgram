@@ -50,7 +50,9 @@ from openprogram.cli.repl.turn import _run_turn_with_history  # noqa: E402,F401
 def run_cli_chat(oneshot: str | None = None,
                  resume: str | None = None,
                  tui: bool = True,
-                 response_format=None) -> None:
+                 response_format=None,
+                 no_alt_screen: bool = False,
+                 screen_reader: bool = False) -> None:
     """Launch the terminal chat.
 
     ``oneshot`` runs one turn and exits (still persisted so it shows
@@ -59,16 +61,51 @@ def run_cli_chat(oneshot: str | None = None,
     ``resume`` picks up a prior session id under the current default
     agent instead of starting a fresh one.
 
-    ``tui`` defaults True on macOS / Linux and False on Windows (Ink
-    can't enter raw input mode on Windows consoles). Callers don't
-    need to pass it — ``openprogram`` resolves it from platform.
+    ``tui`` defaults True on every platform. Ink performs a real raw-input
+    capability check at startup; unsupported terminals fall back to Rich.
     ``oneshot`` always uses the Rich path (one-shot doesn't render
     a TUI).
     """
     import uuid as _uuid
     from rich.console import Console
-    from openprogram.agent.management import manager as _A
     console = Console()
+
+    if resume:
+        session_id = resume
+    else:
+        session_id = "local_" + _uuid.uuid4().hex[:10]
+
+    # The Ink client talks to the worker over WebSocket and discovers the
+    # default agent/model there.  Initialising a second provider runtime in
+    # this short-lived launcher makes a Windows cold start do the expensive
+    # work twice and delays worker startup long enough to look hung.
+    # Initialise the in-process runtime only for one-shot/Rich execution, or
+    # after Ink has genuinely failed and needs the fallback.
+    if tui and not oneshot:
+        try:
+            from openprogram.cli.ink import run_ink_tui
+            run_ink_tui(
+                session_id=session_id,
+                no_alt_screen=no_alt_screen,
+                screen_reader=screen_reader,
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            # cli.py:_maybe_redirect_for_tui() may have dup2'd stdout/stderr
+            # to the profile's logs/ink-startup.log on POSIX. The fallback
+            # REPL must restore them before it prints or prompts.
+            from openprogram import cli as _cli
+            for std_fd, saved_attr in ((1, "_TUI_TTY_OUT"), (2, "_TUI_TTY_ERR")):
+                saved = getattr(_cli, saved_attr, None)
+                if saved is not None:
+                    try:
+                        os.dup2(saved, std_fd)
+                    except OSError:
+                        pass
+            console.print(
+                f"[yellow]TUI failed to start ({type(e).__name__}: {e}); "
+                f"falling back to REPL.[/]"
+            )
 
     # Provider detection probes 5+ providers (CLI binaries + API hosts)
     # on cold cache; that takes several seconds. Tell the user something
@@ -86,40 +123,10 @@ def run_cli_chat(oneshot: str | None = None,
             sys.exit(1)
     model = getattr(rt, "model", "?")
 
+    from openprogram.agent.management import manager as _A
     agent = _A.get_default()
     if agent is None:
         agent = _A.create("main", make_default=True)
-
-    if resume:
-        session_id = resume
-    else:
-        session_id = "local_" + _uuid.uuid4().hex[:10]
-
-    # Full-screen TUI path (default). One-shot stays on the Rich path
-    # because rendering a scroll buffer for a single turn is overkill.
-    if tui and not oneshot:
-        try:
-            from openprogram.cli.ink import run_ink_tui
-            run_ink_tui(agent=agent, session_id=session_id, rt=rt)
-            return
-        except Exception as e:  # noqa: BLE001
-            # cli.py:_maybe_redirect_for_tui() already dup2'd stdout/stderr
-            # to ~/.openprogram/logs/ink-startup.log on the assumption the
-            # Ink TUI would take over the terminal. The fallback REPL writes
-            # to those same fds, so without restoring them the user sees a
-            # frozen blank terminal while everything goes to the log file.
-            from openprogram import cli as _cli
-            for std_fd, saved_attr in ((1, "_TUI_TTY_OUT"), (2, "_TUI_TTY_ERR")):
-                saved = getattr(_cli, saved_attr, None)
-                if saved is not None:
-                    try:
-                        os.dup2(saved, std_fd)
-                    except OSError:
-                        pass
-            console.print(
-                f"[yellow]TUI failed to start ({type(e).__name__}: {e}); "
-                f"falling back to REPL.[/]"
-            )
 
     # Rich REPL fallback / oneshot path. For the chat REPL, the banner
     # below already shows agent + session — no need for a separate

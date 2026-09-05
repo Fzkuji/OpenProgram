@@ -169,8 +169,9 @@ def test_copy_replay_and_terminal_recovery_are_durable(project, tmp_path):
     )[0])
     assert replayed["status"] == "recovery_required"
     assert "in_flight" not in replayed
-    assert db_path.stat().st_mode & 0o777 == 0o600
-    assert db_path.parent.stat().st_mode & 0o777 == 0o700
+    from openprogram._compat import user_private_metadata
+    assert user_private_metadata(db_path.stat(), exact_mode=0o600)
+    assert user_private_metadata(db_path.parent.stat(), exact_mode=0o700)
 
 
 def test_inflight_after_image_is_not_assumed_to_be_our_write(project):

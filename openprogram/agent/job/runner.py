@@ -25,6 +25,7 @@ on terminal so the existing attach card pickup path triggers.
 """
 from __future__ import annotations
 
+import atexit
 import asyncio
 import contextvars
 from contextlib import contextmanager, nullcontext
@@ -327,6 +328,7 @@ class JobRunner:
         if max_workers < 1:
             max_workers = 1
         self.max_workers = max_workers
+        self._owns_governor = governor is None
         if governor is None:
             from openprogram.agent.resource_governance import ResourceGovernor
             from openprogram.store import default_store
@@ -2358,6 +2360,11 @@ class JobRunner:
             with _RUNNERS_BY_EXECUTION_LOCK:
                 if _RUNNERS_BY_EXECUTION_PATH.get(str(self._execution_store.path)) is self:
                     _RUNNERS_BY_EXECUTION_PATH.pop(str(self._execution_store.path), None)
+            if self._owns_governor:
+                try:
+                    self._governor.ledger.close()
+                except Exception:
+                    pass
 
     # Worker body
 
@@ -3880,6 +3887,9 @@ def shutdown_runner() -> None:
             except Exception:
                 pass
             _runner = None
+
+
+atexit.register(shutdown_runner)
 
 
 __all__ = [

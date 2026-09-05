@@ -43,6 +43,7 @@ if test "${OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:-}" = 1; then
 fi
 "$embedded_python" -I "$resources/runtime/bin/verify-product-runtime.py" \
   "$resources/runtime" "${verify_args[@]}"
+"$resources/runtime/bin/node" "$resources/runtime/assets/tui/index.cjs" --probe
 
 port="${OPENPROGRAM_SMOKE_PORT:-$((19000 + RANDOM % 500))}"
 case "$port" in ''|*[!0-9]*) printf 'invalid packaged smoke port\n' >&2; exit 1 ;; esac

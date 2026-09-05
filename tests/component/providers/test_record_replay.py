@@ -11,11 +11,18 @@ import asyncio
 import builtins
 import importlib
 import json
+import os
 import stat
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+
+_POSIX_PERMISSION_AND_SYMLINK = pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX mode and symlink contract; Windows preserves inherited ACLs",
+)
 
 from openprogram.agent.agent_loop import agent_loop
 from openprogram.agent.types import (
@@ -98,7 +105,19 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail loudly if anything under test opens a socket."""
     import socket
 
-    def refuse(*args, **kwargs):
+    real_connect = socket.socket.connect
+
+    def refuse(sock, address, *args, **kwargs):
+        # The Windows Proactor event loop implements its wakeup socketpair
+        # with an internal loopback TCP connection. Allow only that runtime
+        # plumbing; provider network access remains forbidden.
+        if (
+            os.name == "nt"
+            and isinstance(address, tuple)
+            and address
+            and address[0] in {"127.0.0.1", "::1"}
+        ):
+            return real_connect(sock, address, *args, **kwargs)
         raise AssertionError("replay must not open a network connection")
 
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -250,7 +269,9 @@ def test_recording_omits_runtime_only_options_but_provider_receives_callback(
     assert scripted.calls[0].options.on_payload is callback
     request = next(
         row
-        for row in map(json.loads, recording_file.read_text().splitlines())
+        for row in map(
+            json.loads, recording_file.read_text(encoding="utf-8").splitlines()
+        )
         if row["type"] == "request"
     )
     assert "signal" not in request["options"]
@@ -315,7 +336,10 @@ def test_structured_retry_records_v2_calls_and_replays_same_typed_result(
     assert live == replayed == {"answer": 2}
     assert scripted.call_count == replay.call_count == 2
     replay.assert_consumed()
-    rows = [json.loads(raw) for raw in recording_file.read_text().splitlines()]
+    rows = [
+        json.loads(raw)
+        for raw in recording_file.read_text(encoding="utf-8").splitlines()
+    ]
     assert rows[0] == {"type": "header", "format_version": 2}
     requests = [row for row in rows if row["type"] == "request"]
     assert [row["call_index"] for row in requests] == [0, 1]
@@ -452,7 +476,10 @@ def test_v1_ordinary_recording_remains_replayable(
     tmp_path: Path, restore_api_registry
 ) -> None:
     recording_file = _record_one_call(tmp_path)
-    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    rows = [
+        json.loads(line)
+        for line in recording_file.read_text(encoding="utf-8").splitlines()
+    ]
     rows[0]["format_version"] = 1
     request = next(row for row in rows if row["type"] == "request")
     assert request["options"].get("response_format") is None
@@ -603,10 +630,22 @@ def test_replay_reruns_a_multi_turn_tool_loop_without_network(
 
     import socket
 
+    real_connect = socket.socket.connect
+
+    def refuse_non_loopback(sock, address, *args, **kwargs):
+        if (
+            os.name == "nt"
+            and isinstance(address, tuple)
+            and address
+            and address[0] in {"127.0.0.1", "::1"}
+        ):
+            return real_connect(sock, address, *args, **kwargs)
+        pytest.fail("replay opened a network connection")
+
     monkeypatch.setattr(
         socket.socket,
         "connect",
-        lambda *args, **kwargs: pytest.fail("replay opened a network connection"),
+        refuse_non_loopback,
     )
     monkeypatch.setattr(
         socket,
@@ -767,7 +806,10 @@ def test_recording_stops_after_the_first_terminal_event(tmp_path: Path) -> None:
 
     events = asyncio.run(drain())
     calls = read_recording_file(recording_file)
-    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    rows = [
+        json.loads(line)
+        for line in recording_file.read_text(encoding="utf-8").splitlines()
+    ]
     assert source.closed
     assert sum(row["type"] == "call_end" for row in rows) == 1
     assert sum(event.type == "done" for event in events) == 1
@@ -791,7 +833,10 @@ def test_recording_preserves_source_close_failure_after_terminal(
     with pytest.raises(RuntimeError, match="source close failed"):
         asyncio.run(drain())
     calls = read_recording_file(recording_file)
-    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    rows = [
+        json.loads(line)
+        for line in recording_file.read_text(encoding="utf-8").splitlines()
+    ]
     assert calls[0].outcome == "complete"
     assert sum(row["type"] == "call_end" for row in rows) == 1
 
@@ -914,7 +959,10 @@ def test_replay_strictly_validates_structure(
     tmp_path: Path, mutation, match: str
 ) -> None:
     recording_file = _record_one_call(tmp_path)
-    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    rows = [
+        json.loads(line)
+        for line in recording_file.read_text(encoding="utf-8").splitlines()
+    ]
     mutation(rows)
     recording_file.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
 
@@ -924,7 +972,10 @@ def test_replay_strictly_validates_structure(
 
 def test_replay_prevalidates_event_types(tmp_path: Path) -> None:
     recording_file = _record_one_call(tmp_path)
-    rows = [json.loads(line) for line in recording_file.read_text().splitlines()]
+    rows = [
+        json.loads(line)
+        for line in recording_file.read_text(encoding="utf-8").splitlines()
+    ]
     event = next(row for row in rows if row["type"] == "event")
     event["event"]["type"] = "unknown_event"
     recording_file.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
@@ -933,6 +984,7 @@ def test_replay_prevalidates_event_types(tmp_path: Path) -> None:
         ReplayProvider(recording_file)
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_recording_file_and_parent_are_private(tmp_path: Path) -> None:
     parent = tmp_path / "recordings"
     recording_file = parent / "private.jsonl"
@@ -942,6 +994,7 @@ def test_recording_file_and_parent_are_private(tmp_path: Path) -> None:
     assert stat.S_IMODE(recording_file.stat().st_mode) == 0o600
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_recording_tightens_preexisting_parent_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -954,6 +1007,7 @@ def test_recording_tightens_preexisting_parent_directory(
     assert stat.S_IMODE(parent.stat().st_mode) == 0o700
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_recording_preserves_external_parent_permissions(tmp_path: Path) -> None:
     parent = tmp_path / "shared-project"
     parent.mkdir(mode=0o755)
@@ -964,6 +1018,7 @@ def test_recording_preserves_external_parent_permissions(tmp_path: Path) -> None
     assert stat.S_IMODE(parent.stat().st_mode) == 0o755
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_recording_does_not_chmod_external_parent_symlink(tmp_path: Path) -> None:
     target = tmp_path / "shared-target"
     target.mkdir(mode=0o755)
@@ -976,6 +1031,7 @@ def test_recording_does_not_chmod_external_parent_symlink(tmp_path: Path) -> Non
     assert stat.S_IMODE(target.stat().st_mode) == 0o755
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_recording_rejects_symlinked_managed_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -997,6 +1053,7 @@ def test_recording_rejects_symlinked_managed_root(
     assert not (target / "private.jsonl").exists()
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_symlinked_managed_root_does_not_block_external_recording(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1018,6 +1075,7 @@ def test_symlinked_managed_root_does_not_block_external_recording(
     assert stat.S_IMODE(external.stat().st_mode) == 0o755
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_dotdot_cannot_bypass_symlinked_managed_root_rejection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1038,6 +1096,7 @@ def test_dotdot_cannot_bypass_symlinked_managed_root_rejection(
     assert not (target / "private.jsonl").exists()
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_case_alias_cannot_bypass_symlinked_managed_root_rejection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1061,6 +1120,7 @@ def test_case_alias_cannot_bypass_symlinked_managed_root_rejection(
     assert not (target / "private.jsonl").exists()
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_direct_managed_symlink_target_remains_external(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1078,6 +1138,7 @@ def test_direct_managed_symlink_target_remains_external(
     assert stat.S_IMODE(target.stat().st_mode) == 0o755
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_recording_rejects_intermediate_symlink_inside_managed_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1100,6 +1161,7 @@ def test_recording_rejects_intermediate_symlink_inside_managed_root(
     assert not (target / "private.jsonl").exists()
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_replay_rejects_intermediate_symlink_without_chmod(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1118,6 +1180,7 @@ def test_replay_rejects_intermediate_symlink_without_chmod(
     assert stat.S_IMODE(recording_file.stat().st_mode) == 0o644
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_external_replay_rejects_wide_permissions_without_chmod(tmp_path: Path) -> None:
     recording_file = _record_one_call(tmp_path)
     recording_file.chmod(0o644)
@@ -1128,6 +1191,7 @@ def test_external_replay_rejects_wide_permissions_without_chmod(tmp_path: Path) 
     assert stat.S_IMODE(recording_file.stat().st_mode) == 0o644
 
 
+@_POSIX_PERMISSION_AND_SYMLINK
 def test_managed_replay_repairs_wide_permissions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

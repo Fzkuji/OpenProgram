@@ -7,6 +7,7 @@ import pytest
 
 from tests.component.agent.async_job_support import (
     _FakeMonotonic,
+    WORKER_START_TIMEOUT,
     fake_worker,
     store_fixture,
 )
@@ -100,7 +101,7 @@ def test_runner_cancel_before_pickup(store_fixture, fake_worker, monkeypatch):
         session_id="p1", prompt="block", agent_id="main",
         parent_msg_id="a1",
     )
-    assert fake_worker[3].wait(1.0)
+    assert fake_worker[3].wait(WORKER_START_TIMEOUT)
     tid2 = runner.spawn_job(
         session_id="p2", prompt="cancel me", agent_id="main",
         parent_msg_id="a2",
@@ -129,7 +130,7 @@ def test_runner_cancel_during_run(store_fixture, fake_worker, monkeypatch):
     # cancelled while it's still pending, _run_one's
     # pending→running transition gets rejected, and fake_run never
     # gets a chance to observe the cancel signal.
-    assert entered.wait(timeout=2.0), "fake worker never started"
+    assert entered.wait(timeout=WORKER_START_TIMEOUT), "fake worker never started"
     # Don't release barrier — cancel mid-run.
     runner.cancel_execution(tid)
     final = _await_canonical_terminal(runner, tid)
@@ -356,7 +357,10 @@ def test_runner_executes_three_live_jobs_for_one_session(
             )
             for index in range(3)
         ]
-        assert wait_until(lambda: len(fake_worker[0]) >= 3, timeout=2.0)
+        # Each worker durably records its RUNNING transition first. Three
+        # same-session Git commits are serialized and can cross two seconds
+        # on Windows/Defender even though all three executor slots are live.
+        assert wait_until(lambda: len(fake_worker[0]) >= 3, timeout=5.0)
         assert len(fake_worker[0]) == 3
         assert ledger.connection().execute(
             "SELECT COUNT(*) FROM job_admissions WHERE state = 'live'"
@@ -581,7 +585,7 @@ def test_runner_job_coexists_with_mcp_foreground_token(
         job_id = runner.spawn_job(
             session_id="p1", prompt="wait for MCP", agent_id="main",
         )
-        assert fake_worker[3].wait(1.0)
+        assert fake_worker[3].wait(WORKER_START_TIMEOUT)
         row = ledger.connection().execute(
             "SELECT state, owner_instance_id FROM job_admissions WHERE job_id = ?",
             (job_id,),

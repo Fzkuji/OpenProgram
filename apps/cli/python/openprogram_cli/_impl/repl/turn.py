@@ -18,10 +18,10 @@ def _run_turn_with_history(
     """Run one CLI chat turn, persisted to
     ``<state>/agents/<agent_id>/sessions/<session_id>/``.
 
-    Loads the session's prior messages, builds the layered system prompt
-    via ``openprogram.context.system_prompt``, renders history as a
-    plain-text prefix bounded by a char budget, calls rt.exec, and
-    appends + saves both sides.
+    Loads the session's prior messages, renders history as a plain-text
+    prefix bounded by a char budget, calls rt.exec, and appends + saves both
+    sides. ``Runtime`` owns layered system-prompt assembly; putting another
+    copy into the user message breaks memory recall and provider caching.
 
     Streaming: when ``console`` is provided (Rich Console), the
     assistant's reply is emitted token-by-token to the terminal via
@@ -37,7 +37,6 @@ def _run_turn_with_history(
     import time as _time
     import uuid as _uuid
     from openprogram.agent.management import runtime_registry as _runtimes
-    from openprogram.context.system_prompt import build_system_prompt
     from openprogram.webui import persistence as _persist
 
     data = _persist.load_session(agent.id, session_id) or {}
@@ -77,12 +76,9 @@ def _run_turn_with_history(
     })
     messages.append(user_msg)
 
-    system_prompt = build_system_prompt(agent)
     rendered_history = _render_history_plain(messages[:-1], _HISTORY_CHAR_BUDGET)
 
     exec_content: list[dict] = []
-    if system_prompt:
-        exec_content.append({"type": "text", "text": system_prompt})
     if rendered_history:
         exec_content.append({"type": "text", "text": rendered_history})
     exec_content.append({"type": "text", "text": message})

@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 import re
 import secrets
-import stat
 import time
 import uuid
 
@@ -40,20 +39,11 @@ def _check_signature(value, token: str) -> None:
 
 
 def _read(path: Path) -> dict:
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
-    try:
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > _MAX_JSON:
-            raise ValueError("invalid private verification file")
-        with os.fdopen(fd, "r", encoding="utf-8") as handle:
-            fd = -1
-            value = SelfUpdateStore._loads_json(handle.read(_MAX_JSON + 1))
-        if not isinstance(value, dict):
-            raise ValueError("verification file must be an object")
-        return value
-    finally:
-        if fd >= 0:
-            os.close(fd)
+    from openprogram._compat import read_user_state_bytes
+    value = SelfUpdateStore._loads_json(read_user_state_bytes(path, limit=_MAX_JSON).decode("utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("verification file must be an object")
+    return value
 
 
 def _paths(store, record):

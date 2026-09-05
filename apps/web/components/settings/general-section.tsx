@@ -354,7 +354,7 @@ function ApplicationSection() {
           `正在下载… ${downloaded} / ${total} 字节（${percentage}%）`,
         );
       }
-      case "downloaded": return text("DMG opened", "DMG 已打开");
+      case "downloaded": return text("Installer opened", "安装程序已打开");
       case "error": return failedStatusText;
       default: return text("Not checked", "尚未检查");
     }
@@ -424,7 +424,7 @@ function ApplicationSection() {
                 </Button>
                 {updateState?.release?.status === "available" && (
                   <Button size="sm" className={"text-fs-base " + styles.settingsAction} disabled={busy} onClick={() => { void runUpdateAction(() => bridge.updates.download()); }}>
-                    {text("Download and open DMG", "下载并打开 DMG")}
+                    {text("Download and open installer", "下载并打开安装程序")}
                   </Button>
                 )}
                 {updateState?.release && (

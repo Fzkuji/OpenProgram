@@ -44,16 +44,23 @@ def _git_output(
     *args: str,
     timeout: float = 8.0,
     max_bytes: int = 8 * 1024 * 1024,
+    input_data: bytes | None = None,
 ) -> bytes:
-    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+    from openprogram._compat import no_window_creation_flags
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr, tempfile.TemporaryFile() as stdin:
+        if input_data is not None:
+            stdin.write(input_data)
+            stdin.seek(0)
         process = subprocess.Popen(
             ["git", "-C", str(root), *args],
+            stdin=stdin,
             stdout=stdout,
             stderr=stderr,
+            creationflags=no_window_creation_flags(),
         )
         deadline = time.monotonic() + timeout
         while process.poll() is None:
-            if stdout.tell() > max_bytes:
+            if os.fstat(stdout.fileno()).st_size > max_bytes:
                 process.kill()
                 process.wait()
                 raise _OutputLimitError("git output exceeds review limit")
@@ -64,11 +71,81 @@ def _git_output(
             time.sleep(0.01)
         if process.returncode != 0:
             stderr.seek(0)
-            raise OSError(stderr.read().decode("utf-8", errors="replace").strip())
-        if stdout.tell() > max_bytes:
+            raise OSError(stderr.read(64 * 1024).decode("utf-8", errors="replace").strip())
+        if os.fstat(stdout.fileno()).st_size > max_bytes:
             raise _OutputLimitError("git output exceeds review limit")
         stdout.seek(0)
         return stdout.read(max_bytes + 1)
+
+
+def _workspace_git_states(root, head, index_vector, files, budget):
+    """Read immutable Git objects in batches, not processes per changed file."""
+    tree_vector = _git_output(root, "ls-tree", "-r", "-z", head)
+
+    def entries(vector):
+        result = {}
+        for record in vector.split(b"\0"):
+            if not record:
+                continue
+            header, path = record.split(b"\t", 1)
+            fields = header.split()
+            # ls-tree: mode kind oid; ls-files: mode oid stage.
+            oid = fields[2] if fields[1] in {b"blob", b"tree", b"commit"} else fields[1]
+            result.setdefault(path.decode("utf-8", errors="replace"), (fields[0], oid))
+        return result
+
+    tree, index = entries(tree_vector), entries(index_vector)
+    pairs = [(tree.get(row.get("old_rel") or row["rel"]), index.get(row["rel"]))
+             for row in files]
+    ids = sorted({entry[1] for pair in pairs for entry in pair if entry})
+    if not ids:
+        return [(({"kind": "absent"}, None), ({"kind": "absent"}, None)) for _ in files]
+    sizes = {}
+    metadata = _git_output(root, "cat-file", "--batch-check", input_data=b"\n".join(ids) + b"\n")
+    for line in metadata.splitlines():
+        oid, kind, size = line.split()
+        sizes[oid] = (kind, int(size))
+    wanted = set()
+    for pair in pairs:
+        for entry in pair:
+            if entry:
+                kind, size = sizes[entry[1]]
+                if kind == b"blob" and size <= _MAX_DIFF_BYTES:
+                    budget.reserve(size)
+                    wanted.add(entry[1])
+    contents = {}
+    if wanted:
+        ordered = sorted(wanted)
+        limit = sum(sizes[oid][1] + len(oid) + 64 for oid in ordered)
+        raw = _git_output(root, "cat-file", "--batch", max_bytes=limit,
+                          input_data=b"\n".join(ordered) + b"\n")
+        position = 0
+        for expected in ordered:
+            end = raw.index(b"\n", position)
+            oid, kind, size_text = raw[position:end].split()
+            size = int(size_text)
+            if oid != expected or kind != b"blob" or size != sizes[oid][1]:
+                raise OSError("git batch response changed")
+            position = end + 1
+            content = raw[position:position + size]
+            if len(content) != size or raw[position + size:position + size + 1] != b"\n":
+                raise OSError("truncated git batch response")
+            contents[oid] = content
+            position += size + 1
+
+    def state(entry, is_index):
+        if entry is None:
+            return {"kind": "absent"}, None
+        mode, oid = entry
+        kind, size = sizes[oid]
+        if kind != b"blob":
+            return {"kind": "unavailable"}, None
+        content = contents.get(oid)
+        digest = ("git:" + oid.decode() if is_index or content is None else
+                  "sha256:" + hashlib.sha256(content).hexdigest())
+        return {"kind": "blob", "digest": digest, "mode": mode.decode(), "size": size}, content
+
+    return [(state(base, False), state(index_entry, True)) for base, index_entry in pairs]
 
 
 def _untracked_stats(path: Path) -> tuple[int | None, int | None, bool, str]:
@@ -181,30 +258,21 @@ def _index_blob_state(
 def _workspace_content_state(
     root: Path, rel: str, budget: _ReviewContentBudget | None = None,
 ) -> tuple[dict, bytes | None]:
+    from openprogram._compat import (
+        directory_handle, directory_child, directory_close, directory_read_file,
+    )
+
     try:
         relative = Path(rel)
         if relative.is_absolute() or ".." in relative.parts or not relative.name:
             raise OSError("unsafe workspace path")
-        descriptor = os.open(
-            root,
-            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-            | getattr(os, "O_NOFOLLOW", 0),
-        )
+        descriptor = directory_handle(root)
         try:
             for component in relative.parts[:-1]:
-                child = os.open(
-                    component,
-                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-                    | getattr(os, "O_NOFOLLOW", 0),
-                    dir_fd=descriptor,
-                )
-                os.close(descriptor)
+                child = directory_child(descriptor, component)
+                directory_close(descriptor)
                 descriptor = child
-            file_descriptor = os.open(
-                relative.name,
-                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
-                dir_fd=descriptor,
-            )
+            file_descriptor = directory_read_file(descriptor, relative.name)
             try:
                 info = os.fstat(file_descriptor)
                 identity = {
@@ -253,7 +321,7 @@ def _workspace_content_state(
             finally:
                 os.close(file_descriptor)
         finally:
-            os.close(descriptor)
+            directory_close(descriptor)
     except _OutputLimitError:
         raise
     except FileNotFoundError:
@@ -356,10 +424,10 @@ def _workspace_scope(
     snapshot_basis = []
     content_budget = _ReviewContentBudget(_setting("_MAX_REVIEW_SNAPSHOT_BYTES"))
     try:
-        for row in files:
-            base_rel = row.get("old_rel") or row["rel"]
-            base, base_content = _git_blob_state(root, "HEAD", base_rel, content_budget)
-            index, index_content = _index_blob_state(root, row["rel"], content_budget)
+        git_states = _workspace_git_states(root, head_identity, index_vector, files, content_budget)
+        for row, (base_pair, index_pair) in zip(files, git_states):
+            base, base_content = base_pair
+            index, index_content = index_pair
             worktree, worktree_content = _workspace_content_state(
                 root, row["rel"], content_budget,
             )
@@ -394,6 +462,11 @@ def _workspace_scope(
         return {
             "status": "unavailable", "scope": "workspace", "source": "git",
             "files": [], "file_count": 0, "error": "REVIEW_SNAPSHOT_LIMIT",
+        }
+    except (OSError, ValueError) as exc:
+        return {
+            "status": "unavailable", "scope": "workspace", "source": "git",
+            "files": [], "file_count": 0, "error": str(exc),
         }
     return _scope_payload(
         "workspace", "git", files,
@@ -708,11 +781,40 @@ def _workspace_file_diff(
 
 
 def _read_workspace_file(root: Path, rel: str, identity: dict) -> bytes:
+    from .turn_files_diff_shared import (
+        _DIR_FD_CAPABLE, _is_reparse_point, _validate_directory_path,
+    )
+
     relative = Path(rel)
     if relative.is_absolute() or ".." in relative.parts or not relative.name:
         raise OSError("unsafe workspace path")
     if identity.get("kind") != "regular":
         raise OSError("workspace path is not a regular file")
+    if not _DIR_FD_CAPABLE:
+        target = root / relative
+        _validate_directory_path(target.parent)
+        info = os.lstat(target)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or _is_reparse_point(info)
+            or (
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mtime_ns,
+            )
+            != (
+                identity.get("dev"),
+                identity.get("ino"),
+                identity.get("size"),
+                identity.get("mtime_ns"),
+            )
+        ):
+            raise OSError("stale workspace snapshot")
+        if info.st_size > _MAX_DIFF_BYTES:
+            raise _OutputLimitError("workspace file exceeds review limit")
+        return target.read_bytes()
     descriptor = os.open(
         root,
         os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),

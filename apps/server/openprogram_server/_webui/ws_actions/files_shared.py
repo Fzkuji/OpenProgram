@@ -157,6 +157,7 @@ def _workspace_mutation_lock(project_id: str):
     local = _mutation_lock(project_id)
     with local:
         lock_file = None
+        acquired = False
         try:
             from openprogram.paths import get_state_dir
             state = get_state_dir()
@@ -171,20 +172,17 @@ def _workspace_mutation_lock(project_id: str):
                 os.chmod(lock_path, 0o600)
             except OSError:
                 pass
-            try:
-                import fcntl
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            except (ImportError, OSError):
-                pass
+            from openprogram import _compat as fcntl
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            acquired = True
             yield
         finally:
             if lock_file is not None:
                 try:
-                    import fcntl
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                except (ImportError, OSError):
-                    pass
-                lock_file.close()
+                    if acquired:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                finally:
+                    lock_file.close()
 
 
 def _file_digest(target: str) -> str | None:
@@ -389,13 +387,8 @@ def _request_id(cmd: dict) -> str | None:
 
 
 def _process_alive(pid: object) -> bool:
-    if not isinstance(pid, int) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+    from openprogram._compat import process_alive
+    return process_alive(pid)
 
 
 def _owner_process_alive(row: dict) -> bool:

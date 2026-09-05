@@ -5,7 +5,6 @@ import os
 import subprocess
 import shutil
 import sys
-from pathlib import Path
 
 
 def _python_pkg_present(name: str) -> bool:
@@ -28,39 +27,14 @@ def _pip_install(spec: str) -> subprocess.CompletedProcess:
 def _kill_chrome_profile() -> None:
     """Best-effort kill of any sidecar Chrome locked into our profile.
 
-    POSIX: ``pkill -9 -f openprogram/chrome-profile``.
-    Windows: ``taskkill /F /IM chrome.exe`` filtered by command line via
-    WMIC is fragile; we use the simpler approach of ``taskkill`` against
-    chrome.exe processes whose command line mentions the profile path.
-    Failure is non-fatal — the caller's ``rmtree`` will still run.
+    Platform-specific process discovery and termination live in the
+    compatibility seam. Failure is non-fatal — the caller's ``rmtree`` will
+    still run.
     """
-    needle = "openprogram/chrome-profile" if sys.platform != "win32" else r"openprogram\chrome-profile"
-    try:
-        if sys.platform == "win32":
-            # WMIC is deprecated but still ships on Win10/11. Find PIDs
-            # whose CommandLine contains the profile path, then kill.
-            res = subprocess.run(
-                ["wmic", "process", "where",
-                 f"CommandLine like '%{needle}%' and Name='chrome.exe'",
-                 "get", "ProcessId"],
-                capture_output=True, text=True, timeout=5,
-            )
-            for line in (res.stdout or "").splitlines():
-                line = line.strip()
-                if line.isdigit():
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", line],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    )
-        else:
-            subprocess.run(
-                ["pkill", "-9", "-f", needle],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        # No pkill / wmic / taskkill on PATH, or all chrome procs already
-        # gone. Caller's rmtree still does the visible work.
-        pass
+    from openprogram._compat import kill_processes_matching
+    from openprogram.programs.tools.web.browser._chrome_bootstrap import sidecar_dir
+
+    kill_processes_matching(["chrome.exe"], str(sidecar_dir()))
 
 
 def _cmd_browser_install(target: str) -> int:
@@ -152,7 +126,9 @@ def _cmd_browser_status() -> int:
         print("  port file: (none — sidecar not started)")
 
     print("\nSaved logins:")
-    state_dir = Path.home() / ".openprogram" / "browser-states"
+    from openprogram.paths import get_state_dir
+
+    state_dir = get_state_dir() / "browser-states"
     if state_dir.exists():
         states = sorted(state_dir.glob("*.json"))
         if states:
@@ -187,16 +163,22 @@ def _cmd_browser_refresh() -> int:
 
 def _cmd_browser_reset() -> int:
     """Full reset — sidecar + states + port file."""
+    from openprogram.paths import get_state_dir
+    from openprogram.programs.tools.web.browser._chrome_bootstrap import (
+        port_file,
+        sidecar_dir,
+    )
+
     _kill_chrome_profile()
-    sd = Path.home() / ".openprogram" / "chrome-profile"
+    sd = sidecar_dir()
     if sd.exists():
         shutil.rmtree(sd, ignore_errors=True)
         print(f"Removed sidecar profile {sd}")
-    states = Path.home() / ".openprogram" / "browser-states"
+    states = get_state_dir() / "browser-states"
     if states.exists():
         shutil.rmtree(states, ignore_errors=True)
         print(f"Removed saved logins {states}")
-    pf = Path.home() / ".openprogram" / "browser-cdp-port"
+    pf = port_file()
     if pf.exists():
         pf.unlink()
         print(f"Removed port file {pf}")
@@ -206,7 +188,9 @@ def _cmd_browser_reset() -> int:
 
 def _cmd_browser_list() -> int:
     """List saved browser logins."""
-    state_dir = Path.home() / ".openprogram" / "browser-states"
+    from openprogram.paths import get_state_dir
+
+    state_dir = get_state_dir() / "browser-states"
     if not state_dir.exists():
         print(f"(no saved logins — directory doesn't exist: {state_dir})")
         return 0
@@ -223,7 +207,9 @@ def _cmd_browser_list() -> int:
 
 def _cmd_browser_rm(name: str) -> int:
     """Delete a saved login."""
-    state_dir = Path.home() / ".openprogram" / "browser-states"
+    from openprogram.paths import get_state_dir
+
+    state_dir = get_state_dir() / "browser-states"
     candidates = [state_dir / f"{name}.json", state_dir / name]
     for p in candidates:
         if p.exists():

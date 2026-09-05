@@ -87,7 +87,7 @@ a random port. This mirrors openclaw. All probing lives in one module,
   the credential. An optional `expected_revision` binds the proof to the
   revision served by an upgrade target.
 - **ownership** — `describe_port_owner(port)` / `port_owner_hint(port)`:
-  `lsof` / `netstat` + `/proc` / `ps` / `wmic` to name the holding PID
+  `lsof` / `netstat` + `/proc` / `ps` / Windows CIM to name the holding PID
   and command line, classified ours-vs-foreign. This is what lets a
   "port in use" error say *who* holds it.
 

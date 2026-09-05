@@ -1,7 +1,11 @@
 const fs = require("fs");
 const path = require("path");
 
-function resolvePackagedWorker(resourcesPath, expectedVersion) {
+function resolvePackagedWorker(
+  resourcesPath,
+  expectedVersion,
+  platform = process.platform,
+) {
   const runtimeRoot = path.resolve(resourcesPath, "runtime");
   const manifestPath = path.join(runtimeRoot, "runtime-manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -27,6 +31,13 @@ function resolvePackagedWorker(resourcesPath, expectedVersion) {
   if (!fs.existsSync(python)) {
     throw new Error(`embedded Python is missing: ${python}`);
   }
+  let workerPython = python;
+  if (platform === "win32") {
+    workerPython = path.join(path.dirname(python), "pythonw.exe");
+    if (!fs.existsSync(workerPython)) {
+      throw new Error(`embedded windowless Python is missing: ${workerPython}`);
+    }
+  }
   const requiredCapabilities = [
     "web",
     "providers",
@@ -34,6 +45,7 @@ function resolvePackagedWorker(resourcesPath, expectedVersion) {
     "memory",
     "channels",
     "search",
+    "tui.ink",
     "browser.playwright",
     "model.gpa_detector",
     "program.gui",
@@ -62,7 +74,11 @@ function resolvePackagedWorker(resourcesPath, expectedVersion) {
     return asset;
   };
   return {
-    command: python,
+    // pythonw avoids allocating even a hidden console host for the persistent
+    // Windows worker. Keep python.exe for short synchronous commands whose
+    // stdout is part of the Desktop authentication protocol.
+    command: workerPython,
+    authCommand: python,
     args: ["-I", "-B", "-m", "openprogram", "worker", "start"],
     env: {
       PLAYWRIGHT_BROWSERS_PATH: resolveAsset("playwright"),

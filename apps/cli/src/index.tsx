@@ -4,48 +4,71 @@ import { REPL } from './screens/REPL.js';
 import { Demo } from './screens/Demo.js';
 import { BackendClient } from './ws/client.js';
 import { ThemeProvider } from './theme/ThemeProvider.js';
-import { detectAutoTheme } from './theme/autoTheme.js';
-import { setCachedSystemTheme } from './theme/systemTheme.js';
+import { parseTuiOptions } from './options.js';
+import { createTuiReadyHandshake } from './startupHandshake.js';
 
-function parseArgs(argv: string[]): { ws: string; demo: boolean } {
-  let ws = process.env.OPENPROGRAM_WS ?? 'ws://127.0.0.1:18100/ws';
-  let demo = false;
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--ws' && argv[i + 1]) {
-      ws = argv[i + 1]!;
-      i++;
-    }
-    if (argv[i] === '--demo') {
-      demo = true;
-    }
-  }
-  return { ws, demo };
-}
+const {
+  ws,
+  demo,
+  probe,
+  altScreen,
+  screenReader,
+  initialAgent,
+  initialConversation,
+} = parseTuiOptions(process.argv.slice(2));
 
-const { ws, demo } = parseArgs(process.argv.slice(2));
-const client = new BackendClient(ws);
-if (!demo) client.connect();
-
-// Initial auto-theme detection. ThemeProvider keeps auto refreshed during
-// runtime when the terminal is focused.
-detectAutoTheme(null)
-  .then((bg) => { if (bg) setCachedSystemTheme(bg); })
-  .catch(() => { /* fall back to COLORFGBG / dark */ });
-
-process.on('SIGINT', () => process.exit(0));
-process.on('SIGTERM', () => process.exit(0));
+// Raw-mode Ctrl-C is handled by the REPL. Signals delivered by a supervisor,
+// ssh disconnect, or `kill` still need conventional exit codes; process.exit
+// runs the runtime's synchronous signal-exit terminal cleanup first.
+process.once('SIGINT', () => process.exit(130));
+process.once('SIGTERM', () => process.exit(143));
 
 async function main(): Promise<void> {
-  if (!demo && process.stdout.isTTY) {
-    process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+  if (probe) {
+    process.stdout.write('OpenProgram Ink TUI ready\n');
+    return;
   }
-  const root = demo
-    ? <ThemeProvider><Demo /></ThemeProvider>
-    : <ThemeProvider><REPL client={client} initialConversation={process.env.OPENPROGRAM_CONV || undefined} /></ThemeProvider>;
-  const instance = await render(root, { exitOnCtrlC: false });
-  await instance.waitUntilExit();
-  client.close();
-  process.exit(0);
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    process.stderr.write(
+      'OpenProgram TUI requires terminal stdin and stdout; use `openprogram --print` for pipelines.\n',
+    );
+    process.exitCode = 2;
+    return;
+  }
+
+  const client = new BackendClient(ws);
+  try {
+    if (!demo) client.connect();
+
+    // ThemeProvider performs terminal queries through Ink's shared input
+    // parser. A separate pre-render OSC listener races raw-mode setup and can
+    // consume the user's first keystrokes on fast Linux terminals.
+    const root = demo
+      ? <ThemeProvider><Demo /></ThemeProvider>
+      : (
+        <ThemeProvider>
+          <REPL
+            client={client}
+            altScreen={altScreen}
+            screenReader={screenReader}
+            initialAgent={initialAgent}
+            initialConversation={initialConversation}
+          />
+        </ThemeProvider>
+      );
+    const startup = createTuiReadyHandshake();
+    const instance = await render(root, {
+      exitOnCtrlC: false,
+      onFrame: startup.onFrame,
+    });
+    startup.mounted();
+    await instance.waitUntilExit();
+  } finally {
+    // A synchronous Ink mount/raw-mode failure must not leave the WebSocket
+    // (or one of its reconnect timers) keeping the CLI process alive.
+    if (!demo) client.close();
+  }
 }
 
 main().catch((err: unknown) => {

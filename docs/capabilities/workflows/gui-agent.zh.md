@@ -56,7 +56,8 @@ Function 卡片直接显示这个任务结果：验证成功显示 `Succeeded`�
 
 - 产品 runtime 不安装 PyTorch 或 EasyOCR。
 - detector 模型缺失时，release capability probe 会拒绝该 artifact。
-- 受支持的产品平台是 macOS 和 Linux。
+- macOS、Linux 和 Windows x86_64 runtime 都会注册该 Program；具体桌面 backend
+  仍取决于 harness 自身的平台与依赖支持。
 - 运行前需要 runtime 配置好工作目录。工作流记录写入 OpenProgram 状态目录下的 `gui_harness/workflows/`，不再写入源码目录。
 
 源码与 README：`openprogram/programs/applications/gui_harness/`，上游仓库 [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)。

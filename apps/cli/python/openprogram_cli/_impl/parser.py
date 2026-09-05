@@ -109,6 +109,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resume", default=None, metavar="SESSION_ID",
         help="Resume a prior CLI chat session. Find ids via "
              "`openprogram sessions list` or the Web UI sidebar.")
+    parser.add_argument("--no-alt-screen", action="store_true",
+        help="Render the TUI inline and preserve terminal scrollback.")
+    parser.add_argument("--screen-reader", action="store_true",
+        help="Use an assistive-technology-friendly inline TUI without mouse tracking.")
 
     # help=SUPPRESS hides argparse's default flat, add-order subcommand dump
     # (rescue/logs/completion first, daily commands scattered mid-list). The
@@ -172,15 +176,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_tui = sub.add_parser(
         "tui",
         aliases=["chat"],
-        help="Launch the terminal UI (Ink on macOS/Linux, Rich on "
-             "Windows). Same as running `openprogram` with no verb.",
+        help="Launch the terminal UI (Ink when raw input is available, "
+             "otherwise Rich). Same as running `openprogram` with no verb.",
     )
+    # Suppress subparser defaults so an option written before the verb is not
+    # overwritten while still accepting the more natural post-verb form.
     p_tui.add_argument("--print", dest="print_prompt", metavar="PROMPT",
+        default=argparse.SUPPRESS,
         help="One-shot prompt; send, print reply, exit")
     p_tui.add_argument("--json-schema", dest="json_schema", metavar="PATH",
+        default=argparse.SUPPRESS,
         help="Require JSON Schema output for a one-shot --print call; '-' reads stdin")
-    p_tui.add_argument("--resume", default=None, metavar="SESSION_ID",
+    p_tui.add_argument("--resume", default=argparse.SUPPRESS, metavar="SESSION_ID",
         help="Resume a prior CLI chat session.")
+    p_tui.add_argument("--no-alt-screen", action="store_true", default=argparse.SUPPRESS,
+        help="Render inline and preserve terminal scrollback.")
+    p_tui.add_argument("--screen-reader", action="store_true", default=argparse.SUPPRESS,
+        help="Use an assistive-technology-friendly inline TUI without mouse tracking.")
 
     # ---- programs ---------------------------------------------------------
     # The agent authors Programs directly with file tools and the documented API.
@@ -671,8 +683,9 @@ def build_parser() -> argparse.ArgumentParser:
     worker_sub.add_parser("status",
         help="Show whether the worker is running, its PID, port, and uptime.")
     worker_sub.add_parser("install",
-        help="Install as a system service (launchd on macOS, systemd --user "
-             "on Linux). Auto-starts at login and restarts on crash.")
+        help="Install as a login service (launchd on macOS, systemd --user "
+             "on Linux, Task Scheduler on Windows). Auto-starts at login "
+             "and restarts on crash.")
     worker_sub.add_parser("uninstall",
         help="Remove the system service.")
 
@@ -898,7 +911,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Full reset — kill sidecar Chrome, drop the sidecar profile + "
              "all saved logins + port file. Next open() re-bootstraps clean.")
     p_browser_sub.add_parser("list",
-        help="Show every saved login under ~/.openprogram/browser-states/")
+        help="Show every saved login under the active profile's browser-states/")
     p_br_rm = p_browser_sub.add_parser("rm",
         help="Delete a saved login by host or file name")
     p_br_rm.add_argument("name", help="Host or file name (e.g. app.gptzero.me)")

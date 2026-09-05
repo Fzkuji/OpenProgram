@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 
 from copy import deepcopy
 
@@ -14,7 +15,7 @@ from openprogram.self_update.verification import (
 def _request() -> UpdateRequest:
     return UpdateRequest(
         update_id="su_verify", session_id="session", origin_turn_id="turn",
-        origin_assistant_id="turn_reply", agent_id="main", repo="/tmp/OpenProgram",
+        origin_assistant_id="turn_reply", agent_id="main", repo=str(Path("/tmp/OpenProgram").resolve()),
         worktree_id="wt_candidate", base_sha="1" * 40, candidate_sha="2" * 40,
         changed_paths=("openprogram/feature.py",), pre_update_evidence=("tests:pass",),
         goal="Add behavior", assertions=("API returns the result", "UI shows the result"),

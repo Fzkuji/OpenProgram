@@ -2,21 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { groupTimelineDays } from "../components/memory/format.ts";
 
-const memoryPage = readFileSync(
+const normalizedText = (path) => readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
+const memoryPage = normalizedText(
   new URL("../components/memory/index.tsx", import.meta.url),
-  "utf8",
 );
-const memoryCss = readFileSync(
+const memoryCss = normalizedText(
   new URL("../components/memory/memory-page.module.css", import.meta.url),
-  "utf8",
 );
-const memoryParts = readFileSync(
+const memoryParts = normalizedText(
   new URL("../components/memory/parts.tsx", import.meta.url),
-  "utf8",
 );
-const memoryMarkdown = readFileSync(
+const memoryMarkdown = normalizedText(
   new URL("../components/memory/markdown.ts", import.meta.url),
-  "utf8",
 );
 
 function cssRules(selector) {

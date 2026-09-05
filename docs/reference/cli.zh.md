@@ -20,13 +20,15 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | `--print PROMPT` | 一次性 prompt，打印回复后退出 |
 | `--profile PROFILE` | 状态目录 profile，等价于环境变量 `OPENPROGRAM_PROFILE` |
 | `--resume SESSION_ID` | 恢复会话；id 用 `openprogram sessions list` 或 Web UI 侧栏查 |
+| `--no-alt-screen` | 使用行内 TUI 并保留终端滚屏 |
+| `--screen-reader` | 使用不启用鼠标追踪的行内无障碍模式 |
 
 ## 聊天与运行
 
 | 命令 | 作用 | 关键参数 |
 |------|------|----------|
 | `openprogram` | 打开聊天；裸跑会先问开终端 UI 还是 Web UI，没有 worker 时自动拉起 | — |
-| `openprogram tui`（别名 `chat`） | 直接启动终端 UI，跳过界面选择（受支持的 macOS/Linux 安装使用 Ink 或 Python 终端 UI；Rich 仅保留给不受支持的 Windows source checkout） | `--print`、`--resume` 在动词后同样可用 |
+| `openprogram tui`（别名 `chat`） | 在 Windows、macOS 或 Linux 直接启动 Ink 终端 UI；无法提供 raw input 的终端回退到 Rich | `--print`、`--resume`、`--no-alt-screen`、`--screen-reader` 在动词后同样可用 |
 | `openprogram web` | 启动服务并打开浏览器 UI（`http://localhost:18100`） | `--port`（默认：已存偏好，否则 18100）、`--web-port`（同一个单端口的旧别名）、`--no-browser` |
 
 ## 后台服务

@@ -114,16 +114,26 @@ def release_installer(
     version: str,
     owner: str = DEFAULT_OWNER,
     repo: str = DEFAULT_REPO,
+    *,
+    script_name: str = "install-release.sh",
 ) -> Optional[bytes]:
     """Read the versioned installer from the immutable tag."""
-    if re.fullmatch(r"\d+\.\d+\.\d+", version) is None:
+    if (
+        re.fullmatch(r"\d+\.\d+\.\d+", version) is None
+        or script_name not in {"install-release.sh", "install-release.ps1"}
+    ):
         return None
     url = (
         f"https://raw.githubusercontent.com/{owner}/{repo}/"
-        f"v{version}/scripts/install-release.sh"
+        f"v{version}/scripts/{script_name}"
     )
     content = _curl_release_bytes(url)
-    return content if content and content.startswith(b"#!/usr/bin/env sh\n") else None
+    expected = (
+        b'$ErrorActionPreference = "Stop"\n'
+        if script_name.endswith(".ps1")
+        else b"#!/usr/bin/env sh\n"
+    )
+    return content if content and content.startswith(expected) else None
 
 
 def _validated_release_url(value: str) -> str:

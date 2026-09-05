@@ -103,7 +103,10 @@ def test_read_boundary_rejects_plain_directory_and_symlink_alias(tmp_path: Path)
     store = SessionStore(root)
     (root / "not-a-session").mkdir()
     store.create_session("valid", "main")
-    (root / "alias").symlink_to(root / "valid", target_is_directory=True)
+    try:
+        (root / "alias").symlink_to(root / "valid", target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlink creation is unavailable: {exc}")
 
     assert store.get_session("not-a-session") is None
     assert store.get_session("alias") is None

@@ -80,7 +80,6 @@ import {
   ENABLE_KITTY_KEYBOARD,
   ENABLE_MODIFY_OTHER_KEYS,
   ERASE_SCREEN,
-  ERASE_SCROLLBACK
 } from './termio/csi.js'
 import {
   DBP,
@@ -129,6 +128,16 @@ function makeAltScreenParkPatch(terminalRows: number) {
   })
 }
 
+/** Best-effort terminal restoration for SIGHUP/revoked SSH PTYs. */
+function writeCleanupSync(data: string): void {
+  try {
+    writeSync(1, data)
+  } catch {
+    // The controlling terminal may already be gone. Cleanup must continue so
+    // listeners, raw-mode bookkeeping, and the exit promise still settle.
+  }
+}
+
 export type Options = {
   stdout: NodeJS.WriteStream
   stdin: NodeJS.ReadStream
@@ -154,7 +163,9 @@ export default class Ink {
   private readonly stylePool: StylePool
   private charPool: CharPool
   private hyperlinkPool: HyperlinkPool
-  private exitPromise?: Promise<void>
+  private readonly exitPromise: Promise<void>
+  private resolveExitPromise: () => void = () => {}
+  private rejectExitPromise: (reason?: Error) => void = () => {}
   private restoreConsole?: () => void
   private restoreStderr?: () => void
   private readonly unsubscribeTTYHandlers?: () => void
@@ -252,6 +263,15 @@ export default class Ink {
   private isRendering = false
   private immediateRerenderRequested = false
   constructor(private readonly options: Options) {
+    // Create this before the first React render. A layout-effect failure can
+    // synchronously unmount the tree (the common case is non-TTY stdin failing
+    // raw-mode setup) before the caller reaches waitUntilExit(). Lazily
+    // creating the promise there loses that already-delivered resolution or
+    // rejection and leaves the CLI process hanging forever.
+    this.exitPromise = new Promise((resolve, reject) => {
+      this.resolveExitPromise = resolve
+      this.rejectExitPromise = reject
+    })
     autoBind(this)
 
     if (this.options.patchConsole) {
@@ -484,8 +504,6 @@ export default class Ink {
       this.render(this.currentNode)
     })
   }
-  resolveExitPromise: () => void = () => {}
-  rejectExitPromise: (reason?: Error) => void = () => {}
   unsubscribeExit: () => void = () => {}
 
   /**
@@ -1287,7 +1305,6 @@ export default class Ink {
     this.options.stdout.write(
       ENTER_ALT_SCREEN +
         ERASE_SCREEN +
-        ERASE_SCROLLBACK +
         CURSOR_HOME +
         (this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : '')
     )
@@ -1988,30 +2005,30 @@ export default class Ink {
       if (this.altScreenActive) {
         // <AlternateScreen>'s unmount effect won't run during signal-exit.
         // Exit alt screen FIRST so other cleanup sequences go to the main screen.
-        writeSync(1, EXIT_ALT_SCREEN)
+        writeCleanupSync(EXIT_ALT_SCREEN)
       }
 
       // Disable mouse tracking — unconditional because altScreenActive can be
       // stale if AlternateScreen's unmount (which flips the flag) raced a
       // blocked event loop + SIGINT. No-op if tracking was never enabled.
-      writeSync(1, DISABLE_MOUSE_TRACKING)
+      writeCleanupSync(DISABLE_MOUSE_TRACKING)
       // Drain stdin so in-flight mouse events don't leak to the shell
       this.drainStdin()
       // Disable extended key reporting (both kitty and modifyOtherKeys)
-      writeSync(1, DISABLE_MODIFY_OTHER_KEYS)
-      writeSync(1, DISABLE_KITTY_KEYBOARD)
+      writeCleanupSync(DISABLE_MODIFY_OTHER_KEYS)
+      writeCleanupSync(DISABLE_KITTY_KEYBOARD)
       // Disable focus events (DECSET 1004)
-      writeSync(1, DFE)
+      writeCleanupSync(DFE)
       // Disable bracketed paste mode
-      writeSync(1, DBP)
+      writeCleanupSync(DBP)
       // Show cursor
-      writeSync(1, SHOW_CURSOR)
+      writeCleanupSync(SHOW_CURSOR)
       // Clear iTerm2 progress bar
-      writeSync(1, CLEAR_ITERM2_PROGRESS)
+      writeCleanupSync(CLEAR_ITERM2_PROGRESS)
 
       // Clear tab status (OSC 21337) so a stale dot doesn't linger
       if (supportsTabStatus()) {
-        writeSync(1, wrapForMultiplexer(CLEAR_TAB_STATUS))
+        writeCleanupSync(wrapForMultiplexer(CLEAR_TAB_STATUS))
       }
     }
 
@@ -2042,11 +2059,6 @@ export default class Ink {
     }
   }
   async waitUntilExit(): Promise<void> {
-    this.exitPromise ||= new Promise((resolve, reject) => {
-      this.resolveExitPromise = resolve
-      this.rejectExitPromise = reject
-    })
-
     return this.exitPromise
   }
   resetLineCount(): void {

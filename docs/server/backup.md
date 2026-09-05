@@ -20,9 +20,10 @@ openprogram backup prune --keep 5   # delete all but the newest 5
 
 Archives land in `~/.openprogram/backups/` (or
 `~/.openprogram-<profile>/backups/` under a named profile), named
-`<profile>-<timestamp>.tar.gz` and created with mode `0600` — readable only
-by you. The archive is written to a unique owner-only temporary file, flushed,
-and atomically published; POSIX also flushes the containing directory.
+`<profile>-<timestamp>.tar.gz`. POSIX hosts apply mode `0600`. Windows source
+checkouts preserve the state directory's inherited NTFS ACL instead of
+rewriting ACL inheritance. The archive is written to a unique temporary file,
+flushed, and atomically published; POSIX also flushes the containing directory.
 
 ## What gets backed up
 
@@ -117,7 +118,10 @@ archive leaves your state exactly as it was. Each file is then published
 through the same owner-only atomic writer the rest of OpenProgram uses, and
 every publish is journalled — so a restore interrupted by a crash or a full
 disk is reversed rather than left half-applied. Recovery runs automatically at
-the start of the next restore.
+the start of the next restore. POSIX uses descriptor-relative traversal;
+Windows, where Python does not expose those `dir_fd` operations, validates
+containment and rejects symlinks, junctions, and other reparse points before
+each fallback path operation.
 
 ## Pruning
 

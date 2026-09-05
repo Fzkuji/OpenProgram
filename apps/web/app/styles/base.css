@@ -552,9 +552,9 @@ textarea:focus-visible {
 }
 
 /* ===== Desktop (Electron) window chrome =====
-   Chrome-macOS layout: the center tab strip becomes a full-width row
-   across the top of the window, and the traffic lights (hiddenInset,
-   x≈8–64) live at its left end. AppShell renders CenterTabStrip inside
+   Chrome-style layout: the center tab strip becomes a full-width title row.
+   macOS traffic lights live at its left end; Windows caption controls use
+   Window Controls Overlay at its right end. AppShell renders CenterTabStrip inside
    .desktop-tab-row when the preload bridge exists; the three columns
    (.app) sit below it. The strip's own height/background come from
    center-tabs.module.css — the row only reserves the traffic-light
@@ -589,6 +589,13 @@ html.is-desktop {
      紧跟末位 tab 的自然流）—— 见 center-tabs.module.css。 */
   background: var(--tabrow-bg); /* same as .strip — covers the 76px gap */
   -webkit-app-region: drag;
+}
+.desktop-windows .desktop-tab-row {
+  /* Three 46px Windows caption buttons overlay the right side. Keep tab,
+     new-tab and app-menu hit targets out from under minimize/maximize/close.
+     Unlike macOS, Windows has no traffic-light inset on the left. */
+  padding-left: 0;
+  padding-right: 138px;
 }
 .desktop-tab-row > *:not(.desktop-resize-edge) { flex: 1; min-width: 0; }
 /* 5px no-drag inset on the window's top/left/right edges (and corners)

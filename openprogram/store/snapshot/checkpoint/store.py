@@ -10,6 +10,7 @@ import stat
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from openprogram._compat import is_link_metadata
 
 from . import manifest
 from .paths import (
@@ -311,13 +312,13 @@ class CheckpointStore:
             raise OSError(f"history path has no parent: {path}")
         current = Path(parts[0])
         root_info = os.lstat(current)
-        if not stat.S_ISDIR(root_info.st_mode) or stat.S_ISLNK(root_info.st_mode):
+        if not stat.S_ISDIR(root_info.st_mode) or is_link_metadata(root_info):
             raise OSError(f"unsafe root for history path: {path}")
         components = []
         for name in parts[1:]:
             current = current / name
             info = os.lstat(current)
-            if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            if not stat.S_ISDIR(info.st_mode) or is_link_metadata(info):
                 raise OSError(f"unsafe parent for history path: {current}")
             components.append({"name": name, "dev": info.st_dev, "ino": info.st_ino})
         return {
@@ -336,7 +337,7 @@ class CheckpointStore:
         info = os.lstat(current)
         if (
             not stat.S_ISDIR(info.st_mode)
-            or stat.S_ISLNK(info.st_mode)
+            or is_link_metadata(info)
             or (info.st_dev, info.st_ino) != (
                 chain.get("root_dev"), chain.get("root_ino"),
             )
@@ -347,7 +348,7 @@ class CheckpointStore:
             info = os.lstat(current)
             if (
                 not stat.S_ISDIR(info.st_mode)
-                or stat.S_ISLNK(info.st_mode)
+                or is_link_metadata(info)
                 or (info.st_dev, info.st_ino) != (
                     component.get("dev"), component.get("ino"),
                 )
@@ -389,11 +390,13 @@ class CheckpointStore:
             info = os.lstat(path)
         except FileNotFoundError:
             return {"kind": "absent"}
+        if is_link_metadata(info):
+            return {"kind": "symlink"}
         if not stat.S_ISREG(info.st_mode):
             return {"kind": _file_kind(info.st_mode)}
         if info.st_nlink != 1:
             return {"kind": "hardlink", "links": info.st_nlink}
-        file_descriptor = os.open(path, os.O_RDONLY)
+        file_descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
         try:
             return {
                 "kind": "regular",
@@ -817,7 +820,7 @@ class CheckpointStore:
                     raise OSError(f"recovery blob digest mismatch for {target}")
                 tmp_descriptor = os.open(
                     tmp_path,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
                     0o600,
                 )
                 try:
@@ -1059,7 +1062,7 @@ class CheckpointStore:
                     manifest.save(intent_path, intent)
                     rollback_guard = self._apply_state(
                         action["path"], action["rollback"], self.session_dir,
-                        str(intent.get("transaction_id") or "recovery"),
+                        str(intent.get("transaction_id") or "recovery") + "_rollback",
                         action["target"],
                     )
                     if rollback_guard:
@@ -1297,7 +1300,7 @@ class CheckpointStore:
                             continue
                         rollback_guard = self._apply_state(
                             action["path"], action["rollback"], backup_dir,
-                            transaction_id, action["target"],
+                            transaction_id + "_rollback", action["target"],
                         )
                         if rollback_guard:
                             action["rollback_guard_path"] = rollback_guard
@@ -1572,7 +1575,7 @@ class CheckpointStore:
                             continue
                         rollback_guard = self._apply_state(
                             action["path"], action["rollback"], self.session_dir,
-                            transaction_id, action["target"],
+                            transaction_id + "_rollback", action["target"],
                         )
                         if rollback_guard:
                             action["rollback_guard_path"] = rollback_guard

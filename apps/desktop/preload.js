@@ -9,6 +9,7 @@ const windowId = windowIdArgument
 
 contextBridge.exposeInMainWorld("openprogramDesktop", {
   isDesktop: true,
+  platform: process.platform,
   windowId,
   selfUpdateCapture: (nonce) => ipcRenderer.invoke("self-update:ui-capture", nonce),
   selfUpdateReopen: {

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-fitz = pytest.importorskip("fitz")
+fitz = pytest.importorskip("pymupdf")
 
 from openprogram.programs.workflow.document.pdf_layout import (
     page_layout,

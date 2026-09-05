@@ -35,6 +35,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { HoverTip } from "@/components/ui/tooltip";
+import { useFolderPicker } from "@/components/ui/folder-picker";
 import { useSessionStore } from "@/lib/session-store";
 import { closeAllPopovers } from "@/lib/runtime-bridge/ui";
 import { useTranslation } from "@/lib/i18n";
@@ -58,7 +59,13 @@ interface Project {
   session_count: number;
 }
 
-export function ProjectMenu({ onClose }: { onClose: () => void }) {
+export function ProjectMenu({
+  onClose,
+  pickFolder,
+}: {
+  onClose: () => void;
+  pickFolder(start?: string): Promise<string | null>;
+}) {
   const { text } = useTranslation();
   const { sessionId: boundSessionId, chatKey: activeChatKey } = useBoundChat();
   // useBoundChat only carries an id inside a BOUND chat instance — on
@@ -119,18 +126,13 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch("/api/pick-folder", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      const data = res.ok
-        ? ((await res.json()) as { path?: string | null; unsupported?: boolean })
-        : null;
-      if (data?.path) {
+      const path = await pickFolder(
+        projects?.find((project) => project.id === projectId)?.path,
+      );
+      if (path) {
         const reply = await wsRequest<{ ok: boolean; error?: string | null }>(
           "relocate_project",
-          { session_id: sessionId ?? "", project_id: projectId, path: data.path },
+          { session_id: sessionId ?? "", project_id: projectId, path },
           "project_relocated",
         );
         if (reply && !reply.ok) {
@@ -140,16 +142,10 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
           notifyProjectChanged();
           onClose();
         }
-      } else if (!data || data.unsupported) {
-        setErr(
-          text(
-            "Couldn't open the system folder picker — restart the worker.",
-            "无法打开系统文件夹选择器 — 请重启 worker。",
-          ),
-        );
       }
-    } catch {
-      setErr(text("Couldn't open the folder picker.", "无法打开文件夹选择器。"));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setErr(text(`Couldn't choose a folder: ${detail}`, `无法选择文件夹：${detail}`));
     }
     setBusy(false);
   }
@@ -176,30 +172,21 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
     onClose();
   }
 
-  // "Open folder…" → pops the OS-native directory chooser via the
-  // worker. NO manual path entry — a button that opens the system
-  // dialog, period. On the rare platform with no native dialog we show
-  // a one-line hint, never a text box.
+  // "Open folder…" uses the worker's native chooser when available and a
+  // validated server-path dialog on headless hosts.
   async function openFolder() {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch("/api/pick-folder", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      const data = res.ok
-        ? ((await res.json()) as { path?: string | null; unsupported?: boolean })
-        : null;
-      if (data?.path) {
+      const path = await pickFolder();
+      if (path) {
         const created = await wsRequest<{
           ok: boolean;
           project?: Project | null;
           error?: string | null;
         }>(
           "create_project",
-          { path: data.path, session_id: sessionId ?? "" },
+          { path, session_id: sessionId ?? "" },
           "project_created",
         );
         if (created?.ok && created.project?.id) {
@@ -215,17 +202,10 @@ export function ProjectMenu({ onClose }: { onClose: () => void }) {
             created?.error ?? text("Couldn't add this project.", "无法添加此项目。"),
           );
         }
-      } else if (!data || data.unsupported) {
-        setErr(
-          text(
-            "Couldn't open the system folder picker — restart the worker.",
-            "无法打开系统文件夹选择器 — 请重启 worker。",
-          ),
-        );
       }
-      // data.path == null (and supported) → user cancelled; no-op.
-    } catch {
-      setErr(text("Couldn't open the folder picker.", "无法打开文件夹选择器。"));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setErr(text(`Couldn't choose a folder: ${detail}`, `无法选择文件夹：${detail}`));
     }
     setBusy(false);
   }
@@ -392,6 +372,7 @@ export function ProjectBadge() {
   const [label, setLabel] = useState<string>(text("Project", "项目"));
   const [missing, setMissing] = useState(false);
   const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const { pickFolder, folderPickerDialog, manualOpen } = useFolderPicker();
 
   // Returns true once it has resolved a project (so the caller can stop
   // retrying). On a fresh page load the WebSocket may not be OPEN yet, so
@@ -462,6 +443,10 @@ export function ProjectBadge() {
   }, []);
 
   function onOpenChange(next: boolean) {
+    // The headless-host fallback is portaled outside the Popover. Keep this
+    // menu mounted while that modal owns focus so the pending create/relocate
+    // operation can resume after path validation.
+    if (!next && manualOpen) return;
     if (next) {
       window.dispatchEvent(new Event("topbar-close-menus"));
       closeAllPopovers();
@@ -470,6 +455,7 @@ export function ProjectBadge() {
   }
 
   return (
+    <>
     <Popover open={open} onOpenChange={onOpenChange}>
       <HoverTip
         label={
@@ -507,8 +493,10 @@ export function ProjectBadge() {
         sideOffset={10}
         className="w-auto border-0 bg-transparent p-0 shadow-none"
       >
-        <ProjectMenu onClose={() => setOpen(false)} />
+        <ProjectMenu onClose={() => setOpen(false)} pickFolder={pickFolder} />
       </PopoverContent>
     </Popover>
+    {folderPickerDialog}
+    </>
   );
 }

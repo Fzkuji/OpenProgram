@@ -97,10 +97,12 @@ class RuntimeStateStore:
                 file.write(
                     json.dumps(asdict(state), ensure_ascii=False, indent=2) + "\n"
                 )
-            # mkstemp opens at 0600; the state file is read like the rest of
-            # the workspace, and a 600 file left behind is how a stray
-            # temporary is told apart from real state.
-            os.chmod(temporary, 0o644)
+            # mkstemp opens at 0600 on POSIX; the published state file is read
+            # like the rest of the workspace. Windows access is governed by
+            # inherited ACLs, so POSIX mode bits are neither useful nor
+            # intentionally emulated there.
+            if os.name != "nt":
+                os.chmod(temporary, 0o644)
             os.replace(temporary, self.path)
         except BaseException:
             Path(temporary).unlink(missing_ok=True)

@@ -25,7 +25,10 @@ from openprogram.agent.run_control import (
 
 @pytest.fixture
 def agent_run(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
     monkeypatch.setattr("openprogram.paths._migration_checked", True)
     monkeypatch.setattr("openprogram.setup._read_config", lambda: {"sandbox": {"mode": "danger-full-access"}})
     token = begin_turn("session/one", "turn:two")
@@ -38,7 +41,26 @@ def agent_run(tmp_path, monkeypatch):
 
 
 def _manifest(trash_root: Path) -> list[dict]:
-    return [json.loads(line) for line in (trash_root / "manifest.jsonl").read_text().splitlines()]
+    return [
+        json.loads(line)
+        for line in (trash_root / "manifest.jsonl").read_text(
+            encoding="utf-8",
+        ).splitlines()
+    ]
+
+
+def _symlink_to_or_skip(
+    link: Path,
+    target: Path,
+    *,
+    target_is_directory: bool = False,
+) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except OSError as exc:
+        if sys.platform == "win32" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows account cannot create symbolic links")
+        raise
 
 
 def test_move_records_original_path_and_restore_refuses_to_overwrite(tmp_path, monkeypatch):
@@ -74,7 +96,7 @@ def test_move_preserves_symlink_and_uses_copy_then_delete_on_exdev(tmp_path, mon
     outside = tmp_path / "outside.txt"
     outside.write_text("outside")
     link = tmp_path / "link"
-    link.symlink_to(outside)
+    _symlink_to_or_skip(link, outside)
 
     link_entry = rd.move_to_trash(link)
 
@@ -106,6 +128,9 @@ def test_move_preserves_symlink_and_uses_copy_then_delete_on_exdev(tmp_path, mon
 def test_directory_cleanup_does_not_follow_a_swapped_symlink(tmp_path, monkeypatch):
     import openprogram.sandbox.recoverable_delete as rd
 
+    if not rd._safe_rmtree_supported():
+        pytest.skip("platform has no fd-relative symlink-safe directory removal")
+
     source = tmp_path / "source"
     child = source / "child"
     child.mkdir(parents=True)
@@ -130,7 +155,11 @@ def test_directory_cleanup_does_not_follow_a_swapped_symlink(tmp_path, monkeypat
             if not swapped and self.path == str(child):
                 swapped = True
                 child.rename(parked)
-                child.symlink_to(outside, target_is_directory=True)
+                _symlink_to_or_skip(
+                    child,
+                    outside,
+                    target_is_directory=True,
+                )
             return result
 
     def scandir(path):
@@ -422,7 +451,7 @@ def test_trash_contents_cannot_be_deleted_into_the_same_trash(tmp_path, monkeypa
     assert item.read_text() == "keep"
 
     alias = tmp_path / "trash-alias"
-    alias.symlink_to(trash, target_is_directory=True)
+    _symlink_to_or_skip(alias, trash, target_is_directory=True)
     with pytest.raises(OSError):
         move_to_trash(alias / "existing")
     assert item.read_text() == "keep"
@@ -516,7 +545,7 @@ def test_execute_code_routes_interpreter_script_and_cwd_through_local_backend(
     assert seen["cwd"] == str(tmp_path)
     assert seen["timeout"] == 7
     assert seen["command"].startswith("'/opt/custom python' ")
-    assert seen["command"].endswith(".py")
+    assert seen["command"].rstrip("'").endswith(".py")
     assert "exit=0" in result
 
 
@@ -562,14 +591,8 @@ def test_shell_shim_write_failure_leaves_no_partial_file(tmp_path, monkeypatch):
 def test_dir_fd_deletion_fails_safe_instead_of_re_resolving_the_path(tmp_path):
     from openprogram.sandbox.recoverable_delete import _dir_fd_path
 
-    directory = tmp_path / "directory"
-    directory.mkdir()
-    fd = os.open(directory, os.O_RDONLY)
-    try:
-        with pytest.raises(NotImplementedError, match="dir_fd"):
-            _dir_fd_path("target", fd)
-    finally:
-        os.close(fd)
+    with pytest.raises(NotImplementedError, match="dir_fd"):
+        _dir_fd_path("target", 123)
 
 
 def test_agent_shell_rm_rmdir_and_unlink_are_recoverable(agent_run):
@@ -676,7 +699,7 @@ def test_agent_node_rejects_buffer_and_file_url_paths_without_deleting(agent_run
 
 def test_wheel_contains_both_runtime_shims(tmp_path):
     repo = Path(__file__).resolve().parents[3]
-    config = tomllib.loads((repo / "pyproject.toml").read_text())
+    config = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
     package_data = config["tool"]["setuptools"]["package-data"]["openprogram"]
     assert "sandbox/shims/*.py" in package_data
     assert "programs/workflow/browser/*.cjs" in package_data
@@ -704,13 +727,22 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
         '{"favorites": ["must-not-ship"]}\n', encoding="utf-8",
     )
     wheel_dir = tmp_path / "wheel"
+    uv_name = "uv.exe" if sys.platform == "win32" else "uv"
+    uv = Path(sys.executable).with_name(uv_name)
+    if not uv.is_file():
+        resolved_uv = shutil.which("uv")
+        assert resolved_uv is not None, "uv is required for packaging tests"
+        uv = Path(resolved_uv)
     built = subprocess.run(
         [
-            sys.executable, "-m", "build", "--wheel", "--no-isolation",
-            "--skip-dependency-check", "--outdir", str(wheel_dir),
+            str(uv), "build", "--quiet", "--wheel",
+            "--python", sys.executable, "--no-managed-python", "--out-dir",
+            str(wheel_dir), ".",
         ],
         cwd=project,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         timeout=60,
     )
@@ -733,6 +765,8 @@ def test_wheel_contains_both_runtime_shims(tmp_path):
             str(installed), str(wheel),
         ],
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=True,
         env={**os.environ, "PIP_DISABLE_PIP_VERSION_CHECK": "1"},
         timeout=60,

@@ -37,6 +37,7 @@ for (const color of [
   "brightMagenta", "brightCyan", "brightWhite",
 ]) assert.match(page, new RegExp(`\\b${color}:`));
 assert.match(page, /attachCustomKeyEventHandler/);
+assert.match(page, /api\.write\(id, "\\x03"\)/);
 assert.match(page, /navigator\.clipboard\.writeText/);
 assert.match(page, /navigator\.clipboard\.readText/);
 assert.match(page, /terminal\.clear\(\)/);

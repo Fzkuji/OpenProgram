@@ -2,6 +2,12 @@ name: Linux release smoke
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * 1"
+
+concurrency:
+  group: linux-release-smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -35,6 +41,12 @@ jobs:
         env:
           OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
         run: xvfb-run -a scripts/release/build-product-runtime.sh
+      - name: Verify on the Ubuntu 22.04 glibc baseline
+        env:
+          OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime
+        run: >-
+          bash scripts/release/smoke-linux-runtime-baseline.sh
+          "$OPENPROGRAM_RUNTIME_ROOT" "${{ matrix.arch }}"
       - name: Archive complete Linux product runtime
         env:
           OPENPROGRAM_RUNTIME_ROOT: ${{ runner.temp }}/openprogram-runtime/runtime

@@ -568,15 +568,15 @@ def _list_providers() -> list[dict]:
         # The Codex provider needs OAuth credentials, NOT the `codex` CLI
         # binary itself. The binary is only used once for `codex login`,
         # after which OpenProgram reads ~/.codex/auth.json (or the
-        # adopted copy at ~/.openprogram/auth/openai-codex/default.json)
+        # adopted copy in the active OpenProgram profile's auth store)
         # and talks directly to chatgpt.com/backend-api — no proxy, no
         # shell-out to `codex`.
         import os as _os
         from pathlib import Path
         if (Path.home() / ".codex" / "auth.json").exists():
             return True
-        if (Path.home() / ".openprogram" / "auth" / "openai-codex" /
-                "default.json").exists():
+        from openprogram.paths import get_state_dir
+        if (get_state_dir() / "auth" / "openai-codex" / "default.json").exists():
             return True
         return False
 
@@ -2198,6 +2198,9 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
             )
             server = uvicorn.Server(config)
             _loop = asyncio.new_event_loop()
+            from openprogram._compat import install_asyncio_exception_handler
+
+            install_asyncio_exception_handler(_loop)
             asyncio.set_event_loop(_loop)
             _loop.run_until_complete(server.serve())
         finally:
@@ -2244,19 +2247,23 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
 
         def _open():
             import time
-            import webbrowser
 
+            from openprogram._compat import open_browser_url
             from openprogram._ports import backend_accepts_owner_challenge
             from openprogram.backend_endpoint import build_owner_auth_url
 
             deadline = time.monotonic() + 10.0
             while time.monotonic() < deadline:
                 if backend_accepts_owner_challenge(port):
-                    webbrowser.open(build_owner_auth_url(
+                    opened = open_browser_url(build_owner_auth_url(
                         ui_url,
                         token=_owner_auth_state.token,
                         effective_origins=_owner_auth_state.effective_origins,
                     ))
+                    if not opened:
+                        print(
+                            "Browser not opened: no graphical browser is available"
+                        )
                     return
                 time.sleep(0.2)
             print("Browser not opened: Web listener ownership was not verified")

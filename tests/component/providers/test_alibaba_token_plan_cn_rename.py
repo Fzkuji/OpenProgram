@@ -64,7 +64,7 @@ def test_provider_json_uses_cn_beijing_base_url():
     import openprogram.providers as _p
 
     pj = Path(_p.__file__).parent / "alibaba_token_plan_cn" / "provider.json"
-    ep = json.loads(pj.read_text())["endpoints"]["default"]
+    ep = json.loads(pj.read_text(encoding="utf-8"))["endpoints"]["default"]
     assert ep["base_url"] == (
         "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     )
@@ -81,6 +81,8 @@ def test_lobe_icon_map_carries_token_plan_logo():
     import openprogram
 
     root = Path(openprogram.__file__).parent.parent
-    icons = (root / "apps/web/components/settings/lobe-icons.ts").read_text()
+    icons = (root / "apps/web/components/settings/lobe-icons.ts").read_text(
+        encoding="utf-8"
+    )
     assert '"alibaba-token-plan-cn": { slug: "alibaba"' in icons
     assert '"alibaba-token-plan": { slug: "alibaba"' in icons

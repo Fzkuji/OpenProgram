@@ -6,7 +6,10 @@ The canonical document covers:
 
 - the fixed `owner`, `paired`, and `mcp_browser` authority tiers;
 - permission modes, project rules, interactive approval, and non-interactive denial;
-- macOS Seatbelt and Linux bubblewrap enforcement;
+- macOS Seatbelt, Linux bubblewrap, and Windows WSL2-to-bubblewrap enforcement;
+- `auto` capability detection, including native unsandboxed fallback when the
+  optional Windows WSL2 backend is unavailable and fail-closed behavior when
+  `workspace-write` is selected explicitly;
 - bypass and sandbox-escalation semantics;
 - request sources, framework comparisons, failure behavior, implementation evidence, and known gaps.
 

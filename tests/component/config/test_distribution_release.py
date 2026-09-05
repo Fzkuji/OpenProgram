@@ -23,6 +23,10 @@ MACOS_DESKTOP_INSTALL = pytest.mark.skipif(
     sys.platform != "darwin",
     reason="requires macOS app bundle and LaunchServices tools",
 )
+POSIX_SHELL_INTEGRATION = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="exercises the macOS/Linux shell installer; Windows uses PowerShell",
+)
 
 
 def _desktop_package() -> dict:
@@ -1065,6 +1069,7 @@ def test_launchd_unload_failure_preserves_the_service_plist(
     assert plist_path.read_bytes() == original
 
 
+@POSIX_SHELL_INTEGRATION
 def test_packaged_runtime_smoke_rejects_an_incomplete_app_before_install(
     tmp_path: Path,
 ) -> None:
@@ -1083,6 +1088,8 @@ def test_packaged_runtime_smoke_rejects_an_incomplete_app_before_install(
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
     assert failed.returncode != 0
@@ -1205,13 +1212,23 @@ def test_release_installer_is_versioned_and_source_free() -> None:
 
 def test_release_installer_cold_starts_before_switching_current() -> None:
     installer = (ROOT / "scripts" / "release" / "install-release.sh").read_text(encoding="utf-8")
-    assert 'probe_home="$release_dir/.probe-home-$$"' in installer
-    assert 'HOME="$probe_home" OPENPROGRAM_WEB_PORT="$probe_port"' in installer
-    start = installer.index('"$python_bin" -I -B -m openprogram worker start')
+    assert 'probe_home="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-release-probe.XXXXXX")"' in installer
+    assert '$release_dir/.probe-home' not in installer
+    assert 'XDG_CONFIG_HOME="$probe_home/.config"' in installer
+    assert 'OPENPROGRAM_STATE_DIR="$probe_home/.openprogram"' in installer
+    assert "OPENPROGRAM_PROFILE=" in installer
+    assert "OPENPROGRAM_NO_WEB=" in installer
+    assert 'OPENPROGRAM_WORKDIR="$probe_home"' in installer
+    assert "-m openprogram worker start" not in installer
+    probe = installer.index("probe_active=1")
+    start = installer.index(
+        "spawn_detached(prefer_service=False, on_spawn=record_probe_pid)", probe
+    )
     health = installer.index("/healthz", start)
-    stop = installer.index('"$python_bin" -I -B -m openprogram worker stop', health)
-    switch = installer.index("os.replace(sys.argv[1], sys.argv[2])", stop)
-    assert start < health < stop < switch
+    stop = installer.index("stop_probe_process_group", health)
+    publish = installer.index("os.replace(candidate_path, release_path)", stop)
+    switch = installer.index("os.replace(next_link, current_path)", publish)
+    assert start < health < stop < publish < switch
 
 
 def _copied_public_installer(tmp_path: Path) -> Path:
@@ -1223,6 +1240,7 @@ def _copied_public_installer(tmp_path: Path) -> Path:
     return wrapper
 
 
+@POSIX_SHELL_INTEGRATION
 def test_public_release_installer_downloads_same_tag_implementation(
     tmp_path: Path,
 ) -> None:
@@ -1259,6 +1277,7 @@ def test_public_release_installer_downloads_same_tag_implementation(
     assert result.read_text(encoding="utf-8") == "1.2.3|Example/OpenProgram\n"
 
 
+@POSIX_SHELL_INTEGRATION
 @pytest.mark.parametrize("version", ["1", "1.2", "1.2.3.4", "1.2.x"])
 def test_public_release_installer_rejects_non_release_versions(
     tmp_path: Path, version: str
@@ -1274,6 +1293,34 @@ def test_public_release_installer_rejects_non_release_versions(
     assert f"invalid OpenProgram version: {version}" in result.stderr
 
 
+@POSIX_SHELL_INTEGRATION
+@pytest.mark.parametrize(
+    "installer",
+    ["scripts/install-release.sh", "scripts/release/install-release.sh"],
+)
+@pytest.mark.parametrize(
+    "repository", ["repo", "owner/repo/extra", "/repo", "owner/", "owner/re po"]
+)
+def test_posix_release_installers_require_one_owner_repo_pair(
+    tmp_path: Path, installer: str, repository: str
+) -> None:
+    result = subprocess.run(
+        ["sh", str(ROOT / installer)],
+        check=False,
+        env=os.environ
+        | {
+            "HOME": str(tmp_path / "home"),
+            "OPENPROGRAM_VERSION": "1.2.3",
+            "OPENPROGRAM_REPOSITORY": repository,
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert f"invalid OpenProgram repository: {repository}" in result.stderr
+
+
+@POSIX_SHELL_INTEGRATION
 def test_public_release_installer_dispatches_to_checkout_implementation(
     tmp_path: Path,
 ) -> None:
@@ -1300,6 +1347,7 @@ def test_public_release_installer_dispatches_to_checkout_implementation(
     assert output.read_text(encoding="utf-8") == "1.2.3|first|second\n"
 
 
+@POSIX_SHELL_INTEGRATION
 def test_public_release_installer_stops_on_term(tmp_path: Path) -> None:
     wrapper = _copied_public_installer(tmp_path)
     fake_bin = tmp_path / "bin"
@@ -1329,8 +1377,10 @@ def test_public_release_installer_stops_on_term(tmp_path: Path) -> None:
     assert not marker.exists()
 
 
+@POSIX_SHELL_INTEGRATION
 def test_release_installer_replaces_an_existing_current_symlink(tmp_path: Path) -> None:
-    runtime_root = tmp_path / "state" / "runtime" / "cli"
+    state_root = tmp_path / 'state with "quote"'
+    runtime_root = state_root / "runtime" / "cli"
     old_release = runtime_root / "releases" / "0.6.6"
     old_release.mkdir(parents=True)
     (runtime_root / "current").symlink_to(old_release)
@@ -1341,7 +1391,9 @@ def test_release_installer_replaces_an_existing_current_symlink(tmp_path: Path) 
     fake_python = archive_root / "python" / "bin" / "python3"
     fake_python.write_text(
         "#!/bin/sh\n"
-        f"if [ \"$#\" -eq 5 ] && [ \"$3\" = - ]; then exec {sys.executable!r} \"$@\"; fi\n"
+        "if [ \"$#\" -eq 3 ] && [ \"$3\" = - ]; then printf '23456\\n'; exit 0; fi\n"
+        f"if [ \"$#\" -eq 4 ] && [ \"$3\" = - ]; then case \"$4\" in */runtime-manifest.json) exec {sys.executable!r} \"$@\" ;; esac; fi\n"
+        f"if [ \"$#\" -ge 5 ] && [ \"$3\" = - ]; then exec {sys.executable!r} \"$@\"; fi\n"
         "case \"$*\" in\n"
         "  *'openprogram --version'*) printf 'openprogram 0.6.7\\n' ;;\n"
         "  *) : ;;\n"
@@ -1352,8 +1404,12 @@ def test_release_installer_replaces_an_existing_current_symlink(tmp_path: Path) 
     (archive_root / "bin" / "verify-product-runtime.py").write_text(
         "# acceptance fixture\n", encoding="utf-8"
     )
+    (archive_root / "bin" / "python").symlink_to("../python/bin/python3")
     (archive_root / "runtime-manifest.json").write_text(
-        json.dumps({"python": "python/bin/python3"}, indent=2), encoding="utf-8"
+        json.dumps(
+            {"openprogram": "0.6.7", "python": "python/bin/python3"}, indent=2
+        ),
+        encoding="utf-8",
     )
     archive = tmp_path / "OpenProgram-0.6.7-runtime-macos-arm64.tar.gz"
     subprocess.run(
@@ -1363,17 +1419,18 @@ def test_release_installer_replaces_an_existing_current_symlink(tmp_path: Path) 
     import hashlib
 
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    launcher_dir = tmp_path / "bin"
+    launcher_dir = tmp_path / 'bin with "quote"'
     env = {
         "PATH": os.environ["PATH"],
         "HOME": str(tmp_path / "home"),
         "TMPDIR": str(tmp_path),
         "LC_ALL": "C",
         "OPENPROGRAM_VERSION": "0.6.7",
-        "OPENPROGRAM_STATE_DIR": str(tmp_path / "state"),
+        "OPENPROGRAM_STATE_DIR": str(state_root),
         "OPENPROGRAM_BIN_DIR": str(launcher_dir),
         "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
-        "OPENPROGRAM_RUNTIME_SHA256": digest,
+        # Installer comparisons are hexadecimal, not case-sensitive text.
+        "OPENPROGRAM_RUNTIME_SHA256": digest.upper(),
     }
 
     launcher_dir.write_text("not a directory", encoding="utf-8")
@@ -1398,8 +1455,406 @@ def test_release_installer_replaces_an_existing_current_symlink(tmp_path: Path) 
 
     assert (runtime_root / "current").resolve() == runtime_root / "releases" / "0.6.7"
     assert (launcher_dir / "openprogram").is_file()
+    launcher_text = (launcher_dir / "openprogram").read_text(encoding="utf-8")
+    assert 'export OPENPROGRAM_STATE_DIR="$state_root"' in launcher_text
+    assert 'export OPENPROGRAM_BIN_DIR="$launcher_dir"' in launcher_text
+    assert str(state_root.resolve()) in launcher_text
+    assert str(launcher_dir.resolve()) in launcher_text
+    launched = subprocess.run(
+        [str(launcher_dir / "openprogram"), "--version"],
+        check=True,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert launched.stdout == "openprogram 0.6.7\n"
 
 
+def _fake_posix_cli_archive(
+    root: Path,
+    *,
+    manifest_version: str,
+    worker_start_exit: int = 0,
+) -> tuple[Path, str]:
+    import hashlib
+
+    runtime = root / "archive" / "runtime"
+    (runtime / "python" / "bin").mkdir(parents=True)
+    (runtime / "bin").mkdir()
+    fake_python = runtime / "python" / "bin" / "python3"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$#\" -eq 3 ] && [ \"$3\" = - ]; then\n"
+        "  printf '23457\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [ \"$#\" -eq 4 ] && [ \"$3\" = - ]; then\n"
+        "  case \"$4\" in\n"
+        f"    */runtime-manifest.json) exec {sys.executable!r} \"$@\" ;;\n"
+        "    start)\n"
+        "      if [ -n \"${PROBE_ENV_LOG:-}\" ]; then\n"
+        "        {\n"
+        "          printf '%s\\n' \"$HOME\" \"$XDG_CONFIG_HOME\"\n"
+        "          printf '%s\\n' \"$OPENPROGRAM_STATE_DIR\" \"$OPENPROGRAM_PROFILE\"\n"
+        "          printf '%s\\n' \"$OPENPROGRAM_NO_WEB\" \"$OPENPROGRAM_WORKDIR\" \"$PWD\"\n"
+        "          if [ -e \"$XDG_CONFIG_HOME/systemd/user/openprogram-worker.service\" ]; then\n"
+        "            printf 'unit-visible\\n'\n"
+        "          else\n"
+        "            printf 'unit-hidden\\n'\n"
+        "          fi\n"
+        "        } > \"$PROBE_ENV_LOG\"\n"
+        "      fi\n"
+        f"      exit {worker_start_exit} ;;\n"
+        "  esac\n"
+        "fi\n"
+        "if [ \"$#\" -ge 5 ] && [ \"$3\" = - ]; then\n"
+        f"  exec {sys.executable!r} \"$@\"\n"
+        "fi\n"
+        "case \"$*\" in\n"
+        f"  *'openprogram --version'*) printf 'openprogram {manifest_version}\\n' ;;\n"
+        "  *) : ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    (runtime / "bin" / "python").symlink_to("../python/bin/python3")
+    (runtime / "bin" / "verify-product-runtime.py").write_text(
+        "# acceptance fixture\n", encoding="utf-8"
+    )
+    (runtime / "runtime-manifest.json").write_text(
+        json.dumps(
+            {
+                "openprogram": manifest_version,
+                "python": "python/bin/python3",
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    archive = root / "OpenProgram-runtime.tar.gz"
+    subprocess.run(
+        ["tar", "-C", str(root / "archive"), "-czf", str(archive), "runtime"],
+        check=True,
+    )
+    return archive, hashlib.sha256(archive.read_bytes()).hexdigest()
+
+
+@POSIX_SHELL_INTEGRATION
+def test_release_installer_rejects_archive_version_mismatch_before_publish(
+    tmp_path: Path,
+) -> None:
+    archive, digest = _fake_posix_cli_archive(
+        tmp_path / "wrong-version", manifest_version="0.6.6"
+    )
+    state = tmp_path / "state"
+    result = subprocess.run(
+        ["sh", str(ROOT / "scripts" / "release" / "install-release.sh")],
+        check=False,
+        env=os.environ
+        | {
+            "HOME": str(tmp_path / "home"),
+            "OPENPROGRAM_VERSION": "0.6.7",
+            "OPENPROGRAM_STATE_DIR": str(state),
+            "OPENPROGRAM_BIN_DIR": str(tmp_path / "bin"),
+            "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
+            "OPENPROGRAM_RUNTIME_SHA256": digest,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    runtime_root = state / "runtime" / "cli"
+    assert result.returncode != 0
+    assert (
+        "runtime version 0.6.6 does not match requested OpenProgram 0.6.7"
+        in result.stderr
+    )
+    assert not (runtime_root / "releases" / "0.6.7").exists()
+    assert not (runtime_root / "current").exists()
+    assert list(runtime_root.glob(".staging-*")) == []
+
+
+@POSIX_SHELL_INTEGRATION
+def test_failed_new_release_probe_is_cleanly_retryable(tmp_path: Path) -> None:
+    failed_archive, failed_digest = _fake_posix_cli_archive(
+        tmp_path / "failed", manifest_version="0.6.7", worker_start_exit=41
+    )
+    state = tmp_path / "state"
+    launcher = tmp_path / "bin"
+    common_env = os.environ | {
+        "HOME": str(tmp_path / "home"),
+        "OPENPROGRAM_VERSION": "0.6.7",
+        "OPENPROGRAM_STATE_DIR": str(state),
+        "OPENPROGRAM_BIN_DIR": str(launcher),
+    }
+    failed = subprocess.run(
+        ["sh", str(ROOT / "scripts" / "release" / "install-release.sh")],
+        check=False,
+        env=common_env
+        | {
+            "OPENPROGRAM_RUNTIME_ARCHIVE": str(failed_archive),
+            "OPENPROGRAM_RUNTIME_SHA256": failed_digest,
+        },
+        capture_output=True,
+        text=True,
+    )
+    runtime_root = state / "runtime" / "cli"
+    assert failed.returncode == 41
+    assert not (runtime_root / "releases" / "0.6.7").exists()
+    assert list(runtime_root.glob(".staging-*")) == []
+
+    good_archive, good_digest = _fake_posix_cli_archive(
+        tmp_path / "good", manifest_version="0.6.7"
+    )
+    subprocess.run(
+        ["sh", str(ROOT / "scripts" / "release" / "install-release.sh")],
+        check=True,
+        env=common_env
+        | {
+            "OPENPROGRAM_RUNTIME_ARCHIVE": str(good_archive),
+            "OPENPROGRAM_RUNTIME_SHA256": good_digest,
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert (runtime_root / "current").resolve() == (
+        runtime_root / "releases" / "0.6.7"
+    )
+
+
+@POSIX_SHELL_INTEGRATION
+def test_release_installer_probe_ignores_caller_service_and_no_web(
+    tmp_path: Path,
+) -> None:
+    archive, digest = _fake_posix_cli_archive(
+        tmp_path / "archive-fixture", manifest_version="0.6.7"
+    )
+    caller_home = tmp_path / "caller-home"
+    caller_xdg = tmp_path / "caller-xdg"
+    caller_unit = caller_xdg / "systemd" / "user" / "openprogram-worker.service"
+    caller_unit.parent.mkdir(parents=True)
+    caller_unit.write_text("caller unit must remain untouched\n", encoding="utf-8")
+    probe_log = tmp_path / "probe-environment"
+
+    subprocess.run(
+        ["sh", str(ROOT / "scripts" / "release" / "install-release.sh")],
+        check=True,
+        env=os.environ
+        | {
+            "HOME": str(caller_home),
+            "XDG_CONFIG_HOME": str(caller_xdg),
+            "OPENPROGRAM_STATE_DIR": str(tmp_path / "release-state"),
+            "OPENPROGRAM_PROFILE": "caller-profile",
+            "OPENPROGRAM_NO_WEB": "1",
+            "OPENPROGRAM_WORKDIR": str(tmp_path / "caller-workdir"),
+            "OPENPROGRAM_VERSION": "0.6.7",
+            "OPENPROGRAM_BIN_DIR": str(tmp_path / "bin"),
+            "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
+            "OPENPROGRAM_RUNTIME_SHA256": digest,
+            "PROBE_ENV_LOG": str(probe_log),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    values = probe_log.read_text(encoding="utf-8").splitlines()
+    probe_home, xdg_config, state_dir, profile, no_web, workdir, cwd, unit = values
+    assert probe_home != str(caller_home)
+    assert xdg_config == str(Path(probe_home) / ".config")
+    assert state_dir == str(Path(probe_home) / ".openprogram")
+    assert profile == ""
+    assert no_web == ""
+    assert workdir == probe_home
+    assert cwd == probe_home
+    assert unit == "unit-hidden"
+    assert caller_unit.read_text(encoding="utf-8") == (
+        "caller unit must remain untouched\n"
+    )
+
+
+def test_posix_release_installer_has_one_atomic_install_transaction() -> None:
+    installer = (ROOT / "scripts" / "release" / "install-release.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'install_lock="$runtime_root/.install.lock"' in installer
+    assert "fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)" in installer
+    assert 'ln "$lock_token" "$install_lock"' not in installer
+    assert 'probe_home="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-release-probe.XXXXXX")"' in installer
+    assert 'listener.bind(("127.0.0.1", 0))' in installer
+    assert 'raise SystemExit("worker health probe never returned status=ok")' in installer
+    assert "spawn_detached(prefer_service=False, on_spawn=record_probe_pid)" in installer
+    assert "os.killpg(pgid, signal.SIGTERM)" in installer
+    assert "os.killpg(pgid, signal.SIGKILL)" in installer
+    publish = installer.index("os.replace(candidate_path, release_path)")
+    switch = installer.index("os.replace(next_link, current_path)", publish)
+    launcher = installer.index("os.replace(launcher_staging_path, launcher_path)", switch)
+    assert publish < switch < launcher
+    assert 'export OPENPROGRAM_STATE_DIR="$state_root"' in installer
+    assert 'export OPENPROGRAM_BIN_DIR="$launcher_dir"' in installer
+    assert 'exec "$runtime_root/current/bin/python" -I -B -m openprogram' in installer
+
+
+@POSIX_SHELL_INTEGRATION
+def test_posix_release_installer_ignores_a_stale_lock_file(tmp_path: Path) -> None:
+    archive, digest = _fake_posix_cli_archive(
+        tmp_path / "archive-fixture", manifest_version="0.6.7"
+    )
+    runtime_root = tmp_path / "state" / "runtime" / "cli"
+    runtime_root.mkdir(parents=True)
+    lock = runtime_root / ".install.lock"
+    lock.write_text("999999999\n", encoding="ascii")
+
+    result = subprocess.run(
+        ["sh", str(ROOT / "scripts" / "release" / "install-release.sh")],
+        check=True,
+        env=os.environ
+        | {
+            "HOME": str(tmp_path / "home"),
+            "OPENPROGRAM_VERSION": "0.6.7",
+            "OPENPROGRAM_STATE_DIR": str(tmp_path / "state"),
+            "OPENPROGRAM_BIN_DIR": str(tmp_path / "bin"),
+            "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
+            "OPENPROGRAM_RUNTIME_SHA256": digest,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert (runtime_root / "current").resolve() == (
+        runtime_root / "releases" / "0.6.7"
+    )
+    # flock ownership is kernel state.  Arbitrary legacy contents never block
+    # an install and need no unsafe stale-owner deletion protocol.
+    assert lock.read_text(encoding="ascii") == "999999999\n"
+
+
+@POSIX_SHELL_INTEGRATION
+def test_posix_release_installer_serializes_concurrent_activation(
+    tmp_path: Path,
+) -> None:
+    archive, digest = _fake_posix_cli_archive(
+        tmp_path / "archive-fixture", manifest_version="0.6.7"
+    )
+    state = tmp_path / "state"
+    env = os.environ | {
+        "HOME": str(tmp_path / "home"),
+        "OPENPROGRAM_VERSION": "0.6.7",
+        "OPENPROGRAM_STATE_DIR": str(state),
+        "OPENPROGRAM_BIN_DIR": str(tmp_path / "bin"),
+        "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
+        "OPENPROGRAM_RUNTIME_SHA256": digest,
+    }
+    command = ["sh", str(ROOT / "scripts" / "release" / "install-release.sh")]
+    installers = [
+        subprocess.Popen(
+            command,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(2)
+    ]
+    results = [installer.communicate(timeout=30) for installer in installers]
+
+    assert [installer.returncode for installer in installers] == [0, 0], results
+    runtime_root = state / "runtime" / "cli"
+    assert (runtime_root / "current").resolve() == (
+        runtime_root / "releases" / "0.6.7"
+    )
+    assert (tmp_path / "bin" / "openprogram").is_file()
+    assert list(runtime_root.glob(".staging-*")) == []
+
+
+@POSIX_SHELL_INTEGRATION
+def test_posix_release_installer_rolls_back_current_on_activation_failure(
+    tmp_path: Path,
+) -> None:
+    archive, digest = _fake_posix_cli_archive(
+        tmp_path / "archive-fixture", manifest_version="0.6.7"
+    )
+    state = tmp_path / "state"
+    runtime_root = state / "runtime" / "cli"
+    old_release = runtime_root / "releases" / "0.6.6"
+    old_release.mkdir(parents=True)
+    (runtime_root / "current").symlink_to(old_release)
+    launcher_dir = tmp_path / "bin"
+    launcher_dir.mkdir()
+    launcher = launcher_dir / "openprogram"
+    launcher.write_text("old launcher\n", encoding="utf-8")
+    env = os.environ | {
+        "HOME": str(tmp_path / "home"),
+        "OPENPROGRAM_VERSION": "0.6.7",
+        "OPENPROGRAM_STATE_DIR": str(state),
+        "OPENPROGRAM_BIN_DIR": str(launcher_dir),
+        "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
+        "OPENPROGRAM_RUNTIME_SHA256": digest,
+    }
+    command = ["sh", str(ROOT / "scripts" / "release" / "install-release.sh")]
+
+    failed = subprocess.run(
+        command,
+        check=False,
+        env=env | {"OPENPROGRAM_INSTALL_TEST_FAULT": "after-current"},
+        capture_output=True,
+        text=True,
+    )
+
+    assert failed.returncode != 0
+    assert "injected activation failure after current switch" in failed.stderr
+    assert (runtime_root / "current").resolve() == old_release
+    assert launcher.read_text(encoding="utf-8") == "old launcher\n"
+    # A fully verified release may remain cached, but it is not selected until
+    # the same atomic activation transaction succeeds on retry.
+    assert (runtime_root / "releases" / "0.6.7").is_dir()
+
+    subprocess.run(command, check=True, env=env, capture_output=True, text=True)
+    assert (runtime_root / "current").resolve() == (
+        runtime_root / "releases" / "0.6.7"
+    )
+    assert launcher.read_text(encoding="utf-8").startswith("#!/bin/sh\n")
+
+
+@POSIX_SHELL_INTEGRATION
+def test_posix_release_installer_rejects_a_directory_launcher_target(
+    tmp_path: Path,
+) -> None:
+    archive, digest = _fake_posix_cli_archive(
+        tmp_path / "archive-fixture", manifest_version="0.6.7"
+    )
+    state = tmp_path / "state"
+    runtime_root = state / "runtime" / "cli"
+    old_release = runtime_root / "releases" / "0.6.6"
+    old_release.mkdir(parents=True)
+    (runtime_root / "current").symlink_to(old_release)
+    launcher_target = tmp_path / "bin" / "openprogram"
+    launcher_target.mkdir(parents=True)
+
+    result = subprocess.run(
+        ["sh", str(ROOT / "scripts" / "release" / "install-release.sh")],
+        check=False,
+        env=os.environ
+        | {
+            "HOME": str(tmp_path / "home"),
+            "OPENPROGRAM_VERSION": "0.6.7",
+            "OPENPROGRAM_STATE_DIR": str(state),
+            "OPENPROGRAM_BIN_DIR": str(launcher_target.parent),
+            "OPENPROGRAM_RUNTIME_ARCHIVE": str(archive),
+            "OPENPROGRAM_RUNTIME_SHA256": digest,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "launcher target is a directory" in result.stderr
+    assert launcher_target.is_dir()
+    assert (runtime_root / "current").resolve() == old_release
+    assert not (runtime_root / "releases" / "0.6.7").exists()
+
+
+@POSIX_SHELL_INTEGRATION
 def test_short_public_installer_resolves_latest_and_accepts_a_pin(
     tmp_path: Path,
 ) -> None:
@@ -1704,6 +2159,7 @@ def test_stale_package_preflight_checks_both_runtimes_before_deleting(
     assert sentinel.read_text(encoding="utf-8") == "keep\n"
 
 
+@POSIX_SHELL_INTEGRATION
 def test_local_app_refresh_rejects_a_different_product_version_before_build(
     tmp_path: Path,
 ) -> None:
@@ -1753,6 +2209,7 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
     assert '$(dirname -- "$app_path")/.openprogram-app-install.lock' in refresh
 
 
+@POSIX_SHELL_INTEGRATION
 def test_release_version_verifier_rejects_a_mismatched_built_wheel(
     tmp_path: Path,
 ) -> None:
@@ -1782,6 +2239,7 @@ def test_release_version_verifier_rejects_a_mismatched_built_wheel(
     assert f"wheel version 0.6.1 != source version {source_version}" in result.stderr
 
 
+@POSIX_SHELL_INTEGRATION
 def test_local_app_refresh_rejects_dirty_version_change_after_build(
     tmp_path: Path,
 ) -> None:
@@ -2059,6 +2517,18 @@ def test_release_frontend_staging_removes_stale_export_before_build() -> None:
     assert cleanup < build
 
 
+def test_release_staging_builds_self_contained_tui() -> None:
+    staging = (ROOT / "scripts" / "release" / "stage-release-assets.sh").read_text(
+        encoding="utf-8"
+    )
+    builder = (ROOT / "scripts" / "release" / "build-product-runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "npm run build:standalone --workspace apps/cli" in staging
+    assert 'cp "$(command -v node)" "$runtime_root/bin/node"' in builder
+    assert "assets/tui/index.cjs" in builder
+
+
 def test_release_frontend_staging_removes_legacy_package_assets() -> None:
     staging = (ROOT / "scripts" / "release" / "stage-release-assets.sh").read_text(
         encoding="utf-8"
@@ -2093,6 +2563,7 @@ def test_release_frontend_staging_includes_prebuilt_docs() -> None:
     assert 'id="sidebar"' in gate
 
 
+@POSIX_SHELL_INTEGRATION
 def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
@@ -2118,6 +2589,10 @@ if [ "$1" = "run" ] && [ "$2" = "build" ]; then
 elif [ "$1" = "run" ] && [ "$2" = "build:release" ]; then
   mkdir -p "$PWD/apps/cli/python/openprogram_cli/dist"
   printf '// terminal bundle\\n' > "$PWD/apps/cli/python/openprogram_cli/dist/index.mjs"
+fi
+if [ "$1" = "run" ] && [ "$2" = "build:standalone" ]; then
+  mkdir -p "$PWD/apps/cli/dist"
+  printf 'standalone\\n' > "$PWD/apps/cli/dist/index-standalone.cjs"
 fi
 """,
         encoding="utf-8",
@@ -2164,6 +2639,10 @@ if [ "$1" = "run" ] && [ "$2" = "build" ]; then
   mkdir -p "$PWD/apps/web/out"
   printf '<html>web</html>\\n' > "$PWD/apps/web/out/index.html"
   printf '<main aria-label="Authenticating"></main>\\n' > "$PWD/apps/web/out/chat.html"
+fi
+if [ "$1" = "run" ] && [ "$2" = "build:standalone" ]; then
+  mkdir -p "$PWD/apps/cli/dist"
+  printf 'standalone\\n' > "$PWD/apps/cli/dist/index-standalone.cjs"
 fi
 """,
         encoding="utf-8",
@@ -2228,6 +2707,35 @@ def test_product_runtime_installs_complete_default_capabilities() -> None:
     assert "Wiki-Agent-Harness" in product_config
 
 
+def test_posix_runtime_archive_is_labeled_and_published_atomically() -> None:
+    archiver = (ROOT / "scripts" / "release" / "archive-product-runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'test "$manifest_platform" = "$platform"' in archiver
+    assert 'test "$manifest_arch" = "$arch"' in archiver
+    assert 'archive_tmp="$(mktemp "$output_dir/.openprogram-runtime.XXXXXX")"' in archiver
+    assert 'chmod 0644 "$archive_tmp" "$checksum_tmp"' in archiver
+    assert 'mv -f "$archive_tmp" "$archive"' in archiver
+    assert "$(basename \"$archive\")" in archiver
+
+
+def test_posix_runtime_build_has_stable_python_and_bundled_tui_launchers() -> None:
+    builder = (ROOT / "scripts" / "release" / "build-product-runtime.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "for command_name in npm node git" in builder
+    assert 'ln -s "../$python_relative" "$runtime_root/bin/python"' in builder
+    assert 'cp "$(command -v node)" "$runtime_root/bin/node"' in builder
+    assert '"$runtime_root/assets/tui/index.cjs"' in builder
+    assert '"$runtime_root/bin/smoke-ink-tui-pty.py"' in builder
+
+    verifier = (ROOT / "scripts" / "release" / "verify-product-runtime.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'sys.platform.startswith("linux")' in verifier
+    assert '"bin/smoke-ink-tui-pty.py"' in verifier
+
+
 def test_product_runtime_pdf_tool_probe() -> None:
     verifier = runpy.run_path(str(ROOT / "scripts" / "release" / "verify-product-runtime.py"))
     verifier["_probe_pdf_tools"]()
@@ -2286,6 +2794,7 @@ def test_packaged_cli_falls_back_when_ink_runtime_is_absent(
     from openprogram.agent.management import manager
 
     monkeypatch.setenv("OPENPROGRAM_IMMUTABLE_RUNTIME", "1")
+    monkeypatch.setattr(cli_ink, "_has_interactive_tui_stdio", lambda: True)
     monkeypatch.setattr(
         cli_ink,
         "_resolve_node",
@@ -2436,6 +2945,7 @@ def test_product_manifest_requires_one_complete_capability_set() -> None:
         "memory",
         "channels",
         "search",
+        "tui.ink",
         "browser.playwright",
         "model.gpa_detector",
         "program.gui",
@@ -2488,7 +2998,10 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "scripts/release/create-release-manifest.py" in workflow
     assert "scripts/release/smoke-packaged-runtime.sh" in workflow
     assert "sha256" in workflow.lower()
-    assert workflow.count("--publish never") == 1
+    assert "electron-builder --mac dmg zip" in workflow
+    assert "electron-builder --win nsis --${{ matrix.builder_arch }} --publish never" in workflow
+    assert "runner: windows-11-vs2026-arm" in workflow
+    assert workflow.count("--publish never") == 2
     assert "AppImage" not in workflow
 
 
@@ -2562,11 +3075,25 @@ def test_linux_complete_runtime_smoke_is_runnable_without_release_credentials() 
         encoding="utf-8"
     )
     assert "workflow_dispatch:" in workflow
+    assert "schedule:" in workflow
     assert "environment: release" not in workflow
     assert "ubuntu-24.04-arm" in workflow
     assert "scripts/install-release.sh" in workflow
+    assert "smoke-linux-runtime-baseline.sh" in workflow
+    assert "Ubuntu 22.04 glibc baseline" in workflow
     assert "AppImage" not in workflow
     assert "electron-builder" not in workflow
+
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "smoke-linux-runtime-baseline.sh" in release
+
+    baseline = (
+        ROOT / "scripts" / "release" / "smoke-linux-runtime-baseline.sh"
+    ).read_text(encoding="utf-8")
+    assert '"$runtime/bin/verify-product-runtime.py"' in baseline
+    assert '"$runtime/assets/tui/index.cjs" --probe' not in baseline
 
 
 def test_distribution_workflows_use_node24_action_releases() -> None:
@@ -2589,6 +3116,7 @@ def test_packaged_smoke_rejects_unreleased_linux_desktop() -> None:
     assert "python3 -c" not in smoke
 
 
+@POSIX_SHELL_INTEGRATION
 def test_packaged_smoke_reads_formatted_runtime_manifest(tmp_path: Path) -> None:
     runtime = (
         tmp_path

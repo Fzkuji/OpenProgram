@@ -69,7 +69,8 @@ def test_seatbelt_allow_follows_deny(tmp_path):
         deny_write=(),
     ))
     deny_at = profile.index("(deny file-read*")
-    allow_at = profile.index(f'(allow file-read* (subpath "{allowed}")')
+    escaped = os.path.realpath(allowed).replace("\\", "\\\\")
+    allow_at = profile.index(f'(allow file-read* (subpath "{escaped}")')
     assert deny_at < allow_at
 
 
@@ -176,13 +177,38 @@ def test_local_backend_attaches_matched_path_and_rule(monkeypatch):
         lambda: {"sandbox": {"mode": "workspace-write"}},
     )
     monkeypatch.setattr("openprogram.sandbox.unavailable_reason", lambda: None)
+    if os.name == "nt":
+        monkeypatch.setattr(
+            sandbox._compat,
+            "windows_wsl_exec_prefix",
+            lambda: ["wsl.exe", "--distribution", "Ubuntu", "--exec"],
+        )
+        monkeypatch.setattr(
+            sandbox._compat,
+            "windows_path_to_wsl",
+            lambda path: "/mnt/c/" + str(path).replace("\\", "/").replace(":", ""),
+        )
     completed = SimpleNamespace(
-        returncode=1, stdout="", stderr=f"cat: {secret}: Operation not permitted",
+        pid=123,
+        returncode=1,
+        stdout=None,
+        stderr=None,
+        communicate=lambda timeout=None: (
+            "",
+            f"cat: {secret}: Operation not permitted",
+        ),
     )
-    monkeypatch.setattr(
-        "openprogram.backend.local.run_command",
-        lambda *_a, **_kw: completed,
-    )
+    class Owner:
+        def popen(self, *_a, **_kw):
+            return completed
+
+        def release(self):
+            return None
+
+        def terminate(self):
+            return True
+
+    monkeypatch.setattr("openprogram.backend.local.ProcessTreeOwner", Owner)
     result = LocalBackend().run(f"cat {secret}", timeout=5, cwd="/tmp")
     assert result.sandbox_error == "denied"
     assert result.sandbox_rule == "~/.ssh/**"

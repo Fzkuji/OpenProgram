@@ -23,8 +23,6 @@ refuse-if-not — same stance as openclaw.
 from __future__ import annotations
 
 import socket
-import subprocess
-import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -188,72 +186,19 @@ def pids_on_port(port: int) -> list[int]:
     POSIX: ``lsof -iTCP:<port> -sTCP:LISTEN -nP -Fp``.
     Windows: ``netstat -ano -p TCP`` → LISTENING rows, last column is PID.
     """
-    if sys.platform == "win32":
-        try:
-            res = subprocess.run(
-                ["netstat", "-ano", "-p", "TCP"],
-                capture_output=True, text=True, timeout=3,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return []
-        pids: list[int] = []
-        needle = f":{port}"
-        for line in (res.stdout or "").splitlines():
-            parts = line.split()
-            # "  TCP    0.0.0.0:3000   0.0.0.0:0   LISTENING   1234"
-            if len(parts) < 5 or parts[3] != "LISTENING":
-                continue
-            if not parts[1].endswith(needle):
-                continue
-            try:
-                pids.append(int(parts[4]))
-            except ValueError:
-                pass
-        return pids
+    from openprogram._compat import pids_on_port as compat_pids_on_port
 
-    try:
-        out = subprocess.run(
-            ["lsof", "-iTCP:%d" % port, "-sTCP:LISTEN", "-nP", "-Fp"],
-            capture_output=True, text=True, timeout=3,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    return [int(line[1:]) for line in out.stdout.splitlines() if line.startswith("p")]
+    return compat_pids_on_port(port)
 
 
 def process_cmdline(pid: int) -> str:
     """Best-effort command line of ``pid`` as one string. Empty on failure.
 
-    Linux ``/proc/<pid>/cmdline`` → POSIX ``ps -p`` → Windows ``wmic``.
+    Linux ``/proc/<pid>/cmdline`` → POSIX ``ps -p`` → Windows CIM.
     """
-    if sys.platform != "win32":
-        try:
-            with open(f"/proc/{pid}/cmdline", "rb") as f:
-                return f.read().replace(b"\x00", b" ").decode("utf-8", "replace").strip()
-        except OSError:
-            pass
-        try:
-            ps = subprocess.run(
-                ["ps", "-p", str(pid), "-o", "command="],
-                capture_output=True, text=True, timeout=2,
-            )
-            return ps.stdout.strip()
-        except (OSError, subprocess.TimeoutExpired):
-            return ""
+    from openprogram._compat import process_command_line
 
-    try:
-        wm = subprocess.run(
-            ["wmic", "process", "where", f"ProcessId={pid}",
-             "get", "CommandLine", "/format:list"],
-            capture_output=True, text=True, timeout=3,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    for line in (wm.stdout or "").splitlines():
-        line = line.strip()
-        if line.startswith("CommandLine="):
-            return line[len("CommandLine="):].strip()
-    return ""
+    return process_command_line(pid)
 
 
 @dataclass

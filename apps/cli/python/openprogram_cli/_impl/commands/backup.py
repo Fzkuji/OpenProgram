@@ -74,6 +74,18 @@ _MANIFEST_NAME = "backup-manifest.json"
 _SKIP_NAMES = frozenset({"node_modules", "__pycache__", ".DS_Store"})
 _SKIP_SUFFIXES = (".lock", ".pid", ".port", ".log", ".sock")
 
+# Hardened restore traversal uses POSIX ``dir_fd`` operations when the host
+# exposes the complete set. Windows CPython does not, so it takes the explicit
+# path-validation fallback below. This is a capability decision rather than a
+# platform-name decision: a future runtime that adds the APIs automatically
+# receives the stronger descriptor-relative implementation.
+# CPython exposes rename-at support under os.rename; os.replace shares it.
+_RESTORE_DIR_FD_CAPABLE = all(
+    function in os.supports_dir_fd
+    for function in (os.open, os.stat, os.unlink, os.rename)
+)
+_OWNER_FD_CAPABLE = hasattr(os, "geteuid") and hasattr(os, "fchmod")
+
 
 def _credential_tree_member(relative: str) -> bool:
     parts = PurePath(relative).parts
@@ -100,7 +112,11 @@ def backups_dir() -> Path:
     state.mkdir(parents=True, exist_ok=True)
     from openprogram.auth.credentials import _ensure_private_directory
 
-    return _ensure_private_directory(state / "backups", root=state)
+    directory = _ensure_private_directory(state / "backups", root=state)
+    from openprogram._compat import restrict_directory_to_user
+
+    restrict_directory_to_user(directory)
+    return directory
 
 
 def _excluded(path: Path) -> bool:
@@ -324,6 +340,9 @@ def create_backup(
             tar.addfile(info, io.BytesIO(payload))
 
     _private_atomic_write(target, _write_archive, root=state)
+    from openprogram._compat import restrict_to_user
+
+    restrict_to_user(target)
     return target
 
 
@@ -566,6 +585,7 @@ _RESTORE_LOCK = ".restore.lock"
 _journal_write = os.write
 _journal_fsync = os.fsync
 _journal_replace = os.replace
+_journal_unlink = os.unlink
 _staging_open = os.open
 _staging_write = os.write
 _staging_fsync = os.fsync
@@ -596,9 +616,16 @@ def _restore_state_lock(state: Path):
     descriptor = os.open(lock, flags, 0o600)
     try:
         info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+        if not stat.S_ISREG(info.st_mode):
             raise OSError("restore lock failed validation")
-        os.fchmod(descriptor, 0o600)
+        if not _OWNER_FD_CAPABLE:
+            from openprogram._compat import restrict_to_user
+
+            restrict_to_user(lock)
+        else:
+            if info.st_uid != os.geteuid():
+                raise OSError("restore lock failed validation")
+            os.fchmod(descriptor, 0o600)
         try:
             file_lock.flock(descriptor, file_lock.LOCK_EX | file_lock.LOCK_NB)
         except (BlockingIOError, OSError) as exc:
@@ -644,6 +671,13 @@ class _RestoreJournal:
             os.mkdir(self.backup_dir, 0o700)
         except FileExistsError as exc:
             raise OSError("restore journal directory already exists") from exc
+        if not _RESTORE_DIR_FD_CAPABLE:
+            from openprogram._compat import restrict_directory_to_user
+
+            _validate_fallback_path(self.state, self.backup_dir, directory=True)
+            restrict_directory_to_user(self.backup_dir)
+            self._flush(complete=False)
+            return
         flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
         self._backup_fd = os.open(self.backup_dir, flags)
@@ -672,6 +706,8 @@ class _RestoreJournal:
     def preserve(self, relative: str, target: Path) -> Path | None:
         """Copy the current bytes aside so the publish can be reversed."""
 
+        if not _RESTORE_DIR_FD_CAPABLE:
+            return self._preserve_without_dir_fd(relative, target)
         if self._backup_fd is None:
             raise OSError("restore journal has not started")
         target_parts = PurePath(relative).parts
@@ -725,6 +761,47 @@ class _RestoreJournal:
             if destination >= 0:
                 os.close(destination)
         return self.backup_dir / name
+
+    def _preserve_without_dir_fd(self, relative: str, target: Path) -> Path | None:
+        """Path-based preserve with reparse-point validation.
+
+        CPython does not expose ``dir_fd`` traversal on Windows.  Validate
+        every existing component before opening the file, then keep the
+        rollback copy inside the private journal directory and open it with
+        ``O_EXCL`` so an existing path is never followed or overwritten.
+        """
+
+        del relative
+        try:
+            _validate_fallback_path(self.state, target, regular=True)
+        except FileNotFoundError:
+            return None
+        source = os.open(target, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        name = f"{len(self.entries):08d}.previous"
+        previous = self.backup_dir / name
+        destination = -1
+        try:
+            destination = os.open(
+                previous,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                0o600,
+            )
+            while payload := os.read(source, 1024 * 1024):
+                written = 0
+                while written < len(payload):
+                    count = _journal_write(destination, payload[written:])
+                    if count <= 0:
+                        raise OSError("restore preserve write made no progress")
+                    written += count
+            _journal_fsync(destination)
+        finally:
+            os.close(source)
+            if destination >= 0:
+                os.close(destination)
+        from openprogram._compat import restrict_to_user
+
+        restrict_to_user(previous)
+        return previous
 
     def finish(self) -> None:
         from openprogram.auth.credentials import _read_private_bytes, inventory_for_path
@@ -790,14 +867,15 @@ class _RestoreJournal:
             ):
                 raise OSError("restore journal is not a regular file")
             _journal_replace(temporary, self.path)
-            directory = os.open(
-                self.state,
-                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
-            )
-            try:
-                _journal_fsync(directory)
-            finally:
-                os.close(directory)
+            if _RESTORE_DIR_FD_CAPABLE:
+                directory = os.open(
+                    self.state,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+                )
+                try:
+                    _journal_fsync(directory)
+                finally:
+                    os.close(directory)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -931,6 +1009,9 @@ class _UnsafeRecoveryPath(Exception):
 
 
 def _reverse(state: Path, entries: list[dict]) -> None:
+    if not _RESTORE_DIR_FD_CAPABLE:
+        _reverse_without_dir_fd(state, entries)
+        return
     prepared = _prepare_recovery_entries(state, entries)
     try:
         for target_parent, target_name, existed, source in reversed(prepared):
@@ -948,6 +1029,134 @@ def _reverse(state: Path, entries: list[dict]) -> None:
             os.close(target_parent)
             if source is not None:
                 os.close(source)
+
+
+def _reparse_point(info: os.stat_result) -> bool:
+    attributes = getattr(info, "st_file_attributes", 0)
+    marker = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(attributes & marker)
+
+
+def _validate_fallback_path(
+    root: Path,
+    path: Path,
+    *,
+    regular: bool = False,
+    directory: bool = False,
+) -> os.stat_result:
+    """Validate an existing path below ``root`` without following
+    symlinks, junctions, or other reparse points.
+
+    Windows has no Python ``dir_fd`` API, so this is the platform-specific
+    containment contract used by restore journalling and rollback.
+    """
+
+    root = Path(root).resolve()
+    candidate = Path(path).absolute()
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as exc:
+        raise _UnsafeRecoveryPath from exc
+    current = root
+    root_info = os.lstat(current)
+    if _reparse_point(root_info) or not stat.S_ISDIR(root_info.st_mode):
+        raise _UnsafeRecoveryPath
+    for index, part in enumerate(relative.parts):
+        current = current / part
+        info = os.lstat(current)
+        if stat.S_ISLNK(info.st_mode) or _reparse_point(info):
+            raise _UnsafeRecoveryPath
+        if index < len(relative.parts) - 1 and not stat.S_ISDIR(info.st_mode):
+            raise _UnsafeRecoveryPath
+    info = os.lstat(candidate)
+    if regular and not stat.S_ISREG(info.st_mode):
+        raise _UnsafeRecoveryPath
+    if directory and not stat.S_ISDIR(info.st_mode):
+        raise _UnsafeRecoveryPath
+    return info
+
+
+def _reverse_without_dir_fd(state: Path, entries: list[dict]) -> None:
+    """Reverse a restore using validated path operations.
+
+    All paths come from the already schema-validated journal.  Existing
+    components are revalidated immediately before each operation so a
+    junction or symlink cannot redirect recovery outside the state root.
+    """
+
+    state = Path(state).resolve()
+    prepared: list[tuple[Path, bool, Path | None]] = []
+    try:
+        for entry in entries:
+            target = state / Path(entry["relative_path"])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            _validate_fallback_path(state, target.parent, directory=True)
+            if target.exists() or target.is_symlink():
+                _validate_fallback_path(state, target, regular=True)
+            previous = None
+            if entry["existed"]:
+                previous = state / Path(entry["previous"])
+                _validate_fallback_path(state, previous, regular=True)
+            prepared.append((target, entry["existed"], previous))
+    except (OSError, _UnsafeRecoveryPath) as exc:
+        raise _UnsafeRecoveryPath from exc
+
+    for target, existed, previous in reversed(prepared):
+        if existed:
+            assert previous is not None
+            _restore_path_source(previous, target, root=state)
+        else:
+            try:
+                _validate_fallback_path(state, target, regular=True)
+                _journal_unlink(target)
+            except FileNotFoundError:
+                pass
+
+
+def _restore_path_source(source: Path, target: Path, *, root: Path) -> None:
+    """Restore one fallback rollback copy without the public credential writer.
+
+    The journal primitives are bound at import time so rollback still works
+    when a writer fault injector (or a real broken writer dependency) replaces
+    ``os.write``, ``os.fsync``, or ``os.replace`` on the shared module.
+    """
+
+    _validate_fallback_path(root, source, regular=True)
+    _validate_fallback_path(root, target.parent, directory=True)
+    temporary = target.parent / f".{target.name}.{secrets.token_hex(12)}.rollback"
+    source_fd = os.open(source, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    target_fd = -1
+    published = False
+    try:
+        target_fd = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+            0o600,
+        )
+        while payload := os.read(source_fd, 1024 * 1024):
+            written = 0
+            while written < len(payload):
+                count = _journal_write(target_fd, payload[written:])
+                if count <= 0:
+                    raise OSError("restore rollback write made no progress")
+                written += count
+        _journal_fsync(target_fd)
+        os.close(target_fd)
+        target_fd = -1
+        _journal_replace(temporary, target)
+        published = True
+        from openprogram._compat import restrict_to_user
+
+        restrict_to_user(target)
+    finally:
+        os.close(source_fd)
+        if target_fd >= 0:
+            os.close(target_fd)
+        if not published:
+            try:
+                _journal_unlink(temporary)
+            except FileNotFoundError:
+                pass
 
 
 def _prepare_recovery_entries(
@@ -1204,7 +1413,9 @@ def restore_archive(
 
     staging = Path(tempfile.mkdtemp(prefix=".restore-staging-", dir=state.parent))
     try:
-        os.chmod(staging, 0o700)
+        from openprogram._compat import restrict_directory_to_user
+
+        restrict_directory_to_user(staging)
         if os.stat(staging).st_dev != os.stat(state).st_dev:
             raise OSError("restore staging is not on the state filesystem")
         staged_files: list[tuple[str, Path, tuple]] = []
@@ -1226,13 +1437,14 @@ def restore_archive(
             finally:
                 os.close(descriptor)
             staged_files.append((relative, staged_file, inventory))
-        directory = _staging_open(
-            staging, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        )
-        try:
-            _staging_fsync(directory)
-        finally:
-            os.close(directory)
+        if _RESTORE_DIR_FD_CAPABLE:
+            directory = _staging_open(
+                staging, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            )
+            try:
+                _staging_fsync(directory)
+            finally:
+                os.close(directory)
 
         with _restore_target_locks(
             state, (relative for relative, _path, _inventory in staged_files)

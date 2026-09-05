@@ -23,6 +23,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { HoverTip } from "@/components/ui/tooltip";
+import { useFolderPicker } from "@/components/ui/folder-picker";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
@@ -66,6 +67,8 @@ export function WorkingDirChips() {
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const { pickFolder, folderPickerDialog } = useFolderPicker();
 
   // Whole-list replace: optimistic store write, then backend persist for
   // real (non-draft) sessions.
@@ -126,26 +129,18 @@ export function WorkingDirChips() {
 
   async function chooseFolder() {
     setOpen(false);
+    setPickerError(null);
     try {
-      const res = await fetch("/api/pick-folder", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      const data = res.ok
-        ? ((await res.json()) as { path?: string | null; unsupported?: boolean })
-        : null;
-      if (data?.path) {
-        if (!workingDirs.includes(data.path)) {
-          applyWorkingDirs([...workingDirs, data.path]);
+      const path = await pickFolder();
+      if (path) {
+        if (!workingDirs.includes(path)) {
+          applyWorkingDirs([...workingDirs, path]);
         }
-      } else if (!data || data.unsupported) {
-        // ponytail: chips row has no room for error copy — console only.
-        console.warn("pick-folder unavailable — restart the worker");
       }
-      // data.path == null (and supported) → user cancelled; no-op.
-    } catch (e) {
-      console.warn("pick-folder failed", e);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      setPickerError(text(`Couldn't choose a folder: ${detail}`, `无法选择文件夹：${detail}`));
+      setOpen(true);
     }
   }
 
@@ -229,9 +224,15 @@ export function WorkingDirChips() {
                 {text("Choose folder…", "选择文件夹…")}
               </span>
             </div>
+            {pickerError ? (
+              <div className="px-[8px] pb-[3px] pt-[4px] text-[11px] text-[var(--accent-orange)]" role="alert">
+                {pickerError}
+              </div>
+            ) : null}
           </div>
         </PopoverContent>
       </Popover>
+      {folderPickerDialog}
     </>
   );
 }

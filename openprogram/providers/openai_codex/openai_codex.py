@@ -9,6 +9,7 @@ Mirrors openai-codex-responses.ts
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -25,7 +26,10 @@ from openprogram.providers._shared.openai_responses import (
 from openprogram.providers._shared.validate_modalities import validate_input_modalities
 from openprogram.providers._shared.simple_options import build_base_options, clamp_reasoning
 from openprogram.providers.utils.event_stream import EventStream
-from openprogram.providers.utils.http_client import get_shared_async_client
+from openprogram.providers.utils.http_client import (
+    build_async_client,
+    get_shared_async_client,
+)
 from openprogram.providers.utils.rate_limit import parse_rate_limit
 from openprogram.providers.utils.stream_retry import (
     PROVIDER_STREAM_MAX_ATTEMPTS,
@@ -156,6 +160,31 @@ def stream_openai_codex_responses(
             timestamp=int(time.time() * 1000),
         )
 
+        def _has_substantive_content() -> bool:
+            """Whether retrying would duplicate content visible to the caller.
+
+            Responses streams announce an output item before sending any of
+            its text, reasoning summary, or tool arguments.  A prematurely
+            terminated stream can therefore leave an empty placeholder in
+            ``output.content``.  Treating that placeholder as committed made
+            Codex accept ``[DONE]`` after only ``response.output_item.added``
+            as a successful empty reply, and also disabled the retry that
+            could recover it.
+            """
+            for block in output.content:
+                if not isinstance(block, dict):
+                    return True
+                block_type = block.get("type")
+                if block_type == "text" and block.get("text"):
+                    return True
+                if block_type == "thinking" and block.get("thinking"):
+                    return True
+                if block_type == "toolCall" and (
+                    block.get("partial_json") or "index" not in block
+                ):
+                    return True
+            return False
+
         # --- Prep that's identical across retry attempts ----------
         try:
             api_key = _resolve_codex_bearer_token(opts.get("api_key"))
@@ -175,11 +204,35 @@ def stream_openai_codex_responses(
             # reply). Gate it behind an opt-in env var.
             if os.environ.get("OPENPROGRAM_DEBUG_PROVIDER", "").strip() in ("1", "true", "yes"):
                 try:
+                    import hashlib as _hashlib
+
                     _cache_key = request_body.get("prompt_cache_key", "")
                     _instr_len = len(request_body.get("instructions") or "")
                     _tool_names = sorted(t.get("name", "") for t in (request_body.get("tools") or []))
                     _reasoning = request_body.get("reasoning")
+                    _tool_hash = _hashlib.sha256(
+                        json.dumps(
+                            request_body.get("tools") or [],
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest()[:12]
                     _input_items = request_body.get("input") or []
+                    _input_parts = [
+                        len(item.get("content") or [])
+                        for item in _input_items
+                        if isinstance(item, dict)
+                    ]
+                    _input_part_lengths = [
+                        [
+                            len(part.get("text") or "")
+                            for part in (item.get("content") or [])
+                            if isinstance(part, dict)
+                        ]
+                        for item in _input_items
+                        if isinstance(item, dict)
+                    ]
                     _input_text_len = sum(
                         len(c.get("text", ""))
                         for item in _input_items
@@ -189,8 +242,13 @@ def stream_openai_codex_responses(
                     )
                     print(
                         f"[{model.api} req] key={_cache_key!r} items={len(_input_items)} "
+                        f"parts={_input_parts} part_chars={_input_part_lengths} "
                         f"text_chars={_input_text_len} instr={_instr_len} "
-                        f"tools={_tool_names} reasoning={_reasoning}",
+                        f"tools={_tool_names} tool_hash={_tool_hash} "
+                        f"choice={request_body.get('tool_choice')!r} "
+                        f"parallel={request_body.get('parallel_tool_calls')!r} "
+                        f"tier={request_body.get('service_tier')!r} "
+                        f"reasoning={_reasoning}",
                         file=sys.stderr,
                         flush=True,
                     )
@@ -241,8 +299,12 @@ def stream_openai_codex_responses(
             # stream APPENDS to the leftovers and the final message carries
             # duplicated content.
             n0 = len(output.content)
+            retry_route = 0
+            attempt_number = 0
 
             async def _attempt() -> None:
+                nonlocal attempt_number, retry_route
+                attempt_number += 1
                 del output.content[n0:]
                 # Decoupled timeouts: bound connect/write/pool, but let the
                 # SSE idle/total parser govern the streaming body read (the
@@ -250,62 +312,145 @@ def stream_openai_codex_responses(
                 # A single ``timeout=`` float would cap the read low and fire
                 # before the idle budget whenever a proxy/VPN buffers the SSE
                 # stream — the main source of spurious mid-stream timeouts.
-                # Hardened, REUSED client from the shared builder: decoupled +
-                # generous timeouts, TCP keepalive (fast dead-VPN detection),
-                # optional force-IPv4 (broken-IPv6 VPNs), and proxy. The
-                # streaming body read is governed by the two-budget SSE parser
-                # below, not a tight httpx read. It's shared (keep-alive reuse
-                # across turns), so we never close it here.
+                # The first attempt uses the hardened shared client (timeouts,
+                # keepalive, force-IPv4 and proxy policy). A retry uses a fresh
+                # private client: reusing the connection that just produced a
+                # content-free EOF kept every replay in the same broken
+                # transport window. Private clients close in ``finally``.
                 from openprogram.security.url_policy import (
                     OwnerURLException,
                     normalize_origin,
                 )
 
                 configured_origin = normalize_origin(base_url)
-                client = get_shared_async_client(
-                    "openai-codex",
+                owner_exception = OwnerURLException(
                     consumer="provider.configured_api",
-                    configured_origin=configured_origin,
-                    owner_exception=OwnerURLException(
-                        consumer="provider.configured_api",
-                        origin=configured_origin,
-                    ),
+                    origin=configured_origin,
                 )
-                async with client.stream(
-                    "POST",
-                    f"{base_url.rstrip('/')}/codex/responses",
-                    headers=headers,
-                    content=json.dumps(request_body),
-                ) as response:
-                    if response.status_code not in (200, 201):
-                        error_text_bytes = await response.aread()
+                private_client = attempt_number > 1
+                client = (
+                    build_async_client(
+                        consumer="provider.configured_api",
+                        configured_origin=configured_origin,
+                        owner_exception=owner_exception,
+                    )
+                    if private_client
+                    else get_shared_async_client(
+                        "openai-codex",
+                        consumer="provider.configured_api",
+                        configured_origin=configured_origin,
+                        owner_exception=owner_exception,
+                    )
+                )
+                try:
+                    async with client.stream(
+                        "POST",
+                        f"{base_url.rstrip('/')}/codex/responses",
+                        headers=headers,
+                        content=json.dumps(request_body),
+                    ) as response:
+                        if response.status_code not in (200, 201):
+                            error_text_bytes = await response.aread()
+                            try:
+                                err_text = error_text_bytes.decode()
+                            except Exception:
+                                err_text = repr(error_text_bytes)
+                            raise ProviderStreamError(
+                                f"HTTP {response.status_code}: {err_text}",
+                                http_status=response.status_code,
+                                retry_after_s=read_retry_after(response.headers),
+                                error_text=err_text,
+                                retryable=is_retryable_status(
+                                    response.status_code, err_text
+                                ) and not output.content,
+                                provider=model.provider,
+                            )
+
+                        # Rate-limit telemetry (no-op if the backend omits the
+                        # headers). Warn when a bucket is exhausted / nearly so.
+                        rl = parse_rate_limit(response.headers)
+                        if rl.present and (rl.is_throttled or rl.is_low):
+                            print(
+                                f"[{model.api} rate-limit] requests "
+                                f"{rl.remaining_requests}/{rl.limit_requests} · tokens "
+                                f"{rl.remaining_tokens}/{rl.limit_tokens}",
+                                file=sys.stderr, flush=True,
+                            )
+
+                        sse_events = _parse_sse_stream(response, signal=_sig)
                         try:
-                            err_text = error_text_bytes.decode()
-                        except Exception:
-                            err_text = repr(error_text_bytes)
-                        raise ProviderStreamError(
-                            f"HTTP {response.status_code}: {err_text}",
-                            http_status=response.status_code,
-                            retry_after_s=read_retry_after(response.headers),
-                            error_text=err_text,
-                            retryable=is_retryable_status(response.status_code, err_text)
-                                      and not output.content,
-                            provider=model.provider,
-                        )
+                            await process_responses_stream(
+                                sse_events, output, ev_stream, model, signal=_sig
+                            )
+                        except ProviderStreamError as exc:
+                            # Once text, reasoning, or usable tool arguments have
+                            # reached the caller, restarting the request cannot be
+                            # transparent: it would either duplicate those events
+                            # or require deleting content the UI already rendered.
+                            # Stop the retry loop here and let the outer partial-
+                            # response recovery finalize the blocks already
+                            # received with ``stop_reason=length``.
+                            if _has_substantive_content():
+                                exc.retryable = False
 
-                    # Rate-limit telemetry (no-op if the backend omits the
-                    # headers). Warn when a bucket is exhausted / nearly so.
-                    rl = parse_rate_limit(response.headers)
-                    if rl.present and (rl.is_throttled or rl.is_low):
-                        print(
-                            f"[{model.api} rate-limit] requests "
-                            f"{rl.remaining_requests}/{rl.limit_requests} · tokens "
-                            f"{rl.remaining_tokens}/{rl.limit_tokens}",
-                            file=sys.stderr, flush=True,
-                        )
-
-                    sse_events = _parse_sse_stream(response, signal=_sig)
-                    await process_responses_stream(sse_events, output, ev_stream, model, signal=_sig)
+                            # The subscription backend can terminate a Luna stream
+                            # after announcing an empty reasoning item when a
+                            # tool-heavy/long-instruction request uses medium or
+                            # higher reasoning. Repeating the identical request
+                            # just burns the entire retry budget. Preserve the
+                            # requested effort for the first attempt, then make the
+                            # already-scheduled transport retries useful by first
+                            # dropping its reasoning effort to low and, if that
+                            # still terminates empty, disabling reasoning. No
+                            # text/tool output has committed at this point, so this
+                            # cannot duplicate user-visible content.
+                            reasoning = request_body.get("reasoning")
+                            effort = (
+                                reasoning.get("effort")
+                                if isinstance(reasoning, dict)
+                                else None
+                            )
+                            if (
+                                exc.retryable
+                                and "before a terminal response event" in str(exc)
+                            ):
+                                if effort not in (None, "minimal", "low"):
+                                    reasoning["effort"] = "low"
+                                    print(
+                                        f"[{model.api}] empty {effort} reasoning stream; "
+                                        "retrying at low effort",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                elif effort in ("minimal", "low"):
+                                    request_body.pop("reasoning", None)
+                                    if request_body.get("include") == [
+                                        "reasoning.encrypted_content"
+                                    ]:
+                                        request_body.pop("include", None)
+                                    print(
+                                        f"[{model.api}] empty {effort} reasoning stream; "
+                                        "retrying without reasoning",
+                                        file=sys.stderr,
+                                        flush=True,
+                                    )
+                                # Do not pin every replay to the exact cache route
+                                # that just returned an empty stream. Rotate only
+                                # after a safe, pre-content EOF so a healthy
+                                # request keeps normal prefix-cache reuse.
+                                cache_key = request_body.get("prompt_cache_key")
+                                if cache_key:
+                                    retry_route += 1
+                                    digest = hashlib.sha256(
+                                        f"{cache_key}:{retry_route}".encode("utf-8")
+                                    ).hexdigest()[:24]
+                                    request_body["prompt_cache_key"] = (
+                                        f"op-retry-{digest}"
+                                    )
+                            raise
+                finally:
+                    if private_client:
+                        await client.aclose()
 
                 if output.stop_reason in ("aborted", "error"):
                     raise ProviderStreamError(
@@ -316,7 +461,7 @@ def stream_openai_codex_responses(
 
             await retry_stream(
                 _attempt,
-                is_committed_fn=lambda: bool(output.content),
+                is_committed_fn=_has_substantive_content,
                 max_attempts=provider_retry_attempts(PROVIDER_STREAM_MAX_ATTEMPTS),
                 label=model.api,
                 provider=model.provider,
@@ -350,7 +495,7 @@ def stream_openai_codex_responses(
             # user abort, and (c) the failure isn't a PERMANENT kind
             # (auth/invalid/context/policy). Toggle: OPENPROGRAM_PARTIAL_RECOVERY=0.
             if (
-                output.content
+                _has_substantive_content()
                 and output.stop_reason != "aborted"
                 and _recover_partial_enabled()
                 and not _is_permanent_failure(exc)
@@ -524,49 +669,92 @@ async def _parse_sse_stream(response: Any, signal: Any = None):
     _start = _time.monotonic()
     last_activity_at = _start  # ANY line (pings incl.) — OpenClaw bodyTimeout style
     last_data_at = _start      # real data events only — our progress guard
+    saw_terminal = False
+    debug_provider = os.environ.get("OPENPROGRAM_DEBUG_PROVIDER", "").strip().lower() \
+        in ("1", "true", "yes")
+    event_count = 0
+    delta_chars = 0
     line_iter = response.aiter_lines().__aiter__()
-    while True:
-        # Caller cancel (Stop button): raising here unwinds through
-        # ``async with client.stream(...)``, which closes the connection.
-        if signal is not None and callable(getattr(signal, "is_set", None)) and signal.is_set():
-            from openprogram.providers.utils.errors import StreamAborted
-            raise StreamAborted("stream cancelled by caller signal")
-        now = _time.monotonic()
-        if now >= deadline:
-            raise StreamTotalTimeout(
-                f"SSE total budget {SSE_TOTAL_TIMEOUT_S}s exceeded")
-        # Two independent budgets, whichever trips first:
-        #   * no bytes AT ALL for SSE_IDLE_TIMEOUT_S      → dead connection
-        #   * no real data for SSE_DATA_STALL_TIMEOUT_S   → stuck / ping-flood
-        idle_left = SSE_IDLE_TIMEOUT_S - (now - last_activity_at)
-        stall_left = SSE_DATA_STALL_TIMEOUT_S - (now - last_data_at)
-        if idle_left <= 0:
-            raise StreamIdleTimeout(
-                f"no SSE bytes for {SSE_IDLE_TIMEOUT_S}s")
-        if stall_left <= 0:
-            raise StreamIdleTimeout(
-                f"no SSE data event for {SSE_DATA_STALL_TIMEOUT_S}s")
-        # Block only until the soonest budget could trip; on timeout we
-        # loop and the checks above raise the right, specific error.
-        wait = min(idle_left, stall_left, deadline - now)
-        # Also never block past the caller's exec() deadline — keeps the
-        # mid-stream overrun to one wait granularity instead of the full
-        # 15/30-min SSE budget. <=0 means the deadline already passed.
-        _rem = _dl_remaining()
-        if _rem is not None:
-            if _rem <= 0:
-                raise StreamTotalTimeout(
-                    "caller deadline (exec timeout_s) exceeded mid-stream")
-            wait = min(wait, _rem)
-        if signal is not None:
-            # Poll the cancel signal at >=4 Hz — a Stop must not wait out
-            # the full idle/stall budget before taking effect.
-            wait = min(wait, 0.25)
+
+    async def _read_next_line() -> str:
+        """Read one SSE line while polling budgets without cancelling I/O.
+
+        ``asyncio.wait_for(line_iter.__anext__(), 0.25)`` cancels the
+        underlying httpx read every time the Stop-button poll interval
+        expires. A normal model pause longer than 250 ms therefore looked
+        exactly like a server EOF. Shield one persistent read task and only
+        cancel it when a real timeout or caller cancellation exits the read.
+        """
+        read_task = asyncio.create_task(line_iter.__anext__())
         try:
-            line = await asyncio.wait_for(line_iter.__anext__(), timeout=wait)
-        except asyncio.TimeoutError:
-            continue
+            while True:
+                # Caller cancel (Stop button): raising here unwinds through
+                # ``async with client.stream(...)``, which closes the connection.
+                if (
+                    signal is not None
+                    and callable(getattr(signal, "is_set", None))
+                    and signal.is_set()
+                ):
+                    from openprogram.providers.utils.errors import StreamAborted
+
+                    raise StreamAborted("stream cancelled by caller signal")
+                now = _time.monotonic()
+                if now >= deadline:
+                    raise StreamTotalTimeout(
+                        f"SSE total budget {SSE_TOTAL_TIMEOUT_S}s exceeded"
+                    )
+                # Two independent budgets, whichever trips first:
+                #   * no bytes AT ALL for SSE_IDLE_TIMEOUT_S      → dead connection
+                #   * no real data for SSE_DATA_STALL_TIMEOUT_S   → stuck / ping-flood
+                idle_left = SSE_IDLE_TIMEOUT_S - (now - last_activity_at)
+                stall_left = SSE_DATA_STALL_TIMEOUT_S - (now - last_data_at)
+                if idle_left <= 0:
+                    raise StreamIdleTimeout(
+                        f"no SSE bytes for {SSE_IDLE_TIMEOUT_S}s"
+                    )
+                if stall_left <= 0:
+                    raise StreamIdleTimeout(
+                        f"no SSE data event for {SSE_DATA_STALL_TIMEOUT_S}s"
+                    )
+                wait = min(idle_left, stall_left, deadline - now)
+                _rem = _dl_remaining()
+                if _rem is not None:
+                    if _rem <= 0:
+                        raise StreamTotalTimeout(
+                            "caller deadline (exec timeout_s) exceeded mid-stream"
+                        )
+                    wait = min(wait, _rem)
+                if signal is not None:
+                    # Poll the cancel signal at >=4 Hz without cancelling the
+                    # in-flight network read between polls.
+                    wait = min(wait, 0.25)
+                try:
+                    return await asyncio.wait_for(
+                        asyncio.shield(read_task), timeout=wait
+                    )
+                except asyncio.TimeoutError:
+                    continue
+        finally:
+            if not read_task.done():
+                read_task.cancel()
+                await asyncio.gather(read_task, return_exceptions=True)
+
+    while True:
+        try:
+            line = await _read_next_line()
         except StopAsyncIteration:
+            if debug_provider:
+                print(
+                    f"[openai-codex sse] eof events={event_count} "
+                    f"delta_chars={delta_chars} terminal={saw_terminal}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            if not saw_terminal:
+                raise ProviderStreamError(
+                    "Codex SSE ended before a terminal response event",
+                    retryable=True,
+                )
             return
         # Any received line is connection activity (mirrors OpenClaw
         # resetting bodyTimeout on any byte). Real data additionally
@@ -575,15 +763,39 @@ async def _parse_sse_stream(response: Any, signal: Any = None):
         if line.startswith("data: "):
             data = line[6:]
             if data == "[DONE]":
+                if not saw_terminal:
+                    raise ProviderStreamError(
+                        "Codex SSE sent [DONE] before a terminal response event",
+                        retryable=True,
+                    )
                 break
             try:
                 evt = json.loads(data)
             except json.JSONDecodeError:
                 continue
+            event_count += 1
+            event_type = evt.get("type")
+            if isinstance(evt.get("delta"), str):
+                delta_chars += len(evt["delta"])
+            if debug_provider and not str(event_type).endswith(".delta"):
+                response_payload = evt.get("response")
+                response_status = (
+                    response_payload.get("status")
+                    if isinstance(response_payload, dict)
+                    else None
+                )
+                print(
+                    f"[openai-codex sse] event={event_type!r} "
+                    f"status={response_status!r}",
+                    file=sys.stderr,
+                    flush=True,
+                )
             # Only real, parsed data events refresh the idle timer —
             # keepalive pings never arrive here, so they can't stall
             # the abort path.
             last_data_at = _time.monotonic()
+            if event_type in ("response.completed", "response.incomplete"):
+                saw_terminal = True
             yield evt
         elif line.startswith("event: "):
             pass  # Event type prefix; not enough to count as data.

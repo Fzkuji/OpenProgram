@@ -13,7 +13,7 @@ def _request() -> UpdateRequest:
         origin_turn_id="turn-1",
         origin_assistant_id="turn-1_reply",
         agent_id="main",
-        repo="/tmp/OpenProgram",
+        repo=str(Path("/tmp/OpenProgram").resolve()),
         worktree_id="wt_candidate",
         base_sha="1" * 40,
         candidate_sha="2" * 40,

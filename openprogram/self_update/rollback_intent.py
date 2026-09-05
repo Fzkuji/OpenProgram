@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import math
-import os
 import re
-import stat
 import time
 
 from .types import UpdatePhase
@@ -16,16 +14,12 @@ _REVISION = re.compile(r"[0-9a-f]{40}(?:-dirty)?")
 def load_rollback_intent(store, record) -> dict | None:
     """Read under the store lock when used to authorize Job admission."""
     path = store.root / record.request.update_id / f"rollback-{record.state.attempt}.json"
+    from openprogram._compat import read_user_state_bytes
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+        raw = read_user_state_bytes(path, limit=8192)
     except FileNotFoundError:
         return None
-    with os.fdopen(fd, "r", encoding="utf-8") as handle:
-        info = os.fstat(handle.fileno())
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_mode & 0o077 or info.st_size > 8192):
-            raise ValueError("invalid rollback intent file")
-        value = store._loads_json(handle.read(8193))
+    value = store._loads_json(raw.decode("utf-8"))
     if not isinstance(value, dict) or set(value) != {
         "schema", "update_id", "candidate_sha", "attempt", "previous_revision",
         "started_at", "deadline", "error",

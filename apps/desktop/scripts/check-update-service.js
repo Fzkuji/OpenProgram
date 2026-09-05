@@ -7,6 +7,7 @@ const path = require("node:path");
 const {
   DesktopUpdateService,
   compareVersions,
+  desktopAssetSpec,
   desktopUpdateFetch,
   downloadVerified,
   nextAutomaticCheckAt,
@@ -48,6 +49,42 @@ const manifest = {
     },
   ],
 };
+
+assert.deepEqual(desktopAssetSpec("0.6.7", "win32", "x64"), {
+  name: "OpenProgram-0.6.7-win-x64.exe",
+  kind: "windows-installer",
+});
+const windowsRelease = {
+  ...release,
+  assets: [
+    ...release.assets,
+    { name: "OpenProgram-0.6.7-win-x64.exe", size: 456 },
+  ],
+};
+const windowsManifest = {
+  ...manifest,
+  files: [
+    ...manifest.files,
+    {
+      path: "desktop-win-x64/OpenProgram-0.6.7-win-x64.exe",
+      bytes: 456,
+      sha256: "b".repeat(64),
+    },
+  ],
+};
+const windowsAvailable = resolveDesktopRelease(
+  windowsRelease,
+  windowsManifest,
+  "0.6.6",
+  "x64",
+  "win32",
+);
+assert.equal(windowsAvailable.asset.name, "OpenProgram-0.6.7-win-x64.exe");
+assert.equal(windowsAvailable.artifactKind, "windows-installer");
+assert.deepEqual(desktopAssetSpec("0.6.7", "win32", "arm64"), {
+  name: "OpenProgram-0.6.7-win-arm64.exe",
+  kind: "windows-installer",
+});
 
 const available = resolveDesktopRelease(release, manifest, "0.6.6", "arm64");
 assert.equal(available.status, "available");
@@ -461,6 +498,37 @@ async function checkNetworkBoundaries() {
     );
     assert.equal(fs.existsSync(badTarget), false);
     assert.equal(fs.readdirSync(root).some((name) => name.includes(".part-")), false);
+
+    const signatureStatePath = path.join(root, "signature-state.json");
+    saveStateFileAtomic(signatureStatePath, {
+      schema: 1,
+      automaticChecks: true,
+      lastAttemptAt: 1,
+      lastSuccessAt: 1,
+      release: {
+        ...available,
+        asset: {
+          ...available.asset,
+          bytes: bytes.length,
+          sha256: asset.sha256,
+        },
+      },
+    });
+    const signatureTarget = path.join(root, "invalid-signature.dmg");
+    let signatureOpenCount = 0;
+    const signatureService = new DesktopUpdateService({
+      currentVersion: "0.6.6",
+      arch: "arm64",
+      statePath: signatureStatePath,
+      fetchImpl: async () => new Response(bytes),
+      chooseSavePath: async () => signatureTarget,
+      verifyArtifact: async () => { throw new Error("invalid signature"); },
+      openPath: async () => { signatureOpenCount += 1; return ""; },
+      now: () => 2,
+    });
+    assert.equal((await signatureService.download()).status, "error");
+    assert.equal(signatureOpenCount, 0);
+    assert.equal(fs.existsSync(signatureTarget), false);
 
     const originalSetTimeout = global.setTimeout;
     let serviceBodyCancelled = false;

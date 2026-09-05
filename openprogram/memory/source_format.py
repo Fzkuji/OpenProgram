@@ -214,6 +214,11 @@ def trusted_source_ids(memory_dir: Path | str) -> set[str]:
 
 def scan_source_archive(text: str, relative: str | Path) -> V2Scan:
     """Parse the valid v2 prefix without resynchronizing after an error."""
+    # Archives written by OpenProgram use literal LF, but files copied from
+    # or created by ordinary Windows text APIs can contain CRLF. Framing is
+    # line-based, so accept the platform spelling without treating the CR as
+    # part of every marker or record line.
+    text = text.replace("\r\n", "\n")
     lines = text.split("\n")
     if len(lines) < 3 or lines[0] != V2_FORMAT_MARKER or lines[1] != "":
         return V2Scan((), False)

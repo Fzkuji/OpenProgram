@@ -7,13 +7,15 @@ const { resolvePackagedWorker } = require("../packaged-runtime");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "openprogram-runtime-check-"));
 try {
   const runtime = path.join(root, "runtime");
-  const python = path.join(runtime, "python", "bin", "python3");
+  const python = path.join(runtime, "py", "python.exe");
+  const pythonw = path.join(runtime, "py", "pythonw.exe");
   const playwright = path.join(runtime, "assets", "playwright");
   const detector = path.join(runtime, "assets", "gpa", "model.pt");
   fs.mkdirSync(path.dirname(python), { recursive: true });
   fs.mkdirSync(playwright, { recursive: true });
   fs.mkdirSync(path.dirname(detector), { recursive: true });
   fs.writeFileSync(python, "");
+  fs.writeFileSync(pythonw, "");
   fs.writeFileSync(detector, "model");
   const capabilities = Object.fromEntries(
     [
@@ -23,6 +25,7 @@ try {
       "memory",
       "channels",
       "search",
+      "tui.ink",
       "browser.playwright",
       "model.gpa_detector",
       "program.gui",
@@ -35,7 +38,7 @@ try {
     JSON.stringify({
       schema: 2,
       openprogram: "0.6.1",
-      python: "python/bin/python3",
+      python: "py/python.exe",
       capabilities,
       assets: {
         playwright: "assets/playwright",
@@ -43,8 +46,9 @@ try {
       },
     }),
   );
-  const launch = resolvePackagedWorker(root, "0.6.1");
-  assert.strictEqual(launch.command, python);
+  const launch = resolvePackagedWorker(root, "0.6.1", "win32");
+  assert.strictEqual(launch.command, pythonw);
+  assert.strictEqual(launch.authCommand, python);
   assert.deepStrictEqual(
     launch.args,
     ["-I", "-B", "-m", "openprogram", "worker", "start"],
@@ -53,9 +57,13 @@ try {
     PLAYWRIGHT_BROWSERS_PATH: playwright,
     GPA_MODEL_PATH: detector,
   });
+  assert.strictEqual(
+    resolvePackagedWorker(root, "0.6.1", "linux").command,
+    python,
+  );
 
   assert.throws(
-    () => resolvePackagedWorker(root, "0.6.2"),
+    () => resolvePackagedWorker(root, "0.6.2", "win32"),
     /runtime version mismatch/,
   );
 
@@ -73,7 +81,7 @@ try {
     }),
   );
   assert.throws(
-    () => resolvePackagedWorker(root, "0.6.1"),
+    () => resolvePackagedWorker(root, "0.6.1", "win32"),
     /escapes runtime resources/,
   );
   console.log("packaged runtime checks passed");

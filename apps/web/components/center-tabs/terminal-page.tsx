@@ -164,6 +164,17 @@ export function TerminalPage({ preset }: { preset: "shell" | "claude" }) {
         const key = event.key.toLowerCase();
         const copy = key === "c" && (event.metaKey || (event.ctrlKey && event.shiftKey));
         const paste = key === "v" && (event.metaKey || (event.ctrlKey && event.shiftKey));
+        const interrupt = key === "c"
+          && event.ctrlKey
+          && !event.shiftKey
+          && !event.altKey
+          && !event.metaKey;
+        if (interrupt) {
+          // Chromium's native edit accelerator can consume Ctrl+C before
+          // xterm turns it into ETX. Terminal copy remains Ctrl+Shift+C.
+          api.write(id, "\x03");
+          return false;
+        }
         if (copy) {
           void copySelection(terminal).catch(() => setError("clipboard_write_failed"));
           return false;

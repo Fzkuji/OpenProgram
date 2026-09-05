@@ -10,9 +10,9 @@
   "main": "main.js",
   "desktopName": "ai.openprogram.OpenProgram.desktop",
   "scripts": {
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "node scripts/check-native-dependencies.js",
     "dev": "electron .",
-    "check": "npm run check:webtabs && npm run check:no-browser-extensions && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:window-state && npm run check:window-lifecycle && npm run check:theme-chrome && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates",
+    "check": "npm run check:webtabs && npm run check:no-browser-extensions && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:window-state && npm run check:window-lifecycle && npm run check:theme-chrome && npm run check:browser-import && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates && npm run check:windows",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
     "check:no-browser-extensions": "node scripts/check-no-browser-extensions.js",
     "check:webtab-zoom-bounds": "node scripts/check-webtab-zoom-bounds.js",
@@ -20,16 +20,21 @@
     "check:window-state": "node scripts/check-window-state.js",
     "check:window-lifecycle": "node scripts/check-window-lifecycle.js",
     "check:theme-chrome": "node scripts/check-theme-chrome.js",
+    "check:browser-import": "node browser-profile-import.js",
     "check:installed-transfer-client": "node scripts/check-installed-tab-transfer-client.js",
     "check:worker-auth": "node scripts/check-worker-start-url.js && node scripts/check-self-update-reopen.js && node scripts/check-self-update-ui-guard.js && node scripts/check-self-update-ui.js",
     "check:worker-recovery": "node scripts/check-worker-recovery.js",
     "check:packaged-runtime": "node scripts/check-packaged-runtime.js",
     "check:updates": "node scripts/check-update-service.js",
+    "check:windows": "node scripts/check-windows-desktop.js",
     "icon:check": "bash scripts/check-icon.sh",
     "prepare:runtime": "bash ../../scripts/release/prepare-desktop-runtime.sh",
+    "prepare:runtime:win": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ../../scripts/release/prepare-desktop-runtime.ps1",
     "dist": "npm run app:install",
     "app:install": "bash scripts/package-and-install-app.sh",
-    "dist:mac": "npm run prepare:runtime && npm run icon:check && electron-builder --mac dmg zip"
+    "dist:mac": "npm run prepare:runtime && npm run icon:check && electron-builder --mac dmg zip",
+    "dist:win": "npm run prepare:runtime:win && electron-builder --win nsis --x64",
+    "dist:win:arm64": "npm run prepare:runtime:win && electron-builder --win nsis --arm64"
   },
   "devDependencies": {
     "electron": "37.10.3",
@@ -38,6 +43,7 @@
   "build": {
     "appId": "ai.openprogram.desktop",
     "productName": "OpenProgram",
+    "npmRebuild": false,
     "afterPack": "scripts/write-reopen-protocol.cjs",
     "files": [
       "main.js",
@@ -46,6 +52,8 @@
       "tab-transfer-validation.js",
       "preload.js",
       "update-service.js",
+      "terminal-command.js",
+      "windows-signature.js",
       "packaged-runtime.js",
       "worker-start-url.js",
       "self-update-reopen.js",
@@ -57,6 +65,7 @@
       "window-state.js",
       "window-lifecycle.js",
       "theme-chrome.js",
+      "window-chrome.js",
       "browsing-history-store.js",
       "browser-profile-import.js"
     ],
@@ -90,9 +99,36 @@
       "identity": null,
       "hardenedRuntime": false,
       "notarize": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "../web/app/favicon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "signtoolOptions": {
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "include": "installer.nsh",
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
     }
   },
   "dependencies": {
-    "node-pty": "1.0.0"
+    "node-pty": "1.2.0-beta.15"
   }
 }

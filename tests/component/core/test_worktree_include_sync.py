@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -168,6 +169,10 @@ def test_symlinks_are_copied_as_links(repo, dst):
     assert os.readlink(copied) == "tracked.txt"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows filesystems do not expose POSIX executable mode bits",
+)
 def test_permissions_preserved(repo, dst):
     (repo / ".worktreeinclude").write_text("script.sh\n")
     script = repo / "script.sh"

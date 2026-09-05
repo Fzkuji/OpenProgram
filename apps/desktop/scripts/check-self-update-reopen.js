@@ -27,6 +27,8 @@ async function checkWindowEntry() {
   const context = vm.createContext({
     BrowserWindow: Window, __dirname, path, process, URL,
     loadWindowState: () => ({}), browserWindowOptionsForPlan: () => ({}),
+    browserWindowChromeOptions: require("../window-chrome").browserWindowChromeOptions,
+    applyNativeTitleBarChrome: noop,
     attachWindowStatePersistence: noop, applyRestoredChrome: noop,
     stateFile: noop, currentDisplays: noop, currentChrome: { bg: "#ffffff" },
     makeWindowContext: (id, win) => ({ id, win }), windows: new Map(),

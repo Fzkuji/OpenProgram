@@ -22,8 +22,10 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 log = logging.getLogger(__name__)
 
@@ -77,13 +79,15 @@ def spec_for_file(file_path: str) -> ServerSpec | None:
 
 
 def path_to_uri(path: str) -> str:
-    return "file://" + quote(os.path.abspath(path))
+    return Path(path).resolve().as_uri()
 
 
 def uri_to_path(uri: str) -> str:
     if not uri.startswith("file:"):
         return uri
-    return unquote(urlparse(uri).path)
+    parsed = urlparse(uri)
+    encoded_path = f"//{parsed.netloc}{parsed.path}" if parsed.netloc else parsed.path
+    return url2pathname(encoded_path)
 
 
 class LanguageServer:
@@ -111,8 +115,8 @@ class LanguageServer:
     # -- wire format ----------------------------------------------------
 
     def _send(self, message: dict) -> None:
-        body = json.dumps(message)
-        frame = f"Content-Length: {len(body.encode())}\r\n\r\n{body}"
+        body = json.dumps(message, ensure_ascii=False).encode("utf-8")
+        frame = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body
         stdin = self.process.stdin
         if stdin is None or self.process.poll() is not None:
             raise ServerUnavailable(
@@ -135,8 +139,10 @@ class LanguageServer:
                     line = line.strip()
                     if not line:
                         break
-                    name, _, value = line.partition(":")
-                    headers[name.strip().lower()] = value.strip()
+                    name, _, value = line.partition(b":")
+                    headers[name.strip().lower().decode("ascii")] = (
+                        value.strip().decode("ascii")
+                    )
                 length = int(headers.get("content-length", 0))
                 if length <= 0:
                     continue
@@ -144,7 +150,7 @@ class LanguageServer:
                 if not body:
                     return
                 try:
-                    message = json.loads(body)
+                    message = json.loads(body.decode("utf-8"))
                 except json.JSONDecodeError:
                     continue
                 self._dispatch(message)
@@ -348,6 +354,7 @@ def _start(spec: ServerSpec, workspace: str) -> LanguageServer:
     # here: it merges stderr into stdout, and a server's log lines in
     # the middle of a Content-Length frame desynchronize the protocol.
     from openprogram.backend.local import _invocation
+    from openprogram._compat import no_window_creation_flags
 
     command = " ".join([spec.binary, *spec.arguments])
     try:
@@ -360,7 +367,7 @@ def _start(spec: ServerSpec, workspace: str) -> LanguageServer:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True,
+            creationflags=no_window_creation_flags(),
         )
     except Exception as exc:
         raise ServerUnavailable(f"could not start {spec.binary}: {exc}") from exc

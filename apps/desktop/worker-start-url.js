@@ -21,6 +21,7 @@ function resolveAuthenticatedStartUrl(
           env,
           stdio: ["ignore", "pipe", "ignore"],
           timeout: 5000,
+          windowsHide: process.platform === "win32",
         },
       ).trim();
       const bootstrap = new URL(raw);

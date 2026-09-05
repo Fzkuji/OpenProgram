@@ -37,8 +37,8 @@ reason.
 |---|---|
 | preflight | Refuses a dirty working tree, resolves the target commit, asks before a downgrade |
 | checkout | Fast-forwards the checkout to the target commit |
-| deps | Refresh the source checkout's Python environment if `pyproject.toml` changed; run root `npm ci` if `package-lock.json` changed |
-| build | `npx next build`, only if anything under `web/` changed |
+| deps | Refresh the source checkout's Python environment if `pyproject.toml` changed; install the frontend workspaces if `package-lock.json` changed |
+| build | Rebuild `apps/web` and/or `apps/cli` when that workspace or `package-lock.json` changed |
 | probe | Boots the new code cold on a scratch port under an isolated profile, waits for `/healthz`, runs the doctor checks, kills it |
 | restart | Restarts the real service |
 | verify | Polls `/healthz` until it reports the new commit sha |

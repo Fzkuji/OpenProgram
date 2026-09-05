@@ -27,6 +27,12 @@ const { ipcMain } = uiVerificationGuard;
 const { resolvePackagedWorker } = require("./packaged-runtime");
 const { DesktopUpdateService, desktopUpdateFetch } = require("./update-service");
 const {
+  killWindowsProcessTree,
+  resolveTerminalCommand,
+  waitForTerminalPid,
+} = require("./terminal-command");
+const { verifyWindowsAuthenticode } = require("./windows-signature");
+const {
   loadTransferDecisions,
   saveTransferDecisionsAtomic,
   putTransferDecision,
@@ -51,6 +57,7 @@ const {
 const {
   createRecoveryState,
   createRecoveryCoordinator,
+  recordWorkerCommandExit,
   startRecoveryCycle,
   beginRecoveryProbe,
   finishRecoveryProbe,
@@ -68,6 +75,10 @@ const {
   registerSingleMainWindow,
 } = require("./window-lifecycle");
 const themeChrome = require("./theme-chrome");
+const {
+  browserWindowChromeOptions,
+  applyNativeTitleBarChrome,
+} = require("./window-chrome");
 
 // 单实例：worker 单端口 18100（详见 docs/reference/design/cli/single-port.md）
 const WEB_PORT = process.env.OPENPROGRAM_WEB_PORT || "18100";
@@ -125,16 +136,21 @@ function initializeDesktopUpdates() {
   desktopUpdates = new DesktopUpdateService({
     currentVersion: app.getVersion(),
     arch: process.arch,
+    platform: process.platform,
     statePath: path.join(app.getPath("userData"), "update-state.json"),
     fetchImpl: desktopUpdateFetch,
     chooseSavePath: async (name) => {
+      const windowsInstaller = process.platform === "win32";
       const result = await dialog.showSaveDialog({
         title: "Download OpenProgram Update",
         defaultPath: path.join(app.getPath("downloads"), name),
-        filters: [{ name: "macOS Disk Image", extensions: ["dmg"] }],
+        filters: windowsInstaller
+          ? [{ name: "Windows Installer", extensions: ["exe"] }]
+          : [{ name: "macOS Disk Image", extensions: ["dmg"] }],
       });
       return result.canceled ? null : result.filePath;
     },
+    verifyArtifact: (filePath) => verifyWindowsAuthenticode(filePath),
     openPath: (filePath) => shell.openPath(filePath),
     emit: broadcastUpdateState,
   });
@@ -206,6 +222,7 @@ function applyWindowChrome(payload = {}) {
     try {
       if (win.isDestroyed()) continue;
       win.setBackgroundColor(currentChrome.bg);
+      applyNativeTitleBarChrome(win, process.platform, currentChrome);
       if (isErrorPageUrl(win.webContents.getURL?.())) {
         void win.loadURL(errorPageUrl()).catch(() => {});
       }
@@ -243,7 +260,7 @@ function probe(url, timeoutMs) {
   });
 }
 
-function spawnWorker() {
+function spawnWorker(action = "start") {
   const env = { ...process.env, OPENPROGRAM_WEB_PORT: WEB_PORT };
   delete env.PYTHONHOME;
   delete env.PYTHONPATH;
@@ -255,14 +272,23 @@ function spawnWorker() {
   } else {
     launch = { command: "openprogram", args: ["worker", "start"] };
   }
+  if (action === "restart") {
+    launch = { ...launch, args: [...launch.args.slice(0, -1), "restart"] };
+  }
   const child = spawn(launch.command, launch.args, {
     detached: true,
     stdio: "ignore",
     env,
+    // A packaged background worker must never allocate a visible console or
+    // open the user's default Windows Terminal in front of the app.
+    windowsHide: process.platform === "win32",
   });
   child.on("error", (error) => {
     recoveryCoordinator.workerSpawned = false;
     console.error(`[desktop] worker start failed: ${error.message}`);
+  });
+  child.on("exit", (code) => {
+    recordWorkerCommandExit(recoveryCoordinator, action, code);
   });
   child.unref();
 }
@@ -272,7 +298,7 @@ function resolveWorkerStartUrl() {
   const launch = resolvePackagedWorker(process.resourcesPath, app.getVersion());
   return resolveAuthenticatedStartUrl(START_URL, process.env, [
     {
-      command: launch.command,
+      command: launch.authCommand || launch.command,
       args: ["-I", "-B", "-m", "openprogram"],
     },
   ]);
@@ -316,8 +342,8 @@ async function runWindowRecoveryProbe(ctx) {
     Date.now(),
     RECOVERY_INTERVAL_MS,
   );
-  if (action === "spawn") {
-    spawnWorker();
+  if (action === "spawn" || action === "restart") {
+    spawnWorker(action === "restart" ? "restart" : "start");
   } else if (action === "load" && !ctx.win.isDestroyed()) {
     if (state.timer !== null) clearInterval(state.timer);
     state.timer = null;
@@ -3131,6 +3157,18 @@ function registerWebTabIpc() {
     }
   };
   const signalTerminal = (entry, signal) => {
+    if (process.platform === "win32" && Number.isInteger(entry.process.pid)) {
+      // node-pty closes the ConPTY transport but can leave the hosted shell
+      // alive. Kill the exact process tree first; the subsequent node-pty
+      // kill releases its native handles and emits the normal exit event.
+      killWindowsProcessTree(entry.process.pid);
+      try {
+        entry.process.kill();
+      } catch (_error) {
+        /* process already exited */
+      }
+      return;
+    }
     let groupSignaled = false;
     if (process.platform !== "win32" && Number.isInteger(entry.process.pid)) {
       try {
@@ -3179,7 +3217,7 @@ function registerWebTabIpc() {
       terminalSenders.delete(sender);
     });
   };
-  ipcMain.handle("terminal:start", (event, request) => {
+  ipcMain.handle("terminal:start", async (event, request) => {
     const ctx = terminalContextForSender(event);
     if (!ctx) {
       return { ok: false, error: "unauthorized_sender" };
@@ -3211,12 +3249,7 @@ function registerWebTabIpc() {
     const rows = Number.isInteger(request.rows)
       ? Math.min(200, Math.max(5, request.rows))
       : 24;
-    const shellPath = process.env.SHELL && path.isAbsolute(process.env.SHELL)
-      ? process.env.SHELL
-      : "/bin/zsh";
-    const args = preset === "claude"
-      ? ["-l", "-i", "-c", "exec claude"]
-      : ["-l"];
+    const terminalLaunch = resolveTerminalCommand(preset);
     const key = terminalKey(event.sender, id);
     const existing = terminals.get(key);
     if (existing && existing.preset === preset && existing.cwd === cwd) {
@@ -3230,11 +3263,12 @@ function registerWebTabIpc() {
     stopTerminal(event.sender, id);
     let child;
     try {
-      child = require("node-pty").spawn(shellPath, args, {
+      child = require("node-pty").spawn(terminalLaunch.command, terminalLaunch.args, {
         name: "xterm-256color",
         cols,
         rows,
         cwd,
+        useConpty: terminalLaunch.useConpty,
         env: {
           ...process.env,
           TERM: "xterm-256color",
@@ -3272,7 +3306,20 @@ function registerWebTabIpc() {
         event.sender.send("terminal:data", { id, data: "", done: true, exitCode });
       }
     });
-    return { ok: true, pid: child.pid };
+    // node-pty's Windows backend creates ConPTY asynchronously.  Its public
+    // ``pid`` is initially 0 and is updated after ready_datapipe; returning
+    // immediately made the renderer permanently publish data-process-id="0"
+    // even though the shell was running.  Wait only on Windows, where this
+    // delayed PID contract exists, and fail loudly if ConPTY never reports a
+    // process instead of leaving an unmanageable terminal behind.
+    const pid = process.platform === "win32"
+      ? await waitForTerminalPid(child)
+      : child.pid;
+    if (!pid) {
+      stopTerminal(event.sender, id);
+      return { ok: false, error: "terminal_pid_unavailable" };
+    }
+    return { ok: true, pid };
   });
   ipcMain.on("terminal:write", (event, id, data) => {
     const ctx = terminalContextForSender(event);
@@ -3569,9 +3616,7 @@ async function createWindow(options = {}) {
     // animation. Tear-offs still pass show:false and fade in themselves.
     show: detached ? options.show !== false : false,
     backgroundColor: currentChrome.bg,
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : undefined,
-    // macOS only: center the traffic lights vertically in the 40px tab row.
-    trafficLightPosition: { x: 18, y: 13 },
+    ...browserWindowChromeOptions(process.platform, currentChrome),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -3579,6 +3624,7 @@ async function createWindow(options = {}) {
       additionalArguments: [`--openprogram-window-id=${windowId}`],
     },
   });
+  applyNativeTitleBarChrome(win, process.platform, currentChrome);
   if (!detached) {
     attachWindowStatePersistence(win, {
       filePath: stateFile(),

@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'fs';
-import { homedir } from 'os';
 import { join, dirname } from 'path';
+import { tuiStateDir } from './stateDir.js';
 
-const HISTORY_PATH = join(homedir(), '.openprogram', 'cli-history');
 const MAX_HISTORY = 500;
+const historyPath = (): string => join(tuiStateDir(), 'cli-history');
 
 const ensureDir = (): void => {
-  const dir = dirname(HISTORY_PATH);
+  const dir = dirname(historyPath());
   if (!existsSync(dir)) {
     try {
       mkdirSync(dir, { recursive: true });
@@ -17,9 +17,10 @@ const ensureDir = (): void => {
 };
 
 export function loadHistory(): string[] {
-  if (!existsSync(HISTORY_PATH)) return [];
+  const path = historyPath();
+  if (!existsSync(path)) return [];
   try {
-    const raw = readFileSync(HISTORY_PATH, 'utf8');
+    const raw = readFileSync(path, 'utf8');
     return raw
       .split('\n')
       .map((s) => s.trimEnd())
@@ -34,7 +35,7 @@ export function appendHistory(line: string): void {
   if (!line.trim()) return;
   ensureDir();
   try {
-    appendFileSync(HISTORY_PATH, line.replace(/\n/g, '\\n') + '\n');
+    appendFileSync(historyPath(), line.replace(/\n/g, '\\n') + '\n');
   } catch {
     // best effort — no error to user
   }
@@ -42,11 +43,12 @@ export function appendHistory(line: string): void {
 
 export function trimHistoryFile(): void {
   // Periodically truncate the file so it doesn't grow unbounded.
-  if (!existsSync(HISTORY_PATH)) return;
+  const path = historyPath();
+  if (!existsSync(path)) return;
   try {
     const lines = loadHistory();
     if (lines.length <= MAX_HISTORY) return;
-    writeFileSync(HISTORY_PATH, lines.slice(-MAX_HISTORY).join('\n') + '\n');
+    writeFileSync(path, lines.slice(-MAX_HISTORY).join('\n') + '\n');
   } catch {
     // ignore
   }

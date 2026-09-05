@@ -139,10 +139,13 @@ def _load_raw(path: Path) -> dict[str, dict[str, Any]]:
 
 
 def _write_raw(path: Path, jobs: dict[str, dict[str, Any]]) -> None:
+    from openprogram.store.session.git_session import atomic_write_text
+
     payload = {"version": 1, "jobs": jobs}
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    atomic_write_text(
+        path,
+        json.dumps(payload, ensure_ascii=False, default=str, indent=2),
+    )
 
 
 def _commit(session_id: str, message: str) -> None:

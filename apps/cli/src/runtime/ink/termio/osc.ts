@@ -5,6 +5,7 @@
 import { Buffer } from 'buffer'
 
 import { env } from '../../utils/env.js'
+import { clipboardCommands } from '../../utils/clipboardCommands.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
 
 import { BEL, ESC, ESC_TYPE, SEP } from './ansi.js'
@@ -68,7 +69,7 @@ export function wrapForMultiplexer(sequence: string): string {
 export type ClipboardPath = 'native' | 'tmux-buffer' | 'osc52'
 
 export function getClipboardPath(): ClipboardPath {
-  const nativeAvailable = process.platform === 'darwin' && !process.env['SSH_CONNECTION']
+  const nativeAvailable = clipboardCommands().length > 0
 
   if (nativeAvailable) {
     return 'native'
@@ -177,9 +178,11 @@ export async function setClipboard(text: string): Promise<string> {
 }
 
 // Linux clipboard tool: undefined = not yet probed, null = none available.
-// Probe order: wl-copy (Wayland) → xclip (X11) → xsel (X11 fallback).
-// Cached after first attempt so repeated mouse-ups skip the probe chain.
-let linuxCopy: 'wl-copy' | 'xclip' | 'xsel' | null | undefined
+// The command list is capability-gated by the active display. Cache it per
+// capability signature so tests and long-lived shells that gain/lose a
+// display do not retain a stale helper.
+let linuxCopy: string | null | undefined
+let linuxCopyCapability = ''
 
 /**
  * Shell out to a native clipboard utility as a safety net for OSC 52.
@@ -196,48 +199,44 @@ function copyNative(text: string): void {
 
       return
     case 'linux': {
+      const commands = clipboardCommands('linux', process.env)
+      const capability = JSON.stringify(commands)
+      if (capability !== linuxCopyCapability) {
+        linuxCopy = undefined
+        linuxCopyCapability = capability
+      }
+
+      // A local Linux console without DISPLAY/WAYLAND_DISPLAY is not a
+      // native-clipboard capability. Do not spawn three doomed helpers before
+      // falling back to OSC 52. WSL is represented by clip.exe here.
+      if (commands.length === 0) {
+        linuxCopy = null
+        return
+      }
+
       if (linuxCopy === null) {
         return
       }
 
-      if (linuxCopy === 'wl-copy') {
-        void execFileNoThrow('wl-copy', [], opts)
+      const cached = commands.find(([binary]) => binary === linuxCopy)
+      if (cached) {
+        void execFileNoThrow(cached[0], [...cached[1]], opts)
 
         return
       }
 
-      if (linuxCopy === 'xclip') {
-        void execFileNoThrow('xclip', ['-selection', 'clipboard'], opts)
-
-        return
-      }
-
-      if (linuxCopy === 'xsel') {
-        void execFileNoThrow('xsel', ['--clipboard', '--input'], opts)
-
-        return
-      }
-
-      // First call: probe wl-copy (Wayland) then xclip/xsel (X11), cache winner.
-      void execFileNoThrow('wl-copy', [], opts).then(r => {
-        if (r.code === 0) {
-          linuxCopy = 'wl-copy'
-
-          return
-        }
-
-        void execFileNoThrow('xclip', ['-selection', 'clipboard'], opts).then(r2 => {
-          if (r2.code === 0) {
-            linuxCopy = 'xclip'
-
+      // First call for this display: probe only its applicable helpers and
+      // remember the first one that accepts the text.
+      void (async () => {
+        for (const [binary, args] of commands) {
+          const result = await execFileNoThrow(binary, [...args], opts)
+          if (result.code === 0) {
+            linuxCopy = binary
             return
           }
-
-          void execFileNoThrow('xsel', ['--clipboard', '--input'], opts).then(r3 => {
-            linuxCopy = r3.code === 0 ? 'xsel' : null
-          })
-        })
-      })
+        }
+        linuxCopy = null
+      })()
 
       return
     }
@@ -254,6 +253,7 @@ function copyNative(text: string): void {
 /** @internal test-only */
 export function _resetLinuxCopyCache(): void {
   linuxCopy = undefined
+  linuxCopyCapability = ''
 }
 
 /**

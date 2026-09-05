@@ -34,6 +34,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from openprogram._compat import filesystem_path
+
 
 # Errors
 
@@ -43,6 +45,32 @@ class GitSessionError(RuntimeError):
 
 
 # Atomic file replace
+
+
+def _retry_windows_file_access(operation):
+    """Retry the brief sharing violations around a Windows file replace."""
+    deadline = time.monotonic() + 1.0
+    delay = 0.002
+    while True:
+        try:
+            return operation()
+        except OSError as exc:
+            retryable = os.name == "nt" and (
+                isinstance(exc, PermissionError)
+                or getattr(exc, "winerror", None) in {5, 32, 33}
+            )
+            if not retryable or time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.05)
+
+
+def read_text_with_retry(fpath: Path) -> str:
+    """Read UTF-8 text through Windows' transient replace window."""
+    native_path = filesystem_path(fpath)
+    return _retry_windows_file_access(
+        lambda: Path(native_path).read_text(encoding="utf-8")
+    )
 
 
 def atomic_write_text(fpath: Path, text: str) -> Path:
@@ -59,29 +87,39 @@ def atomic_write_text(fpath: Path, text: str) -> Path:
     FileNotFoundError. ``os.replace`` is atomic per file, so a private
     temp per write makes last-writer-wins the only outcome.
 
-    Written 0600. Every caller of this is per-profile state — session
-    transcripts, branch metadata, memory bookkeeping — and the mode a
-    temp file inherits from the umask is 0644, which published all of it
-    to every other account on the machine.
-
     The parent directory is fsynced after the rename, not just the file.
     A rename is a directory change, so fsyncing only the file's contents
     leaves the rename itself unflushed: a power loss then reverts the
     destination to its previous bytes even though the write "succeeded".
     """
+    # Profile state is owner-only on POSIX; Windows retains inherited ACLs.
+    # Apply the mode at creation so even the unpublished bytes remain private.
     tmp = fpath.with_name(f"{fpath.name}.{uuid.uuid4().hex}.tmp")
+    native_tmp = filesystem_path(tmp)
+    native_target = filesystem_path(fpath)
+    created = False
     try:
-        with open(tmp, "w", encoding="utf-8") as handle:
+        descriptor = os.open(
+            native_tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+            0o600,
+        )
+        created = True
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(tmp, 0o600)
-        tmp.replace(fpath)
+        _retry_windows_file_access(
+            lambda: os.replace(native_tmp, native_target)
+        )
         _fsync_directory(fpath.parent)
     finally:
         # No-op after a successful replace; cleans up when write_text
         # or replace raised so a failed write leaves no litter.
-        tmp.unlink(missing_ok=True)
+        if created:
+            try:
+                os.unlink(native_tmp)
+            except FileNotFoundError:
+                pass
     return fpath
 
 
@@ -92,7 +130,7 @@ def _fsync_directory(directory: Path) -> None:
     is not a failure of the write, which has already landed.
     """
     try:
-        descriptor = os.open(directory, os.O_RDONLY)
+        descriptor = os.open(filesystem_path(directory), os.O_RDONLY)
     except OSError:
         return
     try:
@@ -260,7 +298,7 @@ class GitSession:
         if not fpath.exists():
             return {}
         try:
-            return json.loads(fpath.read_text(encoding="utf-8"))
+            return json.loads(read_text_with_retry(fpath))
         except (json.JSONDecodeError, OSError):
             return {}
 
@@ -276,7 +314,7 @@ class GitSession:
         if not fpath.exists():
             return None
         try:
-            return json.loads(fpath.read_text(encoding="utf-8"))
+            return json.loads(read_text_with_retry(fpath))
         except (json.JSONDecodeError, OSError):
             return None
 

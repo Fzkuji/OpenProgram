@@ -249,10 +249,15 @@ class _FakeHTTPClient:
     def __init__(self, responses):
         self._responses = list(responses)
         self.calls = 0
+        self.contents = []
 
     def stream(self, method, url, headers=None, content=None):
         self.calls += 1
+        self.contents.append(content)
         return _FakeStreamCM(self._responses.pop(0))
+
+    async def aclose(self):
+        return None
 
 
 def _sse(obj):
@@ -295,6 +300,7 @@ def test_codex_retry_does_not_duplicate_blocks(monkeypatch):
     monkeypatch.setattr(
         mod, "get_shared_async_client", lambda _name, **_kwargs: fake_client
     )
+    monkeypatch.setattr(mod, "build_async_client", lambda **_kwargs: fake_client)
     monkeypatch.setattr(mod, "_resolve_codex_bearer_token", lambda k: "tok")
 
     # Force one retry regardless of the committed check — the point under
@@ -324,6 +330,127 @@ def test_codex_retry_does_not_duplicate_blocks(monkeypatch):
     assert text == "Hello world"
 
 
+def test_codex_retries_done_after_empty_reasoning_placeholder(monkeypatch):
+    mod = importlib.import_module(
+        "openprogram.providers.openai_codex.openai_codex")
+
+    premature = _FakeSSEResponse([
+        _sse({"type": "response.output_item.added", "output_index": 0,
+              "item": {"type": "reasoning", "id": "r0", "summary": []}}),
+        "data: [DONE]",
+    ])
+    still_premature = _FakeSSEResponse([
+        _sse({"type": "response.output_item.added", "output_index": 0,
+              "item": {"type": "reasoning", "id": "r1", "summary": []}}),
+        "data: [DONE]",
+    ])
+    recovered = _FakeSSEResponse([
+        _sse({"type": "response.output_item.added", "output_index": 0,
+              "item": {"type": "message", "id": "m0"}}),
+        _sse({"type": "response.output_text.delta", "output_index": 0,
+              "delta": "recovered"}),
+        _sse({"type": "response.output_item.done", "output_index": 0,
+              "item": {"type": "message", "id": "m0",
+                       "content": [{"text": "recovered"}]}}),
+        _sse(_COMPLETED),
+        "data: [DONE]",
+    ])
+    fake_client = _FakeHTTPClient([premature, still_premature, recovered])
+    private_client_builds = []
+    monkeypatch.setattr(
+        mod, "get_shared_async_client", lambda _name, **_kwargs: fake_client
+    )
+
+    def build_private(**_kwargs):
+        private_client_builds.append(True)
+        return fake_client
+
+    monkeypatch.setattr(mod, "build_async_client", build_private)
+    monkeypatch.setattr(mod, "_resolve_codex_bearer_token", lambda _k: "tok")
+
+    async def retry_once(attempt_fn, *, is_committed_fn, **_kwargs):
+        with pytest.raises(mod.ProviderStreamError, match="before a terminal"):
+            await attempt_fn()
+        assert is_committed_fn() is False
+        with pytest.raises(mod.ProviderStreamError, match="before a terminal"):
+            await attempt_fn()
+        assert is_committed_fn() is False
+        await attempt_fn()
+
+    monkeypatch.setattr(mod, "retry_stream", retry_once)
+
+    async def run():
+        stream = mod.stream_openai_codex_responses(
+            Model(
+                id="test-model", name="test", api="openai-codex",
+                provider="openai-codex", base_url="https://example.invalid",
+                reasoning=True,
+            ),
+            _codex_ctx(),
+            {"api_key": "tok", "headers": dict(_CODEX_HEADERS),
+             "reasoning_effort": "medium", "session_id": "op-original"},
+        )
+        return await stream.result()
+
+    message = asyncio.run(run())
+    assert fake_client.calls == 3
+    assert len(private_client_builds) == 2
+    assert [block.text for block in message.content if block.type == "text"] == [
+        "recovered"
+    ]
+    attempts = [json.loads(content) for content in fake_client.contents]
+    assert [attempts[0]["reasoning"]["effort"],
+            attempts[1]["reasoning"]["effort"]] == [
+        "medium",
+        "low",
+    ]
+    assert "reasoning" not in attempts[2]
+    assert "include" not in attempts[2]
+    assert attempts[0]["prompt_cache_key"] == "op-original"
+    assert attempts[1]["prompt_cache_key"].startswith("op-retry-")
+    assert attempts[2]["prompt_cache_key"].startswith("op-retry-")
+    assert len({attempt["prompt_cache_key"] for attempt in attempts}) == 3
+
+
+def test_codex_preserves_partial_text_when_terminal_event_is_missing(monkeypatch):
+    mod = importlib.import_module(
+        "openprogram.providers.openai_codex.openai_codex")
+
+    partial = _FakeSSEResponse([
+        _sse({"type": "response.output_item.added", "output_index": 0,
+              "item": {"type": "message", "id": "m0"}}),
+        _sse({"type": "response.output_text.delta", "output_index": 0,
+              "delta": "first line\n"}),
+        _sse({"type": "response.output_text.delta", "output_index": 0,
+              "delta": "second line"}),
+        "data: [DONE]",
+    ])
+    fake_client = _FakeHTTPClient([partial])
+    monkeypatch.setattr(
+        mod, "get_shared_async_client", lambda _name, **_kwargs: fake_client
+    )
+    monkeypatch.setattr(mod, "build_async_client", lambda **_kwargs: fake_client)
+    monkeypatch.setattr(mod, "_resolve_codex_bearer_token", lambda _k: "tok")
+
+    async def run():
+        stream = mod.stream_openai_codex_responses(
+            _model(api="openai-codex", provider="openai-codex"),
+            _codex_ctx(),
+            {"api_key": "tok", "headers": dict(_CODEX_HEADERS)},
+        )
+        return await stream.result()
+
+    message = asyncio.run(run())
+    assert fake_client.calls == 1
+    assert message.stop_reason == "length"
+    texts = [
+        block.get("text") if isinstance(block, dict) else block.text
+        for block in message.content
+        if (block.get("type") if isinstance(block, dict) else block.type) == "text"
+    ]
+    assert texts == ["first line\nsecond line"]
+
+
 # ---------------------------------------------------------------------------
 # 3. Cancel signal
 # ---------------------------------------------------------------------------
@@ -339,6 +466,50 @@ def test_parse_sse_stream_raises_stream_aborted_when_signal_set():
             _FakeSSEResponse([_sse({"type": "x"})]), signal=sig)
         with pytest.raises(StreamAborted):
             await agen.__anext__()
+
+    asyncio.run(run())
+
+
+def test_parse_sse_stream_cancel_poll_does_not_cancel_network_read():
+    mod = importlib.import_module(
+        "openprogram.providers.openai_codex.openai_codex")
+
+    class DelayedResponse:
+        async def aiter_lines(self):
+            # Longer than the 250 ms Stop-button poll interval. The old
+            # wait_for(__anext__) implementation cancelled this healthy read.
+            await asyncio.sleep(0.35)
+            yield _sse({"type": "response.created", "response": {}})
+
+    async def run():
+        signal = asyncio.Event()
+        stream = mod._parse_sse_stream(DelayedResponse(), signal=signal)
+        assert await stream.__anext__() == {
+            "type": "response.created",
+            "response": {},
+        }
+        await stream.aclose()
+
+    asyncio.run(run())
+
+
+def test_parse_sse_stream_cancels_pending_read_when_signal_arrives():
+    mod = importlib.import_module(
+        "openprogram.providers.openai_codex.openai_codex")
+
+    class SlowResponse:
+        async def aiter_lines(self):
+            await asyncio.sleep(60)
+            yield _sse({"type": "never"})
+
+    async def run():
+        signal = asyncio.Event()
+        stream = mod._parse_sse_stream(SlowResponse(), signal=signal)
+        pending = asyncio.create_task(stream.__anext__())
+        await asyncio.sleep(0.05)
+        signal.set()
+        with pytest.raises(StreamAborted):
+            await asyncio.wait_for(pending, timeout=1.0)
 
     asyncio.run(run())
 

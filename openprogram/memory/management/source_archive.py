@@ -96,25 +96,27 @@ def _source_path_key(relative: Path) -> str:
 
 def _preflight_archive_paths(
     target_root: Path, relatives: list[Path]
-) -> dict[Path, Path]:
+) -> dict[str, Path]:
     root = target_root.resolve()
     sources_root = (root / "sources").resolve()
-    planned: dict[str, Path] = {}
-    resolved: dict[Path, Path] = {}
+    planned: dict[str, str] = {}
+    resolved: dict[str, Path] = {}
 
     for relative in relatives:
         path = resolve_within(root, relative.as_posix())
         if path is None or not path.is_relative_to(sources_root):
             raise ValueError("source archive path escapes sources")
-        resolved[relative] = path
+        relative_text = relative.as_posix()
+        resolved[relative_text] = path
         for length in range(1, len(relative.parts) + 1):
             prefix = Path(*relative.parts[:length])
             key = _source_path_key(prefix)
-            previous = planned.setdefault(key, prefix)
-            if previous != prefix:
+            prefix_text = prefix.as_posix()
+            previous = planned.setdefault(key, prefix_text)
+            if previous != prefix_text:
                 raise ValueError(
                     "source archive path collision: "
-                    f"{previous.as_posix()} and {prefix.as_posix()}"
+                    f"{previous} and {prefix_text}"
                 )
 
     for relative in relatives:
@@ -130,7 +132,7 @@ def _preflight_archive_paths(
                 if _source_path_key(Path(existing.name)) != key:
                     continue
                 actual = existing.relative_to(root)
-                if actual != expected:
+                if actual.as_posix() != expected.as_posix():
                     raise ValueError(
                         "source archive path collision: "
                         f"{expected.as_posix()} and {actual.as_posix()}"
@@ -268,7 +270,8 @@ class SourceArchiveMixin:
         so sources are installed atomically with the topics that cite them.
         """
         target_root = self.memory_dir if root is None else Path(root)
-        grouped: dict[Path, list[SourceRecord]] = {}
+        grouped: dict[str, list[SourceRecord]] = {}
+        relatives: dict[str, Path] = {}
         for record in sorted(
             records,
             key=lambda value: (
@@ -292,11 +295,14 @@ class SourceArchiveMixin:
                 raise ValueError("source timestamp is not safe for a header")
             if not normalize_identity_header_part(str(record.speaker_label)):
                 raise ValueError("source record role/speaker label is empty")
-            grouped.setdefault(location[0], []).append(record)
-        paths = _preflight_archive_paths(target_root, list(grouped))
-        existing: dict[Path, tuple[str, set[str]]] = {}
-        for relative in grouped:
-            path = paths[relative]
+            relative = location[0]
+            relative_key = relative.as_posix()
+            relatives.setdefault(relative_key, relative)
+            grouped.setdefault(relative_key, []).append(record)
+        paths = _preflight_archive_paths(target_root, list(relatives.values()))
+        existing: dict[str, tuple[str, set[str]]] = {}
+        for relative_key, relative in relatives.items():
+            path = paths[relative_key]
             text = _read_literal_text(path) if path.exists() else ""
             if text:
                 scan = scan_source_archive(text, relative)
@@ -307,13 +313,14 @@ class SourceArchiveMixin:
                 known = scan.known_source_ids
             else:
                 known = set()
-            existing[relative] = (text, known)
+            existing[relative_key] = (text, known)
 
         refs = []
-        for relative, rows in grouped.items():
-            path = paths[relative]
+        for relative_key, rows in grouped.items():
+            relative = relatives[relative_key]
+            path = paths[relative_key]
             _make_owner_only_dirs(path.parent, target_root)
-            text, known = existing[relative]
+            text, known = existing[relative_key]
             additions = []
             for record in rows:
                 refs.append(record.source_id)

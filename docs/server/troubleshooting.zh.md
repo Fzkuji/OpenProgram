@@ -41,7 +41,8 @@ export OPENPROGRAM_WEB_PORT=8101         # 单端口（默认 18100）
 
 `openprogram doctor` 会运行一次快速的端到端检查：Python/Node/git
 工具链、技能和插件能否加载、provider 凭据、MCP server、磁盘缓存，
-以及 worker 是否在 :18100 监听。`openprogram rescue` 在诊断之外
+以及 worker 是否在 :18100 监听。在 Windows 上，它还会报告长路径配置和只读的
+Defender 性能建议，不会修改注册表、Defender 排除项或文件 ACL。`openprogram rescue` 在诊断之外
 还会直接打印修复命令。在提 issue 之前先读一遍它们的输出。
 
 ## `import openprogram` 报 ModuleNotFoundError

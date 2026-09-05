@@ -6,6 +6,7 @@ approve anyone), and approval is a local-only API (CLI/webui).
 """
 from __future__ import annotations
 
+import os
 import threading
 
 import pytest
@@ -49,7 +50,8 @@ def test_unknown_sender_blocked_and_gets_code() -> None:
     assert set(code) <= set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
     assert code in decision.reply
     assert "openprogram channels access approve telegram" in decision.reply
-    assert _access.access_path("telegram", "a1").stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert _access.access_path("telegram", "a1").stat().st_mode & 0o777 == 0o600
 
 
 def test_repeat_messages_reuse_code_and_stay_silent_for_full_hour(monkeypatch) -> None:

@@ -46,8 +46,9 @@ def test_record_command_precreates_private_header_then_updates_config(
     assert config == {"mode": "record", "file": "fixture"}
     assert header["recording_id"] == "fixture"
     assert header["redaction_version"] == 1
-    assert stat.S_IMODE(info.path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(info.path.parent.stat().st_mode) == 0o700
+    if os.name != "nt":
+        assert stat.S_IMODE(info.path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(info.path.parent.stat().st_mode) == 0o700
 
 
 def test_record_rolls_back_new_file_when_config_update_fails(
@@ -107,14 +108,17 @@ def test_delete_rejects_active_external_and_symlink_recordings(
 ) -> None:
     active = set_record_mode("active")
     outside = tmp_path / "outside.jsonl"
-    outside.write_text(active.path.read_text())
+    outside.write_text(active.path.read_text(encoding="utf-8"), encoding="utf-8")
 
     with pytest.raises(RecordingManagementError, match="active"):
         delete_recording("active")
     with pytest.raises(RecordingManagementError, match="managed ID"):
         delete_recording(str(outside))
     link = paths.get_recordings_dir() / "linked.jsonl"
-    link.symlink_to(outside)
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable for this Windows account: {exc}")
     with pytest.raises(RecordingManagementError, match="symlink"):
         delete_recording("linked")
 
@@ -195,7 +199,7 @@ def test_off_recovers_from_a_replay_file_that_became_invalid(tmp_path: Path) -> 
         encoding="utf-8",
     )
     (state / "config.json").chmod(0o600)
-    env = {**os.environ, "HOME": str(home)}
+    env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
 
     result = subprocess.run(
         [sys.executable, "-m", "openprogram", "recordings", "off"],

@@ -1,18 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
 import { join, dirname } from 'path';
+import { tuiStateDir } from '../utils/stateDir.js';
 import { DEFAULT_SETTING, isThemeSetting, ThemeSetting } from './themes.js';
 
-const CONFIG_PATH = join(homedir(), '.openprogram', 'cli-config.json');
+const configPath = (): string => join(tuiStateDir(), 'cli-config.json');
 
 interface CliConfig {
   theme?: string;
 }
 
 const readConfig = (): CliConfig => {
-  if (!existsSync(CONFIG_PATH)) return {};
+  const path = configPath();
+  if (!existsSync(path)) return {};
   try {
-    const raw = readFileSync(CONFIG_PATH, 'utf8');
+    const raw = readFileSync(path, 'utf8');
     const parsed = JSON.parse(raw);
     return typeof parsed === 'object' && parsed ? (parsed as CliConfig) : {};
   } catch {
@@ -21,12 +22,13 @@ const readConfig = (): CliConfig => {
 };
 
 const writeConfig = (cfg: CliConfig): void => {
-  const dir = dirname(CONFIG_PATH);
+  const path = configPath();
+  const dir = dirname(path);
   if (!existsSync(dir)) {
     try { mkdirSync(dir, { recursive: true }); } catch { /* best effort */ }
   }
   try {
-    writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + '\n');
+    writeFileSync(path, JSON.stringify(cfg, null, 2) + '\n');
   } catch { /* best effort */ }
 };
 

@@ -13,6 +13,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
+from openprogram._compat import no_window_creation_flags
+
 
 @dataclass
 class ExecOptions:
@@ -35,7 +37,11 @@ def _kill_process_tree(pid: int) -> None:
     """Kill a process and its entire child tree."""
     if sys.platform == "win32":
         try:
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                creationflags=no_window_creation_flags(),
+            )
         except Exception:
             pass
     else:
@@ -66,6 +72,8 @@ async def exec_command(
     }
     if sys.platform != "win32":
         kwargs["start_new_session"] = True
+    else:
+        kwargs["creationflags"] = no_window_creation_flags()
 
     process = await asyncio.create_subprocess_exec(command, *args, **kwargs)
 

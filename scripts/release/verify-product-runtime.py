@@ -11,6 +11,7 @@ import io
 import json
 import os
 import platform
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -107,6 +108,42 @@ def _probe_rich_terminal() -> None:
         raise RuntimeError("built-in Rich terminal UI probe failed")
 
 
+def _probe_ink_terminal(root: Path) -> tuple[str, str]:
+    """Verify the self-contained Node + Ink frontend shipped in the runtime."""
+    node_relative = "bin/node.exe" if os.name == "nt" else "bin/node"
+    node = _relative_file(root, node_relative, "bundled Node.js")
+    entry_relative = "assets/tui/index.cjs"
+    entry = _relative_file(root, entry_relative, "bundled Ink TUI")
+    if sys.platform.startswith("linux"):
+        pty_smoke = _relative_file(
+            root,
+            "bin/smoke-ink-tui-pty.py",
+            "Ink pseudo-terminal smoke test",
+        )
+        command = [
+            sys.executable,
+            "-I",
+            "-B",
+            str(pty_smoke),
+            str(node),
+            str(entry),
+        ]
+        expected = "OpenProgram Ink TUI PTY smoke passed"
+    else:
+        command = [str(node), str(entry), "--probe"]
+        expected = "OpenProgram Ink TUI ready"
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if completed.returncode != 0 or completed.stdout.strip() != expected:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(f"bundled Ink terminal UI probe failed: {detail}")
+    return node_relative, entry_relative
+
 def _probe_macos_window_control() -> None:
     if platform.system() != "Darwin":
         return
@@ -127,6 +164,14 @@ def _probe(
     browser: bool = True,
 ) -> dict[str, dict[str, object]]:
     _verify_openprogram_version(expected_openprogram_version)
+    if os.name != "nt":
+        stable_python = _relative_file(
+            root, "bin/python", "stable managed Python launcher"
+        )
+        if stable_python.resolve() != Path(sys.executable).resolve():
+            raise RuntimeError(
+                "stable managed Python launcher does not select this runtime"
+            )
     assets = {
         "playwright": "assets/playwright",
         "gpa_detector": "assets/gpa/model.pt",
@@ -160,6 +205,8 @@ def _probe(
 
     _probe_pdf_tools()
     _probe_rich_terminal()
+    _probe_ink_terminal(root)
+
     _probe_macos_window_control()
 
     if browser:
@@ -233,6 +280,8 @@ def main() -> int:
         if args.allow_deferred_browser:
             parser.error("--allow-deferred-browser is only valid while checking an artifact")
         capabilities = _probe(root, product, args.openprogram_version, browser=not args.defer_browser)
+        node_relative = "bin/node.exe" if os.name == "nt" else "bin/node"
+        tui_relative = "assets/tui/index.cjs"
         manifest = {
             "schema": 2,
             "openprogram": args.openprogram_version,
@@ -256,6 +305,8 @@ def main() -> int:
             "assets": {
                 "playwright": "assets/playwright",
                 "gpa_detector": "assets/gpa/model.pt",
+                "node": node_relative,
+                "tui": tui_relative,
             },
         }
         manifest_path.write_text(

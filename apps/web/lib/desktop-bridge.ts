@@ -132,6 +132,7 @@ export interface DesktopReopenState {
 
 export interface DesktopBridge {
   readonly isDesktop: true;
+  readonly platform?: "darwin" | "win32" | "linux";
   readonly windowId: string;
   selfUpdateCapture?(nonce: string): Promise<{ ok: boolean; reason?: string }>;
   /** Update-triggered original-session recovery; absent in older shells. */

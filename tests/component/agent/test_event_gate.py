@@ -9,6 +9,9 @@ protocol (no numeric cap).
 from __future__ import annotations
 
 import json
+import shlex
+import subprocess
+import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +29,13 @@ from openprogram.events import (
     make_shell_notifier,
 )
 from openprogram.events import bus as eb
+
+
+def _python_command(source: str, *args: object) -> str:
+    argv = [sys.executable, "-c", source, *(str(arg) for arg in args)]
+    if sys.platform == "win32":
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)
 
 
 def _ev(type: str = "tool.before", **payload):
@@ -48,14 +58,11 @@ def test_every_emitted_type_is_registered():
     """Every emit_safe type string in the codebase must be in EVENTS —
     the admission boundary holds with zero migration warnings."""
     import re
-    import subprocess
     root = Path(__file__).resolve().parents[3] / "openprogram"
-    out = subprocess.run(
-        ["grep", "-rhoE", r'emit_safe\(\s*"[a-z_.]+"', str(root),
-         "--include=*.py"],
-        capture_output=True, text=True,
-    ).stdout
-    emitted = set(re.findall(r'"([a-z_.]+)"', out))
+    source = "\n".join(
+        path.read_text(encoding="utf-8") for path in root.rglob("*.py")
+    )
+    emitted = set(re.findall(r'emit_safe\(\s*"([a-z_.]+)"', source))
     assert emitted <= set(EVENTS), f"unregistered: {emitted - set(EVENTS)}"
 
 
@@ -141,34 +148,47 @@ def test_emit_gate_timeout_budget_skips_remaining_gates():
 # shell 订阅者：退出码协议 + 超时
 
 def test_shell_gate_exit_zero_allows():
-    assert make_shell_gate("exit 0")(_ev()) is None
+    assert make_shell_gate(_python_command("raise SystemExit(0)"))(_ev()) is None
 
 
 def test_shell_gate_exit_two_denies_with_stderr_reason():
-    reason = make_shell_gate('echo "还没写测试" >&2; exit 2')(_ev())
+    reason = make_shell_gate(_python_command(
+        "import sys; sys.stderr.write('还没写测试'); raise SystemExit(2)",
+    ))(_ev())
     assert reason == "还没写测试"
 
 
 def test_shell_gate_other_exit_code_fails_open():
-    assert make_shell_gate("exit 3")(_ev()) is None
+    command = _python_command("raise SystemExit(3)")
+    assert make_shell_gate(command)(_ev()) is None
 
 
 def test_shell_gate_timeout_fails_open():
-    assert make_shell_gate("sleep 5", timeout_s=0.2)(_ev()) is None
+    command = _python_command("import time; time.sleep(5)")
+    assert make_shell_gate(command, timeout_s=0.2)(_ev()) is None
 
 
 def test_shell_gate_receives_event_json_on_stdin(tmp_path):
     out = tmp_path / "stdin.json"
-    gate = make_shell_gate(f"cat > {out}; exit 0")
+    command = _python_command(
+        "import pathlib, sys; "
+        "pathlib.Path(sys.argv[1]).write_text(sys.stdin.read(), encoding='utf-8')",
+        out,
+    )
+    gate = make_shell_gate(command)
     ev = _ev(tool="bash")
     assert gate(ev) is None
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     assert data["type"] == "tool.before" and data["payload"]["tool"] == "bash"
 
 
 def test_shell_notifier_runs_in_background_and_ignores_exit_code(tmp_path):
     out = tmp_path / "ran"
-    notify = make_shell_notifier(f"touch {out}; exit 7")
+    command = _python_command(
+        "import pathlib, sys; pathlib.Path(sys.argv[1]).touch(); raise SystemExit(7)",
+        out,
+    )
+    notify = make_shell_notifier(command)
     notify(_ev("turn.start"))
     for _ in range(100):
         if out.exists():
@@ -207,7 +227,7 @@ def test_event_log_falls_back_when_session_dir_missing(_home):
                         {"session": "no-such-session"}))
     fallback = _home / ".openprogram" / "logs" / "events.jsonl"
     assert fallback.exists()
-    rec = json.loads(fallback.read_text().splitlines()[-1])
+    rec = json.loads(fallback.read_text(encoding="utf-8").splitlines()[-1])
     assert rec["type"] == "turn.start"
 
 
@@ -244,7 +264,7 @@ def test_observed_gate_event_logs_once_after_verdict(_home):
     assert out.reasons == ["危险命令"]
     assert observed == [event]
     assert not global_log.exists()
-    records = [json.loads(line) for line in session_log.read_text().splitlines()]
+    records = [json.loads(line) for line in session_log.read_text(encoding="utf-8").splitlines()]
     assert [record["id"] for record in records] == [event.id]
     rec = records[0]
     assert rec["gate"]["allowed"] is False
@@ -266,7 +286,7 @@ def test_gate_only_dispatch_logs_verdict_without_notifying_observers(_home):
     assert out.reasons == ["再跑一轮"]
     assert observed == []
     log = _home / ".openprogram" / "logs" / "events.jsonl"
-    records = [json.loads(line) for line in log.read_text().splitlines()]
+    records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert [record["id"] for record in records] == [event.id]
     assert records[0]["gate"]["allowed"] is False
 
@@ -275,14 +295,14 @@ def test_event_log_rotates_past_5mb(_home):
     log_dir = _home / ".openprogram" / "logs"
     log_dir.mkdir(parents=True)
     log = log_dir / "events.jsonl"
-    log.write_text("x" * (5 * 1024 * 1024 + 1))
+    log.write_text("x" * (5 * 1024 * 1024 + 1), encoding="utf-8")
     old_rotated = log_dir / "events.jsonl.1"
-    old_rotated.write_text("old")
+    old_rotated.write_text("old", encoding="utf-8")
     bus = create_event_bus()
     bus.log_events = True
     bus.emit(make_event("turn.start", "system"))
-    assert old_rotated.read_text() != "old"          # 旧 .1 被覆盖
-    assert len(log.read_text().splitlines()) == 1    # 新文件只有这一行
+    assert old_rotated.read_text(encoding="utf-8") != "old"  # 旧 .1 被覆盖
+    assert len(log.read_text(encoding="utf-8").splitlines()) == 1  # 新文件只有这一行
 
 
 # turn.stop 续轮辅助函数

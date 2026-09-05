@@ -52,7 +52,13 @@ import type { AccountsState, AddStarted } from '../utils/providerAccounts.js';
 
 export type { REPLProps } from './repl/types.js';
 
-export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConversation }) => {
+export const REPL: React.FC<REPLProps> = ({
+  client,
+  initialAgent,
+  initialConversation,
+  altScreen = true,
+  screenReader = false,
+}) => {
   const app = useApp();
   const [committed, setCommitted] = useState<Turn[]>([]);
   const [streaming, setStreaming] = useState<Turn | null>(null);
@@ -235,6 +241,15 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
     executionVersionRef,
   });
 
+  // ``openprogram --resume <id>`` seeds the id through the launcher
+  // environment. Setting local state alone only makes subsequent messages use
+  // that id; explicitly load it so the existing transcript and per-session
+  // tools/effort/permission settings are visible before the user types.
+  useEffect(() => {
+    if (initialConversation) {
+      client.send({ action: 'load_session', session_id: initialConversation });
+    }
+  }, [client, initialConversation]);
   const cancelCurrentExecution = () => {
     const executionId = executionIdRef.current || streaming?.executionId;
     const expectedVersion = executionVersionRef.current;
@@ -500,6 +515,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
           return true;
         },
         requestAliasesPrint: () => { sessionAliasesPrintRef.current = true; },
+        submitChat: sendChat,
       });
       if (handled) return;
       // Not a TUI-local action — try the worker's unified command
@@ -568,7 +584,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
   });
 
   return (
-    <Shell mouseTracking mode="alt">
+    <Shell mouseTracking={altScreen && !screenReader} mode={altScreen && !screenReader ? 'alt' : 'inline'}>
       <TranscriptViewport stickyBottom scrollRef={transcriptScrollRef}>
         <Messages
           committed={committed}
@@ -617,6 +633,7 @@ export const REPL: React.FC<REPLProps> = ({ client, initialAgent, initialConvers
             setSearchResults([]);
             setPickerKind('context_search');
           }}
+          onShowShortcuts={() => setPickerKind('shortcuts')}
         />
       )}
       <ChannelActivityFeed

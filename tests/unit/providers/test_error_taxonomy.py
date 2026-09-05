@@ -42,7 +42,17 @@ def test_taxonomy_fields_generic_exception_is_classified():
 
 def test_assistant_message_has_error_taxonomy_fields():
     fields = set(AssistantMessage.model_fields)
-    assert {"error_reason", "error_retryable", "error_retry_after_s"} <= fields
+    assert {
+        "error_reason",
+        "error_retryable",
+        "error_retry_after_s",
+        "error_transport_exhausted",
+    } <= fields
     # all optional with a None default
-    for f in ("error_reason", "error_retryable", "error_retry_after_s"):
+    for f in (
+        "error_reason",
+        "error_retryable",
+        "error_retry_after_s",
+        "error_transport_exhausted",
+    ):
         assert AssistantMessage.model_fields[f].default is None

@@ -45,7 +45,7 @@ from ._msg_adapter import (
     _row_to_session,
 )
 
-from .git_session import GitSession, atomic_write_text
+from .git_session import GitSession, atomic_write_text, read_text_with_retry
 from .memory_index import SessionMemoryIndex
 
 
@@ -302,7 +302,7 @@ class SessionStore:
         if not p.exists():
             return {}
         try:
-            data = json.loads(p.read_text(encoding="utf-8"))
+            data = json.loads(read_text_with_retry(p))
             return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
         except (OSError, json.JSONDecodeError):
             return {}
@@ -374,7 +374,7 @@ class SessionStore:
         p = self._index_path()
         if p.exists():
             try:
-                data = json.loads(p.read_text(encoding="utf-8"))
+                data = json.loads(read_text_with_retry(p))
                 if isinstance(data, dict):
                     self._index = data
                     self._reset_running_status()
@@ -401,7 +401,7 @@ class SessionStore:
                     dirs_to_scan.append(p)
         for sdir in dirs_to_scan:
             try:
-                meta = json.loads((sdir / "meta.json").read_text(encoding="utf-8"))
+                meta = json.loads(read_text_with_retry(sdir / "meta.json"))
                 sid = meta.get("id") or sdir.name
                 entry = self._meta_to_entry(meta)
                 if not entry.get("created_at"):

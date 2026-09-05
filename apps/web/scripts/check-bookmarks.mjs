@@ -54,29 +54,32 @@ assert.equal(
 );
 assert.match(packageJson.scripts?.check || "", /check:bookmarks/);
 
-const source = readFileSync(sourcePath, "utf8");
-const sessionStore = readFileSync(sessionStorePath, "utf8");
-const webTab = readFileSync(webTabPath, "utf8");
-const browserHome = readFileSync(browserHomePath, "utf8");
-const manager = readFileSync(managerPath, "utf8");
-const detailPanel = readFileSync(detailPanelPath, "utf8");
-const centerTabsCss = readFileSync(
+const normalizedText = (path) => readFileSync(path, "utf8").replace(/\r\n?/g, "\n");
+const source = normalizedText(sourcePath);
+const sessionStore = normalizedText(sessionStorePath);
+const webTab = normalizedText(webTabPath);
+const browserHome = normalizedText(browserHomePath);
+const manager = normalizedText(managerPath);
+const detailPanel = normalizedText(detailPanelPath);
+const centerTabsCss = normalizedText(
   new URL("../components/center-tabs/center-tabs.module.css", import.meta.url),
-  "utf8",
 );
-const mainMenu = readFileSync(mainMenuPath, "utf8");
-const browserControls = readFileSync(browserControlsPath, "utf8");
-const contextMenuOverlay = readFileSync(contextMenuOverlayPath, "utf8");
-const desktopBridge = readFileSync(desktopBridgePath, "utf8");
-const desktopBridgeTypes = readFileSync(desktopBridgeTypesPath, "utf8");
-const desktopMain = readFileSync(desktopMainPath, "utf8");
-const desktopPreload = readFileSync(desktopPreloadPath, "utf8");
-const strip = readCenterTabStripSource(import.meta.url);
-const appShell = readFileSync(appShellPath, "utf8");
-const tabsStore = readFileSync(tabsStorePath, "utf8");
-const tabIds = readFileSync(tabIdsPath, "utf8");
-const rightSidebar = readFileSync(rightSidebarPath, "utf8");
-const rightDockCss = readRightDockCss(new URL("../", import.meta.url));
+const mainMenu = normalizedText(mainMenuPath);
+const browserControls = normalizedText(browserControlsPath);
+const contextMenuOverlay = normalizedText(contextMenuOverlayPath);
+const desktopBridge = normalizedText(desktopBridgePath);
+const desktopBridgeTypes = normalizedText(desktopBridgeTypesPath);
+const desktopMain = normalizedText(desktopMainPath);
+const desktopPreload = normalizedText(desktopPreloadPath);
+const strip = readCenterTabStripSource(import.meta.url).replace(/\r\n?/g, "\n");
+const appShell = normalizedText(appShellPath);
+const tabsStore = normalizedText(tabsStorePath);
+const tabIds = normalizedText(tabIdsPath);
+const rightSidebar = normalizedText(rightSidebarPath);
+const rightDockCss = readRightDockCss(new URL("../", import.meta.url)).replace(
+  /\r\n?/g,
+  "\n",
+);
 assert.match(webTab, /function BookmarkButton/);
 assert.match(webTab, /toggleBookmark\(\{ url, title \}\)/);
 assert.match(webTab, /<BookmarkButton url=\{effectiveUrl\} title=\{title \|\| effectiveUrl\} \/>/);

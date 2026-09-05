@@ -252,14 +252,17 @@ def _redacted_stderr(stderr: bytes) -> str:
 
 
 async def _run_helper(cfg: CredentialProcessConfig) -> str:
+    from openprogram._compat import executable_cmd, no_window_creation_flags
+
     env = os.environ.copy()
     env.update(cfg.env)
     proc = await asyncio.create_subprocess_exec(
-        *cfg.command,
+        *executable_cmd(cfg.command),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
         cwd=cfg.cwd,
+        creationflags=no_window_creation_flags(),
     )
     try:
         stdout, stderr = await asyncio.wait_for(

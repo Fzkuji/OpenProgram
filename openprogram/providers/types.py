@@ -267,6 +267,9 @@ class AssistantMessage(BaseModel):
     error_reason: str | None = None         # ErrorReason value, e.g. "rate_limit"
     error_retryable: bool | None = None
     error_retry_after_s: float | None = None
+    # The provider already consumed its complete transport retry budget.
+    # Higher retry layers must not start another identical budget.
+    error_transport_exhausted: bool | None = None
     structured_output: Any | None = None
     structured_output_mode: Literal["native", "tool", "prompt"] | None = None
     structured_output_attempt: int | None = None

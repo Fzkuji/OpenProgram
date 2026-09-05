@@ -218,6 +218,7 @@ if db.get_session("fixture-session") is None:
     environment.update(
         {
             "HOME": str(tmp_path),
+            "USERPROFILE": str(tmp_path),
             "OPENPROGRAM_MCP_TOKEN": token,
             "OPENPROGRAM_MCP_TEST_EVIDENCE": str(tmp_path / "evidence.jsonl"),
             "PYTHONPATH": python_path,
@@ -525,7 +526,13 @@ def test_authenticated_stdio_subprocess_initializes_and_lists_frozen_tools(
     token_file.write_text(token, encoding="ascii")
     token_file.chmod(0o600)
     environment = dict(os.environ)
-    environment.update({"HOME": str(tmp_path), "OPENPROGRAM_MCP_TOKEN": token})
+    environment.update(
+        {
+            "HOME": str(tmp_path),
+            "USERPROFILE": str(tmp_path),
+            "OPENPROGRAM_MCP_TOKEN": token,
+        }
+    )
 
     async def scenario():
         parameters = StdioServerParameters(
@@ -552,7 +559,19 @@ def test_authenticated_stdio_subprocess_initializes_and_lists_frozen_tools(
 
 
 @pytest.mark.parametrize(
-    "case", ["missing_file", "wrong_mode", "missing_env", "mismatch"]
+    "case",
+    [
+        "missing_file",
+        pytest.param(
+            "wrong_mode",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="Windows token validation does not use POSIX mode bits",
+            ),
+        ),
+        "missing_env",
+        "mismatch",
+    ],
 )
 def test_real_cli_auth_failure_matrix_never_enters_stdio(tmp_path, case):
     state = tmp_path / ".openprogram"
@@ -562,7 +581,7 @@ def test_real_cli_auth_failure_matrix_never_enters_stdio(tmp_path, case):
         token_file.write_text("stored-secret", encoding="ascii")
         token_file.chmod(0o644 if case == "wrong_mode" else 0o600)
     environment = dict(os.environ)
-    environment["HOME"] = str(tmp_path)
+    environment.update({"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)})
     if case != "missing_env":
         environment["OPENPROGRAM_MCP_TOKEN"] = (
             "wrong-secret" if case == "mismatch" else "stored-secret"
@@ -595,7 +614,13 @@ def test_successful_stdio_stdout_contains_only_jsonrpc_frames(tmp_path):
     token_file.write_text(token, encoding="ascii")
     token_file.chmod(0o600)
     environment = dict(os.environ)
-    environment.update({"HOME": str(tmp_path), "OPENPROGRAM_MCP_TOKEN": token})
+    environment.update(
+        {
+            "HOME": str(tmp_path),
+            "USERPROFILE": str(tmp_path),
+            "OPENPROGRAM_MCP_TOKEN": token,
+        }
+    )
     requests = "\n".join(
         json.dumps(frame, separators=(",", ":"))
         for frame in (

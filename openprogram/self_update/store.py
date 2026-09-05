@@ -520,21 +520,15 @@ class SelfUpdateStore:
     @staticmethod
     def _private_directory(path: Path) -> None:
         info = path.lstat()
-        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        if not stat.S_ISDIR(info.st_mode) or not file_lock.user_private_metadata(info):
             raise CorruptUpdateStateError("self-update directory is not private")
 
     @staticmethod
     def _read_private_text(path: Path, *, limit: int = 2_097_152) -> str:
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
-        with os.fdopen(fd, "rb") as handle:
-            info = os.fstat(handle.fileno())
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                    or info.st_mode & 0o077 or info.st_size > limit):
-                raise CorruptUpdateStateError("invalid private self-update file")
-            raw = handle.read(limit + 1)
-            if len(raw) > limit:
-                raise CorruptUpdateStateError("self-update file exceeds read limit")
-            return raw.decode("utf-8")
+        try:
+            return file_lock.read_user_state_bytes(path, limit=limit).decode("utf-8")
+        except ValueError as exc:
+            raise CorruptUpdateStateError("invalid private self-update file") from exc
 
     def _read_json(self, path: Path, *, read_only: bool = False) -> dict[str, Any]:
         try:
@@ -588,22 +582,26 @@ class SelfUpdateStore:
         if not _process_lock.acquire(timeout=0.25 if read_only else -1):
             raise ConcurrentUpdateError("self-update state is busy")
         try:
-            flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | os.O_NONBLOCK
+            flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
                      if read_only else os.O_RDWR | os.O_CREAT)
             descriptor = os.open(lock_path, flags, 0o600)
+            acquired = False
             try:
                 if read_only:
                     info = os.fstat(descriptor)
-                    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                            or stat.S_IMODE(info.st_mode) != 0o600):
+                    if (not stat.S_ISREG(info.st_mode)
+                            or not file_lock.user_private_metadata(info, exact_mode=0o600)
+                            or not file_lock.user_private_metadata(lock_path.lstat(), exact_mode=0o600)):
                         raise CorruptUpdateStateError("read-only update lock is not a private regular file")
                 try:
                     file_lock.flock(descriptor, file_lock.LOCK_EX | (file_lock.LOCK_NB if read_only else 0))
+                    acquired = True
                 except BlockingIOError as exc:
                     raise ConcurrentUpdateError("self-update state is busy") from exc
                 yield
             finally:
-                file_lock.flock(descriptor, file_lock.LOCK_UN)
+                if acquired:
+                    file_lock.flock(descriptor, file_lock.LOCK_UN)
                 os.close(descriptor)
         finally:
             _process_lock.release()

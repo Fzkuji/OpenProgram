@@ -401,9 +401,26 @@ class Program:
 
 def _has_installed_distribution(package: str) -> bool:
     """True when pip/uv left dist-info that owns this import name."""
+
+    # ``packages_distributions()`` builds a complete import-name map by
+    # walking every file in every installed distribution. The complete
+    # Windows runtime has hundreds of distributions and tens of thousands of
+    # files, so doing that once per known Program blocked each new WebSocket
+    # for 3–5 seconds. These are catalogue entries with stable distribution
+    # names; direct metadata lookup is indexed and reflects installs made
+    # while the worker is running without a stale process-wide cache.
+    distribution_name = {
+        "gui_harness": "gui-agent-harness",
+        "research_harness": "research-agent-harness",
+        "wiki_agent_harness": "wiki-agent-harness",
+    }.get(package, package.replace("_", "-"))
     try:
-        from importlib.metadata import packages_distributions
-        return bool(packages_distributions().get(package))
+        from importlib.metadata import PackageNotFoundError, distribution
+
+        distribution(distribution_name)
+        return True
+    except PackageNotFoundError:
+        return False
     except Exception:
         return False
 

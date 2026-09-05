@@ -9,6 +9,7 @@
     "memory",
     "channels",
     "search",
+    "tui.ink",
     "browser.playwright",
     "model.gpa_detector",
     "program.gui",

@@ -186,7 +186,7 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | Doc | Topic |
 |---|---|
 | [`distribution/installation-packaging.html`](distribution/installation-packaging.html) | 完整产品安装、打包、平台支持与 Release 产物 |
-| [`distribution/automatic-updates.html`](distribution/automatic-updates.html) | Stable Release 发现、Desktop 校验后打开 DMG、managed CLI 原子激活、信任边界、界面状态与实现证据 |
+| [`distribution/automatic-updates.html`](distribution/automatic-updates.html) | Stable Release 发现、macOS/Windows Desktop 校验后打开 installer、managed CLI 原子激活、信任边界、界面状态与实现证据 |
 | [`distribution/implementation-plan.md`](distribution/implementation-plan.md) | 不与当前设计重复的历史分发实现证据 |
 
 ## plans/ — 带日期的实施计划

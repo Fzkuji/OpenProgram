@@ -113,16 +113,6 @@
   "schema_version": 1,
   "decisions": [
     {
-      "id": "windows",
-      "status": "deferred",
-      "decision": "do-not-plan",
-      "scope": ["implementation", "testing", "packaging", "compatibility"],
-      "visible": false,
-      "decided_at": "2026-08-12",
-      "rationale": "Windows opens four fronts at once (porting, a second CI matrix, packaging + signing, sandbox semantics with no cheap equivalent) while the user base runs macOS/Linux and Windows users can reach a remote worker from a browser. Sequencing decision, not a rejection.",
-      "plan": "distribution/windows-support.md"
-    },
-    {
       "id": "os-credential-store",
       "status": "rejected",
       "decision": "do-not-implement",
@@ -350,7 +340,7 @@
 <tr><td class="fname">多实例管理器<span class="src">buddy instances.json 加网页切换 · openclaw 一台机器多网关</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">按需自动启动本地模型服务<span class="src">openclaw 选择本地模型时自动启动 vLLM、llama.cpp 或 MLX，并在空闲时停止服务 · codex --oss --local-provider</span></td><td class="g0 us">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g2">◐</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td></tr>
 <tr class="grp"><td>12 <b>安全</b> <span style="color:#6b6a63">15 项</span></td><td class="hc us">我们</td><td class="hc">claude</td><td class="hc">codex</td><td class="hc">openclaw</td><td class="hc">opencode</td><td class="hc">hermes</td><td class="hc">pi-mono</td><td class="hc">pi-ai</td><td class="hc">weclaw</td><td class="hc">cc内</td><td class="hc">cx内</td><td class="hc">gm内</td><td class="hc">buddy</td></tr>
-<tr><td class="fname">操作系统级沙箱<span class="src">我们 sandbox/__init__.py 用 Seatbelt 与 bubblewrap，config_schema.py 的 sandbox.mode 默认 workspace-write；bash、execute_code、cron worker、MCP stdio 服务器与派生 agent 共用同一条 backend/local.py 包裹路径，_with_hard_floor 让 agentics 目录在任何配置下都不可写。codex 三平台 · opencode 只有 Docker 安装法</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
+<tr><td class="fname">操作系统级沙箱<span class="src">我们 sandbox/__init__.py 用 Seatbelt、Linux bubblewrap 与 Windows WSL2-to-bubblewrap 委托；config_schema.py 的 sandbox.mode 默认 auto，后端可用时启用。bash、execute_code、cron worker、MCP stdio 服务器与派生 agent 共用 backend/local.py 包裹路径，_with_hard_floor 让 agentics 目录在任何配置下都不可写。codex 三平台 · opencode 只有 Docker 安装法</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
 <tr><td class="fname">沙箱后端可换<span class="src">hermes 七种终端后端含 modal 与 daytona · openclaw docker/ssh/OpenShell · buddy container/e2b/CVM</span></td><td class="g1 us">●</td><td class="g0">·</td><td class="g2">◐</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g2">◐</td><td class="g0">·</td><td class="g1">●</td></tr>
 <tr><td class="fname">多档审批模式<span class="src">我们五档审批模式，另有 agent/authority.py 的 owner/paired 两档来源权限，渠道来信按档位裁掉工具能力并给出结构化 reason_code。buddy 八档 · claude 六档；weclaw 全自动批</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g2">◐</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td><td class="g1">●</td></tr>
 <tr><td class="fname">LLM 判定的自动审批<span class="src">我们 auto 模式先用固定 allow/deny 集筛选，不确定的写/edit 调 permissions/classifier.py，分类失败时拒绝</span></td><td class="g1 us">●</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g0">·</td><td class="g0">·</td><td class="g0">·</td><td class="g1">●</td><td class="g1">●</td><td class="g0">·</td><td class="g1">●</td></tr>

@@ -21,6 +21,10 @@ def _runner_lifecycle():
 def store(tmp_path, monkeypatch):
     from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
+    from openprogram.agent.job import runner as runner_mod
+    from openprogram import store as store_mod
+
+    runner_mod.shutdown_runner()
     # Pair the canonical execution database with this test's session store;
     # runner startup must not recover executions left by unrelated tests.
     monkeypatch.setattr(
@@ -29,6 +33,7 @@ def store(tmp_path, monkeypatch):
     )
     s = SessionStore(tmp_path / "sessions-git")
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
+    monkeypatch.setattr(store_mod, "default_store", lambda: s)
     monkeypatch.setattr(
         "openprogram.store.session.session_store.default_store", lambda: s,
     )
@@ -45,6 +50,7 @@ def store(tmp_path, monkeypatch):
     try:
         yield s
     finally:
+        runner_mod.shutdown_runner()
         timer = s._index_timer
         try:
             s._flush_index()

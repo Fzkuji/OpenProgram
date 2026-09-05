@@ -5,6 +5,7 @@
  * then interprets sequences as keypresses.
  */
 import { Buffer } from 'buffer'
+import { StringDecoder } from 'string_decoder'
 
 import { PASTE_END, PASTE_START } from './termio/csi.js'
 import { createTokenizer, type Tokenizer } from './termio/tokenize.js'
@@ -190,6 +191,8 @@ export type KeyParseState = {
   pasteBuffer: string
   // Internal tokenizer instance
   _tokenizer?: Tokenizer
+  // stdin may deliver a UTF-8 codepoint across multiple Buffer chunks.
+  _decoder?: StringDecoder
 }
 
 export const INITIAL_STATE: KeyParseState = {
@@ -198,22 +201,38 @@ export const INITIAL_STATE: KeyParseState = {
   pasteBuffer: ''
 }
 
-function inputToString(input: Buffer | string): string {
-  if (Buffer.isBuffer(input)) {
-    if (input[0]! > 127 && input[1] === undefined) {
-      ;(input[0] as unknown as number) -= 128
-
-      return '\x1b' + String(input)
-    } else {
-      return String(input)
+/**
+ * A terminal read is not a key boundary. ConPTY commonly coalesces a run of
+ * printable text and the Enter byte into one ``read()`` (for example
+ * ``/help\r``). Keep printable runs together so unbracketed paste stays fast,
+ * but emit control bytes independently so Enter, Backspace and Ctrl bindings
+ * retain their semantics.
+ */
+function parseTextKeypresses(value: string): ParsedInput[] {
+  const keys: ParsedInput[] = []
+  let printableStart = 0
+  const flushPrintable = (end: number) => {
+    if (end > printableStart) {
+      keys.push(parseKeypress(value.slice(printableStart, end)))
     }
-  } else if (input !== undefined && typeof input !== 'string') {
-    return String(input)
-  } else if (!input) {
-    return ''
-  } else {
-    return input
   }
+
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if (code > 0x1f && code !== 0x7f) {
+      continue
+    }
+    flushPrintable(index)
+    const control = value[index] === '\n' ? '\r' : value[index]!
+    keys.push(parseKeypress(control))
+    if (value[index] === '\r' && value[index + 1] === '\n') {
+      index++
+    }
+    printableStart = index + 1
+  }
+  flushPrintable(value.length)
+
+  return keys
 }
 
 export function parseMultipleKeypresses(
@@ -221,13 +240,31 @@ export function parseMultipleKeypresses(
   input: Buffer | string | null = ''
 ): [ParsedInput[], KeyParseState] {
   const isFlush = input === null
-  const inputString = isFlush ? '' : inputToString(input)
+  let decoder = prevState._decoder ?? new StringDecoder('utf8')
+  let inputString: string
+
+  if (isFlush) {
+    // StringDecoder emits U+FFFD here only for a genuinely incomplete final
+    // sequence. A normal split codepoint remains buffered between reads.
+    inputString = decoder.end()
+    decoder = new StringDecoder('utf8')
+  } else if (Buffer.isBuffer(input)) {
+    inputString = decoder.write(input)
+  } else {
+    // Runtime stdin is consistently either encoded strings or Buffers. If a
+    // caller switches representation, finish any buffered bytes first so
+    // characters cannot be reordered around the string chunk.
+    inputString = decoder.end() + input
+    decoder = new StringDecoder('utf8')
+  }
 
   // Get or create tokenizer
   const tokenizer = prevState._tokenizer ?? createTokenizer({ x10Mouse: true })
 
   // Tokenize the input
-  const tokens = isFlush ? tokenizer.flush() : tokenizer.feed(inputString)
+  const tokens = isFlush
+    ? [...(inputString ? tokenizer.feed(inputString) : []), ...tokenizer.flush()]
+    : tokenizer.feed(inputString)
 
   // Convert tokens to parsed keys, handling paste mode
   const keys: ParsedInput[] = []
@@ -283,7 +320,7 @@ export function parseMultipleKeypresses(
         const mouse = parseMouseEvent(resynthesized)
         keys.push(mouse ?? parseKeypress(resynthesized))
       } else {
-        keys.push(parseKeypress(token.value))
+        keys.push(...parseTextKeypresses(token.value))
       }
     }
   }
@@ -300,7 +337,8 @@ export function parseMultipleKeypresses(
     mode: inPaste ? 'IN_PASTE' : 'NORMAL',
     incomplete: tokenizer.buffer(),
     pasteBuffer,
-    _tokenizer: tokenizer
+    _tokenizer: tokenizer,
+    _decoder: decoder
   }
 
   return [keys, newState]

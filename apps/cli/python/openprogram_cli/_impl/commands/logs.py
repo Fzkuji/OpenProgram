@@ -1,12 +1,13 @@
 """``openprogram logs`` — inspect the various log files.
 
-OpenProgram writes to three log files in two different state dirs:
+OpenProgram writes three log files under the active profile's state directory
+(``~/.openprogram`` by default, or ``~/.openprogram-<profile>``):
 
-* ``~/.openprogram/worker.log`` — backend webui + worker stdout/stderr
-* ``~/.openprogram/logs/runtime.log`` — provider probe / detect /
+* ``worker.log`` — backend webui + worker stdout/stderr
+* ``logs/runtime.log`` — provider probe / detect /
   agent runtime diagnostic chatter (silent on the terminal,
   always written here so it's findable)
-* ``~/.openprogram/logs/ink-startup.log`` — Python startup chatter
+* ``logs/ink-startup.log`` — Python startup chatter
   during Ink TUI launch (warnings, provider probes that ran
   while stdio was dup2'd into this file)
 
@@ -32,8 +33,8 @@ from typing import Optional
 def _log_targets() -> list[tuple[str, Path]]:
     """Return ``[(name, path), ...]`` for every known log.
 
-    All under the canonical state dir (``~/.openprogram/``). worker.log
-    sits at the state-dir root; runtime/ink logs live in ``logs/``.
+    All are under the active profile state dir. ``worker.log`` sits at its
+    root; runtime/Ink logs live in ``logs/``.
     """
     from openprogram.paths import get_state_dir
     state = get_state_dir()

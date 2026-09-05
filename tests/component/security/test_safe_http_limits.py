@@ -161,7 +161,7 @@ def test_absent_or_false_content_length_cannot_bypass_decoded_cap(
 @pytest.mark.parametrize(
     ("encoding", "encoded"),
     [
-        (b"gzip", gzip.compress(b"decoded-too-large")),
+        (b"gzip", gzip.compress(b"decoded-too-large", mtime=0)),
         (b"deflate", __import__("zlib").compress(b"decoded-too-large")),
     ],
 )
@@ -183,7 +183,7 @@ def test_compressed_body_cap_counts_decoded_bytes(monkeypatch, encoding, encoded
 
 
 def test_async_compressed_body_cap_counts_decoded_bytes(monkeypatch):
-    encoded = gzip.compress(b"decoded-too-large")
+    encoded = gzip.compress(b"decoded-too-large", mtime=0)
     response = httpcore.Response(
         200,
         headers=[

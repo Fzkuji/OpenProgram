@@ -15,7 +15,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
-import { homedir } from 'os';
+import { tuiStateDir } from './stateDir.js';
 
 const SCHEMA_VERSION = 1;
 const NEW_KEY = '__new__';
@@ -26,14 +26,7 @@ interface DraftBlob {
 }
 
 function path(): string {
-  // Match openprogram.paths.get_state_dir() default (the Python side
-  // resolves to ~/.agentic) so a single source of truth holds across
-  // languages. Override via OPENPROGRAM_STATE_DIR env if the user has
-  // pointed the worker somewhere custom.
-  const stateDir = process.env.OPENPROGRAM_STATE_DIR
-    || process.env.AGENTIC_DIR
-    || join(homedir(), '.agentic');
-  return join(stateDir, 'tui_drafts.json');
+  return join(tuiStateDir(), 'tui_drafts.json');
 }
 
 function read(): DraftBlob {

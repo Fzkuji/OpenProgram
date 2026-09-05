@@ -20,8 +20,36 @@ jobs:
         run: uv sync --locked --extra dev
       - name: Ruff
         run: uv run --locked --extra dev ruff check openprogram tests scripts
+      - name: Release shell syntax
+        run: |
+          bash -n scripts/release/*.sh
+          dash -n scripts/install-release.sh scripts/release/install-release.sh
+          shellcheck --shell=bash \
+            scripts/release/archive-product-runtime.sh \
+            scripts/release/build-product-runtime.sh \
+            scripts/release/smoke-linux-runtime-baseline.sh
+          shellcheck --shell=sh \
+            scripts/install-release.sh \
+            scripts/release/install-release.sh
       - name: Repository contracts
         run: uv run --locked --extra dev python -m pytest -q tests/contracts
+      - name: Verify generated systemd user unit
+        run: |
+          unit_home="$(mktemp -d)"
+          export HOME="$unit_home"
+          export XDG_CONFIG_HOME="$unit_home/.config"
+          unit_path="$XDG_CONFIG_HOME/systemd/user/openprogram-worker.service"
+          uv run --locked --extra dev python - "$unit_path" <<'PY'
+          import sys
+          from pathlib import Path
+
+          from openprogram.worker.services.systemd import _build_unit
+
+          path = Path(sys.argv[1])
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(_build_unit(), encoding="utf-8")
+          PY
+          systemd-analyze verify "$unit_path"
       - name: Build docs site
         run: uv run --locked --with markdown-it-py --with mdit-py-plugins --with pygments python -m scripts.docs_site.build
       - name: Check docs landing page
@@ -137,6 +165,67 @@ jobs:
       - name: Enforce unit coverage floor
         run: uv run --locked --extra dev coverage report --show-missing --precision=6 --fail-under=40
 
+  windows-core:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x64
+          - runner: windows-11-vs2026-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install locked Python dependencies
+        run: uv sync --locked --extra dev
+      - name: Windows platform contracts
+        run: >-
+          uv run --locked --extra dev python -m pytest -q
+          tests/unit/core/test_windows_install_contract.py
+          tests/unit/core/test_windows_process.py
+          tests/unit/core/test_windows_release.py
+          tests/unit/core/test_windows_worker_service.py
+          tests/component/security/test_sandbox.py
+          tests/component/config/test_formal_release_updates.py
+          tests/unit/dag
+          tests/unit/agent/test_finalize_shadow_git.py
+          tests/component/webui/test_project_files.py
+          tests/component/webui/test_turn_files_ws.py
+          tests/component/config/test_upgrade_cmd.py
+          tests/component/store/test_backup_command.py
+          tests/component/store/test_backup_staged_restore.py
+
+  windows-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x64
+          - runner: windows-11-vs2026-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install Desktop dependencies and native modules
+        run: npm ci --workspace apps/desktop --include-workspace-root
+      - name: Windows Desktop checks
+        run: npm run check --workspace apps/desktop
+
   web:
     runs-on: ubuntu-latest
     steps:
@@ -177,6 +266,12 @@ jobs:
       - run: npm test
         working-directory: apps/cli
       - run: npm run build
+        working-directory: apps/cli
+      - name: Build standalone TUI
+        run: npm run build:standalone
+        working-directory: apps/cli
+      - name: Exercise standalone TUI in a real PTY
+        run: python3 ../../scripts/release/smoke-ink-tui-pty.py node dist/index-standalone.cjs
         working-directory: apps/cli
 
   desktop:

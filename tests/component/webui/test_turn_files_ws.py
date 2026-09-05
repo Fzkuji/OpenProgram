@@ -510,6 +510,15 @@ def test_workspace_review_snapshot_rejects_worktree_content_change(store, tmp_pa
 
 
 def test_workspace_review_page_stales_after_workspace_change(store, tmp_path, monkeypatch):
+    from openprogram.webui.ws_actions import turn_files_diff
+    original_git_output = turn_files_diff._git_output
+    git_calls = []
+
+    def counted_git_output(*args, **kwargs):
+        git_calls.append(args[1:])
+        return original_git_output(*args, **kwargs)
+
+    monkeypatch.setattr(turn_files_diff, "_git_output", counted_git_output)
     root = tmp_path / "workspace-page-repo"
     root.mkdir()
     subprocess.run(["git", "init", "-q", str(root)], check=True)
@@ -530,6 +539,7 @@ def test_workspace_review_page_stales_after_workspace_change(store, tmp_path, mo
     first = first_ws.sent[0]["data"]
     assert first["status"] == "ready"
     assert first["next_cursor"].startswith("rc_")
+    assert len(git_calls) <= 12, "review must batch Git reads rather than spawn per file"
 
     (root / "tracked_0.py").write_text("changed-after-page\n", encoding="utf-8")
     next_ws = FakeWS()

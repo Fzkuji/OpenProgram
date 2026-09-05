@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import stat
 from pathlib import Path
@@ -103,7 +104,7 @@ def test_marker_matches_the_regex_the_web_chip_actually_ships():
     its regex out of the shipped source and run the produced marker
     through it, so the two can't drift apart unnoticed."""
     src = (Path(__file__).resolve().parents[3]
-           / "apps/web/lib/attachment-marker.ts").read_text()
+           / "apps/web/lib/attachment-marker.ts").read_text(encoding="utf-8")
     body = re.search(r"const JSON_ATTACHED_MENTION =\s*\n\s*/(.+)/g;", src).group(1)
     ts_re = re.compile(body.replace("(?:", "(?:"))
     marker = att.format_marker("a.png", "/tmp/a.png", 20481)
@@ -158,7 +159,10 @@ def test_resolve_within_rejects_a_symlink_escaping_the_root(state, tmp_path):
     wd = state / "sessions" / "s1" / "workdir"
     wd.mkdir(parents=True)
     link = wd / "innocent.txt"
-    link.symlink_to(secret)
+    try:
+        link.symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable for this Windows account: {exc}")
     assert link.is_file()                       # the link itself resolves
     assert att.resolve_within(link, att.sendable_roots()) is None
 
@@ -322,7 +326,8 @@ def test_reserved_attachment_names_do_not_overwrite_internal_indexes(
     assert saved.read_bytes() == body
     index = saved.parent / ".opdedup.json"
     assert isinstance(json.loads(index.read_text()), dict)
-    assert stat.S_IMODE(index.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(index.stat().st_mode) == 0o600
 
 
 def test_same_name_browser_documents_each_get_a_saved_path(state):
@@ -451,7 +456,10 @@ def test_send_file_refuses_a_symlink_out_of_the_roots(in_session, tmp_path):
     secret = tmp_path / "id_rsa"
     secret.write_text("PRIVATE KEY")
     link = in_session / "chart.png"
-    link.symlink_to(secret)
+    try:
+        link.symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable for this Windows account: {exc}")
     assert _send(link).startswith("Error:")
     assert sf.drain() == []
 

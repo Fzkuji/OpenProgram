@@ -10,6 +10,32 @@ from pathlib import Path
 from .turn_files_shared import _MAX_DIFF_BYTES, _valid_turn_id
 
 
+_DIR_FD_CAPABLE = all(fn in os.supports_dir_fd for fn in (os.open, os.stat))
+
+
+def _is_reparse_point(info: os.stat_result) -> bool:
+    attributes = getattr(info, "st_file_attributes", 0)
+    flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return bool(flag and attributes & flag)
+
+
+def _validate_directory_path(path: Path) -> None:
+    """Reject symlink/junction traversal without relying on ``dir_fd``."""
+
+    absolute = Path(os.path.abspath(path))
+    current = Path(absolute.parts[0])
+    for component in (None, *absolute.parts[1:]):
+        if component is not None:
+            current = current / component
+        info = os.lstat(current)
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or _is_reparse_point(info)
+        ):
+            raise OSError("unsafe recovery directory")
+
+
 def _same_state(first: dict, second: dict) -> bool:
     if first.get("kind") != second.get("kind"):
         return False
@@ -60,6 +86,27 @@ def _state_bytes(session_dir: Path, turn_id: str, state: dict) -> tuple[bytes, s
     ):
         raise OSError("unsafe recovery blob reference")
     directory = turn_backup_dir(session_dir, turn_id)
+    if not _DIR_FD_CAPABLE:
+        _validate_directory_path(directory)
+        blob = directory / blob_ref
+        info = os.lstat(blob)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or _is_reparse_point(info)
+            or info.st_nlink != 1
+        ):
+            raise OSError("unsafe recovery blob")
+        if state.get("size") is not None and info.st_size != state.get("size"):
+            raise OSError("recovery blob size mismatch")
+        if info.st_size > _MAX_DIFF_BYTES:
+            return b"", "large"
+        raw = blob.read_bytes()
+        if f"sha256:{hashlib.sha256(raw).hexdigest()}" != state.get("digest"):
+            raise OSError("recovery blob digest mismatch")
+        if b"\0" in raw:
+            return b"", "binary"
+        return raw, "available"
     directory_fd = _open_directory_no_symlinks(directory)
     try:
         descriptor = os.open(

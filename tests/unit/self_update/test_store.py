@@ -27,7 +27,7 @@ def _request(update_id: str = "su_test") -> UpdateRequest:
         origin_turn_id="turn-1",
         origin_assistant_id="assistant-1",
         agent_id="default",
-        repo="/tmp/openprogram",
+        repo=str(Path("/tmp/openprogram").resolve()),
         worktree_id="wt-1",
         base_sha="1" * 40,
         candidate_sha="2" * 40,
@@ -48,8 +48,9 @@ def test_create_persists_private_record_and_rejects_second_active(
     assert state.phase is UpdatePhase.PREPARING
     assert store.load_active().request.update_id == "su_test"
     assert json.loads((tmp_path / "active.json").read_text())["update_id"] == "su_test"
-    assert (tmp_path / "su_test" / "request.json").stat().st_mode & 0o777 == 0o600
-    assert (tmp_path / "su_test").stat().st_mode & 0o777 == 0o700
+    from openprogram._compat import user_private_metadata
+    assert user_private_metadata((tmp_path / "su_test" / "request.json").stat(), exact_mode=0o600)
+    assert user_private_metadata((tmp_path / "su_test").stat(), exact_mode=0o700)
     with pytest.raises(ActiveUpdateError):
         store.create(_request("su_other"))
 

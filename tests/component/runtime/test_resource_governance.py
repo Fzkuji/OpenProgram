@@ -36,7 +36,12 @@ def _worker_lock_is_held(monkeypatch):
     )
 
 
-def _admit_fanout_process(db_path, index, start, output) -> None:
+def _admit_fanout_process(db_path, index, start, output, fanout_limit=5) -> None:
+    from openprogram import setup
+
+    setup._read_config = lambda: {
+        "agent": {"max_spawn_depth": 0, "max_spawn_fanout": fanout_limit}
+    }
     start.wait()
     resolved = resolve_resource_limits(ResourceLimits(), scheduler_capacity=32)
     governor = ResourceGovernor(
@@ -819,7 +824,8 @@ def test_fanout_admission_is_atomic_for_24_processes(
         "openprogram.setup._read_config",
         lambda: {"agent": {"max_spawn_depth": 0, "max_spawn_fanout": 5}},
     )
-    ctx = multiprocessing.get_context("fork")
+    method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
+    ctx = multiprocessing.get_context(method)
     start = ctx.Event()
     output = ctx.Queue()
     db_path = tmp_path / "usage.db"
@@ -829,7 +835,7 @@ def test_fanout_admission_is_atomic_for_24_processes(
     processes = [
         ctx.Process(
             target=_admit_fanout_process,
-            args=(db_path, index, start, output),
+            args=(db_path, index, start, output, 5),
         )
         for index in range(24)
     ]

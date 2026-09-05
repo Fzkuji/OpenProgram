@@ -53,7 +53,7 @@ def _reclaim_web_port(port: int) -> None:
     Next.js server, never anything else listening on that port.
 
     Cross-platform via the helpers above — POSIX uses lsof / proc;
-    Windows uses netstat / wmic.
+    Windows uses netstat plus the built-in PowerShell CIM provider.
     """
     pids = _pids_on_port(port)
     if not pids:
@@ -152,7 +152,7 @@ def _ensure_built(wd: Path, *, backend_port: int) -> bool:
     if shutil.which("npm") is None:
         print("[worker] web: npm not found in PATH; can't build frontend")
         return False
-    from openprogram._compat import node_tool_cmd
+    from openprogram._compat import node_tool_cmd, no_window_creation_flags
 
     if not build_id.exists():
         node_modules = wd / "node_modules"
@@ -234,6 +234,7 @@ def start_web_frontend(
             env=env,
             stdout=sys.stdout,
             stderr=sys.stderr,
+            creationflags=no_window_creation_flags(),
         )
     except OSError as e:
         print(f"[worker] web: failed to spawn next start: {e}")
@@ -328,6 +329,7 @@ def _start_build_id_watcher(
                     env=env,
                     stdout=sys.stdout,
                     stderr=sys.stderr,
+                    creationflags=no_window_creation_flags(),
                 )
                 _set_live_proc(new_proc)
                 print(f"[worker] web: respawned next (PID {new_proc.pid})")

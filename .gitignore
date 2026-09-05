@@ -92,6 +92,7 @@ openprogram/providers/_catalog/fetched/
 .superpowers/
 docs/_site/
 docs/_site.tmp/
+docs/_site.build.lock
 merge-x/
 
 # Generated reference pages (rebuilt by scripts/docs_site/generate_reference.py)

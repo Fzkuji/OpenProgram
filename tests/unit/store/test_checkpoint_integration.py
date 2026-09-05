@@ -205,7 +205,10 @@ def test_write_rejects_symlink_without_changing_target(turn_ctx, tmp_path):
     target = tmp_path / "target.txt"
     target.write_text("original\n", encoding="utf-8")
     alias = tmp_path / "alias.txt"
-    alias.symlink_to(target)
+    try:
+        alias.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
     _run_tool("read", {"file_path": str(alias)})
 
     out = _run_tool("write", {"file_path": str(alias), "content": "changed\n"})
@@ -241,7 +244,10 @@ def test_apply_patch_preflights_all_aliases_before_writing(turn_ctx, tmp_path):
     target = tmp_path / "target.py"
     target.write_text("target = 1\n", encoding="utf-8")
     alias = tmp_path / "alias.py"
-    alias.symlink_to(target)
+    try:
+        alias.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
     _run_tool("read", {"file_path": str(safe)})
     _run_tool("read", {"file_path": str(alias)})
     patch = (

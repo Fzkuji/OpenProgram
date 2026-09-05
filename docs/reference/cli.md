@@ -22,13 +22,15 @@ openprogram --profile <name>     # state-directory profile, reroutes to ~/.openp
 | `--print PROMPT` | One-shot prompt; prints the reply and exits |
 | `--profile PROFILE` | State-directory profile, equivalent to the `OPENPROGRAM_PROFILE` environment variable |
 | `--resume SESSION_ID` | Resume a session; find ids with `openprogram sessions list` or the Web UI sidebar |
+| `--no-alt-screen` | Render the TUI inline and preserve terminal scrollback |
+| `--screen-reader` | Use the inline assistive-technology mode without mouse tracking |
 
 ## Chat and running
 
 | Command | What it does | Key flags |
 |------|------|----------|
 | `openprogram` | Open the chat; a bare run first asks terminal UI vs web UI, auto-launches a worker if none is running | — |
-| `openprogram tui` (alias `chat`) | Launch the terminal UI directly, skipping the surface prompt (Ink or Python terminal UI on supported macOS/Linux installs; Rich remains available only to unsupported Windows source checkouts) | `--print`, `--resume` also work after the verb |
+| `openprogram tui` (alias `chat`) | Launch the Ink terminal UI directly on Windows, macOS, or Linux; terminals without raw input fall back to Rich | `--print`, `--resume`, `--no-alt-screen`, and `--screen-reader` also work after the verb |
 | `openprogram web` | Start the service and open the browser UI (`http://localhost:18100`) | `--port` (default: stored pref, then 18100), `--web-port` (legacy alias for the same single port), `--no-browser` |
 
 ## Background service

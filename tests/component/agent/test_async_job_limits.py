@@ -8,6 +8,7 @@ import pytest
 
 from tests.component.agent.async_job_support import (
     _FakeMonotonic,
+    WORKER_START_TIMEOUT,
     fake_worker,
     store_fixture,
 )
@@ -55,7 +56,7 @@ def test_queued_cancel_does_not_cancel_unrelated_session_runtime(
         queued = runner.spawn_job(
             session_id="p2", prompt="queued", agent_id="main",
         )
-        assert fake_worker[3].wait(1.0)
+        assert fake_worker[3].wait(WORKER_START_TIMEOUT)
 
         runner.cancel_execution(queued)
 
@@ -336,7 +337,7 @@ def test_runtime_budget_moves_live_job_to_stopping_until_worker_exits(
         job_id = runner.spawn_job(
             session_id="p1", prompt="stubborn", agent_id="main",
         )
-        assert entered.wait(1.0)
+        assert entered.wait(WORKER_START_TIMEOUT)
         clock.advance(1.1)
         def admission_state():
             return ledger.connection().execute(
@@ -393,7 +394,7 @@ def test_idle_budget_resets_only_after_meaningful_activity(
         job_id = runner.spawn_job(
             session_id="p1", prompt="idle", agent_id="main",
         )
-        assert fake_worker[3].wait(1.0)
+        assert fake_worker[3].wait(WORKER_START_TIMEOUT)
         clock.advance(0.75)
         assert runner.record_job_activity(job_id, "transport_keepalive") is False
         assert runner.record_job_activity(job_id, "provider_data") is True
@@ -442,7 +443,7 @@ def test_bounded_operation_timeout_clamps_and_rejects_unbounded_strict_work(
         job_id = runner.spawn_job(
             session_id="p1", prompt="bounded", agent_id="main",
         )
-        assert fake_worker[3].wait(1.0)
+        assert fake_worker[3].wait(WORKER_START_TIMEOUT)
 
         assert runner.bounded_operation_timeout(job_id, 8.0) == 4.0
         clock.advance(3.0)

@@ -27,24 +27,8 @@ _TERMINAL_STATUSES = ("completed", "conflict", "error")
 
 def process_start_identity(pid: int | None = None) -> str | None:
     """Return a PID-reuse-resistant process start token when available."""
-    pid = os.getpid() if pid is None else pid
-    proc_stat = Path(f"/proc/{pid}/stat")
-    try:
-        fields = proc_stat.read_text(encoding="ascii").split()
-        if len(fields) > 21:
-            return f"proc:{fields[21]}"
-    except (OSError, UnicodeError, ValueError):
-        pass
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "lstart="],
-            check=False, capture_output=True, text=True, timeout=1,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    value = result.stdout.strip()
-    return f"ps:{value}" if result.returncode == 0 and value else None
+    from openprogram._compat import process_start_token
+    return process_start_token(os.getpid() if pid is None else pid)
 
 
 def current_owner_identity() -> tuple[str, int, str | None]:

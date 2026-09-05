@@ -5,6 +5,13 @@ import threading
 
 import pytest
 
+from tests.support.waiting import wait_until
+
+
+# Starting a job includes a durable jobs.json write and a session Git commit.
+# Same-session commits are intentionally serialized; Windows filesystem and
+# Defender latency can make a healthy pickup exceed the old one-second waits.
+WORKER_START_TIMEOUT = 5.0
 
 class _FakeMonotonic:
     def __init__(self) -> None:

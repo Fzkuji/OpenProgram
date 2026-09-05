@@ -33,6 +33,10 @@ from openprogram.mcp.config import (
 
 
 BEARER = "bearer-secret-token-value"
+POSIX_FILE_MODES = pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows access control is not represented by POSIX mode bits",
+)
 CLIENT_SECRET = "oauth-client-secret-value"
 ENV_SECRET = "ghp_env_secret_value_here"
 HEADER_SECRET = "tenant-signed-value-here"
@@ -443,6 +447,7 @@ def test_catalog_update_missing_entry_hides_signed_source_url(monkeypatch, state
 # --- file permissions -------------------------------------------------
 
 
+@POSIX_FILE_MODES
 def test_saved_config_is_owner_only(state_dir):
     path = save_configs([local_config()])
 
@@ -452,6 +457,7 @@ def test_saved_config_is_owner_only(state_dir):
     assert not list(state_dir.glob("*.tmp"))
 
 
+@POSIX_FILE_MODES
 def test_existing_world_readable_config_can_be_saved(state_dir):
     path = save_configs([local_config()])
     os.chmod(path, 0o644)

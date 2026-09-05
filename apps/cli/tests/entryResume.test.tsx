@@ -13,6 +13,10 @@ it('passes the Python launcher resume session to the existing TUI', async () => 
   vi.stubEnv('OPENPROGRAM_CONV', 'saved-goal-session');
   const sigint = process.listeners('SIGINT');
   const sigterm = process.listeners('SIGTERM');
+  const stdinTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+  const stdoutTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+  Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+  Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
   try {
     await import('../src/index.js');
     expect(capture.render).toHaveBeenCalledOnce();
@@ -21,6 +25,10 @@ it('passes the Python launcher resume session to the existing TUI', async () => 
     };
     expect(tree.props.children.props.initialConversation).toBe('saved-goal-session');
   } finally {
+    if (stdinTTY) Object.defineProperty(process.stdin, 'isTTY', stdinTTY);
+    else delete process.stdin.isTTY;
+    if (stdoutTTY) Object.defineProperty(process.stdout, 'isTTY', stdoutTTY);
+    else delete process.stdout.isTTY;
     vi.unstubAllEnvs();
     for (const fn of process.listeners('SIGINT')) if (!sigint.includes(fn)) process.removeListener('SIGINT', fn);
     for (const fn of process.listeners('SIGTERM')) if (!sigterm.includes(fn)) process.removeListener('SIGTERM', fn);

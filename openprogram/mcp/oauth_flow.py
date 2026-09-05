@@ -143,10 +143,9 @@ def _can_open_browser() -> bool:
     WAYLAND_DISPLAY is set (xdg-open inside a bare ssh shell either
     errors or pops on the remote host's screen, neither useful).
     """
-    if sys.platform in ("darwin", "win32"):
-        return True
-    return bool(os.environ.get("DISPLAY") or
-                os.environ.get("WAYLAND_DISPLAY"))
+    from openprogram._compat import can_open_browser
+
+    return can_open_browser()
 
 
 class LocalhostCallback:

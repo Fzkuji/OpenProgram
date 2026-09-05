@@ -23,7 +23,16 @@ def _write_private(path, value: str) -> None:
     path.chmod(0o600)
 
 
+def _symlink_to_or_skip(link: Path, target: Path, *, directory: bool = False) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable for this Windows account: {exc}")
+
+
 def _foreign_writable_temp() -> Path:
+    if not hasattr(os, "geteuid"):
+        pytest.skip("foreign-owner POSIX test is not meaningful on Windows")
     for candidate in (Path("/private/tmp"), Path(tempfile.gettempdir()).resolve()):
         try:
             info = candidate.stat()
@@ -56,7 +65,8 @@ def test_create_token_creates_parent_private_file_and_fsyncs(tmp_path, monkeypat
 
     assert re.fullmatch(r"[A-Za-z0-9_-]{43}", token)
     assert target.read_text(encoding="ascii") == token
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert fsynced
     assert not list(target.parent.glob(".mcp_server_token.*.tmp"))
 
@@ -111,7 +121,7 @@ def test_create_token_refuses_existing_symlink_without_touching_target(tmp_path)
     destination = tmp_path / "destination"
     destination.write_text("do-not-touch", encoding="ascii")
     target = tmp_path / "mcp_server_token"
-    target.symlink_to(destination)
+    _symlink_to_or_skip(target, destination)
 
     with pytest.raises(auth.MCPTokenError, match="already exists"):
         auth.create_token(target)
@@ -128,7 +138,7 @@ def test_create_token_rejects_real_symlink_ancestor(
     actual = tmp_path / "actual"
     actual.mkdir(mode=0o700)
     linked = tmp_path / "linked"
-    linked.symlink_to(actual, target_is_directory=True)
+    _symlink_to_or_skip(linked, actual, directory=True)
     if use_default_path:
         paths = importlib.import_module("openprogram.paths")
         monkeypatch.setattr(paths, "get_state_dir", lambda: linked)
@@ -148,6 +158,11 @@ def test_create_token_rejects_wide_parent_directory(tmp_path):
     parent.mkdir(mode=0o700)
     parent.chmod(0o755)
     target = parent / "mcp_server_token"
+
+    if os.name == "nt":
+        token = auth.create_token(target)
+        assert target.read_text(encoding="ascii") == token
+        return
 
     with pytest.raises(auth.MCPTokenError, match="^could not create MCP server token$"):
         auth.create_token(target)
@@ -169,6 +184,7 @@ def test_create_token_rejects_foreign_parent_directory():
         target.unlink(missing_ok=True)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows does not mutate POSIX mode")
 def test_create_token_removes_its_published_inode_if_final_verification_fails(
     tmp_path, monkeypatch
 ):
@@ -187,6 +203,7 @@ def test_create_token_removes_its_published_inode_if_final_verification_fails(
     assert not list(tmp_path.glob(".mcp_server_token.*.tmp"))
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX dir_fd swap contract")
 def test_create_token_cleans_temp_through_parent_fd_after_post_write_swap(
     tmp_path, monkeypatch
 ):
@@ -246,7 +263,8 @@ def test_real_concurrent_creators_publish_exactly_one_token(tmp_path):
     assert len(created) == 1
     assert refused == ["MCP server token already exists"] * (workers - 1)
     assert target.read_text(encoding="ascii") == created[0]
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert not list(tmp_path.glob(".mcp_server_token.*.tmp"))
 
 
@@ -270,7 +288,13 @@ def test_authentication_rejects_unsafe_or_missing_paths(tmp_path, setup, expecte
     elif setup == "symlink":
         source = tmp_path / "source"
         _write_private(source, "stored-token")
-        target.symlink_to(source)
+        _symlink_to_or_skip(target, source)
+
+    if setup == "wrong-mode" and os.name == "nt":
+        assert auth.authenticate_from_environment(
+            {auth.MCP_TOKEN_ENV: "stored-token"}, path=target
+        ) == "6f69975abe580db3"
+        return
 
     with pytest.raises(auth.MCPTokenError, match=f"^{expected}$"):
         auth.authenticate_from_environment(
@@ -287,7 +311,7 @@ def test_authentication_rejects_real_symlink_ancestor(
     actual.mkdir(mode=0o700)
     _write_private(actual / "mcp_server_token", "stored-token")
     linked = tmp_path / "linked"
-    linked.symlink_to(actual, target_is_directory=True)
+    _symlink_to_or_skip(linked, actual, directory=True)
     if use_default_path:
         paths = importlib.import_module("openprogram.paths")
         monkeypatch.setattr(paths, "get_state_dir", lambda: linked)
@@ -311,6 +335,12 @@ def test_authentication_rejects_wide_parent_directory(tmp_path):
     target = parent / "mcp_server_token"
     _write_private(target, "stored-token")
     parent.chmod(0o755)
+
+    if os.name == "nt":
+        assert auth.authenticate_from_environment(
+            {auth.MCP_TOKEN_ENV: "stored-token"}, path=target
+        ) == "6f69975abe580db3"
+        return
 
     with pytest.raises(
         auth.MCPTokenError,
@@ -342,6 +372,7 @@ def test_authentication_rejects_foreign_parent_directory():
         target.unlink(missing_ok=True)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlink swap contract")
 def test_authentication_revalidates_parent_path_after_read(tmp_path, monkeypatch):
     auth = _auth()
     parent = tmp_path / "parent"
@@ -401,6 +432,7 @@ def test_authentication_revalidates_token_path_inode_after_read(tmp_path, monkey
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX uid contract")
 def test_authentication_rejects_file_not_owned_by_current_user(tmp_path, monkeypatch):
     auth = _auth()
     target = tmp_path / "mcp_server_token"

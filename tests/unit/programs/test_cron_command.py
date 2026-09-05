@@ -132,12 +132,14 @@ def test_worker_spawn_uses_frozen_command_and_explicit_policy(
     assert proc is not None
     proc.wait(timeout=5)
     assert marker.exists()
-    assert marker.read_text().strip() == "ok"
+    assert marker.read_text(encoding="utf-8").strip() == "ok"
     assert not tampered.exists()
     assert captured["cwd"] == str(tmp_path.resolve())
     assert captured["force_sandbox"] is True
     assert captured["policy"] is not None
-    assert entry["execution"]["policy_hash"] in next(log_dir.iterdir()).read_text()
+    assert entry["execution"]["policy_hash"] in next(log_dir.iterdir()).read_text(
+        encoding="utf-8"
+    )
 
 
 def test_worker_direct_command_uses_real_forced_sandbox(sched, tmp_path):
@@ -152,8 +154,8 @@ def test_worker_direct_command_uses_real_forced_sandbox(sched, tmp_path):
     proc = worker._spawn(entry, str(log_dir))
     assert proc is not None
     exit_code = proc.wait(timeout=10)
-    assert exit_code == 0, next(log_dir.iterdir()).read_text()
-    assert marker.read_text() == "real"
+    assert exit_code == 0, next(log_dir.iterdir()).read_text(encoding="utf-8")
+    assert marker.read_text(encoding="utf-8") == "real"
 
 
 def test_worker_direct_refuses_when_sandbox_is_unavailable(
@@ -165,7 +167,7 @@ def test_worker_direct_refuses_when_sandbox_is_unavailable(
     monkeypatch.setattr(worker._sandbox, "unavailable_reason", lambda: "missing")
     assert worker._spawn(entry, str(tmp_path / "refusal-logs")) is None
     assert not marker.exists()
-    log = next((tmp_path / "refusal-logs").iterdir()).read_text()
+    log = next((tmp_path / "refusal-logs").iterdir()).read_text(encoding="utf-8")
     assert "refused" in log.lower() and "missing" in log
 
 
@@ -174,7 +176,7 @@ def test_worker_refuses_a_tampered_execution_spec(sched, tmp_path):
     entry = cron_tool._load(str(sched))[0]
     entry["execution"]["command"] = "echo changed"
     assert worker._spawn(entry, str(tmp_path / "logs")) is None
-    log = next((tmp_path / "logs").iterdir()).read_text()
+    log = next((tmp_path / "logs").iterdir()).read_text(encoding="utf-8")
     assert "refused" in log.lower() and "spec hash" in log.lower()
 
 
@@ -188,7 +190,7 @@ def test_worker_refuses_rehashed_tampering_without_owner_signature(sched, tmp_pa
     }
     entry["execution"]["spec_hash"] = cron_tool._json_hash(unsigned)
     assert worker._spawn(entry, str(tmp_path / "logs")) is None
-    log = next((tmp_path / "logs").iterdir()).read_text()
+    log = next((tmp_path / "logs").iterdir()).read_text(encoding="utf-8")
     assert "signature" in log.lower()
 
 
@@ -219,7 +221,9 @@ def test_prompt_job_rebuilds_a_noninteractive_cron_turn(sched, tmp_path,
     assert req.interaction == "non-interactive"
     assert req.principal_id == spec["job_authority"]["principal_id"]
     assert req.authority_tier == "owner"
-    assert "policy_hash=" + spec["policy_hash"] in log_path.read_text()
+    assert "policy_hash=" + spec["policy_hash"] in log_path.read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.mark.parametrize(("rule_kind", "reason_code"), [
@@ -349,7 +353,9 @@ def test_worker_spawn_prompt_uses_managed_prompt_entry(
     proc = worker._spawn(entry, str(tmp_path / "prompt-logs"))
     assert proc is not None
     assert seen["req"].source == "scheduler"
-    assert "done" in next((tmp_path / "prompt-logs").iterdir()).read_text()
+    assert "done" in next((tmp_path / "prompt-logs").iterdir()).read_text(
+        encoding="utf-8"
+    )
 
 
 def test_worker_spawn_returns_none_for_empty_entry(tmp_path):

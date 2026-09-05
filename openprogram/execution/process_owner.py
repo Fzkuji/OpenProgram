@@ -27,12 +27,9 @@ def process_owner_may_be_alive(lease, *, lease_expires_at=None):
     pid = owner.get("pid")
     if not isinstance(pid, int) or pid <= 0:
         return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+    from openprogram._compat import process_alive
+    if not process_alive(pid):
         return False
-    except (PermissionError, OSError):
-        return True
     actual_start = process_start_identity(pid)
     expected_start = owner.get("start")
     if actual_start is None or expected_start is None:

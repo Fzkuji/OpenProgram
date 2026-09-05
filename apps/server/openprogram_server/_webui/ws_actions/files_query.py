@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import errno
 import json
+import ntpath
 import os
 import posixpath
 import secrets
@@ -14,6 +15,9 @@ import stat
 import threading
 import time
 from dataclasses import dataclass
+
+from openprogram._compat import (directory_handle, directory_child,
+                                 directory_close, directory_duplicate)
 
 from . import files_shared as _shared
 from .files_shared import _resolve
@@ -63,12 +67,13 @@ class _QueryLimitError(OSError):
 
 def _query_path(path: object) -> tuple[str | None, str | None]:
     """Return a canonical project-relative path for query actions."""
-    if not isinstance(path, str) or os.path.isabs(path) or "\x00" in path:
+    if (not isinstance(path, str) or ntpath.splitdrive(path)[0]
+            or path.startswith(("/", "\\")) or "\x00" in path):
         return None, "path escapes project root"
-    normalized = os.path.normpath(path or "")
+    normalized = posixpath.normpath(path.replace("\\", "/") or "")
     if normalized in ("", "."):
         return "", None
-    if normalized == ".." or normalized.startswith(".." + os.sep):
+    if normalized == ".." or normalized.startswith("../"):
         return None, "path escapes project root"
     return normalized, None
 
@@ -288,27 +293,29 @@ def _open_query_dir(project_id: str, path: str) -> int:
             break
         if stat.S_ISLNK(path_stat.st_mode):
             raise _UnsafeQueryPath("path contains a symbolic link")
-    fd = os.open(root, _directory_flags())
+    fd = directory_handle(root)
     try:
         for part in path.split("/") if path else ():
             try:
-                child = os.open(part, _directory_flags(), dir_fd=fd)
+                child = directory_child(fd, part)
             except OSError as exc:
                 if getattr(exc, "errno", None) == getattr(errno, "ELOOP", 40):
                     raise _UnsafeQueryPath("path contains a symbolic link") from exc
                 raise
-            os.close(fd)
+            directory_close(fd)
             fd = child
         return fd
     except Exception:
-        os.close(fd)
+        directory_close(fd)
         raise
 
 
 def _open_child_dir(parent_fd: int, name: str) -> int:
     try:
-        return os.open(name, _directory_flags(), dir_fd=parent_fd)
+        return directory_child(parent_fd, name)
     except OSError as exc:
+        if isinstance(parent_fd, str):
+            raise
         try:
             path_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
         except OSError:
@@ -319,15 +326,15 @@ def _open_child_dir(parent_fd: int, name: str) -> int:
 
 
 def _open_relative_dir(root_fd: int, relative_dir: str) -> int:
-    fd = os.dup(root_fd)
+    fd = directory_duplicate(root_fd)
     try:
         for part in relative_dir.split("/") if relative_dir else ():
             child = _open_child_dir(fd, part)
-            os.close(fd)
+            directory_close(fd)
             fd = child
         return fd
     except Exception:
-        os.close(fd)
+        directory_close(fd)
         raise
 
 
@@ -428,7 +435,8 @@ def _search_rows(project_id: str, path: str, query: str, mode: str,
       while pending:
         relative_dir = pending.pop()
         try:
-            directory_fd = _open_relative_dir(root_fd, relative_dir)
+            within_root = posixpath.relpath(relative_dir or ".", path or ".")
+            directory_fd = _open_relative_dir(root_fd, "" if within_root == "." else within_root)
         except _UnsafeQueryPath as exc:
             raise OSError(errno.ELOOP, str(exc)) from exc
         try:
@@ -483,12 +491,12 @@ def _search_rows(project_id: str, path: str, query: str, mode: str,
                 if is_dir:
                     pending.append(rel)
         finally:
-            os.close(directory_fd)
+            directory_close(directory_fd)
     except OSError as exc:
         code, message = _fs_query_failure(exc)
         return [], (), (code, message)
     finally:
-        os.close(root_fd)
+        directory_close(root_fd)
     rows.sort(key=lambda item: (item[0], item[1]["path"].casefold(), item[1]["path"]))
     return [row for _rank, row in rows], tuple(sorted(basis)), None
 
@@ -595,7 +603,7 @@ def _tree_query(project_id: str, path: object, page_size: object,
                                 message=message, kind="directory")
         finally:
             try:
-                os.close(fd)
+                directory_close(fd)
             except OSError:
                 pass
         if basis != snapshot.basis:
@@ -619,7 +627,7 @@ def _tree_query(project_id: str, path: object, page_size: object,
         return _query_error(project_id, canonical_path or "", code=code,
                             message=message, kind="directory")
     finally:
-        os.close(fd)
+        directory_close(fd)
     if len(entries) > _setting("_QUERY_MAX_SNAPSHOT_ITEMS"):
         return _query_error(project_id, canonical_path or "",
                             code="LIMIT_EXCEEDED", message="snapshot is too large",

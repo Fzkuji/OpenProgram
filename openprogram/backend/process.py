@@ -2,27 +2,24 @@
 
 from __future__ import annotations
 
-import os
-import signal
 import subprocess
 import time
 
+from openprogram._compat import ProcessTreeOwner
 from openprogram.agentic_programming.function import CancelledError, check_cancelled
+from openprogram.backend.base import decode_maybe
 
 
 def run_command(
     args: str | list[str],
     *,
+    tree: ProcessTreeOwner,
     shell: bool,
     timeout: float,
     cwd: str | None = None,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Preserve subprocess.run output/timeout semantics while checking cancellation.
-
-    Each POSIX invocation owns a new process group. Cleanup targets that group
-    even if the shell exited while a child still holds an output pipe open.
-    """
+    """Collect an owned process tree, preserving bounded timeout/cleanup behavior."""
     try:
         check_cancelled()
     except CancelledError:
@@ -30,7 +27,7 @@ def run_command(
             args, -1, "", "[cancelled before process start]"
         )
     deadline = time.monotonic() + timeout
-    with subprocess.Popen(
+    proc = tree.popen(
         args,
         shell=shell,
         cwd=cwd,
@@ -38,46 +35,60 @@ def run_command(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        start_new_session=os.name != "nt",
-    ) as proc:
-        try:
-            while True:
-                check_cancelled()
-                remaining = deadline - time.monotonic()
-                try:
-                    stdout, stderr = proc.communicate(
-                        timeout=max(0, min(0.1, remaining))
-                    )
-                    return subprocess.CompletedProcess(
-                        args, proc.returncode, stdout, stderr
-                    )
-                except subprocess.TimeoutExpired:
-                    if time.monotonic() >= deadline:
-                        raise subprocess.TimeoutExpired(args, timeout)
-        except BaseException as exc:
-            if os.name == "nt":
-                try:
-                    subprocess.run(
-                        ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                        capture_output=True,
-                        timeout=5,
-                    )
-                finally:
-                    if proc.poll() is None:
-                        proc.kill()
-            else:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            stdout, stderr = proc.communicate()
-            if isinstance(exc, CancelledError):
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        while True:
+            check_cancelled()
+            remaining = deadline - time.monotonic()
+            try:
+                stdout, stderr = proc.communicate(timeout=max(0, min(0.1, remaining)))
+                tree.release()
                 return subprocess.CompletedProcess(
-                    args,
-                    proc.returncode or -1,
-                    stdout,
-                    stderr + "\n[cancelled; process terminated]",
+                    args, proc.returncode, stdout, stderr
                 )
-            if isinstance(exc, subprocess.TimeoutExpired):
-                exc.output, exc.stderr = stdout, stderr
-            raise
+            except subprocess.TimeoutExpired as exc:
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(
+                        args, timeout, exc.stdout, exc.stderr
+                    )
+    except BaseException as exc:
+        terminated = tree.terminate()
+        if not terminated:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+        drained = False
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+            drained = True
+        except subprocess.TimeoutExpired as drain_error:
+            # Never close pipes held by communicate's Windows reader thread.
+            # A bounded drain may return partial output, but does not confirm
+            # that a cancelled tool's effects have finished.
+            try:
+                proc.wait(timeout=1)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            stdout = decode_maybe(
+                drain_error.stdout
+                if drain_error.stdout is not None
+                else getattr(exc, "stdout", None)
+            )
+            stderr = decode_maybe(
+                drain_error.stderr
+                if drain_error.stderr is not None
+                else getattr(exc, "stderr", None)
+            )
+        if isinstance(exc, CancelledError) and terminated and drained:
+            return subprocess.CompletedProcess(
+                args,
+                proc.returncode or -1,
+                stdout or "",
+                (stderr or "") + "\n[cancelled; process terminated]",
+            )
+        if isinstance(exc, subprocess.TimeoutExpired):
+            exc.output, exc.stderr = stdout, stderr
+        raise

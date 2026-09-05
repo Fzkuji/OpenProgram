@@ -3,14 +3,18 @@ from __future__ import annotations
 import json
 import errno
 import os
-import pty
+import re
 import subprocess
 import sys
 import textwrap
-import tty
+
+if sys.platform != "win32":
+    import pty
+    import tty
 
 import pytest
 
+from openprogram._compat import InteractivePty
 from openprogram import cli
 from openprogram.providers.structured_output import (
     StructuredOutputUnsupportedError,
@@ -176,12 +180,35 @@ def _run_one_shot_in_pty(*, response_format, reply):
         )
         """
     )
-    master_fd, slave_fd = pty.openpty()
-    tty.setraw(slave_fd)
     env = os.environ.copy()
     env["TERM"] = "xterm-256color"
     env["COLORTERM"] = "truecolor"
     env.pop("NO_COLOR", None)
+    if sys.platform == "win32":
+        terminal = InteractivePty([sys.executable, "-c", script], env=env)
+        chunks = []
+        try:
+            while terminal.alive:
+                chunk = terminal.read_nonblocking(timeout=0.1)
+                if chunk:
+                    chunks.append(chunk)
+            returncode = terminal.wait(timeout=10)
+            while True:
+                chunk = terminal.read_nonblocking(timeout=0.05)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        finally:
+            terminal.close()
+        output = "".join(chunks).replace("\r\n", "\n")
+        # ConPTY's host negotiation writes terminal-control CSI sequences
+        # before the child output. A real terminal consumes them; strip them
+        # here so the assertion compares the user-visible text.
+        output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+        return output, "", returncode
+
+    master_fd, slave_fd = pty.openpty()
+    tty.setraw(slave_fd)
     try:
         process = subprocess.Popen(
             [sys.executable, "-c", script],
@@ -217,7 +244,6 @@ def _run_one_shot_in_pty(*, response_format, reply):
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
 def test_one_shot_structured_result_is_json_only_on_tty():
     stdout, stderr, returncode = _run_one_shot_in_pty(
         response_format={"type": "object"},
@@ -228,7 +254,6 @@ def test_one_shot_structured_result_is_json_only_on_tty():
     assert json.loads(stdout) == {"answer": 3}
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
 def test_one_shot_text_keeps_provider_detection_status_on_tty():
     stdout, stderr, returncode = _run_one_shot_in_pty(
         response_format=None,

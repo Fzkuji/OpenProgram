@@ -65,7 +65,9 @@ function checkLoadSavePutAndRestart() {
     assert.deepEqual(loadTransferDecisions(store.filePath), EMPTY_STORE);
 
     saveTransferDecisionsAtomic(store.filePath, EMPTY_STORE);
-    assert.equal(fs.statSync(store.filePath).mode & 0o777, 0o600);
+    if (process.platform !== "win32") {
+      assert.equal(fs.statSync(store.filePath).mode & 0o777, 0o600);
+    }
     assert.deepEqual(loadTransferDecisions(store.filePath), EMPTY_STORE);
 
     const saved = putTransferDecision(store.filePath, decision());
@@ -81,7 +83,9 @@ function checkLoadSavePutAndRestart() {
       restarted.loadTransferDecisions(store.filePath),
       { version: 1, decisions: { "transfer-1": saved } },
     );
-    assert.equal(fs.statSync(store.filePath).mode & 0o777, 0o600);
+    if (process.platform !== "win32") {
+      assert.equal(fs.statSync(store.filePath).mode & 0o777, 0o600);
+    }
     assertNoTemporaryFiles(store.dir);
   } finally {
     store.cleanup();
@@ -269,7 +273,9 @@ checkCorruptRecovery();
 checkAtomicFailurePreservesPrior("writeFileSync", 1);
 checkAtomicFailurePreservesPrior("fsyncSync", 1);
 checkAtomicFailurePreservesPrior("renameSync", 1);
-checkAtomicFailurePreservesPrior("fsyncSync", 2);
+if (process.platform !== "win32") {
+  checkAtomicFailurePreservesPrior("fsyncSync", 2);
+}
 checkPutReturnsOnlyAfterDurableSave();
 checkReadFailureCannotOverwritePriorStore();
 checkAcknowledgements();

@@ -132,11 +132,12 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
             print(f"  Open the UI:  {ui}")
             print("  Or stop the other instance first:  pkill -f 'openprogram web'")
             if open_browser:
-                import webbrowser
+                from openprogram._compat import open_browser_url
                 from openprogram.backend_endpoint import OwnerAuthError
 
                 try:
-                    webbrowser.open(_active_owner_auth_url(ui, port))
+                    if not open_browser_url(_active_owner_auth_url(ui, port)):
+                        print("  Browser not opened: no graphical browser is available")
                 except OwnerAuthError as exc:
                     print(f"  Browser not opened: {exc}")
             return
@@ -165,7 +166,11 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     # Honour an explicit --port / --web-port on the detached path: the
     # worker resolves its port from this env (lifecycle.resolve_worker_port),
     # not from function args.
-    os.environ.setdefault("OPENPROGRAM_WEB_PORT", str(web_port))
+    # Publish the already-resolved effective port unconditionally.  In
+    # particular, an explicit CLI flag must override a stale inherited env
+    # value; otherwise the parent waits on one port while the worker binds
+    # another.
+    os.environ["OPENPROGRAM_WEB_PORT"] = str(web_port)
 
     rc = spawn_detached()
     if rc != 0:
@@ -187,11 +192,12 @@ def _cmd_web(web_port: int | None, open_browser: bool | None) -> None:
     ui_url = _browser_url(web_port)
 
     if open_browser:
-        import webbrowser
+        from openprogram._compat import open_browser_url
         from openprogram.backend_endpoint import OwnerAuthError
 
         try:
-            webbrowser.open(_active_owner_auth_url(ui_url, web_port))
+            if not open_browser_url(_active_owner_auth_url(ui_url, web_port)):
+                print("Browser not opened: no graphical browser is available")
         except OwnerAuthError as exc:
             print(f"Browser not opened: {exc}")
 

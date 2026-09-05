@@ -141,6 +141,7 @@ def test_user_error_store_default_path_tracks_active_profile(
     from openprogram import paths
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("OPENPROGRAM_PROFILE", "error-test")
     monkeypatch.setattr(paths, "_migration_checked", True)
     monkeypatch.setattr(paths, "_root_mode_checked", set())
