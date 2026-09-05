@@ -448,6 +448,31 @@ textarea:focus-visible {
   min-height: 0;
 }
 
+/* Shared sidebar hit target stays inside the clipped rail. */
+.rail-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  width: 12px;
+  z-index: 10;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.rail-resize-handle[data-edge="left"] { left: 0; }
+.rail-resize-handle[data-edge="right"] { right: 0; }
+.rail-resize-handle::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: 2px;
+  background: var(--accent-blue);
+  opacity: 0;
+}
+.rail-resize-handle[data-edge="left"]::after { left: 0; }
+.rail-resize-handle[data-edge="right"]::after { right: 0; }
+.rail-resize-handle:hover::after,
+.rail-resize-handle[data-resizing="true"]::after { opacity: 1; }
+
 /* Column resize handle */
 /* Zero layout width — main content sits flush against the sidebar's own
    border-right. The drag handle is an invisible absolute strip overlapping

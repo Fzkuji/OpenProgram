@@ -181,23 +181,9 @@ export function RightSidebar() {
       style={railStyle}
       data-view={view}
     >
-      {/* Resize handle — 6px-wide strip on the LEFT edge, drag
-          inward to widen the panel, outward to shrink it. Cursor
-          hint is ew-resize when hovered. Only shown when the panel
-          is open; in collapsed state the icon rail handles itself. */}
       {open && (
         <div
           {...resizeHandleProps}
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: "6px",
-            cursor: "ew-resize",
-            zIndex: 10,
-            background: "transparent",
-          }}
           title={t("right.resize_panel")}
         />
       )}

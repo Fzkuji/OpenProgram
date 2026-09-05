@@ -28,6 +28,7 @@ export function useResizableRail({
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = { startX: event.clientX, startWidth: width };
@@ -60,6 +61,9 @@ export function useResizableRail({
   return {
     style,
     resizeHandleProps: {
+      className: "rail-resize-handle",
+      "data-edge": direction === 1 ? "right" : "left",
+      "data-resizing": resizing,
       onPointerDown,
       onPointerMove,
       onPointerUp: finishResize,

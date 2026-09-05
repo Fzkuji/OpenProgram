@@ -170,7 +170,6 @@ export const Sidebar = memo(function Sidebar() {
       {open && (
         <div
           {...resizeHandleProps}
-          className="absolute inset-y-0 right-0 z-10 w-[6px] cursor-ew-resize"
           title={text("Resize sidebar", "调整侧边栏宽度")}
         />
       )}
