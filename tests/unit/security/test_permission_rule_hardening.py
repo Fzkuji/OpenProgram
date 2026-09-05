@@ -11,8 +11,21 @@ from openprogram.programs.permission_rule import (
     load_merged_rules,
     parse_command,
     pattern_matches,
+    parse_rule,
 )
 from openprogram.store.project import project_store
+
+
+def test_raw_windows_path_rule_preserves_separators():
+    path = r"C:\Users\runneradmin\project/**"
+    assert parse_rule(f"read({path})").pattern == path
+
+
+def test_native_directory_rule_matches_without_symlink_privilege(tmp_path):
+    target = tmp_path / "file.txt"
+    target.write_text("contents")
+    rules = PermissionRules(deny=[f"read({tmp_path}/**)"])
+    assert _match_rule(rules, "read", {"path": str(target)}) == "deny"
 
 
 def test_path_allow_does_not_match_resolution_env():
