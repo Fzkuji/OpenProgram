@@ -271,6 +271,17 @@ def _json_value(value: Any, *, name: str, cap: int | None = None) -> tuple[dict[
     return _descriptor(payload), payload
 
 
+def _validate_loaded_tools(names: Any, snapshot: Mapping[str, Any] | None = None) -> None:
+    if (
+        not isinstance(names, list)
+        or any(not isinstance(name, str) or not name for name in names)
+        or len(set(names)) != len(names)
+    ):
+        raise AgentCheckpointError("checkpoint_schema_invalid", "loaded deferred tools are invalid")
+    if snapshot is not None and not set(names).issubset({tool["name"] for tool in snapshot["tools"]}):
+        raise AgentCheckpointError("checkpoint_schema_invalid", "loaded deferred tools exceed the runtime contract")
+
+
 @dataclass(frozen=True)
 class AgentCheckpointV1:
     """The only resumable Agent state payload.
@@ -302,6 +313,7 @@ class AgentCheckpointV1:
         terminal_effect_receipts: list[Mapping[str, Any]],
         pending_messages: list[Mapping[str, Any]] | None = None,
         pending_command_ids: list[str] | None = None,
+        loaded_deferred_tools: list[str] | None = None,
     ) -> "AgentCheckpointV1":
         if safe_point.get("phase") not in {"after_provider", "after_tool"}:
             raise AgentCheckpointError("checkpoint_schema_invalid", "checkpoint phase is invalid")
@@ -331,6 +343,8 @@ class AgentCheckpointV1:
         ):
             raise AgentCheckpointError("checkpoint_schema_invalid", "resolved snapshot is invalid")
         validate_runtime_contract(resolved_snapshot, resolved_snapshot)
+        loaded_deferred_tools = [] if loaded_deferred_tools is None else loaded_deferred_tools
+        _validate_loaded_tools(loaded_deferred_tools, resolved_snapshot)
 
         blobs: dict[str, bytes] = {}
         refs: dict[str, dict[str, Any]] = {}
@@ -442,6 +456,7 @@ class AgentCheckpointV1:
             "completed_actions": actions,
             "terminal_effect_receipts": receipt_values,
             "pending_command_ids": list(pending_command_ids or []),
+            "loaded_deferred_tools": list(loaded_deferred_tools or []),
         }
         checkpoint = cls(payload=payload, blob_payloads=blobs)
         checkpoint.validate()
@@ -463,12 +478,13 @@ class AgentCheckpointV1:
         }
         if (
             not isinstance(value, Mapping)
-            or set(value) != required
+            or set(value) - {"loaded_deferred_tools"} != required
             or value.get("schema_version") != AGENT_CHECKPOINT_SCHEMA_VERSION
         ):
             raise AgentCheckpointError("checkpoint_schema_invalid", "unsupported Agent checkpoint schema")
         if len(self.to_bytes()) > MAX_AGENT_CHECKPOINT_BYTES:
             raise AgentCheckpointError("checkpoint_too_large", "Agent checkpoint exceeds the size limit")
+        _validate_loaded_tools(value.get("loaded_deferred_tools", []))
         safe_point = value["safe_point"]
         if (
             not isinstance(safe_point, Mapping)
@@ -713,6 +729,7 @@ class AgentCheckpointV1:
             value.payload["resolved_model_system_tool_snapshot_ref"],
         )
         validate_runtime_contract(snapshot, snapshot)
+        _validate_loaded_tools(value.payload.get("loaded_deferred_tools", []), snapshot)
         return value
 
     def read_json_ref(self, store: "ExecutionStore", execution_id: str, descriptor: Mapping[str, Any]) -> Any:

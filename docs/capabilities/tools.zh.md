@@ -89,4 +89,4 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 | `worktree_*` | git worktree：`worktree_create`（也可直接从 PR 开 worktree，传 `pr="123"` / `"#123"` / GitHub PR 链接，走 `gh`）/ `merge` / `discard` / `list` / `keep` | git |
 | `cron` | 登记周期性 agent 任务 | 无 |
 | `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | 把 MCP 的 resources / prompts 原语暴露给模型（`mcp_meta` 目录） | 已配置的 MCP server（见 [MCP](mcp.md)） |
-| `tool_search` | 按需加载被延迟的工具的完整 schema——冷门工具在清单里只占一行，模型要用时再取 | 无 |
+| `tool_search` | 按需加载延迟工具；下一次模型请求包含其完整 schema | 无 |

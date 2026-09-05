@@ -746,7 +746,7 @@ def function(
         tools array. Instead it appears in a "deferred catalog"
         passed through the system prompt; the LLM has to call
         ``tool_search(select="<name>,...")`` to bring the schema
-        into the next turn's tools array. Matches Claude Code's
+        into the next provider request's tools array. Matches Claude Code's
         ``shouldDefer`` flag + ToolSearch flow. Use this for tools
         whose schemas are large (MCP tools, niche helpers) so the
         common-path prompt stays cheap; the LLM still discovers
@@ -1066,18 +1066,10 @@ _loaded_deferred: contextvars.ContextVar[Optional[set[str]]] = (
     contextvars.ContextVar("_loaded_deferred", default=None)
 )
 
-# The tools array is the ROOT of both Anthropic's and OpenAI's cached
-# prefix (cache_policy marks the last tool entry). Growing it mid-turn —
-# which is what a naive re-split after ``tool_search`` does — invalidates
-# the whole prefix for every remaining call of that turn. So the array is
-# frozen at the turn boundary: whatever ``tool_search`` loads enters the
-# array on the NEXT turn, and stays byte-identical until then.
-#
-# Availability does not wait for the array. ``tool_search`` returns the
-# loaded tool's full JSON Schema in its result text, and the dispatcher
-# resolves tool calls by name against the complete tool list (agent_loop
-# ``_execute_tool_calls``), not against the provider array — so a tool
-# loaded this turn is callable this turn.
+# Freeze initial membership per turn. Explicit discovery may add names, so
+# the next provider request includes their real schema, not only result text.
+# The request still takes tools from the resolved, permission-wrapped list;
+# discovery does not rebuild the runtime contract from the mutable registry.
 _frozen_turn_tools: contextvars.ContextVar[Optional[set[str]]] = (
     contextvars.ContextVar("_frozen_turn_tools", default=None)
 )
@@ -1088,9 +1080,9 @@ def freeze_turn_tools(tools: list[AgentTool]) -> None:
     the rest of this turn.
 
     Called once at each turn boundary with the session's full tool list.
-    The frozen set is the loaded-deferred set as it stands right now;
-    anything ``tool_search`` loads afterwards is held back until the next
-    ``freeze_turn_tools`` call.
+    The initial set is copied from loaded-deferred names. Only explicit
+    discovery extends it within the turn; unrelated configuration changes do
+    not rebuild the tools list or its permission wrappers.
     """
     loaded = _loaded_deferred.get()
     _frozen_turn_tools.set(set(loaded) if loaded else set())
@@ -1131,7 +1123,17 @@ def mark_deferred_loaded(names: list[str]) -> set[str]:
         _loaded_deferred.set(current)
     for n in names:
         current.add(n)
+    frozen = _frozen_turn_tools.get()
+    if frozen is not None:
+        # Tool workers inherit ContextVar values. Mutate the shared set so
+        # the provider coroutine observes the promotion after tool completion.
+        frozen.update(names)
     return current
+
+
+def loaded_deferred_names() -> list[str]:
+    """Snapshot explicit discoveries shared with the current tool workers."""
+    return sorted(_loaded_deferred.get() or ())
 
 
 def split_tools_for_dispatch(
@@ -1151,9 +1153,8 @@ def split_tools_for_dispatch(
     When the ContextVar isn't installed (no session) the loaded set
     is empty — all deferred tools land in the catalog.
 
-    Inside a turn the *frozen* set decides membership, so the array (and
-    the cache prefix rooted on it) is byte-stable across every provider
-    call of that turn. See ``freeze_turn_tools``.
+    Inside a turn the initial frozen set plus explicit discoveries decides
+    membership. Repeated searches do not change the provider array.
     """
     frozen = _frozen_turn_tools.get()
     loaded = (frozen if frozen is not None
@@ -1185,7 +1186,7 @@ def _tool_search_impl(select: str, *, max_results: int = _TOOL_SEARCH_MAX_RESULT
                                      name, rank remaining terms.
 
     After this call the matched tools' full schemas appear in the
-    provider tools array on the next turn. Calling a deferred tool
+    provider tools array on the next provider request. Calling a deferred tool
     *before* it has been loaded triggers an InputValidationError on
     most providers because the schema isn't in the request.
     """
@@ -1219,10 +1220,8 @@ def _tool_search_impl(select: str, *, max_results: int = _TOOL_SEARCH_MAX_RESULT
 def _tool_schema_line(t: AgentTool) -> str:
     """Render one loaded tool as a callable definition.
 
-    The tools array is frozen for the rest of this turn (see
-    ``freeze_turn_tools``), so this text — not the array — is what makes
-    the tool callable right now. Same encoding as a provider tool entry so
-    the model reads it the way it reads the array.
+    The next provider request also includes the resolved tool schema.
+    This result uses the same encoding to describe the discovered tool.
     """
     import json as _json
     try:

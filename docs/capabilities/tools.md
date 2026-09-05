@@ -89,4 +89,4 @@ Collaboration splits into four domains, one word each — see
 | `worktree_*` | Git worktrees: `worktree_create` (also opens a worktree straight from a PR — `pr="123"` / `"#123"` / a GitHub PR URL, via `gh`) / `merge` / `discard` / `list` / `keep` | git |
 | `cron` | Register recurring agent tasks | Nothing |
 | `list_mcp_resources` / `read_mcp_resource` / `list_mcp_prompts` / `get_mcp_prompt` | Expose MCP resources / prompts primitives to the model (the `mcp_meta` directory) | A configured MCP server (see [MCP](mcp.md)) |
-| `tool_search` | Load a deferred tool's full schema on demand — rarely-used tools sit in the listing as one line until the model asks for them | Nothing |
+| `tool_search` | Load a deferred tool on demand; its full schema is included in the next model request | Nothing |

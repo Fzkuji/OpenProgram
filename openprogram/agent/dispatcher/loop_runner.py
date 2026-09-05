@@ -345,6 +345,8 @@ def run_loop_blocking(
 
     if continuation is not None:
         validate_runtime_contract(continuation.resolved_snapshot, runtime_contract)
+        from openprogram.programs._runtime import mark_deferred_loaded
+        mark_deferred_loaded(list(continuation.state.payload.get("loaded_deferred_tools", [])))
 
     # _default_convert_to_llm filters out non-LLM messages (e.g. our
     # custom error / system entries) — agent.py already provides this.
@@ -449,6 +451,8 @@ def run_loop_blocking(
         if safe_point_callback is None:
             return False
         durable_payload = dict(payload)
+        from openprogram.programs._runtime import loaded_deferred_names
+        durable_payload["loaded_deferred_tools"] = loaded_deferred_names()
         snapshot = durable_payload.get("resolved_snapshot")
         if isinstance(snapshot, dict):
             last_safe_point_snapshot = dict(snapshot)

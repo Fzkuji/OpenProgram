@@ -147,7 +147,7 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 
 - **常驻（resident）**——完整 JSON Schema 进 provider 的 tools 数组，每轮都带。
 - **延迟（deferred）**——在系统提示的目录里只占一行**裸工具名**。模型需要时调
-  `tool_search` 加载 schema，此后从下一轮起到会话结束它都是常驻的。
+  `tool_search` 加载 schema，随后本轮的下一次 provider 请求就包含该工具。
 
 目录只发名字、不发描述。名字足够让模型认出候选并点名索取，同时无论 defer 多少个
 工具，整个目录都压在两百来 token。
@@ -190,38 +190,24 @@ dict-override 分支（`_model_tools.py:397-421`）除 `enabled/disabled/allowed
 
 效果：默认常驻数组从每轮 ~7.9k 降到 ~4.7k token，约减 41%，且没有任何工具变得不可用。
 
-### 7.4 工具数组以"轮"为粒度
+### 7.4 显式发现更新下一次请求
 
-工具数组是 Anthropic 和 OpenAI **两家缓存前缀的根**——缓存断点打在最后一个工具条目
-上，因此数组之后的一切（系统提示、记忆、整条历史）都缓存在它后面。数组一变，这些
-token 全部按原价重读。
+`freeze_turn_tools` 在轮开始时记录延迟工具的初始成员集合。`tool_search`
+将明确选择且允许的名称同时加入已加载集合和本轮共享集合。下一次 provider 请求
+携带这些工具的真实 schema。仅在工具结果文本中返回 schema，无法满足只允许调用
+请求 tools 数组中工具的 provider。
 
-所以数组**在轮边界定格**。`freeze_turn_tools` 在 agent loop 外层循环每轮跑一次，钉住
-本轮有资格进数组的 defer 工具集合；`split_tools_for_dispatch` 读这个冻结集合，而不是
-实时的已加载集合。轮内途中的 `tool_search` 会写入已加载集合，但撑不大数组——数组以及
-扎根其上的前缀，在本轮每一次 provider 调用中都逐字节相同。下一次 `freeze_turn_tools`
-再把这期间攒下的工具一并放行。
+集合必须原地修改：工具线程继承 ContextVar 的值，在工具线程替换整个值不会更新
+provider 协程。实际执行始终使用本轮已解析且带权限 wrapper 的工具；注册表的无关
+变化不会替换不可变 runtime contract。没有显式发现时数组保持稳定；发现新工具时
+允许改变缓存前缀，以确保该工具实际可用。
 
-不冻结时，一次 `tool_search` 就让本轮剩余全部调用的前缀作废——而工具加载恰恰就发生在
-轮内，这个作废落在最糟的时点。按两天真实流量实测，53% 的输入 token 未命中缓存源于此。
+每个持久化安全点将 `loaded_deferred_tools` 写入 checkpoint，名称必须属于其中的
+工具合同。恢复先验证合同没有变化，再恢复名称，不重放已经完成的搜索。
+旧 checkpoint 缺少该可选字段时恢复空集合，不从工具结果文本推断权限或加载状态。
+每次 provider 派发也记录当前常驻／延迟分类，供上下文检查器使用。
 
-**可用性不等数组**。两条路径保证轮内加载的工具当轮即可调用：
-
-1. `tool_search` 在结果文本里直接返回**完整 schema**，形状与数组条目一致
-   （`{"name", "description", "parameters"}`），并明确写明可以立即调用。模型据此文本
-   构造调用。
-2. 派发按名字在**完整工具列表**里解析，而不是在 provider 数组里
-   （`agent_loop._execute_tool_calls`）。已加载但尚未进数组的工具，调用照常执行。
-
-所以冻结改变的只是工具**何时在数组里被公示**，从不影响它**能否被使用**。晋升的代价
-——一次前缀重写——每工具每会话只付一次，且落在轮边界上，那里本来就有新的用户消息改
-写了尾部。
-
-这也是 defer 名单挑"少用"而非单纯挑"大"的原因：一个多数会话都会用到的工具，defer 等
-于拿固定节省换反复的缓存未命中。
-
-在任何一轮之外构造 provider 数组的调用方（预算计量、`breakdown`、测试）用
-`release_turn_tools()` 退回到实时已加载集合。
+在轮之外装配工具的调用方使用 `release_turn_tools()` 读取实时已加载集合。
 
 ### 7.5 目录是装配器组件
 
@@ -249,8 +235,9 @@ token 全部按原价重读。
 - 它们全都出现在目录里，以及装配后的系统提示里
 - `tool_search` 能把延迟工具移入 provider 数组、移出目录
 - `tool_search` 永不被 defer；`apply_default_deferral` 幂等
-- 轮内 `tool_search` 不改变 provider 数组和目录；加载的工具在下一个轮边界进数组
-- `tool_search` 返回完整参数 schema；已加载但未进数组的工具仍能被派发解析
+- 轮内显式 `tool_search` 将工具加入下一次 provider 数组，并从延迟目录移除
+- `tool_search` 返回完整参数 schema；执行仍使用原有带权限 wrapper 的工具
+- checkpoint 恢复验证 runtime contract 未变，再恢复已记录的发现集合
 
 ---
 

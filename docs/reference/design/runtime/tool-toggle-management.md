@@ -155,7 +155,7 @@ An available tool ships in one of two forms:
 - **Resident** — full JSON Schema in the provider's tools array, every turn.
 - **Deferred** — one bare `name` line in the system prompt's catalog. The
   model loads the schema on demand by calling `tool_search`, after which it
-  is resident from the next turn to the end of the session.
+  is included in the next provider request in the current turn.
 
 The catalog carries names only, not descriptions. A name is enough for the
 model to recognise a candidate and ask for it, and it keeps the whole
@@ -205,49 +205,31 @@ else, so deferring it would be a deadlock. This is asserted twice: the
 Effect: the default resident array drops from ~7.9k to ~4.7k tokens per turn,
 a ~41% cut, with no tool becoming unavailable.
 
-### 7.4 The tools array has turn granularity
+### 7.4 Explicit discovery updates the next request
 
-The tools array is the **root of the cached prefix** for both Anthropic and
-OpenAI — the cache breakpoint sits on the last tool entry, so everything
-after the array (system prompt, memory, the entire history) is cached behind
-it. Change the array and every one of those tokens is re-read at full price.
+`freeze_turn_tools` captures initial deferred membership at each turn boundary.
+`tool_search` explicitly promotes allowed names into both the loaded set and
+that turn's shared membership set. The next provider request includes those
+tools' real schemas. Returning a schema as tool-result text alone is insufficient
+for providers that only permit tools present in the request array.
 
-Therefore the array is **frozen at the turn boundary**. `freeze_turn_tools`
-runs once per turn in the agent loop's outer loop and pins the set of
-deferred tools eligible for the array; `split_tools_for_dispatch` reads that
-frozen set instead of the live loaded set. A `tool_search` call in the middle
-of a turn adds to the loaded set but cannot grow the array — the array, and
-the prefix rooted on it, stay byte-identical for every provider call of that
-turn. The next `freeze_turn_tools` promotes whatever accumulated.
+The membership sets are mutated in place: tool workers inherit ContextVar
+values, and replacing a worker's value would not update the provider coroutine.
+Promotion uses the turn's resolved, permission-wrapped tools, not a new registry
+lookup for execution. Unrelated registry changes do not replace the immutable
+runtime contract. Without explicit discovery, the array remains stable; discovery
+may change the provider's cached prefix to make the requested tool available.
 
-Without the freeze, one `tool_search` invalidated the prefix for the whole
-remainder of the turn — and a turn is exactly when tool loading happens, so
-the invalidation landed at the worst possible moment. Measured over two days
-of real traffic this accounted for 53% of input tokens missing the cache.
+Each durable safe point records `loaded_deferred_tools` in the checkpoint.
+Names must belong to the checkpoint's resolved tool contract. Continuation first
+validates the unchanged contract, then restores those names before its next
+provider request, without replaying completed searches. Older checkpoints without
+this optional field restore an empty set; no tool-result text is interpreted as
+authorization or loading state. Provider dispatch also records its current
+resident/deferred classification for the context inspector.
 
-**Availability does not wait for the array.** Two paths make a tool loaded
-mid-turn callable in that same turn:
-
-1. `tool_search` returns the loaded tools' **full schemas** in its result
-   text, in the same `{"name", "description", "parameters"}` shape as an
-   array entry, with an explicit note that they can be called immediately.
-   The model constructs the call from that text.
-2. Dispatch resolves by name against the **complete tool list**, not the
-   provider array (`agent_loop._execute_tool_calls`). A call for a tool that
-   is loaded but not yet in the array executes normally.
-
-So the freeze changes when a tool is *advertised in the array*, never
-whether it can be *used*. The cost of the promotion — one prefix rewrite —
-is paid once per tool per session, at a turn boundary where a fresh user
-message has already changed the tail anyway.
-
-This is also why the defer list targets tools that are rarely used rather
-than tools that are merely large: a tool loaded in most sessions would trade
-a fixed saving for a recurring cache miss.
-
-Callers that build a provider array outside any turn (budget accounting,
-`breakdown`, tests) call `release_turn_tools()` to fall back to the live
-loaded set.
+Callers assembling tools outside a turn use `release_turn_tools()` to read the
+live loaded set.
 
 ### 7.5 The catalog is an assembler component
 
@@ -285,10 +267,12 @@ Regression coverage lives in `tests/unit/context/test_tool_defer.py`:
 - `tool_search` moves a deferred tool into the provider array and out of the
   catalog
 - `tool_search` is never deferred; `apply_default_deferral` is idempotent
-- within a turn the provider array and the catalog are unchanged by
-  `tool_search`; the loaded tool joins the array at the next turn boundary
-- `tool_search` returns the full parameter schema, and a tool loaded but not
-  yet in the array still resolves for dispatch
+- within a turn, explicit `tool_search` discovery adds the tool to the next
+  provider array and removes it from the deferred catalog
+- `tool_search` returns the full parameter schema; execution still resolves
+  against the original permission-wrapped tools
+- checkpoint continuation restores recorded discoveries after validating
+  the unchanged runtime contract
 
 ---
 

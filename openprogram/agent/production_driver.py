@@ -1272,6 +1272,7 @@ class AgentProductionDriver:
                     completed_actions=action_values,
                     terminal_effect_receipts=receipt_values,
                     pending_command_ids=pending_commands,
+                    loaded_deferred_tools=payload.get("loaded_deferred_tools", []),
                 )
             except AgentCheckpointError as exc:
                 raise AgentDriverError(exc.code, str(exc)) from exc

@@ -479,29 +479,10 @@ async def _run_loop(
     inner_iterations = 0
 
     while True:
-        # Turn boundary — pin the provider tools array for every call made
-        # below. Tools that ``tool_search`` loads mid-turn stay out of the
-        # array until the next boundary so the cached prefix (rooted on the
-        # tools array) survives the turn; they are callable immediately via
-        # the schema tool_search returns. See tool-toggle-management.md §6.
+        # Pin initial membership. Explicit tool_search discoveries extend
+        # this set for the next provider request without rebuilding tools.
         from openprogram.programs import freeze_turn_tools
         freeze_turn_tools(list(current_context.tools or []))
-        # Persist the priced provider/deferred split after freezing it. The
-        # /context panel can then reproduce this HEAD even if the live tool
-        # profile or MCP registry changes later.
-        try:
-            from openprogram.agent.session_db import default_db
-            from openprogram.context.tool_snapshot_node import (
-                record_tool_snapshot,
-            )
-            record_tool_snapshot(
-                default_db(),
-                config.session_id,
-                list(current_context.tools or []),
-            )
-        except Exception:
-            pass
-
         has_more_tool_calls = True
         steering_after_tools: list[AgentMessage] | None = None
         repeat_failures: dict[str, int] = {}
@@ -830,15 +811,19 @@ async def _stream_assistant_response(
         _inject_memory_prefetch(llm_messages, prefetch_block)
 
     # Build LLM context
-    # Layer 6 (Claude Code shouldDefer): split the tools list into the
-    # provider array. The split reads the turn-frozen set installed by
-    # ``freeze_turn_tools`` at the turn boundary, so this returns the
-    # SAME array on every call within a turn — the cached prefix rooted
-    # on the tools array survives a mid-turn ``tool_search``.
+    # Use the resolved tools and the turn's membership set, including tools
+    # explicitly promoted by tool_search since the previous provider call.
     from openprogram.programs import split_tools_for_dispatch
     _provider_tools, _ = split_tools_for_dispatch(
         list(context.tools or [])
     )
+    try:
+        from openprogram.agent.session_db import default_db
+        from openprogram.context.tool_snapshot_node import record_tool_snapshot
+
+        record_tool_snapshot(default_db(), config.session_id, list(context.tools or []))
+    except Exception:
+        pass
     if structured_plan is not None and structured_plan.mode == "tool":
         _provider_tools = [
             *_provider_tools,
