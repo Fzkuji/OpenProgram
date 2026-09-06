@@ -25,7 +25,7 @@
     <h1>拆分 Workflow 的发现、创建、修订与执行</h1>
     <p class="lead">本页定义 OpenProgram 如何让 Chat Agent 选择已有 Workflow、如何按需创建可复用 Workflow，以及用户如何通过 <code>auto_workflow(task)</code> 手动触发完整流程。核心约束是：选择、创建、修订和执行必须是独立公共行为；完整入口只做编排，不再保存另一套实现。</p>
     <div class="meta"><span class="pill proposed">状态：源码实现与复审完成 · App 验收待完成</span><span class="pill scope">范围：Workflow catalog / authoring / runtime / Programs UI</span><span class="pill">读者：Runtime、Programs、Web 实现者</span><span class="pill">兼容：旧 run 只读恢复</span></div>
-    <nav class="toc" aria-label="页内导航"><a href="#decision">设计结论</a><a href="#current">当前实现</a><a href="#architecture">目标架构</a><a href="#contracts">公共合同</a><a href="#authoring">创建与复用</a><a href="#lifecycle">生命周期</a><a href="#comparison">框架对照</a><a href="#migration">实施计划</a><a href="#acceptance">验收</a><a href="#status">实现状态</a></nav>
+    <nav class="toc" aria-label="页内导航"><a href="#decision">设计结论</a><a href="#parameter-ownership">Parameter ownership</a><a href="#current">当前实现</a><a href="#architecture">目标架构</a><a href="#contracts">公共合同</a><a href="#authoring">创建与复用</a><a href="#lifecycle">生命周期</a><a href="#comparison">框架对照</a><a href="#migration">实施计划</a><a href="#acceptance">验收</a><a href="#status">实现状态</a></nav>
   </header>
 
   <main>
@@ -39,6 +39,13 @@
         </div>
         <div class="callout warn"><code>auto_workflow</code> 是便捷编排入口，不是候选 Workflow，也不是组件。搜索结果必须排除它，生成代码不得 import 它，Agent 工具集合不得暴露它。</div>
         <div class="callout"><code>workflow/</code> 只用于按代码类型归类。目录、辅助文件和内部子目录都不是 Program；Programs、Registry 和调用图只把实际注册的 <code>@agentic_function</code> 作为可运行实体。目录层级不得改变公开名称、调用方式或运行语义。</div>
+      </section>
+
+      <section id="parameter-ownership">
+        <h2>Workflow parameter ownership</h2>
+        <p>Users supply the task, evidence and deliverable requirements. Execution parameters belong to the Workflow; do not expose them through Advanced, settings dialogs or parameter questions.</p>
+        <p>When a Workflow has several task-dependent parameters, make one tool-free model request before execution to produce the complete plan. Supply real runtime capabilities and application limits. Validate every field and cross-field constraint, apply a complete fallback on invalid output or planning failure, and propagate cancellation. Fixed invariants remain code-owned; the model cannot change permissions, credentials or application ceilings. Persist the effective plan before resumable work and reuse it on resume.</p>
+        <p>The canonical development example, parameter contract and acceptance checklist are in <a href="../../../capabilities/workflows/authoring.md#design-principle-the-workflow-owns-execution-parameters">Workflow authoring</a>. Missing task facts may require clarification; execution tuning must not be delegated to the user.</p>
       </section>
 
       <section id="current">
@@ -338,7 +345,7 @@ Registry / Programs 展示的运行实体：
       </section>
 
       <section id="status">
-        <h2>10. 实现状态</h2>
+        <h2>10. 实现状态</h2><p>Parameter ownership is a design requirement with a development example. Existing Workflows require individual adoption; Goal currently selects reasoning effort automatically and retains defaults for its other settings. This document does not mark full-parameter planning as implemented across the catalog.</p>
         <table>
           <thead><tr><th>能力</th><th>当前证据</th><th>状态</th></tr></thead>
           <tbody>
