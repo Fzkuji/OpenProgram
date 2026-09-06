@@ -1,5 +1,7 @@
 "use client";
 
+import { approvalDisplayText, readSandboxEscalation, type SandboxEscalation } from "./approval-display-text";
+
 /**
  * QuestionMode —— 一切「问用户」的唯一组件（不再分 single / multi / form /
  * approval 几套）。所有 runtime.ask / confirm / approval / form / ask_many
@@ -75,20 +77,6 @@ interface QuestionModeProps {
 
 /** Wire pick for an approval card. ``always_path`` is sandbox-escalation only. */
 type ApprovalPick = "once" | "always" | "always_path" | "deny";
-
-type SandboxEscalation = { from: string; to: string; path?: string; rule?: string };
-
-function readSandboxEscalation(args?: Record<string, unknown>): SandboxEscalation | undefined {
-  const raw = args?._sandbox_escalation;
-  if (!raw || typeof raw !== "object") return undefined;
-  const o = raw as Record<string, unknown>;
-  return {
-    from: typeof o.from === "string" ? o.from : "",
-    to: typeof o.to === "string" ? o.to : "",
-    path: typeof o.path === "string" ? o.path : undefined,
-    rule: typeof o.rule === "string" ? o.rule : undefined,
-  };
-}
 
 /** 一步（一道题）的统一形状。kind 决定 body 怎么渲染、答案怎么收集。 */
 type Step =
@@ -413,21 +401,11 @@ function StepBody({
   if (step.kind === "approval") {
     const risk = step.risk ?? "low";
     const esc = step.escalation;
-    const summary = esc
-      ? [
-          esc.path ? `${text("Blocked path", "被拦路径")}: ${esc.path}` : "",
-          esc.rule ? `${text("Matched rule", "命中规则")}: ${esc.rule}` : "",
-        ].filter(Boolean).join("\n")
-      : (step.detail ?? "");
+    const { prompt, summary } = approvalDisplayText(step.prompt, step.detail, esc, text);
     return (
       <>
         <div className={styles.prompt}>
-          {esc
-            ? text(
-                "Sandbox blocked this access. Approve an escalated retry?",
-                "沙箱拦截了这次访问。是否批准升级后重试？",
-              )
-            : withColon(step.prompt)}
+          {esc ? prompt : withColon(prompt)}
         </div>
         {summary ? (
           <pre className={approvalStyles.summary + " " + (approvalStyles["risk_" + risk] ?? "")}>

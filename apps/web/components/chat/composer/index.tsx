@@ -65,6 +65,7 @@ import { useComposerInputEffects } from "./input/use-composer-input-effects";
 import { EnvironmentRow } from "./environment-row/environment-row";
 import { ScopedDropOverlay } from "./attach/scoped-drop-overlay";
 import { ComposerBody } from "./modes/composer-body";
+import { useDecisionDiscussion } from "./modes/question/use-decision-discussion";
 import { QuestionPanel } from "./modes/question/question-panel";
 import styles from "./composer.module.css";
 
@@ -483,13 +484,17 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
   const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
 
-  // Chat about this 提交 canonical wait decline 并即时出队。
-  const rejectDecision = useCallback(() => {
-    const d = activeDecision;
-    if (!d) return;
-    sendWaitCommand(d, "execution.wait.decline");
-    dequeueDecision(d.id);
-  }, [activeDecision, dequeueDecision, sendWaitCommand]);
+  const rejectDecision = useDecisionDiscussion({
+    decision: activeDecision,
+    sessionKey: activeChatKey ?? currentSessionId ?? "__new__",
+    input,
+    setInput,
+    decline: useCallback((d: NonNullable<typeof activeDecision>) => {
+      sendWaitCommand(d, "execution.wait.decline");
+    }, [sendWaitCommand]),
+    dequeue: dequeueDecision,
+    textareaRef,
+  });
 
   // 顶部提问面板的内容（真 ask 优先；morphed 时不叠面板 —— approval/form
   // 占着输入区，答完再出）。点 pill = 立即提交（点击即时反馈）。
