@@ -298,7 +298,9 @@ export function DebuggerPanel({
     ? checkpoints.find((checkpoint) => checkpoint.checkpoint_id === snapshot.checkpoint_head_id)
     : undefined;
   const selectedWaits = snapshot ? waits.filter((wait) => wait.execution_id === snapshot.execution_id && ["open", "claimed"].includes(wait.status)) : [];
-  const selectedDraft = snapshot ? drafts.find((draft) => draft.source_execution_id === snapshot.execution_id) : undefined;
+  // Both the server list and locally created drafts are oldest-first.
+  // Reopening the inspector must keep the newest revision editable.
+  const selectedDraft = snapshot ? drafts.slice().reverse().find((draft) => draft.source_execution_id === snapshot.execution_id) : undefined;
   const connectionInfo = connectionCopy(connection);
   useEffect(() => { setDraftText(null); setDraftError(null); }, [selectedDraft?.draft_id]);
 
