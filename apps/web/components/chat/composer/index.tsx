@@ -65,6 +65,7 @@ import { useComposerInputEffects } from "./input/use-composer-input-effects";
 import { EnvironmentRow } from "./environment-row/environment-row";
 import { ScopedDropOverlay } from "./attach/scoped-drop-overlay";
 import { ComposerBody } from "./modes/composer-body";
+import { useWaitAnswer } from "./modes/question/use-wait-answer";
 import { useDecisionDiscussion } from "./modes/question/use-decision-discussion";
 import { QuestionPanel } from "./modes/question/question-panel";
 import styles from "./composer.module.css";
@@ -178,17 +179,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       : null;
   const activeDecision = askDecision ? null : pendingDecision;
   const send = wsSend;
-  const sendWaitCommand = useCallback((decision: NonNullable<typeof pendingDecision>, action: "execution.wait.answer" | "execution.wait.decline", value?: unknown) => {
-    if (!decision.executionId || !Number.isInteger(decision.expectedVersion)) return;
-    send({
-      type: "execution.command", action,
-      command_id: `web-wait-${crypto.randomUUID()}`,
-      execution_id: decision.executionId, expected_version: decision.expectedVersion,
-      payload: action === "execution.wait.answer"
-        ? { wait_id: decision.id, generation: decision.waitGeneration, answer: value }
-        : { wait_id: decision.id, generation: decision.waitGeneration, reason: value },
-    });
-  }, [send]);
+  const { sendAnswer: sendWaitCommand, answerPending, answerLocked } = useWaitAnswer(askDecision, dequeueDecision);
 
   const isRunning = runningTask !== null;
   const isCancelling = Boolean(runningTask?.cancelling);
@@ -409,15 +400,20 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   const submitWithPanel = useCallback(async () => {
     const trimmed = input.trim();
     if (askDecision && trimmed && askDecision.allow_custom) {
-      sendWaitCommand(askDecision, "execution.wait.answer", askDecision.multi ? [trimmed] : trimmed);
-      dequeueDecision(askDecision.id);
-      setComposerInputFor(activeChatKey ?? currentSessionId, "");
+      if (await sendWaitCommand("execution.wait.answer", askDecision.multi ? [trimmed] : trimmed) && !answerLocked) {
+        const draftKey = activeChatKey ?? currentSessionId;
+        if (draftKey && useSessionStore.getState().composerDrafts[draftKey] === input) {
+          setComposerInputFor(draftKey, "");
+        }
+      }
       return;
     }
     await submit();
   }, [
     input,
     askDecision,
+    sendWaitCommand,
+    answerLocked,
     send,
     dequeueDecision,
     setComposerInputFor,
@@ -501,11 +497,11 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           </>
         ),
         prompt: askDecision.prompt,
-        options: askDecision.options.map((label) => ({ label })),
-        disabled: false,
+        options: answerLocked ? [{ label: text("Retry previous answer", "重试原答复") }]
+          : askDecision.options.map((label) => ({ label })),
+        disabled: answerPending,
         onPick: (label: string) => {
-          sendWaitCommand(askDecision, "execution.wait.answer", askDecision.multi ? [label] : label);
-          dequeueDecision(askDecision.id);
+          void sendWaitCommand("execution.wait.answer", askDecision.multi ? [label] : label);
         },
       }
     : null;

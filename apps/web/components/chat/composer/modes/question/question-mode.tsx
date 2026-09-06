@@ -20,15 +20,14 @@ import { approvalDisplayText, readSandboxEscalation, type SandboxEscalation } fr
  * 设计：docs/design/ui/composer-interaction-modes.md。
  */
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 
 import type { PendingDecision, AskOne, FormFieldSchema } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 
 import styles from "./question-mode.module.css";
-import { ExecutionApiError, postExecutionCommand, type WaitCommand } from "@/lib/net/execution-client";
-import { showToast } from "@/lib/format-utils/toast";
+import { useWaitAnswer } from "./use-wait-answer";
 import multi from "./multi-ask-mode.module.css";
 import approvalStyles from "../approval/approval-mode.module.css";
 import formStyles from "./form-mode.module.css";
@@ -137,53 +136,7 @@ function stepAnswered(step: Step, a: Answer): boolean {
 export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionModeProps) {
   const { text } = useTranslation();
   const [discussionPending, setDiscussionPending] = useState(false);
-  const [answerPending, setAnswerPending] = useState(false);
-  const [answerLocked, setAnswerLocked] = useState(false);
-  const answerRequest = useRef<{ command: WaitCommand; busy: boolean } | null>(null);
-  async function sendAnswer(action: "execution.wait.answer" | "execution.wait.decline", value?: unknown) {
-    if (!q.executionId || !Number.isInteger(q.expectedVersion)) {
-      showToast(text("The request is not ready. Reconnect and retry.", "请求尚未就绪，请重连后重试。"), { tone: "error" });
-      return;
-    }
-    if (answerRequest.current?.busy) return;
-    const request = answerRequest.current ?? { busy: false, command: {
-      type: "execution.command" as const, action,
-      command_id: `web-wait-${crypto.randomUUID()}`,
-      execution_id: q.executionId, expected_version: q.expectedVersion,
-      payload: action === "execution.wait.answer"
-        ? { wait_id: q.id, generation: q.waitGeneration, answer: value }
-        : { wait_id: q.id, generation: q.waitGeneration, reason: value },
-    } };
-    answerRequest.current = request;
-    request.busy = true;
-    setAnswerLocked(true);
-    setAnswerPending(true);
-    try {
-      const result = await postExecutionCommand(request.command, AbortSignal.timeout(15000));
-      if (result.command_id === request.command.command_id && result.status === "rejected") {
-        answerRequest.current = null;
-        setAnswerLocked(false);
-        showToast(text("The answer was rejected. Check the current request before retrying.", "答复被拒绝，请检查当前请求后重试。"), { tone: "error" });
-        return;
-      }
-      if (result.command_id !== request.command.command_id || result.status !== "applied") {
-        throw new Error("Answer was not confirmed");
-      }
-      onResolve(q.id);
-    } catch (error) {
-      if (error instanceof ExecutionApiError && error.command?.command_id === request.command.command_id
-          && error.command.status === "rejected") {
-        answerRequest.current = null;
-        setAnswerLocked(false);
-        showToast(text("The answer was rejected. Check the current request before retrying.", "答复被拒绝，请检查当前请求后重试。"), { tone: "error" });
-        return;
-      }
-      showToast(text("Answer not confirmed. Retry to send the same answer.", "答复尚未确认，请重试发送同一答复。"), { tone: "error" });
-    } finally {
-      request.busy = false;
-      setAnswerPending(false);
-    }
-  }
+  const { sendAnswer, answerPending, answerLocked } = useWaitAnswer(q, onResolve);
 
   const [discussionOpen, setDiscussionOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
