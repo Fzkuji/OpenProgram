@@ -42,6 +42,7 @@
 }
 
 .prompt {
+  font-weight: 600;
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   line-height: 1.5;

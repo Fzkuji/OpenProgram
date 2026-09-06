@@ -80,7 +80,7 @@
    The full text is reachable via the `title` attribute set in the
    FunctionForm header. */
 .name {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--fs-base);
   font-weight: 600;
   color: var(--accent-orange);
@@ -168,7 +168,7 @@
    Full text is now shown via a native `title` tooltip set in
    FieldRow (fn-form-fields.tsx) so the layout doesn't move at all. */
 .labelName {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-weight: 600;
   /* Cream / off-white — dimmer than `--text-bright` so it doesn't
      glare next to the muted prose around it. */
@@ -196,7 +196,7 @@
   line-height: 30px;
   color: var(--text-bright);
   font-size: var(--fs-base);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   outline: none;
   transition: border-color 180ms ease;
   width: 100%;
@@ -316,7 +316,7 @@
   border: none;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-secondary);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--fs-base);
   cursor: pointer;
   transition: background 180ms ease, color 180ms ease;
@@ -347,7 +347,7 @@
   border: 1px solid transparent;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
   color: var(--text-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--fs-base);
   width: 60px;
   outline: none;

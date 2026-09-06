@@ -32,6 +32,7 @@
 
 /* = fn-form .label：sans、fs-base、text-secondary。 */
 .label {
+  font-weight: 600;
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   line-height: 1.5;
@@ -39,6 +40,7 @@
 }
 
 .hint {
+  font-weight: 400;
   color: var(--text-muted);
 }
 
