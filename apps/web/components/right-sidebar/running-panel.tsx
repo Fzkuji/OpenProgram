@@ -36,6 +36,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
     stopped: ["Stopped", "已停止"], interrupted: ["Interrupted", "执行中断"], unknown: ["Status needs confirmation", "状态待确认"], lost: ["Status needs confirmation", "状态待确认"],
   }[item.status] as [string, string] || [item.status, item.status]));
   const stale = processes.stale || state.connection.state !== "connected";
+  const hasRead = Boolean(state.fetchedAt) || processes.loaded;
   const refresh = () => { state.refresh(); processes.refresh(); };
   const byExecution = new Map<string, ManagedProcess[]>();
   const unassigned: ManagedProcess[] = [];
@@ -162,13 +163,15 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
     {(!historical || historyOpen) && items.map(item => agentRow(item))}
   </div>;
   return <section className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")}>
-    {stale && (state.fetchedAt || processes.loaded || processes.stale) && <p role="status" className={styles.notice}>{text("Some statuses could not be refreshed. Showing the last saved records.", "部分状态暂时无法刷新，当前显示上次读取的记录。")}</p>}
+    {stale && (hasRead || processes.stale || state.connection.state === "stale") && <p role="status" className={styles.notice}>{hasRead
+      ? text("Some statuses could not be refreshed. Showing the last saved records.", "部分状态暂时无法刷新，当前显示上次读取的记录。")
+      : text("Could not load activity. Refresh to try again.", "无法读取运行记录，请刷新重试。")}</p>}
     <div className={styles.scroll}>
       {roots.length === 0 && <div className={styles.emptyTools}>{refreshButton}</div>}
-      {!state.fetchedAt && !processes.loaded && !processes.stale ? <SidebarNotice>{text("Loading…", "加载中…")}</SidebarNotice> : null}
+      {!hasRead && !processes.stale && state.connection.state === "reconnecting" ? <SidebarNotice>{text("Loading…", "加载中…")}</SidebarNotice> : null}
       {section(text("Needs attention", "需要处理"), attention)}
       {section(text("In progress", "正在进行"), working)}
-      {state.fetchedAt && processes.loaded && attention.length === 0 && working.length === 0 && <SidebarNotice>{roots.length ? text("No tasks are running. Previous tasks are in History.", "当前没有正在进行的任务，已结束任务保留在历史记录中。") : text("Tasks and their programs will appear here when this conversation runs.", "此会话开始执行后，任务及其程序会显示在这里。")}</SidebarNotice>}
+      {state.fetchedAt && processes.loaded && unassigned.length === 0 && attention.length === 0 && working.length === 0 && <SidebarNotice>{roots.length ? text("No tasks are running. Previous tasks are in History.", "当前没有正在进行的任务，已结束任务保留在历史记录中。") : text("Tasks and their programs will appear here when this conversation runs.", "此会话开始执行后，任务及其程序会显示在这里。")}</SidebarNotice>}
       {section(text("History", "历史记录"), history, true)}
       {unassigned.length > 0 && <div className="group/sec"><SectionHeader name={text("Programs without an Agent record", "未关联 Agent 记录的程序")} collapsible={false} collapsed={false} onToggle={() => {}} />{unassigned.map(programRow)}</div>}
     </div>
