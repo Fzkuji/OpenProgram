@@ -30,12 +30,19 @@ def translate_to_chinese(text: str) -> str:
     "text": {"description": "Text to polish", "placeholder": "Paste your text here..."},
     "style": {
         "description": "Style",
+        "hidden": True,
+        "advanced": True,
         "placeholder": "academic",
-        "options": ["academic", "casual", "concise"],
+        "options": ["auto", "academic", "casual", "concise"],
     },
 })
-def polish_text(text: str, style: str) -> str:
+def polish_text(text: str, style: str = "auto") -> str:
     """Polish text in the requested style."""
+    instruction = (
+        "Choose an appropriate style from the text's purpose and audience, then polish it. "
+        "Preserve meaning, facts and any stated requirements. Do not ask the user to select a style."
+        if style == "auto" else f"Polish this text in {style} style:"
+    )
     return llm([
-        {"type": "text", "text": f"Polish this text in {style} style:\n\n{text}"},
+        {"type": "text", "text": f"{instruction}\n\n{text}"},
     ])
