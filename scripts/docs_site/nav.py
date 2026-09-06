@@ -486,6 +486,7 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/ui/attachment-handling.md": 1019,
     "reference/design/ui/attachment-handling.html": 1020,
     "reference/design/ui/chat-attachments.html": 1021,
+    "reference/design/ui/file-type-icons.html": 1022,
     # The three whole-framework pages sit together at the end of the design
     # root: first how one conversation runs inside us, then how we compare to
     # the reference frameworks by design axis, then by feature list.

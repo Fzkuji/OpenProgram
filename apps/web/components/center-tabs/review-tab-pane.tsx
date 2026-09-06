@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText } from "lucide-react";
+import { FileTypeIcon } from "@/components/files/file-type-icon";
 
 import { FeatherIcon } from "@/components/animated-icons";
 import { useTranslation } from "@/lib/i18n";
@@ -383,7 +383,7 @@ const data = await requestReviewScope({
               }}
               title={file.path}
             >
-              <FileText size={14} aria-hidden="true" />
+              <FileTypeIcon name={file.path} />
               <span>{file.rel}</span>
               <i>+{file.added ?? "—"}</i>
               <em>−{file.removed ?? "—"}</em>

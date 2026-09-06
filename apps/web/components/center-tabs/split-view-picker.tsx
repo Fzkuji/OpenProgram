@@ -1,5 +1,7 @@
 "use client";
 
+import { FileTypeIcon } from "@/components/files/file-type-icon";
+
 /**
  * SplitViewPicker — "Choose a tab to add to split view".
  *
@@ -46,7 +48,7 @@ function subtitleOf(
 
 function IconFor({ tab }: { tab: CenterTab }) {
   if (tab.kind === "web") return <ChromeIcon size={15} aria-hidden="true" />;
-  if (tab.kind === "file") return <FileText size={15} aria-hidden="true" />;
+  if (tab.kind === "file") return <FileTypeIcon name={tab.path ?? ""} />;
   if (tab.kind === "ntp") return <CirclePlus size={15} aria-hidden="true" />;
   if (tab.kind === "builtin") {
     if (tab.page === "files") return <FileText size={15} aria-hidden="true" />;

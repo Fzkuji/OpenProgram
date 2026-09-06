@@ -1,5 +1,7 @@
 "use client";
 
+import { FileTypeIcon } from "@/components/files/file-type-icon";
+
 /**
  * Strip tab presentation — the two components the strip maps over.
  *
@@ -70,7 +72,7 @@ function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: boolean
       {tab.kind === "session" ? (
         <MessageCircleIcon ref={iconRef} size={14} />
       ) : tab.kind === "file" ? (
-        <FileText size={13} />
+        <FileTypeIcon name={tab.path ?? ""} size={14} />
       ) : tab.kind === "web" ? (
         tab.faviconUrl && tab.faviconUrl !== brokenFavicon ? (
           <img
@@ -340,7 +342,7 @@ export function TabItem({
           {tab.kind === "session" ? (
             <MessageCircleIcon ref={iconRef} size={14} />
           ) : tab.kind === "file" ? (
-            <FileText size={13} />
+            <FileTypeIcon name={tab.path ?? ""} size={14} />
           ) : tab.kind === "web" ? (
             tab.faviconUrl && tab.faviconUrl !== brokenFavicon ? (
               <img

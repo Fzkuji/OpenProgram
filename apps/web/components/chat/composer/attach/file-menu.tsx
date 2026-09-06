@@ -12,7 +12,8 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "@/lib/i18n";
-import { FileTextIcon, FoldersIcon } from "@/components/animated-icons";
+import { FileTypeIcon } from "@/components/files/file-type-icon";
+import { FoldersIcon } from "@/components/animated-icons";
 
 export interface FileMatch {
   path: string;
@@ -91,13 +92,13 @@ export function FileMenu({
               <span
                 aria-hidden
                 style={{
-                  width: 12,
+                  width: item.is_dir ? 12 : 16,
                   display: "inline-flex",
                   flexShrink: 0,
                   color: "var(--text-muted)",
                 }}
               >
-                {item.is_dir ? <FoldersIcon size={12} /> : <FileTextIcon size={12} />}
+                {item.is_dir ? <FoldersIcon size={12} /> : <FileTypeIcon name={item.path} />}
               </span>
               <span
                 style={{

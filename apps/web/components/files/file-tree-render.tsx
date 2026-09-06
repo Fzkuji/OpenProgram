@@ -1,25 +1,10 @@
 /** FileTree row presentation primitives. */
 import { useEffect, useRef, useState } from "react";
-import { File, FileCode, FileImage, FileJson, FileText } from "lucide-react";
+import { FileTypeIcon } from "./file-type-icon";
 import styles from "./files-panel.module.css";
 
-const ICON_BUCKETS: [Set<string>, typeof File, string | undefined][] = [
-  [new Set(["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "c", "cpp", "h", "hpp", "java", "sh"]), FileCode, "var(--accent-cyan)"],
-  [new Set(["json", "yaml", "yml", "toml", "csv"]), FileJson, "var(--accent-yellow)"],
-  [new Set(["md", "markdown", "txt", "rst", "log"]), FileText, undefined],
-  [new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "ico"]), FileImage, "var(--accent-purple)"],
-  [new Set(["pdf"]), FileText, "var(--accent-red)"],
-];
-
 export function FileGlyph({ name }: { name: string }) {
-  const dot = name.lastIndexOf(".");
-  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-  for (const [exts, Icon, color] of ICON_BUCKETS) {
-    if (exts.has(ext)) {
-      return <Icon size={15} className={styles.treeIcon} style={color ? { color } : undefined} />;
-    }
-  }
-  return <File size={15} className={styles.treeIcon} />;
+  return <FileTypeIcon name={name} className={styles.treeIcon} />;
 }
 export function InlineNameInput({
   initial,
