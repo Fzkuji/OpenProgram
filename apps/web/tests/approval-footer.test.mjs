@@ -58,10 +58,15 @@ const { createRoot } = await import("react-dom/client");
 const { flushSync } = await import("react-dom");
 const { QuestionMode } = await import("../components/chat/composer/modes/question/question-mode.tsx");
 globalThis.WebSocket = { OPEN: 1 };
-const decision = { id: "wait-one", kind: "approval", prompt: "Allow this command?", detail: "echo test", options: [], multi: false, allow_custom: false, executionId: "exec-one", expectedVersion: 3, waitGeneration: 0 };
+const decision = { id: "wait-one", kind: "approval", prompt: "Allow this command?", detail: "echo test", options: [], allowedScopes: ["once", "always"], multi: false, allow_custom: false, executionId: "exec-one", expectedVersion: 3, waitGeneration: 0 };
 async function mounted(q, check) {
   const frames = [], resolved = [], discussed = [];
   globalThis.approvalSocket = { readyState: 1, send: value => frames.push(JSON.parse(value)) };
+  respond = async (_url, init) => {
+    const command = JSON.parse(init.body);
+    frames.push(command);
+    return Response.json({ command: { ...command, status: "applied" } });
+  };
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -76,7 +81,7 @@ test("approval choices and discussion share the bottom action row with Send", as
   await mounted(decision, async ({ host, button, frames, discussed }) => {
     const footer = host.querySelector('[aria-label="Decision actions"]');
     assert.ok(footer, "one shared bottom action row");
-    for (const label of ["Allow once", "Always allow", "Deny", "Chat about this", "Send"]) assert.ok(footer.contains(button(label)), label);
+    for (const label of ["Allow once", "Allow this operation in this project", "Deny", "Chat about this", "Send"]) assert.ok(footer.contains(button(label)), label);
     assert.equal(button("Chat about this").nextElementSibling, button("Send"));
     assert.equal(button("Send").disabled, true);
     await act(async () => button("Allow once").click());
@@ -96,9 +101,9 @@ test("approval choices and discussion share the bottom action row with Send", as
     assert.equal(frames.length, 0);
   });
 });
-for (const [label, scope] of [["Allow once", "once"], ["Always allow", "always"], ["Deny", null], ["Always allow this path", "always_path"]]) {
+for (const [label, scope] of [["Allow once", "once"], ["Allow this operation in this project", "always"], ["Deny", null], ["Always allow this path", "always_path"]]) {
   test(`${label} only sends its original outcome on Send`, async () => {
-    const q = scope === "always_path" ? { ...decision, args: { _sandbox_escalation: { from: "sandbox", to: "host", path: "/tmp/test" } } } : decision;
+    const q = scope === "always_path" ? { ...decision, allowedScopes: ["once", "always_path", "always"], args: { _sandbox_escalation: { from: "sandbox", to: "host", path: "/tmp/test" } } } : decision;
     await mounted(q, async ({ button, frames, resolved }) => {
       await act(async () => button(label).click());
       assert.equal(frames.length, 0);
@@ -112,6 +117,29 @@ for (const [label, scope] of [["Allow once", "once"], ["Always allow", "always"]
     });
   });
 }
+test("approval without advertised scopes offers only one-time approval and denial", async () => {
+  await mounted({ ...decision, allowedScopes: undefined }, async ({ button }) => {
+    assert.ok(button("Allow once"));
+    assert.ok(button("Deny"));
+    assert.equal(button("Allow this operation in this project"), undefined);
+    assert.equal(button("Always allow this path"), undefined);
+  });
+});
+test("answer remains unresolved until the server acknowledges it", async () => {
+  await mounted(decision, async ({ button, resolved }) => {
+    let acknowledge;
+    respond = async (_url, init) => new Promise(resolve => {
+      const command = JSON.parse(init.body);
+      acknowledge = () => resolve(Response.json({ command: { ...command, status: "applied" } }));
+    });
+    await act(async () => button("Allow once").click());
+    await act(async () => button("Send").click());
+    assert.deepEqual(resolved, []);
+    assert.equal(button("Sending…").disabled, true);
+    await act(async () => acknowledge());
+    assert.deepEqual(resolved, [decision.id]);
+  });
+});
 test("multiple questions retain navigation and ordered answers", async () => {
   await mounted({ ...decision, kind: "ask_many", questions: [
     { prompt: "First", options: ["One"], multi: false, allow_custom: false },
