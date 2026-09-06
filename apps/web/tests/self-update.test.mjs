@@ -137,12 +137,9 @@ function fact(host, label) {
   return term.nextElementSibling;
 }
 
-test("Running renders the target separately from unknown verified runtime", async () => {
-  respond = async () => response({ now: 210, items: [{
-    kind: "self_update", id: update.update_id, session_id: update.session_id,
-    label: "Self-update", status: "verifying", started_at: 100, update,
-  }] });
-  await mount(RunningPanel, { active: true }, async (host) => {
+test("self-update history renders the target separately from unknown verified runtime", async () => {
+  respond = async () => response({ items: [update], next_cursor: null });
+  await mount(SelfUpdateHistory, { sessionId: update.session_id }, async (host) => {
     assert.match(host.textContent, /Target revision/);
     assert.equal(fact(host, "Verified runtime").textContent, "Unknown");
     assert.match(host.textContent, /Verifying/);
@@ -213,25 +210,29 @@ test("history keeps stale evidence offline and accepts a new snapshot at the sam
   });
 });
 
-test("history and Running never overlap slow polls and abort them on unmount", async (t) => {
+test("history and activity never overlap polls for the same resource and abort on unmount", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   for (const Component of [SelfUpdateHistory, RunningPanel]) {
-    let requests = 0;
-    let signal;
-    respond = async (_url, init) => {
-      requests++;
-      signal = init.signal;
+    const requests = [];
+    respond = async (url, init) => {
+      requests.push({ url: String(url), signal: init.signal });
       return new Promise(() => {});
     };
-    await mount(Component, { sessionId: update.session_id, active: true }, async () => {
+    await mount(Component, { sessionId: update.session_id, active: true }, async (host) => {
       await act(async () => {
         t.mock.timers.tick(3100);
         window.dispatchEvent(new Event("online"));
         window.dispatchEvent(new Event("online"));
+        if (Component === RunningPanel) {
+          // Activity refreshes both resources while the initial requests are
+          // still pending; neither endpoint may start an overlapping request.
+          host.querySelector('button[aria-label="Refresh activity"]').click();
+        }
       });
-      assert.equal(requests, 1);
+      assert.equal(requests.length, Component === RunningPanel ? 2 : 1);
+      assert.equal(new Set(requests.map(request => request.url)).size, requests.length);
     });
-    assert.equal(signal.aborted, true);
+    assert.ok(requests.every(request => request.signal.aborted));
   }
 });
 
@@ -239,7 +240,7 @@ test("initial failures are not displayed as empty history or Nothing running", a
   respond = async () => response({ error: "denied" }, 403);
   for (const Component of [SelfUpdateHistory, RunningPanel]) {
     await mount(Component, { sessionId: update.session_id, active: true }, async (host) => {
-      assert.match(host.textContent, /unavailable/);
+      assert.match(host.textContent, Component === RunningPanel ? /Could not load activity/ : /unavailable/);
       assert.doesNotMatch(host.textContent, /Nothing is running|Loading/);
     });
   }
@@ -306,12 +307,11 @@ test("manual recovery is explicit and an old verified revision never becomes the
   });
 });
 
-test("Running retains the prior update on a partial self-update projection error", async () => {
+test("self-update history retains the prior update when the server cannot project it", async () => {
   let partial = false;
-  respond = async () => response(partial ? { now: 220, items: [], self_update_error: "unavailable" } : {
-    now: 210, items: [{ kind: "self_update", id: update.update_id, session_id: update.session_id, update }],
-  });
-  await mount(RunningPanel, { active: true }, async (host) => {
+  respond = async () => partial ? response({ error: "unavailable" }, 503)
+    : response({ items: [update], next_cursor: null });
+  await mount(SelfUpdateHistory, { sessionId: update.session_id }, async (host) => {
     partial = true;
     await act(async () => window.dispatchEvent(new Event("online")));
     assert.match(host.textContent, /may be stale/);
