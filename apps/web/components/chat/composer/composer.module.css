@@ -335,31 +335,6 @@
   display: block;
 }
 
-/* 右上角「Chat about this」—— decision 在场时取代 ✕：放弃按它问的来，直接
-   就这话题聊。文字 pill（非圆形），锚在同一右上角 offset，高度对齐别的圆控件。 */
-.chatAboutBtn {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  height: 28px;
-  line-height: 28px;
-  padding: 0 12px;
-  border-radius: 6px;
-  border: none;
-  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-  z-index: 2;
-}
-.chatAboutBtn:hover {
-  background: color-mix(in srgb, var(--text-secondary) 20%, transparent);
-  color: var(--text-bright);
-}
-
 /* Right-aligned group in the bottom row (agent text chips + effort
    pill + context badge). min-width:0 lets it shrink on narrow
    composers; the shrink is absorbed by .agentChips' own overflow-x

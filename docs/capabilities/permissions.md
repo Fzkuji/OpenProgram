@@ -12,6 +12,11 @@ Use the permission menu in Web or the installed App, or `/permissions` in the te
 
 Bypass does not override explicit deny or ask rules, mandatory plan-exit or self-update approval, plugin restrictions, identity capabilities, or Sandbox.
 
+Approval choices appear at the bottom left of the request. Select Allow once,
+Always allow or Deny, then use Send on the right to submit. Chat about this sits
+next to Send and keeps the existing decline-and-return-to-chat behavior.
+On narrow windows, these controls wrap within the same bottom action area.
+
 ## Change permissions during a task
 
 An existing session's selection is sent to the server and confirmed before the interface displays it as effective. The interface sends the change immediately when it already knows the confirmed session version. Once the server confirms Bypass, subsequent ordinary tool calls do not ask for approval, even if the model is still reasoning, streaming text or generating tool arguments. This also applies to later tools in the same response. You do not need to stop generation or send another message. The new mode is included in subsequent model requests; text already being generated is not rewritten. A tool already authorized for execution keeps that authorization. Switching into Plan mode prevents pending write calls from being authorized.

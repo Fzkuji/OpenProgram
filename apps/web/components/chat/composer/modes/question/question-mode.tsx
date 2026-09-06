@@ -13,7 +13,7 @@
  *           「下一题」变「发送」。单步时只有一颗「发送」。
  *
  * 选项一律「只选中」（可再点取消、可切换），点底部按钮才推进 / 提交。
- * 右上角「Chat about this」= 放弃作答、直接聊（composer 渲染）。
+ * 底部右侧「Chat about this」位于发送左侧，沿用放弃作答、直接聊的行为。
  *
  * 设计：docs/design/ui/composer-interaction-modes.md。
  */
@@ -70,6 +70,7 @@ function withColon(s: string): string {
 interface QuestionModeProps {
   decision: PendingDecision;
   onResolve: (id: string) => void;
+  onChatAbout: () => void;
 }
 
 /** Wire pick for an approval card. ``always_path`` is sandbox-escalation only. */
@@ -166,7 +167,7 @@ function stepAnswered(step: Step, a: Answer): boolean {
   return true; // form 字段都有默认/可空，恒算已答
 }
 
-export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
+export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionModeProps) {
   const { text } = useTranslation();
   const steps = toSteps(q);
   const [idx, setIdx] = useState(0);
@@ -267,6 +268,7 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
     if (e.shiftKey) return;
     const t = e.target as HTMLElement;
     if (t.tagName === "TEXTAREA") return;
+    if (t.closest("button") && !e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
       if (allAnswered) submit();
@@ -306,7 +308,15 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
       </div>
       <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
         <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
-        <div className={styles.actions}>
+        <div className={styles.actions} role="group" aria-label={text("Decision actions", "答复操作")}>
+          {cur.kind === "approval" && (
+            <ApprovalChoices step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
+          )}
+          <div className={styles.actionButtons}>
+            <button type="button" className={styles.navBtn} onClick={onChatAbout}
+              title={text("Chat about this instead", "直接聊这个")}>
+              {text("Chat about this", "Chat about this")}
+            </button>
           {navButtons.map((b, i) => (
             <button
               key={i}
@@ -318,6 +328,7 @@ export function QuestionMode({ decision: q, onResolve }: QuestionModeProps) {
               {b.label}
             </button>
           ))}
+          </div>
         </div>
       </div>
     </>
@@ -400,20 +411,8 @@ function StepBody({
   }
 
   if (step.kind === "approval") {
-    const pick = (answer as { pick: ApprovalPick | null }).pick;
     const risk = step.risk ?? "low";
     const esc = step.escalation;
-    const picks: ApprovalPick[] = esc
-      ? esc.path
-        ? ["once", "always_path", "always", "deny"]
-        : ["once", "always", "deny"]
-      : ["once", "always", "deny"];
-    const label: Record<ApprovalPick, string> = {
-      once: esc ? text("Allow once", "本次放行") : text("Allow once", "允许一次"),
-      always_path: text("Always allow this path", "总是允许此路径"),
-      always: text("Always allow", "总是允许"),
-      deny: text("Deny", "拒绝"),
-    };
     const summary = esc
       ? [
           esc.path ? `${text("Blocked path", "被拦路径")}: ${esc.path}` : "",
@@ -435,18 +434,7 @@ function StepBody({
             {summary}
           </pre>
         ) : null}
-        <div className={styles.options}>
-          {picks.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={styles.opt + (pick === p ? " " + styles.optPicked : "")}
-              onClick={() => onChange({ pick: pick === p ? null : p })}
-            >
-              {pick === p ? "✓ " : ""}{label[p]}
-            </button>
-          ))}
-        </div>
+
       </>
     );
   }
@@ -497,5 +485,41 @@ function StepBody({
         />
       ) : null}
     </>
+  );
+}
+
+function ApprovalChoices({ step, answer, onChange }: {
+  step: Extract<Step, { kind: "approval" }>;
+  answer: Answer;
+  onChange: (a: Answer) => void;
+}) {
+  const { text } = useTranslation();
+    const pick = (answer as { pick: ApprovalPick | null }).pick;
+    const esc = step.escalation;
+    const picks: ApprovalPick[] = esc
+      ? esc.path
+        ? ["once", "always_path", "always", "deny"]
+        : ["once", "always", "deny"]
+      : ["once", "always", "deny"];
+    const label: Record<ApprovalPick, string> = {
+      once: esc ? text("Allow once", "本次放行") : text("Allow once", "允许一次"),
+      always_path: text("Always allow this path", "总是允许此路径"),
+      always: text("Always allow", "总是允许"),
+      deny: text("Deny", "拒绝"),
+    };
+  return (
+        <div className={`${styles.options} ${styles.approvalOptions}`} role="group" aria-label={text("Approval options", "审批选项")}>
+          {picks.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={styles.opt + (pick === p ? " " + styles.optPicked : "")}
+              aria-pressed={pick === p}
+              onClick={() => onChange({ pick: pick === p ? null : p })}
+            >
+              {pick === p ? "✓ " : ""}{label[p]}
+            </button>
+          ))}
+        </div>
   );
 }

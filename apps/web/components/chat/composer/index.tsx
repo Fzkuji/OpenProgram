@@ -483,7 +483,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // 这个圆形按钮，所以这里只管 fn-form / 普通聊天两种。
   const onSendButtonClick = fnFormActive ? submitFnForm : submitWithPanel;
 
-  // 拒绝/取消当前的系统决定 —— 走左上角 ✕。提交 canonical wait decline 并即时出队。
+  // Chat about this 提交 canonical wait decline 并即时出队。
   const rejectDecision = useCallback(() => {
     const d = activeDecision;
     if (!d) return;
@@ -668,6 +668,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           composerMode={composerMode}
           activeDecision={activeDecision}
           dequeueDecision={dequeueDecision}
+          onChatAbout={rejectDecision}
           fnFormFunction={fnFormFunction}
           fnForm={fnForm}
           handleFnFormClose={handleFnFormClose}
@@ -734,21 +735,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
           </button>
         )}
 
-        {/* 右上角 —— wrapper 级，跨 fn-form 切换不闪。decision 在场时是
-            「聊聊这个」文字 pill（放弃按它问的来、直接就这话题聊 = reject 当前
-            decision 回到普通输入）；fn-form 时是 ✕ 关闭键。 */}
-        {activeDecision ? (
-          <button
-            className={styles.chatAboutBtn}
-            type="button"
-            onClick={rejectDecision}
-            onMouseDown={(e) => e.preventDefault()}
-            tabIndex={-1}
-            title={text("Chat about this instead", "直接聊这个")}
-          >
-            {text("Chat about this", "Chat about this")}
-          </button>
-        ) : (fnFormActive && !fnForm.closing) && (
+        {/* Function-form close stays in the header; decisions own their footer. */}
+        {!activeDecision && fnFormActive && !fnForm.closing && (
           <button
             className={styles.closeBtn}
             type="button"
