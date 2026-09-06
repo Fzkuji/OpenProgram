@@ -293,9 +293,9 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
   return (
     <>
       <div className={styles.header} data-fn-form-header data-decision onKeyDown={onKey}>
-        <div className={styles.badge}>{text("Your input is needed", "需要你的输入")}</div>
+        <div className={styles.badge}>{discussionOpen ? text("Discuss this operation", "讨论这项操作") : text("Your input is needed", "需要你的输入")}</div>
         {/* 进度点 + 几分之几 —— 哪怕只有 1 步也显示（统一）。 */}
-        <div className={multi.progress}>
+        {!discussionOpen && <div className={multi.progress}>
           {steps.map((_, i) => (
             <span
               key={i}
@@ -311,7 +311,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
           <span className={multi.count}>
             {idx + 1}/{steps.length}
           </span>
-        </div>
+        </div>}
       </div>
       <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
         <fieldset disabled={discussionOpen || discussionPending} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
@@ -320,7 +320,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
         {discussionOpen && (
           <label className={formStyles.field}>
             <span className={formStyles.label}>{text("What would you like to discuss?", "你想讨论什么？")}</span>
-            <Textarea autoFocus rows={3} value={feedback} readOnly={feedbackLocked}
+            <Textarea className={styles.discussionInput} autoFocus rows={5} value={feedback} readOnly={feedbackLocked}
               onChange={(event) => setFeedback(event.target.value)}
               placeholder={text("Add your question, concern, or a different approach…", "写下你的问题、顾虑，或希望调整的地方…")} />
             {feedbackLocked && !discussionPending && <span className={formStyles.hint}>
@@ -440,7 +440,6 @@ function StepBody({
   }
 
   if (step.kind === "approval") {
-    const risk = step.risk ?? "low";
     const esc = step.escalation;
     const { prompt, summary } = approvalDisplayText(step.prompt, step.detail, esc, text);
     return (
@@ -449,7 +448,7 @@ function StepBody({
           {esc ? prompt : withColon(prompt)}
         </div>
         {summary ? (
-          <pre className={approvalStyles.summary + " " + (approvalStyles["risk_" + risk] ?? "")}>
+          <pre className={approvalStyles.summary}>
             {summary}
           </pre>
         ) : null}
