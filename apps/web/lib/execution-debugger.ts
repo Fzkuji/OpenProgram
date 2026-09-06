@@ -181,6 +181,9 @@ export function canExecuteAction(
   action: ExecutionCommandAction,
 ): boolean {
   if (action === "cancel") {
+    if (snapshot.status === "reconciliation_required"
+      && snapshot.effect_summary?.provider_response_incomplete === true
+      && !snapshot.active_child_ids?.length) return false;
     return !["completed", "failed", "cancelled", "interrupted"].includes(snapshot.status);
   }
   if (action === "continue") {

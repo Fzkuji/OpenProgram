@@ -1402,7 +1402,7 @@ def test_returned_provider_failure_finishes_without_attention(tmp_path, stop_rea
 
 
 @pytest.mark.parametrize("kind,orphan", [("provider.before", True), ("tool.before", False)])
-@pytest.mark.parametrize("attention", [None, "wait", "command"])
+@pytest.mark.parametrize("attention", [None, "wait", "command", "cancel", "cancel_applying"])
 def test_snapshot_distinguishes_ended_provider_receipt_from_action_attention(tmp_path, kind, orphan, attention):
     from openprogram.execution.effects import EffectClassification, EffectStatus
     from openprogram.execution.public import execution_snapshot
@@ -1421,11 +1421,14 @@ def test_snapshot_distinguishes_ended_provider_receipt_from_action_attention(tmp
             generation=active.generation, kind="confirm", request={"prompt": "Confirm?"},
             policy_snapshot={}, expires_at=time.time() + 60,
         )
-    elif attention == "command":
-        from openprogram.execution.model import CommandKind
+    elif attention in {"command", "cancel", "cancel_applying"}:
+        from openprogram.execution.model import CommandKind, CommandStatus
         store.accept_command(command_id="pause-attention", execution_id=execution.execution_id,
-                             expected_version=execution.status_version, kind=CommandKind.PAUSE,
+                             expected_version=execution.status_version, kind=CommandKind.PAUSE if attention == "command" else CommandKind.CANCEL,
                              payload={}, actor={"subject": "owner"})
+        if attention == "cancel_applying":
+            store.transition_command("pause-attention", expected_status=CommandStatus.ACCEPTED,
+                                     target=CommandStatus.APPLYING)
     assert execution_snapshot(execution, store=store).effect_summary.get("provider_response_incomplete") is not True
     ended = control.finish_attempt(
         attempt_id=active.attempt_id, generation=active.generation,
@@ -1433,6 +1436,6 @@ def test_snapshot_distinguishes_ended_provider_receipt_from_action_attention(tmp
         target=ExecutionStatus.FAILED, outcome="error",
     ).execution
     snapshot = execution_snapshot(ended, store=store)
-    assert snapshot.effect_summary.get("provider_response_incomplete", False) is (orphan and attention is None)
+    assert snapshot.effect_summary.get("provider_response_incomplete", False) is (orphan and attention in {None, "cancel", "cancel_applying"})
     assert snapshot.status == "reconciliation_required"
     assert len(control.effects.list_unresolved(execution.execution_id)) == 1

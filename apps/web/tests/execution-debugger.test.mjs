@@ -91,3 +91,13 @@ test("event reducer rejects a gap or stale execution event", () => {
     { kind: "stale", snapshotVersion: 7, eventVersion: 6 },
   );
 });
+
+
+test("ended model-only history has no ineffective Cancel, while children retain cancellation", () => {
+  const ended = { ...snapshot, status: "reconciliation_required", active_child_ids: [],
+    effect_summary: { provider_response_incomplete: true } };
+  assert.deepEqual(availableExecutionActions(ended), []);
+  assert.throws(() => buildExecutionCommand(ended, "cancel", "cancel-ended"), /unavailable/);
+  assert.deepEqual(availableExecutionActions({ ...ended, active_child_ids: ["child"] }), ["cancel"]);
+  assert.deepEqual(availableExecutionActions({ ...ended, effect_summary: {} }), ["cancel"]);
+});

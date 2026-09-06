@@ -6,6 +6,7 @@ import logging
 from typing import Any, Mapping
 
 from .model import (
+    CommandKind,
     CommandStatus,
     EventCursor,
     ExecutionRecord,
@@ -171,7 +172,9 @@ def _effect_summary(store: Any, execution: ExecutionRecord) -> dict[str, Any]:
 
         unresolved = EffectStore(store).list_unresolved(execution.execution_id)
         if (unresolved and all(effect.metadata.get("kind") == "provider.before" for effect in unresolved)
-                and not store.list_commands(execution.execution_id, statuses=(CommandStatus.ACCEPTED, CommandStatus.APPLYING))
+                and not any(command.kind is not CommandKind.CANCEL for command in store.list_commands(
+                    execution.execution_id, statuses=(CommandStatus.ACCEPTED, CommandStatus.APPLYING),
+                ))
                 and not DurableWaitStore(store).list_open(execution_id=execution.execution_id)):
             summary["provider_response_incomplete"] = True
     except Exception:
