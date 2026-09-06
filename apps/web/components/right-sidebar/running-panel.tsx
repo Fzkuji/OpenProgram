@@ -6,10 +6,11 @@ import { useExecutionDebugger } from "@/lib/use-execution-debugger";
 import { useManagedProcesses } from "@/lib/use-managed-processes";
 import { processIsActive, stopProcess, type ManagedProcess } from "@/lib/net/process-client";
 import type { ExecutionSnapshot } from "@/lib/execution-debugger";
-import { ChevronRight, Bot, Terminal, RefreshCw } from "lucide-react";
+import { ChevronRight, Bot, Terminal } from "lucide-react";
 import { SectionHeader } from "@/components/sidebar/section-header";
 import { Button } from "@/components/ui/button";
 import { DebuggerPanel } from "./debugger-panel";
+import { ActivityRefreshButton } from "./activity-refresh-button";
 import { SidebarNotice } from "./sidebar-notice";
 import { executionTitle, executionRequest, statusLabel, shortTime, updatedTime } from "./debugger-presentation";
 import styles from "./running-panel.module.css";
@@ -37,7 +38,10 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   }[item.status] as [string, string] || [item.status, item.status]));
   const stale = processes.stale || state.connection.state !== "connected";
   const hasRead = Boolean(state.fetchedAt) || processes.loaded;
-  const refresh = () => { state.refresh(); processes.refresh(); };
+  const refresh = async () => {
+    const results = await Promise.all([state.refresh(), processes.refresh()]);
+    return results.every(Boolean);
+  };
   const byExecution = new Map<string, ManagedProcess[]>();
   const unassigned: ManagedProcess[] = [];
   const ids = new Set(state.executions.map(item => item.execution_id));
@@ -123,7 +127,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   if (selection) {
     const item = processes.detail?.process.id === selection ? processes.detail.process : null;
     return <div className={styles.panel}>
-      <div className={styles.toolbar}>{back}<Button variant="ghost" onClick={processes.refresh}>{text("Refresh", "刷新")}</Button></div>
+      <div className={styles.toolbar}>{back}<ActivityRefreshButton key={selection} onRefresh={processes.refresh} label={text("Refresh program", "刷新程序")} /></div>
       {processes.stale && item && <SidebarNotice>{text("Could not refresh this program. Showing the last saved result.", "无法刷新此程序，当前显示上次读取的记录。")}</SidebarNotice>}
       {!item ? <SidebarNotice>{processes.stale ? text("Program details unavailable.", "暂时无法读取程序详情。") : text("Loading program…", "正在读取程序…")}</SidebarNotice> : <div className={styles.scroll}>
         <h3 className={styles.title}>{programName(item)}</h3><p className={styles.meta}>{processStatus(item)}</p>{item.status === "unknown" && <p className={styles.notice}>{text("The process supervisor is unavailable. This program is not confirmed to have exited; its record is retained.", "程序监督进程不可用，尚不能确认程序已退出，记录仍然保留。")}</p>}
@@ -156,7 +160,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   const attention = roots.filter(item => needsAttention(item));
   const working = roots.filter(item => !needsAttention(item) && hasActive(item));
   const history = roots.filter(item => !needsAttention(item) && !hasActive(item));
-  const refreshButton = <Button variant="ghost" size="icon" className={styles.refresh} onClick={refresh} aria-label={text("Refresh activity", "刷新运行记录")} title={text("Refresh activity", "刷新运行记录")}><RefreshCw size={14} /></Button>;
+  const refreshButton = <ActivityRefreshButton className={styles.refresh} onRefresh={refresh} label={text("Refresh activity", "刷新运行记录")} />;
   const firstGroup = attention.length ? attention : working.length ? working : history;
   const section = (name: string, items: ExecutionSnapshot[], historical = false) => items.length > 0 && <div className="group/sec">
     <SectionHeader name={name} className={styles.sectionHeader} collapsible={historical} collapsed={!historyOpen} onToggle={() => setHistoryOpen(value => !value)} actions={<><span className={styles.count}>{items.length}</span>{items === firstGroup && refreshButton}</>} />

@@ -39,7 +39,7 @@ export type ExecutionDebuggerController = {
   drafts: RevisionDraft[];
   connection: DebuggerConnection;
   selectExecution: (executionId: string) => void;
-  refresh: () => void;
+  refresh: () => Promise<boolean>;
   command: (command: ExecutionCommand) => Promise<CommandResult>;
   respondWait: (input: {
     wait_id: string;
@@ -89,6 +89,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
   const refreshToken = useRef(0);
   const mounted = useRef(true);
   const refreshController = useRef<AbortController | null>(null);
+  const refreshPromise = useRef<Promise<boolean> | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; refreshToken.current++; refreshController.current?.abort(); };
@@ -112,46 +113,54 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     return state;
   }, [sessionId]);
 
-  const refresh = useCallback(async () => {
-    if (!sessionId || !active || refreshController.current) return;
-    const token = ++refreshToken.current;
-    const controller = new AbortController();
-    refreshController.current = controller;
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]);
-    try {
-      const list = await getSessionExecutions(sessionId, signal);
-      const next: Record<string, ExecutionSnapshot> = {};
-      const nextCursors: Record<string, EventCursor> = {};
-      for (const item of list.items || []) {
-        if (!item.snapshot?.execution_id) continue;
-        next[item.snapshot.execution_id] = { ...item.snapshot, started_at: item.started_at, task_label: item.task_label, view_parent_execution_id: item.parent_execution_id };
-        if (item.event_cursor) nextCursors[item.snapshot.execution_id] = item.event_cursor;
+  const refresh = useCallback((): Promise<boolean> => {
+    if (!sessionId || !active) return Promise.resolve(false);
+    if (refreshPromise.current) return refreshPromise.current;
+    const request = (async () => {
+      const token = ++refreshToken.current;
+      const controller = new AbortController();
+      refreshController.current = controller;
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]);
+      try {
+        const list = await getSessionExecutions(sessionId, signal);
+        const next: Record<string, ExecutionSnapshot> = {};
+        const nextCursors: Record<string, EventCursor> = {};
+        for (const item of list.items || []) {
+          if (!item.snapshot?.execution_id) continue;
+          next[item.snapshot.execution_id] = { ...item.snapshot, started_at: item.started_at, task_label: item.task_label, view_parent_execution_id: item.parent_execution_id };
+          if (item.event_cursor) nextCursors[item.snapshot.execution_id] = item.event_cursor;
+        }
+        const inspectionId = [selectedExecutionId, requestedExecutionId].find((id) => id && next[id])
+          || Object.values(next).sort((a, b) => b.updated_at - a.updated_at)[0]?.execution_id;
+        let history: PersistedExecutionEvent[] = [];
+        if (inspectionId) {
+          const [replay] = await Promise.all([
+            getExecutionEvents(inspectionId, Math.max(0, next[inspectionId].event_sequence - 50), signal, sessionId),
+            loadDebuggerData(inspectionId, signal),
+          ]);
+          if (replay.snapshot?.execution_id !== inspectionId || replay.snapshot.session_id !== next[inspectionId].session_id) throw new Error("Execution does not belong to this conversation.");
+          next[inspectionId] = { ...next[inspectionId], ...replay.snapshot };
+          if (replay.event_cursor) nextCursors[inspectionId] = replay.event_cursor;
+          history = replay.events || [];
+        }
+        if (!mounted.current || token !== refreshToken.current || signal.aborted) return false;
+        setSnapshots(next);
+        setCursors(nextCursors);
+        setEvents(history);
+        setFetchedAt(Date.now());
+        setConnection({ state: "connected", cursor: inspectionId ? nextCursors[inspectionId] || null : null });
+        return true;
+      } catch (error) {
+        if (!mounted.current || token !== refreshToken.current || controller.signal.aborted) return false;
+        setConnection({ state: "stale", message: errorMessage(error) });
+        return false;
+      } finally {
+        if (refreshController.current === controller) refreshController.current = null;
       }
-      const inspectionId = [selectedExecutionId, requestedExecutionId].find((id) => id && next[id])
-        || Object.values(next).sort((a, b) => b.updated_at - a.updated_at)[0]?.execution_id;
-      let history: PersistedExecutionEvent[] = [];
-      if (inspectionId) {
-        const [replay] = await Promise.all([
-          getExecutionEvents(inspectionId, Math.max(0, next[inspectionId].event_sequence - 50), signal, sessionId),
-          loadDebuggerData(inspectionId, signal),
-        ]);
-        if (replay.snapshot?.execution_id !== inspectionId || replay.snapshot.session_id !== next[inspectionId].session_id) throw new Error("Execution does not belong to this conversation.");
-        next[inspectionId] = { ...next[inspectionId], ...replay.snapshot };
-        if (replay.event_cursor) nextCursors[inspectionId] = replay.event_cursor;
-        history = replay.events || [];
-      }
-      if (!mounted.current || token !== refreshToken.current || signal.aborted) return;
-      setSnapshots(next);
-      setCursors(nextCursors);
-      setEvents(history);
-      setFetchedAt(Date.now());
-      setConnection({ state: "connected", cursor: inspectionId ? nextCursors[inspectionId] || null : null });
-    } catch (error) {
-      if (!mounted.current || token !== refreshToken.current || controller.signal.aborted) return;
-      setConnection({ state: "stale", message: errorMessage(error) });
-    } finally {
-      if (refreshController.current === controller) refreshController.current = null;
-    }
+    })();
+    refreshPromise.current = request;
+    void request.then(() => { if (refreshPromise.current === request) refreshPromise.current = null; });
+    return request;
   }, [active, sessionId, selectedExecutionId, requestedExecutionId, loadDebuggerData]);
 
   useEffect(() => {
@@ -175,6 +184,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       refreshToken.current++;
       refreshController.current?.abort();
       refreshController.current = null;
+      refreshPromise.current = null;
       window.removeEventListener("op:execution-update", onUpdate);
     };
   }, [active, sessionId, refresh]);
@@ -312,7 +322,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     drafts: selectedData?.drafts || [],
     connection,
     selectExecution,
-    refresh: () => { refresh(); },
+    refresh,
     command,
     respondWait,
     createDraft,

@@ -1,6 +1,5 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   availableExecutionActions,
@@ -22,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ActivityRefreshButton } from "./activity-refresh-button";
 import { SectionHeader } from "../sidebar/section-header";
 import { useTranslation } from "@/lib/i18n";
 import { ExecutionStrip } from "../chat/messages/execution-strip";
@@ -79,7 +79,7 @@ export type DebuggerPanelProps = {
     draft: RevisionDraft,
     action: "validate" | "approve" | "publish" | "fork",
   ) => Promise<void> | void;
-  onRefresh?: () => void;
+  onRefresh?: () => Promise<boolean>;
 };
 
 const ACTION_LABELS: Record<ExecutionCommandAction, string> = {
@@ -422,7 +422,7 @@ export function DebuggerPanel({
     <section className={styles.panel} aria-label="Execution details">
       {connection.state !== "connected" && <div className={styles.connectionLine} data-health={health}>
         <span title={connectionInfo.detail}>{connectionInfo.label}{fetchedAt ? ` · ${shortTime(fetchedAt)}` : ""}</span>
-        {onRefresh && <Button variant="ghost" type="button" onClick={onRefresh} aria-label="Refresh snapshot">Refresh</Button>}
+        {onRefresh && <ActivityRefreshButton onRefresh={onRefresh} label={text("Refresh task", "刷新任务")} />}
       </div>}
 
       <div className={`${styles.layout} ${(detailOnly || executions.length === 1) ? styles.singleExecution : ""}`}>
@@ -439,7 +439,7 @@ export function DebuggerPanel({
                 <p className={styles.muted}>{text("Updated", "更新于")} {updatedTime(snapshot.updated_at)}</p>
               </div>
               <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{statusLabel(snapshot.status, text)}</div>
-              {onRefresh && connection.state === "connected" && <Button variant="ghost" size="icon" onClick={onRefresh} aria-label={text("Refresh task", "刷新任务")} title={text("Refresh task", "刷新任务")}><RefreshCw size={14} /></Button>}
+              {onRefresh && <ActivityRefreshButton onRefresh={onRefresh} label={text("Refresh task", "刷新任务")} />}
             </div>
             {snapshot.status === "reconciliation_required" ? <div className={styles.reason}>
               {unresolvedEffects.some((effect) => effect.kind === "provider.before")
