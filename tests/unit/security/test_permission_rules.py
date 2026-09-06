@@ -356,14 +356,16 @@ def _run_with_args(tool, req, args, approve=True, scope="once"):
     ("process", {"action": "start", "command": "echo harmless"}),
     ("execute_code", {"code": "print('harmless')"}),
 ])
-def test_agent_spawn_bypass_denies_execution_tools(tool_name, args):
+@pytest.mark.parametrize("source", ["agent_spawn", "mcp"])
+def test_external_bypass_respects_owner_delegation(tool_name, args, source):
     tool, ran = _make_tool(tool_name)
     req = TurnRequest(session_id="s", user_text="", agent_id="worker",
-                      source="agent_spawn", permission_mode="bypass",
+                      source=source, permission_mode="bypass",
                       permission_rules=PermissionRules(allow=[tool_name]))
     result = _run_with_args(tool, req, args)
-    assert _denied(result)
-    assert not ran["called"]
+    # Owner-delegated Agents inherit approval policy; MCP keeps its hard ban.
+    assert _denied(result) is (source == "mcp")
+    assert ran["called"] is (source == "agent_spawn")
 
 
 @pytest.mark.parametrize(("tool_name", "args"), [
@@ -842,12 +844,11 @@ def test_dispatcher_installs_gate_on_every_turn(tmp_path, monkeypatch):
     req = TurnRequest(session_id="s", user_text="hi", agent_id="worker",
                       source="agent_spawn", permission_mode="bypass",
                       history_override=[],
-                      permission_rules=PermissionRules(allow=["bash"]))
+                      permission_rules=PermissionRules(deny=["bash"]))
     tools, probes = _tools_handed_to_agent_loop(req, ["bash", "read"])
     assert set(tools) == {"bash", "read"}
 
-    # bash is a hard-constraint violation for a spawned turn even with an
-    # allow rule and permission_mode="bypass".
+    # An explicit deny still applies to an owner-delegated bypass turn.
     result = asyncio.run(tools["bash"].execute(
         "c", {"command": "echo x"}, None, None))
     assert _denied(result)
