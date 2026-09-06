@@ -56,6 +56,7 @@ import {
 } from "./nav-classes";
 import styles from "./sidebar.module.css";
 
+import { useProjectDrag } from "./sessions-list/use-project-drag";
 import { ConfirmDialog } from "./sessions-list/confirm-dialog";
 import { pushPath } from "@/lib/shallow-nav";
 import { runtimeState } from "@/lib/runtime-bridge/state";
@@ -115,16 +116,8 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   /* ---- project mode (Group-by → Project): registry-backed tree ---- */
 
   const projectMode = view.groupBy === "project";
-  const draggedProject = useRef<string | null>(null);
-  const [draggingProject, setDraggingProject] = useState<string | null>(null);
-  const [projectDrop, setProjectDrop] = useState<{id: string; side: "before" | "after"} | null>(null);
   const [orderNotice, setOrderNotice] = useState("");
-  function endProjectDrag() {
-    draggedProject.current = null;
-    setDraggingProject(null);
-    setProjectDrop(null);
-  }
-  useEffect(() => { endProjectDrag(); }, [projectMode]);
+  const { draggingProject, projectDrop, headerProps } = useProjectDrag(projectMode, reorderProject);
 
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const refreshProjects = useCallback(async (): Promise<boolean> => {
@@ -512,37 +505,10 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
               <div key={g.key} data-project-id={g.key}
                 className={`${styles.projectGroup} flex flex-col gap-px`}
                 data-drop={projectDrop?.id === g.key ? projectDrop.side : undefined}
-                data-dragging={draggingProject === g.key || undefined}
-                onDragOver={(event) => {
-                  if (!draggedProject.current || draggedProject.current === g.key) return;
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  const header = event.currentTarget.firstElementChild!.getBoundingClientRect();
-                  setProjectDrop({id: g.key, side: event.clientY < header.top + header.height / 2 ? "before" : "after"});
-                }}
-                onDragLeave={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setProjectDrop(null);
-                }}
-                onDrop={(event) => {
-                  if (!draggedProject.current) return;
-                  event.preventDefault();
-                  const header = event.currentTarget.firstElementChild!.getBoundingClientRect();
-                  reorderProject(draggedProject.current, g.key, event.clientY < header.top + header.height / 2 ? "before" : "after");
-                  endProjectDrag();
-                }}
+                data-dragging={draggingProject?.id === g.key || undefined}
               >
                 <ProjectGroupHeader
-                  dragProps={{
-                    draggable: true,
-                    onDragStart: (event) => {
-                      if ((event.target as HTMLElement).closest("button")) { event.preventDefault(); return; }
-                      draggedProject.current = g.key;
-                      setDraggingProject(g.key);
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("application/x-openprogram-project", g.key);
-                    },
-                    onDragEnd: endProjectDrag,
-                  }}
+                  dragProps={headerProps(g.key)}
                   onMove={(direction) => {
                     const target = groupedProjects[groupIndex + direction];
                     if (target) reorderProject(g.key, target.key, direction < 0 ? "before" : "after");
@@ -620,6 +586,12 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   return (
     <>
       {body}
+      {draggingProject ? (
+        <div aria-hidden="true" className={styles.projectDragPreview}
+          style={{ left: draggingProject.x + 12, top: draggingProject.y + 12 }}>
+          {projects.find(project => project.id === draggingProject.id)?.name}
+        </div>
+      ) : null}
       <span className="sr-only" role="status" aria-live="polite">{orderNotice}</span>
       {/* "Clear all" only when there are conversations to clear — an
           empty list shows just the "No conversations yet" header. It
@@ -765,7 +737,7 @@ function ProjectGroupHeader({
   onToggle: () => void;
   onNewSession: () => void;
   newSessionTitle: string;
-  dragProps: Pick<React.HTMLAttributes<HTMLDivElement>, "draggable" | "onDragStart" | "onDragEnd">;
+  dragProps: React.HTMLAttributes<HTMLDivElement>;
   onMove: (direction: -1 | 1) => void;
   reorderHint: string;
 }) {
@@ -779,7 +751,10 @@ function ProjectGroupHeader({
       aria-expanded={!collapsed}
       title={[path, reorderHint].filter(Boolean).join("\n")}
       aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-      onClick={onToggle}
+      onClick={(event) => {
+        dragProps.onClick?.(event);
+        if (!event.defaultPrevented) onToggle();
+      }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
         if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
