@@ -76,3 +76,7 @@
 
 .singleExecution { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .eventList time { flex-shrink: 0; color: var(--text-dim); font-size: 12px; }
+
+.editorDialog { max-height: calc(100dvh - 48px); overflow-y: auto; }
+.heroTop > div:first-child { flex: 1; }
+.heroTop > .statusBadge { flex-basis: 100%; order: 1; }

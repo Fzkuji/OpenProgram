@@ -1,5 +1,6 @@
 "use client";
 
+import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   availableExecutionActions,
@@ -18,6 +19,7 @@ import { buildWaitAnswer } from "@/lib/execution-wait";
 import type { PersistedExecutionEvent, UnresolvedEffect } from "@/lib/net/execution-client";
 import { SidebarNotice } from "./sidebar-notice";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SectionHeader } from "../sidebar/section-header";
@@ -227,10 +229,21 @@ function ActionButton({
 }
 
 function CommandNotice({ result }: { result: CommandResult | null }) {
+  const { text } = useTranslation();
   if (!result) return null;
+  const errors: Record<string, [string, string]> = {
+    continuation_contract_mismatch: ["The saved runtime differs from the current tools or settings. Restore the matching runtime before resuming.", "保存时的运行环境与当前工具或设置不一致。恢复对应环境后才能继续。"],
+    version_conflict: ["The task changed before this request arrived. Refresh its status and try again.", "提交请求前任务状态已改变。请刷新状态后重试。"],
+    stale_version: ["The task changed before this request arrived. Refresh its status and try again.", "提交请求前任务状态已改变。请刷新状态后重试。"],
+    permission_denied: ["Your current permissions do not allow this action.", "当前权限不允许此操作。"],
+    checkpoint_not_found: ["The saved point is unavailable. Refresh the task before choosing another action.", "保存点不可用。请刷新任务后选择其他操作。"],
+  };
+  const message = result.status === "rejected"
+    ? text(...(errors[result.rejection_code || ""] || ["The request was rejected. Refresh the task; Technical details contains the recorded reason.", "请求被拒绝。请刷新任务；技术详情中保留了具体原因。"] as [string, string]))
+    : text(...({ accepted: ["Request accepted; waiting for a safe boundary.", "请求已接受，等待安全执行边界。"], applying: ["Applying request…", "正在应用请求…"], applied: ["Request applied.", "请求已应用。"] }[result.status] as [string, string]));
   return (
     <div className={`${styles.commandNotice} ${result.status === "rejected" ? styles.noticeDanger : ""}`} role="status">
-      <span>{{ accepted: "Request accepted; waiting for the runtime.", applying: "Applying request…", applied: "Request applied.", rejected: "Request could not be applied. Check the technical details." }[result.status]}</span>
+      <span>{message}</span>
     </div>
   );
 }
@@ -265,6 +278,7 @@ export function DebuggerPanel({
   const waitKey = (wait: DurableWait) => `${wait.wait_id}:${wait.claim_generation}`;
   const [waitError, setWaitError] = useState<string | null>(null);
   const [steerValue, setSteerValue] = useState("");
+  const [editor, setEditor] = useState<"steer" | "branch" | null>(null);
   const [draftText, setDraftText] = useState<string | null>(null);
   const [draftPending, setDraftPending] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -398,10 +412,10 @@ export function DebuggerPanel({
 
   return (
     <section className={styles.panel} aria-label="Execution details">
-      <div className={styles.connectionLine} data-health={health}>
+      {connection.state !== "connected" && <div className={styles.connectionLine} data-health={health}>
         <span title={connectionInfo.detail}>{connectionInfo.label}{fetchedAt ? ` · ${shortTime(fetchedAt)}` : ""}</span>
         {onRefresh && <Button variant="ghost" type="button" onClick={onRefresh} aria-label="Refresh snapshot">Refresh</Button>}
-      </div>
+      </div>}
 
       <div className={`${styles.layout} ${(detailOnly || executions.length === 1) ? styles.singleExecution : ""}`}>
         {!detailOnly && executions.length > 1 && <aside className={styles.executionRail} aria-label="Executions">
@@ -417,6 +431,7 @@ export function DebuggerPanel({
                 <p className={styles.muted}>{text("Updated", "更新于")} {updatedTime(snapshot.updated_at)}</p>
               </div>
               <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{statusLabel(snapshot.status, text)}</div>
+              {onRefresh && connection.state === "connected" && <Button variant="ghost" size="icon" onClick={onRefresh} aria-label={text("Refresh task", "刷新任务")} title={text("Refresh task", "刷新任务")}><RefreshCw size={14} /></Button>}
             </div>
             {snapshot.status === "reconciliation_required" ? <div className={styles.reason}>
               {unresolvedEffects.some((effect) => effect.kind === "provider.before")
@@ -427,16 +442,48 @@ export function DebuggerPanel({
               {unresolvedEffects.filter((effect) => effect.tool_name).map((effect) => <div key={effect.effect_id}>{effect.tool_name}</div>)}
             </div> : snapshot.status === "interrupted" && <p className={styles.muted}>{text("Execution stopped before a final result was saved.", "执行在保存最终结果前中断。")}</p>}
 
-            {availableExecutionActions(snapshot).includes("steer") && <label className={styles.steerInput}>{text("Instruction for the next step", "下一步的补充指令")}<Input maxLength={4096} value={steerValue} onChange={(event) => setSteerValue(event.target.value)} placeholder={text("Describe the change", "描述需要调整的内容")} /></label>}
             <div className={styles.actions}>
-              {(["pause", "continue", "step", "steer", "fork", "retry", "cancel"] as ExecutionCommandAction[]).filter((action) => availableExecutionActions(snapshot).includes(action)).map((action) => (
-                <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} ready={(action !== "steer" || Boolean(steerValue.trim())) && (action !== "fork" || Boolean(actionPayloads.fork))} onCommand={onCommand && connection.state === "connected" ? submitAction : undefined} />
+              {(["pause", "continue", "step", "retry", "cancel"] as ExecutionCommandAction[]).filter((action) => availableExecutionActions(snapshot).includes(action)).map((action) => (
+                <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} onCommand={onCommand && connection.state === "connected" ? submitAction : undefined} />
               ))}
+              {availableExecutionActions(snapshot).includes("steer") && <Button variant="ghost" onClick={() => setEditor("steer")}>{text("Add instruction", "补充指令")}</Button>}
+              {(selectedDraft || (snapshot.capabilities.fork && snapshot.checkpoint_head_id)) && <Button variant="ghost" onClick={() => setEditor("branch")}>{text("Create branch", "创建分支")}</Button>}
             </div>
             <div className={styles.commandStack}>
               {Object.values(commandResults).map((result) => <CommandNotice key={result.command_id} result={result} />)}
             </div>
           </section>
+
+          {selectedWaits.length > 0 && <section className={styles.card}>
+            <div className={styles.cardHeader}><h4>Question and approval waits</h4><span>{selectedWaits.length} open</span></div>
+            {selectedWaits.length ? selectedWaits.map((wait) => (
+              <div className={styles.waitRow} key={wait.wait_id}>
+                <div><strong>{wait.kind === "approval" ? text("Approval needed", "需要授权") : text("Answer needed", "需要回答")}</strong><p>{wait.request?.prompt || text("This execution is waiting for your response.", "此执行正在等待你的回复。")}</p></div>
+                <div className={styles.waitControls}>
+                  {wait.kind === "approval" ? (
+                    <select aria-label="Approval scope" value={approvalScopes[waitKey(wait)] || ""} onChange={(event) => setApprovalScopes((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>
+                      <option value="">Choose approval scope</option>
+                      {(wait.policy_snapshot?.allowed_scopes ?? ["once"]).map((scope) => <option key={scope} value={scope}>{scope}</option>)}
+                    </select>
+                  ) : wait.kind === "form" ? (
+                    <Textarea aria-label="Form answer" value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder={JSON.stringify(Object.fromEntries(Object.entries(wait.request?.schema || {}).map(([name, field]) => [name, field.default ?? ""])), null, 2)} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
+                  ) : wait.kind === "ask_many" || wait.request?.multi ? (
+                    <Textarea aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder={'["answer 1", ["answer 2"]]'} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
+                  ) : wait.request?.options?.length ? (
+                    <select aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>
+                      <option value="">Choose an answer</option>
+                      {wait.request.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                    </select>
+                  ) : (
+                    <Input aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder="Answer" disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
+                  )}
+                  <Button variant="ghost" type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait || pendingWaits.has(waitKey(wait)) || (wait.kind === "approval" && !approvalScopes[waitKey(wait)])}>Answer</Button><Button variant="ghost" type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>Decline</Button>
+                </div>
+              </div>
+            )) : <div className={styles.empty}>No unresolved execution-owned waits.</div>}
+            {waitError && <div className={styles.formError} role="alert">{waitError}</div>}
+          </section>}
+
 
           {activityRows(events, text).length > 0 && <section className={styles.card}>
             <div className={styles.cardHeader}><h4>{text("Progress", "执行进展")}</h4></div>
@@ -471,8 +518,6 @@ export function DebuggerPanel({
             ) : <div className={styles.empty}>Only published checkpoint snapshots can be inspected.</div>}
           </section>}
 
-          </ExecutionStrip>
-
           {(snapshot.resource || Object.keys(snapshot.effect_summary).length > 0) && <div className={styles.twoColumn}>
             {snapshot.resource && <section className={styles.card}>
               <div className={styles.cardHeader}><h4>Resource wait</h4><span>{snapshot.resource?.resource_state ? String(snapshot.resource.resource_state) : "unavailable"}</span></div>
@@ -486,39 +531,26 @@ export function DebuggerPanel({
             </section>}
           </div>}
 
-          {selectedWaits.length > 0 && <section className={styles.card}>
-            <div className={styles.cardHeader}><h4>Question and approval waits</h4><span>{selectedWaits.length} open</span></div>
-            {selectedWaits.length ? selectedWaits.map((wait) => (
-              <div className={styles.waitRow} key={wait.wait_id}>
-                <div><strong>{wait.kind === "approval" ? text("Approval needed", "需要授权") : text("Answer needed", "需要回答")}</strong><p>{wait.request?.prompt || text("This execution is waiting for your response.", "此执行正在等待你的回复。")}</p></div>
-                <div className={styles.waitControls}>
-                  {wait.kind === "approval" ? (
-                    <select aria-label="Approval scope" value={approvalScopes[waitKey(wait)] || ""} onChange={(event) => setApprovalScopes((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>
-                      <option value="">Choose approval scope</option>
-                      {(wait.policy_snapshot?.allowed_scopes ?? ["once"]).map((scope) => <option key={scope} value={scope}>{scope}</option>)}
-                    </select>
-                  ) : wait.kind === "form" ? (
-                    <Textarea aria-label="Form answer" value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder={JSON.stringify(Object.fromEntries(Object.entries(wait.request?.schema || {}).map(([name, field]) => [name, field.default ?? ""])), null, 2)} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
-                  ) : wait.kind === "ask_many" || wait.request?.multi ? (
-                    <Textarea aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder={'["answer 1", ["answer 2"]]'} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
-                  ) : wait.request?.options?.length ? (
-                    <select aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>
-                      <option value="">Choose an answer</option>
-                      {wait.request.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                    </select>
-                  ) : (
-                    <Input aria-label={`${wait.kind} answer`} value={waitValues[waitKey(wait)] || ""} onChange={(event) => setWaitValues((current) => ({ ...current, [waitKey(wait)]: event.target.value }))} placeholder="Answer" disabled={!onRespondWait || pendingWaits.has(waitKey(wait))} />
-                  )}
-                  <Button variant="ghost" type="button" onClick={() => void respondWait(wait, "answer")} disabled={!onRespondWait || pendingWaits.has(waitKey(wait)) || (wait.kind === "approval" && !approvalScopes[waitKey(wait)])}>Answer</Button><Button variant="ghost" type="button" onClick={() => void respondWait(wait, "decline")} disabled={!onRespondWait || pendingWaits.has(waitKey(wait))}>Decline</Button>
-                </div>
-              </div>
-            )) : <div className={styles.empty}>No unresolved execution-owned waits.</div>}
-            {waitError && <div className={styles.formError} role="alert">{waitError}</div>}
-          </section>}
+          </ExecutionStrip>
 
-          {(selectedDraft || (snapshot.capabilities.fork && snapshot.checkpoint_head_id)) && <section className={styles.card}>
-            <div className={styles.cardHeader}><h4>{text("Branch with new instructions", "按新指令创建分支")}</h4></div>
-            <p className={styles.muted}>{text("Continue from this saved point with new instructions. The original execution stays unchanged.", "从此保存点按新指令继续，原执行保持不变。")}</p>
+          <Dialog open={editor === "steer"} onOpenChange={open => setEditor(open ? "steer" : null)}>
+            <DialogContent>
+              <DialogHeader><DialogTitle>{text("Add instruction", "补充指令")}</DialogTitle>
+                <DialogDescription>{text("Applied at the next safe execution boundary. Work already completed is retained.", "在下一个安全执行边界应用，已经完成的操作保持不变。")}</DialogDescription></DialogHeader>
+              <label className={styles.editorLabel}>{text("Instruction", "指令")}<Textarea maxLength={4096} value={steerValue} onChange={event => setSteerValue(event.target.value)} placeholder={text("Describe the change", "描述需要调整的内容")} /></label>
+              <CommandNotice result={commandResults["execution.steer"] || null} />
+              <DialogFooter><ActionButton action="steer" snapshot={snapshot} pending={pendingActions.has("execution.steer")} payload={actionPayloads.steer} ready={Boolean(steerValue.trim())}
+                onCommand={onCommand && connection.state === "connected" ? async command => {
+                  const result = await submitAction(command);
+                  if (result && result.status !== "rejected") { setSteerValue(""); setEditor(null); }
+                  return result;
+                } : undefined} /></DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={editor === "branch"} onOpenChange={open => setEditor(open ? "branch" : null)}>
+            <DialogContent className={styles.editorDialog}>
+              <DialogHeader><DialogTitle>{text("Create branch", "创建分支")}</DialogTitle>
+                <DialogDescription>{text("Continue from this saved point with new instructions. The original execution stays unchanged.", "从此保存点按新指令继续，原执行保持不变。")}</DialogDescription></DialogHeader>
             {(!selectedDraft || selectedDraft.editor) ? <label className={styles.editorLabel}>
               {text("Instructions for the new branch", "新分支的指令")}
               <Textarea maxLength={4096} value={draftText ?? selectedDraft?.editor?.instructions ?? ""} onChange={(event) => setDraftText(event.target.value)} disabled={draftPending || Boolean(selectedDraft && ["published", "discarded"].includes(selectedDraft.status))} />
@@ -543,7 +575,8 @@ export function DebuggerPanel({
               }}>{({ validate: "Check compatibility", approve: "Approve revision", publish: "Publish revision", fork: "Create branch" })[action]}</Button>)}
             </div>
             {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
-          </section>}
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </section>
