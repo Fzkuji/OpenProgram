@@ -8,7 +8,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  padding: 12px;
+  padding: 12px 24px;
   min-height: 48px;
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
@@ -31,7 +31,7 @@
   /* 与 fn-form 的 .body 完全统一：问题/选项/输入框 是并列组件，
      gap 12px；「上一题/下一题」就是 body 的最后一行（.actions）。 */
   gap: 12px;
-  padding: 12px;
+  padding: 12px 24px;
   box-sizing: border-box;
   /* Wrapper height is content-sized (capped by availableComposerHeight).
      flex + min-height:0 lets this pane take the leftover and scroll
@@ -199,5 +199,8 @@
 /* Give the discussion editor more space than the read-only operation context. */
 .discussionInput {
   min-height: 120px;
+  width: calc(100% + 24px);
+  margin-inline: -12px;
+  padding-inline: 11px;
   resize: vertical;
 }
