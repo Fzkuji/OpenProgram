@@ -1,0 +1,78 @@
+/* Top-level RuntimeBlock — a Function marker plus the compact run summary. */
+.runtime-card-host {
+  margin: 20px 8px;
+}
+.runtime-program-run {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: 24px;
+  align-items: start;
+}
+.runtime-program-avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--accent-orange, #d19a66);
+  font: 14px/1 var(--font-mono);
+  user-select: none;
+}
+.runtime-program-content {
+  min-width: 0;
+  padding-right: 52px;
+}
+.runtime-program-content > .tl {
+  margin: 0;
+}
+.runtime-program-content .tl-toggle {
+  max-width: 100%;
+}
+.runtime-program-content .tl-toggle > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.runtime-program-content .tl-chev {
+  flex: 0 0 auto;
+}
+.runtime-program-conclusion {
+  margin-top: 12px;
+}
+.runtime-program-conclusion-label {
+  margin-bottom: 3px;
+  color: var(--text-bright);
+  font-size: 12px;
+  font-weight: 600;
+}
+.runtime-program-conclusion-meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.runtime-program-conclusion-summary.message-content,
+.runtime-program-conclusion-result.message-content {
+  margin-top: 6px;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.65;
+}
+@media (max-width: 640px) {
+  .runtime-program-run { column-gap: 12px; }
+  .runtime-program-content { padding-right: 8px; }
+}
+
+/* Usage summary for completed runtime programs. */
+.runtime-usage-footer {
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  text-align: right;
+}

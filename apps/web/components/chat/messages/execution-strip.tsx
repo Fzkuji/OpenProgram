@@ -5,7 +5,7 @@
  *
  * 分工：聊天里只画**调用树结构**（行 + 层级），详情看右栏——点击函数
  * / 子代理行调 `showDetail`，右栏 Executions 面板显示输入/输出/耗时
- * （与 ExecutionDag、ToolsBlock 同一机制）。行尾 ⌄N 只展开子行
+ * （复用共享详情面板）。行尾 ⌄N 只展开子行
  * （递归层级），不在聊天里倒 JSON。思考行例外：内容轻，点行内联展开。
  *
  * 思考、LLM、子代理沿用 animated-icons；函数行使用静态 Lucide Wrench。
