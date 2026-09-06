@@ -9,6 +9,14 @@ registerHooks({
     if (specifier === "react" && context.parentURL?.endsWith("use-pending-run-function.ts")) {
       return { shortCircuit: true, url: "data:text/javascript,export const useEffect = (effect) => globalThis.launchEffects.push(effect);" };
     }
+    if (context.parentURL?.endsWith("use-pending-run-function.ts")) {
+      if (specifier === "@/lib/state/center-tabs-store") {
+        return { shortCircuit: true, url: "data:text/javascript,export const useCenterTabs = {getState: () => globalThis.launcherTabs};" };
+      }
+      if (specifier === "@/lib/runtime-bridge/conversations") {
+        return { shortCircuit: true, url: "data:text/javascript,export const newSession = (id) => globalThis.launcherNewSession(id);" };
+      }
+    }
     if (specifier.endsWith("owner-auth-bootstrap.ts")) {
       return { shortCircuit: true, url: "data:text/javascript,export const waitForOwnerAuthBootstrap = async () => {};" };
     }
@@ -126,6 +134,23 @@ test("an aborted launch neither opens a form nor publishes its response", async 
 test("a discarded Strict Mode setup does not consume the pending sidebar launch", async (t) => {
   reset();
   globalThis.launchEffects = [];
+  const order = [];
+  globalThis.launcherTabs = {
+    activeId: "s:chat-a",
+    tabs: [{ id: "s:chat-a", kind: "session", sessionId: "chat-a" }],
+    openDraftSessionTab() {
+      order.push("create-draft");
+      return "draft-b";
+    },
+  };
+  globalThis.launcherNewSession = (id) => {
+    order.push(`activate:${id}`);
+    launcherSession.activeChatKey = id;
+  };
+  t.mock.method(launcherSession, "openFnForm", (fn) => {
+    order.push(`form:${launcherSession.activeChatKey}`);
+    opened.push(fn.name);
+  });
   window.location.search = "";
   useFunctions.getState().setFunctions([{ name: "weekly_report" }]);
   const launcher = await import("../lib/use-pending-run-function.ts");
@@ -134,11 +159,13 @@ test("a discarded Strict Mode setup does not consume the pending sidebar launch"
   launcher.usePendingRunFunction("/chat");
   const cleanupDiscarded = launchEffects.pop()();
   cleanupDiscarded();
+  assert.deepEqual(order, [], "discarded setup must not create or activate a draft");
   launcher.usePendingRunFunction("/chat");
   const cleanup = launchEffects.pop()();
   t.mock.timers.tick(0);
   await Promise.resolve();
   assert.deepEqual(opened, ["weekly_report"]);
+  assert.deepEqual(order, ["create-draft", "activate:draft-b", "form:draft-b"]);
   assert.equal(launcher.takePendingRunFunction(), null);
   cleanup();
 });
