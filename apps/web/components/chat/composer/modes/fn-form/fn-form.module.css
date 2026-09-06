@@ -371,15 +371,49 @@
 
 .advanced {
   flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
 }
 .advancedSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-secondary) 6%, transparent);
   color: var(--text-secondary);
   cursor: pointer;
   font-family: var(--font-sans);
-  font-size: var(--fs-base);
+  font-size: 12px;
+  line-height: 20px;
+  list-style: none;
   user-select: none;
+}
+.advancedSummary::-webkit-details-marker {
+  display: none;
+}
+.advancedSummary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 140ms ease;
+}
+.advanced[open] > .advancedSummary::before {
+  transform: rotate(45deg);
+}
+.advancedSummary:hover,
+.advanced[open] > .advancedSummary {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+}
+.advancedSummary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .advancedSummary::before { transition: none; }
 }
 .advancedFields {
   display: flex;
