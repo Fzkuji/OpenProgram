@@ -427,6 +427,7 @@ receipt = {
 }</code>
 </pre>
 <p>The broker persists admission and completion through existing execution effects before reporting a successful receipt. Admission is not proof of a side effect. For native input, event posting often has no transactional acknowledgement: after a lost response, observe rather than replay. Lease generation fences old connections after recovery.</p>
+<p>Receipt admission follows normalization and current authority checks, and is serialized with revocation under a short lock. A receipt admitted before revocation may finish persistence afterward because it records an already-completed primitive; it does not authorize further input. No adapter, validator or database call holds that lock. Dynamic validators are followed by renewed execution/attempt and cancellation checks. Broker dispatch uses a separate copy of the owning host Context for each operation.</p>
 <p>For an unrotated window capture, desktop points are <code>x = origin_x + image_x / scale_x</code>, similarly for y. Crops first map to parent-image coordinates. General display transforms use a matrix and must be invertible; the source observation defines the convention. Browser coordinates are viewport CSS pixels after mapping from screenshot device pixels. Reject points outside allowed content and stale transforms. Do not multiply Retina scale twice.</p>
 <p>SDK calls may hide protocol bookkeeping, but cannot hide changing authority. A locator revalidation may update geometry inside one known target; opening another app or executing on a new origin must pass its own policy check.</p>
 </section>
@@ -975,8 +976,8 @@ receipt = {
 </tr>
 <tr>
 <td>P1 persistent runner / standard GUI Agent</td>
-<td>A separate macOS runner candidate enforces mandatory isolation and preserves Python state with top-level await. Host-side deadlines, cancellation, bounded pipe framing/output and idle process suspension are implemented; 98 security tests and independent specification/quality reviews pass.</td>
-<td>Not integrated. Unsupported or unavailable sandbox fails closed. Script results are untrusted and confer no host/UI authority. Trusted broker admission, durable primitive effects, standard Agent configuration and product acceptance remain unimplemented.</td>
+<td>A separate macOS candidate implements mandatory isolation, persistent Python with top-level await and bounded transport. Its broker validates host-registered targets and execution authority, preserves owner ContextVars, and records primitive effects through the existing EffectStore; 125 scoped security/effect tests and independent specification/quality reviews pass.</td>
+<td>Not integrated. Script completion is untrusted; only host adapter receipts resolve primitive effects. Browser/native/VM adapters, standard Agent configuration and product acceptance remain unimplemented. Trusted adapters must recheck authority before input and after waits; terminating the Python child does not stop an uncooperative host adapter.</td>
 </tr>
 <tr>
 <td>P2 browser / P3 desktop / P4 VM</td>
