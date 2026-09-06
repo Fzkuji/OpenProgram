@@ -15,7 +15,7 @@ import { FieldRow } from "./fn-form-fields";
 import styles from "./fn-form.module.css";
 
 export function visibleParams(fn: AgenticFunction): FnParam[] {
-  return userFunctionParams(fn);
+  return userFunctionParams(fn).filter((p) => !p.hidden && !p.advanced);
 }
 
 export function defaultParamValue(p: FnParam): string {
@@ -53,8 +53,6 @@ export function FunctionForm({
   ghost,
 }: FunctionFormProps) {
   const params = visibleParams(fn);
-  const primary = params.filter((p) => !p.advanced);
-  const advanced = params.filter((p) => p.advanced);
   const { text } = useTranslation();
 
   const rows = (items: FnParam[]) => items.map((p) => (
@@ -142,17 +140,7 @@ export function FunctionForm({
             {text("No parameters required. Use the submit button to continue.", "无需填写参数，点击提交按钮继续。")}
           </div>
         ) : (
-          <>
-            {rows(primary)}
-            {advanced.length > 0 ? (
-              <details className={styles.advanced}>
-                <summary className={styles.advancedSummary}>
-                  {text("Advanced", "高级参数")}
-                </summary>
-                <div className={styles.advancedFields}>{rows(advanced)}</div>
-              </details>
-            ) : null}
-          </>
+          rows(params)
         )}
       </div>
     </>

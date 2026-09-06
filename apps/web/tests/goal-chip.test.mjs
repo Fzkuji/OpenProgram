@@ -209,21 +209,16 @@ test("Goal actions include the snapshot identity shown to the user", async () =>
   } finally { api.mutateGoal = original; await view.close(); }
 });
 
-test("progress does not overwrite an unsaved budget and a conflict keeps the draft", async () => {
+test("Goal details have no execution parameter editors", async () => {
   reset();
-  runtimeState.conversations.s1.goal = { ...snapshot(1), budget: { max_turns: 5 } };
+  runtimeState.conversations.s1.goal = { ...snapshot(1, "paused"), budget: { max_turns: 5 } };
   const view = await mount();
   try {
     await view.open();
-    const input = view.host.querySelector('[aria-label="Turns"]');
-    await typeInto(input, "12");
-    await frame({ ...snapshot(2), budget: { max_turns: 5 } });
-    assert.equal(input.value, "12");
-    await frame({ ...snapshot(3), budget: { max_turns: 9 } });
-    assert.equal(input.value, "12");
-    assert.match(view.host.textContent, /changed elsewhere/i);
-    const save = [...view.host.querySelectorAll("button")].find(node => node.textContent === "Save limits");
-    assert.equal(save.disabled, true);
+    assert.equal(view.host.querySelector('[aria-label="Turns"]'), null);
+    assert.equal(view.host.querySelector('[aria-label="Judge model"]'), null);
+    assert.doesNotMatch(view.host.textContent, /Configure agents|Execution limits|Save roles|Save limits/);
+    assert.ok(view.host.querySelector('textarea'));
   } finally { await view.close(); }
 });
 
@@ -412,34 +407,6 @@ test("completion dismisses a pending end confirmation without changing the resul
   } finally { await view.close(); }
 });
 
-test("paused Goal role settings are editable and saved with snapshot preconditions", async () => {
-  reset();
-  runtimeState.conversations.s1.goal = { ...snapshot(1, "paused"), roles: {
-    work: { provider: "worker", model: "writer", effort: "high", timeout_s: 30 },
-    judge: { provider: "judge", model: "reviewer", effort: "low", timeout_s: 40 },
-  } };
-  const mutate = api.mutateGoal;
-  let sent;
-  api.mutateGoal = async (_sid, body) => {
-    sent = body;
-    return { goal: { ...snapshot(2, "paused"), role_requests: {
-      model: "worker:writer", effort: "high", timeout_s: 30,
-      judge_model: "judge:new-reviewer", judge_effort: "low", judge_timeout_s: 40,
-    } } };
-  };
-  const view = await mount();
-  try {
-    await view.open();
-    const model = view.host.querySelector('[aria-label="Judge model"]');
-    assert.ok(model);
-    await typeInto(model, "new-reviewer");
-    await view.click("Save roles");
-    assert.equal(sent.action, "roles");
-    assert.equal(sent.roles.judge.model, "new-reviewer");
-    assert.equal(sent.expected.goal_id, "goal-1");
-    assert.match(view.host.textContent, /validated on resume/);
-  } finally { api.mutateGoal = mutate; await view.close(); }
-});
 
 test("saved work and judge identities remain visible after remount", async () => {
   reset();
@@ -592,5 +559,24 @@ test("an empty LLM reply is labelled without inventing an output", async () => {
     })));
     assert.match(host.textContent, /No text output/);
     assert.doesNotMatch(host.textContent, /_content/);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("function form removes advanced execution fields without replacement controls", async () => {
+  const { FunctionForm } = await import('../components/chat/composer/modes/fn-form/fn-form.tsx');
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(FunctionForm, {
+      fn: { name: 'goal', params_detail: [
+        { name: 'prompt', type: 'str', required: true },
+        { name: 'model', type: 'str', hidden: true, advanced: true },
+        { name: 'effort', type: 'str', advanced: true },
+      ] }, values: {}, setValue() {}, errorParam: null, onClose() {}, onSubmit() {},
+    })));
+    assert.equal(host.querySelectorAll('textarea, input, select').length, 1);
+    assert.equal(host.querySelector('details, summary'), null);
+    assert.doesNotMatch(host.textContent, /Advanced|effort|model/);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

@@ -26,9 +26,12 @@ and judge otherwise use the same implementation.
 
 Optional limits are `max_rounds`, `max_tokens`, `max_elapsed_s`, and
 `max_cost_usd`. Limits and usage remain cumulative when a Goal is resumed.
-The creation form keeps the objective as its primary field. Expand **Advanced**
-for limits, role settings, and context mode. Explicit arguments in a typed
-`goal(...)` call are preserved; internal recovery fields are not editable here.
+The creation form only asks for the task. Execution parameters have no UI
+editors. New Goals use the configured models and one tool-free model request
+to select supported reasoning effort from task complexity. Invalid responses
+or selection failures retain configured defaults; resumed Goals reuse saved
+settings. Timeouts and budgets keep their existing defaults. Python and CLI
+callers can still pass explicit overrides.
 The default working-turn timeout is 300 seconds; Python and CLI callers can
 override it with `timeout_s`. Cumulative budgets are checked at controller
 boundaries, so the current phase can consume resources beyond a total limit
@@ -49,7 +52,7 @@ again by the Python caller; they are not reconstructed as hosted providers.
 
 The details dialog and `/goal` status show the saved work and judge settings.
 
-In a paused or waiting Goal, expand **Configure agents** to edit the work and
+In a paused or waiting Goal, Python and CLI callers can edit the work and
 judge provider, model, reasoning effort, and timeout. Provider identifies the
 configured authentication route, not a credential. Saving keeps the objective,
 evidence, questions, and cumulative usage unchanged; the selected models are
@@ -78,9 +81,9 @@ pending role selections and reports unknown cost explicitly.
 The Goal chip in the composer opens a detail dialog. It shows the objective,
 status, checklist, resource usage, last decision reason, and all pending
 questions. The dialog supports editing, pausing, resuming, answering individual
-questions, changing execution limits, and cancelling.
+questions and cancelling.
 
-Progress updates leave unsaved text and limits intact. If another client edits
+Progress updates leave unsaved task text intact. If another client edits
 the same values, the dialog preserves your draft and offers an explicit
 “Use latest” action; it does not silently overwrite either version. Requests
 include the displayed Goal identity and version. Save failures retain the
