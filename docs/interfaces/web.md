@@ -1,5 +1,7 @@
 # Web UI
 
+In the sidebar, choose **Group by → Project** to show project folders. Drag a project header above or below another project to reorder it. The insertion line marks the destination. You can also focus a project header and press Alt+Up or Alt+Down. The order is saved on this device and survives reloads; sessions remain in their projects.
+
 See [tool permission modes and live changes](../capabilities/permissions.md) for approval behavior and changes during a task.
 
 The browser interface covers all of OpenProgram's daily operations: chatting, managing functions and programs, configuring providers and MCP, browsing memory and projects. This page walks through each page by route and describes the chat page in detail.

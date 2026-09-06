@@ -65,3 +65,12 @@
 .projectKids :global(.ui-list-item .truncate) {
   font-size: 13px;
 }
+
+.projectGroup { position: relative; }
+.projectGroup[data-dragging] { opacity: .45; }
+.projectGroup[data-drop]::after {
+  content: ""; position: absolute; left: 8px; right: 8px; height: 2px;
+  background: var(--accent-blue, #3975df); pointer-events: none; z-index: 1;
+}
+.projectGroup[data-drop="before"]::after { top: -1px; }
+.projectGroup[data-drop="after"]::after { bottom: -1px; }

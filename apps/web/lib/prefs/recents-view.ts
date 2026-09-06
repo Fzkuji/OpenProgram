@@ -30,6 +30,7 @@ export type RecentsSort = "recency" | "created" | "title";
 export type RecentsActivity = "all" | "1d" | "7d" | "30d";
 
 export interface RecentsView {
+  projectOrder: string[];
   status: RecentsStatus;
   /** Project filter. ``"all"`` = no filter. Stored as a project id /
    *  name; the backend that introduces projects fills the option list
@@ -43,6 +44,7 @@ export interface RecentsView {
 }
 
 export const DEFAULT_RECENTS_VIEW: RecentsView = {
+  projectOrder: [],
   status: "active",
   project: "all",
   environment: "all",
@@ -63,6 +65,7 @@ function _read(): RecentsView {
     if (!raw) return DEFAULT_RECENTS_VIEW;
     const p = JSON.parse(raw) as Partial<RecentsView>;
     return {
+      projectOrder: Array.isArray(p.projectOrder) && p.projectOrder.every((id) => typeof id === "string") ? [...new Set(p.projectOrder)] : [],
       status: p.status || DEFAULT_RECENTS_VIEW.status,
       project: p.project || DEFAULT_RECENTS_VIEW.project,
       environment: p.environment || DEFAULT_RECENTS_VIEW.environment,
@@ -84,8 +87,11 @@ export function getRecentsView(): RecentsView {
 export function setRecentsView(patch: Partial<RecentsView>): void {
   if (typeof window === "undefined") return;
   _cached = { ...getRecentsView(), ...patch };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_cached));
-  window.dispatchEvent(new Event(CHANGE_EVT));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_cached));
+  } finally {
+    window.dispatchEvent(new Event(CHANGE_EVT));
+  }
 }
 
 export function subscribeRecentsView(fn: () => void): () => void {

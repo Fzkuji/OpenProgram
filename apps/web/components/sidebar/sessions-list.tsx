@@ -34,9 +34,9 @@ import type { ConvSummary } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { activateOnKey } from "@/lib/utils";
-import { useRecentsView } from "@/lib/prefs/recents-view";
+import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
 import { wsRequest } from "@/lib/net/ws-request";
-import { projectGroups } from "@/lib/project-groups";
+import { projectGroups, moveProject } from "@/lib/project-groups";
 import {
   Popover,
   PopoverAnchor,
@@ -115,6 +115,16 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   /* ---- project mode (Group-by → Project): registry-backed tree ---- */
 
   const projectMode = view.groupBy === "project";
+  const draggedProject = useRef<string | null>(null);
+  const [draggingProject, setDraggingProject] = useState<string | null>(null);
+  const [projectDrop, setProjectDrop] = useState<{id: string; side: "before" | "after"} | null>(null);
+  const [orderNotice, setOrderNotice] = useState("");
+  function endProjectDrag() {
+    draggedProject.current = null;
+    setDraggingProject(null);
+    setProjectDrop(null);
+  }
+  useEffect(() => { endProjectDrag(); }, [projectMode]);
 
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const refreshProjects = useCallback(async (): Promise<boolean> => {
@@ -400,9 +410,22 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // inputs (visible, projects) change together anyway. Sessions with no
   // explicit project claim belong to the DEFAULT project (the backend's
   // project_for_session falls back to it) — there is no separate
-  // "Ungrouped" bucket in this mode. Group order is fixed: default first,
-  // then project name; session order remains the order from `visible`.
-  const groupedProjects = projectMode ? projectGroups(projects, visible) : [];
+  // "Ungrouped" bucket in this mode. Manual project order does not alter
+  // membership or the session order from `visible`.
+  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder) : [];
+  function reorderProject(source: string, target: string, side: "before" | "after") {
+    // Include hidden/empty projects so filtering cannot discard their position.
+    const fallback = [...projects].sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name));
+    const ids = new Set(projects.map((p) => p.id));
+    const order = [...new Set([...view.projectOrder.filter((id) => ids.has(id)), ...fallback.map((p) => p.id)])];
+    if (source === target || !ids.has(source) || !ids.has(target)) return;
+    try {
+      setRecentsView({ projectOrder: moveProject(order, source, target, side) });
+      setOrderNotice(text("Project order saved", "项目顺序已保存"));
+    } catch {
+      setOrderNotice(text("Order changed, but could not be saved on this device", "顺序已更改，但无法保存在此设备上"));
+    }
+  }
 
   const renderRow = (c: LegacyConv) => {
     const label = labelFor(c, t("sidebar.untitled"));
@@ -483,11 +506,48 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
           // at least the default project) — render a flat run instead of
           // flashing everything under a wrong group.
           visible.map(renderRow)
-        : groupedProjects.map((g) => {
+        : groupedProjects.map((g, groupIndex) => {
             const expanded = filtering ? true : !collapsedProjects.has(g.key);
             return (
-              <div key={g.key} className="flex flex-col gap-px">
+              <div key={g.key} data-project-id={g.key}
+                className={`${styles.projectGroup} flex flex-col gap-px`}
+                data-drop={projectDrop?.id === g.key ? projectDrop.side : undefined}
+                data-dragging={draggingProject === g.key || undefined}
+                onDragOver={(event) => {
+                  if (!draggedProject.current || draggedProject.current === g.key) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  const header = event.currentTarget.firstElementChild!.getBoundingClientRect();
+                  setProjectDrop({id: g.key, side: event.clientY < header.top + header.height / 2 ? "before" : "after"});
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setProjectDrop(null);
+                }}
+                onDrop={(event) => {
+                  if (!draggedProject.current) return;
+                  event.preventDefault();
+                  const header = event.currentTarget.firstElementChild!.getBoundingClientRect();
+                  reorderProject(draggedProject.current, g.key, event.clientY < header.top + header.height / 2 ? "before" : "after");
+                  endProjectDrag();
+                }}
+              >
                 <ProjectGroupHeader
+                  dragProps={{
+                    draggable: true,
+                    onDragStart: (event) => {
+                      if ((event.target as HTMLElement).closest("button")) { event.preventDefault(); return; }
+                      draggedProject.current = g.key;
+                      setDraggingProject(g.key);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("application/x-openprogram-project", g.key);
+                    },
+                    onDragEnd: endProjectDrag,
+                  }}
+                  onMove={(direction) => {
+                    const target = groupedProjects[groupIndex + direction];
+                    if (target) reorderProject(g.key, target.key, direction < 0 ? "before" : "after");
+                  }}
+                  reorderHint={text("Drag to reorder; Alt+Up/Down to move", "拖动排序；Alt+上下方向键移动")}
                   name={g.name}
                   path={g.path}
                   collapsed={!expanded}
@@ -560,6 +620,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   return (
     <>
       {body}
+      <span className="sr-only" role="status" aria-live="polite">{orderNotice}</span>
       {/* "Clear all" only when there are conversations to clear — an
           empty list shows just the "No conversations yet" header. It
           folds away with the Projects section: a folded section leaves
@@ -694,6 +755,9 @@ function ProjectGroupHeader({
   onToggle,
   onNewSession,
   newSessionTitle,
+  dragProps,
+  onMove,
+  reorderHint,
 }: {
   name: string;
   path: string;
@@ -701,17 +765,28 @@ function ProjectGroupHeader({
   onToggle: () => void;
   onNewSession: () => void;
   newSessionTitle: string;
+  dragProps: Pick<React.HTMLAttributes<HTMLDivElement>, "draggable" | "onDragStart" | "onDragEnd">;
+  onMove: (direction: -1 | 1) => void;
+  reorderHint: string;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
-      className={sidebarNavItemClass + " select-none"}
+      {...dragProps}
+      className={sidebarNavItemClass + " select-none cursor-grab active:cursor-grabbing"}
       role="button"
       tabIndex={0}
       aria-expanded={!collapsed}
-      title={path || undefined}
+      title={[path, reorderHint].filter(Boolean).join("\n")}
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
       onClick={onToggle}
-      onKeyDown={activateOnKey(onToggle)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+          event.preventDefault();
+          onMove(event.key === "ArrowUp" ? -1 : 1);
+        } else activateOnKey(onToggle)(event);
+      }}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
