@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { PinIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { ProjectEditor, type EditableProject } from "./project-editor";
 
+import { sidebarProjectActionClass } from "./nav-classes";
 import { SectionHeader } from "./section-header";
 import { Input } from "@/components/ui/input";
 import styles from "./project-settings.module.css";
@@ -40,7 +41,7 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, o
   return <>
     <Menu.Root open={open} onOpenChange={changeOpen}>
       <div onContextMenu={event=>{event.preventDefault();changeOpen(true);}}>
-        {children(<Menu.Trigger asChild><button data-active={editing || addingSection || operation !== null} type="button" aria-label={text(`Options for ${project.name}`, `${project.name} 的选项`)} onPointerDown={event=>event.stopPropagation()} onClick={event=>event.stopPropagation()} className={styles.trigger+" size-5 shrink-0 rounded text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-bg-hover"}><MoreHorizontal size={15}/></button></Menu.Trigger>)}
+        {children(<Menu.Trigger asChild><button data-active={editing || addingSection || operation !== null} type="button" aria-label={text(`Options for ${project.name}`, `${project.name} 的选项`)} onPointerDown={event=>event.stopPropagation()} onClick={event=>event.stopPropagation()} className={styles.trigger+" "+sidebarProjectActionClass+" text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100"}><MoreHorizontal size={14}/></button></Menu.Trigger>)}
       </div>
       <Menu.Portal><Menu.Content side="right" align="start" sideOffset={6} className={MENU_PANEL+" "+styles.menu+" min-w-[220px]"}>
         <Menu.Item className={item} onSelect={onNewSession}><MessageSquarePlus size={14} className={styles.menuIcon}/>{text("New chat", "新建聊天")}</Menu.Item>

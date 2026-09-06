@@ -54,6 +54,7 @@ import {
   sidebarNavIconClass,
   sidebarNavItemClass,
   sidebarNavLabelClass,
+  sidebarProjectActionClass,
 } from "./nav-classes";
 import styles from "./sidebar.module.css";
 
@@ -819,7 +820,7 @@ function ProjectGroupHeader({
         onMouseLeave={() => pinRef.current?.stopAnimation()}
         onFocus={() => pinRef.current?.startAnimation()}
         onBlur={() => pinRef.current?.stopAnimation()}
-        className={`flex size-[20px] shrink-0 items-center justify-center rounded-[5px] text-text-secondary hover:bg-bg-hover hover:text-text-primary ${pinned ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
+        className={`${sidebarProjectActionClass} text-text-secondary hover:text-text-primary ${pinned ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
         <PinIcon ref={pinRef} size={14} aria-hidden="true" />
       </button>
       <button
@@ -830,9 +831,7 @@ function ProjectGroupHeader({
           e.stopPropagation();
           onNewSession();
         }}
-        className="flex size-[20px] shrink-0 items-center justify-center rounded-[5px]
-          text-text-muted opacity-0 transition-opacity duration-150
-          group-hover:opacity-100 hover:bg-[var(--bg-selected)] hover:text-text-bright"
+        className={sidebarProjectActionClass + " text-text-muted opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-text-bright"}
       >
         <Plus size={14} strokeWidth={2} />
       </button>

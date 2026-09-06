@@ -99,3 +99,10 @@ export const sidebarNavActionClass = [
   "group-hover:opacity-60",
   "hover:!opacity-100",
 ].join(" ");
+
+/** Consistent hover surfaces for the pin, new-chat and project-options actions. */
+export const sidebarProjectActionClass = [
+  "inline-flex size-[20px] shrink-0 items-center justify-center",
+  "rounded-[5px] border-0 p-0 leading-none",
+  "hover:bg-bg-hover",
+].join(" ");
