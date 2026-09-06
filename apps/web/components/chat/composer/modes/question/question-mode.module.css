@@ -15,12 +15,12 @@
   flex-shrink: 0;
 }
 
-/* 顶部小标签：橙色主色、mono、轻量（fn-form header 的语气）。 */
+/* Decision headings use the same sans-serif typography as their fields. */
 .badge {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--fs-base);
   font-weight: 600;
-  color: var(--accent-orange);
+  color: var(--text-primary);
 }
 
 /* 主体 = fn-form 的 .body：纵向 gap、与发送行间的下分割线。左右 24px 与
@@ -72,7 +72,10 @@
 .opt {
   padding: 0 12px;
   height: 28px;
-  line-height: 28px;
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 6px;
   border: none;
   background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
@@ -148,7 +151,10 @@
 /* 次按钮（上一题）：中性 tint 圆角矩形。 */
 .navBtn {
   height: 28px;
-  line-height: 28px;
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 12px;
   border-radius: 6px;
   border: none;

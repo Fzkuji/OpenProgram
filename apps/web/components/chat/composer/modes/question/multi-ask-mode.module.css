@@ -38,7 +38,8 @@
   margin-left: 4px;
   font-size: var(--fs-base);
   color: var(--text-muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 整组总标题（runtime.ask_many 的 prompt），在各题之上。 */
