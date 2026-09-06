@@ -977,12 +977,12 @@ receipt = {
 <tr>
 <td>P1 persistent runner / standard GUI Agent</td>
 <td>A separate macOS candidate implements mandatory isolation, persistent Python with top-level await and bounded transport. Its broker validates host-registered targets and execution authority, preserves owner ContextVars, and records primitive effects through the existing EffectStore; 125 scoped security/effect tests and independent specification/quality reviews pass.</td>
-<td>Not integrated. Script completion is untrusted; only host adapter receipts resolve primitive effects. Browser/native/VM adapters, standard Agent configuration and product acceptance remain unimplemented. Trusted adapters must recheck authority before input and after waits; terminating the Python child does not stop an uncooperative host adapter.</td>
+<td>Not integrated. Script completion is untrusted; only host adapter receipts resolve primitive effects. Standard Agent configuration and product acceptance remain unimplemented; browser binding is tested separately below, while native and VM adapters remain incomplete. Trusted adapters must recheck authority before input and after waits; terminating the Python child does not stop an uncooperative host adapter.</td>
 </tr>
 <tr>
 <td>P2 browser / P3 desktop / P4 VM</td>
-<td>A ControllerBackend candidate preserves caller ContextVars and checks a host guard after Page queueing and target lookup, before browser API dispatch. Cancelled observation and interrupted cleanup release session leases; 205 scoped tests and independent reviews pass.</td>
-<td>Not integrated with GUI scripts or the default App. Guarded MCP dispatch is unsupported; cancellation of an already-dispatched Playwright operation is unverified. Full browser SDK, desktop and VM adapters remain incomplete.</td>
+<td>A ControllerBackend candidate preserves caller ContextVars and checks a host guard after Page queueing and target lookup, before browser API dispatch. Cancelled observation and interrupted cleanup release session leases. An opaque broker handle binds an existing owner/session to guarded browser calls with explicit observation IDs. Controlled Page tests cover observe, type, verify and screenshots; host-only PNG bytes are bounded and stored as execution-owned chunks, with full image manifests and structured error diagnostics retained on uncertain effects. The related test suite passes 223 tests.</td>
+<td>The sandboxed script-to-browser binding is tested with a controlled Page; standard Agent and default-App integration remain incomplete. Guarded MCP dispatch is unsupported; cancellation of an already-dispatched Playwright operation is unverified. Full browser SDK, desktop and VM adapters remain incomplete.</td>
 </tr>
 <tr>
 <td>P5 recovery and UX</td>
