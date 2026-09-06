@@ -8,9 +8,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  /* 右内边距给 wrapper 级的「Chat about this」按钮留位（~140px），免得
-     标题/进度点压到它下面。 */
-  padding: 12px 140px 11px 12px;
+  padding: 12px;
   min-height: 48px;
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
@@ -84,6 +82,7 @@
   cursor: pointer;
   transition: background 180ms ease, color 180ms ease;
   user-select: none;
+  white-space: nowrap;
   box-sizing: border-box;
 }
 
@@ -132,8 +131,19 @@
    靠右。 */
 .actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.actionButtons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
 }
 
 /* 次按钮（上一题）：中性 tint 圆角矩形。 */
@@ -169,4 +179,10 @@
 .navBtnPrimary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent-orange) 24%, transparent);
   color: var(--accent-orange);
+}
+
+.opt:focus-visible,
+.navBtn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
 }
