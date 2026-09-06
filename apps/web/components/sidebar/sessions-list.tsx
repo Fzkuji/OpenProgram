@@ -44,7 +44,6 @@ import {
 } from "@/components/ui/popover";
 import {
   FoldersIcon,
-  PinIcon,
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
 import { ConvMenu } from "./conv-menu";
@@ -535,9 +534,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
                       menuTrigger={menuTrigger}
                       icon={project.icon}
                       dragProps={headerProps(g.key)}
-                      pinned={view.pinnedProjects.includes(g.key)}
-                      pinTitle={view.pinnedProjects.includes(g.key) ? text("Unpin project", "取消置顶项目") : text("Pin project", "置顶项目")}
-                      onTogglePin={() => setRecentsView({ pinnedProjects: view.pinnedProjects.includes(g.key) ? view.pinnedProjects.filter(id => id !== g.key) : [...view.pinnedProjects, g.key] })}
                       onMove={(direction) => {
                         const target = visibleProjectGroups[visibleProjectGroups.findIndex(group => group.key === g.key) + direction];
                         if (target) {
@@ -752,8 +748,8 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
  * The EXACT nav-row recipe the Functions/Chats links use: `ui-list-item`
  * box (32px) via sidebarNavItemClass, animated FoldersIcon in the
  * standard 16px icon slot, normal-weight label — plus this row's two
- * trailing extras: a hover-revealed ＋ (new session bound to this
- * project) and a small chevron at the row end that rotates 90° when the
+ * trailing extras: compact new-session and options controls, followed
+ * by a small chevron at the row end that rotates 90° when the
  * group is open. The project's path lives in the row's title tooltip. */
 function ProjectGroupHeader({
   name,
@@ -765,7 +761,7 @@ function ProjectGroupHeader({
   dragProps,
   onMove,
   reorderHint,
-  pinned, pinTitle, onTogglePin, icon, menuTrigger, selected,
+  icon, menuTrigger, selected,
 }: {
   name: string;
   path: string;
@@ -779,12 +775,8 @@ function ProjectGroupHeader({
   icon?: string;
   menuTrigger: React.ReactNode;
   selected: boolean;
-  pinned: boolean;
-  pinTitle: string;
-  onTogglePin: () => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
-  const pinRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
       {...dragProps}
@@ -814,28 +806,21 @@ function ProjectGroupHeader({
         {icon ? <span className="truncate" aria-hidden="true">{icon}</span> : <FoldersIcon ref={iconRef} size={20} />}
       </span>
       <span className={sidebarNavLabelClass}>{name}</span>
-      <button type="button" aria-label={pinTitle} title={pinTitle} aria-pressed={pinned}
-        onClick={event => { event.stopPropagation(); onTogglePin(); }}
-        onMouseEnter={() => pinRef.current?.startAnimation()}
-        onMouseLeave={() => pinRef.current?.stopAnimation()}
-        onFocus={() => pinRef.current?.startAnimation()}
-        onBlur={() => pinRef.current?.stopAnimation()}
-        className={`${sidebarProjectActionClass} text-text-secondary hover:text-text-primary ${pinned ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
-        <PinIcon ref={pinRef} size={14} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        title={newSessionTitle}
-        aria-label={newSessionTitle}
-        onClick={(e) => {
-          e.stopPropagation();
-          onNewSession();
-        }}
-        className={sidebarProjectActionClass + " text-text-muted opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-text-bright"}
-      >
-        <Plus size={14} strokeWidth={2} />
-      </button>
-      {menuTrigger}
+      <div className="flex shrink-0 items-center gap-[2px]">
+        <button
+          type="button"
+          title={newSessionTitle}
+          aria-label={newSessionTitle}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNewSession();
+          }}
+          className={sidebarProjectActionClass + " text-text-muted opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-text-bright"}
+        >
+          <Plus size={14} strokeWidth={2} />
+        </button>
+        {menuTrigger}
+      </div>
       <ChevronRight
         size={12}
         aria-hidden="true"
