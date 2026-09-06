@@ -1180,12 +1180,10 @@ def test_registered_gui_agent_can_select_computer_use_backend(monkeypatch):
         task="click Save", backend="chrome_devtools_mcp",
         runtime=SimpleNamespace(),
     )
-    assert result["status"] == "succeeded"
-    assert result["success"] is True
-    assert result["infeasible_declared"] is False
-    assert calls[0][0] == "original"
-    assert calls[0][1]["browser_backend"] == "chrome_devtools_mcp"
-    assert calls[0][1]["preferred_capability"] == "browser_use"
+    assert result["status"] == "infeasible"
+    assert result["success"] is False
+    assert result["reason_code"] == "guarded_dispatch_unsupported"
+    assert calls == []
 
 
 def test_programs_cli_resolves_registered_gui_agent(monkeypatch, capsys):
@@ -1218,38 +1216,22 @@ def test_programs_cli_resolves_registered_gui_agent(monkeypatch, capsys):
     assert "'status': 'succeeded'" in capsys.readouterr().out
 
 
-def test_registered_gui_agent_browser_surface_uses_default_backend(monkeypatch):
-    from openprogram.programs.gui_harness_bridge import (
-        DEFAULT_MAX_STEPS,
-        install_gui_harness_web_use,
-    )
-
+def test_registered_gui_agent_browser_surface_uses_standard_entry(monkeypatch):
+    from openprogram.programs import gui_browser_agent
+    from openprogram.programs.gui_harness_bridge import DEFAULT_MAX_STEPS, install_gui_harness_web_use
     calls = []
-
-    def original(**kwargs):
+    def standard_entry(**kwargs):
         calls.append(kwargs)
-        return {
-            "status": "succeeded",
-            "reason_code": "verified",
-            "summary": "done",
-        }
-
+        return {"status": "succeeded", "reason_code": "verified_browser_assertion", "summary": "done"}
+    monkeypatch.setattr(gui_browser_agent, "run_browser_gui_agent", standard_entry)
+    def original(**kwargs):
+        raise AssertionError("browser must not use the legacy planner")
     runtime = object()
     wrapped = install_gui_harness_web_use(original)
     result = wrapped(task="inspect the page", surface="browser", runtime=runtime)
-
     assert result["success"] is True
-    assert calls == [{
-        "task": "inspect the page",
-        "max_steps": DEFAULT_MAX_STEPS,
-        "app_name": "desktop",
-        "max_seconds": None,
-        "runtime": runtime,
-        "allow_general": False,
-        "browser_backend": "",
-        "vm_url": "",
-        "preferred_capability": "browser_use",
-    }]
+    assert calls == [{"task": "inspect the page", "max_steps": DEFAULT_MAX_STEPS,
+                      "max_seconds": None, "runtime": runtime, "allow_general": False, "backend": ""}]
 
 
 @pytest.mark.parametrize(

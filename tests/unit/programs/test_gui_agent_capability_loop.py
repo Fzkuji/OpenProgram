@@ -602,7 +602,7 @@ def test_browser_use_delegates_to_background_page_runtime(
     }]
 
 
-def test_bridge_delegates_surface_choice_to_unified_harness(monkeypatch):
+def test_bridge_preserves_legacy_desktop_and_vm_settings(monkeypatch):
     from openprogram.programs.gui_harness_bridge import install_gui_harness_web_use
 
     calls = []
@@ -614,7 +614,7 @@ def test_bridge_delegates_surface_choice_to_unified_harness(monkeypatch):
     wrapped = install_gui_harness_web_use(harness)
     result = wrapped(
         task="inspect the current UI",
-        surface="browser",
+        surface="desktop",
         backend="chrome_devtools_mcp",
         vm_url="http://vm:5000",
         runtime=object(),
@@ -622,6 +622,6 @@ def test_bridge_delegates_surface_choice_to_unified_harness(monkeypatch):
 
     assert result["success"] is True
     assert len(calls) == 1
-    assert calls[0]["preferred_capability"] == "browser_use"
+    assert calls[0]["preferred_capability"] == "computer_use"
     assert calls[0]["browser_backend"] == "chrome_devtools_mcp"
     assert calls[0]["vm_url"] == "http://vm:5000"

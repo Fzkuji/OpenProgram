@@ -2100,7 +2100,7 @@ class Runtime:
 
             req = inner_turn_request("program")
             if req is None:
-                return agent_tools
+                return None
             # No approval surface down here — the inner request is
             # non-interactive by construction, so every gate that would
             # ask instead denies. The sink keeps sandbox.violation events

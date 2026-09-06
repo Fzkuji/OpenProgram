@@ -122,7 +122,7 @@ class GuiBrowserResources:
         for handle in handles:
             self._broker.revoke_resource(handle)
         try:
-            self._registry.release_owner(self._owner)
+            self._registry.release_owner(self._owner, strict=True)
         finally:
             surface_context.release_bindings(self._context)
 

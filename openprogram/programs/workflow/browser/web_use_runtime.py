@@ -613,7 +613,7 @@ class WebUseSessionRegistry:
             if callable(revoke):
                 revoke()
 
-    def release_owner(self, owner_id: str) -> None:
+    def release_owner(self, owner_id: str, *, strict: bool = False) -> None:
         """Release every session and unconsumed Page capability for one caller."""
         with self._lock:
             if owner_id in self._closing_owners:
@@ -628,22 +628,36 @@ class WebUseSessionRegistry:
                 if not value["consumed"]:
                     capabilities.append(value)
         released = set()
+        errors = []
         try:
             for session in sessions:
-                with session.operation_lock:
-                    if not session.closed:
-                        self._cleanup_session(session, suppress_errors=True)
-                    released.add(id(session.page_context))
+                try:
+                    with session.operation_lock:
+                        if not session.closed:
+                            self._cleanup_session(session, suppress_errors=not strict)
+                except BaseException as exc:
+                    if not strict:
+                        raise
+                    errors.append(exc)
+                released.add(id(session.page_context))
             for capability in capabilities:
                 context = capability["context"]
                 key = id(context)
                 if key not in released:
-                    with suppress(Exception):
+                    try:
                         self._release_context(context)
+                    except BaseException as exc:
+                        if strict:
+                            errors.append(exc)
+                        elif not isinstance(exc, Exception):
+                            raise
                     released.add(key)
         finally:
             with self._lock:
                 self._closing_owners.discard(owner_id)
+
+        if errors:
+            raise errors[0]
 
 
 _registry: WebUseSessionRegistry | None = None
