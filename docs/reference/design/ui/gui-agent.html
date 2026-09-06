@@ -976,8 +976,8 @@ receipt = {
 </tr>
 <tr>
 <td>P1 persistent runner / standard GUI Agent</td>
-<td>A separate macOS candidate implements mandatory isolation, persistent Python with top-level await and bounded transport. Its broker validates host-registered targets and execution authority, preserves owner ContextVars, and records primitive effects through the existing EffectStore; 125 scoped security/effect tests and independent specification/quality reviews pass.</td>
-<td>Not integrated. Script completion is untrusted; only host adapter receipts resolve primitive effects. Standard Agent configuration and product acceptance remain unimplemented; browser binding is tested separately below, while native and VM adapters remain incomplete. Trusted adapters must recheck authority before input and after waits; terminating the Python child does not stop an uncooperative host adapter.</td>
+<td>A separate macOS candidate implements mandatory isolation, persistent Python with top-level await and bounded transport. Its broker validates host-registered targets and execution authority, preserves owner ContextVars, and records primitive effects through the existing EffectStore; its native AgentTool binds the current execution attempt and invocation, preserves interpreter state, forwards host screenshots through the existing result converter, and closes on cancellation or context exit. A controlled provider drives the standard AgentSession through tool execution and image consumption; 256 related tests pass.</td>
+<td>The public GUI Agent entry still uses the existing Harness loop; the native tool is not yet installed there. Script completion is untrusted; only host adapter receipts resolve primitive effects. Standard Agent configuration and product acceptance remain unimplemented; browser binding is tested separately below, while native and VM adapters remain incomplete. Trusted adapters must recheck authority before input and after waits; terminating the Python child does not stop an uncooperative host adapter.</td>
 </tr>
 <tr>
 <td>P2 browser / P3 desktop / P4 VM</td>
