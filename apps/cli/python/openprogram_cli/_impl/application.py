@@ -546,6 +546,11 @@ def main():
         verb = getattr(args, "workflows_verb", None)
         if verb == "validate":
             sys.exit(_cmd_workflows_validate(args.directory, as_json=args.json))
+        if verb in {"test", "publish"}:
+            sys.exit(_cmd_workflows_action(
+                args.directory, publish=verb == "publish",
+                replace=getattr(args, "replace", False), as_json=args.json,
+            ))
         _need_subcommand(args._cmd_parser)
         return
 
@@ -1168,7 +1173,7 @@ from openprogram.cli.commands.programs import (  # noqa: E402,F401
     _cmd_uninstall,
     _cmd_programs_available,
 )
-from openprogram.cli.commands.workflows import _cmd_workflows_validate  # noqa: E402,F401
+from openprogram.cli.commands.workflows import _cmd_workflows_validate, _cmd_workflows_action  # noqa: E402,F401
 from openprogram.cli.commands.skills import (  # noqa: E402,F401
     _cmd_skills_list,
     _cmd_skills_doctor,

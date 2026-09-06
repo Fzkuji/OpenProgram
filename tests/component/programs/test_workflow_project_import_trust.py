@@ -1,11 +1,26 @@
 from __future__ import annotations
 
 import subprocess
+import sys
+
+import pytest
 from pathlib import Path
 
 from openprogram.programs import _programs, _registry
 from openprogram.programs.workflow._project import catalog, repository, validation
 import openprogram.paths as paths
+
+
+@pytest.fixture(autouse=True)
+def _restore_workflow_import_state(monkeypatch):
+    monkeypatch.setattr(_registry._workflow_source_finder, "sources", dict(_registry._workflow_source_finder.sources))
+    monkeypatch.setattr(sys, "meta_path", list(sys.meta_path))
+    previous = sys.modules.get("workflows")
+    yield
+    if previous is None:
+        sys.modules.pop("workflows", None)
+    else:
+        sys.modules["workflows"] = previous
 
 
 def _isolate(tmp_path: Path, monkeypatch) -> Path:
@@ -206,8 +221,6 @@ def test_migration_preserves_existing_external_workflow(tmp_path, monkeypatch):
 
 def test_bound_catalog_loads_real_packages_and_only_authorized_siblings(tmp_path, monkeypatch):
     import importlib
-    import sys
-    import pytest
     from openprogram.agentic_programming import function as function_module
     from openprogram.webui._functions import _discover_workflow_functions
 
@@ -222,17 +235,18 @@ def test_bound_catalog_loads_real_packages_and_only_authorized_siblings(tmp_path
     a = _plant(root, "portable_a")
     b = _plant(root, "portable_b")
     unapproved = _plant(root, "portable_unapproved")
-    (b / "__init__.py").write_text("def value():\n    return 'dependency'\n")
+    (b / "__init__.py").write_text("def value():\n    return 'dependency'\ndef portable_b():\n    return value()\n")
     (unapproved / "__init__.py").write_text("raise AssertionError('must not import')\n")
     (a / "__init__.py").write_text("from .workflow import portable_a, late\n")
     (a / "workflow.py").write_text(
         "from openprogram.agentic_programming import agentic_function\n"
         "from openprogram.programs.workflow.portable_b import value\n"
+        "from workflows.portable_b import portable_b\n"
         "@agentic_function\n"
         "def portable_a(task: str):\n    return value() + task\n"
         "def late():\n"
         "    from openprogram.programs.workflow.portable_b import value\n"
-        "    return value()\n"
+        "    return portable_b()\n"
     )
     _programs.bind_program_catalog(source)
     for project in (a, b):
@@ -253,7 +267,7 @@ def test_bound_catalog_loads_real_packages_and_only_authorized_siblings(tmp_path
     finally:
         parent = sys.modules["openprogram.programs.workflow"]
         for name in list(sys.modules):
-            if name.startswith(prefix):
+            if name.startswith(prefix) or name.startswith("workflows.portable_"):
                 sys.modules.pop(name, None)
         for name in ("portable_a", "portable_b", "portable_unapproved"):
             if hasattr(parent, name):

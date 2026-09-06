@@ -576,6 +576,9 @@ def _publish_candidate(candidate: dict, *, project_id: str, action: str) -> dict
             base_candidate, _ = _checkout_revision(project_dir, active_revision)
             if _candidates_equal(candidate, base_candidate):
                 raise InvalidWorkflow("revision unchanged")
+        from .authoring import _run_tests
+
+        _run_tests(instance, candidate["project_metadata"]["entrypoint"])
         published_id, revision = _publish_snapshot(
             instance,
             project_id=project_id,

@@ -847,3 +847,25 @@ def test_process_info_same_sandbox_by_default_host_wide_when_escalated():
     # Linux 等价物：默认 --unshare-pid 隐藏主机进程，escalated 不再隐藏。
     assert "--unshare-pid" in _bwrap_args("true", "/w", SandboxPolicy())
     assert "--unshare-pid" not in _bwrap_args("true", "/w", escalated)
+
+
+def test_private_authoring_tmp_does_not_grant_host_tmp_writes():
+    profile = _seatbelt_profile("/workspace", SandboxPolicy(), private_tmp=True)
+    assert '(allow file-write* (subpath "/workspace"))' in profile
+    assert '(allow file-write* (subpath "/tmp"))' not in profile
+    assert '(allow file-write* (subpath "/private/tmp"))' not in profile
+
+
+def test_authoring_readonly_code_mount_precedes_writes_and_denials(tmp_path):
+    code = tmp_path / "code"
+    work = tmp_path / "workspace"
+    source = work / "snapshot"
+    code.mkdir()
+    source.mkdir(parents=True)
+    args = _bwrap_args("python", str(work), SandboxPolicy(deny_read=(), deny_write=(str(source),)), read_only_roots=(str(code),))
+    code_mount = args.index(str(code))
+    work_mount = args.index(str(work))
+    source_mount = args.index(str(source))
+    assert code_mount < work_mount < source_mount
+    assert args[code_mount - 1] == "--ro-bind"
+    assert args[source_mount - 1] == "--ro-bind"

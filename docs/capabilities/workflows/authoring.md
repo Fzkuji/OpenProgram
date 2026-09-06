@@ -1,118 +1,205 @@
-# Write a Workflow package
+# Write, test, and publish a Workflow
 
-This page is the authoring contract for reusable Workflow packages created by a person or by OpenProgram's author Agent. Both paths use the same static validator.
+A Workflow is a Python package with one public `@agentic_function` entry point. People and OpenProgram's author Agent use the same package validator and Git publication format. Functions compose through ordinary Python imports and calls.
 
-## Required layout
+## Define the contract before writing code
 
-The project directory name, project name, entry-point name, and Python package name must be the same lowercase Python identifier.
+Record the following in the package's `README.md`:
+
+| Item | Required information |
+| --- | --- |
+| Purpose | The concrete task and the evidence needed to complete it |
+| Input | Meaning of `task`, required context, and invalid-input behavior |
+| Output | Return type, files produced, and how success is verified |
+| Effects | Model, tool, file, network, and external-submission behavior |
+| Failure and cancellation | What remains after a failed or interrupted run; whether retry is safe |
+| Dependencies | Imported Workflows, required tools and services |
+| Tests | Behavior checks, mocked external work, and any separate live checks |
+| Usage | One reproducible invocation and the expected result |
+
+Keep the public entry point small. Put preparation, checks, or separate stages in helpers when they have a distinct responsibility. Use `llm`, `agent`, `goal`, tools, and other Workflows directly; do not implement another dispatcher or execution engine. Handle expected invalid input explicitly and let runtime cancellation propagate.
+
+## Package layout and identity
+
+The directory, project name, entry-point name, and Python package name must be the same lowercase Python identifier.
 
 ```text
-weekly_report/
+project_report/
 ├── pyproject.toml
 ├── README.md
 ├── __init__.py
 ├── workflow.py
 ├── steps/
+│   ├── __init__.py
 │   └── prepare.py
 └── tests/
     └── test_workflow.py
 ```
 
-`goals/` and `helpers/` are also valid helper directories. At least one non-`__init__.py` helper module is required. Python source outside these locations is rejected.
+`goals/` and `helpers/` are also supported. At least one non-`__init__.py` helper module is required. Python source outside the package entry, helper directories, and tests is rejected. Bytecode caches are ignored; they are not package source.
 
-## Portable identity and location
+Names begin with a lowercase letter and contain only lowercase letters, digits, and underscores, up to 80 characters. The summary is required and limited to 500 characters. Tags are required but may be empty, with at most 20 strings of 60 characters each.
 
-A published package lives at `openprogram/programs/workflow/<workflow_id>` relative to the OpenProgram project. Its identity is `<workflow_id>`, not the full filesystem location. Use relative imports for its own helpers and normal Python imports for other Workflows. Keep source, metadata, tests and instructions in this package; do not embed a home directory or checkout prefix in any of them.
-
-The runtime records internal sources with an explicit Programs scope:
-
-```json
-{"scope": "programs", "path": "workflow/weekly_report", "kind": "workflow-publish", "source": "workflow:weekly_report"}
-```
-
-The scope resolves against `openprogram/programs/`, never the current conversation's working directory. Moving a source checkout preserves these relative identities. Paths cannot contain `..`, an absolute prefix, a backslash, or an external symlink. If multiple active catalogs contain the same scoped path, loading is rejected rather than choosing one implicitly.
-
-An installed App and a source checkout are separate installations. The App needs one explicit binding to the source catalog; this installation setting is not stored in every Workflow. For local framework development, `scripts/refresh-local-app.sh` binds the default App to the checkout being installed. After moving that checkout, run the refresh script from its new location. This also rebuilds and restarts the default installation; it is not a read-only validation command.
-
-Previously authorized in-project Workflow records using obsolete absolute prefixes migrate to relative identities when a structurally valid matching package exists in a known catalog. Existing external locations remain external. Migration does not authorize other directories found beside that package. Removing an authorization remains effective even if the directory is missing and later recreated.
-
-## Metadata
+`pyproject.toml`:
 
 ```toml
 [project]
-name = "weekly_report"
+name = "project_report"
 version = "0.1.0"
-description = "Prepare an evidence-based weekly report."
-keywords = ["weekly report", "status update"]
+description = "Prepare a draft report from verified project evidence."
+keywords = ["report", "evidence"]
 
 [tool.openprogram]
-display-name = "weekly_report"
+display-name = "project_report"
 
 [project.entry-points."openprogram.workflows"]
-weekly_report = "workflows.weekly_report:weekly_report"
+project_report = "workflows.project_report:project_report"
 ```
 
-Names must begin with a lowercase letter and contain only lowercase letters, digits, and underscores. A summary is required and limited to 500 characters. The `keywords`/tags array is required but may be empty; it accepts at most 20 strings and 60 characters per entry.
+## Implement the entry point
 
-## Public entry point
-
-`workflow.py` must define exactly one public function whose name matches the project. It uses the existing `@agentic_function` decorator and accepts exactly one positional `task` argument.
+`workflow.py` defines exactly one public function, named after the package, with exactly one positional `task` argument:
 
 ```python
 from openprogram.agentic_programming import agentic_function
-
 from .steps.prepare import prepare
 
 
 @agentic_function
-def weekly_report(task: str):
+def project_report(task: str) -> str:
     return prepare(task)
 ```
 
-`__init__.py` re-exports that function:
+`__init__.py` re-exports it:
 
 ```python
-from .workflow import weekly_report
+from .workflow import project_report
 
-__all__ = ["weekly_report"]
+__all__ = ["project_report"]
 ```
 
-## Allowed Python
+Leave `steps/__init__.py` empty. In `steps/prepare.py`:
 
-Top-level package code may contain module docstrings, allowed `from ... import ...` statements, an optional `__all__`, and function definitions. Classes, ordinary `import x` statements, mutable module constants, arbitrary top-level calls, and redefining managed names such as `llm`, `agent`, or `goal` are rejected.
+```python
+from openprogram.programs.workflow.goal import goal
 
-Absolute imports are limited to:
 
-- `openprogram.agentic_programming`
-- `openprogram.programs.workflow.*`
-- `openprogram.programs.tools.*`
-- one `workflows.<name>` import at a time, with the imported function matching the package name
+def prepare(task: str) -> str:
+    request = task.strip()
+    if not request:
+        raise ValueError("A report request is required")
+    return goal(
+        "Prepare a draft report using only supplied or verified evidence. "
+        "Do not submit it to an external service. Request: " + request,
+        max_rounds=2,
+    )
+```
 
-Normal relative imports inside the package are allowed. `tests/test_workflow.py` may import `workflows.<project_name>`. Static directory validation checks only the import shape; create/revise publication resolves each Workflow dependency, rejects missing or cyclic dependencies, and pins the selected Git revision.
+The README for this example states that input describes the period, evidence and format; output is a draft string; the Goal may use configured models and tools to inspect evidence; external submission is excluded. Live provider behavior needs separate verification. A canceled or failed run is not a completed report, and retries may repeat evidence collection.
 
-## Static validation
+## Write behavior tests
+
+Test expected output, invalid input, and the effects the Workflow is allowed to request. Mock external work in the publication tests: network access is disabled. Do not treat a test that only checks `callable(entrypoint)` as proof of behavior.
+
+For the example, `tests/test_workflow.py` verifies the draft-only request and rejects empty input before any Goal call:
+
+```python
+from workflows.project_report import project_report
+
+
+def test_draft_request(monkeypatch):
+    calls = []
+
+    def fake_goal(prompt, **kwargs):
+        calls.append(prompt)
+        return "verified draft"
+
+    monkeypatch.setattr("workflows.project_report.steps.prepare.goal", fake_goal)
+    result = project_report.__wrapped__("  this week's verified commits  ")
+    assert result == "verified draft"
+    assert len(calls) == 1
+    assert "this week's verified commits" in calls[0]
+    assert "Do not submit" in calls[0]
+
+
+def test_empty_request(monkeypatch):
+    def unexpected_goal(*args, **kwargs):
+        raise AssertionError("invalid input reached the Goal")
+
+    monkeypatch.setattr("workflows.project_report.steps.prepare.goal", unexpected_goal)
+    try:
+        project_report.__wrapped__("   ")
+    except ValueError:
+        return
+    raise AssertionError("empty input was accepted")
+```
+
+`__wrapped__` is the original decorated Python function used here for isolated behavior tests. Normal users call the public function or submit its chat form. These tests do not claim to verify model quality, Runtime integration, or successful external actions.
+
+## Allowed imports and composition
+
+Package top-level code permits docstrings, allowed `from ... import ...` statements, optional `__all__`, and function definitions. Classes, plain `import x`, mutable top-level constants, arbitrary top-level calls, and replacing managed names such as `llm`, `agent`, or `goal` are rejected.
+
+Absolute imports may reference `openprogram.agentic_programming`, `openprogram.programs.workflow.*`, `openprogram.programs.tools.*`, or one named Workflow:
+
+```python
+from workflows.project_report import project_report
+```
+
+The live catalog resolves that public name to the same authorized callable as `openprogram.programs.workflow.project_report`. Package-internal helpers use relative imports. Publication resolves named Workflow dependencies, rejects missing or cyclic dependencies, and records exact Git revisions. Snapshot execution loads those pinned dependencies, not the latest live package. Do not encode checkout locations in import strings.
+
+## Validate, test, and publish
+
+Use the same Python environment as OpenProgram. Pytest is a declared runtime dependency; behavior testing also requires an available OS sandbox. When using a source checkout, install the current project with:
 
 ```bash
-openprogram workflows validate ./weekly_report
-openprogram workflows validate ./weekly_report --json
+python -m pip install -e .
 ```
 
-The command checks the directory boundary, metadata, required files, Python syntax, top-level statements, imports, decorators, entry-point signature, helper presence, and re-export. It is read-only: it does not initialize Git, write files, import the package, or execute its tests.
+Run the authoring commands against the package directory:
 
-Python-generated `__pycache__` directories are ignored so a package remains valid after import. Other files still follow the package path contract; validation does not delete cache files.
+```bash
+openprogram workflows validate ./project_report --json
+openprogram workflows test ./project_report --json
+openprogram workflows publish ./project_report --json
+```
 
-A successful JSON result includes `ok`, `workflow_id`, normalized metadata, the validated Python file list, and `executed_tests: false`. An invalid package exits with status 1 and reports `error_type` and `error`.
+| Command | Observable result |
+| --- | --- |
+| `validate` | Checks metadata, boundaries, syntax, imports, entry signature, re-export, helpers, and tests without importing or executing the package; returns `executed_tests: false` |
+| `test` | Copies validated source and pinned dependencies, executes pytest in a required sandbox, and returns `executed_tests: true`, `sandboxed: true`, and test output on success; does not publish |
+| `publish` | Revalidates and retests the exact snapshot, commits it into the Workflow catalog, records the source, and returns `workflow_id` and the immutable Git `revision` |
 
-## Favorites and Use
+Behavior testing currently supports macOS and Linux where the OS sandbox is available. It has a 60-second process deadline, disables network and automatic pytest plugins, removes credential environment variables, protects snapshot source from writes, uses an isolated home and temporary workspace, and prevents background processes from surviving the test. macOS denies subprocess creation; Linux confines descendants to a private PID namespace. Mock external process calls in portable publication tests. It does not fall back to unsandboxed execution. Failed tests, timeout, or unavailable sandbox prevent publication.
 
-Open **Abilities → Programs** and select the Workflow. Favorite saves its public function name; the sidebar resolves that name against the callable catalog. **Use** opens the Workflow's parameter form in chat. It does not execute the Workflow or send a message until you submit the form.
+Publication does not change the authored directory. It rejects an existing destination unless replacement is explicit:
 
-The catalog is refreshed when Programs loads. If Use cannot find a cached function, it requests the current callable catalog once. An unavailable function or failed request produces a visible error. A failed refresh retains the last successful catalog instead of removing all favorite rows. Leaving the chat while a launch is resolving cancels opening that form in another chat.
+```bash
+openprogram workflows publish ./project_report --replace --json
+```
 
-If a source directory appears in Programs but cannot be used, check package validation and installation authorization, then refresh Programs. Source files being visible does not establish that their Python entry point loaded successfully.
+Replacement also requires a clean destination Git repository. Preserve or commit deliberate edits there before replacing it. The final publication operation rechecks the destination under its lock. A prior test report is never accepted in place of testing the snapshot being published.
 
-## Current integration boundary
+The author Agent's `create_workflow` and `revise_workflow` remain separate generated-package entry points and run the same required sandbox tests before publication. Failed tests publish nothing; testing does not execute the user's real task. The manual commands above are the supported path for publishing files written by a person. The legacy `entry.py` format is for historical revisions and resume compatibility, not new packages.
 
-Static validation alone does not publish a package. OpenProgram currently publishes generated packages through `create_workflow` and explicit updates through `revise_workflow`. A manual publish command will require a forced-sandbox behavior-test gate first, so untrusted Python cannot read credentials, write outside its candidate directory, use the network, or run indefinitely.
+## Portable paths and installed Apps
 
-The legacy `entry.py` format is read-only compatibility for historical revisions and runs. Do not use it for new packages.
+Published packages live at `openprogram/programs/workflow/<workflow_id>` relative to the OpenProgram project. Internal source records use a scoped POSIX relative path:
+
+```json
+{"scope": "programs", "path": "workflow/project_report", "kind": "workflow-publish", "source": "workflow:project_report"}
+```
+
+The scope resolves against `openprogram/programs/`, never the current conversation's working directory. Moving a source checkout preserves this identity. Traversal, absolute scoped paths, backslashes, external symlinks, and ambiguous catalog matches are rejected.
+
+An installed App needs one explicit source-catalog binding to find a separate checkout. This installation setting is not repeated in each package. For local framework development, run `scripts/refresh-local-app.sh` from the checkout being installed, including after moving it. This rebuilds and restarts the default installation; it is not read-only validation.
+
+Previously authorized Workflow records with obsolete checkout prefixes migrate when a structurally valid matching package exists in a known catalog. Existing external locations remain external. Migration does not authorize neighboring directories. Removing a source authorization remains effective if its directory is missing and later recreated.
+
+## Favorites, Use, and troubleshooting
+
+Open **Abilities → Programs**, refresh, and select the Workflow. Favorite saves its public function name. **Use** opens its parameter form in chat; nothing executes until you submit that form.
+
+Programs and the sidebar share a callable catalog. Use requests a current catalog if the function is not cached, and displays a visible error when the function is unavailable or the request fails. Failed refreshes preserve the last successful catalog. Older responses cannot replace a newer catalog, and leaving the chat cancels a pending form opening.
+
+If source is visible but Use is unavailable, verify the package, publication result, and source authorization, then refresh Programs. Source visibility alone does not prove Python import succeeded. If behavior tests fail, inspect the returned output; keep live provider checks separate from sandboxed publication tests. A dirty destination must be resolved before `--replace` can succeed.

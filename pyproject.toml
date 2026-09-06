@@ -28,6 +28,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    # Workflow publication requires sandboxed behavior tests, including generated packages.
+    "pytest>=8.0.0",
     # Used by `openprogram providers setup` / `login` for an interactive
     # arrow-key menu. Falls back to plain input() when not installed,
     # so this is officially optional in source-development environments.
@@ -136,7 +138,6 @@ dev = [
     # test_wheel_contains_both_runtime_shims builds with --no-isolation, so
     # the backend must be importable in the dev env (not bundled on 3.12+)
     "setuptools>=68,<75",
-    "pytest>=8.0.0",
     "pytest-timeout>=2.3",
     # full-suite runs go 126s -> 27s with -n auto; keep serial default so
     # single-file debugging stays overhead-free

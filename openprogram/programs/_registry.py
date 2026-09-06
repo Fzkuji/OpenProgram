@@ -204,6 +204,22 @@ def _migrate_workflow_project_sources(root) -> None:
     mark_workflow_projects_migrated()
 
 
+class _WorkflowAliasLoader:
+    """Expose the existing callable without registering a second function."""
+
+    def __init__(self, canonical: str):
+        self.canonical = canonical
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        package = importlib.import_module(self.canonical)
+        name = self.canonical.rsplit(".", 1)[-1]
+        setattr(module, name, getattr(package, name))
+        module.__all__ = [name]
+
+
 class _WorkflowSourceFinder:
     """Resolve only explicitly authorized external Workflow package names.
 
@@ -215,7 +231,15 @@ class _WorkflowSourceFinder:
         self.sources: dict[str, str] = {}
 
     def find_spec(self, fullname, path=None, target=None):
-        source = self.sources.get(fullname)
+        if fullname == "workflows":
+            # Live imports have no filesystem search path. Snapshot execution
+            # explicitly supplies its own namespace before loading packages.
+            return importlib.machinery.ModuleSpec(fullname, loader=None, is_package=True)
+        alias = fullname.startswith("workflows.") and fullname.count(".") == 1
+        if alias and path:
+            return None  # A snapshot namespace owns its pinned package bytes.
+        canonical = "openprogram.programs.workflow." + fullname.split(".")[1] if alias else fullname
+        source = self.sources.get(canonical)
         if source is None:
             return None
         from openprogram.programs._programs import owner_controlled_program_sources
@@ -223,6 +247,8 @@ class _WorkflowSourceFinder:
         allowed = {row["path"] for row in owner_controlled_program_sources()}
         if source not in allowed or os.path.islink(source):
             raise ModuleNotFoundError(f"Workflow source is no longer authorized: {fullname}")
+        if alias:
+            return importlib.machinery.ModuleSpec(fullname, _WorkflowAliasLoader(canonical))
         return importlib.util.spec_from_file_location(
             fullname,
             os.path.join(source, "__init__.py"),

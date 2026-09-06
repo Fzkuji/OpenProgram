@@ -210,6 +210,10 @@ def _package_project() -> str:
 
 @pytest.fixture
 def session_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # These tests own planning, revisions and runtime behavior; the real OS
+    # publication gate is covered by integration/programs/test_workflow_authoring.py.
+    from openprogram.programs.workflow._project import authoring
+    monkeypatch.setattr(authoring, "_run_tests", lambda *_args: {"executed_tests": True, "sandboxed": True})
     monkeypatch.setattr(TL, "_session_repo", lambda _sid: tmp_path)
     monkeypatch.setattr(TL, "_workflow_projects_root", lambda: tmp_path / "catalog")
     monkeypatch.setattr(TL, "_registered_agentic_functions", lambda: {})

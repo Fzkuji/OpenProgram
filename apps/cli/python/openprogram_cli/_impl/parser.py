@@ -62,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
             "    agents          manage agents (model, skills, tools per persona)\n"
             "    sessions        manage chat sessions\n"
             "    programs        run / list agentic programs\n"
-            "    workflows       validate authored Workflow packages\n"
+            "    workflows       validate, test and publish Workflow packages\n"
             "    skills          manage the SKILL.md registry\n"
             "    plugins         manage installed plugins\n"
             "    channels        chat-channel bots (Telegram, Discord, Slack, WeChat)\n"
@@ -250,6 +250,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit a stable JSON report",
     )
+
+    for verb, help_text in (
+        ("test", "Run Workflow behavior tests in a required OS sandbox"),
+        ("publish", "Test and publish an immutable Workflow package revision"),
+    ):
+        command = workflows_sub.add_parser(verb, help=help_text)
+        command.add_argument("directory", help="Workflow package directory containing pyproject.toml")
+        command.add_argument("--json", action="store_true", help="Emit a JSON result")
+        if verb == "publish":
+            command.add_argument("--replace", action="store_true", help="Replace an existing clean Workflow package after tests pass")
 
     # ---- skills -----------------------------------------------------------
     p_skills = sub.add_parser("skills", help="Manage SKILL.md registry")
