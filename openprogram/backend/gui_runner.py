@@ -38,10 +38,12 @@ class GuiPythonRunner:
     All protocol faults, deadlines and cancellation destroy this interpreter.
     """
 
-    def __init__(self):
+    def __init__(self, *, broker=None):
+        self._broker = broker
         self._context = None
         self._process = None
         self._sequence = 0
+        self._last_rpc_id = 0
         self._lock = threading.Lock()
         self._closed = False
 
@@ -76,6 +78,8 @@ class GuiPythonRunner:
 
     def close(self):
         self._closed = True
+        if self._broker is not None:
+            self._broker.revoke()
         if self._context is not None:
             context, self._context = self._context, None
             context.__exit__(None, None, None)
@@ -111,6 +115,9 @@ class GuiPythonRunner:
         output = {"stdout": [], "stderr": []}
         text_size = 0
         wire_size = 0
+        operations = 0
+        rpc = None
+        rpc_id = None
         stderr_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
         def append(stream, text):
@@ -130,6 +137,21 @@ class GuiPythonRunner:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise GuiRunnerError("execution deadline exceeded")
+                if rpc is not None and rpc.done():
+                    try:
+                        response = {"value": rpc.result(), "error": None}
+                    except Exception as exc:
+                        response = {"value": None, "error": f"{type(exc).__name__}: {exc}"}
+                    body = json.dumps({"id": self._sequence, "request_id": rpc_id, **response},
+                                      allow_nan=False).encode()
+                    if len(body) > _MAX_TEXT:
+                        raise GuiRunnerError("broker reply exceeds output limit")
+                    text_size += len(body)
+                    if text_size > _MAX_TEXT:
+                        raise GuiRunnerError("output limit exceeded")
+                    pending = memoryview(struct.pack("!I", len(body)) + body)
+                    selector.register(process.stdin, selectors.EVENT_WRITE, "input")
+                    rpc = None
                 for key, _ in selector.select(min(remaining, 0.05)):
                     try:
                         if key.data == "input":
@@ -171,7 +193,25 @@ class GuiPythonRunner:
                                     or not isinstance(message.get("text"), str)):
                                 raise GuiRunnerError("invalid protocol output")
                             append(message["stream"], message["text"])
+                        elif message.get("type") == "rpc":
+                            if self._broker is None:
+                                raise GuiRunnerError("GUI broker unavailable")
+                            if rpc is not None or pending:
+                                raise GuiRunnerError("pipelined GUI broker request")
+                            operations += 1
+                            if operations > 100:
+                                raise GuiRunnerError("GUI operation limit exceeded")
+                            rpc_id = message.get("request_id")
+                            if type(rpc_id) is not int or rpc_id <= self._last_rpc_id:
+                                raise GuiRunnerError("invalid GUI broker request identity")
+                            self._last_rpc_id = rpc_id
+                            try:
+                                rpc = self._broker.submit(message.get("request"), deadline=deadline, cancel=cancel)
+                            except (ValueError, PermissionError) as exc:
+                                raise GuiRunnerError(f"invalid GUI broker request: {exc}") from exc
                         elif message.get("type") == "done":
+                            if rpc is not None:
+                                raise GuiRunnerError("premature completion during GUI operation")
                             error = message.get("error")
                             if error is not None and not isinstance(error, str):
                                 raise GuiRunnerError("invalid protocol error")

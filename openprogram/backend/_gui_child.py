@@ -9,17 +9,22 @@ import inspect
 import json
 import struct
 import sys
+import threading
 
 _reader = sys.stdin.buffer
 _writer = sys.stdout.buffer
 _namespace = {"__name__": "__main__"}
 _sequence = 0
+_rpc_sequence = 0
+_send_lock = threading.Lock()
+_rpc_lock = threading.Lock()
 
 
 def _send(message):
     payload = json.dumps(message, ensure_ascii=True).encode()
-    _writer.write(struct.pack("!I", len(payload)) + payload)
-    _writer.flush()
+    with _send_lock:
+        _writer.write(struct.pack("!I", len(payload)) + payload)
+        _writer.flush()
 
 
 class _Output:
@@ -36,6 +41,25 @@ class _Output:
         pass
 
 
+class _UI:
+    async def call(self, resource, method, arguments=None, observation=None):
+        global _rpc_sequence
+        with _rpc_lock:
+            _rpc_sequence += 1
+            request_id = _rpc_sequence
+            _send({"id": _sequence, "type": "rpc", "request_id": request_id,
+                   "request": {"resource": resource, "method": method,
+                               "arguments": {} if arguments is None else arguments, "observation": observation}})
+            length, = struct.unpack("!I", _reader.read(4))
+            reply = json.loads(_reader.read(length))
+            if reply.get("id") != _sequence or reply.get("request_id") != request_id:
+                raise RuntimeError("invalid GUI broker response")
+            if reply.get("error") is not None:
+                raise RuntimeError(reply["error"])
+            return reply["value"]
+
+
+_namespace["ui"] = _UI()
 sys.stdout = _Output("stdout")
 sys.stderr = _Output("stderr")
 while True:
