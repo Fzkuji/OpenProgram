@@ -78,5 +78,5 @@
 .eventList time { flex-shrink: 0; color: var(--text-dim); font-size: 12px; }
 
 .editorDialog { max-height: calc(100dvh - 48px); overflow-y: auto; }
-.heroTop > div:first-child { flex: 1; }
+.heroTop > div:first-child { flex: 1 1 0; }
 .heroTop > .statusBadge { flex-basis: 100%; order: 1; }

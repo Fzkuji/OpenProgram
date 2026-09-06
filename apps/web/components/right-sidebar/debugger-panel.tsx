@@ -564,11 +564,11 @@ export function DebuggerPanel({
                 <DialogDescription>{text("Continue from this saved point with new instructions. The original execution stays unchanged.", "从此保存点按新指令继续，原执行保持不变。")}</DialogDescription></DialogHeader>
             {(!selectedDraft || selectedDraft.editor) ? <label className={styles.editorLabel}>
               {text("Instructions for the new branch", "新分支的指令")}
-              <Textarea maxLength={4096} value={draftText ?? selectedDraft?.editor?.instructions ?? ""} onChange={(event) => setDraftText(event.target.value)} disabled={draftPending || Boolean(selectedDraft && ["published", "discarded"].includes(selectedDraft.status))} />
+              <Textarea maxLength={4096} value={draftText ?? selectedDraft?.editor?.instructions ?? ""} onChange={(event) => setDraftText(event.target.value)} disabled={draftPending} readOnly={Boolean(selectedDraft && ["published", "discarded"].includes(selectedDraft.status))} />
             </label> : <p className={styles.muted}>{text("This revision was prepared by another client.", "此修订由其他客户端准备。")}</p>}
             {selectedDraft && <p className={styles.muted}>{({ draft: "Draft", validated: "Validated", approved: "Approved", published: "Ready to create branch", discarded: "Discarded", rejected: "Needs changes" })[selectedDraft.status]}</p>}
-            <div className={styles.revisionActions}>
-              {(!selectedDraft || (!["published", "discarded"].includes(selectedDraft.status) && selectedDraft.editor)) && <Button variant="ghost" disabled={draftPending || (selectedDraft ? !onUpdateDraft : !onCreateDraft) || !(draftText ?? selectedDraft?.editor?.instructions ?? "").trim()} onClick={async () => {
+            <DialogFooter className={styles.revisionActions}>
+              {(!selectedDraft || (!["published", "discarded"].includes(selectedDraft.status) && selectedDraft.editor)) && <Button variant={selectedDraft ? "ghost" : "default"} disabled={draftPending || (selectedDraft ? !onUpdateDraft : !onCreateDraft) || !(draftText ?? selectedDraft?.editor?.instructions ?? "").trim() || Boolean(selectedDraft && (draftText === null || draftText === selectedDraft.editor?.instructions))} onClick={async () => {
                 setDraftError(null); setDraftPending(true);
                 try {
                   const preparation = { instructions: (draftText ?? selectedDraft?.editor?.instructions ?? "").trim() };
@@ -578,13 +578,13 @@ export function DebuggerPanel({
                 } catch (error) { setDraftError(error instanceof Error ? error.message : "Could not save instructions."); }
                 finally { setDraftPending(false); }
               }}>{selectedDraft ? text("Save instructions", "保存指令") : text("Prepare branch", "准备分支")}</Button>}
-              {selectedDraft && (["validate", "approve", "publish", "fork"] as const).filter((action) => ({ validate: "draft", approve: "validated", publish: "approved", fork: "published" })[action] === selectedDraft.status).map((action) => <Button variant="ghost" key={action} disabled={draftPending || !onDraftAction || (draftText !== null && draftText !== selectedDraft.editor?.instructions)} onClick={async () => {
+              {selectedDraft && (["validate", "approve", "publish", "fork"] as const).filter((action) => ({ validate: "draft", approve: "validated", publish: "approved", fork: "published" })[action] === selectedDraft.status).map((action) => <Button variant="default" key={action} disabled={draftPending || !onDraftAction || (draftText !== null && draftText !== selectedDraft.editor?.instructions)} onClick={async () => {
                 setDraftError(null); setDraftPending(true);
                 try { await onDraftAction?.(selectedDraft, action); }
                 catch (error) { setDraftError(error instanceof Error ? error.message : "Could not apply revision action."); }
                 finally { setDraftPending(false); }
               }}>{({ validate: "Check compatibility", approve: "Approve revision", publish: "Publish revision", fork: "Create branch" })[action]}</Button>)}
-            </div>
+            </DialogFooter>
             {draftError && <div className={styles.formError} role="alert">{draftError}</div>}
             </DialogContent>
           </Dialog>
