@@ -652,7 +652,9 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
     set((s) => switchChat(s, id ?? COMPOSER_NEW_KEY, id)),
 
   setCurrentDraft: (key) =>
-    set((s) => switchChat(s, key, null)),
+    set((s) => s.activeChatKey === key && s.currentSessionId === null
+      ? {}
+      : switchChat(s, key, null)),
 
   dropChatDraft: (key) =>
     set((s) => {
