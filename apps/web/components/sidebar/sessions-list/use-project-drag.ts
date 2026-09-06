@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HTMLAttributes } from "react";
 
 type Drop = { id: string; side: "before" | "after" };
+type Slot = { id: string; top: number; height: number; center: number };
 type Drag = {
   id: string; pointerId: number; element: HTMLElement;
   startX: number; startY: number; x: number; y: number; active: boolean;
+  scroller: HTMLElement; scrollTop: number; slots: Slot[];
 };
 
 /** Pointer capture keeps project ordering independent of the OS drag session. */
@@ -19,12 +21,13 @@ export function useProjectDrag(
   const [projectDrop, setProjectDrop] = useState<Drop | null>(null);
 
   function dropAt(drag: Drag): Drop | null {
-    const group = drag.element.ownerDocument.elementFromPoint(drag.x, drag.y)?.closest<HTMLElement>("[data-project-id]");
-    if (!group || group.closest("#sidebar") !== drag.element.closest("#sidebar")) return null;
-    const id = group.dataset.projectId!;
-    if (id === drag.id) return null;
-    const header = group.firstElementChild!.getBoundingClientRect();
-    return { id, side: drag.y < header.top + header.height / 2 ? "before" : "after" };
+    const rect = drag.scroller.getBoundingClientRect();
+    if (drag.x < rect.left || drag.x > rect.right || drag.y < rect.top || drag.y > rect.bottom) return null;
+    // Use the original layout so animated neighbors never change the hit test.
+    const y = drag.y + drag.scroller.scrollTop - drag.scrollTop;
+    const slot = drag.slots.find((item, index) => y < (drag.slots[index + 1]?.top ?? Infinity));
+    if (!slot || slot.id === drag.id) return null;
+    return { id: slot.id, side: y < slot.center ? "before" : "after" };
   }
   function updateDrop(drag: Drag) {
     const next = dropAt(drag);
@@ -63,7 +66,14 @@ export function useProjectDrag(
     const rect = scroller.getBoundingClientRect();
     if (drag.x >= rect.left && drag.x <= rect.right) {
       const delta = drag.y < rect.top + 28 ? -8 : drag.y > rect.bottom - 28 ? 8 : 0;
-      if (delta) { scroller.scrollTop += delta; updateDrop(drag); }
+      if (delta) {
+        const previous = scroller.scrollTop;
+        scroller.scrollTop += delta;
+        if (scroller.scrollTop !== previous) {
+          setDraggingProject({ id: drag.id, x: drag.x, y: drag.y });
+          updateDrop(drag);
+        }
+      }
     }
     frame.current = window.requestAnimationFrame(autoScroll);
   }
@@ -75,7 +85,16 @@ export function useProjectDrag(
       onPointerDown: event => {
         if (!enabled || current.current || !event.isPrimary || event.button !== 0 || (event.target as Element).closest("button")) return;
         suppressClick.current = null;
-        current.current = { id, element: event.currentTarget, pointerId: event.pointerId,
+        const element = event.currentTarget;
+        const sidebar = element.closest<HTMLElement>("#sidebar");
+        const scroller = element.closest<HTMLElement>(".overflow-y-auto");
+        if (!sidebar || !scroller) return;
+        const slots = Array.from(sidebar.querySelectorAll<HTMLElement>("[data-project-id]")).map(group => {
+          const bounds = group.getBoundingClientRect();
+          const header = group.querySelector<HTMLElement>("[aria-keyshortcuts]")!.getBoundingClientRect();
+          return { id: group.dataset.projectId!, top: bounds.top, height: bounds.height, center: header.top + header.height / 2 };
+        });
+        current.current = { id, element, pointerId: event.pointerId, scroller, scrollTop: scroller.scrollTop, slots,
           startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, active: false };
         event.currentTarget.setPointerCapture(event.pointerId);
       },
@@ -110,5 +129,22 @@ export function useProjectDrag(
       },
     };
   }
-  return { draggingProject, projectDrop, headerProps };
+  function projectOffset(id: string): number {
+    const drag = current.current;
+    if (!drag?.active) return 0;
+    if (id === drag.id) return drag.y - drag.startY + drag.scroller.scrollTop - drag.scrollTop;
+    if (!projectDrop) return 0;
+    const source = drag.slots.findIndex(slot => slot.id === drag.id);
+    const target = drag.slots.findIndex(slot => slot.id === projectDrop.id);
+    const index = drag.slots.findIndex(slot => slot.id === id);
+    const destination = target + Number(projectDrop.side === "after") - Number(source < target);
+    const slot = drag.slots[source];
+    const gap = source + 1 < drag.slots.length ? drag.slots[source + 1].top - slot.top - slot.height
+      : source > 0 ? slot.top - drag.slots[source - 1].top - drag.slots[source - 1].height : 1;
+    const distance = slot.height + Math.max(1, Math.min(8, gap));
+    if (source < index && index <= destination) return -distance;
+    if (destination <= index && index < source) return distance;
+    return 0;
+  }
+  return { draggingProject, projectDrop, projectOffset, headerProps };
 }

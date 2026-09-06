@@ -24,7 +24,7 @@ test('pointer drag commits on release, cancels safely, and leaves normal clicks 
       order = moveProject(order, source, target, side); saves++;
     });
     return h('div', { id: 'sidebar', className: 'overflow-y-auto' }, order.map(id => h('div', { key:id, 'data-project-id':id },
-      h('div', { ...last.headerProps(id), role:'button', onClick: event => { last.headerProps(id).onClick(event); if (!event.defaultPrevented) clicks++; } }, id, h('button', {}, '+')))));
+      h('div', { ...last.headerProps(id), role:'button', 'aria-keyshortcuts':'Alt+ArrowUp Alt+ArrowDown', onClick: event => { last.headerProps(id).onClick(event); if (!event.defaultPrevented) clicks++; } }, id, h('button', {}, '+')))));
   }
   const host = document.createElement('div'); document.body.append(host);
   const root = createRoot(host);
@@ -40,6 +40,7 @@ test('pointer drag commits on release, cancels safely, and leaves normal clicks 
     el.hasPointerCapture = p => capture.has(p);
     el.releasePointerCapture = p => capture.delete(p);
     el.getBoundingClientRect = () => ({top:order.indexOf(id)*40, height:32});
+    el.parentElement.getBoundingClientRect = () => ({top:order.indexOf(id)*40, height:32});
   }
   document.elementFromPoint = (x, y) => x < 0 ? null : header(order[Math.floor(y/40)]);
   async function fire(id, type, x, y, extra = {}) {
@@ -53,6 +54,8 @@ test('pointer drag commits on release, cancels safely, and leaves normal clicks 
   await fire('c','pointermove',10,2);
   assert.equal(saves,0); assert.equal(last.projectDrop.side,'before');
   assert.equal(last.draggingProject.id,'c');
+  assert.equal(last.projectOffset('a'),40,'Neighbor previews displacement before saving');
+  assert.equal(last.projectOffset('c'),-96,'Dragged project follows pointer and edge scroll');
   assert.equal(frames.size,1);
   await fire('c','pointerup',10,2);
   assert.deepEqual(order,['c','a','b']); assert.equal(saves,1);

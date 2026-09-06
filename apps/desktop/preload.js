@@ -74,6 +74,11 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       return () => ipcRenderer.removeListener("webtab:command", listener);
     },
   },
+  // Native OS menus return only the selected action ID to this renderer.
+  contextMenu: {
+    popup: (opts) => ipcRenderer.invoke("native-menu:popup", opts),
+    close: (requestId) => ipcRenderer.send("native-menu:close", requestId),
+  },
   // Main-menu overlay. The ⋮ menu is a top-layer WebContentsView (so it
   // covers native web tabs a DOM menu can't). open() from the real UI
   // window, choose()/close() from the overlay document, onAction() back on

@@ -84,6 +84,7 @@ import type {
   DesktopDownloadsApi,
   DesktopHistoryApi,
   DesktopMainMenuApi,
+  DesktopNativeMenuApi,
   DesktopTerminalApi,
   DesktopThemeApi,
   DesktopUpdateApi,
@@ -107,6 +108,7 @@ export type {
   DesktopHistoryApi,
   DesktopHistoryEntry,
   DesktopMainMenuApi,
+  DesktopNativeMenuApi,
   DesktopTerminalApi,
   DesktopThemeApi,
   DesktopUpdateApi,
@@ -153,6 +155,7 @@ export interface DesktopBridge {
   tabTransfer: DesktopTabTransferApi;
   /** Top-layer ⋮ menu overlay. Absent in shells older than this build. */
   mainMenu?: DesktopMainMenuApi;
+  contextMenu?: DesktopNativeMenuApi;
   /** Absent in shells older than the browsing-history build. */
   history?: DesktopHistoryApi;
   /** Desktop-only download history and active download controls. */

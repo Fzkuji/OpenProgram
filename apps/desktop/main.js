@@ -2822,7 +2822,23 @@ function contextForMenuSender(event) {
   return null;
 }
 
+const nativeContextMenus = require("./native-context-menu").createNativeContextMenus(Menu);
+function nativeMenuOwner(event) {
+  const ctx = contextForSender(event);
+  if (!ctx || !event.senderFrame || event.sender !== ctx.win.webContents || event.senderFrame !== event.sender.mainFrame) return null;
+  try { return new URL(event.sender.getURL()).origin === UI_ORIGIN ? ctx : null; }
+  catch { return null; }
+}
+
 function registerWebTabIpc() {
+  ipcMain.handle("native-menu:popup", (event, opts) => {
+    const ctx = nativeMenuOwner(event);
+    if (!ctx) throw new Error("Unauthorized menu sender");
+    return nativeContextMenus.popup(ctx.win, event.sender, opts, rendererZoomFactor(event));
+  });
+  ipcMain.on("native-menu:close", (event, requestId) => {
+    if (nativeMenuOwner(event) && typeof requestId === "string") nativeContextMenus.close(event.sender, requestId);
+  });
   ipcMain.on("main-menu:open", (event, opts) => {
     const ctx = contextForSender(event);
     if (ctx) {

@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode, type MouseEvent } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { MoreHorizontal, Check, ChevronRight, MessageSquarePlus, FolderOpen, Pencil, PanelsTopLeft, FolderSearch, GitBranch, Archive, FolderMinus } from "lucide-react";
 import { MENU_PANEL, MENU_SEPARATOR, itemCls } from "@/components/chat/top-bar/menu-styles";
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { PinIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { ProjectEditor, type EditableProject } from "./project-editor";
+import { useSidebarMenu } from "./use-sidebar-menu";
 
 import { sidebarProjectActionClass } from "./nav-classes";
 import { SectionHeader } from "./section-header";
@@ -27,29 +28,51 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, o
 }) {
   const { text } = useTranslation();
   const view = useRecentsView();
-  const [open,setOpen] = useState(false);
+  const menu = useSidebarMenu();
+  const open = menu.open;
   const [editing,setEditing] = useState(false);
   const [addingSection,setAddingSection] = useState(false);
   const [operation,setOperation] = useState<ProjectOperation|null>(null);
   const [error,setError] = useState("");
   const pinned = view.pinnedProjects.includes(project.id);
   const pinRef = useRef<AnimatedNavIconHandle>(null);
-  function changeOpen(value: boolean) { setOpen(value); if (value) onActivate?.(); }
   function selectSection(section: string) {
     setRecentsView({ projectSections: {...view.projectSections,[project.id]:section} });
   }
+  const revealFolder = async()=>{setError("");try{const result=await wsRequest<{ok?:boolean;error?:string}>("project_file_reveal",{project_id:project.id,path:""},"project_file_reveal_result");if(!result?.ok)throw new Error(result?.error||text("Could not reveal folder", "无法显示文件夹"));}catch(err){setError(String(err instanceof Error?err.message:err));}};
+  function togglePin() {
+    setRecentsView({pinnedProjects:pinned?view.pinnedProjects.filter(id=>id!==project.id):[...view.pinnedProjects,project.id]});
+  }
+  function showMenu(event: MouseEvent<HTMLElement>) {
+    onActivate?.();
+    menu.show(event, [
+      { id: "new-chat", label: text("New chat", "新建聊天"), onSelect: onNewSession },
+      { id: "open", label: text("Open project", "打开项目"), onSelect: onOpen },
+      { id: "pin", label: pinned ? text("Unpin", "取消置顶") : text("Pin", "置顶"), onSelect: togglePin },
+      { id: "edit", label: text("Edit project", "编辑项目"), onSelect: () => setEditing(true) },
+      { id: "section", label: text("Section", "分区"), separatorBefore: true, children: [
+        ...["", ...view.projectSectionNames].map((section, index) => ({ id: `section:${index}`, label: section || text("Projects", "项目"), checked: (view.projectSections[project.id] || "") === section, onSelect: () => selectSection(section) })),
+        { id: "new-section", label: text("New section…", "新建分区…"), separatorBefore: true, onSelect: () => setAddingSection(true) },
+      ] },
+      { id: "reveal", label: text("Reveal in file manager", "在文件管理器中显示"), separatorBefore: true, onSelect: revealFolder },
+      { id: "worktree", label: text("Create permanent worktree", "创建持久 worktree"), onSelect: () => setOperation("create_project_worktree") },
+      { id: "archive", label: text("Archive chats", "归档聊天"), onSelect: () => setOperation("archive_project_chats") },
+      ...(!project.is_default ? [{ id: "remove", label: text("Remove project", "移除项目"), onSelect: () => setOperation("remove_project") }] : []),
+    ]);
+  }
   return <>
-    <Menu.Root open={open} onOpenChange={changeOpen}>
-      <div onContextMenu={event=>{event.preventDefault();changeOpen(true);}}>
-        {children(<Menu.Trigger asChild><button data-active={editing || addingSection || operation !== null} type="button" aria-label={text(`Options for ${project.name}`, `${project.name} 的选项`)} onPointerDown={event=>event.stopPropagation()} onClick={event=>event.stopPropagation()} className={styles.trigger+" "+sidebarProjectActionClass+" text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100"}><MoreHorizontal size={14}/></button></Menu.Trigger>)}
+    <Menu.Root open={open && !menu.native} onOpenChange={menu.onOpenChange}>
+      <Menu.Trigger asChild><span aria-hidden="true" style={{position:"fixed",left:menu.point.x,top:menu.point.y,width:0,height:0,pointerEvents:"none"}} /></Menu.Trigger>
+      <div onContextMenu={showMenu}>
+        {children(<button data-state={open ? "open" : "closed"} aria-haspopup="menu" aria-expanded={open} data-active={editing || addingSection || operation !== null} type="button" aria-label={text(`Options for ${project.name}`, `${project.name} 的选项`)} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();if(open)menu.close();else showMenu(event);}} className={styles.trigger+" "+sidebarProjectActionClass+" text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100"}><MoreHorizontal size={14}/></button>)}
       </div>
-      <Menu.Portal><Menu.Content side="right" align="start" sideOffset={6} className={MENU_PANEL+" "+styles.menu+" min-w-[220px]"}>
+      <Menu.Portal><Menu.Content side="bottom" align="start" sideOffset={4} onCloseAutoFocus={event=>event.preventDefault()} className={MENU_PANEL+" "+styles.menu+" min-w-[220px]"}>
         <Menu.Item className={item} onSelect={onNewSession}><MessageSquarePlus size={14} className={styles.menuIcon}/>{text("New chat", "新建聊天")}</Menu.Item>
         <Menu.Item className={item} onSelect={onOpen}><FolderOpen size={14} className={styles.menuIcon}/>{text("Open project", "打开项目")}</Menu.Item>
         <Menu.Item className={item}
           onMouseEnter={()=>pinRef.current?.startAnimation()} onMouseLeave={()=>pinRef.current?.stopAnimation()}
           onFocus={()=>pinRef.current?.startAnimation()} onBlur={()=>pinRef.current?.stopAnimation()}
-          onSelect={()=>setRecentsView({pinnedProjects:pinned?view.pinnedProjects.filter(id=>id!==project.id):[...view.pinnedProjects,project.id]})}><PinIcon ref={pinRef} size={14} className={styles.menuIcon} aria-hidden="true"/>{pinned?text("Unpin", "取消置顶"):text("Pin", "置顶")}</Menu.Item>
+          onSelect={togglePin}><PinIcon ref={pinRef} size={14} className={styles.menuIcon} aria-hidden="true"/>{pinned?text("Unpin", "取消置顶"):text("Pin", "置顶")}</Menu.Item>
         <Menu.Item className={item} onSelect={()=>setEditing(true)}><Pencil size={14} className={styles.menuIcon}/>{text("Edit project", "编辑项目")}</Menu.Item>
         <Menu.Separator className={MENU_SEPARATOR}/>
         <Menu.Sub><Menu.SubTrigger className={item}><PanelsTopLeft size={14} className={styles.menuIcon}/><span className="flex-1">{text("Section", "分区")}</span><ChevronRight size={14}/></Menu.SubTrigger><Menu.Portal><Menu.SubContent className={MENU_PANEL+" "+styles.menu+" min-w-[180px]"}>
@@ -58,7 +81,7 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, o
           <Menu.Item className={item} onSelect={()=>setAddingSection(true)}>{text("New section…", "新建分区…")}</Menu.Item>
         </Menu.SubContent></Menu.Portal></Menu.Sub>
         <Menu.Separator className={MENU_SEPARATOR}/>
-        <Menu.Item className={item} onSelect={async()=>{setError("");try{const result=await wsRequest<{ok?:boolean;error?:string}>("project_file_reveal",{project_id:project.id,path:""},"project_file_reveal_result");if(!result?.ok)throw new Error(result?.error||text("Could not reveal folder", "无法显示文件夹"));}catch(err){setError(String(err instanceof Error?err.message:err));}}}><FolderSearch size={14} className={styles.menuIcon}/>{text("Reveal in file manager", "在文件管理器中显示")}</Menu.Item>
+        <Menu.Item className={item} onSelect={revealFolder}><FolderSearch size={14} className={styles.menuIcon}/>{text("Reveal in file manager", "在文件管理器中显示")}</Menu.Item>
         <Menu.Item className={item} onSelect={()=>setOperation("create_project_worktree")}><GitBranch size={14} className={styles.menuIcon}/>{text("Create permanent worktree", "创建持久 worktree")}</Menu.Item>
         <Menu.Item className={item} onSelect={()=>setOperation("archive_project_chats")}><Archive size={14} className={styles.menuIcon}/>{text("Archive chats", "归档聊天")}</Menu.Item>
         {!project.is_default&&<Menu.Item className={item} onSelect={()=>setOperation("remove_project")}><FolderMinus size={14} className={styles.menuIcon}/>{text("Remove project", "移除项目")}</Menu.Item>}

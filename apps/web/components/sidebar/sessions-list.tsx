@@ -28,6 +28,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronRight, Plus } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import type { ConvSummary } from "@/lib/session-store";
@@ -47,6 +48,7 @@ import {
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
 import { ConvMenu } from "./conv-menu";
+import { useSidebarMenu } from "./use-sidebar-menu";
 import { RecentsFilter } from "./recents-filter";
 import { SectionHeader } from "./section-header";
 import {
@@ -123,7 +125,8 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
 
   const projectMode = view.groupBy === "project";
   const [orderNotice, setOrderNotice] = useState("");
-  const { draggingProject, projectDrop, headerProps } = useProjectDrag(projectMode, reorderProject);
+  const { draggingProject, projectOffset, headerProps } = useProjectDrag(projectMode, reorderProject);
+  const reducedMotion = useReducedMotion();
 
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const { selectedProjectId, selectProject, clearProjectSelection } = useProjectSelection(projects, currentId, activeChatKey, pendingProjectId);
@@ -518,10 +521,12 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
                 const expanded = filtering ? true : !collapsedProjects.has(g.key);
                 const project = projects.find(project => project.id === g.key)!;
                 return (
-                  <div data-project-id={g.key}
+                  <motion.div layout="position" data-project-id={g.key}
                     key={g.key}
                     className={`${styles.projectGroup} flex flex-col gap-px`}
-                    data-drop={projectDrop?.id === g.key ? projectDrop.side : undefined}
+                    animate={{ y: projectOffset(g.key), scale: draggingProject?.id === g.key ? 1.02 : 1 }}
+                    transition={reducedMotion || draggingProject?.id === g.key ? { duration: 0 } : { type: "spring", stiffness: 600, damping: 40 }}
+                    style={{ zIndex: draggingProject?.id === g.key ? 5 : undefined }}
                     data-dragging={draggingProject?.id === g.key || undefined}
                   >
                     <ProjectMenu project={project}
@@ -561,7 +566,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
                         {g.items.map(renderRow)}
                       </div>
                     ) : null}
-                  </div>
+                  </motion.div>
                 );
               }))}
             {!folded && section === "" && filtering && projects.length > 0 && groupedProjects.length === 0 ? (
@@ -619,12 +624,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   return (
     <>
       {body}
-      {draggingProject ? (
-        <div aria-hidden="true" className={styles.projectDragPreview}
-          style={{ left: draggingProject.x + 12, top: draggingProject.y + 12 }}>
-          {projects.find(project => project.id === draggingProject.id)?.name}
-        </div>
-      ) : null}
+
       <span className="sr-only" role="status" aria-live="polite">{orderNotice}</span>
       {/* Hide Clear all when every project list is folded. */}
       {!isEmpty && !(projectMode && projectLists.every(({ section }) => collapsedGroups.has(projectSectionKey(section)))) ? (
@@ -947,7 +947,8 @@ function ConvItem({
   onDelete: () => void;
 }) {
   const { t, text } = useTranslation();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = useSidebarMenu();
+  const menuOpen = menu.open;
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(label);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -962,7 +963,7 @@ function ConvItem({
   // Selected row: a background highlight marks it; the text steps down
   // from pure white to the warm off-white (--text-primary) so it isn't
   // glaringly bright.
-  const colorCls = active ? "bg-bg-hover text-text-primary" : "text-text-primary";
+  const colorCls = active || menuOpen ? "bg-bg-hover text-text-primary" : "text-text-primary";
   // 右缘渐隐的三个状态（静止约 8px / 悬停 70%→92% / 滚动中）都在
   // base.css 的 .title-fade 里，过渡也在那儿——渐变值本身不可插值，
   // 靠注册过的 --fade-a / --fade-b 百分比属性做动画。
@@ -1032,8 +1033,27 @@ function ConvItem({
     if (name && name.trim()) onMoveToGroup(name.trim());
   }
 
+  function openMenu(event: React.MouseEvent<HTMLElement>) {
+    menu.show(event, [
+      { id: "rename", label: t("sidebar.rename"), onSelect: startRename },
+      { id: "pin", label: t(conv.pinned ? "sidebar.unpin" : "sidebar.pin"), onSelect: onTogglePin },
+      { id: "group", label: t("sidebar.move_to_group"), children: [
+        ...(conv.group ? [{ id: "ungroup", label: t("sidebar.remove_from_group"), onSelect: () => onMoveToGroup("") }] : []),
+        ...groups.filter(group => group !== conv.group).map((group, index) => ({ id: `group:${index}`, label: group, onSelect: () => onMoveToGroup(group) })),
+        { id: "new-group", label: t("sidebar.new_group"), onSelect: newGroup },
+      ] },
+      { id: "copy", label: t("sidebar.copy_link"), onSelect: onCopyLink },
+      { id: "export", label: t("sidebar.export"), children: [
+        { id: "export-md", label: t("sidebar.export_markdown"), onSelect: () => onExport("md") },
+        { id: "export-html", label: t("sidebar.export_html"), onSelect: () => onExport("html") },
+      ] },
+      { id: "archive", label: t(conv.archived ? "sidebar.unarchive" : "sidebar.archive"), onSelect: onToggleArchive },
+      { id: "delete", label: t("sidebar.delete"), separatorBefore: true, onSelect: onDelete },
+    ]);
+  }
+
   return (
-    <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+    <Popover open={menuOpen && !menu.native} onOpenChange={menu.onOpenChange}>
       <div
         className={`${base} ${colorCls} ${stateCls}`}
         /* The row is a div (the marquee/mask layering and the nested ⋮
@@ -1044,14 +1064,11 @@ function ConvItem({
         role={renaming ? undefined : "button"}
         tabIndex={renaming ? undefined : 0}
         aria-current={active ? "true" : undefined}
-        onKeyDown={renaming ? undefined : activateOnKey(onClick)}
+        onKeyDown={renaming ? undefined : event => { if (event.target === event.currentTarget) activateOnKey(onClick)(event); }}
         onClick={renaming ? undefined : onClick}
         onMouseEnter={renaming ? undefined : measureMarquee}
         onMouseLeave={stopMarquee}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenuOpen(true);
-        }}
+        onContextMenu={openMenu}
         /* 不给 title：悬停时标题自己滚动（measureMarquee 起的 marquee），
            原生 tooltip 会浮在相邻行上盖住列表，两者只留滚动这一种。 */
       >
@@ -1125,12 +1142,12 @@ function ConvItem({
         )}
 
         {/* ⋯ button — hover-visible; anchors the menu. */}
-        <PopoverAnchor asChild>
+        <PopoverAnchor virtualRef={menu.anchor} />
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setMenuOpen((v) => !v);
+              if (menuOpen) menu.close(); else openMenu(e);
             }}
             /* Was "Filter & sort" — that's the Recents header's button,
                not this row's. This one opens the conversation menu. */
@@ -1142,6 +1159,7 @@ function ConvItem({
               opacity-0 pointer-events-none transition-opacity duration-150 ease-out
               group-hover:opacity-100 group-hover:pointer-events-auto
               data-[state=open]:opacity-100 data-[state=open]:pointer-events-auto
+              data-[state=open]:bg-[var(--bg-selected)] data-[state=open]:text-text-bright
               hover:bg-[var(--bg-selected)] hover:text-text-bright"
             data-state={menuOpen ? "open" : "closed"}
           >
@@ -1152,13 +1170,13 @@ function ConvItem({
               <circle cx="8" cy="13" r="1.4" />
             </svg>
           </button>
-        </PopoverAnchor>
       </div>
 
       <PopoverContent
         align="start"
         side="bottom"
         sideOffset={4}
+        onCloseAutoFocus={event => event.preventDefault()}
         className="w-auto border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none"
         onClick={(e) => e.stopPropagation()}
       >
@@ -1173,7 +1191,7 @@ function ConvItem({
           onCopyLink={onCopyLink}
           onExport={onExport}
           onDelete={onDelete}
-          onClose={() => setMenuOpen(false)}
+          onClose={menu.close}
         />
       </PopoverContent>
     </Popover>

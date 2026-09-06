@@ -309,6 +309,7 @@ vm.runInContext(
   `${source}\n;globalThis.__webtabTestHooks = {
     makeWindowContext,
     contextForSender,
+    nativeMenuOwner,
     focusedContext,
     syncVisibleViews,
     showView,
@@ -1347,6 +1348,17 @@ async function checkSenderOwnership() {
   const winB = fakeWindow(4);
   const ctxA = registerContext("window-a", winA);
   const ctxB = registerContext("window-b", winB);
+  const frame = {};
+  winA.webContents.mainFrame = frame;
+  winA.webContents.getURL = () => "http://127.0.0.1:18100/chat";
+  const nativeEvent = { sender: winA.webContents, senderFrame: frame };
+  assert.strictEqual(hooks.nativeMenuOwner(nativeEvent), ctxA);
+  assert.equal(hooks.nativeMenuOwner({ ...nativeEvent, senderFrame: {} }), null);
+  assert.equal(hooks.nativeMenuOwner({ sender: winA.webContents }), null);
+  winA.webContents.getURL = () => "https://example.com/";
+  assert.equal(hooks.nativeMenuOwner(nativeEvent), null);
+  assert.throws(() => ipcHandlers.get("native-menu:popup")(nativeEvent, {}), /Unauthorized/);
+  winA.webContents.getURL = () => "http://127.0.0.1:18100/chat";
   const a = controlledRecord("owned-a");
   const b = controlledRecord("owned-b");
   addRecord(ctxA, a);

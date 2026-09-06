@@ -12,7 +12,8 @@
   "scripts": {
     "postinstall": "node scripts/check-native-dependencies.js",
     "dev": "electron .",
-    "check": "npm run check:webtabs && npm run check:no-browser-extensions && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:window-state && npm run check:window-lifecycle && npm run check:theme-chrome && npm run check:browser-import && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates && npm run check:windows",
+    "check:native-menu": "node scripts/check-native-context-menu.js",
+    "check": "npm run check:native-menu && npm run check:webtabs && npm run check:no-browser-extensions && npm run check:webtab-zoom-bounds && npm run check:tab-transfer-store && npm run check:window-state && npm run check:window-lifecycle && npm run check:theme-chrome && npm run check:browser-import && npm run check:installed-transfer-client && npm run check:worker-auth && npm run check:worker-recovery && npm run check:packaged-runtime && npm run check:updates && npm run check:windows",
     "check:webtabs": "node scripts/check-webtab-navigation.js",
     "check:no-browser-extensions": "node scripts/check-no-browser-extensions.js",
     "check:webtab-zoom-bounds": "node scripts/check-webtab-zoom-bounds.js",
@@ -48,6 +49,7 @@
     "files": [
       "main.js",
       "menu-geometry.js",
+      "native-context-menu.js",
       "worker-recovery-state.js",
       "tab-transfer-validation.js",
       "preload.js",

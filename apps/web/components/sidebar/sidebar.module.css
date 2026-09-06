@@ -67,20 +67,10 @@
 }
 
 .projectGroup { position: relative; }
-.projectGroup[data-dragging] { opacity: .45; }
-.projectGroup[data-drop]::after {
-  content: ""; position: absolute; left: 8px; right: 8px; height: 2px;
-  background: var(--accent-blue, #3975df); pointer-events: none; z-index: 1;
-}
-.projectGroup[data-drop="before"]::after { top: -1px; }
-.projectGroup[data-drop="after"]::after { bottom: -1px; }
-
-.projectDragPreview {
-  position: fixed; z-index: 1000; pointer-events: none;
-  max-width: 240px; padding: 6px 10px; border-radius: 8px;
-  background: var(--bg-tertiary); color: var(--text-bright);
-  box-shadow: var(--shadow-popover); font-size: var(--fs-sm);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.projectGroup[data-dragging] {
+  background: var(--bg-sidebar, var(--bg-secondary));
+  border-radius: var(--ui-list-radius);
+  box-shadow: var(--shadow);
 }
 
 /* Match the ordinary selected conversation row. */

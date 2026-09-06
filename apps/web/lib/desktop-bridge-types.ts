@@ -280,3 +280,9 @@ export interface DesktopMainMenuApi {
   onAction(cb: (id: string) => void): () => void;
   onClosed?(cb: () => void): () => void;
 }
+
+/** Native OS context menu, with a request-scoped lifetime. */
+export interface DesktopNativeMenuApi {
+  popup(opts: { requestId: string; x: number; y: number; items: DesktopContextMenuItem[] }): Promise<string | null>;
+  close(requestId: string): void;
+}
