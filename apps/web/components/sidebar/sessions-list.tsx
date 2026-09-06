@@ -25,7 +25,7 @@
  * reads) for instant feedback before the server's echo lands.
  */
 
-import { Fragment, memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronRight, Plus, Pin } from "lucide-react";
 import { useCurrentSessionId } from "./use-window-globals";
@@ -491,87 +491,89 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   const collapsible = true;
   const isEmpty = visible.length === 0;
   const firstHasHeader = sections.length > 0 && sections[0].label !== "";
-  // Whole-tree fold for project mode — same SectionHeader affordance as
-  // the "Recents" bucket header, same transient collapsedGroups set.
+  // Pinned, custom sections, and Projects are peer lists with independent folds.
   const PROJECTS_SECTION_KEY = "__projects__";
-  const projectsFolded = collapsedGroups.has(PROJECTS_SECTION_KEY);
+  const projectSectionKey = (section: string) => section ? `project-section:${section}` : PROJECTS_SECTION_KEY;
+  const visibleProjectGroups = groupedProjects.filter(group => !collapsedGroups.has(projectSectionKey(projectSection(group.key))));
+  const projectLists = sectionOrder.map(section => ({ section, groups: groupedProjects.filter(group => projectSection(group.key) === section) }))
+    .filter(({ section, groups }) => section !== "__pinned__" || groups.length > 0);
   const body = projectMode ? (
     <>
-      {/* Group-by → Project: a top-level collapsible "Projects" header
-          (the way "Recents" heads the date view) that folds ALL groups
-          at once; the filter rides its right — it must stay reachable,
-          it's the way back to the other modes. */}
-      <SectionHeader
-        name={text("Projects", "项目")}
-        collapsible
-        collapsed={projectsFolded}
-        onToggle={() => toggleGroupCollapse(PROJECTS_SECTION_KEY)}
-        actions={<RecentsFilter projects={projects} />}
-      />
-      {projectsFolded ? null : projects.length === 0
-        ? // projects_list hasn't answered yet (the registry always holds
-          // at least the default project) — render a flat run instead of
-          // flashing everything under a wrong group.
-          visible.map(renderRow)
-        : groupedProjects.map((g, groupIndex) => {
-            const expanded = filtering ? true : !collapsedProjects.has(g.key);
-            const project = projects.find(project=>project.id===g.key)!;
-            const section = projectSection(g.key);
-            const sectionStart = groupIndex === 0 || projectSection(groupedProjects[groupIndex-1].key) !== section;
-            return (
-              <Fragment key={g.key}>
-              {sectionStart && (section || view.pinnedProjects.length || view.projectSectionNames.length) ? <ProjectSectionHeading section={section}/> : null}
-              <div data-project-id={g.key}
-                className={`${styles.projectGroup} flex flex-col gap-px`}
-                data-drop={projectDrop?.id === g.key ? projectDrop.side : undefined}
-                data-dragging={draggingProject?.id === g.key || undefined}
-              >
-                <ProjectMenu project={project}
-                  onActivate={()=>selectProject(g.key)}
-                  onOpen={()=>{router.push(`/projects?project=${encodeURIComponent(g.key)}`);}}
-                  onNewSession={()=>newSessionInProject(g.key)}
-                  onSaved={updated=>setProjects(items=>items.map(item=>item.id===updated.id?{...item,...updated}:item))}>
-                {menuTrigger=><ProjectGroupHeader
-                  selected={selectedProjectId === g.key}
-                  menuTrigger={menuTrigger}
-                  icon={project.icon}
-                  dragProps={headerProps(g.key)}
-                  pinned={view.pinnedProjects.includes(g.key)}
-                  pinTitle={view.pinnedProjects.includes(g.key) ? text("Unpin project", "取消置顶项目") : text("Pin project", "置顶项目")}
-                  onTogglePin={() => setRecentsView({ pinnedProjects: view.pinnedProjects.includes(g.key) ? view.pinnedProjects.filter(id => id !== g.key) : [...view.pinnedProjects, g.key] })}
-                  onMove={(direction) => {
-                    const target = groupedProjects[groupIndex + direction];
-                    if (target) reorderProject(g.key, target.key, direction < 0 ? "before" : "after");
-                  }}
-                  reorderHint={text("Drag to reorder; Alt+Up/Down to move", "拖动排序；Alt+上下方向键移动")}
-                  name={g.name}
-                  path={g.path}
-                  collapsed={!expanded}
-                  onToggle={() => toggleProjectCollapse(g.key)}
-                  onNewSession={() => newSessionInProject(g.key)}
-                  newSessionTitle={text(
-                    "New session in this project",
-                    "在此项目新建会话",
-                  )}
-                />}
-                </ProjectMenu>
-                {expanded && g.items.length > 0 ? (
-                  // Level-2 block: dense 28px rows + the 1px vertical
-                  // guide at x=16px (see .projectKids in the module CSS).
-                  <div className={`${styles.projectKids} flex flex-col gap-px`}>
-                    {g.items.map(renderRow)}
+      {projectLists.map(({ section, groups }) => {
+        const key = projectSectionKey(section);
+        const folded = collapsedGroups.has(key);
+        const name = section === "__pinned__" ? text("Pinned", "置顶") : section || text("Projects", "项目");
+        return (
+          <section key={key} aria-label={name} className="group/sec flex flex-col gap-px">
+            <ProjectSectionHeading
+              section={section}
+              collapsed={folded}
+              onToggle={() => toggleGroupCollapse(key)}
+              actions={section === "" ? <RecentsFilter projects={projects} /> : undefined}
+            />
+            {!folded && (projects.length === 0 && section === ""
+              ? visible.map(renderRow)
+              : groups.map(g => {
+                const expanded = filtering ? true : !collapsedProjects.has(g.key);
+                const project = projects.find(project => project.id === g.key)!;
+                return (
+                  <div data-project-id={g.key}
+                    key={g.key}
+                    className={`${styles.projectGroup} flex flex-col gap-px`}
+                    data-drop={projectDrop?.id === g.key ? projectDrop.side : undefined}
+                    data-dragging={draggingProject?.id === g.key || undefined}
+                  >
+                    <ProjectMenu project={project}
+                      onActivate={()=>selectProject(g.key)}
+                      onOpen={()=>{router.push(`/projects?project=${encodeURIComponent(g.key)}`);}}
+                      onNewSession={()=>newSessionInProject(g.key)}
+                      onSaved={updated=>setProjects(items=>items.map(item=>item.id===updated.id?{...item,...updated}:item))}>
+                    {menuTrigger=><ProjectGroupHeader
+                      selected={selectedProjectId === g.key}
+                      menuTrigger={menuTrigger}
+                      icon={project.icon}
+                      dragProps={headerProps(g.key)}
+                      pinned={view.pinnedProjects.includes(g.key)}
+                      pinTitle={view.pinnedProjects.includes(g.key) ? text("Unpin project", "取消置顶项目") : text("Pin project", "置顶项目")}
+                      onTogglePin={() => setRecentsView({ pinnedProjects: view.pinnedProjects.includes(g.key) ? view.pinnedProjects.filter(id => id !== g.key) : [...view.pinnedProjects, g.key] })}
+                      onMove={(direction) => {
+                        const target = visibleProjectGroups[visibleProjectGroups.findIndex(group => group.key === g.key) + direction];
+                        if (target) {
+                        reorderProject(g.key, target.key, direction < 0 ? "before" : "after");
+                        // Crossing section parents remounts the header; retain keyboard focus.
+                        requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-project-id="${CSS.escape(g.key)}"] [aria-keyshortcuts]`)?.focus());
+                      }
+                      }}
+                      reorderHint={text("Drag to reorder; Alt+Up/Down to move", "拖动排序；Alt+上下方向键移动")}
+                      name={g.name}
+                      path={g.path}
+                      collapsed={!expanded}
+                      onToggle={() => toggleProjectCollapse(g.key)}
+                      onNewSession={() => newSessionInProject(g.key)}
+                      newSessionTitle={text(
+                        "New session in this project",
+                        "在此项目新建会话",
+                      )}
+                    />}
+                    </ProjectMenu>
+                    {expanded && g.items.length > 0 ? (
+                      // Level-2 block: dense 28px rows + the 1px vertical
+                      // guide at x=16px (see .projectKids in the module CSS).
+                      <div className={`${styles.projectKids} flex flex-col gap-px`}>
+                        {g.items.map(renderRow)}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                );
+              }))}
+            {!folded && section === "" && filtering && projects.length > 0 && groupedProjects.length === 0 ? (
+              <div className="px-[16px] py-[10px] text-[12px] text-[var(--text-muted)]">
+                {text("No matches", "没有匹配的会话")}
               </div>
-              </Fragment>
-            );
-          })}
-      {!projectsFolded && view.projectSectionNames.filter(section=>!groupedProjects.some(group=>projectSection(group.key)===section)).map(section=><ProjectSectionHeading key={section} section={section}/>)}
-      {filtering && projects.length > 0 && groupedProjects.length === 0 ? (
-        <div className="px-[16px] py-[10px] text-[12px] text-[var(--text-muted)]">
-          {text("No matches", "没有匹配的会话")}
-        </div>
-      ) : null}
+            ) : null}
+          </section>
+        );
+      })}
     </>
   ) : (
     <>
@@ -626,11 +628,8 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
         </div>
       ) : null}
       <span className="sr-only" role="status" aria-live="polite">{orderNotice}</span>
-      {/* "Clear all" only when there are conversations to clear — an
-          empty list shows just the "No conversations yet" header. It
-          folds away with the Projects section: a folded section leaves
-          no rows for it to act on visually. */}
-      {!isEmpty && !(projectMode && projectsFolded) ? (
+      {/* Hide Clear all when every project list is folded. */}
+      {!isEmpty && !(projectMode && projectLists.every(({ section }) => collapsedGroups.has(projectSectionKey(section)))) ? (
         <div className={styles.clearAll} onClick={clearAll}>
           {t("sidebar.clear_all")}
         </div>
