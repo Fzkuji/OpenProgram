@@ -4,8 +4,8 @@
  * Assistant message bubble — React port of the legacy
  * `.message.assistant` + `.chat-stream-body` scaffold.
  *
- * Layout order matches chat-ws.js: Thinking block, then the Tool-calls
- * card, then the answer text. While the turn is still streaming with
+ * Execution details share one timeline across streaming and history.
+ * While the turn is still streaming with
  * nothing rendered yet, a typing indicator stands in.
  */
 import { memo } from "react";
@@ -14,7 +14,6 @@ import {
   useSessionStore,
   type AssistantBlock,
   type ChatMsg,
-  type ChatToolCall,
 } from "@/lib/session-store";
 import {
   agentColor,
@@ -39,7 +38,6 @@ import { MessageActions, MessageTimestamp } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { RuntimeBlock } from "./runtime-block";
-import { ToolsBlock } from "./tool-card";
 import { TurnFilesChips } from "./turn-files-chips";
 import { shouldRenderTurnFiles } from "./turn-files-presentation";
 import { AttachmentChips, parseAttachments } from "./user-attachments";
@@ -157,8 +155,20 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
   const runningToolIds = new Set(
     tools.filter((t) => t.status === "running").map((t) => t.id),
   );
-  const effBlocks: AssistantBlock[] | undefined =
-    msg.blocks && msg.blocks.length > 0 ? msg.blocks : undefined;
+  // Legacy/final frames may retain the flat fields without ordered blocks.
+  // Adapt those existing records to the shared timeline, without inventing
+  // interleaving that the stored data does not contain.
+  const fallbackBlocks: AssistantBlock[] = [
+    ...(msg.thinking ? [{ type: "thinking" as const, text: msg.thinking }] : []),
+    ...tools.map((tool): AssistantBlock => ({
+      type: "tool", tool: tool.tool, tool_call_id: tool.id,
+      input: tool.input, result: tool.result, is_error: tool.isError || tool.status === "error",
+      truncated: tool.truncated, total_bytes: tool.totalBytes,
+      message_id: tool.messageId, node_id: tool.nodeId,
+    })),
+  ];
+  const effBlocks = msg.blocks?.length ? msg.blocks
+    : fallbackBlocks.length ? fallbackBlocks : undefined;
   // "进行中"的行 = 时间线的最后一个块（且还在流式）。只有它有动画：
   // 思考行刷最新一行字 + 呼吸点，其余行已定格。
   const lastBlockIdx = effBlocks ? effBlocks.length - 1 : -1;
@@ -196,50 +206,6 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
     || text("sub-agent", "子代理"));
   const spawnHeads = (cards: ChatMsg[]) =>
     cards.map((card) => card.attach?.head_id);
-  // Renders one block in its source-order position.
-  const renderBlock = (b: AssistantBlock, idx: number, fifo: ChatMsg[]) => {
-    if (b.type === "thinking") {
-      // Frameless timeline row (chat-turn-visual-spec.html), same as the
-      // settled-turn path below — NOT the old boxed ThinkingBlock. The
-      // streaming (flat) path used to render a框; unify on ThinkingStep so
-      // thinking is a one-line summary row in both streaming and settled states.
-      return <ThinkingStep key={`thk_${idx}`} text={b.text || ""} />;
-    }
-    if (b.type === "text") {
-      return <MarkdownText key={`txt_${idx}`} text={b.text || ""} />;
-    }
-    // tool block
-    const tname = b.tool || "";
-    if (AGENTIC_TOOL_NAMES.has(tname)) {
-      const rc = fifo.shift();
-      if (rc) {
-        return (
-          <div key={`rt_${idx}`} className="assistant-runtime-children">
-            <RuntimeBlock msg={rc} nested />
-          </div>
-        );
-      }
-      // No matching runtime row (e.g. the LLM's call was rejected by
-      // validation before the @agentic_function body ran, so no
-      // runtime placeholder was created). Fall through to the regular
-      // ToolsBlock so the failed attempt is still visible — otherwise
-      // the bubble silently drops it and adjacent thinking / runtime
-      // rows collapse against each other.
-    }
-    const tc: ChatToolCall = {
-      id: b.tool_call_id || `tc_${idx}`,
-      tool: tname || "?",
-      input: b.input || "",
-      result: b.result,
-      truncated: b.truncated,
-      totalBytes: b.total_bytes,
-      messageId: b.message_id,
-      nodeId: b.node_id,
-      isError: !!b.is_error,
-      status: b.is_error ? "error" : "done",
-    };
-    return <ToolsBlock key={`tool_${idx}`} tools={[tc]} sessionId={bubbleSessionId} />;
-  };
   const color = agentColor(msg.agentId);
   const initial = agentInitial(msg.agentId);
   const sender = agentDisplayName(msg.agentId);
@@ -361,7 +327,7 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
               const rendered: React.ReactNode[] = [];
               segs.forEach((seg, si) => {
                 if (seg.kind === "text") {
-                  rendered.push(renderBlock(seg.b, seg.i, fifo));
+                  rendered.push(<MarkdownText key={`txt_${seg.i}`} text={seg.b.text || ""} />);
                   return;
                 }
                 const cardFifo = seg.cards.slice();
@@ -487,23 +453,6 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
             })()
           ) : (
             <>
-              {msg.thinking ? (
-                <ThinkingStep text={msg.thinking} />
-              ) : null}
-              {(() => {
-                // Filter agentic tool calls out of the folded "Tool calls"
-                // card — they have their own RuntimeBlock (gui_agent
-                // function card with Execution DAG, params, return
-                // preview). Without this filter the user sees BOTH a
-                // generic "Tool calls (1)" row AND the RuntimeBlock,
-                // which double-renders the same call.
-                const nonAgentic = tools.filter(
-                  (t) => !AGENTIC_TOOL_NAMES.has(t.tool || ""),
-                );
-                return nonAgentic.length > 0
-                  ? <ToolsBlock tools={nonAgentic} sessionId={bubbleSessionId} />
-                  : null;
-              })()}
               {/* 无 blocks 的旧会话仍用普通时间线行，不切回卡片 UI。 */}
               {attachFifo.length > 0 ? (
                 <ExecutionStrip

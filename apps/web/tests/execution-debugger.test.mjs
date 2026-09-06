@@ -23,6 +23,8 @@ const snapshot = {
   owner_lease: null,
   resource: { resource_state: "released", queue_wait: null },
   checkpoint_head_id: "cp-7",
+  can_continue: true,
+  can_step: true,
   safe_point: { kind: "agent.tool.action.after", step_id: "tool-2", phase: "after" },
   capabilities: {
     pause: true,
@@ -49,6 +51,15 @@ test("canonical actions derive from status, capability, and checkpoint", () => {
     "fork",
     "cancel",
   ]);
+});
+
+test("a checkpoint alone never authorizes continue or step without server readiness", () => {
+  for (const readiness of [undefined, false]) {
+    const unavailable = { ...snapshot, can_continue: readiness, can_step: readiness };
+    assert.deepEqual(availableExecutionActions(unavailable), ["steer", "fork", "cancel"]);
+    assert.throws(() => buildExecutionCommand(unavailable, "continue", "cmd-1"), /unavailable/);
+    assert.throws(() => buildExecutionCommand(unavailable, "step", "cmd-2"), /unavailable/);
+  }
 });
 
 test("commands contain only canonical target and optimistic version", () => {

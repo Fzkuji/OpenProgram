@@ -10,12 +10,14 @@ import type {
 export class ExecutionApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly command?: CommandResult;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, command?: CommandResult) {
     super(message);
     this.name = "ExecutionApiError";
     this.status = status;
     this.code = code;
+    this.command = command;
   }
 }
 
@@ -86,8 +88,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
-    const code = typeof body.error === "string" ? body.error : "request_failed";
-    throw new ExecutionApiError(response.status, code, code);
+    const command = body.command && typeof body.command === "object" ? body.command as CommandResult : undefined;
+    const code = typeof body.error === "string" ? body.error : command?.rejection_code || "request_failed";
+    throw new ExecutionApiError(response.status, code, code, command);
   }
   return body as T;
 }
@@ -137,12 +140,13 @@ export async function getExecutionDebuggerState(
   );
 }
 
-export async function postExecutionCommand(command: ExecutionCommand): Promise<CommandResult> {
+export async function postExecutionCommand(command: ExecutionCommand, signal?: AbortSignal): Promise<CommandResult> {
   const operation = command.action.slice("execution.".length);
   const pathOperation = operation.startsWith("wait.")
     ? `wait/${operation.slice("wait.".length)}`
     : operation;
   const body = await request<Record<string, unknown>>(`/api/execution/${pathOperation}`, {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(command),

@@ -77,10 +77,13 @@ a body with 12px padding on every side:
 * **fn-form**: the run button (the same 24px square as the chat send button) and
   the 24px close button sit side by side at the header's right edge; the body
   ends right after the last field.
-* **question / approval**: the header holds the badge + progress dots with the
-  "Chat about this" button at its right edge; the nav buttons (‹ Previous /
-  Next › / Send) are the body's **last row**, right-aligned in normal flow — no
-  absolute positioning, no reserved bottom band.
+* **question / approval**: the header holds only the badge and progress. The
+  body's last row groups approval choices on the left and response actions on
+  the right. "Chat about this" sits immediately before Send (or before the
+  navigation buttons for multiple questions). Choices only select an answer;
+  Send commits it. Narrow composers wrap inside this bottom action region
+  without overlapping controls. Keyboard activation keeps each button's own
+  action. There is no absolute positioning or reserved empty row.
 
 Buttons are rounded rectangles (6px radius) throughout — no pill or circle
 shapes. A static size-accurate mock of this layout lives in

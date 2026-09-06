@@ -930,11 +930,6 @@ class RuntimeControlService:
                                 "execution_state_invalid",
                                 "steer safe point requires a running Agent",
                             )
-                        steer_receipt = {
-                            "checkpoint_id": checkpoint.checkpoint_id,
-                            "safe_point": checkpoint.safe_point,
-                            "terminal_receipt": dict(terminal_receipt),
-                        }
                         for steer in steering_commands:
                             if steer.status is CommandStatus.ACCEPTED:
                                 steer = self.executions._transition_command(
@@ -943,14 +938,9 @@ class RuntimeControlService:
                                     expected_status=CommandStatus.ACCEPTED,
                                     target=CommandStatus.APPLYING,
                                 )
-                            steer = self.executions._transition_command(
-                                connection,
-                                steer.command_id,
-                                expected_status=CommandStatus.APPLYING,
-                                target=CommandStatus.APPLIED,
-                                result_version=updated.status_version,
-                                receipt=steer_receipt,
-                            )
+                            # The runtime still has to persist this input as a
+                            # user message. Its receipt closes APPLYING only after
+                            # that write; a checkpoint alone is not delivery.
                             applied_commands.append(steer)
                         command = next(
                             item for item in applied_commands

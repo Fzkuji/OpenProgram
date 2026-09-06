@@ -21,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ActivityRefreshButton } from "./activity-refresh-button";
 import { SectionHeader } from "../sidebar/section-header";
 import { useTranslation } from "@/lib/i18n";
 import { ExecutionStrip } from "../chat/messages/execution-strip";
@@ -79,7 +78,6 @@ export type DebuggerPanelProps = {
     draft: RevisionDraft,
     action: "validate" | "approve" | "publish" | "fork",
   ) => Promise<void> | void;
-  onRefresh?: () => Promise<boolean>;
 };
 
 const ACTION_LABELS: Record<ExecutionCommandAction, string> = {
@@ -109,7 +107,7 @@ function statusClass(status: string): string {
 function connectionCopy(connection: DebuggerConnection): { label: string; detail: string } {
   if (connection.state === "connected") return { label: "Synced", detail: "Last fetched snapshot" };
   if (connection.state === "reconnecting") return { label: "Reconnecting", detail: "Snapshot will be refreshed before replay" };
-  if (connection.state === "gap") return { label: "Event gap", detail: connection.message || "Refresh required before applying more events" };
+  if (connection.state === "gap") return { label: "Event gap", detail: connection.message || "Automatically reloading before applying more events" };
   if (connection.state === "stale") return { label: "Stale", detail: connection.message || "This view is behind the canonical snapshot" };
   return { label: "Conflict", detail: connection.message || "The server rejected an optimistic version" };
 }
@@ -221,7 +219,7 @@ function ActionButton({
       className={action === "cancel" ? styles.cancelButton : undefined}
       onClick={() => void submit()}
       disabled={disabled}
-      title={!onCommand ? "Refresh the execution before sending a command" : !ready ? action === "steer" ? "Enter the next instruction" : "Create and publish an instruction branch first" : undefined}
+      title={!onCommand ? "Waiting for the latest execution status" : !ready ? action === "steer" ? "Enter the next instruction" : "Create and publish an instruction branch first" : undefined}
     >
       {pending ? "Submitting…" : ACTION_LABELS[action]}
     </Button>
@@ -233,13 +231,13 @@ function CommandNotice({ result }: { result: CommandResult | null }) {
   if (!result) return null;
   const errors: Record<string, [string, string]> = {
     continuation_contract_mismatch: ["The saved runtime differs from the current tools or settings. Restore the matching runtime before resuming.", "保存时的运行环境与当前工具或设置不一致。恢复对应环境后才能继续。"],
-    version_conflict: ["The task changed before this request arrived. Refresh its status and try again.", "提交请求前任务状态已改变。请刷新状态后重试。"],
-    stale_version: ["The task changed before this request arrived. Refresh its status and try again.", "提交请求前任务状态已改变。请刷新状态后重试。"],
+    version_conflict: ["The task changed before this request arrived. Its status updates automatically; try again once it is available.", "提交请求前任务状态已改变。状态将自动更新，恢复后可重试。"],
+    stale_version: ["The task changed before this request arrived. Its status updates automatically; try again once it is available.", "提交请求前任务状态已改变。状态将自动更新，恢复后可重试。"],
     permission_denied: ["Your current permissions do not allow this action.", "当前权限不允许此操作。"],
-    checkpoint_not_found: ["The saved point is unavailable. Refresh the task before choosing another action.", "保存点不可用。请刷新任务后选择其他操作。"],
+    checkpoint_not_found: ["The saved point is unavailable. Wait for the task status to update before choosing another action.", "保存点不可用。请等待任务状态自动更新后选择其他操作。"],
   };
   const message = result.status === "rejected"
-    ? text(...(errors[result.rejection_code || ""] || ["The request was rejected. Refresh the task; Technical details contains the recorded reason.", "请求被拒绝。请刷新任务；技术详情中保留了具体原因。"] as [string, string]))
+    ? text(...(errors[result.rejection_code || ""] || ["The request was rejected. Task status updates automatically; Technical details contains the recorded reason.", "请求被拒绝。任务状态会自动更新；技术详情中保留了具体原因。"] as [string, string]))
     : text(...({ accepted: ["Request accepted; waiting for a safe boundary.", "请求已接受，等待安全执行边界。"], applying: ["Applying request…", "正在应用请求…"], applied: ["Request applied.", "请求已应用。"] }[result.status] as [string, string]));
   return (
     <div className={`${styles.commandNotice} ${result.status === "rejected" ? styles.noticeDanger : ""}`} role="status">
@@ -266,7 +264,6 @@ export function DebuggerPanel({
   onCreateDraft,
   onUpdateDraft,
   onDraftAction,
-  onRefresh,
 }: DebuggerPanelProps) {
   const { text } = useTranslation();
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(selectedExecutionId || executions[0]?.execution_id || null);
@@ -393,10 +390,9 @@ export function DebuggerPanel({
     return (
       <section className={styles.panel} aria-label="Execution details">
         <SidebarNotice>
-          <div>{connection.state === "stale" ? "Could not load executions." : connection.state === "reconnecting" && sessionId ? "Loading executions…" : "No executions in this conversation."}</div>
+          <div>{connection.state === "stale" ? "Could not load executions. Retrying automatically." : connection.state === "reconnecting" && sessionId ? "Loading executions…" : "No executions in this conversation."}</div>
           {connection.message && <div>{connection.message}</div>}
           {!sessionId && <div>Run a message to see its execution here.</div>}
-          {sessionId && connection.state === "stale" && onRefresh && <Button variant="ghost" onClick={onRefresh}>Retry</Button>}
         </SidebarNotice>
       </section>
     );
@@ -422,7 +418,6 @@ export function DebuggerPanel({
     <section className={styles.panel} aria-label="Execution details">
       {connection.state !== "connected" && <div className={styles.connectionLine} data-health={health}>
         <span title={connectionInfo.detail}>{connectionInfo.label}{fetchedAt ? ` · ${shortTime(fetchedAt)}` : ""}</span>
-        {onRefresh && <ActivityRefreshButton onRefresh={onRefresh} label={text("Refresh task", "刷新任务")} />}
       </div>}
 
       <div className={`${styles.layout} ${(detailOnly || executions.length === 1) ? styles.singleExecution : ""}`}>
@@ -439,7 +434,6 @@ export function DebuggerPanel({
                 <p className={styles.muted}>{text("Updated", "更新于")} {updatedTime(snapshot.updated_at)}</p>
               </div>
               <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{statusLabel(snapshot.status, text)}</div>
-              {onRefresh && <ActivityRefreshButton onRefresh={onRefresh} label={text("Refresh task", "刷新任务")} />}
             </div>
             {snapshot.status === "reconciliation_required" ? <div className={styles.reason}>
               {unresolvedEffects.some((effect) => effect.kind === "provider.before")

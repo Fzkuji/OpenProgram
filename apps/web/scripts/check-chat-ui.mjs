@@ -1097,11 +1097,12 @@ assert.doesNotMatch(
 );
 assert.match(
   queuedMessages,
-  /queuedAt:[\s\S]*className="message-timestamp"[\s\S]*new Date\(row\.queuedAt\)\.toLocaleTimeString/,
+  /className="message-timestamp"[\s\S]*new Date\(row\.queuedAt\)\.toLocaleTimeString/,
   "queued user messages must show their enqueue timestamp before dispatch",
 );
-assert.match(queuedMessages, /Steer now/);
-assert.match(queuedMessages, /Injecting…/);
+assert.match(queuedMessages, /Add to current turn/);
+assert.doesNotMatch(queuedMessages, /onStopAndSend|Stop current and send/);
+assert.match(queuedMessages, /Adding to current turn…/);
 assert.match(controlsCluster, /While running: Steer/);
 assert.match(controlsCluster, /While running: Queue/);
 assert.match(userBubble, /msg\.steering[\s\S]*Steered/);

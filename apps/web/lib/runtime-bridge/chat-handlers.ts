@@ -1007,7 +1007,9 @@ export function handleChatResponse(data: ChatResponseData): void {
           ? data.blocks
           : undefined;
       if (rid && st.messagesById[rid]) {
-        st.updateMessage(sid, rid, { content, blocks } as never);
+        // A terminal envelope may omit ordered blocks. Preserve the stream's
+        // existing timeline instead of overwriting it with undefined.
+        st.updateMessage(sid, rid, { content, ...(blocks ? { blocks } : {}) } as never);
       } else if (rid) {
         st.appendMessage(sid, {
           id: rid, role: "assistant", content, blocks, status: "done",

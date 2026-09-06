@@ -1,5 +1,5 @@
 /* 统一状态圆点系统（.indicator-dot，docs/design/indicator-dots.md）。
-   对应组件：components/chat/messages/tool-card.tsx、attach-card.tsx、
+   对应组件：components/chat/messages/attach-card.tsx、
    components/chat/composer/status-chip.tsx 等 */
 
 /* ===== indicator-dot — unified status dot system =====

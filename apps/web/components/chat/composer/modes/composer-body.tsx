@@ -31,6 +31,7 @@ export interface ComposerBodyProps {
   composerMode: string;
   activeDecision: Decision | null;
   dequeueDecision(id: string): void;
+  onChatAbout(): void;
   fnFormFunction: FnFormFn | null;
   fnForm: ReturnType<typeof useFnFormState>;
   handleFnFormClose(): void;
@@ -55,6 +56,7 @@ export function ComposerBody({
   composerMode,
   activeDecision,
   dequeueDecision,
+  onChatAbout,
   fnFormFunction,
   fnForm,
   handleFnFormClose,
@@ -82,6 +84,7 @@ export function ComposerBody({
             key={activeDecision.id}
             decision={activeDecision}
             onResolve={dequeueDecision}
+            onChatAbout={onChatAbout}
           />
         ) : composerMode === "fn-form" && fnFormFunction ? (
           <FunctionForm

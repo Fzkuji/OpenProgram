@@ -17,7 +17,7 @@
 @import "./styles/chat/indicator-dot.css";
 @import "./styles/chat/thinking-spinner.css";
 @import "./styles/chat/context-card.css";
-@import "./styles/chat/inline-tree.css";
+@import "./styles/chat/runtime-program.css";
 @import "./styles/chat/execution-strip.css";
 @import "./styles/chat/jump-latest.css";
 @import "./styles/chat/message-rail.css";
