@@ -314,7 +314,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
         </div>
       </div>
       <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
-        <fieldset disabled={discussionOpen || discussionPending} className="m-0 min-w-0 border-0 p-0">
+        <fieldset disabled={discussionOpen || discussionPending} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
           <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
         </fieldset>
         {discussionOpen && (
