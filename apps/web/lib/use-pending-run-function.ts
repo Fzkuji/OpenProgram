@@ -3,6 +3,8 @@
 /** Open a requested Program after the chat route has completed its reset. */
 import { useEffect } from "react";
 import { openFunctionForm } from "@/lib/state/functions-actions";
+import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { newSession } from "@/lib/runtime-bridge/conversations";
 
 export interface PendingRunFunction {
   name: string;
@@ -45,7 +47,18 @@ export function usePendingRunFunction(pathname: string): void {
     // discarded setup must not consume a request that its cleanup cancels.
     const timer = setTimeout(() => {
       const request = takePending();
-      if (request) void openFunctionForm(request.name, controller.signal);
+      if (!request) return;
+      if (pathname === "/chat") {
+        // Explicit Program navigation starts a draft; startup restoration alone
+        // must not leave the previous persisted tab owning this blank chat.
+        const tabs = useCenterTabs.getState();
+        const active = tabs.tabs.find((tab) => tab.id === tabs.activeId);
+        const draftId = active?.kind === "session" && active.draft && active.sessionId
+          ? active.sessionId
+          : tabs.openDraftSessionTab();
+        newSession(draftId);
+      }
+      void openFunctionForm(request.name, controller.signal);
     }, 0);
     return () => {
       clearTimeout(timer);

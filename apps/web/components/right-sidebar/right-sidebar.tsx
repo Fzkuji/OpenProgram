@@ -26,6 +26,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 import { ContextCommitTimeline } from "./context-commit-timeline";
@@ -94,7 +95,13 @@ export function RightSidebar() {
   const activeTab = useCenterTabs((s) =>
     s.tabs.find((tab) => tab.id === s.activeId),
   );
+  const pathname = usePathname();
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  // Tab metadata can briefly retain the previous session while /chat resets.
+  // Never query or show that session unless the visible route and chat agree.
   const activitySessionId = activeTab?.kind === "session" && !activeTab.draft
+    && activeTab.sessionId === currentSessionId
+    && pathname === `/s/${encodeURIComponent(currentSessionId ?? "")}`
     ? activeTab.sessionId ?? null
     : null;
   const currentProject = useCurrentProject();
