@@ -82,6 +82,9 @@ def wrap_with_approval(
     def _interaction_manifest(call_id: str, args: dict) -> dict | None:
         """Describe an approval before the Agent loop dispatches its effect."""
         decision, reason, _, _ = permission_decision(agent_tool, req, args)
+        if decision == "allow" and name == "ask_user_question":
+            from openprogram.programs.tools.interaction.clarify import interaction_manifest
+            return interaction_manifest(args)
         if decision != "ask":
             return None
         from openprogram.worktree.context import current_worktree_path

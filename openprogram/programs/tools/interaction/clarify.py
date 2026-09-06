@@ -123,6 +123,21 @@ def _to_runtime_questions(questions: list[dict]) -> list[dict]:
     return out
 
 
+def interaction_manifest(args: dict) -> dict | None:
+    """Declare the same question batch consumed by runtime.ask on resume."""
+    questions = args.get("questions")
+    if not isinstance(questions, list) or not questions or not all(isinstance(q, dict) for q in questions):
+        return None
+    return {
+        "kind": "ask_many", "prompt": "", "options": [],
+        "multi": False, "allow_custom": False, "detail": "",
+        "schema": {}, "questions": _to_runtime_questions(questions),
+        "policy_snapshot": {"version": 1, "kind": "ask_many", "on_answer": "continue",
+                            "on_decline": "fail", "on_timeout": "fail"},
+        "timeout": 300.0,
+    }
+
+
 @function(
     name=NAME,
     description=DESCRIPTION,
