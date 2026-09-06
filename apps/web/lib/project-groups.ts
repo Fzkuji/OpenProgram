@@ -6,8 +6,12 @@ export interface ProjectGroupSource {
   session_ids?: readonly string[];
 }
 
+export type ProjectSort = "recency" | "oldest" | "name" | "manual";
+
 export interface ProjectGroupItem {
   id: string;
+  updated_at?: number;
+  created_at?: number;
 }
 
 export interface ProjectGroup<T extends ProjectGroupItem> {
@@ -22,6 +26,7 @@ export function projectGroups<T extends ProjectGroupItem>(
   projects: readonly ProjectGroupSource[],
   items: readonly T[],
   order: readonly string[] = [],
+  options: { sort?: ProjectSort; pinned?: readonly string[]; includeEmpty?: boolean; activityItems?: readonly T[] } = {},
 ): ProjectGroup<T>[] {
   const owner = new Map<string, string>();
   for (const project of projects) {
@@ -40,11 +45,27 @@ export function projectGroups<T extends ProjectGroupItem>(
     else byProject.set(projectId, [item]);
   }
 
+  const activity = new Map<string, number>();
+  for (const item of options.activityItems ?? items) {
+    const projectId = owner.get(item.id) ?? defaultId;
+    if (!projectId) continue;
+    const timestamp = item.updated_at || item.created_at || 0;
+    activity.set(projectId, Math.max(activity.get(projectId) ?? 0, Number.isFinite(timestamp) ? timestamp : 0));
+  }
+  const pinned = new Set(options.pinned);
   const rank = new Map(order.map((id, index) => [id, index]));
   return [...projects]
     .sort((a, b) => {
-      const delta = (rank.get(a.id) ?? order.length) - (rank.get(b.id) ?? order.length);
-      if (delta) return delta;
+      const pinDelta = Number(pinned.has(b.id)) - Number(pinned.has(a.id));
+      if (pinDelta) return pinDelta;
+      if (options.sort === "recency" || options.sort === "oldest") {
+        const delta = (activity.get(b.id) ?? 0) - (activity.get(a.id) ?? 0);
+        if (delta) return options.sort === "oldest" ? -delta : delta;
+      } else if (options.sort !== "name") {
+        const delta = (rank.get(a.id) ?? order.length) - (rank.get(b.id) ?? order.length);
+        if (delta) return delta;
+      }
+      if (options.sort === "name") return a.name.localeCompare(b.name);
       if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
       return a.name.localeCompare(b.name);
     })
@@ -54,7 +75,7 @@ export function projectGroups<T extends ProjectGroupItem>(
       path: project.path,
       items: byProject.get(project.id) ?? [],
     }))
-    .filter((group) => group.items.length > 0);
+    .filter((group) => options.includeEmpty || group.items.length > 0);
 }
 
 /** Move one project without changing the relative order of any other project. */

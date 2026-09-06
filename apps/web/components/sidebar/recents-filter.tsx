@@ -64,7 +64,7 @@ const rowCls =
   " data-[highlighted]:text-text-bright";
 
 export function RecentsFilter() {
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const view = useRecentsView();
   const [open, setOpen] = useState(false);
   const filterIconRef = useRef<AnimatedNavIconHandle>(null);
@@ -190,15 +190,27 @@ export function RecentsFilter() {
             onPick={(groupBy) => setRecentsView({ groupBy })}
           />
           <Row<RecentsSort>
-            label={t("sidebar.sort_by")}
+            label={text("Chat order", "聊天排序")}
             value={view.sort}
             options={[
               ["title", t("sidebar.sort_title")],
               ["created", t("sidebar.sort_created")],
               ["recency", t("sidebar.sort_recency")],
             ]}
-            onPick={(sort) => setRecentsView({ sort })}
+            onPick={(sort) => setRecentsView({ sort, sortDirection: sort === "title" ? "asc" : view.sortDirection })}
           />
+          <Row<"asc" | "desc">
+            label={text("Chat direction", "聊天排序方向")}
+            value={view.sortDirection}
+            options={[["desc", text("Newest first / Z–A", "新到旧 / Z–A")], ["asc", text("Oldest first / A–Z", "旧到新 / A–Z")]]}
+            onPick={(sortDirection) => setRecentsView({ sortDirection })}
+          />
+          {view.groupBy === "project" ? <Row
+            label={text("Project order", "项目排序")}
+            value={view.projectSort}
+            options={[["recency", text("Recent activity first", "最近活动优先")], ["oldest", text("Oldest activity first", "最早活动优先")], ["name", text("Name", "名称")], ["manual", text("Manual", "手动")]]}
+            onPick={(projectSort) => setRecentsView({ projectSort })}
+          /> : null}
         </DM.Content>
       </DM.Portal>
     </DM.Root>

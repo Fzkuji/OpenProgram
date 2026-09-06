@@ -1,3 +1,4 @@
+import type { ProjectSort } from "../project-groups";
 /**
  * recents-view — per-browser view preferences for the sidebar Recents
  * list (which Status to show, how to sort, whether to group).
@@ -31,6 +32,9 @@ export type RecentsActivity = "all" | "1d" | "7d" | "30d";
 
 export interface RecentsView {
   projectOrder: string[];
+  projectSort: ProjectSort;
+  pinnedProjects: string[];
+  sortDirection: "asc" | "desc";
   status: RecentsStatus;
   /** Project filter. ``"all"`` = no filter. Stored as a project id /
    *  name; the backend that introduces projects fills the option list
@@ -45,6 +49,9 @@ export interface RecentsView {
 
 export const DEFAULT_RECENTS_VIEW: RecentsView = {
   projectOrder: [],
+  projectSort: "recency",
+  pinnedProjects: [],
+  sortDirection: "desc",
   status: "active",
   project: "all",
   environment: "all",
@@ -66,6 +73,9 @@ function _read(): RecentsView {
     const p = JSON.parse(raw) as Partial<RecentsView>;
     return {
       projectOrder: Array.isArray(p.projectOrder) && p.projectOrder.every((id) => typeof id === "string") ? [...new Set(p.projectOrder)] : [],
+      projectSort: ["recency", "oldest", "name", "manual"].includes(p.projectSort ?? "") ? p.projectSort! : (Array.isArray(p.projectOrder) && p.projectOrder.length ? "manual" : "recency"),
+      pinnedProjects: Array.isArray(p.pinnedProjects) ? [...new Set(p.pinnedProjects.filter((id) => typeof id === "string"))] : [],
+      sortDirection: p.sortDirection === "asc" || p.sortDirection === "desc" ? p.sortDirection : p.sort === "title" ? "asc" : "desc",
       status: p.status || DEFAULT_RECENTS_VIEW.status,
       project: p.project || DEFAULT_RECENTS_VIEW.project,
       environment: p.environment || DEFAULT_RECENTS_VIEW.environment,

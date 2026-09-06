@@ -27,7 +27,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, Pin } from "lucide-react";
 import { useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import type { ConvSummary } from "@/lib/session-store";
@@ -359,17 +359,17 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     const cmp = (a: LegacyConv, b: LegacyConv) => {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       if (view.sort === "title") {
-        return labelFor(a, "").localeCompare(labelFor(b, ""));
+        return labelFor(a, "").localeCompare(labelFor(b, "")) * (view.sortDirection === "asc" ? 1 : -1);
       }
       // "created" 按创建时间；"recency" 按最后活跃（updated_at，随消息
       // 追加更新），老行缺 updated_at 时退回 created_at。缺失时间戳一律
       // 按 0（最旧）处理，不能退回 nowTs——否则 null 时间戳的老行会压过
       // 刚建的会话。
       if (view.sort === "created") {
-        return (b.created_at || 0) - (a.created_at || 0);
+        return ((b.created_at || 0) - (a.created_at || 0)) * (view.sortDirection === "asc" ? -1 : 1);
       }
-      return (b.updated_at || b.created_at || 0)
-        - (a.updated_at || a.created_at || 0);
+      return ((b.updated_at || b.created_at || 0)
+        - (a.updated_at || a.created_at || 0)) * (view.sortDirection === "asc" ? -1 : 1);
     };
     return [...arr].sort(cmp);
   })();
@@ -405,15 +405,16 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // project_for_session falls back to it) — there is no separate
   // "Ungrouped" bucket in this mode. Manual project order does not alter
   // membership or the session order from `visible`.
-  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder) : [];
+  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, activityItems: convArr }) : [];
   function reorderProject(source: string, target: string, side: "before" | "after") {
     // Include hidden/empty projects so filtering cannot discard their position.
+    const displayed = projectGroups(projects, convArr, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, includeEmpty: true }).map(g => g.key);
     const fallback = [...projects].sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name));
     const ids = new Set(projects.map((p) => p.id));
-    const order = [...new Set([...view.projectOrder.filter((id) => ids.has(id)), ...fallback.map((p) => p.id)])];
+    const order = [...new Set([...displayed, ...view.projectOrder.filter((id) => ids.has(id)), ...fallback.map((p) => p.id)])];
     if (source === target || !ids.has(source) || !ids.has(target)) return;
     try {
-      setRecentsView({ projectOrder: moveProject(order, source, target, side) });
+      setRecentsView({ projectSort: "manual", projectOrder: moveProject(order, source, target, side) });
       setOrderNotice(text("Project order saved", "项目顺序已保存"));
     } catch {
       setOrderNotice(text("Order changed, but could not be saved on this device", "顺序已更改，但无法保存在此设备上"));
@@ -453,6 +454,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     : buildSections(visible, {
         groupBy: view.groupBy,
         sort: view.sort,
+        sortDirection: view.sortDirection,
         nowTs,
         locale,
         isWorking,
@@ -509,6 +511,9 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
               >
                 <ProjectGroupHeader
                   dragProps={headerProps(g.key)}
+                  pinned={view.pinnedProjects.includes(g.key)}
+                  pinTitle={view.pinnedProjects.includes(g.key) ? text("Unpin project", "取消置顶项目") : text("Pin project", "置顶项目")}
+                  onTogglePin={() => setRecentsView({ pinnedProjects: view.pinnedProjects.includes(g.key) ? view.pinnedProjects.filter(id => id !== g.key) : [...view.pinnedProjects, g.key] })}
                   onMove={(direction) => {
                     const target = groupedProjects[groupIndex + direction];
                     if (target) reorderProject(g.key, target.key, direction < 0 ? "before" : "after");
@@ -646,6 +651,7 @@ interface Section {
 interface SectionOpts {
   groupBy: "none" | "state" | "project" | "flat";
   sort: "recency" | "created" | "title";
+  sortDirection: "asc" | "desc";
   nowTs: number;
   locale: string;
   isWorking: (id: string) => boolean;
@@ -708,7 +714,7 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
   }
   const out: Section[] = [];
   if (pinned.length) out.push({ key: "pinned", label: o.labels.pinned, items: pinned });
-  const sorted = Array.from(buckets.values()).sort((a, b) => a.key.localeCompare(b.key));
+  const sorted = Array.from(buckets.values()).sort((a, b) => a.key.localeCompare(b.key) * (o.sortDirection === "asc" ? -1 : 1));
   out.push(...sorted);
   return out;
 }
@@ -730,6 +736,7 @@ function ProjectGroupHeader({
   dragProps,
   onMove,
   reorderHint,
+  pinned, pinTitle, onTogglePin,
 }: {
   name: string;
   path: string;
@@ -740,6 +747,9 @@ function ProjectGroupHeader({
   dragProps: React.HTMLAttributes<HTMLDivElement>;
   onMove: (direction: -1 | 1) => void;
   reorderHint: string;
+  pinned: boolean;
+  pinTitle: string;
+  onTogglePin: () => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
@@ -769,6 +779,11 @@ function ProjectGroupHeader({
         <FoldersIcon ref={iconRef} size={20} />
       </span>
       <span className={sidebarNavLabelClass}>{name}</span>
+      <button type="button" aria-label={pinTitle} title={pinTitle} aria-pressed={pinned}
+        onClick={event => { event.stopPropagation(); onTogglePin(); }}
+        className={`shrink-0 rounded p-1 hover:bg-bg-hover ${pinned ? "text-text-bright" : "text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
+        <Pin size={13} fill={pinned ? "currentColor" : "none"} />
+      </button>
       <button
         type="button"
         title={newSessionTitle}

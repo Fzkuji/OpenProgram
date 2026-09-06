@@ -17,3 +17,19 @@ test("project ordering preserves membership and hidden projects", () => {
  assert.deepEqual(moveProject(order,"missing","a","after"),order);
  assert.deepEqual(moveProject(order,"b","b","before"),order);
 });
+
+test("activity ordering and pins follow new chats without changing membership", () => {
+ const timed = [{id:"a1",updated_at:10},{id:"b1",updated_at:20},{id:"d1",created_at:5}];
+ const keys = (rows,options) => projectGroups(projects,rows,[],options).map(g=>g.key);
+ assert.deepEqual(keys(timed,{sort:"recency"}),["b","a","d"]);
+ assert.deepEqual(keys([...timed,{id:"new",updated_at:30}],{sort:"recency"}),["d","b","a"]);
+ assert.deepEqual(keys(timed,{sort:"oldest"}),["d","a","b"]);
+ assert.deepEqual(keys(timed,{sort:"recency",pinned:["d"]}),["d","b","a"]);
+ assert.deepEqual(keys([timed[0],timed[2]],{sort:"recency",activityItems:[...timed,{id:"new",updated_at:30}]}),["d","a"]);
+});
+
+test("manual ordering includes empty projects when computing drag positions", () => {
+ const full = projectGroups(projects,[{id:"d1"},{id:"b1"}],["d","a","b"],{sort:"manual",includeEmpty:true}).map(g=>g.key);
+ assert.deepEqual(full,["d","a","b"]);
+ assert.deepEqual(moveProject(full,"d","b","after"),["a","b","d"]);
+});

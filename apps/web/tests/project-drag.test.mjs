@@ -107,10 +107,13 @@ test('project order persists, reloads, synchronizes, and survives a storage erro
   const prefs = await import('../lib/prefs/recents-view.ts');
   let changes = 0;
   const unsubscribe = prefs.subscribeRecentsView(() => changes++);
-  prefs.setRecentsView({projectOrder:['c','a','b']});
+  prefs.setRecentsView({projectOrder:['c','a','b'],projectSort:'oldest',pinnedProjects:['a'],sortDirection:'asc'});
   assert.deepEqual(JSON.parse(values.get('recents_view')).projectOrder,['c','a','b']);
   const reload = await import('../lib/prefs/recents-view.ts?reload');
   assert.deepEqual(reload.getRecentsView().projectOrder,['c','a','b']);
+  assert.equal(reload.getRecentsView().projectSort,'oldest');
+  assert.deepEqual(reload.getRecentsView().pinnedProjects,['a']);
+  assert.equal(reload.getRecentsView().sortDirection,'asc');
   values.set('recents_view', JSON.stringify({projectOrder:['b','b','a']}));
   const event = new window.Event('storage'); event.key = 'recents_view'; window.dispatchEvent(event);
   assert.deepEqual(prefs.getRecentsView().projectOrder,['b','a']);
@@ -121,4 +124,13 @@ test('project order persists, reloads, synchronizes, and survives a storage erro
   assert.deepEqual(prefs.getRecentsView().projectOrder,['a','c']);
   assert.equal(changes,4);
   unsubscribe(); window.dispatchEvent(event); assert.equal(changes,4);
+  values.set('recents_view', JSON.stringify({sort:'title',groupBy:'flat'}));
+  const legacyTitle = await import('../lib/prefs/recents-view.ts?legacy-title');
+  assert.equal(legacyTitle.getRecentsView().sortDirection,'asc');
+  values.set('recents_view', JSON.stringify({sort:'title',sortDirection:'desc'}));
+  const explicitTitle = await import('../lib/prefs/recents-view.ts?explicit-title');
+  assert.equal(explicitTitle.getRecentsView().sortDirection,'desc');
+  values.set('recents_view', JSON.stringify({sort:'recency'}));
+  const legacyTime = await import('../lib/prefs/recents-view.ts?legacy-time');
+  assert.equal(legacyTime.getRecentsView().sortDirection,'desc');
 });
