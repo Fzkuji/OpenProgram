@@ -215,7 +215,7 @@ export function sendChatMessage({
   const additionalWorkingDirs = sessionId
     ? useSessionStore.getState().additionalWorkingDirsBySession[sessionId]
     : null;
-  if (additionalWorkingDirs && additionalWorkingDirs.length > 0) {
+  if (additionalWorkingDirs != null) {
     payload.additional_working_dirs = additionalWorkingDirs;
   }
   if (attachments && attachments.length > 0) {

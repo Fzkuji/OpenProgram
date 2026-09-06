@@ -57,6 +57,7 @@ interface Project {
   /** Backend-computed: the folder no longer exists on disk. */
   path_missing?: boolean;
   session_count: number;
+  source_folders?: string[];
 }
 
 export function ProjectMenu({

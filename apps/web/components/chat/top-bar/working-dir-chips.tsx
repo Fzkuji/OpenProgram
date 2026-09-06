@@ -14,7 +14,7 @@
  * `working_dirs` broadcast is authoritative. Drafts only write the
  * store — the first chat frame carries the list (send-chat-message.ts).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Folder, FolderPlus, X } from "lucide-react";
 
 import {
@@ -47,6 +47,7 @@ interface Project {
   path: string;
   is_default: boolean;
   session_count: number;
+  source_folders?: string[];
 }
 
 export function WorkingDirChips() {
@@ -56,10 +57,10 @@ export function WorkingDirChips() {
     activeChatKey ? s.pendingProjectsByChat[activeChatKey] ?? null : null,
   );
   const workingDirsKey = sessionId ?? activeChatKey;
-  const workingDirs = useSessionStore((s) =>
+  const explicitWorkingDirs = useSessionStore((s) =>
     workingDirsKey
-      ? s.additionalWorkingDirsBySession[workingDirsKey] ?? NO_WORKING_DIRS
-      : NO_WORKING_DIRS,
+      ? s.additionalWorkingDirsBySession[workingDirsKey]
+      : undefined,
   );
   const setAdditionalWorkingDirs = useSessionStore(
     (s) => s.setAdditionalWorkingDirs,
@@ -67,6 +68,10 @@ export function WorkingDirChips() {
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const effectiveProjectId = !sessionId ? pendingProjectId ?? currentProjectId : currentProjectId;
+  const selectedProject = projects.find(project=>project.id===effectiveProjectId) ?? projects.find(project=>project.is_default);
+  const workingDirs = explicitWorkingDirs ?? selectedProject?.source_folders ?? NO_WORKING_DIRS;
+  const refreshGeneration = useRef(0);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const { pickFolder, folderPickerDialog } = useFolderPicker();
 
@@ -75,7 +80,7 @@ export function WorkingDirChips() {
   function applyWorkingDirs(dirs: string[]) {
     if (!workingDirsKey) return;
     setAdditionalWorkingDirs(workingDirsKey, dirs);
-    const isDraft = !sessionId || sessionId.startsWith("local_");
+    const isDraft = !sessionId;
     if (!isDraft) {
       void wsRequest(
         "set_working_dirs",
@@ -87,6 +92,7 @@ export function WorkingDirChips() {
   }
 
   const refresh = useCallback(async () => {
+    const generation = ++refreshGeneration.current;
     const data = await wsRequest<{
       projects: Project[];
       current_project_id: string | null;
@@ -100,17 +106,31 @@ export function WorkingDirChips() {
       // 恒为 null，误收会把选中态画到默认项目上。
       (d) => (d.session_id ?? null) === (sessionId || null),
     );
-    if (data) {
-      setProjects(data.projects || []);
+    if (generation !== refreshGeneration.current) return true;
+    if (data?.projects) {
+      setProjects(data.projects);
       setCurrentProjectId(data.current_project_id ?? null);
-    } else {
-      setProjects([]);
+      return true;
     }
+    return false;
   }, [sessionId]);
 
   useEffect(() => {
     if (open) void refresh();
   }, [open, refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    const attempt = async () => {
+      if (!await refresh() && !cancelled && tries++ < 20) timer = setTimeout(attempt, 300);
+    };
+    const changed = () => { tries = 0; void attempt(); };
+    void attempt();
+    window.addEventListener("project-changed", changed);
+    return () => { cancelled = true; ++refreshGeneration.current; clearTimeout(timer); window.removeEventListener("project-changed", changed); };
+  }, [refresh]);
 
   // Mirror ProjectBadge: only one topbar dropdown open at a time.
   useEffect(() => {
@@ -147,9 +167,6 @@ export function WorkingDirChips() {
   // 未绑定项目的会话 current_project_id 为 null，但它实际生效的是默认
   // 项目（chip 显示的就是它）——回落到 is_default，别让"当前项目"混进
   // 最近列表。
-  const effectiveProjectId = !sessionId
-    ? pendingProjectId ?? currentProjectId
-    : currentProjectId;
   const currentProjectPath =
     projects.find((p) => p.id === effectiveProjectId)?.path ??
     projects.find((p) => p.is_default)?.path ??

@@ -90,6 +90,10 @@ class Project:
     session_ids: list[str] = field(default_factory=list)
     status: str = "active"          # active | paused | done
     created_at: float = field(default_factory=time.time)
+    icon: str = ""
+    custom_name: bool = False
+    description: str = ""
+    source_folders: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -104,6 +108,10 @@ class Project:
             session_ids=list(d.get("session_ids", []) or []),
             status=d.get("status", "active"),
             created_at=float(d.get("created_at", time.time())),
+            icon=d.get("icon", ""),
+            custom_name=bool(d.get("custom_name", False)),
+            description=d.get("description", ""),
+            source_folders=list(d.get("source_folders", []) or []),
         )
 
 
@@ -554,6 +562,48 @@ def _upsert(project: Project) -> Project:
     return project
 
 
+def update_project(project_id: str, patch: dict) -> Project:
+    """Validate and atomically edit display metadata; preserve main path/bindings."""
+    if not isinstance(project_id, str) or not project_id:
+        raise ValueError("project_id is required")
+    if not isinstance(patch, dict) or not patch or set(patch) - {"name", "icon", "description", "source_folders"}:
+        raise ValueError("unsupported project fields")
+    values = dict(patch)
+    for key, limit in (("name", 200), ("icon", 32), ("description", 2000)):
+        if key in values:
+            value = values[key]
+            if not isinstance(value, str) or len(value) > limit or (key == "name" and not value.strip()):
+                raise ValueError(f"invalid project {key}")
+            values[key] = value.strip()
+    if "source_folders" in values:
+        folders = values["source_folders"]
+        if not isinstance(folders, list) or len(folders) > 32:
+            raise ValueError("source_folders must be a list of at most 32 directories")
+        normalized = []
+        for value in folders:
+            if not isinstance(value, str) or not Path(value).expanduser().is_absolute():
+                raise ValueError("source folder paths must be absolute")
+            path = Path(value).expanduser().resolve()
+            if not path.is_dir():
+                raise ValueError(f"source folder is not a directory: {value}")
+            if str(path) not in normalized:
+                normalized.append(str(path))
+        values["source_folders"] = normalized
+    with _reg_lock:
+        registry = _read_registry()
+        if project_id not in registry:
+            raise ValueError("unknown project")
+        project = Project.from_dict(registry[project_id])
+        for key, value in values.items():
+            setattr(project, key, value)
+        if "name" in values:
+            project.custom_name = True
+        project.source_folders = [p for p in project.source_folders if p != project.path]
+        registry[project_id] = project.to_dict()
+        _write_registry(registry)
+        return project
+
+
 # ── project-level settings ──────────────────────────────────────────────
 # 项目级配置（权限规则、以后的项目级工具/模型偏好等）。
 # 非默认项目落在 <project>/.openprogram/settings.json（跟项目走，可进版本库
@@ -619,8 +669,9 @@ def get_default_project() -> Project:
     if existing is not None:
         # Backfill older records that used the placeholder "Default"
         # label / empty path so the catch-all reads as the home folder.
-        if (existing.name or "") in ("", "Default") or not existing.path:
-            existing.name = home_name
+        if (not existing.custom_name and (existing.name or "") in ("", "Default")) or not existing.path:
+            if not existing.custom_name:
+                existing.name = home_name
             existing.path = str(home)
             _upsert(existing)
         return existing

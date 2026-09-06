@@ -723,6 +723,9 @@ export function useWS(): void {
         case "sessions_list":
           handleSessionsList((d ?? []) as never);
           return true;
+        case "projects_changed":
+          window.dispatchEvent(new Event("project-changed"));
+          return true;
         case "session_updated":
           handleSessionUpdated((d ?? null) as never);
           return true;

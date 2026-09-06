@@ -142,6 +142,11 @@ def save_session_run_config(
     from openprogram.agent.session_db import default_db
     db = default_db()
     row = db.get_session(session_id)
+    if row is not None and additional_working_dirs is None and "additional_working_dirs" not in row:
+        from openprogram.store.project import project_store as projects
+        project = projects.project_for_session(session_id)
+        if project and project.source_folders:
+            fields["additional_working_dirs"] = list(project.source_folders)
     if fields and row is not None:
         db.update_session(session_id, agent_id=agent_id, **fields)
         row = db.get_session(session_id)

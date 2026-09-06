@@ -56,6 +56,9 @@ def _project_dict(p, alive: set[str] | None = None) -> dict:
         "session_count": len(sids),
         "session_ids": sids,
         "status": p.status,
+        "icon": getattr(p, "icon", ""),
+        "description": getattr(p, "description", ""),
+        "source_folders": list(getattr(p, "source_folders", []) or []),
     }
 
 
@@ -407,7 +410,21 @@ async def handle_list_project_sessions(ws, cmd: dict):
     }, default=str))
 
 
+async def handle_update_project(ws, cmd: dict):
+    from openprogram.store.project import project_store as projects
+    try:
+        project = projects.update_project(cmd.get("project_id"), cmd.get("patch"))
+        result = {"ok": True, "project": _project_dict(project)}
+    except (ValueError, OSError) as exc:
+        result = {"ok": False, "error": str(exc)}
+    await ws.send_text(json.dumps({"type": "project_updated", "data": result}))
+    if result["ok"]:
+        from openprogram.webui import server
+        server._broadcast(json.dumps({"type": "projects_changed", "data": {"project_id": project.id}}))
+
+
 ACTIONS = {
+    "update_project": handle_update_project,
     "list_projects": handle_list_projects,
     "list_project_sessions": handle_list_project_sessions,
     "get_project_config": handle_get_project_config,
