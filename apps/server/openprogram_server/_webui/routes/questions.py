@@ -47,6 +47,7 @@ def register(app):
                 )
             ]
         visible = []
+        versions = {}
         for wait in waits:
             execution = store.get_execution(wait.execution_id)
             if execution is None or not _authorize_read(
@@ -54,10 +55,13 @@ def register(app):
             ):
                 continue
             visible.append(wait)
+            versions[wait.execution_id] = execution.status_version
         return JSONResponse(content={"questions": [
             {
                 "id": q.wait_id, "execution_id": q.execution_id,
                 "wait_generation": q.claim_generation, "kind": q.kind,
+                "expected_version": versions[q.execution_id],
+                "allowed_scopes": q.policy_snapshot.get("allowed_scopes"),
                 "prompt": q.request.get("prompt", ""), "options": q.request.get("options", []),
                 "multi": q.request.get("multi", False),
                 "allow_custom": q.request.get("allow_custom", True),

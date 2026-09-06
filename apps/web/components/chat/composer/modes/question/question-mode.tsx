@@ -20,14 +20,15 @@ import { approvalDisplayText, readSandboxEscalation, type SandboxEscalation } fr
  * 设计：docs/design/ui/composer-interaction-modes.md。
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 
 import type { PendingDecision, AskOne, FormFieldSchema } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
 
 import styles from "./question-mode.module.css";
-import { getSocket } from "@/lib/runtime-bridge/state";
+import { ExecutionApiError, postExecutionCommand, type WaitCommand } from "@/lib/net/execution-client";
+import { showToast } from "@/lib/format-utils/toast";
 import multi from "./multi-ask-mode.module.css";
 import approvalStyles from "../approval/approval-mode.module.css";
 import formStyles from "./form-mode.module.css";
@@ -36,31 +37,6 @@ import formStyles from "./form-mode.module.css";
  *  locale-independent token accepted by ``_approval.await_user_approval``.
  *  Not user-visible — the button labels are translated separately. */
 const APPROVE_ANSWER = "approve";
-
-function wsSend(payload: unknown): void {
-  const sock = getSocket();
-  if (sock && sock.readyState === WebSocket.OPEN) {
-    sock.send(JSON.stringify(payload));
-  }
-}
-
-function waitCommand(
-  decision: PendingDecision,
-  action: "execution.wait.answer" | "execution.wait.decline",
-  value?: unknown,
-): void {
-  if (!decision.executionId || !Number.isInteger(decision.expectedVersion)) return;
-  wsSend({
-    type: "execution.command",
-    action,
-    command_id: `web-wait-${crypto.randomUUID()}`,
-    execution_id: decision.executionId,
-    expected_version: decision.expectedVersion,
-    payload: action === "execution.wait.answer"
-      ? { wait_id: decision.id, generation: decision.waitGeneration, answer: value }
-      : { wait_id: decision.id, generation: decision.waitGeneration, reason: value },
-  });
-}
 
 /** 提示语收尾：已是问号/冒号/句号等终止符就原样；否则补一个中文冒号「：」，
  *  让「请填写名字」这类祈使句读起来像在等你输入。 */
@@ -88,6 +64,7 @@ type Step =
       detail?: string;
       risk?: "low" | "medium" | "high";
       escalation?: SandboxEscalation;
+      allowedScopes?: string[];
     }
   | { kind: "form"; prompt: string; detail?: string; schema: Record<string, FormFieldSchema> };
 
@@ -110,6 +87,7 @@ function toSteps(q: PendingDecision): Step[] {
       detail: q.detail,
       risk: q.risk_level,
       escalation: readSandboxEscalation(q.args),
+      allowedScopes: q.allowedScopes,
     }];
   }
   if (q.kind === "ask_many") {
@@ -159,6 +137,54 @@ function stepAnswered(step: Step, a: Answer): boolean {
 export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionModeProps) {
   const { text } = useTranslation();
   const [discussionPending, setDiscussionPending] = useState(false);
+  const [answerPending, setAnswerPending] = useState(false);
+  const [answerLocked, setAnswerLocked] = useState(false);
+  const answerRequest = useRef<{ command: WaitCommand; busy: boolean } | null>(null);
+  async function sendAnswer(action: "execution.wait.answer" | "execution.wait.decline", value?: unknown) {
+    if (!q.executionId || !Number.isInteger(q.expectedVersion)) {
+      showToast(text("The request is not ready. Reconnect and retry.", "请求尚未就绪，请重连后重试。"), { tone: "error" });
+      return;
+    }
+    if (answerRequest.current?.busy) return;
+    const request = answerRequest.current ?? { busy: false, command: {
+      type: "execution.command" as const, action,
+      command_id: `web-wait-${crypto.randomUUID()}`,
+      execution_id: q.executionId, expected_version: q.expectedVersion,
+      payload: action === "execution.wait.answer"
+        ? { wait_id: q.id, generation: q.waitGeneration, answer: value }
+        : { wait_id: q.id, generation: q.waitGeneration, reason: value },
+    } };
+    answerRequest.current = request;
+    request.busy = true;
+    setAnswerLocked(true);
+    setAnswerPending(true);
+    try {
+      const result = await postExecutionCommand(request.command, AbortSignal.timeout(15000));
+      if (result.command_id === request.command.command_id && result.status === "rejected") {
+        answerRequest.current = null;
+        setAnswerLocked(false);
+        showToast(text("The answer was rejected. Check the current request before retrying.", "答复被拒绝，请检查当前请求后重试。"), { tone: "error" });
+        return;
+      }
+      if (result.command_id !== request.command.command_id || result.status !== "applied") {
+        throw new Error("Answer was not confirmed");
+      }
+      onResolve(q.id);
+    } catch (error) {
+      if (error instanceof ExecutionApiError && error.command?.command_id === request.command.command_id
+          && error.command.status === "rejected") {
+        answerRequest.current = null;
+        setAnswerLocked(false);
+        showToast(text("The answer was rejected. Check the current request before retrying.", "答复被拒绝，请检查当前请求后重试。"), { tone: "error" });
+        return;
+      }
+      showToast(text("Answer not confirmed. Retry to send the same answer.", "答复尚未确认，请重试发送同一答复。"), { tone: "error" });
+    } finally {
+      request.busy = false;
+      setAnswerPending(false);
+    }
+  }
+
   const [discussionOpen, setDiscussionOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [feedbackLocked, setFeedbackLocked] = useState(false);
@@ -182,7 +208,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
     setAnswers((cur) => cur.map((a, k) => (k === i ? next : a)));
 
   function submit() {
-    if (discussionOpen || discussionPending) return;
+    if (discussionOpen || discussionPending || answerPending) return;
     // 按原 decision kind 收集成后端期望的格式。
     if (q.kind === "form") {
       const step = steps[0] as Extract<Step, { kind: "form" }>;
@@ -197,8 +223,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
           answer[name] = v;
         }
       }
-      waitCommand(q, "execution.wait.answer", answer);
-      onResolve(q.id);
+      void sendAnswer("execution.wait.answer", answer);
       return;
     }
     if (q.kind === "approval") {
@@ -207,12 +232,11 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
       // follow the user's locale. ``_approval.await_user_approval`` accepts
       // it verbatim; a localized string would fail the comparison in every
       // language it doesn't happen to list.
-      if (pick === "once") waitCommand(q, "execution.wait.answer", { answer: APPROVE_ANSWER, scope: "once" });
-      else if (pick === "always") waitCommand(q, "execution.wait.answer", { answer: APPROVE_ANSWER, scope: "always" });
-      else if (pick === "always_path") waitCommand(q, "execution.wait.answer", { answer: APPROVE_ANSWER, scope: "always_path" });
-      else if (pick === "deny") waitCommand(q, "execution.wait.decline");
+      if (pick === "once") void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "once" });
+      else if (pick === "always") void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "always" });
+      else if (pick === "always_path") void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "always_path" });
+      else if (pick === "deny") void sendAnswer("execution.wait.decline");
       else return;
-      onResolve(q.id);
       return;
     }
     if (q.kind === "ask_many") {
@@ -223,8 +247,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
         const sc = s as Extract<Step, { kind: "choice" }>;
         return sc.multi ? arr : (arr[0] ?? "");
       });
-      waitCommand(q, "execution.wait.answer", value);
-      onResolve(q.id);
+      void sendAnswer("execution.wait.answer", value);
       return;
     }
     // ask / confirm —— 单题选择。
@@ -232,8 +255,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
     const arr = Array.from(aa.picked);
     if (aa.custom.trim()) arr.push(aa.custom.trim());
     const answer: string | string[] = q.multi ? arr : (arr[0] ?? "");
-    waitCommand(q, "execution.wait.answer", answer);
-    onResolve(q.id);
+    void sendAnswer("execution.wait.answer", answer);
   }
 
   // 底部按钮组：单步 → [发送]；多步 → [‹上一题, 下一题›/发送]。就是 body
@@ -242,11 +264,11 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
     const prev = {
       label: text("‹ Previous", "‹ 上一题"),
       onClick: () => setIdx((i) => Math.max(0, i - 1)),
-      disabled: atFirst,
+      disabled: atFirst || answerLocked,
       primary: false,
     };
     const nextOrSend = atLast
-      ? { label: text("Send", "发送"), onClick: submit, disabled: !allAnswered, primary: true }
+      ? { label: answerPending ? text("Sending…", "发送中…") : answerLocked ? text("Retry", "重试") : text("Send", "发送"), onClick: submit, disabled: !allAnswered, primary: true }
       : {
           label: text("Next ›", "下一题 ›"),
           onClick: () => setIdx((i) => Math.min(steps.length - 1, i + 1)),
@@ -304,7 +326,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
                 (i === idx ? " " + multi.dotActive : "") +
                 (stepAnswered(steps[i], answers[i]) ? " " + multi.dotDone : "")
               }
-              onClick={() => { if (!discussionOpen) setIdx(i); }}
+              onClick={() => { if (!discussionOpen && !answerLocked) setIdx(i); }}
               title={text(`Question ${i + 1}`, `第 ${i + 1} 题`)}
             />
           ))}
@@ -314,7 +336,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
         </div>}
       </div>
       <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
-        <fieldset disabled={discussionOpen || discussionPending} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+        <fieldset disabled={discussionOpen || discussionPending || answerLocked} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
           <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
         </fieldset>
         {discussionOpen && (
@@ -330,7 +352,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
         )}
         <div className={styles.actions} role="group" aria-label={text("Decision actions", "答复操作")}>
           {cur.kind === "approval" && !discussionOpen && (
-            <ApprovalChoices step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
+            <ApprovalChoices disabled={answerLocked} step={cur} answer={curAns} onChange={(a) => { if (!answerLocked) patch(idx, a); }} />
           )}
           <div className={styles.actionButtons}>
             {discussionOpen ? <>
@@ -342,7 +364,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
                 {discussionPending ? text("Sending…", "发送中…") : feedbackLocked
                   ? text("Retry discussion", "重试讨论") : text("Send discussion", "发送讨论")}
               </button>
-            </> : <button type="button" className={styles.navBtn}
+            </> : <button type="button" className={styles.navBtn} disabled={answerLocked}
               onClick={() => setDiscussionOpen(true)} title={text("Discuss before proceeding", "先讨论再继续")}>
               {text("Chat about this", "Chat about this")}
             </button>}
@@ -352,7 +374,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
               type="button"
               className={`${styles.navBtn} ${b.primary ? styles.navBtnPrimary : ""}`}
               onClick={b.onClick}
-              disabled={discussionPending || b.disabled}
+              disabled={discussionPending || answerPending || b.disabled}
             >
               {b.label}
             </button>
@@ -506,7 +528,8 @@ function StepBody({
   );
 }
 
-function ApprovalChoices({ step, answer, onChange }: {
+function ApprovalChoices({ step, answer, onChange, disabled = false }: {
+  disabled?: boolean;
   step: Extract<Step, { kind: "approval" }>;
   answer: Answer;
   onChange: (a: Answer) => void;
@@ -514,15 +537,13 @@ function ApprovalChoices({ step, answer, onChange }: {
   const { text } = useTranslation();
     const pick = (answer as { pick: ApprovalPick | null }).pick;
     const esc = step.escalation;
-    const picks: ApprovalPick[] = esc
-      ? esc.path
-        ? ["once", "always_path", "always", "deny"]
-        : ["once", "always", "deny"]
-      : ["once", "always", "deny"];
+    const scopes = step.allowedScopes ?? ["once"];
+    const picks: ApprovalPick[] = ["once", ...(["always_path", "always"] as const)
+      .filter(scope => scopes.includes(scope) && (scope !== "always_path" || Boolean(esc?.path))), "deny"];
     const label: Record<ApprovalPick, string> = {
       once: esc ? text("Allow once", "本次放行") : text("Allow once", "允许一次"),
       always_path: text("Always allow this path", "总是允许此路径"),
-      always: text("Always allow", "总是允许"),
+      always: esc ? text("Always allow", "总是允许") : text("Allow this operation in this project", "允许此项目中的相同操作"),
       deny: text("Deny", "拒绝"),
     };
   return (
@@ -532,6 +553,7 @@ function ApprovalChoices({ step, answer, onChange }: {
               key={p}
               type="button"
               className={styles.opt + (pick === p ? " " + styles.optPicked : "")}
+              disabled={disabled}
               aria-pressed={pick === p}
               onClick={() => onChange({ pick: pick === p ? null : p })}
             >

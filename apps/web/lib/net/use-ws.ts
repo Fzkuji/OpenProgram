@@ -516,6 +516,7 @@ export function useWS(): void {
               detail: dd.detail ? String(dd.detail) : undefined,
               tool: dd.tool ? String(dd.tool) : undefined,
               args: (dd.args as Record<string, unknown>) || undefined,
+              allowedScopes: Array.isArray(dd.allowed_scopes) ? dd.allowed_scopes.filter((scope): scope is string => typeof scope === "string") : undefined,
               risk_level: (dd.risk_level as "low" | "medium" | "high") || undefined,
               schema:
                 dd.schema && typeof dd.schema === "object"
@@ -688,6 +689,7 @@ export function useWS(): void {
                         detail: dd.detail ? String(dd.detail) : undefined,
                         tool: dd.tool ? String(dd.tool) : undefined,
                         args: (dd.args as Record<string, unknown>) || undefined,
+              allowedScopes: Array.isArray(dd.allowed_scopes) ? dd.allowed_scopes.filter((scope): scope is string => typeof scope === "string") : undefined,
               risk_level: (dd.risk_level as "low" | "medium" | "high") || undefined,
                         schema:
                           dd.schema && typeof dd.schema === "object"

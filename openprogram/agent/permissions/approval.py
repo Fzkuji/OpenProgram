@@ -86,6 +86,10 @@ def wrap_with_approval(
             return None
         from openprogram.worktree.context import current_worktree_path
         import os
+        from openprogram.programs.permission_rule import exact_rule_for_call
+        scopes = ["once"]
+        if name not in _ONE_SHOT_FORCE_APPROVAL_TOOLS and exact_rule_for_call(name, args) is not None:
+            scopes.append("always")
         return {
             "kind": "approval",
             "prompt": f"允许执行 {name}？",
@@ -96,6 +100,7 @@ def wrap_with_approval(
                 "tool": name, "args": args, "tool_call_id": str(call_id),
                 "risk_level": _risk_level(name, args),
                 "approval_reason": reason,
+                "allowed_scopes": scopes,
                 "permission_version": getattr(req, "_permission_version", 0),
                 "accept_edits_safe": bool(getattr(agent_tool, "_accept_edits_safe", False)),
                 "working_dir": current_worktree_path() or os.getcwd(),
@@ -103,7 +108,7 @@ def wrap_with_approval(
             "policy_snapshot": {
                 "version": 1, "kind": "approval", "on_answer": "continue",
                 "on_decline": "fail", "on_timeout": "fail",
-                "allowed_scopes": ["once", "always", "always_path"],
+                "allowed_scopes": scopes,
             },
             "timeout": 300.0,
         }
@@ -245,7 +250,8 @@ def wrap_with_approval(
                    and reason.strip() else f"[denied] user did not approve {name}")
             return _denied(msg, "APPROVAL_DENIED")
         if scope == "always" and name not in _ONE_SHOT_FORCE_APPROVAL_TOOLS:
-            _persist_always_allow_rule(req.session_id, name, args)
+            if not _persist_always_allow_rule(req.session_id, name, args):
+                return _denied("[denied] could not save the project approval rule; operation was not executed", "APPROVAL_RULE_SAVE_FAILED")
         return await _run_original(call_id, args, cancel, on_update)
 
     async def _gated_execute(call_id, args, cancel, on_update):

@@ -1403,6 +1403,7 @@ class AgentProductionDriver:
                             "schema": wait_request["schema"], "questions": wait_request["questions"],
                             "tool": wait_request.get("tool"), "args": wait_request.get("args"),
                             "risk_level": wait_request.get("risk_level"),
+                            "allowed_scopes": suspension.wait.policy_snapshot.get("allowed_scopes"),
                             "execution_id": attempt.execution_id,
                             "wait_generation": suspension.wait.claim_generation,
                             "expected_version": suspension.execution.status_version,

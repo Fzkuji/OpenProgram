@@ -80,6 +80,7 @@ export interface PendingDecision {
   args?: Record<string, unknown>;
   /** approval-only: danger level for card highlighting. */
   risk_level?: "low" | "medium" | "high";
+  allowedScopes?: string[];
   /** form-only: flat-object field schema (field name → {type, title,
    *  description, enum, default, …}). The answer is an object (field → value).
    *  See runtime.form / docs/design/runtime/user-input-requests.md Phase 4a. */
