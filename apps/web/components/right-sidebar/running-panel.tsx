@@ -6,7 +6,7 @@ import { useExecutionDebugger } from "@/lib/use-execution-debugger";
 import { useManagedProcesses } from "@/lib/use-managed-processes";
 import { processIsActive, stopProcess, type ManagedProcess } from "@/lib/net/process-client";
 import type { ExecutionSnapshot } from "@/lib/execution-debugger";
-import { ChevronRight, Bot, Terminal } from "lucide-react";
+import { ChevronRight, Bot, Terminal, RefreshCw } from "lucide-react";
 import { SectionHeader } from "@/components/sidebar/section-header";
 import { Button } from "@/components/ui/button";
 import { DebuggerPanel } from "./debugger-panel";
@@ -88,10 +88,6 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
     const title = executionTitle(item, state.executions.length - state.executions.indexOf(item), text);
     return <div className={styles.branch} key={item.execution_id}>
       <div className={styles.agentRow}>
-        {expandable ? <Button variant="ghost" size="icon" className={styles.expand} aria-expanded={open}
-          aria-label={`${open ? text("Collapse", "折叠") : text("Expand", "展开")} ${title}`} onClick={() => toggle(item.execution_id)}>
-          <ChevronRight size={16} style={{ transform: open ? "rotate(90deg)" : undefined }} />
-        </Button> : <span className={styles.expandSpace} />}
         <Button variant="ghost" className={styles.row} onClick={() => { state.selectExecution(item.execution_id); setSelection("agent"); }}>
           <Bot size={16} className={styles.symbol} aria-hidden="true" />
           <span className={styles.rowText}>
@@ -99,6 +95,10 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
             <span className={styles.meta}>{statusLabel(item.status, text)}{descendants.length ? ` · ${descendants.length} ${text("branches", "分支")}` : ""}{owned.length ? ` · ${owned.length} ${text("programs", "程序")}${owned.some(processIsActive) ? ` (${owned.filter(processIsActive).length} ${text("active", "活动中")})` : ""}` : ""}{!["paused", "reconciliation_required"].includes(item.status) && needsAttention(item) ? ` · ${text("Child needs attention", "子项需要处理")}` : ""}</span>
           </span>
         </Button>
+        {expandable && <Button variant="ghost" size="icon" className={styles.expand} aria-expanded={open}
+          aria-label={`${open ? text("Collapse", "折叠") : text("Expand", "展开")} ${title}`} onClick={() => toggle(item.execution_id)}>
+          <ChevronRight size={16} style={{ transform: open ? "rotate(90deg)" : undefined }} />
+        </Button>}
       </div>
       {expandable && open && <div className={ancestors.size < 4 ? styles.children : undefined}>
         {descendants.map(child => agentRow(child, path))}{owned.map(programRow)}
@@ -150,17 +150,16 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   const attention = roots.filter(item => needsAttention(item));
   const working = roots.filter(item => !needsAttention(item) && hasActive(item));
   const history = roots.filter(item => !needsAttention(item) && !hasActive(item));
+  const refreshButton = <Button variant="ghost" size="icon" className={styles.refresh} onClick={refresh} aria-label={text("Refresh activity", "刷新运行记录")} title={text("Refresh activity", "刷新运行记录")}><RefreshCw size={14} /></Button>;
+  const firstGroup = attention.length ? attention : working.length ? working : history;
   const section = (name: string, items: ExecutionSnapshot[], historical = false) => items.length > 0 && <div className="group/sec">
-    <SectionHeader name={`${name} · ${items.length}`} collapsible={historical} collapsed={!historyOpen} onToggle={() => setHistoryOpen(value => !value)} />
+    <SectionHeader name={name} className={styles.sectionHeader} collapsible={historical} collapsed={!historyOpen} onToggle={() => setHistoryOpen(value => !value)} actions={<><span className={styles.count}>{items.length}</span>{items === firstGroup && refreshButton}</>} />
     {(!historical || historyOpen) && items.map(item => agentRow(item))}
   </div>;
   return <section className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")}>
-    <div className={styles.toolbar}>
-      <span className={styles.toolbarLabel}>{text("This conversation", "当前会话")}</span>
-      <Button variant="ghost" onClick={refresh}>{text("Refresh", "刷新")}</Button>
-    </div>
     {stale && (state.fetchedAt || processes.loaded || processes.stale) && <p role="status" className={styles.notice}>{text("Some statuses could not be refreshed. Showing the last saved records.", "部分状态暂时无法刷新，当前显示上次读取的记录。")}</p>}
     <div className={styles.scroll}>
+      {roots.length === 0 && <div className={styles.emptyTools}>{refreshButton}</div>}
       {!state.fetchedAt && !processes.loaded && !processes.stale ? <SidebarNotice>{text("Loading…", "加载中…")}</SidebarNotice> : null}
       {section(text("Needs attention", "需要处理"), attention)}
       {section(text("In progress", "正在进行"), working)}

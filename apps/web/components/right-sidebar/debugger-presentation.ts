@@ -15,7 +15,7 @@ export function statusLabel(status: string, text: Text): string {
 export function executionTitle(snapshot: ExecutionSnapshot, ordinal: number, text: Text): string {
   const display = snapshot.display;
   if (display?.kind === "job_agent" && display.label) return display.label;
-  if (snapshot.task_label) return snapshot.task_label;
+  if (snapshot.task_label) return snapshot.task_label.replace(/[\u0000-\u001f\u007f]/g, " ").trim() || text("Untitled task", "未命名任务");
   const name = display?.tool_name || display?.label || display?.entrypoint;
   if (name === "agent" || (display?.kind === "chat" && name === "main") || name === "openprogram.agent.production_driver:AgentProductionDriver") return text(`Assistant run ${ordinal}`, `助手执行 ${ordinal}`);
   if (name === "goal") return text("Goal run", "目标执行");
