@@ -94,3 +94,36 @@ def test_compaction_coverage_retains_earlier_turn_membership(tmp_path):
     branches = conversation_activity_branches(items, session_store=db)
     assert len(branches) == 1
     assert set(branches[0]['execution_ids']) == {'e1', 'e2'}
+
+
+def test_branch_projection_observes_placement_from_another_store(tmp_path):
+    from openprogram.execution.activity_branches import conversation_activity_branches
+    root = tmp_path / 'home-sessions'
+    reader = SessionStore(root)
+    registrar = SessionStore(root)
+    project = SessionStore(tmp_path / 'project-sessions')
+    writer = SessionNodeWriter(project, 'placed')
+    writer.append(Call(id='user', role='user', predecessor='ROOT'))
+    writer.append(Call(id='assistant', role='llm', predecessor='user'))
+    registrar._record_location('placed', project.root_path / 'placed')
+    items = [{'execution_id': 'run', 'session_id': 'placed', 'snapshot': {'display': {
+        'user_message_id': 'user', 'assistant_message_id': 'assistant'}}}]
+    branches = conversation_activity_branches(items, session_store=reader)
+    assert len(branches) == 1
+    assert branches[0]['execution_ids'] == ['run']
+
+
+def test_branch_projection_observes_relocation_after_open(tmp_path):
+    from openprogram.execution.activity_branches import conversation_activity_branches
+    reader = SessionStore(tmp_path / 'home')
+    registrar = SessionStore(tmp_path / 'home')
+    for place, tip in [('old', 'old-tip'), ('new', 'new-tip')]:
+        project = SessionStore(tmp_path / place)
+        writer = SessionNodeWriter(project, 'placed')
+        writer.append(Call(id='user', role='user', predecessor='ROOT'))
+        writer.append(Call(id=tip, role='llm', predecessor='user'))
+        registrar._record_location('placed', project.root_path / 'placed')
+        items = [{'execution_id': tip, 'session_id': 'placed', 'snapshot': {'display': {
+            'user_message_id': 'user', 'assistant_message_id': tip}}}]
+        branches = conversation_activity_branches(items, session_store=reader)
+        assert [branch['head_msg_id'] for branch in branches] == [tip]
