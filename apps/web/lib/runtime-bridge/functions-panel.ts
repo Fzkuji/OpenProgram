@@ -11,6 +11,7 @@ import { useSessionStore } from "@/lib/session-store";
 import { addAssistantMessage } from "./chat-handlers";
 import { runtimeState } from "./state";
 import { navigate } from "@/lib/navigate";
+import { openFunctionForm, refreshFunctionsList } from "@/lib/state/functions-actions";
 import { setPendingRunFunction } from "@/lib/use-pending-run-function";
 
 interface FnDef {
@@ -43,9 +44,7 @@ export async function deleteFunction(name: string): Promise<void> {
     const data = await resp.json();
     if (data.deleted) {
       addAssistantMessage('Deleted function "' + name + '".');
-      const fResp = await fetch("/api/programs");
-      runtimeState.availableFunctions = await fResp.json();
-      renderFunctions();
+      await refreshFunctionsList();
     } else {
       addAssistantMessage("Cannot delete: " + (data.error || "unknown error"));
     }
@@ -76,13 +75,13 @@ export function clickFunction(name: string, category?: string): void {
     navigate("/chat");
     return;
   }
-  useSessionStore.getState().openFnForm(fn as never);
+  void openFunctionForm(fn.name);
 }
 
 export function clickFnExample(fnName: string): void {
   const fn = findFunction(fnName);
   if (!fn) return;
-  useSessionStore.getState().openFnForm(fn as never);
+  void openFunctionForm(fn.name);
 }
 
 export function setInput(text: string): void {

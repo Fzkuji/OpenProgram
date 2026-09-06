@@ -34,6 +34,7 @@ import { useTranslation } from "@/lib/i18n";
 import { jsonFetch } from "@/lib/net/fetch-client";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useFunctions } from "@/lib/state/functions-store";
+import { refreshFunctionsList } from "@/lib/state/functions-actions";
 import type { FunctionsMeta } from "@/lib/types";
 
 import {
@@ -158,6 +159,7 @@ export function ProgramsPage({
       setError("");
       setDirectories({});
       setExpanded(new Set());
+      void refreshFunctionsList(controller.signal);
       try {
         const root = await loadDirectory("", controller.signal);
         if (cancelled) return;

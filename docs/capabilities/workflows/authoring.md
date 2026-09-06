@@ -103,6 +103,14 @@ Python-generated `__pycache__` directories are ignored so a package remains vali
 
 A successful JSON result includes `ok`, `workflow_id`, normalized metadata, the validated Python file list, and `executed_tests: false`. An invalid package exits with status 1 and reports `error_type` and `error`.
 
+## Favorites and Use
+
+Open **Abilities → Programs** and select the Workflow. Favorite saves its public function name; the sidebar resolves that name against the callable catalog. **Use** opens the Workflow's parameter form in chat. It does not execute the Workflow or send a message until you submit the form.
+
+The catalog is refreshed when Programs loads. If Use cannot find a cached function, it requests the current callable catalog once. An unavailable function or failed request produces a visible error. A failed refresh retains the last successful catalog instead of removing all favorite rows. Leaving the chat while a launch is resolving cancels opening that form in another chat.
+
+If a source directory appears in Programs but cannot be used, check package validation and installation authorization, then refresh Programs. Source files being visible does not establish that their Python entry point loaded successfully.
+
 ## Current integration boundary
 
 Static validation alone does not publish a package. OpenProgram currently publishes generated packages through `create_workflow` and explicit updates through `revise_workflow`. A manual publish command will require a forced-sandbox behavior-test gate first, so untrusted Python cannot read credentials, write outside its candidate directory, use the network, or run indefinitely.

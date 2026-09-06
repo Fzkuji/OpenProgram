@@ -103,6 +103,14 @@ Python 生成的 `__pycache__` 目录会被忽略，因此 package 在 import �
 
 成功的 JSON 包含 `ok`、`workflow_id`、规范化 metadata、校验后的 Python 文件列表和 `executed_tests: false`。非法 package 退出码为 1，并返回 `error_type` 与 `error`。
 
+## 收藏与 Use
+
+打开 **Abilities → Programs**，选择 Workflow。收藏保存公开函数名；侧边栏根据可调用函数目录解析这个名称。**Use** 在聊天中打开 Workflow 参数表单。提交表单之前，不会执行 Workflow 或发送消息。
+
+打开 Programs 时会刷新函数目录。如果 Use 找不到缓存中的函数，会请求一次当前可调用目录。函数不可用或请求失败时，界面显示明确错误。刷新失败会保留最近一次成功的目录，不会清空收藏项。等待加载期间离开聊天，会取消在其他聊天中打开这个表单。
+
+如果源码目录显示在 Programs 中却无法使用，应检查包验证结果和安装授权，然后刷新 Programs。源码可见不代表 Python 入口已经成功加载。
+
 ## 当前接入边界
 
 静态校验本身不会发布 package。OpenProgram 当前通过 `create_workflow` 发布生成项目，通过显式 `revise_workflow` 发布更新。人工 publish 命令必须先建立强制 sandbox 的行为测试门，防止未信任 Python 读取凭据、写出 candidate 目录、联网或无限运行。

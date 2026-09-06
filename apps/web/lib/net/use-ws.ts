@@ -10,6 +10,7 @@
  * and non-React modules can reach it.
  */
 import { useEffect } from "react";
+import { useFunctions } from "@/lib/state/functions-store";
 
 import { permissionSnapshotPatch } from "@/lib/session-store/permission-state";
 import { consumeCommandErrorFrame } from "@/lib/net/action-error";
@@ -534,10 +535,7 @@ export function useWS(): void {
           });
           return true;
         case "functions_list":
-          runtimeState.availableFunctions = (d || []) as unknown[];
-          import("@/lib/state/functions-store").then(({ useFunctions }) => {
-            useFunctions.getState().setFunctions((d || []) as never[]);
-          });
+          if (Array.isArray(d)) useFunctions.getState().setFunctions(d);
           loadProgramsMeta().then(() => renderFunctions());
           return true;
         case "channel_accounts":
