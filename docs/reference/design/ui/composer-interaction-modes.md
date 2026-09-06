@@ -218,3 +218,12 @@ change behaviour.
 * user-input registry / runtime.ask: [../runtime/user-input-requests.md](../runtime/operations/user-input-requests.md)
 * event layer (the unified event stream, this is its alignment landing point in the frontend):
   [../proactive/event-reference.html](../proactive/event-reference.html)
+
+### Discussing a pending request
+
+Chat about this declines only the displayed wait and prepares an editable draft
+from its prompt and displayed detail, followed by the existing session draft.
+It does not send a chat message or grant approval. The input receives focus and
+the caret moves to the end after ordinary chat input mounts. Other queued
+decisions remain pending; they postpone focus until the input is available.
+Switching sessions cancels the pending focus request.
