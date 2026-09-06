@@ -25,18 +25,26 @@ def test_gui_agent_design_covers_flow_boundaries_and_file_ownership() -> None:
     )
 
     for section_id in (
-        "current-api",
-        "target-api",
+        "scope",
+        "references",
+        "current",
         "architecture",
-        "invocation",
         "comparison",
-        "runner",
-        "lifecycle",
-        "results",
-        "boundaries",
-        "ownership",
-        "migration",
+        "execution",
+        "surfaces",
+        "macos",
+        "browser",
+        "platforms",
+        "context",
+        "performance",
+        "authority",
+        "recovery",
+        "experience",
+        "verification",
+        "plan",
+        "protocol",
         "evidence",
+        "status",
     ):
         assert f'id="{section_id}"' in source
     for path in (
@@ -49,10 +57,8 @@ def test_gui_agent_design_covers_flow_boundaries_and_file_ownership() -> None:
         "apps/desktop/main.js",
     ):
         assert path in source
-    assert "padding: clamp(20px,3vw,36px)" in source
-    assert "@media (max-width:1120px)" in source
     for contract_term in (
-        "browser_control",
+        "gui_exec",
         "plan_next_capability",
         "call_capability",
         "computer_use",
@@ -60,7 +66,9 @@ def test_gui_agent_design_covers_flow_boundaries_and_file_ownership() -> None:
         "vm_use",
         "browser_agent",
         "web_use",
-        "Internal capabilities create traceable child nodes",
+        "AgentSession",
+        "effect_uncertain",
+        "background_input",
     ):
         assert contract_term in source
 
