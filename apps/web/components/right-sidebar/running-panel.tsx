@@ -110,7 +110,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
       </div>}
     </div>;
   }
-  if (!sessionId) return <SidebarNotice>{text("Open a conversation to view its Agents and programs.", "打开一个会话，查看其中的 Agent 和程序。")}</SidebarNotice>;
+  if (!sessionId) return <SidebarNotice>{text("Select or start a conversation to view its Agents and programs.", "选择或开始一个会话，查看其中的 Agent 和程序。")}</SidebarNotice>;
   const back = <Button variant="ghost" onClick={() => setSelection(null)}>{text("← All activity", "← 全部运行记录")}</Button>;
   if (selection === "agent") return <div className={styles.panel}>
     <div className={styles.toolbar}>{back}</div>

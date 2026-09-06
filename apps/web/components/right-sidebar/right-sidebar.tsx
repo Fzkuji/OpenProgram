@@ -70,7 +70,6 @@ export function RightSidebar() {
   const view = storedView === "debugger" ? VIEW_RUNNING : storedView;
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
-  const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const [visible, setVisible] = useState(true);
   useEffect(() => {
     const update = () => setVisible(!document.hidden);
@@ -95,6 +94,9 @@ export function RightSidebar() {
   const activeTab = useCenterTabs((s) =>
     s.tabs.find((tab) => tab.id === s.activeId),
   );
+  const activitySessionId = activeTab?.kind === "session" && !activeTab.draft
+    ? activeTab.sessionId ?? null
+    : null;
   const currentProject = useCurrentProject();
   const treeProjectId =
     activeTab?.kind === "file"
@@ -281,7 +283,7 @@ export function RightSidebar() {
         </div>
         {/* One conversation-owned view for Agents and their managed programs. */}
         <div className="right-view" data-view={VIEW_RUNNING}>
-          <RunningPanel key={currentSessionId || "no-session"} sessionId={currentSessionId} active={open && visible && view === VIEW_RUNNING} />
+          <RunningPanel key={activitySessionId || "no-session"} sessionId={activitySessionId} active={open && visible && view === VIEW_RUNNING} />
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template
