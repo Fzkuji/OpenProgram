@@ -39,9 +39,9 @@ function takePending(): { name: string; cat: string } | null {
   return { name: runName, cat: runCat };
 }
 
-export function usePendingRunFunction(pathname: string): void {
+export function usePendingRunFunction(pathname: string, ready = true): void {
   useEffect(() => {
-    if (pathname !== "/chat" && !pathname.startsWith("/s/")) return;
+    if (!ready || (pathname !== "/chat" && !pathname.startsWith("/s/"))) return;
     const controller = new AbortController();
     // Defer both consumption and opening past the chat reset. Strict Mode's
     // discarded setup must not consume a request that its cleanup cancels.
@@ -64,5 +64,5 @@ export function usePendingRunFunction(pathname: string): void {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [pathname]);
+  }, [pathname, ready]);
 }

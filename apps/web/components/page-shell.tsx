@@ -142,10 +142,12 @@ function stripLegacyChatChrome(host: HTMLElement) {
 export function PageShell({ page }: { page: Page }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
 
     async function init() {
       try {
@@ -187,6 +189,7 @@ export function PageShell({ page }: { page: Page }) {
           );
           runInlineScript(code);
         }
+        if (!cancelled) setReady(true);
       } catch (e) {
         if (!cancelled) setErr(String(e));
       }
@@ -231,7 +234,7 @@ export function PageShell({ page }: { page: Page }) {
   //     chat area in place (welcome screen + cleared state)
   // SPA hand-off from /programs → /chat lives in its own hook —
   // see lib/use-pending-run-function.ts.
-  usePendingRunFunction(pathname);
+  usePendingRunFunction(pathname, ready);
 
   // Own the chat WebSocket lifecycle (slice A of the WS-layer
   // migration). PageShell is only ever instantiated as the chat shell,

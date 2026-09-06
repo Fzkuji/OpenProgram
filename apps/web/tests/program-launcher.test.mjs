@@ -205,3 +205,14 @@ test("a shared store update supersedes an in-flight HTTP snapshot", async () => 
   assert.deepEqual(useFunctions.getState().functions, current);
   assert.deepEqual(runtimeState.availableFunctions, current);
 });
+
+
+test("pending Use waits for chat initialization before consuming the request", async (t) => {
+  reset();
+  globalThis.launchEffects = [];
+  const launcher = await import("../lib/use-pending-run-function.ts");
+  launcher.setPendingRunFunction({ name: "browser_agent" });
+  launcher.usePendingRunFunction("/chat", false);
+  assert.equal(launchEffects.pop()(), undefined);
+  assert.deepEqual(launcher.takePendingRunFunction(), { name: "browser_agent" });
+});
