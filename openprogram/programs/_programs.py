@@ -195,6 +195,11 @@ def _recorded_root(row: dict) -> str | None:
             if candidate.resolve().parent != (catalog_root / parts[0]).resolve():
                 continue
             matches.append(str(candidate))
+        if len(matches) > 1 and parts[0] == "workflow":
+            # Wheels can contain source copies without the independent Git
+            # repository required by published Workflows. Only actual projects
+            # compete for a recorded identity; two Git projects remain ambiguous.
+            matches = [path for path in matches if (Path(path) / ".git").exists()]
         return matches[0] if len(matches) == 1 else None
     expanded = os.path.expanduser(raw)
     if not os.path.isabs(expanded):

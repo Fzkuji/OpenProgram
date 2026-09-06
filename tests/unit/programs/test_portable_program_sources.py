@@ -94,3 +94,25 @@ def test_removal_revokes_a_missing_portable_source(tmp_path, monkeypatch):
     _programs.remove_program_source(workflow)
     workflow.mkdir()
     assert _programs.owner_controlled_program_sources() == []
+
+
+@pytest.mark.parametrize('installed_git', [False, True])
+def test_bundled_workflow_copy_does_not_ambiguate_owned_git_source(tmp_path, monkeypatch, installed_git):
+    state = tmp_path / 'state'
+    source = tmp_path / 'source' / 'openprogram' / 'programs'
+    workflow = source / 'workflow' / 'demo'
+    workflow.mkdir(parents=True)
+    (workflow / '.git').mkdir()
+    (source / '__init__.py').write_text('')
+    installed = tmp_path / 'installed' / 'openprogram'
+    bundled = installed / 'programs' / 'workflow' / 'demo'
+    bundled.mkdir(parents=True)
+    if installed_git:
+        (bundled / '.git').mkdir()
+    monkeypatch.setattr(paths, 'get_state_dir', lambda: state)
+    monkeypatch.setattr(openprogram, '__file__', str(installed / '__init__.py'))
+    _programs.bind_program_catalog(source)
+    _programs.record_program_source(workflow, source='workflow:demo',
+                                    kind='workflow-publish', base=str(workflow.parent))
+    actual = _programs.owner_controlled_program_sources()
+    assert [row['path'] for row in actual] == ([] if installed_git else [str(workflow)])
