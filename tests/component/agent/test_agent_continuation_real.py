@@ -879,6 +879,83 @@ def test_permission_update_during_wait_publication_is_not_lost(real_agent_chat, 
     assert h.tools.calls == ["first"]
 
 
+@pytest.mark.parametrize("phase", ["thinking_delta", "text_delta", "toolcall_delta", "between_tools"])
+def test_bypass_update_during_generation_or_batch_needs_no_new_approval(
+    real_agent_chat, monkeypatch, phase,
+):
+    from tests.component.providers.scripted_provider import ScriptedThinking, ScriptedText, ScriptedToolCall
+    from openprogram.agent.authority import local_owner_authority
+    from openprogram.agent.permissions.approval import wrap_with_approval
+    from openprogram.webui.ws_actions.permissions import handle_set_permission
+    import openprogram.agent.dispatcher.loop_runner as loop_runner
+
+    h = real_agent_chat
+    monkeypatch.setattr(loop_runner, "_wrap_with_approval", wrap_with_approval)
+    ws = _WebSocket()
+    ws.scope["state"]["authority"] = local_owner_authority()
+
+    def set_mode(mode, version):
+        asyncio.run(handle_set_permission(ws, {
+            "session_id": h.session_id, "mode": mode, "expected_version": version,
+        }))
+        assert ws.frames[-1]["data"].get("error") is None
+        assert ws.frames[-1]["data"]["mode"] == mode
+
+    set_mode("ask", 0)
+    h.provider.add_response(
+        ScriptedThinking("Checking the requested operation"), ScriptedText("Working"),
+        ScriptedToolCall("first", {}, "live-first"),
+        ScriptedToolCall("second", {}, "live-second"),
+    )
+    h.provider.add_response(ScriptedText("done"))
+    original = h.provider.stream_simple
+    entered, release = threading.Event(), threading.Event()
+
+    async def stream(*args, **kwargs):
+        async for event in original(*args, **kwargs):
+            yield event
+            if event.type == phase and not entered.is_set():
+                entered.set()
+                while not release.is_set():
+                    await asyncio.sleep(0)
+
+    monkeypatch.setattr(h.provider, "stream_simple", stream)
+    if phase == "between_tools":
+        h.tools.blocked.add("first")
+    execution = _chat(h)
+    try:
+        if phase == "between_tools":
+            question = _pending_question(h, kind="approval")
+            _question_action(h, "question_reply", question.id, answer="approve")
+            _wait(h.tools.started["first"].is_set)
+        else:
+            _wait(entered.is_set)
+            assert h.tools.calls == []
+        # The authenticated settings command completes while generation/tool
+        # execution remains blocked, without stopping the current provider call.
+        set_mode("bypass", 1)
+        assert h.provider.call_count == 1
+    finally:
+        release.set()
+        if phase == "between_tools":
+            h.tools.release["first"].set()
+    completed = _wait(lambda: (
+        item if (item := h.store.get_execution(execution.execution_id)).status in {
+            ExecutionStatus.COMPLETED, ExecutionStatus.FAILED,
+        } else None
+    ), detail=lambda: {"errors": h.activation_errors, "outcomes": [str(x) for x in h.outcomes]})
+    assert completed.status is ExecutionStatus.COMPLETED
+    assert h.tools.calls == ["first", "second"]
+    assert h.provider.call_count == 2
+    from openprogram.execution.waits import DurableWaitStore
+    assert not DurableWaitStore(h.store).list_open(session_id=h.session_id)
+    with h.store._connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM execution_waits WHERE execution_id = ?",
+            (execution.execution_id,),
+        ).fetchone()[0] == (1 if phase == "between_tools" else 0)
+
+
 def test_cancel_resumed_local_shell_reaps_child_and_finalizes_chat(
     real_agent_chat, tmp_path, monkeypatch,
 ):
