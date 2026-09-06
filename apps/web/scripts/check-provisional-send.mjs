@@ -760,13 +760,13 @@ assert.match(
 );
 assert.match(
   chatHandlers,
-  /latest_snapshot[\s\S]*snapshotVersion[\s\S]*setRunningTaskFor\(snapshotSessionId, restoredTask/,
-  "stale command rejection must restore the canonical running task snapshot",
+  /latest_snapshot[\s\S]*snapshotVersion[\s\S]*setRunningTaskFor\(snapshotSessionId, ownsForeground \? restoredTask : null, "never"\)/,
+  "stale command rejection must restore only a foreground-owning canonical task",
 );
 assert.match(
   chatHandlers,
-  /setRunning\(true\);\s*setRunActive\(true\)/,
-  "stale command rejection must restore the active composer state",
+  /setRunning\(ownsForeground\);\s*setRunActive\(ownsForeground\)/,
+  "stale command rejection must derive composer activity from foreground ownership",
 );
 assert.match(
   chatHandlers,
