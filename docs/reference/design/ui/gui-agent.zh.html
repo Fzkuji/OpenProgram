@@ -435,7 +435,8 @@ receipt = {
 <p>保留 ScreenCaptureKit 与 AX。增加稳定签名的完整输入原生 helper，绑定应用身份、窗口和 broker 租约。支持的控件用 AX；画布与键盘流程研究进程定向事件。</p>
 <p>本机 SDK 声明了 <code>CGEventPostToPid</code>，<code>AXUIElementPostKeyboardEvent</code> 已弃用。PID 不是窗口 ID；必须验证窗口路由、坐标解释、事件接收和前台/指针保持，不声称 OpenAI 使用该 API。</p>
 <p>Harness 的显式测试探针 <code>tests/probe_native_input.py</code> 使用自有 AppKit 测试窗口。在 macOS 15.7.3 arm64 上，原始进程定向鼠标事件到达应用时没有关联窗口；NSEvent 能关联窗口，但后续鼠标坐标错误。实验性 <code>CGEventSetWindowLocation</code> 注记配合包含标题栏的完整窗口 frame，得到预期的点击和拖拽坐标。该 setter 未公开，实验只证明本机可行性，不构成受支持的生产契约。默认探针保留公开 API 对照组，未公开路径需要 <code>--private-window-location</code>。</p>
-<p>测试窗口不使用剪贴板即可收到普通及 Unicode key-down 字符。前台身份和指针位置只在实验前后采样，不能排除瞬时变化。收到事件不等于真实文本编辑、IME、快捷键、多窗口隔离、截图坐标映射或画布应用兼容性通过；这些实现门槛通过前，<code>background_input</code> 仍不可用。探索性<a href="https://github.com/Lakr233/bgclick-rev-skill/blob/main/bgclick-rev-skill.md">后台点击分析</a>提供了未公开窗口坐标注记的候选线索，其中关于其他软件的主张不作为已核实事实。</p>
+<p>事件测试窗口不使用剪贴板即可收到普通及 Unicode key-down 字符。独立的 <code>--controls</code> 测试窗口通过实际控件值和 DOM 事件位置，检查原生文本替换、NSButton 动作、本地 WebKit 文本框替换和画布拖拽。Command+A 需要测试应用的标准 Edit 菜单；初次实验缺少该菜单，文本被追加，判定失败。控件几何在 WebKit 加载完成后测量。这些测试只证明少量 AppKit/WebKit 控件行为，不代表已安装应用兼容性、IME、一般快捷键、多窗口隔离或截图坐标映射通过。</p>
+<p>前台身份和指针位置只在实验前后采样，不能排除瞬时变化；完整实现门槛通过前，<code>background_input</code> 仍不可用。探索性<a href="https://github.com/Lakr233/bgclick-rev-skill/blob/main/bgclick-rev-skill.md">后台点击分析</a>提供了未公开窗口坐标注记的候选线索，其中关于其他软件的主张不作为已核实事实。</p>
 <div class="callout">实现第一道门槛：签名 helper、自有 AppKit/WebKit/Electron 夹具、已安装画布应用，另一应用保持前台。记录目标真实状态、截图、前台身份、指针和按键状态。失败意味着后台要求仍未解决，不能以“前台/VM 能做”代替通过。</div>
 <p>声明 <code>background_ax</code>、<code>background_input</code>、<code>foreground_input</code> 或不可用。验证过的能力默认后台；前台需要任务/会话策略允许并显示控制，不能静默激活应用。公共 API 不能完成要求时，评估受支持的供应商接入或经过实测的原生方式，该指标继续未完成。</p>
 <p>通过 display 身份、窗口原点、比例与裁剪元信息映射截图像素。覆盖 Retina、多屏负原点、窗口移动和比例变化，拒绝过期几何。截图与输入权限分别检查，最小化、安全输入、锁屏、权限框分别返回明确结果。</p>
@@ -968,7 +969,7 @@ receipt = {
 </tr>
 <tr>
 <td>P0 完整原生输入</td>
-<td>自有 AppKit 探针定位公开路径的坐标错误，并测试显式启用的未公开窗口坐标注记。</td>
+<td>自有 AppKit/WebKit 探针通过显式启用的未公开窗口坐标注记，检查事件坐标、文本替换、按钮动作和画布拖拽。</td>
 <td>生产能力未实现。测试窗口事件投递只是初步证据；签名 helper、真实应用兼容性及完整输入验收仍未完成。</td>
 </tr>
 <tr>
