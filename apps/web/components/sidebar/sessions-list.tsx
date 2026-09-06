@@ -27,7 +27,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronRight, Plus, Pin } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import type { ConvSummary } from "@/lib/session-store";
@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/popover";
 import {
   FoldersIcon,
+  PinIcon,
   type AnimatedNavIconHandle,
 } from "@/components/animated-icons";
 import { ConvMenu } from "./conv-menu";
@@ -782,6 +783,7 @@ function ProjectGroupHeader({
   onTogglePin: () => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
+  const pinRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
       {...dragProps}
@@ -813,8 +815,12 @@ function ProjectGroupHeader({
       <span className={sidebarNavLabelClass}>{name}</span>
       <button type="button" aria-label={pinTitle} title={pinTitle} aria-pressed={pinned}
         onClick={event => { event.stopPropagation(); onTogglePin(); }}
+        onMouseEnter={() => pinRef.current?.startAnimation()}
+        onMouseLeave={() => pinRef.current?.stopAnimation()}
+        onFocus={() => pinRef.current?.startAnimation()}
+        onBlur={() => pinRef.current?.stopAnimation()}
         className={`flex size-[20px] shrink-0 items-center justify-center rounded-[5px] text-text-secondary hover:bg-bg-hover hover:text-text-primary ${pinned ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
-        <Pin size={14} strokeWidth={1.75} className="rotate-45" aria-hidden="true" />
+        <PinIcon ref={pinRef} size={14} aria-hidden="true" />
       </button>
       <button
         type="button"

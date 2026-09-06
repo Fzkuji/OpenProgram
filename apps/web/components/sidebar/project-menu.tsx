@@ -1,12 +1,13 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { MoreHorizontal, Check, ChevronRight, MessageSquarePlus, FolderOpen, Pin, Pencil, PanelsTopLeft, FolderSearch, GitBranch, Archive, FolderMinus } from "lucide-react";
+import { MoreHorizontal, Check, ChevronRight, MessageSquarePlus, FolderOpen, Pencil, PanelsTopLeft, FolderSearch, GitBranch, Archive, FolderMinus } from "lucide-react";
 import { MENU_PANEL, MENU_SEPARATOR, itemCls } from "@/components/chat/top-bar/menu-styles";
 import { useTranslation } from "@/lib/i18n";
 import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { PinIcon, type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { ProjectEditor, type EditableProject } from "./project-editor";
 
 import { SectionHeader } from "./section-header";
@@ -31,6 +32,7 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, o
   const [operation,setOperation] = useState<ProjectOperation|null>(null);
   const [error,setError] = useState("");
   const pinned = view.pinnedProjects.includes(project.id);
+  const pinRef = useRef<AnimatedNavIconHandle>(null);
   function changeOpen(value: boolean) { setOpen(value); if (value) onActivate?.(); }
   function selectSection(section: string) {
     setRecentsView({ projectSections: {...view.projectSections,[project.id]:section} });
@@ -43,7 +45,10 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, o
       <Menu.Portal><Menu.Content side="right" align="start" sideOffset={6} className={MENU_PANEL+" "+styles.menu+" min-w-[220px]"}>
         <Menu.Item className={item} onSelect={onNewSession}><MessageSquarePlus size={14} className={styles.menuIcon}/>{text("New chat", "新建聊天")}</Menu.Item>
         <Menu.Item className={item} onSelect={onOpen}><FolderOpen size={14} className={styles.menuIcon}/>{text("Open project", "打开项目")}</Menu.Item>
-        <Menu.Item className={item} onSelect={()=>setRecentsView({pinnedProjects:pinned?view.pinnedProjects.filter(id=>id!==project.id):[...view.pinnedProjects,project.id]})}><Pin size={14} className={styles.menuIcon}/>{pinned?text("Unpin", "取消置顶"):text("Pin", "置顶")}</Menu.Item>
+        <Menu.Item className={item}
+          onMouseEnter={()=>pinRef.current?.startAnimation()} onMouseLeave={()=>pinRef.current?.stopAnimation()}
+          onFocus={()=>pinRef.current?.startAnimation()} onBlur={()=>pinRef.current?.stopAnimation()}
+          onSelect={()=>setRecentsView({pinnedProjects:pinned?view.pinnedProjects.filter(id=>id!==project.id):[...view.pinnedProjects,project.id]})}><PinIcon ref={pinRef} size={14} className={styles.menuIcon} aria-hidden="true"/>{pinned?text("Unpin", "取消置顶"):text("Pin", "置顶")}</Menu.Item>
         <Menu.Item className={item} onSelect={()=>setEditing(true)}><Pencil size={14} className={styles.menuIcon}/>{text("Edit project", "编辑项目")}</Menu.Item>
         <Menu.Separator className={MENU_SEPARATOR}/>
         <Menu.Sub><Menu.SubTrigger className={item}><PanelsTopLeft size={14} className={styles.menuIcon}/><span className="flex-1">{text("Section", "分区")}</span><ChevronRight size={14}/></Menu.SubTrigger><Menu.Portal><Menu.SubContent className={MENU_PANEL+" "+styles.menu+" min-w-[180px]"}>

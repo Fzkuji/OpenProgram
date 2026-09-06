@@ -1,8 +1,10 @@
 "use client";
 
 import type { Transition, Variants } from "framer-motion";
-import { motion, useAnimation } from "framer-motion";
+import { motion, useAnimation, useReducedMotion } from "framer-motion";
 import { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
+
+import { Pin } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -404,6 +406,52 @@ export const FolderOpenIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconP
   },
 );
 FolderOpenIcon.displayName = "FolderOpenIcon";
+
+// Upstream has no Pin component. As with MonitorIcon, keep the official Lucide
+// glyph and the shared controlled-ref API; reuse the folder-open animation.
+const AnimatedPin = motion.create(Pin);
+export const PinIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconProps>(
+  ({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+    const controls = useAnimation();
+    const reducedMotion = useReducedMotion();
+    const isControlledRef = useRef(false);
+    const startAnimation = useCallback(() => {
+      if (!reducedMotion) void controls.start("animate");
+    }, [controls, reducedMotion]);
+    const stopAnimation = useCallback(() => {
+      void controls.start("normal");
+    }, [controls]);
+
+    useImperativeHandle(ref, () => {
+      isControlledRef.current = true;
+      return { startAnimation, stopAnimation };
+    }, [startAnimation, stopAnimation]);
+
+    return (
+      <div
+        className={cn("inline-flex", className)}
+        onMouseEnter={event => {
+          if (isControlledRef.current) onMouseEnter?.(event);
+          else startAnimation();
+        }}
+        onMouseLeave={event => {
+          if (isControlledRef.current) onMouseLeave?.(event);
+          else stopAnimation();
+        }}
+        {...props}
+      >
+        <AnimatedPin
+          size={size}
+          initial="normal"
+          animate={reducedMotion ? "normal" : controls}
+          transition={reducedMotion ? { duration: 0 } : undefined}
+          variants={FOLDER_OPEN_VARIANTS}
+        />
+      </div>
+    );
+  },
+);
+PinIcon.displayName = "PinIcon";
 
 // ─── terminal (Exec agent chip — command / tool runtime) ────────────
 // Carried verbatim from pqoqubbw/icons (icons/terminal.tsx): the prompt
