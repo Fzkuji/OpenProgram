@@ -299,7 +299,7 @@ def goal(
             persist()
         requested = goal_state.get("role_requests") or {}
         roles, role_runtimes = prepare_roles(
-            goal_state.get("roles"), runtime,
+            goal_state.get("roles"), runtime, prompt=prompt,
             model=requested.get("model", model), effort=requested.get("effort", effort),
             timeout_s=requested.get("timeout_s", turn_timeout),
             judge_model=requested.get("judge_model", judge_model),
