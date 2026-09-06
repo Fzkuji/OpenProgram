@@ -157,6 +157,29 @@ def execution_update_frame(
     }
 
 
+def _effect_summary(store: Any, execution: ExecutionRecord) -> dict[str, Any]:
+    """Separate missing model responses from user-actionable external effects."""
+    summary = dict(execution.effect_summary)
+    summary.pop("provider_response_incomplete", None)
+    if (execution.status.value != "reconciliation_required"
+            or execution.reason_code != "effect_reconciliation"
+            or execution.current_attempt_id is not None or execution.owner_lease):
+        return summary
+    try:
+        from .effects import EffectStore
+        from .waits import DurableWaitStore
+
+        unresolved = EffectStore(store).list_unresolved(execution.execution_id)
+        if (unresolved and all(effect.metadata.get("kind") == "provider.before" for effect in unresolved)
+                and not store.list_commands(execution.execution_id, statuses=(CommandStatus.ACCEPTED, CommandStatus.APPLYING))
+                and not DurableWaitStore(store).list_open(execution_id=execution.execution_id)):
+            summary["provider_response_incomplete"] = True
+    except Exception:
+        # Missing evidence must not suppress a real attention item.
+        _log.debug("provider outcome classification unavailable", exc_info=True)
+    return summary
+
+
 def execution_snapshot(
     execution: ExecutionRecord,
     *,
@@ -194,7 +217,7 @@ def execution_snapshot(
         capabilities=execution.capabilities.to_dict(),
         pending_command_ids=_pending_commands(store, execution.execution_id),
         active_child_ids=_active_children(store, execution.execution_id),
-        effect_summary=dict(execution.effect_summary),
+        effect_summary=_effect_summary(store, execution),
         terminal_at=execution.terminal_at,
         updated_at=execution.updated_at,
         event_sequence=sequence,

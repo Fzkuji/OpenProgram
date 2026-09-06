@@ -428,11 +428,20 @@ async def _run_loop(
             ev_stream.push(AgentEventMessageEnd(message=message))
         new_messages.append(message)
 
-    def schedule_structured_repair(
+    async def finish_provider_response(message: AssistantMessage) -> None:
+        # A returned response is known even when it cannot become a decision.
+        if config.safe_point_hook is not None:
+            await config.safe_point_hook("provider.finished", {
+                "message": _durable_message(message),
+                "usage": _durable_message(message.usage),
+            })
+
+    async def schedule_structured_repair(
         error: Exception,
         candidate: AssistantMessage,
     ) -> bool:
         nonlocal structured_attempt, has_more_tool_calls, pending_validation_error
+        await finish_provider_response(candidate)
         if structured_plan is None or config.response_format is None:
             return False
         from openprogram.providers.structured_output import (
@@ -533,6 +542,11 @@ async def _run_loop(
                 structured_attempt if structured_plan is not None else None,
             )
 
+            if message.stop_reason in ("error", "aborted") or (
+                structured_plan is not None and message.stop_reason == "length"
+            ):
+                await finish_provider_response(message)
+
             if structured_plan is not None and message.stop_reason in (
                 "length", "error", "aborted",
             ):
@@ -586,7 +600,7 @@ async def _run_loop(
                         "The hidden structured-output submission must be the only tool call",
                         code="mixed_submission",
                     )
-                    if schedule_structured_repair(error, message):
+                    if await schedule_structured_repair(error, message):
                         continue
                     raise error
                 if submit_calls:
@@ -602,7 +616,7 @@ async def _run_loop(
                             validation_output,
                         )
                     except Exception as error:
-                        if schedule_structured_repair(error, message):
+                        if await schedule_structured_repair(error, message):
                             continue
                         raise
                     message.content = [TextContent(
@@ -627,7 +641,7 @@ async def _run_loop(
                         "The model did not call the hidden structured-output submission tool",
                         code="missing_submission",
                     )
-                    if schedule_structured_repair(error, message):
+                    if await schedule_structured_repair(error, message):
                         continue
                     raise error
 
@@ -649,7 +663,7 @@ async def _run_loop(
                 try:
                     value = parse_and_validate_json(raw, validation_output)
                 except Exception as error:
-                    if schedule_structured_repair(error, message):
+                    if await schedule_structured_repair(error, message):
                         continue
                     raise
                 message.content = [TextContent(

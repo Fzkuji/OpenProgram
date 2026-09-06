@@ -12,6 +12,15 @@ const STATUS: Record<string, [string, string]> = {
 export function statusLabel(status: string, text: Text): string {
   return text(...(STATUS[status] || ["Status unavailable", "状态不可用"]));
 }
+export function executionNeedsAttention(snapshot: ExecutionSnapshot): boolean {
+  return snapshot.status === "paused" || (snapshot.status === "reconciliation_required"
+    && snapshot.effect_summary?.provider_response_incomplete !== true);
+}
+export function executionStatusLabel(snapshot: ExecutionSnapshot, text: Text): string {
+  return snapshot.status === "reconciliation_required" && !executionNeedsAttention(snapshot)
+    ? text("Ended · response record incomplete", "已结束 · 响应记录不完整")
+    : statusLabel(snapshot.status, text);
+}
 export function executionRequest(snapshot: ExecutionSnapshot): string {
   return (snapshot.task_label || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -30,6 +39,7 @@ export function executionTitle(snapshot: ExecutionSnapshot, ordinal: number, tex
   return name || text(`Task ${ordinal}`, `任务 ${ordinal}`);
 }
 export function executionGuidance(snapshot: ExecutionSnapshot, text: Text): string | null {
+  if (snapshot.status === "reconciliation_required" && !executionNeedsAttention(snapshot)) return text("This attempt has ended. Its model response record is incomplete; there is no pending confirmation. Recorded details remain available in history.", "本轮执行已结束，模型响应记录不完整，没有待确认事项。详细记录保留在历史中。");
   if (snapshot.status === "reconciliation_required") return text("An external action has no confirmed result. Inspect its recorded details before repeating it.", "外部操作尚无已确认的结果。再次执行前请核对记录详情。");
   if (snapshot.status === "paused") return snapshot.can_continue
     ? text("Paused at a saved point. Continue resumes this task; Step advances one supported boundary.", "任务已暂停在保存点。继续会恢复任务；单步只推进一个支持的执行边界。")

@@ -1493,7 +1493,7 @@ class AgentProductionDriver:
             effect = service.effects.get(effect_id)
             if effect is None or effect.status is not EffectStatus.DISPATCHED:
                 raise AgentDriverError("effect_state_invalid", "Agent effect is not dispatchable")
-            if kind == "provider.after":
+            if kind in {"provider.after", "provider.finished"}:
                 message = payload.get("message")
                 if not isinstance(message, Mapping):
                     raise AgentDriverError("checkpoint_schema_invalid", "provider receipt lacks AssistantMessage")
@@ -1528,6 +1528,7 @@ class AgentProductionDriver:
                     "provider_request_id": payload.get("provider_request_id"),
                     "usage": payload.get("usage"),
                     "message_hash": json_digest(latest_assistant),
+                    "stop_reason": message.get("stop_reason"),
                     "supports_idempotency_key": actual_supports_idempotency_key,
                 }
                 terminal_receipt["idempotency_key"] = (
@@ -1553,16 +1554,16 @@ class AgentProductionDriver:
                 # command arrived, independently of the current provider decision.
                 prior_actions.append({
                     "action_id": action_id, "input_hash": input_hash,
-                    "result": dict(latest_assistant) if kind == "provider.after" else dict(result),
+                    "result": dict(latest_assistant) if kind in {"provider.after", "provider.finished"} else dict(result),
                 })
                 prior_receipts.append({
                     "effect_id": effect_id,
-                    "frontier_step_id": f"{'after_provider' if kind == 'provider.after' else 'after_tool'}:{action_id}",
+                    "frontier_step_id": f"{'after_provider' if kind in {'provider.after', 'provider.finished'} else 'after_tool'}:{action_id}",
                     "action_id": action_id, "outcome": "committed",
                     "receipt": dict(terminal_receipt),
                 })
 
-            command = current_command(service, attempt.execution_id)
+            command = None if kind == "provider.finished" else current_command(service, attempt.execution_id)
             if command is None:
                 service.effects.resolve(
                     effect_id, expected_status=EffectStatus.DISPATCHED,

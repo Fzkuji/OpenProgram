@@ -55,6 +55,7 @@ let respond;
 globalThis.fetch = (...args) => respond(...args);
 const { act, createElement, useState, useRef } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { flushSync } = await import("react-dom");
 const { QuestionMode } = await import("../components/chat/composer/modes/question/question-mode.tsx");
 globalThis.WebSocket = { OPEN: 1 };
 const decision = { id: "wait-one", kind: "approval", prompt: "Allow this command?", detail: "echo test", options: [], multi: false, allow_custom: false, executionId: "exec-one", expectedVersion: 3, waitGeneration: 0 };
@@ -162,10 +163,10 @@ async function discussionMounted(check) {
     const click = async () => {
       const open = [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this");
       if (open) {
-        await act(async () => open.click());
+        await act(async () => flushSync(() => open.click()));
         const input = host.querySelector("textarea");
         const props = input[Object.keys(input).find(key => key.startsWith("__reactProps$"))];
-        await act(async () => props.onChange({ target: { value: "Why is this command needed?" } }));
+        await act(async () => flushSync(() => props.onChange({ target: { value: "Why is this command needed?" } })));
       }
       const send = [...host.querySelectorAll("button")].find(b => ["Send discussion", "Retry discussion"].includes(b.textContent));
       send?.click();

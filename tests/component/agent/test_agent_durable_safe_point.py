@@ -1331,3 +1331,108 @@ def test_nonordinary_agent_entries_do_not_claim_pause_step_or_durable_wait(
     assert capabilities.safe_point_kinds == ()
     assert "execution.pause" not in capabilities
     assert "execution.step" not in capabilities
+
+
+@pytest.mark.parametrize("stop_reason,structured", [
+    ("error", False), ("aborted", False), ("error", True), ("length", True), ("invalid", True), ("repair", True),
+])
+def test_returned_provider_failure_finishes_without_attention(tmp_path, stop_reason, structured):
+    from openprogram.agent.agent_loop import agent_loop
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.agent.types import AgentContext, AgentLoopConfig
+    from openprogram.providers.types import AssistantMessage, EventError, EventDone, Model, TextContent
+    from openprogram.providers.structured_output import (
+        normalize_response_format, StructuredOutputGenerationError, StructuredOutputValidationError,
+    )
+
+    store, attempts, active, execution = _admitted_agent_execution(tmp_path)
+    control = RuntimeControlService(store, attempts, DriverRegistry())
+    hook = AgentProductionDriver(store, control_service=control)._safe_point_hook(
+        active, SimpleNamespace(user_msg_id="user-anchor"), threading.Event(),
+    )
+
+    async def safe_point(kind, payload):
+        return hook(kind, payload)
+
+    responses = []
+
+    async def provider(model, context, options):
+        content = "{}" if stop_reason == "repair" and responses else "invalid json"
+        responses.append(content)
+        message = AssistantMessage(
+            content=[TextContent(text=content)], api=model.api, provider=model.provider, model=model.id,
+            stop_reason="stop" if stop_reason in {"invalid", "repair"} else stop_reason,
+            error_message="provider stopped", timestamp=1,
+        )
+        if stop_reason in {"error", "aborted"}:
+            yield EventError(reason=stop_reason, error=message)
+        else:
+            yield EventDone(reason=message.stop_reason, message=message)
+
+    async def run():
+        stream = agent_loop([], AgentContext(messages=[], tools=[]), AgentLoopConfig(
+            model=Model(id="fake", name="fake", api="openai-completions", provider="openai",
+                        base_url="https://example.invalid/v1"),
+            convert_to_llm=lambda messages: messages, safe_point_hook=safe_point,
+            response_format=normalize_response_format({
+                "type": "json_schema", "schema": {"type": "object"},
+                "fallback": "prompt", "max_validation_retries": 1 if stop_reason == "repair" else 0,
+            }) if structured else None,
+        ), stream_fn=provider)
+        async for _ in stream:
+            pass
+        await stream.result()
+
+    if stop_reason in {"length", "invalid"}:
+        with pytest.raises((StructuredOutputGenerationError, StructuredOutputValidationError)):
+            asyncio.run(run())
+    else:
+        asyncio.run(run())
+    finished = control.finish_attempt(
+        attempt_id=active.attempt_id, generation=active.generation,
+        expected_execution_version=store.get_execution(execution.execution_id).status_version,
+        target=ExecutionStatus.COMPLETED if stop_reason == "repair" else ExecutionStatus.FAILED,
+        outcome=stop_reason,
+    )
+    assert finished.execution.status is (ExecutionStatus.COMPLETED if stop_reason == "repair" else ExecutionStatus.FAILED)
+    if stop_reason == "repair":
+        assert responses == ["invalid json", "{}"]
+    assert control.effects.list_unresolved(execution.execution_id) == []
+    assert finished.execution.checkpoint_head_id is None
+
+
+@pytest.mark.parametrize("kind,orphan", [("provider.before", True), ("tool.before", False)])
+@pytest.mark.parametrize("attention", [None, "wait", "command"])
+def test_snapshot_distinguishes_ended_provider_receipt_from_action_attention(tmp_path, kind, orphan, attention):
+    from openprogram.execution.effects import EffectClassification, EffectStatus
+    from openprogram.execution.public import execution_snapshot
+
+    store, attempts, active, execution = _admitted_agent_execution(tmp_path)
+    control = RuntimeControlService(store, attempts, DriverRegistry())
+    control.effects.register(effect_id="effect-orphan", execution_id=execution.execution_id,
+                             attempt_id=active.attempt_id, action_id="action-orphan",
+                             classification=EffectClassification.NONREPEATABLE,
+                             idempotency_key=None, metadata={"kind": kind})
+    control.effects.mark_dispatched("effect-orphan", expected_status=EffectStatus.PLANNED)
+    if attention == "wait":
+        from openprogram.execution.waits import DurableWaitStore
+        DurableWaitStore(store).open_wait(
+            execution_id=execution.execution_id, attempt_id=active.attempt_id,
+            generation=active.generation, kind="confirm", request={"prompt": "Confirm?"},
+            policy_snapshot={}, expires_at=time.time() + 60,
+        )
+    elif attention == "command":
+        from openprogram.execution.model import CommandKind
+        store.accept_command(command_id="pause-attention", execution_id=execution.execution_id,
+                             expected_version=execution.status_version, kind=CommandKind.PAUSE,
+                             payload={}, actor={"subject": "owner"})
+    assert execution_snapshot(execution, store=store).effect_summary.get("provider_response_incomplete") is not True
+    ended = control.finish_attempt(
+        attempt_id=active.attempt_id, generation=active.generation,
+        expected_execution_version=execution.status_version,
+        target=ExecutionStatus.FAILED, outcome="error",
+    ).execution
+    snapshot = execution_snapshot(ended, store=store)
+    assert snapshot.effect_summary.get("provider_response_incomplete", False) is (orphan and attention is None)
+    assert snapshot.status == "reconciliation_required"
+    assert len(control.effects.list_unresolved(execution.execution_id)) == 1

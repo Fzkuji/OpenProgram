@@ -11,7 +11,7 @@ import { SectionHeader } from "@/components/sidebar/section-header";
 import { Button } from "@/components/ui/button";
 import { DebuggerPanel } from "./debugger-panel";
 import { SidebarNotice } from "./sidebar-notice";
-import { executionTitle, executionRequest, statusLabel, shortTime, updatedTime } from "./debugger-presentation";
+import { executionTitle, executionRequest, executionNeedsAttention, executionStatusLabel, shortTime, updatedTime } from "./debugger-presentation";
 import styles from "./running-panel.module.css";
 
 
@@ -60,7 +60,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   function needsAttention(item: ExecutionSnapshot, seen = new Set<string>()): boolean {
     if (seen.has(item.execution_id)) return false;
     seen.add(item.execution_id);
-    return ["paused", "reconciliation_required"].includes(item.status)
+    return executionNeedsAttention(item)
       || (byExecution.get(item.execution_id) || []).some(p => ["unknown", "lost"].includes(p.status))
       || (children.get(item.execution_id) || []).some(child => needsAttention(child, seen));
   }
@@ -97,7 +97,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
           <span className={styles.rowText}>
             <span className={styles.rowHeading}><span className={styles.name} title={executionRequest(item) || title}>{title}</span>
               {item.started_at != null && <time className={styles.started} dateTime={new Date(item.started_at * 1000).toISOString()} title={updatedTime(item.started_at)} aria-label={updatedTime(item.started_at)}>{shortTime(item.started_at * 1000)}</time>}</span>
-            <span className={styles.meta}>{statusLabel(item.status, text)}{descendants.length ? ` · ${descendants.length} ${text("branches", "分支")}` : ""}{owned.length ? ` · ${owned.length} ${text("programs", "程序")}${owned.some(processIsActive) ? ` (${owned.filter(processIsActive).length} ${text("active", "活动中")})` : ""}` : ""}{!["paused", "reconciliation_required"].includes(item.status) && needsAttention(item) ? ` · ${text("Child needs attention", "子项需要处理")}` : ""}</span>
+            <span className={styles.meta}>{executionStatusLabel(item, text)}{descendants.length ? ` · ${descendants.length} ${text("branches", "分支")}` : ""}{owned.length ? ` · ${owned.length} ${text("programs", "程序")}${owned.some(processIsActive) ? ` (${owned.filter(processIsActive).length} ${text("active", "活动中")})` : ""}` : ""}{!executionNeedsAttention(item) && needsAttention(item) ? ` · ${text("Child needs attention", "子项需要处理")}` : ""}</span>
           </span>
         </Button>
         {expandable && <Button variant="ghost" size="icon" className={styles.expand} aria-expanded={open}

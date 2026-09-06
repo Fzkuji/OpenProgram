@@ -1300,6 +1300,9 @@ secondaryTabsModule.replaceCenterTabsPayload(
   orderedDestinationEntry.beforeCenterTabs,
   { persist: false },
 );
+// Start this recovery scenario from its saved fixture, not earlier scenarios' user edits.
+secondarySession.setState({ composerDrafts: { ...JSON.parse(effectSessionBytes).composerDrafts } });
+values.set("openprogram.sessionDraftState:secondary", effectSessionBytes);
 secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: false });
 const startupEntry = {
   ...orderedDestinationEntry,

@@ -24,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SectionHeader } from "../sidebar/section-header";
 import { useTranslation } from "@/lib/i18n";
 import { ExecutionStrip } from "../chat/messages/execution-strip";
-import { executionTitle, executionRequest, executionGuidance, statusLabel, activityRows, shortTime, updatedTime } from "./debugger-presentation";
+import { executionTitle, executionRequest, executionGuidance, executionNeedsAttention, executionStatusLabel, activityRows, shortTime, updatedTime } from "./debugger-presentation";
 import styles from "./debugger-panel.module.css";
 
 export type DebuggerConnection = {
@@ -180,7 +180,7 @@ function ExecutionTree({
           <span className={`${styles.statusDot} ${statusClass(execution.status)}`} aria-hidden="true" />
           <span className={styles.executionText}>
             <span className={styles.executionName}>{executionTitle(execution, executions.length - executions.indexOf(execution), text)}</span>
-            <span className={styles.executionMeta}>{statusLabel(execution.status, text)}</span>
+            <span className={styles.executionMeta}>{executionStatusLabel(execution, text)}</span>
           </span>
         </button>
         {renderBranch(execution.execution_id, depth + 1)}
@@ -433,9 +433,9 @@ export function DebuggerPanel({
                 <h3>{executionTitle(snapshot, executions.length - executions.indexOf(snapshot), text)}</h3>
                 <p className={styles.muted}>{text("Updated", "更新于")} {updatedTime(snapshot.updated_at)}</p>
               </div>
-              <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{statusLabel(snapshot.status, text)}</div>
+              <div className={`${styles.statusBadge} ${statusClass(snapshot.status)}`}><span className={styles.statusDot} />{executionStatusLabel(snapshot, text)}</div>
             </div>
-            {snapshot.status === "reconciliation_required" ? <div className={styles.reason}>
+            {snapshot.status === "reconciliation_required" && executionNeedsAttention(snapshot) ? <div className={styles.reason}>
               {unresolvedEffects.some((effect) => effect.kind === "provider.before")
                 ? text("The model request has no confirmed response. This run is waiting for its result to be resolved.", "模型请求尚无已确认的响应，本次执行正在等待结果核对。")
                 : unresolvedEffects.some((effect) => effect.kind === "tool.before")
