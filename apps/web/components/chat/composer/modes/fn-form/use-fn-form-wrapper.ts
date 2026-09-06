@@ -335,15 +335,15 @@ function measureDecisionHeight(el: HTMLDivElement): number {
 function textareaContentHeight(el: HTMLDivElement): number {
   const ta = el.querySelector("textarea") as HTMLTextAreaElement | null;
   if (!ta) return 48;
-  // Collapse from a flex-filled field: height:auto still reports the
-  // stretched box. Zero the used height so scrollHeight is content.
+  // Measure without flex growth, retaining the native rows minimum.
+  // A zero-height read undercounts the field and clips body padding.
   const prevH = ta.style.height;
   const prevMin = ta.style.minHeight;
   const prevFlex = ta.style.flex;
   ta.style.flex = "none";
   ta.style.minHeight = "0";
-  ta.style.height = "0px";
-  const h = ta.scrollHeight;
+  ta.style.height = "auto";
+  const h = ta.scrollHeight + ta.offsetHeight - ta.clientHeight;
   ta.style.height = prevH;
   ta.style.minHeight = prevMin;
   ta.style.flex = prevFlex;
