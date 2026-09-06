@@ -981,8 +981,8 @@ receipt = {
 </tr>
 <tr>
 <td>P2 浏览器/P3 桌面/P4 VM</td>
-<td>定位现有原语与归属机制。</td>
-<td>目标尚未实现；缺新增操作与集成测试。</td>
+<td>ControllerBackend 候选保留调用者 ContextVars，在 Page 排队及目标查找后、调用浏览器 API 前执行宿主校验。观察取消和清理过程中的中断均会释放会话租约；205 项局部测试及独立审查通过。</td>
+<td>尚未与 GUI 脚本或默认 App 集成。MCP 暂不支持受限派发，已派发 Playwright 操作的取消尚未验证。完整浏览器 SDK、桌面和 VM 适配器仍未完成。</td>
 </tr>
 <tr>
 <td>P5 恢复与 UX</td>

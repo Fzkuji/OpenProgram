@@ -981,8 +981,8 @@ receipt = {
 </tr>
 <tr>
 <td>P2 browser / P3 desktop / P4 VM</td>
-<td>Existing primitives and ownership identified.</td>
-<td>Not implemented as target; missing operation and integration tests.</td>
+<td>A ControllerBackend candidate preserves caller ContextVars and checks a host guard after Page queueing and target lookup, before browser API dispatch. Cancelled observation and interrupted cleanup release session leases; 205 scoped tests and independent reviews pass.</td>
+<td>Not integrated with GUI scripts or the default App. Guarded MCP dispatch is unsupported; cancellation of an already-dispatched Playwright operation is unverified. Full browser SDK, desktop and VM adapters remain incomplete.</td>
 </tr>
 <tr>
 <td>P5 recovery and UX</td>
