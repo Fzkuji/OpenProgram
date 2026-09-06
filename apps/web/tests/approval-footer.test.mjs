@@ -126,7 +126,8 @@ const { useSendQueue, registerChatSender } = await import("../lib/state/send-que
 const { useSessionStore } = await import("../lib/session-store/index.ts");
 
 async function discussionMounted(check) {
-  const requests = [], sent = [], removed = [], notices = [];
+  const requests = [], sent = [], removed = [], notices = [], frames = [];
+  globalThis.approvalSocket = { readyState: 1, send: value => frames.push(JSON.parse(value)) };
   const onToast = e => notices.push(e.detail); window.addEventListener("op:toast", onToast);
   const q = { ...decision, sessionId: "origin", tool: "process" };
   const host = document.createElement("div"); document.body.append(host);
@@ -155,7 +156,7 @@ async function discussionMounted(check) {
   try {
     await act(async () => root.render(createElement(Harness)));
     const click = () => [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this").click();
-    await check({ host, requests, sent, removed, notices, click, q, changeSession, draft });
+    await check({ host, requests, sent, removed, notices, frames, click, q, changeSession, draft });
   } finally { await act(async () => root.unmount()); host.remove(); window.removeEventListener("op:toast", onToast); useSendQueue.setState({ queues: {} }); }
 }
 
@@ -220,5 +221,23 @@ test("discussion queues until the rejected execution clears and retries a discon
     useSendQueue.getState().drain("origin");
     assert.equal(sent.length, 1);
     assert.equal(useSendQueue.getState().queues.origin?.length ?? 0, 0);
+  });
+});
+
+test("pending discussion blocks approval via Ctrl and Meta Enter", async () => {
+  await discussionMounted(async ({ host, click, frames }) => {
+    let finish;
+    respond = async (_url, init) => new Promise(resolve => { finish = () => resolve(Response.json({ command: { ...JSON.parse(init.body), status: "applied" } })); });
+    const allow = [...host.querySelectorAll("button")].find(b => b.textContent === "Allow once");
+    await act(async () => allow.click());
+    await act(async () => click());
+    for (const modifier of ["ctrlKey", "metaKey"]) {
+      const enter = new Event("keydown", { bubbles: true, cancelable: true });
+      Object.defineProperties(enter, { key: { value: "Enter" }, [modifier]: { value: true } });
+      await act(async () => allow.dispatchEvent(enter));
+    }
+    const count = frames.length;
+    await act(async () => finish());
+    assert.equal(count, 0, "no competing approval while rejection is pending");
   });
 });

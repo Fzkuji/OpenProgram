@@ -172,6 +172,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
     setAnswers((cur) => cur.map((a, k) => (k === i ? next : a)));
 
   function submit() {
+    if (discussionPending) return;
     // 按原 decision kind 收集成后端期望的格式。
     if (q.kind === "form") {
       const step = steps[0] as Extract<Step, { kind: "form" }>;
