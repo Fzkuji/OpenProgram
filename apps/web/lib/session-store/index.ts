@@ -928,12 +928,15 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
 
   pendingDecisions: [],
   enqueueDecision: (d) =>
-    set((state) =>
-      // Dedupe by id — reconnect replay re-sends the same question.asked.
-      state.pendingDecisions.some((p) => p.id === d.id)
-        ? {}
-        : { pendingDecisions: [...state.pendingDecisions, d] },
-    ),
+    set((state) => {
+      const previous = state.pendingDecisions.find((p) => p.id === d.id);
+      if (!previous) return { pendingDecisions: [...state.pendingDecisions, d] };
+      if (previous.executionId !== d.executionId || previous.expectedVersion > d.expectedVersion
+          || previous.waitGeneration > d.waitGeneration) return {};
+      // Refresh canonical metadata without resetting the component's answer draft.
+      const supplied = Object.fromEntries(Object.entries(d).filter(([, value]) => value !== undefined));
+      return { pendingDecisions: state.pendingDecisions.map((p) => p.id === d.id ? { ...p, ...supplied } : p) };
+    }),
   dequeueDecision: (id) =>
     set((state) => ({
       pendingDecisions: state.pendingDecisions.filter((p) => p.id !== id),
