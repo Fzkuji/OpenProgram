@@ -1,3 +1,4 @@
+import type { ProjectSort } from "../project-groups";
 /**
  * recents-view — per-browser view preferences for the sidebar Recents
  * list (which Status to show, how to sort, whether to group).
@@ -30,6 +31,12 @@ export type RecentsSort = "recency" | "created" | "title";
 export type RecentsActivity = "all" | "1d" | "7d" | "30d";
 
 export interface RecentsView {
+  projectOrder: string[];
+  projectSort: ProjectSort;
+  pinnedProjects: string[];
+  projectSectionNames: string[];
+  projectSections: Record<string, string>;
+  sortDirection: "asc" | "desc";
   status: RecentsStatus;
   /** Project filter. ``"all"`` = no filter. Stored as a project id /
    *  name; the backend that introduces projects fills the option list
@@ -43,6 +50,12 @@ export interface RecentsView {
 }
 
 export const DEFAULT_RECENTS_VIEW: RecentsView = {
+  projectOrder: [],
+  projectSort: "recency",
+  pinnedProjects: [],
+  projectSectionNames: [],
+  projectSections: {},
+  sortDirection: "desc",
   status: "active",
   project: "all",
   environment: "all",
@@ -63,6 +76,12 @@ function _read(): RecentsView {
     if (!raw) return DEFAULT_RECENTS_VIEW;
     const p = JSON.parse(raw) as Partial<RecentsView>;
     return {
+      projectOrder: Array.isArray(p.projectOrder) && p.projectOrder.every((id) => typeof id === "string") ? [...new Set(p.projectOrder)] : [],
+      projectSort: ["recency", "oldest", "name", "manual"].includes(p.projectSort ?? "") ? p.projectSort! : (Array.isArray(p.projectOrder) && p.projectOrder.length ? "manual" : "recency"),
+      pinnedProjects: Array.isArray(p.pinnedProjects) ? [...new Set(p.pinnedProjects.filter((id) => typeof id === "string"))] : [],
+      projectSectionNames: Array.isArray(p.projectSectionNames) ? [...new Set(p.projectSectionNames.filter((name) => typeof name === "string" && name.trim() && name !== "__pinned__"))] : [],
+      projectSections: p.projectSections && typeof p.projectSections === "object" && !Array.isArray(p.projectSections) ? Object.fromEntries(Object.entries(p.projectSections).filter(([, value]) => typeof value === "string")) : {},
+      sortDirection: p.sortDirection === "asc" || p.sortDirection === "desc" ? p.sortDirection : p.sort === "title" ? "asc" : "desc",
       status: p.status || DEFAULT_RECENTS_VIEW.status,
       project: p.project || DEFAULT_RECENTS_VIEW.project,
       environment: p.environment || DEFAULT_RECENTS_VIEW.environment,
@@ -84,8 +103,11 @@ export function getRecentsView(): RecentsView {
 export function setRecentsView(patch: Partial<RecentsView>): void {
   if (typeof window === "undefined") return;
   _cached = { ...getRecentsView(), ...patch };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_cached));
-  window.dispatchEvent(new Event(CHANGE_EVT));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(_cached));
+  } finally {
+    window.dispatchEvent(new Event(CHANGE_EVT));
+  }
 }
 
 export function subscribeRecentsView(fn: () => void): () => void {

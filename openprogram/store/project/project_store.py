@@ -90,6 +90,11 @@ class Project:
     session_ids: list[str] = field(default_factory=list)
     status: str = "active"          # active | paused | done
     created_at: float = field(default_factory=time.time)
+    icon: str = ""
+    hidden: bool = False
+    custom_name: bool = False
+    description: str = ""
+    source_folders: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -103,7 +108,12 @@ class Project:
             is_default=bool(d.get("is_default", False)),
             session_ids=list(d.get("session_ids", []) or []),
             status=d.get("status", "active"),
+            hidden=bool(d.get("hidden", False)),
             created_at=float(d.get("created_at", time.time())),
+            icon=d.get("icon", ""),
+            custom_name=bool(d.get("custom_name", False)),
+            description=d.get("description", ""),
+            source_folders=list(d.get("source_folders", []) or []),
         )
 
 
@@ -479,6 +489,7 @@ class ProjectGit:
 # Registry (projects.json)
 
 _reg_lock = threading.Lock()
+_worktree_lock = threading.Lock()
 
 
 def _read_registry() -> dict[str, dict]:
@@ -554,6 +565,48 @@ def _upsert(project: Project) -> Project:
     return project
 
 
+def update_project(project_id: str, patch: dict) -> Project:
+    """Validate and atomically edit display metadata; preserve main path/bindings."""
+    if not isinstance(project_id, str) or not project_id:
+        raise ValueError("project_id is required")
+    if not isinstance(patch, dict) or not patch or set(patch) - {"name", "icon", "description", "source_folders"}:
+        raise ValueError("unsupported project fields")
+    values = dict(patch)
+    for key, limit in (("name", 200), ("icon", 32), ("description", 2000)):
+        if key in values:
+            value = values[key]
+            if not isinstance(value, str) or len(value) > limit or (key == "name" and not value.strip()):
+                raise ValueError(f"invalid project {key}")
+            values[key] = value.strip()
+    if "source_folders" in values:
+        folders = values["source_folders"]
+        if not isinstance(folders, list) or len(folders) > 32:
+            raise ValueError("source_folders must be a list of at most 32 directories")
+        normalized = []
+        for value in folders:
+            if not isinstance(value, str) or not Path(value).expanduser().is_absolute():
+                raise ValueError("source folder paths must be absolute")
+            path = Path(value).expanduser().resolve()
+            if not path.is_dir():
+                raise ValueError(f"source folder is not a directory: {value}")
+            if str(path) not in normalized:
+                normalized.append(str(path))
+        values["source_folders"] = normalized
+    with _reg_lock:
+        registry = _read_registry()
+        if project_id not in registry:
+            raise ValueError("unknown project")
+        project = Project.from_dict(registry[project_id])
+        for key, value in values.items():
+            setattr(project, key, value)
+        if "name" in values:
+            project.custom_name = True
+        project.source_folders = [p for p in project.source_folders if p != project.path]
+        registry[project_id] = project.to_dict()
+        _write_registry(registry)
+        return project
+
+
 # ── project-level settings ──────────────────────────────────────────────
 # 项目级配置（权限规则、以后的项目级工具/模型偏好等）。
 # 非默认项目落在 <project>/.openprogram/settings.json（跟项目走，可进版本库
@@ -619,8 +672,9 @@ def get_default_project() -> Project:
     if existing is not None:
         # Backfill older records that used the placeholder "Default"
         # label / empty path so the catch-all reads as the home folder.
-        if (existing.name or "") in ("", "Default") or not existing.path:
-            existing.name = home_name
+        if (not existing.custom_name and (existing.name or "") in ("", "Default")) or not existing.path:
+            if not existing.custom_name:
+                existing.name = home_name
             existing.path = str(home)
             _upsert(existing)
         return existing
@@ -661,7 +715,7 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
     pid = _project_id_for_path(p)
     existing = get_project(pid)
     if existing is not None:
-        return existing
+        return set_project_hidden(pid, False) if existing.hidden else existing
 
     # Before minting a new id: this folder may be a registered project
     # that was MOVED on disk. Its session footprint is the deterministic
@@ -832,3 +886,56 @@ __all__ = [
     "save_project_settings",
     "ensure_footprint_ignored",
 ]
+
+
+def set_project_hidden(project_id: str, hidden: bool) -> Project:
+    """Remove/restore a navigation entry; keep paths and session ownership."""
+    with _reg_lock:
+        reg = _read_registry()
+        if not isinstance(project_id, str) or project_id not in reg:
+            raise ValueError("unknown project")
+        if hidden and reg[project_id].get("is_default"):
+            raise ValueError("the default project cannot be removed")
+        reg[project_id]["hidden"] = hidden
+        _write_registry(reg)
+        return Project.from_dict(reg[project_id])
+
+
+def create_project_worktree(project_id: str, path: str, branch: str) -> Project:
+    """Create a persistent worktree from HEAD without changing the source checkout."""
+    project = get_project(project_id)
+    if not project:
+        raise ValueError("unknown project")
+    if not isinstance(path, str) or not Path(path).expanduser().is_absolute():
+        raise ValueError("an absolute destination path is required")
+    if not isinstance(branch, str) or not branch.strip() or branch.startswith("-"):
+        raise ValueError("a new branch name is required")
+    branch = branch.strip()
+    target = Path(path).expanduser().resolve()
+    source = Path(project.path).resolve()
+    if target == source or source in target.parents:
+        raise ValueError("choose a destination outside the source project")
+    if not target.parent.is_dir():
+        raise ValueError("destination parent directory does not exist")
+
+    def git(*args):
+        result = subprocess.run(["git", "-C", str(source), *args], capture_output=True, text=True, timeout=120)
+        if result.returncode:
+            raise ValueError(result.stderr.strip() or "git command failed")
+        return result.stdout.strip()
+
+    checkout = Path(git("rev-parse", "--show-toplevel")).resolve()
+    if target == checkout or checkout in target.parents:
+        raise ValueError("choose a destination outside the source Git checkout")
+    git("check-ref-format", "--branch", branch)
+    # Serialize worktree creates. An ACK retry recognizes this exact
+    # branch/path pair, so it cannot produce a second worktree.
+    with _worktree_lock:
+        if target.exists():
+            records = git("worktree", "list", "--porcelain").split("\n\n")
+            expected = {f"worktree {target}", f"branch refs/heads/{branch}"}
+            if not any(expected.issubset(set(record.splitlines())) for record in records):
+                raise ValueError("destination already exists")
+        else:
+            git("worktree", "add", "-b", branch, "--", str(target), "HEAD")
+        return resolve_project(target)

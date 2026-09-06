@@ -1,5 +1,13 @@
 # Web UI
 
+The project menu also reveals its folder in the system file manager, creates a permanent Git worktree, archives its chats, or removes its sidebar entry. Worktrees use a new branch from the current commit and a new absolute folder outside the source Git checkout; uncommitted changes stay in the original folder. Removing a project preserves files, chats, and project ownership. Restore it from the Projects page or reopen its folder. The default home project cannot be removed. Archived chats remain available through the Archived filter; hidden project chats remain in date/flat history.
+
+Right-click a project or use its ellipsis menu to open its settings, start a chat, pin it, edit it, or assign it to a custom section. The shared project editor changes its display name, text icon or emoji, description, and additional source folders. Source folders default into chats that have no explicit folder configuration; removing a folder does not delete files. Main-folder relocation remains in project settings. Section menus rename or remove sections; removing a section keeps its projects.
+
+Project order and chat order are independent. Use the sidebar filter menu to sort projects by newest activity, oldest activity, name, or manual order. New messages update the project activity time automatically. Pin a project using its pin button to keep it above unpinned projects. Chat direction selects oldest-first or newest-first; title sorting also supports A–Z and Z–A. Dragging switches project order to manual. These view preferences are saved locally.
+
+In the sidebar, choose **Group by → Project** to show project folders. Drag a project header above or below another project to reorder it. The insertion line marks the destination. You can also focus a project header and press Alt+Up or Alt+Down. The order is saved on this device and survives reloads; sessions remain in their projects.
+
 See [tool permission modes and live changes](../capabilities/permissions.md) for approval behavior and changes during a task.
 
 The browser interface covers all of OpenProgram's daily operations: chatting, managing functions and programs, configuring providers and MCP, browsing memory and projects. This page walks through each page by route and describes the chat page in detail.
@@ -22,6 +30,12 @@ Open `http://localhost:18100` in a browser. The page is a static export served b
 
 Replies stream in over WebSocket: a placeholder reply appears immediately after sending, and text, thinking, and tool-call blocks render incrementally in arrival order. When several agents write into one session, each assistant message carries the producing agent's avatar and name.
 
+### Messages during a turn
+
+**Queue** keeps messages in order and starts each after the preceding turn finishes. **Steer** and a queued message's **Add to current turn** action append instructions at the running Agent's next safe point. They do not cancel its tool call or change its model, tools or permission settings. Stopping an execution remains a separate composer action.
+
+If an instruction cannot be added to the current turn, its message remains queued. If delivery cannot be confirmed, the row stays visible and retries the same command to avoid duplicate delivery; it does not automatically resend as a new turn. Steering accepts up to 4,096 characters; longer messages remain queued. Unsent queues are stored in the current window's memory and are lost on page reload. Attachments remain in the composer instead of entering the text queue.
+
 ### Stopping and reconnecting
 
 Use **Cancel execution** in the composer to stop the current execution. Refreshing or reopening a session restores the active execution and its cancellation controls, including executions resumed after an approval wait. An execution can remain active while no new output arrives; silence alone does not end it. Completed executions do not remain active because of an obsolete worker registration.
@@ -34,7 +48,7 @@ The model's thinking process renders as a collapsible block, collapsed by defaul
 
 ### Function-call timeline
 
-Function and tool calls within each reply turn render as an expandable execution timeline: one row per step, with arguments, output, errors, and duration for each function call. Nested calls display recursively as a context tree, and subagents are steps in the timeline too. Clicking a step opens the execution detail panel in the right sidebar. Functions run manually from the `/programs` page's Run dialog use the same timeline rendering.
+Function and tool calls within each reply turn render as an expandable execution timeline: one row per step, with arguments, output, errors, and duration for each function call. Nested calls display recursively as a context tree, and subagents are steps in the timeline too. Clicking a step opens the execution detail panel in the right sidebar. Functions run manually from the `/programs` page's Run dialog use the same timeline rendering. Completed replies retain their streamed timeline; older records without ordered blocks use the same collapsible components instead of a separate tool-call table.
 
 ### Attachments
 
@@ -86,7 +100,7 @@ Opening `/settings` directly lands on `/settings/general`. Model credentials sta
 
 Select an Agent to inspect its progress and use the existing execution controls. Pause, Continue, Step and Retry appear only when supported by that execution. Use **Add instruction** or **Create branch** to open the shared editor dialog. Published instructions remain read-only; **Edit as new draft** creates a separately validated revision without changing the published version. Outstanding questions and approvals appear before progress history. Internal IDs, revision data, resource snapshots, effect counters, checkpoints and raw events are under **Technical details**. A result awaiting confirmation is a blocked execution, not ongoing generation. When it has no active attempt, the composer permits a new message and does not restore Cancel after refresh; Activity retains the unresolved result and its restrictions. A fetched snapshot does not prove an Agent is currently running.
 
-Select a program to see its command, working directory, environment, start and end times, exit code and recorded output. **Stop program** targets that program's managed process group, including ordinary background descendants. Other programs are unaffected. Output is bounded; the view explicitly indicates truncation while retaining the process record. Manual refresh buttons remain busy while reads are pending, briefly show a checkmark on success, and show a failure icon when a read fails. Automatic polling does not animate the button. An initial read failure displays a loading error rather than claiming older records exist. Programs without an Agent record remain visible and prevent an empty-activity message. A failed refresh keeps the last records, selected program details and output visible with a stale-state notice. Changing the selected program clears the previous details; a successful refresh that no longer includes that program also clears them.
+Select a program to see its command, working directory, environment, start and end times, exit code and recorded output. **Stop program** targets that program's managed process group, including ordinary background descendants. Other programs are unaffected. Output is bounded; the view explicitly indicates truncation while retaining the process record. Activity updates automatically on execution and job events, when the panel opens, and after connection or page visibility recovers. It has no manual refresh button. Execution snapshots have a 30-second fallback refresh; managed programs and their output are checked every 3 seconds while visible because they do not yet publish a dedicated event stream. An initial read failure displays a loading error rather than claiming older records exist. Programs without an Agent record remain visible and prevent an empty-activity message. A failed refresh keeps the last records, selected program details and output visible with a stale-state notice. Changing the selected program clears the previous details; a successful refresh that no longer includes that program also clears them.
 
 Long-running programs should be launched through the `process` tool's `start` action. The launch belongs to the trusted execution and session context. Its detached supervisor retains output and control across worker restarts; ordinary shell background children remain part of the managed group. Programs deliberately detached into another process session, or started outside framework process management, are not claimed as monitored.
 

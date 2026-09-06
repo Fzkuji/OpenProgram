@@ -152,9 +152,9 @@ assert.match(projectsPage, /"list_project_sessions"/);
 
 assert.match(
   sessionsList,
-  /import\s*\{\s*projectGroups\s*\}\s*from\s*"@\/lib\/project-groups"/,
+  /import\s*\{\s*projectGroups\s*,\s*moveProject\s*(?:,\s*filterProjectItems\s*)?\}\s*from\s*"@\/lib\/project-groups"/,
 );
-assert.match(sessionsList, /projectGroups\(projects, visible\)/);
+assert.match(sessionsList, /projectGroups\(projects, visible, view.projectOrder,/);
 
 const { projectGroups } = await import("../lib/project-groups.ts");
 

@@ -17,6 +17,7 @@
  */
 
 import { create } from "zustand";
+import type { ExecutionCommand } from "@/lib/execution-debugger";
 
 // ponytail: `send-chat-message` imports back into this module (it records the
 // per-session turn settings), so the send function is reached through a
@@ -55,6 +56,9 @@ export interface QueuedMessage {
   queuedAt: number;
   /** A steer request is in flight; drain must wait for its acknowledgement. */
   injecting?: boolean;
+  /** Retained verbatim until its durable acknowledgement is known. */
+  steerCommand?: ExecutionCommand;
+  steerError?: "unconfirmed" | "unavailable" | "too_long" | "retry";
 }
 
 /** What the composer hands over; the store stamps id + queuedAt. */
@@ -66,6 +70,7 @@ interface SendQueueState {
   enqueue: (sessionId: string, draft: QueueDraft) => string;
   remove: (sessionId: string, id: string) => void;
   setInjecting: (sessionId: string, id: string, injecting: boolean) => void;
+  setSteering: (sessionId: string, id: string, patch: Partial<Pick<QueuedMessage, "injecting" | "steerCommand" | "steerError">>) => void;
   /** Send the head entry if the session is idle. No-op otherwise. */
   drain: (sessionId: string) => void;
 }
@@ -116,10 +121,16 @@ export const useSendQueue = create<SendQueueState>((set, get) => ({
       };
     }),
 
+  setSteering: (sessionId, id, patch) => set((s) => {
+    const entries = s.queues[sessionId];
+    if (!entries?.some(item => item.id === id)) return {};
+    return { queues: { ...s.queues, [sessionId]: entries.map(item => item.id === id ? { ...item, ...patch } : item) } };
+  }),
+
   drain: (sessionId) => {
     const head = (get().queues[sessionId] ?? EMPTY)[0];
     if (!head || !sendImpl) return;
-    if (head.injecting) return;
+    if (head.injecting || head.steerCommand) return;
     // Still busy — the next running-task clear will call us again.
     if (useSessionStore.getState().runningTasks[sessionId]) return;
     // Pop BEFORE sending: sendChatMessage re-enters the store (running
@@ -149,9 +160,7 @@ export const useSendQueue = create<SendQueueState>((set, get) => ({
   },
 }));
 
-/** Move one entry to the front, keeping the others in order behind it.
- *  Backs the queued row's "stop current and send now": the entry becomes
- *  what the next drain ships, without discarding the ones before it. */
+/** Move one entry to the front without cancelling an execution. */
 export function promoteToHead(sessionId: string, id: string): void {
   useSendQueue.setState((s) => {
     const cur = s.queues[sessionId];

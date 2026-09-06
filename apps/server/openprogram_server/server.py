@@ -1028,6 +1028,15 @@ def _append_msg(conv: dict, msg: dict) -> None:
     # dedup — ``SessionStore.append_message`` is idempotent on id
     # and the final reply uses ``SessionNodeWriter.update()`` to patch
     # the persisted node.
+    # Dispatcher completion advances the durable head without updating this
+    # server's conversation mirror. Resolve an ordinary user append before
+    # advance_head fills in a predecessor from that potentially stale mirror.
+    # Explicit predecessors, including None for a root fork, remain exact.
+    if msg.get("role") == "user" and "predecessor" not in msg and conv.get("id"):
+        from openprogram.agent.session_db import default_db
+        session = default_db().get_session(conv["id"]) or {}
+        msg["predecessor"] = session.get("head_id") or "ROOT"
+
     _existing_idx = -1
     if msg.get("id"):
         for _i, _existing in enumerate(conv.get("messages") or []):
@@ -1079,22 +1088,9 @@ def _append_msg(conv: dict, msg: dict) -> None:
                         id=_ROOT_ID, role=_RU, output="",
                         metadata={"display": "root"},
                     ))
-                # Conv predecessor = the previous turn's assistant reply.
-                # Every user turn keeps caller=ROOT; the predecessor edge
-                # is what chains turn N to turn N-1. Resolve it from the
-                # AUTHORITATIVE store head at write time — the last
-                # persisted leaf, which is still the prior reply because
-                # set_head to this user node happens below. Relying on
-                # advance_head's side effect / the in-memory conv mirror
-                # instead left every 2nd+ webui turn with an empty
-                # predecessor (disconnected pseudo-root → the DAG split
-                # into a tree per turn). Turn 1: head is None → no
-                # predecessor → the node hangs off ROOT via caller, which
-                # is correct for a first turn.
+                # The predecessor was resolved before mirror mutation above,
+                # or supplied explicitly by the caller (None means a root fork).
                 _pred = msg.get("predecessor")
-                if not _pred:
-                    _sess_now = db.get_session(cid) or {}
-                    _pred = _sess_now.get("head_id") or ""
                 _umeta = {k: v for k, v in msg.items()
                           if k not in {"id", "role", "content", "timestamp",
                                        "predecessor"}

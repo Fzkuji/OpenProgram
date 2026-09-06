@@ -95,4 +95,17 @@ assert.equal(
 assert.equal(activityTs({ created_at: 111 }), 111, "falls back to created_at");
 assert.equal(activityTs({}), 0);
 
+
+
+// Exercise the production section builder across date groups, not only each
+// group's internal order. Keep pinned conversations first in both directions.
+const sectionSource = sidebarSrc.slice(sidebarSrc.indexOf("function _dateBucket("), sidebarSrc.indexOf("/* ---- project group header"));
+const sectionJs = ts.transpileModule(sectionSource, {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+const buildSections = new Function("bucketKey", "bucketSortKey", "bucketLabel", sectionJs + "; return buildSections;")(mod.bucketKey, mod.bucketSortKey, mod.bucketLabel);
+const sectionNow = new Date(2026,8,6,12).getTime()/1000;
+const sectionItems = [{id:"old",created_at:sectionNow-20*86400},{id:"today",created_at:sectionNow},{id:"pin",created_at:sectionNow,pinned:true}];
+const sectionOpts = {groupBy:"none",sort:"recency",nowTs:sectionNow,locale:"en",isWorking:()=>false,labels:{pinned:"Pinned",today:"Today",past7:"Past 7 days",recents:"Recents",working:"Working",completed:"Completed"}};
+assert.deepEqual(buildSections(sectionItems,{...sectionOpts,sortDirection:"asc"}).flatMap(s=>s.items.map(c=>c.id)),["pin","old","today"]);
+assert.deepEqual(buildSections(sectionItems,{...sectionOpts,sortDirection:"desc"}).flatMap(s=>s.items.map(c=>c.id)),["pin","today","old"]);
+
 console.log("check-recents-buckets: ok");

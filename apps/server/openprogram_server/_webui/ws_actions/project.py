@@ -56,6 +56,10 @@ def _project_dict(p, alive: set[str] | None = None) -> dict:
         "session_count": len(sids),
         "session_ids": sids,
         "status": p.status,
+        "hidden": getattr(p, "hidden", False),
+        "icon": getattr(p, "icon", ""),
+        "description": getattr(p, "description", ""),
+        "source_folders": list(getattr(p, "source_folders", []) or []),
     }
 
 
@@ -407,7 +411,21 @@ async def handle_list_project_sessions(ws, cmd: dict):
     }, default=str))
 
 
+async def handle_update_project(ws, cmd: dict):
+    from openprogram.store.project import project_store as projects
+    try:
+        project = projects.update_project(cmd.get("project_id"), cmd.get("patch"))
+        result = {"ok": True, "project": _project_dict(project)}
+    except (ValueError, OSError) as exc:
+        result = {"ok": False, "error": str(exc)}
+    await ws.send_text(json.dumps({"type": "project_updated", "data": result}))
+    if result["ok"]:
+        from openprogram.webui import server
+        server._broadcast(json.dumps({"type": "projects_changed", "data": {"project_id": project.id}}))
+
+
 ACTIONS = {
+    "update_project": handle_update_project,
     "list_projects": handle_list_projects,
     "list_project_sessions": handle_list_project_sessions,
     "get_project_config": handle_get_project_config,
@@ -419,3 +437,55 @@ ACTIONS = {
     "add_session_workdir": handle_add_session_workdir,
     "remove_session_workdir": handle_remove_session_workdir,
 }
+
+
+async def handle_project_operation(ws, cmd: dict):
+    """Project menu mutations, with persisted results before success events."""
+    import asyncio
+    from openprogram.store.project import project_store as projects
+    from openprogram.webui import server
+    action = cmd.get("action")
+    project_id = cmd.get("project_id")
+    result = {"ok": False, "project_id": project_id}
+    try:
+        if not isinstance(project_id, str) or not projects.get_project(project_id):
+            raise ValueError("unknown project")
+        if action in ("remove_project", "restore_project"):
+            project = projects.set_project_hidden(project_id, action == "remove_project")
+            result.update(ok=True, project=_project_dict(project))
+        elif action == "create_project_worktree":
+            project = await asyncio.to_thread(projects.create_project_worktree, project_id, cmd.get("path"), cmd.get("branch"))
+            result.update(ok=True, project=_project_dict(project))
+        elif action == "archive_project_chats":
+            from openprogram.agent.session_db import default_db
+            db = default_db()
+            project = projects.get_project(project_id)
+            archived = []
+            result["session_ids"] = archived
+            session_ids = list(project.session_ids)
+            if project.is_default:
+                claimed = {sid for p in projects.list_projects() for sid in p.session_ids}
+                session_ids.extend(row["id"] for row in db.list_sessions(limit=100_000, include_archived=True)
+                                   if row.get("id") and row["id"] not in claimed)
+            for sid in session_ids:
+                if not db.get_session(sid):
+                    continue
+                db.update_session(sid, archived=True)
+                archived.append(sid)
+                with server._sessions_lock:
+                    if sid in server._sessions:
+                        server._sessions[sid]["archived"] = True
+                server._broadcast(json.dumps({"type": "session_updated", "data": {"id": sid, "archived": True}}))
+            result["ok"] = True
+        else:
+            raise ValueError("unknown project operation")
+    except Exception as exc:
+        result["error"] = str(exc)
+    await ws.send_text(json.dumps({"type": f"{action}_result", "data": result}))
+    if result["ok"]:
+        server._broadcast(json.dumps({"type": "projects_changed", "data": {"project_id": project_id}}))
+
+
+ACTIONS.update({name: handle_project_operation for name in (
+    "remove_project", "restore_project", "create_project_worktree", "archive_project_chats",
+)})

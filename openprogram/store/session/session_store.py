@@ -1481,6 +1481,42 @@ class SessionStore:
         _git, idx = pair
         return msg_id in idx.nodes_by_id
 
+    def has_persisted_ancestor(
+        self, session_id: str, ancestor_id: str, descendant_id: str,
+    ) -> bool:
+        """Read the on-disk predecessor chain, without trusting cached nodes."""
+        pair = self._open(session_id)
+        if pair is None or not ancestor_id or not descendant_id:
+            return False
+        git, _idx = pair
+        paths = {}
+        for path in git.list_history():
+            parts = path.stem.split("-", 2)
+            if len(parts) == 3:
+                node_id = parts[2]
+                if node_id in paths:
+                    return False
+                paths[node_id] = path
+        visited = set()
+        current = descendant_id
+        while current and current not in visited:
+            visited.add(current)
+            path = paths.get(current)
+            if path is None:
+                return False
+            try:
+                node = json.loads(read_text_with_retry(path))
+            except (OSError, json.JSONDecodeError):
+                return False
+            if not isinstance(node, dict) or node.get("id") != current:
+                return False
+            if current == ancestor_id:
+                return True
+            current = node.get("predecessor")
+            if not isinstance(current, str):
+                return False
+        return False
+
     # Branches
 
     def list_branches(self, session_id: str) -> list[dict[str, Any]]:

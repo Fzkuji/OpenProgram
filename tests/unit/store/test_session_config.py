@@ -185,3 +185,21 @@ def test_set_sandbox_false_echoes_without_session_id(tmp_db, monkeypatch) -> Non
     )
     assert sent[0]["data"]["sandbox"] is False
     assert sent[0]["data"]["sandbox_enabled"] is False
+
+
+def test_project_source_defaults_persist_to_real_session(tmp_db, tmp_path, monkeypatch):
+    from openprogram.store.project import project_store as projects
+    monkeypatch.setattr(projects, "_registry_path", lambda: tmp_path / "projects.json")
+    main = tmp_path / "project"
+    extra = tmp_path / "sources"
+    main.mkdir()
+    extra.mkdir()
+    project = projects.resolve_project(main)
+    projects.update_project(project.id, {"source_folders": [str(extra)]})
+    tmp_db.create_session("with-sources", "main", project_id=project.id)
+    projects.bind_session("with-sources", project.id)
+    cfg = save_session_run_config("with-sources", agent_id="main")
+    assert cfg.additional_working_dirs == [str(extra)]
+    assert load_session_run_config("with-sources").additional_working_dirs == [str(extra)]
+    save_session_run_config("with-sources", agent_id="main", additional_working_dirs=[])
+    assert save_session_run_config("with-sources", agent_id="main").additional_working_dirs == []

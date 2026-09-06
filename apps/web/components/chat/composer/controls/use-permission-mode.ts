@@ -66,7 +66,6 @@ export function usePermissionMode(): PermissionModeHook {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const known = useRef(false);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const setComposerSettings = useBoundSetComposerSettings();
@@ -91,14 +90,13 @@ export function usePermissionMode(): PermissionModeHook {
   useEffect(() => {
     let active = true;
     generation.current += 1;
-    known.current = false;
     setError(null);
     setPending(false);
     void wsRequest<{ mode?: unknown; version?: unknown; error?: string }>(
       "set_permission", { session_id: sid }, "permission_changed", { requestId: true },
     ).then((data) => {
       if (!active) return;
-      if (data && !data.error) { known.current = true; apply(data); }
+      if (data && !data.error) apply(data);
     });
     return () => { active = false; };
   }, [sid, apply]);
@@ -109,7 +107,9 @@ export function usePermissionMode(): PermissionModeHook {
     const operationGeneration = generation.current;
     const expectedVersion = settingsRef.current.permission_version;
     void (async () => {
-      const current = await wsRequest<{ mode?: unknown; version?: number; error?: string }>(
+      // A confirmed version is sufficient for the atomic update. Send it now,
+      // without delaying the change behind another settings read.
+      const current = expectedVersion !== undefined ? { version: expectedVersion } : await wsRequest<{ mode?: unknown; version?: number; error?: string }>(
         "set_permission", { session_id: sid }, "permission_changed", { requestId: true },
       );
       if (operationGeneration !== generation.current) return;
@@ -121,7 +121,6 @@ export function usePermissionMode(): PermissionModeHook {
         setError(text("Could not read permission settings. Reconnect and retry.", "无法读取权限设置，请重新连接后重试。"));
         return;
       }
-      known.current = true;
       const result = await wsRequest<{ mode?: unknown; version?: unknown; error?: string }>(
         "set_permission", { session_id: sid, mode: m, expected_version: expectedVersion ?? current.version },
         "permission_changed", { requestId: true },

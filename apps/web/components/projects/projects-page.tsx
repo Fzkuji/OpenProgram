@@ -6,7 +6,7 @@
  * Info 元数据）。同页切换，不跳路由。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, FolderSearch } from "lucide-react";
 
 import fx from "@/components/functions/functions-page.module.css";
@@ -18,11 +18,13 @@ import { useTranslation } from "@/lib/i18n";
 import { FoldersIcon, FolderPlusIcon } from "@/components/animated-icons";
 import { wsRequest } from "@/lib/net/ws-request";
 import { formatRelativeTime } from "@/lib/format-utils/format";
+import { ProjectEditor, type EditableProject } from "@/components/sidebar/project-editor";
+import { Button } from "@/components/ui/button";
 import { PermissionsSection } from "./permissions-section";
 import { ProjectConfigSection } from "./project-config-section";
 import { pushPath } from "@/lib/shallow-nav";
 
-interface Project {
+interface Project extends EditableProject {
   id: string;
   name: string;
   path: string;
@@ -55,10 +57,12 @@ export function ProjectsPage({
 } = {}) {
   const { text, locale } = useTranslation();
   const router = useRouter();
+  const requestedProject = useSearchParams()?.get("project");
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("settings");
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [localQuery, setLocalQuery] = useState("");
   const { pickFolder, folderPickerDialog } = useFolderPicker();
@@ -86,6 +90,8 @@ export function ProjectsPage({
     refresh();
     return () => window.removeEventListener("project-changed", onChanged);
   }, [refresh]);
+
+  useEffect(() => { if (requestedProject) setSelectedId(requestedProject); }, [requestedProject]);
 
   const selected = useMemo(
     () => projects.find((p) => p.id === selectedId) || null,
@@ -147,6 +153,7 @@ export function ProjectsPage({
   const view = (
       <div className={fx.view} style={embedded ? { flex: 1, minHeight: 0, height: "auto" } : undefined}>
         {folderPickerDialog}
+        {editing && selected && <ProjectEditor key={selected.id} project={selected} onClose={()=>setEditing(false)} onSaved={updated=>setProjects(items=>items.map(item=>item.id===updated.id?{...item,...updated}:item))}/>}
         {(!embedded || queryProp === undefined) && (
           <div className={fx.topbar}>
             {!embedded && <span className={fx.title}>{text("Projects", "项目")}</span>}
@@ -174,7 +181,7 @@ export function ProjectsPage({
                 className={cls(fx.profileItem, p.id === selectedId && fx.active)}
                 onClick={() => setSelectedId(p.id)}
               >
-                <span className={fx.profileIcon}><FoldersIcon size={16} /></span>
+                <span className={fx.profileIcon}>{p.icon || <FoldersIcon size={16} />}</span>
                 <span className={fx.profileName}>{p.name}</span>
                 {p.path_missing && (
                   <AlertTriangle
@@ -184,6 +191,7 @@ export function ProjectsPage({
                     aria-label={text("Folder missing", "目录缺失")}
                   />
                 )}
+                {p.hidden && <span className={styles.badge}>{text("Hidden", "已隐藏")}</span>}
                 {p.is_default && <span className={styles.badge}>{text("Default", "默认")}</span>}
               </div>
             ))}
@@ -206,6 +214,8 @@ export function ProjectsPage({
                 <div className={styles.detailHead}>
                   <span className={styles.detailTitle}>{selected.name}</span>
                   <span className={styles.detailPath}>{selected.path}</span>
+                  {selected.hidden&&<Button variant="outline" onClick={async()=>{try{const result=await wsRequest<{ok:boolean;error?:string}>("restore_project",{project_id:selected.id},"restore_project_result");if(!result?.ok)throw new Error(result?.error||"Could not restore project");await refresh();window.dispatchEvent(new Event("project-changed"));}catch(err){setError(String(err));}}}>{text("Restore to sidebar", "恢复到侧边栏")}</Button>}
+                  <Button variant="outline" onClick={()=>setEditing(true)}>{text("Edit project", "编辑项目")}</Button>
                 </div>
                 {selected.path_missing && (
                   <div

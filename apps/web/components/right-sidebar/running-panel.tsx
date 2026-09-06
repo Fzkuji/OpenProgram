@@ -10,7 +10,6 @@ import { ChevronRight, Bot, Terminal } from "lucide-react";
 import { SectionHeader } from "@/components/sidebar/section-header";
 import { Button } from "@/components/ui/button";
 import { DebuggerPanel } from "./debugger-panel";
-import { ActivityRefreshButton } from "./activity-refresh-button";
 import { SidebarNotice } from "./sidebar-notice";
 import { executionTitle, executionRequest, statusLabel, shortTime, updatedTime } from "./debugger-presentation";
 import styles from "./running-panel.module.css";
@@ -38,10 +37,6 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   }[item.status] as [string, string] || [item.status, item.status]));
   const stale = processes.stale || state.connection.state !== "connected";
   const hasRead = Boolean(state.fetchedAt) || processes.loaded;
-  const refresh = async () => {
-    const results = await Promise.all([state.refresh(), processes.refresh()]);
-    return results.every(Boolean);
-  };
   const byExecution = new Map<string, ManagedProcess[]>();
   const unassigned: ManagedProcess[] = [];
   const ids = new Set(state.executions.map(item => item.execution_id));
@@ -122,13 +117,13 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
     <DebuggerPanel key={state.selectedExecutionId || "empty"} {...state} detailOnly
       onSelectExecution={state.selectExecution} onCommand={state.command} onRespondWait={state.respondWait}
       onCreateDraft={async input => { await state.createDraft(input); }} onUpdateDraft={state.updateDraft}
-      onDraftAction={state.draftAction} onRefresh={refresh} />
+      onDraftAction={state.draftAction} />
   </div>;
   if (selection) {
     const item = processes.detail?.process.id === selection ? processes.detail.process : null;
     return <div className={styles.panel}>
-      <div className={styles.toolbar}>{back}<ActivityRefreshButton key={selection} onRefresh={processes.refresh} label={text("Refresh program", "刷新程序")} /></div>
-      {processes.stale && item && <SidebarNotice>{text("Could not refresh this program. Showing the last saved result.", "无法刷新此程序，当前显示上次读取的记录。")}</SidebarNotice>}
+      <div className={styles.toolbar}>{back}</div>
+      {processes.stale && item && <SidebarNotice>{text("Program updates are unavailable. Showing saved results and retrying automatically.", "程序更新暂时不可用，保留上次记录并自动重试。")}</SidebarNotice>}
       {!item ? <SidebarNotice>{processes.stale ? text("Program details unavailable.", "暂时无法读取程序详情。") : text("Loading program…", "正在读取程序…")}</SidebarNotice> : <div className={styles.scroll}>
         <h3 className={styles.title}>{programName(item)}</h3><p className={styles.meta}>{processStatus(item)}</p>{item.status === "unknown" && <p className={styles.notice}>{text("The process supervisor is unavailable. This program is not confirmed to have exited; its record is retained.", "程序监督进程不可用，尚不能确认程序已退出，记录仍然保留。")}</p>}
         {item.execution_id && ids.has(item.execution_id) && <Button variant="ghost" className={styles.row} onClick={() => { state.selectExecution(item.execution_id!); setSelection("agent"); }}>
@@ -146,7 +141,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
         {processIsActive(item) && <Button variant="destructive" disabled={stopPending || processes.stale || item.can_stop === false} onClick={async () => {
           setStopPending(true); setStopError(null);
           try { await stopProcess(item.id, sessionId); processes.refresh(); }
-          catch { setStopError(text("Could not stop the program. Refresh its status and try again.", "未能停止程序，请刷新状态后重试。")); }
+          catch { setStopError(text("Could not stop the program. Its status will update automatically; try again once it is available.", "未能停止程序，状态将自动更新，恢复后可重试。")); }
           finally { setStopPending(false); }
         }}>{stopPending ? text("Stopping…", "正在停止…") : text("Stop program", "停止程序")}</Button>}
         {stopError && <p role="alert" className={styles.error}>{stopError}</p>}
@@ -160,18 +155,15 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   const attention = roots.filter(item => needsAttention(item));
   const working = roots.filter(item => !needsAttention(item) && hasActive(item));
   const history = roots.filter(item => !needsAttention(item) && !hasActive(item));
-  const refreshButton = <ActivityRefreshButton className={styles.refresh} onRefresh={refresh} label={text("Refresh activity", "刷新运行记录")} />;
-  const firstGroup = attention.length ? attention : working.length ? working : history;
   const section = (name: string, items: ExecutionSnapshot[], historical = false) => items.length > 0 && <div className="group/sec">
-    <SectionHeader name={name} className={styles.sectionHeader} collapsible={historical} collapsed={!historyOpen} onToggle={() => setHistoryOpen(value => !value)} actions={<><span className={styles.count}>{items.length}</span>{items === firstGroup && refreshButton}</>} />
+    <SectionHeader name={name} className={styles.sectionHeader} collapsible={historical} collapsed={!historyOpen} onToggle={() => setHistoryOpen(value => !value)} actions={<><span className={styles.count}>{items.length}</span></>} />
     {(!historical || historyOpen) && items.map(item => agentRow(item))}
   </div>;
   return <section className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")}>
     {stale && (hasRead || processes.stale || state.connection.state === "stale") && <p role="status" className={styles.notice}>{hasRead
-      ? text("Some statuses could not be refreshed. Showing the last saved records.", "部分状态暂时无法刷新，当前显示上次读取的记录。")
-      : text("Could not load activity. Refresh to try again.", "无法读取运行记录，请刷新重试。")}</p>}
+      ? text("Some statuses are unavailable. Showing saved records and retrying automatically.", "部分状态暂时不可用，保留上次记录并自动重试。")
+      : text("Could not load activity. Retrying automatically.", "无法读取运行记录，正在自动重试。")}</p>}
     <div className={styles.scroll}>
-      {roots.length === 0 && <div className={styles.emptyTools}>{refreshButton}</div>}
       {!hasRead && !processes.stale && state.connection.state === "reconnecting" ? <SidebarNotice>{text("Loading…", "加载中…")}</SidebarNotice> : null}
       {section(text("Needs attention", "需要处理"), attention)}
       {section(text("In progress", "正在进行"), working)}

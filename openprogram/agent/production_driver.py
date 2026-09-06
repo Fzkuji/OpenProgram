@@ -17,6 +17,7 @@ import logging
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from concurrent.futures import Future
 from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from types import SimpleNamespace
@@ -966,6 +967,44 @@ class AgentProductionDriver:
             # without deepcopy, which cannot pickle MappingProxyType values.
             steer_queue = [_json_safe(item) for item in steer_inputs]
             steer_consumed_ids: set[str] = set()
+
+            @contextmanager
+            def persist_steer(command_id: str, message_id: str):
+                # Serialize delivery with terminal closure. The session write is
+                # idempotent; closure can recover it if this SQL commit fails.
+                with self.executions._transaction() as connection:
+                    attempts = self._control_service().attempts
+                    owner = attempts._require(connection, attempt.attempt_id)
+                    execution = self.executions._require_execution(connection, attempt.execution_id)
+                    attempts._validate_generation(owner, attempt.generation)
+                    attempts._validate_lease(owner, attempts._clock())
+                    attempts._validate_owner(execution, owner, execution.status_version)
+                    if owner.status is not AttemptStatus.ACTIVE:
+                        raise AgentDriverError("stale_owner", "steering requires an active attempt")
+                    command = self.executions._get_command(connection, command_id)
+                    if (
+                        command is None
+                        or command.execution_id != attempt.execution_id
+                        or command.kind is not CommandKind.STEER
+                        or command.status not in {
+                            CommandStatus.ACCEPTED, CommandStatus.APPLYING, CommandStatus.APPLIED,
+                        }
+                    ):
+                        raise AgentDriverError("steer_closed", "steering delivery is no longer pending")
+                    if command.status is CommandStatus.ACCEPTED:
+                        command = self.executions._transition_command(
+                            connection, command_id,
+                            expected_status=CommandStatus.ACCEPTED,
+                            target=CommandStatus.APPLYING,
+                        )
+                    yield
+                    if command.status is CommandStatus.APPLYING:
+                        self.executions._transition_command(
+                            connection, command_id,
+                            expected_status=CommandStatus.APPLYING,
+                            target=CommandStatus.APPLIED,
+                            receipt={"user_message_id": message_id},
+                        )
             if continuation is not None:
                 from openprogram.agent.dispatcher import process_agent_continuation
 
@@ -979,6 +1018,7 @@ class AgentProductionDriver:
                     "canonical_execution": True,
                     "steer_inputs": steer_queue,
                     "steer_consumed_ids": steer_consumed_ids,
+                    "persist_steer": persist_steer,
                 }
                 if getattr(request, "_job_context", None) is not None:
                     execution_context["job_context"] = copy.deepcopy(request._job_context)
@@ -1031,6 +1071,7 @@ class AgentProductionDriver:
                             "canonical_execution": True,
                             "steer_inputs": steer_queue,
                             "steer_consumed_ids": steer_consumed_ids,
+                            "persist_steer": persist_steer,
                         }
                         if getattr(request, "_job_context", None) is not None:
                             runner_kwargs["execution_context"]["job_context"] = copy.deepcopy(request._job_context)
@@ -1553,7 +1594,9 @@ class AgentProductionDriver:
                 for applied in completion.applied_commands:
                     if applied.kind is not CommandKind.STEER:
                         continue
-                    if applied.command_id in consumed:
+                    if applied.command_id in consumed or any(
+                        item.get("command_id") == applied.command_id for item in steer_queue
+                    ):
                         continue
                     message = applied.payload.get("message")
                     if isinstance(message, str) and message.strip():

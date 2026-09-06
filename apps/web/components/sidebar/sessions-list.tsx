@@ -25,18 +25,18 @@
  * reads) for instant feedback before the server's echo lands.
  */
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, Pin } from "lucide-react";
 import { useCurrentSessionId } from "./use-window-globals";
 import { useSessionStore } from "@/lib/session-store";
 import type { ConvSummary } from "@/lib/session-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { useTranslation } from "@/lib/i18n";
 import { activateOnKey } from "@/lib/utils";
-import { useRecentsView } from "@/lib/prefs/recents-view";
+import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
 import { wsRequest } from "@/lib/net/ws-request";
-import { projectGroups } from "@/lib/project-groups";
+import { projectGroups, moveProject, filterProjectItems } from "@/lib/project-groups";
 import {
   Popover,
   PopoverAnchor,
@@ -56,6 +56,9 @@ import {
 } from "./nav-classes";
 import styles from "./sidebar.module.css";
 
+import { ProjectMenu, ProjectSectionHeading } from "./project-menu";
+import type { EditableProject } from "./project-editor";
+import { useProjectDrag } from "./sessions-list/use-project-drag";
 import { ConfirmDialog } from "./sessions-list/confirm-dialog";
 import { pushPath } from "@/lib/shallow-nav";
 import { runtimeState } from "@/lib/runtime-bridge/state";
@@ -76,7 +79,7 @@ import {
 /** One registry project as `projects_list` ships it (Group-by → Project
  *  mode only). `session_ids` is alive-filtered server-side (same filter
  *  as `session_count`). */
-interface SidebarProject {
+interface SidebarProject extends EditableProject {
   id: string;
   name: string;
   path: string;
@@ -115,6 +118,8 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   /* ---- project mode (Group-by → Project): registry-backed tree ---- */
 
   const projectMode = view.groupBy === "project";
+  const [orderNotice, setOrderNotice] = useState("");
+  const { draggingProject, projectDrop, headerProps } = useProjectDrag(projectMode, reorderProject);
 
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const refreshProjects = useCallback(async (): Promise<boolean> => {
@@ -130,7 +135,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     return false;
   }, []);
 
-  // The registry fetch only runs while Group-by is set to Project. It
+  // The registry supplies both project grouping and stable-ID filtering. It
   // re-runs when the session SET changes (create / delete — also what a
   // WS reconnect's list_sessions replay produces), since the registry's
   // reverse index may have gained/lost bindings; `project-changed`
@@ -139,7 +144,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // same pattern as the topbar ProjectBadge.
   const convIdsKey = Object.keys(conversations).sort().join(",");
   useEffect(() => {
-    if (!projectMode) return;
     let cancelled = false;
     let tries = 0;
     const attempt = () => {
@@ -346,27 +350,24 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
       const cutoff = nowTs - days * 86400;
       arr = arr.filter((c) => (c.updated_at || c.created_at || 0) >= cutoff);
     }
-    // Project filter — each conv carries a project NAME (home-folder
-    // name for ad-hoc chats), so "All projects" shows everything and a
-    // specific pick narrows to that folder's chats. (Environment is
-    // still UI-only — no per-conversation environment field yet.)
+    // Match registry membership by ID so renaming a project preserves the filter.
     if (view.project && view.project !== "all") {
-      arr = arr.filter((c) => c.project === view.project);
+      arr = filterProjectItems(projects, arr, view.project);
     }
     const cmp = (a: LegacyConv, b: LegacyConv) => {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       if (view.sort === "title") {
-        return labelFor(a, "").localeCompare(labelFor(b, ""));
+        return labelFor(a, "").localeCompare(labelFor(b, "")) * (view.sortDirection === "asc" ? 1 : -1);
       }
       // "created" 按创建时间；"recency" 按最后活跃（updated_at，随消息
       // 追加更新），老行缺 updated_at 时退回 created_at。缺失时间戳一律
       // 按 0（最旧）处理，不能退回 nowTs——否则 null 时间戳的老行会压过
       // 刚建的会话。
       if (view.sort === "created") {
-        return (b.created_at || 0) - (a.created_at || 0);
+        return ((b.created_at || 0) - (a.created_at || 0)) * (view.sortDirection === "asc" ? -1 : 1);
       }
-      return (b.updated_at || b.created_at || 0)
-        - (a.updated_at || a.created_at || 0);
+      return ((b.updated_at || b.created_at || 0)
+        - (a.updated_at || a.created_at || 0)) * (view.sortDirection === "asc" ? -1 : 1);
     };
     return [...arr].sort(cmp);
   })();
@@ -390,7 +391,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
 
   // Any narrowing filter active → matched-only view: groups auto-expand
   // around their matches. (status "all" widens, so it doesn't count;
-  // "archived" narrows.) Empty project groups are always hidden.
+  // "archived" narrows.) Empty projects are hidden only while filtering.
   const filtering =
     view.status === "archived" ||
     view.lastActivity !== "all" ||
@@ -400,9 +401,29 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // inputs (visible, projects) change together anyway. Sessions with no
   // explicit project claim belong to the DEFAULT project (the backend's
   // project_for_session falls back to it) — there is no separate
-  // "Ungrouped" bucket in this mode. Group order is fixed: default first,
-  // then project name; session order remains the order from `visible`.
-  const groupedProjects = projectMode ? projectGroups(projects, visible) : [];
+  // "Ungrouped" bucket in this mode. Manual project order does not alter
+  // membership or the session order from `visible`.
+  const projectSection = (id: string) => view.pinnedProjects.includes(id) ? "__pinned__" : (view.projectSectionNames.includes(view.projectSections[id]) ? view.projectSections[id] : "");
+  const sectionOrder = ["__pinned__", ...view.projectSectionNames, ""];
+  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, activityItems: convArr, includeEmpty: !filtering })
+    .sort((a,b) => sectionOrder.indexOf(projectSection(a.key)) - sectionOrder.indexOf(projectSection(b.key))) : [];
+  function reorderProject(source: string, target: string, side: "before" | "after") {
+    // Include hidden/empty projects so filtering cannot discard their position.
+    const displayed = projectGroups(projects, convArr, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, includeEmpty: true, includeHidden: true }).map(g => g.key);
+    const fallback = [...projects].sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name));
+    const ids = new Set(projects.map((p) => p.id));
+    const order = [...new Set([...displayed, ...view.projectOrder.filter((id) => ids.has(id)), ...fallback.map((p) => p.id)])];
+    if (source === target || !ids.has(source) || !ids.has(target)) return;
+    try {
+      setRecentsView({ projectSort: "manual", projectOrder: moveProject(order, source, target, side),
+        pinnedProjects: view.pinnedProjects.includes(target) ? [...new Set([...view.pinnedProjects,source])] : view.pinnedProjects.filter(id=>id!==source),
+        projectSections: view.pinnedProjects.includes(target) ? view.projectSections : {...view.projectSections,[source]:view.projectSections[target]||""},
+      });
+      setOrderNotice(text("Project order saved", "项目顺序已保存"));
+    } catch {
+      setOrderNotice(text("Order changed, but could not be saved on this device", "顺序已更改，但无法保存在此设备上"));
+    }
+  }
 
   const renderRow = (c: LegacyConv) => {
     const label = labelFor(c, t("sidebar.untitled"));
@@ -437,6 +458,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     : buildSections(visible, {
         groupBy: view.groupBy,
         sort: view.sort,
+        sortDirection: view.sortDirection,
         nowTs,
         locale,
         isWorking,
@@ -476,18 +498,42 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
         collapsible
         collapsed={projectsFolded}
         onToggle={() => toggleGroupCollapse(PROJECTS_SECTION_KEY)}
-        actions={<RecentsFilter />}
+        actions={<RecentsFilter projects={projects} />}
       />
       {projectsFolded ? null : projects.length === 0
         ? // projects_list hasn't answered yet (the registry always holds
           // at least the default project) — render a flat run instead of
           // flashing everything under a wrong group.
           visible.map(renderRow)
-        : groupedProjects.map((g) => {
+        : groupedProjects.map((g, groupIndex) => {
             const expanded = filtering ? true : !collapsedProjects.has(g.key);
+            const project = projects.find(project=>project.id===g.key)!;
+            const section = projectSection(g.key);
+            const sectionStart = groupIndex === 0 || projectSection(groupedProjects[groupIndex-1].key) !== section;
             return (
-              <div key={g.key} className="flex flex-col gap-px">
-                <ProjectGroupHeader
+              <Fragment key={g.key}>
+              {sectionStart && (section || view.pinnedProjects.length || view.projectSectionNames.length) ? <ProjectSectionHeading section={section}/> : null}
+              <div data-project-id={g.key}
+                className={`${styles.projectGroup} flex flex-col gap-px`}
+                data-drop={projectDrop?.id === g.key ? projectDrop.side : undefined}
+                data-dragging={draggingProject?.id === g.key || undefined}
+              >
+                <ProjectMenu project={project}
+                  onOpen={()=>{router.push(`/projects?project=${encodeURIComponent(g.key)}`);}}
+                  onNewSession={()=>newSessionInProject(g.key)}
+                  onSaved={updated=>setProjects(items=>items.map(item=>item.id===updated.id?{...item,...updated}:item))}>
+                {menuTrigger=><ProjectGroupHeader
+                  menuTrigger={menuTrigger}
+                  icon={project.icon}
+                  dragProps={headerProps(g.key)}
+                  pinned={view.pinnedProjects.includes(g.key)}
+                  pinTitle={view.pinnedProjects.includes(g.key) ? text("Unpin project", "取消置顶项目") : text("Pin project", "置顶项目")}
+                  onTogglePin={() => setRecentsView({ pinnedProjects: view.pinnedProjects.includes(g.key) ? view.pinnedProjects.filter(id => id !== g.key) : [...view.pinnedProjects, g.key] })}
+                  onMove={(direction) => {
+                    const target = groupedProjects[groupIndex + direction];
+                    if (target) reorderProject(g.key, target.key, direction < 0 ? "before" : "after");
+                  }}
+                  reorderHint={text("Drag to reorder; Alt+Up/Down to move", "拖动排序；Alt+上下方向键移动")}
                   name={g.name}
                   path={g.path}
                   collapsed={!expanded}
@@ -497,7 +543,8 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
                     "New session in this project",
                     "在此项目新建会话",
                   )}
-                />
+                />}
+                </ProjectMenu>
                 {expanded && g.items.length > 0 ? (
                   // Level-2 block: dense 28px rows + the 1px vertical
                   // guide at x=16px (see .projectKids in the module CSS).
@@ -506,8 +553,10 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
                   </div>
                 ) : null}
               </div>
+              </Fragment>
             );
           })}
+      {!projectsFolded && view.projectSectionNames.filter(section=>!groupedProjects.some(group=>projectSection(group.key)===section)).map(section=><ProjectSectionHeading key={section} section={section}/>)}
       {filtering && projects.length > 0 && groupedProjects.length === 0 ? (
         <div className="px-[16px] py-[10px] text-[12px] text-[var(--text-muted)]">
           {text("No matches", "没有匹配的会话")}
@@ -527,11 +576,11 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
           collapsible={false}
           collapsed={false}
           onToggle={() => {}}
-          actions={<RecentsFilter />}
+          actions={<RecentsFilter projects={projects} />}
         />
       ) : !firstHasHeader ? (
         <div className="flex h-[24px] items-center justify-end px-[8px]">
-          <RecentsFilter />
+          <RecentsFilter projects={projects} />
         </div>
       ) : null}
       {sections.map((sec, i) =>
@@ -547,7 +596,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
               collapsible={collapsible}
               collapsed={collapsedGroups.has(sec.key)}
               onToggle={() => toggleGroupCollapse(sec.key)}
-              actions={i === 0 ? <RecentsFilter /> : undefined}
+              actions={i === 0 ? <RecentsFilter projects={projects} /> : undefined}
             />
             {(!collapsible || !collapsedGroups.has(sec.key)) &&
               sec.items.map(renderRow)}
@@ -560,6 +609,13 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   return (
     <>
       {body}
+      {draggingProject ? (
+        <div aria-hidden="true" className={styles.projectDragPreview}
+          style={{ left: draggingProject.x + 12, top: draggingProject.y + 12 }}>
+          {projects.find(project => project.id === draggingProject.id)?.name}
+        </div>
+      ) : null}
+      <span className="sr-only" role="status" aria-live="polite">{orderNotice}</span>
       {/* "Clear all" only when there are conversations to clear — an
           empty list shows just the "No conversations yet" header. It
           folds away with the Projects section: a folded section leaves
@@ -613,6 +669,7 @@ interface Section {
 interface SectionOpts {
   groupBy: "none" | "state" | "project" | "flat";
   sort: "recency" | "created" | "title";
+  sortDirection: "asc" | "desc";
   nowTs: number;
   locale: string;
   isWorking: (id: string) => boolean;
@@ -675,7 +732,7 @@ function buildSections(visible: LegacyConv[], o: SectionOpts): Section[] {
   }
   const out: Section[] = [];
   if (pinned.length) out.push({ key: "pinned", label: o.labels.pinned, items: pinned });
-  const sorted = Array.from(buckets.values()).sort((a, b) => a.key.localeCompare(b.key));
+  const sorted = Array.from(buckets.values()).sort((a, b) => a.key.localeCompare(b.key) * (o.sortDirection === "asc" ? -1 : 1));
   out.push(...sorted);
   return out;
 }
@@ -694,6 +751,10 @@ function ProjectGroupHeader({
   onToggle,
   onNewSession,
   newSessionTitle,
+  dragProps,
+  onMove,
+  reorderHint,
+  pinned, pinTitle, onTogglePin, icon, menuTrigger,
 }: {
   name: string;
   path: string;
@@ -701,24 +762,48 @@ function ProjectGroupHeader({
   onToggle: () => void;
   onNewSession: () => void;
   newSessionTitle: string;
+  dragProps: React.HTMLAttributes<HTMLDivElement>;
+  onMove: (direction: -1 | 1) => void;
+  reorderHint: string;
+  icon?: string;
+  menuTrigger: React.ReactNode;
+  pinned: boolean;
+  pinTitle: string;
+  onTogglePin: () => void;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
-      className={sidebarNavItemClass + " select-none"}
+      {...dragProps}
+      className={sidebarNavItemClass + " select-none cursor-grab active:cursor-grabbing"}
       role="button"
       tabIndex={0}
       aria-expanded={!collapsed}
-      title={path || undefined}
-      onClick={onToggle}
-      onKeyDown={activateOnKey(onToggle)}
+      title={[path, reorderHint].filter(Boolean).join("\n")}
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+      onClick={(event) => {
+        dragProps.onClick?.(event);
+        if (!event.defaultPrevented) onToggle();
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+          event.preventDefault();
+          onMove(event.key === "ArrowUp" ? -1 : 1);
+        } else activateOnKey(onToggle)(event);
+      }}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
       <span className={sidebarNavIconClass}>
-        <FoldersIcon ref={iconRef} size={20} />
+        {icon ? <span className="truncate" aria-hidden="true">{icon}</span> : <FoldersIcon ref={iconRef} size={20} />}
       </span>
       <span className={sidebarNavLabelClass}>{name}</span>
+      <button type="button" aria-label={pinTitle} title={pinTitle} aria-pressed={pinned}
+        onClick={event => { event.stopPropagation(); onTogglePin(); }}
+        className={`shrink-0 rounded p-1 hover:bg-bg-hover ${pinned ? "text-text-bright" : "text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
+        <Pin size={13} fill={pinned ? "currentColor" : "none"} />
+      </button>
       <button
         type="button"
         title={newSessionTitle}
@@ -733,6 +818,7 @@ function ProjectGroupHeader({
       >
         <Plus size={14} strokeWidth={2} />
       </button>
+      {menuTrigger}
       <ChevronRight
         size={12}
         aria-hidden="true"

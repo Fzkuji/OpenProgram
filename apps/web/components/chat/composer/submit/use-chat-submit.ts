@@ -114,7 +114,7 @@ export function useChatSubmit({
     }
     // During a run every plain-text send first gets one retained queue row.
     // Queue mode leaves it there; steer mode marks that same row injecting
-    // until steer_ack either accepts it or releases it back to normal drain.
+    // until the durable command receipt accepts it or releases it for normal drain.
     // (Plain text only — attachments / slash go through the normal path,
     // which is disabled while running.)
     if (isRunning) {

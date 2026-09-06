@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenProgram · 聊天发送队列可靠性</title>
+<title>OpenProgram · Queue and steering</title>
 <style>
   :root { color-scheme:dark; --bg:#11141a; --panel:#181d26; --panel2:#202735;
     --line:#303a4a; --text:#dce3ec; --muted:#96a1b1; --blue:#72a8ff;
@@ -32,88 +32,15 @@
 </style>
 </head>
 <body><main>
-  <p class="eyebrow">OpenProgram / Web UI / Runtime contract</p>
-  <h1>聊天发送队列可靠性设计</h1>
-  <p class="sub">基线：<code>b6460fdcb67b6b12843491490968696a5438d4d6</code>。本页定义用户在 turn 运行期间提交下一条普通文本消息时，浏览器队列、WebSocket 和后端 session 独占之间的合同，并记录实现与验证状态。</p>
-
-  <div class="lead"><b>确定方案。</b> 每个 session 的运行中消息模式为 <code>queue</code>（默认）或 <code>steer</code>。queue 保持 renderer 内存态并沿用既有 FIFO；steer 通过 session 文件 inbox 在 agent-loop checkpoint 注入当前 turn，注入时立即写入带 <code>steering: true</code> 标记的 user node。服务端拒绝已结束 turn 的 steer；turn 收尾把尚未消费的 steer 按 FIFO 作为后续普通 turn 输入。goal/workflow 使用自己的 loop，不接入普通 chat 的消费器。</div>
-
-  <h2>01 · 目标与边界</h2>
-  <div class="grid">
-    <section class="card"><h3>必须保证</h3><ul>
-      <li>同一 session 同时最多发送一个队首。</li><li>重复 clear 不会发送后续项。</li>
-      <li>断线前未成功写出的项留在队首。</li><li><code>run_active</code> 拒绝不会产生错误气泡或丢失文本。</li>
-    </ul></section>
-    <section class="card"><h3>产品边界</h3><ul>
-      <li>队列不写磁盘，页面刷新会清除未发送项。</li><li>队列只处理普通纯文本 turn。</li>
-      <li>slash、fn-form、附件继续使用各自入口。</li><li>不同窗口各自持有其提交的队列和 session mode。</li>
-    </ul></section>
-    <section class="card"><h3>不引入</h3><ul>
-      <li>不恢复已删除的 v2 <code>MessageStore</code>。</li><li>不增加 broker、数据库表或新依赖。</li>
-      <li>不把 queued message 提前写进服务端 transcript。</li><li>不修改 goal/workflow 的 loop 或消费语义。</li>
-    </ul></section>
-  </div>
-
-  <h2>02 · 状态与顺序</h2>
-  <div class="diagram"><div class="flow">
-    <div class="state">queued<br><span class="small">队列中可撤回</span></div><span class="arrow">→ idle + drain</span>
-    <div class="state">socket write<br><span class="small">队首暂时移出队列</span></div><span class="arrow">→ success</span>
-    <div class="state">optimistic running<br><span class="small">阻止第二次 drain</span></div><span class="arrow">→ ACK / running_task</span>
-    <div class="state">server running<br><span class="small">服务端状态接管</span></div><span class="arrow">→ clear</span>
-    <div class="state">next queued<br><span class="small">仅发送下一条</span></div>
-  </div></div>
-  <p>socket write 失败时，队首放回原位置且不进入 running。<code>run_active</code> 表示服务端已有 turn：被拒绝的普通发送放回队首，当前 session 保持 running，等待真实 clear。普通本地 idle→idle 更新不是 drain 信号；服务端 <code>running_task_clear</code> 是权威完成事件，即使 UI 已因 stop 乐观显示 idle，也必须尝试 drain。</p>
-  <p>steer 路径先把该项标为 <code>injecting</code>，按 request id 等待 <code>steer_ack</code>。<code>accepted</code> 后移除临时 queued row，服务端持久化的 user message 接管显示；<code>not_running</code> 解除 injecting 并沿用普通 queue/drain；超时保留原 queued row。agent loop 每次只消费一条 steer。消费时写入 user node，并把当前 assistant placeholder 的 predecessor 指向最新 steer node；turn 收尾取走剩余 inbox 项并依次启动后续普通 turn。</p>
-
-  <h2>03 · 组件职责</h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>组件</th><th>唯一职责</th><th>禁止行为</th></tr></thead><tbody>
-      <tr><td><code>state/send-queue.ts</code></td><td>FIFO、按 session 隔离、发送失败恢复队首。</td><td>不判断服务端权威状态，不持久化 transcript。</td></tr>
-      <tr><td><code>composer/submit/send-chat-message.ts</code></td><td>写 WebSocket；成功后立即设置该 session 的 optimistic running。</td><td>不得在同一 session 已有 provisional send 时把第二条视为成功。</td></tr>
-      <tr><td><code>session-store</code></td><td>running→idle 转换触发 drain；服务端真实 clear 可显式重试 drain。</td><td>普通 idle→idle 更新不得触发 drain。</td></tr>
-      <tr><td><code>use-ws.ts</code></td><td>连接恢复后，当前 session 通过 <code>load_session</code> 恢复；后台队列通过无焦点副作用的 <code>get_run_state</code> 查询状态。</td><td>不得在未知 run 状态下直接发送队列，也不得为后台队列改变 socket 的 focused session。</td></tr>
-      <tr><td><code>ws_actions/chat.py</code></td><td>原子占用 session，成功者才能写 user message 和启动 turn。</td><td>不得把“检查”和“占用”分成可并发穿过的两个阶段。</td></tr>
-      <tr><td><code>ws_actions/runtime.py</code></td><td>仅在 session 仍运行时接受 steer，并返回 request-correlated 结果。</td><td>不得对已结束或无法写入的消息返回成功。</td></tr>
-      <tr><td><code>agent/dispatcher/loop_runner.py</code></td><td>普通 chat 消费一条 steer、注入 agent loop 并同步持久化 conversation chain。</td><td>不得让 <code>agent_spawn</code> 或 goal/workflow 消费普通 chat steer。</td></tr>
-    </tbody></table></div>
-
-  <h2>04 · 附件、断线与失败语义</h2>
-  <ul>
-    <li><b>附件：</b>运行期间若 composer 含图片或文档，提交动作不入队、不清空文字、不清空附件；界面维持草稿，等待当前 turn 完成后正常发送。</li>
-    <li><b>写入前断线：</b><code>sendChatMessage</code> 返回 false，队首恢复；连接恢复且 session 确认 idle 后重试。</li>
-    <li><b>写入后断线：</b>本设计沿用 WebSocket 已写出即由服务端处理的现有合同；队首已经从浏览器队列移除。可靠跨进程投递与持久化幂等键不在本次范围。</li>
-    <li><b>服务端拒绝：</b><code>run_active</code> 携带原文本，前端放回队首；其他错误仍按普通 turn 错误显示。</li>
-    <li><b>停止并立即发送：</b>目标项移到队首并发送 stop；optimistic clear 只更新 UI，不发送队首。收到服务端真实 clear 后才 drain，后端仍以原子占用为最终保护。</li>
-  </ul>
-  <div class="note">队列不是持久消息系统。它保证当前 renderer 生命周期内不因重复状态事件、已知 socket 写失败或服务端忙拒绝而丢失文本；页面刷新和已成功写入但 ACK 丢失仍遵循现有非持久边界。</div>
-
-  <h2>05 · 验证合同</h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th>场景</th><th>预期</th><th>状态</th></tr></thead><tbody>
-      <tr><td>两条排队消息 + 两次连续 clear</td><td>只发送第一条，第二条保留。</td><td><span class="pill ok">已验证</span></td></tr>
-      <tr><td>停止并立即发送 + optimistic idle + 服务端真实 clear</td><td>stop 后不提前发送；真实 clear 到达时发送置顶项一次。</td><td><span class="pill ok">已验证</span></td></tr>
-      <tr><td>第一条 ACK 后运行结束</td><td>第二条才发送。</td><td><span class="pill ok">已验证</span></td></tr>
-      <tr><td>socket 写失败后重连</td><td>消息留在队首，确认 idle 后发送。</td><td><span class="pill ok">已验证</span></td></tr>
-      <tr><td>运行中带附件提交</td><td>不排队、不清空草稿。</td><td><span class="pill ok">已验证</span></td></tr>
-      <tr><td>两个 WebSocket 同时提交同一 session</td><td>一个取得占用，另一个收到 <code>run_active</code>；reservation 在 runtime 接管前始终有效。</td><td><span class="pill ok">已验证</span></td></tr>
-      <tr><td>现有 FIFO、撤回、置顶、跨 session 隔离</td><td>行为保持。</td><td><span class="pill ok">已有检查</span></td></tr>
-      <tr><td>运行中 steer</td><td>下一 checkpoint 注入当前 turn，user node 带 steering 标记，reload 后仍可见。</td><td><span class="pill ok">已验证</span></td></tr>
-      <tr><td>turn 已结束时 steer</td><td>ACK 为 <code>not_running</code>，前端回退到普通 queue/drain。</td><td><span class="pill ok">已验证</span></td></tr>
-      <tr><td>turn 收尾仍有 inbox 项</td><td>文件被清除，消息按 FIFO 成为后续普通 turn 输入。</td><td><span class="pill ok">已验证</span></td></tr>
-    </tbody></table></div>
-
-  <h2>06 · 实现记录</h2>
-  <p><span class="pill ok">实现完成</span>。queue 仍是默认且保持既有 FIFO。composer 的 per-session 设置新增 queue/steer 模式；steer 请求复用 queued row 表示 injecting 和失败回退。普通 chat agent loop 读取共享文件 inbox，持久化 steering user node 并同步 conversation edge；收尾关闭接受状态和最后 sweep 使用同一个 session 锁，避免 ACK 成功后遗留文件。goal/workflow loop 未修改。</p>
-  <div class="table-wrap"><table>
-    <thead><tr><th>验证命令</th><th>实际结果</th></tr></thead><tbody>
-      <tr><td><code>npm --prefix apps/web run check</code></td><td><span class="pill ok">通过</span>，包含 send-queue、chat-ui、Markdown sanitize 和 WS action 合同。</td></tr>
-      <tr><td><code>python -m pytest tests/unit/webui/test_webui_head_mirror_and_run_guard.py tests/unit/webui/test_webui_chat_dispatcher.py tests/component/runtime/test_turn_cancellation.py tests/unit/programs/test_retry_function.py tests/unit/agent/test_dispatcher_integration.py -q</code></td><td><span class="pill ok">61 passed, 1 skipped</span></td></tr>
-      <tr><td><code>npm --prefix apps/web exec -- tsc -p apps/web/tsconfig.json --noEmit</code></td><td><span class="pill ok">通过</span></td></tr>
-      <tr><td><code>npm --prefix apps/web run build</code></td><td><span class="pill ok">27 个静态页面生成完成</span></td></tr>
-      <tr><td><code>python -m pytest tests/unit/agent/test_chat_steering.py tests/unit/webui/test_ws_steer.py -q</code></td><td><span class="pill ok">5 passed</span></td></tr>
-      <tr><td><code>node --no-warnings --experimental-strip-types apps/web/scripts/check-send-queue.mjs</code></td><td><span class="pill ok">通过</span>，覆盖 injecting 不得并发普通 drain 及 not_running 回退。</td></tr>
-      <tr><td><code>node --no-warnings --experimental-strip-types apps/web/scripts/check-chat-ui.mjs</code></td><td><span class="pill ok">通过</span>，覆盖 mode、steer action、injecting 与 transcript marker wiring。</td></tr>
-      <tr><td><code>ruff check .</code></td><td><span class="pill ok">通过</span></td></tr>
-    </tbody></table></div>
-  <p class="small">同轮追加修复：assistant Markdown 不再依赖 CDN <code>marked</code>；CDN 不可用时使用已安装的 npm 包，因此普通回复不会退化为带边框的 <code>&lt;pre&gt;</code>。</p>
+<p class="eyebrow">OpenProgram / Web / Conversation input</p><h1>Queue and active-turn steering</h1>
+<div class="lead">Queue is the default: each conversation sends one follow-up after its preceding turn ends. Steer adds text to the exact active execution at a supported safe point. Neither queue action cancels the active execution; cancellation belongs to the separate Stop control.</div>
+<h2>Reference and compatibility</h2><p><a href="https://learn.chatgpt.com/docs/prompting#steering-and-queuing">Codex prompting</a> separates queued follow-ups from active-turn input. <a href="https://learn.chatgpt.com/docs/app-server#steer-an-active-turn">Codex App Server</a> binds steering to the expected active turn and does not accept runtime-setting overrides. OpenProgram uses its existing execution command service and safe points instead of adding a second session inbox or provider-specific steering transport.</p>
+<h2>Delivery</h2><div class="diagram">Queued text → execution identity and current version → durable execution.steer command → next safe point → persisted steering user message</div>
+<p>The queue retains an entry until a matching applied receipt confirms that its user message is persisted. Accepted or applying commands are checked automatically with the same envelope. The command carries only the message, exact execution identity, version and an idempotency key. It does not change permissions, models, tools or the current running program. Unsupported or ended executions leave the entry queued; idle reconciliation drains normal follow-ups in FIFO order.</p>
+<p>Before posting, the client retains the immutable command envelope. A lost acknowledgement leaves delivery unconfirmed: the row remains visible, normal drain cannot send it again, and retry reuses the same envelope. A confirmed stale-version rejection permits a new envelope against a fresh snapshot. Errors are visible; injected flags are always released after transport failure.</p>
+<h2>Ownership and UI</h2><p>The active session and its running execution determine the target. Another session or related sub-Agent is never selected opportunistically. The queue exposes one non-cancelling action to add a message to the active turn, plus removal when delivery is not uncertain. The running-message preference remains queue or steer. Attachments retain their existing draft behavior; steering accepts text within the canonical command size limit.</p>
+<p>Normal follow-up admission resolves its predecessor from the durable session head before updating the server conversation mirror. It includes the preceding assistant reply, tool results and delivered steering inputs; explicit branch predecessors remain unchanged.</p>
+<h2>Storage boundary</h2><p>Queue entries remain local to this renderer. Pending steering entries cannot be drained as ordinary messages until a definitive acknowledgement resolves the command. Canonical acceptance persists the command on the server; application persists the user message. When an execution finishes, undelivered steering commands are rejected and their rows can resume ordinary queuing. A completed tool batch is never skipped merely because a steering message arrives. This change does not replace ordinary chat transport with a new message broker.</p>
+<h2>Acceptance</h2><ul><li>Queue two follow-ups: each starts only after the preceding turn ends.</li><li>Add text while a tool runs: the same execution and tool continue; the instruction reaches the subsequent model context.</li><li>Lost acknowledgement: retain the row and replay the same command without duplicate delivery.</li><li>Ended, unavailable and unsupported targets retain the input and report their state.</li><li>Scope switching cannot steer another conversation; Stop remains a separate explicit action.</li></ul>
+<h2>Implementation status</h2><p>The implementation uses canonical execution commands and non-cancelling queue controls. Agent command application confirms persisted user input in the active reply branch; safe-point admission alone remains applying. Owner expiry cannot authorize a late input write. Execution closure resolves undelivered commands even when the execution awaits effect reconciliation. Acceptance uses the default App and real request handling; static checks do not replace that runtime acceptance.</p>
 </main></body></html>

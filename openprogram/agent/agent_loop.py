@@ -1400,56 +1400,13 @@ async def _execute_tool_calls(
         if stop_at_safe_point:
             break
 
-        # Check for steering messages after each tool execution
-        if get_steering_messages:
-            steering = await get_steering_messages()
-            if steering:
-                steering_messages = steering
-                # Skip remaining tool calls
-                remaining = tool_calls[index + 1:]
-                for skipped in remaining:
-                    results.append(_skip_tool_call(skipped, ev_stream))
-                break
+    # Finish the already-issued tool batch before adding input to the next
+    # model decision. Steering does not cancel or fabricate skipped tool results.
+    # A pause owns its checkpoint; leave its pending input for continuation.
+    if not stop_at_safe_point and get_steering_messages:
+        steering_messages = await get_steering_messages() or None
 
     return {
         "tool_results": results, "steering_messages": steering_messages,
         "stop_at_safe_point": stop_at_safe_point,
     }
-
-
-def _skip_tool_call(
-    tool_call: ToolCall,
-    ev_stream: EventStream[AgentEvent, list[AgentMessage]],
-) -> ToolResultMessage:
-    """Create a skipped tool result. Mirrors skipToolCall() in TypeScript."""
-    result = AgentToolResult(
-        content=[TextContent(type="text", text="Skipped due to queued user message.")],
-        details={},
-        is_error=True,
-    )
-
-    ev_stream.push(AgentEventToolStart(
-        tool_call_id=tool_call.id,
-        tool_name=tool_call.name,
-        args=tool_call.arguments,
-    ))
-    ev_stream.push(AgentEventToolEnd(
-        tool_call_id=tool_call.id,
-        tool_name=tool_call.name,
-        result=result,
-        is_error=True,
-    ))
-
-    tool_result_msg = ToolResultMessage(
-        role="toolResult",
-        tool_call_id=tool_call.id,
-        tool_name=tool_call.name,
-        content=result.content,
-        details={},
-        is_error=True,
-        timestamp=int(time.time() * 1000),
-    )
-    ev_stream.push(AgentEventMessageStart(message=tool_result_msg))
-    ev_stream.push(AgentEventMessageEnd(message=tool_result_msg))
-
-    return tool_result_msg

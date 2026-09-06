@@ -3,22 +3,18 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
-const sidebar = read("../components/right-sidebar/right-sidebar.tsx");
-const sessionDebugger = read("../components/right-sidebar/session-debugger.tsx");
 const running = read("../components/right-sidebar/running-panel.tsx");
 const panel = read("../components/right-sidebar/debugger-panel.tsx");
 const hook = read("../lib/use-execution-debugger.ts");
 const client = read("../lib/net/execution-client.ts");
 const ws = read("../lib/net/use-ws.ts");
-const viewHost = read("../app/styles/right-dock/view-host.css");
 
-test("running execution cards open the canonical debugger view", () => {
-  assert.match(sidebar, /VIEW_DEBUGGER/);
-  assert.match(sidebar, /<SessionDebugger/);
-  assert.match(sessionDebugger, /<DebuggerPanel/);
-  assert.match(sidebar, /onOpenExecution=\{openDebugger\}/);
-  assert.match(running, /Open execution debugger/);
-  assert.match(viewHost, /data-view="debugger"/);
+test("conversation activity inspects the selected Agent through the canonical debugger", () => {
+  assert.match(running, /state\.selectExecution\(item\.execution_id\)/);
+  assert.match(running, /selection === "agent"/);
+  assert.match(running, /<DebuggerPanel/);
+  assert.match(running, /onCommand=\{state\.command\}/);
+  assert.match(running, /onRespondWait=\{state\.respondWait\}/);
 });
 
 test("debugger refreshes authorized conversation snapshots and persisted events", () => {

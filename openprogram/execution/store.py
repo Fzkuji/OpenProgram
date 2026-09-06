@@ -2200,6 +2200,51 @@ class ExecutionStore:
             )
         if updated.rowcount != 1:
             raise ExecutionConflict("stale_version", "execution changed concurrently")
+        if target in TERMINAL_EXECUTION_STATUSES or (
+            target is ExecutionStatus.RECONCILIATION_REQUIRED and clear_owner
+        ):
+            # Admission and owner closure share this transaction. A steer
+            # arriving after the last safe point must get a definitive receipt,
+            # including when unresolved effects end the attempt for reconciliation.
+            pending_steers = connection.execute(
+                "SELECT command_id, status FROM commands WHERE execution_id = ? "
+                "AND kind = ? AND status IN (?, ?) "
+                "AND EXISTS (SELECT 1 FROM execution_agent_turn_inputs "
+                "WHERE execution_id = commands.execution_id)",
+                (execution_id, CommandKind.STEER.value,
+                 CommandStatus.ACCEPTED.value, CommandStatus.APPLYING.value),
+            ).fetchall()
+            for steer in pending_steers:
+                status = CommandStatus(steer["status"])
+                message_id = hashlib.sha256(
+                    f"{current.session_id}:{steer['command_id']}".encode()
+                ).hexdigest()[:24]
+                # Agent messages live in the session Git store. Recover a
+                # completed branch-linked write whose SQL receipt failed (including
+                # a rolled-back ACCEPTED -> APPLYING transition on resume).
+                # Delivery holds this same transaction lock around the write.
+                from openprogram.agent.session_db import default_db
+                turn_input = connection.execute(
+                    "SELECT assistant_message_id FROM execution_inputs WHERE execution_id = ?",
+                    (execution_id,),
+                ).fetchone()
+                delivered = bool(turn_input) and default_db().has_persisted_ancestor(
+                    current.session_id, message_id, str(turn_input["assistant_message_id"]),
+                )
+                if delivered and status is CommandStatus.ACCEPTED:
+                    self._transition_command(
+                        connection, str(steer["command_id"]),
+                        expected_status=status, target=CommandStatus.APPLYING,
+                    )
+                    status = CommandStatus.APPLYING
+                self._transition_command(
+                    connection, str(steer["command_id"]),
+                    expected_status=status,
+                    target=CommandStatus.APPLIED if delivered else CommandStatus.REJECTED,
+                    result_version=new_version,
+                    rejection_code=None if delivered else "execution_finished",
+                    receipt={"user_message_id": message_id} if delivered else None,
+                )
         if target in TERMINAL_EXECUTION_STATUSES:
             connection.execute(
                 "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",

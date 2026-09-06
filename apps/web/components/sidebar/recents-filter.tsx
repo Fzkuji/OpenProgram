@@ -63,30 +63,17 @@ const rowCls =
   " data-[state=open]:text-text-bright data-[highlighted]:bg-bg-hover" +
   " data-[highlighted]:text-text-bright";
 
-export function RecentsFilter() {
-  const { t } = useTranslation();
+export function RecentsFilter({projects = []}: {projects?: readonly {id:string;name:string}[]} = {}) {
+  const { t, text } = useTranslation();
   const view = useRecentsView();
   const [open, setOpen] = useState(false);
   const filterIconRef = useRef<AnimatedNavIconHandle>(null);
 
-  // Project options come from the conversations themselves — every conv
-  // carries a project name (the home-folder name for ad-hoc chats), so
-  // the flyout lists "All projects" + each distinct folder the user has
-  // chats under, instead of a lone meaningless "All".
   const conversations = useSessionStore((s) => s.conversations);
-  const projectOptions = useMemo<[string, string][]>(() => {
-    const names = new Set<string>();
-    for (const c of Object.values(conversations || {})) {
-      const p = (c as { project?: string }).project;
-      if (p) names.add(p);
-    }
-    return [
-      ["all", t("sidebar.all_projects")],
-      ...Array.from(names)
-        .sort((a, b) => a.localeCompare(b))
-        .map((n) => [n, n] as [string, string]),
-    ];
-  }, [conversations, t]);
+  const projectOptions = useMemo<[string, string][]>(() => [
+    ["all", t("sidebar.all_projects")],
+    ...projects.map(p=>[p.id,p.name] as [string,string]).sort((a,b)=>a[1].localeCompare(b[1])),
+  ], [projects, t]);
 
   const archivedCount = useMemo(
     () =>
@@ -190,15 +177,27 @@ export function RecentsFilter() {
             onPick={(groupBy) => setRecentsView({ groupBy })}
           />
           <Row<RecentsSort>
-            label={t("sidebar.sort_by")}
+            label={text("Chat order", "聊天排序")}
             value={view.sort}
             options={[
               ["title", t("sidebar.sort_title")],
               ["created", t("sidebar.sort_created")],
               ["recency", t("sidebar.sort_recency")],
             ]}
-            onPick={(sort) => setRecentsView({ sort })}
+            onPick={(sort) => setRecentsView({ sort, sortDirection: sort === "title" ? "asc" : view.sortDirection })}
           />
+          <Row<"asc" | "desc">
+            label={text("Chat direction", "聊天排序方向")}
+            value={view.sortDirection}
+            options={[["desc", text("Newest first / Z–A", "新到旧 / Z–A")], ["asc", text("Oldest first / A–Z", "旧到新 / A–Z")]]}
+            onPick={(sortDirection) => setRecentsView({ sortDirection })}
+          />
+          {view.groupBy === "project" ? <Row
+            label={text("Project order", "项目排序")}
+            value={view.projectSort}
+            options={[["recency", text("Recent activity first", "最近活动优先")], ["oldest", text("Oldest activity first", "最早活动优先")], ["name", text("Name", "名称")], ["manual", text("Manual", "手动")]]}
+            onPick={(projectSort) => setRecentsView({ projectSort })}
+          /> : null}
         </DM.Content>
       </DM.Portal>
     </DM.Root>

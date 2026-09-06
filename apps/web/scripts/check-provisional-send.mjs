@@ -75,6 +75,23 @@ const { sendChatMessage } = await import(
 // The ack-pairing reservations live in lib/pending-user-text now.
 const pendingUserText = await import("../lib/pending-user-text.ts");
 const { useSessionStore } = await import("../lib/session-store/index.ts");
+if (process.argv.includes("--project-dir-intent")) {
+const projectDirectoryFrames = [];
+setSocket({readyState:1,send:payload=>projectDirectoryFrames.push(JSON.parse(payload))});
+for (const [suffix,dirs] of [["empty",[]],["set",["/extra"]],["unset",undefined]]) {
+  const key = `local_project_directories_${suffix}`;
+  useSessionStore.getState().setCurrentDraft(key);
+  if (dirs !== undefined) useSessionStore.getState().setAdditionalWorkingDirs(key,dirs);
+  assert.equal(sendChatMessage({text:"test directory intent",sessionId:key,thinking:"medium",toolsEnabled:true,webSearchEnabled:false}),true);
+  const frame = projectDirectoryFrames.at(-1);
+  assert.equal(frame.session_id,key);
+  if (dirs === undefined) assert.equal(Object.hasOwn(frame,"additional_working_dirs"),false);
+  else assert.deepEqual(frame.additional_working_dirs,dirs);
+}
+console.log("project directory send intent checks passed");
+process.exit(0);
+}
+
 const provisional = "local_duplicate_send";
 
 const send = (text) => sendChatMessage({

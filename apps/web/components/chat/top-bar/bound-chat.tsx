@@ -37,11 +37,12 @@ export function useBoundChat(): BoundChat {
   const scoped = useOptionalScopedSessionId();
   const globalSessionId = useSessionStore((s) => s.currentSessionId);
   const globalChatKey = useSessionStore((s) => s.activeChatKey);
+  const acknowledged = useSessionStore((s) => !!scoped && !!s.conversations[scoped]);
   if (scoped === null) {
     return { sessionId: globalSessionId, chatKey: globalChatKey };
   }
   return {
-    sessionId: isDraftKey(scoped) ? null : scoped,
+    sessionId: isDraftKey(scoped) && !acknowledged ? null : scoped,
     chatKey: scoped === "__new__" ? null : scoped,
   };
 }

@@ -27,6 +27,7 @@ import {
   postRevisionDraftCommand,
 } from "@/lib/net/execution-client";
 import "@/lib/net/ws-events";
+import { useSessionStore } from "@/lib/session-store";
 
 export type ExecutionDebuggerController = {
   executions: ExecutionSnapshot[];
@@ -167,17 +168,37 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     if (!active || !sessionId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      await refresh();
-      if (!cancelled) timer = setTimeout(poll, 5000);
+    let reading = false;
+    let dirty = false;
+    const visible = () => document.visibilityState !== "hidden";
+    const update = async () => {
+      if (cancelled || !visible()) return;
+      dirty = true;
+      if (reading) return;
+      reading = true;
+      clearTimeout(timer);
+      try {
+        do {
+          dirty = false;
+          await refresh();
+        } while (dirty && !cancelled && visible());
+      } finally {
+        reading = false;
+        if (!cancelled) timer = setTimeout(update, 30000);
+      }
     };
-    void poll();
-    const onUpdate = (event: WindowEventMap["op:execution-update"]) => {
-      if (event.detail?.execution?.session_id !== sessionId) return;
-      // Fetch one canonical snapshot/history pair instead of mixing event and poll versions.
-      void refresh();
-    };
+    // Events invalidate the authorized list, including newly created child sessions.
+    // Never merge their possibly out-of-scope payloads into the current view.
+    const onUpdate = () => { void update(); };
+    const unsubscribe = useSessionStore.subscribe((state, previous) => {
+      if (state.wsStatus === "open" && previous.wsStatus !== "open") onUpdate();
+    });
     window.addEventListener("op:execution-update", onUpdate);
+    window.addEventListener("op:job-status", onUpdate);
+    window.addEventListener("online", onUpdate);
+    window.addEventListener("focus", onUpdate);
+    document.addEventListener("visibilitychange", onUpdate);
+    void update();
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -185,7 +206,12 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       refreshController.current?.abort();
       refreshController.current = null;
       refreshPromise.current = null;
+      unsubscribe();
       window.removeEventListener("op:execution-update", onUpdate);
+      window.removeEventListener("op:job-status", onUpdate);
+      window.removeEventListener("online", onUpdate);
+      window.removeEventListener("focus", onUpdate);
+      document.removeEventListener("visibilitychange", onUpdate);
     };
   }, [active, sessionId, refresh]);
 
@@ -223,8 +249,11 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     } catch (error) {
       setConnection({ state: "conflict", message: errorMessage(error) });
       throw error;
+    } finally {
+      // Commands can be rejected without publishing an execution event.
+      void refresh();
     }
-  }, [loadDebuggerData, sessionId]);
+  }, [loadDebuggerData, sessionId, refresh]);
 
   const respondWait = useCallback(async (input: Parameters<ExecutionDebuggerController["respondWait"]>[0]) => {
     await postExecutionWait({ ...input, generation: input.claim_generation, expected_version: snapshots[input.execution_id]?.status_version ?? 0 });
