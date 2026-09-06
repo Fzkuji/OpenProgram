@@ -25,9 +25,10 @@ export function useDecisionDiscussion({ decision, thinking, dequeue }: Options) 
     const context = [
       d.prompt,
       ...(d.questions ?? []).map(question => question.prompt),
-      d.detail,
-      d.tool ? `Tool: ${d.tool}` : null,
-      d.args ? JSON.stringify(d.args, null, 2) : null,
+      d.detail || [
+        d.tool ? `Tool: ${d.tool}` : null,
+        d.args ? JSON.stringify(d.args, null, 2) : null,
+      ].filter(Boolean).join("\n"),
     ].filter(Boolean).join("\n");
     const message = `${input}\n\n${text("Regarding:", "讨论内容：")}\n${context}`;
     let request = requests.current.get(d.id);
