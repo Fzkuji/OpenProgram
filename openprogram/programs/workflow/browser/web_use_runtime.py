@@ -79,6 +79,8 @@ class WebUseSession:
 class ControllerBackend:
     """Canonical command adapter over one exact BrowserPageController."""
 
+    supports_operation_guard = True
+
     def __init__(self, name: str, controller_factory: Callable[[], Any]) -> None:
         self.name = name
         self._controller_factory = controller_factory
@@ -93,17 +95,17 @@ class ControllerBackend:
             session.controller = controller
         return session.controller
 
-    def observe(self, session: WebUseSession, arguments: Mapping[str, Any]):
+    def observe(self, session: WebUseSession, arguments: Mapping[str, Any], *, before_dispatch=None):
         del arguments
-        return self._controller(session).execute(action="observe")
+        return self._controller(session).execute(action="observe", **({"before_dispatch": before_dispatch} if before_dispatch is not None else {}))
 
-    def act(self, session: WebUseSession, arguments: Mapping[str, Any]):
-        return self._controller(session).execute(**dict(arguments))
+    def act(self, session: WebUseSession, arguments: Mapping[str, Any], *, before_dispatch=None):
+        return self._controller(session).execute(**dict(arguments), **({"before_dispatch": before_dispatch} if before_dispatch is not None else {}))
 
-    def verify(self, session: WebUseSession, arguments: Mapping[str, Any]):
+    def verify(self, session: WebUseSession, arguments: Mapping[str, Any], *, before_dispatch=None):
         params = dict(arguments)
         params["action"] = "verify"
-        return self._controller(session).execute(**params)
+        return self._controller(session).execute(**params, **({"before_dispatch": before_dispatch} if before_dispatch is not None else {}))
 
     def close(self, session: WebUseSession) -> None:
         if session.controller is not None:
@@ -191,14 +193,14 @@ class WebUseSessionRegistry:
         session.closing = True
         with self._lock:
             self._detach_locked(session)
-        error: Exception | None = None
+        error: BaseException | None = None
         try:
             self._adapters[session.backend].close(session)
-        except Exception as exc:
+        except BaseException as exc:
             error = exc
         try:
             self._release_context(session.page_context)
-        except Exception as exc:
+        except BaseException as exc:
             if error is None:
                 error = exc
         finally:
@@ -299,6 +301,7 @@ class WebUseSessionRegistry:
         page_context_token: str = "",
         page_context: dict[str, Any] | None = None,
         arguments: Mapping[str, Any] | None = None,
+        before_dispatch: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         params = dict(normalize_web_use_arguments({"arguments": arguments}).get("arguments") or {})
         if _unresolved_session_id(web_session_id):
@@ -313,6 +316,8 @@ class WebUseSessionRegistry:
             selected = backend or DEFAULT_BACKEND
             if selected not in self._adapters:
                 return {"ok": False, "reason_code": "unsupported_backend"}
+            if before_dispatch is not None and not getattr(self._adapters[selected], "supports_operation_guard", False):
+                return {"ok": False, "reason_code": "guarded_dispatch_unsupported"}
             if page_context_token:
                 with self._lock:
                     capability = self._page_capabilities.get(page_context_token)
@@ -476,21 +481,30 @@ class WebUseSessionRegistry:
                     }
 
             adapter = self._adapters[session.backend]
+            guard_args = {}
+            if before_dispatch is not None:
+                if not getattr(adapter, "supports_operation_guard", False):
+                    return {"ok": False, "reason_code": "guarded_dispatch_unsupported"}
+                guard_args["before_dispatch"] = before_dispatch
             try:
+                if before_dispatch is not None:
+                    before_dispatch()
                 if command == "observe":
-                    result = adapter.observe(session, params)
+                    result = adapter.observe(session, params, **guard_args)
                 elif command == "act":
-                    result = adapter.act(session, params)
+                    result = adapter.act(session, params, **guard_args)
                 elif command == "verify":
-                    result = adapter.verify(session, params)
+                    result = adapter.verify(session, params, **guard_args)
                 elif command == "close":
                     self._cleanup_session(session, suppress_errors=False)
                     result = {"ok": True, "closed": True}
                 else:
                     return {"ok": False, "reason_code": "invalid_command"}
-            except Exception as exc:
+            except BaseException as exc:
                 if command == "observe" and not session.closing:
                     self._cleanup_session(session, suppress_errors=True)
+                    raise
+                if not isinstance(exc, Exception):
                     raise
                 if command != "act":
                     raise
