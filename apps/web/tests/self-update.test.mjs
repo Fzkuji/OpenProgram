@@ -224,9 +224,10 @@ test("history and activity never overlap polls for the same resource and abort o
         window.dispatchEvent(new Event("online"));
         window.dispatchEvent(new Event("online"));
         if (Component === RunningPanel) {
-          // Activity refreshes both resources while the initial requests are
-          // still pending; neither endpoint may start an overlapping request.
-          host.querySelector('button[aria-label="Refresh activity"]').click();
+          // An execution event invalidates both pending resources without
+          // overlapping reads or requiring a manual refresh control.
+          window.dispatchEvent(new Event("op:execution-update"));
+          assert.equal(host.querySelector('button[aria-label="Refresh activity"]'), null);
         }
       });
       assert.equal(requests.length, Component === RunningPanel ? 2 : 1);
