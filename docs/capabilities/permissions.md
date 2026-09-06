@@ -14,9 +14,12 @@ Bypass does not override explicit deny or ask rules, mandatory plan-exit or self
 
 Approval choices appear at the bottom left of the request. Select Allow once,
 Always allow or Deny, then use Send on the right to submit. Chat about this sits
-next to Send. It rejects the current request and automatically sends a short
-message telling the model you want to discuss it. The model replies without
-executing tools; you can then send a separate follow-up. Your draft is unchanged.
+next to Send. It opens a feedback field while keeping the original question or
+operation visible. Opening or cancelling this field sends nothing. Write your
+feedback and choose Send discussion: after the current wait is declined, your
+feedback and its original context are sent to the same conversation. The model
+replies without executing tools. Deny alone declines the operation without
+sending a discussion message. Your ordinary chat draft is unchanged.
 On narrow windows, these controls wrap within the same bottom action area.
 
 ## Change permissions during a task

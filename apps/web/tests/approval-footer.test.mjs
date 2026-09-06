@@ -87,7 +87,11 @@ test("approval choices and discussion share the bottom action row with Send", as
     assert.equal(enter.defaultPrevented, false, "native button activation must not submit the selected approval");
     assert.equal(frames.length, 0);
     await act(async () => button("Chat about this").click());
-    assert.deepEqual(discussed, ["wait-one"]);
+    assert.deepEqual(discussed, []);
+    assert.ok(host.querySelector("textarea"));
+    assert.equal(button("Send discussion").disabled, true);
+    await act(async () => button("Cancel").click());
+    assert.ok(button("Allow once"));
     assert.equal(frames.length, 0);
   });
 });
@@ -155,20 +159,30 @@ async function discussionMounted(check) {
   }
   try {
     await act(async () => root.render(createElement(Harness)));
-    const click = () => [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this").click();
+    const click = async () => {
+      const open = [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this");
+      if (open) {
+        await act(async () => open.click());
+        const input = host.querySelector("textarea");
+        const props = input[Object.keys(input).find(key => key.startsWith("__reactProps$"))];
+        await act(async () => props.onChange({ target: { value: "Why is this command needed?" } }));
+      }
+      const send = [...host.querySelectorAll("button")].find(b => ["Send discussion", "Retry discussion"].includes(b.textContent));
+      send?.click();
+    };
     await check({ host, requests, sent, removed, notices, frames, click, q, changeSession, draft });
   } finally { await act(async () => root.unmount()); host.remove(); window.removeEventListener("op:toast", onToast); useSendQueue.setState({ queues: {} }); }
 }
 
-test("Chat about this acknowledges rejection and automatically sends discussion without changing draft", async () => {
+test("Sending feedback acknowledges decline and sends contextual discussion without changing draft", async () => {
   await discussionMounted(async ({ host, click, requests, sent, draft }) => {
-    await act(async () => { click(); click(); });
+    await act(async () => { await click(); await click(); });
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "/api/execution/wait/decline");
     assert.equal(requests[0].command.payload.wait_id, decision.id);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].sessionId, "origin");
-    assert.match(sent[0].text, /reject.*discuss/i);
+    assert.match(sent[0].text, /Why is this command needed\?[\s\S]*Allow this command\?[\s\S]*echo test/);
     assert.ok(!sent[0].text.includes('{'));
     assert.equal(sent[0].toolsEnabled, false);
     assert.equal(sent[0].webSearchEnabled, false);

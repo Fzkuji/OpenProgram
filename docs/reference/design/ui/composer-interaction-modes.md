@@ -221,12 +221,4 @@ change behaviour.
 
 ### Discussing a pending request
 
-Chat about this submits an exact canonical wait decline and waits for its applied
-acknowledgement. It then queues a short user message saying that the request is
-rejected and discussion is needed. The existing session queue sends it when the
-prior execution becomes idle. This automatic turn disables tools and web search
-so the model replies before the user sends a separate follow-up. Drafts,
-attachments and later-turn settings remain unchanged. Duplicate clicks share one
-command and one notification. Failed or unconfirmed declines show an error and
-do not send a rejection notification. The session captured at click time owns
-both operations even if the user switches tabs while awaiting acknowledgement.
+Chat about this opens a feedback field in the existing decision card. Opening and cancelling do not resolve the wait. Sending binds the user's feedback and original question or tool context to the exact canonical decline. After an applied acknowledgement, the existing session queue sends that contextual discussion with tools and web search disabled. Plain Deny creates no discussion turn. Drafts and attachments remain unchanged. Submission and retry retain the same command and feedback, and conflicting approval controls remain blocked until confirmation.

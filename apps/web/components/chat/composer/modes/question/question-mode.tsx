@@ -15,12 +15,13 @@ import { approvalDisplayText, readSandboxEscalation, type SandboxEscalation } fr
  *           「下一题」变「发送」。单步时只有一颗「发送」。
  *
  * 选项一律「只选中」（可再点取消、可切换），点底部按钮才推进 / 提交。
- * 底部右侧「Chat about this」位于发送左侧，沿用放弃作答、直接聊的行为。
+ * 底部右侧「Chat about this」位于发送左侧，打开反馈输入框，发送后才结束等待并继续讨论。
  *
  * 设计：docs/design/ui/composer-interaction-modes.md。
  */
 
 import { useState } from "react";
+import { Textarea } from "@/components/ui/textarea";
 
 import type { PendingDecision, AskOne, FormFieldSchema } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -72,7 +73,7 @@ function withColon(s: string): string {
 interface QuestionModeProps {
   decision: PendingDecision;
   onResolve: (id: string) => void;
-  onChatAbout: () => void | Promise<void>;
+  onChatAbout: (feedback: string) => void | Promise<void>;
 }
 
 /** Wire pick for an approval card. ``always_path`` is sandbox-escalation only. */
@@ -158,6 +159,15 @@ function stepAnswered(step: Step, a: Answer): boolean {
 export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionModeProps) {
   const { text } = useTranslation();
   const [discussionPending, setDiscussionPending] = useState(false);
+  const [discussionOpen, setDiscussionOpen] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [feedbackLocked, setFeedbackLocked] = useState(false);
+  async function sendDiscussion() {
+    if (discussionPending || !feedback.trim()) return;
+    setFeedbackLocked(true);
+    setDiscussionPending(true);
+    try { await onChatAbout(feedback); } finally { setDiscussionPending(false); }
+  }
   const steps = toSteps(q);
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>(() => steps.map(seedAnswer));
@@ -172,7 +182,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
     setAnswers((cur) => cur.map((a, k) => (k === i ? next : a)));
 
   function submit() {
-    if (discussionPending) return;
+    if (discussionOpen || discussionPending) return;
     // 按原 decision kind 收集成后端期望的格式。
     if (q.kind === "form") {
       const step = steps[0] as Extract<Step, { kind: "form" }>;
@@ -255,6 +265,13 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
     // Enter commits an IME candidate (CN/JP/KR) — never treat that as send.
     const native = e.nativeEvent as KeyboardEvent;
     if (native.isComposing || native.keyCode === 229) return;
+    if (discussionOpen) {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        void sendDiscussion();
+      }
+      return;
+    }
     if (e.shiftKey) return;
     const t = e.target as HTMLElement;
     if (t.tagName === "TEXTAREA") return;
@@ -287,7 +304,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
                 (i === idx ? " " + multi.dotActive : "") +
                 (stepAnswered(steps[i], answers[i]) ? " " + multi.dotDone : "")
               }
-              onClick={() => setIdx(i)}
+              onClick={() => { if (!discussionOpen) setIdx(i); }}
               title={text(`Question ${i + 1}`, `第 ${i + 1} 题`)}
             />
           ))}
@@ -297,21 +314,39 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
         </div>
       </div>
       <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
-        <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
+        <fieldset disabled={discussionOpen || discussionPending} className="m-0 min-w-0 border-0 p-0">
+          <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
+        </fieldset>
+        {discussionOpen && (
+          <label className={formStyles.field}>
+            <span className={formStyles.label}>{text("What would you like to discuss?", "你想讨论什么？")}</span>
+            <Textarea autoFocus rows={3} value={feedback} readOnly={feedbackLocked}
+              onChange={(event) => setFeedback(event.target.value)}
+              placeholder={text("Add your question, concern, or a different approach…", "写下你的问题、顾虑，或希望调整的地方…")} />
+            {feedbackLocked && !discussionPending && <span className={formStyles.hint}>
+              {text("Not confirmed yet. Retry to confirm the same feedback.", "尚未确认，请重试发送同一条反馈。")}
+            </span>}
+          </label>
+        )}
         <div className={styles.actions} role="group" aria-label={text("Decision actions", "答复操作")}>
-          {cur.kind === "approval" && (
+          {cur.kind === "approval" && !discussionOpen && (
             <ApprovalChoices step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
           )}
           <div className={styles.actionButtons}>
-            <button type="button" className={styles.navBtn} disabled={discussionPending} aria-busy={discussionPending}
-              onClick={async () => {
-                setDiscussionPending(true);
-                try { await onChatAbout(); } finally { setDiscussionPending(false); }
-              }}
-              title={text("Chat about this instead", "直接聊这个")}>
-              {discussionPending ? text("Sending…", "发送中…") : text("Chat about this", "Chat about this")}
-            </button>
-          {navButtons.map((b, i) => (
+            {discussionOpen ? <>
+              <button type="button" className={styles.navBtn} disabled={feedbackLocked}
+                onClick={() => setDiscussionOpen(false)}>{text("Cancel", "取消")}</button>
+              <button type="button" className={`${styles.navBtn} ${styles.navBtnPrimary}`}
+                disabled={discussionPending || !feedback.trim()} aria-busy={discussionPending}
+                onClick={() => void sendDiscussion()}>
+                {discussionPending ? text("Sending…", "发送中…") : feedbackLocked
+                  ? text("Retry discussion", "重试讨论") : text("Send discussion", "发送讨论")}
+              </button>
+            </> : <button type="button" className={styles.navBtn}
+              onClick={() => setDiscussionOpen(true)} title={text("Discuss before proceeding", "先讨论再继续")}>
+              {text("Chat about this", "Chat about this")}
+            </button>}
+          {!discussionOpen && navButtons.map((b, i) => (
             <button
               key={i}
               type="button"
