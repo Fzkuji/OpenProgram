@@ -41,7 +41,13 @@ function takePending(): { name: string; cat: string } | null {
 
 export function usePendingRunFunction(pathname: string, ready = true): void {
   useEffect(() => {
-    if (!ready || (pathname !== "/chat" && !pathname.startsWith("/s/"))) return;
+    if (pathname !== "/chat" && !pathname.startsWith("/s/")) return;
+    // The route reset can clear the query before initialization finishes.
+    // Retain the request now; consume it only once the chat is ready.
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get("run");
+    if (name) setPendingRunFunction({ name, cat: params.get("cat") || "" });
+    if (!ready) return;
     const controller = new AbortController();
     // Defer both consumption and opening past the chat reset. Strict Mode's
     // discarded setup must not consume a request that its cleanup cancels.

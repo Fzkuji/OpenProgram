@@ -216,3 +216,15 @@ test("pending Use waits for chat initialization before consuming the request", a
   assert.equal(launchEffects.pop()(), undefined);
   assert.deepEqual(launcher.takePendingRunFunction(), { name: "browser_agent" });
 });
+
+
+test("Use query survives a chat reset before the page becomes ready", async () => {
+  reset();
+  globalThis.launchEffects = [];
+  const launcher = await import("../lib/use-pending-run-function.ts");
+  window.location.search = "?run=browser_agent&cat=workflow";
+  launcher.usePendingRunFunction("/chat", false);
+  launchEffects.pop()();
+  window.location.search = "";
+  assert.deepEqual(launcher.takePendingRunFunction(), { name: "browser_agent", cat: "workflow" });
+});
