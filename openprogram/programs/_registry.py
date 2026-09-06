@@ -204,6 +204,35 @@ def _migrate_workflow_project_sources(root) -> None:
     mark_workflow_projects_migrated()
 
 
+class _WorkflowSourceFinder:
+    """Resolve only explicitly authorized external Workflow package names.
+
+    A parent namespace path would also expose unapproved sibling packages.
+    Exact package specs preserve normal Python relative/dependency imports.
+    """
+
+    def __init__(self):
+        self.sources: dict[str, str] = {}
+
+    def find_spec(self, fullname, path=None, target=None):
+        source = self.sources.get(fullname)
+        if source is None:
+            return None
+        from openprogram.programs._programs import owner_controlled_program_sources
+
+        allowed = {row["path"] for row in owner_controlled_program_sources()}
+        if source not in allowed or os.path.islink(source):
+            raise ModuleNotFoundError(f"Workflow source is no longer authorized: {fullname}")
+        return importlib.util.spec_from_file_location(
+            fullname,
+            os.path.join(source, "__init__.py"),
+            submodule_search_locations=[source],
+        )
+
+
+_workflow_source_finder = _WorkflowSourceFinder()
+
+
 def _load_workflow_projects() -> None:
     """Import each published workflow package so its decorator registers it."""
     try:
@@ -217,40 +246,47 @@ def _load_workflow_projects() -> None:
     if not root.is_dir() or root.is_symlink():
         return
 
+    from openprogram.programs._programs import migrate_program_source_paths
+
+    migrate_program_source_paths()
     _migrate_workflow_project_sources(root)
     allowed = {
         os.path.normcase(os.path.realpath(row["path"]))
         for row in owner_controlled_program_sources(str(root))
     }
 
-    import_root = str(root.parent)
-    inserted = import_root not in sys.path
-    if inserted:
-        sys.path.insert(0, import_root)
+    sources = {}
+    for project_dir in sorted(root.iterdir()):
+        if (
+            not _is_workflow_project_candidate(project_dir)
+            or os.path.normcase(os.path.realpath(project_dir)) not in allowed
+        ):
+            continue
+        try:
+            index = catalog._read_project_index(project_dir)
+            entrypoint = index["project_metadata"].get("entrypoint")
+            if entrypoint != project_dir.name:
+                continue
+            sources[f"openprogram.programs.workflow.{entrypoint}"] = str(project_dir)
+        except Exception as exc:
+            _debug_registry_error(f"workflow:{project_dir.name}", exc)
+
+    # Install every authorized name before importing any package, so A can
+    # import B regardless of directory order, including inside function bodies.
+    _workflow_source_finder.sources = sources
+    if _workflow_source_finder not in sys.meta_path:
+        sys.meta_path.insert(0, _workflow_source_finder)
     previous_dont_write_bytecode = sys.dont_write_bytecode
     sys.dont_write_bytecode = True
     try:
         importlib.invalidate_caches()
-        for project_dir in sorted(root.iterdir()):
-            if (
-                not _is_workflow_project_candidate(project_dir)
-                or os.path.normcase(os.path.realpath(project_dir)) not in allowed
-            ):
-                continue
+        for module_name in sources:
             try:
-                index = catalog._read_project_index(project_dir)
-                entrypoint = index["project_metadata"].get("entrypoint")
-                if entrypoint != project_dir.name:
-                    continue
-                importlib.import_module(
-                    f"openprogram.programs.workflow.{entrypoint}"
-                )
+                importlib.import_module(module_name)
             except Exception as exc:
-                _debug_registry_error(f"workflow:{project_dir.name}", exc)
+                _debug_registry_error(module_name, exc)
     finally:
         sys.dont_write_bytecode = previous_dont_write_bytecode
-        if inserted:
-            sys.path.remove(import_root)
 
 
 # ---------------------------------------------------------------------------

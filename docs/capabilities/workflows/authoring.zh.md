@@ -20,6 +20,22 @@ weekly_report/
 
 helper 也可以放在 `goals/` 或 `helpers/`。必须至少有一个不是 `__init__.py` 的 helper 模块；其他位置的 Python 源码会被拒绝。
 
+## 可迁移的身份与位置
+
+发布后的包相对于 OpenProgram 项目位于 `openprogram/programs/workflow/<workflow_id>`。身份是 `<workflow_id>`，不是完整文件系统位置。包内辅助模块使用相对 import，其他 Workflow 使用普通 Python import。源码、元数据、测试和说明都保存在包内，不写入用户主目录或 checkout 前缀。
+
+运行时按明确的 Programs 范围记录项目内来源：
+
+```json
+{"scope": "programs", "path": "workflow/weekly_report", "kind": "workflow-publish", "source": "workflow:weekly_report"}
+```
+
+这个范围相对于 `openprogram/programs/` 解析，不相对于当前聊天的工作目录。移动源码 checkout 不改变相对身份。路径不允许包含 `..`、绝对路径前缀、反斜杠或指向外部的符号链接。如果多个活动目录包含相同的范围路径，系统拒绝加载，不会隐式选择其中一个。
+
+已安装 App 和源码 checkout 是两个安装位置。App 需要一次明确的源码目录绑定；每个 Workflow 不重复保存这项安装设置。本地框架开发使用 `scripts/refresh-local-app.sh` 将默认 App 绑定到本次安装的 checkout。移动 checkout 后，从新位置运行刷新脚本；它也会重新构建并重启默认实例，不是只读验证命令。
+
+对于之前已授权、仍使用旧绝对前缀的项目内 Workflow，只要已知目录中存在结构有效的对应包，就会迁移为相对身份。仍存在的外部位置继续保持外部来源身份。迁移不会授权同目录下其他包。撤销登记时即使目录已不存在，之后重新创建目录也不会恢复该授权。
+
 ## Metadata
 
 ```toml

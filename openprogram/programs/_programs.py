@@ -106,7 +106,7 @@ def _read_program_sources_document() -> dict:
     if not isinstance(payload, dict):
         payload = {}
     rows = payload.get("programs", [])
-    payload["version"] = 1
+    payload["version"] = 2
     payload["programs"] = (
         [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
     )
@@ -117,10 +117,85 @@ def _read_program_sources() -> list[dict]:
     return _read_program_sources_document()["programs"]
 
 
+def bind_program_catalog(root) -> None:
+    """Bind an installed runtime to an explicitly selected source catalog.
+
+    This is one installation location, not a per-Workflow identity. Local
+    App refresh calls it from the checkout being installed.
+    """
+    candidate = Path(root).resolve()
+    if candidate.name != "programs" or not (candidate / "__init__.py").is_file():
+        raise ValueError("expected an OpenProgram Programs catalog")
+
+    def _mutate(rows: list[dict]) -> None:
+        payload = _read_program_sources_document()
+        payload["catalog_root"] = str(candidate)
+        payload["programs"] = rows
+        _write_program_sources_document(payload)
+
+    _update_program_sources(_mutate)
+
+
+def _source_catalog_roots() -> list[Path]:
+    """Installed package and explicitly bound external source catalogs.
+
+    Never use cwd: a conversation can operate in an unrelated repository.
+    Absolute application entries remain external installation bindings.
+    """
+    import openprogram
+
+    roots = [Path(openprogram.__file__).resolve().parent / "programs"]
+    document = _read_program_sources_document()
+    binding = document.get("catalog_root")
+    if isinstance(binding, str) and os.path.isabs(binding) and Path(binding).is_dir():
+        roots.append(Path(binding).resolve())
+    for row in document["programs"]:
+        if row.get("scope"):
+            continue
+        raw = str(row.get("path", ""))
+        if not os.path.isabs(raw):
+            continue
+        entry = Path(raw)
+        if entry.is_dir() and entry.parent.name == "applications":
+            roots.append(entry.parent.parent.resolve())
+    return list(dict.fromkeys(roots))
+
+
+def _portable_source_path(root: str) -> str | None:
+    for catalog_root in _source_catalog_roots():
+        try:
+            relative = (Path(root).parent.resolve() / Path(root).name).relative_to(catalog_root).as_posix()
+        except ValueError:
+            continue
+        parts = relative.split("/")
+        if len(parts) == 2 and parts[0] in {"workflow", "applications"}:
+            return relative
+    return None
+
+
 def _recorded_root(row: dict) -> str | None:
     raw = str(row.get("path", "")).strip()
     if not raw:
         return None
+    scope = row.get("scope")
+    if scope is not None:
+        parts = raw.split("/")
+        if (
+            scope != "programs" or "\\" in raw or len(parts) != 2
+            or parts[0] not in {"workflow", "applications"}
+            or parts[1] in {"", ".", ".."}
+        ):
+            return None
+        matches = []
+        for catalog_root in _source_catalog_roots():
+            candidate = catalog_root / raw
+            # A portable location cannot silently become an external symlink.
+            if candidate.is_symlink() or candidate.parent.is_symlink() or not candidate.is_dir():
+                continue
+            if candidate.resolve().parent != (catalog_root / parts[0]).resolve():
+                continue
+            matches.append(str(candidate))
+        return matches[0] if len(matches) == 1 else None
     expanded = os.path.expanduser(raw)
     if not os.path.isabs(expanded):
         return None
@@ -143,7 +218,7 @@ def _write_program_sources_document(payload: dict) -> None:
 
 def _write_program_sources(rows: list[dict]) -> None:
     payload = _read_program_sources_document()
-    payload["version"] = 1
+    payload["version"] = 2
     payload["programs"] = rows
     _write_program_sources_document(payload)
 
@@ -165,6 +240,15 @@ def _is_direct_child(path: str, base: str) -> bool:
     return parent.casefold() == os.path.realpath(base).casefold()
 
 
+def _source_matches_path(row: dict, root: str) -> bool:
+    # Revocation and replacement compare identities, even after the files
+    # disappear. Discovery alone requires an existing directory.
+    if row.get("scope") == "programs":
+        return row.get("path") == _portable_source_path(root)
+    existing = _recorded_root(row)
+    return existing is not None and existing.casefold() == root.casefold()
+
+
 def record_program_source(
     path, *, source: str, kind: str = "git", base: str | None = None
 ) -> None:
@@ -180,11 +264,12 @@ def record_program_source(
     def _mutate(rows: list[dict]) -> None:
         kept = [
             row for row in rows
-            if (existing := _recorded_root(row)) is None
-            or existing.casefold() != root.casefold()
+            if not _source_matches_path(row, root)
         ]
+        relative = None if os.path.islink(root) else _portable_source_path(root)
         kept.append({
-            "path": root,
+            **({"scope": "programs"} if relative else {}),
+            "path": relative or root,
             "source": str(source),
             "kind": str(kind),
             "recorded_at": time.time(),
@@ -206,10 +291,63 @@ def remove_program_source(path) -> None:
             return
         kept = [
             row for row in rows
-            if (existing := _recorded_root(row)) is None
-            or existing.casefold() != root.casefold()
+            if not _source_matches_path(row, root)
         ]
         _write_program_sources(kept)
+
+    _update_program_sources(_mutate)
+
+
+def migrate_program_source_paths() -> None:
+    """Relocate authorized legacy Workflow records, never discover new ones."""
+    def _mutate(rows: list[dict]) -> None:
+        changed = False
+        migrated = []
+        # Preserve the external checkout binding before converting its
+        # individual absolute application entries to relative identities.
+        external_roots = owner_programs_roots()
+        document = _read_program_sources_document()
+        if not document.get("catalog_root") and len(external_roots) == 1:
+            document["catalog_root"] = str(external_roots[0])
+            changed = True
+        for row in rows:
+            if row.get("scope") is not None:
+                migrated.append(row)
+                continue
+            raw = str(row.get("path", ""))
+            relative = _portable_source_path(raw) if os.path.isabs(raw) else None
+            if (
+                relative is None and not os.path.lexists(raw)
+                and row.get("kind") in {"workflow-publish", "workflow-migration"}
+            ):
+                # Recover only the canonical suffix of an already-authorized
+                # record. Arbitrary directory names and external paths do not
+                # establish a new authorization.
+                parts = raw.replace("\\", "/").split("/")
+                if len(parts) >= 4 and parts[-4:-1] == ["openprogram", "programs", "workflow"]:
+                    relative = "workflow/" + parts[-1]
+            if relative is None or os.path.islink(raw):
+                migrated.append(row)
+                continue
+            portable = {**row, "scope": "programs", "path": relative}
+            resolved = _recorded_root(portable)
+            if resolved is None:
+                migrated.append(row)
+                continue
+            if relative.startswith("workflow/"):
+                try:
+                    from openprogram.programs.workflow._project import catalog
+                    index = catalog._read_project_index(Path(resolved))
+                    if index["project_metadata"].get("entrypoint") != Path(resolved).name:
+                        raise ValueError("workflow entry point does not match its location")
+                except Exception:
+                    migrated.append(row)
+                    continue
+            migrated.append(portable)
+            changed = True
+        if changed:
+            document["programs"] = migrated
+            _write_program_sources_document(document)
 
     _update_program_sources(_mutate)
 
@@ -221,7 +359,7 @@ def workflow_projects_migrated() -> bool:
 def mark_workflow_projects_migrated() -> None:
     def _mutate(rows: list[dict]) -> None:
         payload = _read_program_sources_document()
-        payload["version"] = 1
+        payload["version"] = 2
         payload["programs"] = rows
         payload[_WORKFLOW_PROJECTS_MIGRATED] = True
         _write_program_sources_document(payload)
@@ -242,16 +380,16 @@ def owner_controlled_program_sources(base: str | None = None) -> list[dict]:
 
 
 def owner_programs_roots() -> list[Path]:
-    """Return source ``openprogram/programs`` roots recorded by the owner."""
-    roots: dict[str, Path] = {}
+    """Source catalogs explicitly bound to this runtime, excluding its package."""
+    import openprogram
+
+    package_root = Path(openprogram.__file__).resolve().parent / "programs"
+    roots = _source_catalog_roots()
     for row in owner_controlled_program_sources():
-        application = Path(row["path"]).resolve()
-        applications = application.parent
-        if applications.name != "applications":
-            continue
-        root = applications.parent
-        roots.setdefault(os.path.normcase(os.fspath(root)), root)
-    return [roots[key] for key in sorted(roots)]
+        entry = Path(row["path"])
+        if entry.parent.name == "applications":
+            roots.append(entry.parent.parent.resolve())
+    return list(dict.fromkeys(root for root in roots if root != package_root))
 
 
 def is_owner_controlled_program_path(path) -> bool:

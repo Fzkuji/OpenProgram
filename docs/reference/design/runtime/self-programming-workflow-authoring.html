@@ -372,7 +372,26 @@ Registry / Programs 展示的运行实体：
           <li>不改变Agent、Program和Workflow现有Python调用语义；本设计只拆入口与生命周期。</li>
         </ul>
       </section>
-    </article>
+
+<section id="portable-package-contract">
+<h2>Portable Workflow package contract</h2>
+<p>A Workflow is a self-contained Python package under <code>openprogram/programs/workflow/&lt;workflow_id&gt;</code>. Its public function name and package-relative location remain stable when the OpenProgram checkout moves. Package metadata, imports, dependency revisions, UI links and invocation requests never contain a developer home directory.</p>
+<table><thead><tr><th>Concern</th><th>Contract</th></tr></thead><tbody>
+<tr><td>Identity</td><td>The lowercase package identifier is the registered callable name. Python composition uses ordinary imports and direct calls. No new runtime, decorator or invocation protocol is introduced.</td></tr>
+<tr><td>Internal location</td><td>Persist <code>{"scope":"programs","path":"workflow/weekly_report"}</code> using a canonical two-component POSIX path. The scope means <code>openprogram/programs/</code> in the active project. Resolve it against the active OpenProgram Programs catalog only at filesystem boundaries. Never resolve it against the conversation working directory. Reject absolute scoped paths, traversal and ambiguous catalog matches.</td></tr>
+<tr><td>External installation</td><td>The installed App may use an explicitly owner-recorded source checkout. A single <code>catalog_root</code> installation binding identifies that checkout; <code>refresh-local-app.sh</code> updates it from the checkout being installed. This binding is distinct from each package's portable path. External development symlinks retain their explicit authorization; a relative identifier does not authorize arbitrary external code.</td></tr>
+<tr><td>Migration</td><td>Convert previously authorized in-project absolute entries to scoped relative entries, including records whose old checkout no longer exists. Only a structurally valid matching package in a known catalog can satisfy a legacy Workflow entry. Do not repeat unrestricted directory discovery when a checkout moves. Preserve unrelated external records and authorization revocation.</td></tr>
+<tr><td>Discovery and UI</td><td>Use one callable catalog for launch parameters and favorites. Refresh updates React and runtime readers together. A missing or invalid callable produces a visible error; Use never silently waits and disappears. Sidebar and Programs launch use the same handoff.</td></tr>
+<tr><td>Authoring</td><td>Design input, output, side effects, failure and cancellation before implementation. Keep metadata, public entry point, helpers, tests and README inside the package. Validate structure, run behavior checks, publish an immutable revision, verify discovery, favorite and open its parameter form. A static validation pass is not execution evidence.</td></tr>
+<tr><td>Compatibility</td><td>Preserve existing function names, schema, favorites ordering, dependency pins, ordinary Python imports and uncommitted Workflow files. Runtime absolute paths remain internal filesystem details, not persisted package identities.</td></tr>
+</tbody></table>
+<h3>Acceptance</h3>
+<ul><li>Record, move the checkout, discover and resolve the same authorized Workflow without editing package metadata or per-package paths.</li><li>Recover the previously recorded weekly-report package from its obsolete checkout prefix without authorizing unrelated directories.</li><li>Reject traversal, unknown scope, unauthorized packages and ambiguous resolution; preserve explicitly installed external sources.</li><li>In the default installed App, the existing weekly_report favorite appears and Use opens its task form; do not execute or submit a report during acceptance.</li><li>The English authoring guide and Chinese translation specify identical creation, validation, publication, relocation and troubleshooting behavior, with commands verified against the CLI.</li></ul>
+<h3>Implementation status</h3>
+<p>Scoped source persistence, authorized legacy relocation and default-App catalog binding have focused regression coverage and are under independent specification review. Shared launch behavior and complete authoring documentation remain pending. This section does not assert deployment or acceptance.</p>
+</section>
+
+</article>
 
     <aside aria-label="设计摘要">
       <div class="panel"><div class="side-title">最终公共面</div><ul class="side-list"><li><a href="#contracts"><code>search_workflows</code></a></li><li><a href="#contracts"><code>create_workflow</code></a></li><li><a href="#contracts"><code>revise_workflow</code></a></li><li><a href="#contracts"><code>auto_workflow</code></a></li><li>具体Workflow入口</li></ul></div>

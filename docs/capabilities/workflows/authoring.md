@@ -20,6 +20,22 @@ weekly_report/
 
 `goals/` and `helpers/` are also valid helper directories. At least one non-`__init__.py` helper module is required. Python source outside these locations is rejected.
 
+## Portable identity and location
+
+A published package lives at `openprogram/programs/workflow/<workflow_id>` relative to the OpenProgram project. Its identity is `<workflow_id>`, not the full filesystem location. Use relative imports for its own helpers and normal Python imports for other Workflows. Keep source, metadata, tests and instructions in this package; do not embed a home directory or checkout prefix in any of them.
+
+The runtime records internal sources with an explicit Programs scope:
+
+```json
+{"scope": "programs", "path": "workflow/weekly_report", "kind": "workflow-publish", "source": "workflow:weekly_report"}
+```
+
+The scope resolves against `openprogram/programs/`, never the current conversation's working directory. Moving a source checkout preserves these relative identities. Paths cannot contain `..`, an absolute prefix, a backslash, or an external symlink. If multiple active catalogs contain the same scoped path, loading is rejected rather than choosing one implicitly.
+
+An installed App and a source checkout are separate installations. The App needs one explicit binding to the source catalog; this installation setting is not stored in every Workflow. For local framework development, `scripts/refresh-local-app.sh` binds the default App to the checkout being installed. After moving that checkout, run the refresh script from its new location. This also rebuilds and restarts the default installation; it is not a read-only validation command.
+
+Previously authorized in-project Workflow records using obsolete absolute prefixes migrate to relative identities when a structurally valid matching package exists in a known catalog. Existing external locations remain external. Migration does not authorize other directories found beside that package. Removing an authorization remains effective even if the directory is missing and later recreated.
+
 ## Metadata
 
 ```toml
