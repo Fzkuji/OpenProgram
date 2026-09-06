@@ -1372,3 +1372,18 @@ def test_browser_agent_source_has_no_heavy_gui_or_auxiliary_vision_imports():
     assert "image_analyze" not in source
     assert "ultralytics" not in source
     assert "cv2" not in source
+
+
+def test_browser_workflow_form_excludes_execution_settings():
+    import inspect
+    from openprogram.programs.workflow.browser import browser_agent
+
+    meta = browser_agent.input_meta
+    signature = inspect.signature(browser_agent)
+    visible = [name for name in signature.parameters
+               if not meta.get(name, {}).get("hidden")
+               and not meta.get(name, {}).get("advanced")]
+    assert visible == ["task", "url"]
+    assert signature.parameters["max_steps"].default == 20
+    assert signature.parameters["max_seconds"].default == 300
+    assert signature.parameters["backend"].default == ""

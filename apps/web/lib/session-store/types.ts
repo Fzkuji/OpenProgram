@@ -26,9 +26,8 @@ export interface FnParam {
   default?: string;
   placeholder?: string;
   hidden?: boolean;
-  /** User-settable but collapsed below the primary fields. Unlike hidden
-   *  internal runtime parameters, advanced fields are valid direct-call
-   *  arguments and appear in the FunctionForm's Advanced section. */
+  /** Legacy execution-setting marker: accepted by explicit programmatic calls,
+   *  excluded from all user function forms. It must not create a settings UI. */
   advanced?: boolean;
   multiline?: boolean;
   options?: string[];

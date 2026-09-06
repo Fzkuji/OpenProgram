@@ -1054,10 +1054,12 @@ def _release_screenshot_payload(
     input={
         "task": {"description": "Browser task", "multiline": True},
         "url": {"description": "Optional initial http(s) URL"},
-        "max_steps": {"description": "Maximum state-changing actions"},
-        "max_seconds": {"description": "Wall-clock limit in seconds"},
+        "max_steps": {"description": "Maximum state-changing actions", "hidden": True, "advanced": True},
+        "max_seconds": {"description": "Wall-clock limit in seconds", "hidden": True, "advanced": True},
         "backend": {
             "description": "Optional web_use backend for GUI Agent Harness",
+            "hidden": True,
+            "advanced": True,
             "options": [
                 "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
             ],

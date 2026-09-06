@@ -61,3 +61,5 @@ Function 卡片直接显示这个任务结果：验证成功显示 `Succeeded`�
 - 运行前需要 runtime 配置好工作目录。工作流记录写入 OpenProgram 状态目录下的 `gui_harness/workflows/`，不再写入源码目录。
 
 源码与 README：`openprogram/programs/applications/gui_harness/`，上游仓库 [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)。
+
+Browser Workflow 表单只显示任务和可选目标 URL。动作上限、超时与 backend 使用内部默认设置，不显示 Advanced。显式程序调用仍可使用受支持的覆盖值。

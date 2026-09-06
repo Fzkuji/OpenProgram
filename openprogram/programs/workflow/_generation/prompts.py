@@ -136,6 +136,14 @@ __wrapped__ body with external calls mocked using the monkeypatch fixture. Publi
 runs these tests with network disabled in an OS sandbox, so tests must not call
 live providers or submit external requests. Use ordinary relative imports inside
 the package.
+Execution parameters belong to the Workflow. Never expose model, effort, limits,
+retry counts or backend settings as user inputs, an Advanced section, or questions.
+When several settings depend on the task, make one bounded, tool-free llm request
+before substantive execution to choose the complete parameter plan from actual
+runtime capabilities and application limits. Validate every field and constraint;
+use a complete valid fallback on failure, propagate cancellation, and reuse the
+saved plan on resume. Ask users only for missing task facts or required approval.
+Do not override user constraints or application limits with model-generated values.
 Plain import statements such as `import json` are forbidden. Every Python
 module top level may contain only a module docstring, allowed `from ... import
 ...` statements, an optional `__all__` assignment, and function definitions;
