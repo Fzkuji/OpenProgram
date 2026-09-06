@@ -2200,10 +2200,12 @@ class ExecutionStore:
             )
         if updated.rowcount != 1:
             raise ExecutionConflict("stale_version", "execution changed concurrently")
-        if target in TERMINAL_EXECUTION_STATUSES:
-            # Admission and terminal closure share this transaction. A steer
-            # arriving after the last safe point must get a definitive receipt
-            # so its sender can retain it for the next turn.
+        if target in TERMINAL_EXECUTION_STATUSES or (
+            target is ExecutionStatus.RECONCILIATION_REQUIRED and clear_owner
+        ):
+            # Admission and owner closure share this transaction. A steer
+            # arriving after the last safe point must get a definitive receipt,
+            # including when unresolved effects end the attempt for reconciliation.
             pending_steers = connection.execute(
                 "SELECT command_id, status FROM commands WHERE execution_id = ? "
                 "AND kind = ? AND status IN (?, ?) "
@@ -2237,6 +2239,7 @@ class ExecutionStore:
                     rejection_code=None if delivered else "execution_finished",
                     receipt={"user_message_id": message_id} if delivered else None,
                 )
+        if target in TERMINAL_EXECUTION_STATUSES:
             connection.execute(
                 "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
                 (execution_id,),

@@ -973,10 +973,23 @@ class AgentProductionDriver:
                 # Serialize delivery with terminal closure. The session write is
                 # idempotent; closure can recover it if this SQL commit fails.
                 with self.executions._transaction() as connection:
+                    attempts = self._control_service().attempts
+                    owner = attempts._require(connection, attempt.attempt_id)
+                    execution = self.executions._require_execution(connection, attempt.execution_id)
+                    attempts._validate_generation(owner, attempt.generation)
+                    attempts._validate_lease(owner, attempts._clock())
+                    attempts._validate_owner(execution, owner, execution.status_version)
+                    if owner.status is not AttemptStatus.ACTIVE:
+                        raise AgentDriverError("stale_owner", "steering requires an active attempt")
                     command = self.executions._get_command(connection, command_id)
-                    if command is None or command.status not in {
-                        CommandStatus.ACCEPTED, CommandStatus.APPLYING, CommandStatus.APPLIED,
-                    }:
+                    if (
+                        command is None
+                        or command.execution_id != attempt.execution_id
+                        or command.kind is not CommandKind.STEER
+                        or command.status not in {
+                            CommandStatus.ACCEPTED, CommandStatus.APPLYING, CommandStatus.APPLIED,
+                        }
+                    ):
                         raise AgentDriverError("steer_closed", "steering delivery is no longer pending")
                     if command.status is CommandStatus.ACCEPTED:
                         command = self.executions._transition_command(
