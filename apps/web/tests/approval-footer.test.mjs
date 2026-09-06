@@ -120,73 +120,105 @@ test("multiple questions retain navigation and ordered answers", async () => {
   });
 });
 
+
 const { useDecisionDiscussion } = await import("../components/chat/composer/modes/question/use-decision-discussion.ts");
-for (const q of [decision, { ...decision, args: { _sandbox_escalation: { from: "sandbox", to: "host", path: "/blocked/file", rule: "deny-write" } } }]) {
-for (const existingDraft of ["", "Keep my existing question."]) {
-  test(`discussion prepares an editable focused draft, preserving ${existingDraft ? "existing text" : "empty input"} (${q.args ? "sandbox" : "ordinary"})`, async () => {
-    const declined = [];
-    let focusCount = 0;
-    const host = document.createElement("div");
-    document.body.append(host);
-    const root = createRoot(host);
-    function Harness() {
-      const [active, setQ] = useState(q);
-      const [draft, setDraft] = useState(existingDraft);
-      const textareaRef = useRef(null);
-      const discuss = useDecisionDiscussion({ decision: active, sessionKey: "session-one", input: draft, setInput: setDraft,
-        decline: d => declined.push(d), dequeue: () => setQ(null), textareaRef });
-      return active ? createElement(QuestionMode, { decision: active, onResolve() {}, onChatAbout: discuss })
-        : createElement("textarea", { value: draft, onChange: e => setDraft(e.target.value), ref: node => {
-          textareaRef.current = node;
-          if (node) node.focus = () => { focusCount++; };
-        } });
-    }
-    try {
-      await act(async () => root.render(createElement(Harness)));
-      await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this").click());
-      assert.deepEqual(declined, [q], "only the displayed wait is declined");
-      const textarea = host.querySelector("textarea");
-      if (q.args) {
-        assert.ok(textarea.value.includes("Sandbox blocked this access"));
-        assert.ok(textarea.value.includes("/blocked/file"));
-        assert.ok(textarea.value.includes("deny-write"));
-      } else {
-        assert.ok(textarea.value.includes(q.prompt));
-        assert.ok(textarea.value.includes(q.detail));
-      }
-      assert.ok(textarea.value.endsWith(existingDraft));
-      assert.equal(focusCount, 1, "focus the newly mounted chat input");
-    } finally { await act(async () => root.unmount()); host.remove(); }
+const { useSendQueue, registerChatSender } = await import("../lib/state/send-queue.ts");
+const { useSessionStore } = await import("../lib/session-store/index.ts");
+
+async function discussionMounted(check) {
+  const requests = [], sent = [], removed = [], notices = [];
+  const onToast = e => notices.push(e.detail); window.addEventListener("op:toast", onToast);
+  const q = { ...decision, sessionId: "origin", tool: "process" };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  const draft = "My unsent question";
+  let changeSession;
+  useSessionStore.setState({ runningTasks: {}, currentSessionId: "origin", activeChatKey: "origin" });
+  useSendQueue.setState({ queues: {} });
+  registerChatSender(args => { sent.push(args); return true; });
+  respond = async (url, init) => {
+    const command = JSON.parse(init.body); requests.push({ url, command });
+    return Response.json({ command: { ...command, status: "applied" } });
+  };
+  function Harness() {
+    const [active, setActive] = useState(q);
+    const [sid, setSid] = useState("origin");
+    const [input, setInput] = useState(draft);
+    changeSession = setSid;
+    const textareaRef = useRef(null);
+    const discuss = useDecisionDiscussion({ decision: active, sessionKey: sid, thinking: "medium",
+      input, setInput, decline() {}, textareaRef,
+      dequeue: id => { removed.push(id); setActive(null); } });
+    return active ? createElement(QuestionMode, { decision: active, onResolve() {}, onChatAbout: discuss })
+      : createElement("textarea", { value: input, readOnly: true, ref: textareaRef });
+  }
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    const click = () => [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this").click();
+    await check({ host, requests, sent, removed, notices, click, q, changeSession, draft });
+  } finally { await act(async () => root.unmount()); host.remove(); window.removeEventListener("op:toast", onToast); useSendQueue.setState({ queues: {} }); }
+}
+
+test("Chat about this acknowledges rejection and automatically sends discussion without changing draft", async () => {
+  await discussionMounted(async ({ host, click, requests, sent, draft }) => {
+    await act(async () => { click(); click(); });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "/api/execution/wait/decline");
+    assert.equal(requests[0].command.payload.wait_id, decision.id);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].sessionId, "origin");
+    assert.match(sent[0].text, /reject.*discuss/i);
+    assert.ok(!sent[0].text.includes('{'));
+    assert.equal(sent[0].toolsEnabled, false);
+    assert.equal(sent[0].webSearchEnabled, false);
+    assert.equal(host.querySelector("textarea").value, draft);
+  });
+});
+
+test("discussion waits for applied acknowledgement and remains owned by the original session", async () => {
+  await discussionMounted(async ({ click, sent, changeSession }) => {
+    let finish;
+    respond = async (_url, init) => new Promise(resolve => { finish = () => resolve(Response.json({ command: { ...JSON.parse(init.body), status: "applied" } })); });
+    await act(async () => click());
+    assert.equal(sent.length, 0);
+    assert.equal(document.querySelector('[aria-busy="true"]').disabled, true);
+    await act(async () => changeSession("other"));
+    await act(async () => finish());
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].sessionId, "origin");
+  });
+});
+
+for (const status of ["rejected", "accepted", "wrong-id", "network-error"]) {
+  test(`discussion does not send on ${status} acknowledgement`, async () => {
+    await discussionMounted(async ({ click, sent, removed, notices }) => {
+      respond = async (_url, init) => {
+        if (status === "network-error") throw new Error("offline");
+        const command = JSON.parse(init.body);
+        return Response.json({ command: { ...command, command_id: status === "wrong-id" ? "different" : command.command_id, status: status === "wrong-id" ? "applied" : status } });
+      };
+      await act(async () => click());
+      assert.equal(sent.length, 0);
+      assert.equal(removed.length, 0);
+      assert.equal(notices.at(-1).tone, "error");
+      assert.match(notices.at(-1).message, /not sent/);
+    });
   });
 }
 
-}
-for (const switchSession of [false, true]) {
-  test(`discussion focus ${switchSession ? "cancels after switching sessions" : "waits for remaining decisions"}`, async () => {
-    let control, focusCount = 0;
-    const host = document.createElement("div"); document.body.append(host);
-    const root = createRoot(host);
-    function Harness() {
-      const [q, setQ] = useState(decision);
-      const [sid, setSid] = useState("one");
-      const [draft, setDraft] = useState("");
-      const textareaRef = useRef(null);
-      const discuss = useDecisionDiscussion({ decision: q, sessionKey: sid, input: draft, setInput: setDraft,
-        decline() {}, dequeue: () => setQ({ ...decision, id: "second" }), textareaRef });
-      control = { setQ, setSid };
-      return q ? createElement(QuestionMode, { decision: q, onResolve() {}, onChatAbout: discuss })
-        : createElement("textarea", { value: draft, readOnly: true, ref: node => {
-          textareaRef.current = node; if (node) node.focus = () => { focusCount++; };
-        } });
-    }
-    try {
-      await act(async () => root.render(createElement(Harness)));
-      await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this").click());
-      assert.equal(focusCount, 0);
-      assert.equal(host.querySelector("textarea"), null, "the other pending decision remains visible");
-      if (switchSession) await act(async () => control.setSid("two"));
-      await act(async () => control.setQ(null));
-      assert.equal(focusCount, switchSession ? 0 : 1);
-    } finally { await act(async () => root.unmount()); host.remove(); }
+test("discussion queues until the rejected execution clears and retries a disconnected sender", async () => {
+  await discussionMounted(async ({ click, sent }) => {
+    useSessionStore.setState({ runningTasks: { origin: { execution_id: "exec-one" } } });
+    await act(async () => click());
+    assert.equal(sent.length, 0);
+    assert.equal(useSendQueue.getState().queues.origin.length, 1);
+    useSessionStore.setState({ runningTasks: {} });
+    registerChatSender(() => false);
+    useSendQueue.getState().drain("origin");
+    assert.equal(useSendQueue.getState().queues.origin.length, 1);
+    registerChatSender(args => { sent.push(args); return true; });
+    useSendQueue.getState().drain("origin");
+    assert.equal(sent.length, 1);
+    assert.equal(useSendQueue.getState().queues.origin?.length ?? 0, 0);
   });
-}
+});

@@ -486,14 +486,8 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
 
   const rejectDecision = useDecisionDiscussion({
     decision: activeDecision,
-    sessionKey: activeChatKey ?? currentSessionId ?? "__new__",
-    input,
-    setInput,
-    decline: useCallback((d: NonNullable<typeof activeDecision>) => {
-      sendWaitCommand(d, "execution.wait.decline");
-    }, [sendWaitCommand]),
+    thinking,
     dequeue: dequeueDecision,
-    textareaRef,
   });
 
   // 顶部提问面板的内容（真 ask 优先；morphed 时不叠面板 —— approval/form

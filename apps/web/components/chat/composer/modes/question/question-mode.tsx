@@ -72,7 +72,7 @@ function withColon(s: string): string {
 interface QuestionModeProps {
   decision: PendingDecision;
   onResolve: (id: string) => void;
-  onChatAbout: () => void;
+  onChatAbout: () => void | Promise<void>;
 }
 
 /** Wire pick for an approval card. ``always_path`` is sandbox-escalation only. */
@@ -157,6 +157,7 @@ function stepAnswered(step: Step, a: Answer): boolean {
 
 export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionModeProps) {
   const { text } = useTranslation();
+  const [discussionPending, setDiscussionPending] = useState(false);
   const steps = toSteps(q);
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>(() => steps.map(seedAnswer));
@@ -301,9 +302,13 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
             <ApprovalChoices step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
           )}
           <div className={styles.actionButtons}>
-            <button type="button" className={styles.navBtn} onClick={onChatAbout}
+            <button type="button" className={styles.navBtn} disabled={discussionPending} aria-busy={discussionPending}
+              onClick={async () => {
+                setDiscussionPending(true);
+                try { await onChatAbout(); } finally { setDiscussionPending(false); }
+              }}
               title={text("Chat about this instead", "直接聊这个")}>
-              {text("Chat about this", "Chat about this")}
+              {discussionPending ? text("Sending…", "发送中…") : text("Chat about this", "Chat about this")}
             </button>
           {navButtons.map((b, i) => (
             <button
@@ -311,7 +316,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
               type="button"
               className={`${styles.navBtn} ${b.primary ? styles.navBtnPrimary : ""}`}
               onClick={b.onClick}
-              disabled={b.disabled}
+              disabled={discussionPending || b.disabled}
             >
               {b.label}
             </button>

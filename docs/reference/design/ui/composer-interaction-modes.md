@@ -221,9 +221,12 @@ change behaviour.
 
 ### Discussing a pending request
 
-Chat about this declines only the displayed wait and prepares an editable draft
-from its prompt and displayed detail, followed by the existing session draft.
-It does not send a chat message or grant approval. The input receives focus and
-the caret moves to the end after ordinary chat input mounts. Other queued
-decisions remain pending; they postpone focus until the input is available.
-Switching sessions cancels the pending focus request.
+Chat about this submits an exact canonical wait decline and waits for its applied
+acknowledgement. It then queues a short user message saying that the request is
+rejected and discussion is needed. The existing session queue sends it when the
+prior execution becomes idle. This automatic turn disables tools and web search
+so the model replies before the user sends a separate follow-up. Drafts,
+attachments and later-turn settings remain unchanged. Duplicate clicks share one
+command and one notification. Failed or unconfirmed declines show an error and
+do not send a rejection notification. The session captured at click time owns
+both operations even if the user switches tabs while awaiting acknowledgement.

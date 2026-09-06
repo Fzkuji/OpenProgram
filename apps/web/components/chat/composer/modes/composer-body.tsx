@@ -31,7 +31,7 @@ export interface ComposerBodyProps {
   composerMode: string;
   activeDecision: Decision | null;
   dequeueDecision(id: string): void;
-  onChatAbout(): void;
+  onChatAbout(): void | Promise<void>;
   fnFormFunction: FnFormFn | null;
   fnForm: ReturnType<typeof useFnFormState>;
   handleFnFormClose(): void;

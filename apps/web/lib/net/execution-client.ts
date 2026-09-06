@@ -140,7 +140,11 @@ export async function getExecutionDebuggerState(
   );
 }
 
-export async function postExecutionCommand(command: ExecutionCommand, signal?: AbortSignal): Promise<CommandResult> {
+export type WaitCommand = Omit<ExecutionCommand, "action"> & {
+  action: "execution.wait.answer" | "execution.wait.decline";
+};
+
+export async function postExecutionCommand(command: ExecutionCommand | WaitCommand, signal?: AbortSignal): Promise<CommandResult> {
   const operation = command.action.slice("execution.".length);
   const pathOperation = operation.startsWith("wait.")
     ? `wait/${operation.slice("wait.".length)}`
