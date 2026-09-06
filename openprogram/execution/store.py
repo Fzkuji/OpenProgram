@@ -2220,11 +2220,17 @@ class ExecutionStore:
                     f"{current.session_id}:{steer['command_id']}".encode()
                 ).hexdigest()[:24]
                 # Agent messages live in the session Git store. Recover a
-                # completed idempotent write whose SQL receipt failed (including
+                # completed branch-linked write whose SQL receipt failed (including
                 # a rolled-back ACCEPTED -> APPLYING transition on resume).
                 # Delivery holds this same transaction lock around the write.
                 from openprogram.agent.session_db import default_db
-                delivered = default_db().message_exists(current.session_id, message_id)
+                turn_input = connection.execute(
+                    "SELECT assistant_message_id FROM execution_inputs WHERE execution_id = ?",
+                    (execution_id,),
+                ).fetchone()
+                delivered = bool(turn_input) and default_db().has_persisted_ancestor(
+                    current.session_id, message_id, str(turn_input["assistant_message_id"]),
+                )
                 if delivered and status is CommandStatus.ACCEPTED:
                     self._transition_command(
                         connection, str(steer["command_id"]),

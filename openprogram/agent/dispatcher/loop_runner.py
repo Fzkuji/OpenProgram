@@ -406,18 +406,19 @@ def run_loop_blocking(
             )
             with delivery:
                 writer = SessionNodeWriter(db, req.session_id, advance_head=False)
-                if not db.message_exists(req.session_id, message_id):
-                    writer.append(Call(
-                        id=message_id,
-                        created_at=timestamp,
-                        role=ROLE_USER,
-                        output=text,
-                        predecessor=predecessor,
-                        metadata=metadata,
-                    ))
-                if not db.message_exists(req.session_id, message_id):
-                    raise RuntimeError("steering user message was not persisted")
+                # Replay the idempotent append even when the memory index has
+                # the ID: an earlier history write may have failed after indexing.
+                writer.append(Call(
+                    id=message_id,
+                    created_at=timestamp,
+                    role=ROLE_USER,
+                    output=text,
+                    predecessor=predecessor,
+                    metadata=metadata,
+                ))
                 writer.update(assistant_msg_id, predecessor=message_id)
+                if not db.has_persisted_ancestor(req.session_id, message_id, assistant_msg_id):
+                    raise RuntimeError("steering message is not persisted in the assistant branch")
         except Exception:
             # Retain the command for another safe point if either the user
             # message or its delivery receipt could not be persisted.
