@@ -272,7 +272,10 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
         {/* 进度点 + 几分之几 —— 哪怕只有 1 步也显示（统一）。 */}
         {!discussionOpen && <div className={multi.progress}>
           {steps.map((_, i) => (
-            <span
+            <button
+              type="button"
+              disabled={answerLocked}
+              aria-current={i === idx ? "step" : undefined}
               key={i}
               className={
                 multi.dot +

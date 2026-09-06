@@ -13,13 +13,20 @@ Use the permission menu in Web or the installed App, or `/permissions` in the te
 Bypass does not override explicit deny or ask rules, mandatory plan-exit or self-update approval, plugin restrictions, identity capabilities, or Sandbox.
 
 Approval choices appear at the bottom left of the request. Select Allow once,
-Always allow or Deny, then use Send on the right to submit. Chat about this sits
+Allow this operation in this project, or Deny, then use Send on the right to submit.
+The project option is offered only when the operation supports a persistent exact
+rule. It applies to the same operation in future sessions in that project.
+Self-update requests offer only one-time approval. A failed rule save is reported
+and does not execute the operation. Chat about this sits
 next to Send. It opens a feedback field while keeping the original question or
 operation visible. Opening or cancelling this field sends nothing. Write your
 feedback and choose Send discussion: after the current wait is declined, your
 feedback and its original context are sent to the same conversation. The model
 replies without executing tools. Deny alone declines the operation without
 sending a discussion message. Your ordinary chat draft is unchanged.
+The request remains visible until the server confirms the answer. If delivery is
+unknown, retry the original answer; retrying does not create a different approval.
+Refreshing restores the current request, execution version and supported scopes.
 On narrow windows, these controls wrap within the same bottom action area.
 
 ## Change permissions during a task
