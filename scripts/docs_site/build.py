@@ -275,7 +275,7 @@ def embed_html(raw_url: str) -> str:
 
     iframe sandboxing keeps the original's fixed-position layouts, styles,
     scripts, and visualizations 100% intact without leaking into the shell.
-    The original file is shipped verbatim alongside as a .raw.html sibling.
+    The page is shipped alongside as a .raw.html sibling with site links resolved.
     """
     return (
         f'<iframe class="viz-frame" src="{raw_url}" loading="lazy" '
@@ -558,11 +558,11 @@ def _build_into_out_root() -> int:
         else:
             html_text = p.src.read_text(encoding="utf-8", errors="replace")
             if is_full_page(html_text):
-                # Standalone page → ship verbatim + isolate in an iframe.
+                # Standalone page → preserve layout in an iframe and resolve site links.
                 raw_rel = p.out.with_suffix("").with_suffix(".raw.html")
                 raw_path = OUT_ROOT / raw_rel
                 raw_path.parent.mkdir(parents=True, exist_ok=True)
-                raw_path.write_text(html_text + _ESC_FORWARD, encoding="utf-8")
+                raw_path.write_text(relink_internal(html_text, p.out.parent) + _ESC_FORWARD, encoding="utf-8")
                 body = embed_html(DEPLOY_BASE + str(raw_rel).replace("\\", "/"))
                 toc = ""
             else:
@@ -627,7 +627,7 @@ def _build_into_out_root() -> int:
                 zh_raw_rel = p.zh_out.with_suffix(".raw.html")
                 zh_raw_path = OUT_ROOT / zh_raw_rel
                 zh_raw_path.parent.mkdir(parents=True, exist_ok=True)
-                zh_raw_path.write_text(zh_text + _ESC_FORWARD, encoding="utf-8")
+                zh_raw_path.write_text(relink_internal(zh_text, p.zh_out.parent) + _ESC_FORWARD, encoding="utf-8")
                 zh_body = embed_html(
                     DEPLOY_BASE + str(zh_raw_rel).replace("\\", "/")
                 )

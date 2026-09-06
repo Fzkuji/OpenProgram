@@ -130,7 +130,12 @@ lowercase Python identifier and is also the public function name. Export that
 function from __init__.py. Define it in workflow.py with the existing
 @agentic_function decorator and exactly one task parameter. Put reusable
 responsibilities in separate steps/, goals/, or helpers/ modules and include
-tests/test_workflow.py. Use ordinary relative imports inside the package.
+tests/test_workflow.py. Include actual pytest behavior tests for output and invalid
+input, not an import-only file or just a callable assertion. Test the entry's
+__wrapped__ body with external calls mocked using the monkeypatch fixture. Publication
+runs these tests with network disabled in an OS sandbox, so tests must not call
+live providers or submit external requests. Use ordinary relative imports inside
+the package.
 Plain import statements such as `import json` are forbidden. Every Python
 module top level may contain only a module docstring, allowed `from ... import
 ...` statements, an optional `__all__` assignment, and function definitions;

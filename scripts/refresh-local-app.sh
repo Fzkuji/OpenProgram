@@ -390,6 +390,15 @@ printf '%s\n' "$revision" > \
 # worker necessarily imports the refreshed runtime.
 # Rebind an existing launchd service to the same embedded interpreter used by
 # the App. A detached fallback must use it too, never the PATH installation.
+# Bind this source catalog once; individual Programs retain relative identities.
+"$app_python" -I -B - "$repo_root/openprogram/programs" <<'PYTHON'
+import sys
+from openprogram.programs._programs import bind_program_catalog, migrate_program_source_paths
+
+bind_program_catalog(sys.argv[1])
+migrate_program_source_paths()
+PYTHON
+
 if test -f "$HOME/Library/LaunchAgents/ai.openprogram.worker.plist"; then
   "$app_python" -I -B -m openprogram worker install
 else

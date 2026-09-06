@@ -18,7 +18,9 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Reorder } from "framer-motion";
 
-import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
+import { type AgenticFunction } from "@/lib/session-store";
+import { openFunctionForm } from "@/lib/state/functions-actions";
+import { setPendingRunFunction } from "@/lib/use-pending-run-function";
 import { useFunctions } from "@/lib/state/functions-store";
 import { type AnimatedNavIconHandle } from "@/components/animated-icons";
 import {
@@ -62,7 +64,6 @@ async function persistMeta(meta: FunctionsMeta): Promise<void> {
 
 export function FavoritesList(): React.ReactElement | null {
   const { availableFunctions, programsMeta } = useWindowGlobals();
-  const openFnForm = useSessionStore((s) => s.openFnForm);
   const pathname = usePathname();
   const router = useRouter();
 
@@ -105,16 +106,13 @@ export function FavoritesList(): React.ReactElement | null {
     if (!fn) return;
     const onChat = pathname === "/chat" || pathname.startsWith("/s/");
     if (!onChat) {
-      const w = window as unknown as {
-        __pendingRunFunction?: { name: string; cat: string };
-      };
-      w.__pendingRunFunction = { name, cat: category || "" };
+      setPendingRunFunction({ name, cat: category || "" });
       // `__lastChatPath` was a legacy public/js global that nothing assigns
       // anymore, so this always fell through to "/chat" regardless.
       router.push("/chat");
       return;
     }
-    openFnForm(fn);
+    void openFunctionForm(fn.name);
   }
 
   function handleReorder(next: AgenticFunction[]) {

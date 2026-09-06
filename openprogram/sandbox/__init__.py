@@ -803,18 +803,22 @@ def _concrete_paths(patterns: tuple[str, ...]) -> list[str]:
 # --- wrapping --------------------------------------------------------------
 
 def wrap_command(command: str, cwd: str,
-                 policy: SandboxPolicy | None = None) -> tuple[list[str], bool]:
+                 policy: SandboxPolicy | None = None, *,
+                 private_tmp: bool = False,
+                 allow_subprocesses: bool = True,
+                 read_only_roots: tuple[str, ...] = ()) -> tuple[list[str], bool]:
     """Wrap *command* in a sandbox invocation. Returns ``(args, shell)``."""
     if policy is None:
         policy = SandboxPolicy()
     cwd = os.path.realpath(cwd)
     if sys.platform == "darwin":
-        profile = _seatbelt_profile(cwd, policy)
+        profile = _seatbelt_profile(cwd, policy, private_tmp=private_tmp,
+                                    allow_subprocesses=allow_subprocesses)
         return (["/usr/bin/sandbox-exec", "-p", profile,
                  "/bin/bash", "-c", command], False)
     if sys.platform == "win32":
         return (_wsl_bwrap_args(command, cwd, policy), False)
-    return (_bwrap_args(command, cwd, policy), False)
+    return (_bwrap_args(command, cwd, policy, read_only_roots=read_only_roots), False)
 
 
 def _writable_roots(cwd: str, policy: SandboxPolicy) -> list[str]:
@@ -826,12 +830,13 @@ def _writable_roots(cwd: str, policy: SandboxPolicy) -> list[str]:
     return roots
 
 
-def _seatbelt_profile(cwd: str, policy: SandboxPolicy) -> str:
+def _seatbelt_profile(cwd: str, policy: SandboxPolicy, *, private_tmp: bool = False,
+                      allow_subprocesses: bool = True) -> str:
     lines = [
         "(version 1)",
         "(deny default)",
         "(allow process-exec)",
-        "(allow process-fork)",
+        *(["(allow process-fork)"] if allow_subprocesses else []),
         # Same-sandbox only: without these the opened-up process-exec
         # would let a child signal and inspect processes on the host.
         # Escalated policy re-opens host process INSPECTION (ps/lsof);
@@ -850,11 +855,12 @@ def _seatbelt_profile(cwd: str, policy: SandboxPolicy) -> str:
     for root in _writable_roots(cwd, policy):
         lines.append(f"(allow file-write* (subpath {_sbpl_str(root)}))")
     tmpdir = os.path.realpath(os.environ.get("TMPDIR") or "/tmp")
-    lines += [
-        f"(allow file-write* (subpath {_sbpl_str(tmpdir)}))",
-        '(allow file-write* (subpath "/private/tmp"))',
-        '(allow file-write* (subpath "/tmp"))',
-    ]
+    if not private_tmp:
+        lines += [
+            f"(allow file-write* (subpath {_sbpl_str(tmpdir)}))",
+            '(allow file-write* (subpath "/private/tmp"))',
+            '(allow file-write* (subpath "/tmp"))',
+        ]
     # `2>/dev/null` is in most real commands and `(deny default)` blocks it.
     for dev in _CHAR_DEVICES:
         lines.append(
@@ -881,7 +887,8 @@ def _seatbelt_profile(cwd: str, policy: SandboxPolicy) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _bwrap_args(command: str, cwd: str, policy: SandboxPolicy) -> list[str]:
+def _bwrap_args(command: str, cwd: str, policy: SandboxPolicy, *,
+                read_only_roots: tuple[str, ...] = ()) -> list[str]:
     args = [
         "bwrap",
         "--new-session",       # bubblewrap documents this as the TIOCSTI guard
@@ -904,6 +911,12 @@ def _bwrap_args(command: str, cwd: str, policy: SandboxPolicy) -> list[str]:
     # directory under /tmp, and the workspace silently vanishes — which is
     # where every `tempfile` staging directory lands.
     args += ["--tmpfs", "/tmp"]
+    # Re-expose trusted code/interpreters hidden by the private /tmp mount.
+    # These mounts precede writable roots and all deny rules, so they cannot
+    # reopen credentials or make the test snapshot writable.
+    for root in read_only_roots:
+        real = os.path.realpath(root)
+        args += ["--ro-bind", real, real]
     for root in _writable_roots(cwd, policy):
         args += ["--bind", root, root]
     # Only paths that exist: the root is bound read-only, so bwrap cannot

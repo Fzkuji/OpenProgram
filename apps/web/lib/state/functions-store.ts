@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { runtimeState } from "@/lib/runtime-bridge/state";
 import type { FunctionsMeta } from "@/lib/types";
 import type { AgenticFunction } from "@/lib/session-store";
 
@@ -35,7 +36,10 @@ export const useFunctions = create<ProgramsState>((set) => ({
   search: "",
   draggedProgram: null,
   setMeta: (m) => set({ meta: m }),
-  setFunctions: (fns) => set({ functions: fns }),
+  setFunctions: (fns) => {
+    runtimeState.availableFunctions = fns;
+    set({ functions: fns });
+  },
   setCurrentFolder: (f) => set({ currentFolder: f }),
   setViewMode: (v) => set({ viewMode: v }),
   setFilter: (f) => set({ filter: f }),

@@ -1,34 +1,50 @@
 "use client";
 
-/**
- * Functions-related actions that don't fit a component (one-shot
- * fetches, store writes that need to be triggered from event handlers
- * rather than render). The matching mutations live in
- * `lib/functions-store.ts`; this file just wraps the network calls and
- * keeps `runtimeState.availableFunctions` in sync while the WS reducer
- * still feeds the shared runtime state.
- */
-
 import { useFunctions } from "./functions-store";
-import { runtimeState } from "@/lib/runtime-bridge/state";
-import type { AgenticFunction } from "@/lib/session-store";
+import { useSessionStore, type AgenticFunction } from "@/lib/session-store";
+import { jsonFetch } from "@/lib/net/fetch-client";
+import { showToast } from "@/lib/format-utils/toast";
+import { translateText } from "@/lib/i18n";
 
-/**
- * Re-fetch the function catalogue from `/api/programs` and publish
- * it to both the React store (`useFunctions.setFunctions`) and
- * `runtimeState.availableFunctions` (read by the `→ /chat` fn-form
- * hand-off in `lib/use-pending-run-function.ts`). Mirrors
- * `refreshFunctions` in functions-panel.ts so the sidebar refresh
- * button no longer needs to go through a global.
- */
-export async function refreshFunctionsList(): Promise<void> {
+let latestRefresh = 0;
+
+/** Refresh both catalog readers. Failed requests preserve the last usable list. */
+export async function refreshFunctionsList(signal?: AbortSignal): Promise<AgenticFunction[] | null> {
+  const request = ++latestRefresh;
+  const previous = useFunctions.getState().functions;
   try {
-    const resp = await fetch("/api/programs");
-    const data: AgenticFunction[] = await resp.json();
-    const fns = Array.isArray(data) ? data : [];
-    useFunctions.getState().setFunctions(fns);
-    runtimeState.availableFunctions = fns;
-  } catch (err) {
-    console.error("Refresh functions failed:", err);
+    const data = await jsonFetch<AgenticFunction[]>("/api/programs", { signal });
+    if (!Array.isArray(data)) throw new TypeError("/api/programs must return an array");
+    if (signal?.aborted) return null;
+    const current = useFunctions.getState().functions;
+    if (request !== latestRefresh || current !== previous) return current;
+    useFunctions.getState().setFunctions(data);
+    return data;
+  } catch (error) {
+    if (!signal?.aborted) console.error("Refresh functions failed:", error);
+    return null;
   }
+}
+
+let latestLaunch = 0;
+
+/** Resolve a Program and open its parameters without executing or sending it. */
+export async function openFunctionForm(name: string, signal?: AbortSignal): Promise<void> {
+  const launch = ++latestLaunch;
+  const owner = useSessionStore.getState().activeChatKey;
+  let fn = useFunctions.getState().functions.find((item) => item.name === name);
+  let fetched: AgenticFunction[] | null = [];
+  if (!fn) {
+    fetched = await refreshFunctionsList(signal);
+    fn = fetched?.find((item) => item.name === name);
+  }
+  if (signal?.aborted || launch !== latestLaunch || useSessionStore.getState().activeChatKey !== owner) return;
+  if (fn) {
+    useSessionStore.getState().openFnForm(fn);
+    return;
+  }
+  showToast(fetched === null
+    ? translateText("Programs could not be loaded. Try again.", "无法加载 Programs，请重试。")
+    : translateText(`Program ${name} is unavailable. Check its installation and refresh Programs.`, `Program ${name} 不可用，请检查安装并刷新 Programs。`),
+  { tone: "error" });
 }

@@ -7,7 +7,7 @@ import { BotIcon, BoxesIcon, HeartIcon, WrenchIcon } from "@/components/animated
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
 import { useTranslation } from "@/lib/i18n";
-import { jsonFetch } from "@/lib/net/fetch-client";
+import { refreshFunctionsList } from "@/lib/state/functions-actions";
 import { getLastChatPath } from "@/lib/last-chat-path";
 import { runtimeState } from "@/lib/runtime-bridge/state";
 import { useFunctions } from "@/lib/state/functions-store";
@@ -44,7 +44,7 @@ export function FunctionsPage() {
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
       const [programRows, programMeta, toolRows] = await Promise.all([
-        jsonFetch<unknown>("/api/programs", { signal }),
+        refreshFunctionsList(signal),
         fetch("/api/programs/meta", { signal }).then((response) => response.json()),
         fetch("/api/tools", { signal }).then((response) => response.json()),
       ]);

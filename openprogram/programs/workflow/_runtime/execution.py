@@ -280,6 +280,9 @@ def _execute_package_snapshot(
         name: module for name, module in sys.modules.items() if is_snapshot_module(name)
     }
     prior_workflows = sys.modules.pop("workflows", missing)
+    namespace_spec = importlib.machinery.ModuleSpec("workflows", loader=None, is_package=True)
+    namespace_spec.submodule_search_locations = [str(snapshot / "workflows")]
+    sys.modules["workflows"] = importlib.util.module_from_spec(namespace_spec)
     for name in prior_modules:
         sys.modules.pop(name, None)
     sys.path.insert(0, str(snapshot))
