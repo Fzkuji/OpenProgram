@@ -144,6 +144,7 @@ def test_execution_payload_embeds_only_the_nested_job_resource(monkeypatch):
     view = SimpleNamespace(resource=resource)
     monkeypatch.setattr("openprogram.agent.job.get_runner", lambda: SimpleNamespace(
         get_job_resource_view=lambda _job_id: view,
+        get_job=lambda _job_id: None,
     ))
     monkeypatch.setattr(
         "openprogram.execution.default_store", lambda: SimpleNamespace(),
