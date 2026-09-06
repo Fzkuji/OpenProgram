@@ -813,8 +813,8 @@ function ProjectGroupHeader({
       <span className={sidebarNavLabelClass}>{name}</span>
       <button type="button" aria-label={pinTitle} title={pinTitle} aria-pressed={pinned}
         onClick={event => { event.stopPropagation(); onTogglePin(); }}
-        className={`shrink-0 rounded p-1 hover:bg-bg-hover ${pinned ? "text-text-bright" : "text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
-        <Pin size={13} fill={pinned ? "currentColor" : "none"} />
+        className={`flex size-[20px] shrink-0 items-center justify-center rounded-[5px] text-text-secondary hover:bg-bg-hover hover:text-text-primary ${pinned ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}>
+        <Pin size={14} strokeWidth={1.75} className="rotate-45" aria-hidden="true" />
       </button>
       <button
         type="button"
