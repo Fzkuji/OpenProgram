@@ -517,7 +517,7 @@ receipt = {
 <span id="boundaries">
 </span>
 <h2 tabindex="-1">Execution authority and isolation</h2>
-<p>Generated Python is arbitrary code, so OS isolation is mandatory. Launch the persistent child using a GUI-specific sandbox profile that intersects outer restrictions with an unconditionally enforced scratch/runtime/IPC-only policy. The ordinary Backend.spawn_spec path is not sufficient. Add a strict launch API that accepts the validated policy object, requires the platform sandbox, and refuses fallback. Neither danger-full-access, a broad inherited override, nor sandbox-unavailable may disable this per-tool isolation; in that case gui_exec is unavailable and ordinary separately gated tools remain unchanged. Deny direct network, desktop automation, arbitrary host-file access and raw CDP/native handles in this child. A filtered globals dictionary is not an isolation mechanism.</p>
+<p>Generated Python is arbitrary code, so OS isolation is mandatory. Launch the persistent child using a GUI-specific sandbox profile that intersects outer restrictions with an unconditionally enforced scratch/runtime/IPC-only policy. The ordinary Backend.spawn_spec path is not sufficient. Use a strict launch context that owns its scratch directory, fixes the interpreter and mandatory policy, requires the platform sandbox, and refuses fallback. Runtime bootstrap may read literal ancestor directory entries, but this does not permit descendant file contents. Neither danger-full-access, a broad inherited override, nor sandbox-unavailable may disable this per-tool isolation; in that case gui_exec is unavailable and ordinary separately gated tools remain unchanged. Deny direct network, desktop automation, arbitrary host-file access and raw CDP/native handles in this child. A filtered globals dictionary is not an isolation mechanism.</p>
 <p>The trusted broker holds OS permissions and external handles. Authenticate the child connection using process identity and an invocation-bound channel; do not pass a reusable global bearer credential into generated code. Validate owner, generation, exact target, operation, current user grant, deadline and cancellation before each effect. A batch admission is not blanket authorization for future targets.</p>
 <p>Ordinary Agent tools remain separately gated. If a script needs file or shell work, request the normal tool through an explicit brokered tool proxy, or return to the Agent to invoke it. Reuse the existing tool dispatcher and immutable outer request. Do not copy the legacy browser path's special bypass into a general code runner.</p>
 <p>UI observations are untrusted data. Page text and screenshots cannot authorize new app access, alter system instructions or invoke restricted tools. Tool descriptions and app capabilities come from the trusted host. Preserve user approvals for the same authorized action; new apps or expanded effects follow current policy. Do not add a confirmation to every harmless click.</p>
@@ -975,8 +975,8 @@ receipt = {
 </tr>
 <tr>
 <td>P1 persistent runner / standard GUI Agent</td>
-<td>Current Runtime and execute_code boundaries inspected.</td>
-<td>Not implemented; persistent isolation, broker and configuration acceptance missing.</td>
+<td>A separate macOS launcher candidate enforces isolation even with disabled or permissive outer policy; 83 security tests and independent specification/quality reviews pass.</td>
+<td>Not integrated. The launcher owns scratch and child cleanup; unsupported or unavailable sandbox fails closed. Persistent protocol, broker, standard Agent configuration and product acceptance remain unimplemented.</td>
 </tr>
 <tr>
 <td>P2 browser / P3 desktop / P4 VM</td>

@@ -517,7 +517,7 @@ receipt = {
 <span id="boundaries">
 </span>
 <h2 tabindex="-1">执行权限与隔离</h2>
-<p>生成的 Python 是任意代码，必须由 OS 隔离。持续子进程使用 GUI 专用 sandbox profile，将外层限制与不可关闭的 scratch/runtime/IPC-only 策略求交。普通 Backend.spawn_spec 路径不足；新增接收已验证策略对象的严格启动接口，要求平台 sandbox 且禁止降级。danger-full-access、宽松继承 override 或 sandbox 不可用都不能关闭该工具隔离；此时 gui_exec 不可用，正常独立授权工具保持原行为。子进程不能直接联网、自动控制桌面、任意读取宿主文件或取得原始 CDP/native 对象；过滤 globals 不是隔离措施。</p>
+<p>生成的 Python 是任意代码，必须由 OS 隔离。持续子进程使用 GUI 专用 sandbox profile，将外层限制与不可关闭的 scratch/runtime/IPC-only 策略求交。普通 Backend.spawn_spec 路径不足；使用拥有独立临时目录、固定解释器与强制策略的严格启动上下文，要求平台 sandbox 且禁止降级。运行库启动可以读取祖先目录本身的目录项，但不能因此读取其后代文件内容。danger-full-access、宽松继承 override 或 sandbox 不可用都不能关闭该工具隔离；此时 gui_exec 不可用，正常独立授权工具保持原行为。子进程不能直接联网、自动控制桌面、任意读取宿主文件或取得原始 CDP/native 对象；过滤 globals 不是隔离措施。</p>
 <p>可信 broker 持有 OS 权限和外部对象，用进程身份与本次调用绑定通道认证子进程，不把可复用全局 bearer 凭据交给生成代码。每次副作用前校验 owner、generation、准确目标、动作、当前用户授权、deadline、取消状态。批次被接受不代表未来新目标都被授权。</p>
 <p>正常 Agent 工具分别受权限限制。脚本需要文件/shell 操作时，经显式 broker 工具代理请求正常工具，或返回 Agent 再调用；复用现有 dispatcher 和不可扩大权限的外层请求，不能把旧浏览器路径的特殊 bypass 复制进通用代码运行器。</p>
 <p>页面文本和截图是非可信数据，不能授权新应用、修改系统指令或调用受限工具。工具说明与应用能力来自可信宿主。相同授权动作继续使用已有批准，新增应用或扩大副作用按当前策略处理，不给每次无害点击新增确认。</p>
@@ -975,8 +975,8 @@ receipt = {
 </tr>
 <tr>
 <td>P1 持续运行器/标准 GUI Agent</td>
-<td>检查当前 Runtime 与 execute_code 边界。</td>
-<td>未实现；缺持续隔离、broker 与配置验收。</td>
+<td>独立的 macOS 启动器候选在外层关闭沙箱或允许全部权限时仍强制隔离；83 项安全测试及独立规格、质量审查通过。</td>
+<td>尚未集成。启动器负责临时目录与子进程清理；平台不支持或沙箱不可用时明确拒绝。持续协议、broker、标准 Agent 配置及产品验收仍未实现。</td>
 </tr>
 <tr>
 <td>P2 浏览器/P3 桌面/P4 VM</td>
