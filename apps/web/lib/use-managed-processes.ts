@@ -12,8 +12,8 @@ export function useManagedProcesses(active: boolean, sessionId: string | null, s
   const [version, setVersion] = useState(0);
   const refresh = useCallback(() => setVersion(v => v + 1), []);
   useEffect(() => { setItems([]); setDetail(null); setLoaded(false); setStale(false); }, [sessionId]);
+  useEffect(() => { setDetail(null); }, [sessionId, selectedId]);
   useEffect(() => {
-    setDetail(null);
     if (!active || !sessionId) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -24,11 +24,16 @@ export function useManagedProcesses(active: boolean, sessionId: string | null, s
       try {
         const data = await getSessionProcesses(sessionId, controller.signal);
         if (disposed) return;
-        setItems(data.items); setLoaded(true); setStale(false);
+        setItems(data.items); setLoaded(true);
         if (selectedId) {
+          if (!data.items.some(item => item.id === selectedId)) {
+            setDetail(null);
+            throw new Error("Selected program is no longer in this conversation.");
+          }
           const selected = await getProcess(selectedId, controller.signal, sessionId);
           if (!disposed && data.items.some(item => item.id === selected.process.id)) setDetail(selected);
         }
+        if (!disposed) setStale(false);
       } catch { if (!disposed) setStale(true); }
       finally {
         clearTimeout(timeout);
