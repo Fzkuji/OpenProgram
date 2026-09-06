@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { ProjectEditor, type EditableProject } from "./project-editor";
 
+import { SectionHeader } from "./section-header";
 import { Input } from "@/components/ui/input";
 import styles from "./project-settings.module.css";
 
@@ -64,21 +65,23 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, o
   </>;
 }
 
-export function ProjectSectionHeading({ section }: { section:string }) {
+export function ProjectSectionHeading({ section, collapsed, onToggle, actions }: {
+  section: string; collapsed: boolean; onToggle: () => void; actions?: ReactNode;
+}) {
   const {text} = useTranslation();
   const view = useRecentsView();
   const [renaming,setRenaming] = useState(false);
   const custom = section !== "" && section !== "__pinned__";
   const title = section === "__pinned__" ? text("Pinned", "置顶") : section || text("Projects", "项目");
-  return <><div className="flex items-center justify-between px-2 pt-3 pb-1 text-xs text-text-muted">
-    <span>{title}</span>
+  return <><SectionHeader name={title} collapsible collapsed={collapsed} onToggle={onToggle} actions={<>
+    {actions}
     {custom && <Menu.Root><Menu.Trigger asChild><button type="button" aria-label={text(`Options for section ${section}`, `分区 ${section} 的选项`)}><MoreHorizontal size={15}/></button></Menu.Trigger>
       <Menu.Portal><Menu.Content className={MENU_PANEL+" "+styles.menu+" min-w-[180px]"}>
         <Menu.Item className={item} onSelect={()=>setRenaming(true)}>{text("Rename section", "重命名分区")}</Menu.Item>
         <Menu.Item className={item} onSelect={()=>setRecentsView({projectSectionNames:view.projectSectionNames.filter(value=>value!==section),projectSections:Object.fromEntries(Object.entries(view.projectSections).filter(([,value])=>value!==section))})}>{text("Remove section", "移除分区")}</Menu.Item>
       </Menu.Content></Menu.Portal>
     </Menu.Root>}
-  </div>
+  </>}/>
   {renaming&&<SectionNameDialog initialName={section} onClose={()=>setRenaming(false)} onSave={name=>setRecentsView({projectSectionNames:view.projectSectionNames.map(value=>value===section?name:value),projectSections:Object.fromEntries(Object.entries(view.projectSections).map(([id,value])=>[id,value===section?name:value]))})}/>}
   </>;
 }

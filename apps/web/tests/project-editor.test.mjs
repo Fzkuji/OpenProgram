@@ -9,7 +9,7 @@ const webRoot = new URL('../', import.meta.url);
 registerHooks({
   resolve(specifier, context, next) {
     const base = specifier.startsWith('@/') ? new URL(specifier.slice(2),webRoot).href : specifier.startsWith('.') && !/\.[a-z]+$/i.test(specifier) ? new URL(specifier,context.parentURL).href : null;
-    if(base) for(const suffix of ['.ts','.tsx','/index.ts']) if(existsSync(fileURLToPath(base+suffix))) return {url:base+suffix,shortCircuit:true};
+    if(base) for(const suffix of ['.ts','.tsx','/index.ts','/index.tsx']) if(existsSync(fileURLToPath(base+suffix))) return {url:base+suffix,shortCircuit:true};
     return next(specifier,context);
   },
   load(url,context,next) {
@@ -87,14 +87,17 @@ test('project menus open, pin, edit, create and rename sections without altering
   await act(async()=>input.dispatchEvent(new Event('input',{bubbles:true})));
   await act(async()=>host.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   assert.deepEqual(getRecentsView().projectSectionNames,['Research']);assert.equal(getRecentsView().projectSections.p,'Research');
-  await act(async()=>root.render(h(ProjectSectionHeading,{section:'Research'})));
+  let folds=0;
+  await act(async()=>root.render(h(ProjectSectionHeading,{section:'Research',collapsed:false,onToggle:()=>folds++})));
+  const heading=host.querySelector('[role=button]');assert.equal(heading.getAttribute('aria-expanded'),'true');
+  await act(async()=>heading.dispatchEvent(new Event('click',{bubbles:true})));assert.equal(folds,1);
   await act(async()=>host.querySelector('button').dispatchEvent(new Event('pointerdown',{bubbles:true})));
-  await click('Rename section');
+  await click('Rename section');assert.equal(folds,1,'section options must not toggle its list');
   const rename=host.querySelector('input');rename.type='text';Object.getOwnPropertyDescriptor(Object.getPrototypeOf(rename),'value').set.call(rename,'Experiments');
   await act(async()=>rename.dispatchEvent(new Event('input',{bubbles:true})));
   await act(async()=>host.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   assert.deepEqual(getRecentsView().projectSectionNames,['Experiments']);assert.equal(getRecentsView().projectSections.p,'Experiments');
-  await act(async()=>root.render(h(ProjectSectionHeading,{section:'Experiments'})));
+  await act(async()=>root.render(h(ProjectSectionHeading,{section:'Experiments',collapsed:false,onToggle:()=>{}})));
   await act(async()=>host.querySelector('button').dispatchEvent(new Event('pointerdown',{bubbles:true})));
   await click('Remove section');assert.deepEqual(getRecentsView().projectSectionNames,[]);assert.equal(getRecentsView().projectSections.p,undefined);
   await act(async()=>root.unmount());host.remove();
