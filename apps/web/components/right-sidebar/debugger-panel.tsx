@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   availableExecutionActions,
   buildExecutionCommand,
@@ -279,6 +279,12 @@ export function DebuggerPanel({
   const [waitError, setWaitError] = useState<string | null>(null);
   const [steerValue, setSteerValue] = useState("");
   const [editor, setEditor] = useState<"steer" | "branch" | null>(null);
+  const editorEpoch = useRef(0);
+  const steerRevision = useRef(0);
+  function openEditor(next: "steer" | "branch" | null) {
+    editorEpoch.current += 1;
+    setEditor(next);
+  }
   const [draftText, setDraftText] = useState<string | null>(null);
   const [draftPending, setDraftPending] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -446,8 +452,8 @@ export function DebuggerPanel({
               {(["pause", "continue", "step", "retry", "cancel"] as ExecutionCommandAction[]).filter((action) => availableExecutionActions(snapshot).includes(action)).map((action) => (
                 <ActionButton key={action} action={action} snapshot={snapshot} pending={pendingActions.has(`execution.${action}`)} payload={actionPayloads[action]} onCommand={onCommand && connection.state === "connected" ? submitAction : undefined} />
               ))}
-              {availableExecutionActions(snapshot).includes("steer") && <Button variant="ghost" onClick={() => setEditor("steer")}>{text("Add instruction", "补充指令")}</Button>}
-              {(selectedDraft || (snapshot.capabilities.fork && snapshot.checkpoint_head_id)) && <Button variant="ghost" onClick={() => setEditor("branch")}>{text("Create branch", "创建分支")}</Button>}
+              {availableExecutionActions(snapshot).includes("steer") && <Button variant="ghost" onClick={() => openEditor("steer")}>{text("Add instruction", "补充指令")}</Button>}
+              {(selectedDraft || (snapshot.capabilities.fork && snapshot.checkpoint_head_id)) && <Button variant="ghost" onClick={() => openEditor("branch")}>{text("Create branch", "创建分支")}</Button>}
             </div>
             <div className={styles.commandStack}>
               {Object.values(commandResults).map((result) => <CommandNotice key={result.command_id} result={result} />)}
@@ -533,21 +539,26 @@ export function DebuggerPanel({
 
           </ExecutionStrip>
 
-          <Dialog open={editor === "steer"} onOpenChange={open => setEditor(open ? "steer" : null)}>
+          <Dialog open={editor === "steer"} onOpenChange={open => openEditor(open ? "steer" : null)}>
             <DialogContent>
               <DialogHeader><DialogTitle>{text("Add instruction", "补充指令")}</DialogTitle>
                 <DialogDescription>{text("Applied at the next safe execution boundary. Work already completed is retained.", "在下一个安全执行边界应用，已经完成的操作保持不变。")}</DialogDescription></DialogHeader>
-              <label className={styles.editorLabel}>{text("Instruction", "指令")}<Textarea maxLength={4096} value={steerValue} onChange={event => setSteerValue(event.target.value)} placeholder={text("Describe the change", "描述需要调整的内容")} /></label>
+              <label className={styles.editorLabel}>{text("Instruction", "指令")}<Textarea maxLength={4096} value={steerValue} onChange={event => { steerRevision.current += 1; setSteerValue(event.target.value); }} placeholder={text("Describe the change", "描述需要调整的内容")} /></label>
               <CommandNotice result={commandResults["execution.steer"] || null} />
               <DialogFooter><ActionButton action="steer" snapshot={snapshot} pending={pendingActions.has("execution.steer")} payload={actionPayloads.steer} ready={Boolean(steerValue.trim())}
                 onCommand={onCommand && connection.state === "connected" ? async command => {
+                  const submittedEditor = editorEpoch.current;
+                  const submittedRevision = steerRevision.current;
                   const result = await submitAction(command);
-                  if (result && result.status !== "rejected") { setSteerValue(""); setEditor(null); }
+                  if (result && result.status !== "rejected" && steerRevision.current === submittedRevision) {
+                    setSteerValue("");
+                    if (editorEpoch.current === submittedEditor) openEditor(null);
+                  }
                   return result;
                 } : undefined} /></DialogFooter>
             </DialogContent>
           </Dialog>
-          <Dialog open={editor === "branch"} onOpenChange={open => setEditor(open ? "branch" : null)}>
+          <Dialog open={editor === "branch"} onOpenChange={open => openEditor(open ? "branch" : null)}>
             <DialogContent className={styles.editorDialog}>
               <DialogHeader><DialogTitle>{text("Create branch", "创建分支")}</DialogTitle>
                 <DialogDescription>{text("Continue from this saved point with new instructions. The original execution stays unchanged.", "从此保存点按新指令继续，原执行保持不变。")}</DialogDescription></DialogHeader>
