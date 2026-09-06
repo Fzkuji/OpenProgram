@@ -40,3 +40,5 @@ First-party Programs are immutable product components. In a mutable extension or
 Any repository that follows the directory contract (`<package>/agentics/__init__.py` exposing `AGENTIC_FUNCTIONS`) can be installed with the same `programs install` command. See [Installing and writing harnesses](../installing-harnesses.md) for the contract, a minimal template, and the publishing flow.
 
 That harness contract is different from a single self-programming Workflow package. For the package contract, a complete tested example, relative paths, and the `workflows validate/test/publish` commands, see [Write, test, and publish a Workflow](authoring.md). Generated `create_workflow` and `revise_workflow` packages use the same required behavior-test gate.
+
+Workflow forms ask for task information, not execution settings. Text polishing infers its style from the text in the same model request; it does not require a style selection. Browser backend and session handles remain internal. Document page ranges and output destinations are optional task requirements. Explicit Python callers retain supported overrides.

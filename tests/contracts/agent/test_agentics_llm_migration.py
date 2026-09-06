@@ -119,3 +119,16 @@ def test_only_deferred_tool_loops_still_call_runtime_exec():
 
     remaining.sort()
     assert remaining == []
+
+
+def test_polish_chooses_style_without_a_user_setting(monkeypatch):
+    module = importlib.import_module("openprogram.programs.workflow.text")
+    calls = []
+    monkeypatch.setattr(module, "llm", lambda prompt, **kwargs: calls.append(prompt) or "polished")
+    assert module.polish_text("A research abstract") == "polished"
+    assert len(calls) == 1
+    assert "Choose an appropriate style" in calls[0][0]["text"]
+    assert module.polish_text.input_meta["style"]["hidden"]
+    assert inspect.signature(module.polish_text).parameters["style"].default == "auto"
+    module.polish_text("A note", style="concise")
+    assert "in concise style" in calls[1][0]["text"]

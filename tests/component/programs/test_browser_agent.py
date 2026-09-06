@@ -1387,3 +1387,12 @@ def test_browser_workflow_form_excludes_execution_settings():
     assert signature.parameters["max_steps"].default == 20
     assert signature.parameters["max_seconds"].default == 300
     assert signature.parameters["backend"].default == ""
+
+
+def test_web_use_does_not_expose_backend_or_session_handles():
+    import inspect
+    from openprogram.programs.workflow.browser import web_use
+
+    for name in ("backend", "web_session_id", "page_context_token"):
+        assert web_use.input_meta[name]["hidden"]
+        assert inspect.signature(web_use).parameters[name].default == ""

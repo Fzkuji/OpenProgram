@@ -1737,9 +1737,10 @@ def _start_session_on_opened_page(*, context, owner_id: str, backend: str, argum
                 "observe or act with url opens a desktop web tab when no Page exists."
             ),
         },
-        "backend": {"description": "Backend used when observe creates a session"},
+        "backend": {"description": "Backend used when observe creates a session", "hidden": True, "advanced": True},
         "page": {"description": "Turn Page alias used by observe; never a URL"},
-        "web_session_id": {"description": "Session returned by observe"},
+        "web_session_id": {"description": "Session returned by observe", "hidden": True, "advanced": True},
+        "page_context_token": {"hidden": True, "advanced": True},
         "arguments": {
             "description": (
                 "Command-specific arguments. act needs action; expected_frame_id "
