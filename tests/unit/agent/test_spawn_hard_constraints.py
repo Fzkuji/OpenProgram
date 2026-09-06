@@ -158,7 +158,10 @@ def test_inner_tools_are_gated_by_the_outer_hard_constraints(owner_authority):
     gated = _gate(["bash", "worktree_create", "read"], outer)
 
     by_name = {t.name: t for t in gated}
-    for blocked in ("bash", "worktree_create"):
+    # Owner-delegated shell calls follow the admitted permission policy;
+    # worktree operations remain a hard constraint even under Bypass.
+    assert _text(_run(by_name["bash"], {"command": "id"})) == "RAN"
+    for blocked in ("worktree_create",):
         result = _run(by_name[blocked], {"command": "id"})
         assert result.details["reason_code"] == "HARD_CONSTRAINT_DENIED", blocked
         assert "RAN" not in _text(result), blocked

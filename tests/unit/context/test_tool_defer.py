@@ -163,8 +163,8 @@ def _load(name: str) -> None:
     ))
 
 
-def test_tools_array_frozen_within_a_turn():
-    """tool_search mid-turn must NOT change the provider array."""
+def test_discovery_promotes_only_the_loaded_tool_within_a_turn():
+    """Explicit discovery updates the next provider request's tool array."""
     install_loaded_deferred()
     apply_default_deferral()
     tools = agent_tools(toolset="full")
@@ -175,15 +175,15 @@ def test_tools_array_frozen_within_a_turn():
     _load("playwright_browser")
 
     after, cat_after = split_tools_for_dispatch(list(tools))
-    assert [t.name for t in after] == [t.name for t in before], (
-        "tools array changed mid-turn — cache prefix invalidated"
-    )
-    # The system-prompt catalog is part of the same prefix, so it holds too.
-    assert cat_after == cat_before
+    assert {t.name for t in after} == {t.name for t in before} | {"playwright_browser"}
+    assert cat_after == [(name, hint) for name, hint in cat_before if name != "playwright_browser"]
+    _load("playwright_browser")
+    repeated, _ = split_tools_for_dispatch(list(tools))
+    assert [t.name for t in repeated] == [t.name for t in after]
     install_loaded_deferred()
 
 
-def test_frozen_tool_enters_array_on_the_next_turn():
+def test_discovered_tool_remains_in_array_at_the_next_turn():
     install_loaded_deferred()
     apply_default_deferral()
     tools = agent_tools(toolset="full")
@@ -191,7 +191,7 @@ def test_frozen_tool_enters_array_on_the_next_turn():
 
     freeze_turn_tools(list(tools))
     _load(name)
-    assert name not in {t.name for t in split_tools_for_dispatch(list(tools))[0]}
+    assert name in {t.name for t in split_tools_for_dispatch(list(tools))[0]}
 
     freeze_turn_tools(list(tools))  # next turn boundary
     after, catalog = split_tools_for_dispatch(list(tools))
@@ -242,10 +242,8 @@ def test_tool_search_true_miss_still_says_no_match():
     install_loaded_deferred()
 
 
-def test_frozen_but_unlisted_tool_still_dispatches():
-    """A tool loaded mid-turn is absent from the provider array yet must
-    still route — the dispatcher resolves by name against the full tool
-    list, which is what agent_loop._execute_tool_calls does."""
+def test_discovered_tool_keeps_the_resolved_dispatch_target():
+    """Provider promotion keeps the existing resolved tool for dispatch."""
     install_loaded_deferred()
     apply_default_deferral()
     tools = agent_tools(toolset="full")
@@ -255,7 +253,7 @@ def test_frozen_but_unlisted_tool_still_dispatches():
     _load(name)
 
     provider_array = {t.name for t in split_tools_for_dispatch(list(tools))[0]}
-    assert name not in provider_array, "precondition: not in the array yet"
+    assert name in provider_array, "discovered tool must be in the next request"
 
     # Same lookup agent_loop._execute_tool_calls performs.
     resolved = next((t for t in tools if t.name == name), None)

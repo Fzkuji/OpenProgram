@@ -504,7 +504,7 @@ def _real_provider_safe_point(tmp_path, *, tool_calls=True):
     from openprogram.agent.production_driver import AgentProductionDriver
     from openprogram.agent.continuation import runtime_contract_snapshot
     from openprogram.execution.model import CommandKind
-    from openprogram.providers.types import Model
+    from openprogram.providers.types import AssistantMessage, Model
 
     control = RuntimeControlService(store, attempts, DriverRegistry())
     driver = AgentProductionDriver(store, control_service=control)
@@ -542,11 +542,14 @@ def _real_provider_safe_point(tmp_path, *, tool_calls=True):
         if tool_calls else [{"type": "text", "text": "terminal"}]
     )
     tool_call_ids = ["tool-1"] if tool_calls else []
+    # Match agent_loop's durable payload, including model defaults, so
+    # restoring AssistantMessage preserves the checkpoint's content hash.
+    message = AssistantMessage(
+        content=tool_content, api="openai-completions", provider="openai",
+        model="fake", timestamp=1,
+    ).model_dump(mode="json")
     assert hook("provider.after", {
-        "message": {
-            "role": "assistant", "content": tool_content,
-            "api": "openai-completions", "provider": "openai", "model": "fake", "timestamp": 1,
-        },
+        "message": message,
         "resolved_snapshot": snapshot,
         "turn": {
             "user_message_id": "user-anchor", "assistant_message_id": "assistant-anchor",

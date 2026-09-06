@@ -379,7 +379,7 @@ def test_production_driver_consumes_running_steer_fifo_at_provider_safe_point(tm
         "usage": {},
     }) is False
 
-    # A later safe point must not re-apply the already applied commands.
+    # A later safe point must not enqueue the same pending delivery twice.
     assert hook("provider.before", {
         "resolved_snapshot": snapshot,
         "context": {"messages": ["next"]},
@@ -400,8 +400,10 @@ def test_production_driver_consumes_running_steer_fifo_at_provider_safe_point(tm
     assert [item["payload"]["message"] for item in queue] == [
         "first instruction", "second instruction",
     ]
+    # This fixture exercises safe-point queueing only. Delivery becomes
+    # APPLIED after the dispatcher persists the branch-linked user message.
     assert all(
-        store.get_command(command_id).status is CommandStatus.APPLIED
+        store.get_command(command_id).status is CommandStatus.APPLYING
         for command_id in ("steer-first", "steer-second")
     )
     current = store.get_execution(execution.execution_id)

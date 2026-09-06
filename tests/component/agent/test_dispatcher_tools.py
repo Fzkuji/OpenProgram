@@ -554,6 +554,7 @@ def test_approval_required_consumes_typed_durable_answer(
     )
     _answer_wait(store, service, wait, {"answer": "允许", "scope": "once"})
     from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
+    from openprogram.agent.run_control import reset_current_execution_id, set_current_execution_id
     req = _owner_turn(
         session_id="c1", user_text="run", agent_id="main", source="tui",
         permission_mode="ask",
@@ -562,13 +563,15 @@ def test_approval_required_consumes_typed_durable_answer(
         R._registry["dangerprobe"], req, lambda _event: None,
     )
     token = set_preapproved_wait_id(wait.wait_id)
+    execution_token = set_current_execution_id(wait.execution_id)
     try:
         result = asyncio.run(wrapped.execute(
             "call-dangerprobe", {"target": "x"}, None, lambda _update: None,
         ))
     finally:
+        reset_current_execution_id(execution_token)
         reset_preapproved_wait_id(token)
-    assert fired.is_set(), "tool was not executed after approval"
+    assert fired.is_set(), f"tool was not executed after approval: {result!r}"
     assert result.is_error is False
     assert result.content[0].text == "did x"
 

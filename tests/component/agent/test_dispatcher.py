@@ -357,6 +357,7 @@ def test_await_user_approval_consumes_typed_prepublished_wait(tmp_path, monkeypa
     """The approval primitive only consumes a resolved safe-point wait."""
     import asyncio
     from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
+    from openprogram.agent.run_control import reset_current_execution_id, set_current_execution_id
 
     req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                         source="tui", permission_mode="ask")
@@ -367,6 +368,7 @@ def test_await_user_approval_consumes_typed_prepublished_wait(tmp_path, monkeypa
         service, store, wait, {"answer": "允许", "scope": "always"},
     )
     token = set_preapproved_wait_id(wait.wait_id)
+    execution_token = set_current_execution_id(wait.execution_id)
 
     async def _drive():
         return await D._await_user_approval(
@@ -376,9 +378,10 @@ def test_await_user_approval_consumes_typed_prepublished_wait(tmp_path, monkeypa
     try:
         approved, reason, scope = asyncio.run(_drive())
     finally:
+        reset_current_execution_id(execution_token)
         reset_preapproved_wait_id(token)
 
-    assert approved is True
+    assert approved is True, (reason, scope)
     assert reason is None
     assert scope == "always"
 

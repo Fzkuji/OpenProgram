@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextvars import copy_context
 import inspect
 import pickle
 import queue
@@ -408,7 +409,8 @@ def test_child_entry_builds_the_session_selected_custom_runtime(
         _current_runtime.get(None),
     )
     try:
-        process_runner._child_entry(
+        copy_context().run(
+            process_runner._child_entry,
             "missing_probe",
             {},
             "s",
@@ -491,7 +493,8 @@ def test_child_entry_force_invokes_hidden_agentic_tool(monkeypatch, tmp_path):
         _current_runtime.get(None),
     )
     try:
-        process_runner._child_entry(
+        copy_context().run(
+            process_runner._child_entry,
             "hidden_child_probe",
             {},
             "s",

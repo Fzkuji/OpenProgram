@@ -306,7 +306,8 @@ def test_long_lived_spawn_keeps_its_existing_process_semantics(
         pass
 
     def popen(*args, **kwargs):
-        seen.update(args=args, **kwargs)
+        seen["positional_args"] = args
+        seen.update(kwargs)
         return Process()
 
     monkeypatch.setattr(

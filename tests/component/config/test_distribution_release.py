@@ -1984,7 +1984,7 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     stops = [
         match.start()
         for match in re.finditer(
-            r'"\$local_python" -m openprogram worker stop', refresh
+            r'"\$app_python" -I -B -m openprogram worker (?:install|stop)', refresh
         )
     ]
     health = refresh.index(
@@ -1994,9 +1994,10 @@ def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     final_window = refresh[install:health]
     assert "build.files" in refresh
     assert (
-        '"$local_python" -m openprogram worker stop >/dev/null 2>&1\n'
+        '"$app_python" -I -B -m openprogram worker stop >/dev/null 2>&1\n'
         in final_window
     )
+    assert '"$app_python" -I -B -m openprogram worker install\n' in final_window
     assert "worker stop >/dev/null 2>&1 || true" not in final_window
 
 
