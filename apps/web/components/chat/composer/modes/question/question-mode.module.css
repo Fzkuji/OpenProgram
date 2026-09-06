@@ -195,3 +195,9 @@
 .approvalOptions .opt {
   white-space: nowrap;
 }
+
+/* Give the discussion editor more space than the read-only operation context. */
+.discussionInput {
+  min-height: 120px;
+  resize: vertical;
+}
