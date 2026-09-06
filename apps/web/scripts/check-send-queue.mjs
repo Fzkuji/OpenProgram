@@ -8,7 +8,7 @@
  *   2. the drain is triggered by the running-task clear, with no polling;
  *   3. queues are keyed by session, so one session's turn ending never
  *      ships another session's queue.
- * Plus remove / promoteToHead, which back the two per-row actions.
+ * Also covers removal, ordering, and canonical steering acknowledgements.
  */
 import assert from "node:assert/strict";
 
@@ -168,7 +168,7 @@ assert.equal(sent.length, 1);
 assert.equal(sent[0].text, "keep", "a removed message is never sent");
 assert.equal(useSendQueue.getState().queues[A], undefined);
 
-/* --- 5. promoteToHead (停止当前并立即发送) ---------------------------- */
+/* --- 5. explicit queue ordering ----------------------------------- */
 sent.length = 0;
 run(A);
 enqueueMessage(A, draft("was-first"));
@@ -251,7 +251,7 @@ const attachedId = enqueueMessage(A, draft("caption with image"), 1);
 assert.equal(attachedId, null, "an attached draft must not enter the text queue");
 assert.equal(useSendQueue.getState().queues[A], undefined);
 
-/* --- 11. stop-now drains the queue at 0ms (Claude Code) ----------- */
+/* --- 11. separate composer Stop retains its explicit cancel behavior */
 sent.length = 0;
 useSendQueue.setState({ queues: {} });
 store.setRunningTaskFor(A, {
@@ -276,11 +276,11 @@ assert.equal(stopFrames[0].expected_version, 7);
 assert.deepEqual(
   sent.map((m) => m.text),
   ["send-after-stop"],
-  "stopSession must send the promoted queued message at 0ms",
+  "the separate Stop control preserves ordinary idle queue draining",
 );
 const sentOnce = sent.length;
 const afterStop = useSessionStore.getState().runningTasks[A];
-assert.ok(afterStop, "stop-and-send must leave occupancy for the new turn");
+assert.ok(afterStop, "the queued send must leave occupancy for the new turn");
 handleRunningTaskClear(A);
 await settle();
 assert.equal(
@@ -315,42 +315,30 @@ assert.deepEqual(
   "not_running can release the same row into ordinary queue semantics",
 );
 
-/* --- 13. steer ACK accepts or releases the retained queue row ------- */
-const wsListeners = new Set();
-let steerResult = "accepted";
-setSocket({
-  readyState: 1,
-  addEventListener: (type, listener) => {
-    if (type === "message") wsListeners.add(listener);
-  },
-  removeEventListener: (type, listener) => {
-    if (type === "message") wsListeners.delete(listener);
-  },
-  send: (payload) => {
-    const frame = JSON.parse(payload);
-    if (frame.action !== "steer") {
-      sent.push(frame);
-      return;
-    }
-    queueMicrotask(() => {
-      const event = {
-        data: JSON.stringify({
-          type: "steer_ack",
-          data: {
-            session_id: frame.session_id,
-            request_id: frame.request_id,
-            result: steerResult,
-          },
-        }),
-      };
-      for (const listener of [...wsListeners]) listener(event);
-    });
-  },
-});
+/* --- 13. canonical steer receipts retain or release the queue row --- */
+const originalFetch = globalThis.fetch;
+const steerCommands = [];
+let loseSteerReceipt = false;
+globalThis.fetch = async (url, init) => {
+  if (init?.method === "POST") {
+    assert.equal(url, "/api/execution/steer");
+    const command = JSON.parse(init.body);
+    assert.equal(command.action, "execution.steer");
+    assert.equal(command.execution_id, "active-execution");
+    steerCommands.push(command);
+    if (loseSteerReceipt) throw new Error("receipt lost");
+    return Response.json({ command: { command_id: command.command_id, status: "applied" } });
+  }
+  assert.equal(url, `/api/execution/active-execution?conversation_session_id=${A}`);
+  return Response.json({ snapshot: {
+    execution_id: "active-execution", session_id: A, status_version: 7,
+    status: "running", capabilities: { steer: true },
+  } });
+};
 const { steerQueuedMessage } = await import("../lib/state/steer-message.ts");
 sent.length = 0;
 useSendQueue.setState({ queues: {} });
-run(A);
+store.setRunningTaskFor(A, { session_id: A, msg_id: "m", execution_id: "active-execution" });
 const acceptedId = enqueueMessage(A, draft("accepted-steer"));
 const acceptedPromise = steerQueuedMessage(A, acceptedId);
 assert.equal(
@@ -362,11 +350,10 @@ assert.equal(await acceptedPromise, true);
 assert.equal(
   useSendQueue.getState().queues[A],
   undefined,
-  "accepted steer removes the temporary queued row",
+  "applied steer removes the temporary queued row",
 );
 
 store.setRunningTaskFor(A, null, "always");
-steerResult = "not_running";
 const fallbackId = enqueueMessage(A, draft("fallback-turn"));
 assert.equal(await steerQueuedMessage(A, fallbackId), false);
 await settle();
@@ -375,6 +362,24 @@ assert.deepEqual(
   ["fallback-turn"],
   "not_running sends the retained row through the normal chat sender",
 );
+
+// A lost receipt cannot release the same input as a second ordinary turn.
+useSendQueue.setState({ queues: {} });
+sent.length = 0;
+store.setRunningTaskFor(A, { session_id: A, msg_id: "m", execution_id: "active-execution" });
+loseSteerReceipt = true;
+const uncertainId = enqueueMessage(A, draft("uncertain-steer"));
+assert.equal(await steerQueuedMessage(A, uncertainId), false);
+assert.equal(useSendQueue.getState().queues[A][0].steerError, "unconfirmed");
+const originalCommand = steerCommands.at(-1);
+store.setRunningTaskFor(A, null, "always");
+await settle();
+assert.equal(sent.length, 0, "unknown receipt must block ordinary drain");
+loseSteerReceipt = false;
+assert.equal(await steerQueuedMessage(A, uncertainId), true);
+assert.deepEqual(steerCommands.at(-1), originalCommand, "retry preserves the immutable command envelope");
+assert.equal(useSendQueue.getState().queues[A], undefined);
+globalThis.fetch = originalFetch;
 
 // Durable approval continuation has no surviving initial chat_ack/task.
 store.setRunningTaskFor(A, null, "always");

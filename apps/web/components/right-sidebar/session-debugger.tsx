@@ -20,6 +20,5 @@ export function SessionDebugger({ sessionId, active, requestedExecutionId }: {
     onCreateDraft={async (input) => { await state.createDraft(input); }}
     onUpdateDraft={state.updateDraft}
     onDraftAction={state.draftAction}
-    onRefresh={state.refresh}
   />;
 }

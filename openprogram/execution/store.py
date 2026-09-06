@@ -2201,6 +2201,42 @@ class ExecutionStore:
         if updated.rowcount != 1:
             raise ExecutionConflict("stale_version", "execution changed concurrently")
         if target in TERMINAL_EXECUTION_STATUSES:
+            # Admission and terminal closure share this transaction. A steer
+            # arriving after the last safe point must get a definitive receipt
+            # so its sender can retain it for the next turn.
+            pending_steers = connection.execute(
+                "SELECT command_id, status FROM commands WHERE execution_id = ? "
+                "AND kind = ? AND status IN (?, ?) "
+                "AND EXISTS (SELECT 1 FROM execution_agent_turn_inputs "
+                "WHERE execution_id = commands.execution_id)",
+                (execution_id, CommandKind.STEER.value,
+                 CommandStatus.ACCEPTED.value, CommandStatus.APPLYING.value),
+            ).fetchall()
+            for steer in pending_steers:
+                status = CommandStatus(steer["status"])
+                message_id = hashlib.sha256(
+                    f"{current.session_id}:{steer['command_id']}".encode()
+                ).hexdigest()[:24]
+                # Agent messages live in the session Git store. Recover a
+                # completed idempotent write whose SQL receipt failed (including
+                # a rolled-back ACCEPTED -> APPLYING transition on resume).
+                # Delivery holds this same transaction lock around the write.
+                from openprogram.agent.session_db import default_db
+                delivered = default_db().message_exists(current.session_id, message_id)
+                if delivered and status is CommandStatus.ACCEPTED:
+                    self._transition_command(
+                        connection, str(steer["command_id"]),
+                        expected_status=status, target=CommandStatus.APPLYING,
+                    )
+                    status = CommandStatus.APPLYING
+                self._transition_command(
+                    connection, str(steer["command_id"]),
+                    expected_status=status,
+                    target=CommandStatus.APPLIED if delivered else CommandStatus.REJECTED,
+                    result_version=new_version,
+                    rejection_code=None if delivered else "execution_finished",
+                    receipt={"user_message_id": message_id} if delivered else None,
+                )
             connection.execute(
                 "DELETE FROM execution_finish_repair_slots WHERE execution_id = ?",
                 (execution_id,),

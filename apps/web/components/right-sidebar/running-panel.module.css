@@ -23,8 +23,6 @@
 .expand { flex: 0 0 var(--ui-button-h); color: var(--text-dim); }
 .panel .sectionHeader { padding-top: 8px; padding-bottom: 4px; }
 .count { padding: 0 4px; color: var(--text-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
-.refresh { color: var(--text-dim); }
-.emptyTools { display: flex; justify-content: flex-end; }
 
 .rowHeading { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .rowHeading .name { flex: 1; min-width: 0; }

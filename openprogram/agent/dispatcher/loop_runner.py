@@ -398,22 +398,29 @@ def run_loop_blocking(
 
             metadata.update(normalize_authority(req))
             stamp_schema(metadata)
-            writer = SessionNodeWriter(db, req.session_id, advance_head=False)
-            if not db.message_exists(req.session_id, message_id):
-                writer.append(Call(
-                    id=message_id,
-                    created_at=timestamp,
-                    role=ROLE_USER,
-                    output=text,
-                    predecessor=predecessor,
-                    metadata=metadata,
-                ))
-            if not db.message_exists(req.session_id, message_id):
-                raise RuntimeError("steering user message was not persisted")
-            writer.update(assistant_msg_id, predecessor=message_id)
+            persist = (execution_context or {}).get("persist_steer")
+            delivery = (
+                persist(command_id, message_id)
+                if callable(persist) and isinstance(command_id, str)
+                else contextlib.nullcontext()
+            )
+            with delivery:
+                writer = SessionNodeWriter(db, req.session_id, advance_head=False)
+                if not db.message_exists(req.session_id, message_id):
+                    writer.append(Call(
+                        id=message_id,
+                        created_at=timestamp,
+                        role=ROLE_USER,
+                        output=text,
+                        predecessor=predecessor,
+                        metadata=metadata,
+                    ))
+                if not db.message_exists(req.session_id, message_id):
+                    raise RuntimeError("steering user message was not persisted")
+                writer.update(assistant_msg_id, predecessor=message_id)
         except Exception:
-            # Persistence is part of acceptance. Put the text back so the
-            # turn-end sweep can deliver it as an ordinary next turn.
+            # Retain the command for another safe point if either the user
+            # message or its delivery receipt could not be persisted.
             if isinstance(durable_steer_inputs, list):
                 durable_steer_inputs.insert(0, item)
             if isinstance(durable_steer_consumed_ids, set) and isinstance(command_id, str):
@@ -434,6 +441,7 @@ def run_loop_blocking(
                 "content": text,
                 "source": "web",
                 "steering": True,
+                "command_id": command_id,
                 "timestamp": timestamp,
                 "predecessor": predecessor,
             },
