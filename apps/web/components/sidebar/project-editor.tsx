@@ -7,7 +7,7 @@ import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
 
 export interface EditableProject {
-  id: string; name: string; path: string; icon?: string; description?: string; source_folders?: string[];
+  hidden?: boolean; is_default?: boolean; id: string; name: string; path: string; icon?: string; description?: string; source_folders?: string[];
 }
 const inputClass = "w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm";
 const icons = ["", "📁", "💻", "🔬", "📚", "🎮", "🧪", "📊", "🎨", "🌐", "⭐", "📝"];

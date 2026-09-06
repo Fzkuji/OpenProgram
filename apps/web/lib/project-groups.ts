@@ -3,6 +3,7 @@ export interface ProjectGroupSource {
   name: string;
   path: string;
   is_default: boolean;
+  hidden?: boolean;
   session_ids?: readonly string[];
 }
 
@@ -26,7 +27,7 @@ export function projectGroups<T extends ProjectGroupItem>(
   projects: readonly ProjectGroupSource[],
   items: readonly T[],
   order: readonly string[] = [],
-  options: { sort?: ProjectSort; pinned?: readonly string[]; includeEmpty?: boolean; activityItems?: readonly T[] } = {},
+  options: { sort?: ProjectSort; pinned?: readonly string[]; includeEmpty?: boolean; includeHidden?: boolean; activityItems?: readonly T[] } = {},
 ): ProjectGroup<T>[] {
   const owner = new Map<string, string>();
   for (const project of projects) {
@@ -54,7 +55,7 @@ export function projectGroups<T extends ProjectGroupItem>(
   }
   const pinned = new Set(options.pinned);
   const rank = new Map(order.map((id, index) => [id, index]));
-  return [...projects]
+  return projects.filter(project => options.includeHidden || !project.hidden)
     .sort((a, b) => {
       const pinDelta = Number(pinned.has(b.id)) - Number(pinned.has(a.id));
       if (pinDelta) return pinDelta;
@@ -84,4 +85,13 @@ export function moveProject(order: readonly string[], source: string, target: st
   const next = order.filter((id) => id !== source);
   next.splice(next.indexOf(target) + (side === "after" ? 1 : 0), 0, source);
   return next;
+}
+
+/** Registry IDs keep filtering stable after renames; accept old name preferences. */
+export function filterProjectItems<T extends ProjectGroupItem & {project?: string}>(projects: readonly ProjectGroupSource[], items: readonly T[], selection: string): T[] {
+  const project = projects.find(p=>p.id===selection) ?? projects.find(p=>p.name===selection);
+  if (!project) return items.filter(item=>item.project===selection);
+  const owned = new Set(project.session_ids);
+  const claimed = new Set(projects.flatMap(p=>[...(p.session_ids ?? [])]));
+  return items.filter(item=>owned.has(item.id) || (project.is_default && !claimed.has(item.id)));
 }

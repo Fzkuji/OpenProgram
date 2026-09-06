@@ -9,6 +9,9 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { ProjectEditor, type EditableProject } from "./project-editor";
 
+import { wsRequest } from "@/lib/net/ws-request";
+import { ProjectOperationDialog, type ProjectOperation } from "./project-operation-dialog";
+
 const item = itemCls(false) + " outline-none data-[highlighted]:bg-bg-hover";
 export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: {
   project: EditableProject;
@@ -20,6 +23,8 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
   const [open,setOpen] = useState(false);
   const [editing,setEditing] = useState(false);
   const [addingSection,setAddingSection] = useState(false);
+  const [operation,setOperation] = useState<ProjectOperation|null>(null);
+  const [error,setError] = useState("");
   const pinned = view.pinnedProjects.includes(project.id);
   function selectSection(section: string) {
     setRecentsView({ projectSections: {...view.projectSections,[project.id]:section} });
@@ -40,8 +45,15 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
           <Menu.Separator className={MENU_SEPARATOR}/>
           <Menu.Item className={item} onSelect={()=>setAddingSection(true)}>{text("New section…", "新建分区…")}</Menu.Item>
         </Menu.SubContent></Menu.Portal></Menu.Sub>
+        <Menu.Separator className={MENU_SEPARATOR}/>
+        <Menu.Item className={item} onSelect={async()=>{setError("");try{const result=await wsRequest<{ok?:boolean;error?:string}>("project_file_reveal",{project_id:project.id,path:""},"project_file_reveal_result");if(!result?.ok)throw new Error(result?.error||text("Could not reveal folder", "无法显示文件夹"));}catch(err){setError(String(err instanceof Error?err.message:err));}}}>{text("Reveal in file manager", "在文件管理器中显示")}</Menu.Item>
+        <Menu.Item className={item} onSelect={()=>setOperation("create_project_worktree")}>{text("Create permanent worktree", "创建持久 worktree")}</Menu.Item>
+        <Menu.Item className={item} onSelect={()=>setOperation("archive_project_chats")}>{text("Archive chats", "归档聊天")}</Menu.Item>
+        {!project.is_default&&<Menu.Item className={item} onSelect={()=>setOperation("remove_project")}>{text("Remove project", "移除项目")}</Menu.Item>}
       </Menu.Content></Menu.Portal>
     </Menu.Root>
+    {operation&&<ProjectOperationDialog project={project} operation={operation} onClose={()=>setOperation(null)} onSaved={onSaved}/>}
+    {error&&<Dialog open onOpenChange={open=>{if(!open)setError("");}}><DialogContent><DialogTitle>{text("Project action failed", "项目操作失败")}</DialogTitle><DialogDescription>{error}</DialogDescription><Button onClick={()=>setError("")}>{text("Close", "关闭")}</Button></DialogContent></Dialog>}
     {addingSection&&<SectionNameDialog onClose={()=>setAddingSection(false)} onSave={name=>setRecentsView({projectSectionNames:[...view.projectSectionNames,name],projectSections:{...view.projectSections,[project.id]:name}})}/>}
     {editing&&<ProjectEditor project={project} onClose={()=>setEditing(false)} onSaved={onSaved}/>}
   </>;

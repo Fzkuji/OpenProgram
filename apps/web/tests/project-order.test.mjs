@@ -33,3 +33,21 @@ test("manual ordering includes empty projects when computing drag positions", ()
  assert.deepEqual(full,["d","a","b"]);
  assert.deepEqual(moveProject(full,"d","b","after"),["a","b","d"]);
 });
+
+test('hidden projects retain ownership and renamed projects filter by ID',async()=>{
+  const {filterProjectItems}=await import('../lib/project-groups.ts');
+  const projects=[{id:'home',name:'Home',path:'/home',is_default:true},{id:'p',name:'Renamed',path:'/p',is_default:false,hidden:true,session_ids:['a']}];
+  const items=[{id:'a',project:'Old name'},{id:'other'}];
+  assert.deepEqual(projectGroups(projects,items).map(p=>[p.key,p.items.map(i=>i.id)]),[['home',['other']]]);
+  assert.deepEqual(filterProjectItems(projects,items,'p'),[items[0]]);
+  assert.deepEqual(filterProjectItems(projects,items,'home'),[items[1]]);
+});
+
+
+test('removing and restoring a project preserves its manual position through other drags',()=>{
+  const projects=['a','b','c'].map(id=>({id,name:id,path:'/'+id,is_default:false,hidden:id==='a'}));
+  const order=projectGroups(projects,[],['a','b','c'],{sort:'manual',includeEmpty:true,includeHidden:true}).map(p=>p.key);
+  const moved=moveProject(order,'c','b','before');
+  assert.deepEqual(moved,['a','c','b']);
+  assert.deepEqual(projectGroups(projects.map(p=>({...p,hidden:false})),[],moved,{sort:'manual',includeEmpty:true}).map(p=>p.key),['a','c','b']);
+});

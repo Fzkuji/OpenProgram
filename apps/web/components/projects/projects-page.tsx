@@ -191,6 +191,7 @@ export function ProjectsPage({
                     aria-label={text("Folder missing", "目录缺失")}
                   />
                 )}
+                {p.hidden && <span className={styles.badge}>{text("Hidden", "已隐藏")}</span>}
                 {p.is_default && <span className={styles.badge}>{text("Default", "默认")}</span>}
               </div>
             ))}
@@ -213,6 +214,7 @@ export function ProjectsPage({
                 <div className={styles.detailHead}>
                   <span className={styles.detailTitle}>{selected.name}</span>
                   <span className={styles.detailPath}>{selected.path}</span>
+                  {selected.hidden&&<Button variant="outline" onClick={async()=>{try{const result=await wsRequest<{ok:boolean;error?:string}>("restore_project",{project_id:selected.id},"restore_project_result");if(!result?.ok)throw new Error(result?.error||"Could not restore project");await refresh();window.dispatchEvent(new Event("project-changed"));}catch(err){setError(String(err));}}}>{text("Restore to sidebar", "恢复到侧边栏")}</Button>}
                   <Button variant="outline" onClick={()=>setEditing(true)}>{text("Edit project", "编辑项目")}</Button>
                 </div>
                 {selected.path_missing && (

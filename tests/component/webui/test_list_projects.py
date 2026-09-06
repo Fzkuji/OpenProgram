@@ -73,7 +73,7 @@ def test_projects_list_registry_error_is_not_authoritative_empty(monkeypatch):
     assert data["projects"] is None
 
 
-def test_remove_project_action_is_unavailable_and_registry_unchanged(
+def test_remove_project_action_hides_entry_and_preserves_registry(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ):
     from openprogram.webui import server
@@ -92,13 +92,9 @@ def test_remove_project_action_is_unavailable_and_registry_unchanged(
         "project_id": "proj_remove",
     }))
 
-    # An action with no handler answers `operation_error` — it used to be
-    # dropped in silence, which made a deliberately-removed action
-    # indistinguishable from a backend that never replied.
-    assert [f["type"] for f in ws.sent] == ["operation_error"]
-    assert ws.sent[0]["data"]["action"] == "remove_project"
-    assert ws.sent[0]["data"]["code"] == "unknown_action"
-    assert json.loads(registry_path.read_text(encoding="utf-8")) == before
-    assert "remove_project" not in ws_project.ACTIONS
-    assert "remove_project" not in server.WS_ACTIONS
-    assert not hasattr(ws_project, "handle_remove_project")
+    assert [f["type"] for f in ws.sent] == ["remove_project_result"]
+    assert ws.sent[0]["data"]["ok"] is True
+    after = json.loads(registry_path.read_text(encoding="utf-8"))
+    assert after == {**before, "proj_remove": {**before["proj_remove"], "hidden": True}}
+    assert "remove_project" in ws_project.ACTIONS
+    assert "remove_project" in server.WS_ACTIONS

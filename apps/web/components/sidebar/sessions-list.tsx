@@ -36,7 +36,7 @@ import { useTranslation } from "@/lib/i18n";
 import { activateOnKey } from "@/lib/utils";
 import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
 import { wsRequest } from "@/lib/net/ws-request";
-import { projectGroups, moveProject } from "@/lib/project-groups";
+import { projectGroups, moveProject, filterProjectItems } from "@/lib/project-groups";
 import {
   Popover,
   PopoverAnchor,
@@ -135,7 +135,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     return false;
   }, []);
 
-  // The registry fetch only runs while Group-by is set to Project. It
+  // The registry supplies both project grouping and stable-ID filtering. It
   // re-runs when the session SET changes (create / delete — also what a
   // WS reconnect's list_sessions replay produces), since the registry's
   // reverse index may have gained/lost bindings; `project-changed`
@@ -144,7 +144,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // same pattern as the topbar ProjectBadge.
   const convIdsKey = Object.keys(conversations).sort().join(",");
   useEffect(() => {
-    if (!projectMode) return;
     let cancelled = false;
     let tries = 0;
     const attempt = () => {
@@ -351,12 +350,9 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
       const cutoff = nowTs - days * 86400;
       arr = arr.filter((c) => (c.updated_at || c.created_at || 0) >= cutoff);
     }
-    // Project filter — each conv carries a project NAME (home-folder
-    // name for ad-hoc chats), so "All projects" shows everything and a
-    // specific pick narrows to that folder's chats. (Environment is
-    // still UI-only — no per-conversation environment field yet.)
+    // Match registry membership by ID so renaming a project preserves the filter.
     if (view.project && view.project !== "all") {
-      arr = arr.filter((c) => c.project === view.project);
+      arr = filterProjectItems(projects, arr, view.project);
     }
     const cmp = (a: LegacyConv, b: LegacyConv) => {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
@@ -395,7 +391,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
 
   // Any narrowing filter active → matched-only view: groups auto-expand
   // around their matches. (status "all" widens, so it doesn't count;
-  // "archived" narrows.) Empty project groups are always hidden.
+  // "archived" narrows.) Empty projects are hidden only while filtering.
   const filtering =
     view.status === "archived" ||
     view.lastActivity !== "all" ||
@@ -413,7 +409,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     .sort((a,b) => sectionOrder.indexOf(projectSection(a.key)) - sectionOrder.indexOf(projectSection(b.key))) : [];
   function reorderProject(source: string, target: string, side: "before" | "after") {
     // Include hidden/empty projects so filtering cannot discard their position.
-    const displayed = projectGroups(projects, convArr, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, includeEmpty: true }).map(g => g.key);
+    const displayed = projectGroups(projects, convArr, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, includeEmpty: true, includeHidden: true }).map(g => g.key);
     const fallback = [...projects].sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.name.localeCompare(b.name));
     const ids = new Set(projects.map((p) => p.id));
     const order = [...new Set([...displayed, ...view.projectOrder.filter((id) => ids.has(id)), ...fallback.map((p) => p.id)])];
@@ -502,7 +498,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
         collapsible
         collapsed={projectsFolded}
         onToggle={() => toggleGroupCollapse(PROJECTS_SECTION_KEY)}
-        actions={<RecentsFilter />}
+        actions={<RecentsFilter projects={projects} />}
       />
       {projectsFolded ? null : projects.length === 0
         ? // projects_list hasn't answered yet (the registry always holds
@@ -580,11 +576,11 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
           collapsible={false}
           collapsed={false}
           onToggle={() => {}}
-          actions={<RecentsFilter />}
+          actions={<RecentsFilter projects={projects} />}
         />
       ) : !firstHasHeader ? (
         <div className="flex h-[24px] items-center justify-end px-[8px]">
-          <RecentsFilter />
+          <RecentsFilter projects={projects} />
         </div>
       ) : null}
       {sections.map((sec, i) =>
@@ -600,7 +596,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
               collapsible={collapsible}
               collapsed={collapsedGroups.has(sec.key)}
               onToggle={() => toggleGroupCollapse(sec.key)}
-              actions={i === 0 ? <RecentsFilter /> : undefined}
+              actions={i === 0 ? <RecentsFilter projects={projects} /> : undefined}
             />
             {(!collapsible || !collapsedGroups.has(sec.key)) &&
               sec.items.map(renderRow)}

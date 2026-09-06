@@ -54,6 +54,7 @@ interface Project {
   name: string;
   path: string;
   is_default: boolean;
+  hidden?: boolean;
   /** Backend-computed: the folder no longer exists on disk. */
   path_missing?: boolean;
   session_count: number;
@@ -291,6 +292,7 @@ export function ProjectMenu({
       {/* 目录已不存在的项目仍然列出（静默消失会让用户以为项目丢了），
           点击它走定位修复而不是选中——选一个死路径当主目录没有意义。 */}
       {list.map((p) => {
+        if (p.hidden && p.id !== activeId) return null;
         const active = p.id === activeId;
         return (
           <div

@@ -91,6 +91,7 @@ class Project:
     status: str = "active"          # active | paused | done
     created_at: float = field(default_factory=time.time)
     icon: str = ""
+    hidden: bool = False
     custom_name: bool = False
     description: str = ""
     source_folders: list[str] = field(default_factory=list)
@@ -107,6 +108,7 @@ class Project:
             is_default=bool(d.get("is_default", False)),
             session_ids=list(d.get("session_ids", []) or []),
             status=d.get("status", "active"),
+            hidden=bool(d.get("hidden", False)),
             created_at=float(d.get("created_at", time.time())),
             icon=d.get("icon", ""),
             custom_name=bool(d.get("custom_name", False)),
@@ -487,6 +489,7 @@ class ProjectGit:
 # Registry (projects.json)
 
 _reg_lock = threading.Lock()
+_worktree_lock = threading.Lock()
 
 
 def _read_registry() -> dict[str, dict]:
@@ -712,7 +715,7 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
     pid = _project_id_for_path(p)
     existing = get_project(pid)
     if existing is not None:
-        return existing
+        return set_project_hidden(pid, False) if existing.hidden else existing
 
     # Before minting a new id: this folder may be a registered project
     # that was MOVED on disk. Its session footprint is the deterministic
@@ -883,3 +886,56 @@ __all__ = [
     "save_project_settings",
     "ensure_footprint_ignored",
 ]
+
+
+def set_project_hidden(project_id: str, hidden: bool) -> Project:
+    """Remove/restore a navigation entry; keep paths and session ownership."""
+    with _reg_lock:
+        reg = _read_registry()
+        if not isinstance(project_id, str) or project_id not in reg:
+            raise ValueError("unknown project")
+        if hidden and reg[project_id].get("is_default"):
+            raise ValueError("the default project cannot be removed")
+        reg[project_id]["hidden"] = hidden
+        _write_registry(reg)
+        return Project.from_dict(reg[project_id])
+
+
+def create_project_worktree(project_id: str, path: str, branch: str) -> Project:
+    """Create a persistent worktree from HEAD without changing the source checkout."""
+    project = get_project(project_id)
+    if not project:
+        raise ValueError("unknown project")
+    if not isinstance(path, str) or not Path(path).expanduser().is_absolute():
+        raise ValueError("an absolute destination path is required")
+    if not isinstance(branch, str) or not branch.strip() or branch.startswith("-"):
+        raise ValueError("a new branch name is required")
+    branch = branch.strip()
+    target = Path(path).expanduser().resolve()
+    source = Path(project.path).resolve()
+    if target == source or source in target.parents:
+        raise ValueError("choose a destination outside the source project")
+    if not target.parent.is_dir():
+        raise ValueError("destination parent directory does not exist")
+
+    def git(*args):
+        result = subprocess.run(["git", "-C", str(source), *args], capture_output=True, text=True, timeout=120)
+        if result.returncode:
+            raise ValueError(result.stderr.strip() or "git command failed")
+        return result.stdout.strip()
+
+    checkout = Path(git("rev-parse", "--show-toplevel")).resolve()
+    if target == checkout or checkout in target.parents:
+        raise ValueError("choose a destination outside the source Git checkout")
+    git("check-ref-format", "--branch", branch)
+    # Serialize worktree creates. An ACK retry recognizes this exact
+    # branch/path pair, so it cannot produce a second worktree.
+    with _worktree_lock:
+        if target.exists():
+            records = git("worktree", "list", "--porcelain").split("\n\n")
+            expected = {f"worktree {target}", f"branch refs/heads/{branch}"}
+            if not any(expected.issubset(set(record.splitlines())) for record in records):
+                raise ValueError("destination already exists")
+        else:
+            git("worktree", "add", "-b", branch, "--", str(target), "HEAD")
+        return resolve_project(target)

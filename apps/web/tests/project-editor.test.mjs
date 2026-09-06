@@ -146,3 +146,45 @@ test('acknowledged local-prefixed chats are real sessions for project directory 
   assert.ok(writes.some(([action,payload])=>action==='set_working_dirs'&&payload.session_id==='local_chat'&&payload.dirs.length===0));
   await act(async()=>root.unmount());host.remove();globalThis.projectScopedSession=null;
 });
+
+test('project operations confirm requests, retain errors, and close only after success',async()=>{
+  const {ProjectOperationDialog}=await import('../components/sidebar/project-operation-dialog.tsx');
+  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+  let closed=0;const saved=[];const calls=[];let fail=true;
+  globalThis.projectRequest=async(...args)=>{calls.push(args);return fail?{ok:false,error:'disk failure'}:{ok:true,project_id:'p',project:{id:'p',name:'P',path:'/main',hidden:true}};};
+  const props={project:{id:'p',name:'P',path:'/main'},onClose:()=>closed++,onSaved:p=>saved.push(p)};
+  await act(async()=>root.render(h(ProjectOperationDialog,{...props,operation:'remove_project'})));
+  assert.equal(calls.length,0);
+  await act(async()=>host.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(calls[0][0],'remove_project');assert.equal(closed,0);assert.equal(host.querySelector('[role="alert"]').textContent,'disk failure');
+  fail=false;
+  await act(async()=>host.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(closed,1);assert.equal(saved[0].hidden,true);
+  await act(async()=>root.render(h(ProjectOperationDialog,{...props,key:'worktree',operation:'create_project_worktree'})));
+  const inputs=host.querySelectorAll('input');
+  for(const [i,value] of ['/new worktree','codex/new-worktree'].entries()){
+    inputs[i].type='text';Object.getOwnPropertyDescriptor(Object.getPrototypeOf(inputs[i]),'value').set.call(inputs[i],value);
+    await act(async()=>inputs[i].dispatchEvent(new Event('input',{bubbles:true})));
+  }
+  await act(async()=>host.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(calls.at(-1)[0],'create_project_worktree');
+  assert.deepEqual(calls.at(-1)[1],{project_id:'p',path:'/new worktree',branch:'codex/new-worktree'});
+  await act(async()=>root.render(h(ProjectOperationDialog,{...props,key:'archive',operation:'archive_project_chats'})));
+  await act(async()=>host.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  assert.equal(calls.at(-1)[0],'archive_project_chats');
+  await act(async()=>root.unmount());host.remove();
+});
+
+test('project menu reaches reveal, worktree, archive, and remove dialogs',async()=>{
+  const {ProjectMenu}=await import('../components/sidebar/project-menu.tsx');
+  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);const calls=[];
+  globalThis.projectRequest=async(...args)=>{calls.push(args);return {ok:true};};
+  await act(async()=>root.render(h(ProjectMenu,{project:{id:'p',name:'P',path:'/main'},onOpen:()=>{},onNewSession:()=>{},onSaved:()=>{},children:trigger=>h('div',{'data-header':true},trigger)})));
+  async function context(){await act(async()=>host.querySelector('[data-header]').dispatchEvent(new Event('contextmenu',{bubbles:true,cancelable:true})));}
+  async function click(label){const button=[...host.querySelectorAll('button')].find(b=>b.textContent===label);assert.ok(button,label);await act(async()=>button.dispatchEvent(new Event('click',{bubbles:true})));}
+  await context();await click('Reveal in file manager');assert.equal(calls[0][0],'project_file_reveal');assert.deepEqual(calls[0][1],{project_id:'p',path:''});
+  for(const label of ['Create permanent worktree','Archive chats','Remove project']){
+    await context();await click(label);assert.ok(host.querySelector('form'),label);await click('Cancel');assert.equal(calls.length,1,'cancel must not mutate');
+  }
+  await act(async()=>root.unmount());host.remove();
+});
