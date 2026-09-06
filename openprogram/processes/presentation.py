@@ -61,7 +61,7 @@ def command_display(command: str) -> dict[str, str]:
                 continue
             # An unrecognized flag may consume another argument; do not guess.
             return result
-        if arg in {'&', '|', ';', '&&', '||', '-', '>'}:
+        if arg == '-' or re.fullmatch(r'[();<>|&]+', arg):
             return result
         return {"name": basename(arg), "kind": "script"}
     return result
