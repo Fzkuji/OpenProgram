@@ -508,7 +508,7 @@ function ApprovalChoices({ step, answer, onChange }: {
       deny: text("Deny", "拒绝"),
     };
   return (
-        <div className={styles.options} role="group" aria-label={text("Approval options", "审批选项")}>
+        <div className={`${styles.options} ${styles.approvalOptions}`} role="group" aria-label={text("Approval options", "审批选项")}>
           {picks.map((p) => (
             <button
               key={p}
