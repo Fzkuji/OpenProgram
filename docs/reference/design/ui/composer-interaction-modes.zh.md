@@ -236,3 +236,7 @@ apps/web/components/chat/composer/
 * user-input registry / runtime.ask：[../runtime/user-input-requests.md](../runtime/operations/user-input-requests.md)
 * 事件层（统一事件流，这是它在前端的对齐落点）：
   [../proactive/event-reference.html](../proactive/event-reference.html)
+
+### 讨论待处理请求
+
+Chat about this 只拒绝当前显示的 wait，把提示和已显示的详情写入可编辑草稿，原有会话草稿保留在其后。它不发送聊天消息，也不批准操作。普通聊天输入框恢复后自动聚焦，光标移到末尾。其他排队的决定继续保留，在它们结束后才聚焦输入框；切换会话会取消尚未执行的聚焦请求。

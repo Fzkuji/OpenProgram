@@ -53,7 +53,7 @@ window.history = { replaceState() {}, pushState() {} };
 window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 let respond;
 globalThis.fetch = (...args) => respond(...args);
-const { act, createElement } = await import("react");
+const { act, createElement, useState, useRef } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { QuestionMode } = await import("../components/chat/composer/modes/question/question-mode.tsx");
 globalThis.WebSocket = { OPEN: 1 };
@@ -119,3 +119,74 @@ test("multiple questions retain navigation and ordered answers", async () => {
     assert.deepEqual(frames[0].payload.answer, ["One", "Two"]);
   });
 });
+
+const { useDecisionDiscussion } = await import("../components/chat/composer/modes/question/use-decision-discussion.ts");
+for (const q of [decision, { ...decision, args: { _sandbox_escalation: { from: "sandbox", to: "host", path: "/blocked/file", rule: "deny-write" } } }]) {
+for (const existingDraft of ["", "Keep my existing question."]) {
+  test(`discussion prepares an editable focused draft, preserving ${existingDraft ? "existing text" : "empty input"} (${q.args ? "sandbox" : "ordinary"})`, async () => {
+    const declined = [];
+    let focusCount = 0;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    function Harness() {
+      const [active, setQ] = useState(q);
+      const [draft, setDraft] = useState(existingDraft);
+      const textareaRef = useRef(null);
+      const discuss = useDecisionDiscussion({ decision: active, sessionKey: "session-one", input: draft, setInput: setDraft,
+        decline: d => declined.push(d), dequeue: () => setQ(null), textareaRef });
+      return active ? createElement(QuestionMode, { decision: active, onResolve() {}, onChatAbout: discuss })
+        : createElement("textarea", { value: draft, onChange: e => setDraft(e.target.value), ref: node => {
+          textareaRef.current = node;
+          if (node) node.focus = () => { focusCount++; };
+        } });
+    }
+    try {
+      await act(async () => root.render(createElement(Harness)));
+      await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this").click());
+      assert.deepEqual(declined, [q], "only the displayed wait is declined");
+      const textarea = host.querySelector("textarea");
+      if (q.args) {
+        assert.ok(textarea.value.includes("Sandbox blocked this access"));
+        assert.ok(textarea.value.includes("/blocked/file"));
+        assert.ok(textarea.value.includes("deny-write"));
+      } else {
+        assert.ok(textarea.value.includes(q.prompt));
+        assert.ok(textarea.value.includes(q.detail));
+      }
+      assert.ok(textarea.value.endsWith(existingDraft));
+      assert.equal(focusCount, 1, "focus the newly mounted chat input");
+    } finally { await act(async () => root.unmount()); host.remove(); }
+  });
+}
+
+}
+for (const switchSession of [false, true]) {
+  test(`discussion focus ${switchSession ? "cancels after switching sessions" : "waits for remaining decisions"}`, async () => {
+    let control, focusCount = 0;
+    const host = document.createElement("div"); document.body.append(host);
+    const root = createRoot(host);
+    function Harness() {
+      const [q, setQ] = useState(decision);
+      const [sid, setSid] = useState("one");
+      const [draft, setDraft] = useState("");
+      const textareaRef = useRef(null);
+      const discuss = useDecisionDiscussion({ decision: q, sessionKey: sid, input: draft, setInput: setDraft,
+        decline() {}, dequeue: () => setQ({ ...decision, id: "second" }), textareaRef });
+      control = { setQ, setSid };
+      return q ? createElement(QuestionMode, { decision: q, onResolve() {}, onChatAbout: discuss })
+        : createElement("textarea", { value: draft, readOnly: true, ref: node => {
+          textareaRef.current = node; if (node) node.focus = () => { focusCount++; };
+        } });
+    }
+    try {
+      await act(async () => root.render(createElement(Harness)));
+      await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Chat about this").click());
+      assert.equal(focusCount, 0);
+      assert.equal(host.querySelector("textarea"), null, "the other pending decision remains visible");
+      if (switchSession) await act(async () => control.setSid("two"));
+      await act(async () => control.setQ(null));
+      assert.equal(focusCount, switchSession ? 0 : 1);
+    } finally { await act(async () => root.unmount()); host.remove(); }
+  });
+}
