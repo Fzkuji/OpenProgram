@@ -16,10 +16,11 @@ import { wsRequest } from "@/lib/net/ws-request";
 import { ProjectOperationDialog, type ProjectOperation } from "./project-operation-dialog";
 
 const item = itemCls(false) + " outline-none " + styles.menuItem;
-export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: {
+export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, onActivate}: {
   project: EditableProject;
   children: (trigger: ReactNode) => ReactNode;
   onOpen: () => void; onNewSession: () => void; onSaved: (project:EditableProject) => void;
+  onActivate?: () => void;
 }) {
   const { text } = useTranslation();
   const view = useRecentsView();
@@ -29,12 +30,13 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: 
   const [operation,setOperation] = useState<ProjectOperation|null>(null);
   const [error,setError] = useState("");
   const pinned = view.pinnedProjects.includes(project.id);
+  function changeOpen(value: boolean) { setOpen(value); if (value) onActivate?.(); }
   function selectSection(section: string) {
     setRecentsView({ projectSections: {...view.projectSections,[project.id]:section} });
   }
   return <>
-    <Menu.Root open={open} onOpenChange={setOpen}>
-      <div onContextMenu={event=>{event.preventDefault();setOpen(true);}}>
+    <Menu.Root open={open} onOpenChange={changeOpen}>
+      <div onContextMenu={event=>{event.preventDefault();changeOpen(true);}}>
         {children(<Menu.Trigger asChild><button data-active={editing || addingSection || operation !== null} type="button" aria-label={text(`Options for ${project.name}`, `${project.name} 的选项`)} onPointerDown={event=>event.stopPropagation()} onClick={event=>event.stopPropagation()} className={styles.trigger+" size-5 shrink-0 rounded text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-bg-hover"}><MoreHorizontal size={15}/></button></Menu.Trigger>)}
       </div>
       <Menu.Portal><Menu.Content side="right" align="start" sideOffset={6} className={MENU_PANEL+" "+styles.menu+" min-w-[220px]"}>

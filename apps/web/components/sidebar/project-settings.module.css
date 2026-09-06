@@ -88,9 +88,8 @@
 }
 .trigger[data-state="open"], .trigger[data-active="true"] {
   opacity: 1;
-  color: var(--accent-blue);
-  background: color-mix(in srgb, var(--accent-blue) 14%, var(--bg-secondary));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 32%, transparent), 0 0 10px color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  color: var(--text-bright);
+  background: var(--bg-hover);
 }
 .menuItem { transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease; }
 .menuItem[data-highlighted], .menuItem[data-state="open"] {
@@ -109,7 +108,7 @@
   .heading { align-items: flex-start; }
 }
 /* Keep project selection/focus visible despite the app-wide button shadow reset. */
-.iconOption:focus-visible, .trigger:focus-visible {
+.iconOption:focus-visible {
   box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3px var(--accent-blue), 0 0 12px color-mix(in srgb, var(--accent-blue) 18%, transparent) !important;
 }
 

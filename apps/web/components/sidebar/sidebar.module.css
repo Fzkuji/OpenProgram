@@ -82,3 +82,26 @@
   box-shadow: var(--shadow-popover); font-size: var(--fs-sm);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* Selection belongs to the complete project header, independently of focus. */
+.projectHeader { position: relative; }
+.projectGroup .projectHeader[data-selected="true"] {
+  background: color-mix(in srgb, var(--accent-blue) 15%, var(--bg-secondary));
+  color: var(--text-bright);
+}
+.projectHeader::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 40%, transparent), 0 0 12px color-mix(in srgb, var(--accent-blue) 15%, transparent);
+  transition: opacity 150ms ease;
+}
+.projectHeader[data-selected="true"]::before { opacity: 1; }
+.projectHeader[data-selected="true"] :global(.sidebar-nav-icon),
+.projectHeader[data-selected="true"] :global(.sidebar-nav-label) { color: var(--text-bright); }
+@media (prefers-reduced-motion: reduce) {
+  .projectHeader::before { transition: none; }
+}
