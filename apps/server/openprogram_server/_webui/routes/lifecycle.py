@@ -123,7 +123,9 @@ def register(app):
                     "snapshot_status_version": execution.status_version,
                 },
             })
-        return JSONResponse({"items": items, "now": time.time()},
+        from openprogram.execution.activity_branches import conversation_activity_branches
+        branches = conversation_activity_branches(items, conversation_session_id=session_id)
+        return JSONResponse({"items": items, "branches": branches, "now": time.time()},
                             headers={"Cache-Control": "no-store"})
 
     async def _revision(request: Request, body: dict, action: str):

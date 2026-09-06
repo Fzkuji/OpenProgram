@@ -39,6 +39,7 @@ type EventsResponse = {
 };
 
 export type RunningExecutionList = {
+  branches?: import("../execution-debugger").ConversationActivityBranch[];
   items: Array<{
     kind?: string;
     started_at?: number;

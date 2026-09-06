@@ -1,3 +1,11 @@
+export type ConversationActivityBranch = {
+  branch_id: string;
+  session_id: string;
+  head_msg_id: string;
+  name?: string | null;
+  execution_ids: string[];
+};
+
 export const EXECUTION_COMMAND_ACTIONS = [
   "pause",
   "continue",

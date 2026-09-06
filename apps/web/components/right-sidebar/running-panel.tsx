@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { DebuggerPanel } from "./debugger-panel";
 import { SidebarNotice } from "./sidebar-notice";
 import { executionTitle, executionRequest, executionNeedsAttention, executionStatusLabel, shortTime, updatedTime } from "./debugger-presentation";
+import { activityBranches, type ActivityBranch } from "@/lib/activity-branches";
 import styles from "./running-panel.module.css";
 
 
@@ -29,7 +30,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   });
   const [stopPending, setStopPending] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
-  const processes = useManagedProcesses(active, sessionId, selection && selection !== "agent" ? selection : null);
+  const processes = useManagedProcesses(active, sessionId, selection && selection !== "agent" && !selection.startsWith("branch:") ? selection : null);
   const processStatus = (item: ManagedProcess) => text(...({
     starting: ["Starting", "正在启动"], running: ["Running", "正在运行"], stopping: ["Stopping", "正在停止"],
     completed: ["Completed", "已完成"], exited: ["Exited", "已退出"], failed: ["Failed", "运行失败"],
@@ -50,12 +51,6 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
     const parentId = item.view_parent_execution_id ?? item.parent_execution_id;
     const parent = parentId && ids.has(parentId) ? parentId : null;
     children.set(parent, [...(children.get(parent) || []), item]);
-  }
-  function hasActive(item: ExecutionSnapshot, seen = new Set<string>()): boolean {
-    if (seen.has(item.execution_id)) return false;
-    seen.add(item.execution_id);
-    return ["queued", "running", "pausing", "cancelling"].includes(item.status) || (byExecution.get(item.execution_id) || []).some(processIsActive)
-      || (children.get(item.execution_id) || []).some(child => hasActive(child, seen));
   }
   function needsAttention(item: ExecutionSnapshot, seen = new Set<string>()): boolean {
     if (seen.has(item.execution_id)) return false;
@@ -82,11 +77,11 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
       </span>
     </Button>;
   }
-  function agentRow(item: ExecutionSnapshot, ancestors = new Set<string>()): ReactNode {
+  function agentRow(item: ExecutionSnapshot, ancestors = new Set<string>(), allowed?: Set<string>): ReactNode {
     if (ancestors.has(item.execution_id)) return null;
     const path = new Set(ancestors).add(item.execution_id);
     const owned = byExecution.get(item.execution_id) || [];
-    const descendants = children.get(item.execution_id) || [];
+    const descendants = (children.get(item.execution_id) || []).filter(child => !allowed || allowed.has(child.execution_id));
     const expandable = owned.length > 0 || descendants.length > 0;
     const open = expanded.has(item.execution_id);
     const title = executionTitle(item, state.executions.length - state.executions.indexOf(item), text);
@@ -106,12 +101,52 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
         </Button>}
       </div>
       {expandable && open && <div className={ancestors.size < 4 ? styles.children : undefined}>
-        {descendants.map(child => agentRow(child, path))}{owned.map(programRow)}
+        {descendants.map(child => agentRow(child, path, allowed))}{owned.map(programRow)}
       </div>}
     </div>;
   }
+  const { groups, ungrouped } = activityBranches(state.executions, state.branches || []);
+  function hasActive(item: ExecutionSnapshot, seen = new Set<string>()): boolean {
+    if (seen.has(item.execution_id)) return false;
+    seen.add(item.execution_id);
+    return ["queued", "running", "pausing", "cancelling"].includes(item.status)
+      || (byExecution.get(item.execution_id) || []).some(processIsActive)
+      || (children.get(item.execution_id) || []).some(child => hasActive(child, seen));
+  }
+  const branchAttention = (branch: ActivityBranch) => branch.executions.some(item => needsAttention(item));
+  const branchActive = (branch: ActivityBranch) => branch.executions.some(item => hasActive(item));
+  const branchRepresentative = (branch: ActivityBranch) => branch.executions.find(item => needsAttention(item))
+    || branch.executions.find(item => hasActive(item)) || branch.executions[0];
+  const branchTitle = (branch: ActivityBranch) => branch.name || `${text("Branch", "分支")} ${groups.indexOf(branch) + 1} · ${executionTitle(
+    [...branch.executions].reverse().find(item => branch.execution_ids.includes(item.execution_id)) || branch.executions[0], 1, text)}`;
+  function branchRow(branch: ActivityBranch): ReactNode {
+    const item = branchRepresentative(branch);
+    return <Button variant="ghost" className={styles.row} key={branch.branch_id} onClick={() => {
+      state.selectExecution(item.execution_id); setSelection(`branch:${branch.branch_id}`);
+    }}>
+      <Bot size={16} className={styles.symbol} aria-hidden="true" />
+      <span className={styles.rowText}><span className={styles.name}>{branchTitle(branch)}</span>
+        <span className={styles.meta}>{branchAttention(branch) ? text("Needs attention", "需要处理")
+          : branchActive(branch) ? text("Running", "正在运行") : executionStatusLabel(item, text)}</span>
+      </span>
+    </Button>;
+  }
   if (!sessionId) return <SidebarNotice>{text("Select or start a conversation to view its Agents and programs.", "选择或开始一个会话，查看其中的 Agent 和程序。")}</SidebarNotice>;
   const back = <Button variant="ghost" onClick={() => setSelection(null)}>{text("← All activity", "← 全部运行记录")}</Button>;
+  if (selection?.startsWith("branch:")) {
+    const branch = groups.find(item => `branch:${item.branch_id}` === selection)
+      || groups.find(item => item.execution_ids.includes(state.selectedExecutionId || ""));
+    return <div className={styles.panel}><div className={styles.toolbar}>{back}</div>
+      <div className={styles.scroll}>
+        {branch ? <><h3 className={styles.title}>{branchTitle(branch)}</h3>
+          <p className={styles.meta}>{text("Execution history for this conversation branch", "此会话分支的执行记录")}</p>
+          {branch.executions.filter(item => {
+            const parent = item.view_parent_execution_id ?? item.parent_execution_id;
+            return !parent || !branch.executions.some(other => other.execution_id === parent);
+          }).map(item => agentRow(item, new Set(), new Set(branch.executions.map(run => run.execution_id))))}
+        </> : <SidebarNotice>{text("Branch details are unavailable.", "暂时无法读取分支详情。")}</SidebarNotice>}
+      </div></div>;
+  }
   if (selection === "agent") return <div className={styles.panel}>
     <div className={styles.toolbar}>{back}</div>
     <DebuggerPanel key={state.selectedExecutionId || "empty"} {...state} detailOnly
@@ -151,13 +186,13 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
       </div>}
     </div>;
   }
-  const roots = children.get(null) || [];
-  const attention = roots.filter(item => needsAttention(item));
-  const working = roots.filter(item => !needsAttention(item) && hasActive(item));
-  const history = roots.filter(item => !needsAttention(item) && !hasActive(item));
-  const section = (name: string, items: ExecutionSnapshot[], historical = false) => items.length > 0 && <div className="group/sec">
+  const roots = groups;
+  const attention = groups.filter(branchAttention);
+  const working = groups.filter(item => !branchAttention(item) && branchActive(item));
+  const history = groups.filter(item => !branchAttention(item) && !branchActive(item));
+  const section = (name: string, items: ActivityBranch[], historical = false) => items.length > 0 && <div className="group/sec">
     <SectionHeader name={name} className={styles.sectionHeader} collapsible={historical} collapsed={!historyOpen} onToggle={() => setHistoryOpen(value => !value)} actions={<><span className={styles.count}>{items.length}</span></>} />
-    {(!historical || historyOpen) && items.map(item => agentRow(item))}
+    {(!historical || historyOpen) && items.map(branchRow)}
   </div>;
   return <section className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")}>
     {stale && (hasRead || processes.stale || state.connection.state === "stale") && <p role="status" className={styles.notice}>{hasRead
@@ -167,8 +202,12 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
       {!hasRead && !processes.stale && state.connection.state === "reconnecting" ? <SidebarNotice>{text("Loading…", "加载中…")}</SidebarNotice> : null}
       {section(text("Needs attention", "需要处理"), attention)}
       {section(text("In progress", "正在进行"), working)}
-      {state.fetchedAt && processes.loaded && unassigned.length === 0 && attention.length === 0 && working.length === 0 && <SidebarNotice>{roots.length ? text("No tasks are running. Previous tasks are in History.", "当前没有正在进行的任务，已结束任务保留在历史记录中。") : text("Tasks and their programs will appear here when this conversation runs.", "此会话开始执行后，任务及其程序会显示在这里。")}</SidebarNotice>}
+      {state.fetchedAt && processes.loaded && unassigned.length === 0 && ungrouped.length === 0 && attention.length === 0 && working.length === 0 && <SidebarNotice>{roots.length ? text("No tasks are running. Previous tasks are in History.", "当前没有正在进行的任务，已结束任务保留在历史记录中。") : text("Tasks and their programs will appear here when this conversation runs.", "此会话开始执行后，任务及其程序会显示在这里。")}</SidebarNotice>}
       {section(text("History", "历史记录"), history, true)}
+      {ungrouped.length > 0 && <div className="group/sec"><SectionHeader name={text("Records awaiting branch association", "尚未关联分支的记录")} collapsible={false} collapsed={false} onToggle={() => {}} />{ungrouped.filter(item => {
+        const parent = item.view_parent_execution_id ?? item.parent_execution_id;
+        return !parent || !ungrouped.some(other => other.execution_id === parent);
+      }).map(item => agentRow(item))}</div>}
       {unassigned.length > 0 && <div className="group/sec"><SectionHeader name={text("Programs without an Agent record", "未关联 Agent 记录的程序")} collapsible={false} collapsed={false} onToggle={() => {}} />{unassigned.map(programRow)}</div>}
     </div>
   </section>;

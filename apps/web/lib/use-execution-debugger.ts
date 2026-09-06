@@ -31,6 +31,7 @@ import { useSessionStore } from "@/lib/session-store";
 
 export type ExecutionDebuggerController = {
   executions: ExecutionSnapshot[];
+  branches?: import("./execution-debugger").ConversationActivityBranch[];
   events: PersistedExecutionEvent[];
   unresolvedEffects: UnresolvedEffect[];
   fetchedAt: number | null;
@@ -75,6 +76,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function useExecutionDebugger(active: boolean, sessionId: string | null, requestedExecutionId?: string | null): ExecutionDebuggerController {
+  const [branches, setBranches] = useState<import("./execution-debugger").ConversationActivityBranch[]>([]);
   const [snapshots, setSnapshots] = useState<Record<string, ExecutionSnapshot>>({});
   const [cursors, setCursors] = useState<Record<string, EventCursor>>({});
   const [events, setEvents] = useState<PersistedExecutionEvent[]>([]);
@@ -146,6 +148,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
         }
         if (!mounted.current || token !== refreshToken.current || signal.aborted) return false;
         setSnapshots(next);
+        setBranches(list.branches || []);
         setCursors(nextCursors);
         setEvents(history);
         setFetchedAt(Date.now());
@@ -342,6 +345,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
     : undefined;
   return {
     executions,
+    branches,
     events,
     unresolvedEffects: selectedKey ? debuggerData[selectedKey]?.unresolvedEffects || [] : [],
     fetchedAt,
