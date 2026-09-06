@@ -218,11 +218,16 @@ test("history and activity never overlap polls for the same resource and abort o
       requests.push({ url: String(url), signal: init.signal });
       return new Promise(() => {});
     };
-    await mount(Component, { sessionId: update.session_id, active: true }, async () => {
+    await mount(Component, { sessionId: update.session_id, active: true }, async (host) => {
       await act(async () => {
         t.mock.timers.tick(3100);
         window.dispatchEvent(new Event("online"));
         window.dispatchEvent(new Event("online"));
+        if (Component === RunningPanel) {
+          // Activity refreshes both resources while the initial requests are
+          // still pending; neither endpoint may start an overlapping request.
+          host.querySelector('button[aria-label="Refresh activity"]').click();
+        }
       });
       assert.equal(requests.length, Component === RunningPanel ? 2 : 1);
       assert.equal(new Set(requests.map(request => request.url)).size, requests.length);
