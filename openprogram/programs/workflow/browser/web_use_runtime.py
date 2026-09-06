@@ -532,15 +532,15 @@ class WebUseSessionRegistry:
             metadata = (
                 dict(result.json_data) if isinstance(result.json_data, dict) else {}
             )
-            metadata.setdefault("web_session_id", session.id)
-            metadata.setdefault("backend", session.backend)
+            metadata["web_session_id"] = session.id
+            metadata["backend"] = session.backend
             if reused_session:
                 metadata["session_reused"] = True
             result.json_data = metadata
             return result
         payload = dict(result) if isinstance(result, dict) else {"result": result}
-        payload.setdefault("web_session_id", session.id)
-        payload.setdefault("backend", session.backend)
+        payload["web_session_id"] = session.id
+        payload["backend"] = session.backend
         if reused_session:
             payload["session_reused"] = True
         return payload
