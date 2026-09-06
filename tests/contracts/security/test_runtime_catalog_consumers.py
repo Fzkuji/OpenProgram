@@ -52,7 +52,7 @@ def _repo_zip() -> bytes:
 
 
 class _Server(http.server.ThreadingHTTPServer):
-    daemon_threads = True
+    daemon_threads = False
 
     def __init__(self):
         self.mode = "zip"
@@ -73,6 +73,12 @@ class _Server(http.server.ThreadingHTTPServer):
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def end_headers(self):
+        # This fixture serves one response per connection; no idle handlers
+        # may survive teardown and write into a later test's closed capture.
+        self.send_header("Connection", "close")
+        super().end_headers()
 
     def do_GET(self):
         self.server.requests.append(self.path)
