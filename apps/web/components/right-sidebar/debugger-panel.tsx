@@ -568,6 +568,12 @@ export function DebuggerPanel({
             </label> : <p className={styles.muted}>{text("This revision was prepared by another client.", "此修订由其他客户端准备。")}</p>}
             {selectedDraft && <p className={styles.muted}>{({ draft: "Draft", validated: "Validated", approved: "Approved", published: "Ready to create branch", discarded: "Discarded", rejected: "Needs changes" })[selectedDraft.status]}</p>}
             <DialogFooter className={styles.revisionActions}>
+              {selectedDraft?.editor && ["published", "discarded"].includes(selectedDraft.status) && snapshot.checkpoint_head_id && <Button variant="ghost" disabled={draftPending || !onCreateDraft} onClick={async () => {
+                setDraftError(null); setDraftPending(true);
+                try { await onCreateDraft?.({ execution_id: snapshot.execution_id, source_checkpoint_id: snapshot.checkpoint_head_id!, preparation: { instructions: selectedDraft.editor!.instructions } }); }
+                catch (error) { setDraftError(error instanceof Error ? error.message : "Could not prepare new instructions."); }
+                finally { setDraftPending(false); }
+              }}>{text("Edit as new draft", "编辑为新草稿")}</Button>}
               {(!selectedDraft || (!["published", "discarded"].includes(selectedDraft.status) && selectedDraft.editor)) && <Button variant={selectedDraft ? "ghost" : "default"} disabled={draftPending || (selectedDraft ? !onUpdateDraft : !onCreateDraft) || !(draftText ?? selectedDraft?.editor?.instructions ?? "").trim() || Boolean(selectedDraft && (draftText === null || draftText === selectedDraft.editor?.instructions))} onClick={async () => {
                 setDraftError(null); setDraftPending(true);
                 try {
