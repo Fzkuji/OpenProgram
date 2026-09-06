@@ -970,13 +970,13 @@ receipt = {
 </tr>
 <tr>
 <td>P0 complete native input</td>
-<td>Single-window event/control samples pass; the LaunchServices two-window sample exposes WebKit focus and wrong-window keyboard failures. Exact-window capture succeeds.</td>
-<td>Production capability not implemented. Fixture event delivery is preliminary; signed helper, real-app compatibility and complete input acceptance remain open.</td>
+<td>The reviewed owned-fixture matrix is executed: three default two-window runs reproduce WebKit focus failure; one explicit Command run delivers canvas drag but writes text into the sibling. Event-only regression and exact-window capture pass; foreground and cursor are preserved.</td>
+<td>Complete-input acceptance fails. The exact-window image agrees with final control receipts; fixture cleanup is verified. Production input, signed helper and real-application compatibility remain unresolved.</td>
 </tr>
 <tr>
 <td>P1 persistent runner / standard GUI Agent</td>
-<td>A separate macOS launcher candidate enforces isolation even with disabled or permissive outer policy; 83 security tests and independent specification/quality reviews pass.</td>
-<td>Not integrated. The launcher owns scratch and child cleanup; unsupported or unavailable sandbox fails closed. Persistent protocol, broker, standard Agent configuration and product acceptance remain unimplemented.</td>
+<td>A separate macOS runner candidate enforces mandatory isolation and preserves Python state with top-level await. Host-side deadlines, cancellation, bounded pipe framing/output and idle process suspension are implemented; 98 security tests and independent specification/quality reviews pass.</td>
+<td>Not integrated. Unsupported or unavailable sandbox fails closed. Script results are untrusted and confer no host/UI authority. Trusted broker admission, durable primitive effects, standard Agent configuration and product acceptance remain unimplemented.</td>
 </tr>
 <tr>
 <td>P2 browser / P3 desktop / P4 VM</td>
