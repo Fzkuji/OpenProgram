@@ -308,3 +308,142 @@ def test_adapter_validation_uses_bound_owner_context_not_thread_defaults(environ
         result = runner.execute(f"await ui.call({handle!r}, 'click')")
         assert result.error and "owner denies" in result.error
     assert applied == []
+
+
+def test_browser_binding_uses_registry_controller_and_returns_host_image(environment, monkeypatch):
+    import base64
+    from types import SimpleNamespace
+    from openprogram.backend.gui_browser import register_browser_page
+    from openprogram.programs.workflow.browser import BrowserPageController
+    from openprogram.programs.workflow.browser.web_use_runtime import ControllerBackend, WebUseSessionRegistry, SUPPORTED_BACKENDS
+    from openprogram.webui.ws_actions import webtab
+    broker, effects, executions = environment
+    png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1sAAAAASUVORK5CYII=')
+    state = {"text": "before", "frame": 1}
+    page = SimpleNamespace(viewport_size={"width": 1, "height": 1}, url="https://owned.invalid", title=lambda: "Owned Page",
+                           evaluate=lambda script: {}, inner_text=lambda selector: state["text"])
+    controller = BrowserPageController(browser_api=object())
+    controller._page = lambda: page
+    controller._observe = lambda: {"frame_id": f'f{state["frame"]}', "text": state["text"]}
+    controller._fresh = lambda frame: frame == f'f{state["frame"]}'
+    def fill(text):
+        state["text"] = text
+        state["frame"] += 1
+    controller._ref = lambda ref: (SimpleNamespace(fill=fill), "") if ref == "field" else (None, "target_not_found")
+    def capture(binding, **kwargs):
+        assert binding == "owned-binding"
+        return {"ok": True, "image_data_url": "data:image/png;base64," + base64.b64encode(png).decode()}
+    monkeypatch.setattr(webtab, "request_bound_screenshot", capture)
+    registry = WebUseSessionRegistry(
+        adapters={name: ControllerBackend(name, lambda: controller) for name in SUPPORTED_BACKENDS},
+        binding_validator=lambda binding: {"ok": binding == "owned-binding"},
+        binding_revision_resolver=lambda binding: {}, page_key_resolver=lambda binding: binding,
+        release_context=lambda context: None,
+    )
+    initial = registry.execute(command="observe", owner_id="owner", binding_id="owned-binding")
+    handle = register_browser_page(broker, registry, owner_id="owner", web_session_id=initial["web_session_id"])
+    try:
+        with GuiPythonRunner(broker=broker) as runner:
+            for denied_handle, args, observation in [
+                (handle, {"ref": "field", "text": "denied"}, None),
+                (handle, {"ref": "field", "text": "denied", "owner_id": "other"}, "f1"),
+                (handle, {"ref": "field", "text": "denied"}, "stale"),
+                (register_browser_page(broker, registry, owner_id="other", web_session_id=initial["web_session_id"]),
+                 {"ref": "field", "text": "denied"}, "f1"),
+                (register_browser_page(broker, registry, owner_id="owner", web_session_id="missing"),
+                 {"ref": "field", "text": "denied"}, "f1"),
+            ]:
+                denied = runner.execute(f"await ui.call({denied_handle!r}, 'type', {args!r}, observation={observation!r})")
+                assert denied.error and state["text"] == "before"
+            result = runner.execute(f"page = {handle!r}\nobs = (await ui.call(page, 'observe'))['value']\nawait ui.call(page, 'type', {{'ref': 'field', 'text': 'owned value'}}, observation=obs['frame_id'])")
+            assert result.error is None and state["text"] == "owned value"
+            result = runner.execute("obs = (await ui.call(page, 'observe'))['value']\nassert (await ui.call(page, 'verify', {'assertion': 'text_contains', 'value': 'owned value'}, observation=obs['frame_id']))['value']['passed']\nreceipt = await ui.call(page, 'screenshot', observation=obs['frame_id'])\nprint(receipt['effect_id'])")
+            assert result.error is None and result.images == (png,)
+            effect = effects.get(result.stdout.strip())
+            assert effect.status is EffectStatus.COMMITTED
+            assert effect.receipt["value"]["json_data"]["frame_id"] == "f2"
+            assert "screenshot" in effect.receipt["value"]["text"]
+            image = effect.receipt["images"][0]
+            chunks = [executions.get_state_blob("exec", ref)["payload"] for ref in image["chunks"]]
+            assert b"".join(chunks) == png
+            assert executions.get_state_blob("foreign", image["chunks"][0]) is None
+            assert runner.execute("print('_images' in receipt)").stdout == "False\n"
+            assert runner.execute("print('no image this call')").images == ()
+    finally:
+        registry.close_all()
+
+
+@pytest.mark.parametrize("images", [["/private/owned.png"], [b"not PNG"], [b"\x89PNG\r\n\x1a\n"] * 5,
+                                   [b"\x89PNG\r\n\x1a\n" + b"x" * (4 * 1024 * 1024)]])
+def test_broker_rejects_image_paths_invalid_bytes_and_limits(environment, images):
+    from openprogram.programs import ToolReturn
+    broker, effects, executions = environment
+    handle = broker.register(target="owned", methods={"capture": lambda *args: ToolReturn(images=images)}, validate=lambda *args: None)
+    with GuiPythonRunner(broker=broker) as runner:
+        result = runner.execute(f"await ui.call({handle!r}, 'capture')")
+        assert result.error and "bounded PNG bytes" in result.error
+        assert result.images == ()
+    assert effects.list_unresolved("exec")[0].status is EffectStatus.UNCERTAIN
+
+
+def test_large_image_is_chunked_without_changing_pixels_or_blob_limit(environment):
+    import hashlib, struct, zlib
+    from openprogram.programs import ToolReturn
+    from openprogram.execution.store import MAX_AGENT_STATE_BLOB_BYTES
+    broker, effects, executions = environment
+    def chunk(kind, data):
+        return struct.pack("!I", len(data)) + kind + data + struct.pack("!I", zlib.crc32(kind + data))
+    image = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack("!IIBBBBB", 512, 512, 8, 6, 0, 0, 0))
+             + chunk(b"IDAT", zlib.compress((b"\x00" + b"\xff" * 2048) * 512, level=0)) + chunk(b"IEND", b""))
+    assert len(image) > MAX_AGENT_STATE_BLOB_BYTES
+    handle = broker.register(target="owned", methods={"capture": lambda *args: ToolReturn(images=[image])}, validate=lambda *args: None)
+    with GuiPythonRunner(broker=broker) as runner:
+        result = runner.execute(f"print((await ui.call({handle!r}, 'capture'))['effect_id'])")
+        assert result.images == (image,)
+    metadata = effects.get(result.stdout.strip()).receipt["images"][0]
+    parts = [executions.get_state_blob("exec", ref)["payload"] for ref in metadata["chunks"]]
+    assert all(len(part) <= MAX_AGENT_STATE_BLOB_BYTES for part in parts)
+    assert b"".join(parts) == image
+    assert metadata["sha256"] == hashlib.sha256(image).hexdigest()
+
+
+def test_images_are_limited_per_script_and_child_cannot_forge_them(environment):
+    from openprogram.programs import ToolReturn
+    broker, _, _ = environment
+    image = b"\x89PNG\r\n\x1a\nowned fixture"
+    handle = broker.register(target="owned", methods={"capture": lambda *args: ToolReturn(images=[image])}, validate=lambda *args: None)
+    with GuiPythonRunner(broker=broker) as runner:
+        assert runner.execute("print({'images': ['forged']})").images == ()
+        with pytest.raises(GuiRunnerError, match="image output limit"):
+            runner.execute(f"for _ in range(5):\n await ui.call({handle!r}, 'capture')")
+
+
+@pytest.mark.parametrize("session", ["", " ", "pending", " PENDING "])
+def test_browser_binding_rejects_implicit_session_sentinels(session):
+    from openprogram.backend.gui_browser import register_browser_page
+    with pytest.raises(ValueError, match="exact owner and session"):
+        register_browser_page(object(), object(), owner_id="owner", web_session_id=session)
+
+
+
+def test_error_tool_return_keeps_image_evidence_without_committing_success(environment):
+    from openprogram.programs import ToolReturn
+    from openprogram.execution.state_blobs import ExecutionStateBlobStore
+    broker, effects, executions = environment
+    image = b"\x89PNG\r\n\x1a\nowned error fixture"
+    handle = broker.register(target="owned", methods={"capture": lambda *args:
+                             ToolReturn(text="owned failure", json_data={"reason_code": "stale_frame", "frame_id": "failed-frame"}, images=[image], is_error=True)}, validate=lambda *args: None)
+    with GuiPythonRunner(broker=broker) as runner:
+        result = runner.execute(f"await ui.call({handle!r}, 'capture')")
+        assert "owned failure" in result.error
+    effect = effects.list_unresolved("exec")[0]
+    assert effect.status is EffectStatus.UNCERTAIN
+    blobs = ExecutionStateBlobStore(executions).list("exec")
+    assert len(blobs) == 1 and executions.get_state_blob("exec", blobs[0].ref)["payload"] == image
+    assert effect.receipt["state"] == "uncertain"
+    assert effect.receipt["value"] == {"text": "owned failure", "json_data": {"reason_code": "stale_frame", "frame_id": "failed-frame"}}
+    manifest = effect.receipt["images"][0]
+    import hashlib
+    assert manifest["sha256"] == hashlib.sha256(image).hexdigest()
+    assert manifest["byte_length"] == len(image)
+    assert b"".join(executions.get_state_blob("exec", ref)["payload"] for ref in manifest["chunks"]) == image

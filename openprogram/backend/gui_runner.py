@@ -29,6 +29,7 @@ class GuiPythonResult:
     stdout: str
     stderr: str
     error: str | None
+    images: tuple[bytes, ...] = ()
 
 
 class GuiPythonRunner:
@@ -113,6 +114,7 @@ class GuiPythonRunner:
         pending = memoryview(struct.pack("!I", len(payload)) + payload)
         incoming = bytearray()
         output = {"stdout": [], "stderr": []}
+        images = []
         text_size = 0
         wire_size = 0
         operations = 0
@@ -139,7 +141,16 @@ class GuiPythonRunner:
                     raise GuiRunnerError("execution deadline exceeded")
                 if rpc is not None and rpc.done():
                     try:
-                        response = {"value": rpc.result(), "error": None}
+                        reply = dict(rpc.result())
+                        attachments = reply.pop("_images", ())
+                        if (not isinstance(attachments, (tuple, list)) or any(not isinstance(image, bytes) for image in attachments)
+                                or len(images) + len(attachments) > 4
+                                or sum(map(len, images)) + sum(map(len, attachments)) > 16 * 1024 * 1024):
+                            raise GuiRunnerError("GUI image output limit exceeded")
+                        images.extend(attachments)
+                        response = {"value": reply, "error": None}
+                    except GuiRunnerError:
+                        raise
                     except Exception as exc:
                         response = {"value": None, "error": f"{type(exc).__name__}: {exc}"}
                     body = json.dumps({"id": self._sequence, "request_id": rpc_id, **response},
@@ -236,6 +247,6 @@ class GuiPythonRunner:
                                         raise GuiRunnerError("unexpected protocol data at completion")
                                     append("stderr", stderr_decoder.decode(tail))
                             append("stderr", stderr_decoder.decode(b"", final=True))
-                            return GuiPythonResult("".join(output["stdout"]), "".join(output["stderr"]), error)
+                            return GuiPythonResult("".join(output["stdout"]), "".join(output["stderr"]), error, tuple(images))
                         else:
                             raise GuiRunnerError("unknown protocol message")

@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
 from dataclasses import dataclass
 import json
+import hashlib
 import threading
 import time
 from types import MappingProxyType
@@ -18,6 +19,9 @@ import uuid
 from openprogram.execution.attempts import AttemptStore, AttemptStatus
 from openprogram.execution.effects import EffectClassification, EffectStatus, EffectStore
 from openprogram.execution.model import ExecutionStatus
+from openprogram.execution.state_blobs import ExecutionStateBlobStore
+from openprogram.execution.store import MAX_AGENT_STATE_BLOB_BYTES
+from openprogram.programs import ToolReturn
 
 
 @dataclass(frozen=True)
@@ -134,13 +138,44 @@ class GuiBroker:
         )
         check()
         self._effects.mark_dispatched(effect.effect_id, expected_status=EffectStatus.PLANNED)
+        diagnostic = None
         try:
             check()
             value = resource.methods[method](args, observation, GuiOperationContext(check, deadline))
             check()
+            images = ()
+            adapter_error = None
+            image_records = []
+            if isinstance(value, ToolReturn):
+                if value.is_error:
+                    adapter_error = value.text or "GUI adapter failed"
+                images = tuple(value.images)
+                if len(images) > 4 or any(not isinstance(image, bytes) or len(image) > 4 * 1024 * 1024
+                                          or not image.startswith(b"\x89PNG\r\n\x1a\n") for image in images):
+                    raise ValueError("GUI images must be bounded PNG bytes, never paths or URLs")
+                value = {"text": value.text, "json_data": value.json_data}
+                blobs = ExecutionStateBlobStore(self._effects.executions)
+                for index, image in enumerate(images):
+                    chunks = []
+                    for offset in range(0, len(image), MAX_AGENT_STATE_BLOB_BYTES):
+                        check()
+                        name = f"gui_image_{index}_{offset}"
+                        blob = blobs.put(execution_id=self._execution_id, attempt_id=self._attempt_id,
+                                         name=name, payload=image[offset:offset + MAX_AGENT_STATE_BLOB_BYTES],
+                                         media_type="application/octet-stream", schema_version=1)
+                        blobs.attach_ref(execution_id=self._execution_id, ref=blob.ref, name=name,
+                                         reference_kind="effect", reference_id=effect.effect_id)
+                        chunks.append(blob.ref)
+                    image_records.append({"mime_type": "image/png", "byte_length": len(image),
+                                          "sha256": hashlib.sha256(image).hexdigest(), "chunks": chunks})
             # The adapter receipt, never a child message, resolves this effect.
             receipt = {"state": "applied", "target": resource.target, "method": method, "value": value}
+            if image_records:
+                receipt["images"] = image_records
             receipt = json.loads(json.dumps(receipt, allow_nan=False))
+            if adapter_error is not None:
+                diagnostic = {**receipt, "state": "uncertain"}
+                raise RuntimeError(adapter_error)
             check()
             with self._lock:
                 # Commit admission linearizes with revoke here, after receipt
@@ -154,12 +189,13 @@ class GuiBroker:
                 outcome=EffectStatus.COMMITTED, receipt=admitted_receipt,
                 attempt_id=self._attempt_id, generation=self._generation,
             )
-            return {"effect_id": effect.effect_id, **receipt}
+            return {"effect_id": effect.effect_id, **receipt, **({"_images": images} if images else {})}
         except BaseException:
             # If persistence itself fails, DISPATCHED already denotes unresolved
             # work; preserve that record and the original exception.
             try:
-                self._effects.mark_uncertain(effect.effect_id, expected_status=EffectStatus.DISPATCHED)
+                self._effects.mark_uncertain(effect.effect_id, expected_status=EffectStatus.DISPATCHED,
+                                             receipt=diagnostic)
             except Exception:
                 pass
             raise

@@ -207,6 +207,7 @@ class EffectStore:
         effect_id: str,
         *,
         expected_status: EffectStatus,
+        receipt: Mapping[str, Any] | None = None,
     ) -> EffectRecord:
         if expected_status in TERMINAL_EFFECT_STATUSES:
             raise EffectConflict("terminal", "resolved effect cannot become uncertain")
@@ -218,6 +219,7 @@ class EffectStore:
             effect_id,
             expected_status=expected_status,
             target=EffectStatus.UNCERTAIN,
+            receipt=receipt,
         )
 
     def resolve(
