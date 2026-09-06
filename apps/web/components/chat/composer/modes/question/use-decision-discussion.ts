@@ -15,26 +15,36 @@ interface Options {
 
 export function useDecisionDiscussion({ decision, thinking, dequeue }: Options) {
   const { text } = useTranslation();
-  const requests = useRef(new Map<string, { command: WaitCommand; busy: boolean; sent: boolean }>());
+  const requests = useRef(new Map<string, { command: WaitCommand; message: string; feedback: string; busy: boolean; sent: boolean }>());
 
-  return useCallback(async () => {
+  return useCallback(async (feedback: string) => {
     if (!decision?.sessionId || !decision.executionId) return;
     const d = decision;
-    const message = text(
-      `I reject this request${d.tool ? ` (${d.tool})` : ""} and want to discuss it. Do not execute or retry it. Please respond to me first and wait for my next message.`,
-      `我拒绝这次申请${d.tool ? `（${d.tool}）` : ""}，希望先讨论。不要执行或重试这次操作。请先回复我，再等待我的下一条消息。`,
-    );
+    const input = feedback.trim();
+    if (!input) return;
+    const context = [
+      d.prompt,
+      ...(d.questions ?? []).map(question => question.prompt),
+      d.detail,
+      d.tool ? `Tool: ${d.tool}` : null,
+      d.args ? JSON.stringify(d.args, null, 2) : null,
+    ].filter(Boolean).join("\n");
+    const message = `${input}\n\n${text("Regarding:", "讨论内容：")}\n${context}`;
     let request = requests.current.get(d.id);
     if (!request) {
-      request = { busy: false, sent: false, command: {
+      request = { busy: false, sent: false, message, feedback: input, command: {
         type: "execution.command", action: "execution.wait.decline",
         command_id: `web-discuss-${crypto.randomUUID()}`,
         execution_id: d.executionId, expected_version: d.expectedVersion,
-        payload: { wait_id: d.id, generation: d.waitGeneration, reason: message },
+        payload: { wait_id: d.id, generation: d.waitGeneration, reason: `${text("Discussion requested before proceeding.", "用户希望先讨论再继续。")}\n${message}` },
       } };
       requests.current.set(d.id, request);
     }
     if (request.busy || request.sent) return;
+    if (request.feedback !== input) {
+      showToast(text("Retry the pending discussion before changing its feedback.", "请先重试待确认的讨论，再修改反馈。"), { tone: "error" });
+      return;
+    }
     request.busy = true;
     try {
       const result = await postExecutionCommand(request.command, AbortSignal.timeout(15000));
@@ -44,7 +54,7 @@ export function useDecisionDiscussion({ decision, thinking, dequeue }: Options) 
       // Use the existing session queue: the declined execution may not have
       // cleared in the WebSocket projection yet. Drafts and attachments stay put.
       enqueueMessage(d.sessionId, {
-        text: message, thinking, toolsEnabled: false, webSearchEnabled: false,
+        text: request.message, thinking, toolsEnabled: false, webSearchEnabled: false,
         background: true,
       });
       request.sent = true;
