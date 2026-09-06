@@ -25,7 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SectionHeader } from "../sidebar/section-header";
 import { useTranslation } from "@/lib/i18n";
 import { ExecutionStrip } from "../chat/messages/execution-strip";
-import { executionTitle, statusLabel, activityRows, shortTime, updatedTime } from "./debugger-presentation";
+import { executionTitle, executionRequest, executionGuidance, statusLabel, activityRows, shortTime, updatedTime } from "./debugger-presentation";
 import styles from "./debugger-panel.module.css";
 
 export type DebuggerConnection = {
@@ -448,7 +448,7 @@ export function DebuggerPanel({
                   ? text("A tool result is unconfirmed. Verify the external action before starting it again.", "工具结果尚未确认。再次执行前需要核对外部操作的实际结果。")
                   : text("An external action has an unconfirmed outcome. This run needs attention before it can continue.", "外部操作结果尚未确认，需要处理后才能继续执行。")}
               {unresolvedEffects.filter((effect) => effect.tool_name).map((effect) => <div key={effect.effect_id}>{effect.tool_name}</div>)}
-            </div> : snapshot.status === "interrupted" && <p className={styles.muted}>{text("Execution stopped before a final result was saved.", "执行在保存最终结果前中断。")}</p>}
+            </div> : executionGuidance(snapshot, text) && <p className={styles.muted}>{executionGuidance(snapshot, text)}</p>}
 
             <div className={styles.actions}>
               {(["pause", "continue", "step", "retry", "cancel"] as ExecutionCommandAction[]).filter((action) => availableExecutionActions(snapshot).includes(action)).map((action) => (
@@ -493,6 +493,7 @@ export function DebuggerPanel({
           </section>}
 
 
+          {executionRequest(snapshot) && executionRequest(snapshot) !== executionTitle(snapshot, executions.length - executions.indexOf(snapshot), text) && <ExecutionStrip label={text("Request excerpt", "请求摘要")}><p className={styles.requestText}>{executionRequest(snapshot)}</p></ExecutionStrip>}
           {activityRows(events, text).length > 0 && <section className={styles.card}>
             <div className={styles.cardHeader}><h4>{text("Progress", "执行进展")}</h4></div>
             <ol className={styles.eventList}>{activityRows(events, text).slice(0, 8).map((event) => (

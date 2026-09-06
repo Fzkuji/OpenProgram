@@ -79,3 +79,5 @@
 .editorDialog { max-height: calc(100dvh - 48px); overflow-y: auto; }
 .heroTop > .statusBadge { grid-column: 1 / -1; grid-row: 2; }
 .heroTop > button { grid-column: 2; grid-row: 1; }
+
+.requestText { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }

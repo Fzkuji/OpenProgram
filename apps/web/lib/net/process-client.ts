@@ -6,6 +6,7 @@ export type ManagedProcess = {
   execution_id: string | null;
   tool_call_id?: string | null;
   command: string;
+  display?: { name: string; kind: "executable" | "script" | "module" | "snippet" | "unknown" };
   cwd: string | null;
   status: string;
   started_at: number;

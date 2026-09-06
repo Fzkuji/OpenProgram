@@ -214,5 +214,7 @@ class ProcessStore:
 
 
 def public_record(record):
+    from .presentation import command_display
     return {**{key: record.get(key) for key in PUBLIC_FIELDS},
-            "can_stop": record["status"] in LIVE}
+            "can_stop": record["status"] in LIVE,
+            "display": command_display(record.get("command") or "")}
