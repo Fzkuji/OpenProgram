@@ -65,6 +65,7 @@ import { baseOf, joinPath, parentOf } from "./file-tree-query";
 import { asServerRenameResult, type FileOperationResult } from "./file-tree-operation";
 import { FileGlyph, InlineNameInput } from "./file-tree-render";
 import { FileBreadcrumb, FileDetails, FileSortMenu, FolderSize, formatFileBytes, useFileSort, invalidateFolderSizes } from "./file-management";
+import { HoverTip } from "@/components/ui/tooltip";
 import styles from "./files-panel.module.css";
 
 export interface TreeEntry {
@@ -1291,32 +1292,32 @@ export function FileTree({
         onMoveResult={moveSearchResult}
         actions={
           <>
-            <button
+            <HoverTip label={text("New File", "新建文件")}><button
               type="button"
               className={styles.iconBtn}
               onClick={() => startCreate("file")}
-              title={text("New File", "新建文件")}
+              aria-label={text("New File", "新建文件")}
             >
               <FilePlus />
-            </button>
-            <button
+            </button></HoverTip>
+            <HoverTip label={text("New Folder", "新建文件夹")}><button
               type="button"
               className={styles.iconBtn}
               onClick={() => startCreate("dir")}
-              title={text("New Folder", "新建文件夹")}
+              aria-label={text("New Folder", "新建文件夹")}
             >
               <FolderPlus />
-            </button>
-            <button
+            </button></HoverTip>
+            <HoverTip label={text("Refresh", "刷新")}><button
               type="button"
               className={styles.iconBtn}
               onClick={refetchRoot}
-              title={text("Refresh", "刷新")}
+              aria-label={text("Refresh", "刷新")}
             >
               <RotateCw />
-            </button>
+            </button></HoverTip>
             <FileSortMenu value={sort} onChange={setSort} />
-            <button type="button" className={styles.iconBtn} onClick={() => setDetailsPath(selected?.path ?? activePath ?? "")} title={text("Get Info", "查看详细信息")}><Info /></button>
+            <HoverTip label={text("Get Info", "查看详细信息")}><button type="button" className={styles.iconBtn} onClick={() => setDetailsPath(selected?.path ?? activePath ?? "")} aria-label={text("Get Info", "查看详细信息")}><Info /></button></HoverTip>
           </>
         }
       />

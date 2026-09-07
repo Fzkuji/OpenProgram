@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ArrowDownWideNarrow, ChevronRight, Copy, X } from "lucide-react";
+import { ArrowDownWideNarrow, Check, ChevronRight, Copy, X } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { HoverTip } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { MENU_PANEL, GROUP_LABEL, MENU_SEPARATOR, itemCls } from "@/components/chat/top-bar/menu-styles";
 import { copyText } from "./explorer-header";
 import styles from "./files-panel.module.css";
 
@@ -44,15 +47,19 @@ export function FileSortMenu({ value, onChange }: { value: string; onChange: (va
     if (index === 0) updated[1] = next === "size" || next === "mtime" ? "desc" : "asc";
     onChange(updated.join(":"));
   };
-  return <Popover><PopoverTrigger asChild><button type="button" className={styles.iconBtn} title={text("Sort and display", "排序与显示")}><ArrowDownWideNarrow /></button></PopoverTrigger>
-    <PopoverContent align="start" className={styles.fileSortMenu}>
-      <label>{text("Sort by", "排序依据")}<select value={fields[0]} onChange={e => change(0, e.target.value)}>
-        <option value="name">{text("Name", "名称")}</option><option value="mtime">{text("Modified", "修改时间")}</option><option value="size">{text("Size", "大小")}</option><option value="kind">{text("Type", "类型")}</option>
-      </select></label>
-      <label>{text("Order", "顺序")}<select value={fields[1]} onChange={e => change(1, e.target.value)}><option value="asc">{text("Ascending", "升序")}</option><option value="desc">{text("Descending", "降序")}</option></select></label>
-      {([[2, "folders", "mixed", text("Folders first", "文件夹优先")], [3, "hidden", "visible", text("Show hidden files", "显示隐藏文件")], [4, "ignored", "tracked", text("Show Git-ignored files", "显示 Git 忽略文件")]] as const).map(([index, yes, no, label]) => <label key={index}><span>{label}</span><input type="checkbox" checked={fields[index] === yes} onChange={e => change(index, e.target.checked ? yes : no)} /></label>)}
-      <small>{text("Unknown folder sizes stay last within their group. Refresh after calculating sizes to sort again.", "未知大小的文件夹排在同组末尾。计算完成后刷新可重新按大小排序。")}</small>
-    </PopoverContent></Popover>;
+  const option = (index: number, key: string, label: string, alternate?: string) => <DropdownMenuItem key={key} role={alternate ? "menuitemcheckbox" : "menuitemradio"} aria-checked={fields[index] === key} className={`${itemCls(false)} outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright`} onSelect={event => { event.preventDefault(); change(index, alternate && fields[index] === key ? alternate : key); }}><span className="flex-1">{label}</span>{fields[index] === key ? <Check size={14} /> : <span className="w-[14px]" />}</DropdownMenuItem>;
+  return <DropdownMenu modal={false}><HoverTip label={text("Sort and display", "排序与显示")}><DropdownMenuTrigger asChild><button type="button" className={styles.iconBtn} aria-label={text("Sort and display", "排序与显示")}><ArrowDownWideNarrow /></button></DropdownMenuTrigger></HoverTip>
+    <DropdownMenuContent align="start" className={`${MENU_PANEL} w-[240px]`}>
+      <div role="group" aria-label={text("Sort by", "排序依据")}><div className={GROUP_LABEL}>{text("Sort by", "排序依据")}</div>
+        {option(0, "name", text("Name", "名称"))}{option(0, "mtime", text("Modified", "修改时间"))}{option(0, "size", text("Size", "大小"))}{option(0, "kind", text("Type", "类型"))}
+      </div><DropdownMenuSeparator className={MENU_SEPARATOR} />
+      <div role="group" aria-label={text("Order", "顺序")}>
+        {option(1, "asc", text("Ascending", "升序"))}{option(1, "desc", text("Descending", "降序"))}
+      </div><DropdownMenuSeparator className={MENU_SEPARATOR} />
+      {option(2, "folders", text("Folders first", "文件夹优先"), "mixed")}{option(3, "hidden", text("Show hidden files", "显示隐藏文件"), "visible")}{option(4, "ignored", text("Show Git-ignored files", "显示 Git 忽略文件"), "tracked")}
+      <small className="px-[10px] py-[6px] text-[12px] text-text-muted">{text("Unknown folder sizes stay last within their group. Refresh after calculating sizes to sort again.", "未知大小的文件夹排在同组末尾。计算完成后刷新可重新按大小排序。")}</small>
+    </DropdownMenuContent></DropdownMenu>;
+
 }
 
 export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: string; path: string; absolutePath?: string; onLocate: (path: string) => void }) {
@@ -96,12 +103,12 @@ export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: s
     void document.fonts?.ready.then(fit);
     return () => { disposed = true; observer.disconnect(); };
   }, [root, path]);
-  const crumb = (name: string, target: string) => <button type="button" title={target || root} onClick={() => onLocate(target)}>{name}</button>;
+  const crumb = (name: string, target: string) => <HoverTip label={target || root}><button type="button" data-path={target} onClick={() => onLocate(target)}>{name}</button></HoverTip>;
   return <><nav ref={ref} className={styles.fileBreadcrumb} aria-label={text("File path", "文件路径")}>
     <span ref={measureRef} className={styles.fileBreadcrumbMeasure} aria-hidden="true">{[root, "…", ...parts].map((name, i) => <span key={i}>{name}</span>)}</span>
-    {crumb(root, "")}{firstVisible > 0 ? <span className={styles.fileCrumbPart}><ChevronRight /><Popover><PopoverTrigger asChild><button title={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={styles.fileCrumbMenu}>{parts.slice(0, firstVisible).map((part, i) => <div key={i}>{crumb(part, parts.slice(0, i + 1).join("/"))}</div>)}</PopoverContent></Popover></span> : null}
+    {crumb(root, "")}{firstVisible > 0 ? <span className={styles.fileCrumbPart}><ChevronRight /><Popover><PopoverTrigger asChild><button type="button" aria-label={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={`${MENU_PANEL} ${styles.fileCrumbMenu}`}>{parts.slice(0, firstVisible).map((part, i) => <button type="button" className={itemCls(false)} key={i} onClick={() => onLocate(parts.slice(0, i + 1).join("/"))}>{part}</button>)}</PopoverContent></Popover></span> : null}
     {parts.map((part, i) => i < firstVisible ? null : <span className={styles.fileCrumbPart} style={i === firstVisible && leadingWidth !== undefined ? { maxWidth: leadingWidth } : undefined} key={i}><ChevronRight />{crumb(part, parts.slice(0, i + 1).join("/"))}</span>)}
-  </nav><button type="button" className={styles.iconBtn} disabled={!absolutePath} aria-label={text("Copy absolute path", "复制绝对路径")} title={text("Copy absolute path", "复制绝对路径")} onClick={() => { if (absolutePath) void copyText(absolutePath); }}><Copy /></button></>;
+  </nav><HoverTip label={text("Copy absolute path", "复制绝对路径")}><button type="button" className={styles.iconBtn} disabled={!absolutePath} aria-label={text("Copy absolute path", "复制绝对路径")} onClick={() => { if (absolutePath) void copyText(absolutePath); }}><Copy /></button></HoverTip></>;
 }
 
 export interface SizeResult { state: string; complete?: boolean; bytes?: number | null; entries?: number; skipped?: number; token?: string | null; updated_at?: number; error?: string }

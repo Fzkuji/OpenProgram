@@ -16,6 +16,7 @@ import {
 
 import { useTranslation } from "@/lib/i18n";
 import { matchingIndexes } from "./explorer-search";
+import { HoverTip } from "@/components/ui/tooltip";
 import styles from "./files-panel.module.css";
 
 export type ExplorerSearchMode = "filter" | "highlight";
@@ -166,11 +167,11 @@ export function ExplorerHeader({
               {rootName}
             </button>
             <span className={styles.treeRootFullPath}>{rootPath ?? rootName}</span>
-            <button
+            <HoverTip label={copied ? text("Copied", "已复制") : text("Copy path", "复制路径")}><button
               className={styles.treeRootCopy}
               type="button"
               disabled={!rootPath}
-              title={copied ? text("Copied", "已复制") : text("Copy path", "复制路径")}
+
               aria-label={text("Copy path", "复制路径")}
               onClick={() => {
                 if (!rootPath) return;
@@ -181,20 +182,20 @@ export function ExplorerHeader({
               }}
             >
               {copied ? <Check /> : <Copy />}
-            </button>
+            </button></HoverTip>
           </div>
         ) : null}
         <div className={`${styles.treeToolbarActions} ${!showRootPath ? styles.treeToolbarActionsOnly : ""}`}>
           {!hideSearch && (
-          <button
+          <HoverTip label={searchOpen ? text("Close search", "关闭搜索") : text("Search", "搜索")}><button
             type="button"
             className={`${styles.iconBtn} ${searchOpen ? styles.iconBtnActive : ""}`}
             onClick={() => searchOpen ? closeSearch() : onSearchOpenChange(true)}
             aria-expanded={searchOpen}
-            title={searchOpen ? text("Close search", "关闭搜索") : text("Search", "搜索")}
+            aria-label={searchOpen ? text("Close search", "关闭搜索") : text("Search", "搜索")}
           >
             <Search />
-          </button>
+          </button></HoverTip>
           )}
           {actions}
         </div>
@@ -229,9 +230,9 @@ export function ExplorerHeader({
             <span className={styles.treeSearchCount} aria-live="polite">
               {resultCount ? resultIndex + 1 : 0} / {resultCount}
             </span>
-            <button className={styles.treeSearchAction} type="button" disabled={!resultCount} tabIndex={searchOpen ? 0 : -1} title={text("Previous match", "上一个匹配项")} onClick={() => onMoveResult(-1)}><ChevronUp /></button>
-            <button className={styles.treeSearchAction} type="button" disabled={!resultCount} tabIndex={searchOpen ? 0 : -1} title={text("Next match", "下一个匹配项")} onClick={() => onMoveResult(1)}><ChevronDown /></button>
-            <button className={styles.treeSearchAction} type="button" disabled={!query} tabIndex={searchOpen ? 0 : -1} title={text("Clear", "清除")} onClick={() => onQueryChange("")}><X /></button>
+            <HoverTip label={text("Previous match", "上一个匹配项")}><button className={styles.treeSearchAction} type="button" disabled={!resultCount} tabIndex={searchOpen ? 0 : -1} aria-label={text("Previous match", "上一个匹配项")} onClick={() => onMoveResult(-1)}><ChevronUp /></button></HoverTip>
+            <HoverTip label={text("Next match", "下一个匹配项")}><button className={styles.treeSearchAction} type="button" disabled={!resultCount} tabIndex={searchOpen ? 0 : -1} aria-label={text("Next match", "下一个匹配项")} onClick={() => onMoveResult(1)}><ChevronDown /></button></HoverTip>
+            <HoverTip label={text("Clear", "清除")}><button className={styles.treeSearchAction} type="button" disabled={!query} tabIndex={searchOpen ? 0 : -1} aria-label={text("Clear", "清除")} onClick={() => onQueryChange("")}><X /></button></HoverTip>
           </div>
         </div>
         <div className={styles.treeSearchOptions}>

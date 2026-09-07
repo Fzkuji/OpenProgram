@@ -642,12 +642,10 @@
 .fileBreadcrumb svg { width: 12px; height: 12px; flex-shrink: 0; }
 .fileCrumbPart { display: flex; align-items: center; gap: 2px; min-width: 0; flex-shrink: 0; }
 .fileCrumbPart:last-child { color: var(--text-primary); flex: 0 1 auto; }
-.fileCrumbMenu { width: auto; max-width: 300px; }
+.fileCrumbMenu { width: max-content; min-width: 140px; max-width: min(300px, calc(100vw - 24px)); }
 .fileCrumbMenu button { width: 100%; text-align: left; padding: 6px 10px; overflow-wrap: anywhere; }
-.fileSortMenu { display: flex; flex-direction: column; gap: 10px; width: 240px; padding: 12px; font-size: 12px; }
-.fileSortMenu label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.fileSortMenu select { color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 5px; padding: 4px; }
-.fileSortMenu small, .folderSizeDetails small { color: var(--text-dim); line-height: 1.5; }
+.fileCrumbMenu button:focus-visible { outline: none; background: var(--bg-hover); color: var(--text-bright); }
+
 .treeRowWithSize { grid-template-columns: 17px minmax(0, 1fr) auto; }
 .folderSize { font-size: 10px; font-variant-numeric: tabular-nums; color: var(--text-dim); padding-left: 8px; white-space: nowrap; }
 .fileDetails { background: var(--bg-primary); color: var(--text-primary); width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 40px); overflow-y: auto; border-radius: 12px; }

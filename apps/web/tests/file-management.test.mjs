@@ -51,10 +51,11 @@ test("shared Programs header retains its single toolbar without a path row", () 
 
 test("narrow breadcrumb keeps project root and current filename", () => {
   const { document } = parseHTML(renderToStaticMarkup(h(api.FileBreadcrumb, { root: "Project", path: "src/deep/file2.py", onLocate: noop })));
+  assert.equal(Boolean(document.querySelector('nav button[title]')), false, "breadcrumb uses styled hints rather than native square title tooltips");
   assert.match(document.firstElementChild.textContent, /Project/);
   assert.match(document.firstElementChild.textContent, /file2.py/);
-  assert.ok(document.querySelector('button[title="Parent folders"]'));
-  assert.equal(document.querySelector('button[title="src/deep/file2.py"]').textContent, "file2.py");
+  assert.ok(document.querySelector('button[aria-label="Parent folders"]'));
+  assert.equal(document.querySelector('button[data-path="src/deep/file2.py"]').textContent, "file2.py");
 });
 
 test("byte display covers zero and binary unit boundaries", () => {
@@ -161,7 +162,7 @@ test("breadcrumb uses available width and reveals more ancestors when resized", 
     available = 190;
     await act(async () => resize());
     assert.deepEqual(visible(), ["fzkuji", "…", "easyeditor", "evaluate"], "use spare width for a truncated ancestor");
-    const partial = document.querySelector('button[title="Desktop/EasyEdit/easyeditor"]');
+    const partial = document.querySelector('button[data-path="Desktop/EasyEdit/easyeditor"]');
     assert.equal(partial.parentElement.style.maxWidth, "56px");
     available = 400;
     await act(async () => resize());
@@ -213,7 +214,7 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     const path = () => document.querySelector('nav[aria-label="File path"]').textContent;
     assert.match(path(), /data.bin/);
     holding = true; refreshed = true; holdingPages = true;
-    await click('button[title="Refresh"]');
+    await click('button[aria-label="Refresh"]');
     assert.match(path(), /data.bin/);
     assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'), "keep expanded rows while refresh is pending");
     holding = false;
@@ -232,7 +233,7 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     assert.ok(requests.slice(beforeEvent).some(p => p.path === "src"), "event refresh reads latest expanded state");
     assert.match(path(), /data.bin/);
     failPage = true;
-    await click('button[title="Refresh"]');
+    await click('button[aria-label="Refresh"]');
     assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'), "failed refresh preserves old content");
     const retry = [...document.querySelectorAll("button")].find(node => node.textContent === "Refresh failed — retry");
     assert.ok(retry, "failed page refresh exposes a retry");
@@ -256,4 +257,13 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     await act(async () => { root.unmount(); for (const resolve of [...held, ...heldPages]) resolve(); });
     Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
   }
+});
+
+
+test("sort control exposes an accessible styled menu trigger without a native title", () => {
+  const { document } = parseHTML(renderToStaticMarkup(h(api.FileSortMenu, { value: "name:asc:folders:hidden:ignored", onChange: noop })));
+  const button = document.querySelector('button[aria-label="Sort and display"]');
+  assert.ok(button);
+  assert.equal(button.getAttribute("aria-haspopup"), "menu");
+  assert.equal(button.hasAttribute("title"), false);
 });
