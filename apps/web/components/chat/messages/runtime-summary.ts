@@ -250,7 +250,9 @@ export function runtimeSummaryLabel(input: RuntimeSummaryInput): string {
     interrupted: text("Interrupted", "已中断"),
     capped: text("Stopped", "已停止"),
   };
-  const status = errored
+  const status = input.fnName === "gui_agent" && workflowPayload(input.tree?.output)?.reason_code === "system_access_required"
+    ? text("Waiting for system access", "等待系统授权")
+    : errored
     ? text("Error", "出错")
     : guiFailed
       ? text("Failed", "失败")
