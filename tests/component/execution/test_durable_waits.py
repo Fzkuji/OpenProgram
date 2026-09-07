@@ -306,7 +306,8 @@ def test_answer_reactivates_exact_wait_checkpoint_without_replaying_wait_attempt
     assert DurableWaitStore(executions).get_wait("wait_resume").outcome == "answered"
 
 
-def test_startup_recovers_committed_wait_outcome_once(tmp_path) -> None:
+@pytest.mark.parametrize("resume_blocked", [False, True])
+def test_startup_recovers_committed_wait_outcome_once(tmp_path, resume_blocked) -> None:
     from openprogram.execution.startup import recover_execution_startup
 
     executions, attempts, execution, attempt = _active_execution(tmp_path)
@@ -340,10 +341,22 @@ def test_startup_recovers_committed_wait_outcome_once(tmp_path) -> None:
         answer="yes",
     )
 
+    if resume_blocked:
+        # A prior resume already checked and rejected an incompatible runtime.
+        # The old answer must not repeatedly trigger that operation on restart.
+        with executions._transaction() as connection:
+            connection.execute(
+                "UPDATE executions SET reason_code = 'continuation_contract_mismatch' WHERE execution_id = ?",
+                (execution.execution_id,),
+            )
     recover_execution_startup(control_service=service)
     # The saga scan is safe to repeat while the resumed owner is active.
     asyncio.run(service.recover_wait_outcomes())
 
+    if resume_blocked:
+        assert activations == []
+        assert executions.get_execution(execution.execution_id).reason_code == "continuation_contract_mismatch"
+        return
     assert len(activations) == 1
     assert activations[0][1] == suspended.checkpoint.checkpoint_id
     assert executions.get_execution(execution.execution_id).status.value == "running"

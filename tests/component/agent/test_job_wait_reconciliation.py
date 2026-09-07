@@ -74,7 +74,7 @@ def test_job_reconciler_expires_unanswered_wait_and_applies_timeout_policy(
     )
     with executions._transaction() as connection:
         connection.execute(
-            "UPDATE execution_waits SET expires_at = 0 WHERE wait_id = ?",
+            "UPDATE execution_waits SET expires_at = 1 WHERE wait_id = ?",
             (suspended.wait.wait_id,),
         )
 
@@ -115,6 +115,18 @@ def test_default_job_driver_publishes_question_events(monkeypatch):
     event = {"type": "question.asked", "data": {"execution_id": "job-1"}}
     driver.event_sink(event)
     assert sent == [event]
+
+
+def test_job_recovery_leaves_conversation_wait_to_its_control_service(tmp_path):
+    from openprogram.agent.job.runner import JobRunner
+
+    executions, _, execution, _ = _active_execution(tmp_path)
+    runner = JobRunner.__new__(JobRunner)
+    runner._execution_store = executions
+    # This execution has no Job admission. Recovery must not try to queue it
+    # through the Job resource scheduler or prevent worker startup.
+    runner._queue_wait_resume(None, execution)
+    assert executions.get_execution(execution.execution_id) == execution
 
 
 def test_reconciler_schedules_recovery_on_an_existing_event_loop():

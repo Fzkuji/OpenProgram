@@ -478,7 +478,11 @@ class RuntimeControlService:
         paused with the exact checkpoint recorded on the wait; startup or a
         scheduler can submit the deterministic internal continue intent.
         """
-        if execution.status is not ExecutionStatus.PAUSED or execution.current_attempt_id is not None:
+        if (
+            execution.status is not ExecutionStatus.PAUSED
+            or execution.current_attempt_id is not None
+            or execution.reason_code != "wait_open"
+        ):
             return execution
         outcome = wait.outcome
         policy_key = {

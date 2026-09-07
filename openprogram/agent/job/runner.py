@@ -1971,6 +1971,10 @@ class JobRunner:
 
     def _queue_wait_resume(self, wait, execution) -> None:
         """Re-admit a resolved Job wait through the normal resource queue."""
+        # Conversation executions share this database but have no Job
+        # admission. Their own control service recovers their continuations.
+        if self._execution_store.get_job_agent_input(execution.execution_id) is None:
+            return
         self.queue_job_resume(
             command_id=f"wait-resume:{wait.wait_id}:{wait.outcome}",
             execution_id=execution.execution_id,
