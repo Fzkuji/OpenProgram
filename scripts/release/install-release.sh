@@ -492,4 +492,5 @@ fi
 printf 'OpenProgram %s installed.\n' "$OPENPROGRAM_VERSION"
 printf 'Executable: %s/openprogram\n' "$launcher_dir"
 printf 'Runtime: %s\n' "$release_dir"
+printf '%s\n' 'Desktop control is optional. Before using it, open Settings > System on the execution computer. Installation does not request screen access.'
 exit 0

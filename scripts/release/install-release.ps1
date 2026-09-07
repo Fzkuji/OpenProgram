@@ -549,6 +549,7 @@ if (-not $env:OPENPROGRAM_BIN_DIR) {
 Write-Host "OpenProgram $Version installed."
 Write-Host "Executable: $LauncherCmd"
 Write-Host "Runtime: $ReleaseDir"
+Write-Host "Desktop control is optional. Before using it, open Settings > System on the execution computer. Installation does not elevate the application."
 } finally {
     try {
         if (Test-Path -LiteralPath $Staging) {

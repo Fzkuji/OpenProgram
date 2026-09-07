@@ -185,6 +185,9 @@ def _print_summary() -> None:
         print(f"  default model:    {cfg.get('default_provider')}/{cfg.get('default_model')}")
         print(f"  thinking effort:  {(cfg.get('agent') or {}).get('thinking_effort', 'medium')}")
 
+    print("Optional desktop access: open Settings > System on the execution computer before using desktop control. "
+          "Ordinary chat needs no screen permission; setup never opens system permission prompts automatically.")
+
 
 def _mode_select() -> str | None:
     from openprogram.setup import _choose_one
