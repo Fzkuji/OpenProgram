@@ -461,6 +461,15 @@ def test_continue_rejects_changed_tool_runtime_contract(real_agent_chat, mutatio
     assert real_agent_chat.provider.call_count == 1
     assert real_agent_chat.tools.calls == []
 
+    from openprogram.execution.outbox import ProjectionDispatcher
+    from openprogram.execution.projections import projection_handlers
+    projections = ProjectionDispatcher(real_agent_chat.store, projection_handlers(real_agent_chat.store))
+    projections.dispatch_once(owner_id="test-resume-notice", limit=1000)
+    projections.dispatch_once(owner_id="test-resume-notice", limit=1000)
+    reply = next(item for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
+                 if item.get("id", "").endswith("_reply"))
+    assert reply["content"].count("Execution could not resume.") == 1
+
 
 @pytest.mark.parametrize(
     ("field", "value"),
@@ -722,6 +731,40 @@ def test_wait_is_a_durable_safe_point_before_tool_dispatch(
     else:
         assert final.status is ExecutionStatus.FAILED
         assert real_agent_chat.tools.calls == []
+
+
+def test_approval_resume_reuses_saved_prompt_after_context_updates(real_agent_chat, monkeypatch):
+    from tests.component.providers.scripted_provider import ScriptedToolCall, ScriptedText
+    import openprogram.context.components as components
+
+    prompts = []
+    original_stream = real_agent_chat.provider.stream_simple
+    async def observe_prompt(model, context, options=None):
+        prompts.append(context.system_prompt)
+        async for event in original_stream(model, context, options):
+            yield event
+    monkeypatch.setattr(real_agent_chat.provider, "stream_simple", observe_prompt)
+
+    monkeypatch.setattr(components, "build_system_prompt", lambda *_args, **_kwargs: "saved turn context")
+    real_agent_chat.tools.wait_kind = "approval"
+    real_agent_chat.provider.add_response(ScriptedToolCall("first", {}, "call-context-wait"))
+    real_agent_chat.provider.add_response(ScriptedText("completed after approval"))
+    execution = _chat(real_agent_chat)
+    question = _pending_question(real_agent_chat, kind="approval")
+    _wait(lambda: real_agent_chat.store.get_execution(execution.execution_id).status is ExecutionStatus.PAUSED)
+
+    # Memory/date/project text may change during a long human wait. It is
+    # not the prompt used by the already checkpointed provider decision.
+    monkeypatch.setattr(components, "build_system_prompt", lambda *_args, **_kwargs: "updated memory and date")
+    _question_action(real_agent_chat, "question_reply", question.id, answer="允许")
+    completed = _wait(lambda: (
+        item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
+        is ExecutionStatus.COMPLETED else None
+    ), detail=lambda: real_agent_chat.store.get_execution(execution.execution_id).to_dict())
+    assert completed.current_attempt_id is None
+    assert real_agent_chat.tools.calls == ["first"]
+    assert real_agent_chat.provider.call_count == 2
+    assert prompts == ["saved turn context", "saved turn context"]
 
 
 def test_cancel_wakes_real_question_wait_with_exact_reason(real_agent_chat):

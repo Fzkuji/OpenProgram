@@ -82,6 +82,7 @@ def _configure_web_use_tools(tools, surface_context):
 def resolve_agent_runtime(
     req: "TurnRequest", *, assistant_msg_id: Optional[str] = None,
     on_event: Optional["EventCallback"] = None,
+    saved_system_prompt: str | None = None,
 ):
     """Resolve the exact model, prompt, tools, and durable runtime contract."""
     from openprogram.agent import dispatcher as _dispatcher
@@ -115,9 +116,11 @@ def resolve_agent_runtime(
                     wrapped.append(tool)
             tools = wrapped
     from openprogram.context.components import build_system_prompt
-    recordable_prompt = build_system_prompt(
-        agent_profile,
-        tools=tools,
+    # A continuation uses the prompt that produced its saved decision.
+    # Memory, dates and project text may change while a human is deciding;
+    # rebuilding them is neither necessary nor the context we will execute.
+    recordable_prompt = saved_system_prompt if saved_system_prompt is not None else build_system_prompt(
+        agent_profile, tools=tools,
         additional_working_dirs=getattr(req, "additional_working_dirs", None),
         plan_mode=req.permission_mode == "plan" or _plan_mode.is_plan_mode(req.session_id),
     )
@@ -125,7 +128,7 @@ def resolve_agent_runtime(
     surface_prompt = _render_surface_context(
         req.surface_context, web_use_enabled=web_use_enabled,
     )
-    if surface_prompt:
+    if surface_prompt and saved_system_prompt is None:
         system_prompt = f"{system_prompt}\n\n{surface_prompt}"
     model = _dispatcher._resolve_model(agent_profile, req.model_override)
     contract = runtime_contract_snapshot(
@@ -183,6 +186,7 @@ def run_loop_blocking(
         # Resolve agent profile → tools, system_prompt, model.
         agent_profile, tools, recordable_system_prompt, system_prompt, model, runtime_contract = resolve_agent_runtime(
             req, assistant_msg_id=assistant_msg_id, on_event=on_event,
+            saved_system_prompt=continuation.resolved_snapshot["system_prompt"] if continuation is not None else None,
         )
     finally:
         if _worktree_token is not None:

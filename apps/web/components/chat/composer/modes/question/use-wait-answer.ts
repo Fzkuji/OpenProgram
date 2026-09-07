@@ -60,6 +60,9 @@ export function useWaitAnswer(q: PendingDecision | null, onResolve: (id: string)
       }
       requests.current.delete(q.id);
       onResolve(q.id);
+      if (result.execution?.status === "paused" && result.execution.reason_code === "continuation_contract_mismatch") {
+        showToast(text("Your answer was saved, but execution could not resume. The operation has not run.", "答复已保存，但执行未能恢复，操作尚未执行。"), { tone: "error" });
+      }
       return true;
     } catch (error) {
       if (error instanceof ExecutionApiError && error.command?.command_id === request.command.command_id

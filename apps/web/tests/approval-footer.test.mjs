@@ -77,6 +77,25 @@ async function mounted(q, check) {
   } finally { await act(async () => root.unmount()); host.remove(); }
 }
 
+test("saved approval reports a continuation that could not resume", async () => {
+  const notices = [];
+  const listener = event => notices.push(event.detail.message);
+  window.addEventListener("op:toast", listener);
+  try {
+    await mounted(decision, async ({ button, resolved }) => {
+      respond = async (_url, init) => {
+        const command = JSON.parse(init.body);
+        return Response.json({ command: { ...command, status: "applied" },
+          execution: { execution_id: "exec-one", status: "paused", reason_code: "continuation_contract_mismatch" } });
+      };
+      await act(async () => button("Allow once").click());
+      assert.deepEqual(resolved, [decision.id]);
+      assert.equal(notices.length, 1);
+      assert.match(notices[0], /answer was saved.*operation has not run/i);
+    });
+  } finally { window.removeEventListener("op:toast", listener); }
+});
+
 for (const [label, action] of [["Allow once", "execution.wait.answer"], ["Deny", "execution.wait.decline"]]) {
   test(`approval ${label} submits one decision directly`, async () => {
     await mounted(decision, async ({ host, button, frames, resolved }) => {

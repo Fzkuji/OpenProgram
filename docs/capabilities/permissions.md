@@ -19,7 +19,7 @@ Persistent rules remain available in History project settings.
 
 Human tool approvals have no default time limit. Waiting saves execution progress
 and releases the active execution attempt; reopening the App restores the pending
-request. Cancelling the task withdraws its approval. Expired older requests are not
+request. Resuming uses the context saved for that turn, so later memory or date updates do not invalidate the approval. Tool, permission and working-directory checks still apply. If execution cannot resume, the conversation reports that the pending operation did not run. Cancelling the task withdraws its approval. Expired older requests are not
 reactivated and cannot authorize a new operation.
 
 For `edit`, `write`, and `apply_patch`, approval records the target files' state.

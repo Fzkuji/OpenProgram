@@ -571,6 +571,7 @@ class AgentProductionDriver:
                     _profile, _tools, _recordable, _prompt, _model, _contract = resolve_agent_runtime(
                         request,
                         assistant_msg_id=continuation.assistant_message_id,
+                        saved_system_prompt=continuation.resolved_snapshot["system_prompt"],
                     )
                 finally:
                     reset_worktree(_workdir_token)

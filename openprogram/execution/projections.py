@@ -103,8 +103,11 @@ class ExecutionProjectionReadModel:
                     ),
                 )
                 current_advanced = current_write.rowcount == 1
-        if (item.projection_kind == "dag" and execution.status.value == "failed"
-                and execution.reason_code in {"agent_runner_error", "wait_declined", "wait_timeout"}):
+        if (item.projection_kind == "dag" and (
+            (execution.status.value == "failed"
+             and execution.reason_code in {"agent_runner_error", "wait_declined", "wait_timeout"})
+            or (execution.status.value == "paused" and execution.reason_code == "continuation_contract_mismatch")
+        )):
             # This is an outbox projection: failure retries independently of
             # canonical completion, including after a worker restart.
             self._project_failed_assistant(execution)
@@ -136,12 +139,21 @@ class ExecutionProjectionReadModel:
         if node is None or (node.metadata or {}).get("status") not in {None, "running", "error", "interrupted"}:
             return
         reason = execution.reason_code
-        if (reason in {"wait_declined", "wait_timeout"}
+        if (reason in {"wait_declined", "wait_timeout", "continuation_contract_mismatch"}
                 and (node.metadata or {}).get("error") == reason
                 and (node.metadata or {}).get("status") == "error"):
             return
         fields = {"metadata": {"status": "error", "error": reason,
                                "finished_at": execution.terminal_at or execution.updated_at}}
+        if reason == "continuation_contract_mismatch":
+            notice = "Execution could not resume. The pending operation was not run."
+            fields["output"] = f"{node.output}\n\n{notice}".strip()
+            writer.update(source.assistant_message_id, **fields)
+            from openprogram.events import emit_ws_frame
+            emit_ws_frame({"type": "session_reload", "data": {
+                "session_id": execution.session_id, "reason": reason,
+            }})
+            return
         if reason in {"wait_declined", "wait_timeout"}:
             notice = ("[declined] This request was declined."
                       if reason == "wait_declined" else "[expired] This request expired before an answer was received.")
