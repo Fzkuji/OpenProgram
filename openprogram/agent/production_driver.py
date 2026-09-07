@@ -1392,9 +1392,14 @@ class AgentProductionDriver:
                         wait_id=wait_id, agent_checkpoint=checkpoint,
                     )
                     try:
-                        if self.event_sink is None:
-                            return True
-                        self.event_sink({"type": "question.asked", "data": {
+                        sink = self.event_sink
+                        if sink is None:
+                            # Durable continuations can outlive the original
+                            # chat transport. Their next wait still needs a
+                            # live notification on the shared event stream.
+                            from openprogram.events import emit_ws_frame
+                            sink = emit_ws_frame
+                        sink({"type": "question.asked", "data": {
                             "id": suspension.wait.wait_id,
                             "session_id": request.session_id,
                             "kind": wait_kind, "prompt": wait_request["prompt"],
