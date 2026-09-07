@@ -72,8 +72,8 @@ test("Filter and Highlight preserve their existing tree semantics", () => {
   assert.match(source, /filter\.trim\(\) && searchMode === "filter"/);
   assert.match(source, /searchMode === "highlight"/);
   assert.match(source, /async function locateTreePath/);
-  assert.match(source, /role="listitem"/);
-  assert.match(source, /renderDir\("", 0\)/);
+  assert.match(source, /PierreSearchTree/);
+  assert.match(source, /renderTree\(\)/);
 });
 
 test("search errors use the inline tree status and stale reveal state is cleared", () => {
@@ -83,7 +83,7 @@ test("search errors use the inline tree status and stale reveal state is cleared
   }
   assert.match(source, /revealTarget\.current = null/);
   assert.match(source, /revealScrollTimer\.current/);
-  assert.match(source, /revealFlashTimer\.current/);
+  assert.match(source, /pierreRef\.current\?\.reveal/);
 });
 
 test("search results reveal and locate the real tree path instead of becoming a second tree", () => {

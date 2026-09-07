@@ -85,35 +85,15 @@ assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*flex-direction:\s*column/s);
 assert.match(fileTreeCss, /\.treeRootPath\s*\{/);
 assert.match(fileTreeCss, /\.treeToolbar\s*\{/);
 assert.match(fileTreeCss, /\.treeSearchRow\s*\{/);
-assert.match(explorerSearch, /export const EXPLORER_BASE_PAD = 16/);
-assert.match(fileTree, /const TREE_BASE_PAD = EXPLORER_BASE_PAD/);
-assert.match(fileTree, /const TREE_LABEL_OFFSET = 44/);
-assert.match(explorerSearch, /export const EXPLORER_INDENT = 27/);
-assert.match(fileTree, /const INDENT = EXPLORER_INDENT/);
-assert.match(fileTree, /paddingLeft: TREE_BASE_PAD \+ depth \* INDENT/);
-assert.match(fileTree, /TREE_BASE_PAD \+ 8 \+ depth \* INDENT/);
-assert.doesNotMatch(fileTree, /\bROW_PAD\b|\bFILE_PAD\b/);
-assert.doesNotMatch(fileTree, /ChevronRight|chevronSlot|styles\.chevron/);
-assert.match(fileTree, /<FolderOpen size=\{15\} className=\{styles\.treeIconFolder\}/);
+const pierreTree = source("components/files/pierre-file-tree.tsx");
+const pierreTheme = source("components/files/pierre-tree-theme.ts");
+assert.match(fileTree, /<PierreFileTree/);
+assert.match(pierreTree, /from "@pierre\/trees\/react"/);
+assert.match(pierreTree, /itemHeight: 30, density: 1/);
+assert.match(pierreTheme, /"file-tree-icon-chevron": "openprogram-folder"/);
+assert.match(pierreTheme, /transform: none !important/);
 assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*padding:\s*6px 8px/s);
 assert.match(fileTreeCss, /\.treeRootPath\s*\{[^}]*height:\s*36px[^}]*gap:\s*10px/s);
-assert.match(
-  fileTreeCss,
-  /\.treeRow\s*\{[^}]*grid-template-columns:\s*17px minmax\(0, 1fr\)/s,
-);
-assert.match(fileTreeCss, /\.treeKids > \.treeNode::before/);
-assert.match(
-  fileTreeCss,
-  /\.treeKids > \.treeNode::before\s*\{[^}]*z-index:\s*1/s,
-  "tree connector rails must paint above selected and hover row backgrounds",
-);
-assert.match(fileTreeCss, /\.treeKids > \.treeNode:last-child::before/);
-assert.match(fileTreeCss, /\.treeKids > \.treeNode > \.treeRow::before/);
-assert.match(
-  fileTreeCss,
-  /\.treeKids > \.treeNode > \.treeRow::before\s*\{[^}]*width:\s*20px/s,
-);
-assert.match(fileTreeCss, /\.treeName,[\s\S]*\.treePath\s*\{[^}]*margin-left:\s*6px/);
 assert.match(
   projectMenu,
   /\{list\.map\(\(p\) => \{/,

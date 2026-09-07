@@ -1,4 +1,4 @@
-/* Adapted from Pierre Trees style.css; see pierre/LICENSE.md and NOTICE.md. */
+/* Adapted from Pierre Trees style.css; see public/third-party/pierre for licenses. */
 .icon { flex-shrink: 0; color: var(--pierre-gray); }
 .icon { --pierre-gray: #84848a; }
 :global(.dark) .icon { --pierre-gray: #adadb1; }

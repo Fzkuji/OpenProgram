@@ -10,8 +10,11 @@ const rightSidebar = readFileSync(new URL("components/right-sidebar/right-sideba
 
 for (const consumer of [files, programs]) {
   assert.match(consumer, /ExplorerHeader/);
-  assert.match(consumer, /ExplorerMatchText/);
+
 }
+assert.match(programs, /ExplorerMatchText/);
+assert.match(files, /PierreFileTree/);
+assert.match(files, /query=\{searchMode === "highlight" && !fuzzySearch \? filter/);
 assert.match(header, /setTimeout\([\s\S]*1500/);
 assert.match(header, /Filter/);
 assert.match(header, /Highlight/);

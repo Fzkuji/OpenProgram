@@ -190,7 +190,7 @@ export function invalidateFolderSizes(projectId: string) {
     publish(job, { ...job.value, token: null, state: job.value.bytes == null ? "unknown" : "cached" });
   }
 }
-function useFolderSize(projectId: string, path: string, enabled: boolean, priority = false) {
+export function useFolderSize(projectId: string, path: string, enabled: boolean, priority = false) {
   const job = getJob(projectId, path);
   const value = useSyncExternalStore(listener => { job.listeners.add(listener); return () => { job.listeners.delete(listener); }; }, () => job.value, () => job.value);
   useEffect(() => {
