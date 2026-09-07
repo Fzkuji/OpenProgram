@@ -102,7 +102,7 @@ def test_failed_test_or_source_drift_is_not_candidate_ready(diagnosis_environmen
 
 
 @pytest.mark.parametrize("diagnosis_environment", [{"required_tests": ["python -c " + shlex.quote(
-    "import os,time; from pathlib import Path; Path('test-pid').write_text(str(os.getpid())); time.sleep(30)")]}], indirect=True)
+    "import os,time; from pathlib import Path; Path('test-pid.tmp').write_text(str(os.getpid())); Path('test-pid.tmp').replace('test-pid'); time.sleep(30)")]}], indirect=True)
 @pytest.mark.parametrize("stop", ["owner", "iteration", "new_update", "timeout"])
 @native_sandbox
 def test_stopping_after_model_completion_reaps_test(diagnosis_environment, monkeypatch, stop):

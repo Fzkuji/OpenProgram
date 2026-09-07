@@ -55,7 +55,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | You.com | `YDC_API_KEY` or `YOU_API_KEY` |
 | Ollama | Local Ollama (signed in via `ollama signin`), or `OLLAMA_API_KEY` for Ollama Cloud |
 
-The chat Web Search switch controls whether `web_search` is available for that message. Turning it off excludes the tool even in automatic tool mode. Turning it on still respects the Agent's disabled tools and permissions. Tool profile choices belong to each conversation and survive tab changes and refreshes.
+The chat Web Search switch controls whether `web_search` is available for that message. Turning it off excludes the tool even in automatic tool mode. When enabled, the search schema is available immediately, including when Tools is off. Turning it on still respects the Agent's disabled tools and permissions. Tool profile choices belong to each conversation and survive tab changes and refreshes.
 
 Search keys take effect on subsequent calls without restarting. An unavailable saved default falls back to another available provider; an explicitly named unavailable provider reports an error. Jina search requires `JINA_API_KEY`.
 

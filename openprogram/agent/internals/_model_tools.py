@@ -409,6 +409,21 @@ def resolve_tools(
             or match_any("web_search", agent_tools_config.get("disabled") or [])
         ):
             tool_list = [t for t in tool_list or [] if t.name != "web_search"]
+        # An explicit Search selection must be callable even without ToolSearch.
+        # Copy only the selected tool; never change shared registry deferral.
+        search_selected = (
+            isinstance(wanted, dict) and wanted.get("web_search") is True
+        ) or (isinstance(wanted, list) and "web_search" in wanted)
+        if search_selected:
+            from copy import copy
+
+            promoted = []
+            for tool in tool_list or []:
+                if tool.name == "web_search" and getattr(tool, "_defer", False):
+                    tool = copy(tool)
+                    tool._defer = False
+                promoted.append(tool)
+            tool_list = promoted
         mcp_cfg = (profile or {}).get("mcp") or {}
         disabled = list(mcp_cfg.get("disabled") or [])
         allowed = list(mcp_cfg.get("allowed") or [])
