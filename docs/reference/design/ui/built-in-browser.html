@@ -210,7 +210,8 @@
       <div class="meta"><span class="pill"><span class="dot"></span>当前基线已实现</span><span class="pill">桌面 App</span><span class="pill">独立浏览器 profile</span><span class="pill">Browser chrome 已对齐</span><span class="pill">popup 激活 · 网页右键菜单已实现</span></div>
       <details class="mobile-toc">
         <summary>本页目录</summary>
-        <nav aria-label="移动端页内导航"><a href="#decisions">产品决策</a><a href="#toolbar">工具栏与菜单</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
+        <nav aria-label="移动端页内导航"><a href="#decisions">产品决策</a><a href="#toolbar">工具栏与菜单</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#session-pages">会话网页</a>
+          <a href="#acceptance">验收与状态</a></nav>
       </details>
     </header>
 
@@ -449,6 +450,18 @@
       </div>
     </section>
 
+    <section class="section" id="session-pages">
+      <div class="section-head"><span class="section-no">07</span><h2>按会话管理 Agent 网页</h2></div>
+      <p>右侧栏提供可折叠的 Pages 视图，列出本窗口所有网页，支持按标题、URL 与会话名称搜索。Agent 新建的独立网页默认不占顶部标签；手动网页、固定的网页和用户显式建立的分屏组合继续显示在顶部。点击列表项查看同一个网页实例，不重新导航。</p>
+      <div class="card"><strong>交互预览</strong><p>顶部：会话 A · 会话 B · 已固定网页　｜　右侧：Files · Activity · Pages</p>
+      <details open><summary>会话 A · 3 个网页</summary><p>Google Search　　查看 · 固定 · 关闭</p><p>OpenProgram Docs　　查看 · 固定 · 关闭</p><p>GitHub repository　　查看 · 固定 · 关闭</p></details>
+      <details><summary>会话 B · 2 个网页</summary><p>论文主页　　查看 · 固定 · 关闭</p><p>实验结果　　查看 · 固定 · 关闭</p></details>
+      <details><summary>手动打开 / 会话未知</summary><p>没有可信会话归属的旧网页保留原有顶部位置；无会话上下文的新 Agent 网页归入独立的 Agent 分组。</p></details></div>
+      <p>会话归属由 worker 的实际调用上下文写入创建命令，不采用当前选中的会话猜测。网页元数据保存 Agent 来源、会话 ID 与固定状态，随中心标签持久化及跨窗口转移。弹出网页继承 opener 的归属。固定只改变顶部显示；折叠、搜索和切换不销毁 WebContentsView。关闭调用现有标签关闭路径；会话标签关闭后网页仍按原会话 ID 归类。</p>
+      <p>采用 Chrome 截图中的可搜索网页列表与折叠分组，使用现有右侧栏而不是新增常驻栏。不引入第二份网页注册表，不将视觉会话分组写入用于分屏的 groups。已有页面的绑定权限、目标 ID、失败回滚与销毁行为继续由现有控制层负责。</p>
+      <p>实现状态：创建入口传递实际会话，网页元数据随 CenterTab 持久化与转移；右侧 Pages 与顶部过滤使用同一份网页记录。行为测试覆盖并行会话归属、重复 URL、手动重开固定、恢复及弹窗继承。默认 App 发布验收检查分组搜索、固定、关闭及顶部标签数量。</p>
+    </section>
+
     <section class="section" id="acceptance">
       <div class="section-head"><span class="section-no">07</span><h2>验收与实现状态</h2></div>
       <p class="section-intro">每项验收都对应一个外部可观察结果。设计状态和实现证据分列，不以文档存在本身证明功能完成。</p>
@@ -488,7 +501,8 @@
 
   <aside class="rail" aria-label="页内导航">
     <div class="rail-title">On this page</div>
-    <nav><a href="#decisions">产品决策</a><a href="#toolbar">工具栏与菜单</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#acceptance">验收与状态</a></nav>
+    <nav><a href="#decisions">产品决策</a><a href="#toolbar">工具栏与菜单</a><a href="#surfaces">可见状态</a><a href="#references">参考行为</a><a href="#architecture">架构与数据流</a><a href="#boundaries">信任边界</a><a href="#session-pages">会话网页</a>
+          <a href="#acceptance">验收与状态</a></nav>
   </aside>
 </div>
 <script>

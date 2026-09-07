@@ -24,6 +24,7 @@ import { createPortal } from "react-dom";
 import { CirclePlus, Plus, SquareArrowOutUpRight } from "lucide-react";
 
 import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
+import { topLevelTabs } from "@/lib/state/web-page-management";
 import { centerTabStripEntries } from "@/lib/state/center-tab-groups";
 import { dragCoordinator } from "@/lib/tab-drag-coordinator";
 import { desktopBridge } from "@/lib/desktop-bridge";
@@ -220,8 +221,11 @@ export function CenterTabStrip() {
     setDetachCueHost(detachCue ? document.querySelector(".center-body") : null);
   }, [detachCue !== null]);
 
+  const visibleTabs = topLevelTabs(tabs, groups);
+  const stripFocusId = visibleTabs.some(tab => tab.id === focusedTabId)
+    ? focusedTabId : visibleTabs[0]?.id;
   const stripEntries = centerTabStripEntries({
-    tabIds: tabs.map((tab) => tab.id),
+    tabIds: visibleTabs.map((tab) => tab.id),
     groups,
   });
 
@@ -337,7 +341,7 @@ export function CenterTabStrip() {
                 group={entry.group}
                 tabs={tabs}
                 activeId={activeId}
-                focusedTabId={focusedTabId}
+                focusedTabId={stripFocusId ?? null}
                 closingIds={closingIds}
                 onActivate={onTabClickFromPointer}
                 onFocusTab={setFocusedTabId}
@@ -356,7 +360,7 @@ export function CenterTabStrip() {
               key={entry.id}
               tab={tab}
               active={tab.id === activeId}
-              tabStop={tab.id === focusedTabId}
+              tabStop={tab.id === stripFocusId}
               enter={enteringIds.has(tab.id)}
               closing={closingIds.has(tab.id)}
               label={labelOf(tab, t, text)}

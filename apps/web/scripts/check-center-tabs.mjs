@@ -1006,7 +1006,7 @@ assert.match(
 );
 assert.match(
   desktopBridge,
-  /openWebTab\(d\.url\);[\s\S]*showCenterSurface\(\);/,
+  /openWebTab\(d\.url, true\);[\s\S]*showCenterSurface\(\);/,
 );
 assert.match(appShell, /tab\.kind === "file"[\s\S]*?<FileTabPane/);
 assert.match(appShell, /tab\.kind === "web"[\s\S]*?<WebTabPane/);

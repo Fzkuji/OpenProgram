@@ -51,6 +51,7 @@ const {
   registerVisibleWebTabBounds,
   removeVisibleWebTabBounds,
   setWebTabReady,
+  setDesktopSplitLayoutAvailable,
 } = await import("../lib/desktop-bridge.ts");
 
 function transferStub() {
@@ -145,6 +146,7 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
           url,
           req_id: reqId,
           window_id: "main",
+          session_id: "origin",
           ...(background ? { background: true } : {}),
         },
       },
@@ -324,6 +326,42 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
     created: false,
     reused: true,
   }]);
+
+  // Two existing split sessions: a same-URL agent request must not select A's page.
+  resetTabs();
+  const otherUrl = "https://other-session.test/";
+  const otherId = `w:${otherUrl}`;
+  useCenterTabs.setState({
+    tabs: [
+      { id: "s:other", kind: "session", title: "Other", sessionId: "other" },
+      { id: otherId, kind: "web", title: "Other page", url: otherUrl, agentOpened: true, agentSessionId: "other" },
+      { id: "s:origin", kind: "session", title: "Origin", sessionId: "origin" },
+      { id: "w:origin", kind: "web", title: "Origin page", url: "https://origin.test/", agentOpened: true, agentSessionId: "origin" },
+    ],
+    groups: [
+      { id: "g:other", memberIds: ["s:other", otherId], visibleIds: ["s:other", otherId], focusedId: "s:other" },
+      { id: "g:origin", memberIds: ["s:origin", "w:origin"], visibleIds: ["s:origin", "w:origin"], focusedId: "s:origin" },
+    ],
+    activeId: "s:origin",
+    splitWebTabId: "w:origin",
+    ensureExclusiveWebTab: (url) => {
+      const id = ensureExclusiveWebTab(url);
+      setWebTabReady(id, true);
+      return id;
+    },
+  });
+  const groupsBefore = useCenterTabs.getState().groups;
+  setDesktopSplitLayoutAvailable(true);
+  setWebTabReady(otherId, true);
+  sent.length = 0;
+  await open(otherUrl, "different-owner-split");
+  const opened = useCenterTabs.getState().tabs.find(tab => tab.id === sent[0]?.tab_id);
+  assert.notEqual(opened?.id, otherId);
+  assert.equal(opened?.agentSessionId, "origin");
+  assert.equal(opened?.agentOpened, true);
+  assert.equal(useCenterTabs.getState().activeId, "s:origin");
+  assert.deepEqual(useCenterTabs.getState().groups, groupsBefore);
+  setDesktopSplitLayoutAvailable(false);
 
   // Exact screenshot capture stays hidden and does not activate the Page.
   resetTabs();

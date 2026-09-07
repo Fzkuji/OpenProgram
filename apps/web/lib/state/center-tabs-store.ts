@@ -117,6 +117,11 @@ export interface CenterTab {
   url?: string;
   /** Popup web tabs only — exact opener tab in this renderer window. */
   openerTabId?: string;
+  /** Agent-created page attribution, independent of the active session/view. */
+  agentOpened?: boolean;
+  agentSessionId?: string;
+  /** Explicitly keep an agent page in the top strip. */
+  webPinned?: boolean;
   /** Web tabs only — favicon URL reported by the desktop shell; the
    *  strip falls back to the Chrome icon when absent or unloadable. */
   faviconUrl?: string;
@@ -203,10 +208,12 @@ export interface CenterTabsState {
   ) => void;
   /** Focus-or-create a web tab for `url` (must already be a valid
    *  http(s) URL — run user input through normalizeWebUrl first). */
-  openWebTab: (url: string) => void;
+  openWebTab: (url: string, agentRequest?: boolean) => void;
   /** Always append a distinct web tab for a native page popup. */
   openPopupWebTab: (url: string, openerTabId: string) => string;
   /** Create or reuse a web tab without focusing it or opening a split. */
+  markAgentWebTab: (id: string, sessionId?: string) => void;
+  setWebTabPinned: (id: string, pinned: boolean) => void;
   ensureWebTab: (url: string) => string;
   /** Create a unique same-URL leaf without focusing it. */
   ensureExclusiveWebTab: (url: string) => string;
@@ -612,7 +619,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         });
       }),
 
-    openWebTab: (url) =>
+    openWebTab: (url, agentRequest = false) =>
       set((s) => {
         const id = webTabId(url);
         const existing = s.tabs.find((tab) => tab.id === id);
@@ -630,14 +637,16 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           (active.kind === "builtin" && active.page === "browser")
         );
         const restoreUrl = existing.url !== url;
-        if (!consumeNtp && !restoreUrl && s.activeId === id) return {};
+        const pin = !agentRequest && existing.agentOpened && !existing.webPinned;
+        if (!consumeNtp && !restoreUrl && !pin && s.activeId === id) return {};
         let tabs = consumeNtp
           ? s.tabs.filter((tab) => tab.id !== active.id)
           : s.tabs;
-        if (restoreUrl) {
+        if (restoreUrl || pin) {
           tabs = tabs.map((tab) =>
             tab.id === id
-              ? { ...tab, url, title: hostnameOf(url) }
+              ? { ...tab, url, title: restoreUrl ? hostnameOf(url) : tab.title,
+                  webPinned: pin ? true : tab.webPinned }
               : tab,
           );
         }
@@ -649,12 +658,25 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       set((s) => commitCenterTabsState(s, {
         tabs: [
           ...s.tabs,
-          { id, kind: "web", title: hostnameOf(url), url, openerTabId },
+          { id, kind: "web", title: hostnameOf(url), url, openerTabId,
+            agentOpened: s.tabs.find((tab) => tab.id === openerTabId)?.agentOpened,
+            agentSessionId: s.tabs.find((tab) => tab.id === openerTabId)?.agentSessionId },
         ],
         activeId: id,
       }));
       return id;
     },
+
+    markAgentWebTab: (id, sessionId) => set((s) => commitCenterTabsState(s, {
+      tabs: s.tabs.map((tab) => tab.id === id && tab.kind === "web"
+        ? { ...tab, agentOpened: true, agentSessionId: sessionId || undefined }
+        : tab),
+    })),
+
+    setWebTabPinned: (id, pinned) => set((s) => commitCenterTabsState(s, {
+      tabs: s.tabs.map((tab) => tab.id === id && tab.kind === "web"
+        ? { ...tab, webPinned: pinned } : tab),
+    })),
 
     ensureWebTab: (url) => {
       const id = webTabId(url);

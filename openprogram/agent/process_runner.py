@@ -164,7 +164,10 @@ def _open_bridged_webtab(
             "error": "background Page open is outside the originating window",
         }
     if not window_id and not background:
-        return webtab.request_open_tab(command.get("url") or "", timeout=timeout)
+        return webtab.request_open_tab(
+            command.get("url") or "", timeout=timeout,
+            **({"session_id": command["session_id"]} if command.get("session_id") else {}),
+        )
 
     selected = _desktop_window_registration(webtab, window_id, sole=True)
     if selected is None:
@@ -489,8 +492,14 @@ def _bridge_webtab_to_parent(
     *,
     allowed_window_id: str = "",
     allowed_bindings: set[str] | None = None,
+    session_id: str = "",
 ) -> dict:
     command = data.get("command") if isinstance(data, dict) else None
+    # Attribution comes from the parent execution, never from child-supplied data.
+    if isinstance(command, dict):
+        command = {key: value for key, value in command.items() if key != "session_id"}
+        if session_id:
+            command["session_id"] = session_id
     op = command.get("op") if isinstance(command, dict) else ""
     valid = op in {"open", "active", "capture_pages"} or (
         op in {"activate", "screenshot"}
@@ -1249,6 +1258,7 @@ def run_agentic_in_subprocess(
                     tracked_webtabs,
                     allowed_window_id=allowed_window_id,
                     allowed_bindings=allowed_webtab_bindings,
+                    session_id=session_id,
                 )
                 if result.get("reason_code") == "page_cleanup_failed":
                     bridge_cleanup_failures.append({

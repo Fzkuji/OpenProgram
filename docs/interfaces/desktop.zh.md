@@ -46,7 +46,7 @@ OpenProgram 不导入密码、支付或地址自动填充数据、下载记录�
 
 当一个聊天轮次所在应用窗口中存在可见的内置 Browser Pane 时，OpenProgram 会在模型首次回复前附加该精确 WebTab 的有限页面描述。Agent 会获得页面标题、origin、可见文本、ARIA landmarks 与浏览器控制工具。Browser Pane 在左侧、右侧或聊天上的画中画预览中都不影响访问，也不要求应用窗口或 Browser Pane 获得操作系统焦点。
 
-若 Agent 在你停留在聊天时打开页面，桌面端会把该实时 WebTab 显示为角落小窗。小窗可以展开为「左聊天右网页」分屏、接管中间栏，或关闭预览且不销毁标签。关闭预览只是隐藏小窗，页面仍留在标签栏。网页版（普通浏览器里的 UI，不是桌面 App）没有原生 BrowserView，同一预览降级为 iframe 或「在新标签打开」。
+若 Agent 在你停留在聊天时打开页面，桌面端会把该实时 WebTab 显示为角落小窗。小窗可以展开为「左聊天右网页」分屏、接管中间栏，或关闭预览且不销毁标签。关闭预览只是隐藏小窗，页面仍可从右侧栏的 **网页** 中访问。网页版（普通浏览器里的 UI，不是桌面 App）没有原生 BrowserView，同一预览降级为 iframe 或「在新标签打开」。
 
 动作始终绑定发起聊天的窗口与 WebTab。默认使用 DOM、ARIA、页面文本和 element refs；只有视觉任务或结构化方式无法定位页面时，才使用一张当前 viewport screenshot。该路径不增加 OCR、object detector、多轮裁剪、component memory、vision memory 或 workflow replay。
 
@@ -57,3 +57,7 @@ Chrome Web Store 与 Edge Add-ons 页面可以作为普通网页打开，但 Ope
 需要扩展 OpenProgram 本身时，使用 [OpenProgram Plugins](../capabilities/plugins.zh.md)、Skills、MCP servers、Programs 或 agent tools。这些能力不修改内嵌网页运行时。
 
 持续维护的工程规范见[内置浏览器设计](../reference/design/ui/built-in-browser.html)与 [Web Use / Computer Use 边界](../reference/design/integrations/web-use.html)。
+
+## 管理已打开的网页
+
+在右侧栏打开 **网页**，按网页标题、URL 或会话名称搜索。Agent 新建的网页按来源会话分组，默认不占顶部标签栏；手动打开、固定到顶部及显式分屏中的网页仍在顶部显示。展开或折叠会话分组，点击网页查看原有页面，也可以固定或关闭。折叠分组不会停止网页或 Agent。会话归属和固定状态在刷新后保留；没有记录归属的旧网页保持原有位置。

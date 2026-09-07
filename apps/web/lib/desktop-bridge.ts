@@ -20,6 +20,7 @@ import {
   snapshotCenterTabsPayload,
   useCenterTabs,
   validateTransferredTabs,
+  webTabId,
 } from "@/lib/state/center-tabs-store";
 import {
   peekLiveWebTabPipId,
@@ -883,7 +884,7 @@ export function installDesktopMenuHandlers(): void {
     const detail = e.detail;
     if (detail?.type !== "webtab.command") return;
     const d = detail.data as
-      | { op?: string; url?: string; window_id?: string; tab_id?: string; req_id?: string; background?: boolean; nonce?: string; expected_geometry_revision?: number }
+      | { op?: string; url?: string; session_id?: string; window_id?: string; tab_id?: string; req_id?: string; background?: boolean; nonce?: string; expected_geometry_revision?: number }
       | undefined;
     if (!d?.req_id || !["open", "active", "activate", "preview", "screenshot", "list", "resolve", "close", "self_update_capture"].includes(d.op || "")) return;
     const ws = getSocket();
@@ -1124,6 +1125,7 @@ export function installDesktopMenuHandlers(): void {
         );
         const id = useCenterTabs.getState().ensureExclusiveWebTab(d.url);
         const created = !priorTabIds.has(id);
+        if (created) useCenterTabs.getState().markAgentWebTab(id, d.session_id);
         const ownership = { created, reused: !created };
         ensureWebView(bridge, id, d.url);
         let settled = false;
@@ -1168,12 +1170,17 @@ export function installDesktopMenuHandlers(): void {
         ? findCenterTabGroup(state.groups, active.id)
         : undefined;
       const activeGroupHasWeb = activeGroup?.memberIds.some((memberId) =>
-        state.tabs.some((tab) => tab.id === memberId && tab.kind === "web"),
+        state.tabs.some((tab) => tab.id === memberId && tab.kind === "web"
+          && (!tab.agentOpened || tab.agentSessionId === d.session_id)),
       ) ?? false;
-      const split = active?.kind === "session"
+      const canonical = state.tabs.find(tab => tab.id === webTabId(d.url!));
+      const ownerConflict = !!canonical?.agentOpened && canonical.agentSessionId !== d.session_id;
+      const split = !ownerConflict && active?.kind === "session"
+        && (!d.session_id || active.sessionId === d.session_id)
         && isDesktopSplitLayoutAvailable()
         && activeGroupHasWeb;
-      const usePip = active?.kind === "session" && !split;
+      const usePip = active?.kind === "session" && !split
+        && (!d.session_id || active.sessionId === d.session_id);
       const routeVisible =
         window.location.pathname === "/chat" ||
         window.location.pathname.startsWith("/s/");
@@ -1182,15 +1189,19 @@ export function installDesktopMenuHandlers(): void {
         id = state.openWebTabInSplit(d.url);
         if (active?.kind === "session") registerPipPair(id, active.id);
       } else if (usePip && active) {
-        id = pipOpenMustFork(d.url, active.id)
+        id = ownerConflict || pipOpenMustFork(d.url, active.id)
           ? state.ensureExclusiveWebTab(d.url)
           : state.ensureWebTab(d.url);
         useWebTabPip.getState().show(id, active.id);
+      } else if (ownerConflict) {
+        id = state.ensureExclusiveWebTab(d.url);
+        state.setActive(id);
       } else {
-        state.openWebTab(d.url);
+        state.openWebTab(d.url, true);
         id = useCenterTabs.getState().activeId;
       }
       const created = !!id && !priorTabIds.has(id);
+      if (created && id) useCenterTabs.getState().markAgentWebTab(id, d.session_id);
       const ownership = { created, reused: !!id && !created };
       if (!split && !routeVisible) {
         const routed = showCenterSurface();

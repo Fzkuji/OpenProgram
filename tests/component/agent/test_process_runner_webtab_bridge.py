@@ -1307,3 +1307,17 @@ def test_multiwindow_bindings_remain_isolated_under_concurrency(monkeypatch):
     finally:
         for owner in owners:
             webtab.release_connection(owner)
+
+
+def test_parent_owns_page_session_attribution(monkeypatch):
+    from openprogram.agent import process_runner
+    from openprogram.webui.ws_actions import webtab
+
+    seen = []
+    monkeypatch.setattr(webtab, "request_open_tab", lambda url, timeout, **kwargs:
+                        seen.append(kwargs) or {"ok": False})
+    process_runner._bridge_webtab_to_parent({
+        "req_id": "attribution",
+        "command": {"op": "open", "url": "https://example.com/", "session_id": "forged"},
+    }, Queue(), session_id="actual-session")
+    assert seen == [{"session_id": "actual-session"}]

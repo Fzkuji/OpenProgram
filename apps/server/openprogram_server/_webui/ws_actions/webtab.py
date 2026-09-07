@@ -531,12 +531,20 @@ def _bind_opened_tab(result: dict) -> dict:
     return result
 
 
-def request_open_tab(url: str, timeout: float = 15.0) -> dict:
+def request_open_tab(
+    url: str, timeout: float = 15.0, *, session_id: str | None = None,
+) -> dict:
     """Open/focus ``url`` and return the active desktop tab identity."""
     import os
+    from openprogram.agent.run_control import get_current_session_id
+
+    owner = session_id or get_current_session_id()
+    command = {"op": "open", "url": url}
+    if owner:
+        command["session_id"] = owner
     if os.environ.get("OPENPROGRAM_IN_AGENTIC_SUBPROCESS") == "1":
-        return _request({"op": "open", "url": url}, timeout)
-    return _bind_opened_tab(_request({"op": "open", "url": url}, timeout))
+        return _request(command, timeout)
+    return _bind_opened_tab(_request(command, timeout))
 
 
 def request_active_tab(timeout: float = 5.0) -> dict:

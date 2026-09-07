@@ -46,7 +46,7 @@ OpenProgram does not import passwords, payment or address autofill data, downloa
 
 When a chat turn has a visible built-in Browser pane in the same app window, OpenProgram attaches a bounded description of that exact WebTab to the turn before the first model response. The Agent receives the page title, origin, visible text, ARIA landmarks, and a browser-control tool. This works whether the Browser pane is on the left or right, in a picture-in-picture preview over chat, and does not require the app window or Browser pane to have operating-system focus.
 
-If the Agent opens a page while you stay in chat, Desktop shows that live WebTab as a small corner preview. The preview can expand into a chat-and-page split, take over the center pane, or close without destroying the tab. Closing the preview only hides it; the page remains in the tab strip. The web UI (a browser tab, not the Desktop App) has no native BrowserView, so the same preview falls back to an iframe or an Open-in-new-tab control.
+If the Agent opens a page while you stay in chat, Desktop shows that live WebTab as a small corner preview. The preview can expand into a chat-and-page split, take over the center pane, or close without destroying the tab. Closing the preview only hides it; the page remains available in **Pages** in the right sidebar. The web UI (a browser tab, not the Desktop App) has no native BrowserView, so the same preview falls back to an iframe or an Open-in-new-tab control.
 
 Actions remain bound to the originating window and WebTab. The default path uses DOM, ARIA, page text, and element references. A single current-viewport screenshot is used only for a visual task or when the page cannot be located structurally. The product does not add OCR, object detection, iterative crops, component memory, vision memory, or workflow replay to this path.
 
@@ -57,3 +57,7 @@ Chrome Web Store and Edge Add-ons pages open as ordinary webpages, but OpenProgr
 Use [OpenProgram Plugins](../capabilities/plugins.md), Skills, MCP servers, Programs, or agent tools to extend OpenProgram itself. These do not modify the embedded webpage runtime.
 
 The maintained engineering specifications are [Built-in browser design](../reference/design/ui/built-in-browser.html) and the [Web Use / Computer Use boundary](../reference/design/integrations/web-use.html).
+
+## Managing open pages
+
+Open **Pages** in the right sidebar to search by page title, URL, or conversation. Agent-created pages are grouped by originating conversation and hidden from the top strip unless pinned or in an explicit split. Manual pages stay in the top strip. Select a page to view it, pin it, or close it. Collapsing groups keeps pages running. Ownership and pinning survive reloads; old unattributed pages keep their existing position.
