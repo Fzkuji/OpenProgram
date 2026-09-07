@@ -21,6 +21,7 @@ export const treeClipboard: {
 
 export interface TreeContextMenuProps {
   canPaste: boolean;
+  revealLabel: string;
   onReveal: () => void;
   onNewFile: () => void;
   onNewFolder: () => void;
@@ -44,7 +45,7 @@ export function TreeContextMenu(props: TreeContextMenuProps) {
   return (
     <div className={`${MENU_PANEL} min-w-[200px]`}>
       <Item
-        label={text("Reveal in Finder", "在 Finder 中显示")}
+        label={props.revealLabel}
         onClick={() => run(props.onReveal)}
       />
       <div className={MENU_SEPARATOR} />

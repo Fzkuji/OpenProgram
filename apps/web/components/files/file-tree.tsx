@@ -46,6 +46,7 @@ import {
   PopoverContent,
 } from "@/components/ui/popover";
 import { ConfirmDialog } from "@/components/sidebar/sessions-list/confirm-dialog";
+import { useSidebarMenu } from "@/components/sidebar/use-sidebar-menu";
 import { TreeContextMenu, treeClipboard } from "./tree-context-menu";
 import {
   ExplorerHeader,
@@ -180,7 +181,8 @@ export function FileTree({
   const [selected, setSelected] = useState<{ path: string; type: "file" | "dir" } | null>(null);
   const [creating, setCreating] = useState<{ dir: string; kind: "file" | "dir" } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; path: string; type: "file" | "dir" } | null>(null);
+  const [menuTarget, setMenuTarget] = useState<{ path: string; type: "file" | "dir" } | null>(null);
+  const contextMenu = useSidebarMenu();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
@@ -326,7 +328,8 @@ export function FileTree({
     setSelected(null);
     setCreating(null);
     setRenaming(null);
-    setMenu(null);
+    setMenuTarget(null);
+    contextMenu.close();
     setFilter("");
     setSearchResults([]);
     setSearchPage(1);
@@ -762,16 +765,68 @@ export function FileTree({
     }
   }
 
+  function revealLabel() {
+    const platform = window.openprogramDesktop?.platform;
+    return text(
+      platform === "darwin"
+        ? "Reveal in Finder"
+        : platform === "win32"
+          ? "Reveal in File Explorer"
+          : "Reveal in File Manager",
+      "在文件管理器中显示",
+    );
+  }
+
+  function fileContextActions(path: string, type: "file" | "dir") {
+    const targetDir = type === "dir" ? path : parentOf(path);
+    return {
+      reveal: () => void fileOp("reveal", { path }, []),
+      newFile: () => startCreate("file", targetDir),
+      newFolder: () => startCreate("dir", targetDir),
+      copyPath: () => void copyPathTo(path, true),
+      copyRelativePath: () => void copyPathTo(path, false),
+      cut: () => { treeClipboard.current = { op: "cut", path }; },
+      copy: () => { treeClipboard.current = { op: "copy", path }; },
+      paste: () => void pasteInto(targetDir),
+      rename: () => {
+        setFilter("");
+        setSearchOpen(false);
+        expandChain(parentOf(path));
+        setRenaming(path);
+      },
+      delete: () => setConfirmDelete(path),
+    };
+  }
+
+  function fileContextItems(path: string, type: "file" | "dir") {
+    const actions = fileContextActions(path, type);
+    return [
+      { id: "reveal", label: revealLabel(), onSelect: actions.reveal },
+      { id: "new-file", label: text("New File", "新建文件"), separatorBefore: true, onSelect: actions.newFile },
+      { id: "new-folder", label: text("New Folder", "新建文件夹"), onSelect: actions.newFolder },
+      { id: "copy-path", label: text("Copy Path", "复制路径"), separatorBefore: true, onSelect: actions.copyPath },
+      { id: "copy-relative-path", label: text("Copy Relative Path", "复制相对路径"), onSelect: actions.copyRelativePath },
+      { id: "cut", label: text("Cut", "剪切"), separatorBefore: true, onSelect: actions.cut },
+      { id: "copy", label: text("Copy", "复制"), onSelect: actions.copy },
+      { id: "paste", label: text("Paste", "粘贴"), disabled: !treeClipboard.current, onSelect: actions.paste },
+      { id: "rename", label: text("Rename", "重命名"), separatorBefore: true, onSelect: actions.rename },
+      { id: "delete", label: text("Delete", "删除"), onSelect: actions.delete },
+    ];
+  }
+
   function onRowContextMenu(
-    e: React.MouseEvent,
+    e: React.MouseEvent<HTMLElement>,
     path: string,
     type: "file" | "dir",
   ) {
-    e.preventDefault();
-    e.stopPropagation();
     setSelected({ path, type });
-    setMenu({ x: e.clientX, y: e.clientY, path, type });
+    setMenuTarget({ path, type });
+    contextMenu.show(e, fileContextItems(path, type));
   }
+
+  const webMenuActions = menuTarget
+    ? fileContextActions(menuTarget.path, menuTarget.type)
+    : null;
 
   const searchableEntries = useMemo(() => {
     const entries = new Map<string, TreeEntry>();
@@ -1203,21 +1258,11 @@ export function FileTree({
         )}
       </div>
 
-      {/* Right-click context menu — same Popover/MENU_PANEL pattern as
-          the Recents ConvMenu, anchored to the pointer via a fixed
-          zero-size span. */}
-      {menu ? (
-        <Popover
-          open
-          onOpenChange={(o) => {
-            if (!o) setMenu(null);
-          }}
-        >
-          <PopoverAnchor asChild>
-            <span
-              style={{ position: "fixed", left: menu.x, top: menu.y, width: 0, height: 0 }}
-            />
-          </PopoverAnchor>
+      {/* Desktop uses the platform menu. Web keeps the existing visual
+          menu at the same pointer coordinates as a fallback. */}
+      {menuTarget && webMenuActions && contextMenu.open && !contextMenu.native ? (
+        <Popover open onOpenChange={contextMenu.onOpenChange}>
+          <PopoverAnchor virtualRef={contextMenu.anchor} />
           <PopoverContent
             align="start"
             side="bottom"
@@ -1226,32 +1271,18 @@ export function FileTree({
           >
             <TreeContextMenu
               canPaste={!!treeClipboard.current}
-              onReveal={() => fileOp("reveal", { path: menu.path }, [])}
-              onNewFile={() =>
-                startCreate("file", menu.type === "dir" ? menu.path : parentOf(menu.path))
-              }
-              onNewFolder={() =>
-                startCreate("dir", menu.type === "dir" ? menu.path : parentOf(menu.path))
-              }
-              onCopyPath={() => copyPathTo(menu.path, true)}
-              onCopyRelativePath={() => copyPathTo(menu.path, false)}
-              onCut={() => {
-                treeClipboard.current = { op: "cut", path: menu.path };
-              }}
-              onCopy={() => {
-                treeClipboard.current = { op: "copy", path: menu.path };
-              }}
-              onPaste={() =>
-                pasteInto(menu.type === "dir" ? menu.path : parentOf(menu.path))
-              }
-              onRename={() => {
-                setFilter(""); // inline editor only renders in tree mode
-                setSearchOpen(false);
-                expandChain(parentOf(menu.path)); // row must be visible
-                setRenaming(menu.path);
-              }}
-              onDelete={() => setConfirmDelete(menu.path)}
-              onClose={() => setMenu(null)}
+              revealLabel={revealLabel()}
+              onReveal={webMenuActions.reveal}
+              onNewFile={webMenuActions.newFile}
+              onNewFolder={webMenuActions.newFolder}
+              onCopyPath={webMenuActions.copyPath}
+              onCopyRelativePath={webMenuActions.copyRelativePath}
+              onCut={webMenuActions.cut}
+              onCopy={webMenuActions.copy}
+              onPaste={webMenuActions.paste}
+              onRename={webMenuActions.rename}
+              onDelete={webMenuActions.delete}
+              onClose={contextMenu.close}
             />
           </PopoverContent>
         </Popover>

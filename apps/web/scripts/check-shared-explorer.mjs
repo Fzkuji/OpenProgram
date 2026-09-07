@@ -46,5 +46,9 @@ assert.doesNotMatch(rightSidebar, /headerExtra=\{/);
 assert.doesNotMatch(rightSidebar, /view !== VIEW_FILES/);
 assert.doesNotMatch(programs, /react-arborist|react-use-measure/);
 assert.doesNotMatch(files, /const filtered = useMemo/);
+assert.match(files, /useSidebarMenu/);
+assert.match(files, /contextMenu\.show\(e,/);
+assert.match(files, /!contextMenu\.native/);
+assert.match(files, /Reveal in File Explorer/);
 
 console.log("shared explorer checks passed");
