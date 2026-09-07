@@ -733,9 +733,12 @@ def test_wait_is_a_durable_safe_point_before_tool_dispatch(
         assert real_agent_chat.tools.calls == []
 
 
-def test_approval_resume_reuses_saved_prompt_after_context_updates(real_agent_chat, monkeypatch):
+@pytest.mark.parametrize("browser_available", [False, True])
+def test_approval_resume_reuses_saved_prompt_after_context_updates(real_agent_chat, monkeypatch, browser_available):
     from tests.component.providers.scripted_provider import ScriptedToolCall, ScriptedText
     import openprogram.context.components as components
+    import openprogram.agent.surface_context as surfaces
+    monkeypatch.setattr(surfaces, "web_use_available", lambda _context: browser_available)
 
     prompts = []
     original_stream = real_agent_chat.provider.stream_simple
@@ -756,6 +759,7 @@ def test_approval_resume_reuses_saved_prompt_after_context_updates(real_agent_ch
     # Memory/date/project text may change during a long human wait. It is
     # not the prompt used by the already checkpointed provider decision.
     monkeypatch.setattr(components, "build_system_prompt", lambda *_args, **_kwargs: "updated memory and date")
+    monkeypatch.setattr(surfaces, "web_use_available", lambda _context: not browser_available)
     _question_action(real_agent_chat, "question_reply", question.id, answer="允许")
     completed = _wait(lambda: (
         item if (item := real_agent_chat.store.get_execution(execution.execution_id)).status
@@ -764,7 +768,8 @@ def test_approval_resume_reuses_saved_prompt_after_context_updates(real_agent_ch
     assert completed.current_attempt_id is None
     assert real_agent_chat.tools.calls == ["first"]
     assert real_agent_chat.provider.call_count == 2
-    assert prompts == ["saved turn context", "saved turn context"]
+    assert len(prompts) == 2 and prompts[0] == prompts[1]
+    assert prompts[0].startswith("saved turn context")
 
 
 def test_cancel_wakes_real_question_wait_with_exact_reason(real_agent_chat):

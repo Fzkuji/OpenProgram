@@ -55,12 +55,12 @@ _INDEPENDENT_BROWSER_TOOLS = {
 }
 
 
-def _configure_web_use_tools(tools, surface_context):
+def _configure_web_use_tools(tools, surface_context, *, enabled: bool | None = None):
     """Expose one in-app browser contract when Desktop Page inventory exists."""
     from openprogram.agent.surface_context import tool_enabled, web_use_available
 
-    bound = tool_enabled(surface_context)
-    enabled = bound or (bool(tools) and web_use_available(surface_context))
+    if enabled is None:
+        enabled = tool_enabled(surface_context) or (bool(tools) and web_use_available(surface_context))
     current = list(tools or [])
     if not enabled:
         return [tool for tool in current if tool.name != "web_use"], False
@@ -82,7 +82,7 @@ def _configure_web_use_tools(tools, surface_context):
 def resolve_agent_runtime(
     req: "TurnRequest", *, assistant_msg_id: Optional[str] = None,
     on_event: Optional["EventCallback"] = None,
-    saved_system_prompt: str | None = None,
+    saved_runtime_contract: Mapping | None = None,
 ):
     """Resolve the exact model, prompt, tools, and durable runtime contract."""
     from openprogram.agent import dispatcher as _dispatcher
@@ -94,7 +94,12 @@ def resolve_agent_runtime(
         else _dispatcher._load_agent_profile(req.agent_id)
     )
     tools = _resolve_tools(agent_profile, req.tools_override, source=req.source)
-    tools, web_use_enabled = _configure_web_use_tools(tools, req.surface_context)
+    # Page inventory is transient. Keep this turn's browser-tool selection
+    # through reconnects; each actual browser action still validates access.
+    saved_web_use = None if saved_runtime_contract is None else any(
+        tool["name"] == "web_use" for tool in saved_runtime_contract["tools"]
+    )
+    tools, web_use_enabled = _configure_web_use_tools(tools, req.surface_context, enabled=saved_web_use)
     if req.source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
         from openprogram.programs import apply_tool_policy
 
@@ -116,6 +121,7 @@ def resolve_agent_runtime(
                     wrapped.append(tool)
             tools = wrapped
     from openprogram.context.components import build_system_prompt
+    saved_system_prompt = None if saved_runtime_contract is None else saved_runtime_contract["system_prompt"]
     # A continuation uses the prompt that produced its saved decision.
     # Memory, dates and project text may change while a human is deciding;
     # rebuilding them is neither necessary nor the context we will execute.
@@ -186,7 +192,7 @@ def run_loop_blocking(
         # Resolve agent profile → tools, system_prompt, model.
         agent_profile, tools, recordable_system_prompt, system_prompt, model, runtime_contract = resolve_agent_runtime(
             req, assistant_msg_id=assistant_msg_id, on_event=on_event,
-            saved_system_prompt=continuation.resolved_snapshot["system_prompt"] if continuation is not None else None,
+            saved_runtime_contract=continuation.resolved_snapshot if continuation is not None else None,
         )
     finally:
         if _worktree_token is not None:
