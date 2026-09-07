@@ -233,6 +233,8 @@
   flex-shrink: 0;
 }
 
+.treeCol > .treeHeader { border-bottom: 0; }
+
 .treeRootPath {
   flex: 1;
   min-width: 0;
