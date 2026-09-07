@@ -642,6 +642,7 @@ function reparentRecords(source, target, records) {
   snapshots.targetVisibleViewIds = [...target.visibleViewIds];
   try {
     for (const record of records) {
+      clearActionCue(record);
       const snapshot = {
         record,
         sourceId: source.id,
@@ -1687,6 +1688,310 @@ function recordFor(ctx, id) {
   return record && record.ownerId === ctx.id ? record : null;
 }
 
+const debuggerHolds = new Map();
+const HUMAN_INPUT_KINDS = new Set(["pointer", "key", "scroll", "navigate"]);
+const HUMAN_MODIFIER_KEYS = new Set([
+  "Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "NumLock",
+  "Fn", "FnLock", "Hyper", "Super",
+]);
+const ACTION_CUE_MS = 1200;
+const ACTION_CUE_SIZE = 12;
+
+function acquireDebugger(webContents) {
+  const client = webContents?.debugger;
+  if (!client || webContents.isDestroyed?.()) return null;
+  let hold = debuggerHolds.get(client);
+  if (!hold) {
+    let attachedHere = false;
+    try {
+      if (!client.isAttached()) {
+        client.attach("1.3");
+        attachedHere = true;
+      }
+    } catch {
+      return null;
+    }
+    hold = { count: 0, attachedHere };
+    debuggerHolds.set(client, hold);
+  }
+  hold.count += 1;
+  return client;
+}
+
+function releaseDebugger(webContents) {
+  const client = webContents?.debugger;
+  if (!client) return;
+  const hold = debuggerHolds.get(client);
+  if (!hold) return;
+  hold.count -= 1;
+  if (hold.count > 0) return;
+  debuggerHolds.delete(client);
+  if (!hold.attachedHere) return;
+  try {
+    if (client.isAttached()) client.detach();
+  } catch {
+    /* session may already be gone */
+  }
+}
+
+async function withDebugger(webContents, fn) {
+  const client = acquireDebugger(webContents);
+  if (!client) return null;
+  try {
+    return await fn(client);
+  } catch {
+    return null;
+  } finally {
+    releaseDebugger(webContents);
+  }
+}
+
+function emitHumanInput(record, kind) {
+  if (!record || !HUMAN_INPUT_KINDS.has(kind)) return false;
+  if (tabTransfers.isLocked(record.id)) return false;
+  const owner = ownerOf(record);
+  if (!owner) return false;
+  record.humanSequence = (Number(record.humanSequence) || 0) + 1;
+  owner.win.webContents.send("webtab:human-input", {
+    id: record.id,
+    windowId: owner.id,
+    sequence: record.humanSequence,
+    kind,
+  });
+  return true;
+}
+
+function noteHumanKey(record, input) {
+  if (input?.type !== "keyDown") return false;
+  const key = String(input.key || "");
+  if (!key || key === "Tab" || HUMAN_MODIFIER_KEYS.has(key)) return false;
+  return emitHumanInput(record, "key");
+}
+
+function noteHumanMouse(record, mouse) {
+  const type = mouse?.type;
+  if (type === "mouseDown" || type === "contextMenu") {
+    return emitHumanInput(record, "pointer");
+  }
+  if (type === "mouseWheel") return emitHumanInput(record, "scroll");
+  return false;
+}
+
+function viewZoomFactor(record) {
+  try {
+    const zoom = Number(record.view.webContents.getZoomFactor?.());
+    return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function cssViewportSize(record) {
+  const bounds = record.view.getBounds();
+  const zoom = viewZoomFactor(record);
+  return {
+    width: bounds.width / zoom,
+    height: bounds.height / zoom,
+    zoom,
+    bounds,
+  };
+}
+
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function pointInViewport(x, y, width, height) {
+  return x >= 0 && y >= 0 && x < width && y < height;
+}
+
+function viewportMatchesMarker(marker, record) {
+  const current = cssViewportSize(record);
+  return Math.round(marker.width) === Math.round(current.width)
+    && Math.round(marker.height) === Math.round(current.height);
+}
+
+const ACTION_CUE_RESOURCE_ID_MAX = 256;
+
+function actionCueResourceId(marker) {
+  if (marker == null || !Object.prototype.hasOwnProperty.call(marker, "resourceId")) {
+    return "";
+  }
+  const value = marker.resourceId;
+  if (typeof value !== "string" || !value || value.length > ACTION_CUE_RESOURCE_ID_MAX) {
+    return null;
+  }
+  return value;
+}
+
+function isStaleActionMarker(record, sequence, generation, hasGeneration, resourceId) {
+  const lastSeq = record.lastActionSequence;
+  const lastGen = record.lastActionGeneration;
+  const lastId = record.lastActionResourceId || "";
+  const priorId = record.priorActionResourceId || "";
+  if (resourceId) {
+    if (lastId && resourceId !== lastId) {
+      return resourceId === priorId;
+    }
+  }
+  if (hasGeneration) {
+    if (lastGen != null) {
+      if (generation < lastGen) return true;
+      if (generation > lastGen) return false;
+      return lastSeq != null && sequence <= lastSeq;
+    }
+    if (generation > 0) return false;
+  }
+  return lastSeq != null && sequence <= lastSeq;
+}
+
+function rememberActionCueIdentity(record, sequence, generation, hasGeneration, resourceId) {
+  if (resourceId && resourceId !== (record.lastActionResourceId || "")) {
+    if (record.lastActionResourceId) {
+      record.priorActionResourceId = record.lastActionResourceId;
+    }
+    record.lastActionResourceId = resourceId;
+    record.lastActionGeneration = hasGeneration ? generation : 0;
+    record.lastActionSequence = sequence;
+    return;
+  }
+  record.lastActionSequence = sequence;
+  if (hasGeneration) record.lastActionGeneration = generation;
+  if (resourceId) record.lastActionResourceId = resourceId;
+}
+
+function boundsDiffer(a, b) {
+  return a.x !== b.x || a.y !== b.y || a.width !== b.width || a.height !== b.height;
+}
+
+function actionCueStillCurrent(record, ctx, id, token) {
+  return record.actionCueToken === token && recordFor(ctx, id) === record;
+}
+
+async function cleanupCue(record, token) {
+  if (token == null || !record) return false;
+  const acquired = record.actionCueAcquiredTokens;
+  if (!acquired || !acquired.has(token)) return false;
+  acquired.delete(token);
+  const wc = record.view?.webContents;
+  const ownsOverlay = record.actionCueHoldToken === token;
+  if (ownsOverlay) {
+    record.actionCueHold = false;
+    record.actionCueHoldToken = null;
+  }
+  try {
+    const client = wc?.debugger;
+    if (ownsOverlay && client && !wc.isDestroyed?.()) {
+      if (record.actionCueHoldToken == null || record.actionCueHoldToken === token) {
+        try { await client.sendCommand("Overlay.hideHighlight"); } catch { /* overlay may be unavailable */ }
+      }
+      if (record.actionCueHoldToken == null || record.actionCueHoldToken === token) {
+        try { await client.sendCommand("Overlay.disable"); } catch { /* overlay may be unavailable */ }
+      }
+    }
+  } finally {
+    releaseDebugger(wc);
+  }
+  return true;
+}
+
+function clearActionCue(record) {
+  if (!record) return false;
+  if (record.actionCueTimer != null) {
+    clearTimeout(record.actionCueTimer);
+    record.actionCueTimer = null;
+  }
+  const holdToken = record.actionCueHoldToken;
+  record.actionCueToken = (record.actionCueToken || 0) + 1;
+  void cleanupCue(record, holdToken);
+  return true;
+}
+
+async function showActionView(ctx, id, marker) {
+  const record = recordFor(ctx, id);
+  if (!record) return false;
+  if (marker == null) {
+    if (record.actionCueTimer != null) {
+      clearTimeout(record.actionCueTimer);
+      record.actionCueTimer = null;
+    }
+    const holdToken = record.actionCueHoldToken;
+    record.actionCueToken = (record.actionCueToken || 0) + 1;
+    await cleanupCue(record, holdToken);
+    return true;
+  }
+  if (typeof marker !== "object") return false;
+  const x = marker.x;
+  const y = marker.y;
+  const width = marker.width;
+  const height = marker.height;
+  const sequence = marker.sequence;
+  const generation = marker.generation;
+  const hasGeneration = finiteNumber(generation);
+  const resourceId = actionCueResourceId(marker);
+  if (resourceId == null) return false;
+  if (![x, y, width, height, sequence].every(finiteNumber)) return false;
+  if (width <= 0 || height <= 0 || sequence < 0) return false;
+  if (hasGeneration && generation < 0) return false;
+  if (isStaleActionMarker(record, sequence, generation, hasGeneration, resourceId)) {
+    return false;
+  }
+  if (!viewportMatchesMarker(marker, record)) return false;
+  if (!pointInViewport(x, y, width, height)) return false;
+  const current = cssViewportSize(record);
+  if (!pointInViewport(x, y, current.width, current.height)) return false;
+
+  if (record.actionCueTimer != null) {
+    clearTimeout(record.actionCueTimer);
+    record.actionCueTimer = null;
+  }
+  const previousHold = record.actionCueHoldToken;
+  const token = (record.actionCueToken = (record.actionCueToken || 0) + 1);
+  await cleanupCue(record, previousHold);
+  if (!actionCueStillCurrent(record, ctx, id, token)) return false;
+
+  const wc = record.view.webContents;
+  const client = acquireDebugger(wc);
+  if (!client) return false;
+  if (!record.actionCueAcquiredTokens) record.actionCueAcquiredTokens = new Set();
+  record.actionCueAcquiredTokens.add(token);
+  record.actionCueHold = true;
+  record.actionCueHoldToken = token;
+  const size = Math.max(
+    1,
+    Math.min(ACTION_CUE_SIZE, Math.round(current.width), Math.round(current.height)),
+  );
+  const cueX = Math.max(0, Math.min(Math.round(x - size / 2), Math.round(current.width) - size));
+  const cueY = Math.max(0, Math.min(Math.round(y - size / 2), Math.round(current.height) - size));
+  try {
+    await client.sendCommand("Overlay.enable");
+    if (!actionCueStillCurrent(record, ctx, id, token)) {
+      await cleanupCue(record, token);
+      return false;
+    }
+    await client.sendCommand("Overlay.highlightRect", {
+      x: cueX,
+      y: cueY,
+      width: size,
+      height: size,
+      color: { r: 56, g: 189, b: 248, a: 0 },
+      outlineColor: { r: 56, g: 189, b: 248, a: 0.85 },
+    });
+    if (!actionCueStillCurrent(record, ctx, id, token)) {
+      await cleanupCue(record, token);
+      return false;
+    }
+    rememberActionCueIdentity(record, sequence, generation, hasGeneration, resourceId);
+    record.actionCueTimer = setTimeout(() => {
+      if (record.actionCueToken === token) clearActionCue(record);
+    }, ACTION_CUE_MS);
+    return true;
+  } catch {
+    await cleanupCue(record, token);
+    return false;
+  }
+}
+
 function sendState(record, extra) {
   const ctx = ownerOf(record);
   if (!ctx) return;
@@ -1789,7 +2094,7 @@ function showWebTabContextMenu(record, params = {}) {
   if (!owner || tabTransfers.isLocked(record.id)) return false;
   const ownerId = owner.id;
   const wc = record.view.webContents;
-  const exact = (action) => () => {
+  const exact = (action, humanKind = null) => () => {
     const current = ownerOf(record);
     if (
       !current
@@ -1797,6 +2102,7 @@ function showWebTabContextMenu(record, params = {}) {
       || tabTransfers.isLocked(record.id)
       || wc.isDestroyed()
     ) return;
+    if (humanKind) emitHumanInput(record, humanKind);
     action();
   };
   const template = [];
@@ -1818,12 +2124,12 @@ function showWebTabContextMenu(record, params = {}) {
   if (params.isEditable) {
     if (template.length) template.push({ type: "separator" });
     template.push(
-      { label: "Undo", enabled: !!editFlags.canUndo, click: exact(() => wc.undo()) },
-      { label: "Redo", enabled: !!editFlags.canRedo, click: exact(() => wc.redo()) },
+      { label: "Undo", enabled: !!editFlags.canUndo, click: exact(() => wc.undo(), "key") },
+      { label: "Redo", enabled: !!editFlags.canRedo, click: exact(() => wc.redo(), "key") },
       { type: "separator" },
-      { label: "Cut", enabled: !!editFlags.canCut, click: exact(() => wc.cut()) },
+      { label: "Cut", enabled: !!editFlags.canCut, click: exact(() => wc.cut(), "key") },
       { label: "Copy", enabled: !!editFlags.canCopy, click: exact(() => wc.copy()) },
-      { label: "Paste", enabled: !!editFlags.canPaste, click: exact(() => wc.paste()) },
+      { label: "Paste", enabled: !!editFlags.canPaste, click: exact(() => wc.paste(), "key") },
       { label: "Select All", enabled: !!editFlags.canSelectAll, click: exact(() => wc.selectAll()) },
     );
   } else {
@@ -1840,14 +2146,26 @@ function showWebTabContextMenu(record, params = {}) {
       {
         label: "Back",
         enabled: wc.navigationHistory.canGoBack(),
-        click: exact(() => wc.navigationHistory.goBack()),
+        click: exact(() => {
+          wc.navigationHistory.goBack();
+          emitHumanInput(record, "navigate");
+        }),
       },
       {
         label: "Forward",
         enabled: wc.navigationHistory.canGoForward(),
-        click: exact(() => wc.navigationHistory.goForward()),
+        click: exact(() => {
+          wc.navigationHistory.goForward();
+          emitHumanInput(record, "navigate");
+        }),
       },
-      { label: "Reload", click: exact(() => wc.reload()) },
+      {
+        label: "Reload",
+        click: exact(() => {
+          wc.reload();
+          emitHumanInput(record, "navigate");
+        }),
+      },
     );
   }
 
@@ -1897,6 +2215,17 @@ function ensureView(ctx, id, url) {
       webPreferences: { partition: "persist:webtabs" },
     });
     record = { id, view, ownerId: ctx.id, navigation: null, findRequestId: null };
+    const nativeSetBounds = view.setBounds.bind(view);
+    const nativeSetVisible = view.setVisible.bind(view);
+    view.setBounds = (bounds) => {
+      const prev = view.getBounds();
+      nativeSetBounds(bounds);
+      if (boundsDiffer(prev, view.getBounds())) clearActionCue(record);
+    };
+    view.setVisible = (visible) => {
+      nativeSetVisible(visible);
+      if (!visible) clearActionCue(record);
+    };
     ctx.views.set(id, record);
     ctx.win.contentView.addChildView(view);
     // A never-shown Page otherwise has a 0x0 viewport, so neither Electron
@@ -1954,7 +2283,17 @@ function ensureView(ctx, id, url) {
       sendState(record, { faviconUrl: "" });
     });
     wc.on("found-in-page", (_event, result) => forwardFindResult(record, result));
-    wc.on("before-input-event", (event, input) => handleWebTabShortcut(record, event, input));
+    wc.on("did-navigate", () => clearActionCue(record));
+    wc.on("did-navigate-in-page", (_event, _url, isMainFrame) => {
+      if (isMainFrame) clearActionCue(record);
+    });
+    wc.on("before-input-event", (event, input) => {
+      if (handleWebTabShortcut(record, event, input)) return;
+      noteHumanKey(record, input);
+    });
+    wc.on("before-mouse-event", (_event, mouse) => {
+      noteHumanMouse(record, mouse);
+    });
     if (url && isTabUrl(url)) void loadView(record, url).catch(() => {});
   }
   return record;
@@ -2293,22 +2632,11 @@ function hideView(ctx, id) {
 }
 
 async function devToolsTargetId(webContents) {
-  const client = webContents?.debugger;
-  if (!client) return null;
-  let attachedHere = false;
-  try {
-    if (!client.isAttached()) {
-      client.attach("1.3");
-      attachedHere = true;
-    }
+  return withDebugger(webContents, async (client) => {
     const result = await client.sendCommand("Target.getTargetInfo");
     const targetId = result?.targetInfo?.targetId;
     return typeof targetId === "string" && targetId ? targetId : null;
-  } catch {
-    return null;
-  } finally {
-    if (attachedHere && client.isAttached()) client.detach();
-  }
+  });
 }
 
 async function activateView(ctx, id, url, requireVisible = false) {
@@ -2409,18 +2737,21 @@ const SURFACE_PREVIEW_SCRIPT = `(() => {
   };
 })()`;
 
-async function previewView(ctx, id) {
+async function previewView(ctx, id, allowBackground = false) {
   const record = recordFor(ctx, id);
-  if (!record || !ctx.visibleViewIds.has(id)) return null;
+  if (!record) return null;
+  if (!allowBackground && !ctx.visibleViewIds.has(id)) return null;
   const wc = record.view.webContents;
+  if (wc.isDestroyed?.()) return null;
   try {
     const [preview, targetId] = await Promise.all([
       wc.executeJavaScript(SURFACE_PREVIEW_SCRIPT, true),
       devToolsTargetId(wc),
     ]);
-    if (!targetId || recordFor(ctx, id) !== record || !ctx.visibleViewIds.has(id)) {
+    if (!targetId || recordFor(ctx, id) !== record || wc.isDestroyed?.()) {
       return null;
     }
+    if (!allowBackground && !ctx.visibleViewIds.has(id)) return null;
     return {
       tab_id: id,
       target_id: targetId,
@@ -2444,17 +2775,19 @@ function withView(ctx, id, fn) {
 // without going through loadView. Remove that stale registry entry before
 // invoking the native operation, so a following activation cannot reuse a
 // Promise Electron is about to reject with ERR_ABORTED.
-function runNativeNavigation(ctx, id, navigate) {
+function runNativeNavigation(ctx, id, navigate, humanKind = null) {
   const record = recordFor(ctx, id);
   if (!record) return false;
   record.navigation = null;
   navigate(record.view.webContents);
+  if (humanKind) emitHumanInput(record, humanKind);
   return true;
 }
 
 function destroyView(ctx, id) {
   const record = recordFor(ctx, id);
   if (!record) return false;
+  clearActionCue(record);
   ctx.visibleViewIds.delete(id);
   record.navigation = null;
   ctx.views.delete(id);
@@ -2877,7 +3210,13 @@ function registerWebTabIpc() {
   });
   ipcMain.on("webtab:navigate", (event, id, url) => {
     const ctx = contextForSender(event);
-    if (ctx) void navigateView(ctx, id, url).catch(() => {});
+    if (!ctx) return;
+    const pending = navigateView(ctx, id, url);
+    if (pending) {
+      const owned = recordFor(ctx, id);
+      if (owned) emitHumanInput(owned, "navigate");
+      void pending.catch(() => {});
+    }
   });
   ipcMain.handle("webtab:activate", (event, id, url, requireVisible) => {
     const ctx = contextForSender(event);
@@ -2898,9 +3237,11 @@ function registerWebTabIpc() {
     const ctx = contextForSender(event);
     return ctx && typeof id === "string" ? inspectView(ctx, id) : null;
   });
-  ipcMain.handle("webtab:preview", (event, id) => {
+  ipcMain.handle("webtab:preview", (event, id, allowBackground) => {
     const ctx = contextForSender(event);
-    return ctx && typeof id === "string" ? previewView(ctx, id) : null;
+    return ctx && typeof id === "string"
+      ? previewView(ctx, id, allowBackground === true)
+      : null;
   });
   ipcMain.on("webtab:sync-visible", (event, items) => {
     const ctx = contextForSender(event);
@@ -2936,7 +3277,7 @@ function registerWebTabIpc() {
   });
   ipcMain.on("webtab:reload", (event, id) => {
     const ctx = contextForSender(event);
-    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.reload());
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.reload(), "navigate");
   });
   ipcMain.on("webtab:stop", (event, id) => {
     const ctx = contextForSender(event);
@@ -2944,11 +3285,11 @@ function registerWebTabIpc() {
   });
   ipcMain.on("webtab:go-back", (event, id) => {
     const ctx = contextForSender(event);
-    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goBack());
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goBack(), "navigate");
   });
   ipcMain.on("webtab:go-forward", (event, id) => {
     const ctx = contextForSender(event);
-    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goForward());
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goForward(), "navigate");
   });
   ipcMain.on("webtab:find", (event, id, query, options) => {
     const ctx = contextForSender(event);
@@ -2973,6 +3314,10 @@ function registerWebTabIpc() {
   ipcMain.handle("webtab:capture", (event, id) => {
     const ctx = contextForSender(event);
     return ctx ? captureView(ctx, id) : null;
+  });
+  ipcMain.handle("webtab:show-action", (event, id, marker) => {
+    const ctx = contextForSender(event);
+    return ctx && typeof id === "string" ? showActionView(ctx, id, marker) : false;
   });
   ipcMain.handle("history:list", (_event, options) => {
     try {

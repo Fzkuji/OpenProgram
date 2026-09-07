@@ -169,6 +169,35 @@ def _ensure_test_authority(req):
         setattr(req, key, value)
 
 
+def _frozen_runtime_request(**kwargs):
+    """Non-interactive child keeps the admitted snapshot; live owner rereads."""
+    from openprogram.agent.authority import local_owner_authority, runtime_authority
+
+    parent = TurnRequest(
+        session_id=kwargs.get("session_id", "s"),
+        user_text="",
+        agent_id="main",
+        source="web",
+        **local_owner_authority(),
+    )
+    return TurnRequest(**kwargs, **runtime_authority(parent, "agentic/child"))
+
+
+def _permission_request(authority_path, *, permission_mode, permission_rules, monkeypatch):
+    kwargs = dict(
+        session_id="s", user_text="", agent_id="main", source="web",
+        permission_mode=permission_mode,
+        permission_rules=permission_rules,
+    )
+    if authority_path == "frozen_child":
+        return _frozen_runtime_request(**kwargs)
+    monkeypatch.setattr(
+        "openprogram.programs.permission_rule.load_merged_rules",
+        lambda _sid: permission_rules,
+    )
+    return TurnRequest(**kwargs)
+
+
 def _run(tool, req, approve=True, scope="once"):
     """Wrap tool with approval under req, run its execute, return (result, ran)."""
     async def _fake_approval(*, req, tool_name, args, on_event, timeout=300.0, tool_call_id=None):
@@ -194,12 +223,15 @@ def test_bypass_runs_without_approval():
     assert ran["called"]
 
 
-def test_deny_rule_blocks_even_under_bypass():
-    # THE key safety property: deny beats bypass.
+@pytest.mark.parametrize("authority_path", ["live_owner", "frozen_child"])
+def test_deny_rule_blocks_even_under_bypass(authority_path, monkeypatch):
+    # THE key safety property: deny beats bypass on live owner rules and frozen child snapshot.
     tool, ran = _make_tool("bash")
-    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
-                      permission_mode="bypass",
-                      permission_rules=PermissionRules(deny=["bash"]))
+    req = _permission_request(
+        authority_path, permission_mode="bypass",
+        permission_rules=PermissionRules(deny=["bash"]),
+        monkeypatch=monkeypatch,
+    )
     result = _run(tool, req)
     assert _denied(result)
     assert result.is_error is True
@@ -207,11 +239,14 @@ def test_deny_rule_blocks_even_under_bypass():
     assert not ran["called"]
 
 
-def test_allow_rule_runs_without_approval_in_ask():
+@pytest.mark.parametrize("authority_path", ["live_owner", "frozen_child"])
+def test_allow_rule_runs_without_approval_in_ask(authority_path, monkeypatch):
     tool, ran = _make_tool("bash")
-    req = TurnRequest(session_id="s", user_text="", agent_id="main", source="web",
-                      permission_mode="ask",
-                      permission_rules=PermissionRules(allow=["bash"]))
+    req = _permission_request(
+        authority_path, permission_mode="ask",
+        permission_rules=PermissionRules(allow=["bash"]),
+        monkeypatch=monkeypatch,
+    )
     # even if approval would deny, allow rule short-circuits to run
     _run(tool, req, approve=False)
     assert ran["called"]
@@ -539,7 +574,7 @@ def test_always_allow_persists_exact_normalized_operation(monkeypatch):
     saved = {}
     project = type("Project", (), {"id": "p"})()
     monkeypatch.setattr(project_store, "project_for_session", lambda _sid: project)
-    monkeypatch.setattr(project_store, "load_project_settings", lambda _pid: {})
+    monkeypatch.setattr(project_store, "load_project_settings", lambda _pid: saved)
     monkeypatch.setattr(
         project_store, "save_project_settings",
         lambda _pid, settings: saved.update(settings),
@@ -714,6 +749,10 @@ def test_sandbox_denial_emits_event_and_retries_under_escalated_policy(monkeypat
         permission_rules=PermissionRules(allow=["bash"]),
     )
     _ensure_test_authority(req)
+    monkeypatch.setattr(
+        "openprogram.programs.permission_rule.load_merged_rules",
+        lambda _sid: req.permission_rules,
+    )
     tool = AgentTool(
         name="bash", description="", parameters={}, label="bash",
         execute=_denied_then_ok_exec(calls),

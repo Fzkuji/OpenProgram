@@ -90,6 +90,10 @@ _REF_SNAPSHOT_SCRIPT = r"""
     ),
     name,
     disabled: Boolean(el.disabled || el.getAttribute("aria-disabled") === "true"),
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
   };
 }
 """
@@ -531,6 +535,13 @@ class BrowserPageController:
                     field: metadata[field]
                     for field in ("tag", "role", "name", "disabled")
                 }
+                try:
+                    ref_meta[ref]["bounds"] = {
+                        "x": float(actual["x"]), "y": float(actual["y"]),
+                        "width": float(actual["width"]), "height": float(actual["height"]),
+                    }
+                except (KeyError, TypeError, ValueError):
+                    pass
                 elements.append({
                     field: value
                     for field, value in metadata.items()
@@ -628,7 +639,7 @@ class BrowserPageController:
             return None, "stale_observation"
         return target, None
 
-    def _mutated(self, detail: str) -> dict[str, Any]:
+    def _mutated(self, detail: str, *, point: dict | None = None) -> dict[str, Any]:
         self._mutations += 1
         self._frame = None
         self._dispose_refs()
@@ -636,7 +647,10 @@ class BrowserPageController:
         self._screenshot_frame = ""
         self._screenshot_viewport = None
         self._navigation_time_origin = None
-        return {"ok": True, "detail": detail, "observe_required": True}
+        payload = {"ok": True, "detail": detail, "observe_required": True}
+        if point is not None:
+            payload["point"] = point
+        return payload
 
     def _write_allowed(self) -> dict[str, Any] | None:
         if self._mutations < self.max_steps:
@@ -836,7 +850,8 @@ class BrowserPageController:
                     return {"ok": False, "reason_code": "invalid_coordinate"}
                 self._agent_click(lambda: run(page.mouse.click, point_x, point_y))
                 return self._mutated(
-                    f"clicked viewport point ({point_x:g}, {point_y:g})"
+                    f"clicked viewport point ({point_x:g}, {point_y:g})",
+                    point={"x": point_x, "y": point_y, "width": 0, "height": 0},
                 )
         target, ref_error = self._ref(ref)
         if target is None:
@@ -852,7 +867,11 @@ class BrowserPageController:
                 )
             else:
                 self._agent_click(lambda: run(target.click))
-            return self._mutated(f"clicked {ref}")
+            bounds = (self._ref_meta.get((ref or "").lstrip("@")) or {}).get("bounds")
+            return self._mutated(
+                f"clicked {ref}",
+                point=dict(bounds) if isinstance(bounds, dict) else None,
+            )
         if action == "type":
             run(target.fill, text)
             return self._mutated(f"typed {len(text)} character(s) into {ref}")
@@ -1152,6 +1171,7 @@ def _run_browser_task_commands(
             cleanup(owner_id)
 
     def close_auto_opened_page() -> dict[str, Any] | None:
+        """Close a Page that was opened but never became a usable target."""
         nonlocal auto_opened_context
         if auto_opened_context is None:
             return None
@@ -1322,33 +1342,21 @@ def _run_browser_task_commands(
                 page_key = surface_context.resolve_page_key("")
             finally:
                 surface_context.reset(token)
-            # The registry owns this temporary context once observe starts.
-            release_context_on_exit = False
             observed = registry.execute(
                 command="observe", backend=backend, binding_id=binding_id,
                 page_key=page_key, owner_id=owner_id, page_context=context,
             )
-            if captured_here and not observed.get("web_session_id"):
-                release_context_on_exit = True
-    except _GUI_TASK_ERRORS as exc:
-        close_failure = close_auto_opened_page()
+            if observed.get("web_session_id"):
+                # Registry session owns the Page lease; the native Page stays.
+                release_context_on_exit = False
+    except _GUI_TASK_ERRORS:
         with suppress(Exception):
             release_owner()
         with suppress(Exception):
             release_captured_context()
-        if close_failure is not None:
-            return cleanup_failed(close_failure, {
-                "reason_code": (
-                    "cancelled"
-                    if isinstance(exc, _CANCELLATION_ERRORS)
-                    else "runtime_error"
-                ),
-                "summary": f"{type(exc).__name__}: {exc}",
-            })
         raise
     session_id = str(observed.get("web_session_id") or "")
     if not session_id or "frame_id" not in observed:
-        close_failure = close_auto_opened_page()
         if session_id:
             with suppress(Exception):
                 registry.execute(
@@ -1359,17 +1367,12 @@ def _run_browser_task_commands(
             release_owner()
         with suppress(Exception):
             release_captured_context()
-        unavailable = {
+        return {
             "status": "failed",
             "reason_code": observed.get("reason_code", "page_unavailable"),
             "summary": "The selected Page could not be observed.",
             "backend": backend,
         }
-        return (
-            cleanup_failed(close_failure, unavailable)
-            if close_failure is not None else
-            unavailable
-        )
 
     last: dict[str, Any] = {
         "result": None, "action": "", "seq": 0, "screenshot_result": None,
@@ -1585,17 +1588,7 @@ def _run_browser_task_commands(
             "summary": summary or "Browser task ended without verification.",
             "backend": backend, "web_session_id": session_id,
         })
-    except _GUI_TASK_ERRORS as exc:
-        close_failure = close_auto_opened_page()
-        if close_failure is not None:
-            return finish(cleanup_failed(close_failure, {
-                "reason_code": (
-                    "cancelled"
-                    if isinstance(exc, _CANCELLATION_ERRORS)
-                    else "runtime_error"
-                ),
-                "summary": f"{type(exc).__name__}: {exc}",
-            }))
+    except _GUI_TASK_ERRORS:
         preserve_primary_exception = True
         raise
     finally:
@@ -1624,22 +1617,7 @@ def _run_browser_task_commands(
         except Exception as exc:
             screenshot_cleanup_error = exc
         finally:
-            close_failure = close_auto_opened_page()
-            if close_failure is not None:
-                cleanup_result = cleanup_failed(
-                    close_failure, terminal_result,
-                )
-                if terminal_result is not None:
-                    terminal_result.clear()
-                    terminal_result.update(cleanup_result)
-            preserve_outcome = (
-                preserve_primary_exception
-                or (
-                    terminal_result is not None
-                    and terminal_result.get("reason_code")
-                    == "page_cleanup_failed"
-                )
-            )
+            preserve_outcome = preserve_primary_exception
             try:
                 registry.execute(
                     command="close", web_session_id=session_id,

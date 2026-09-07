@@ -4,6 +4,8 @@ import { webTabId } from "@/lib/state/center-tab-ids";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 
+export { startWebTabCaptureLoop } from "./web-tab-capture-loop";
+
 /** Ephemeral picture-in-picture host for an agent-opened WebTab.
  *  Not persisted — closing the preview or expanding to split/fullscreen
  *  clears the visible host. The leaf tab itself stays in the center-tabs
@@ -22,6 +24,7 @@ type PipCenterState = {
   tabs: readonly { id: string; kind: string }[];
   activeId: string | null;
   groups: readonly { memberIds: string[]; visibleIds: string[] }[];
+  splitWebTabId?: string | null;
 };
 
 /** Session↔web pairing survives PiP rebinds: every tab that has floated
@@ -214,17 +217,14 @@ function pipCoverBase(tabId: string, state: PipCenterState): boolean {
   if (!state.tabs.some((tab) => tab.id === tabId && tab.kind === "web")) {
     return false;
   }
-  if (state.activeId === tabId) return false;
   const group = state.activeId
     ? state.groups.find((item) => item.memberIds.includes(state.activeId!))
     : undefined;
-  if (group?.visibleIds.includes(tabId)) return false;
-  // The PiP is a chat-side preview: it only floats over the session pane.
-  // When the user focuses any other center page (files, terminal, another
-  // web tab, ...) it must not cover that page.
+  if (group?.visibleIds.includes(tabId) && state.activeId !== tabId) return false;
+  if (state.splitWebTabId === tabId) return false;
   if (state.activeId) {
     const active = state.tabs.find((tab) => tab.id === state.activeId);
-    if (active && active.kind !== "session") return false;
+    if (active && active.kind !== "session" && active.id !== tabId) return false;
   }
   return true;
 }
@@ -234,7 +234,8 @@ export function pipCoversCenter(
   ownerTabId: string | null,
   state: PipCenterState = useCenterTabs.getState(),
 ): boolean {
-  return pipCoverBase(tabId, state) && !!ownerTabId && state.activeId === ownerTabId;
+  return pipCoverBase(tabId, state) && !!ownerTabId
+    && (state.activeId === ownerTabId || state.activeId === tabId);
 }
 
 export function clampPipRect(

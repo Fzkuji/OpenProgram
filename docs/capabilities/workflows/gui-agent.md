@@ -36,6 +36,20 @@ Inside an active macOS Runtime execution, trusted callers can select `surface="b
 
 The model proposes a final browser assertion. The host checks it against the owned Page and current frame after the Agent returns. Success requires that assertion to pass and no unresolved primitive effects from this invocation. The result includes the verification effect and assertion evidence; a model-selected assertion does not prove every aspect of an arbitrary task. Script completion alone cannot report success. Handles are revoked before Page leases are released, and cleanup errors prevent a successful result. Cleanup may still wait for an already-running browser operation; bounded in-flight cancellation and default-App acceptance remain unverified.
 
+## Browser resources and human control
+
+In the desktop App, Agent-opened Pages remain in the background. Open **Resources** in the right sidebar to see the current conversation's Pages grouped by branch, including Pages used by its child agents. Continuing a branch keeps its resource group. Distinct Pages stay distinct even when they have the same URL; pages without established branch ownership appear under **Unassigned**.
+
+Select a resource to inspect its image preview. **Follow current branch** selects the Page most recently operated on by that branch; selecting a resource manually keeps that selection while the Agent works elsewhere. **Hide** stops preview capture and keeps the Page available. **Expand** enlarges the image preview. **Open in tab** opens the existing Page for direct use. These controls keep their selection per conversation and branch.
+
+The actual webpage remains usable while its image appears in the preview. There is no dimming mask. Its toolbar identifies the current controller and provides **Pause Agent**, **Resume Agent**, **Show actions**, and **Operation history**. Action markers are brief and do not intercept input; history contains operation types and results rather than the text entered into a webpage.
+
+Using the real webpage requests yielding: clicking, typing, scrolling, and navigating close later Agent input admission and request execution pause. Merely focusing the page or inspecting its preview does not pause execution. An action already dispatched can still finish. **Yielding** means stopping is pending; **Paused** requires execution acknowledgement and reconciliation. **Stop unconfirmed** means the App has not confirmed stopping, and the webpage remains usable. Resuming is explicit and requires a fresh observation and current permission.
+
+Closing a Page affects every branch reference to that same Page. An active Page first requests stopping; it stays available until stopping is confirmed. Closing is separate from hiding the preview. Disconnection or an unavailable target shows the last image as stale. Saved resource metadata does not restore an Agent input lease or recreate a closed Page.
+
+These browser controls operate on exact OpenProgram Pages. Native application windows, the shared host desktop, and VM displays retain their own capability and input-scope restrictions described below.
+
 ## Automatic capability execution
 
 The following sequence applies when no explicit browser path is selected:

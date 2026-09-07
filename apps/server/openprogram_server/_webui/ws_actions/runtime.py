@@ -462,6 +462,7 @@ async def submit_execution_control(
     actor: dict | None,
     bound_session: str | None = None,
     surface: str | None = None,
+    conversation_session_id: str | None = None,
 ):
     """Submit one authenticated exact command through RuntimeControlService."""
     from openprogram.execution import default_control_service, default_store
@@ -489,10 +490,18 @@ async def submit_execution_control(
             "execution_id": execution_id, "status_version": None,
         }
     try:
-        authorization = _authorize_execution(
-            raw_actor, _PUBLIC_COMMAND_ACTIONS[operation], execution,
-            bound_session=bound_session,
-        )
+        if conversation_session_id:
+            from openprogram.execution.conversation_scope import authorize_conversation_execution
+
+            authorization = authorize_conversation_execution(
+                raw_actor, _PUBLIC_COMMAND_ACTIONS[operation], execution,
+                store=store, session_id=conversation_session_id, bound_session=None,
+            )
+        else:
+            authorization = _authorize_execution(
+                raw_actor, _PUBLIC_COMMAND_ACTIONS[operation], execution,
+                bound_session=bound_session,
+            )
         # Command and audit records retain only transport-trusted control
         # metadata.  The execution binding is resolved by the server and is
         # stored explicitly so later audit readers can reconstruct the exact

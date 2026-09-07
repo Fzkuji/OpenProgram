@@ -33,6 +33,31 @@ export interface DesktopWebTabFindResult {
   finalUpdate: boolean;
 }
 
+export type DesktopWebTabHumanInputKind = "pointer" | "key" | "scroll" | "navigate";
+
+export interface DesktopWebTabHumanInput {
+  id: string;
+  windowId: string;
+  sequence: number;
+  kind: DesktopWebTabHumanInputKind;
+}
+
+export interface DesktopWebTabActionMarker {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  sequence: number;
+  /** Resource generation from the host receipt. Stale generation is rejected. */
+  generation?: number;
+  /**
+   * Backend resource_id for this receipt (`page:<instance>:<revision>`).
+   * A new id on the same native Page is a worker incarnation; generation
+   * may restart. Omit only when the renderer has no resource row.
+   */
+  resourceId?: string;
+}
+
 export interface DesktopWebTabBounds {
   x: number;
   y: number;
@@ -64,8 +89,8 @@ export interface DesktopWebTabApi {
     url: string;
     title: string;
   } | null>;
-  /** Bounded DOM/ARIA preview for a currently visible native view. */
-  preview(id: string): Promise<{
+  /** Bounded DOM/ARIA preview. Default is the currently visible native view. */
+  preview(id: string, allowBackground?: boolean): Promise<{
     tab_id: string;
     target_id: string;
     url: string;
@@ -99,6 +124,11 @@ export interface DesktopWebTabApi {
   print?(id: string): Promise<boolean>;
   /** Snapshot of the native page as a data URL, for PiP drag placeholders. */
   capture?(id: string): Promise<string | null>;
+  /** Host-owned action location on the exact native view. null clears. */
+  showAction?(
+    id: string,
+    marker: DesktopWebTabActionMarker | null,
+  ): Promise<boolean>;
   /** PiP-only layout scale. Pass the content width, or null to restore user zoom. */
   setPipZoom?(id: string, width: number | null): void;
   /** Navigation/title/loading events pushed from main; returns the
@@ -108,6 +138,8 @@ export interface DesktopWebTabApi {
   onPopup?(cb: (popup: { openerId: string; url: string }) => void): () => void;
   onFindResult?(cb: (result: DesktopWebTabFindResult) => void): () => void;
   onCommand?(cb: (command: { id: string; command: "find" }) => void): () => void;
+  /** Native human input on an owned Page. Payload has no typed text, keys, coords, or URLs. */
+  onHumanInput?(cb: (input: DesktopWebTabHumanInput) => void): () => void;
 }
 /** One recorded page visit from the desktop browsing history. */
 export interface DesktopHistoryEntry {

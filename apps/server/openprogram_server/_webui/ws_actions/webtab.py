@@ -29,6 +29,7 @@ _connection_revisions: dict[Any, int] = {}
 _page_revisions: dict[tuple[int, str], int] = {}
 _desktop_windows: dict[Any, str] = {}
 _next_revision = itertools.count(1)
+_instance_id = uuid.uuid4().hex[:12]
 RESPONSE_TIMEOUT_REASON_CODE = "desktop_response_timeout"
 _PNG_DATA_URL_PREFIX = "data:image/png;base64,"
 # Leave JSON framing headroom below Uvicorn's 16 MiB WebSocket message limit.
@@ -162,6 +163,14 @@ def register_binding(
             max(0, int(geometry_revision)),
             bool(allow_background),
         )
+        connection_generation = connection_revision
+    try:
+        from openprogram.browser_resources import retain_from_binding
+        retain_from_binding(
+            binding_id, window_id, tab_id, target_id, connection_generation,
+        )
+    except Exception:
+        pass
     return binding_id
 
 
@@ -173,11 +182,13 @@ def release_binding(binding_id: str) -> None:
 def release_connection(ws) -> None:
     """Revoke bindings and wake exact-socket requests on disconnect."""
     wake = []
+    page_keys = []
     with _lock:
         _desktop_windows.pop(ws, None)
         connection_revision = _connection_revisions.pop(ws, None)
         for binding_id, entry in list(_bindings.items()):
             if entry[0] is ws:
+                page_keys.append(page_key_for_revision(entry[5]))
                 _bindings.pop(binding_id, None)
         if connection_revision is not None:
             for identity in list(_page_revisions):
@@ -192,6 +203,13 @@ def release_connection(ws) -> None:
                 wake.append(ev)
     for ev in wake:
         ev.set()
+    if page_keys:
+        try:
+            from openprogram.browser_resources import mark_binding_unavailable
+            for page_key in dict.fromkeys(page_keys):
+                mark_binding_unavailable(page_key=page_key)
+        except Exception:
+            pass
 
 
 def registered_desktop_windows() -> list[tuple[Any, str, int]]:
@@ -226,13 +244,29 @@ def binding_owner_revision(binding_id: str) -> tuple[Any, int] | None:
         return entry[0], revision
 
 
+def page_key_for_revision(page_revision: int) -> str:
+    """Return a process-incarnated Page identity that does not collide after restart."""
+    return f"page:{_instance_id}:{int(page_revision)}"
+
+
+def page_revision_for_key(page_key: str) -> int | None:
+    """Return the current-process page revision encoded in a page_key, if any."""
+    prefix = f"page:{_instance_id}:"
+    if not isinstance(page_key, str) or not page_key.startswith(prefix):
+        return None
+    rest = page_key[len(prefix):]
+    if not rest.isdigit():
+        return None
+    return int(rest)
+
+
 def binding_page_key(binding_id: str) -> str:
     """Return a server-owned identity shared by captures of one CDP Page."""
     with _lock:
         entry = _bindings.get(binding_id)
     if entry is None:
         return ""
-    return f"page:{entry[5]}"
+    return page_key_for_revision(entry[5])
 
 
 def binding_revisions(binding_id: str) -> dict[str, int]:
@@ -256,13 +290,22 @@ def binding_connection(binding_id: str):
 
 
 def _invalidate_page(ws, target_id: str) -> None:
+    page_keys = []
     with _lock:
         connection_revision = _connection_revisions.get(ws)
         if connection_revision is not None:
             _page_revisions.pop((connection_revision, target_id), None)
         for binding_id, entry in list(_bindings.items()):
             if entry[0] is ws and entry[3] == target_id:
+                page_keys.append(page_key_for_revision(entry[5]))
                 _bindings.pop(binding_id, None)
+    if page_keys:
+        try:
+            from openprogram.browser_resources import mark_binding_unavailable
+            for page_key in dict.fromkeys(page_keys):
+                mark_binding_unavailable(page_key=page_key)
+        except Exception:
+            pass
 
 
 def request_bound_tab(
@@ -498,7 +541,14 @@ def request_close_tab(binding_id: str, timeout: float = 5.0) -> dict:
         }
     result = request_on_ws(ws, {"op": "close", "tab_id": tab_id}, timeout)
     if result.get("ok"):
+        page_key = binding_page_key(binding_id)
         release_binding(binding_id)
+        if page_key:
+            try:
+                from openprogram.browser_resources import BrowserResourceStore
+                BrowserResourceStore().mark_closed(page_key)
+            except Exception:
+                pass
     return result
 
 
@@ -674,7 +724,89 @@ async def handle_webtab_register(ws, cmd: dict):
         _desktop_windows[ws] = window_id
 
 
+async def handle_webtab_closed(ws, cmd: dict):
+    """Mark the exact native Page closed when the originating renderer destroys it."""
+    window_id = cmd.get("window_id")
+    tab_id = cmd.get("tab_id")
+    if not isinstance(window_id, str) or not window_id or not isinstance(tab_id, str) or not tab_id:
+        return
+    from openprogram.webui.ws_actions.runtime import trusted_runtime_actor
+    if trusted_runtime_actor(getattr(ws, "scope", None), surface="ws") is None:
+        return
+    from openprogram.browser_resources import (
+        BrowserResourceStore, fence_page_writes,
+        page_keys_for_socket_tab, project_conversation_resources, emit_browser_resource,
+    )
+    keys = page_keys_for_socket_tab(ws, window_id, tab_id)
+    for page_key in keys:
+        fence_page_writes(page_key)
+        try:
+            BrowserResourceStore().mark_closed(page_key)
+        except Exception:
+            continue
+        try:
+            associations = BrowserResourceStore().associations_for_page(page_key)
+            conversation = next(
+                (item.get("conversation_session_id") or item.get("session_id")
+                 for item in associations
+                 if item.get("conversation_session_id") or item.get("session_id")),
+                None,
+            )
+            if conversation:
+                rows, _, _ = project_conversation_resources(conversation)
+                row = next((item for item in rows if item["resource_id"] == page_key), None)
+                if row is not None:
+                    emit_browser_resource(row, page_key=page_key)
+        except Exception:
+            pass
+    closed_revisions = {
+        revision
+        for revision in (page_revision_for_key(page_key) for page_key in keys)
+        if revision is not None
+    }
+    with _lock:
+        connection_revision = _connection_revisions.get(ws)
+        for binding_id, entry in list(_bindings.items()):
+            if entry[0] is ws and entry[1] == window_id and entry[2] == tab_id:
+                if connection_revision is not None:
+                    _page_revisions.pop((connection_revision, entry[3]), None)
+                _bindings.pop(binding_id, None)
+        if connection_revision is not None and closed_revisions:
+            for identity, revision in list(_page_revisions.items()):
+                if identity[0] == connection_revision and revision in closed_revisions:
+                    _page_revisions.pop(identity, None)
+
+
+_HUMAN_INPUT_KINDS = frozenset({"pointer", "key", "scroll", "navigate"})
+
+
+async def handle_webtab_human_input(ws, cmd: dict):
+    """Fence later Agent writes for the exact Page of this renderer tab."""
+    window_id = cmd.get("window_id")
+    tab_id = cmd.get("tab_id")
+    sequence = cmd.get("sequence")
+    if sequence is None:
+        sequence = cmd.get("input_seq")
+    kind = cmd.get("kind")
+    if (
+        not isinstance(window_id, str) or not window_id
+        or not isinstance(tab_id, str) or not tab_id
+        or type(sequence) is not int or sequence < 1
+        or kind not in _HUMAN_INPUT_KINDS
+    ):
+        return
+    from openprogram.webui.ws_actions.runtime import trusted_runtime_actor
+    if trusted_runtime_actor(getattr(ws, "scope", None), surface="ws") is None:
+        return
+    from openprogram.browser_resources import handle_human_page_input
+    await handle_human_page_input(
+        ws=ws, window_id=window_id, tab_id=tab_id, input_seq=sequence, kind=kind,
+    )
+
+
 ACTIONS = {
     "webtab_register": handle_webtab_register,
     "webtab_result": handle_webtab_result,
+    "webtab_human_input": handle_webtab_human_input,
+    "webtab_closed": handle_webtab_closed,
 }

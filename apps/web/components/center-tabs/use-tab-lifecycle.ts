@@ -28,6 +28,7 @@ import {
 } from "@/lib/runtime-bridge/draft-channel-choice";
 import { pushPath } from "@/lib/shallow-nav";
 import { useTranslation } from "@/lib/i18n";
+import { selectTabsReadyForHumanClose } from "@/lib/state/browser-control";
 
 export function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
@@ -291,14 +292,16 @@ export function useTabLifecycle({
     // freezeStripWidths has walked the row, so without the early mark the
     // closing tab gets pinned too and its exit shrink fights the inline
     // width.
+    const ready = selectTabsReadyForHumanClose(tabsToClose, useCenterTabs.getState().tabs);
+    if (ready.length === 0) return;
     if (isMouseDrivenClose(e)) freezeWidthsForMouseClose(e.target);
     else releaseFrozenWidths();
     // 先播退场动画（.tabExit 收缩到 0），animationend 再 finishClose 真正
     // 移除 —— 和新建 tab 的挤压动画成镜像。
-    for (const tab of tabsToClose) closingInstances.current.set(tab.id, tab);
+    for (const tab of ready) closingInstances.current.set(tab.id, tab);
     setClosingIds((prev) => {
       const next = new Set(prev);
-      for (const tab of tabsToClose) next.add(tab.id);
+      for (const tab of ready) next.add(tab.id);
       return next;
     });
   }

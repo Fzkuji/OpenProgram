@@ -2106,14 +2106,18 @@ assert.match(desktopBridgeSource, /closeAgentWebTabResult\(d\.tab_id, state\.tab
 assert.match(desktopBridgeSource, /if \(closed\.ok\) state\.closeTab\(d\.tab_id!\)/);
 assert.match(desktopBridgeSource, /state\.openWebTabInSplit\(d\.url\)/);
 assert.match(desktopBridgeSource, /registerPipPair\(id, active\.id\)/);
-assert.match(desktopBridgeSource, /revealAgentWebTab\(d\.tab_id\)/);
 assert.match(desktopBridgeSource, /state\.ensureWebTab\(d\.url\)/);
 assert.match(desktopBridgeSource, /pipOpenMustFork\(d\.url, active\.id\)/);
 assert.match(desktopBridgeSource, /ensureExclusiveWebTab\(d\.url\)/);
 assert.match(
   desktopBridgeSource,
-  /if \(d\.background\)[\s\S]*?ensureExclusiveWebTab\(d\.url\)[\s\S]*?ensureWebView\(bridge, id, d\.url\)[\s\S]*?bridge\.webTab\.resolve\?\.\(id\)/,
+  /if \(d\.background \|\| d\.session_id\)[\s\S]*?ensureExclusiveWebTab\(d\.url\)[\s\S]*?ensureWebView\(bridge, id, d\.url\)[\s\S]*?bridge\.webTab\.resolve\?\.\(id\)/,
   "a background agent open must create and resolve a hidden exclusive Page without activating it",
+);
+assert.match(
+  desktopBridgeSource,
+  /d\.op === "preview" && d\.background === true[\s\S]*?selectedMirrorTabById/,
+  "selected PiP preview stays a background mirror and does not reveal the native Page",
 );
 assert.match(
   desktopBridgeSource,
@@ -2464,7 +2468,7 @@ assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), tru
 assert.equal(visibleWebTab()?.id, pipOnlyId);
 useCenterTabs.getState().setActive(pipOnlyId);
 assert.equal(useCenterTabs.getState().activeId, pipOnlyId);
-assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), false);
+assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), true);
 assert.equal(collapseWebTabToPip(pipOnlyId), true);
 assert.equal(peekWebTabPipId(), pipOnlyId);
 assert.equal(peekWebTabPipOwnerId(), "s:chat");
@@ -2575,7 +2579,7 @@ assert.equal(peekWebTabPipOwnerId(), pipOwnerA);
 assert.equal(pipBoundTabId(), pipOwnedId);
 assert.equal(
   pipCoversCenter(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
-  false,
+  true,
 );
 
 globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "main" };
@@ -2828,37 +2832,28 @@ const pipSource = await readFile(
 );
 assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("move"/);
 assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("resize"/);
-assert.match(pipSource, /const BOUNDS_THROTTLE_MS = 100;/);
-assert.match(pipSource, /setSnapshot\(tabId,/);
-assert.match(
-  pipSource,
-  /pip\.tabId !== tabId[\s\S]*?pipCoversCenter\([\s\S]*?pip\.ownerTabId[\s\S]*?setPipZoom\?\.\(tabId, null\)/,
-  "a delayed PiP bounds callback must restore zoom after its owner chat loses focus",
-);
+assert.match(pipSource, /setSnapshot\(id, dataUrl\)/);
 assert.match(
   pipSource,
   /useEffect\(\(\) => \{\s*if \(live\) return;\s*dragRef\.current = null;\s*pendingRectRef\.current = null;\s*captureGenRef\.current \+= 1;[\s\S]*?cancelAnimationFrame\(rafRef\.current\);\s*rafRef\.current = 0;[\s\S]*?\}, \[live\]\);/,
   "owner loss during drag must cancel interaction state before PiP can remount",
 );
-assert.match(pipSource, /reportRef\.current\(true\)/);
-assert.match(pipSource, /if \(dragRef\.current\) return;/);
 assert.match(pipSource, /translate\(\$\{next\.x - drag\.origin\.x\}px/);
 assert.match(pipSource, /requestAnimationFrame/);
-assert.match(pipSource, /bridge\.webTab\.capture/);
-assert.match(pipSource, /removeVisibleWebTabBounds\(bridge, tabId\)/);
+assert.match(pipSource, /bridge\?\.webTab\.capture|webTab\.capture/);
+assert.match(pipSource, /startWebTabCaptureLoop/);
 assert.match(pipSource, /showShot\(getSnapshot\(tabId\)/);
-assert.match(pipSource, /showShot\(null\)/);
 assert.match(pipSource, /className=\{styles\.webPipShot\}/);
-assert.match(pipSource, /setPipZoom\?\.\(tabId, bounds\.width\)/);
-assert.match(pipSource, /setPipZoom\?\.\(tabId, null\)/);
-assert.match(pipSource, /end\(\);\s*useCenterTabs\.getState\(\)\.setSplitWebTab\(tabId\)/);
-assert.match(pipSource, /end\(\);\s*useCenterTabs\.getState\(\)\.setActive\(tabId\)/);
+assert.match(pipSource, /Last frame/);
+assert.doesNotMatch(pipSource, /<iframe/);
+assert.doesNotMatch(pipSource, /ensureWebView|registerVisibleWebTabBounds|setPipZoom/);
 assert.doesNotMatch(pipSource, /webPipParked|parkedShot|Controlled by/);
-assert.match(webTabPaneSource, /pipBoundTabId\(\) === tabId/);
-assert.match(webTabPaneSource, /useWebTabPip\.getState\(\)\.end\(\)/);
-assert.match(webTabPaneSource, /setActive\(ownerTabId\)/);
-assert.match(webTabPaneSource, /Controlled by/);
-assert.match(webTabPaneSource, /usePipSnapshots\(\(s\) => s\.shots\[tabId\]\)/);
+assert.doesNotMatch(webTabPaneSource, /PipBoundMask|Controlled by|webBoundMask|pipBoundTabId/);
+assert.match(webTabPaneSource, /signalHumanBrowserInput|isHumanYieldEvent/);
+assert.match(
+  webTabPaneSource,
+  /ensureWebView\(bridge, tabId, viewUrlRef\.current\);[\s\S]*?bridge\.webTab\.setPipZoom\?\.\(tabId, null\);/,
+);
 {
   const desktop = webTabPaneSource.slice(
     webTabPaneSource.indexOf("function DesktopWebTabPane"),
@@ -2867,19 +2862,10 @@ assert.match(webTabPaneSource, /usePipSnapshots\(\(s\) => s\.shots\[tabId\]\)/);
   const iframe = webTabPaneSource.slice(
     webTabPaneSource.indexOf("function IframeWebTabPane"),
   );
-  assert.match(
-    desktop,
-    /if \(pipBound\) \{\s*removeVisibleWebTabBounds\(bridge, tabId\);\s*setWebTabReady\(tabId, false\);\s*return;\s*\}\s*ensureWebView\(bridge, tabId/,
-  );
-  assert.match(
-    desktop,
-    /if \(pipBound\) \{\s*removeVisibleWebTabBounds\(bridge, tabId\);\s*setWebTabReady\(tabId, false\);\s*return;\s*\}\s*const el = bodyRef\.current/,
-  );
-  assert.match(
-    iframe,
-    /\{pipBound \? \(\s*<PipBoundMask tabId=\{tabId\} \/>\s*\) : url\.startsWith\("file:"\)/,
-  );
-  assert.doesNotMatch(iframe, /ensureWebView|registerVisibleWebTabBounds/);
+  assert.doesNotMatch(desktop, /if \(pipBound\)/);
+  assert.match(desktop, /ensureWebView\(bridge, tabId/);
+  assert.match(iframe, /url\.startsWith\("file:"\)/);
+  assert.doesNotMatch(iframe, /ensureWebView|registerVisibleWebTabBounds|PipBoundMask/);
 }
 assert.match(
   await readFile(
@@ -2923,7 +2909,9 @@ const pipCss = await readFile(
 assert.match(pipCss, /\.webPipResize/);
 assert.match(pipCss, /\.webPipDragging/);
 assert.match(pipCss, /\.webPipShot/);
-assert.match(pipCss, /object-fit:\s*fill/);
+assert.match(pipCss, /object-fit:\s*contain/);
+assert.match(pipCss, /\.webPip\[data-state="active"\]/);
+assert.match(pipCss, /\.webPane\[data-state="yielding"\]/);
 assert.doesNotMatch(pipCss, /webPipParked/);
 const previewChipSource = await readFile(
   new URL("../components/chat/composer/environment-row/chips/web-preview-chip.tsx", import.meta.url),

@@ -1334,10 +1334,73 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: contain;
   pointer-events: none;
   display: none;
 }
+.webPipExpanded {
+  width: min(720px, calc(100% - 24px));
+  height: min(480px, calc(100% - 24px));
+}
+.webPipMode {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browserControl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.browserControl[data-compact="true"] {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+}
+.webPip[data-state="active"],
+.webPane[data-state="active"] {
+  outline: 1px solid color-mix(in srgb, #5b8cff 70%, transparent);
+  outline-offset: 0;
+}
+.webPip[data-state="yielding"],
+.webPane[data-state="yielding"] {
+  outline: 1px solid color-mix(in srgb, #d4a017 55%, transparent);
+  outline-offset: 0;
+}
+.browserControlStatus {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.browserHistory {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.browserHistory summary {
+  cursor: pointer;
+}
+.browserHistory ol {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.browserActionMark {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #5b8cff;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.browserMarkerNote { display: none; }
 .webPipResize {
   position: absolute;
   right: 0;

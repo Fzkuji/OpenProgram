@@ -66,7 +66,51 @@ def register(app):
             for record in ResourceUseStore().list(session_id, scope):
                 check_owner(record)
                 items.append({**record, "source": "usage", "status": "attached" if record["kind"] in {"vm", "desktop"} else "in_use"})
-            return JSONResponse({"items": items, "now": time.time()}, headers={"Cache-Control": "no-store"})
+            from openprogram.browser_resources import project_conversation_resources
+            browser_items, current_branch_id, current_branch_name = project_conversation_resources(session_id)
+            items.extend(browser_items)
+            return JSONResponse(
+                {
+                    "items": items, "now": time.time(),
+                    "current_branch_id": current_branch_id,
+                    "current_branch_name": current_branch_name,
+                },
+                headers={"Cache-Control": "no-store"},
+            )
+        except Exception as exc:
+            return _error(exc)
+
+    @app.post("/api/session/{session_id}/resources/{resource_id}/control")
+    async def session_resource_control(session_id: str, resource_id: str, request: Request):
+        try:
+            _authorize(request, session_id)
+            actor, _bound = _actor_and_session(request)
+            body = await request.json()
+            if not isinstance(body, dict):
+                return JSONResponse({"error": "invalid_command"}, status_code=400)
+            action = body.get("action")
+            command_id = body.get("command_id")
+            generation = body.get("generation")
+            if action not in {"pause", "resume"} or not isinstance(command_id, str) or not command_id:
+                return JSONResponse({"error": "invalid_command"}, status_code=400)
+            if type(generation) is not int:
+                return JSONResponse({"error": "invalid_command"}, status_code=400)
+            from openprogram.browser_resources import apply_resource_control
+            row = await apply_resource_control(
+                conversation_session_id=session_id, resource_id=resource_id,
+                action=action, command_id=command_id, generation=generation,
+                actor=actor,
+            )
+            payload = dict(row)
+            payload["now"] = time.time()
+            return JSONResponse(payload, headers={"Cache-Control": "no-store"})
+        except KeyError:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        except ValueError as exc:
+            code = str(exc) if str(exc) in {"stale_generation", "unsupported_action"} else "invalid_command"
+            return JSONResponse({"error": code}, status_code=409 if code == "stale_generation" else 400)
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc) or "conflict"}, status_code=409)
         except Exception as exc:
             return _error(exc)
 

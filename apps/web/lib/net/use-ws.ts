@@ -806,6 +806,7 @@ export function useWS(): void {
 
       socket.onopen = () => {
         updateStatus("connected");
+        window.dispatchEvent(new CustomEvent("op:browser-connection", { detail: { connected: true } }));
         if (reconnectTimer) {
           clearTimeout(reconnectTimer);
           reconnectTimer = null;
@@ -871,6 +872,7 @@ export function useWS(): void {
 
       socket.onclose = () => {
         updateStatus("disconnected");
+        window.dispatchEvent(new CustomEvent("op:browser-connection", { detail: { connected: false } }));
         if (!stopped) reconnectTimer = setTimeout(connect, 2000);
       };
 
@@ -902,6 +904,7 @@ export function useWS(): void {
         socket.close();
       }
       if (runtimeState.ws === socket) {
+        window.dispatchEvent(new CustomEvent("op:browser-connection", { detail: { connected: false } }));
         setSocket(null);
         pushStatusBadge();
       }

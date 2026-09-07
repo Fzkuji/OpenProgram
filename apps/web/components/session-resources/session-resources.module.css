@@ -9,10 +9,13 @@
 details[open] > .group::before { transform: rotate(90deg); }
 .group span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group small { font-variant-numeric: tabular-nums; }
-.row { display: flex; align-items: center; border-radius: 7px; gap: 2px; padding: 3px; }
+.row { display: flex; align-items: center; border-radius: 7px; gap: 2px; padding: 3px; min-height: 44px; }
 .row:hover { background: var(--bg-hover); }
 .row[data-active="true"] { background: var(--bg-selected); }
-.page { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 6px 3px; text-align: left; background: transparent; border: 0; color: var(--text-primary); cursor: pointer; }
+.page { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 8px 3px; text-align: left; background: transparent; border: 0; color: var(--text-primary); cursor: pointer; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent, #5b8cff); flex-shrink: 0; }
+.showPreview { align-self: flex-start; background: transparent; border: 0; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 12px; padding: 0 6px; }
+.showPreview:hover { color: var(--text-bright); }
 .page > svg { flex-shrink: 0; }
 .page span { min-width: 0; }
 .page strong, .page small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

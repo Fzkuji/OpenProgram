@@ -1,30 +1,41 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Columns2, ExternalLink, Maximize2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Eye, Maximize2, Minimize2, X } from "lucide-react";
 
-import {
-  desktopBridge,
-  ensureWebView,
-  registerVisibleWebTabBounds,
-  removeVisibleWebTabBounds,
-  setWebTabReady,
-} from "@/lib/desktop-bridge";
+import { desktopBridge } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import {
+  controlResourceFromSession,
+  displayedControlState,
+  liveOperationMarker,
+} from "@/lib/state/browser-control";
+import { fittedImageRect, mapOperationPoint } from "@/lib/state/browser-marker-geometry";
+import {
+  followCurrentBranch,
+  getPreviewPreference,
+  hideResourcePreview,
+  latestFollowTarget,
+  listedBrowserResources,
+  previewTabId,
+  togglePreviewExpanded,
+  useBrowserResourceStore,
+  viewedBranchFor,
+  type SessionResource,
+} from "@/lib/state/session-resources";
 import {
   clampPipRect,
   getSnapshot,
   pipCoversCenter,
   setSnapshot,
+  startWebTabCaptureLoop,
   useWebTabPip,
   type WebTabPipRect,
 } from "@/lib/state/web-tab-pip-store";
-import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
+import { BrowserControlBar } from "./browser-control-bar";
 
 import styles from "./center-tabs.module.css";
-
-const BOUNDS_THROTTLE_MS = 100;
 
 type PipDrag = {
   kind: "move" | "resize";
@@ -68,34 +79,76 @@ function measuredRect(el: HTMLElement): WebTabPipRect {
   };
 }
 
+function resourceForTab(tabId: string): SessionResource | undefined {
+  return listedBrowserResources().find(row => previewTabId(row) === tabId);
+}
+
+function PipActionMark({
+  point,
+  body,
+  image,
+}: {
+  point: { x: number; y: number; width?: number; height?: number };
+  body: HTMLElement | null;
+  image: { width: number; height: number };
+}) {
+  if (!body) return null;
+  const box = body.getBoundingClientRect();
+  const fitted = fittedImageRect({ width: box.width, height: box.height }, image);
+  const pos = mapOperationPoint(point, fitted, image);
+  if (!pos) return null;
+  return <span className={styles.browserActionMark} style={{ left: pos.left, top: pos.top }} aria-hidden="true" />;
+}
+
 export function WebTabPip() {
   const { text } = useTranslation();
   const tabId = useWebTabPip((s) => s.tabId);
   const ownerTabId = useWebTabPip((s) => s.ownerTabId);
   const hide = useWebTabPip((s) => s.hide);
-  const end = useWebTabPip((s) => s.end);
   const rect = useWebTabPip((s) => s.rect);
   const setRect = useWebTabPip((s) => s.setRect);
   const tabs = useCenterTabs((s) => s.tabs);
   const activeId = useCenterTabs((s) => s.activeId);
   const groups = useCenterTabs((s) => s.groups);
+  const splitWebTabId = useCenterTabs((s) => s.splitWebTabId);
   const tab = tabId
     ? tabs.find((item) => item.id === tabId && item.kind === "web")
     : undefined;
-  const center = { tabs, activeId, groups };
+  const owner = ownerTabId ? tabs.find((item) => item.id === ownerTabId) : undefined;
+  const sessionId = owner?.kind === "session" ? owner.sessionId || null : null;
+  const branchId = sessionId ? viewedBranchFor(sessionId) : null;
+  const pref = sessionId ? getPreviewPreference(sessionId, branchId) : null;
+  const connected = useBrowserResourceStore(s => s.connected);
+  useBrowserResourceStore(s => s.ingestClock);
+  const resource = tabId ? resourceForTab(tabId) : undefined;
+  const control = resource ? controlResourceFromSession(resource) : null;
+  const center = { tabs, activeId, groups, splitWebTabId };
   const live = !!tabId && !!ownerTabId && pipCoversCenter(tabId, ownerTabId, center);
   const rootRef = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PipDrag | null>(null);
   const pendingRectRef = useRef<WebTabPipRect | null>(null);
   const rafRef = useRef(0);
-  const throttleRef = useRef(0);
-  const lastPublishRef = useRef(0);
   const shotRef = useRef<HTMLImageElement>(null);
   const captureGenRef = useRef(0);
-  const reportRef = useRef<(immediate?: boolean) => void>(() => {});
+  const [freshness, setFreshness] = useState<"live" | "last-frame" | "unavailable">("unavailable");
+  const [, render] = useState(0);
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
+  const marker = resource?.resourceId
+    ? liveOperationMarker(resource.resourceId, { generation: resource.generation || 0 })
+    : null;
+
+  const showShot = (dataUrl: string | null) => {
+    const img = shotRef.current;
+    if (!img) return;
+    if (dataUrl) {
+      img.src = dataUrl;
+      img.style.display = "block";
+      return;
+    }
+    img.removeAttribute("src");
+    img.style.display = "none";
+  };
 
   useEffect(() => () => {
     if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
@@ -136,99 +189,39 @@ export function WebTabPip() {
   }, [live, setRect]);
 
   useEffect(() => {
-    if (!bridge || !tabId || !live || !url) return;
-    ensureWebView(bridge, tabId, url);
-    const el = bodyRef.current;
-    if (!el) return;
-    const publish = () => {
-      lastPublishRef.current = Date.now();
-      const pip = useWebTabPip.getState();
-      if (
-        pip.tabId !== tabId
-        || !pipCoversCenter(
-          tabId,
-          pip.ownerTabId,
-          useCenterTabs.getState(),
-        )
-      ) {
-        removeVisibleWebTabBounds(bridge, tabId);
-        bridge.webTab.setPipZoom?.(tabId, null);
-        setWebTabReady(tabId, false);
-        return;
-      }
-      const bounds = measureWebTabBounds(el);
-      const occluded = isWebTabOccluded(
-        bounds,
-        document.querySelectorAll(
-          '[role="dialog"], [role="menu"], [role="listbox"], .branches-merge-modal-backdrop, [data-native-view-occluder="true"]',
-        ),
-      );
-      if (occluded || bounds.width <= 0 || bounds.height <= 0) {
-        removeVisibleWebTabBounds(bridge, tabId);
-        setWebTabReady(tabId, false);
-        return;
-      }
-      registerVisibleWebTabBounds(bridge, tabId, bounds);
-      bridge.webTab.setPipZoom?.(tabId, bounds.width);
-      setWebTabReady(tabId, true);
-    };
-    const report = (immediate = false) => {
-      if (dragRef.current) return;
-      if (immediate) {
-        window.clearTimeout(throttleRef.current);
-        throttleRef.current = 0;
-        publish();
-        return;
-      }
-      const wait = Math.max(0, BOUNDS_THROTTLE_MS - (Date.now() - lastPublishRef.current));
-      if (wait === 0) {
-        window.clearTimeout(throttleRef.current);
-        throttleRef.current = 0;
-        publish();
-        return;
-      }
-      if (throttleRef.current) return;
-      throttleRef.current = window.setTimeout(() => {
-        throttleRef.current = 0;
-        if (dragRef.current) return;
-        publish();
-      }, wait) as unknown as number;
-    };
-    const onWindowChange = () => report();
-    reportRef.current = report;
-    report(true);
-    const ro = new ResizeObserver(() => report());
-    ro.observe(el);
-    const mo = new MutationObserver(() => report());
-    mo.observe(document.body, { subtree: true, childList: true, attributes: true });
-    window.addEventListener("resize", onWindowChange);
-    window.addEventListener("scroll", onWindowChange, true);
-    return () => {
-      void bridge.webTab.capture?.(tabId).then((d) => {
-        if (d) setSnapshot(tabId, d);
-      });
-      reportRef.current = () => {};
-      window.clearTimeout(throttleRef.current);
-      ro.disconnect();
-      mo.disconnect();
-      window.removeEventListener("resize", onWindowChange);
-      window.removeEventListener("scroll", onWindowChange, true);
-      removeVisibleWebTabBounds(bridge, tabId);
-      bridge.webTab.setPipZoom?.(tabId, null);
-      setWebTabReady(tabId, false);
-    };
-  }, [bridge, tabId, url, live]);
-
-  useEffect(() => {
-    if (!bridge || !tabId || !live) return;
-    return bridge.webTab.onState((state) => {
-      if (state.id !== tabId) return;
-      if (state.url) useCenterTabs.getState().updateWebTab(tabId, { url: state.url });
-      if (state.title) useCenterTabs.getState().updateWebTab(tabId, { title: state.title });
-      if (state.faviconUrl !== undefined) {
-        useCenterTabs.getState().updateWebTab(tabId, { faviconUrl: state.faviconUrl });
-      }
+    if (!tabId || !live) return;
+    const gen = ++captureGenRef.current;
+    const capture = bridge?.webTab.capture;
+    showShot(getSnapshot(tabId) ?? null);
+    if (typeof capture !== "function") {
+      setFreshness(getSnapshot(tabId) ? "last-frame" : "unavailable");
+      return;
+    }
+    const loop = startWebTabCaptureLoop({
+      tabId,
+      generation: gen,
+      isCurrent: () => {
+        if (captureGenRef.current !== gen) return null;
+        const pip = useWebTabPip.getState();
+        if (pip.tabId !== tabId) return null;
+        return { tabId, generation: gen };
+      },
+      capture,
+      onFrame: (id, dataUrl) => {
+        setSnapshot(id, dataUrl);
+        if (captureGenRef.current !== gen) return;
+        showShot(dataUrl);
+        setFreshness("live");
+      },
+      onUnavailable: (id) => {
+        if (captureGenRef.current !== gen) return;
+        setFreshness(getSnapshot(id) ? "last-frame" : "unavailable");
+      },
     });
+    return () => {
+      loop.stop();
+      if (captureGenRef.current === gen) captureGenRef.current += 1;
+    };
   }, [bridge, tabId, live]);
 
   const placed = !!rect;
@@ -244,11 +237,20 @@ export function WebTabPip() {
   if (!tabId || !tab || !live) return null;
 
   const title = tab.title || url;
-  const expandSplit = text("Split with chat", "展开为分屏");
-  const takeOver = text("Open fullscreen", "全屏接管");
-  const closePreview = text("Close preview", "关闭预览");
-  const openExternal = text("Open in new tab", "在新标签打开");
+  const followLabel = text("Follow current branch", "跟随当前分支");
+  const usePage = text("Use in webpage", "在网页中使用");
+  const hideLabel = text("Hide", "隐藏");
+  const expandLabel = pref?.expanded ? text("Collapse", "收起") : text("Expand", "展开");
   const resizeLabel = text("Resize preview", "调整预览大小");
+  const modeLabel = pref?.mode === "follow"
+    ? text("Following Agent", "跟随 Agent")
+    : text("Manual inspection", "手动查看");
+  const frameState = !connected && freshness === "live" ? "last-frame" : freshness;
+  const freshLabel = frameState === "live"
+    ? text("Read-only image mirror", "只读图像镜像")
+    : frameState === "last-frame"
+      ? text("Last frame", "最后一帧")
+      : text("Image preview unavailable", "无法预览图像");
 
   const liveRect = (el: HTMLElement) =>
     rect ?? measuredRect(el);
@@ -268,18 +270,6 @@ export function WebTabPip() {
     el.style.height = `${next.height}px`;
     el.style.right = "auto";
     el.style.bottom = "auto";
-  };
-
-  const showShot = (dataUrl: string | null) => {
-    const img = shotRef.current;
-    if (!img) return;
-    if (dataUrl) {
-      img.src = dataUrl;
-      img.style.display = "block";
-      return;
-    }
-    img.removeAttribute("src");
-    img.style.display = "none";
   };
 
   const commitRect = (el: HTMLElement, next: WebTabPipRect) => {
@@ -314,20 +304,7 @@ export function WebTabPip() {
     pendingRectRef.current = dragRef.current.origin;
     el.classList.add(styles.webPipDragging);
     el.style.willChange = kind === "move" ? "transform" : "left, top, width, height";
-    if (bridge && tabId) {
-      const gen = ++captureGenRef.current;
-      showShot(getSnapshot(tabId) ?? null);
-      const capture = bridge.webTab.capture;
-      if (typeof capture === "function") {
-        void capture(tabId).then((dataUrl) => {
-          if (!dataUrl) return;
-          setSnapshot(tabId, dataUrl);
-          if (captureGenRef.current === gen && dragRef.current) showShot(dataUrl);
-        });
-      }
-      removeVisibleWebTabBounds(bridge, tabId);
-      setWebTabReady(tabId, false);
-    }
+    showShot(getSnapshot(tabId) ?? null);
   };
 
   const onDragPointerMove = (event: React.PointerEvent<HTMLElement>) => {
@@ -346,11 +323,11 @@ export function WebTabPip() {
     if (rafRef.current) return;
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = 0;
-      const live = pendingRectRef.current;
+      const liveDrag = pendingRectRef.current;
       const current = dragRef.current;
       const node = rootRef.current;
-      if (!live || !current || !node) return;
-      previewRect(node, current, live);
+      if (!liveDrag || !current || !node) return;
+      previewRect(node, current, liveDrag);
     });
   };
 
@@ -365,21 +342,20 @@ export function WebTabPip() {
     const next = pendingRectRef.current;
     dragRef.current = null;
     pendingRectRef.current = null;
-    captureGenRef.current += 1;
     if (el && next) commitRect(el, next);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    reportRef.current(true);
-    showShot(null);
   };
 
   return (
     <div
       ref={rootRef}
-      className={styles.webPip}
+      className={`${styles.webPip} ${pref?.expanded ? styles.webPipExpanded : ""}`}
+      data-pip="true"
       role="complementary"
       aria-label={title}
+      data-state={control ? displayedControlState(control) : "readonly"}
       style={pipStyle}
     >
       <div
@@ -389,76 +365,87 @@ export function WebTabPip() {
         onPointerUp={onDragPointerUp}
         onPointerCancel={onDragPointerUp}
       >
-        <span className={styles.webPipTitle} title={title}>{title}</span>
+        <span className={styles.webPipTitle} title={`${title} · ${modeLabel}`}>{title}</span>
+        <small className={styles.webPipMode}>{modeLabel}</small>
         <button
           type="button"
           className={styles.webToolbarBtn}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => {
-            end();
-            useCenterTabs.getState().setSplitWebTab(tabId);
+            if (!sessionId) return;
+            const next = followCurrentBranch(sessionId, branchId);
+            const target = listedBrowserResources().find(row => row.id === (next.targetId || latestFollowTarget(sessionId, branchId)));
+            const nextTab = previewTabId(target);
+            if (nextTab && ownerTabId) useWebTabPip.getState().show(nextTab, ownerTabId);
+            render(value => value + 1);
           }}
-          title={expandSplit}
-          aria-label={expandSplit}
+          title={followLabel}
+          aria-label={followLabel}
         >
-          <Columns2 size={14} />
+          {followLabel}
+        </button>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => useCenterTabs.getState().setActive(tabId)}
+          title={usePage}
+          aria-label={usePage}
+        >
+          <Eye size={14} />
         </button>
         <button
           type="button"
           className={styles.webToolbarBtn}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => {
-            end();
-            useCenterTabs.getState().setActive(tabId);
+            if (sessionId) togglePreviewExpanded(sessionId, branchId);
+            render(value => value + 1);
           }}
-          title={takeOver}
-          aria-label={takeOver}
+          title={expandLabel}
+          aria-label={expandLabel}
         >
-          <Maximize2 size={14} />
+          {pref?.expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
-        {!bridge ? (
-          <button
-            type="button"
-            className={styles.webToolbarBtn}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={() => window.open(url, "_blank", "noopener")}
-            title={openExternal}
-            aria-label={openExternal}
-          >
-            <ExternalLink size={14} />
-          </button>
-        ) : null}
         <button
           type="button"
           className={styles.webToolbarBtn}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={hide}
-          title={closePreview}
-          aria-label={closePreview}
+          onClick={() => {
+            if (sessionId) hideResourcePreview(sessionId, branchId);
+            hide();
+          }}
+          title={hideLabel}
+          aria-label={hideLabel}
         >
           <X size={14} />
         </button>
       </div>
+      <BrowserControlBar resource={control} compact />
       <div className={styles.webPipStage}>
-        <div ref={bodyRef} className={styles.webPipBody}>
+        <div className={styles.webPipBody}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img ref={shotRef} className={styles.webPipShot} alt="" />
-          {bridge ? null : url.startsWith("file:") ? (
+          {frameState !== "live" && (
             <div className={styles.webPipFallback}>
-              {text(
-                "Local files can only be opened in the desktop app.",
-                "本地文件仅能在桌面应用中打开。",
-              )}
+              {freshLabel}
+              {tabId ? (
+                <button type="button" className={styles.webToolbarBtn} onClick={() => useCenterTabs.getState().setActive(tabId)}>
+                  {usePage}
+                </button>
+              ) : null}
             </div>
-          ) : (
-            <iframe
-              className={styles.webFrame}
-              src={url}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              referrerPolicy="no-referrer"
-              title={text("Web page", "网页")}
-            />
           )}
+          {marker?.point ? (
+            <PipActionMark
+              point={marker.point}
+              body={shotRef.current?.parentElement ?? null}
+              image={{
+                width: shotRef.current?.naturalWidth || marker.point.width || 0,
+                height: shotRef.current?.naturalHeight || marker.point.height || 0,
+              }}
+            />
+          ) : null}
         </div>
         <div
           className={styles.webPipResize}

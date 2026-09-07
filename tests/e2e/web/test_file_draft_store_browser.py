@@ -7,7 +7,6 @@ import tempfile
 from threading import Thread
 
 import pytest
-from playwright.sync_api import sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -36,6 +35,8 @@ esbuild.buildSync({
 
 
 def test_production_indexeddb_draft_store_is_atomic_across_connections() -> None:
+    from playwright.sync_api import sync_playwright
+
     with tempfile.TemporaryDirectory(prefix="openprogram-draft-browser-") as directory:
         bundle = Path(directory) / "file-draft-store.js"
         _bundle_production_store(bundle)

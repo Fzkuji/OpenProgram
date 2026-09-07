@@ -1235,103 +1235,23 @@ def test_registered_gui_agent_browser_surface_uses_standard_entry(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    (
-        "close_result", "runtime_behavior", "teardown_raises",
-        "expected_status", "expected_success",
-    ),
+    ("runtime_behavior", "teardown_raises", "expected_status", "expected_reason"),
     [
-        ({"ok": True}, "verify", False, "succeeded", True),
-        ({"ok": True}, "raise", False, None, None),
-        (
-            {
-                "ok": False,
-                "reason_code": "desktop_unavailable",
-                "error": "the background Page could not be closed",
-            },
-            "verify",
-            False,
-            "infeasible",
-            False,
-        ),
-        (
-            {
-                "ok": False,
-                "reason_code": "desktop_unavailable",
-                "error": "the background Page could not be closed",
-            },
-            "timeout",
-            False,
-            "infeasible",
-            False,
-        ),
-        (
-            {
-                "ok": False,
-                "reason_code": "desktop_unavailable",
-                "error": "the background Page could not be closed",
-            },
-            "miss",
-            False,
-            "infeasible",
-            False,
-        ),
-        (
-            {
-                "ok": False,
-                "reason_code": "desktop_unavailable",
-                "error": "the background Page could not be closed",
-            },
-            "raise",
-            False,
-            "infeasible",
-            False,
-        ),
-        (
-            {
-                "ok": False,
-                "reason_code": "desktop_unavailable",
-                "error": "the background Page could not be closed",
-            },
-            "observe_cancel",
-            True,
-            "infeasible",
-            False,
-        ),
-        (
-            {
-                "ok": False,
-                "reason_code": "desktop_unavailable",
-                "error": "the background Page could not be closed",
-            },
-            "screenshot_timeout",
-            True,
-            "infeasible",
-            False,
-        ),
-        (
-            {"ok": True},
-            "observe_cancel",
-            True,
-            None,
-            None,
-        ),
-        (
-            {
-                "ok": False,
-                "reason_code": "desktop_unavailable",
-                "error": "the background Page could not be closed",
-            },
-            "cancel",
-            True,
-            "infeasible",
-            False,
-        ),
-        ({"ok": True}, "cancel", True, None, None),
+        ("verify", False, "succeeded", "verified"),
+        ("raise", False, None, None),
+        ("timeout", False, "failed", "timeout"),
+        ("miss", False, "failed", "tool_not_executed"),
+        ("observe_cancel", False, None, None),
+        ("observe_cancel", True, None, None),
+        ("screenshot_timeout", False, None, None),
+        ("cancel", False, None, None),
+        ("cancel", True, None, None),
+        ("verify", True, None, None),
     ],
 )
 def test_browser_capability_without_page_opens_background_page(
-    monkeypatch, close_result, runtime_behavior, teardown_raises,
-    expected_status, expected_success,
+    monkeypatch, runtime_behavior, teardown_raises,
+    expected_status, expected_reason,
 ):
     from openprogram.agent import surface_context
     from openprogram.agentic_programming.function import CancelledError
@@ -1360,10 +1280,16 @@ def test_browser_capability_without_page_opens_background_page(
     released = []
 
     class _Registry:
+        def __init__(self):
+            self.calls = []
+            self.released_owners = []
+            self.revoked = []
+
         def list_pages(self, **_kwargs):
             return {"ok": True, "pages": []}
 
         def execute(self, **kwargs):
+            self.calls.append(kwargs)
             if kwargs["command"] == "observe":
                 if runtime_behavior == "observe_cancel":
                     raise CancelledError("cancelled during first observe")
@@ -1382,11 +1308,13 @@ def test_browser_capability_without_page_opens_background_page(
                 raise RuntimeError("registry close failed")
             return {"ok": True, "closed": True}
 
-        def revoke_screenshot(self, _session_id):
+        def revoke_screenshot(self, session_id):
+            self.revoked.append(session_id)
             if runtime_behavior == "screenshot_timeout":
                 raise RuntimeError("screenshot revoke failed")
 
-        def release_owner(self, _owner_id):
+        def release_owner(self, owner_id):
+            self.released_owners.append(owner_id)
             if teardown_raises:
                 raise RuntimeError("registry owner close failed")
             return None
@@ -1419,7 +1347,8 @@ def test_browser_capability_without_page_opens_background_page(
                 ))
             return "The background Page title is Google."
 
-    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    registry = _Registry()
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
     monkeypatch.setattr(surface_context, "current", lambda: None)
     monkeypatch.setattr(
         surface_context, "capture_pages", lambda _context=None: context,
@@ -1441,7 +1370,7 @@ def test_browser_capability_without_page_opens_background_page(
     monkeypatch.setattr(
         surface_context,
         "close_page",
-        lambda value: closed.append(value) or close_result,
+        lambda value: closed.append(value) or {"ok": True},
     )
 
     call_kwargs = {
@@ -1483,7 +1412,12 @@ def test_browser_capability_without_page_opens_background_page(
             if runtime_behavior == "cancel"
             else RuntimeError
         )
-        with pytest.raises(expected_error, match="cancelled|model transport"):
+        match = (
+            "registry close failed|registry owner close failed"
+            if runtime_behavior == "verify" and teardown_raises
+            else "cancelled|model transport|screenshot payload"
+        )
+        with pytest.raises(expected_error, match=match):
             browser_module._run_browser_task_commands(**call_kwargs)
         result = None
     else:
@@ -1491,33 +1425,124 @@ def test_browser_capability_without_page_opens_background_page(
 
     if result is not None:
         assert result["status"] == expected_status
+        assert result["reason_code"] == expected_reason
         assert result["backend"] == DEFAULT_BACKEND
     assert opens == [(
         "https://www.google.com/",
         {"window_id": "window-1", "background": True},
     )]
-    assert closed == [opened_context]
+    assert closed == []
     assert context in released
-    if expected_success is False:
-        assert result["reason_code"] == "page_cleanup_failed"
-        previous_reason = {
-            "verify": "verified",
-            "miss": "tool_not_executed",
-            "raise": "runtime_error",
-            "observe_cancel": "cancelled",
-            "screenshot_timeout": "timeout",
-            "timeout": "timeout",
-            "cancel": "cancelled",
-        }[runtime_behavior]
-        expected_ending = (
-            "after the GUI task was verified"
-            if previous_reason == "verified" else
-            f"after the GUI task ended with {previous_reason}"
-        )
-        assert expected_ending in result["summary"]
-        assert "Close the remaining background Page" in result[
-            "handoff_instruction"
-        ]
+    assert registry.released_owners
+    if runtime_behavior != "observe_cancel":
+        assert any(call["command"] == "close" for call in registry.calls)
+    if runtime_behavior == "screenshot_timeout":
+        assert registry.revoked
+
+
+def test_malformed_auto_open_still_closes_unusable_page(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as browser_module
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
+
+    context = {"context_id": "ctx-empty", "window_id": "window-1", "surfaces": []}
+    opened_context = {
+        "context_id": "ctx-malformed",
+        "window_id": "window-1",
+        "surfaces": [{"tab_id": "tab-opened"}],
+    }
+    closed = []
+    released_owners = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def release_owner(self, owner_id):
+            released_owners.append(owner_id)
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: context,
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda url, **kwargs: opened_context,
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "close_page",
+        lambda value: closed.append(value) or {"ok": True},
+    )
+
+    result = browser_module._run_browser_task_commands(
+        task="inspect the page",
+        backend=DEFAULT_BACKEND,
+        max_steps=1,
+        max_seconds=10,
+        runtime=SimpleNamespace(),
+    )
+
+    assert closed == [opened_context]
+    assert result["status"] == "failed"
+    assert result["reason_code"] == "page_unavailable"
+    assert released_owners
+
+
+def test_malformed_auto_open_reports_close_failure(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as browser_module
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.programs.workflow.browser.web_use_runtime import DEFAULT_BACKEND
+
+    context = {"context_id": "ctx-empty", "window_id": "window-1", "surfaces": []}
+    opened_context = {
+        "context_id": "ctx-malformed-fail",
+        "window_id": "window-1",
+        "surfaces": [{"tab_id": "tab-opened"}],
+    }
+    closed = []
+
+    class _Registry:
+        def list_pages(self, **_kwargs):
+            return {"ok": True, "pages": []}
+
+        def release_owner(self, _owner_id):
+            return None
+
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: _Registry())
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context, "capture_pages", lambda _context=None: context,
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda url, **kwargs: opened_context,
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "close_page",
+        lambda value: closed.append(value) or {
+            "ok": False,
+            "error": "the background Page could not be closed",
+        },
+    )
+
+    result = browser_module._run_browser_task_commands(
+        task="inspect the page",
+        backend=DEFAULT_BACKEND,
+        max_steps=1,
+        max_seconds=10,
+        runtime=SimpleNamespace(),
+    )
+
+    assert closed == [opened_context]
+    assert result["reason_code"] == "page_cleanup_failed"
+    assert "Close the remaining background Page" in result["handoff_instruction"]
 
 
 def test_browser_capability_reuses_existing_origin_page(monkeypatch):

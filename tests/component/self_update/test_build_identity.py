@@ -85,11 +85,19 @@ def test_doctor_exposes_stable_check_ids(monkeypatch):
     from openprogram.cli.commands import doctor
     def healthy():
         return True, "Healthy", "checked"
+    system_access_rows = (
+        {"id": "system_access:screen_recording", "ok": True, "label": "Screen recording",
+         "detail": "granted: Authorized for this process.", "optional": True, "status": "granted"},
+        {"id": "system_access:accessibility", "ok": True, "label": "Desktop control",
+         "detail": "not_granted: Not authorized for this process.", "optional": True, "status": "not_granted"},
+    )
     monkeypatch.setattr(doctor, "CHECKS", (healthy,))
     monkeypatch.setattr(doctor, "runtime_http_checks", lambda: [(True, "runtime-http-registry", "checked")])
     monkeypatch.setattr("openprogram._compat.platform_environment_advisories", lambda _: [(True, "platform-check", "checked")])
+    monkeypatch.setattr("openprogram.system_access.doctor_rows", lambda: list(system_access_rows))
     assert doctor.run_checks() == [
         {"id": "healthy", "ok": True, "label": "Healthy", "detail": "checked"},
         {"id": "runtime_http:runtime-http-registry", "ok": True, "label": "runtime-http-registry", "detail": "checked"},
         {"id": "platform:platform-check", "ok": True, "label": "platform-check", "detail": "checked"},
+        *system_access_rows,
     ]

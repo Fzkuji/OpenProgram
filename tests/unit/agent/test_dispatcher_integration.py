@@ -173,7 +173,7 @@ def test_frozen_verifier_profile_reaches_real_loop_and_blocks_injected_browser(t
         assert profile["system_prompt"] == "Frozen verifier"
         return original_model(profile, override)
     monkeypatch.setattr(D, "_resolve_model", resolve)
-    monkeypatch.setattr(loop_runner, "_configure_web_use_tools", lambda *_: ([get_agent_tool("bash")], True))
+    monkeypatch.setattr(loop_runner, "_configure_web_use_tools", lambda *_, **_kwargs: ([get_agent_tool("bash")], True))
     text_stream = make_text_stream_fn(["verified"])
     async def stream(model, context, options):
         assert not context.tools

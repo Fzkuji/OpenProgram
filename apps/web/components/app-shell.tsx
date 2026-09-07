@@ -9,6 +9,7 @@ import { Sidebar } from "./sidebar/sidebar";
 import { RightSidebar } from "./right-sidebar/right-sidebar";
 import { CenterTabStrip } from "./center-tabs/center-tab-strip";
 import { WebTabPip } from "./center-tabs/web-tab-pip";
+import { BrowserResourceProjection } from "@/lib/state/browser-resource-projection";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   findCenterTabGroup,
@@ -642,6 +643,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       {/* Non-chat routes render their own page content via the router. */}
+      <BrowserResourceProjection />
       {!showChat && children}
       {/* Right sidebar — persistent across conversations. Hidden (not
          unmounted) on non-chat routes so its state survives. */}

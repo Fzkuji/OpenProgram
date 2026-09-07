@@ -120,6 +120,8 @@ export interface CenterTab {
   /** Agent-created page attribution, independent of the active session/view. */
   agentOpened?: boolean;
   agentSessionId?: string;
+  agentBranchId?: string;
+  agentExecutionId?: string;
   /** Explicitly keep an agent page in the top strip. */
   webPinned?: boolean;
   /** Web tabs only — favicon URL reported by the desktop shell; the
@@ -212,7 +214,9 @@ export interface CenterTabsState {
   /** Always append a distinct web tab for a native page popup. */
   openPopupWebTab: (url: string, openerTabId: string) => string;
   /** Create or reuse a web tab without focusing it or opening a split. */
-  markAgentWebTab: (id: string, sessionId?: string) => void;
+  markAgentWebTab: (id: string, sessionId?: string, attribution?: {
+    branchId?: string; executionId?: string;
+  }) => void;
   setWebTabPinned: (id: string, pinned: boolean) => void;
   ensureWebTab: (url: string) => string;
   /** Create a unique same-URL leaf without focusing it. */
@@ -655,21 +659,30 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     openPopupWebTab: (url, openerTabId) => {
       const id = nextPopupWebTabId(url);
-      set((s) => commitCenterTabsState(s, {
-        tabs: [
-          ...s.tabs,
-          { id, kind: "web", title: hostnameOf(url), url, openerTabId,
-            agentOpened: s.tabs.find((tab) => tab.id === openerTabId)?.agentOpened,
-            agentSessionId: s.tabs.find((tab) => tab.id === openerTabId)?.agentSessionId },
-        ],
-        activeId: id,
-      }));
+      set((s) => {
+        const opener = s.tabs.find((tab) => tab.id === openerTabId);
+        return commitCenterTabsState(s, {
+          tabs: [
+            ...s.tabs,
+            {
+              id, kind: "web", title: hostnameOf(url), url, openerTabId,
+              agentOpened: opener?.agentOpened,
+              agentSessionId: opener?.agentSessionId,
+              agentBranchId: opener?.agentBranchId,
+              agentExecutionId: opener?.agentExecutionId,
+            },
+          ],
+          activeId: opener?.agentOpened ? s.activeId : id,
+        });
+      });
       return id;
     },
 
-    markAgentWebTab: (id, sessionId) => set((s) => commitCenterTabsState(s, {
+    markAgentWebTab: (id, sessionId, attribution) => set((s) => commitCenterTabsState(s, {
       tabs: s.tabs.map((tab) => tab.id === id && tab.kind === "web"
-        ? { ...tab, agentOpened: true, agentSessionId: sessionId || undefined }
+        ? { ...tab, agentOpened: true, agentSessionId: sessionId || undefined,
+            agentBranchId: attribution?.branchId || tab.agentBranchId,
+            agentExecutionId: attribution?.executionId || tab.agentExecutionId }
         : tab),
     })),
 

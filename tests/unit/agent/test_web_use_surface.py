@@ -71,6 +71,45 @@ def test_surface_context_captures_preview_from_the_originating_socket(monkeypatc
     webtab.release_binding(binding_id)
 
 
+def test_surface_context_forwards_background_preview_without_activate(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.webui.ws_actions import webtab
+
+    ws = _WS()
+    sent = []
+
+    def request(bound_ws, command, timeout=5.0):
+        sent.append(command)
+        return {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "w:right",
+            "target_id": "target-right",
+            "url": "https://example.com/mirror",
+            "title": "Mirror",
+            "geometry_revision": 3,
+            "preview": {"visible_text_excerpt": "PiP", "aria_landmarks": [], "interactive_count": 0},
+        }
+
+    monkeypatch.setattr(webtab, "request_on_ws", request)
+    context = surface_context.capture({
+        "version": 1,
+        "window_id": "window-1",
+        "tab_id": "w:right",
+        "region": "right",
+        "access": "enabled",
+        "geometry_revision": 3,
+        "background": True,
+    }, ws)
+    assert sent == [{
+        "op": "preview", "window_id": "window-1", "tab_id": "w:right",
+        "expected_geometry_revision": 3, "background": True,
+    }]
+    binding_id = context["surfaces"][0]["binding_id"]
+    assert webtab._bindings[binding_id][8] is True
+    webtab.release_binding(binding_id)
+
+
 def test_disabled_surface_is_visible_to_model_but_has_no_preview_or_binding():
     from openprogram.agent import surface_context
 
@@ -1611,12 +1650,12 @@ def test_frontend_and_electron_expose_turn_surface_preview_contract():
     assert "export function surfaceRefForChat" in bridge
     assert "export function surfaceOriginForChat" in bridge
     assert 'd.op === "preview"' in bridge
-    assert "webTab.preview(tab.id)" in bridge
+    assert "webTab.preview(tab.id, d.background === true)" in bridge
     control = bridge[bridge.index("export function installDesktopMenuHandlers"):]
     geometry_guard = control.index("if (d.expected_geometry_revision")
-    assert geometry_guard < control.index("bridge.webTab.preview(tab.id)")
+    assert geometry_guard < control.index("bridge.webTab.preview(tab.id, d.background === true)")
     assert geometry_guard < control.index("bridge.webTab.activate(tab.id, d.url, true)")
-    assert 'preview: (id) => ipcRenderer.invoke("webtab:preview", id)' in preload
+    assert 'ipcRenderer.invoke("webtab:preview", id, allowBackground)' in preload
     assert 'ipcMain.handle("webtab:preview"' in main
     assert 'action: "webtab_register", window_id: desktopWindowId' in use_ws
     assert "visible_text_excerpt" in main
@@ -1870,7 +1909,7 @@ def test_subprocess_permission_snapshot_denies_nested_browser_page_before_bypass
     from dataclasses import replace
     from types import SimpleNamespace
 
-    from openprogram.agent.authority import local_owner_authority
+    from openprogram.agent.authority import local_owner_authority, runtime_authority
     from openprogram.agent.dispatcher import TurnRequest
     from openprogram.agent.permissions.approval import wrap_with_approval
     from openprogram.agent.process_runner import _permission_rules_from_snapshot
@@ -1886,13 +1925,19 @@ def test_subprocess_permission_snapshot_denies_nested_browser_page_before_bypass
     rules = _permission_rules_from_snapshot({
         "allow": [], "deny": ["browser_page"], "ask": [],
     })
+    parent_request = TurnRequest(
+        session_id="session-1", user_text="", agent_id="main", source="web",
+        **local_owner_authority(),
+    )
+    # Match runtime_attach -> process_runner: child authority is non-interactive,
+    # so its admitted snapshot is distinct from the owner's live project rules.
     child_request = replace(TurnRequest(
         session_id="session-1",
         user_text="",
         agent_id="main",
         source="web",
         permission_rules=rules,
-        **local_owner_authority(),
+        **runtime_authority(parent_request, "agentic/browser_agent"),
     ), permission_mode="bypass")
     tool = AgentTool(
         name="browser_page",

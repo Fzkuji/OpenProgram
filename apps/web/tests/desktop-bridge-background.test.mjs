@@ -31,11 +31,12 @@ registerHooks({
 const listeners = new Map();
 const storage = new Map();
 globalThis.window = {
+  fetch: globalThis.fetch,
   addEventListener(type, handler) {
     listeners.set(type, handler);
   },
   dispatchEvent() {},
-  location: { pathname: "/s/origin" },
+  location: { pathname: "/s/origin", hash: "" },
 };
 globalThis.localStorage = {
   getItem: (key) => storage.get(key) ?? null,
@@ -86,6 +87,7 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
   const captured = [];
   let activationTarget = null;
   let resolveRejects = true;
+  let resolutionTarget = null;
   window.openprogramDesktop = {
     isDesktop: true,
     windowId: "main",
@@ -97,7 +99,7 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
       async resolve(id) {
         resolved.push(id);
         if (resolveRejects) throw new Error("resolve rejected");
-        return null;
+        return resolutionTarget;
       },
       preview: async () => null,
       async capture(id) {
@@ -123,7 +125,11 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
   const sent = [];
   setSocket({
     readyState: WebSocket.OPEN,
-    send(payload) { sent.push(JSON.parse(payload)); },
+    send(payload) {
+      const message = JSON.parse(payload);
+      if (message.action === "webtab_result") sent.push(message);
+      else assert.equal(message.action, "webtab_closed", "only lifecycle notifications may accompany command replies");
+    },
   });
   installDesktopMenuHandlers();
   const closeTab = useCenterTabs.getState().closeTab;
@@ -137,7 +143,7 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
     closeTab,
     ensureExclusiveWebTab,
   });
-  const open = async (url, reqId, background = false) => {
+  const open = async (url, reqId, background = false, agent = false) => {
     listeners.get("op:ws-message")({
       detail: {
         type: "webtab.command",
@@ -146,7 +152,7 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
           url,
           req_id: reqId,
           window_id: "main",
-          session_id: "origin",
+          ...((background || agent) ? { session_id: "origin" } : {}),
           ...(background ? { background: true } : {}),
         },
       },
@@ -354,7 +360,10 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
   setDesktopSplitLayoutAvailable(true);
   setWebTabReady(otherId, true);
   sent.length = 0;
-  await open(otherUrl, "different-owner-split");
+  resolveRejects = false;
+  resolutionTarget = "different-owner-target";
+  await open(otherUrl, "different-owner-split", false, true);
+  resolutionTarget = null;
   const opened = useCenterTabs.getState().tabs.find(tab => tab.id === sent[0]?.tab_id);
   assert.notEqual(opened?.id, otherId);
   assert.equal(opened?.agentSessionId, "origin");
@@ -473,7 +482,11 @@ test("background Page resolve deadline never sends a late reply", async (t) => {
   };
   setSocket({
     readyState: WebSocket.OPEN,
-    send(payload) { sent.push(JSON.parse(payload)); },
+    send(payload) {
+      const message = JSON.parse(payload);
+      if (message.action === "webtab_result") sent.push(message);
+      else assert.equal(message.action, "webtab_closed", "only lifecycle notifications may accompany command replies");
+    },
   });
 
   const resetTabs = () => {
@@ -685,7 +698,11 @@ test("visible route failure rolls back only an agent-created Page", async () => 
   const sent = [];
   setSocket({
     readyState: WebSocket.OPEN,
-    send(payload) { sent.push(JSON.parse(payload)); },
+    send(payload) {
+      const message = JSON.parse(payload);
+      if (message.action === "webtab_result") sent.push(message);
+      else assert.equal(message.action, "webtab_closed", "only lifecycle notifications may accompany command replies");
+    },
   });
   window.location.pathname = "/settings";
 

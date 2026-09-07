@@ -208,7 +208,8 @@ def _patched_run_loop(stream_fn):
 
 
 def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-                           *, wait_id: str):
+                           *, wait_id: str, tool: str, args: dict,
+                           tool_call_id: str):
     """Create the durable approval safe point consumed by the wrapper."""
     import openprogram.execution as execution_module
     from openprogram.execution import RuntimeControlService
@@ -242,10 +243,10 @@ def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
         attempt_id=attempt.attempt_id, generation=attempt.generation,
         kind="approval",
         request={
-            "prompt": "允许执行 dangerprobe？", "options": ["允许", "拒绝"],
-            "multi": False, "allow_custom": False, "detail": "dangerprobe",
-            "schema": {}, "questions": [], "tool": "dangerprobe", "args": {},
-            "tool_call_id": "call-dangerprobe",
+            "prompt": f"允许执行 {tool}？", "options": ["允许", "拒绝"],
+            "multi": False, "allow_custom": False, "detail": tool,
+            "schema": {}, "questions": [], "tool": tool, "args": dict(args),
+            "tool_call_id": tool_call_id,
         },
         policy_snapshot={
             "version": 1, "kind": "approval",
@@ -551,6 +552,8 @@ def test_approval_required_consumes_typed_durable_answer(
 
     store, service, wait = _durable_approval_wait(
         tmp_path, monkeypatch, wait_id="wait_dangerprobe_allow",
+        tool="dangerprobe", args={"target": "x"},
+        tool_call_id="call-dangerprobe",
     )
     _answer_wait(store, service, wait, {"answer": "允许", "scope": "once"})
     from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id
@@ -591,6 +594,7 @@ def test_approval_denied_aborts_tool_before_execution(
 
     store, service, wait = _durable_approval_wait(
         tmp_path, monkeypatch, wait_id="wait_risky_decline",
+        tool="risky", args={}, tool_call_id="call-risky",
     )
     _decline_wait(store, service, wait)
     from openprogram.agent.run_control import reset_preapproved_wait_id, set_preapproved_wait_id

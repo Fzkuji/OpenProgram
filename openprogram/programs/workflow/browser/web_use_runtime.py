@@ -35,6 +35,16 @@ def _session_frame_id(session: WebUseSession) -> str:
     return ""
 
 
+def _session_viewport(session: WebUseSession) -> dict[str, Any] | None:
+    viewport = session.state.get("viewport")
+    if isinstance(viewport, dict):
+        return viewport
+    frame = getattr(session.controller, "_frame", None)
+    if isinstance(frame, dict) and isinstance(frame.get("viewport"), dict):
+        return frame["viewport"]
+    return None
+
+
 def _result_frame_id(result: Any) -> str:
     payload = (
         result.json_data
@@ -74,6 +84,7 @@ class WebUseSession:
     )
     closing: bool = False
     closed: bool = False
+    inflight_ops: int = 0
 
 
 class ControllerBackend:
@@ -399,6 +410,27 @@ class WebUseSessionRegistry:
             if session is None:
                 return {"ok": False, "reason_code": "web_session_not_found"}
 
+        try:
+            from openprogram.agent.run_control import get_current_execution_id
+            from openprogram.browser_resources import attribute_operating_page
+            execution_id = get_current_execution_id()
+            if execution_id:
+                session.state["execution_id"] = execution_id
+                attribute_operating_page(session.page_key)
+        except Exception:
+            pass
+
+        if command in {"act", "verify"}:
+            from openprogram.browser_resources import writes_fenced
+            if writes_fenced(session.page_key):
+                return {
+                    "ok": False,
+                    "reason_code": "write_fenced",
+                    "web_session_id": session.id,
+                    "backend": session.backend,
+                }
+
+        follow_receipt = None
         with session.operation_lock:
             with self._lock:
                 owner_closing = (
@@ -406,6 +438,15 @@ class WebUseSessionRegistry:
                 )
             if session.closing or session.closed or owner_closing:
                 return {"ok": False, "reason_code": "web_session_not_found"}
+            if command in {"act", "verify"}:
+                from openprogram.browser_resources import writes_fenced
+                if writes_fenced(session.page_key):
+                    return {
+                        "ok": False,
+                        "reason_code": "write_fenced",
+                        "web_session_id": session.id,
+                        "backend": session.backend,
+                    }
             if session.owner_id and owner_id != session.owner_id:
                 return {"ok": False, "reason_code": "web_session_owner_mismatch"}
             if backend and backend != session.backend:
@@ -481,18 +522,82 @@ class WebUseSessionRegistry:
                     }
 
             adapter = self._adapters[session.backend]
-            guard_args = {}
-            if before_dispatch is not None:
-                if not getattr(adapter, "supports_operation_guard", False):
-                    return {"ok": False, "reason_code": "guarded_dispatch_unsupported"}
-                guard_args["before_dispatch"] = before_dispatch
-            try:
+            def combined_guard():
+                if command in {"act", "verify"}:
+                    from openprogram.browser_resources import writes_fenced
+                    if writes_fenced(session.page_key):
+                        raise PermissionError("write_fenced")
                 if before_dispatch is not None:
+                    before_dispatch()
+            use_guard = before_dispatch is not None or command in {"act", "verify"}
+            guard_args = {}
+            if use_guard:
+                if before_dispatch is not None and not getattr(adapter, "supports_operation_guard", False):
+                    return {"ok": False, "reason_code": "guarded_dispatch_unsupported"}
+                if getattr(adapter, "supports_operation_guard", False):
+                    guard_args["before_dispatch"] = combined_guard
+                elif command in {"act", "verify"} and writes_fenced(session.page_key):
+                    return {
+                        "ok": False, "reason_code": "write_fenced",
+                        "web_session_id": session.id, "backend": session.backend,
+                    }
+            dispatched_op_id = None
+            try:
+                if use_guard:
+                    combined_guard()
+                elif before_dispatch is not None:
                     before_dispatch()
                 if command == "observe":
                     result = adapter.observe(session, params, **guard_args)
+                    frame = getattr(session.controller, "_frame", None)
+                    if isinstance(frame, dict) and isinstance(frame.get("viewport"), dict):
+                        session.state["viewport"] = frame["viewport"]
                 elif command == "act":
-                    result = adapter.act(session, params, **guard_args)
+                    from openprogram.browser_resources import (
+                        report_browser_operation, sanitize_operation,
+                    )
+                    from openprogram.agent.run_control import get_current_execution_id
+                    dispatched_op_id = "op_" + uuid.uuid4().hex[:12]
+                    pre_frame = _session_frame_id(session)
+                    viewport = _session_viewport(session)
+                    execution_id = get_current_execution_id()
+                    dispatched = sanitize_operation(
+                        action=str(params.get("action") or ""),
+                        arguments=params, result={"ok": True},
+                        frame_id=pre_frame,
+                        geometry_revision=session.geometry_revision,
+                        phase="dispatched", operation_id=dispatched_op_id,
+                        viewport=viewport,
+                    )
+                    session.inflight_ops = int(getattr(session, "inflight_ops", 0) or 0) + 1
+                    try:
+                        try:
+                            report_browser_operation(
+                                session.page_key, dispatched, follow=True,
+                                execution_id=execution_id,
+                            )
+                        except Exception:
+                            pass
+                        result = adapter.act(session, params, **guard_args)
+                    finally:
+                        session.inflight_ops = max(
+                            0, int(getattr(session, "inflight_ops", 0) or 0) - 1,
+                        )
+                    failed = isinstance(result, dict) and result.get("ok") is False
+                    follow_receipt = [(
+                        session.page_key,
+                        sanitize_operation(
+                            action=str(params.get("action") or ""),
+                            arguments=params, result=result,
+                            frame_id=pre_frame or _result_frame_id(result),
+                            geometry_revision=session.geometry_revision,
+                            phase="failed" if failed else "acknowledged",
+                            operation_id=dispatched_op_id,
+                            viewport=viewport,
+                        ),
+                        not failed,
+                        execution_id,
+                    )]
                 elif command == "verify":
                     result = adapter.verify(session, params, **guard_args)
                 elif command == "close":
@@ -500,6 +605,42 @@ class WebUseSessionRegistry:
                     result = {"ok": True, "closed": True}
                 else:
                     return {"ok": False, "reason_code": "invalid_command"}
+            except PermissionError as exc:
+                if "write_fenced" in str(exc):
+                    if command == "act" and dispatched_op_id:
+                        from openprogram.browser_resources import sanitize_operation
+                        from openprogram.agent.run_control import get_current_execution_id
+                        follow_receipt = [(
+                            session.page_key,
+                            sanitize_operation(
+                                action=str(params.get("action") or ""),
+                                arguments=params,
+                                result={"ok": False, "reason_code": "write_fenced"},
+                                frame_id=_session_frame_id(session),
+                                geometry_revision=session.geometry_revision,
+                                phase="failed", operation_id=dispatched_op_id,
+                                viewport=_session_viewport(session),
+                            ),
+                            False,
+                            get_current_execution_id(),
+                        )]
+                    if follow_receipt:
+                        from openprogram.browser_resources import report_browser_operation
+                        for page_key, operation, follow, execution_id in follow_receipt:
+                            try:
+                                report_browser_operation(
+                                    page_key, operation, follow=follow,
+                                    execution_id=execution_id,
+                                )
+                            except Exception:
+                                pass
+                    return {
+                        "ok": False, "reason_code": "write_fenced",
+                        "web_session_id": session.id, "backend": session.backend,
+                    }
+                if command == "observe" and not session.closing:
+                    self._cleanup_session(session, suppress_errors=True)
+                raise
             except BaseException as exc:
                 if command == "observe" and not session.closing:
                     self._cleanup_session(session, suppress_errors=True)
@@ -521,12 +662,38 @@ class WebUseSessionRegistry:
                     ),
                     "observe_required": True,
                 }
+                if dispatched_op_id:
+                    from openprogram.browser_resources import sanitize_operation
+                    from openprogram.agent.run_control import get_current_execution_id
+                    follow_receipt = [(
+                        session.page_key,
+                        sanitize_operation(
+                            action=str(params.get("action") or ""),
+                            arguments=params, result=result,
+                            frame_id=_session_frame_id(session),
+                            geometry_revision=session.geometry_revision,
+                            phase="failed", operation_id=dispatched_op_id,
+                            viewport=_session_viewport(session),
+                        ),
+                        False,
+                        get_current_execution_id(),
+                    )]
 
             frame_id = _result_frame_id(result)
             if frame_id:
                 session.state["frame_id"] = frame_id
             if created_session and not frame_id:
                 self._cleanup_session(session, suppress_errors=True)
+
+        if follow_receipt:
+            from openprogram.browser_resources import report_browser_operation
+            for page_key, operation, follow, execution_id in follow_receipt:
+                try:
+                    report_browser_operation(
+                        page_key, operation, follow=follow, execution_id=execution_id,
+                    )
+                except Exception:
+                    pass
 
         if isinstance(result, ToolReturn):
             metadata = (
@@ -601,6 +768,27 @@ class WebUseSessionRegistry:
             released.add(key)
         return len(capabilities)
 
+    def invalidate_page_frames(self, page_key: str) -> None:
+        with self._lock:
+            sessions = [item for item in self._sessions.values() if item.page_key == page_key]
+        for session in sessions:
+            with session.operation_lock:
+                session.state.pop("frame_id", None)
+                session.state.pop("viewport", None)
+                controller = session.controller
+                if controller is None:
+                    continue
+                invalidate = getattr(controller, "invalidate_external_frame", None)
+                if callable(invalidate):
+                    with suppress(Exception):
+                        invalidate()
+                    continue
+                controller._frame = None
+                if hasattr(controller, "_screenshot_frame"):
+                    controller._screenshot_frame = ""
+                if hasattr(controller, "_screenshot_viewport"):
+                    controller._screenshot_viewport = None
+
     def revoke_screenshot(self, web_session_id: str) -> None:
         with self._lock:
             session = self._sessions.get(web_session_id)
@@ -627,6 +815,7 @@ class WebUseSessionRegistry:
                 self._page_capabilities.pop(token, None)
                 if not value["consumed"]:
                     capabilities.append(value)
+        page_keys = [session.page_key for session in sessions if session.page_key]
         released = set()
         errors = []
         try:
@@ -655,6 +844,12 @@ class WebUseSessionRegistry:
         finally:
             with self._lock:
                 self._closing_owners.discard(owner_id)
+        try:
+            from openprogram.browser_resources import reconcile_resource_control
+            for page_key in dict.fromkeys(page_keys):
+                reconcile_resource_control(page_key)
+        except Exception:
+            pass
 
         if errors:
             raise errors[0]

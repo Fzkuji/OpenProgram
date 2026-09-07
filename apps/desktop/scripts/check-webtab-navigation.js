@@ -321,6 +321,7 @@ vm.runInContext(
     activateView,
     resolveView,
     inspectView,
+    previewView,
     setPipZoom,
     runNativeNavigation,
     registerWebTabIpc,
@@ -334,6 +335,8 @@ vm.runInContext(
     contextMenuRequestedX,
     ensureView,
     destroyView,
+    showActionView,
+    emitHumanInput,
     validateTransferPayload:
       typeof validateTransferPayload === "function" ? validateTransferPayload : undefined,
     reparentRecords:
@@ -459,6 +462,13 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   let canGoBack = false;
   let canGoForward = false;
   const webContentsListeners = new Map();
+  const debuggerCommands = [];
+  const capturePageArgs = [];
+  const focusCalls = [];
+  const executeJavaScriptCalls = [];
+  const delayedDebugger = new Map();
+  let delayPreview = false;
+  let pendingPreviewResolve = null;
   const nativeCalls = {
     reload: 0,
     stop: 0,
@@ -501,10 +511,23 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     debugger: {
       isAttached() { return debuggerAttached; },
       attach() { debuggerAttached = true; },
-      sendCommand(method) {
-        assert.equal(method, "Target.getTargetInfo");
-        targetCalls += 1;
-        return Promise.resolve({ targetInfo: { targetId: `${id}-target` } });
+      sendCommand(method, params) {
+        debuggerCommands.push({ method, params });
+        let result;
+        if (method === "Target.getTargetInfo") {
+          targetCalls += 1;
+          result = { targetInfo: { targetId: `${id}-target` } };
+        } else if (typeof method === "string" && method.startsWith("Overlay.")) {
+          result = {};
+        } else {
+          return Promise.reject(new Error(`unexpected debugger method ${method}`));
+        }
+        if (delayedDebugger.has(method)) {
+          return new Promise((resolve) => {
+            delayedDebugger.get(method).push(() => resolve(result));
+          });
+        }
+        return Promise.resolve(result);
       },
       detach() { debuggerAttached = false; },
     },
@@ -544,8 +567,9 @@ function controlledRecord(id, currentUrl = "", loading = false) {
       }
       return Promise.resolve(printPdfResult);
     },
-    capturePage() {
+    capturePage(...args) {
       nativeCalls.capturePage += 1;
+      capturePageArgs.push(args);
       const image = {
         isEmpty: () => false,
         toDataURL: () => "data:image/png;base64,TEST",
@@ -554,6 +578,21 @@ function controlledRecord(id, currentUrl = "", loading = false) {
         return new Promise((resolve) => { pendingCaptureResolve = resolve; });
       }
       return Promise.resolve(image);
+    },
+    focus() { focusCalls.push("focus"); },
+    executeJavaScript(script, userGesture) {
+      executeJavaScriptCalls.push([script, userGesture]);
+      const result = {
+        visible_text_excerpt: "excerpt",
+        text_truncated: false,
+        aria_landmarks: [],
+        landmarks_truncated: false,
+        interactive_count: 0,
+      };
+      if (delayPreview) {
+        return new Promise((resolve) => { pendingPreviewResolve = () => resolve(result); });
+      }
+      return Promise.resolve(result);
     },
     isDestroyed() { return webContentsDestroyed; },
     close() { closeCalls += 1; },
@@ -604,6 +643,26 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     boundsCalls,
     closeCallCount: () => closeCalls,
     targetCallCount: () => targetCalls,
+    debuggerCommands,
+    isDebuggerAttached: () => debuggerAttached,
+    capturePageArgs,
+    focusCalls,
+    executeJavaScriptCalls,
+    delayDebuggerMethod(method) {
+      if (!delayedDebugger.has(method)) delayedDebugger.set(method, []);
+    },
+    completeDebuggerMethod(method) {
+      const pending = delayedDebugger.get(method) || [];
+      delayedDebugger.delete(method);
+      for (const complete of pending) complete();
+    },
+    delayExecuteJavaScript() { delayPreview = true; },
+    completeExecuteJavaScript() {
+      delayPreview = false;
+      const resolve = pendingPreviewResolve;
+      pendingPreviewResolve = null;
+      resolve?.();
+    },
     windowOpen: (details) => windowOpenHandler?.(details),
     nativeCalls,
     editCalls,
@@ -766,6 +825,7 @@ async function checkPopupCreatesIndependentRendererTab() {
     ["Paste", "paste"],
     ["Select All", "selectAll"],
   ];
+  const humanBeforeEdit = humanInputMessages(win).length;
   for (const [label] of editActions) {
     const item = menuTemplate.find((candidate) => candidate.label === label);
     assert.ok(item,
@@ -781,6 +841,11 @@ async function checkPopupCreatesIndependentRendererTab() {
     paste: 1,
     selectAll: 1,
   });
+  assert.deepEqual(
+    plain(humanInputMessages(win).slice(humanBeforeEdit).map((item) => item.kind)),
+    ["key", "key", "key", "key"],
+    "Undo/Redo/Cut/Paste emit sanitized human input; Copy and Select All are passive",
+  );
 
   const mixedEditFlags = {
     canUndo: false,
@@ -966,7 +1031,20 @@ function checkPreloadWindowIdentity() {
   exposed.webTab.zoom("pane-a", "in");
   exposed.webTab.print("pane-a");
   exposed.webTab.capture("pane-a");
+  exposed.webTab.preview("pane-a");
+  exposed.webTab.preview("pane-a", true);
   exposed.webTab.setPipZoom("pane-a", 640);
+  const marker = {
+    x: 12,
+    y: 24,
+    width: 800,
+    height: 600,
+    sequence: 4,
+    generation: 5,
+    resourceId: "page:incarnation-a:1",
+  };
+  exposed.webTab.showAction("pane-a", marker);
+  exposed.webTab.showAction("pane-a", null);
   assert.deepEqual(sent.slice(-3), [
     ["webtab:find", "pane-a", "needle", { forward: false, findNext: true }],
     ["webtab:stop-find", "pane-a", "clearSelection"],
@@ -976,6 +1054,10 @@ function checkPreloadWindowIdentity() {
     ["webtab:zoom", "pane-a", "in"],
     ["webtab:print", "pane-a"],
     ["webtab:capture", "pane-a"],
+    ["webtab:preview", "pane-a", undefined],
+    ["webtab:preview", "pane-a", true],
+    ["webtab:show-action", "pane-a", marker],
+    ["webtab:show-action", "pane-a", null],
   ]);
 }
 
@@ -1018,6 +1100,52 @@ function checkPreloadPopupSubscription() {
   }]);
   unsubscribe();
   assert.equal(listeners.has("webtab:popup"), false);
+}
+
+function checkPreloadHumanInputSubscription() {
+  const listeners = new Map();
+  let exposed = null;
+  const preloadSandbox = {
+    CustomEvent: class CustomEvent {},
+    process: { argv: ["electron"] },
+    window: { dispatchEvent() {} },
+    require(id) {
+      if (id !== "electron") return require(id);
+      return {
+        contextBridge: {
+          exposeInMainWorld(_name, value) { exposed = value; },
+        },
+        ipcRenderer: {
+          send() {},
+          invoke() { return Promise.resolve(null); },
+          on(channel, listener) { listeners.set(channel, listener); },
+          removeListener(channel, listener) {
+            if (listeners.get(channel) === listener) listeners.delete(channel);
+          },
+        },
+      };
+    },
+  };
+  vm.createContext(preloadSandbox);
+  vm.runInContext(preloadSource, preloadSandbox, { filename: "apps/desktop/preload.js" });
+
+  const received = [];
+  const unsubscribe = exposed.webTab.onHumanInput((payload) => received.push(payload));
+  const payload = {
+    id: "pane-a",
+    windowId: "window-from-main",
+    sequence: 3,
+    kind: "pointer",
+  };
+  listeners.get("webtab:human-input")?.({}, payload);
+  assert.deepEqual(received, [payload]);
+  assert.equal(
+    Object.keys(received[0]).sort().join(","),
+    "id,kind,sequence,windowId",
+    "human-input payload must not include typed text, key values, coordinates, or URLs",
+  );
+  unsubscribe();
+  assert.equal(listeners.has("webtab:human-input"), false);
 }
 
 function checkPreloadLocalFilePath() {
@@ -1282,6 +1410,15 @@ async function checkVisibleCollectionAndActivation() {
   assert.equal(a.visibility.length, backgroundVisibilityCalls);
   assert.equal(a.targetCallCount(), backgroundTargetCalls + 1);
 
+  assert.equal(
+    await hooks.previewView(ctx, "a"),
+    null,
+    "preview stays visible-only by default",
+  );
+  assert.equal(await hooks.previewView(ctx, "a", false), null);
+  assert.equal(a.executeJavaScriptCalls.length, 0);
+  assert.equal(a.visibility.length, backgroundVisibilityCalls);
+
   // Page inventory must read the native Page's current URL/title. The tabs
   // store may still contain the pre-navigation metadata for a background Page.
   const live = controlledRecord("live-title", "https://live.example/path");
@@ -1396,6 +1533,16 @@ async function checkSenderOwnership() {
   assert.equal(await ipcHandlers.get("webtab:zoom")(eventB, "owned-a", "in"), null);
   assert.equal(await ipcHandlers.get("webtab:print")(eventB, "owned-a"), false);
   assert.equal(await ipcHandlers.get("webtab:capture")(eventB, "owned-a"), null);
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")(eventB, "owned-a", {
+      x: 1,
+      y: 1,
+      width: 200,
+      height: 100,
+      sequence: 1,
+    }),
+    false,
+  );
   ipcListeners.get("webtab:set-pip-zoom")(eventB, "owned-a", 640);
   ipcListeners.get("webtab:set-bounds")(
     eventB,
@@ -2843,6 +2990,16 @@ async function checkLockedRecordsRejectOrdinaryIpc() {
   assert.equal(
     await ipcHandlers.get("webtab:capture")(eventFor(destinationWin), "locked-ipc-web"),
     null,
+  );
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")(eventFor(destinationWin), "locked-ipc-web", {
+      x: 1,
+      y: 1,
+      width: 410,
+      height: 330,
+      sequence: 1,
+    }),
+    false,
   );
   ipcListeners.get("webtab:set-pip-zoom")(
     eventFor(destinationWin),
@@ -4736,6 +4893,8 @@ assert.doesNotMatch(source, /\bconst views = new Map\(\)/);
 assert.doesNotMatch(source, /\bvisibleViewId\b/);
 assert.match(source, /ipcMain\.on\("webtab:sync-visible"/);
 assert.match(source, /ipcMain\.on\("webtab:set-pip-zoom"/);
+assert.match(source, /ipcMain\.handle\("webtab:show-action"/);
+assert.match(source, /webtab:human-input/);
 assert.match(source, /const PIP_VIRTUAL_WIDTH = 1920/);
 assert.match(source, /if \(!record\.pipLayoutZoom\) wc\.setZoomFactor\(factor\)/);
 assert.match(source, /ipcMain\.on\("tab-transfer:prepare"/);
@@ -4948,6 +5107,682 @@ async function checkCrossWindowHoverZOrder() {
   focusedWindow = null;
 }
 
+function humanInputMessages(win) {
+  return win.sent
+    .filter(([channel]) => channel === "webtab:human-input")
+    .map(([, payload]) => payload);
+}
+
+async function flushAsync() {
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+}
+
+async function checkBackgroundPreview() {
+  hooks.registerWebTabIpc();
+  const winA = fakeWindow(811);
+  const winB = fakeWindow(812);
+  const ctxA = registerContext("preview-a", winA);
+  const ctxB = registerContext("preview-b", winB);
+  const record = hooks.ensureView(ctxA, "mirror-page", "https://example.com/mirror");
+  const controlled = generatedNativeRecords.at(-1);
+  controlled.controls[0].resolve();
+  await record.navigation?.promise;
+  hooks.syncVisibleViews(ctxA, [{
+    id: "mirror-page",
+    bounds: { x: 8, y: 9, width: 640, height: 480 },
+  }]);
+  hooks.hideView(ctxA, "mirror-page");
+  const visibility = controlled.visibility.slice();
+  const currentBounds = controlled.currentBounds();
+  const zoom = controlled.nativeCalls.zoom.slice();
+
+  assert.equal(
+    await ipcHandlers.get("webtab:preview")({ sender: winA.webContents }, "mirror-page"),
+    null,
+    "hidden preview is denied without allowBackground",
+  );
+  assert.equal(controlled.executeJavaScriptCalls.length, 0);
+
+  const preview = plain(await ipcHandlers.get("webtab:preview")(
+    { sender: winA.webContents },
+    "mirror-page",
+    true,
+  ));
+  assert.equal(preview.tab_id, "mirror-page");
+  assert.equal(preview.target_id, `${controlled.record.id}-target`);
+  assert.equal(preview.preview.visible_text_excerpt, "excerpt");
+  assert.equal(controlled.executeJavaScriptCalls.at(-1)[1], true);
+  assert.deepEqual(controlled.currentBounds(), currentBounds);
+  assert.deepEqual(controlled.visibility, visibility);
+  assert.deepEqual(controlled.nativeCalls.zoom, zoom);
+  assert.deepEqual(controlled.focusCalls, []);
+  assert.equal(ctxA.visibleViewIds.has("mirror-page"), false);
+
+  assert.equal(
+    await ipcHandlers.get("webtab:preview")({ sender: winB.webContents }, "mirror-page", true),
+    null,
+    "foreign window cannot preview an unowned view",
+  );
+
+  controlled.delayExecuteJavaScript();
+  const pendingDestroyed = ipcHandlers.get("webtab:preview")(
+    { sender: winA.webContents },
+    "mirror-page",
+    true,
+  );
+  hooks.destroyView(ctxA, "mirror-page");
+  controlled.completeExecuteJavaScript();
+  assert.equal(await pendingDestroyed, null, "destroyed view rejects in-flight background preview");
+
+  const live = hooks.ensureView(ctxA, "transfer-preview", "https://example.com/xfer");
+  const transferred = generatedNativeRecords.at(-1);
+  transferred.controls[0].resolve();
+  transferred.delayExecuteJavaScript();
+  const dest = registerContext("preview-dest", fakeWindow(813));
+  const pendingTransfer = ipcHandlers.get("webtab:preview")(
+    { sender: winA.webContents },
+    "transfer-preview",
+    true,
+  );
+  hooks.reparentRecords(ctxA, dest, [live]);
+  transferred.completeExecuteJavaScript();
+  assert.equal(await pendingTransfer, null, "transferred view rejects in-flight background preview");
+  assert.deepEqual(transferred.focusCalls, []);
+
+  hooks.windows.delete(ctxA.id);
+  hooks.windows.delete(ctxB.id);
+  hooks.windows.delete(dest.id);
+}
+
+async function checkActionCueFreshness() {
+  hooks.registerWebTabIpc();
+  const win = fakeWindow(821);
+  const ctx = registerContext("cue-fresh", win);
+  hooks.ensureView(ctx, "cue-page", "https://example.com/cue");
+  const controlled = generatedNativeRecords.at(-1);
+  controlled.controls[0].resolve();
+  hooks.syncVisibleViews(ctx, [{
+    id: "cue-page",
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  }]);
+  const marker = { x: 10, y: 10, width: 800, height: 600, sequence: 4 };
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: win.webContents }, "cue-page", marker),
+    true,
+  );
+  const highlights = () => controlled.debuggerCommands
+    .filter((item) => item.method === "Overlay.highlightRect").length;
+  const firstHighlights = highlights();
+  clock.advance(2000);
+  await flushAsync();
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: win.webContents }, "cue-page", marker),
+    false,
+    "equal sequence must not recreate a timed-out cue",
+  );
+  assert.equal(highlights(), firstHighlights);
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: win.webContents }, "cue-page", {
+      ...marker,
+      sequence: 5,
+    }),
+    true,
+  );
+  clock.advance(2000);
+  await flushAsync();
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: win.webContents }, "cue-page", {
+      ...marker,
+      sequence: 1,
+      generation: 2,
+    }),
+    true,
+    "a newer resource generation may restart sequence on the same Page",
+  );
+  clock.advance(2000);
+  await flushAsync();
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: win.webContents }, "cue-page", {
+      ...marker,
+      sequence: 9,
+      generation: 1,
+    }),
+    false,
+    "stale generation is rejected even with a higher sequence",
+  );
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: win.webContents }, "cue-page", {
+      ...marker,
+      sequence: 1,
+      generation: 2,
+    }),
+    false,
+    "duplicate generation+sequence after timeout must not recreate the cue",
+  );
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: win.webContents }, "cue-page", {
+      ...marker,
+      sequence: 2,
+      generation: 2,
+    }),
+    true,
+  );
+  hooks.destroyView(ctx, "cue-page");
+  hooks.windows.delete(ctx.id);
+}
+
+async function checkActionCueWorkerIncarnation() {
+  hooks.registerWebTabIpc();
+  const win = fakeWindow(833);
+  const ctx = registerContext("cue-incarnation", win);
+  hooks.ensureView(ctx, "retained-page", "https://example.com/retained");
+  const controlled = generatedNativeRecords.at(-1);
+  controlled.controls[0].resolve();
+  hooks.syncVisibleViews(ctx, [{
+    id: "retained-page",
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  }]);
+  const event = { sender: win.webContents };
+  const show = (extra) => ipcHandlers.get("webtab:show-action")(event, "retained-page", {
+    x: 10,
+    y: 10,
+    width: 800,
+    height: 600,
+    ...extra,
+  });
+  const clear = () => ipcHandlers.get("webtab:show-action")(event, "retained-page", null);
+
+  assert.equal(await show({ resourceId: "page:old:1", generation: 5, sequence: 12 }), true);
+  assert.equal(await clear(), true, "disconnect null clears the visual cue");
+  assert.equal(
+    await show({ resourceId: "page:old:1", generation: 1, sequence: 2 }),
+    false,
+    "same incarnation cannot restart generation after null",
+  );
+  assert.equal(
+    await show({ resourceId: "page:new:1", generation: 1, sequence: 2 }),
+    true,
+    "a new backend resourceId on the retained Page may restart generation",
+  );
+  assert.equal(
+    await show({ resourceId: "page:old:1", generation: 5, sequence: 13 }),
+    false,
+    "obsolete incarnation must not erase the newer cue",
+  );
+  assert.equal(
+    await show({ resourceId: "page:new:1", generation: 1, sequence: 2 }),
+    false,
+    "duplicate sequence in the new incarnation is stale",
+  );
+  assert.equal(await show({ resourceId: "page:new:1", generation: 1, sequence: 3 }), true);
+  assert.equal(await clear(), true);
+  assert.equal(
+    await show({ resourceId: "page:new:1", generation: 1, sequence: 3 }),
+    false,
+    "null must not reset freshness for stale replay after human yield",
+  );
+
+  controlled.delayDebuggerMethod("Overlay.enable");
+  const first = show({ resourceId: "page:newer:1", generation: 1, sequence: 1 });
+  const second = show({ resourceId: "page:newer:1", generation: 1, sequence: 2 });
+  await flushAsync();
+  controlled.completeDebuggerMethod("Overlay.enable");
+  const overlapping = [await first, await second];
+  assert.equal(overlapping[1], true, "overlapping higher sequence in the new incarnation must complete");
+  const pendingNull = clear();
+  assert.equal(await pendingNull, true);
+  await flushAsync();
+  assert.equal(controlled.isDebuggerAttached(), false);
+
+  hooks.destroyView(ctx, "retained-page");
+  hooks.windows.delete(ctx.id);
+}
+
+async function checkOverlappingActionCues() {
+  hooks.registerWebTabIpc();
+  const win = fakeWindow(832);
+  const ctx = registerContext("cue-overlap", win);
+  hooks.ensureView(ctx, "overlap-page", "https://example.com/overlap");
+  const controlled = generatedNativeRecords.at(-1);
+  controlled.controls[0].resolve();
+  hooks.syncVisibleViews(ctx, [{
+    id: "overlap-page",
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  }]);
+  const event = { sender: win.webContents };
+  const marker = { x: 10, y: 10, width: 800, height: 600 };
+  const show = (sequence) => ipcHandlers.get("webtab:show-action")(
+    event,
+    "overlap-page",
+    { ...marker, sequence },
+  );
+
+  controlled.delayDebuggerMethod("Overlay.enable");
+  const first = show(1);
+  const second = show(2);
+  await flushAsync();
+  assert.equal(controlled.debuggerCommands.filter((item) => item.method === "Overlay.enable").length >= 1, true);
+  controlled.completeDebuggerMethod("Overlay.enable");
+  const overlapping = [await first, await second];
+  assert.equal(
+    overlapping[1],
+    true,
+    "a later in-flight higher sequence must complete while Overlay.enable is pending",
+  );
+  assert.equal(controlled.isDebuggerAttached(), true);
+  const highlights = controlled.debuggerCommands.filter((item) => item.method === "Overlay.highlightRect");
+  assert.ok(highlights.length >= 1, "newer overlapping cue must paint Overlay.highlightRect");
+
+  controlled.delayDebuggerMethod("Overlay.enable");
+  controlled.delayDebuggerMethod("Overlay.hideHighlight");
+  const replacement = show(3);
+  const cleared = ipcHandlers.get("webtab:show-action")(event, "overlap-page", null);
+  await flushAsync();
+  controlled.completeDebuggerMethod("Overlay.enable");
+  controlled.completeDebuggerMethod("Overlay.hideHighlight");
+  assert.equal(await cleared, true, "explicit null must clear while hide/enable are pending");
+  await replacement;
+  await flushAsync();
+  assert.equal(
+    controlled.isDebuggerAttached(),
+    false,
+    "later null must release the Overlay debugger hold",
+  );
+
+  hooks.destroyView(ctx, "overlap-page");
+  hooks.windows.delete(ctx.id);
+}
+
+async function checkHumanInputYieldingAndActionCue() {
+  hooks.registerWebTabIpc();
+  const winA = fakeWindow(801);
+  const winB = fakeWindow(802);
+  const ctxA = registerContext("human-a", winA);
+  const ctxB = registerContext("human-b", winB);
+  const record = hooks.ensureView(ctxA, "live-page", "https://example.com/live");
+  const controlled = generatedNativeRecords.at(-1);
+  controlled.controls[0].resolve();
+  await record.navigation?.promise;
+  hooks.syncVisibleViews(ctxA, [{
+    id: "live-page",
+    bounds: { x: 10, y: 20, width: 800, height: 600 },
+  }]);
+
+  let prevented = false;
+  const mouseEvent = { preventDefault() { prevented = true; } };
+  controlled.emitWebContents("before-mouse-event", mouseEvent, {
+    type: "mouseDown",
+    x: 40,
+    y: 50,
+    button: "left",
+  });
+  assert.equal(prevented, false, "yielding must not preventDefault native pointer input");
+  assert.deepEqual(plain(humanInputMessages(winA).at(-1)), {
+    id: "live-page",
+    windowId: "human-a",
+    sequence: 1,
+    kind: "pointer",
+  });
+  assert.equal(
+    Object.keys(humanInputMessages(winA).at(-1)).sort().join(","),
+    "id,kind,sequence,windowId",
+  );
+  assert.equal(humanInputMessages(winB).length, 0, "human input follows the exact owner window");
+
+  prevented = false;
+  controlled.emitWebContents("before-mouse-event", mouseEvent, {
+    type: "mouseWheel",
+    deltaY: 40,
+  });
+  assert.equal(prevented, false);
+  const keyEvent = { preventDefault() { prevented = true; } };
+  controlled.emitWebContents("before-input-event", keyEvent, {
+    type: "keyDown",
+    key: "a",
+    code: "KeyA",
+    shift: false,
+    control: false,
+    alt: false,
+    meta: false,
+  });
+  assert.equal(prevented, false, "yielding must not steal page-operating keys");
+  assert.deepEqual(
+    plain(humanInputMessages(winA).slice(-2).map((item) => item.kind)),
+    ["scroll", "key"],
+  );
+  assert.equal(humanInputMessages(winA).at(-1).sequence, 3);
+
+  const ignoredBefore = humanInputMessages(winA).length;
+  for (const mouse of [
+    { type: "mouseMove", x: 1, y: 1 },
+    { type: "mouseEnter", x: 1, y: 1 },
+    { type: "mouseLeave", x: 1, y: 1 },
+    { type: "mouseUp", x: 1, y: 1 },
+  ]) {
+    controlled.emitWebContents("before-mouse-event", {
+      preventDefault() { prevented = true; },
+    }, mouse);
+  }
+  controlled.emitWebContents("before-input-event", { preventDefault() {} }, {
+    type: "keyDown",
+    key: "Tab",
+    code: "Tab",
+    shift: false,
+    control: false,
+    alt: false,
+    meta: false,
+  });
+  controlled.emitWebContents("before-input-event", { preventDefault() {} }, {
+    type: "keyDown",
+    key: "Tab",
+    code: "Tab",
+    shift: true,
+    control: false,
+    alt: false,
+    meta: false,
+  });
+  controlled.emitWebContents("before-input-event", { preventDefault() {} }, {
+    type: "keyUp",
+    key: "a",
+    code: "KeyA",
+  });
+  controlled.emitWebContents("before-input-event", { preventDefault() {} }, {
+    type: "keyDown",
+    key: "Shift",
+    code: "ShiftLeft",
+    shift: true,
+  });
+  controlled.emitWebContents("before-input-event", { preventDefault() {} }, {
+    type: "keyDown",
+    key: "Meta",
+    code: "MetaLeft",
+    meta: true,
+  });
+  controlled.emitWebContents("input-event", {}, { type: "mouseDown", x: 9, y: 9 });
+  assert.equal(
+    humanInputMessages(winA).length,
+    ignoredBefore,
+    "hover/move/Tab/keyup/modifiers and CDP input-event must not yield",
+  );
+
+  const navigateBefore = humanInputMessages(winA).length;
+  ipcListeners.get("webtab:reload")({ sender: winA.webContents }, "live-page");
+  ipcListeners.get("webtab:go-back")({ sender: winA.webContents }, "live-page");
+  ipcListeners.get("webtab:go-forward")({ sender: winA.webContents }, "live-page");
+  ipcListeners.get("webtab:navigate")(
+    { sender: winA.webContents },
+    "live-page",
+    "https://example.com/user",
+  );
+  assert.deepEqual(
+    plain(humanInputMessages(winA).slice(navigateBefore).map((item) => item.kind)),
+    ["navigate", "navigate", "navigate", "navigate"],
+  );
+  const afterUserNav = humanInputMessages(winA).length;
+  ipcListeners.get("webtab:ensure")(
+    { sender: winA.webContents },
+    "live-page",
+    "https://example.com/agent-ensure",
+  );
+  await ipcHandlers.get("webtab:resolve")({ sender: winA.webContents }, "live-page");
+  await ipcHandlers.get("webtab:activate")({ sender: winA.webContents }, "live-page");
+  assert.equal(
+    humanInputMessages(winA).length,
+    afterUserNav,
+    "agent ensure/resolve/activate must not be human navigation",
+  );
+
+  controlled.setNavigationAvailability({ back: true, forward: false });
+  controlled.emitWebContents("context-menu", {}, {
+    selectionText: "",
+    isEditable: false,
+    editFlags: {},
+  });
+  menuTemplate.find((item) => item.label === "Back").click();
+  assert.equal(humanInputMessages(winA).at(-1).kind, "navigate");
+
+  const hiddenId = "hidden-page";
+  hooks.ensureView(ctxA, hiddenId, "https://example.com/hidden");
+  const hidden = generatedNativeRecords.at(-1);
+  hidden.controls[0].resolve();
+  const hiddenBounds = hidden.currentBounds();
+  const hiddenVisibility = hidden.visibility.slice();
+  const hiddenZoom = hidden.nativeCalls.zoom.slice();
+  assert.equal(
+    await ipcHandlers.get("webtab:capture")({ sender: winA.webContents }, hiddenId),
+    "data:image/png;base64,TEST",
+  );
+  assert.equal(hidden.capturePageArgs.at(-1)[0], undefined);
+  assert.equal(hidden.capturePageArgs.at(-1)[1].stayHidden, true);
+  assert.deepEqual(hidden.currentBounds(), hiddenBounds);
+  assert.deepEqual(hidden.visibility, hiddenVisibility);
+  assert.deepEqual(hidden.nativeCalls.zoom, hiddenZoom);
+  assert.deepEqual(hidden.focusCalls, []);
+  assert.equal(ctxA.visibleViewIds.has(hiddenId), false);
+
+  const visibleVisibility = controlled.visibility.slice();
+  const visibleBounds = controlled.currentBounds();
+  const visibleZoom = controlled.nativeCalls.zoom.slice();
+  assert.equal(
+    await ipcHandlers.get("webtab:capture")({ sender: winA.webContents }, "live-page"),
+    "data:image/png;base64,TEST",
+  );
+  assert.equal(controlled.capturePageArgs.at(-1)[0], undefined);
+  assert.equal(controlled.capturePageArgs.at(-1)[1].stayHidden, true);
+  assert.deepEqual(controlled.currentBounds(), visibleBounds);
+  assert.deepEqual(controlled.visibility, visibleVisibility);
+  assert.deepEqual(controlled.nativeCalls.zoom, visibleZoom);
+  assert.deepEqual(controlled.focusCalls, []);
+
+  assert.equal(typeof ipcHandlers.get("webtab:show-action"), "function");
+  const marker = { x: 40, y: 80, width: 800, height: 600, sequence: 11 };
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", marker),
+    true,
+  );
+  const highlight = controlled.debuggerCommands.find((item) => item.method === "Overlay.highlightRect");
+  assert.ok(highlight, "owned annotation must use Overlay.highlightRect");
+  assert.ok(
+    highlight.params.width <= 20 && highlight.params.height <= 20,
+    "cue is a brief point mark, not the observed viewport rectangle",
+  );
+  assert.equal(controlled.isDebuggerAttached(), true);
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winB.webContents }, "live-page", {
+      ...marker,
+      sequence: 12,
+    }),
+    false,
+    "foreign window cannot annotate an unowned view",
+  );
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      ...marker,
+      sequence: 10,
+    }),
+    false,
+    "stale sequence must be rejected",
+  );
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      x: 900,
+      y: 80,
+      width: 800,
+      height: 600,
+      sequence: 12,
+    }),
+    false,
+    "out-of-bounds cue must be rejected",
+  );
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      x: 40,
+      y: 80,
+      width: 400,
+      height: 300,
+      sequence: 12,
+    }),
+    false,
+    "viewport-size mismatch is stale geometry",
+  );
+
+  const hideCount = () => controlled.debuggerCommands.filter((item) => item.method === "Overlay.hideHighlight").length;
+  const hidesBeforeGeometry = hideCount();
+  ipcListeners.get("webtab:set-bounds")(
+    { sender: winA.webContents },
+    "live-page",
+    { x: 10, y: 20, width: 640, height: 480 },
+  );
+  await flushAsync();
+  assert.ok(hideCount() > hidesBeforeGeometry, "geometry change must clear the action cue");
+
+  hooks.syncVisibleViews(ctxA, [{
+    id: "live-page",
+    bounds: { x: 10, y: 20, width: 800, height: 600 },
+  }]);
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      ...marker,
+      sequence: 13,
+    }),
+    true,
+  );
+  const hidesBeforeHide = hideCount();
+  hooks.hideView(ctxA, "live-page");
+  await flushAsync();
+  assert.ok(hideCount() > hidesBeforeHide, "hiding must clear the action cue");
+
+  hooks.syncVisibleViews(ctxA, [{
+    id: "live-page",
+    bounds: { x: 10, y: 20, width: 800, height: 600 },
+  }]);
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      ...marker,
+      sequence: 14,
+    }),
+    true,
+  );
+  const hidesBeforeNav = hideCount();
+  controlled.emitWebContents("did-navigate");
+  await flushAsync();
+  assert.ok(hideCount() > hidesBeforeNav, "navigation must clear the action cue");
+
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      ...marker,
+      sequence: 15,
+    }),
+    true,
+  );
+  const destWin = fakeWindow(803);
+  const dest = registerContext("human-dest", destWin);
+  const hidesBeforeTransfer = hideCount();
+  hooks.reparentRecords(ctxA, dest, [record]);
+  await flushAsync();
+  assert.ok(hideCount() > hidesBeforeTransfer, "transfer must clear the action cue");
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      ...marker,
+      sequence: 16,
+    }),
+    false,
+    "source window cannot annotate a transferred view",
+  );
+
+  hooks.reparentRecords(dest, ctxA, [record]);
+  hooks.syncVisibleViews(ctxA, [{
+    id: "live-page",
+    bounds: { x: 10, y: 20, width: 800, height: 600 },
+  }]);
+  const closedBefore = humanInputMessages(winA).length;
+  hooks.destroyView(ctxA, "live-page");
+  prevented = false;
+  controlled.emitWebContents("before-mouse-event", {
+    preventDefault() { prevented = true; },
+  }, { type: "mouseDown", x: 1, y: 1 });
+  assert.equal(prevented, false);
+  assert.equal(
+    humanInputMessages(winA).length,
+    closedBefore,
+    "destroyed view must not notify human input",
+  );
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      ...marker,
+      sequence: 17,
+    }),
+    false,
+  );
+
+  hooks.ensureView(ctxA, "no-overlay", "https://example.com/none");
+  const unavailable = generatedNativeRecords.at(-1);
+  unavailable.controls[0].resolve();
+  hooks.syncVisibleViews(ctxA, [{
+    id: "no-overlay",
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  }]);
+  unavailable.record.view.webContents.debugger.sendCommand = async (method, params) => {
+    unavailable.debuggerCommands.push({ method, params });
+    if (method === "Target.getTargetInfo") {
+      return { targetInfo: { targetId: "no-overlay-target" } };
+    }
+    throw new Error("Overlay unavailable");
+  };
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "no-overlay", {
+      x: 10,
+      y: 10,
+      width: 800,
+      height: 600,
+      sequence: 1,
+    }),
+    false,
+  );
+  assert.equal(
+    unavailable.isDebuggerAttached(),
+    false,
+    "failed overlay must release a debugger session it attached",
+  );
+  assert.equal(await hooks.resolveView(ctxA, "no-overlay"), "no-overlay-target");
+
+  hooks.ensureView(ctxA, "timed-cue", "https://example.com/timed");
+  const timed = generatedNativeRecords.at(-1);
+  timed.controls[0].resolve();
+  hooks.syncVisibleViews(ctxA, [{
+    id: "timed-cue",
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  }]);
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "timed-cue", {
+      x: 10,
+      y: 10,
+      width: 800,
+      height: 600,
+      sequence: 1,
+    }),
+    true,
+  );
+  assert.equal(timed.isDebuggerAttached(), true);
+  const targetBeforeTimeout = timed.targetCallCount();
+  const resolveDuringCue = hooks.resolveView(ctxA, "timed-cue");
+  assert.equal(await resolveDuringCue, `${timed.record.id}-target`);
+  assert.equal(timed.isDebuggerAttached(), true, "devToolsTargetId must not detach an in-use Overlay session");
+  assert.equal(timed.targetCallCount(), targetBeforeTimeout + 1);
+  clock.advance(2000);
+  await flushAsync();
+  assert.ok(timed.debuggerCommands.some((item) => item.method === "Overlay.hideHighlight"));
+  assert.equal(
+    timed.isDebuggerAttached(),
+    false,
+    "cue timeout must detach a debugger attached for Overlay",
+  );
+
+  hooks.windows.delete(ctxA.id);
+  hooks.windows.delete(ctxB.id);
+  hooks.windows.delete(dest.id);
+}
+
 Promise.all([
   checkLoadView(),
   checkVisibleCollectionAndActivation(),
@@ -4955,10 +5790,16 @@ Promise.all([
   .then(async () => {
     checkPreloadWindowIdentity();
     checkPreloadPopupSubscription();
+    checkPreloadHumanInputSubscription();
     checkPreloadLocalFilePath();
     checkPreloadTabTransfer();
     checkContextMenuEndAlignment();
     await checkSenderOwnership();
+    await checkHumanInputYieldingAndActionCue();
+    await checkBackgroundPreview();
+    await checkActionCueFreshness();
+    await checkActionCueWorkerIncarnation();
+    await checkOverlappingActionCues();
     await checkDownloadsLifecycle();
     await checkTerminalProcessIdentity();
     await checkFocusedRoutingAndCleanup();

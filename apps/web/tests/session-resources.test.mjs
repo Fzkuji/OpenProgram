@@ -1,6 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resourceSessionId, sessionResourceRows, backendResourceRows } from "../lib/state/session-resources.ts";
+import { readFileSync } from "node:fs";
+import {
+  resourceSessionId,
+  sessionResourceRows,
+  backendResourceRows,
+  groupSessionResources,
+  ingestBrowserResource,
+  applyResourceSnapshot,
+  beginResourceSnapshotClock,
+  followPreviewBinding,
+  listedBrowserResources,
+  resetBrowserResources,
+  getPreviewPreference,
+  selectResourcePreview,
+  followCurrentBranch,
+  hideResourcePreview,
+  showResourcePreview,
+  latestFollowTarget,
+  requestResourceControl,
+  recoverSessionResources,
+  sessionResourceView,
+  setBrowserConnection,
+} from "../lib/state/session-resources.ts";
 
 const tabs = [
   { id: "s:a", kind: "session", title: "A", sessionId: "a" },
@@ -45,4 +67,301 @@ test("code views and process records never become software resources", () => {
   const legacy = backendResourceRows([{ id: "p", session_id: "b", source: "process", kind: "docker", title: "Code", target: "image", status: "running" }], "b");
   const rows = sessionResourceRows(tabs, legacy, "b");
   assert.deepEqual(rows.map(r => r.kind), ["web"]);
+});
+
+function browserItem(overrides = {}) {
+  return {
+    id: "assoc-a",
+    resource_id: "page-a",
+    session_id: "a",
+    conversation_session_id: "a",
+    execution_id: "exec-a",
+    branch_id: "br-a",
+    branch_name: "Research",
+    agent_name: "Research Agent",
+    tab_id: "w:a",
+    window_id: "main",
+    kind: "web",
+    title: "Plans overview",
+    target: "https://a.test",
+    status: "open",
+    source: "browser",
+    control_state: "active",
+    generation: 1,
+    sequence: 1,
+    ...overrides,
+  };
+}
+
+test("browser associations keep exact page identity and group by branch not session", () => {
+  const backend = backendResourceRows([
+    browserItem(),
+    browserItem({
+      id: "assoc-b", resource_id: "page-a", branch_id: "br-b", branch_name: "Build",
+      agent_name: "Build Agent", tab_id: "w:a", sequence: 2,
+    }),
+    browserItem({
+      id: "assoc-c", resource_id: "page-c", branch_id: null, branch_name: null,
+      title: "Legacy page", tab_id: "w:legacy", target: "https://legacy.test",
+    }),
+    { id: "vm-a", session_id: "a", source: "usage", kind: "vm", title: "VM", target: "http://vm.test", status: "in_use" },
+  ], "a");
+  assert.equal(backend.find(row => row.id === "assoc-a").resourceId, "page-a");
+  assert.equal(backend.find(row => row.id === "assoc-b").resourceId, "page-a");
+  assert.equal(backend.filter(row => row.resourceId === "page-a").length, 2);
+  const rows = sessionResourceRows(tabs, backend, "a");
+  assert.equal(rows.filter(row => row.sourceId === "w:a" && row.source === "web").length, 0);
+  const groups = groupSessionResources(rows, "br-a");
+  assert.deepEqual(groups.map(group => group.key), ["br-a", "br-b", "unassigned"]);
+  assert.equal(groups[0].current, true);
+  assert.equal(groups[0].title, "Research");
+  assert.equal(groups[2].title, "Unassigned");
+  assert.ok(groups[2].rows.some(row => row.id === "assoc-c"));
+  assert.ok(groups[2].rows.some(row => row.kind === "vm"));
+});
+
+test("parent Resources keep authorized child-owned browser Pages", () => {
+  resetBrowserResources();
+  ingestBrowserResource({
+    id: "assoc-child",
+    resource_id: "page-child",
+    session_id: "child",
+    conversation_session_id: "parent",
+    execution_id: "exec-child",
+    branch_id: "br-parent",
+    branch_name: "Research",
+    agent_name: "Child Agent",
+    tab_id: "w:child",
+    kind: "web",
+    title: "Child page",
+    target: "https://child.test",
+    status: "open",
+    source: "browser",
+    control_state: "active",
+    generation: 1,
+    sequence: 1,
+  }, "parent");
+  const listed = sessionResourceRows([], listedBrowserResources(), "parent");
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].sessionId, "child");
+  assert.equal(listed[0].conversationSessionId, "parent");
+  assert.equal(groupSessionResources(listed, "br-parent")[0].key, "br-parent");
+});
+
+test("closed Pages move to a collapsed unavailable group and leave live counts", () => {
+  const rows = backendResourceRows([
+    browserItem({ id: "assoc-live", status: "open", control_state: "active" }),
+    browserItem({
+      id: "assoc-dead", resource_id: "page-dead", title: "Closed",
+      status: "closed", control_state: "closed", sequence: 2,
+    }),
+  ], "a");
+  const groups = groupSessionResources(rows, "br-a");
+  assert.deepEqual(groups.map(group => group.key), ["br-a", "unavailable"]);
+  assert.equal(groups[0].rows.length, 1);
+  assert.equal(groups[0].rows[0].id, "assoc-live");
+  assert.equal(groups[1].title, "Unavailable");
+  assert.equal(groups[1].rows[0].id, "assoc-dead");
+});
+
+test("ingest ignores stale generation or sequence and resets on session change", () => {
+  resetBrowserResources();
+  const first = ingestBrowserResource(browserItem({ sequence: 4, title: "Live" }), "a");
+  assert.equal(first.title, "Live");
+  assert.equal(ingestBrowserResource(browserItem({ sequence: 3, title: "Old seq" }), "a")?.title, "Live");
+  assert.equal(ingestBrowserResource(browserItem({ generation: 0, sequence: 9, title: "Old gen" }), "a")?.title, "Live");
+  assert.equal(ingestBrowserResource(browserItem({ session_id: "other", conversation_session_id: "other" }), "a"), null);
+  resetBrowserResources("a");
+  assert.equal(ingestBrowserResource(browserItem({ sequence: 1, title: "Still live" }), "a")?.title, "Live");
+  resetBrowserResources();
+  assert.equal(ingestBrowserResource(browserItem({ sequence: 1, title: "Reopened" }), "a")?.title, "Reopened");
+});
+
+test("snapshot recovery does not overwrite newer events or another session", () => {
+  resetBrowserResources();
+  ingestBrowserResource(browserItem({ conversation_session_id: "a", sequence: 1, title: "A1" }), "a");
+  ingestBrowserResource(browserItem({
+    id: "assoc-b", resource_id: "page-b", session_id: "b", conversation_session_id: "b",
+    tab_id: "w:b", branch_id: "br-b", title: "B1", sequence: 1,
+  }), "b");
+  const begun = beginResourceSnapshotClock();
+  ingestBrowserResource(browserItem({ sequence: 4, title: "A-live" }), "a", { origin: "event" });
+  const merged = applyResourceSnapshot([browserItem({ sequence: 1, title: "A-stale" })], "a", { begunClock: begun });
+  assert.equal(merged.find(row => row.id === "assoc-a").title, "A-live");
+  assert.ok(listedBrowserResources().some(row => row.id === "assoc-b"));
+});
+
+test("authentic dispatch binds follow preview; snapshot operations do not", () => {
+  resetBrowserResources();
+  const sessionTabs = [
+    { id: "s:a", kind: "session", sessionId: "a" },
+    { id: "w:a", kind: "web" },
+    { id: "w:b", kind: "web" },
+  ];
+  ingestBrowserResource(browserItem(), "a", { origin: "snapshot" });
+  ingestBrowserResource(browserItem({
+    id: "assoc-b", resource_id: "page-b", tab_id: "w:b", title: "Pricing",
+    sequence: 2, last_operation: { id: "op-old", action: "click", phase: "dispatched" },
+  }), "a", { origin: "snapshot" });
+  followCurrentBranch("a", "br-a");
+  assert.equal(followPreviewBinding("a", "br-a", sessionTabs), null);
+  ingestBrowserResource(browserItem({
+    id: "assoc-b", resource_id: "page-b", tab_id: "w:b", title: "Pricing",
+    sequence: 3, last_operation: { id: "op-new", action: "click", phase: "dispatched" },
+  }), "a", { origin: "event" });
+  assert.deepEqual(followPreviewBinding("a", "br-a", sessionTabs), { tabId: "w:b", ownerTabId: "s:a" });
+  hideResourcePreview("a", "br-a");
+  assert.equal(followPreviewBinding("a", "br-a", sessionTabs), null);
+});
+
+test("follow tracks admitted operations only and hide does not reopen from later events", () => {
+  resetBrowserResources();
+  ingestBrowserResource(browserItem(), "a");
+  ingestBrowserResource(browserItem({
+    id: "assoc-b", resource_id: "page-b", tab_id: "w:b", title: "Pricing",
+    target: "https://b.test", sequence: 2,
+  }), "a");
+  selectResourcePreview("a", "br-a", "assoc-a");
+  let pref = getPreviewPreference("a", "br-a");
+  assert.equal(pref.mode, "manual");
+  assert.equal(pref.targetId, "assoc-a");
+  ingestBrowserResource(browserItem({
+    id: "assoc-b", resource_id: "page-b", tab_id: "w:b", title: "Pricing",
+    target: "https://b.test", sequence: 3,
+    last_operation: { id: "op-1", action: "click", phase: "dispatched" },
+  }), "a");
+  pref = getPreviewPreference("a", "br-a");
+  assert.equal(pref.mode, "manual");
+  assert.equal(pref.targetId, "assoc-a");
+  assert.equal(latestFollowTarget("a", "br-a"), "assoc-b");
+  followCurrentBranch("a", "br-a");
+  pref = getPreviewPreference("a", "br-a");
+  assert.equal(pref.mode, "follow");
+  assert.equal(pref.targetId, "assoc-b");
+  hideResourcePreview("a", "br-a");
+  ingestBrowserResource(browserItem({
+    sequence: 5,
+    last_operation: { id: "op-2", action: "click", phase: "acknowledged" },
+  }), "a");
+  pref = getPreviewPreference("a", "br-a");
+  assert.equal(pref.hidden, true);
+  assert.equal(pref.mode, "follow");
+  assert.equal(pref.targetId, "assoc-a");
+  assert.equal(latestFollowTarget("a", "br-a"), "assoc-a");
+  showResourcePreview("a", "br-a");
+  pref = getPreviewPreference("a", "br-a");
+  assert.equal(pref.hidden, false);
+  assert.equal(pref.targetId, "assoc-a");
+});
+
+test("resource control posts pause or resume and failed rows are not paused", async () => {
+  const calls = [];
+  const row = await requestResourceControl({
+    conversationSessionId: "a",
+    resourceId: "page-a",
+    action: "pause",
+    commandId: "cmd-1",
+    generation: 1,
+  }, async (url, init) => {
+    calls.push({ url, init });
+    return { id: "assoc-a", resource_id: "page-a", control_state: "unknown", generation: 1, sequence: 8 };
+  });
+  assert.equal(calls[0].url, "/api/session/a/resources/page-a/control");
+  assert.equal(JSON.parse(calls[0].init.body).action, "pause");
+  assert.equal(JSON.parse(calls[0].init.body).command_id, "cmd-1");
+  assert.equal(row.control_state, "unknown");
+  assert.notEqual(row.control_state, "paused");
+});
+
+test("HTTP control envelope is ingested into the shared row", async () => {
+  resetBrowserResources();
+  ingestBrowserResource(browserItem({ control_state: "active", sequence: 1 }), "a");
+  await requestResourceControl({
+    conversationSessionId: "a",
+    resourceId: "page-a",
+    action: "pause",
+    commandId: "cmd-2",
+    generation: 1,
+  }, async () => ({
+    item: browserItem({ control_state: "paused", sequence: 9 }),
+    now: 1,
+  }));
+  assert.equal(listedBrowserResources().find(row => row.id === "assoc-a").controlState, "paused");
+});
+
+test("first resource snapshot is pending until this conversation's GET completes", () => {
+  resetBrowserResources();
+  const pending = sessionResourceView("a");
+  assert.equal(pending.loaded, false);
+  assert.equal(pending.unavailable, false);
+  assert.deepEqual(pending.rows, []);
+  ingestBrowserResource(browserItem({ title: "From event" }), "a", { origin: "event" });
+  const afterEvent = sessionResourceView("a");
+  assert.equal(afterEvent.loaded, false);
+  assert.equal(afterEvent.rows.length, 1);
+  applyResourceSnapshot([browserItem({
+    id: "assoc-b", resource_id: "page-b", session_id: "b", conversation_session_id: "b",
+    tab_id: "w:b", title: "Other", sequence: 1,
+  })], "b");
+  assert.equal(sessionResourceView("a").loaded, false);
+  assert.equal(sessionResourceView("b").loaded, true);
+});
+
+test("a successful empty snapshot shows empty and a nonempty snapshot lists Pages", () => {
+  resetBrowserResources();
+  applyResourceSnapshot([], "a");
+  const empty = sessionResourceView("a");
+  assert.equal(empty.loaded, true);
+  assert.equal(empty.unavailable, false);
+  assert.deepEqual(empty.rows, []);
+  applyResourceSnapshot([browserItem({ title: "Plans" })], "a");
+  const filled = sessionResourceView("a");
+  assert.equal(filled.loaded, true);
+  assert.equal(filled.rows[0].title, "Plans");
+  applyResourceSnapshot([browserItem({ title: "Plans", sequence: 2 })], "a");
+  assert.equal(sessionResourceView("a").loaded, true);
+  assert.equal(sessionResourceView("a").rows[0].title, "Plans");
+});
+
+test("a failed snapshot keeps retained rows and uses unavailable without unloading", async () => {
+  resetBrowserResources();
+  ingestBrowserResource(browserItem({ title: "Kept" }), "a", { origin: "event" });
+  await assert.rejects(() => recoverSessionResources("a", async () => {
+    throw new Error("snapshot failed");
+  }));
+  const failed = sessionResourceView("a");
+  assert.equal(failed.loaded, true);
+  assert.equal(failed.unavailable, true);
+  assert.equal(failed.rows[0].title, "Kept");
+  await recoverSessionResources("a", async () => ({ items: [browserItem({ title: "Recovered", sequence: 2 })] }));
+  const recovered = sessionResourceView("a");
+  assert.equal(recovered.loaded, true);
+  assert.equal(recovered.unavailable, false);
+  assert.equal(recovered.rows[0].title, "Recovered");
+});
+
+test("conversation switch isolates first-load completion", async () => {
+  resetBrowserResources();
+  await recoverSessionResources("a", async () => ({ items: [browserItem()] }));
+  assert.equal(sessionResourceView("a").loaded, true);
+  assert.equal(sessionResourceView("b").loaded, false);
+  await recoverSessionResources("b", async () => ({ items: [] }));
+  assert.equal(sessionResourceView("a").loaded, true);
+  assert.equal(sessionResourceView("a").rows.length, 1);
+  assert.equal(sessionResourceView("b").loaded, true);
+  assert.deepEqual(sessionResourceView("b").rows, []);
+  setBrowserConnection(false);
+  assert.equal(sessionResourceView("a").unavailable, true);
+  setBrowserConnection(true);
+  assert.equal(sessionResourceView("a").unavailable, false);
+});
+
+test("the Resources hook and projection use per-conversation snapshot completion", () => {
+  const hook = readFileSync(new URL("../lib/use-session-resources.ts", import.meta.url), "utf8");
+  const projection = readFileSync(new URL("../lib/state/browser-resource-projection.ts", import.meta.url), "utf8");
+  const store = readFileSync(new URL("../lib/state/session-resources.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(hook, /rowClock\)\.length\s*>=\s*0/);
+  assert.match(hook, /sessionResourceView\(sessionId\)/);
+  assert.match(projection, /recoverSessionResources\(sessionId/);
+  assert.match(store, /completeResourceSnapshot\(sessionId, \{ ok: false \}\)/);
 });

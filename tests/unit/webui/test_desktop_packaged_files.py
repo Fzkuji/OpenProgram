@@ -76,7 +76,8 @@ def test_refresh_script_rejects_stale_checkout_for_default_app():
 
     assert 'test "$app_path" = "/Applications/OpenProgram.app"' in refresh
     assert "merge-base --is-ancestor" in refresh
-    assert "refs/remotes/origin/main HEAD" in refresh
+    assert "for protected_ref in refs/heads/main refs/remotes/origin/main; do" in refresh
+    assert 'merge-base --is-ancestor "$protected_ref" HEAD' in refresh
     assert "refusing to refresh the default App" in refresh
-    assert "OPENPROGRAM_APP_PATH to a separate App" in refresh
+    assert "behind $protected_ref" in refresh
     assert 'test -n "$desktop_file" || continue' in refresh

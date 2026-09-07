@@ -44,6 +44,7 @@ class ResourceUseStore:
                 started_at REAL NOT NULL, owner_pid INTEGER NOT NULL,
                 owner_identity TEXT NOT NULL)""")
             db.execute("CREATE INDEX IF NOT EXISTS resource_session ON resource_uses(session_id)")
+            # Browser Page descriptors share this file; BrowserResourceStore owns their schema.
         if os.name == "posix":
             self.path.chmod(0o600)
 

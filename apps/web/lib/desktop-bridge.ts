@@ -28,7 +28,6 @@ import {
   peekWebTabPipOwnerId,
   pipOpenMustFork,
   registerPipPair,
-  revealAgentWebTab,
   useWebTabPip,
 } from "@/lib/state/web-tab-pip-store";
 import {
@@ -78,6 +77,8 @@ import {
   draftChannelChoiceHost,
 } from "@/lib/runtime-bridge/draft-channel-choice";
 import { getSocket } from "@/lib/runtime-bridge/state";
+import { ingestBrowserResource, type BackendResource } from "@/lib/state/session-resources";
+import { recordOperationCue, showActionsEnabled } from "@/lib/state/browser-control";
 import { hasNavigate, navigate } from "@/lib/navigate";
 import type {
   DesktopBrowserDataApi,
@@ -186,6 +187,7 @@ const readyWebTabIds = new Set<string>();
 const webTabReadyWaiters = new Map<string, Set<(ready: boolean) => void>>();
 const visibleWebBounds = new Map<string, DesktopWebTabBounds>();
 const webTabGeometryRevisions = new Map<string, number>();
+const nativeCueOperations = new Map<string, string>();
 let nextWebTabGeometryRevision = 1;
 let visibleWebFlushScheduled = false;
 let visibleWebFlushBridge: DesktopBridge | null = null;
@@ -209,6 +211,14 @@ function scheduleVisibleWebBoundsFlush(bridge: DesktopBridge): void {
   });
 }
 
+function invalidateWebTabGeometry(bridge: DesktopBridge | null | undefined, id: string): void {
+  const geometryRevision = nextWebTabGeometryRevision++;
+  webTabGeometryRevisions.set(id, geometryRevision);
+  if (bridge && typeof window !== "undefined") window.dispatchEvent(new CustomEvent("op:browser-geometry", {
+    detail: { windowId: bridge.windowId, tabId: id, geometryRevision },
+  }));
+}
+
 export function registerVisibleWebTabBounds(
   bridge: DesktopBridge,
   id: string,
@@ -217,7 +227,7 @@ export function registerVisibleWebTabBounds(
   const previous = visibleWebBounds.get(id);
   if (!previous || previous.x !== bounds.x || previous.y !== bounds.y
       || previous.width !== bounds.width || previous.height !== bounds.height) {
-    webTabGeometryRevisions.set(id, nextWebTabGeometryRevision++);
+    invalidateWebTabGeometry(bridge, id);
   }
   visibleWebBounds.set(id, { ...bounds });
   scheduleVisibleWebBoundsFlush(bridge);
@@ -228,7 +238,7 @@ export function removeVisibleWebTabBounds(
   id: string,
 ): void {
   if (visibleWebBounds.delete(id)) {
-    webTabGeometryRevisions.set(id, nextWebTabGeometryRevision++);
+    invalidateWebTabGeometry(bridge, id);
   }
   scheduleVisibleWebBoundsFlush(bridge);
 }
@@ -301,8 +311,13 @@ export function destroyStaleWebViews(
     if (!alive.has(id)) {
       removeVisibleWebTabBounds(bridge, id);
       bridge.webTab.destroy(id);
+      const ws = getSocket();
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "webtab_closed", window_id: bridge.windowId, tab_id: id }));
+      }
       liveViewIds.delete(id);
       webTabGeometryRevisions.delete(id);
+      nativeCueOperations.delete(id);
     }
   }
 }
@@ -356,9 +371,59 @@ export function subscribeWebTabPopups(
     if (!state.tabs.some((tab) => tab.id === popup.openerId && tab.kind === "web")) {
       return;
     }
+    const opener = state.tabs.find((tab) => tab.id === popup.openerId);
     state.openPopupWebTab(popup.url, popup.openerId);
-    showCenterSurface();
+    if (!opener?.agentOpened) showCenterSurface();
   }) ?? (() => {});
+}
+
+/** Native human input is an exact Page signal, independent of the selected conversation. */
+export function subscribeBrowserHumanInput(bridge: DesktopBridge): () => void {
+  const sequences = new Map<string, number>();
+  return bridge.webTab.onHumanInput?.((event) => {
+    if (event.windowId !== bridge.windowId || !Number.isSafeInteger(event.sequence)
+        || event.sequence <= (sequences.get(event.id) ?? 0)
+        || !["pointer", "key", "scroll", "navigate"].includes(event.kind)
+        || !useCenterTabs.getState().tabs.some(tab => tab.id === event.id && tab.kind === "web")) return;
+    sequences.set(event.id, event.sequence);
+    void bridge.webTab.showAction?.(event.id, null).catch(() => {});
+    const ws = getSocket();
+    const connected = ws?.readyState === WebSocket.OPEN;
+    window.dispatchEvent(new CustomEvent("op:browser-human-input", {
+      detail: { ...event, connected },
+    }));
+    if (connected) ws.send(JSON.stringify({
+      action: "webtab_human_input", window_id: event.windowId,
+      tab_id: event.id, sequence: event.sequence, kind: event.kind,
+    }));
+  }) ?? (() => {});
+}
+
+function receiveBrowserResource(bridge: DesktopBridge, data: Record<string, unknown> | undefined) {
+  if (!data || typeof data.session_id !== "string") return;
+  const scope = typeof data.conversation_session_id === "string" ? data.conversation_session_id : data.session_id;
+  const row = ingestBrowserResource(data as BackendResource, scope);
+  if (!row?.resourceId || !row.tabId || row.windowId !== bridge.windowId
+      || row.generation !== data.generation || row.sequence !== data.sequence) return;
+  const operation = row.lastOperation;
+  if (operation) recordOperationCue({ resourceId: row.resourceId,
+    generation: row.generation || 0, operation, controlState: row.controlState,
+    geometryRevision: webTabGeometryRevisions.get(row.tabId) ?? 0 });
+  if (!bridge.webTab.showAction) return;
+  const point = operation?.point;
+  const fresh = row.controlState === "active"
+    && (operation?.phase === "dispatched" || operation?.phase === "acknowledged")
+    && operation.geometry_revision === (webTabGeometryRevisions.get(row.tabId) ?? 0)
+    && !!operation.frame_id && showActionsEnabled();
+  const marker = fresh && point && typeof point.width === "number" && typeof point.height === "number"
+    ? { x: point.x, y: point.y, width: point.width, height: point.height, sequence: row.sequence || 0, generation: row.generation || 0, resourceId: row.resourceId }
+    : null;
+  if (marker && operation) {
+    const key = `${row.resourceId}:${row.generation}:${operation.id}`;
+    if (nativeCueOperations.get(row.tabId) === key) return;
+    nativeCueOperations.set(row.tabId, key);
+  }
+  void bridge.webTab.showAction(row.tabId, marker).catch(() => {});
 }
 
 export function visibleWebTab() {
@@ -408,12 +473,21 @@ function visibleWebTabById(tabId: string) {
     : null;
 }
 
+/** A selected image mirror refers to an existing Page without claiming native visibility. */
+function selectedMirrorTabById(tabId: string) {
+  const state = useCenterTabs.getState();
+  const pip = useWebTabPip.getState();
+  if (pip.tabId !== tabId || !pip.ownerTabId || state.activeId !== pip.ownerTabId) return null;
+  return state.tabs.find((tab) => tab.id === tabId && tab.kind === "web") ?? null;
+}
+
 export function finalizeWebTabPreview(
   tabId: string,
   expectedGeometryRevision: number,
   result: Record<string, unknown> | null,
+  allowBackground = false,
 ): Record<string, unknown> {
-  const tab = visibleWebTabById(tabId);
+  const tab = allowBackground ? selectedMirrorTabById(tabId) : visibleWebTabById(tabId);
   const geometryRevision = webTabGeometryRevisions.get(tabId) ?? 0;
   if (!tab || (
     expectedGeometryRevision > 0
@@ -500,6 +574,8 @@ function finalizeBoundWebTabScreenshot(
 
 export interface TurnSurfaceRef {
   version: 1;
+  /** Explicitly selected image mirror of an existing background Page. */
+  background?: boolean;
   window_id: string;
   tab_id: string;
   region: "left" | "right" | "center";
@@ -734,7 +810,8 @@ export function surfaceRefForChat(
     }
   }
   if (!web || web.kind !== "web") return null;
-  const scopedWeb = visibleWebTabById(web.id);
+  const mirror = selectedMirrorTabById(web.id);
+  const scopedWeb = visibleWebTabById(web.id) ?? mirror;
   if (!scopedWeb) return null;
   web = scopedWeb;
   const region = !group
@@ -746,6 +823,7 @@ export function surfaceRefForChat(
     version: 1,
     window_id: bridge.windowId,
     tab_id: web.id,
+    ...(mirror && !isWebTabActuallyVisible(web.id) ? { background: true } : {}),
     region,
     access: toolsEnabled ? "enabled" : "disabled",
     focused: group?.focusedId === web.id,
@@ -877,14 +955,27 @@ export function installDesktopMenuHandlers(): void {
     showCenterSurface();
   });
   subscribeWebTabPopups(bridge);
-  // Agent 控制面：后端广播 webtab.command(op=open) → 在可见 UI 里开
-  // web tab，并经同一条 WS 回执 webtab_result(req_id)。非桌面客户端不装
-  // 本 handler（上面 bridge 为空即返回），该消息自然被忽略。
+  subscribeBrowserHumanInput(bridge);
+  window.addEventListener("op:browser-connection", (event: Event) => {
+    if ((event as CustomEvent<{ connected: boolean }>).detail?.connected) return;
+    for (const id of liveViewIds) void bridge.webTab.showAction?.(id, null).catch(() => {});
+  });
+  window.addEventListener("op:browser-actions-changed", () => {
+    if (!showActionsEnabled()) {
+      for (const id of liveViewIds) void bridge.webTab.showAction?.(id, null).catch(() => {});
+    }
+  });
+  // Exact-window commands and receipts share the authenticated App socket.
+  // Retained resource events remain live while the Resources panel is closed.
   window.addEventListener("op:ws-message", (e) => {
     const detail = e.detail;
+    if (detail?.type === "browser.resource") {
+      receiveBrowserResource(bridge, detail.data);
+      return;
+    }
     if (detail?.type !== "webtab.command") return;
     const d = detail.data as
-      | { op?: string; url?: string; session_id?: string; window_id?: string; tab_id?: string; req_id?: string; background?: boolean; nonce?: string; expected_geometry_revision?: number }
+      | { op?: string; url?: string; session_id?: string; execution_id?: string; branch_id?: string; window_id?: string; tab_id?: string; req_id?: string; background?: boolean; nonce?: string; expected_geometry_revision?: number }
       | undefined;
     if (!d?.req_id || !["open", "active", "activate", "preview", "screenshot", "list", "resolve", "close", "self_update_capture"].includes(d.op || "")) return;
     const ws = getSocket();
@@ -1060,7 +1151,7 @@ export function installDesktopMenuHandlers(): void {
         return;
       }
       if (d.op === "preview") {
-        void bridge.webTab.preview(tab.id).then((result) => {
+        void bridge.webTab.preview(tab.id, d.background === true).then((result) => {
           ws.send(JSON.stringify({
             action: "webtab_result",
             req_id: d.req_id,
@@ -1068,7 +1159,13 @@ export function installDesktopMenuHandlers(): void {
               tab.id,
               d.expected_geometry_revision ?? 0,
               result,
+              d.background === true,
             ),
+          }));
+        }).catch(() => {
+          ws.send(JSON.stringify({
+            action: "webtab_result", req_id: d.req_id,
+            ok: false, error: "desktop web tab preview is unavailable",
           }));
         });
       } else {
@@ -1092,19 +1189,13 @@ export function installDesktopMenuHandlers(): void {
         });
       }
       };
-      // Agent attention shift: an off-screen web tab that is unpaired or
-      // already paired to the active session becomes that session's
-      // floating page, then the op runs once the floating web view is
-      // ready. Pages paired to another session are not hijacked.
-      const visible = d.tab_id ? visibleWebTabById(d.tab_id) : null;
-      if (!visible && d.tab_id && revealAgentWebTab(d.tab_id)) {
-        const tabId = d.tab_id;
-        void waitForWebTabReady(tabId, 2000).then(() =>
-          runOp(visibleWebTabById(tabId)),
-        );
-        return;
-      }
-      runOp(visible);
+      // Reading a selected mirror never reveals or reparents the native Page.
+      const tab = d.tab_id
+        ? (d.op === "preview" && d.background === true
+          ? selectedMirrorTabById(d.tab_id)
+          : visibleWebTabById(d.tab_id))
+        : null;
+      runOp(tab);
       return;
     }
 
@@ -1119,13 +1210,17 @@ export function installDesktopMenuHandlers(): void {
         }));
         return;
       }
-      if (d.background) {
+      // Agent pages belong to Resources even when an older caller omits
+      // background. Opening is not an operation or a request for user focus.
+      if (d.background || d.session_id) {
         const priorTabIds = new Set(
           useCenterTabs.getState().tabs.map((tab) => tab.id),
         );
         const id = useCenterTabs.getState().ensureExclusiveWebTab(d.url);
         const created = !priorTabIds.has(id);
-        if (created) useCenterTabs.getState().markAgentWebTab(id, d.session_id);
+        if (created) useCenterTabs.getState().markAgentWebTab(id, d.session_id, {
+          branchId: d.branch_id, executionId: d.execution_id,
+        });
         const ownership = { created, reused: !created };
         ensureWebView(bridge, id, d.url);
         let settled = false;
@@ -1346,7 +1441,7 @@ export function applyWebViewBookkeeping(
   for (const id of snapshot.readyIds) readyWebTabIds.add(id);
   for (const { id, bounds } of snapshot.visibleBounds) {
     visibleWebBounds.set(id, { ...bounds });
-    webTabGeometryRevisions.set(id, nextWebTabGeometryRevision++);
+    invalidateWebTabGeometry(bridge, id);
   }
   if (bridge) scheduleVisibleWebBoundsFlush(bridge);
 }

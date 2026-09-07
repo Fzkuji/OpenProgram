@@ -45,14 +45,21 @@ import {
 import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   collapseWebTabToPip,
-  pipBoundTabId,
   pipCollapseTargetFor,
-  usePipSnapshots,
   useWebTabPip,
 } from "@/lib/state/web-tab-pip-store";
+import {
+  controlResourceFromSession,
+  displayedControlState,
+  isHumanYieldEvent,
+  markScopeYielding,
+  requestExplicitPause,
+} from "@/lib/state/browser-control";
+import { listedBrowserResources, previewTabId, useBrowserResourceStore } from "@/lib/state/session-resources";
 import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
+import { BrowserControlBar } from "./browser-control-bar";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
   // Bridge presence is fixed for the lifetime of the page (preload
@@ -89,50 +96,17 @@ function BookmarkButton({ url, title }: { url: string; title: string }) {
   );
 }
 
-function PipBoundMask({ tabId }: { tabId: string }) {
-  const { text } = useTranslation();
-  const ownerTabId = useWebTabPip((s) => s.ownerTabId);
-  const ownerTitle = useCenterTabs((s) => {
-    const owner = s.tabs.find((tab) => tab.id === ownerTabId);
-    return owner?.title;
-  }) || text("another session", "另一个会话");
-  const label = text(
-    `Controlled by “${ownerTitle}”`,
-    `正在由「${ownerTitle}」控制`,
-  );
-  const endLabel = text("End floating window", "结束浮动");
-  const goLabel = text("Go to that session", "转到该会话");
-  const shot = usePipSnapshots((s) => s.shots[tabId]);
-  return (
-    <div className={styles.webBoundMask}>
-      {shot ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img className={styles.webBoundMaskShot} src={shot} alt="" />
-      ) : null}
-      <div className={styles.webBoundMaskDim} />
-      <div className={styles.webBoundMaskBody}>
-        <div className={styles.webBoundMaskTitle}>{label}</div>
-        <div className={styles.webBoundMaskActions}>
-          <button
-            type="button"
-            className={styles.webBoundMaskBtn}
-            onClick={() => useWebTabPip.getState().end()}
-          >
-            {endLabel}
-          </button>
-          <button
-            type="button"
-            className={styles.webBoundMaskBtn}
-            onClick={() => {
-              if (ownerTabId) useCenterTabs.getState().setActive(ownerTabId);
-            }}
-          >
-            {goLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+function resourceForLiveTab(tabId: string) {
+  const row = listedBrowserResources().find(item => previewTabId(item) === tabId);
+  return row ? controlResourceFromSession(row) : null;
+}
+
+function yieldFromLiveTab(tabId: string, event: { type: string; key?: string }) {
+  if (!isHumanYieldEvent(event)) return;
+  const resource = resourceForLiveTab(tabId);
+  if (!resource) return;
+  if (desktopBridge()) markScopeYielding(resource);
+  else void requestExplicitPause(resource);
 }
 
 function usePipCollapseTarget(tabId: string) {
@@ -202,7 +176,8 @@ function DesktopWebTabPane({
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
   const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
-  const pipBound = useWebTabPip(() => pipBoundTabId() === tabId);
+  useBrowserResourceStore(s => s.ingestClock);
+  const control = resourceForLiveTab(tabId);
   // 历史遗留的白屏竞态可能把 store 里的 url 冲成空串；tab id 本身带着
   // 原始 URL（"w:<url>"），空 url 时从 id 找回，老 tab 自愈。
   const effectiveUrl =
@@ -238,11 +213,6 @@ function DesktopWebTabPane({
       bridge,
       useCenterTabs.getState().tabs.map((t) => t.id),
     );
-    if (pipBound) {
-      removeVisibleWebTabBounds(bridge, tabId);
-      setWebTabReady(tabId, false);
-      return;
-    }
     ensureWebView(bridge, tabId, viewUrlRef.current);
     // A pane always shows the page at user zoom. Clear any leftover PiP
     // layout zoom here instead of relying on the PiP's unmount cleanup
@@ -251,18 +221,13 @@ function DesktopWebTabPane({
     return () => {
       setWebTabReady(tabId, false);
     };
-  }, [bridge, tabId, pipBound]);
+  }, [bridge, tabId]);
 
   // Bounds: renderer reports the body's viewport-relative CSS px and
   // main converts them to native DIP using the sender's current zoom.
   // Preserve fractional values until main performs the final rounding.
   // Report on mount, resize, and any ancestor scroll.
   useEffect(() => {
-    if (pipBound) {
-      removeVisibleWebTabBounds(bridge, tabId);
-      setWebTabReady(tabId, false);
-      return;
-    }
     const el = bodyRef.current;
     if (!el) return;
     const report = () => {
@@ -295,7 +260,7 @@ function DesktopWebTabPane({
       window.removeEventListener("scroll", report, true);
       removeVisibleWebTabBounds(bridge, tabId);
     };
-  }, [bridge, tabId, pipBound]);
+  }, [bridge, tabId]);
 
   // Main → renderer state: address bar (unless the user is typing in
   // it), tab title, loading spinner, history-button enablement. URL
@@ -363,6 +328,7 @@ function DesktopWebTabPane({
       bridge.webTab.navigate(tabId, normalized);
       updateWebTab(tabId, { url: normalized });
     }
+    yieldFromLiveTab(tabId, { type: "navigate" });
   }
 
   function navigateTo(nextUrl: string) {
@@ -372,6 +338,7 @@ function DesktopWebTabPane({
     viewUrlRef.current = normalized;
     bridge.webTab.navigate(tabId, normalized);
     updateWebTab(tabId, { url: normalized });
+    yieldFromLiveTab(tabId, { type: "navigate" });
   }
 
   function openFind() {
@@ -416,13 +383,20 @@ function DesktopWebTabPane({
   const disabledStyle = { opacity: 0.35, cursor: "default" } as const;
 
   return (
-    <div className={styles.webPane} onKeyDownCapture={handleRendererShortcut}>
+    <div
+      className={styles.webPane}
+      data-state={control ? displayedControlState(control) : undefined}
+      onKeyDownCapture={handleRendererShortcut}
+    >
       <div className={styles.webChrome}>
       <div className={styles.webToolbar}>
         <button
           type="button"
           className={styles.webToolbarBtn}
-          onClick={() => bridge.webTab.goBack(tabId)}
+          onClick={() => {
+            bridge.webTab.goBack(tabId);
+            yieldFromLiveTab(tabId, { type: "navigate" });
+          }}
           disabled={!canGoBack}
           style={canGoBack ? undefined : disabledStyle}
           title={text("Back", "后退")}
@@ -432,7 +406,10 @@ function DesktopWebTabPane({
         <button
           type="button"
           className={`${styles.webToolbarBtn} ${styles.webToolbarForward}`}
-          onClick={() => bridge.webTab.goForward(tabId)}
+          onClick={() => {
+            bridge.webTab.goForward(tabId);
+            yieldFromLiveTab(tabId, { type: "navigate" });
+          }}
           disabled={!canGoForward}
           style={canGoForward ? undefined : disabledStyle}
           title={text("Forward", "前进")}
@@ -442,7 +419,13 @@ function DesktopWebTabPane({
         <button
           type="button"
           className={styles.webToolbarBtn}
-          onClick={() => loading ? bridge.webTab.stop(tabId) : bridge.webTab.reload(tabId)}
+          onClick={() => {
+            if (loading) bridge.webTab.stop(tabId);
+            else {
+              bridge.webTab.reload(tabId);
+              yieldFromLiveTab(tabId, { type: "navigate" });
+            }
+          }}
           title={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
           aria-label={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
         >
@@ -476,7 +459,10 @@ function DesktopWebTabPane({
           ownerId={menuOwnerId}
           actions={{
             home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
-            forward: () => bridge.webTab.goForward(tabId),
+            forward: () => {
+              bridge.webTab.goForward(tabId);
+              yieldFromLiveTab(tabId, { type: "navigate" });
+            },
             openExternal: () => bridge.openExternal(viewUrlRef.current),
             find: canFind ? openFind : undefined,
             zoomIn: canZoom ? () => { void bridge.webTab.zoom?.(tabId, "in"); } : undefined,
@@ -490,6 +476,7 @@ function DesktopWebTabPane({
           canGoForward={canGoForward}
         />
       </div>
+      <BrowserControlBar resource={control} compact />
       <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
       </div>
       {findOpen ? (
@@ -521,11 +508,12 @@ function DesktopWebTabPane({
           </button>
         </div>
       ) : null}
-      {pipBound ? (
-        <PipBoundMask tabId={tabId} />
-      ) : (
-        <div ref={bodyRef} className={styles.webFrame} />
-      )}
+      <div
+        ref={bodyRef}
+        className={styles.webFrame}
+        onPointerDown={() => yieldFromLiveTab(tabId, { type: "pointerdown" })}
+        onWheel={() => yieldFromLiveTab(tabId, { type: "wheel" })}
+      />
     </div>
   );
 }
@@ -536,7 +524,8 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
   const { text } = useTranslation();
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
   const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
-  const pipBound = useWebTabPip(() => pipBoundTabId() === tabId);
+  useBrowserResourceStore(s => s.ingestClock);
+  const control = resourceForLiveTab(tabId);
   const [address, setAddress] = useState(url);
   // Bumping remounts the iframe — that's the reload button.
   const [frameEpoch, setFrameEpoch] = useState(0);
@@ -558,6 +547,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
     } else {
       updateWebTab(tabId, { url: normalized });
     }
+    yieldFromLiveTab(tabId, { type: "navigate" });
   }
 
   function openExternal() {
@@ -569,16 +559,23 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
     if (!normalized) return;
     setAddress(normalized);
     updateWebTab(tabId, { url: normalized });
+    yieldFromLiveTab(tabId, { type: "navigate" });
   }
 
   return (
-    <div className={styles.webPane}>
+    <div
+      className={styles.webPane}
+      data-state={control ? displayedControlState(control) : undefined}
+    >
       <div className={styles.webChrome}>
       <div className={styles.webToolbar}>
         <button
           type="button"
           className={styles.webToolbarBtn}
-          onClick={() => setFrameEpoch((e) => e + 1)}
+          onClick={() => {
+            setFrameEpoch((e) => e + 1);
+            yieldFromLiveTab(tabId, { type: "navigate" });
+          }}
           title={text("Reload", "重新加载")}
         >
           <RotateCw size={14} />
@@ -617,11 +614,10 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
           }}
         />
       </div>
+      <BrowserControlBar resource={control} compact />
       <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
       </div>
-      {pipBound ? (
-        <PipBoundMask tabId={tabId} />
-      ) : url.startsWith("file:") ? (
+      {url.startsWith("file:") ? (
         /* Browsers silently block file:// in iframes — say so instead of
            showing a blank frame. */
         <div
@@ -662,6 +658,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             referrerPolicy="no-referrer"
             title={text("Web page", "网页")}
+            onPointerDown={() => yieldFromLiveTab(tabId, { type: "pointerdown" })}
           />
         </>
       )}

@@ -171,6 +171,7 @@ def capture(raw: Any, ws) -> dict | None:
 
     from openprogram.webui.ws_actions import webtab
     connection_revision = webtab.ensure_connection_revision(ws)
+    background = raw.get("background") is True
     preview_command = {
         "op": "preview",
         "window_id": descriptor["window_id"],
@@ -180,6 +181,8 @@ def capture(raw: Any, ws) -> dict | None:
         preview_command["expected_geometry_revision"] = descriptor[
             "geometry_revision"
         ]
+    if background:
+        preview_command["background"] = True
     result = webtab.request_on_ws(ws, preview_command, timeout=5.0)
     target_id = result.get("target_id") if isinstance(result, dict) else None
     if (
@@ -205,6 +208,7 @@ def capture(raw: Any, ws) -> dict | None:
             target_id,
             geometry_revision=descriptor["geometry_revision"],
             expected_connection_revision=connection_revision,
+            allow_background=background,
         )
     except RuntimeError:
         surface["preview_status"] = "unavailable"
@@ -220,6 +224,15 @@ def capture(raw: Any, ws) -> dict | None:
         "page_key": webtab.binding_page_key(binding_id),
         **revisions,
     })
+    try:
+        from openprogram.browser_resources import BrowserResourceStore
+        BrowserResourceStore().update_display(
+            surface["page_key"],
+            title=str(surface.get("title") or ""),
+            target=str(result.get("url") or ""),
+        )
+    except Exception:
+        pass
     return context
 
 
@@ -391,6 +404,15 @@ def capture_active() -> dict:
         "page_key": webtab.binding_page_key(binding_id),
         **revisions,
     }
+    try:
+        from openprogram.browser_resources import BrowserResourceStore
+        BrowserResourceStore().update_display(
+            surface["page_key"],
+            title=str(surface.get("title") or ""),
+            target=str(result.get("url") or ""),
+        )
+    except Exception:
+        pass
     return {
         "context_id": "page_ctx_" + uuid.uuid4().hex,
         "primary_surface_key": "p1",
@@ -632,6 +654,15 @@ def open_page(
     alias_map = {"p1": "p1", "web:1": "p1"}
     if not background:
         alias_map["focused"] = "p1"
+    try:
+        from openprogram.browser_resources import BrowserResourceStore
+        BrowserResourceStore().update_display(
+            str(surface.get("page_key") or ""),
+            title=str(surface.get("title") or ""),
+            target=str(result.get("url") or normalized),
+        )
+    except Exception:
+        pass
     return {
         "context_id": "page_ctx_" + uuid.uuid4().hex,
         "window_id": window_id,

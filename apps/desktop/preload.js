@@ -37,7 +37,8 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       ipcRenderer.invoke("webtab:activate", id, url, requireVisible),
     resolve: (id) => ipcRenderer.invoke("webtab:resolve", id),
     inspect: (id) => ipcRenderer.invoke("webtab:inspect", id),
-    preview: (id) => ipcRenderer.invoke("webtab:preview", id),
+    preview: (id, allowBackground) =>
+      ipcRenderer.invoke("webtab:preview", id, allowBackground),
     setBounds: (id, bounds) => ipcRenderer.send("webtab:set-bounds", id, bounds),
     show: (id) => ipcRenderer.send("webtab:show", id),
     hide: (id) => ipcRenderer.send("webtab:hide", id),
@@ -52,6 +53,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     zoom: (id, action) => ipcRenderer.invoke("webtab:zoom", id, action),
     print: (id) => ipcRenderer.invoke("webtab:print", id),
     capture: (id) => ipcRenderer.invoke("webtab:capture", id),
+    showAction: (id, marker) => ipcRenderer.invoke("webtab:show-action", id, marker),
     setPipZoom: (id, width) => ipcRenderer.send("webtab:set-pip-zoom", id, width),
     onState: (cb) => {
       const listener = (_event, state) => cb(state);
@@ -72,6 +74,11 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       const listener = (_event, command) => cb(command);
       ipcRenderer.on("webtab:command", listener);
       return () => ipcRenderer.removeListener("webtab:command", listener);
+    },
+    onHumanInput: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      ipcRenderer.on("webtab:human-input", listener);
+      return () => ipcRenderer.removeListener("webtab:human-input", listener);
     },
   },
   // Native OS menus return only the selected action ID to this renderer.

@@ -229,7 +229,8 @@ def _grab_approval_frames() -> tuple[list[dict], "callable"]:
 
 
 def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-                           *, wait_id: str = "wait_dispatcher_approval"):
+                           *, wait_id: str = "wait_dispatcher_approval",
+                           tool: str = "bash", args: dict | None = None):
     """Create the pre-published approval safe point used by these tests."""
     import openprogram.execution as execution_module
     from openprogram.execution import RuntimeControlService
@@ -239,6 +240,7 @@ def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     from openprogram.execution.store import ExecutionStore
     from openprogram.execution.waits import DurableWaitStore
 
+    request_args = {} if args is None else dict(args)
     store = ExecutionStore(tmp_path / "dispatcher-executions.db")
     monkeypatch.setattr(execution_module, "default_store", lambda: store)
     revision = store.create_revision(manifest={"entrypoint": "dispatcher-test"})
@@ -265,9 +267,9 @@ def _durable_approval_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
         attempt_id=attempt.attempt_id, generation=attempt.generation,
         kind="approval",
         request={
-            "prompt": "允许执行 bash？", "options": ["允许", "拒绝"],
-            "multi": False, "allow_custom": False, "detail": "bash",
-            "schema": {}, "questions": [], "tool": "bash", "args": {},
+            "prompt": f"允许执行 {tool}？", "options": ["允许", "拒绝"],
+            "multi": False, "allow_custom": False, "detail": tool,
+            "schema": {}, "questions": [], "tool": tool, "args": request_args,
         },
         policy_snapshot={
             "version": 1, "kind": "approval",
@@ -362,7 +364,7 @@ def test_await_user_approval_consumes_typed_prepublished_wait(tmp_path, monkeypa
     req = D.TurnRequest(session_id="c1", user_text="hi", agent_id="main",
                         source="tui", permission_mode="ask")
     store, service, _execution, _attempt, wait = _durable_approval_wait(
-        tmp_path, monkeypatch,
+        tmp_path, monkeypatch, args={"command": "ls"},
     )
     _resolve_approval_wait(
         service, store, wait, {"answer": "允许", "scope": "always"},
