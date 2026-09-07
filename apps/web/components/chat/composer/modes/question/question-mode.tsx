@@ -21,6 +21,8 @@ import { approvalDisplayText, readSandboxEscalation, type SandboxEscalation } fr
  */
 
 import { useState } from "react";
+import { ChevronRight } from "lucide-react";
+import { OperationCode } from "./operation-code";
 import { Textarea } from "@/components/ui/textarea";
 
 import type { PendingDecision, AskOne, FormFieldSchema } from "@/lib/session-store";
@@ -64,6 +66,8 @@ type Step =
       risk?: "low" | "medium" | "high";
       escalation?: SandboxEscalation;
       allowedScopes?: string[];
+      tool?: string;
+      args?: Record<string, unknown>;
     }
   | { kind: "form"; prompt: string; detail?: string; schema: Record<string, FormFieldSchema> };
 
@@ -87,6 +91,8 @@ function toSteps(q: PendingDecision): Step[] {
       risk: q.risk_level,
       escalation: readSandboxEscalation(q.args),
       allowedScopes: q.allowedScopes,
+      tool: q.tool,
+      args: q.args,
     }];
   }
   if (q.kind === "ask_many") {
@@ -292,13 +298,19 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
         </div>}
       </div>
       <div className={styles.body} data-fn-form-body onKeyDown={onKey}>
-        <fieldset disabled={discussionOpen || discussionPending || answerLocked} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+        {cur.kind === "approval" ? (
           <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
-        </fieldset>
+        ) : discussionOpen ? (
+          <div className={styles.prompt}>{cur.prompt}</div>
+        ) : (
+          <fieldset disabled={discussionPending || answerLocked} className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+            <StepBody step={cur} answer={curAns} onChange={(a) => patch(idx, a)} />
+          </fieldset>
+        )}
         {discussionOpen && (
           <label className={formStyles.field}>
-            <span className={formStyles.label}>{text("What would you like to discuss?", "你想讨论什么？")}</span>
-            <Textarea className={styles.discussionInput} autoFocus rows={5} value={feedback} readOnly={feedbackLocked}
+            <span className="sr-only">{text("Discussion", "讨论内容")}</span>
+            <Textarea className={styles.discussionInput} autoFocus rows={4} value={feedback} readOnly={feedbackLocked}
               onChange={(event) => setFeedback(event.target.value)}
               placeholder={text("Add your question, concern, or a different approach…", "写下你的问题、顾虑，或希望调整的地方…")} />
             {feedbackLocked && !discussionPending && <span className={formStyles.hint}>
@@ -420,17 +432,21 @@ function StepBody({
   if (step.kind === "approval") {
     const esc = step.escalation;
     const { prompt, summary } = approvalDisplayText(step.prompt, step.detail, esc, text);
+    const command = !esc && ["bash", "process", "shell", "exec_command"].includes(step.tool ?? "")
+      && typeof step.args?.command === "string" ? step.args.command : null;
     return (
       <>
-        <div className={styles.prompt}>
-          {esc ? prompt : withColon(prompt)}
-        </div>
-        {summary ? (
-          <pre className={approvalStyles.summary}>
-            {summary}
-          </pre>
-        ) : null}
-
+        <div className={styles.prompt}>{esc ? prompt : withColon(prompt)}</div>
+        {command ? <OperationCode value={command} language="bash" /> : null}
+        {esc && summary ? <pre className={approvalStyles.summary}>{summary}</pre> : null}
+        {step.args && Object.keys(step.args).length > 0 ? (
+          command ? (
+            <details className={approvalStyles.executionDetails}>
+              <summary><ChevronRight size={16} aria-hidden="true" />{text("Execution details", "查看执行详情")}</summary>
+              <OperationCode value={JSON.stringify(step.args, null, 2)} language="json" />
+            </details>
+          ) : <OperationCode value={JSON.stringify(step.args, null, 2)} language="json" />
+        ) : !esc && summary ? <OperationCode value={summary} language="text" /> : null}
       </>
     );
   }
