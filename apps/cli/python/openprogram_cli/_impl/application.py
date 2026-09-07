@@ -357,6 +357,8 @@ def _choose_surface() -> str:
 
 
 def main():
+    from openprogram.worker.lifecycle import use_named_runtime_for_cli
+    use_named_runtime_for_cli()
     _ensure_utf8_stdio()
     parser = build_parser()
 

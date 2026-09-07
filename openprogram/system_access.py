@@ -70,7 +70,14 @@ def report() -> dict:
         rows = [{'id': 'desktop_session', 'label': 'Desktop access', 'optional': True,
                  'status': 'unsupported', 'detail': 'No desktop permission backend for this platform.',
                  'instruction': 'Use a supported browser or remote VM backend.', 'can_request': False}]
-    return {'platform': system, 'host': socket.gethostname(), 'executable': sys.executable,
+    application = ''
+    if system == 'Darwin':
+        try:
+            bundle = importlib.import_module('Foundation').NSBundle.mainBundle()
+            application = str(bundle.objectForInfoDictionaryKey_('CFBundleName') or '')
+        except Exception:
+            pass
+    return {'platform': system, 'application': application, 'host': socket.gethostname(), 'executable': sys.executable,
             'pid': os.getpid(), 'checked_at': time.time(), 'capabilities': rows}
 
 

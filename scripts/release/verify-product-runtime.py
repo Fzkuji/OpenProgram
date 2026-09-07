@@ -309,6 +309,9 @@ def main() -> int:
                 "tui": tui_relative,
             },
         }
+        worker_relative = "OpenProgram Runtime.app/Contents/MacOS/OpenProgram Runtime"
+        if platform.system() == "Darwin" and (root / worker_relative).is_file():
+            manifest["worker_python"] = worker_relative
         manifest_path.write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -317,6 +320,9 @@ def main() -> int:
         manifest = _read_json(manifest_path)
         if manifest.get("schema") != 2:
             raise RuntimeError("unsupported runtime manifest schema")
+        if manifest.get("worker_python"):
+            helper = _relative_file(root, manifest["worker_python"], "named worker runtime")
+            subprocess.run([str(helper), "-I", "-B", "-c", "import openprogram"], check=True, timeout=20)
         current_arch = platform.machine().lower()
         expected_arches = {
             "x86_64": {"x86_64", "amd64"},

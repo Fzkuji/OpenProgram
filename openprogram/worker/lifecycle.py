@@ -214,10 +214,73 @@ def _looks_like_worker_process(pid: int) -> bool:
 # start / stop
 
 
+def worker_executable() -> str:
+    """Use the named macOS runtime declared by this managed installation."""
+    if sys.platform != "darwin":
+        return sys.executable
+    import json
+    executable = Path(sys.executable).resolve()
+    for root in executable.parents:
+        manifest_path = root / "runtime-manifest.json"
+        if not manifest_path.is_file():
+            continue
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        relative = manifest.get("worker_python")
+        if not relative:
+            return sys.executable  # Legacy/source installs keep their interpreter.
+        helper = (root / relative).resolve()
+        managed = (root / manifest["python"]).resolve()
+        if executable not in {managed, helper}:
+            return sys.executable
+        try:
+            helper.relative_to(root)
+        except ValueError:
+            raise RuntimeError("Named runtime escapes the managed installation") from None
+        if not helper.is_file() or not os.access(helper, os.X_OK):
+            raise RuntimeError("Named runtime is missing; repair the installation")
+        return str(helper)
+    return sys.executable
+
+
+def use_named_runtime_for_cli() -> None:
+    """Keep direct managed CLI execution under the same application identity."""
+    executable = worker_executable()
+    if Path(executable).resolve() == Path(sys.executable).resolve():
+        return
+    # Keep interpreter options only, never treat CLI tool arguments as Python flags.
+    flags = []
+    original = iter(getattr(sys, "orig_argv", [sys.executable])[1:])
+    for argument in original:
+        if argument in {"--", "-"} or not argument.startswith("-"):
+            break
+        boundary = None
+        takes_value = False
+        if not argument.startswith("--"):
+            for index, option in enumerate(argument[1:], 1):
+                if option in "mc":
+                    boundary = index
+                    break
+                if option in "WX":
+                    takes_value = index == len(argument) - 1
+                    break
+        if boundary is not None:
+            if boundary > 1:
+                flags.append(argument[:boundary])
+            break
+        flags.append(argument)
+        if takes_value or argument == "--check-hash-based-pycs":
+            flags.append(next(original))
+    if sys.flags.isolated and "-I" not in flags:
+        flags.append("-I")
+    if sys.flags.dont_write_bytecode and "-B" not in flags:
+        flags.append("-B")
+    os.execv(executable, [executable, *flags, "-m", "openprogram", *sys.argv[1:]])
+
+
 def _detached_worker_command(flags=None) -> list[str]:
     """Preserve isolation and bytecode policy across the worker re-exec."""
     active_flags = sys.flags if flags is None else flags
-    command = [sys.executable]
+    command = [worker_executable()]
     if active_flags.isolated:
         command.append("-I")
     if active_flags.dont_write_bytecode:

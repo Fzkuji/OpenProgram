@@ -169,6 +169,10 @@ test -x "$runtime_root/bin/python" || {
   printf 'stable managed Python launcher is not executable\n' >&2
   exit 1
 }
+if [ "$(uname -s)" = Darwin ]; then
+  "$python_bin" -I "$repo_root/scripts/release/build-macos-runtime-app.py" \
+    "$runtime_root" --python "$python_bin" --icon "$repo_root/apps/desktop/build/icon.icns"
+fi
 package_version="$("$python_bin" -I -c \
   'from importlib.metadata import version; print(version("openprogram"))')"
 "$python_bin" -I "$runtime_root/bin/verify-product-runtime.py" \

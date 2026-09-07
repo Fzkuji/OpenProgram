@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import styles from "./settings-page.module.css";
 
 type Capability = { id: string; label: string; status: string; detail: string; instruction: string; can_request: boolean };
-type Report = { platform: string; host: string; executable: string; capabilities: Capability[] };
+type Report = { application?: string; platform: string; host: string; executable: string; capabilities: Capability[] };
 
 /** Live executor status; never persist a grant or prompt while checking. */
 export function SystemAccess() {
@@ -63,7 +63,7 @@ export function SystemAccess() {
     <p className={styles.pageMeta}>{text("Optional capabilities on the execution computer. Checks never open permission prompts.", "执行电脑上的可选功能。检查状态不会弹出授权窗口。")}</p>
     {!report && !error && <p role="status">{text("Checking…", "正在检查…")}</p>}
     {report && <>
-      <p className={styles.pageMeta}>{report.host} · {report.platform}</p>
+      <p className={styles.pageMeta}>{report.application ? `${report.application} · ` : ""}{report.host} · {report.platform}</p>
       <div className={styles.card}>{report.capabilities.map(row => <div className={`${styles.row} ${styles.rowTop}`} key={row.id}>
         <div className={styles.label}>
           <div>{row.id === "screen_recording" ? text("Screen recording", "屏幕录制") : row.id === "accessibility" ? text("Desktop control", "桌面控制") : text("Desktop access", "桌面访问")} · {labels[row.status] || row.status}</div>

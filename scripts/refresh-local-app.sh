@@ -223,6 +223,9 @@ PY
   }
   cp "$repo_root/uv.lock" "$runtime_assets_stage/product-uv.lock"
   cp "$repo_root/scripts/release/verify-product-runtime.py" "$runtime_assets_stage/verify-product-runtime.py"
+  cp "$repo_root/scripts/release/build-macos-runtime-app.py" "$runtime_assets_stage/build-macos-runtime-app.py"
+  cp "$repo_root/scripts/release/mac-runtime-main.c" "$runtime_assets_stage/mac-runtime-main.c"
+  cp "$repo_root/apps/desktop/build/icon.icns" "$runtime_assets_stage/icon.icns"
   cp "$product_runtime_config" "$runtime_assets_stage/product-runtime.json"
   rm -rf "$repo_root/build"
   "$uv_bin" build --wheel --out-dir "$attempt_dir" "$repo_root"
@@ -372,6 +375,8 @@ cp "$runtime_assets_stage/verify-product-runtime.py" "$runtime_root/bin/verify-p
 if test ! -e "$runtime_root/bin/python" && test ! -L "$runtime_root/bin/python"; then
   ln -s "../$app_python_relative" "$runtime_root/bin/python"
 fi
+"$app_python" -I "$runtime_assets_stage/build-macos-runtime-app.py" \
+  "$runtime_root" --python "$app_python" --icon "$runtime_assets_stage/icon.icns"
 runtime_version="$("$app_python" -I -c 'from importlib.metadata import version; print(version("openprogram"))')"
 runtime_uv_version="$("$runtime_root/bin/uv" --version | awk '{print $2}')"
 # The verifier probes every capability before writing its manifest. Never
@@ -428,7 +433,7 @@ curl -fsS http://127.0.0.1:18100/healthz >/dev/null
 import subprocess
 import sys
 from pathlib import Path
-from openprogram.worker.lifecycle import current_worker_pid
+from openprogram.worker.lifecycle import current_worker_pid, worker_executable
 
 pid = current_worker_pid()
 if pid is None:
@@ -440,7 +445,7 @@ executable = subprocess.check_output(
     ["ps", "-p", str(pid), "-o", "comm="], text=True,
 ).strip()
 if (
-    Path(executable).resolve() != Path(sys.argv[1]).resolve()
+    Path(executable).resolve() != Path(worker_executable()).resolve()
     or not command.endswith(" -I -B -u -m openprogram worker run")
 ):
     raise SystemExit(f"refreshed worker {pid} does not use the embedded App interpreter")

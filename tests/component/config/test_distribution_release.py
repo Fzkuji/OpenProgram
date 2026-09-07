@@ -2273,8 +2273,10 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     tui.parent.mkdir(parents=True)
     tui.write_text("// staged Ink bundle\n", encoding="utf-8")
     (repo / "uv.lock").write_text("", encoding="utf-8")
-    for name in ("product-runtime.json", "verify-product-runtime.py"):
+    for name in ("product-runtime.json", "verify-product-runtime.py", "build-macos-runtime-app.py", "mac-runtime-main.c"):
         (release_scripts / name).write_bytes((ROOT / "scripts/release" / name).read_bytes())
+    (desktop / "build").mkdir(exist_ok=True)
+    (desktop / "build/icon.icns").write_bytes(b"icns")
     (release_scripts / "install-release.sh").write_text(
         'OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-0.6.6}"\n',
         encoding="utf-8",
@@ -2478,7 +2480,8 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     os.killpg(interrupted.pid, signal.SIGTERM)
     stdout, stderr = interrupted.communicate(timeout=5)
 
-    assert interrupted.returncode == 143, (stdout, stderr)
+    # The flock-owning Python parent reports a signal directly; Bash reports 128+signal.
+    assert interrupted.returncode in {-signal.SIGTERM, 143}, (stdout, stderr)
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
     assert not lock_file.exists()
@@ -2533,7 +2536,7 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     os.killpg(cleanup_interrupted.pid, signal.SIGTERM)
     stdout, stderr = cleanup_interrupted.communicate(timeout=5)
 
-    assert cleanup_interrupted.returncode == 143, (stdout, stderr)
+    assert cleanup_interrupted.returncode in {-signal.SIGTERM, 143}, (stdout, stderr)
     assert not lock_file.exists()
     assert not list(Path(env["TMPDIR"]).glob("openprogram-local-wheel.*"))
 

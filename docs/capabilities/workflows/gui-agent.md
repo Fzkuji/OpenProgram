@@ -82,8 +82,11 @@ Opening this page or running `openprogram doctor` does not request permission.
 The TUI `/doctor` command and `GET /api/system/access` expose the same checks.
 Missing optional desktop access does not prevent ordinary chat or upgrades.
 
-On macOS, screen recording and Accessibility are checked separately for the
-executing process. In local System settings, **Set up access** explicitly requests
+On macOS, managed installations run the worker and its Python children through
+**OpenProgram Runtime**, an embedded application with the OpenProgram icon and
+a stable bundle identifier. This is the name to look for in System Settings;
+the installer does not grant its permissions. Screen recording and Accessibility
+are checked separately for the executing process. In local System settings, **Set up access** explicitly requests
 only a missing permission; an existing grant is left untouched. Complete the
 system confirmation, then return to the page for automatic verification.
 Remote clients must arrange authorization on the execution computer. A grant
