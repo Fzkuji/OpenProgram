@@ -1,7 +1,5 @@
 "use client";
 
-import { FolderTypeIcon } from "@/components/files/file-type-icon";
-
 /**
  * FileTree — the right sidebar's resident content: a lazy directory
  * tree over the active tab's project. Clicking a file opens (or
@@ -16,6 +14,8 @@ import {
   File,
   FilePlus,
   Info,
+  Folder,
+  FolderOpen,
   FolderPlus,
   RotateCw,
 } from "lucide-react";
@@ -1089,7 +1089,7 @@ export function FileTree({
               onClick={() => void revealSearchResult(path, entry.type)}
             >
               {entry.type === "dir" ? (
-                <FolderTypeIcon size={15} className={styles.treeIconFolder} />
+                <Folder size={15} className={styles.treeIconFolder} />
               ) : (
                 <FileGlyph name={entry.name} />
               )}
@@ -1134,7 +1134,7 @@ export function FileTree({
             style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
           >
             {creating.kind === "dir" ? (
-              <FolderTypeIcon size={14} className={styles.treeIconFolder} />
+              <Folder size={14} className={styles.treeIconFolder} />
             ) : (
               <File size={14} className={styles.treeIcon} />
             )}
@@ -1187,9 +1187,9 @@ export function FileTree({
               title={full}
             >
               {displayOpen ? (
-                <FolderTypeIcon open size={15} className={styles.treeIconFolder} />
+                <FolderOpen size={15} className={styles.treeIconFolder} />
               ) : (
-                <FolderTypeIcon size={15} className={styles.treeIconFolder} />
+                <Folder size={15} className={styles.treeIconFolder} />
               )}
               {renaming === full ? (
                 <InlineNameInput

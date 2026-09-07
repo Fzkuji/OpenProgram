@@ -1,13 +1,12 @@
 "use client";
 
-import { FolderTypeIcon } from "@/components/files/file-type-icon";
-
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Check,
   ChevronDown,
   ChevronUp,
   Copy,
+  FolderOpen,
   Highlighter,
   ListFilter,
   ScanSearch,
@@ -151,7 +150,7 @@ export function ExplorerHeader({
         {!pathNavigation ? leading : null}
         {showRootPath && !pathNavigation ? (
           <div className={styles.treeRootPath}>
-            <FolderTypeIcon open className={styles.treeRootIcon} aria-hidden="true" />
+            <FolderOpen className={styles.treeRootIcon} aria-hidden="true" />
             <button
               className={styles.treeRootLabel}
               type="button"

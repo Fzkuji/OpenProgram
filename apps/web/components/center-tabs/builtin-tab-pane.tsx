@@ -1,7 +1,5 @@
 "use client";
 
-import { FolderTypeIcon } from "@/components/files/file-type-icon";
-
 /**
  * BuiltinTabPane — the wide, full-center form of the two library pages
  * that used to live in the right sidebar: Bookmarks and Web history.
@@ -21,6 +19,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  Folder,
   History,
   MoreVertical,
   Trash2,
@@ -135,7 +134,7 @@ function bookmarkSearchResults(folder: BookmarkFolder, needle: string): Bookmark
 function BookmarkFavicon({ node }: { node: BookmarkNode }) {
   const [broken, setBroken] = useState(false);
   if (node.kind === "folder") {
-    return <FolderTypeIcon size={17} aria-hidden="true" />;
+    return <Folder size={17} aria-hidden="true" />;
   }
   if (!node.faviconUrl || broken) {
     return <ChromeIcon size={16} aria-hidden="true" />;
@@ -285,7 +284,7 @@ function BookmarksPage() {
           ) : (
             <span className={styles.bookmarkFolderTwisty} />
           )}
-          <FolderTypeIcon size={16} aria-hidden="true" />
+          <Folder size={16} aria-hidden="true" />
           <button
             type="button"
             className={styles.bookmarkFolderTitle}
@@ -818,7 +817,7 @@ function DownloadsPage() {
                     title={text("Show in folder", "在文件夹中显示")}
                     aria-label={text("Show in folder", "在文件夹中显示")}
                   >
-                    <FolderTypeIcon size={14} aria-hidden="true" />
+                    <Folder size={14} aria-hidden="true" />
                   </button>
                 )}
               </div>

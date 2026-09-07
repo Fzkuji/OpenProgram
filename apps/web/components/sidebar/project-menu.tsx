@@ -1,9 +1,7 @@
 "use client";
-
-import { FolderTypeIcon } from "@/components/files/file-type-icon";
 import { useRef, useState, type ReactNode, type MouseEvent } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { MoreHorizontal, Check, ChevronRight, MessageSquarePlus, Pencil, PanelsTopLeft, FolderSearch, GitBranch, Archive, FolderMinus } from "lucide-react";
+import { MoreHorizontal, Check, ChevronRight, MessageSquarePlus, FolderOpen, Pencil, PanelsTopLeft, FolderSearch, GitBranch, Archive, FolderMinus } from "lucide-react";
 import { MENU_PANEL, MENU_SEPARATOR, itemCls } from "@/components/chat/top-bar/menu-styles";
 import { useTranslation } from "@/lib/i18n";
 import { useRecentsView, setRecentsView } from "@/lib/prefs/recents-view";
@@ -70,7 +68,7 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, o
       </div>
       <Menu.Portal><Menu.Content side="bottom" align="start" sideOffset={4} onCloseAutoFocus={event=>event.preventDefault()} className={MENU_PANEL+" "+styles.menu+" min-w-[220px]"}>
         <Menu.Item className={item} onSelect={onNewSession}><MessageSquarePlus size={14} className={styles.menuIcon}/>{text("New chat", "新建聊天")}</Menu.Item>
-        <Menu.Item className={item} onSelect={onOpen}><FolderTypeIcon open size={14} className={styles.menuIcon}/>{text("Open project", "打开项目")}</Menu.Item>
+        <Menu.Item className={item} onSelect={onOpen}><FolderOpen size={14} className={styles.menuIcon}/>{text("Open project", "打开项目")}</Menu.Item>
         <Menu.Item className={item}
           onMouseEnter={()=>pinRef.current?.startAnimation()} onMouseLeave={()=>pinRef.current?.stopAnimation()}
           onFocus={()=>pinRef.current?.startAnimation()} onBlur={()=>pinRef.current?.stopAnimation()}

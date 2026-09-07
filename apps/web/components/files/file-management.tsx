@@ -57,7 +57,6 @@ export function FileSortMenu({ value, onChange }: { value: string; onChange: (va
         {option(1, "asc", text("Ascending", "升序"))}{option(1, "desc", text("Descending", "降序"))}
       </div><DropdownMenuSeparator className={MENU_SEPARATOR} />
       {option(2, "folders", text("Folders first", "文件夹优先"), "mixed")}{option(3, "hidden", text("Show hidden files", "显示隐藏文件"), "visible")}{option(4, "ignored", text("Show Git-ignored files", "显示 Git 忽略文件"), "tracked")}
-      <small className="px-[10px] py-[6px] text-[12px] text-text-muted">{text("Unknown folder sizes stay last within their group. Refresh after calculating sizes to sort again.", "未知大小的文件夹排在同组末尾。计算完成后刷新可重新按大小排序。")}</small>
     </DropdownMenuContent></DropdownMenu>;
 
 }

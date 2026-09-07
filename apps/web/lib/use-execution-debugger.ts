@@ -62,6 +62,7 @@ export type ExecutionDebuggerController = {
 };
 
 type DebuggerConnection = {
+  errorSessionId?: string | null;
   state: "connected" | "reconnecting" | "stale" | "gap" | "conflict";
   cursor?: EventCursor | null;
   expected_sequence?: number | null;
@@ -156,7 +157,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
         return true;
       } catch (error) {
         if (!mounted.current || token !== refreshToken.current || controller.signal.aborted) return false;
-        setConnection({ state: "stale", message: errorMessage(error) });
+        setConnection({ state: "stale", message: errorMessage(error), errorSessionId: sessionId });
         return false;
       } finally {
         if (refreshController.current === controller) refreshController.current = null;
@@ -234,7 +235,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       if (resultExecution?.execution_id) {
         setSnapshots((current) => ({ ...current, [resultExecution.execution_id]: { ...current[resultExecution.execution_id], ...resultExecution } }));
         void loadDebuggerData(resultExecution.execution_id).catch((error) => {
-          setConnection({ state: "stale", message: errorMessage(error) });
+          setConnection({ state: "stale", message: errorMessage(error), errorSessionId: sessionId });
         });
       }
       const childId = result.result_json?.child_execution_id;
@@ -250,7 +251,7 @@ export function useExecutionDebugger(active: boolean, sessionId: string | null, 
       }
       return result;
     } catch (error) {
-      setConnection({ state: "conflict", message: errorMessage(error) });
+      setConnection({ state: "conflict", message: errorMessage(error), errorSessionId: sessionId });
       throw error;
     } finally {
       // Commands can be rejected without publishing an execution event.

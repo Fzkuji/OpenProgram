@@ -9,11 +9,12 @@ import { getProcess, getSessionProcesses, type ManagedProcess } from "./net/proc
 export function useManagedProcesses(active: boolean, sessionId: string | null, selectedId: string | null) {
   const [items, setItems] = useState<ManagedProcess[]>([]);
   const [detail, setDetail] = useState<{ process: ManagedProcess; output: string } | null>(null);
-  const [stale, setStale] = useState(false);
+  const [failedSessionId, setFailedSessionId] = useState<string | null>(null);
+  const stale = failedSessionId !== null && failedSessionId === sessionId;
   const [loaded, setLoaded] = useState(false);
   const refreshRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
   const refresh = useCallback(() => refreshRef.current(), []);
-  useEffect(() => { setItems([]); setDetail(null); setLoaded(false); setStale(false); }, [sessionId]);
+  useEffect(() => { setItems([]); setDetail(null); setLoaded(false); setFailedSessionId(null); }, [sessionId]);
   useEffect(() => { setDetail(null); }, [sessionId, selectedId]);
   useEffect(() => {
     if (!active || !sessionId) return;
@@ -43,9 +44,9 @@ export function useManagedProcesses(active: boolean, sessionId: string | null, s
             if (!disposed && data.items.some(item => item.id === selected.process.id)) setDetail(selected);
           }
           if (disposed) return false;
-          setStale(false);
+          setFailedSessionId(null);
           return true;
-        } catch { if (!disposed) setStale(true); return false; }
+        } catch { if (!disposed) setFailedSessionId(sessionId); return false; }
         finally {
           clearTimeout(timeout);
           pending = null;
