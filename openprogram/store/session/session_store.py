@@ -616,8 +616,12 @@ class SessionStore:
         registry (which relocate / auto-claim keeps current), and heal
         the index if the repo is found at the project's current path.
         """
+        # Placement can be created or relocated by another worker/process.
+        # The persisted index is atomic; an in-memory startup snapshot must
+        # not keep an existing conversation invisible until the next restart.
+        locations = self._load_locations()
         with self._lock:
-            loc = self._locations.get(session_id)
+            loc = locations.get(session_id) or self._locations.get(session_id)
         if not loc:
             return self.root_path / session_id
         p = Path(loc)
@@ -652,6 +656,10 @@ class SessionStore:
             sdir = self._session_dir(session_id)
             with self._lock:
                 cached = self._sessions.get(session_id)
+                if cached and cached[0].path != sdir:
+                    # Another process relocated the session since it was opened.
+                    self._sessions.pop(session_id)
+                    cached = None
                 if cached:
                     self._sessions.move_to_end(session_id)
             if not create_if_missing:
