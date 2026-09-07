@@ -58,17 +58,39 @@ export function FileSortMenu({ value, onChange }: { value: string; onChange: (va
 export function FileBreadcrumb({ root, path, onLocate }: { root: string; path: string; onLocate: (path: string) => void }) {
   const { text } = useTranslation();
   const ref = useRef<HTMLElement>(null);
-  const [compact, setCompact] = useState(true);
-  useEffect(() => {
-    const observer = new ResizeObserver(([entry]) => setCompact(entry.contentRect.width < 540));
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, []);
+  const measureRef = useRef<HTMLSpanElement>(null);
   const parts = path.split("/").filter(Boolean);
+  const [firstVisible, setFirstVisible] = useState(Math.max(0, parts.length - 1));
+  useEffect(() => {
+    let disposed = false;
+    const fit = () => {
+      if (disposed || !ref.current || !measureRef.current) return;
+      const available = ref.current.clientWidth;
+      if (!available) return;
+      const widths = Array.from(measureRef.current.children, item => item.getBoundingClientRect().width);
+      const rootWidth = Math.min(widths[0], available * .4);
+      // Each non-root segment has a 12px chevron and two 2px gaps.
+      const segments = widths.slice(2).map(width => width + 16);
+      let remaining = segments.reduce((sum, width) => sum + width, 0);
+      let first = 0;
+      if (rootWidth + remaining > available) {
+        while (first < segments.length - 1 && rootWidth + widths[1] + 16 + remaining > available) {
+          remaining -= segments[first++];
+        }
+      }
+      setFirstVisible(first);
+    };
+    const observer = new ResizeObserver(fit);
+    if (ref.current) observer.observe(ref.current);
+    fit();
+    void document.fonts?.ready.then(fit);
+    return () => { disposed = true; observer.disconnect(); };
+  }, [root, path]);
   const crumb = (name: string, target: string) => <button type="button" title={target || root} onClick={() => onLocate(target)}>{name}</button>;
   return <nav ref={ref} className={styles.fileBreadcrumb} aria-label={text("File path", "文件路径")}>
-    {crumb(root, "")}{compact && parts.length > 1 ? <><ChevronRight /><Popover><PopoverTrigger asChild><button title={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={styles.fileCrumbMenu}>{parts.slice(0, -1).map((part, i) => <div key={i}>{crumb(part, parts.slice(0, i + 1).join("/"))}</div>)}</PopoverContent></Popover></> : null}
-    {parts.map((part, i) => compact && i < parts.length - 1 ? null : <span className={styles.fileCrumbPart} key={i}><ChevronRight />{crumb(part, parts.slice(0, i + 1).join("/"))}</span>)}
+    <span ref={measureRef} className={styles.fileBreadcrumbMeasure} aria-hidden="true">{[root, "…", ...parts].map((name, i) => <span key={i}>{name}</span>)}</span>
+    {crumb(root, "")}{firstVisible > 0 ? <span className={styles.fileCrumbPart}><ChevronRight /><Popover><PopoverTrigger asChild><button title={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={styles.fileCrumbMenu}>{parts.slice(0, firstVisible).map((part, i) => <div key={i}>{crumb(part, parts.slice(0, i + 1).join("/"))}</div>)}</PopoverContent></Popover></span> : null}
+    {parts.map((part, i) => i < firstVisible ? null : <span className={styles.fileCrumbPart} key={i}><ChevronRight />{crumb(part, parts.slice(0, i + 1).join("/"))}</span>)}
   </nav>;
 }
 
