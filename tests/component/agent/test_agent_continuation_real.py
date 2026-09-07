@@ -1112,3 +1112,33 @@ def test_cancel_at_resumed_provider_boundary_finalizes(real_agent_chat, monkeypa
 
     assert h.provider.call_count == 1
     assert h.tools.calls == ['first']
+
+
+def test_decline_preserves_checkpoint_trace_and_notifies_chat(real_agent_chat, monkeypatch):
+    from tests.component.providers.scripted_provider import ScriptedThinking, ScriptedText, ScriptedToolCall
+    from openprogram.execution.outbox import ProjectionDispatcher
+    from openprogram.execution.projections import projection_handlers
+    h = real_agent_chat
+    h.tools.wait_kind = "approval"
+    h.provider.add_response(ScriptedText("Earlier progress."), ScriptedToolCall("second", {}, "call-finished"))
+    h.provider.add_response(ScriptedThinking("Checking the requested operation."), ScriptedText("Please approve this operation."), ScriptedToolCall("first", {}, "call-denied"))
+    execution = _chat(h)
+    question = _pending_question(h, kind="approval")
+    _wait(lambda: h.store.get_execution(execution.execution_id).status is ExecutionStatus.PAUSED)
+    frames = []
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
+    _question_action(h, "question_reject", question.id)
+    _wait(lambda: h.store.get_execution(execution.execution_id).status is ExecutionStatus.FAILED)
+    ProjectionDispatcher(h.store, projection_handlers(h.store)).dispatch_once(owner_id="test-trace")
+    source = h.store.get_execution_input(execution.execution_id)
+    from openprogram.store import SessionNodeWriter
+    node = SessionNodeWriter(h.sessions, h.session_id, advance_head=False).load().nodes[source.assistant_message_id]
+    blocks = json.loads(node.metadata.get("extra", "{}" )).get("blocks", [])
+    assert any(b.get("type") == "thinking" for b in blocks)
+    assert any(b.get("text") == "Please approve this operation." for b in blocks)
+    assert any(b.get("tool_call_id") == "call-denied" and b.get("result") for b in blocks)
+    assert "declined" in node.output.lower()
+    assert any(f.get("type") == "session_reload" for f in frames)
+    assert h.tools.calls == ["second"]
+    assert any(b.get("tool_call_id") == "call-finished" and b.get("result") == "second:ok" for b in blocks)
+    assert any(b.get("text") == "Earlier progress." for b in blocks)

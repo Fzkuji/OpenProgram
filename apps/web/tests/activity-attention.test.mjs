@@ -17,3 +17,9 @@ test("paused tasks and unresolved external actions remain actionable", () => {
   }
   assert.equal(executionNeedsAttention({ status: "failed", effect_summary: {} }), false);
 });
+
+
+test("approval outcomes are distinguished from generic pauses and failures", () => {
+  assert.equal(executionStatusLabel({ status: "failed", reason_code: "wait_declined" }, text), "Declined");
+  assert.equal(executionStatusLabel({ status: "paused", reason_code: "wait_open" }, text), "Waiting for your response");
+});

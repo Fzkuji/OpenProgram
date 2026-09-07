@@ -120,8 +120,8 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
   const branchActive = (branch: ActivityBranch) => branch.executions.some(item => hasActive(item));
   const branchRepresentative = (branch: ActivityBranch) => branch.executions.find(item => needsAttention(item))
     || branch.executions.find(item => hasActive(item)) || branch.executions[0];
-  const branchTitle = (branch: ActivityBranch) => branch.name || `${text("Branch", "分支")} ${groups.indexOf(branch) + 1} · ${executionTitle(
-    [...branch.executions].reverse().find(item => branch.execution_ids.includes(item.execution_id)) || branch.executions[0], 1, text)}`;
+  const branchTitle = (branch: ActivityBranch) => branch.name || executionTitle(
+    [...branch.executions].reverse().find(item => branch.execution_ids.includes(item.execution_id)) || branch.executions[0], 1, text);
   function branchRow(branch: ActivityBranch): ReactNode {
     const item = branchRepresentative(branch);
     return <Button variant="ghost" className={styles.row} key={branch.branch_id} onClick={() => {
@@ -141,8 +141,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
       || groups.find(item => item.execution_ids.includes(state.selectedExecutionId || ""));
     return <div className={styles.panel}><div className={styles.toolbar}>{back}</div>
       <div className={styles.scroll}>
-        {branch ? <><h3 className={styles.title}>{branchTitle(branch)}</h3>
-          <p className={styles.meta}>{text("Execution history for this conversation branch", "此会话分支的执行记录")}</p>
+        {branch ? <><h3 className={styles.title}>{branch.name || text("Execution history", "执行记录")} <span className={styles.count}>{branch.executions.length}</span></h3>
           {branch.executions.filter(item => {
             const parent = item.view_parent_execution_id ?? item.parent_execution_id;
             return !parent || !branch.executions.some(other => other.execution_id === parent);

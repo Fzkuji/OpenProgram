@@ -85,12 +85,14 @@ def _create_current_schema(connection: sqlite3.Connection) -> None:
     if connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'execution_events'"
     ).fetchone() is not None:
-        _add_column_if_missing(
-            connection,
-            "execution_events",
-            "execution_sequence INTEGER NOT NULL DEFAULT 0",
-        )
-        _backfill_execution_sequences(connection)
+        columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(execution_events)")}
+        if "execution_sequence" not in columns:
+            _add_column_if_missing(
+                connection,
+                "execution_events",
+                "execution_sequence INTEGER NOT NULL DEFAULT 0",
+            )
+            _backfill_execution_sequences(connection)
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS runs (

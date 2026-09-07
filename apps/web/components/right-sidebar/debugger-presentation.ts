@@ -17,6 +17,8 @@ export function executionNeedsAttention(snapshot: ExecutionSnapshot): boolean {
     && snapshot.effect_summary?.provider_response_incomplete !== true);
 }
 export function executionStatusLabel(snapshot: ExecutionSnapshot, text: Text): string {
+  if (snapshot.reason_code === "wait_declined") return text("Declined", "已拒绝");
+  if (snapshot.status === "paused" && snapshot.reason_code === "wait_open") return text("Waiting for your response", "等待你的答复");
   return snapshot.status === "reconciliation_required" && !executionNeedsAttention(snapshot)
     ? text("Ended · response record incomplete", "已结束 · 响应记录不完整")
     : statusLabel(snapshot.status, text);

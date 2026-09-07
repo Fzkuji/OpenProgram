@@ -168,7 +168,7 @@ class ExecutionProjectionReadModel:
         if node is None or (node.metadata or {}).get("status") not in {None, "running", "error", "interrupted"}:
             return
         reason = execution.reason_code
-        if (reason in {"wait_declined", "wait_timeout", "continuation_contract_mismatch"}
+        if (reason == "continuation_contract_mismatch"
                 and (node.metadata or {}).get("error") == reason
                 and (node.metadata or {}).get("status") == "error"):
             return
@@ -184,10 +184,24 @@ class ExecutionProjectionReadModel:
             }})
             return
         if reason in {"wait_declined", "wait_timeout"}:
-            notice = ("[declined] This request was declined."
-                      if reason == "wait_declined" else "[expired] This request expired before an answer was received.")
-            fields["output"] = f"{node.output}\n\n{notice}".strip()
+            notice = ("This operation was declined and was not executed."
+                      if reason == "wait_declined" else "This request expired before an answer was received.")
+            blocks = self._checkpoint_blocks(execution, source.assistant_message_id)
+            if blocks:
+                blocks.append({"type": "text", "text": notice})
+                fields["metadata"]["extra"] = json.dumps({"blocks": blocks})
+                fields["output"] = "\n\n".join(
+                    block["text"] for block in blocks if block.get("type") == "text"
+                )
+            else:
+                fields["output"] = node.output if notice in (node.output or "") else f"{node.output or ''}\n\n{notice}".strip()
+            if reason == "wait_declined":
+                fields["metadata"].update(status="cancelled", error=None, error_type=None)
             writer.update(source.assistant_message_id, **fields)
+            from openprogram.events import emit_ws_frame
+            emit_ws_frame({"type": "session_reload", "data": {
+                "session_id": execution.session_id, "reason": reason,
+            }})
             return
         if not node.output:
             output = ""
@@ -205,6 +219,46 @@ class ExecutionProjectionReadModel:
                     _log.debug("failed reply has no readable assistant checkpoint", exc_info=True)
             fields["output"] = output or "[error] Agent execution failed."
         writer.update(source.assistant_message_id, **fields)
+
+    def _checkpoint_blocks(self, execution: ExecutionRecord, assistant_id: str) -> list[dict]:
+        """Recover only the public display blocks from this turn's saved messages."""
+        if not execution.checkpoint_head_id:
+            return []
+        from openprogram.agent.continuation import AgentCheckpointV1
+        from .checkpoints import ExecutionCheckpointStore
+        try:
+            checkpoint = ExecutionCheckpointStore(self.store).get(execution.checkpoint_head_id)
+            state = AgentCheckpointV1.load(self.store, checkpoint)
+            if state.payload["turn"]["assistant_message_id"] != assistant_id:
+                return []
+            blocks: list[dict] = []
+            tools: dict[str, dict] = {}
+            for action in state.payload["completed_actions"]:
+                message = state.read_json_ref(self.store, execution.execution_id, action["result_ref"])
+                if message.get("role") == "assistant":
+                    for item in message.get("content", []):
+                        kind = item.get("type")
+                        if kind in {"text", "thinking"}:
+                            blocks.append({"type": kind, "text": item.get(kind, "")})
+                        elif kind == "toolCall":
+                            block = {"type": "tool", "tool": item["name"],
+                                     "tool_call_id": item["id"], "input": json.dumps(item.get("arguments", {}))}
+                            blocks.append(block)
+                            tools[item["id"]] = block
+                elif message.get("role") == "toolResult" and message.get("tool_call_id") in tools:
+                    tools[message["tool_call_id"]].update(
+                        result="\n".join(item.get("text", "") for item in message.get("content", []) if item.get("type") == "text"),
+                        is_error=message.get("is_error", False),
+                    )
+            pending = state.payload["current_decision"]["tool_call_ids"][state.payload["next_tool_index"]:]
+            for tool_id in pending:
+                if tool_id in tools and "result" not in tools[tool_id]:
+                    tools[tool_id].update(result="Not executed: request declined." if execution.reason_code == "wait_declined"
+                                         else "Not executed: request expired.", is_error=True)
+            return blocks
+        except Exception:
+            _log.warning("Could not recover the saved display trace for %s", execution.execution_id, exc_info=True)
+            return []
 
     def get_current(
         self, projection_kind: str, execution_id: str

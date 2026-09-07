@@ -80,6 +80,8 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
     monkeypatch.setattr("openprogram.webui.server._runtime_management", _RM())
 
     captured = {}
+    monkeypatch.setattr("openprogram.agent.dispatcher.titles.fn_form_llm_title",
+                        lambda *_args: captured.update(active_while_titling=real_is_run_active("s1")))
 
     def _stop_dispatch(**kw):
         captured["anchor"] = kw.get("anchor_msg_id")
@@ -213,6 +215,8 @@ def test_parent_threads_canonical_id_with_or_without_precreate(monkeypatch, tmp_
             "access": "enabled",
         },
     )
+    assert captured.get("active_while_titling") is False
+
     assert "error" not in res
 
     # A top-level code node exists on disk and HEAD points at it.

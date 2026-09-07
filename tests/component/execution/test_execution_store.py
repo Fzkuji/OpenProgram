@@ -544,3 +544,13 @@ def test_default_store_follows_the_active_profile_path(tmp_path, monkeypatch) ->
         assert first.path == target
     finally:
         _store_for_path.cache_clear()
+
+
+def test_reopening_current_store_does_not_rewrite_execution_history(tmp_path):
+    store = _store(tmp_path)
+    execution = _execution(store)
+    before = store.list_events(execution.execution_id)
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("CREATE TRIGGER history_is_immutable BEFORE UPDATE ON execution_events BEGIN SELECT RAISE(ABORT, 'startup rewrote execution history'); END")
+    reopened = ExecutionStore(store.path)
+    assert reopened.list_events(execution.execution_id) == before

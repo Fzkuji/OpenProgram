@@ -80,7 +80,7 @@ test("Activity counts one continuous branch and retains both executions in detai
     await click("History");
     assert.equal(host.querySelectorAll("time").length, 0, "turn timestamps belong in details");
     await click("first");
-    assert.match(host.textContent, /Execution history for this conversation branch/);
+    assert.match(host.textContent, /Execution history 2/);
     assert.match(host.textContent, /first/); assert.match(host.textContent, /last/);
   });
 });
@@ -126,4 +126,17 @@ test("Activity still reports confirmed current conversation read failures", asyn
   for (const processFailed of [false,true]) await mounted([], async host => {
     assert.match(host.textContent, /statuses are unavailable/);
   }, [], [], {connection: processFailed ? {state:"connected"} : {state:"stale",message:"request failed",errorSessionId:"session"}}, {stale:processFailed});
+});
+
+
+test("branch details show a request once, below a short aligned heading", async () => {
+  const request = 'Long approval request process(action=start, command=example)';
+  await mounted([{...run("first", "failed", 1), task_label: request, reason_code:"wait_declined"}], async (host, click) => {
+    await click("History");
+    await click("Long approval request");
+    assert.equal(host.querySelector("h3").textContent, "Execution history 1");
+    assert.equal(host.textContent.split(request).length - 1, 1);
+    assert.match(host.textContent, /Declined/);
+    assert.doesNotMatch(host.textContent, /Execution history for this conversation branch|Branch 1/);
+  });
 });

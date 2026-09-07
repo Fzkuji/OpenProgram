@@ -684,14 +684,6 @@ def run_agentic_function_call(
                     "display": "runtime",
                 })
                 return
-            if (out or {}).get("ok") and _fn_title:
-                # Stage-2 of the doc's two-stage naming: the function has
-                # produced a result, so let the LLM rename the session
-                # over the call + output (race-guarded; never locks).
-                from openprogram.agent.dispatcher.titles import (
-                    fn_form_llm_title,
-                )
-                fn_form_llm_title(_rc_db2(), session_id, _fn_title)
         finally:
             # The function run is over (success / error / exception) —
             # clear the running task so the sidebar's flowing animation
@@ -709,6 +701,15 @@ def run_agentic_function_call(
                     )
             except Exception:
                 pass
+
+        if (out or {}).get("ok") and _fn_title:
+            # Stage-2 of the doc's two-stage naming: the function has
+            # produced a result, so let the LLM rename the session
+            # over the call + output (race-guarded; never locks).
+            from openprogram.agent.dispatcher.titles import (
+                fn_form_llm_title,
+            )
+            fn_form_llm_title(_rc_db2(), session_id, _fn_title)
 
     try:
         worker = threading.Thread(target=_run, daemon=True)
