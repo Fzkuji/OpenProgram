@@ -23,7 +23,7 @@
   position: relative;
   min-width: 0;
   border-radius: var(--ui-button-radius);
-  background: var(--bg-input);
+  background: var(--bg-primary);
   color: var(--text-primary);
   font-size: var(--fs-base);
   line-height: 1.5;
