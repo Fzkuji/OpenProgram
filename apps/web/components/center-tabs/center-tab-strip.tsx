@@ -24,7 +24,6 @@ import { createPortal } from "react-dom";
 import { CirclePlus, Plus, SquareArrowOutUpRight } from "lucide-react";
 
 import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
-import { SessionResourcesMenu } from "@/components/session-resources/session-resources-menu";
 import { topLevelTabs } from "@/lib/state/web-page-management";
 import { centerTabStripEntries } from "@/lib/state/center-tab-groups";
 import { dragCoordinator } from "@/lib/tab-drag-coordinator";
@@ -324,7 +323,6 @@ export function CenterTabStrip() {
         unfreezeTimerRef.current = null;
       }}
     >
-      <SessionResourcesMenu />
       {/* tab 流容器：浏览器模式 display:contents 零影响；桌面模式限宽，
          让＋号既跟随 tab、又最深只顶到右栏图标轴线（见 module css）。 */}
       <div

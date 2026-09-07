@@ -46,7 +46,7 @@ OpenProgram does not import passwords, payment or address autofill data, downloa
 
 When a chat turn has a visible built-in Browser pane in the same app window, OpenProgram attaches a bounded description of that exact WebTab to the turn before the first model response. The Agent receives the page title, origin, visible text, ARIA landmarks, and a browser-control tool. This works whether the Browser pane is on the left or right, in a picture-in-picture preview over chat, and does not require the app window or Browser pane to have operating-system focus.
 
-If the Agent opens a page while you stay in chat, Desktop shows that live WebTab as a small corner preview. The preview can expand into a chat-and-page split, take over the center pane, or close without destroying the tab. Closing the preview only hides it; the page remains available from **Session resources** at the top left. The web UI (a browser tab, not the Desktop App) has no native BrowserView, so the same preview falls back to an iframe or an Open-in-new-tab control.
+If the Agent opens a page while you stay in chat, Desktop shows that live WebTab as a small corner preview. The preview can expand into a chat-and-page split, take over the center pane, or close without destroying the tab. Closing the preview only hides it; the page remains available from **Session resources** in the right sidebar. The web UI (a browser tab, not the Desktop App) has no native BrowserView, so the same preview falls back to an iframe or an Open-in-new-tab control.
 
 Actions remain bound to the originating window and WebTab. The default path uses DOM, ARIA, page text, and element references. A single current-viewport screenshot is used only for a visual task or when the page cannot be located structurally. The product does not add OCR, object detection, iterative crops, component memory, vision memory, or workflow replay to this path.
 
@@ -60,9 +60,9 @@ The maintained engineering specifications are [Built-in browser design](../refer
 
 ## Session resources
 
-Click the chevron at the top left, beside the window controls, to open **Session resources**. Search by resource title, target, type, or conversation, and expand or collapse conversation groups. The popup lists webpages, file views with recorded provenance, terminal views, active managed processes, and resources reported by integrations. Manual views without a recorded session appear in an unassigned group.
+Click **Resources** in the right sidebar to open **Session resources**. Use the sidebar toggle to collapse or expand the panel. Search by resource title, target, type, or conversation, and expand or collapse conversation groups. The panel lists webpages, file views with recorded provenance, terminal views, active managed processes, and resources reported by integrations. Manual views without a recorded session appear in an unassigned group.
 
-Agent-created webpages stay out of the top strip unless pinned or in a split. Select a webpage or file to open its existing view. Webpages can be pinned or closed; closing the popup or a group leaves resources running. The right sidebar no longer has a Pages entry.
+Agent-created webpages stay out of the top strip unless pinned or in a split. Select a webpage or file to open its existing view. Webpages can be pinned or closed; collapsing the panel or a group leaves resources running. Selecting a resource keeps the panel open beside its view.
 
 Docker and SSH foreground backend calls report their period of use. Managed background processes retain their existing status and output controls. GUI Harness reports its configured desktop or VM attachment for the duration of the call. Select a non-page resource to inspect its target and status; managed processes also show output. These entries describe session usage, not infrastructure ownership or a container/VM deletion interface.
 

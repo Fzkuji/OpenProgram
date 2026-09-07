@@ -26,6 +26,8 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { Box } from "lucide-react";
+import { SessionResourcesPanel } from "../session-resources/session-resources-panel";
 import { usePathname } from "next/navigation";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -63,12 +65,13 @@ import {
 // "detail" picks `<div data-view="detail">`.
 const VIEW_FILES = "files";
 const VIEW_RUNNING = "running";
+const VIEW_RESOURCES = "resources";
 
 export function RightSidebar() {
   const { t, text } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
   const storedView = useSessionStore((s) => s.rightDock.view);
-  const view = storedView === "pages" ? VIEW_FILES : storedView === "debugger" ? VIEW_RUNNING : storedView;
+  const view = storedView === "pages" ? VIEW_RESOURCES : storedView === "debugger" ? VIEW_RUNNING : storedView;
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
   const [visible, setVisible] = useState(true);
@@ -274,6 +277,17 @@ export function RightSidebar() {
           </span>
         </div>
 
+        <button type="button"
+          className={sidebarNavItemClass + " right-nav-item" + (view === VIEW_RESOURCES ? " " + sidebarNavItemActiveClass : "")}
+          data-view={VIEW_RESOURCES}
+          onClick={() => onNavClick(VIEW_RESOURCES)}
+          title={text("Session resources", "会话资源")}
+          aria-label={text("Session resources", "会话资源")}
+          aria-expanded={open && view === VIEW_RESOURCES}
+          aria-controls="sessionResourcesPanel">
+          <span className={sidebarNavIconClass}><Box size={20} /></span>
+          <span className={sidebarNavLabelClass}>{text("Resources", "资源")}</span>
+        </button>
       </div>
 
       <div className="right-view-host">
@@ -292,6 +306,9 @@ export function RightSidebar() {
         {/* One conversation-owned view for Agents and their managed programs. */}
         <div className="right-view" data-view={VIEW_RUNNING}>
           <RunningPanel key={activitySessionId || "no-session"} sessionId={activitySessionId} active={open && visible && view === VIEW_RUNNING} />
+        </div>
+        <div id="sessionResourcesPanel" className="right-view" data-view={VIEW_RESOURCES}>
+          {open && visible && view === VIEW_RESOURCES && <SessionResourcesPanel />}
         </div>
         {/* Detail view: ui.js showDetail() writes innerHTML into
             #detailBody and textContent into #detailTitle. The template

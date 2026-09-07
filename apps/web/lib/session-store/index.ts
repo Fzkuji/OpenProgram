@@ -366,7 +366,7 @@ const RIGHT_LS_VIEW = "rightSidebarView";
 // to a center perspective, and "worktrees" was removed outright, so
 // none of them is a sidebar view any more. A stale persisted value
 // falls back to the default view.
-const VALID_VIEWS = new Set(["context", "detail", "files", "running"]);
+const VALID_VIEWS = new Set(["context", "detail", "files", "running", "resources"]);
 
 function readRightDock(): { open: boolean; view: string } {
   if (typeof window === "undefined") return { open: false, view: "files" };
@@ -385,7 +385,8 @@ function readRightDock(): { open: boolean; view: string } {
   let view = "files";
   try {
     const v = localStorage.getItem(RIGHT_LS_VIEW);
-    if (v && VALID_VIEWS.has(v)) view = v;
+    if (v === "pages") view = "resources";
+    else if (v && VALID_VIEWS.has(v)) view = v;
   } catch {
     /* ignore */
   }

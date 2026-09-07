@@ -34,6 +34,7 @@
   display: none;
   flex-direction: column;
 }
+.right-sidebar[data-view="resources"] .right-view[data-view="resources"],
 .right-sidebar[data-view="detail"] .right-view[data-view="detail"],
 .right-sidebar[data-view="context"] .right-view[data-view="context"],
 .right-sidebar[data-view="running"] .right-view[data-view="running"],

@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Box, ChevronDown, File, Globe, Monitor, Pin, PinOff, Search, Server, Terminal, X } from "lucide-react";
+import { Box, File, Globe, Monitor, Pin, PinOff, Search, Server, Terminal, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { resourceSessionIds, sessionResourceRows, type SessionResource } from "@/lib/state/session-resources";
 import { useSessionResources } from "@/lib/use-session-resources";
@@ -12,22 +11,7 @@ import { getProcess } from "@/lib/net/process-client";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./session-resources.module.css";
 
-export function SessionResourcesMenu() {
-  const { text } = useTranslation();
-  const [open, setOpen] = useState(false);
-  return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger asChild><button type="button" className={styles.trigger}
-      title={text("Session resources", "会话资源")} aria-label={text("Session resources", "会话资源")}>
-      <ChevronDown size={18} />
-    </button></PopoverTrigger>
-    <PopoverContent align="start" sideOffset={8} className={styles.popup}
-      aria-label={text("Session resources", "会话资源")} data-native-view-occluder="true">
-      {open && <ResourceList onOpenView={() => setOpen(false)} />}
-    </PopoverContent>
-  </Popover>;
-}
-
-function ResourceList({ onOpenView }: { onOpenView: () => void }) {
+export function SessionResourcesPanel() {
   const { text } = useTranslation();
   const router = useRouter();
   const tabs = useCenterTabs(s => s.tabs);
@@ -72,9 +56,9 @@ function ResourceList({ onOpenView }: { onOpenView: () => void }) {
     running: text("Running", "运行中"), starting: text("Starting", "启动中"), stopping: text("Stopping", "停止中"), unknown: text("Unknown", "状态未知"), released: text("Released", "已释放"),
   }[status] || status);
 
-  return <section className={styles.panel}>
+  return <section className={styles.panel} aria-label={text("Session resources", "会话资源")}>
     <label className={styles.search}><Search size={15} aria-hidden="true" />
-      <input autoFocus value={query} onChange={event => setQuery(event.target.value)}
+      <input value={query} onChange={event => setQuery(event.target.value)}
         placeholder={text("Search resources or sessions", "搜索资源或会话")}
         aria-label={text("Search resources or sessions", "搜索资源或会话")} />
     </label>
@@ -98,7 +82,6 @@ function ResourceList({ onOpenView }: { onOpenView: () => void }) {
               if (row.source === "web" || row.source === "file" || row.source === "terminal") {
                 useCenterTabs.getState().setActive(row.sourceId);
                 if (window.location.pathname !== "/chat" && !window.location.pathname.startsWith("/s/")) router.push("/chat");
-                onOpenView();
               } else setSelected(row);
             }}><Icon size={17} aria-hidden="true" /><span><strong>{row.title}</strong>
               <small>{names[row.kind] || row.kind} · {statusName(row.status)}{row.target ? ` · ${row.target}` : ""}</small></span></button>
