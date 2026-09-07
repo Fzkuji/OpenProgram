@@ -3,7 +3,7 @@
    专属的等宽代码块样式，颜色全走真实主题变量。 */
 
 .summary {
-  margin: 0 -12px;
+  margin: 0;
   font-family: var(--font-sans);
   font-size: var(--fs-base);
   line-height: 1.5;
