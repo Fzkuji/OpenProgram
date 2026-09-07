@@ -312,20 +312,20 @@ test ! -L "$app_path/Contents/Resources/update" && \
 }
 cp "$repo_root/apps/desktop/scripts/install-app.sh" "$installer_stage"
 
-if pgrep -x OpenProgram >/dev/null 2>&1; then
-  osascript -e 'tell application "OpenProgram" to quit' >/dev/null 2>&1 || true
+if pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1; then
+  osascript -e 'tell application id "ai.openprogram.desktop" to quit' >/dev/null 2>&1 || true
   for _ in {1..50}; do
-    pgrep -x OpenProgram >/dev/null 2>&1 || break
+    pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 || break
     sleep 0.2
   done
-  if pgrep -x OpenProgram >/dev/null 2>&1; then
-    pkill -TERM -x OpenProgram
+  if pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1; then
+    pkill -TERM -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)"
     for _ in {1..50}; do
-      pgrep -x OpenProgram >/dev/null 2>&1 || break
+      pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 || break
       sleep 0.2
     done
   fi
-  pgrep -x OpenProgram >/dev/null 2>&1 && {
+  pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1 && {
     printf 'OpenProgram did not quit before the refresh\n' >&2
     exit 1
   }
