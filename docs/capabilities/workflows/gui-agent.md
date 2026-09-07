@@ -117,3 +117,5 @@ The current macOS development build is not production-signed. Permission
 persistence across signed release upgrades, first-run capability onboarding,
 and automatic task recovery after authorization remain unverified. System
 access setup never retries a declined operation.
+
+Local desktop tasks check macOS access before planning. If a grant is missing, the conversation keeps the task and opens the native authorization request for a newly completed visible run. After authorizing, return to the conversation and choose **Continue task**. This rechecks access and runs the same GUI task with its saved arguments. Opening historical results does not repeatedly open System Settings. Browser and VM tasks do not request local desktop access.

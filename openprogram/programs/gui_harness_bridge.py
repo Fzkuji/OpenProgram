@@ -149,6 +149,20 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 task=task, max_steps=steps, max_seconds=seconds, backend=backend,
                 runtime=runtime, allow_general=allow_general,
             ))
+        # Check before planning: no model call or desktop effect is needed to
+        # discover a known missing local OS grant. Explicit remote surfaces skip it.
+        if selected_surface in {"", "desktop"} and not vm_url:
+            from openprogram.system_access import report
+            access = report()
+            missing = [row for row in access["capabilities"]
+                       if row["status"] == "not_granted" and row.get("can_request")]
+            if access.get("platform") == "Darwin" and missing:
+                return _normalize_gui_result({
+                    "status": "infeasible", "reason_code": "system_access_required",
+                    "summary": "Waiting for system access.",
+                    "handoff_instruction": "", "system_access": missing,
+                    "completion_verified": False,
+                })
         call_args = {
             "task": task,
             "max_steps": steps if steps is not None else 0,

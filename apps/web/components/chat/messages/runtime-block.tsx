@@ -29,6 +29,9 @@ import { useTranslation } from "@/lib/i18n";
 import { showToast } from "@/lib/format-utils/toast";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
+import { SystemAccessRecovery } from "./system-access-recovery";
+import { systemAccessRequired, hasSystemAccessRequest, consumeSystemAccessRequest, systemAccessRequestId } from "@/lib/system-access-result";
+
 import type { TNode } from "./tree-types";
 import { ExecutionStrip, StepRow, TreeStep, decodeEscapes } from "./execution-strip";
 import { ActionButton, MessageTimestamp, SVG } from "./message-actions";
@@ -135,6 +138,11 @@ export function RuntimeBlock({
   const { fn } = parseRun(msg.function || msg.content || "");
   const fnName = msg.function || fn;
   const tree = displayTree(msg);
+  const sawRunning = useRef(false);
+  if (streaming) sawRunning.current = true;
+  const needsAccess = fnName === "gui_agent" && !streaming && systemAccessRequired(tree?.output).length > 0;
+  const accessId = systemAccessRequestId(tree, msg.id);
+  const accessRecovery = needsAccess ? <SystemAccessRecovery output={tree?.output} autoOpen={sawRunning.current || hasSystemAccessRequest(sessionId || "", accessId)} onAutoOpen={() => consumeSystemAccessRequest(sessionId || "", accessId)} onContinue={doRetry} /> : null;
 
   useEffect(() => {
     if (nested || !streaming) return;
@@ -371,6 +379,7 @@ export function RuntimeBlock({
         data-msg-id={msg.id}
       >
         <div className="tl-body">{body}</div>
+        {accessRecovery}
         {runtimeAfter}
         {footer}
       </div>
@@ -398,7 +407,8 @@ export function RuntimeBlock({
         >
           {body}
         </ExecutionStrip>
-        {answer ? (
+        {accessRecovery}
+        {answer && !needsAccess ? (
           <section className="runtime-program-conclusion" aria-label={text("Function reply", "函数答复")} data-function-answer>
             <div className="runtime-program-conclusion-summary message-content chat-text"
               dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }} />
