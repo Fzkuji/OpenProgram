@@ -36,7 +36,10 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
     completed: ["Completed", "已完成"], exited: ["Exited", "已退出"], failed: ["Failed", "运行失败"],
     stopped: ["Stopped", "已停止"], interrupted: ["Interrupted", "执行中断"], unknown: ["Status needs confirmation", "状态待确认"], lost: ["Status needs confirmation", "状态待确认"],
   }[item.status] as [string, string] || [item.status, item.status]));
-  const stale = processes.stale || state.connection.state !== "connected";
+  const readFailed = processes.stale || (
+    state.connection.errorSessionId === sessionId && Boolean(state.connection.message)
+    && ["stale", "conflict"].includes(state.connection.state)
+  );
   const hasRead = Boolean(state.fetchedAt) || processes.loaded;
   const byExecution = new Map<string, ManagedProcess[]>();
   const unassigned: ManagedProcess[] = [];
@@ -195,7 +198,7 @@ export function RunningPanel({ active, sessionId }: { active: boolean; sessionId
     {(!historical || historyOpen) && items.map(branchRow)}
   </div>;
   return <section className={styles.panel} aria-label={text("Conversation activity", "会话运行记录")}>
-    {stale && (hasRead || processes.stale || state.connection.state === "stale") && <p role="status" className={styles.notice}>{hasRead
+    {readFailed && <p role="status" className={styles.notice}>{hasRead
       ? text("Some statuses are unavailable. Showing saved records and retrying automatically.", "部分状态暂时不可用，保留上次记录并自动重试。")
       : text("Could not load activity. Retrying automatically.", "无法读取运行记录，正在自动重试。")}</p>}
     <div className={styles.scroll}>

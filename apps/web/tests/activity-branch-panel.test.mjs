@@ -59,9 +59,9 @@ const { createRoot } = await import("react-dom/client");
 const { RunningPanel } = await import("../components/right-sidebar/running-panel.tsx");
 const run = (id, status, started_at) => ({ execution_id: id, session_id: "session", status, started_at, updated_at: started_at, parent_execution_id: null, effect_summary: {}, task_label: id });
 const branches = [{ branch_id: "session:tip", session_id: "session", head_msg_id: "tip", execution_ids: ["first", "last"] }];
-async function mounted(executions, check, branchList = branches, processes = []) {
-  globalThis.activityController = { executions, branches: branchList, connection: { state: "connected" }, fetchedAt: 1, selectExecution() {} };
-  globalThis.activityProcesses = { items: processes, stale: false, loaded: true };
+async function mounted(executions, check, branchList = branches, processes = [], stateOverrides = {}, processOverrides = {}) {
+  globalThis.activityController = { executions, branches: branchList, connection: { state: "connected" }, fetchedAt: 1, selectExecution() {}, ...stateOverrides };
+  globalThis.activityProcesses = { items: processes, stale: false, loaded: true, ...processOverrides };
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   try {
@@ -112,4 +112,18 @@ test('a separately associated active child keeps its parent branch visible', asy
       assert.doesNotMatch(host.textContent, /History/);
     }, [{...branches[0], execution_ids:['first']}, {...branches[0], branch_id:'child', execution_ids:['last']}]);
   }
+});
+
+
+test("Activity never flashes an error for loading, reconnection, or another conversation's failure", async () => {
+  for (const connection of [{state:"reconnecting"}, {state:"gap"}, {state:"stale"}, {state:"stale",message:"previous failure",errorSessionId:"other"}]) {
+    await mounted([], async host => {
+      assert.doesNotMatch(host.textContent, /statuses are unavailable|Could not load activity/);
+    }, [], [], {connection,fetchedAt:null}, {loaded:true});
+  }
+});
+test("Activity still reports confirmed current conversation read failures", async () => {
+  for (const processFailed of [false,true]) await mounted([], async host => {
+    assert.match(host.textContent, /statuses are unavailable/);
+  }, [], [], {connection: processFailed ? {state:"connected"} : {state:"stale",message:"request failed",errorSessionId:"session"}}, {stale:processFailed});
 });
