@@ -277,7 +277,7 @@ export function RightSidebar() {
             {text("Activity", "运行记录")}
           </span>
         </div>
-        <button type="button" className={sidebarNavItemClass + " right-nav-item" +
+        <button type="button" className={sidebarNavItemClass + " right-nav-item text-left" +
           (view === VIEW_PAGES ? " " + sidebarNavItemActiveClass : "")}
           data-view={VIEW_PAGES} onClick={() => onNavClick(VIEW_PAGES)}
           title={text("Webpages grouped by conversation", "按会话分组的网页")}
