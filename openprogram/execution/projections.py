@@ -111,6 +111,8 @@ class ExecutionProjectionReadModel:
             # This is an outbox projection: failure retries independently of
             # canonical completion, including after a worker restart.
             self._project_failed_assistant(execution)
+        if item.projection_kind == "dag" and execution.status.value in {"running", "completed"}:
+            self._project_recovered_assistant(execution)
         if item.projection_kind == "ui" and current_advanced:
             # The durable snapshot above remains the reconnect source of
             # truth.  This frame only updates already-connected clients.
@@ -120,6 +122,33 @@ class ExecutionProjectionReadModel:
             emit_ws_frame(execution_update_frame(
                 payload["execution"], payload["event_cursor"], data=payload,
             ))
+
+    def _project_recovered_assistant(self, execution: ExecutionRecord) -> None:
+        """Clear a prior continuation error only after canonical recovery."""
+        from openprogram.agent.session_db import default_db
+        from openprogram.store import SessionNodeWriter
+
+        current = self.store.get_execution(execution.execution_id)
+        source = self.store.get_execution_input(execution.execution_id)
+        if (current is None or current.status_version != execution.status_version
+                or source is None or not source.assistant_message_id):
+            return
+        if execution.parent_execution_id:
+            parent = self.store.get_execution_input(execution.parent_execution_id)
+            if parent is not None and parent.assistant_message_id == source.assistant_message_id:
+                return
+        writer = SessionNodeWriter(default_db(), execution.session_id, advance_head=False)
+        node = writer.load().nodes.get(source.assistant_message_id)
+        if node is None or (node.metadata or {}).get("error") != "continuation_contract_mismatch":
+            return
+        writer.update(source.assistant_message_id, metadata={
+            "status": execution.status.value, "error": None, "error_type": None,
+            "finished_at": execution.terminal_at,
+        })
+        from openprogram.events import emit_ws_frame
+        emit_ws_frame({"type": "session_reload", "data": {
+            "session_id": execution.session_id, "reason": "continuation_recovered",
+        }})
 
     def _project_failed_assistant(self, execution: ExecutionRecord) -> None:
         from openprogram.agent.session_db import default_db

@@ -470,6 +470,18 @@ def test_continue_rejects_changed_tool_runtime_contract(real_agent_chat, mutatio
                  if item.get("id", "").endswith("_reply"))
     assert reply["content"].count("Execution could not resume.") == 1
 
+    real_agent_chat.tools.schema_variant = "initial"
+    real_agent_chat.tools.permission_variant = False
+    real_agent_chat.tools.implementation_variant = "initial"
+    _command(real_agent_chat, "execution.continue", current, f"continue-restored-{mutation}")
+    _wait(lambda: real_agent_chat.store.get_execution(execution.execution_id).status is ExecutionStatus.COMPLETED)
+    projections.dispatch_once(owner_id="test-recovered-notice", limit=1000)
+    reply = next(item for item in real_agent_chat.sessions.get_branch(real_agent_chat.session_id)
+                 if item.get("id", "").endswith("_reply"))
+    assert reply["content"] == "saved answer"
+    assert reply.get("status") == "completed"
+    assert not reply.get("error")
+
 
 @pytest.mark.parametrize(
     ("field", "value"),
