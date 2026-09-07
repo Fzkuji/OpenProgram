@@ -211,7 +211,7 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     if (action !== "project_file_tree") return null;
     requests.push(payload);
     if (failPage && payload.cursor) return { project_id: payload.project_id, path: payload.path, error_code: "IO_ERROR" };
-    const response = { project_id: payload.project_id, path: payload.path, snapshot_id: refreshed ? "fresh" : "initial", next_cursor: payload.path !== "src" ? null : !payload.cursor ? "page2" : payload.cursor === "page2" ? "page3" : null, entries: payload.path === "" ? [entry("src", "dir")] : payload.cursor === "page3" ? [entry("last.txt", "file", 7)] : payload.cursor ? [entry("data.bin", "file", refreshed ? 2048 : 1024)] : [entry("empty.txt", "file")] };
+    const response = { project_id: payload.project_id, path: payload.path, snapshot_id: refreshed ? "fresh" : "initial", next_cursor: payload.path !== "src" ? null : !payload.cursor ? "page2" : payload.cursor === "page2" ? "page3" : null, entries: payload.path === "" ? [entry("src", "dir")] : payload.cursor === "page3" ? [entry("last.txt", "file", 7)] : payload.cursor ? [entry("data.bin", "file", refreshed ? 2048 : 1024)] : [entry("empty.txt", "file"), ...(payload.path === "src" ? [entry("nested", "dir")] : [])] };
     if (holding) await new Promise(resolve => held.push(resolve));
     if (refreshed && payload.cursor && holdingPages) await new Promise(resolve => heldPages.push(resolve));
     return response;
@@ -279,6 +279,13 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async value => { copied = value; } } } });
     try { await click('button[aria-label="Copy absolute path"]'); assert.equal(copied, "/project/src/data.bin"); }
     finally { if (previous) Object.defineProperty(globalThis, "navigator", previous); else delete globalThis.navigator; }
+    await click('[data-item-path="src/nested/"]');
+    assert.ok(query('[data-item-path="src/nested/empty.txt"]'));
+    await click('[data-item-path="src/"]');
+    await click('button[aria-label="Refresh"]');
+    assert.equal(query('[data-item-path="src/nested/"]'), null);
+    await click('[data-item-path="src/"]');
+    assert.ok(query('[data-item-path="src/nested/empty.txt"]'), "refresh of a collapsed ancestor retains expanded child caches");
     await act(async () => root.render(h(api.FileTree, { projectId: "other-project" })));
     assert.doesNotMatch(path(), /data.bin/);
     assert.equal(query('[data-item-path="src/data.bin"]'), null);

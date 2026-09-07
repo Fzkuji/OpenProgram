@@ -427,7 +427,12 @@ export function FileTree({
     setSearchError(null);
     setSearchLoading(false);
     const previous = treeStateRef.current;
-    const paths = ["", ...previous.expanded];
+    const retained = new Set(["", ...previous.expanded]);
+    for (const dir of previous.expanded) {
+      let parent = parentOf(dir);
+      while (parent) { retained.add(parent); parent = parentOf(parent); }
+    }
+    const paths = [...retained];
     // Keep visible rows during revalidation; collapsed caches must be reloaded
     // on their next expansion. The event listener reads the latest view via ref.
     setDirs(Object.fromEntries(paths.filter(path => previous.dirs[path] !== undefined).map(path => [path, previous.dirs[path]])));
