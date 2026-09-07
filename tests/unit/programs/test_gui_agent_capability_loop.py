@@ -625,3 +625,22 @@ def test_bridge_preserves_legacy_desktop_and_vm_settings(monkeypatch):
     assert calls[0]["preferred_capability"] == "computer_use"
     assert calls[0]["browser_backend"] == "chrome_devtools_mcp"
     assert calls[0]["vm_url"] == "http://vm:5000"
+
+
+def test_window_support_uses_shared_access_report(harness_on_path, monkeypatch):
+    from types import SimpleNamespace
+    from gui_harness.adapters import mac_window
+    from openprogram import system_access
+    monkeypatch.setattr(mac_window.platform, 'system', lambda: 'Darwin')
+    monkeypatch.setattr(mac_window.importlib.util, 'find_spec', lambda _: object())
+    monkeypatch.setitem(sys.modules, 'Quartz', SimpleNamespace())
+    monkeypatch.setitem(sys.modules, 'ApplicationServices', SimpleNamespace())
+    monkeypatch.setitem(sys.modules, 'ScreenCaptureKit', SimpleNamespace(SCScreenshotManager=object()))
+    rows = [{'id': 'accessibility', 'status': 'not_granted', 'label': 'Desktop control',
+             'detail': 'Missing control permission.', 'instruction': 'Open System settings.'}]
+    monkeypatch.setattr(system_access, 'report', lambda: {'capabilities': rows, 'executable': 'private-path'})
+    result = mac_window.window_support()
+    assert not result['available']
+    assert result['system_access'] == rows
+    assert 'Missing control permission.' in result['reason']
+    assert 'private-path' not in repr(result)

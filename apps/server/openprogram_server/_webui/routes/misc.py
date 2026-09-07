@@ -52,6 +52,38 @@ def register(app):
             "all_ok": all(r["ok"] for r in results),
         })
 
+    @app.get("/api/system/access")
+    def system_access_api():
+        from openprogram.system_access import report
+        return JSONResponse(report(), headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/system/access/{capability}")
+    def request_system_access_api(capability: str, request: Request):
+        from openprogram.backend_endpoint import is_loopback_host
+        from openprogram.self_update.projection import ProjectionAccessError
+        from openprogram.system_access import request_access
+        from .self_updates import require_owner
+        try:
+            require_owner(request)
+            from urllib.parse import urlsplit
+            origin = urlsplit(request.headers.get("origin", ""))
+            forwarded = any(key.lower() == "forwarded" or key.lower().startswith("x-forwarded-") for key in request.headers)
+            if (not request.client or not is_loopback_host(request.client.host)
+                    or not is_loopback_host(request.url.hostname or "")
+                    or origin.scheme not in {"http", "https"}
+                    or not is_loopback_host(origin.hostname or "") or forwarded):
+                raise ProjectionAccessError("Authorize on the execution computer.")
+        except ProjectionAccessError:
+            return JSONResponse({"error": "System access setup requires the local owner on the execution computer."}, status_code=403)
+        try:
+            return JSONResponse(request_access(capability), headers={"Cache-Control": "no-store"})
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except RuntimeError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        except Exception:
+            return JSONResponse({"error": "The system permission request could not be opened. Open System Settings on the execution computer."}, status_code=503)
+
     @app.get("/healthz")
     async def healthz():
         """Non-identifying liveness probe available before authentication."""

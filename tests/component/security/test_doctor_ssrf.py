@@ -134,6 +134,7 @@ def test_run_checks_reuses_one_runtime_http_inventory(monkeypatch):
         ]
 
     monkeypatch.setattr(doctor, "CHECKS", ())
+    monkeypatch.setattr("openprogram.system_access.doctor_rows", lambda: [])
     monkeypatch.setattr(doctor, "runtime_http_checks", fake_runtime_checks)
     monkeypatch.setattr(
         "openprogram._compat.platform_environment_advisories", lambda _path: []

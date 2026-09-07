@@ -74,3 +74,29 @@ The Function card displays that task result directly: `Succeeded` for a verified
 Source and README: `openprogram/programs/applications/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).
 
 Browser Workflow forms expose only the task and optional target URL. Action limits, timeout and backend remain internal settings with defaults; no Advanced section is shown. Explicit programmatic calls retain their supported overrides.
+
+## System access diagnostics
+
+System settings shows live optional desktop access on the execution computer.
+Opening this page or running `openprogram doctor` does not request permission.
+The TUI `/doctor` command and `GET /api/system/access` expose the same checks.
+Missing optional desktop access does not prevent ordinary chat or upgrades.
+
+On macOS, screen recording and Accessibility are checked separately for the
+executing process. In local System settings, **Set up access** explicitly requests
+only a missing permission; an existing grant is left untouched. Complete the
+system confirmation, then return to the page for automatic verification.
+Remote clients must arrange authorization on the execution computer. A grant
+for another application is not evidence that the worker is authorized.
+
+Linux headless sessions and unsupported Wayland desktop capture are reported
+separately from missing dependencies. An X11 display alone does not prove access.
+Windows desktop access depends on the active session and target; ordinary
+applications cannot assume access to secure desktops or elevated targets.
+Neither platform is instructed to disable security or run the entire application
+as administrator. Native Linux and Windows desktop acceptance remains unverified.
+
+The current macOS development build is not production-signed. Permission
+persistence across signed release upgrades, first-run capability onboarding,
+and automatic task recovery after authorization remain unverified. System
+access setup never retries a declined operation.

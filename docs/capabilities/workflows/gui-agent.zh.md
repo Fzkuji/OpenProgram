@@ -73,3 +73,22 @@ Function 卡片直接显示这个任务结果：验证成功显示 `Succeeded`�
 源码与 README：`openprogram/programs/applications/gui_harness/`，上游仓库 [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness)。
 
 Browser Workflow 表单只显示任务和可选目标 URL。动作上限、超时与 backend 使用内部默认设置，不显示 Advanced。显式程序调用仍可使用受支持的覆盖值。
+
+## 系统权限检查
+
+系统设置显示执行电脑上的可选桌面权限。打开页面或运行 `openprogram doctor`
+不会申请权限。TUI 的 `/doctor` 和 `GET /api/system/access` 使用同一套检查。
+未开放可选桌面权限不会阻止普通对话或升级。
+
+macOS 分别检查实际执行进程的录屏和辅助功能权限。本机系统设置中的“设置权限”
+只会在用户点击后申请缺少的权限，已有授权保持不变。在系统中确认后返回页面，
+页面自动重新检查。远程客户端需要在执行电脑上完成授权；其他应用的授权不能
+证明 worker 已获得授权。
+
+Linux 无图形桌面和暂不支持的 Wayland 桌面捕获会与缺少依赖分别报告。
+仅存在 X11 显示配置不能证明具有访问权限。Windows 的桌面访问取决于当前会话
+和目标程序，普通程序不能假定可以访问系统安全桌面或高权限目标。不会要求用户
+关闭安全限制或将整个程序改为管理员运行。Linux、Windows 原生桌面验收尚未完成。
+
+当前 macOS 开发构建没有正式生产签名。正式签名版本升级后的授权保持、首次使用
+功能引导、授权后自动恢复任务尚未验证。设置系统权限不会重新执行已拒绝的操作。

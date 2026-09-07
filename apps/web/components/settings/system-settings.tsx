@@ -9,6 +9,7 @@
  */
 import { useEffect, useState } from "react";
 
+import { SystemAccess } from "./system-access";
 import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./settings-page.module.css";
@@ -94,6 +95,7 @@ export function SystemSettings() {
         </p>
       </div>
       <div className={styles.pageBody}>
+        <SystemAccess />
         {groups.map((g) => (
           <section key={g}>
             <h3 className={styles.sectionTitle}>{g}</h3>

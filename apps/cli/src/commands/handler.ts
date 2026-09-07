@@ -960,11 +960,11 @@ export function handleSlash(line: string, ctx: SlashContext): boolean {
         .then(async (response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data = await response.json() as {
-            results: Array<{ ok: boolean; label: string; detail: string }>;
+            results: Array<{ ok: boolean; label: string; detail: string; optional?: boolean; status?: string }>;
             all_ok: boolean;
           };
           const results = data.results.map(
-            (result) => `${result.ok ? '✓' : '✗'} ${result.label} - ${result.detail}`,
+            (result) => `${result.optional && result.status !== 'granted' ? 'i' : result.ok ? '✓' : '✗'} ${result.label} - ${result.detail}`,
           );
           ctx.pushSystem(
             `Doctor report\n\n${results.join('\n')}\n\n${data.all_ok ? 'All checks passed.' : 'Some checks failed.'}`,

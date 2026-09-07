@@ -348,6 +348,8 @@ def run_checks() -> list[dict]:
         {"id": "platform:" + label, "ok": ok, "label": label, "detail": detail}
         for ok, label, detail in platform_rows
     )
+    from openprogram.system_access import doctor_rows
+    results.extend(doctor_rows())
     return results
 
 
@@ -369,7 +371,7 @@ def _cmd_doctor(as_json: bool = False) -> int:
     width = max(len(r["label"]) for r in results) + 2
     fail_count = 0
     for r in results:
-        mark = "OK  " if r["ok"] else "FAIL"
+        mark = "INFO" if r.get("optional") and r.get("status") != "granted" else ("OK  " if r["ok"] else "FAIL")
         label = r["label"].ljust(width)
         print(f"  [{mark}] {label}{r['detail']}")
         if not r["ok"]:
