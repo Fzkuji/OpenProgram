@@ -9,12 +9,10 @@ import { join } from "node:path";
 const require = createRequire(import.meta.url);
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Python, TypeScript, Shell, BracketsYellow, Markdown, Git, Claude } from "@react-symbols/icons/files";
-import { DefaultFileIcon } from "@react-symbols/icons/utils";
 
 const bundle = await build({
   entryPoints: [fileURLToPath(new URL("../components/files/file-type-icon.tsx", import.meta.url))],
-  bundle: true, write: false, format: "cjs", platform: "node", jsx: "automatic",
+  loader: { ".module.css": "empty" }, bundle: true, write: false, format: "cjs", platform: "node", jsx: "automatic",
   plugins: [{ name: "shared-react", setup(builder) {
     builder.onResolve({ filter: /^react(?:\/.*)?$/ }, ({ path }) => ({ path: require.resolve(path), external: true }));
   } }],
@@ -32,16 +30,15 @@ const render = (name) => renderToStaticMarkup(createElement(FileTypeIcon, { name
 
 test("file type icons distinguish common languages and normalize paths", () => {
   const expected = {
-    "app.py": Python, "app.ts": TypeScript, "app.sh": Shell,
-    "data.json": BracketsYellow, "README.md": Markdown, ".gitignore": Git,
-    "CLAUDE.md": Claude, "file.unknown-extension": DefaultFileIcon,
+    "app.py": "python", "app.ts": "typescript", "app.sh": "bash",
+    "data.json": "json", "README.md": "markdown", ".gitignore": "git",
+    "CLAUDE.md": "claude", "file.unknown-extension": "default",
   };
-  for (const [name, Icon] of Object.entries(expected)) {
-    const markup = renderToStaticMarkup(createElement(Icon, {
-      width: 16, height: 16, "aria-hidden": "true", focusable: "false", style: { flexShrink: 0 },
-    }));
-    assert.equal(render(name), markup, name);
+  for (const [name, token] of Object.entries(expected)) {
+    assert.match(render(name), new RegExp(`data-file-icon="${token}"`), name);
   }
+  assert.match(render(".DS_Store"), /M8 1v3a3 3 0 0 0 3 3h3/);
+  assert.match(render("README.md"), /M1 12V4h2l2 2.5L7 4/);
   assert.equal(render("C:\\src.v2\\APP.PY"), render("app.py"));
   assert.equal(render("src.v2/nested/app.ts"), render("app.ts"));
   assert.equal(render("docs/AGENTS.md"), render("README.md"));
@@ -54,4 +51,22 @@ test("file type icons distinguish common languages and normalize paths", () => {
   assert.equal(render("constructor.py"), render("app.py"));
   assert.match(render("app.py"), /aria-hidden="true"/);
   assert.match(render("app.py"), /width="16"/);
+});
+
+test("file icons preserve sizing and never render filename markup", () => {
+  const markup = renderToStaticMarkup(createElement(FileTypeIcon, { name: "evil<svg onload=alert(1)>.py", size: 14, className: "tab-icon" }));
+  assert.match(markup, /width="14"/);
+  assert.match(markup, /tab-icon/);
+  assert.doesNotMatch(markup, /onload|evil/);
+});
+
+test("repeated gradient icons have independent SVG paint references", () => {
+  const markup = renderToStaticMarkup(createElement("div", {},
+    createElement(FileTypeIcon, { name: "next.config.js" }),
+    createElement(FileTypeIcon, { name: "next.config.js" })));
+  const ids = [...markup.matchAll(/id="([^"]+)"/g)].map(match => match[1]);
+  const refs = [...markup.matchAll(/url\(#([^)]+)\)/g)].map(match => match[1]);
+  assert.ok(ids.length >= 2);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(refs, ids);
 });

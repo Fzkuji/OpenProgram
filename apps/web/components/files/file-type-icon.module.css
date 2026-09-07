@@ -1,0 +1,78 @@
+/* Adapted from Pierre Trees style.css; see pierre/LICENSE.md and NOTICE.md. */
+.icon { flex-shrink: 0; color: var(--pierre-gray); }
+.icon { --pierre-gray: #84848a; }
+:global(.dark) .icon { --pierre-gray: #adadb1; }
+.icon { --pierre-red: #d52c36; }
+:global(.dark) .icon { --pierre-red: #ff6762; }
+.icon { --pierre-vermilion: #ff8c5b; }
+:global(.dark) .icon { --pierre-vermilion: #d5512f; }
+.icon { --pierre-orange: #d47628; }
+:global(.dark) .icon { --pierre-orange: #ffa359; }
+.icon { --pierre-yellow: #d5a910; }
+:global(.dark) .icon { --pierre-yellow: #ffd452; }
+.icon { --pierre-green: #199f43; }
+:global(.dark) .icon { --pierre-green: #5ecc71; }
+.icon { --pierre-teal: #17a5af; }
+:global(.dark) .icon { --pierre-teal: #64d1db; }
+.icon { --pierre-cyan: #1ca1c7; }
+:global(.dark) .icon { --pierre-cyan: #68cdf2; }
+.icon { --pierre-blue: #1a85d4; }
+:global(.dark) .icon { --pierre-blue: #69b1ff; }
+.icon { --pierre-indigo: #693acf; }
+:global(.dark) .icon { --pierre-indigo: #9d6afb; }
+.icon { --pierre-purple: #a631be; }
+:global(.dark) .icon { --pierre-purple: #d568ea; }
+.icon { --pierre-pink: #d32a61; }
+:global(.dark) .icon { --pierre-pink: #ff678d; }
+.icon { --pierre-mauve: #594c5b; }
+:global(.dark) .icon { --pierre-mauve: #79697b; }
+.icon[data-file-icon="default"] { color: var(--pierre-gray); }
+.icon[data-file-icon="astro"] { color: var(--pierre-purple); }
+.icon[data-file-icon="babel"] { color: var(--pierre-yellow); }
+.icon[data-file-icon="bash"] { color: var(--pierre-green); }
+.icon[data-file-icon="biome"] { color: var(--pierre-blue); }
+.icon[data-file-icon="bootstrap"] { color: var(--pierre-indigo); }
+.icon[data-file-icon="browserslist"] { color: var(--pierre-yellow); }
+.icon[data-file-icon="bun"] { color: var(--pierre-mauve); }
+.icon[data-file-icon="c"] { color: var(--pierre-blue); }
+.icon[data-file-icon="cpp"] { color: var(--pierre-blue); }
+.icon[data-file-icon="claude"] { color: var(--pierre-orange); }
+.icon[data-file-icon="css"] { color: var(--pierre-indigo); }
+.icon[data-file-icon="database"] { color: var(--pierre-purple); }
+.icon[data-file-icon="docker"] { color: var(--pierre-blue); }
+.icon[data-file-icon="eslint"] { color: var(--pierre-indigo); }
+.icon[data-file-icon="git"] { color: var(--pierre-vermilion); }
+.icon[data-file-icon="go"] { color: var(--pierre-cyan); }
+.icon[data-file-icon="graphql"] { color: var(--pierre-pink); }
+.icon[data-file-icon="html"] { color: var(--pierre-orange); }
+.icon[data-file-icon="image"] { color: var(--pierre-pink); }
+.icon[data-file-icon="javascript"] { color: var(--pierre-yellow); }
+.icon[data-file-icon="json"] { color: var(--pierre-orange); }
+.icon[data-file-icon="markdown"] { color: var(--pierre-green); }
+.icon[data-file-icon="mcp"] { color: var(--pierre-teal); }
+.icon[data-file-icon="npm"] { color: var(--pierre-red); }
+.icon[data-file-icon="oxc"] { color: var(--pierre-cyan); }
+.icon[data-file-icon="postcss"] { color: var(--pierre-red); }
+.icon[data-file-icon="prettier"] { color: var(--pierre-teal); }
+.icon[data-file-icon="python"] { color: var(--pierre-blue); }
+.icon[data-file-icon="react"] { color: var(--pierre-cyan); }
+.icon[data-file-icon="ruby"] { color: var(--pierre-red); }
+.icon[data-file-icon="rust"] { color: var(--pierre-orange); }
+.icon[data-file-icon="sass"] { color: var(--pierre-pink); }
+.icon[data-file-icon="svg"] { color: var(--pierre-orange); }
+.icon[data-file-icon="svelte"] { color: var(--pierre-red); }
+.icon[data-file-icon="svgo"] { color: var(--pierre-green); }
+.icon[data-file-icon="swift"] { color: var(--pierre-orange); }
+.icon[data-file-icon="table"] { color: var(--pierre-teal); }
+.icon[data-file-icon="text"] { color: var(--pierre-gray); }
+.icon[data-file-icon="tailwind"] { color: var(--pierre-cyan); }
+.icon[data-file-icon="terraform"] { color: var(--pierre-indigo); }
+.icon[data-file-icon="typescript"] { color: var(--pierre-blue); }
+.icon[data-file-icon="vite"] { color: var(--pierre-purple); }
+.icon[data-file-icon="vscode"] { color: var(--pierre-blue); }
+.icon[data-file-icon="vue"] { color: var(--pierre-green); }
+.icon[data-file-icon="wasm"] { color: var(--pierre-indigo); }
+.icon[data-file-icon="webpack"] { color: var(--pierre-blue); }
+.icon[data-file-icon="yml"] { color: var(--pierre-red); }
+.icon[data-file-icon="zig"] { color: var(--pierre-orange); }
+.icon[data-file-icon="zip"] { color: var(--pierre-orange); }
