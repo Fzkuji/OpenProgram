@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Every checkout publishes to the same default App and dependency directories.
+# Keep the lock in the parent until the complete build/install/restart finishes.
+if test "${OPENPROGRAM_REFRESH_LOCK_HELD:-}" != "1"; then
+  exec python3 - "$0" "$@" <<'PYLOCK'
+import fcntl, os, subprocess, sys, tempfile
+lock_path = os.path.join(tempfile.gettempdir(), f"openprogram-refresh-{os.getuid()}.lock")
+with open(lock_path, "a") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    result = subprocess.run(["bash", sys.argv[1], *sys.argv[2:]],
+                            env={**os.environ, "OPENPROGRAM_REFRESH_LOCK_HELD": "1"})
+    raise SystemExit(result.returncode)
+PYLOCK
+fi
+
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$repo_root/openprogram/programs/applications/gui_harness}"
 app_path="${OPENPROGRAM_APP_PATH:-/Applications/OpenProgram.app}"
@@ -16,17 +30,14 @@ uv_bin="${OPENPROGRAM_UV_BIN:-$(command -v uv || true)}"
 # feature branch can silently restore already-fixed server or UI behavior.
 # A caller deliberately validating historical code must use a separate
 # OPENPROGRAM_APP_PATH, not replace the user's normal App.
-if test "$app_path" = "/Applications/OpenProgram.app" && \
-  git -C "$repo_root" rev-parse --verify --quiet refs/remotes/origin/main \
-    >/dev/null; then
-  if ! git -C "$repo_root" merge-base --is-ancestor \
-    refs/remotes/origin/main HEAD; then
-    printf '%s\n' \
-      'refusing to refresh the default App from a checkout behind origin/main' \
-      'fetch/rebase the branch, or set OPENPROGRAM_APP_PATH to a separate App' \
-      >&2
-    exit 1
-  fi
+if test "$app_path" = "/Applications/OpenProgram.app"; then
+  for protected_ref in refs/heads/main refs/remotes/origin/main; do
+    if git -C "$repo_root" rev-parse --verify --quiet "$protected_ref" >/dev/null && \
+      ! git -C "$repo_root" merge-base --is-ancestor "$protected_ref" HEAD; then
+      printf '%s\n' "refusing to refresh the default App from a checkout behind $protected_ref" >&2
+      exit 1
+    fi
+  done
 fi
 
 if test -n "${OPENPROGRAM_LOCAL_PYTHON:-}"; then
