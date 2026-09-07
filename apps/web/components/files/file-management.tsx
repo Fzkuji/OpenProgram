@@ -4,11 +4,12 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ArrowDownWideNarrow, Check, ChevronRight, Copy, X } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { HoverTip } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { MENU_PANEL, GROUP_LABEL, MENU_SEPARATOR, itemCls } from "@/components/chat/top-bar/menu-styles";
+import { useSidebarMenu, type SidebarMenuItem } from "@/components/sidebar/use-sidebar-menu";
 import { copyText } from "./explorer-header";
 import styles from "./files-panel.module.css";
 
@@ -63,6 +64,33 @@ export function FileSortMenu({ value, onChange }: { value: string; onChange: (va
 
 export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: string; path: string; absolutePath?: string; onLocate: (path: string) => void }) {
   const { text } = useTranslation();
+  const contextMenu = useSidebarMenu();
+  const [menuItems, setMenuItems] = useState<SidebarMenuItem[]>([]);
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyGeneration = useRef(0);
+  useEffect(() => {
+    setCopied(false);
+    return () => { copyGeneration.current++; if (copyTimer.current) clearTimeout(copyTimer.current); };
+  }, [absolutePath]);
+  async function copy(value: string) {
+    const generation = ++copyGeneration.current;
+    if (!await copyText(value) || generation !== copyGeneration.current) return;
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    setCopied(true);
+    copyTimer.current = setTimeout(() => setCopied(false), 1500);
+  }
+  const rootAbsolute = absolutePath === undefined ? undefined : path ? absolutePath.slice(0, -path.length).replace(/\/$/, "") : absolutePath;
+  function pathMenu(event: React.MouseEvent<HTMLElement>, name: string, target: string) {
+    const absolute = rootAbsolute === undefined ? undefined : target ? `${rootAbsolute.replace(/\/$/, "")}/${target}` : rootAbsolute || "/";
+    const items: SidebarMenuItem[] = [
+      { id: "relative", label: text("Copy relative path", "复制相对路径"), onSelect: () => { void copy(target || "."); } },
+      { id: "absolute", label: text("Copy absolute path", "复制绝对路径"), disabled: absolute === undefined, onSelect: () => { if (absolute !== undefined) void copy(absolute); } },
+      { id: "name", label: text("Copy name", "复制名称"), onSelect: () => { void copy(name); } },
+    ];
+    setMenuItems(items);
+    contextMenu.show(event, items);
+  }
   const ref = useRef<HTMLElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
   const parts = path.split("/").filter(Boolean);
@@ -102,12 +130,13 @@ export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: s
     void document.fonts?.ready.then(fit);
     return () => { disposed = true; observer.disconnect(); };
   }, [root, path]);
-  const crumb = (name: string, target: string) => <button type="button" data-path={target} onClick={() => onLocate(target)}>{name}</button>;
+  const crumb = (name: string, target: string) => <button type="button" data-path={target} onContextMenu={event => pathMenu(event, name, target)} onClick={() => onLocate(target)}>{name}</button>;
   return <><nav ref={ref} className={styles.fileBreadcrumb} aria-label={text("File path", "文件路径")}>
     <span ref={measureRef} className={styles.fileBreadcrumbMeasure} aria-hidden="true">{[root, "…", ...parts].map((name, i) => <span key={i}>{name}</span>)}</span>
-    {crumb(root, "")}{firstVisible > 0 ? <span className={styles.fileCrumbPart}><ChevronRight /><Popover><PopoverTrigger asChild><button type="button" aria-label={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={`${MENU_PANEL} ${styles.fileCrumbMenu}`}>{parts.slice(0, firstVisible).map((part, i) => <button type="button" className={itemCls(false)} key={i} onClick={() => onLocate(parts.slice(0, i + 1).join("/"))}>{part}</button>)}</PopoverContent></Popover></span> : null}
+    {crumb(root, "")}{firstVisible > 0 ? <span className={styles.fileCrumbPart}><ChevronRight /><Popover><PopoverTrigger asChild><button type="button" aria-label={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={`${MENU_PANEL} ${styles.fileCrumbMenu}`}>{parts.slice(0, firstVisible).map((part, i) => <button type="button" className={itemCls(false)} key={i} onContextMenu={event => pathMenu(event, part, parts.slice(0, i + 1).join("/"))} onClick={() => onLocate(parts.slice(0, i + 1).join("/"))}>{part}</button>)}</PopoverContent></Popover></span> : null}
     {parts.map((part, i) => i < firstVisible ? null : <span className={styles.fileCrumbPart} style={i === firstVisible && leadingWidth !== undefined ? { maxWidth: leadingWidth } : undefined} key={i}><ChevronRight />{crumb(part, parts.slice(0, i + 1).join("/"))}</span>)}
-  </nav><HoverTip label={text("Copy absolute path", "复制绝对路径")}><button type="button" className={styles.iconBtn} disabled={!absolutePath} aria-label={text("Copy absolute path", "复制绝对路径")} onClick={() => { if (absolutePath) void copyText(absolutePath); }}><Copy /></button></HoverTip></>;
+  </nav><HoverTip label={copied ? text("Copied", "已复制") : text("Copy absolute path", "复制绝对路径")}><button type="button" className={styles.iconBtn} disabled={!absolutePath} aria-label={copied ? text("Copied", "已复制") : text("Copy absolute path", "复制绝对路径")} onClick={() => { if (absolutePath) void copy(absolutePath); }}>{copied ? <Check /> : <Copy />}</button></HoverTip>
+    {contextMenu.open && !contextMenu.native ? <Popover open onOpenChange={contextMenu.onOpenChange}><PopoverAnchor virtualRef={contextMenu.anchor} /><PopoverContent align="start" sideOffset={2} className={`${MENU_PANEL} w-auto`}><div role="menu">{menuItems.map(item => <button type="button" role="menuitem" className={itemCls(false)} key={item.id} disabled={item.disabled} onClick={() => { contextMenu.close(); item.onSelect?.(); }}>{item.label}</button>)}</div></PopoverContent></Popover> : null}</>;
 }
 
 export interface SizeResult { state: string; complete?: boolean; bytes?: number | null; entries?: number; skipped?: number; token?: string | null; updated_at?: number; error?: string }

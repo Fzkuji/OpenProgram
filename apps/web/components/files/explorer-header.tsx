@@ -21,11 +21,11 @@ import styles from "./files-panel.module.css";
 
 export type ExplorerSearchMode = "filter" | "highlight";
 
-export async function copyText(value: string): Promise<void> {
+export async function copyText(value: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(value);
-      return;
+      return true;
     }
   } catch {
     // Use the selection fallback when clipboard permission is unavailable.
@@ -35,9 +35,11 @@ export async function copyText(value: string): Promise<void> {
   textarea.style.position = "fixed";
   textarea.style.opacity = "0";
   document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand("copy");
-  textarea.remove();
+  try {
+    textarea.select();
+    return document.execCommand("copy");
+  } catch { return false; }
+  finally { textarea.remove(); }
 }
 
 export function ExplorerMatchText({
@@ -175,7 +177,8 @@ export function ExplorerHeader({
               aria-label={text("Copy path", "复制路径")}
               onClick={() => {
                 if (!rootPath) return;
-                void copyText(rootPath).then(() => {
+                void copyText(rootPath).then(success => {
+                  if (!success) return;
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1200);
                 });

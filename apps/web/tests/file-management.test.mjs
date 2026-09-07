@@ -409,3 +409,39 @@ test("Pierre nested folder collapse survives state synchronization and refresh",
     assert.ok(row("src/nested/file.txt"));
   } finally { await act(async()=>root.unmount()); Object.assign(globalThis,saved); }
 });
+
+test("breadcrumb copy confirms success and context menu copies the clicked ancestor", async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver };
+  const clipboard = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.assign(globalThis, { window: parsed.window, document: parsed.document, ResizeObserver: class { observe() {} disconnect() {} } });
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const writes = []; let finishCopy, menu, select;
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: value => { writes.push(value); return new Promise(resolve => { finishCopy = resolve; }); } } } });
+  window.openprogramDesktop = { contextMenu: { popup: request => { menu = request; return new Promise(resolve => { select = resolve; }); }, close() {} } };
+  const root = createRoot(document.getElementById("root"));
+  const click = async node => act(async () => node.dispatchEvent(new window.Event("click", { bubbles: true })));
+  try {
+    await act(async () => root.render(h(api.FileBreadcrumb, {root:"Project",path:"src/file.txt",absolutePath:"/project/src/file.txt",onLocate:noop})));
+    await click(document.querySelector('button[aria-label="Copy absolute path"]'));
+    assert.equal(document.querySelector('button[aria-label="Copied"]'), null, "pending write is not a success");
+    await act(async () => finishCopy());
+    assert.ok(document.querySelector('button[aria-label="Copied"] svg'));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1550)); });
+    assert.ok(document.querySelector('button[aria-label="Copy absolute path"]'));
+    const ancestor = document.querySelector('button[data-path="src"]');
+    await act(async () => ancestor.dispatchEvent(new window.Event("contextmenu", {bubbles:true})));
+    assert.deepEqual(menu.items.map(item => item.id), ["relative","absolute","name"]);
+    await act(async () => select("absolute"));
+    assert.equal(writes.at(-1), "/project/src");
+    await act(async () => finishCopy());
+    await act(async () => ancestor.dispatchEvent(new window.Event("contextmenu", {bubbles:true})));
+    await act(async () => select("relative"));
+    assert.equal(writes.at(-1), "src");
+    await act(async () => finishCopy());
+  } finally {
+    await act(async () => root.unmount());
+    Object.assign(globalThis, saved);
+    if (clipboard) Object.defineProperty(globalThis, "navigator", clipboard); else delete globalThis.navigator;
+  }
+});
