@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Box, Globe, Monitor, Pin, PinOff, Search, Server, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useWebTabPip } from "@/lib/state/web-tab-pip-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { resourceSessionId, sessionResourceRows, type SessionResource } from "@/lib/state/session-resources";
 import { useSessionResources } from "@/lib/use-session-resources";
@@ -72,7 +73,12 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
             data-active={selected?.id === row.id || row.sourceId === activeId}>
             <button type="button" className={styles.page} title={row.target} onClick={() => {
               if (row.source === "web") {
-                useCenterTabs.getState().setActive(row.sourceId);
+                const pip = useWebTabPip.getState();
+                if (pip.tabId === row.sourceId || pip.backgroundTabId === row.sourceId) pip.end();
+                const center = useCenterTabs.getState();
+                center.setWebTabPinned(row.sourceId, true);
+                center.ungroupTab(row.sourceId);
+                center.setActive(row.sourceId);
                 if (window.location.pathname !== "/chat" && !window.location.pathname.startsWith("/s/")) router.push("/chat");
               } else setSelected(row);
             }}><Icon size={17} aria-hidden="true" /><span><strong>{row.title}</strong>
