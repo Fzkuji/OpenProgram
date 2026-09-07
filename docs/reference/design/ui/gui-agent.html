@@ -10,6 +10,12 @@
 @media(max-width:1100px){.page{display:block;max-width:1000px}.rail{display:none}.mobile-nav{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 0}.mobile-nav select{max-width:100%;min-width:0}.page{padding:18px 20px 60px}}
 @media(max-width:600px){body{font-size:15px}.page{padding:16px 14px 60px}header p{font-size:17px}h2{font-size:23px}section{padding:28px 0}.callout{padding:13px 15px}th,td{padding:10px 12px}pre{padding:14px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+/* Resource interaction proposal: isolated from the product runtime. */
+.ref:where(p){white-space:normal}.review-link{display:inline-block;margin-top:14px}.resource-demo{--rd-bg:#18181b;--rd-panel:#202023;--rd-text:#eeeeef;--rd-muted:#b1b1b8;background:var(--rd-bg);color:var(--rd-text);border:1px solid #3e3e44;border-radius:12px;overflow:hidden;font:13px/1.5 system-ui,sans-serif;margin:22px 0}.resource-demo button,.resource-demo input,.resource-demo select{font:inherit;color:inherit;border:0;border-radius:6px;background:transparent}.resource-demo button{cursor:pointer;padding:7px 9px}.resource-demo button:hover{background:#ffffff12}.resource-demo button:focus-visible,.resource-demo input:focus-visible,.resource-demo select:focus-visible{outline:2px solid #8ac6ff;outline-offset:-2px}.resource-demo button:disabled{cursor:default;opacity:.55}.rd-lab{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:12px;background:#232327;border-bottom:1px solid #3b3b42}.rd-lab span{color:#b4d7ff;font-size:12px}.rd-lab button{background:#37373e}.rd-shell{display:grid;grid-template-columns:minmax(0,1fr) 300px;min-height:660px}.rd-chat{min-width:0;position:relative;padding:22px;display:flex;flex-direction:column;gap:16px}.rd-chat h3{margin:0;font-size:16px}.rd-caption{color:var(--rd-muted);font-size:12px;margin:0}.rd-message{max-width:420px;color:#d9d9df;padding:15px 0}.rd-composer{margin-top:auto;border-radius:10px;background:#29292e;padding:14px;color:var(--rd-muted)}.rd-sidebar{min-width:0;background:#1d1d20;padding:12px;border-left:1px solid #34343a}.rd-tabs{display:flex;gap:18px;font-size:12px;color:var(--rd-muted);padding:4px 5px 12px}.rd-tabs strong{color:#f2f2f4}.rd-search{width:100%;padding:9px!important;background:#29292e!important;margin-bottom:12px}.rd-list{max-height:550px;overflow:auto}.resource-demo details{border:0;background:transparent;padding:0;margin:0 0 12px}.resource-demo summary{display:flex;gap:7px;align-items:center;cursor:pointer;padding:8px 4px;font-weight:500;font-size:12px;color:#c1c1c8;list-style:none}.resource-demo summary:before{content:'›'}.resource-demo details[open]>summary:before{transform:rotate(90deg)}.resource-demo summary::-webkit-details-marker{display:none}.rd-count{margin-left:auto;color:#b0b0ba;font-variant-numeric:tabular-nums}.rd-row{display:flex;width:100%;gap:9px;align-items:center;text-align:left;min-height:48px;border-radius:7px;padding:7px!important;margin-bottom:2px}.rd-row[aria-pressed=true]{background:#34343d}.rd-icon{width:18px;height:18px;flex-shrink:0;display:grid;place-items:center;color:#b9bcc8}.rd-icon svg{width:17px;height:17px}.rd-name{min-width:0;flex:1}.rd-name strong,.rd-name small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rd-name strong{font-size:12px;font-weight:500}.rd-name small{font-size:11px;color:#b1b1bb;margin-top:3px}.rd-dot{width:6px;height:6px;flex-shrink:0;background:#81d1aa;border-radius:50%}.rd-preview{align-self:flex-end;width:min(100%,420px);border:1px solid #424249;border-radius:11px;background:#242428;overflow:hidden;box-shadow:0 12px 28px #0003;margin-top:auto}.rd-preview[hidden]{display:none}.rd-head{padding:10px 12px;display:flex;gap:10px;align-items:start}.rd-head div{flex:1;min-width:0}.rd-head strong{font-size:12px;overflow-wrap:anywhere}.rd-head small{display:block;color:#b8b8c0;font-size:11px}.rd-screen{margin:0 10px;min-height:155px;padding:16px;background:#efeff2;color:#292932;border-radius:4px;display:flex;flex-direction:column;justify-content:center;gap:8px}.rd-screen strong{font-size:17px}.rd-screen small{color:#545465}.rd-screen.vm{background:#15283a;color:#d5e8f8}.rd-screen.vm small{color:#acc2d4}.rd-screen.window{background:#35313c;color:#eddbfb}.rd-screen.window small{color:#c9b6d7}.rd-screen.stale{background:#29292e;color:#d2d2db}.rd-screen.stale small{color:#b1b1bb}.rd-fake-lines{height:38px;background:repeating-linear-gradient(0deg,#0000 0 10px,#74749a25 10px 12px);width:85%}.rd-actions{display:flex;flex-wrap:wrap;gap:4px;padding:7px}.rd-note{padding:0 12px 10px;color:#b7c9de;font-size:11px;margin:0}.rd-preview.expanded{width:100%;align-self:stretch}.rd-preview.expanded .rd-screen{min-height:275px}.rd-empty{padding:20px 8px;color:#b7b7c0}.rd-state{padding:10px 12px;border-top:1px solid #3b3b42;color:#c4cee0;font-size:12px}.rd-show{align-self:flex-end;background:#33333c!important}.proposal-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.proposal-grid>div{min-width:0}.proposal-grid h3{color:var(--cyan)}.proposal-grid ul{padding-left:20px}.decision-note{border-left:3px solid var(--cyan);padding:12px 18px;background:var(--panel)}
+@media(max-width:850px){.rd-shell{grid-template-columns:minmax(0,1fr) 270px}.rd-chat{padding:14px}.proposal-grid{grid-template-columns:1fr}}
+@media(max-width:650px){.rd-shell{grid-template-columns:1fr}.rd-sidebar{border-left:0;border-top:1px solid #34343a}.rd-list{max-height:330px}.rd-chat{min-height:445px}.rd-preview{width:100%}.rd-lab{gap:5px}.rd-lab label{width:100%}}
+
 </style>
 </head>
 <body>
@@ -31,7 +37,7 @@
 <a href="#performance">Latency, cost and verification strategy</a>
 <a href="#authority">Execution authority and isolation</a>
 <a href="#recovery">Failure, cancellation and restart recovery</a>
-<a href="#experience">Default App experience and operation visibility</a>
+<a href="#experience">Resources and operation preview</a>
 <a href="#verification">Application suite and matched comparison</a>
 <a href="#decisions">Adopted, modified and rejected choices</a>
 <a href="#plan">Implementation sequence and bounded work packages</a>
@@ -47,6 +53,7 @@
 <span>TARGET DESIGN · NOT A COMPLETED IMPLEMENTATION</span>
 <a href="gui-agent.zh.html">Chinese edition</a>
 </div>
+<a class="review-link" href="#experience">Review the Resources and preview proposal</a>
 </header>
 <div class="mobile-nav">
 <label for="section-select">Section</label>
@@ -66,7 +73,7 @@
 <option value="performance">Latency, cost and verification strategy</option>
 <option value="authority">Execution authority and isolation</option>
 <option value="recovery">Failure, cancellation and restart recovery</option>
-<option value="experience">Default App experience and operation visibility</option>
+<option value="experience">Resources and operation preview</option>
 <option value="verification">Application suite and matched comparison</option>
 <option value="decisions">Adopted, modified and rejected choices</option>
 <option value="plan">Implementation sequence and bounded work packages</option>
@@ -590,13 +597,153 @@ receipt = {
 <p>Public result semantics stay <code>succeeded</code>, <code>infeasible</code> or <code>failed</code>; cancellation remains the execution system's cancelled state. Pause/approval/takeover are resumable control states, not successful results. Include reason, unresolved criterion, last verified state and artifact evidence. Failed cleanup cannot rewrite an actual task failure as success.</p> <a class="ref" href="#S11">[S11]</a>
 </section>
 <section id="experience">
-<span id="invocation">
-</span>
-<h2 tabindex="-1">Default App experience and operation visibility</h2>
-<p>Keep the single GUI Agent form and registered-expression behavior. A whole registered function expression remains one ProgramRun without an extra chat reasoning turn; prose or fenced code remains an ordinary message. Capture submitting window/Page identity for both form and direct-expression entry.</p>
-<p>The running card shows task, exact app/Page, background/foreground mode, current operation, last observed progress and elapsed time. Expand for screenshots, code batches and per-operation receipts; do not flood the normal conversation with every primitive. Preserve the native non-activating indicator from <code>adapters/mac_indicator.py</code>, including cleanup and ownership.</p>
-<p>Stop immediately requests cancellation; the UI distinguishes stopping from stopped. Take over fences writes and shows what remains, with Resume doing fresh observation. App-access prompts name the exact app and access scope, save allowed decisions under normal policy and expose revocation. Missing permission identifies whether capture or input is unavailable.</p>
-<p>Display verified artifacts and final criteria, not just a green function return. Support long tasks with visible milestones, user steering and bounded progress updates. These controls must work in <code>/Applications/OpenProgram.app</code> on default profile, port <code>18100</code> and <code>~/.openprogram</code>. Alternate Electron instances do not count as acceptance.</p> <a class="ref" href="#S12">[S12]</a>
+<span id="invocation"></span>
+<h2 tabindex="-1">Resources and a unified operation preview</h2>
+<p class="decision-note">Proposal awaiting review: this section specifies interaction, appearance, ownership and implementation order. It is not implemented. Discuss each code change after approval; this round does not run real browser, desktop or VM task acceptance.</p>
+<p>Resources in the current conversation's right sidebar lists all associated targets by branch. Agent-opened pages remain in the background without adding top tabs. One chat preview follows the target most recently operated on by the viewed branch. Browser Pages, native application windows, the host desktop and VM displays share selection rules while retaining distinct input capabilities.</p>
+<h3>Interactive appearance proposal</h3>
+<p>Select resources, simulate the next operation, and resume Follow current branch after manual inspection. Change the viewed branch, search, hide or expand the preview. All data is illustrative; the prototype connects to no real page or machine.</p>
+<div class="resource-demo" id="resource-demo">
+<div class="rd-lab"><span>Design simulation only</span><label>Viewed branch <select id="rd-branch"><option value="0">Branch A · Research</option><option value="1">Branch B · Build</option><option value="2">Branch C · Desktop</option></select></label><button type="button" id="rd-next">Simulate next operation</button><button type="button" id="rd-safe" disabled>Simulate stop acknowledgement</button></div>
+<div class="rd-shell"><div class="rd-chat"><h3>Compare plans</h3><p class="rd-caption" id="rd-chat-branch"></p><div class="rd-message">Check five pages and collect the differences. Keep the pages available for later use.<p class="rd-caption">Only the preview target changes; the five Pages stay connected.</p></div>
+<button type="button" id="rd-show" class="rd-show" hidden>Show preview</button>
+<div class="rd-preview" id="rd-preview"><div class="rd-head"><div><strong id="rd-title"></strong><small id="rd-subtitle"></small></div><button type="button" id="rd-hide">Hide</button></div><div id="rd-screen" class="rd-screen"><strong id="rd-screen-title"></strong><small id="rd-capability"></small><div class="rd-fake-lines" aria-hidden="true"></div><small id="rd-fresh"></small></div><div class="rd-actions"><button type="button" id="rd-follow">Follow current branch</button><button type="button" id="rd-take">Take over</button><button type="button" id="rd-expand">Expand</button></div><p class="rd-note" id="rd-note"></p></div>
+<div class="rd-composer" aria-hidden="true">Message this branch…</div></div>
+<aside class="rd-sidebar" aria-label="Resources"><div class="rd-tabs"><span>Files</span><span>Activity</span><strong>Resources</strong></div><input id="rd-search" class="rd-search" type="search" placeholder="Search resources" aria-label="Search resources"><div id="rd-list" class="rd-list"></div></aside></div>
+<div class="rd-state" id="rd-state" role="status" aria-live="polite"></div></div>
+<script>
+(()=>{
+'use strict';
+const L={"lab": "Design simulation only", "branch": "Viewed branch", "branches": ["Branch A · Research", "Branch B · Build", "Branch C · Desktop"], "next": "Simulate next operation", "safe": "Simulate stop acknowledgement", "theme": "Toggle theme", "session": "Compare plans", "message": "Check five pages and collect the differences. Keep the pages available for later use.", "hint": "Only the preview target changes; the five Pages stay connected.", "compose": "Message this branch…", "search": "Search resources", "follow": "Follow current branch", "manual": "Manual inspection", "following": "Following Agent", "cancel": "Cancel takeover", "take": "Take over", "give": "Return to Agent", "pending": "Stopping · waiting for acknowledgement", "expand": "Expand", "collapse": "Collapse", "hide": "Hide", "show": "Show preview", "readonly": "Read-only preview", "control": "Manual control · simulated", "unavailable": "Input unavailable for this target", "fresh": "Illustrative live frame", "stale": "Disconnected · last frame", "native": "Background input unverified", "desktop": "Foreground required · shared host input", "vm": "Guest virtual display · background", "web": "Background Page", "empty": "No matching resources", "count": "resources", "current": "Current", "operating": "Operating", "idle": "Idle", "child": "Research Agent", "build": "Build Agent", "display": "Desktop Agent", "titles": ["Plans overview", "Product details", "Pricing", "Comparison notes", "Results", "Blender · Scene", "Ubuntu · Virtual display", "Host display 1"], "bodies": ["Review queue", "Product details", "Pricing table", "Comparison draft", "Collected results", "Scene viewport", "Guest desktop", "Shared desktop"], "status": "Preview state", "showhelp": "Hidden. Resources and background operations remain available.", "stophelp": "Waiting for the host. Simulate acknowledgement using the review controls above.", "controlled": "Example only: no real input is sent. Return the lease before switching targets.", "inspecthelp": "Inspecting this target. The agent may continue operating another resource.", "followhelp": "Follows only operations in the viewed branch.", "bg": "Background", "paused": "Paused", "simnotice": "The next simulated operation changes the active target in the selected branch."};
+const $=id=>document.getElementById('rd-'+id);
+const icons={web:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18"/>',window:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>',vm:'<rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/>',desktop:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M6 21h12m-6-4v4"/>'};
+const resources=L.titles.map((title,i)=>({id:i,title,branch:i<5?0:i<7?1:2,type:i<5?'web':i===5?'window':i===6?'vm':'desktop',cap:i<5?L.web:i===5?L.native:i===6?L.vm:L.desktop,agent:i<5?L.child:i<7?L.build:L.display}));
+let viewed=0, query='', control='agent', controlledTarget=null;
+const preferences=[0,6,7].map(target=>({target,mode:'follow',hidden:false,expanded:false}));
+const last=[0,6,7], operating=new Set([0,6]);
+let collapsed={};
+function prefs(){return preferences[viewed]}
+function selected(){return resources[prefs().target]}
+function changeTarget(id){if(control!=='agent')return;Object.assign(prefs(),{target:id,mode:'manual',hidden:false,expanded:false});render();$('title').focus?.();}
+function buildList(){
+ const root=$('list');const focused=document.activeElement?.closest('.rd-row')?.dataset.id;root.replaceChildren();let total=0;
+ L.branches.forEach((name,b)=>{
+  const rows=resources.filter(r=>r.branch===b&&[r.title,r.cap,r.agent,name].join(' ').toLowerCase().includes(query.toLowerCase()));
+  if(!rows.length)return;total+=rows.length;
+  const details=document.createElement('details');details.open=query?true:!collapsed[b];
+  const summary=document.createElement('summary');summary.append(document.createTextNode(name+(b===viewed?' · '+L.current:'')));
+  const count=document.createElement('span');count.className='rd-count';count.textContent=rows.length;summary.append(count);details.append(summary);
+  details.addEventListener('toggle',()=>{if(!query)collapsed[b]=!details.open});
+  rows.forEach(r=>{
+   const button=document.createElement('button');button.type='button';button.className='rd-row';button.dataset.id=r.id;button.disabled=control!=='agent';button.setAttribute('aria-pressed',String(r.id===prefs().target&&!prefs().hidden));
+   const icon=document.createElement('span');icon.className='rd-icon';icon.setAttribute('aria-hidden','true');icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'+icons[r.type]+'</svg>';
+   const text=document.createElement('span');text.className='rd-name';const title=document.createElement('strong');title.textContent=r.title;
+   const sub=document.createElement('small');sub.textContent=(operating.has(r.id)?L.operating:controlledTarget===r.id?L.paused:L.idle)+' · '+r.agent;text.append(title,sub);button.append(icon,text);
+   if(operating.has(r.id)){const dot=document.createElement('span');dot.className='rd-dot';dot.setAttribute('aria-hidden','true');button.append(dot)}
+   button.addEventListener('click',()=>changeTarget(r.id));details.append(button);
+  });root.append(details);
+ });
+ if(focused!==undefined)root.querySelector('[data-id="'+focused+'"]')?.focus({preventScroll:true});
+ if(!total){const empty=document.createElement('p');empty.className='rd-empty';empty.textContent=L.empty;root.append(empty)}
+}
+function render(){
+ const p=prefs(),r=selected();
+ $('chat-branch').textContent=L.branches[viewed];$('title').textContent=r.title;
+ $('subtitle').textContent=L.branches[r.branch]+' · '+(p.mode==='follow'?L.following:L.manual);
+ $('screen-title').textContent=L.bodies[r.id];$('capability').textContent=r.cap;
+ $('screen').className='rd-screen '+r.type;
+ $('fresh').textContent=control==='human'?L.control:control==='pending'?L.pending:L.readonly+' · '+L.fresh;
+ $('preview').hidden=p.hidden;$('show').hidden=!p.hidden;$('preview').classList.toggle('expanded',p.expanded);
+ $('expand').textContent=p.expanded?L.collapse:L.expand;
+ $('take').textContent=control==='human'?L.give:control==='pending'?L.cancel:L.take;
+ $('take').disabled=control==='agent'&&!['web','vm'].includes(r.type);
+ $('take').title=$('take').disabled&&control==='agent'?L.unavailable:'';
+ $('follow').disabled=control!=='agent';$('branch').disabled=control!=='agent';$('safe').disabled=control!=='pending';
+ $('next').disabled=control!=='agent';$('hide').disabled=control!=='agent';
+ $('note').textContent=control==='pending'?L.stophelp:control==='human'?L.controlled:p.mode==='follow'?L.followhelp:L.inspecthelp;
+ $('state').textContent=p.hidden?L.showhelp:L.status+': '+(control==='agent'?p.mode==='follow'?L.following:L.manual:control==='pending'?L.pending:L.control)+' · '+r.title;
+ buildList();
+}
+$('branch').addEventListener('change',()=>{if(control==='agent'){viewed=Number($('branch').value);render()}});
+$('search').addEventListener('input',()=>{query=$('search').value;buildList()});
+$('next').addEventListener('click',()=>{
+ if(control!=='agent')return;
+ const candidates=resources.filter(r=>r.branch===viewed&&['web','vm'].includes(r.type));
+ if(!candidates.length){$('state').textContent=L.unavailable;return}
+ operating.delete(last[viewed]);const at=candidates.findIndex(r=>r.id===last[viewed]);last[viewed]=candidates[(at+1)%candidates.length].id;operating.add(last[viewed]);
+ if(prefs().mode==='follow')prefs().target=last[viewed];render();
+});
+$('follow').addEventListener('click',()=>{if(control==='agent'){Object.assign(prefs(),{mode:'follow',target:last[viewed],hidden:false,expanded:false});render()}});
+$('hide').addEventListener('click',()=>{prefs().hidden=true;render();$('show').focus()});
+$('show').addEventListener('click',()=>{prefs().hidden=false;render();$('follow').focus()});
+$('expand').addEventListener('click',()=>{prefs().expanded=!prefs().expanded;prefs().mode='manual';render();$('expand').focus()});
+$('take').addEventListener('click',()=>{
+ if(control==='human'||control==='pending'){control='agent';controlledTarget=null;render();return}
+ if(control!=='agent')return;control='pending';controlledTarget=selected().id;prefs().mode='manual';render();$('safe').focus();
+});
+$('safe').addEventListener('click',()=>{if(control==='pending'){operating.delete(controlledTarget);control='human';render();$('take').focus()}});
+render();
+})();
+</script>
+
+<h3>Current behavior and the proposed change</h3>
+<ul><li>Resources currently groups by <code>sessionId</code>, without representing branches or child-agent ownership within a conversation. Backend usage records disappear on invocation exit and cannot directly serve as a retained resource inventory.</li><li>Clicking a webpage currently calls <code>setWebTabPinned(true)</code>, ungroups it and activates its top tab. Pin means top-tab visibility. This does not match selecting a chat preview.</li><li>PiP currently holds a session-tab/Page pairing, with retained pairings mainly in memory. The proposal separates target lifetime, preview selection and execution leases. Hiding a preview does not destroy its target.</li></ul>
+<h3>List and preview appearance</h3>
+<p>Use the existing sidebar's dark surfaces, system font and 16px type icons, with no bordered card per resource. A collapsible branch header shows its name, current marker and resource count. Compact rows are approximately 44-48px tall: title first, then type, state and child-agent name when needed. Long titles truncate; details expose full titles, sanitized origins and target identity. Hover and selection use subtle surface changes. An operating indicator and preview selection are distinct, with text rather than color alone explaining state.</p>
+<p>The preview identifies its title, branch, target type and background capability. Actions use explicit labels such as Follow current branch, Take over, Expand and Hide. Reuse the sidebar's adjustable width. On narrow product layouts, a Resources drawer selects a target while retaining chat and preview access. This document stacks its mock panes on narrow screens for review; it does not propose an additional product page.</p>
+<div class="proposal-grid"><div><h3>Selection and following</h3><ul>
+<li>At most one preview per App window; preferences are scoped to the viewed conversation and branch. Following responds only to host-admitted operation events in that branch. Opening a resource, status polling or receiving a screenshot alone does not switch the preview.</li>
+<li>Concurrent child agents follow the last operated target in host event order, with the active agent identified. Coalesce rapid changes over approximately 200ms and render the latest frame without accumulating stale frames; this is an initial parameter to measure.</li>
+<li>Clicking any resource enters manual inspection. The agent continues its task and cannot replace that preview. Inspecting another branch's resource neither checks out that branch nor grants write access. Follow current branch explicitly returns to automatic selection.</li>
+<li>Hide changes visibility only; background work and all resource rows remain. Later events cannot reopen it. A row click or Show preview restores it. Expanding changes presentation, without copying a Page or raising a native application.</li>
+<li>Changing branches restores that branch's preview preference. A new preference follows its latest operation target, including an unavailable state if that target has closed, or displays an empty state when no operation exists. Other branches may keep running but cannot replace the visible preview.</li>
+</ul></div><div><h3>Retention, opening and closing</h3><ul>
+<li>Remove Pin from Resources. A row click previews; Expand enlarges the same target. A browser menu may offer Open in tab. Only that explicit action adds an ordinary top view, and repeated opening reuses the same Page.</li>
+<li>Existing explicitly pinned or user-opened top pages remain ordinary user views. Migration must not close them or hide every old page. Recent agent use does not create new top tabs.</li>
+<li>Task completion releases Python, input leases and temporary observations. Associated pages and VMs remain idle and available. Explicitly temporary test/intermediate resources retain their declared disposal policy; task completion does not mean close all resources.</li>
+<li>Menus name the operation: Close webpage, Disconnect window, Disconnect VM. Stop VM is separate and never triggered by hiding its preview. Borrowed user applications are never automatically quit.</li>
+<li>Closing a target in use or referenced by other branches shows affected executions, requests stopping and waits for write-lease release. Unconfirmed stopping remains Stopping. Closed records move to a collapsed unavailable group; default counts include only currently connectable targets.</li>
+</ul></div></div>
+<h3>Browser, application window, desktop and VM boundaries</h3>
+<div class="table-wrap"><table><thead><tr><th>Resource</th><th>Background target and preview</th><th>Unavailable behavior</th></tr></thead><tbody>
+<tr><td>Browser Page</td><td>Reuse an exact Page/CDP target, retaining its document, authentication and navigation state. Previewing does not activate the page. Popups register under the originating branch; following switches only when an operation targets the popup.</td><td>Closed pages, lost ownership and stale frames stop writes. Reopening a URL creates a new resource identity rather than claiming the original state survived.</td></tr>
+<tr><td>Native application window</td><td>Bind a process instance and exact window. Support capture and verified background input where available. Show Background control, Preview only or Foreground required according to the requested action.</td><td>Do not promise full background control of every application. The current native input matrix still fails. Minimized windows, lock state, missing permissions and uncertain identity have specific explanations; raising an application requires explicit selection of foreground operation.</td></tr>
+<tr><td>Host desktop display</td><td>Represents a host display and its coordinate space, reflecting the entire desktop. It does not provide an input environment independent of the user.</td><td>Global mouse and keyboard can affect the user's work. Do not label this independent background control. Arrange foreground access or use an isolated VM; preview selection grants no global input.</td></tr>
+<tr><td>VM virtual display</td><td>A background VM exposes its guest display and keyboard/mouse adapter without requiring a foreground host console. The VM process, guest graphical session and remote display service must still run.</td><td>A missing graphical session, locked guest, disconnected display or unsupported input channel has an explicit state. Reconnection requires observation and never automatically replays uncertain inputs. Docker remains an optional environment implementation, not a required layer.</td></tr>
+</tbody></table></div>
+<h3>Ownership, branches and concurrency</h3>
+<p>Resources persists serializable descriptors; the host retains actual Page/window/VM handles and leases. Reuse existing conversation and branch projections. Group keys require stable branch identity or verifiable fork lineage, not the changing message HEAD or a new group per execution. Renaming, continued turns and retries update presentation or associations; forking does not duplicate external page state.</p>
+<ul>
+<li>A descriptor includes resource ID, type, sanitized target description, actual owner, lifecycle, connection generation and preview capability. Branch associations separately track originating invocation, branch, child agent and sharing mode. Do not merge distinct Pages with identical URLs; merge UI and usage records for the same actual Page.</li>
+<li>Child-agent resources appear under the originating parent conversation branch with their actual owner identified. Later child work or branch renaming must not rewrite provenance. Existing session/execution authorization remains per resource; a shared display group grants no access.</li>
+<li>Ancestor resources show Referenced from. Browser branch writes default to an independent Page, without claiming external website or login-state isolation. Native windows and VMs cannot be cloned automatically; require explicit lease transfer or an independent target.</li>
+<li>Preview selection is not control acquisition. Shared references may appear in several branch rows with their current controller shown. Write leases exclude conflicts at the actual input scope: Page, application process with shared focus, VM or host desktop. Window grouping does not establish concurrent input support.</li>
+<li>Preview events carry session, branch, resource, connection generation and monotonic sequence. Discard stale events after branch changes, reconnection or revocation. Metadata is restorable; process-local handles are not. Legacy records without provable branch ownership belong in Unassigned, without guessed migration.</li>
+</ul>
+<h3>Inspection, takeover and disconnection</h3>
+<p>Automatic preview is read-only. Take over requests a pause from executions owning conflicting write leases and immediately blocks new writes. Enable human input only after host acknowledgement, completion of dispatched operations and release of held input. If stopping cannot be confirmed, retain a read-only Stopping view rather than enabling concurrent user/agent writes. Return to Agent disables manual input, observes again and reacquires authority, without using old frames.</p>
+<p>Idle background targets retain their connection without high-frequency capture. Only the visible preview subscribes to images; do not periodically scan all host applications. Show frame freshness and operation progress. A disconnected resource labels its image Last frame, exposes metadata and disables input. App restart, Page crash and VM reboot require identity validation; durable metadata does not imply a live target. Under memory pressure, offer explicit resource release rather than silently discarding forms or stopping VMs.</p>
+<h3>Deterministic state transitions</h3>
+<div class="table-wrap"><table><thead><tr><th>Event</th><th>Preview result</th><th>Execution and target</th></tr></thead><tbody>
+<tr><td>Agent dispatches an operation</td><td>Switch only when following and visible. Manual inspection and expanded views keep their target.</td><td>Operating starts at validated adapter dispatch and ends on receipt, confirmed cancellation or failure. Queueing, lease ownership and capture polling do not imply Operating. Missing or expired events show Unknown.</td></tr>
+<tr><td>Select resource / Expand</td><td>Selection opens read-only manual inspection. Expand enters a manual large view, read-only unless a human lease is already confirmed; collapsing preserves that mode. Keep branch selection and existing page grouping.</td><td>No lease transfer or target creation. Ordinary top views obey the same input controls and cannot bypass takeover by changing placement.</td></tr>
+<tr><td>Hide / Show</td><td>Hide retains mode and target. Show uses the latest operation target, or its unavailable state, in follow mode, or restores the manually selected target/unavailable state. The list keeps updating.</td><td>Do not minimize OS windows, disconnect guest displays or finish execution.</td></tr>
+<tr><td>Follow current branch / Return to Agent</td><td>Follow only changes selection and exits the large view. Return to Agent separately returns the human input lease.</td><td>Following and target switching are disabled during human control until the lease is returned. After 5 seconds without takeover acknowledgement, show Still waiting and allow cancellation, never force takeover. This is a UI timeout to measure, not a proven stopping guarantee.</td></tr>
+<tr><td>Target conflict / Child completion</td><td>Show the actual controller. Several different targets may show Operating concurrently; the one preview shows the latest target.</td><td>A second writer receives busy, without implicit queueing or preemption. Require explicit transfer or an independent target. A child releases its lease on completion; the parent cannot inherit it automatically.</td></tr>
+<tr><td>Disconnect / Lost focus / Restart</td><td>Mark the last frame stale and disable input. Show No frame when no image has been received.</td><td>Unknown identity/capability stops writes and clears Operating. Automatic reconnection is read-only and limited to a verifiable identical instance. Recreating Pages, starting VMs and resuming writes use explicit actions and authorization.</td></tr>
+</tbody></table></div>
+<p>A parent branch follows its own executions and child executions created in that branch, in host dispatch order. A child conversation window follows only its own branch. A shared target may have reference rows in several branches; each group counts unique targets and lists unavailable counts separately. Remove reference only detaches an idle association. Close webpage and Stop VM affect the actual target and enumerate all affected references. Completion retains grouping. App restart restores grouping and preview preferences, never human control or write leases. Titles and secret URL query values do not establish ownership; secret query parameters are not persisted.</p>
+<p>Failed native focus or result checks show Input failed, revoke writes and retain evidence, without continued background retries. Legacy adapters lacking dispatch/completion events show Executing, operation state unverified, without an operating dot or unconfirmed interactive takeover. Host desktops bind display identity; layout changes invalidate old coordinates. Disconnecting either a user-opened or agent-opened application never quits it. Quit application is a separate explicit user action. Disconnect VM releases transport only; the guest and virtual display remain running.</p>
+<p>The viewed branch is the branch checked out in the current conversation pane. Resource selection never changes this key. The single action label is <strong>Follow current branch</strong>: after inspecting a resource in branch B while viewing branch A, this action follows A and its attributed children. <strong>Return to Agent</strong> is a separate action shown during human control; it returns the input lease and requests explicit agent resumption under normal authorization.</p>
+<p>Take over applies to the current small preview, expanded preview or top view. All are read-only before acknowledgement and accept input only with a confirmed human lease. Expanding or collapsing after takeover keeps the same lease and input mode. During pending or active takeover, row selection, following, Hide and branch switching are disabled; a persistent Cancel takeover or Return to Agent action remains visible. Closing/navigating the host view or losing its connection revokes human input and leaves agent execution paused; no hidden surface retains control and no agent automatically resumes.</p>
+<p>When the selected target closes or its VM stops, clear Operating and show that target's unavailable/last-frame state. Manual inspection keeps this state until selection changes. Following also keeps it until a newer admitted operation in the viewed branch selects a target; it never silently falls back to an older resource. Show preview and branch restoration obey this rule.</p>
+<h3>Implementation sequence: discuss each item first</h3>
+<ol><li>Approve branch grouping, click-to-preview, manual inspection/following, removal of Pin and closing semantics.</li><li>Extend resource records and branch projection: retained descriptors, actual ownership, child-agent references and legacy migration.</li><li>Implement unified preview state and Resources rows while preserving Page identities and separating hide, expand and close.</li><li>Connect browser operation events and lease controls; accept multiple pages, branches and takeover in the default App.</li><li>Discuss native windows, the host desktop and background VM adapters separately. Advertise each capability only after real-target acceptance.</li></ol>
+<p>Primary locations: <code>session-resources-panel.tsx</code>, <code>session-resources.ts</code>, <code>use-session-resources.ts</code>, <code>web-tab-pip-store.ts</code>, <code>desktop-bridge.ts</code>, the existing <code>ResourceUseStore</code>, execution ownership and browser registry. Reuse execution control without another scheduler. This round changes only the bilingual document.</p>
+<h3>Acceptance cases</h3>
+<ul><li>One branch opens five pages: no extra top tabs, all five remain accessible, and actual operations select the preview.</li><li>Two branches and their child agents run concurrently: true branch grouping, no task changes on checkout and no incorrect target rebinding.</li><li>The user inspects A while the agent operates B: A stays visible, B shows Operating, and only explicit following returns to B.</li><li>Hide, expand, search and group collapse neither reload pages, stop VMs, grant control nor destroy targets.</li><li>Closing an active target, revocation, late frames, restart and disconnection have explicit states. Unconfirmed stopping cannot enable human input.</li><li>Same-process windows, concurrent user input and two VMs verify their conflict scopes independently. Successful capture does not establish background input.</li></ul>
+<p>Keep the single GUI Agent form, exact submitting window/Page identity, verified deliverables and existing native operation indicator. Product acceptance still uses the default App; a working document prototype is not implementation evidence.</p>
+<p class="ref"><a href="#S13">[S13] Current Resources/PiP sources</a> · <a href="#S12">[S12] App entry</a></p>
 </section>
 <section id="verification">
 <h2 tabindex="-1">Application suite and matched comparison</h2>
@@ -944,6 +1091,7 @@ receipt = {
 </details>
 <p>GitHub main links locate files; findings come from the inspected local sources. Immutable revisions, file digests, dirty state and command logs belong to the review package. A remote link does not prove it matches local code.</p>
 </section>
+<div class="evidence" id="S13"><h3>S13</h3><p><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/session-resources/session-resources-panel.tsx">session-resources-panel.tsx</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/state/session-resources.ts">session-resources.ts</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/state/web-tab-pip-store.ts">web-tab-pip-store.ts</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/desktop-bridge.ts">desktop-bridge.ts</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/session_resources.py">session_resources.py</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/routes/processes.py">processes.py</a></p></div>
 <section id="status">
 <span id="results">
 </span>
@@ -989,6 +1137,7 @@ receipt = {
 <td>The recorded integrated build is installed in the default App. Its embedded Python loads the installed wheel without source injection. Owned-fixture checks verify denied external file reads/writes and network access, excluded secret environment variables, writable scratch space, persistent variables, a committed SQLite operation receipt and child-process cleanup. The default App reconnects and displays its normal interface.</td>
 <td>The refresh script exits unsuccessfully because its health wait expires; the worker subsequently becomes healthy without another restart. This is not a passing refresh-script run. These results apply to the tested installed build, not every later installation. No real browser task is accepted through the public entry in the default App; browser interaction, final page results and resource cleanup still require that acceptance.</td>
 </tr>
+<tr><td>Resources and unified preview</td><td>Current Resources/PiP source audited; branch grouping, manual/follow selection, lifecycle and target-specific limits have an interactive document prototype.</td><td>Proposal awaiting user review. Persistent branch ownership, operation-driven preview, removal of Pin and native/VM preview adapters are not implemented or accepted in the default App.</td></tr>
 <tr>
 <td>P5 recovery and UX</td>
 <td>Shared execution controls and current indicator identified.</td>

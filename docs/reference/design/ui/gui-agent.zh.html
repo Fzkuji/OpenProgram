@@ -10,6 +10,12 @@
 @media(max-width:1100px){.page{display:block;max-width:1000px}.rail{display:none}.mobile-nav{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 0}.mobile-nav select{max-width:100%;min-width:0}.page{padding:18px 20px 60px}}
 @media(max-width:600px){body{font-size:15px}.page{padding:16px 14px 60px}header p{font-size:17px}h2{font-size:23px}section{padding:28px 0}.callout{padding:13px 15px}th,td{padding:10px 12px}pre{padding:14px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+/* Resource interaction proposal: isolated from the product runtime. */
+.ref:where(p){white-space:normal}.review-link{display:inline-block;margin-top:14px}.resource-demo{--rd-bg:#18181b;--rd-panel:#202023;--rd-text:#eeeeef;--rd-muted:#b1b1b8;background:var(--rd-bg);color:var(--rd-text);border:1px solid #3e3e44;border-radius:12px;overflow:hidden;font:13px/1.5 system-ui,sans-serif;margin:22px 0}.resource-demo button,.resource-demo input,.resource-demo select{font:inherit;color:inherit;border:0;border-radius:6px;background:transparent}.resource-demo button{cursor:pointer;padding:7px 9px}.resource-demo button:hover{background:#ffffff12}.resource-demo button:focus-visible,.resource-demo input:focus-visible,.resource-demo select:focus-visible{outline:2px solid #8ac6ff;outline-offset:-2px}.resource-demo button:disabled{cursor:default;opacity:.55}.rd-lab{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:12px;background:#232327;border-bottom:1px solid #3b3b42}.rd-lab span{color:#b4d7ff;font-size:12px}.rd-lab button{background:#37373e}.rd-shell{display:grid;grid-template-columns:minmax(0,1fr) 300px;min-height:660px}.rd-chat{min-width:0;position:relative;padding:22px;display:flex;flex-direction:column;gap:16px}.rd-chat h3{margin:0;font-size:16px}.rd-caption{color:var(--rd-muted);font-size:12px;margin:0}.rd-message{max-width:420px;color:#d9d9df;padding:15px 0}.rd-composer{margin-top:auto;border-radius:10px;background:#29292e;padding:14px;color:var(--rd-muted)}.rd-sidebar{min-width:0;background:#1d1d20;padding:12px;border-left:1px solid #34343a}.rd-tabs{display:flex;gap:18px;font-size:12px;color:var(--rd-muted);padding:4px 5px 12px}.rd-tabs strong{color:#f2f2f4}.rd-search{width:100%;padding:9px!important;background:#29292e!important;margin-bottom:12px}.rd-list{max-height:550px;overflow:auto}.resource-demo details{border:0;background:transparent;padding:0;margin:0 0 12px}.resource-demo summary{display:flex;gap:7px;align-items:center;cursor:pointer;padding:8px 4px;font-weight:500;font-size:12px;color:#c1c1c8;list-style:none}.resource-demo summary:before{content:'›'}.resource-demo details[open]>summary:before{transform:rotate(90deg)}.resource-demo summary::-webkit-details-marker{display:none}.rd-count{margin-left:auto;color:#b0b0ba;font-variant-numeric:tabular-nums}.rd-row{display:flex;width:100%;gap:9px;align-items:center;text-align:left;min-height:48px;border-radius:7px;padding:7px!important;margin-bottom:2px}.rd-row[aria-pressed=true]{background:#34343d}.rd-icon{width:18px;height:18px;flex-shrink:0;display:grid;place-items:center;color:#b9bcc8}.rd-icon svg{width:17px;height:17px}.rd-name{min-width:0;flex:1}.rd-name strong,.rd-name small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rd-name strong{font-size:12px;font-weight:500}.rd-name small{font-size:11px;color:#b1b1bb;margin-top:3px}.rd-dot{width:6px;height:6px;flex-shrink:0;background:#81d1aa;border-radius:50%}.rd-preview{align-self:flex-end;width:min(100%,420px);border:1px solid #424249;border-radius:11px;background:#242428;overflow:hidden;box-shadow:0 12px 28px #0003;margin-top:auto}.rd-preview[hidden]{display:none}.rd-head{padding:10px 12px;display:flex;gap:10px;align-items:start}.rd-head div{flex:1;min-width:0}.rd-head strong{font-size:12px;overflow-wrap:anywhere}.rd-head small{display:block;color:#b8b8c0;font-size:11px}.rd-screen{margin:0 10px;min-height:155px;padding:16px;background:#efeff2;color:#292932;border-radius:4px;display:flex;flex-direction:column;justify-content:center;gap:8px}.rd-screen strong{font-size:17px}.rd-screen small{color:#545465}.rd-screen.vm{background:#15283a;color:#d5e8f8}.rd-screen.vm small{color:#acc2d4}.rd-screen.window{background:#35313c;color:#eddbfb}.rd-screen.window small{color:#c9b6d7}.rd-screen.stale{background:#29292e;color:#d2d2db}.rd-screen.stale small{color:#b1b1bb}.rd-fake-lines{height:38px;background:repeating-linear-gradient(0deg,#0000 0 10px,#74749a25 10px 12px);width:85%}.rd-actions{display:flex;flex-wrap:wrap;gap:4px;padding:7px}.rd-note{padding:0 12px 10px;color:#b7c9de;font-size:11px;margin:0}.rd-preview.expanded{width:100%;align-self:stretch}.rd-preview.expanded .rd-screen{min-height:275px}.rd-empty{padding:20px 8px;color:#b7b7c0}.rd-state{padding:10px 12px;border-top:1px solid #3b3b42;color:#c4cee0;font-size:12px}.rd-show{align-self:flex-end;background:#33333c!important}.proposal-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.proposal-grid>div{min-width:0}.proposal-grid h3{color:var(--cyan)}.proposal-grid ul{padding-left:20px}.decision-note{border-left:3px solid var(--cyan);padding:12px 18px;background:var(--panel)}
+@media(max-width:850px){.rd-shell{grid-template-columns:minmax(0,1fr) 270px}.rd-chat{padding:14px}.proposal-grid{grid-template-columns:1fr}}
+@media(max-width:650px){.rd-shell{grid-template-columns:1fr}.rd-sidebar{border-left:0;border-top:1px solid #34343a}.rd-list{max-height:330px}.rd-chat{min-height:445px}.rd-preview{width:100%}.rd-lab{gap:5px}.rd-lab label{width:100%}}
+
 </style>
 </head>
 <body>
@@ -31,7 +37,7 @@
 <a href="#performance">延迟、成本与验证策略</a>
 <a href="#authority">执行权限与隔离</a>
 <a href="#recovery">失败、取消与重启恢复</a>
-<a href="#experience">默认 App 体验与操作可见性</a>
+<a href="#experience">Resources 与操作预览</a>
 <a href="#verification">应用任务集与同条件对比</a>
 <a href="#decisions">采用、修改与拒绝的方案</a>
 <a href="#plan">实现顺序与有界任务包</a>
@@ -47,6 +53,7 @@
 <span>目标设计 · 尚非完整实现</span>
 <a href="gui-agent.html">English</a>
 </div>
+<a class="review-link" href="#experience">审阅 Resources 与预览交互方案</a>
 </header>
 <div class="mobile-nav">
 <label for="section-select">章节</label>
@@ -66,7 +73,7 @@
 <option value="performance">延迟、成本与验证策略</option>
 <option value="authority">执行权限与隔离</option>
 <option value="recovery">失败、取消与重启恢复</option>
-<option value="experience">默认 App 体验与操作可见性</option>
+<option value="experience">Resources 与操作预览</option>
 <option value="verification">应用任务集与同条件对比</option>
 <option value="decisions">采用、修改与拒绝的方案</option>
 <option value="plan">实现顺序与有界任务包</option>
@@ -590,13 +597,159 @@ receipt = {
 <p>公开结果仍为 <code>succeeded</code>、<code>infeasible</code>、<code>failed</code>；取消由执行系统 cancelled 状态表示。暂停/审批/接管是可恢复控制状态，不是成功。结果包含原因、未完成条件、最后验证状态及交付物证据，清理失败不能把任务失败改为成功。</p> <a class="ref" href="#S11">[S11]</a>
 </section>
 <section id="experience">
-<span id="invocation">
-</span>
-<h2 tabindex="-1">默认 App 体验与操作可见性</h2>
-<p>保留唯一 GUI Agent 表单和注册表达式行为：完整注册函数表达式创建一个 ProgramRun，不多加聊天推理轮；普通文字或代码块仍为普通消息。表单和直接表达式都捕获提交窗口/Page 身份。</p>
-<p>运行卡片显示任务、准确应用/Page、后台/前台模式、当前动作、最近观察进度与耗时。展开查看截图、代码批次和逐操作回执，不把每个原语都写进正常对话。保留 <code>adapters/mac_indicator.py</code> 不激活应用的原生提示、归属检查和清理。</p>
-<p>停止立即请求取消，界面区分正在停止与已停止。接管阻止写入并说明剩余工作，恢复先重新观察。应用授权提示说明准确应用与范围，按正常策略保存决定并允许撤销；缺失权限分别说明截图还是输入不可用。</p>
-<p>显示经过验证的交付物和完成条件，不只显示绿色函数结果。长任务支持阶段进度、用户修正和有界更新。验收使用 <code>/Applications/OpenProgram.app</code>、默认 profile、端口 <code>18100</code>、<code>~/.openprogram</code>，另起 Electron 实例不能代替。</p> <a class="ref" href="#S12">[S12]</a>
+<span id="invocation"></span>
+<h2 tabindex="-1">Resources 与统一操作预览</h2>
+<p class="decision-note">待评审方案：本节只定义交互、样式、数据归属与实施顺序，尚未实现。确认后再逐项讨论代码修改；本轮不启动真实浏览器、桌面或 VM 操作验收。</p>
+<p>每个会话的右侧 Resources 按分支显示全部已关联的操作目标。Agent 打开的网页默认在后台保留，不增加顶部标签；聊天中只有一个预览，默认显示当前分支最近正在操作的目标。浏览器页面、单个应用窗口、宿主桌面与 VM 虚拟屏幕使用同一套选择规则，实际输入能力分别校验。</p>
+<h3>可操作样式稿</h3>
+<p>点资源条目切换预览，点“模拟下一次操作”观察自动跟随，手动选择后用“跟随当前分支”恢复。也可切换当前分支、搜索资源、隐藏或展开预览。全部为文档中的示例数据，不连接真实页面或机器。</p>
+<div class="resource-demo" id="resource-demo">
+<div class="rd-lab"><span>仅设计模拟</span><label>当前查看分支 <select id="rd-branch"><option value="0">分支 A · 调研</option><option value="1">分支 B · 制作</option><option value="2">分支 C · 桌面</option></select></label><button type="button" id="rd-next">模拟下一次操作</button><button type="button" id="rd-safe" disabled>模拟停止确认</button></div>
+<div class="rd-shell"><div class="rd-chat"><h3>比较方案</h3><p class="rd-caption" id="rd-chat-branch"></p><div class="rd-message">检查五个页面，整理差异。页面保留，后续还要继续使用。<p class="rd-caption">只切换小窗正在预览的目标，五个 Page 均保持连接。</p></div>
+<button type="button" id="rd-show" class="rd-show" hidden>显示预览</button>
+<div class="rd-preview" id="rd-preview"><div class="rd-head"><div><strong id="rd-title"></strong><small id="rd-subtitle"></small></div><button type="button" id="rd-hide">隐藏</button></div><div id="rd-screen" class="rd-screen"><strong id="rd-screen-title"></strong><small id="rd-capability"></small><div class="rd-fake-lines" aria-hidden="true"></div><small id="rd-fresh"></small></div><div class="rd-actions"><button type="button" id="rd-follow">跟随当前分支</button><button type="button" id="rd-take">接管</button><button type="button" id="rd-expand">展开</button></div><p class="rd-note" id="rd-note"></p></div>
+<div class="rd-composer" aria-hidden="true">向当前分支发送消息…</div></div>
+<aside class="rd-sidebar" aria-label="Resources"><div class="rd-tabs"><span>Files</span><span>Activity</span><strong>Resources</strong></div><input id="rd-search" class="rd-search" type="search" placeholder="搜索资源" aria-label="搜索资源"><div id="rd-list" class="rd-list"></div></aside></div>
+<div class="rd-state" id="rd-state" role="status" aria-live="polite"></div></div>
+<script>
+(()=>{
+'use strict';
+const L={"lab": "仅设计模拟", "branch": "当前查看分支", "branches": ["分支 A · 调研", "分支 B · 制作", "分支 C · 桌面"], "next": "模拟下一次操作", "safe": "模拟停止确认", "theme": "切换明暗", "session": "比较方案", "message": "检查五个页面，整理差异。页面保留，后续还要继续使用。", "hint": "只切换小窗正在预览的目标，五个 Page 均保持连接。", "compose": "向当前分支发送消息…", "search": "搜索资源", "follow": "跟随当前分支", "manual": "手动查看", "following": "跟随 Agent", "cancel": "取消接管", "take": "接管", "give": "返回 Agent", "pending": "正在停止 · 等待确认", "expand": "展开", "collapse": "收起", "hide": "隐藏", "show": "显示预览", "readonly": "只读预览", "control": "人工控制 · 模拟", "unavailable": "该目标暂不允许输入", "fresh": "示例实时画面", "stale": "连接中断 · 最后画面", "native": "后台输入尚未验证", "desktop": "需要前台 · 与用户共享输入", "vm": "guest 虚拟显示 · 后台", "web": "后台 Page", "empty": "没有匹配的资源", "count": "项资源", "current": "当前", "operating": "正在操作", "idle": "闲置", "child": "调研 Agent", "build": "制作 Agent", "display": "桌面 Agent", "titles": ["方案总览", "产品详情", "价格说明", "比较记录", "结果汇总", "Blender · 场景窗口", "Ubuntu · 虚拟屏幕", "宿主显示器 1"], "bodies": ["待核对项目", "产品详情", "价格表", "比较草稿", "已整理结果", "场景视口", "虚拟机桌面", "共享桌面"], "status": "预览状态", "showhelp": "小窗已隐藏，资源和后台操作仍保留。", "stophelp": "正在等待宿主确认。用上方设计控件模拟停止确认。", "controlled": "仅示例，不发送真实输入。切换目标前先归还控制权。", "inspecthelp": "保持当前预览，Agent 可以继续操作其他资源。", "followhelp": "只跟随当前查看分支的操作。", "bg": "后台", "paused": "已暂停", "simnotice": "下一次模拟操作会切换当前分支的活动目标。"};
+const $=id=>document.getElementById('rd-'+id);
+const icons={web:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18"/>',window:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>',vm:'<rect x="3" y="3" width="18" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/>',desktop:'<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M6 21h12m-6-4v4"/>'};
+const resources=L.titles.map((title,i)=>({id:i,title,branch:i<5?0:i<7?1:2,type:i<5?'web':i===5?'window':i===6?'vm':'desktop',cap:i<5?L.web:i===5?L.native:i===6?L.vm:L.desktop,agent:i<5?L.child:i<7?L.build:L.display}));
+let viewed=0, query='', control='agent', controlledTarget=null;
+const preferences=[0,6,7].map(target=>({target,mode:'follow',hidden:false,expanded:false}));
+const last=[0,6,7], operating=new Set([0,6]);
+let collapsed={};
+function prefs(){return preferences[viewed]}
+function selected(){return resources[prefs().target]}
+function changeTarget(id){if(control!=='agent')return;Object.assign(prefs(),{target:id,mode:'manual',hidden:false,expanded:false});render();$('title').focus?.();}
+function buildList(){
+ const root=$('list');const focused=document.activeElement?.closest('.rd-row')?.dataset.id;root.replaceChildren();let total=0;
+ L.branches.forEach((name,b)=>{
+  const rows=resources.filter(r=>r.branch===b&&[r.title,r.cap,r.agent,name].join(' ').toLowerCase().includes(query.toLowerCase()));
+  if(!rows.length)return;total+=rows.length;
+  const details=document.createElement('details');details.open=query?true:!collapsed[b];
+  const summary=document.createElement('summary');summary.append(document.createTextNode(name+(b===viewed?' · '+L.current:'')));
+  const count=document.createElement('span');count.className='rd-count';count.textContent=rows.length;summary.append(count);details.append(summary);
+  details.addEventListener('toggle',()=>{if(!query)collapsed[b]=!details.open});
+  rows.forEach(r=>{
+   const button=document.createElement('button');button.type='button';button.className='rd-row';button.dataset.id=r.id;button.disabled=control!=='agent';button.setAttribute('aria-pressed',String(r.id===prefs().target&&!prefs().hidden));
+   const icon=document.createElement('span');icon.className='rd-icon';icon.setAttribute('aria-hidden','true');icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'+icons[r.type]+'</svg>';
+   const text=document.createElement('span');text.className='rd-name';const title=document.createElement('strong');title.textContent=r.title;
+   const sub=document.createElement('small');sub.textContent=(operating.has(r.id)?L.operating:controlledTarget===r.id?L.paused:L.idle)+' · '+r.agent;text.append(title,sub);button.append(icon,text);
+   if(operating.has(r.id)){const dot=document.createElement('span');dot.className='rd-dot';dot.setAttribute('aria-hidden','true');button.append(dot)}
+   button.addEventListener('click',()=>changeTarget(r.id));details.append(button);
+  });root.append(details);
+ });
+ if(focused!==undefined)root.querySelector('[data-id="'+focused+'"]')?.focus({preventScroll:true});
+ if(!total){const empty=document.createElement('p');empty.className='rd-empty';empty.textContent=L.empty;root.append(empty)}
+}
+function render(){
+ const p=prefs(),r=selected();
+ $('chat-branch').textContent=L.branches[viewed];$('title').textContent=r.title;
+ $('subtitle').textContent=L.branches[r.branch]+' · '+(p.mode==='follow'?L.following:L.manual);
+ $('screen-title').textContent=L.bodies[r.id];$('capability').textContent=r.cap;
+ $('screen').className='rd-screen '+r.type;
+ $('fresh').textContent=control==='human'?L.control:control==='pending'?L.pending:L.readonly+' · '+L.fresh;
+ $('preview').hidden=p.hidden;$('show').hidden=!p.hidden;$('preview').classList.toggle('expanded',p.expanded);
+ $('expand').textContent=p.expanded?L.collapse:L.expand;
+ $('take').textContent=control==='human'?L.give:control==='pending'?L.cancel:L.take;
+ $('take').disabled=control==='agent'&&!['web','vm'].includes(r.type);
+ $('take').title=$('take').disabled&&control==='agent'?L.unavailable:'';
+ $('follow').disabled=control!=='agent';$('branch').disabled=control!=='agent';$('safe').disabled=control!=='pending';
+ $('next').disabled=control!=='agent';$('hide').disabled=control!=='agent';
+ $('note').textContent=control==='pending'?L.stophelp:control==='human'?L.controlled:p.mode==='follow'?L.followhelp:L.inspecthelp;
+ $('state').textContent=p.hidden?L.showhelp:L.status+': '+(control==='agent'?p.mode==='follow'?L.following:L.manual:control==='pending'?L.pending:L.control)+' · '+r.title;
+ buildList();
+}
+$('branch').addEventListener('change',()=>{if(control==='agent'){viewed=Number($('branch').value);render()}});
+$('search').addEventListener('input',()=>{query=$('search').value;buildList()});
+$('next').addEventListener('click',()=>{
+ if(control!=='agent')return;
+ const candidates=resources.filter(r=>r.branch===viewed&&['web','vm'].includes(r.type));
+ if(!candidates.length){$('state').textContent=L.unavailable;return}
+ operating.delete(last[viewed]);const at=candidates.findIndex(r=>r.id===last[viewed]);last[viewed]=candidates[(at+1)%candidates.length].id;operating.add(last[viewed]);
+ if(prefs().mode==='follow')prefs().target=last[viewed];render();
+});
+$('follow').addEventListener('click',()=>{if(control==='agent'){Object.assign(prefs(),{mode:'follow',target:last[viewed],hidden:false,expanded:false});render()}});
+$('hide').addEventListener('click',()=>{prefs().hidden=true;render();$('show').focus()});
+$('show').addEventListener('click',()=>{prefs().hidden=false;render();$('follow').focus()});
+$('expand').addEventListener('click',()=>{prefs().expanded=!prefs().expanded;prefs().mode='manual';render();$('expand').focus()});
+$('take').addEventListener('click',()=>{
+ if(control==='human'||control==='pending'){control='agent';controlledTarget=null;render();return}
+ if(control!=='agent')return;control='pending';controlledTarget=selected().id;prefs().mode='manual';render();$('safe').focus();
+});
+$('safe').addEventListener('click',()=>{if(control==='pending'){operating.delete(controlledTarget);control='human';render();$('take').focus()}});
+render();
+})();
+</script>
+
+<h3>当前实现的问题与改动范围</h3>
+<ul><li>Resources 目前按 <code>sessionId</code> 分组；它没有表达同一会话内的分支和子 Agent 归属。后端的临时使用记录在调用退出时删除，不能直接作为持续保留的资源清单。</li><li>当前点网页会执行 <code>setWebTabPinned(true)</code>、取消分组并激活顶部页面；pin 的含义是顶部标签可见性。这与“点一下在聊天小窗查看”不一致。</li><li>当前 PiP 只有一组会话标签与页面绑定，保留映射主要在内存。新设计把资源的存续、预览选择、执行租约分别记录，关预览不销毁目标。</li></ul>
+<h3>列表与小窗的具体样式</h3>
+<p>沿用右侧栏的暗色背景、系统字体和 16px 类型图标；不为每个资源画边框卡片。分支标题是一行可折叠按钮，显示分支名、当前标记和资源数量；条目约 44–48px 高，第一行是页面或窗口标题，第二行是类型、状态及需要时的子 Agent 名。标题过长省略，完整标题、脱敏来源和目标身份在详情中查看。悬停使用轻底色，选中使用稍深底色；“正在操作”圆点与“正在预览”选中态分别显示，不只靠颜色区分状态。</p>
+<p>小窗保留标题、所属分支、类型与后台能力，正文显示页面或屏幕预览，底部是“跟随当前分支 / 接管 / 展开 / 隐藏”等有文字含义的操作。侧栏宽度复用现有可调整宽度，不固定重做布局；窄屏以 Resources 抽屉选择目标，聊天和预览保持可用。上方样式稿在窄屏改为上下排列以便审阅，不代表新增产品页。</p>
+<div class="proposal-grid"><div><h3>选择与跟随</h3><ul>
+<li>每个 App 窗口最多显示一个预览，状态按当前会话和分支记忆。自动跟随只响应当前查看分支中，已获宿主许可的实际操作事件；资源刚打开、状态轮询或截图更新本身不切换预览。</li>
+<li>多个子 Agent 并行时，按宿主事件顺序跟随最后实际操作的目标，显示正在使用它的 Agent。约 200ms 合并连续更新，只渲染最新帧，不积压旧帧；这是待测初始参数。</li>
+<li>点任意资源进入“手动查看”，Agent 继续原任务，预览不会被后台切换覆盖。查看其他分支的资源不切换会话分支，也不授予写权限。按钮明确显示“跟随当前分支”以返回自动模式。</li>
+<li>隐藏小窗只改变可见性；后台操作继续，Resources 保留全部目标。后续事件不自动重新弹出，点条目或“显示预览”才恢复。手动展开只改变展示尺寸，不复制 Page 或把应用置前。</li>
+<li>切换分支后恢复该分支的预览偏好；从未选择时跟随其最近操作目标；该目标已关闭则显示不可用，没有操作记录时显示空状态。其他分支仍可运行，其消息不能覆盖当前预览。</li>
+</ul></div><div><h3>保留、打开与关闭</h3><ul>
+<li>取消 Resources 中的 pin 按钮。单击默认预览；“展开”显示同一目标的大视图。浏览器更多操作可提供“在标签页打开”，只有这项显式操作才增加普通顶部视图，重复打开复用同一 Page。</li>
+<li>已有用户手动固定或打开的顶部页面保留为普通用户视图；迁移不能关闭它们，也不自动把所有旧页面隐藏。后台资源不会因为最近使用而自动生成新标签。</li>
+<li>任务结束释放 Python、输入租约与临时观察文件，已关联页面和 VM 保留，转为闲置。仅声明为临时的测试/中间资源按原有明确策略销毁，不把“任务结束”当成“关闭所有资源”。</li>
+<li>行菜单使用具体动作：“关闭网页”“断开窗口关联”“断开 VM 连接”。“停止 VM”单独列出，不能随关小窗触发；借用的用户 App 不自动退出。</li>
+<li>关闭正在使用或被其他分支引用的目标，需要展示受影响执行，先请求停止并等待写租约释放。未能确认停止时保持“停止中”，不能谎报已关闭。已关闭记录移入可折叠的不可用分组；默认数量只计当前可连接目标。</li>
+</ul></div></div>
+<h3>浏览器、软件窗口、桌面与 VM 的能力边界</h3>
+<div class="table-wrap"><table><thead><tr><th>资源</th><th>后台目标与预览</th><th>不可行时如何显示</th></tr></thead><tbody>
+<tr><td>浏览器 Page</td><td>复用准确 Page/CDP target；后台保持文档、登录和导航状态。用户看预览不需要激活网页。打开的弹窗登记为原分支新资源，确实操作弹窗时才跟随。</td><td>页面已关闭、脱离归属或 frame 过期时停止写入。重新打开 URL 创建新的资源身份，不冒充原页面状态。</td></tr>
+<tr><td>单个原生应用窗口</td><td>绑定进程实例和准确窗口，可支持窗口截图与经过验证的后台输入。列表显示“后台可操作”“仅预览”或“需要前台”，按动作能力判断。</td><td>不能承诺所有软件都支持完整后台点击/输入。现有原生矩阵仍失败。最小化、锁屏、权限不足、无法准确定位时给出具体原因；只有用户明确选择前台方式才允许激活窗口。</td></tr>
+<tr><td>宿主桌面屏幕</td><td>对应宿主显示器及其坐标空间，能反映整个桌面。它没有独立于用户的输入环境。</td><td>全局鼠标和键盘可能影响用户当前工作，不标为“独立后台”。需要协商使用前台，或改用隔离 VM；选中预览不代表允许全局输入。</td></tr>
+<tr><td>VM 虚拟屏幕</td><td>VM 在后台运行，其 guest 虚拟显示和输入适配器提供截图、键盘和鼠标；不要求宿主 VM 控制台保持前台。VM 进程、guest 图形会话与远程显示服务仍须运行。</td><td>guest 无图形会话、锁定、显示断开或输入通道不支持时显示具体状态，不伪装实时画面。重连后重新观察，禁止自动重放不确定输入。Docker 可作为环境实现选项，不新增必填容器层。</td></tr>
+</tbody></table></div>
+<h3>数据归属、分支与并发</h3>
+<p>Resources 保存可序列化的资源描述，真正的 Page/窗口/VM 句柄及租约仍由宿主管理。复用现有会话与分支投影，分组键必须来自稳定的分支身份或可验证的分叉谱系，不能使用不断变化的当前消息 HEAD，也不能把一次执行当成一个分支。分支改名、继续对话和重试只更新展示或关联；分叉不会复制真实网页状态。</p>
+<ul>
+<li>资源描述包含资源 ID、类型、脱敏目标描述、真实所有者、生命周期状态、连接代次和预览能力；分支关联另外保存来源调用、所属分支、子 Agent 和共享方式。同 URL 的不同 Page 不合并；同一 Page 的 UI 与使用记录合并为一个真实资源。</li>
+<li>子 Agent 资源在父会话原始分支下展示，并标明实际子 Agent 所有者；子 Agent 转向新任务或父分支改名不能改变历史归属。原会话/执行授权仍逐条检查，不能因为显示在同组而越权。</li>
+<li>从共同祖先继承的资源显示“引用自…”；浏览器默认新建独立 Page 用于分支写入，不能声称外部网站或登录状态因此隔离。原生窗口和 VM 不能自动克隆；需要显式转移写租约或提供独立目标。</li>
+<li>选择预览不是获取控制权限。同一个目标在各分支行中可作为共享引用出现，标明当前控制方；写入租约按实际冲突域互斥，如 Page、共享输入焦点的应用进程、VM 或宿主桌面。按窗口分组不证明应用能并发输入。</li>
+<li>预览事件带会话、分支、资源 ID、连接代次和单调序号；切分支、重连或撤销后丢弃过期事件。元数据可恢复，进程内句柄不可复用。旧记录无法归属分支时放入“待归属”，不猜测迁移。</li>
+</ul>
+<h3>预览、接管与断线</h3>
+<p>自动预览默认只读。用户点“接管”后请求暂停拥有冲突写租约的执行，立即禁止新写入；必须收到宿主确认、等待已发操作结束并释放按键后，才能启用人工输入。不能及时停止时保留只读画面和“正在停止”，不能让用户与 Agent 同时写入。恢复 Agent 时退出手动输入、重新观察并重新授权，禁止复用旧帧。</p>
+<p>后台空闲目标保留连接但停止高频截图；仅当前预览订阅图像，不周期扫描所有宿主应用。运行中显示帧的新鲜度与操作进度；最后一张截图显示“连接中断 / 最后画面”，未连接的资源允许查看元数据但不允许输入。App 重启、网页崩溃与 VM 重启均需重新验证目标身份；持久记录不等于外部资源仍存活。内存不足时提示用户释放资源，不静默丢弃表单或停止 VM。</p>
+<h3>状态转换的确定规则</h3>
+<div class="table-wrap"><table><thead><tr><th>事件</th><th>预览结果</th><th>执行与目标</th></tr></thead><tbody>
+<tr><td>Agent 派发操作</td><td>仅自动跟随且未隐藏时切到对应目标；手动查看或大视图保持当前目标。</td><td>“正在操作”从经过校验的 adapter 派发开始，到回执、取消确认或失败结束。入队、持有租约、截图轮询都不单独显示该标记；超时或缺少事件显示“状态未知”。</td></tr>
+<tr><td>点资源 / 展开</td><td>点资源打开只读手动预览；展开进入手动大视图，除非已取得人工租约，否则保持只读；收起保持当前模式。保持原分支选择，不取消已有页面分组。</td><td>不转移租约，不创建目标。普通顶部视图也遵守同一输入控制，不能通过换展示位置绕过接管。</td></tr>
+<tr><td>隐藏 / 显示</td><td>隐藏保存模式和目标；显示时自动模式取最近操作目标或该目标的不可用状态，手动模式恢复原目标或显示不可用。列表继续更新。</td><td>不最小化 OS 窗口，不切断 VM 虚拟显示，不结束执行。</td></tr>
+<tr><td>跟随当前分支 / 返回 Agent</td><td>“跟随当前分支”只改变选择模式，退出大视图。“返回 Agent”才归还人工输入租约。</td><td>人工控制期间禁用跟随和目标切换；先归还租约。接管等待 5 秒未获确认，显示仍在等待、可取消请求，不自动抢占。这是待测 UI 超时，不是已测停止保证。</td></tr>
+<tr><td>目标冲突 / 子 Agent 结束</td><td>显示真实控制方；不同目标可同时有多个“正在操作”条目，单个小窗仍只显示最新目标。</td><td>第二写入者得到 busy，不隐式排队或抢占。需用户显式转移或分配独立目标；子执行结束释放自己的租约，父执行不能自动继承。</td></tr>
+<tr><td>断线 / 焦点丢失 / 重启</td><td>最后画面加失效标记，停用输入；未取得过图像显示“暂无画面”。</td><td>身份和能力未知时停止写入，不显示“正在操作”。只自动尝试只读重连到可验证的同一实例；重建 Page、启动 VM、恢复写入须走显式动作和授权。</td></tr>
+</tbody></table></div>
+<p>父分支的跟随集合包含父执行与在该分支创建的子执行，使用宿主派发顺序；子会话窗口只跟随子会话自身的分支。相同真实目标可在不同分支中显示引用行，资源数量按每组唯一目标计，Unavailable 的数量单列。“移除引用”只解除闲置关联；“关闭网页 / 停止 VM”作用于真实目标，必须列出全部受影响引用。任务完成保留原分组；App 重启保留分组与预览偏好，但不恢复人工控制或写租约。标题和 URL 查询凭据不作为归属依据，不持久保存秘密查询参数。</p>
+<p>原生输入的焦点或结果验证失败显示“输入失败”，撤销写入并保留证据，不能继续按后台模式尝试。无明确派发/结束事件的旧适配器显示“执行中 · 操作状态未验证”，不显示操作圆点，也不提供无确认的交互接管。宿主桌面按显示器标识绑定；屏幕布局变化令旧坐标失效。无论 App 是用户先打开还是 Agent 打开，断开关联均不退出 App；退出软件作为单独的用户明确动作。VM 的断开连接只释放传输连接，guest 与虚拟显示继续运行。</p>
+<p>“当前分支”固定指当前会话聊天区域已检出的分支。点击资源不会更改这个键。操作统一命名为<strong>跟随当前分支</strong>：查看分支 A 时手动预览 B 的资源，点它仍跟随 A 及其所属子 Agent。<strong>返回 Agent</strong>是人工控制期间的另一项操作，用于归还输入租约，并按正常授权请求恢复 Agent 执行。</p>
+<p>“接管”适用于当前小窗、大预览和顶部视图。收到确认前均只读，取得人工租约后才可输入；接管后展开或收起保持相同租约和输入模式。等待或已经接管时，禁用资源选择、跟随、隐藏和切换分支；始终保留“取消接管”或“返回 Agent”。若用户关闭或离开宿主视图、连接丢失，撤销人工输入并保持 Agent 暂停；不允许隐藏视图继续持有控制，也不自动恢复 Agent。</p>
+<p>当前目标关闭或 VM 停止时，清除操作标记并显示该目标不可用或最后画面。手动查看一直保留此状态，直到用户另选资源；自动跟随也保留，直到当前分支有更新的获准操作选择另一个目标，不自行回退到旧资源。“显示预览”和分支偏好恢复遵守相同规则。</p>
+<h3>后续实施拆分：每项先讨论</h3>
+<ol>
+<li>确认这份交互稿：分支分组、点击预览、手动查看与自动跟随、移除 pin、关闭语义。</li>
+<li>扩展现有资源记录及分支投影：持久描述、真实归属、子 Agent 引用与遗留数据迁移。</li>
+<li>实现统一预览状态与 Resources 列表；保留现有页面身份，分离隐藏、展开和关闭。</li>
+<li>接入浏览器操作事件和租约控制，完成默认 App 中多页面、多分支和用户接管验收。</li>
+<li>分别讨论原生窗口、宿主桌面与后台 VM 适配；每类只有真实目标验收通过才显示对应能力。</li>
+</ol>
+<p>主要修改位置：<code>session-resources-panel.tsx</code>、<code>session-resources.ts</code>、<code>use-session-resources.ts</code>、<code>web-tab-pip-store.ts</code>、<code>desktop-bridge.ts</code> 与现有 <code>ResourceUseStore</code>、执行归属、浏览器注册表。复用现有执行控制，不新增另一套任务调度器。本轮只修改本文双语设计，不修改这些代码。</p>
+<h3>验收用例</h3>
+<ul><li>一个分支打开五页：顶部标签不增长，五个资源均可再次访问，预览随实际动作切换。</li><li>两个分支及其子 Agent 并行：按真实分支分组，切分支不改变外部任务，资源不会错误重绑定。</li><li>手动查看 A 时 Agent 操作 B：A 保持预览，B 仍显示“正在操作”；恢复跟随才切回 B。</li><li>隐藏、展开、搜索、折叠分组不会重载网页、停止 VM、授予控制或销毁目标。</li><li>关闭使用中目标、撤销权限、迟到帧、重启与断线有明确状态，未确认停止时不能启用人工输入。</li><li>同进程多窗口、用户同时操作和两个 VM 分别验证输入冲突边界；不以截图成功代替后台输入成功。</li></ul>
+<p>保留唯一 GUI Agent 表单、准确提交窗口/Page 身份、真实交付物证据及现有原生操作提示。产品验收仍使用默认 App；文档原型的交互通过不等于这些功能已经实现。</p>
+<p class="ref"><a href="#S13">[S13] 当前 Resources/PiP 源码</a> · <a href="#S12">[S12] App 入口</a></p>
 </section>
 <section id="verification">
 <h2 tabindex="-1">应用任务集与同条件对比</h2>
@@ -944,6 +1097,7 @@ receipt = {
 </details>
 <p>GitHub main 链接用于定位，本文事实来自当前本机源码核查；主仓库和独立 Harness 的不可变版本、文件摘要、未提交状态与命令日志记录在本次审查包，不能把远程链接当成本机版本相同的证明。</p>
 </section>
+<div class="evidence" id="S13"><h3>S13</h3><p><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/session-resources/session-resources-panel.tsx">session-resources-panel.tsx</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/state/session-resources.ts">session-resources.ts</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/state/web-tab-pip-store.ts">web-tab-pip-store.ts</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/desktop-bridge.ts">desktop-bridge.ts</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/session_resources.py">session_resources.py</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/routes/processes.py">processes.py</a></p></div>
 <section id="status">
 <span id="results">
 </span>
@@ -989,6 +1143,7 @@ receipt = {
 <td>验收记录中的整合构建已安装到默认 App。内置 Python 直接加载已安装 wheel，未注入源码路径。自有测试对象验证了外部文件读写和网络访问被拒绝、秘密环境变量不继承、临时目录可写、跨次调用保留变量、SQLite 操作回执已提交及子进程已回收。默认 App 恢复连接并显示正常界面。</td>
 <td>刷新脚本因健康检查等待超时而非正常退出；worker 随后在没有再次重启的情况下恢复健康，不能将该次刷新脚本记为通过。这些结果仅适用于受测安装构建，不自动覆盖后续安装。尚未通过默认 App 的公共入口验收真实浏览器任务；浏览器交互、页面最终结果和资源释放仍需实机验收。</td>
 </tr>
+<tr><td>Resources 与统一预览</td><td>已核对当前 Resources/PiP 源码；分支分组、手动查看/自动跟随、生命周期与目标能力限制已有可交互文档原型。</td><td>方案待用户审阅。资源持久分支归属、操作事件驱动预览、移除 pin 及原生/VM 预览适配尚未实现，也未在默认 App 验收。</td></tr>
 <tr>
 <td>P5 恢复与 UX</td>
 <td>定位共享执行控制和当前原生提示。</td>
