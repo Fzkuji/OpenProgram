@@ -102,7 +102,7 @@ export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: s
     void document.fonts?.ready.then(fit);
     return () => { disposed = true; observer.disconnect(); };
   }, [root, path]);
-  const crumb = (name: string, target: string) => <HoverTip label={target || root}><button type="button" data-path={target} onClick={() => onLocate(target)}>{name}</button></HoverTip>;
+  const crumb = (name: string, target: string) => <button type="button" data-path={target} onClick={() => onLocate(target)}>{name}</button>;
   return <><nav ref={ref} className={styles.fileBreadcrumb} aria-label={text("File path", "文件路径")}>
     <span ref={measureRef} className={styles.fileBreadcrumbMeasure} aria-hidden="true">{[root, "…", ...parts].map((name, i) => <span key={i}>{name}</span>)}</span>
     {crumb(root, "")}{firstVisible > 0 ? <span className={styles.fileCrumbPart}><ChevronRight /><Popover><PopoverTrigger asChild><button type="button" aria-label={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={`${MENU_PANEL} ${styles.fileCrumbMenu}`}>{parts.slice(0, firstVisible).map((part, i) => <button type="button" className={itemCls(false)} key={i} onClick={() => onLocate(parts.slice(0, i + 1).join("/"))}>{part}</button>)}</PopoverContent></Popover></span> : null}
