@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 import hashlib
+import fcntl
 import os
 from pathlib import Path
 
@@ -90,6 +91,8 @@ def write_checked(path: str, content: str) -> None:
     flags |= os.O_CREAT | os.O_EXCL if expected.get('missing') else 0
     fd = os.open(path, flags, 0o666)
     with os.fdopen(fd, 'r+b') as stream:
+        # Serialize approved writers before checking the opened file again.
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
         if not expected.get('missing'):
             st = os.fstat(stream.fileno())
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
