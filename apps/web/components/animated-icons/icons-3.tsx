@@ -6,6 +6,7 @@ import { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
 
 import { Pin } from "lucide-react";
 
+import { FolderTypeIcon } from "@/components/files/file-type-icon";
 import { cn } from "@/lib/utils";
 
 import type { AnimatedNavIconHandle, AnimatedNavIconProps } from "./_shared";
@@ -383,24 +384,9 @@ export const FolderOpenIcon = forwardRef<AnimatedNavIconHandle, AnimatedNavIconP
         onMouseLeave={handleMouseLeave}
         {...props}
       >
-        <svg
-          fill="none"
-          height={size}
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-          viewBox="0 0 24 24"
-          width={size}
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <motion.path
-            animate={controls}
-            variants={FOLDER_OPEN_VARIANTS}
-            style={{ transformOrigin: "12px 12px" }}
-            d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"
-          />
-        </svg>
+        <motion.span className="inline-flex" animate={controls} variants={FOLDER_OPEN_VARIANTS}>
+          <FolderTypeIcon size={size} open />
+        </motion.span>
       </div>
     );
   },

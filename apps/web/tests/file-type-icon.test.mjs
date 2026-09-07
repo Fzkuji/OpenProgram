@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Python, TypeScript, Shell, BracketsYellow, Markdown, Git, Claude } from "@react-symbols/icons/files";
-import { DefaultFileIcon } from "@react-symbols/icons/utils";
+import { DefaultFileIcon, DefaultFolderIcon, DefaultFolderOpenedIcon } from "@react-symbols/icons/utils";
 
 const bundle = await build({
   entryPoints: [fileURLToPath(new URL("../components/files/file-type-icon.tsx", import.meta.url))],
@@ -20,11 +20,11 @@ const bundle = await build({
   } }],
 });
 const temporary = mkdtempSync(join(tmpdir(), "op-file-icons-"));
-let FileTypeIcon;
+let FileTypeIcon, FolderTypeIcon;
 try {
   const output = join(temporary, "icons.cjs");
   writeFileSync(output, bundle.outputFiles[0].text);
-  ({ FileTypeIcon } = await import(pathToFileURL(output).href));
+  ({ FileTypeIcon, FolderTypeIcon } = await import(pathToFileURL(output).href));
 } finally {
   rmSync(temporary, { recursive: true, force: true });
 }
@@ -54,4 +54,13 @@ test("file type icons distinguish common languages and normalize paths", () => {
   assert.equal(render("constructor.py"), render("app.py"));
   assert.match(render("app.py"), /aria-hidden="true"/);
   assert.match(render("app.py"), /width="16"/);
+});
+
+
+test("folder identities use Symbols closed and opened assets at existing sizes", () => {
+  for (const open of [false, true]) for (const size of [12, 15, 20]) {
+    const actual = renderToStaticMarkup(createElement(FolderTypeIcon, { open, size, className: "folder" }));
+    const expected = renderToStaticMarkup(createElement(open ? DefaultFolderOpenedIcon : DefaultFolderIcon, { width: size, height: size, className: "folder", "aria-hidden": "true", focusable: "false", style: { flexShrink: 0 } }));
+    assert.equal(actual, expected);
+  }
 });

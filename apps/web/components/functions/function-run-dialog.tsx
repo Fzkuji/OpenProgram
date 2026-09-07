@@ -1,8 +1,10 @@
 "use client";
 
+import { FolderTypeIcon } from "@/components/files/file-type-icon";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Play, Eye, Loader2, Folder } from "lucide-react";
+import { X, Play, Eye, Loader2, } from "lucide-react";
 import type { AgenticFunction, FunctionParamDetail } from "@/lib/types";
 import { api } from "@/lib/net/api";
 import { useTranslation } from "@/lib/i18n";
@@ -305,7 +307,7 @@ function ParamInput({
                 }
               }}
             >
-              <Folder />
+              <FolderTypeIcon />
               {text("Browse", "浏览")}
             </Button>
           </div>

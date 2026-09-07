@@ -1,5 +1,7 @@
 "use client";
 
+import { FolderTypeIcon } from "@/components/files/file-type-icon";
+
 /**
  * Project menu — content of the topbar `<ProjectBadge />` popover.
  *
@@ -23,7 +25,7 @@
  * Positioning / click-outside come from the shadcn <Popover> in index.tsx.
  */
 import { useEffect, useRef, useState, useCallback } from "react";
-import { AlertTriangle, Check, Folder, FolderSearch } from "lucide-react";
+import { AlertTriangle, Check, FolderSearch } from "lucide-react";
 import {
   type AnimatedNavIconHandle,
   FolderOpenIcon,
@@ -337,7 +339,7 @@ export function ProjectMenu({
       <div className={MENU_SEPARATOR} />
 
       <div className={itemCls(false)} onClick={() => !busy && openFolder()}>
-        <Folder size={14} strokeWidth={2} className="shrink-0 opacity-70" />
+        <FolderTypeIcon size={14} className="shrink-0 opacity-70" />
         <span className="flex-1">{text("Open folder…", "打开文件夹…")}</span>
       </div>
 

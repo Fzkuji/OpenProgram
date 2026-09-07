@@ -1,5 +1,7 @@
 "use client";
 
+import { FolderTypeIcon } from "@/components/files/file-type-icon";
+
 /**
  * WorkingDirChips — claude.ai-style chips for the session's additional
  * working directories, rendered in the composer's envChips row right of
@@ -15,7 +17,7 @@
  * store — the first chat frame carries the list (send-chat-message.ts).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Folder, FolderPlus, X } from "lucide-react";
+import { FolderPlus, X } from "lucide-react";
 
 import {
   Popover,
@@ -182,7 +184,7 @@ export function WorkingDirChips() {
     <>
       {workingDirs.map((dir) => (
         <span key={dir} className="runtime-badge workdir-badge" title={dir}>
-          <Folder size={14} strokeWidth={2} className="workdir-icon" />
+          <FolderTypeIcon size={14} className="workdir-icon" />
           <span className="badge-short">{baseName(dir)}</span>
           <X
             size={13}
@@ -236,7 +238,7 @@ export function WorkingDirChips() {
               </>
             ) : null}
             <div className={itemCls(false)} onClick={() => void chooseFolder()}>
-              <Folder size={14} strokeWidth={2} className="shrink-0 opacity-70" />
+              <FolderTypeIcon size={14} className="shrink-0 opacity-70" />
               <span className="flex-1">
                 {text("Choose folder…", "选择文件夹…")}
               </span>

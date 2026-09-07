@@ -1,5 +1,7 @@
 "use client";
 
+import { FolderTypeIcon } from "@/components/files/file-type-icon";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -7,8 +9,6 @@ import {
   ChevronDown,
   ChevronRight,
   FileCode,
-  Folder,
-  FolderOpen,
   GitBranch,
   Network,
   RefreshCw,
@@ -108,8 +108,8 @@ function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolea
   if (entry.program_kind?.endsWith("function")) return <Wrench size={15} className={fileStyles.treeIcon} />;
   if (entry.kind === "folder") {
     return expanded
-      ? <FolderOpen size={15} className={fileStyles.treeIconFolder} />
-      : <Folder size={15} className={fileStyles.treeIconFolder} />;
+      ? <FolderTypeIcon open size={15} className={fileStyles.treeIconFolder} />
+      : <FolderTypeIcon size={15} className={fileStyles.treeIconFolder} />;
   }
   return <FileCode size={15} className={fileStyles.treeIcon} />;
 }
