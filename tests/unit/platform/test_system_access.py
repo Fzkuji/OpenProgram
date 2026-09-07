@@ -18,6 +18,7 @@ def test_macos_checks_both_and_does_not_prompt(monkeypatch):
 
 def test_granted_request_is_noop(monkeypatch):
     monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
+    monkeypatch.setattr(system_access, '_open_settings', lambda cap: (_ for _ in ()).throw(AssertionError('must not open settings')))
     monkeypatch.setitem(sys.modules, 'Quartz', SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: True))
     assert system_access.request_access('screen_recording')['status'] == 'granted'
 
@@ -56,9 +57,13 @@ def test_windows_never_assumes_administrator_means_access(monkeypatch):
 def test_explicit_request_only_prompts_missing_capability(monkeypatch):
     monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
     calls = []
+    opened = []
+    monkeypatch.setattr(system_access, '_open_settings', lambda cap: opened.append(cap) or True)
     monkeypatch.setitem(sys.modules, 'ApplicationServices', SimpleNamespace(
         AXIsProcessTrusted=lambda: False, kAXTrustedCheckOptionPrompt='prompt',
         AXIsProcessTrustedWithOptions=lambda options: calls.append(options)))
     row = system_access.request_access('accessibility')
     assert calls == [{'prompt': True}]
+    assert opened == ['accessibility']
+    assert row['settings_opened']
     assert row['status'] == 'not_granted'

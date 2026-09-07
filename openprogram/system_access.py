@@ -74,6 +74,18 @@ def report() -> dict:
             'pid': os.getpid(), 'checked_at': time.time(), 'capabilities': rows}
 
 
+def _open_settings(capability: str) -> bool:
+    """Open only the fixed native page after an explicit user setup action."""
+    panes = {'screen_recording': 'Privacy_ScreenCapture', 'accessibility': 'Privacy_Accessibility'}
+    try:
+        appkit = importlib.import_module('AppKit')
+        foundation = importlib.import_module('Foundation')
+        url = foundation.NSURL.URLWithString_('x-apple.systempreferences:com.apple.preference.security?' + panes[capability])
+        return bool(appkit.NSWorkspace.sharedWorkspace().openURL_(url))
+    except Exception:
+        return False
+
+
 def request_access(capability: str) -> dict:
     """Explicit local-user setup only; never call from a probe or a model tool."""
     if platform.system() != 'Darwin' or capability not in _MAC:
@@ -89,7 +101,10 @@ def request_access(capability: str) -> dict:
         else:
             ax = importlib.import_module('ApplicationServices')
             ax.AXIsProcessTrustedWithOptions({ax.kAXTrustedCheckOptionPrompt: True})
-        return _mac_status(capability)
+        after = _mac_status(capability)
+        if after['status'] != 'granted':
+            after['settings_opened'] = _open_settings(capability)
+        return after
     finally:
         _REQUEST_LOCK.release()
 
