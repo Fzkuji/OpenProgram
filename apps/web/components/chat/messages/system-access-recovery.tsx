@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
-import { systemAccessRequired } from "./system-access-result";
+import { systemAccessRequired } from "@/lib/system-access-result";
 
 type Row = { id: string; status: string; can_request?: boolean };
 
 /** Native setup belongs to the visible owner UI, never to model-written prose. */
-export function SystemAccessRecovery({ output, autoOpen, onContinue }: {
-  output: unknown; autoOpen: boolean; onContinue?: () => void;
+export function SystemAccessRecovery({ output, autoOpen, onContinue, onAutoOpen }: {
+  output: unknown; autoOpen: boolean; onContinue?: () => void; onAutoOpen?: () => void;
 }) {
   const required = systemAccessRequired(output);
   const { text } = useTranslation();
@@ -69,6 +69,7 @@ export function SystemAccessRecovery({ output, autoOpen, onContinue }: {
   useEffect(() => {
     if (!autoOpen || !local || !checked || attempted.current || !missing.length || !visibleNow) return;
     attempted.current = true;
+    onAutoOpen?.();
     void setup(missing[0]);
   }, [autoOpen, local, checked, key, visibleNow]); // Only one automatic request for this visible completion.
   async function resume() {

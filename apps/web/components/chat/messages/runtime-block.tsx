@@ -30,7 +30,7 @@ import { showToast } from "@/lib/format-utils/toast";
 import { optimisticAction } from "@/lib/runtime-bridge/optimistic-action";
 
 import { SystemAccessRecovery } from "./system-access-recovery";
-import { systemAccessRequired } from "./system-access-result";
+import { systemAccessRequired, hasSystemAccessRequest, consumeSystemAccessRequest, systemAccessRequestId } from "@/lib/system-access-result";
 
 import type { TNode } from "./tree-types";
 import { ExecutionStrip, StepRow, TreeStep, decodeEscapes } from "./execution-strip";
@@ -141,7 +141,8 @@ export function RuntimeBlock({
   const sawRunning = useRef(false);
   if (streaming) sawRunning.current = true;
   const needsAccess = fnName === "gui_agent" && !streaming && systemAccessRequired(tree?.output).length > 0;
-  const accessRecovery = needsAccess ? <SystemAccessRecovery output={tree?.output} autoOpen={sawRunning.current} onContinue={doRetry} /> : null;
+  const accessId = systemAccessRequestId(tree, msg.id);
+  const accessRecovery = needsAccess ? <SystemAccessRecovery output={tree?.output} autoOpen={sawRunning.current || hasSystemAccessRequest(sessionId || "", accessId)} onAutoOpen={() => consumeSystemAccessRequest(sessionId || "", accessId)} onContinue={doRetry} /> : null;
 
   useEffect(() => {
     if (nested || !streaming) return;

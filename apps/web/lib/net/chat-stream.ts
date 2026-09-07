@@ -1,3 +1,4 @@
+import { rememberSystemAccessFromTree } from "../system-access-result";
 /**
  * Chat-stream WS reducer.
  *
@@ -334,6 +335,9 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // Live execution tree for a streaming `/run` — store it on the reply
   // so <RuntimeBlock />'s <ExecutionTree /> renders it as it grows.
   if (d.type === "tree_update" && d.tree) {
+    if (useSessionStore.getState().currentSessionId === sid) {
+      rememberSystemAccessFromTree(sid, d.msg_id, d.tree, d.function);
+    }
     flushPendingDelta(rid);
     if (d.msg_id) flushPendingDelta(d.msg_id);
     // The same tree_update channel carries the run's terminal state:
@@ -549,6 +553,9 @@ function handleRuntimeRow(sid: string, d: ChatResponseData): void {
     rawType: d.type,
     contextTree: (d.context_tree as never) || undefined,
   };
+  if (store.currentSessionId === sid) {
+    rememberSystemAccessFromTree(sid, d.msg_id, d.context_tree, patch.function);
+  }
   const resultTimestamp = current?.timestamp ?? Date.now();
   if (mergeIntoAssistant && calledBy) {
     // Update inside the parent's runtimeChildren.
