@@ -23,6 +23,7 @@ import {
   requestCloseBrowserPage,
   settlePendingClose,
 } from "@/lib/state/browser-control";
+import { revealExistingWebTab } from "@/lib/state/web-page-management";
 import { useSessionResources } from "@/lib/use-session-resources";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./session-resources.module.css";
@@ -140,7 +141,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
               aria-label={`${text("Open in tab", "在标签中打开")}: ${row.title}`}
               title={text("Open in tab", "在标签中打开")} onClick={() => {
                 const tabId = existingResourceTabId(row, tabs);
-                if (tabId) useCenterTabs.getState().setActive(tabId);
+                if (tabId) revealExistingWebTab(tabId, useCenterTabs.getState());
                 else render(value => value + 1);
               }}>↗</button>}
             {tab && <button type="button" className={styles.action} aria-label={`${text("Close webpage", "关闭网页")}: ${row.title}`}

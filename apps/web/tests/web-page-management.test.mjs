@@ -29,7 +29,7 @@ registerHooks({
 });
 
 const { useCenterTabs } = await import("../lib/state/center-tabs-store.ts");
-const { topLevelTabs, groupWebPages } = await import("../lib/state/web-page-management.ts");
+const { topLevelTabs, groupWebPages, revealExistingWebTab } = await import("../lib/state/web-page-management.ts");
 const { normalizeCenterTabsPayload } = await import("../lib/state/center-tabs-persistence.ts");
 
 test("agent pages retain session ownership, pinning and popup provenance", () => {
@@ -65,7 +65,30 @@ test("explicit split groups and legacy pages remain reachable in the strip", () 
   assert.equal(groupWebPages(tabs).find(g=>g.agent).sessionId, null);
 });
 
- test("manually reopening a managed URL pins it without changing its owner", () => {
+test("explicit reveal keeps the exact page identity and only then appears in the strip", () => {
+  useCenterTabs.setState({ tabs: [], groups: [], activeId: null, splitWebTabId: null });
+  const store = useCenterTabs.getState();
+  const id = store.ensureExclusiveWebTab("https://reveal.test/");
+  store.markAgentWebTab(id, "owner");
+  store.openSessionTab("owner", "Chat");
+  const afterOpen = useCenterTabs.getState();
+  assert.equal(afterOpen.tabs.find(tab => tab.id === id).url, "https://reveal.test/");
+  assert.ok(!topLevelTabs(afterOpen.tabs, afterOpen.groups).some(tab => tab.id === id));
+  assert.equal(revealExistingWebTab("missing", afterOpen), false);
+  assert.equal(revealExistingWebTab(id, useCenterTabs.getState()), true);
+  const revealed = useCenterTabs.getState();
+  const page = revealed.tabs.find(tab => tab.id === id);
+  assert.equal(page.id, id);
+  assert.equal(page.url, "https://reveal.test/");
+  assert.equal(page.agentOpened, true);
+  assert.equal(page.agentSessionId, "owner");
+  assert.equal(revealed.activeId, id);
+  assert.ok(topLevelTabs(revealed.tabs, revealed.groups).some(tab => tab.id === id));
+  assert.equal(revealExistingWebTab(id, useCenterTabs.getState()), true);
+  assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.id === id).length, 1);
+});
+
+test("manually reopening a managed URL pins it without changing its owner", () => {
   useCenterTabs.setState({ tabs: [], groups: [], activeId: null, splitWebTabId: null });
   const store = useCenterTabs.getState();
   const id = store.ensureWebTab("https://reopen.test/");

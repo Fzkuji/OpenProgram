@@ -1,10 +1,27 @@
 import type { CenterTab } from "./center-tabs-store";
 import type { CenterTabGroup } from "./center-tab-groups";
 
-/** Explicit split layouts remain in the strip; session-owned standalone pages live in their session resource panel. */
+/** Explicit split layouts and user-revealed pages remain in the strip; other session-owned standalone pages live in their session resource panel. */
 export function topLevelTabs(tabs: readonly CenterTab[], groups: readonly CenterTabGroup[]) {
   const grouped = new Set(groups.flatMap(group => group.memberIds));
   return tabs.filter(tab => tab.kind !== "web" || !tab.agentOpened || !tab.agentSessionId || tab.webPinned || grouped.has(tab.id));
+}
+
+type CenterTabsRevealStore = {
+  tabs: readonly CenterTab[];
+  groups: readonly CenterTabGroup[];
+  setWebTabPinned: (id: string, pinned: boolean) => void;
+  setActive: (id: string) => void;
+};
+
+/** Explicit Open in tab: keep the exact existing Page and make it an ordinary current top view. */
+export function revealExistingWebTab(tabId: string, store: CenterTabsRevealStore): boolean {
+  if (!store.tabs.some(tab => tab.id === tabId)) return false;
+  if (!topLevelTabs(store.tabs, store.groups).some(tab => tab.id === tabId)) {
+    store.setWebTabPinned(tabId, true);
+  }
+  store.setActive(tabId);
+  return true;
 }
 
 export function groupWebPages(tabs: readonly CenterTab[]) {
