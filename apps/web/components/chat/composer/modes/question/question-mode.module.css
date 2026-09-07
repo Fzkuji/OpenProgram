@@ -200,8 +200,7 @@
 /* Give the discussion editor more space than the read-only operation context. */
 .discussionInput {
   min-height: 120px;
-  width: calc(100% + 24px);
-  margin-inline: -12px;
-  padding-inline: 11px;
+  width: 100%;
+  margin-inline: 0;
   resize: vertical;
 }
