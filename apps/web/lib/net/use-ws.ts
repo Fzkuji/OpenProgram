@@ -576,7 +576,9 @@ export function useWS(): void {
         }
         case "sandbox_changed":
           import("@/lib/session-store").then(({ useSessionStore }) => {
-            const dd = (d || {}) as { session_id?: string; sandbox?: unknown };
+            const dd = (d || {}) as { session_id?: string; sandbox?: unknown; request_id?: string };
+            // Correlated replies belong to their request owner, which rejects stale reads.
+            if (dd.request_id) return;
             if (!dd.session_id || typeof dd.sandbox !== "boolean") return;
             useSessionStore
               .getState()

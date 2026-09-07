@@ -1347,7 +1347,10 @@ async def handle_set_sandbox(ws, cmd: dict):
             "request_id": cmd.get("request_id"), "action": "set_sandbox"}
     frame = json.dumps({"type": "sandbox_changed", "data": data})
     await ws.send_text(frame)
-    _s._broadcast(frame)
+    if "sandbox_enabled" in cmd:
+        # Reads are request-local. Broadcast only mutations, without the caller's ID.
+        broadcast = {k: v for k, v in data.items() if k != "request_id"}
+        _s._broadcast(json.dumps({"type": "sandbox_changed", "data": broadcast}))
 
 
 async def handle_search_messages(ws, cmd: dict):

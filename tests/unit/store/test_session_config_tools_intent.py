@@ -108,7 +108,10 @@ def test_search_off_removes_tool_from_automatic_and_explicit_selections():
 
 def test_search_on_respects_agent_disabled_policy():
     from openprogram.agent.internals._model_tools import resolve_tools
-    intent = tools_override_from_config(SessionRunConfig(tools_enabled=True, web_search=True))
+    configs = [SessionRunConfig(tools_enabled=True, web_search=True),
+               SessionRunConfig(tools_enabled=True, tools_override=['web_search'], web_search=True),
+               SessionRunConfig(tools_enabled=True, tools_override={'preset': 'full'}, web_search=True)]
     for profile in ({'tools': {'mode': 'none'}}, {'tools': {'mode': 'automatic', 'disabled': ['web_*']}}):
-        tools = resolve_tools(profile, intent, source='web')
-        assert 'web_search' not in {t.name for t in tools or []}
+        for cfg in configs:
+            tools = resolve_tools(profile, tools_override_from_config(cfg), source='web')
+            assert 'web_search' not in {t.name for t in tools or []}

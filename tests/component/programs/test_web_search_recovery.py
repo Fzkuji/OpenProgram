@@ -128,3 +128,34 @@ def test_search_probe_does_not_block_event_loop(monkeypatch):
         assert json.loads(response.body)['ok'] is True
 
     asyncio.run(run())
+
+
+def test_sandbox_reads_are_correlated_and_only_mutations_broadcast(monkeypatch):
+    import asyncio
+    import json
+    from types import SimpleNamespace
+    from openprogram.webui.ws_actions.session import handle_set_sandbox
+    from openprogram.webui import server
+    state = {'sandbox': True}
+    sent, broadcasts = [], []
+
+    async def send_text(frame):
+        sent.append(json.loads(frame))
+
+    def save(*args, sandbox_enabled, **kwargs):
+        state['sandbox'] = sandbox_enabled
+
+    monkeypatch.setattr('openprogram.agent.session_config.load_session_run_config',
+                        lambda sid: SimpleNamespace(sandbox_enabled=state['sandbox']))
+    monkeypatch.setattr('openprogram.agent.session_config.save_session_run_config', save)
+    monkeypatch.setattr('openprogram.webui.ws_actions.chat._db_agent_id', lambda sid: 'main')
+    monkeypatch.setattr('openprogram.sandbox.ui_state', lambda value: {'sandbox': value})
+    monkeypatch.setattr(server, '_broadcast', lambda frame: broadcasts.append(json.loads(frame)))
+    ws = SimpleNamespace(send_text=send_text)
+    asyncio.run(handle_set_sandbox(ws, {'session_id': 'A', 'request_id': 'read'}))
+    assert sent[-1]['data']['request_id'] == 'read'
+    assert broadcasts == []
+    asyncio.run(handle_set_sandbox(ws, {'session_id': 'A', 'request_id': 'write', 'sandbox_enabled': False}))
+    assert sent[-1]['data']['request_id'] == 'write'
+    assert broadcasts[-1]['data']['sandbox'] is False
+    assert 'request_id' not in broadcasts[-1]['data']

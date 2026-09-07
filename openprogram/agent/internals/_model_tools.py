@@ -401,8 +401,14 @@ def resolve_tools(
     # by the ``<server>`` prefix against the agent's ``mcp.disabled/
     # allowed`` patterns. Required-server check returns None to abort
     # the turn cleanly.
-    def _apply_mcp_gate(tool_list):
+    def _apply_profile_gates(tool_list):
         from openprogram.agent.management.gating import match_any, check_required
+        agent_tools_config = (profile or {}).get("tools")
+        if isinstance(agent_tools_config, dict) and (
+            agent_tools_config.get("mode") == "none"
+            or match_any("web_search", agent_tools_config.get("disabled") or [])
+        ):
+            tool_list = [t for t in tool_list or [] if t.name != "web_search"]
         mcp_cfg = (profile or {}).get("mcp") or {}
         disabled = list(mcp_cfg.get("disabled") or [])
         allowed = list(mcp_cfg.get("allowed") or [])
@@ -451,7 +457,7 @@ def resolve_tools(
     if wanted is None:
         try:
             from openprogram.programs import agent_tools as _agent_tools
-            return _apply_mcp_gate(_agent_tools(source=source, only_available=True))
+            return _apply_profile_gates(_agent_tools(source=source, only_available=True))
         except Exception:
             return None
     if wanted == []:
@@ -501,7 +507,7 @@ def resolve_tools(
                     resolved = [
                         t for t in resolved if not match_any(t.name, disabled_patterns)
                     ]
-                return _apply_mcp_gate(_overlay_web_search(resolved))
+                return _apply_profile_gates(_overlay_web_search(resolved))
             if mode == "selected" or isinstance(preset, str):
                 if isinstance(preset, str):
                     names = _access_preset_names(preset)
@@ -520,7 +526,7 @@ def resolve_tools(
                     resolved = [
                         t for t in resolved if not match_any(t.name, disabled_patterns)
                     ]
-                return _apply_mcp_gate(_overlay_web_search(resolved))
+                return _apply_profile_gates(_overlay_web_search(resolved))
             if isinstance(enabled, list):
                 names = [str(n) for n in enabled]
             else:
@@ -540,12 +546,12 @@ def resolve_tools(
                         if not match_any(t.name, disabled_patterns)
                         and (not allowed_patterns or match_any(t.name, allowed_patterns))
                     ]
-                return _apply_mcp_gate(_overlay_web_search(resolved))
-            return _apply_mcp_gate(_overlay_web_search(
+                return _apply_profile_gates(_overlay_web_search(resolved))
+            return _apply_profile_gates(_overlay_web_search(
                 agent_tools(names=names, source=source, only_available=True)))
 
         if isinstance(wanted, list) and wanted and isinstance(wanted[0], str):
-            return _apply_mcp_gate(agent_tools(
+            return _apply_profile_gates(agent_tools(
                 names=[str(n) for n in wanted],
                 source=source,
                 only_available=True,
@@ -554,7 +560,7 @@ def resolve_tools(
         if source in {"self_update_verify", "self_update_diagnose", "self_update_repair"}:
             from openprogram.programs import apply_tool_policy
             resolved = apply_tool_policy(resolved, source=source, exposure_filter=False)
-        return _apply_mcp_gate(resolved)
+        return _apply_profile_gates(resolved)
     except Exception:
         return None
 
