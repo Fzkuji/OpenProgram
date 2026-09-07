@@ -142,7 +142,7 @@ export const PierreFileTree = forwardRef<PierreTreeHandle, Props>(function Pierr
 });
 function FolderSizeSubscription({ projectId, path, onValue }: { projectId: string; path: string; onValue(value: string): void }) {
   const { value } = useFolderSize(projectId, path, true);
-  const display = value.bytes == null ? (value.state === "scanning" ? "…" : "—") : `${value.complete ? "≈ " : "≥ "}${formatFileBytes(value.bytes)}`;
+  const display = value.bytes == null ? (value.state === "scanning" ? "…" : "—") : formatFileBytes(value.bytes);
   useEffect(() => onValue(display), [display, onValue]);
   return null;
 }

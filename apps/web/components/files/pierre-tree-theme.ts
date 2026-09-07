@@ -11,5 +11,6 @@ export const pierreTreeCSS = `
 :host { --trees-bg-override: var(--bg-secondary); --trees-padding-inline-override: 4px; --trees-fg-override: var(--text-secondary); font-family: inherit; }
 [data-item-type="folder"] > [data-item-section="icon"] > svg { transform: none !important; color: #d4a73e; }
 [data-item-type="folder"][aria-expanded="true"], [data-item-type="folder"][data-file-tree-sticky-row="true"] { --op-folder-closed: none; --op-folder-open: inline; }
+[data-item-selected="true"]::before { outline: none !important; }
 [data-item-section="decoration"] { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; }
 `;
