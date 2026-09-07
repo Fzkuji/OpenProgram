@@ -590,33 +590,27 @@ export function FileTree({
   }
 
   async function locateTreePath(path: string, type: "file" | "dir"): Promise<boolean> {
+    const generation = queryGeneration.current;
+    const locateEntry = async (directory: string, name: string, kind: "file" | "dir") => {
+      const matches = (entry: TreeEntry) => entry.name === name && entry.type === kind;
+      const cached = treeStateRef.current.dirs[directory];
+      if (Array.isArray(cached) && cached.some(matches)) return true;
+      let loaded = await load(directory);
+      while (generation === queryGeneration.current && loaded?.next_cursor && !loaded.entries?.some(matches)) {
+        loaded = await load(directory, loaded.next_cursor);
+      }
+      return generation === queryGeneration.current && Boolean(loaded?.entries?.some(matches));
+    };
     const parts = path.split("/");
     let directory = "";
     for (let index = 0; index < parts.length - 1; index += 1) {
       const child = parts[index];
-      const page = await load(directory);
-      let loaded = page;
-      while (
-        loaded?.next_cursor &&
-        !loaded.entries?.some((entry) => entry.name === child && entry.type === "dir")
-      ) {
-        loaded = await load(directory, loaded.next_cursor);
-      }
-      if (!loaded?.entries?.some((entry) => entry.name === child && entry.type === "dir")) {
-        return false;
-      }
+      if (!(await locateEntry(directory, child, "dir"))) return false;
       setExpanded((previous) => new Set(previous).add(joinPath(directory, child)));
       directory = joinPath(directory, child);
     }
     const target = parts[parts.length - 1];
-    let loaded = await load(directory);
-    while (
-      loaded?.next_cursor &&
-      !loaded.entries?.some((entry) => entry.name === target && entry.type === type)
-    ) {
-      loaded = await load(directory, loaded.next_cursor);
-    }
-    return Boolean(loaded?.entries?.some((entry) => entry.name === target && entry.type === type));
+    return locateEntry(directory, target, type);
   }
 
   async function revealSearchResult(path: string, type: "file" | "dir") {

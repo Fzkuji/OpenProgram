@@ -258,6 +258,15 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     await click('[data-item-path="src/data.bin"]');
     const path = () => document.querySelector('nav[aria-label="File path"]').textContent;
     assert.match(path(), /data.bin/);
+    const beforeLocateRequests = requests.length;
+    const beforeLocateSizes = sizeRequests;
+    const beforeLocateRow = query('[data-item-path="src/data.bin"]');
+    await click('nav button[data-path="src/data.bin"]');
+    await click('nav button[data-path="src"]');
+    assert.equal(requests.length, beforeLocateRequests, "cached breadcrumb navigation does not reload directories");
+    assert.equal(sizeRequests, beforeLocateSizes, "cached breadcrumb navigation does not restart size scans");
+    assert.equal(query('[data-item-path="src/data.bin"]'), beforeLocateRow, "cached navigation preserves mounted rows");
+    await click('[data-item-path="src/data.bin"]');
     holding = true; refreshed = true; holdingPages = true;
     await click('button[aria-label="Refresh"]');
     assert.match(path(), /data.bin/);
