@@ -51,6 +51,10 @@
 }
 /* tab 流容器：浏览器模式不参与布局（display:contents，行为与从前
    完全一致）。 */
+/* Desktop dark tabs need a lighter selection than the content surface. */
+:global(html.is-desktop[data-theme-mode="dark"]) .strip {
+  --tab-active-bg: color-mix(in srgb, var(--bg-primary) 88%, white 12%);
+}
 .tabsFlow {
   display: contents;
 }

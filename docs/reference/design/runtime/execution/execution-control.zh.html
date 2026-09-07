@@ -1,0 +1,301 @@
+<h1 id="top">会话分支与运行控制</h1>
+
+<p class="quick-intro">这里说明三件事：统计什么、什么时候需要你处理、暂停或停止后会发生什么。</p>
+
+<p class="summary-rule"><strong>Activity 按会话分支统计。</strong>在同一分支继续发消息，不会多出一条 History。</p>
+
+<section id="reading-guide">
+<span id="identity"></span>
+
+<h2>1. 先分清三个对象</h2>
+<div class="doc-table">
+<table>
+<thead>
+<tr><th scope="col">对象</th><th scope="col">含义</th><th scope="col">显示在哪里</th></tr>
+</thead>
+<tbody>
+<tr><td>会话分支</td><td>一条连续的对话路径。真正分叉时，才产生另一条路径。</td><td>Activity 中的一项。</td></tr>
+
+<tr><td>一次执行</td><td>一次任务运行，例如回答一条消息。</td><td>放在分支详情中。暂停、继续、取消等操作用它的 ID 确定目标。</td></tr>
+
+<tr><td>受管理的进程</td><td>工具启动的一条命令，例如运行脚本。</td><td>归属于启动它的那次执行，可单独查看输出或停止。</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+
+<section id="activity-conversation-branches">
+<span id="activity"></span>
+
+<span id="unified-activity"></span>
+
+<h2>2. 分支怎样计数</h2>
+<div class="doc-table">
+<table>
+<thead>
+<tr><th scope="col">例子</th><th scope="col">计数</th><th scope="col">详情</th></tr>
+</thead>
+<tbody>
+<tr><td>发一条消息，再说“继续”。</td><td>1</td><td>两次执行仍属于同一个分支。</td></tr>
+
+<tr><td>从前面的某个位置创建另一条回复。</td><td>2</td><td>原分支和新分支各显示一项。</td></tr>
+
+<tr><td>同一分支后面的一次执行失败。</td><td>1</td><td>失败保留在详情中，不会因此创建分支。</td></tr>
+
+<tr><td>两个分支有相同的早期消息。</td><td>2</td><td>共同的早期执行可出现在两边的详情中，但不会额外计数。</td></tr>
+</tbody>
+</table>
+</div>
+<p>History 统计已结束的分支。需要处理或仍在运行的分支，显示在对应区域。</p></section>
+
+
+<section id="provider-terminal-activity">
+<span id="state"></span>
+
+<span id="state-note"></span>
+
+<h2>3. 应该显示什么状态？</h2>
+<div class="doc-table">
+<table>
+<thead>
+<tr><th scope="col">情况</th><th scope="col">所在区域</th><th scope="col">含义</th></tr>
+</thead>
+<tbody>
+<tr><td>等待审批、回答、暂停处理，或工具结果尚未查明。</td><td>Needs attention</td><td>打开详情查看实际请求。发新消息不会自动撤销它。</td></tr>
+
+<tr><td>执行、子任务或所属进程仍在运行。</td><td>In progress</td><td>Agent 回答完了，不代表后台进程也停止了。</td></tr>
+
+<tr><td>分支已结束，没有运行中的工作或待处理请求。</td><td>History</td><td>失败记录和输出仍可在详情中查看。</td></tr>
+
+<tr><td>执行者已结束，只缺模型响应记录；也没有实际等待或待处理的非取消操作。</td><td>History</td><td>显示“已结束 · 响应记录不完整”。遗留的取消请求不会使它变成待确认事项。只有子任务仍在运行时才保留 Cancel。这不表示任务成功。</td></tr>
+</tbody>
+</table>
+</div>
+<p>分支的一般状态取最新一次执行，同时检查真实等待、子任务和所属进程。无法关联的记录会单独保留，不猜测它属于哪个分支。</p></section>
+
+
+<section id="commands">
+<span id="protocol"></span>
+
+<span id="decision"></span>
+
+<span id="scope"></span>
+
+<h2>4. 每个操作会做什么？</h2>
+<div class="doc-table">
+<table>
+<thead>
+<tr><th scope="col">操作</th><th scope="col">结果</th><th scope="col">限制</th></tr>
+</thead>
+<tbody>
+<tr><td>Pause</td><td>请求在下一个安全位置暂停。</td><td>当前动作可能先完成，不是停在任意一行代码上。</td></tr>
+
+<tr><td>Continue</td><td>从已保存的进度继续同一次执行。</td><td>必须有有效的保存状态，且该执行支持继续。</td></tr>
+
+<tr><td>Step</td><td>执行一个已定义的步骤，再次暂停。</td><td>步骤可以是一次工具动作，不等于一行代码。</td></tr>
+
+<tr><td>Steer</td><td>补充后续工作要遵守的指令。</td><td>不改写已经完成的工作。</td></tr>
+
+<tr><td>Cancel</td><td>结束选中的执行及其下属执行。</td><td>不能撤销已经完成的外部操作。受管理的进程另有独立控制。</td></tr>
+
+<tr><td>Fork / Retry</td><td>从允许的保存位置创建独立的后续执行。</td><td>原历史保留。聊天 Agent 的新执行先暂停，需点击 Continue；其他类型遵循各自调度规则。</td></tr>
+</tbody>
+</table>
+</div>
+<p>界面只提供该执行支持的操作。“已接收”表示请求已保存；“已生效”才表示操作完成。</p></section>
+
+
+<section id="checkpoint">
+<span id="recovery-design"></span>
+
+<span id="safe-point"></span>
+
+<span id="effects"></span>
+
+<span id="recovery"></span>
+
+<span id="foreground-reconnect"></span>
+
+<h2>5. 重启后保留什么？</h2>
+<div class="doc-table">
+<table>
+<thead>
+<tr><th scope="col">记录</th><th scope="col">简单解释</th><th scope="col">作用</th></tr>
+</thead>
+<tbody>
+<tr><td>检查点</td><td>在规定位置保存的执行进度。</td><td>继续时从这里开始，不恢复被冻结的线程。</td></tr>
+
+<tr><td>操作结果记录</td><td>模型或工具请求是否结束，以及已确认的结果。</td><td>不盲目重复已确认的操作；外部动作结果不明时先核对。</td></tr>
+
+<tr><td>本次运行的所有权</td><td>当前哪个 worker 有权更新这次执行。</td><td>旧 worker 不能覆盖接替它的新 worker 的状态。</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+
+<span id="record"></span>
+
+<span id="security"></span>
+
+<span id="revision"></span>
+
+<span id="revision-draft"></span>
+
+<span id="driver"></span>
+
+<span id="cancel"></span>
+
+<span id="owners"></span>
+
+<span id="agent-public-cutover"></span>
+
+<span id="agent-safe-point"></span>
+
+<span id="job-durable-control"></span>
+
+<span id="job-snapshot"></span>
+
+<span id="surface"></span>
+
+<details id="engineering">
+<summary>工程参考：标识和安全规则</summary>
+<div class="doc-table">
+<table>
+<thead>
+<tr><th scope="col">标识</th><th scope="col">用途</th></tr>
+</thead>
+<tbody>
+<tr><td><code>session_id</code></td><td>确定会话范围和访问权限，不能直接作为执行控制目标。</td></tr>
+
+<tr><td><code>run_id</code></td><td>关联原执行及其分叉、重试执行。</td></tr>
+
+<tr><td><code>execution_id</code></td><td>精确控制目标。暂停、继续保留它；分叉或重试创建新 ID。</td></tr>
+
+<tr><td><code>attempt_id</code></td><td>worker 的一次实际运行；恢复时可创建新的 attempt。</td></tr>
+
+<tr><td><code>revision_id</code></td><td>程序及其运行规则的不可变版本。</td></tr>
+
+<tr><td><code>command_id</code> + <code>expected_version</code></td><td>防止重复操作，并拒绝基于旧状态发出的命令。</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li>各入口使用同一个命令服务。先保存请求，再由执行者处理；界面状态不能代替权限检查。</li>
+
+<li>取消优先于暂停、单步、继续和补充指令。只有当前执行者可提交进度或最终状态。</li>
+
+<li>已返回的模型错误和中止会登记响应。工具结果未知时仍需核对，History 标签不会清除它。</li>
+
+<li>分叉前验证保存位置、程序版本和权限。修改程序、模型或工具规则，仍需独立审批。</li>
+
+<li>Agent 和后台 Job 使用同一套执行管理。Job 的 job_id 等于 execution_id。资源分配与执行状态分开管理。</li>
+
+<li>分支归属取自已有会话图和消息 ID。压缩上下文后仍保留早期关联；加载项目会话时读取最新保存位置。</li>
+
+<li>读取和控制限制在有权访问的会话内。重连使用已保存的版本和事件位置，不重复创建任务。</li>
+
+<li>受管理进程保留 ID、归属和有上限的输出。重启后检查监督进程，不能只凭保存的 PID 发送终止信号。</li>
+</ul>
+</details>
+
+
+<section id="status">
+<span id="verification"></span>
+
+<span id="current"></span>
+
+<span id="cutover"></span>
+
+<span id="acceptance"></span>
+
+<h2>6. 实现与验证</h2>
+<div class="doc-table">
+<table>
+<thead>
+<tr><th scope="col">部分</th><th scope="col">已有实现</th><th scope="col">怎样验收</th></tr>
+</thead>
+<tbody>
+<tr><td>分支统计</td><td>按真实会话分支显示，每次执行保留在详情中。</td><td>连续会话 → History 1；确有三个分支的会话 → History 3。</td></tr>
+
+<tr><td>待处理状态</td><td>区分单纯缺模型记录、真实等待和工具结果不明。</td><td>真实审批仍显示；已结束的模型请求不会单独要求确认。</td></tr>
+
+<tr><td>执行控制</td><td>已有统一命令、检查点和版本控制；不同执行支持的能力不同。</td><td>只验证该执行声明支持的操作；强制工具、spawn 和 merge 路径仍有限制。</td></tr>
+
+<tr><td>进程与恢复</td><td>默认 macOS App 已验收进程归属、独立停止、输出保留和刷新。</td><td>这些验收不能证明 Windows 或 Linux 的实际运行结果。</td></tr>
+</tbody>
+</table>
+</div>
+<p>限制：不恢复任意线程栈，不自动撤销操作，也不补造从未保存的进程记录。普通函数内部提问仍需预先声明交互边界；等待的最长时间和 Job 的运行预算，尚未统一接入资源管理。</p>
+<ul>
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/execution/activity_branches.py">分支归属实现</a></li>
+
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/tests/component/webui/test_activity_branches.py">分支归属回归测试</a></li>
+
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/tests/activity-branch-panel.test.mjs">Activity 面板回归测试</a></li>
+
+<li><a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/execution">执行协议与持久化源码</a></li>
+</ul>
+</section>
+
+
+<span id="references"></span>
+
+<span id="related"></span>
+
+<details id="reference">
+<summary>参考与相关设计</summary>
+<div class="doc-table">
+<table>
+<thead>
+<tr><th scope="col">参考</th><th scope="col">采用的思路</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://microsoft.github.io/debug-adapter-protocol/">Debug Adapter Protocol</a></td><td>把查看和控制分开，明确支持哪些操作。</td></tr>
+
+<tr><td><a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/workflow/workflow-execution/workflow-execution.mdx">Temporal Workflow Execution</a></td><td>持久保存执行状态。</td></tr>
+
+<tr><td><a href="https://github.com/temporalio/documentation/blob/main/docs/encyclopedia/workflow/workflow-pause.mdx">Temporal Workflow Pause</a></td><td>暂停不会撤销已经开始的工作。</td></tr>
+
+<tr><td><a href="https://docs.langchain.com/oss/python/langgraph/persistence">LangGraph persistence</a></td><td>在检查点保存进度。</td></tr>
+
+<tr><td><a href="https://docs.langchain.com/oss/python/langgraph/interrupts">LangGraph interrupts</a></td><td>在规定位置等待输入，再恢复。</td></tr>
+
+<tr><td><a href="https://docs.langchain.com/oss/python/langgraph/use-time-travel">LangGraph time travel</a></td><td>创建其他执行方案时保留原历史。</td></tr>
+
+<tr><td><a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/">Kubernetes Pod lifecycle</a></td><td>先请求终止，再确认执行者退出。</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><a href="async-job-lifecycle.html">后台 Job 生命周期</a></li>
+
+<li><a href="../dag/overview.html">会话图</a></li>
+
+<li><a href="../agent-resource-governance.html">资源分配</a></li>
+
+<li><a href="../operations/user-input-requests.html">提问与审批</a></li>
+
+<li><a href="../../error-handling.html">错误处理</a></li>
+</ul>
+</details>
+
+
+<span id="state-title"></span>
+
+<span id="state-desc"></span>
+
+<span id="arrow"></span>
+
+<span id="control-arrow"></span>
+
+<span id="arch-title"></span>
+
+<span id="arch-desc"></span>
+
+<span id="arch-arrow"></span>
+
+<style>
+.quick-intro{font-size:1.1rem;line-height:1.6}.summary-rule{padding:12px 16px;border-left:3px solid currentColor;margin:18px 0}.doc-table{overflow-x:auto;margin:14px 0 26px}table{width:100%;border-collapse:collapse}th,td{text-align:left;vertical-align:top;padding:10px;border-bottom:1px solid var(--border,#8884);line-height:1.55}th{font-weight:600}td:first-child{min-width:110px}h2{margin-top:32px}details{margin:18px 0;border:1px solid var(--border,#8884);border-radius:6px;padding:12px 16px}summary{cursor:pointer;font-weight:600}li{margin:7px 0}code{overflow-wrap:anywhere}section{scroll-margin-top:100px}:focus-visible{outline:2px solid currentColor;outline-offset:4px}@media(max-width:600px){th,td{padding:8px;font-size:.9rem}td:first-child{min-width:85px}}
+</style>
