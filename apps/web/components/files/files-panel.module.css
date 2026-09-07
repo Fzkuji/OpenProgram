@@ -635,7 +635,7 @@
 
 /* Files retains the shared Explorer controls, with a separate path row. */
 .filePathRow { display: flex; align-items: center; min-width: 0; min-height: 30px; gap: 4px; }
-.fileBreadcrumb { position: relative; display: flex; align-items: center; min-width: 0; flex: 1; gap: 2px; overflow: hidden; font-size: 12px; color: var(--text-dim); }
+.fileBreadcrumb { position: relative; display: flex; align-items: center; min-width: 0; flex: 1; gap: 2px; overflow: hidden; font-size: 14px; color: var(--text-dim); }
 .fileBreadcrumb button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px; background: transparent; border: 0; border-radius: var(--ui-list-radius); cursor: pointer; }
 .fileBreadcrumb > button { flex: 0 0 auto; max-width: 40%; }
 .fileBreadcrumb button:hover, .fileCrumbMenu button:hover { background: var(--bg-hover); }

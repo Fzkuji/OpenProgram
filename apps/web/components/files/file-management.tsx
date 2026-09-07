@@ -55,7 +55,7 @@ export function FileSortMenu({ value, onChange }: { value: string; onChange: (va
     </PopoverContent></Popover>;
 }
 
-export function FileBreadcrumb({ root, path, onLocate }: { root: string; path: string; onLocate: (path: string) => void }) {
+export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: string; path: string; absolutePath?: string; onLocate: (path: string) => void }) {
   const { text } = useTranslation();
   const ref = useRef<HTMLElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
@@ -87,11 +87,11 @@ export function FileBreadcrumb({ root, path, onLocate }: { root: string; path: s
     return () => { disposed = true; observer.disconnect(); };
   }, [root, path]);
   const crumb = (name: string, target: string) => <button type="button" title={target || root} onClick={() => onLocate(target)}>{name}</button>;
-  return <nav ref={ref} className={styles.fileBreadcrumb} aria-label={text("File path", "文件路径")}>
+  return <><nav ref={ref} className={styles.fileBreadcrumb} aria-label={text("File path", "文件路径")}>
     <span ref={measureRef} className={styles.fileBreadcrumbMeasure} aria-hidden="true">{[root, "…", ...parts].map((name, i) => <span key={i}>{name}</span>)}</span>
     {crumb(root, "")}{firstVisible > 0 ? <span className={styles.fileCrumbPart}><ChevronRight /><Popover><PopoverTrigger asChild><button title={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={styles.fileCrumbMenu}>{parts.slice(0, firstVisible).map((part, i) => <div key={i}>{crumb(part, parts.slice(0, i + 1).join("/"))}</div>)}</PopoverContent></Popover></span> : null}
     {parts.map((part, i) => i < firstVisible ? null : <span className={styles.fileCrumbPart} key={i}><ChevronRight />{crumb(part, parts.slice(0, i + 1).join("/"))}</span>)}
-  </nav>;
+  </nav><button type="button" className={styles.iconBtn} disabled={!absolutePath} aria-label={text("Copy absolute path", "复制绝对路径")} title={text("Copy absolute path", "复制绝对路径")} onClick={() => { if (absolutePath) void copyText(absolutePath); }}><Copy /></button></>;
 }
 
 export interface SizeResult { state: string; complete?: boolean; bytes?: number | null; entries?: number; skipped?: number; token?: string | null; updated_at?: number; error?: string }

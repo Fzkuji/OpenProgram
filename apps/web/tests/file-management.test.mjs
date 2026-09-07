@@ -11,14 +11,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
 const require = createRequire(import.meta.url);
 const bundle = await build({
-  stdin: { contents: 'export * from "./components/files/explorer-header"; export * from "./components/files/file-management";', resolveDir: new URL("../", import.meta.url).pathname, loader: "tsx" },
+  stdin: { contents: 'export * from "./components/files/explorer-header"; export * from "./components/files/file-management"; export * from "./components/files/file-tree";', resolveDir: new URL("../", import.meta.url).pathname, loader: "tsx" },
   bundle: true, write: false, format: "cjs", platform: "node", jsx: "automatic", loader: { ".css": "empty" },
   plugins: [{ name: "host", setup(builder) {
     builder.onLoad({ filter: /\.css$/ }, () => ({ contents: "export default {};", loader: "js" }));
     builder.onResolve({ filter: /^react(?:-dom)?(?:\/.*)?$/ }, ({ path }) => ({ path: require.resolve(path), external: true }));
     builder.onResolve({ filter: /^@\/lib\/i18n$/ }, () => ({ path: "i18n", namespace: "fake" }));
     builder.onResolve({ filter: /^@\/lib\/net\/ws-request$/ }, () => ({ path: "ws", namespace: "fake" }));
-    builder.onLoad({ filter: /.*/, namespace: "fake" }, ({ path }) => ({ contents: path === "i18n" ? 'export const useTranslation=()=>({text:(en)=>en});' : 'export const wsRequest=(action,payload)=>globalThis.__fileManagementQuery?.(action,payload) ?? Promise.resolve(null);', loader: "js" }));
+    builder.onResolve({ filter: /^@\/lib\/(state\/center-tabs-store|session-store|navigate)$/ }, ({ path }) => ({ path, namespace: "state" }));
+    builder.onLoad({ filter: /.*/, namespace: "state" }, ({ path }) => ({ contents: path.endsWith("center-tabs-store") ? 'const state={tabs:[],activeId:null,openFileTab:()=>{}}; export const useCenterTabs=Object.assign(fn=>fn(state),{getState:()=>state});' : path.endsWith("session-store") ? 'export const useSessionStore={getState:()=>({currentSessionId:null})};' : 'export const navigate=()=>{};', loader: "js" }));
+    builder.onLoad({ filter: /.*/, namespace: "fake" }, ({ path }) => ({ contents: path === "i18n" ? 'export const useTranslation=()=>({text:(en)=>en});' : 'export const wsRequest=(action,payload)=>globalThis.__fileManagementQuery?.(action,payload) ?? Promise.resolve(null); export const idempotencyKeyFor=()=>"test"; export class MutationRegistryCapacityError extends Error {} export const reconcileWsMutation=()=>{}; export const wsMutationRequest=()=>{};', loader: "js" }));
   } }],
 });
 const temporary = mkdtempSync(join(tmpdir(), "op-file-management-"));
@@ -167,5 +169,68 @@ test("breadcrumb uses available width and reveals more ancestors when resized", 
     prototype.getBoundingClientRect = oldRect;
     if (oldWidth) Object.defineProperty(prototype, "clientWidth", oldWidth); else delete prototype.clientWidth;
     Object.assign(globalThis, saved);
+  }
+});
+
+
+test("file tree refresh preserves expanded paths and file sizes, and path copy uses the absolute path", async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver, IntersectionObserver: globalThis.IntersectionObserver };
+  globalThis.window = parsed.window; globalThis.document = parsed.document;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+  globalThis.IntersectionObserver = class { observe() {} disconnect() {} };
+  const root = createRoot(document.getElementById("root"));
+  const projectId = "refresh-tree";
+  const requests = []; const held = []; let holding = false; let refreshed = false;
+  const entry = (name, type, size = 0) => ({ name, type, size, mtime: 1 });
+  globalThis.__fileManagementQuery = async (action, payload) => {
+    if (action === "list_projects") return { projects: [{ id: projectId, path: "/project" }, { id: "other-project", path: "/other" }] };
+    if (action !== "project_file_tree") return null;
+    requests.push(payload);
+    const response = { project_id: payload.project_id, path: payload.path, snapshot_id: refreshed ? "fresh" : "initial", next_cursor: payload.path === "src" && !payload.cursor ? "page2" : null, entries: payload.path === "" ? [entry("src", "dir")] : payload.cursor ? [entry("data.bin", "file", refreshed ? 2048 : 1024)] : [entry("empty.txt", "file")] };
+    if (holding) await new Promise(resolve => held.push(resolve));
+    return response;
+  };
+  const click = async selector => { const node = document.querySelector(selector); assert.ok(node, selector); await act(async () => node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))); };
+  // linkedom provides Event, which React's delegated click handler also accepts.
+  window.MouseEvent = window.Event;
+  try {
+    await act(async () => root.render(h(api.FileTree, { projectId })));
+    await click('[data-tree-path="src"]');
+    assert.match(document.querySelector('[data-tree-path="src/empty.txt"]').textContent, /0 B/);
+    await click('button[aria-label="Load more entries"]');
+    assert.match(document.querySelector('[data-tree-path="src/data.bin"]').textContent, /1.0 KiB/);
+    await click('[data-tree-path="src/data.bin"]');
+    const path = () => document.querySelector('nav[aria-label="File path"]').textContent;
+    assert.match(path(), /data.bin/);
+    holding = true; refreshed = true;
+    await click('button[title="Refresh"]');
+    assert.match(path(), /data.bin/);
+    assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'), "keep expanded rows while refresh is pending");
+    holding = false;
+    await act(async () => { for (const resolve of held.splice(0)) resolve(); });
+    assert.ok(requests.filter(p => p.path === "src").length >= 2, "refresh expanded directories too");
+    assert.match(path(), /data.bin/);
+    assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'));
+    assert.match(document.querySelector('[data-tree-path="src/data.bin"]').textContent, /2.0 KiB/);
+    assert.ok(requests.some(p => p.cursor === "page2" && p.snapshot_id === "fresh"));
+    const beforeEvent = requests.length;
+    await act(async () => window.dispatchEvent(new window.CustomEvent("project-files-changed", { detail: { project_id: projectId } })));
+    assert.ok(requests.slice(beforeEvent).some(p => p.path === "src"), "event refresh reads latest expanded state");
+    assert.match(path(), /data.bin/);
+    const copy = document.querySelector('button[aria-label="Copy absolute path"]');
+    assert.ok(copy, "right-hand copy button");
+    let copied;
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async value => { copied = value; } } } });
+    try { await click('button[aria-label="Copy absolute path"]'); assert.equal(copied, "/project/src/data.bin"); }
+    finally { if (previous) Object.defineProperty(globalThis, "navigator", previous); else delete globalThis.navigator; }
+    await act(async () => root.render(h(api.FileTree, { projectId: "other-project" })));
+    assert.doesNotMatch(path(), /data.bin/);
+    assert.equal(document.querySelector('[data-tree-path="src/data.bin"]'), null);
+  } finally {
+    await act(async () => { root.unmount(); for (const resolve of held) resolve(); });
+    Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
   }
 });

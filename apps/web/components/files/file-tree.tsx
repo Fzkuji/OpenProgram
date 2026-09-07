@@ -64,7 +64,7 @@ import {
 import { baseOf, joinPath, parentOf } from "./file-tree-query";
 import { asServerRenameResult, type FileOperationResult } from "./file-tree-operation";
 import { FileGlyph, InlineNameInput } from "./file-tree-render";
-import { FileBreadcrumb, FileDetails, FileSortMenu, FolderSize, useFileSort, invalidateFolderSizes } from "./file-management";
+import { FileBreadcrumb, FileDetails, FileSortMenu, FolderSize, formatFileBytes, useFileSort, invalidateFolderSizes } from "./file-management";
 import styles from "./files-panel.module.css";
 
 export interface TreeEntry {
@@ -172,6 +172,8 @@ export function FileTree({
   const [directoryPages, setDirectoryPages] = useState<Record<string, DirectoryPage>>({});
   const [loadingMore, setLoadingMore] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const treeStateRef = useRef({ dirs, expanded });
+  treeStateRef.current = { dirs, expanded };
   const [filter, setFilter] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -262,11 +264,11 @@ export function FileTree({
   }
 
   const load = useCallback(
-    async (path: string, cursor?: string | null, retry = true): Promise<TreeResult | null> => {
+    async (path: string, cursor?: string | null, retry = true, preserveRows = false): Promise<TreeResult | null> => {
       const generation = queryGeneration.current;
       if (cursor) {
         setLoadingMore((previous) => new Set(previous).add(path));
-      } else {
+      } else if (!preserveRows) {
         setDirs((d) => ({ ...d, [path]: "loading" }));
       }
       const page = directoryPagesRef.current[path];
@@ -429,17 +431,31 @@ export function FileTree({
     setSearchHasMore(false);
     setSearchError(null);
     setSearchLoading(false);
-    setDirs({});
+    const previous = treeStateRef.current;
+    const paths = ["", ...previous.expanded];
+    // Keep visible rows during revalidation; collapsed caches must be reloaded
+    // on their next expansion. The event listener reads the latest view via ref.
+    setDirs(Object.fromEntries(paths.filter(path => previous.dirs[path] !== undefined).map(path => [path, previous.dirs[path]])));
     setDirectoryPages({});
     directoryPagesRef.current = {};
     setLoadingMore(new Set());
-    setExpanded(new Set());
     revealTarget.current = null;
     if (revealScrollTimer.current) clearTimeout(revealScrollTimer.current);
     if (revealFlashTimer.current) clearTimeout(revealFlashTimer.current);
     revealScrollTimer.current = null;
     revealFlashTimer.current = null;
-    void load("");
+    const generation = queryGeneration.current;
+    for (const path of paths) void (async () => {
+      const oldRows = previous.dirs[path];
+      const count = Array.isArray(oldRows) ? oldRows.length : 0;
+      let page = await load(path, null, true, true);
+      let loaded = page?.entries?.length ?? 0;
+      // Retain the user's loaded page range with fresh snapshot cursors.
+      while (generation === queryGeneration.current && page?.next_cursor && loaded < count) {
+        page = await load(path, page.next_cursor);
+        loaded += page?.entries?.length ?? 0;
+      }
+    })();
   }
 
   useEffect(() => {
@@ -1189,7 +1205,7 @@ export function FileTree({
         <div key={full} className={styles.treeNode}>
           <div
             data-tree-path={full}
-            className={`${styles.treeRow} ${full === activePath ? styles.treeRowActive : ""} ${selectedCls}`}
+            className={`${styles.treeRow} ${styles.treeRowWithSize} ${full === activePath ? styles.treeRowActive : ""} ${selectedCls}`}
             style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
             onClick={() => {
               setSelected({ path: full, type: "file" });
@@ -1208,6 +1224,7 @@ export function FileTree({
             ) : (
               <ExplorerMatchText className={styles.treeName} value={e.name} query={filter} fuzzy={fuzzySearch} current={current} />
             )}
+            {renaming !== full ? <span className={styles.folderSize} title={`${e.size} B`}>{formatFileBytes(e.size)}</span> : null}
           </div>
         </div>
       );
@@ -1238,7 +1255,7 @@ export function FileTree({
     <div className={`${styles.treeCol} ${detailsInline && detailsPath !== null ? styles.treeWithDetails : ""}`} ref={rootRef}>
       <ExplorerHeader
         leading={headerExtra}
-        pathNavigation={<FileBreadcrumb root={projectRoot ? baseOf(projectRoot) : text("Project", "项目")} path={selected?.path ?? activePath ?? ""} onLocate={path => {
+        pathNavigation={<FileBreadcrumb absolutePath={projectRoot ? `${projectRoot.replace(/\/$/, "")}/${selected?.path ?? activePath ?? ""}`.replace(/\/$/, "") || "/" : undefined} root={projectRoot ? baseOf(projectRoot) : text("Project", "项目")} path={selected?.path ?? activePath ?? ""} onLocate={path => {
           setFilter("");
           if (!path) { setSelected({ path: "", type: "dir" }); rootRef.current?.querySelector(`.${styles.treeBody}`)?.scrollTo({ top: 0 }); return; }
           const type = path === selected?.path ? selected.type : path === activePath ? "file" : "dir";
