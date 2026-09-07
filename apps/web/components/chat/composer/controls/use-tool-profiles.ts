@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from "react";
 
+import { useSessionScope } from "@/lib/session-store/session-scope";
+
 const DEFAULT_PROFILE = "__agent__";
 
-export function useToolProfiles(sessionId: string | null) {
+export function useToolProfiles() {
   const [toolProfiles, setToolProfiles] = useState<Record<string, string[]>>({});
-  const [activeProfile, setActiveProfile] = useState(DEFAULT_PROFILE);
+  const activeProfile = useSessionScope((s) => s.settings.toolsProfile ?? DEFAULT_PROFILE);
+  const patchSettings = useSessionScope((s) => s.patchSettings);
 
   useEffect(() => {
     fetch("/api/tool-profiles")
@@ -15,11 +18,10 @@ export function useToolProfiles(sessionId: string | null) {
       .catch(() => {});
   }, []);
 
-  useEffect(() => setActiveProfile(DEFAULT_PROFILE), [sessionId]);
 
   return {
     toolProfiles,
     activeProfile,
-    switchProfile: setActiveProfile,
+    switchProfile: (toolsProfile: string) => patchSettings({ toolsProfile }),
   };
 }

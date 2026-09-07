@@ -291,15 +291,15 @@ _CATALOG: dict[str, ProviderInfo] = {
         name="Jina AI",
         description=(
             "s.jina.ai search returns markdown-formatted hit blocks "
-            "optimised for LLM consumption. Free unauthenticated tier "
-            "with rate limits; JINA_API_KEY raises the cap."
+            "optimised for LLM consumption. Authentication is required; "
+            "configure JINA_API_KEY before searching."
         ),
-        tier="Free (rate-limited)",
+        tier="API key required",
         signup_url="https://jina.ai/",
         docs_url="https://jina.ai/reader/",
         setup_steps=[
-            "Optional: sign up at jina.ai and grab an API key for higher rate limits",
-            "Set JINA_API_KEY in the environment (or skip for the free tier)",
+            "Sign up at jina.ai and create an API key",
+            "Set JINA_API_KEY in Settings or the environment",
         ],
     ),
     "kagi": ProviderInfo(

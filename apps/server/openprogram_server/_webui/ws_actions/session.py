@@ -1343,7 +1343,8 @@ async def handle_set_sandbox(ws, cmd: dict):
     # system default (on) and the Plus-menu switch snaps back.
     if override is None and isinstance(requested, bool):
         override = requested
-    data = {"session_id": session_id or None, **ui_state(override)}
+    data = {"session_id": session_id or None, **ui_state(override),
+            "request_id": cmd.get("request_id"), "action": "set_sandbox"}
     frame = json.dumps({"type": "sandbox_changed", "data": data})
     await ws.send_text(frame)
     _s._broadcast(frame)

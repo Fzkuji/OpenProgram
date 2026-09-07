@@ -11,6 +11,7 @@ state via ``global`` statements.
 from __future__ import annotations
 
 import os
+import asyncio
 
 from typing import Any
 
@@ -123,7 +124,7 @@ def register(app):
 
         started = _t.time()
         try:
-            results = backend.search("openprogram health check", num_results=1)
+            results = await asyncio.to_thread(backend.search, "openprogram health check", num_results=1)
             latency_ms = int((_t.time() - started) * 1000)
             return JSONResponse(content={
                 "ok": True,

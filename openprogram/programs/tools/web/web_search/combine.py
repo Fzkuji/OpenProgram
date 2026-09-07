@@ -58,32 +58,7 @@ def combine_rrf(
       list is useful for the formatter so the agent can see "via
       tavily + brave + exa" instead of a single backend name.
     """
-    backend_names = _resolve_provider_names(providers)
-    if not backend_names:
-        raise LookupError("No providers available for combined search")
-
-    # Map each provider name → its ranked result list. We keep the rank
-    # implicit in the list index (rank-1 = index 0, rank-2 = index 1…).
-    raw: dict[str, list[SearchResult]] = {}
-
-    def _query_one(name: str) -> tuple[str, list[SearchResult]]:
-        backend = registry.get(name)
-        return name, backend.search(query, num_results=num_results)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(backend_names)) as pool:
-        futures = {pool.submit(_query_one, n): n for n in backend_names}
-        for fut in concurrent.futures.as_completed(futures, timeout=timeout):
-            try:
-                name, hits = fut.result()
-            except Exception:
-                # Per-provider failure is OK in combine mode — we just
-                # drop it from the merge. The other backends still
-                # contribute.
-                continue
-            raw[name] = hits
-
-    if not raw:
-        return [], []
+    raw = _collect(query, num_results, providers, timeout, race=False)
 
     # RRF: for each (url, rank, provider), add 1 / (k + rank) to a
     # running per-url score. Keep the highest-quality canonical
@@ -136,32 +111,45 @@ def combine_race(
     The slower ones get cancelled. Useful for time-sensitive interactive
     chat; bad for high-stakes research (use RRF for that).
     """
-    backend_names = _resolve_provider_names(providers)
-    if not backend_names:
+    raw = _collect(query, num_results, providers, timeout, race=True)
+    for name, hits in raw.items():
+        if hits:
+            return hits, [name]
+    return [], sorted(raw)
+
+
+def _collect(query, num_results, providers, timeout, *, race):
+    names = _resolve_provider_names(providers)
+    if not names:
         raise LookupError("No providers available for combined search")
-
-    def _query_one(name: str) -> tuple[str, list[SearchResult]]:
-        backend = registry.get(name)
-        return name, backend.search(query, num_results=num_results)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(backend_names)) as pool:
-        futures = {pool.submit(_query_one, n): n for n in backend_names}
+    # Resolve backends before dispatch; background requests own no mutable registry lookup.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(names))
+    futures = {}
+    raw = {}
+    failures = []
+    try:
+        for name in names:
+            futures[pool.submit(registry.get(name).search, query, num_results=num_results)] = name
         try:
-            for fut in concurrent.futures.as_completed(futures, timeout=timeout):
+            for future in concurrent.futures.as_completed(futures, timeout=timeout):
+                name = futures[future]
                 try:
-                    name, hits = fut.result()
-                except Exception:
+                    raw[name] = future.result()
+                except Exception as exc:
+                    failures.append(f"{name}: {type(exc).__name__}")
                     continue
-                if hits:
-                    # Cancel the others — they may still be running in
-                    # the threadpool but their results get discarded.
-                    for other in futures:
-                        if other is not fut:
-                            other.cancel()
-                    return hits, [name]
+                if race and raw[name]:
+                    return {name: raw[name]}
         except concurrent.futures.TimeoutError:
-            pass
-    return [], []
+            if not raw:
+                raise TimeoutError("Combined search deadline exceeded without a successful response") from None
+        if not raw:
+            raise RuntimeError("All search providers failed (" + "; ".join(failures) + ")")
+        return raw
+    finally:
+        # Running synchronous requests cannot be cancelled; their transport deadlines
+        # still apply. Do not hold the caller until those requests finish.
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _resolve_provider_names(providers: Iterable[str] | None) -> list[str]:
@@ -175,7 +163,7 @@ def _resolve_provider_names(providers: Iterable[str] | None) -> list[str]:
         wanted = [p.strip() for p in providers if p and p.strip()]
         # Drop unknown names rather than raising; the user might pass a
         # combo list and we want partial-success.
-        return [p for p in wanted if registry.has(p) and registry.get(p).is_available()]
+        return list(dict.fromkeys(p for p in wanted if registry.has(p) and registry.get(p).is_available()))
     return [p.name for p in registry.available()]
 
 

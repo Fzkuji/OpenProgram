@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +13,7 @@ import { Python, TypeScript, Shell, BracketsYellow, Markdown, Git, Claude } from
 import { DefaultFileIcon } from "@react-symbols/icons/utils";
 
 const bundle = await build({
-  entryPoints: [new URL("../components/files/file-type-icon.tsx", import.meta.url).pathname],
+  entryPoints: [fileURLToPath(new URL("../components/files/file-type-icon.tsx", import.meta.url))],
   bundle: true, write: false, format: "cjs", platform: "node", jsx: "automatic",
   plugins: [{ name: "shared-react", setup(builder) {
     builder.onResolve({ filter: /^react(?:\/.*)?$/ }, ({ path }) => ({ path: require.resolve(path), external: true }));

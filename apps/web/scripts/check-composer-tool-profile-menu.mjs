@@ -32,7 +32,7 @@ const toolProfilesHook = fs.readFileSync(
   "utf8",
 );
 assert.match(toolProfilesHook, /const DEFAULT_PROFILE = "__agent__"/);
-assert.match(toolProfilesHook, /useState\(DEFAULT_PROFILE\)/);
+assert.match(toolProfilesHook, /settings\.toolsProfile/);
 assert.doesNotMatch(
   composer,
   /api\/tool-profiles\/activate/,

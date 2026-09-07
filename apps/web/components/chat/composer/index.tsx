@@ -266,9 +266,9 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     send,
   );
   const { sandbox, sandboxAvailable, sandboxReason, toggleSandbox } =
-    useSandboxToggle(activeChatKey ?? currentSessionId);
+    useSandboxToggle(activeChatKey ?? currentSessionId, !!currentSessionId);
   const { toolProfiles, activeProfile, switchProfile } =
-    useToolProfiles(currentSessionId);
+    useToolProfiles();
 
   // Slash-menu state lives in its own hook (./use-slash-menu).
   // fn-form field state (values, error highlight, closing

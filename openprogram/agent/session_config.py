@@ -181,7 +181,7 @@ def tools_override_from_config(cfg: SessionRunConfig) -> ToolsOverride:
         return _with_web_search(dict(cfg.tools_override), cfg.web_search)
 
     # Bool / toolset / web_search intent → build a dict intent, expanded live.
-    if cfg.tools_enabled is True or cfg.toolset or cfg.web_search:
+    if cfg.tools_enabled is True or cfg.toolset or cfg.web_search is not None:
         intent: dict[str, Any] = {"inherit": True}
         if cfg.toolset:
             intent["toolset"] = cfg.toolset
@@ -249,13 +249,15 @@ def _with_web_search(override: ToolsOverride, web_search: Optional[bool]) -> Too
     """Overlay the web_search intent onto an override. For a dict intent we
     set the ``web_search`` key (the expander adds the tool); for a list we
     append the name. ``[]`` (all off) is left untouched."""
-    if not web_search:
+    if web_search is None:
         return override
     if isinstance(override, dict):
         out = dict(override)
-        out["web_search"] = True
+        out["web_search"] = web_search
         return out
     if isinstance(override, list):
+        if web_search is False:
+            return [name for name in override if name != "web_search"]
         return override if "web_search" in override else [*override, "web_search"]
     return override
 

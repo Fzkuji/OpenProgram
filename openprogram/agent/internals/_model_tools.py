@@ -445,8 +445,8 @@ def resolve_tools(
         )
         if isinstance(inherited, dict):
             inherited.pop("inherit", None)
-            if wanted.get("web_search"):
-                inherited["web_search"] = True
+            if "web_search" in wanted:
+                inherited["web_search"] = wanted["web_search"]
         wanted = inherited
     if wanted is None:
         try:
@@ -481,9 +481,13 @@ def resolve_tools(
             want_web_search = bool(wanted.get("web_search"))
 
             def _overlay_web_search(tools):
+                if wanted.get("web_search") is False:
+                    return [t for t in tools if t.name != "web_search"]
                 if not want_web_search:
                     return tools
                 if any(t.name == "web_search" for t in tools):
+                    return tools
+                if match_any("web_search", disabled_patterns):
                     return tools
                 extra = agent_tools(names=["web_search"], source=source, only_available=True)
                 return [*tools, *extra]

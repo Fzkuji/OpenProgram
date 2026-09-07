@@ -32,13 +32,11 @@ export function useToolsToggles(): ToolsTogglesHook {
 
   const toggleTools = useCallback(
     () => setComposerSettings({ tools: !tools }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tools],
+    [tools, setComposerSettings],
   );
   const toggleWebSearch = useCallback(
     () => setComposerSettings({ webSearch: !webSearch }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [webSearch],
+    [webSearch, setComposerSettings],
   );
 
   return { tools, webSearch, toggleTools, toggleWebSearch };

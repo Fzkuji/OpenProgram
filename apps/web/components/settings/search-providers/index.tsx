@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import styles from "../settings-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
+import { jsonFetch } from "@/lib/net/fetch-client";
 import { cachedFetch, invalidate } from "@/lib/prefs/settings-cache";
 import { useTranslation } from "@/lib/i18n";
 import { SearchProviderDetail } from "./detail";
@@ -23,6 +24,7 @@ export function SearchProvidersSection() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -55,8 +57,9 @@ export function SearchProvidersSection() {
 
   const setDefault = useCallback(async (id: string | null) => {
     setSaving(true);
+    setError(null);
     try {
-      await fetch("/api/search-providers/default", {
+      await jsonFetch("/api/search-providers/default", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: id }),
@@ -68,11 +71,11 @@ export function SearchProvidersSection() {
         prev.map((p) => ({ ...p, is_default: p.id === id })),
       );
     } catch {
-      /* ignore */
+      setError(text("Could not save the search provider. Retry after reconnecting.", "无法保存搜索后端，请在重新连接后重试。"));
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [text]);
 
   const matches = useCallback(
     (p: SearchProvider) =>
@@ -114,6 +117,7 @@ export function SearchProvidersSection() {
           )}
         </p>
       </div>
+      {error && <p role="alert">{error}</p>}
       <div className={`${styles.pageBody} ${styles.pageBodyTwoPane}`}>
         <div className={styles.providersLayout}>
           <div className={styles.providersSidebar}>

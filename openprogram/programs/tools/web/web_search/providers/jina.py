@@ -7,10 +7,7 @@ Jina hosts two endpoints aimed at agents:
   * ``r.jina.ai`` — reader; converts a URL to clean markdown. Used by
     ``web_fetch`` rather than here.
 
-Accepts an optional ``JINA_API_KEY`` for higher rate limits; works
-unauthenticated for casual use (slower, capped). Listing in
-``requires_env`` is informational — ``is_available()`` returns True
-unconditionally so the unauthenticated path stays usable.
+Requires ``JINA_API_KEY`` for the search endpoint.
 
 Docs: https://jina.ai/reader/#apiform — search docs are on the same page.
 """
@@ -32,18 +29,11 @@ TIMEOUT = 25.0
 @dataclass
 class JinaProvider:
     name: str = "jina"
-    # Lower than DDG (10) — Jina free tier is slower and capped. Useful
-    # as a high-quality fallback when an agent already has a Jina key
-    # for the reader endpoint.
     priority: int = 35
-    # Optional — endpoint works unauthenticated. Listed so the catalog
-    # UI mentions the var; ``is_available`` doesn't enforce it.
     requires_env: tuple = ("JINA_API_KEY",)
 
     def is_available(self) -> bool:
-        # Always considered available — s.jina.ai accepts unauthenticated
-        # traffic. With a key it just runs faster and skips the cap.
-        return True
+        return bool(os.environ.get("JINA_API_KEY", "").strip())
 
     def search(self, query: str, *, num_results: int = 8) -> list[SearchResult]:
         # ``s.jina.ai`` takes the query as the URL path. JSON response
@@ -57,8 +47,9 @@ class JinaProvider:
             "X-Respond-With": "no-content",
         }
         key = os.environ.get("JINA_API_KEY")
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
+        if not key or not key.strip():
+            raise RuntimeError("JINA_API_KEY not set")
+        headers["Authorization"] = f"Bearer {key}"
         data = get_json(url, headers=headers, timeout=TIMEOUT, provider_label="Jina")
 
         # ``data.data`` is the result array. Each entry has title /

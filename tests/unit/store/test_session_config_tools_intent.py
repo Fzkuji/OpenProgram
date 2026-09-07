@@ -93,3 +93,22 @@ def test_web_search_overlay_adds_the_tool():
     resolved = resolve_tools({}, intent, source="web")
     names = {t.name for t in (resolved or [])}
     assert "web_search" in names
+
+
+def test_search_off_removes_tool_from_automatic_and_explicit_selections():
+    from openprogram.agent.internals._model_tools import resolve_tools
+    for cfg in (
+        SessionRunConfig(tools_enabled=True, web_search=False),
+        SessionRunConfig(web_search=False),
+        SessionRunConfig(tools_enabled=True, tools_override=['web_search', 'read'], web_search=False),
+    ):
+        tools = resolve_tools({}, tools_override_from_config(cfg), source='web')
+        assert 'web_search' not in {t.name for t in tools or []}
+
+
+def test_search_on_respects_agent_disabled_policy():
+    from openprogram.agent.internals._model_tools import resolve_tools
+    intent = tools_override_from_config(SessionRunConfig(tools_enabled=True, web_search=True))
+    for profile in ({'tools': {'mode': 'none'}}, {'tools': {'mode': 'automatic', 'disabled': ['web_*']}}):
+        tools = resolve_tools(profile, intent, source='web')
+        assert 'web_search' not in {t.name for t in tools or []}

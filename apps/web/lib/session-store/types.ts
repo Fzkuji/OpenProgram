@@ -106,6 +106,7 @@ export interface ComposerSettings {
   thinking: string;
   tools: boolean;
   webSearch: boolean;
+  toolsProfile?: string;
   fast: boolean;
   /** What Enter does while this session already has a running turn. */
   runningMessageMode: "queue" | "steer";

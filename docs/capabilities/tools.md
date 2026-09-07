@@ -35,7 +35,7 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | `playwright_browser` | Playwright-driven headless Chromium (open / navigate and other actions) | Playwright Chromium is included in every supported release |
 | `agent_browser` | Drive a browser through the npm `agent-browser` CLI; snapshot returns the accessibility tree | Developer-added alternative backend; not required for product browser functionality |
 
-`web_search` backends and keys (DuckDuckGo and arXiv are key-free and work out of the box):
+`web_search` backends and keys (arXiv is key-free; DuckDuckGo also requires its optional package):
 
 | Backend | Environment variable |
 |---|---|
@@ -54,6 +54,12 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | Tavily | `TAVILY_API_KEY` |
 | You.com | `YDC_API_KEY` or `YOU_API_KEY` |
 | Ollama | Local Ollama (signed in via `ollama signin`), or `OLLAMA_API_KEY` for Ollama Cloud |
+
+The chat Web Search switch controls whether `web_search` is available for that message. Turning it off excludes the tool even in automatic tool mode. Turning it on still respects the Agent's disabled tools and permissions. Tool profile choices belong to each conversation and survive tab changes and refreshes.
+
+Search keys take effect on subsequent calls without restarting. An unavailable saved default falls back to another available provider; an explicitly named unavailable provider reports an error. Jina search requires `JINA_API_KEY`.
+
+`combine="race"` returns the first nonempty successful response. `combine="rrf"` retains results completed before the deadline. Total failure is reported as an error, distinct from a successful empty search. Already running requests finish under their transport timeouts.
 
 ## Images and PDF
 

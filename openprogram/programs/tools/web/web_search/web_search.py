@@ -39,58 +39,20 @@ NAME = "web_search"
 
 
 def _build_description() -> str:
-    """Generate the LLM-facing description from the providers that are
-    actually configured at this moment.
-
-    The point: the LLM should see exactly the backends the user has set
-    keys for — not the full 16-name menu — so it doesn't waste a
-    function-call slot trying ``provider=kagi`` when no Kagi key is
-    set. Frozen at registration time (i.e. at backend startup), so
-    adding a key mid-session requires a restart for the LLM to see
-    the new provider listed. That matches every other key-driven
-    config OpenProgram has.
-    """
-    avail = [p.name for p in registry.available()]
-    avail_str = ", ".join(avail) if avail else "(none configured — set an API key to enable)"
-
-    # Pull the academic / paper hint forward only if arxiv is one of
-    # the configured backends — no point teaching the LLM about a
-    # mode that isn't available.
-    arxiv_hint = (
-        " Use `arxiv` for academic / paper searches."
-        if "arxiv" in avail else ""
-    )
-
     return (
-        "Search the web and return a ranked list of results (title, URL, "
-        "snippet). Use when you have a question and need to discover URLs — "
-        "pair with `web_fetch` to read the full page.\n\n"
-        "Backend selection:\n"
-        f"  • `provider=<name>` forces a specific backend. Available right "
-        f"now: {avail_str}.{arxiv_hint}\n"
-        "  • Omit `provider` to auto-select by priority + availability "
-        "(highest-quality configured backend wins).\n"
-        "  • `combine='rrf'` runs several backends in parallel and merges "
-        "via Reciprocal Rank Fusion — strongly recommended for high-stakes "
-        "research queries; results corroborated across providers float "
-        "to the top. Pair with `providers=['tavily','brave','exa']` to "
-        "pin which backends to blend.\n"
-        "  • `combine='race'` returns whichever backend responds first — "
-        "use when latency matters more than coverage."
+        "Search the web for ranked results (title, URL, snippet). "
+        "Use web_fetch to read full pages. Omit provider to use the saved default "
+        "or the highest-priority available backend. Explicit providers require "
+        "their credentials to be configured. Use arxiv for academic papers. "
+        "combine='rrf' merges timely results from multiple providers; "
+        "combine='race' returns the first nonempty successful response. "
+        "The providers array restricts aggregation to named backends."
     )
 
 
 def _build_spec() -> dict:
-    """Build the JSON-schema spec with the ``provider`` enum locked to
-    the providers that are actually available right now.
-
-    The enum constraint tells well-behaved tool runners (OpenAI's
-    function-calling validator, Anthropic's tool use) that the model
-    *can't* legally name an unconfigured backend — saves a round trip
-    on every "I'll try kagi, oh it's not configured, fall back to
-    tavily" sequence the LLM would otherwise stumble into.
-    """
-    avail = [p.name for p in registry.available()]
+    """Stable provider names; credential availability is checked at execution."""
+    avail = [p.name for p in registry.all()]
     provider_schema = {
         "type": "string",
         "description": (
@@ -144,10 +106,7 @@ def _build_spec() -> dict:
     }
 
 
-# Description + SPEC are computed at registration time so they reflect
-# the providers configured AT THIS BACKEND STARTUP. Adding an API key
-# mid-session requires a backend restart for the LLM-visible tool
-# schema to refresh — same pattern as every other key-driven setting.
+# Registration is credential-independent so newly configured keys work immediately.
 DESCRIPTION = _build_description()
 SPEC: dict[str, Any] = {
     "name": NAME,
@@ -201,7 +160,10 @@ def execute(
     # --- Combine path: run RRF / race across several providers ---------
     if combine:
         from .combine import combine_race, combine_rrf
-        fn = combine_rrf if combine.lower() == "rrf" else combine_race
+        combine = combine.lower()
+        if combine not in {"rrf", "race"}:
+            return "Error: combine must be rrf or race."
+        fn = combine_rrf if combine == "rrf" else combine_race
         try:
             merged, contributors = fn(
                 query, num_results=num_results, providers=providers,
@@ -220,7 +182,7 @@ def execute(
         try:
             from openprogram.setup import read_search_default_provider
             stored = read_search_default_provider()
-            if stored and registry.has(stored):
+            if stored and stored in {p.name for p in registry.available()}:
                 provider = stored
         except Exception:
             pass
