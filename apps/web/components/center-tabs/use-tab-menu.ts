@@ -19,6 +19,7 @@ import {
   findCenterTabGroup,
   splitCandidates,
 } from "@/lib/state/center-tab-groups";
+import { topLevelTabs } from "@/lib/state/web-page-management";
 import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { buildTransferPayload, desktopBridge } from "@/lib/desktop-bridge";
 import { dragCoordinator } from "@/lib/tab-drag-coordinator";
@@ -218,7 +219,7 @@ export function useTabMenu({
   function canMoveMenuTab(tabId: string, direction: -1 | 1) {
     const state = useCenterTabs.getState();
     const entries = centerTabStripEntries({
-      tabIds: state.tabs.map((tab) => tab.id),
+      tabIds: topLevelTabs(state.tabs, state.groups).map((tab) => tab.id),
       groups: state.groups,
     });
     const index = entries.findIndex((entry) => entry.kind === "group"
@@ -232,7 +233,7 @@ export function useTabMenu({
     const sourceGroup = findCenterTabGroup(state.groups, tabId);
     if (sourceGroup) {
       const entries = centerTabStripEntries({
-        tabIds: state.tabs.map((tab) => tab.id),
+        tabIds: topLevelTabs(state.tabs, state.groups).map((tab) => tab.id),
         groups: state.groups,
       });
       const sourceIndex = entries.findIndex(
@@ -249,7 +250,7 @@ export function useTabMenu({
       );
     } else {
       const entries = centerTabStripEntries({
-        tabIds: state.tabs.map((tab) => tab.id),
+        tabIds: topLevelTabs(state.tabs, state.groups).map((tab) => tab.id),
         groups: state.groups,
       });
       const sourceIndex = entries.findIndex(
@@ -357,7 +358,7 @@ export function useTabMenu({
   function closableTabsAround(tabId: string, after: boolean): CenterTab[] {
     const state = useCenterTabs.getState();
     const entries = centerTabStripEntries({
-      tabIds: state.tabs.map((tab) => tab.id),
+      tabIds: topLevelTabs(state.tabs, state.groups).map((tab) => tab.id),
       groups: state.groups,
     });
     const at = entries.findIndex((entry) => entry.kind === "group"
