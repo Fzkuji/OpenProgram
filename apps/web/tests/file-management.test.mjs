@@ -183,13 +183,14 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
   const root = createRoot(document.getElementById("root"));
   const projectId = "refresh-tree";
   const requests = []; const held = []; let holding = false; let refreshed = false; const heldPages = [];
-  let holdingPages = false;
+  let holdingPages = false; let failPage = false;
   const entry = (name, type, size = 0) => ({ name, type, size, mtime: 1 });
   globalThis.__fileManagementQuery = async (action, payload) => {
     if (action === "list_projects") return { projects: [{ id: projectId, path: "/project" }, { id: "other-project", path: "/other" }] };
     if (action !== "project_file_tree") return null;
     requests.push(payload);
-    const response = { project_id: payload.project_id, path: payload.path, snapshot_id: refreshed ? "fresh" : "initial", next_cursor: payload.path === "src" && !payload.cursor ? "page2" : null, entries: payload.path === "" ? [entry("src", "dir")] : payload.cursor ? [entry("data.bin", "file", refreshed ? 2048 : 1024)] : [entry("empty.txt", "file")] };
+    if (failPage && payload.cursor) return { project_id: payload.project_id, path: payload.path, error_code: "IO_ERROR" };
+    const response = { project_id: payload.project_id, path: payload.path, snapshot_id: refreshed ? "fresh" : "initial", next_cursor: payload.path !== "src" ? null : !payload.cursor ? "page2" : payload.cursor === "page2" ? "page3" : null, entries: payload.path === "" ? [entry("src", "dir")] : payload.cursor === "page3" ? [entry("last.txt", "file", 7)] : payload.cursor ? [entry("data.bin", "file", refreshed ? 2048 : 1024)] : [entry("empty.txt", "file")] };
     if (holding) await new Promise(resolve => held.push(resolve));
     if (refreshed && payload.cursor && holdingPages) await new Promise(resolve => heldPages.push(resolve));
     return response;
@@ -225,6 +226,17 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     await act(async () => window.dispatchEvent(new window.CustomEvent("project-files-changed", { detail: { project_id: projectId } })));
     assert.ok(requests.slice(beforeEvent).some(p => p.path === "src"), "event refresh reads latest expanded state");
     assert.match(path(), /data.bin/);
+    failPage = true;
+    await click('button[title="Refresh"]');
+    assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'), "failed refresh preserves old content");
+    const retry = [...document.querySelectorAll("button")].find(node => node.textContent === "Refresh failed — retry");
+    assert.ok(retry, "failed page refresh exposes a retry");
+    failPage = false;
+    await act(async () => retry.dispatchEvent(new window.MouseEvent("click", { bubbles: true })));
+    assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'));
+    assert.doesNotMatch(document.body.textContent, /Refresh failed/);
+    await click('button[aria-label="Load more entries"]');
+    assert.match(document.querySelector('[data-tree-path="src/last.txt"]').textContent, /7 B/);
     const copy = document.querySelector('button[aria-label="Copy absolute path"]');
     assert.ok(copy, "right-hand copy button");
     let copied;

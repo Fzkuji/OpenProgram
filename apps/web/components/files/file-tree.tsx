@@ -170,6 +170,7 @@ export function FileTree({
   const [detailsPath, setDetailsPath] = useState<string | null>(null);
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
   const [directoryPages, setDirectoryPages] = useState<Record<string, DirectoryPage>>({});
+  const [refreshErrors, setRefreshErrors] = useState<Set<string>>(new Set());
   const [loadingMore, setLoadingMore] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const treeStateRef = useRef({ dirs, expanded });
@@ -306,7 +307,7 @@ export function FileTree({
       }
       if (!data || data.project_id !== projectId || data.error || data.error_code
         || data.path !== path || !data.entries) {
-        setDirs((d) => ({ ...d, [path]: cursor && Array.isArray(d[path]) ? d[path] : "error" }));
+        setDirs((d) => ({ ...d, [path]: (cursor || refreshedEntries) && Array.isArray(d[path]) ? d[path] : "error" }));
         return data;
       }
       for (const e of data.entries) {
@@ -341,6 +342,7 @@ export function FileTree({
     setDirectoryPages({});
     directoryPagesRef.current = {};
     setLoadingMore(new Set());
+    setRefreshErrors(new Set());
     setExpanded(new Set());
     // 组件跨项目复用（右栏不带 key 渲染）：上一个项目的选中行、
     // 内联新建/重命名、筛选词都指向旧根目录下的相对路径，留着会
@@ -382,6 +384,7 @@ export function FileTree({
     setDirectoryPages({});
     directoryPagesRef.current = {};
     setLoadingMore(new Set());
+    setRefreshErrors(new Set());
     void load("");
     for (const path of expanded) void load(path);
   }, [sort, load, expanded]);
@@ -441,6 +444,7 @@ export function FileTree({
     setDirectoryPages({});
     directoryPagesRef.current = {};
     setLoadingMore(new Set());
+    setRefreshErrors(new Set());
     revealTarget.current = null;
     if (revealScrollTimer.current) clearTimeout(revealScrollTimer.current);
     if (revealFlashTimer.current) clearTimeout(revealFlashTimer.current);
@@ -456,7 +460,11 @@ export function FileTree({
       while (generation === queryGeneration.current && page?.next_cursor && entries.length < count) {
         page = await load(path, page.next_cursor, true, entries);
       }
-      if (generation !== queryGeneration.current || !page?.entries || page.error || page.error_code) return;
+      if (generation !== queryGeneration.current) return;
+      if (!page?.entries || page.error || page.error_code) {
+        setRefreshErrors(previous => new Set(previous).add(path));
+        return;
+      }
       setDirs(previous => ({ ...previous, [path]: entries.filter((entry, index) => entries.findIndex(other => other.name === entry.name) === index) }));
       const nextPage = { snapshotId: page.snapshot_id ?? null, nextCursor: page.next_cursor ?? null };
       setDirectoryPages(previous => ({ ...previous, [path]: nextPage }));
@@ -1148,10 +1156,11 @@ export function FileTree({
       return (
         <div className={styles.treeHint} style={{ paddingLeft: hintPad }}>
           {text("Failed to load", "加载失败")}
+          {refreshErrors.has(dir) ? <button type="button" onClick={refetchRoot}>{text("Retry refresh", "重试刷新")}</button> : null}
         </div>
       );
     }
-    if (state.length === 0 && !createRow) {
+    if (state.length === 0 && !createRow && !refreshErrors.has(dir)) {
       return null;
     }
     const rows = state.map((e) => {
@@ -1238,6 +1247,7 @@ export function FileTree({
       <>
         {createRow}
         {rows}
+        {refreshErrors.has(dir) ? <button type="button" className={styles.treeRow} style={{ paddingLeft: hintPad }} onClick={refetchRoot}>{text("Refresh failed — retry", "刷新失败，重试")}</button> : null}
         {directoryPages[dir]?.nextCursor ? (
           <button
             type="button"
