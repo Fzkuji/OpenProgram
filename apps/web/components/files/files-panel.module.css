@@ -570,7 +570,10 @@
    structure reads at a glance against the mono file glyphs. */
 .treeIconFolder {
   justify-self: center;
+  color: var(--accent-yellow);
+  fill: color-mix(in srgb, var(--accent-yellow) 30%, transparent);
 }
+.treeFolderSymbol { justify-self: center; }
 
 /* Command-line tree structure. Each direct child owns one vertical
    segment on its parent's icon axis. The last child stops that segment

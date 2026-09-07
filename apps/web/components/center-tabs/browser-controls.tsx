@@ -1,7 +1,5 @@
 "use client";
 
-import { FolderTypeIcon } from "@/components/files/file-type-icon";
-
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -11,6 +9,7 @@ import {
   ChevronRight,
   Clock3,
   Download,
+  Folder,
   House,
   Import,
   Library,
@@ -365,7 +364,7 @@ function BookmarkMenuNodes({
       <DropdownMenuSubTrigger
         className={`${itemCls(false)} w-full min-w-0 outline-none data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-bright data-[state=open]:bg-bg-hover data-[state=open]:text-text-bright`}
       >
-        <FolderTypeIcon size={13} className="shrink-0" />
+        <Folder size={13} fill="currentColor" className="shrink-0" />
         <span className="min-w-0 flex-1 truncate text-left">{node.title || "Folder"}</span>
         <ChevronRight size={13} className="ml-auto shrink-0" aria-hidden="true" />
       </DropdownMenuSubTrigger>
@@ -426,7 +425,7 @@ function BookmarkFolderButton({
   const buttonContent = appearance === "overflow" ? (
     <ChevronRight size={14} />
   ) : (
-    <><FolderTypeIcon size={14} /><span>{folder.title}</span></>
+    <><Folder size={14} fill="currentColor" /><span>{folder.title}</span></>
   );
 
   useEffect(() => {

@@ -94,7 +94,7 @@ assert.match(fileTree, /paddingLeft: TREE_BASE_PAD \+ depth \* INDENT/);
 assert.match(fileTree, /TREE_BASE_PAD \+ 8 \+ depth \* INDENT/);
 assert.doesNotMatch(fileTree, /\bROW_PAD\b|\bFILE_PAD\b/);
 assert.doesNotMatch(fileTree, /ChevronRight|chevronSlot|styles\.chevron/);
-assert.match(fileTree, /<FolderTypeIcon open size=\{15\} className=\{styles\.treeIconFolder\}/);
+assert.match(fileTree, /<FolderTypeIcon open size=\{15\} className=\{styles\.treeFolderSymbol\}/);
 assert.match(fileTreeCss, /\.treeHeader\s*\{[^}]*padding:\s*6px 8px/s);
 assert.match(fileTreeCss, /\.treeRootPath\s*\{[^}]*height:\s*36px[^}]*gap:\s*10px/s);
 assert.match(

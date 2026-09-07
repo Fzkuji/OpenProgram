@@ -1089,7 +1089,7 @@ export function FileTree({
               onClick={() => void revealSearchResult(path, entry.type)}
             >
               {entry.type === "dir" ? (
-                <FolderTypeIcon size={15} className={styles.treeIconFolder} />
+                <FolderTypeIcon size={15} className={styles.treeFolderSymbol} />
               ) : (
                 <FileGlyph name={entry.name} />
               )}
@@ -1134,7 +1134,7 @@ export function FileTree({
             style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
           >
             {creating.kind === "dir" ? (
-              <FolderTypeIcon size={14} className={styles.treeIconFolder} />
+              <FolderTypeIcon size={14} className={styles.treeFolderSymbol} />
             ) : (
               <File size={14} className={styles.treeIcon} />
             )}
@@ -1187,9 +1187,9 @@ export function FileTree({
               title={full}
             >
               {displayOpen ? (
-                <FolderTypeIcon open size={15} className={styles.treeIconFolder} />
+                <FolderTypeIcon open size={15} className={styles.treeFolderSymbol} />
               ) : (
-                <FolderTypeIcon size={15} className={styles.treeIconFolder} />
+                <FolderTypeIcon size={15} className={styles.treeFolderSymbol} />
               )}
               {renaming === full ? (
                 <InlineNameInput
