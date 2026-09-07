@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict
 
 from openprogram._compat import directory_close
-from .files_query import (_query_path, _query_ignored_path, _open_query_dir,
+from .files_query import (_query_path, _open_query_dir,
                           _open_child_dir, _project_info, _fs_query_failure)
 
 _LOCK = threading.RLock()
@@ -23,8 +23,8 @@ def _target(project_id, path):
     if not isinstance(project_id, str) or not project_id:
         raise ValueError("project_id must be a nonempty string")
     canonical, error = _query_path(path)
-    if error or _query_ignored_path(canonical or ''):
-        raise ValueError(error or 'path is not available')
+    if error:
+        raise ValueError(error)
     parent, _, name = (canonical or '').rpartition('/')
     fd = _open_query_dir(project_id, parent if name else '')
     return canonical or '', fd, name
@@ -97,7 +97,7 @@ def _walk(project_id, path):
             try:
                 value = entry.stat(follow_symlinks=False)
                 if stat.S_ISDIR(value.st_mode):
-                    if _query_ignored_path(entry.name) or len(stack) >= 64:
+                    if len(stack) >= 64:
                         yield 0, 1
                     else:
                         child = _open_child_dir(fd, entry.name)

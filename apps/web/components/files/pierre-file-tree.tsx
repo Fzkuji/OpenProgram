@@ -32,7 +32,7 @@ export const PierreFileTree = forwardRef<PierreTreeHandle, Props>(function Pierr
   const syncing = useRef(false);
   const renderedPaths = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => { props.onRowsRendered?.(renderedPaths.current); }, [props.onRowsRendered]);
-  const sizes = useRef(new Map<string, string>());
+  const sizes = useRef(new Map<string, { text: string; scanning: boolean }>());
   const [visibleFolders, setVisibleFolders] = useState<string[]>([]);
   const metadata = useRef(new Map<string, PierreTreeEntry>());
   metadata.current = new Map(props.entries.map(entry => [entry.path, entry]));
@@ -52,8 +52,10 @@ export const PierreFileTree = forwardRef<PierreTreeHandle, Props>(function Pierr
     renderRowDecoration: ({ item }) => {
       const entry = metadata.current.get(normalize(item.path));
       if (!entry) return null;
-      const text = entry.type === "file" ? formatFileBytes(entry.size) : sizes.current.get(entry.path) ?? "—";
-      return latest.current.matches?.has(entry.path) ? { text, parts: [{ text: "• ", color: "var(--trees-accent)" }, { text }] } : { text };
+      const size = sizes.current.get(entry.path);
+      const text = entry.type === "file" ? formatFileBytes(entry.size) : size?.text ?? "";
+      const part = { text, color: entry.type === "dir" && size?.scanning ? "var(--op-size-scanning, var(--text-tertiary))" : undefined };
+      return { text, parts: latest.current.matches?.has(entry.path) ? [{ text: "• ", color: "var(--trees-accent)" }, part] : [part] };
     },
   });
   useImperativeHandle(ref, () => ({
@@ -132,18 +134,20 @@ export const PierreFileTree = forwardRef<PierreTreeHandle, Props>(function Pierr
       onClick={event => { const entry = fromEvent(event); if (entry) { if (props.onActivate) props.onActivate(entry.path, entry.type); else if (entry.type === "file") props.onOpen(entry.path); } }}
       onKeyDown={event => { if (event.key !== "Enter") return; const path = model.getFocusedPath(); const entry = path && metadata.current.get(normalize(path)); if (entry) { if (props.onActivate) props.onActivate(entry.path, entry.type); else if (entry.type === "file") props.onOpen(entry.path); } }}
       onContextMenu={event => { const entry = fromEvent(event); if (entry) props.onContextMenu(event, entry.path, entry.type); }} />
-    {visibleFolders.map(path => <FolderSizeSubscription key={path} projectId={props.projectId} path={path} onValue={value => {
-      if (sizes.current.get(path) === value) return;
-      sizes.current.set(path, value);
+    {visibleFolders.map(path => <FolderSizeSubscription key={path} projectId={props.projectId} path={path} onValue={(text, scanning) => {
+      const previous = sizes.current.get(path);
+      if (previous?.text === text && previous.scanning === scanning) return;
+      sizes.current.set(path, { text, scanning });
       // The public setter redraws decorations without resetting focus or scroll.
       model.setIcons(icons);
     }} />)}
   </div>;
 });
-function FolderSizeSubscription({ projectId, path, onValue }: { projectId: string; path: string; onValue(value: string): void }) {
+function FolderSizeSubscription({ projectId, path, onValue }: { projectId: string; path: string; onValue(value: string, scanning: boolean): void }) {
   const { value } = useFolderSize(projectId, path, true);
-  const display = value.bytes == null ? (value.state === "scanning" ? "…" : "—") : formatFileBytes(value.bytes);
-  useEffect(() => onValue(display), [display, onValue]);
+  const display = value.bytes == null ? "" : formatFileBytes(value.bytes);
+  const scanning = value.state === "scanning" && value.bytes != null;
+  useEffect(() => onValue(display, scanning), [display, scanning, onValue]);
   return null;
 }
 

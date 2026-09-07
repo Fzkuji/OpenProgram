@@ -202,12 +202,20 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
   const root = createRoot(document.getElementById("root"));
   const projectId = "refresh-tree";
   let sizeRequests = 0;
+  let holdSize = true; const sizeWaiters = [];
   const requests = []; const held = []; let holding = false; let refreshed = false; const heldPages = [];
   let holdingPages = false; let failPage = true;
   const entry = (name, type, size = 0) => ({ name, type, size, mtime: 1 });
   globalThis.__fileManagementQuery = async (action, payload) => {
     if (action === "list_projects") return { projects: [{ id: projectId, path: "/project" }, { id: "other-project", path: "/other" }] };
-    if (action === "project_folder_size") { sizeRequests++; return { state: "complete", bytes: 2048, complete: true }; }
+    if (action === "project_folder_size") {
+      sizeRequests++;
+      if (holdSize) {
+        if (!payload.operation) return {state:"cached",bytes:1024,complete:false};
+        return new Promise(resolve => sizeWaiters.push(resolve));
+      }
+      return { state: "complete", bytes: 2048, complete: true };
+    }
     if (action !== "project_file_tree") return null;
     requests.push(payload);
     if (failPage && payload.cursor) return { project_id: payload.project_id, path: payload.path, error_code: "IO_ERROR" };
@@ -224,6 +232,15 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     await act(async () => root.render(h(api.FileTree, { projectId })));
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
     assert.ok(sizeRequests > 0, "visible folder starts a size scan after shadow renderer mounts");
+    const pulse = () => query('[data-item-section="decoration"] span[style*="--op-size-scanning"]');
+    assert.equal(pulse()?.textContent, "1.0 KiB");
+    await act(async()=>sizeWaiters.shift()({state:"partial",bytes:2048,token:"scan"}));
+    assert.equal(pulse()?.textContent, "2.0 KiB", "existing number updates while pulsing");
+    holdSize = false;
+    await act(async()=>sizeWaiters.shift()({state:"complete",bytes:2048,complete:true}));
+    assert.equal(pulse(), null, "completion stops pulse even when byte value does not change");
+    assert.doesNotMatch(query('[data-item-path="src/"] [data-item-section="decoration"]').textContent, /计算中|Calculating|—|…/);
+
     await click('[data-item-path="src/"]');
     assert.match(query('[data-item-path="src/empty.txt"]').textContent, /0 B/);
     await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
@@ -290,7 +307,7 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     assert.doesNotMatch(path(), /data.bin/);
     assert.equal(query('[data-item-path="src/data.bin"]'), null);
   } finally {
-    await act(async () => { root.unmount(); for (const resolve of [...held, ...heldPages]) resolve(); });
+    await act(async () => { root.unmount(); for (const resolve of [...held, ...heldPages, ...sizeWaiters]) resolve(); });
     Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
   }
 });

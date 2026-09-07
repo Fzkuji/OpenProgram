@@ -670,3 +670,7 @@
 
 .fileBreadcrumbMeasure { position: absolute; visibility: hidden; pointer-events: none; display: flex; width: max-content; height: 0; overflow: hidden; }
 .fileBreadcrumbMeasure > span { display: inline-block; flex: none; padding: 4px; white-space: nowrap; }
+
+.folderSizeScanning { color: var(--text-tertiary); animation: folder-size-pulse 1.8s ease-in-out infinite; }
+@keyframes folder-size-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .folderSizeScanning { animation: none; } }

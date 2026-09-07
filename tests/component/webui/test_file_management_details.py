@@ -50,14 +50,14 @@ def test_size_cancel_and_resume_are_bound_to_directory(project_root, monkeypatch
                 metadata._drop(token)
 
 
-def test_size_skips_links_and_restricted_directories(project_root):
+def test_size_skips_links_and_counts_dependency_directories(project_root):
     (project_root / 'src' / 'outside').symlink_to(project_root.parent)
     (project_root / 'src' / 'node_modules').mkdir()
     (project_root / 'src' / 'node_modules' / 'large').write_bytes(b'x' * 10000)
     result = _run(ws_files.handle_project_folder_size, {'project_id': 'p1', 'path': 'src', 'operation': 'start'})['data']
     assert result['state'] == 'incomplete'
-    assert result['skipped'] == 2
-    assert result['bytes'] == len(b"print('hi')\n")
+    assert result['skipped'] == 1
+    assert result['bytes'] == 10000 + len(b"print('hi')\n")
     link = _run(ws_files.handle_project_file_info, {'project_id': 'p1', 'path': 'src/outside'})['data']
     assert link['type'] == 'symlink'
     assert 'link_target' not in link
@@ -95,3 +95,18 @@ def test_metadata_rejects_malformed_requests(project_root):
         assert _run(ws_files.handle_project_file_info, cmd)['data']['error_code'] == 'INVALID_REQUEST'
     result = _run(ws_files.handle_project_folder_size, {'project_id': 'p1', 'path': '', 'operation': []})['data']
     assert result['error_code'] == 'INVALID_REQUEST'
+
+
+def test_size_counts_search_ignored_cache_directories(project_root):
+    cache = project_root / '.cache'
+    (cache / 'node_modules').mkdir(parents=True)
+    (cache / 'a').write_bytes(b'abc')
+    (cache / 'node_modules' / 'b').write_bytes(b'12345')
+    cmd = {'project_id': 'p1', 'path': '.cache'}
+    info = _run(ws_files.handle_project_file_info, cmd)['data']
+    assert info.get('type') == 'dir', info
+    size = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'start'})['data']
+    while size.get('token'):
+        size = _run(ws_files.handle_project_folder_size, {**cmd, 'operation': 'continue', 'token': size['token']})['data']
+    assert size.get('bytes') == 8, size
+    assert size['state'] == 'complete'

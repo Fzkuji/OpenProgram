@@ -13,4 +13,7 @@ export const pierreTreeCSS = `
 [data-item-type="folder"][aria-expanded="true"], [data-item-type="folder"][data-file-tree-sticky-row="true"] { --op-folder-closed: none; --op-folder-open: inline; }
 [data-item-selected="true"]::before { outline: none !important; }
 [data-item-section="decoration"] { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; }
+[data-item-section="decoration"] span[style*="--op-size-scanning"] { animation: folder-size-pulse 1.8s ease-in-out infinite; }
+@keyframes folder-size-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { [data-item-section="decoration"] span[style*="--op-size-scanning"] { animation: none; } }
 `;
