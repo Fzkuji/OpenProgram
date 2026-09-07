@@ -3106,3 +3106,33 @@ def test_open_page_cleanup_contract_reaches_public_web_use_entries(
     )
 
     assert result == cleanup
+
+
+@pytest.mark.parametrize("subprocess_mode", [False, True])
+@pytest.mark.parametrize("session_id", ["resource-owner-session", ""])
+def test_public_web_use_open_carries_trusted_resource_owner(monkeypatch, subprocess_mode, session_id):
+    from openprogram.agent import surface_context
+    from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
+    from openprogram.programs.workflow import browser as module
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setenv("OPENPROGRAM_IN_AGENTIC_SUBPROCESS", "1" if subprocess_mode else "0")
+    ws = object()
+    monkeypatch.setattr(server, "_ws_connections", {ws})
+    monkeypatch.setattr(webtab, "registered_desktop_windows", lambda: [(ws, "main", 1)])
+    commands = []
+    def request(command, *args, **kwargs):
+        commands.append(command)
+        return {"ok": False, "error": "test transport stopped after capture"}
+    monkeypatch.setattr(webtab, "_request", request)
+    monkeypatch.setattr(webtab, "request_on_ws", lambda ws, command, **kw: request(command))
+    token = set_current_session_id(session_id)
+    try:
+        module.web_use(command="observe", arguments={"url": "https://example.test/resource-owner"})
+    finally:
+        reset_current_session_id(token)
+    assert len(commands) == 1
+    assert commands[0]["op"] == "open"
+    assert commands[0].get("session_id") == (session_id or None)

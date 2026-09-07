@@ -429,10 +429,14 @@ def open_page(
             "error": f"unsupported url ({exc.reason}): {exc.safe_url}",
         }
 
+    from openprogram.agent.run_control import get_current_session_id
+
+    session_id = get_current_session_id()
     requested_window_id = _text(window_id, 160)
     command = {
         "op": "open",
         "url": normalized,
+        **({"session_id": session_id} if session_id else {}),
         **({"window_id": requested_window_id} if requested_window_id else {}),
         **({"background": True} if background else {}),
     }
