@@ -381,6 +381,13 @@ export function useWS(): void {
                 || store.runningTasks[sid]?.execution_id === eid)
             ) {
               setRunning(false);
+              // Durable approval continuations can finish after the original
+              // streaming transport has ended. Reconcile the persisted message
+              // and tool results when the authoritative execution becomes terminal.
+              // Never reload an older execution over a newer active turn.
+              if (socket?.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ action: "load_session", session_id: sid }));
+              }
             }
           });
           return true;
