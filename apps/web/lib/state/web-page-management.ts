@@ -1,10 +1,10 @@
 import type { CenterTab } from "./center-tabs-store";
 import type { CenterTabGroup } from "./center-tab-groups";
 
-/** Explicit split layouts remain in the strip; managed standalone pages live in Pages. */
+/** Explicit split layouts remain in the strip; session-owned standalone pages live in their session resource panel. */
 export function topLevelTabs(tabs: readonly CenterTab[], groups: readonly CenterTabGroup[]) {
   const grouped = new Set(groups.flatMap(group => group.memberIds));
-  return tabs.filter(tab => tab.kind !== "web" || !tab.agentOpened || tab.webPinned || grouped.has(tab.id));
+  return tabs.filter(tab => tab.kind !== "web" || !tab.agentOpened || !tab.agentSessionId || tab.webPinned || grouped.has(tab.id));
 }
 
 export function groupWebPages(tabs: readonly CenterTab[]) {

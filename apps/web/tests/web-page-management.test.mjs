@@ -61,6 +61,7 @@ test("explicit split groups and legacy pages remain reachable in the strip", () 
   const tabs = [{id:"s:a",kind:"session",title:"A"}, {id:"w:a",kind:"web",title:"Page",agentOpened:true}, {id:"w:old",kind:"web",title:"Legacy"}];
   const groups = [{id:"g",memberIds:["s:a","w:a"],visibleIds:["s:a","w:a"],focusedId:"s:a"}];
   assert.deepEqual(topLevelTabs(tabs, groups), tabs);
+  assert.deepEqual(topLevelTabs(tabs, []), tabs);
   assert.equal(groupWebPages(tabs).find(g=>g.agent).sessionId, null);
 });
 

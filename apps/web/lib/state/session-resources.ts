@@ -17,14 +17,15 @@ export type BackendResource = {
   source: "usage" | "process";
 };
 
-export function resourceSessionIds(tabs: readonly CenterTab[], current: string | null) {
-  return [...new Set([current, ...tabs.flatMap(tab => [
-    tab.kind === "session" && !tab.draft ? tab.sessionId : null,
-    tab.agentSessionId, tab.diffSessionId,
-  ])].filter((id): id is string => !!id))].sort();
+export function resourceSessionId(tab: CenterTab | undefined): string | null {
+  if (tab?.kind === "session") return tab.draft ? null : tab.sessionId || null;
+  if (tab?.kind === "web") return tab.agentSessionId || null;
+  if (tab?.kind === "file") return tab.diffSessionId || null;
+  return null;
 }
 
-export function sessionResourceRows(tabs: readonly CenterTab[], backend: readonly SessionResource[]) {
+export function sessionResourceRows(tabs: readonly CenterTab[], backend: readonly SessionResource[], sessionId: string | null) {
+  if (!sessionId) return [];
   const views: SessionResource[] = tabs.flatMap(tab => {
     const kind = tab.kind === "web" || tab.kind === "file" ? tab.kind
       : tab.kind === "builtin" && tab.page === "terminal" ? "terminal" : null;
@@ -35,9 +36,9 @@ export function sessionResourceRows(tabs: readonly CenterTab[], backend: readonl
       target: tab.url || tab.path || "", status: "open", source: kind, sourceId: tab.id,
     }];
   });
-  // A descendant process can be returned in more than one requested conversation scope.
+  // Authorization scope does not change the actual session owner.
   const unique = new Map([...views, ...backend].map(row => [row.id, row]));
-  return [...unique.values()];
+  return [...unique.values()].filter(row => row.sessionId === sessionId);
 }
 
 export function backendResourceRows(items: readonly BackendResource[], scopeSessionId: string): SessionResource[] {

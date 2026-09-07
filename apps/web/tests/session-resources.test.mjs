@@ -1,39 +1,42 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resourceSessionIds, sessionResourceRows, backendResourceRows } from "../lib/state/session-resources.ts";
+import { resourceSessionId, sessionResourceRows, backendResourceRows } from "../lib/state/session-resources.ts";
 
-test("session resource scope uses recorded provenance without assigning manual views", () => {
-  const tabs = [
-    { id: "s:a", kind: "session", title: "A", sessionId: "a" },
-    { id: "s:d", kind: "session", title: "Draft", sessionId: "draft", draft: true },
-    { id: "w:a", kind: "web", title: "Web", agentSessionId: "a", url: "https://example.test" },
-    { id: "f:a", kind: "file", title: "Code", diffSessionId: "b", path: "app.py" },
-    { id: "b:terminal", kind: "builtin", page: "terminal", title: "" },
-    { id: "w:m", kind: "web", title: "Manual", url: "https://manual.test" },
-  ];
-  assert.deepEqual(resourceSessionIds(tabs, "a"), ["a", "b"]);
-  const rows = sessionResourceRows(tabs, []);
-  assert.deepEqual(rows.map(row => [row.kind, row.sessionId]), [["web", "a"], ["file", "b"], ["terminal", null], ["web", null]]);
+const tabs = [
+  { id: "s:a", kind: "session", title: "A", sessionId: "a" },
+  { id: "s:b", kind: "session", title: "B", sessionId: "b" },
+  { id: "s:d", kind: "session", title: "Draft", sessionId: "draft", draft: true },
+  { id: "w:a", kind: "web", title: "A page", agentSessionId: "a", url: "https://a.test" },
+  { id: "w:b", kind: "web", title: "B page", agentSessionId: "b", url: "https://b.test" },
+  { id: "f:b", kind: "file", title: "Code", diffSessionId: "b", path: "app.py" },
+  { id: "b:terminal", kind: "builtin", page: "terminal", title: "" },
+  { id: "w:manual", kind: "web", title: "Manual", url: "https://manual.test" },
+];
+
+test("active session or owned resource determines scope without stale global session fallback", () => {
+  assert.deepEqual(tabs.map(resourceSessionId), ["a", "b", null, "a", "b", "b", null, null]);
+  assert.equal(resourceSessionId(undefined), null);
 });
 
-test("heterogeneous integrations stay typed and shared scoped resources appear once", () => {
-  const items = ["docker", "vm", "ssh", "device"].map(kind => ({
-    id: `usage:${kind}`, sourceId: kind, source: "usage", sessionId: "a", kind, title: kind, target: "target", status: "in_use",
-  }));
-  const rows = sessionResourceRows([], [...items, items[0]]);
-  assert.equal(rows.length, 4);
-  assert.equal(rows[3].kind, "device");
+test("switching sessions isolates web, file and heterogeneous backend resources", () => {
+  const backend = backendResourceRows(["docker", "vm", "device"].flatMap(kind => ["a", "b"].map(session_id => ({
+    id: `${kind}:${session_id}`, source: "usage", session_id, kind, title: kind, target: "target", status: "in_use",
+  }))), "a");
+  const a = sessionResourceRows(tabs, backend, "a");
+  const b = sessionResourceRows(tabs, backend, "b");
+  assert.deepEqual(a.map(r => r.kind), ["web", "docker", "vm", "device"]);
+  assert.deepEqual(b.map(r => r.kind), ["web", "file", "docker", "vm", "device"]);
+  assert.ok(a.every(r => r.sessionId === "a"));
+  assert.ok(b.every(r => r.sessionId === "b"));
+  assert.deepEqual(sessionResourceRows(tabs, backend, null), []);
+  assert.deepEqual(sessionResourceRows(tabs, backend, "empty-session"), []);
 });
 
-test("caller scope grants inspection without rewriting the resource's actual session", () => {
-  const item = { id: "r1", session_id: "a-child", source: "process", kind: "docker", title: "Docker", target: "image", status: "running" };
-  const child = backendResourceRows([item], "a-child");
-  const parent = backendResourceRows([item], "z-parent");
-  for (const rows of [parent, [...parent, ...child], [...child, ...parent]]) {
-    const result = sessionResourceRows([], rows);
-    assert.equal(result.length, 1);
-    assert.equal(result[0].sessionId, "a-child");
-    assert.ok(["z-parent", "a-child"].includes(result[0].scopeSessionId));
-  }
-  assert.equal(parent[0].scopeSessionId, "z-parent");
+test("authorized descendant scope does not relabel or include another session's resource", () => {
+  const item = { id: "r1", session_id: "child", source: "process", kind: "docker", title: "Docker", target: "image", status: "running" };
+  const rows = backendResourceRows([item], "parent");
+  assert.equal(rows[0].sessionId, "child");
+  assert.equal(rows[0].scopeSessionId, "parent");
+  assert.deepEqual(sessionResourceRows([], rows, "parent"), []);
+  assert.equal(sessionResourceRows([], [...rows, ...rows], "child").length, 1);
 });

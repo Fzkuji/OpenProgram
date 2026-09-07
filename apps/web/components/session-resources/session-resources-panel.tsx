@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Box, File, Globe, Monitor, Pin, PinOff, Search, Server, Terminal, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
-import { resourceSessionIds, sessionResourceRows, type SessionResource } from "@/lib/state/session-resources";
+import { resourceSessionId, sessionResourceRows, type SessionResource } from "@/lib/state/session-resources";
 import { useSessionResources } from "@/lib/use-session-resources";
 import { useSessionStore } from "@/lib/session-store";
 import { getProcess } from "@/lib/net/process-client";
@@ -12,13 +12,17 @@ import { useTranslation } from "@/lib/i18n";
 import styles from "./session-resources.module.css";
 
 export function SessionResourcesPanel() {
+  const sessionId = useCenterTabs(s => resourceSessionId(s.tabs.find(tab => tab.id === s.activeId)));
+  return <SessionResourceList key={sessionId || "no-session"} sessionId={sessionId} />;
+}
+
+function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   const { text } = useTranslation();
   const router = useRouter();
   const tabs = useCenterTabs(s => s.tabs);
   const activeId = useCenterTabs(s => s.activeId);
   const conversations = useSessionStore(s => s.conversations);
-  const currentSessionId = useSessionStore(s => s.currentSessionId);
-  const backend = useSessionResources(JSON.stringify(resourceSessionIds(tabs, currentSessionId)));
+  const backend = useSessionResources(sessionId);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<SessionResource | null>(null);
@@ -34,7 +38,7 @@ export function SessionResourcesPanel() {
     return () => controller.abort();
   }, [selected?.id, text]);
   const needle = query.trim().toLocaleLowerCase();
-  const rows = sessionResourceRows(tabs, backend.rows);
+  const rows = sessionResourceRows(tabs, backend.rows, sessionId);
   const names: Record<string, string> = {
     web: text("Webpage", "网页"), file: text("File", "文件"), terminal: text("Terminal", "终端"), docker: "Docker", vm: "VM",
     ssh: "SSH", desktop: text("Desktop", "桌面"), process: text("Process", "进程"),
@@ -49,7 +53,7 @@ export function SessionResourcesPanel() {
     if (!groups.has(key)) groups.set(key, { title, rows: [] });
     groups.get(key)!.rows.push(row);
   }
-  const ordered = [...groups].sort(([a], [b]) => Number(b === currentSessionId) - Number(a === currentSessionId));
+  const ordered = [...groups];
   const icons = { web: Globe, file: File, docker: Box, vm: Monitor, ssh: Server, desktop: Monitor, process: Terminal, terminal: Terminal };
   const statusName = (status: string) => ({
     open: text("Open", "已打开"), in_use: text("In use", "使用中"), attached: text("Attached", "已关联"),
@@ -59,14 +63,14 @@ export function SessionResourcesPanel() {
   return <section className={styles.panel} aria-label={text("Session resources", "会话资源")}>
     <label className={styles.search}><Search size={15} aria-hidden="true" />
       <input value={query} onChange={event => setQuery(event.target.value)}
-        placeholder={text("Search resources or sessions", "搜索资源或会话")}
-        aria-label={text("Search resources or sessions", "搜索资源或会话")} />
+        placeholder={text("Search session resources", "搜索当前会话资源")}
+        aria-label={text("Search session resources", "搜索当前会话资源")} />
     </label>
     {backend.unavailable && <p role="status" className={styles.notice}>{text("Some resource statuses could not be refreshed.", "部分资源状态未能刷新。")}</p>}
     <div className={styles.list}>
       {ordered.length === 0 && <p className={styles.empty}>{needle ? text("No matching resources", "没有匹配的资源")
         : !backend.loaded ? text("Loading resources…", "正在加载资源…")
-          : text("Resources used by this window's sessions appear here.", "当前窗口会话使用的资源会显示在这里。")}</p>}
+          : sessionId ? text("This session has no resources in use.", "当前会话没有正在使用的资源。") : text("Select a session to view its resources.", "选择会话以查看其资源。")}</p>}
       {ordered.map(([key, group]) => <details key={key} open={!!needle || !collapsed[key]} onToggle={event => {
         if (needle) return;
         const closed = !event.currentTarget.open;

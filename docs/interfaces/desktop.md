@@ -60,9 +60,9 @@ The maintained engineering specifications are [Built-in browser design](../refer
 
 ## Session resources
 
-Click **Resources** in the right sidebar to open **Session resources**. Use the sidebar toggle to collapse or expand the panel. Search by resource title, target, type, or conversation, and expand or collapse conversation groups. The panel lists webpages, file views with recorded provenance, terminal views, active managed processes, and resources reported by integrations. Manual views without a recorded session appear in an unassigned group.
+Click **Resources** in the right sidebar to open **Session resources**. Use the sidebar toggle to collapse or expand the panel. The panel shows only resources owned by the selected session. Search by resource title, target or type. Switching sessions clears the previous search and details. The panel lists webpages, file views with recorded provenance, terminal views, active managed processes, and resources reported by integrations. Views without recorded session ownership and new draft chats show no session resources. Opening an owned resource keeps its session context.
 
-Agent-created webpages stay out of the top strip unless pinned or in a split. Select a webpage or file to open its existing view. Webpages can be pinned or closed; collapsing the panel or a group leaves resources running. Selecting a resource keeps the panel open beside its view.
+Agent-created webpages with recorded session ownership stay out of the top strip unless pinned or in a split. Legacy pages without an owner remain in the top strip. Select a webpage or file to open its existing view. Webpages can be pinned or closed; collapsing the panel or a group leaves resources running. Selecting a resource keeps the panel open beside its view.
 
 Docker and SSH foreground backend calls report their period of use. Managed background processes retain their existing status and output controls. GUI Harness reports its configured desktop or VM attachment for the duration of the call. Select a non-page resource to inspect its target and status; managed processes also show output. These entries describe session usage, not infrastructure ownership or a container/VM deletion interface.
 
