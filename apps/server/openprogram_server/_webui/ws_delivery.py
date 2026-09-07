@@ -96,6 +96,12 @@ def _frame_metadata(payload: str) -> tuple[str, tuple[str, ...]]:
             execution.get("execution_id") or execution.get("id") or entity_id
         )
 
+    # A correlated reply acknowledges one request. A later broadcast must
+    # never replace it, even when both frames contain the same snapshot.
+    request_id = data.get("request_id") or envelope.get("request_id")
+    if request_id:
+        return "critical", (frame_type, "reply", str(request_id))
+
     if frame_type == "pong":
         return "control", ("control", "pong")
     if frame_type == "job_status":
@@ -143,6 +149,8 @@ def _frame_metadata(payload: str) -> tuple[str, tuple[str, ...]]:
             return "critical", (frame_type, session_id)
         return "replace", (frame_type, session_id, entity_id)
     if frame_type in _SNAPSHOT_TYPES:
+        if frame_type == "permission_rules":
+            return "snapshot", (frame_type, str(data.get("project_id") or ""))
         return "snapshot", (frame_type, session_id)
     if (
         "error" in frame_type
