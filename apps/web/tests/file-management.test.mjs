@@ -5,7 +5,8 @@ import { createRequire } from "node:module";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createElement as h } from "react";
+import { createElement as h, act, Fragment } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
 const require = createRequire(import.meta.url);
@@ -17,7 +18,7 @@ const bundle = await build({
     builder.onResolve({ filter: /^react(?:-dom)?(?:\/.*)?$/ }, ({ path }) => ({ path: require.resolve(path), external: true }));
     builder.onResolve({ filter: /^@\/lib\/i18n$/ }, () => ({ path: "i18n", namespace: "fake" }));
     builder.onResolve({ filter: /^@\/lib\/net\/ws-request$/ }, () => ({ path: "ws", namespace: "fake" }));
-    builder.onLoad({ filter: /.*/, namespace: "fake" }, ({ path }) => ({ contents: path === "i18n" ? 'export const useTranslation=()=>({text:(en)=>en});' : 'export const wsRequest=async()=>null;', loader: "js" }));
+    builder.onLoad({ filter: /.*/, namespace: "fake" }, ({ path }) => ({ contents: path === "i18n" ? 'export const useTranslation=()=>({text:(en)=>en});' : 'export const wsRequest=(action,payload)=>globalThis.__fileManagementQuery?.(action,payload) ?? Promise.resolve(null);', loader: "js" }));
   } }],
 });
 const temporary = mkdtempSync(join(tmpdir(), "op-file-management-"));
@@ -59,4 +60,43 @@ test("byte display covers zero and binary unit boundaries", () => {
   assert.equal(api.formatFileBytes(1023), "1023 B");
   assert.equal(api.formatFileBytes(1024), "1.0 KiB");
   assert.equal(api.formatFileBytes(1024 ** 3), "1.0 GiB");
+});
+
+
+for (const state of ["incomplete", "complete"]) test(`refresh preserves ${state} size provenance while verification waits`, async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, IntersectionObserver: globalThis.IntersectionObserver };
+  globalThis.window = parsed.window;
+  globalThis.document = parsed.document;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.IntersectionObserver = class {
+    constructor(callback) { this.callback = callback; }
+    observe() { queueMicrotask(() => this.callback([{ isIntersecting: true }])); }
+    disconnect() {}
+  };
+  const root = createRoot(document.getElementById("root"));
+  const held = [];
+  const projectId = `provenance-${state}`;
+  globalThis.__fileManagementQuery = async (_action, payload) => payload.operation === "start"
+    ? { state, bytes: 12, entries: 2, skipped: state === "complete" ? 0 : 1, token: null }
+    : { state: "unknown" };
+  try {
+    await act(async () => root.render(h(api.FolderSize, { projectId, path: "src" })));
+    assert.match(document.body.textContent, state === "complete" ? /≈ 12 B/ : /≥ 12 B/);
+    await act(async () => root.render(null));
+    api.invalidateFolderSizes(projectId);
+    globalThis.__fileManagementQuery = (action) => action === "project_file_info"
+      ? Promise.resolve({ type: "dir", name: "src", absolute_path: "/src", size: null, mtime: 1, created_at: null, permissions: "drwxr-xr-x" })
+      : new Promise(resolve => held.push(resolve));
+    await act(async () => root.render(h(Fragment, null,
+      ...["blocker1", "blocker2", "src"].map(path => h(api.FolderSize, { key: path, projectId, path })),
+      h(api.FileDetails, { projectId, path: "src", onClose: noop, inline: true }),
+    )));
+    const content = document.body.textContent;
+    assert.equal((content.match(state === "complete" ? /≈ 12 B/g : /≥ 12 B/g) ?? []).length, 2, content);
+  } finally {
+    await act(async () => { root.unmount(); for (const resolve of held) resolve({ state: "unknown" }); });
+    Object.assign(globalThis, saved);
+    delete globalThis.__fileManagementQuery;
+  }
 });

@@ -72,7 +72,7 @@ export function FileBreadcrumb({ root, path, onLocate }: { root: string; path: s
   </nav>;
 }
 
-export interface SizeResult { state: string; bytes?: number | null; entries?: number; skipped?: number; token?: string | null; updated_at?: number; error?: string }
+export interface SizeResult { state: string; complete?: boolean; bytes?: number | null; entries?: number; skipped?: number; token?: string | null; updated_at?: number; error?: string }
 interface Owned { project_id: string; path: string }
 export async function fileManagementQuery<T>(action: string, projectId: string, path: string, extra: Record<string, unknown> = {}, signal?: AbortSignal): Promise<T | null> {
   return wsRequest<T & Owned>(action, { project_id: projectId, path, ...extra }, `${action}_result`, d => d.project_id === projectId && d.path === path, 10000, { signal });
@@ -95,7 +95,11 @@ function pump() {
     void queue.shift()!.run().finally(() => { running--; pump(); });
   }
 }
-function publish(job: SizeJob, value: SizeResult) { job.value = value.error ? { ...value, state: "error" } : value; for (const listener of job.listeners) listener(); }
+function publish(job: SizeJob, value: SizeResult) {
+  // Completeness belongs to the byte sample, independent of queue/cache state.
+  job.value = { ...value, complete: value.complete ?? ["complete", "cached"].includes(value.state), ...(value.error ? { state: "error" } : {}) };
+  for (const listener of job.listeners) listener();
+}
 function getJob(projectId: string, path: string) {
   const key = JSON.stringify([projectId, path]);
   let job = jobs.get(key);
@@ -170,7 +174,7 @@ export function FolderSize({ projectId, path }: { projectId: string; path: strin
 function VisibleFolderSize({ projectId, path }: { projectId: string; path: string }) {
   const { text } = useTranslation();
   const { value } = useFolderSize(projectId, path, true);
-  const partial = ["partial", "incomplete", "cancelled", "scanning"].includes(value.state);
+  const partial = !value.complete;
   return <span title={value.error ?? text("Approximate logical size. Open details to calculate or continue.", "文件逻辑大小估计。打开详情可计算或继续统计。")}>{value.bytes == null ? (value.state === "scanning" ? "…" : "—") : `${partial ? "≥ " : "≈ "}${formatFileBytes(value.bytes)}`}</span>;
 }
 interface FileInfo { type: string; name: string; absolute_path: string; size: number | null; mtime: number; created_at: number | null; permissions: string; link_target?: string; link_status?: string; error?: string }
@@ -206,8 +210,8 @@ export function FileDetails({ projectId, path, onClose, inline = false }: { proj
     <h3>{info?.name ?? path}</h3>
     {error ? <div role="alert">{error}<button onClick={() => setAttempt(value => value + 1)}>{text("Retry", "重试")}</button></div> : !info ? <p>{text("Loading…", "加载中…")}</p> : <>
       <dl>{field(text("Type", "类型"), info.type)}{info.type === "symlink" ? field(text("Link", "符号链接"), info.link_target ?? info.link_status ?? text("Unavailable", "不可用")) : null}{field(text("Relative path", "相对路径"), path || ".")}{field(text("Path", "路径"), info.absolute_path)}{field(text("Modified", "修改时间"), date(info.mtime))}{field(text("Created", "创建时间"), date(info.created_at))}{field(text("Permissions", "权限"), info.permissions)}
-      {info.type !== "dir" ? field(text("Size", "大小"), `${formatFileBytes(info.size ?? 0)} (${info.size ?? 0} B)`) : field(text("Folder size", "文件夹大小"), folder.value.bytes == null ? text("Not calculated", "未计算") : `${["complete", "cached"].includes(folder.value.state) ? "≈ " : "≥ "}${formatFileBytes(folder.value.bytes)}`)}</dl>
-      {info.type === "dir" ? <div className={styles.folderSizeDetails} aria-live="polite"><p>{({ unknown: text("Waiting to calculate", "等待计算"), scanning: text("Calculating…", "正在计算…"), complete: text("Complete scan", "完整统计"), cached: text("Cached result · may be outdated", "缓存结果 · 可能已过期"), partial: text("Partial scan · continue to count the remaining entries", "部分统计 · 可继续扫描剩余条目"), incomplete: text("Incomplete · some entries were skipped", "统计不完整 · 部分条目已跳过"), cancelled: text("Cancelled · partial result", "已取消 · 部分统计"), error: folder.value.error } as Record<string, string | undefined>)[folder.value.state]}</p>
+      {info.type !== "dir" ? field(text("Size", "大小"), `${formatFileBytes(info.size ?? 0)} (${info.size ?? 0} B)`) : field(text("Folder size", "文件夹大小"), folder.value.bytes == null ? text("Not calculated", "未计算") : `${folder.value.complete ? "≈ " : "≥ "}${formatFileBytes(folder.value.bytes)}`)}</dl>
+      {info.type === "dir" ? <div className={styles.folderSizeDetails} aria-live="polite"><p>{({ unknown: text("Waiting to calculate", "等待计算"), scanning: text("Calculating…", "正在计算…"), complete: text("Complete scan", "完整统计"), cached: folder.value.complete ? text("Cached result · may be outdated", "缓存结果 · 可能已过期") : text("Cached partial result · incomplete", "缓存的部分统计 · 尚未完成"), partial: text("Partial scan · continue to count the remaining entries", "部分统计 · 可继续扫描剩余条目"), incomplete: text("Incomplete · some entries were skipped", "统计不完整 · 部分条目已跳过"), cancelled: text("Cancelled · partial result", "已取消 · 部分统计"), error: folder.value.error } as Record<string, string | undefined>)[folder.value.state]}</p>
         {folder.value.entries != null ? <p>{text("Entries scanned", "已扫描条目")}: {folder.value.entries} · {text("Skipped", "跳过")}: {folder.value.skipped ?? 0}</p> : null}
         {folder.value.updated_at ? <p>{date(folder.value.updated_at)}</p> : null}
         <small>{text("Sums file bytes, including hidden files. Does not follow symbolic links; restricted directories and unreadable entries are skipped. This is not disk usage.", "累计文件字节数，包含隐藏文件。不跟随符号链接；受限目录和不可读条目会跳过。这不是磁盘占用量。")}</small>
