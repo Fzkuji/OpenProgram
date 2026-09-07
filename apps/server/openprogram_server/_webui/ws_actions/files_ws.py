@@ -271,7 +271,27 @@ async def handle_project_file_reveal(ws, cmd: dict) -> None:
     }, default=str))
 
 
+async def handle_project_file_info(ws, cmd: dict) -> None:
+    from .files_metadata import file_info
+    project_id, path = cmd.get("project_id"), cmd.get("path", "")
+    result = await asyncio.to_thread(file_info, project_id, path)
+    await ws.send_text(json.dumps({"type": "project_file_info_result", "data": {
+        **result, "project_id": project_id, "path": path, "action": "project_file_info", "request_id": _request_id(cmd),
+    }}))
+
+
+async def handle_project_folder_size(ws, cmd: dict) -> None:
+    from .files_metadata import folder_size
+    project_id, path = cmd.get("project_id"), cmd.get("path", "")
+    result = await asyncio.to_thread(folder_size, project_id, path, cmd.get("operation", "peek"), cmd.get("token"))
+    await ws.send_text(json.dumps({"type": "project_folder_size_result", "data": {
+        **result, "project_id": project_id, "path": path, "action": "project_folder_size", "request_id": _request_id(cmd),
+    }}))
+
+
 ACTIONS = {
+    "project_file_info": handle_project_file_info,
+    "project_folder_size": handle_project_folder_size,
     "project_file_tree": handle_project_file_tree,
     "project_file_search": handle_project_file_search,
     "project_file_read": handle_project_file_read,

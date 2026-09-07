@@ -37,6 +37,7 @@ from .files_mutations import (
     _reveal_entry, _write_file,
 )
 from .files_ws import (
+    handle_project_file_info, handle_project_folder_size,
     ACTIONS, handle_project_file_copy, handle_project_file_create,
     handle_project_file_delete, handle_project_file_operation_status,
     handle_project_file_read, handle_project_file_rename,
@@ -45,6 +46,7 @@ from .files_ws import (
 )
 
 __all__ = [
+    "handle_project_file_info", "handle_project_folder_size",
     "ACTIONS", "handle_project_file_copy", "handle_project_file_create",
     "handle_project_file_delete", "handle_project_file_operation_status",
     "handle_project_file_read", "handle_project_file_rename",

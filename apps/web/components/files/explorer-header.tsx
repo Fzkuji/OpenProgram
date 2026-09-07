@@ -78,6 +78,7 @@ export function ExplorerMatchText({
 
 export function ExplorerHeader({
   leading,
+  pathNavigation,
   rootName,
   rootPath,
   showRootPath = true,
@@ -96,6 +97,7 @@ export function ExplorerHeader({
   hideSearch = false,
 }: {
   leading?: ReactNode;
+  pathNavigation?: ReactNode;
   rootName: string;
   rootPath: string | null;
   showRootPath?: boolean;
@@ -136,6 +138,7 @@ export function ExplorerHeader({
 
   return (
     <div className={styles.treeHeader}>
+      {pathNavigation ? <div className={styles.filePathRow}>{leading}{pathNavigation}</div> : null}
       <div
         className={`${styles.treeToolbar} ${showRootPath && pathExpanded ? styles.treeToolbarExpanded : ""}`}
         onMouseLeave={() => {
@@ -143,8 +146,8 @@ export function ExplorerHeader({
           setPathExpanded(false);
         }}
       >
-        {leading}
-        {showRootPath ? (
+        {!pathNavigation ? leading : null}
+        {showRootPath && !pathNavigation ? (
           <div className={styles.treeRootPath}>
             <FolderOpen className={styles.treeRootIcon} aria-hidden="true" />
             <button

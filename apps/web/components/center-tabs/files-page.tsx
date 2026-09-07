@@ -23,7 +23,7 @@ export function FilesPage() {
 
   return (
     <div className={styles.filesPage}>
-      <FileTree projectId={project.id} />
+      <FileTree projectId={project.id} central />
     </div>
   );
 }

@@ -20,7 +20,7 @@ assert.match(header, /Previous match/);
 assert.match(header, /Next match/);
 assert.match(header, /copyText/);
 assert.match(header, /showRootPath = true/);
-assert.match(header, /showRootPath \? \(/);
+assert.match(header, /showRootPath && !pathNavigation \? \(/);
 assert.match(files, /rootPath=\{projectRoot\}/);
 assert.doesNotMatch(files, /showRootPath=\{false\}/);
 assert.match(programs, /showRootPath=\{false\}/);

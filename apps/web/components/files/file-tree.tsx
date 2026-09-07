@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   File,
   FilePlus,
+  Info,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -63,6 +64,7 @@ import {
 import { baseOf, joinPath, parentOf } from "./file-tree-query";
 import { asServerRenameResult, type FileOperationResult } from "./file-tree-operation";
 import { FileGlyph, InlineNameInput } from "./file-tree-render";
+import { FileBreadcrumb, FileDetails, FileSortMenu, FolderSize, useFileSort, invalidateFolderSizes } from "./file-management";
 import styles from "./files-panel.module.css";
 
 export interface TreeEntry {
@@ -140,8 +142,10 @@ type DirState = TreeEntry[] | "loading" | "error";
 export function FileTree({
   projectId,
   headerExtra,
+  central = false,
 }: {
   projectId: string;
+  central?: boolean;
   /** Slot rendered before the filter input (the right sidebar puts
    *  its collapse toggle here so header stays a single row). */
   headerExtra?: React.ReactNode;
@@ -160,6 +164,10 @@ export function FileTree({
     openFileTab(projectId, path);
     navigate("/chat");
   };
+  const [sort, setSort] = useFileSort(projectId);
+  const sortRef = useRef(sort);
+  sortRef.current = sort;
+  const [detailsPath, setDetailsPath] = useState<string | null>(null);
   const [dirs, setDirs] = useState<Record<string, DirState>>({});
   const [directoryPages, setDirectoryPages] = useState<Record<string, DirectoryPage>>({});
   const [loadingMore, setLoadingMore] = useState<Set<string>>(new Set());
@@ -185,6 +193,13 @@ export function FileTree({
   const contextMenu = useSidebarMenu();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const [detailsInline, setDetailsInline] = useState(false);
+  useEffect(() => {
+    if (!central) return;
+    const observer = new ResizeObserver(([entry]) => setDetailsInline(entry.contentRect.width >= 700));
+    if (rootRef.current) observer.observe(rootRef.current);
+    return () => observer.disconnect();
+  }, [central]);
   const directoryPagesRef = useRef<Record<string, DirectoryPage>>({});
   const queryControllers = useRef(new Set<AbortController>());
   const mutationControllers = useRef(new Set<AbortController>());
@@ -260,6 +275,7 @@ export function FileTree({
         {
           project_id: projectId,
           path,
+          sort: sortRef.current,
           ...(cursor ? { cursor, snapshot_id: page?.snapshotId } : {}),
         },
         "project_file_tree_result",
@@ -326,6 +342,7 @@ export function FileTree({
     // 内联新建/重命名、筛选词都指向旧根目录下的相对路径，留着会
     // 误指到新项目里同名路径上，切根时一并清掉。
     setSelected(null);
+    setDetailsPath(null);
     setCreating(null);
     setRenaming(null);
     setMenuTarget(null);
@@ -350,6 +367,20 @@ export function FileTree({
       mutationLifecycleGeneration.current += 1;
     };
   }, [load]);
+
+  const previousSort = useRef(sort);
+  useEffect(() => {
+    if (previousSort.current === sort) return;
+    previousSort.current = sort;
+    for (const controller of queryControllers.current) controller.abort();
+    queryGeneration.current += 1;
+    setDirs({});
+    setDirectoryPages({});
+    directoryPagesRef.current = {};
+    setLoadingMore(new Set());
+    void load("");
+    for (const path of expanded) void load(path);
+  }, [sort, load, expanded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -388,6 +419,7 @@ export function FileTree({
   }
 
   function refetchRoot() {
+    invalidateFolderSizes(projectId);
     abortSearchQueries();
     for (const controller of queryControllers.current) controller.abort();
     queryGeneration.current += 1;
@@ -635,6 +667,8 @@ export function FileTree({
   /** After a rename/move, any open center file tab at the old path —
    *  or under it when a directory moved — follows to the new path. */
   function retargetOpenTabs(oldPath: string, newPath: string) {
+    setSelected(current => current && (current.path === oldPath || current.path.startsWith(oldPath + "/")) ? { ...current, path: newPath + current.path.slice(oldPath.length) } : current);
+    setDetailsPath(current => current && (current === oldPath || current.startsWith(oldPath + "/")) ? newPath + current.slice(oldPath.length) : current);
     const s = useCenterTabs.getState();
     for (const t of [...s.tabs]) {
       if (t.kind !== "file" || t.projectId !== projectId || !t.path) continue;
@@ -743,6 +777,8 @@ export function FileTree({
     }
     const deleted = await fileOp("delete", { path }, [parentOf(path)]);
     if (deleted.status !== "ready") return;
+    setSelected(current => current && (current.path === path || current.path.startsWith(path + "/")) ? { path: parentOf(path), type: "dir" } : current);
+    setDetailsPath(current => current && (current === path || current.startsWith(path + "/")) ? null : current);
     if (hasDraft) {
       const cleared = await clearFileDraftsForPath(projectId, path);
       if (!cleared.ok) {
@@ -780,6 +816,7 @@ export function FileTree({
   function fileContextActions(path: string, type: "file" | "dir") {
     const targetDir = type === "dir" ? path : parentOf(path);
     return {
+      info: () => setDetailsPath(path),
       reveal: () => void fileOp("reveal", { path }, []),
       newFile: () => startCreate("file", targetDir),
       newFolder: () => startCreate("dir", targetDir),
@@ -801,6 +838,7 @@ export function FileTree({
   function fileContextItems(path: string, type: "file" | "dir") {
     const actions = fileContextActions(path, type);
     return [
+      { id: "info", label: text("Get Info", "查看详细信息"), onSelect: actions.info },
       { id: "reveal", label: revealLabel(), onSelect: actions.reveal },
       { id: "new-file", label: text("New File", "新建文件"), separatorBefore: true, onSelect: actions.newFile },
       { id: "new-folder", label: text("New Folder", "新建文件夹"), onSelect: actions.newFolder },
@@ -1010,7 +1048,7 @@ export function FileTree({
 
   function renderSearchResults(): React.ReactNode {
     return (
-      <div role="list" aria-label={text("Project search results", "项目搜索结果")}>
+      <div role="list" aria-label={text("Project search results", "项目搜索结果")}><div className={styles.treeHint}>{text("Sorted by relevance", "按相关度排序")}</div>
         {searchMatches.map(({ path, entry }) => (
           <div key={path} role="listitem">
             <button
@@ -1108,7 +1146,7 @@ export function FileTree({
           <div key={full} className={styles.treeNode}>
             <div
               data-tree-path={full}
-              className={`${styles.treeRow} ${DIM_DIRS.has(e.name) ? styles.treeRowDim : ""} ${selectedCls}`}
+              className={`${styles.treeRow} ${styles.treeRowWithSize} ${DIM_DIRS.has(e.name) ? styles.treeRowDim : ""} ${selectedCls}`}
               style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT }}
               onClick={() => {
                 setSelected({ path: full, type: "dir" });
@@ -1131,6 +1169,7 @@ export function FileTree({
               ) : (
                 <ExplorerMatchText className={styles.treeName} value={e.name} query={filter} fuzzy={fuzzySearch} current={current} />
               )}
+              {renaming !== full ? <FolderSize projectId={projectId} path={full} /> : null}
             </div>
             {displayOpen ? (
               // The child container inherits the parent folder's icon
@@ -1196,9 +1235,15 @@ export function FileTree({
   }
 
   return (
-    <div className={styles.treeCol} ref={rootRef}>
+    <div className={`${styles.treeCol} ${detailsInline && detailsPath !== null ? styles.treeWithDetails : ""}`} ref={rootRef}>
       <ExplorerHeader
         leading={headerExtra}
+        pathNavigation={<FileBreadcrumb root={projectRoot ? baseOf(projectRoot) : text("Project", "项目")} path={selected?.path ?? activePath ?? ""} onLocate={path => {
+          setFilter("");
+          if (!path) { setSelected({ path: "", type: "dir" }); rootRef.current?.querySelector(`.${styles.treeBody}`)?.scrollTo({ top: 0 }); return; }
+          const type = path === selected?.path ? selected.type : path === activePath ? "file" : "dir";
+          void locateTreePath(path, type).then(found => { if (found) { setSelected({ path, type }); revealTarget.current = path; } });
+        }} />}
         rootName={projectRoot ? baseOf(projectRoot) : text("Resolving project…", "正在读取项目…")}
         rootPath={projectRoot}
         searchOpen={searchOpen}
@@ -1238,6 +1283,8 @@ export function FileTree({
             >
               <RotateCw />
             </button>
+            <FileSortMenu value={sort} onChange={setSort} />
+            <button type="button" className={styles.iconBtn} onClick={() => setDetailsPath(selected?.path ?? activePath ?? "")} title={text("Get Info", "查看详细信息")}><Info /></button>
           </>
         }
       />
@@ -1272,6 +1319,7 @@ export function FileTree({
             <TreeContextMenu
               canPaste={!!treeClipboard.current}
               revealLabel={revealLabel()}
+              onInfo={webMenuActions.info}
               onReveal={webMenuActions.reveal}
               onNewFile={webMenuActions.newFile}
               onNewFolder={webMenuActions.newFolder}
@@ -1287,6 +1335,8 @@ export function FileTree({
           </PopoverContent>
         </Popover>
       ) : null}
+
+      {detailsPath !== null ? <FileDetails key={`${projectId}:${detailsPath}`} projectId={projectId} path={detailsPath} inline={detailsInline} onClose={() => setDetailsPath(null)} /> : null}
 
       {confirmDelete ? (
         <ConfirmDialog

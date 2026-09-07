@@ -11,6 +11,9 @@ import ntpath
 import os
 import posixpath
 import secrets
+import re
+import subprocess
+from functools import cmp_to_key
 import stat
 import threading
 import time
@@ -557,7 +560,7 @@ def _tree_query(project_id: str, path: object, page_size: object,
     if not isinstance(sort, str) and sort is not None:
         return _query_error(project_id, canonical_path or "",
                             code="INVALID_REQUEST", message="sort must be a string")
-    if sort_name != "dirs_first_path":
+    if sort_name != "dirs_first_path" and not re.fullmatch(r"(name|mtime|size|kind):(asc|desc):(folders|mixed):(hidden|visible):(ignored|tracked)", sort_name):
         return _query_error(project_id, canonical_path or "",
                             code="INVALID_REQUEST", message="unsupported sort")
     try:
@@ -632,6 +635,47 @@ def _tree_query(project_id: str, path: object, page_size: object,
         return _query_error(project_id, canonical_path or "",
                             code="LIMIT_EXCEEDED", message="snapshot is too large",
                             kind="directory")
+    if sort_name != "dirs_first_path":
+        key, direction, grouping, hidden, ignored = sort_name.split(":")
+        if hidden == "visible":
+            entries = [row for row in entries if not row["name"].startswith(".")]
+        if ignored == "tracked":
+            root, _, _ = _project_info(project_id)
+            paths = [posixpath.join(canonical_path or "", row["name"]) for row in entries]
+            try:
+                process = subprocess.run(["git", "-C", root, "check-ignore", "-z", "--stdin"],
+                    input=("\0".join(paths) + "\0").encode(), capture_output=True, timeout=2)
+                if process.returncode not in (0, 1, 128):
+                    raise OSError("Git ignore query failed")
+                ignored_paths = set(process.stdout.decode(errors="replace").split("\0"))
+                entries = [row for row, candidate in zip(entries, paths) if candidate not in ignored_paths]
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return _query_error(project_id, canonical_path or "", code="IO_ERROR", message=str(exc))
+        if key == "size":
+            from .files_metadata import cached_size
+            for row in entries:
+                if row["type"] == "dir":
+                    row["size"] = cached_size(project_id, posixpath.join(canonical_path or "", row["name"]))
+        def name_key(row):
+            return tuple((1, int(part)) if part.isdigit() else (0, part.casefold())
+                         for part in re.split(r"(\d+)", row["name"]))
+        def compare(a, b):
+            if grouping == "folders" and a["type"] != b["type"]:
+                return -1 if a["type"] == "dir" else 1
+            av, bv = a.get(key), b.get(key)
+            if key == "name": av, bv = name_key(a), name_key(b)
+            if key == "kind":
+                av, bv = ["folder" if r["type"] == "dir" else posixpath.splitext(r["name"])[1].casefold() for r in (a, b)]
+            if key == "size":
+                av, bv = a.get("size"), b.get("size")
+            if av is None or bv is None:
+                if av is not None: return -1
+                if bv is not None: return 1
+                order = 0
+            else:
+                order = ((av > bv) - (av < bv)) * (-1 if direction == "desc" else 1)
+            return order or ((name_key(a), a["name"]) > (name_key(b), b["name"])) - ((name_key(a), a["name"]) < (name_key(b), b["name"]))
+        entries.sort(key=cmp_to_key(compare))
     snapshot = _QuerySnapshot(
         snapshot_id=secrets.token_urlsafe(18), kind="directory",
         project_id=project_id, path=canonical_path or "", query="", mode="",

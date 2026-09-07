@@ -22,6 +22,7 @@ export const treeClipboard: {
 export interface TreeContextMenuProps {
   canPaste: boolean;
   revealLabel: string;
+  onInfo: () => void;
   onReveal: () => void;
   onNewFile: () => void;
   onNewFolder: () => void;
@@ -44,6 +45,7 @@ export function TreeContextMenu(props: TreeContextMenuProps) {
 
   return (
     <div className={`${MENU_PANEL} min-w-[200px]`}>
+      <Item label={text("Get Info", "查看详细信息")} onClick={() => run(props.onInfo)} />
       <Item
         label={props.revealLabel}
         onClick={() => run(props.onReveal)}

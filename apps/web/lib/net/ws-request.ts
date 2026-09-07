@@ -565,6 +565,7 @@ function requestId(): string {
 
 const CORRELATED_ACTIONS = new Set([
   "project_file_tree", "project_file_search", "project_file_read",
+    "project_file_info", "project_folder_size",
   "project_file_operation_status",
   "turn_operation_status",
   "project_file_write", "project_file_create", "project_file_rename",
