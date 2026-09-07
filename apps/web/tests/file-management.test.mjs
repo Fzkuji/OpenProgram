@@ -182,7 +182,8 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
   globalThis.IntersectionObserver = class { observe() {} disconnect() {} };
   const root = createRoot(document.getElementById("root"));
   const projectId = "refresh-tree";
-  const requests = []; const held = []; let holding = false; let refreshed = false;
+  const requests = []; const held = []; let holding = false; let refreshed = false; const heldPages = [];
+  let holdingPages = false;
   const entry = (name, type, size = 0) => ({ name, type, size, mtime: 1 });
   globalThis.__fileManagementQuery = async (action, payload) => {
     if (action === "list_projects") return { projects: [{ id: projectId, path: "/project" }, { id: "other-project", path: "/other" }] };
@@ -190,6 +191,7 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     requests.push(payload);
     const response = { project_id: payload.project_id, path: payload.path, snapshot_id: refreshed ? "fresh" : "initial", next_cursor: payload.path === "src" && !payload.cursor ? "page2" : null, entries: payload.path === "" ? [entry("src", "dir")] : payload.cursor ? [entry("data.bin", "file", refreshed ? 2048 : 1024)] : [entry("empty.txt", "file")] };
     if (holding) await new Promise(resolve => held.push(resolve));
+    if (refreshed && payload.cursor && holdingPages) await new Promise(resolve => heldPages.push(resolve));
     return response;
   };
   const click = async selector => { const node = document.querySelector(selector); assert.ok(node, selector); await act(async () => node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))); };
@@ -204,12 +206,16 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     await click('[data-tree-path="src/data.bin"]');
     const path = () => document.querySelector('nav[aria-label="File path"]').textContent;
     assert.match(path(), /data.bin/);
-    holding = true; refreshed = true;
+    holding = true; refreshed = true; holdingPages = true;
     await click('button[title="Refresh"]');
     assert.match(path(), /data.bin/);
     assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'), "keep expanded rows while refresh is pending");
     holding = false;
     await act(async () => { for (const resolve of held.splice(0)) resolve(); });
+    assert.ok(heldPages.length, "second refreshed page is still pending");
+    assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'), "keep previous second-page row until the refreshed range is complete");
+    holdingPages = false;
+    await act(async () => { for (const resolve of heldPages.splice(0)) resolve(); });
     assert.ok(requests.filter(p => p.path === "src").length >= 2, "refresh expanded directories too");
     assert.match(path(), /data.bin/);
     assert.ok(document.querySelector('[data-tree-path="src/data.bin"]'));
@@ -230,7 +236,7 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     assert.doesNotMatch(path(), /data.bin/);
     assert.equal(document.querySelector('[data-tree-path="src/data.bin"]'), null);
   } finally {
-    await act(async () => { root.unmount(); for (const resolve of held) resolve(); });
+    await act(async () => { root.unmount(); for (const resolve of [...held, ...heldPages]) resolve(); });
     Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
   }
 });

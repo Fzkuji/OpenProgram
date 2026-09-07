@@ -264,11 +264,11 @@ export function FileTree({
   }
 
   const load = useCallback(
-    async (path: string, cursor?: string | null, retry = true, preserveRows = false): Promise<TreeResult | null> => {
+    async (path: string, cursor?: string | null, retry = true, refreshedEntries?: TreeEntry[]): Promise<TreeResult | null> => {
       const generation = queryGeneration.current;
       if (cursor) {
         setLoadingMore((previous) => new Set(previous).add(path));
-      } else if (!preserveRows) {
+      } else if (!refreshedEntries) {
         setDirs((d) => ({ ...d, [path]: "loading" }));
       }
       const page = directoryPagesRef.current[path];
@@ -292,7 +292,8 @@ export function FileTree({
       }
       if (generation !== queryGeneration.current) return null;
       if (data?.error_code === "STALE_SNAPSHOT" && cursor && retry) {
-        setDirs((d) => ({ ...d, [path]: "loading" }));
+        if (refreshedEntries) refreshedEntries.length = 0;
+        else setDirs((d) => ({ ...d, [path]: "loading" }));
         const nextPages = { ...directoryPagesRef.current };
         delete nextPages[path];
         directoryPagesRef.current = nextPages;
@@ -301,7 +302,7 @@ export function FileTree({
           delete next[path];
           return next;
         });
-        return load(path, null, false);
+        return load(path, null, false, refreshedEntries);
       }
       if (!data || data.project_id !== projectId || data.error || data.error_code
         || data.path !== path || !data.entries) {
@@ -311,7 +312,8 @@ export function FileTree({
       for (const e of data.entries) {
         if (e.type === "file") noteFileMtime(projectId, joinPath(path, e.name), e.mtime);
       }
-      setDirs((d) => {
+      if (refreshedEntries) refreshedEntries.push(...data.entries);
+      else setDirs((d) => {
         const existing = cursor && Array.isArray(d[path]) ? d[path] : [];
         const entries = [...existing, ...data.entries!].filter(
           (entry, index, all) => all.findIndex((candidate) => candidate.name === entry.name) === index,
@@ -323,7 +325,7 @@ export function FileTree({
         nextCursor: data.next_cursor ?? null,
       };
       directoryPagesRef.current = { ...directoryPagesRef.current, [path]: nextPage };
-      setDirectoryPages((pages) => ({ ...pages, [path]: nextPage }));
+      if (!refreshedEntries) setDirectoryPages((pages) => ({ ...pages, [path]: nextPage }));
       return data;
     },
     [projectId],
@@ -448,13 +450,16 @@ export function FileTree({
     for (const path of paths) void (async () => {
       const oldRows = previous.dirs[path];
       const count = Array.isArray(oldRows) ? oldRows.length : 0;
-      let page = await load(path, null, true, true);
-      let loaded = page?.entries?.length ?? 0;
+      const entries: TreeEntry[] = [];
+      let page = await load(path, null, true, entries);
       // Retain the user's loaded page range with fresh snapshot cursors.
-      while (generation === queryGeneration.current && page?.next_cursor && loaded < count) {
-        page = await load(path, page.next_cursor);
-        loaded += page?.entries?.length ?? 0;
+      while (generation === queryGeneration.current && page?.next_cursor && entries.length < count) {
+        page = await load(path, page.next_cursor, true, entries);
       }
+      if (generation !== queryGeneration.current || !page?.entries || page.error || page.error_code) return;
+      setDirs(previous => ({ ...previous, [path]: entries.filter((entry, index) => entries.findIndex(other => other.name === entry.name) === index) }));
+      const nextPage = { snapshotId: page.snapshot_id ?? null, nextCursor: page.next_cursor ?? null };
+      setDirectoryPages(previous => ({ ...previous, [path]: nextPage }));
     })();
   }
 
