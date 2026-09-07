@@ -2197,7 +2197,7 @@ def test_local_app_refresh_rejects_a_different_product_version_before_build(
     post_build_gate = refresh.index('--wheel "$wheel"')
     lock = refresh.index('acquire_pid_lock "$install_lock_file"')
     archive = refresh.index('node "$asar_cli" pack')
-    first_worker_mutation = refresh.index("pgrep -x OpenProgram")
+    first_worker_mutation = refresh.index('pgrep -f "^/Applications/OpenProgram[.]app/Contents/MacOS/OpenProgram( |$)"')
     first_pip_mutation = refresh.index('"$local_python" -m pip install')
     assert refresh.count("--require-source-match") == 2
     assert archive < lock < post_build_gate < first_worker_mutation
