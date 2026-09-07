@@ -55,7 +55,7 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 | You.com | `YDC_API_KEY` 或 `YOU_API_KEY` |
 | Ollama | 本地 Ollama（需 `ollama signin`），或用 `OLLAMA_API_KEY` 走 Ollama Cloud |
 
-聊天中的 Web Search 开关控制本条消息是否可使用 `web_search`；关闭后，即使是自动工具模式也会排除此工具。开启仍遵守 Agent 禁用工具和权限设置。Tool profile 按会话保存，切换标签和刷新后保留。
+聊天中的 Web Search 开关控制本条消息是否可使用 `web_search`；关闭后，即使是自动工具模式也会排除此工具。开启后直接提供搜索工具定义，Tools 关闭时也可调用。开启仍遵守 Agent 禁用工具和权限设置。Tool profile 按会话保存，切换标签和刷新后保留。
 
 新增搜索 key 在后续调用中生效，无需重启。默认后端不可用时使用其他可用后端；显式指定不可用后端则报错。Jina 搜索需要 `JINA_API_KEY`。`combine="race"` 返回首个非空成功结果；`combine="rrf"` 保留截止时间前完成的结果。全部失败返回错误，与成功但无结果区分；已开始的请求按各自传输超时结束。
 

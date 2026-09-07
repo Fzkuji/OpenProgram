@@ -115,3 +115,29 @@ def test_search_on_respects_agent_disabled_policy():
         for cfg in configs:
             tools = resolve_tools(profile, tools_override_from_config(cfg), source='web')
             assert 'web_search' not in {t.name for t in tools or []}
+
+
+def test_explicit_search_reaches_cold_provider_request_without_loader():
+    from openprogram.agent.internals._model_tools import resolve_tools
+    from openprogram.programs import (
+        agent_tools, apply_default_deferral, freeze_turn_tools,
+        install_loaded_deferred, release_turn_tools, split_tools_for_dispatch,
+    )
+    apply_default_deferral()
+    shared = next(t for t in agent_tools(names=["web_search"]) if t.name == "web_search")
+    assert shared._defer
+    install_loaded_deferred()
+    freeze_turn_tools([])
+    try:
+        for cfg in (
+            SessionRunConfig(tools_enabled=True, tools_override=["web_search"], web_search=True),
+            SessionRunConfig(tools_enabled=True, web_search=True),
+            SessionRunConfig(tools_override=["web_search"]),
+        ):
+            resolved = resolve_tools({}, tools_override_from_config(cfg), source="web")
+            provider, catalog = split_tools_for_dispatch(resolved or [])
+            assert "web_search" in {t.name for t in provider}
+            assert "web_search" not in {name for name, _ in catalog}
+            assert shared._defer, "Per-chat selection must not mutate the global registry"
+    finally:
+        release_turn_tools()
