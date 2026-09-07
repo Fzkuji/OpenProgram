@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 
 NAME = 'OpenProgram'
-BUNDLE = 'OpenProgram Runtime.app'
+BUNDLE = 'OpenProgram.app'
 IDENTIFIER = 'ai.openprogram.runtime'
 RELATIVE = f'{BUNDLE}/Contents/MacOS/{NAME}'
 

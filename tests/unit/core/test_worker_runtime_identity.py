@@ -9,7 +9,7 @@ def test_worker_uses_declared_named_runtime(tmp_path, monkeypatch):
     python = root / 'python/bin/python3'
     python.parent.mkdir(parents=True)
     python.touch()
-    helper = root / 'OpenProgram Runtime.app/Contents/MacOS/OpenProgram'
+    helper = root / 'OpenProgram.app/Contents/MacOS/OpenProgram'
     helper.parent.mkdir(parents=True)
     helper.write_text('helper')
     helper.chmod(0o755)
