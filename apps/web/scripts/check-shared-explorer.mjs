@@ -36,7 +36,7 @@ assert.doesNotMatch(
   css.match(/\.treeRootFullPath\s*\{[^}]*\}/s)?.[0] ?? "",
   /font-family/,
 );
-assert.match(css, /\.treeBody\s*\{[^}]*padding:\s*8px 0/s);
+assert.match(css, /\.treeBody\s*\{[^}]*padding:\s*0;/s);
 assert.match(css, /\.treeRow\s*\{[^}]*height:\s*30px/s);
 assert.match(css, /\.treeKids\s*>\s*\.treeNode:last-child::before\s*\{[^}]*height:\s*15px/s);
 assert.match(css, /\.treeName,\s*\n\.treePath\s*\{[^}]*margin-left:\s*6px/s);

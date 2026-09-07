@@ -14,6 +14,7 @@ interface Props {
   selected: string | null;
   query?: string;
   matches?: ReadonlySet<string>;
+  onRowsRendered?(paths: ReadonlySet<string>): void;
   onActivate?(path: string, type: "file" | "dir"): void;
   onExpandedChange(paths: Set<string>): void;
   onSelect(path: string, type: "file" | "dir"): void;
@@ -29,6 +30,8 @@ export const PierreFileTree = forwardRef<PierreTreeHandle, Props>(function Pierr
   latest.current = props;
   const host = useRef<HTMLDivElement>(null);
   const syncing = useRef(false);
+  const renderedPaths = useRef<ReadonlySet<string>>(new Set());
+  useEffect(() => { props.onRowsRendered?.(renderedPaths.current); }, [props.onRowsRendered]);
   const sizes = useRef(new Map<string, string>());
   const [visibleFolders, setVisibleFolders] = useState<string[]>([]);
   const metadata = useRef(new Map<string, PierreTreeEntry>());
@@ -65,6 +68,12 @@ export const PierreFileTree = forwardRef<PierreTreeHandle, Props>(function Pierr
   useEffect(() => {
     syncing.current = true;
     model.resetPaths(props.entries.map(modelPath), { initialExpandedPaths: [...props.expanded].map(path => path + "/") });
+    // Initial expansion opens ancestors too; restore explicitly collapsed parents.
+    for (const entry of props.entries) {
+      if (entry.type !== "dir" || props.expanded.has(entry.path)) continue;
+      const item = model.getItem(modelPath(entry));
+      if (item && "collapse" in item) item.collapse();
+    }
     for (const path of model.getSelectedPaths()) model.getItem(path)?.deselect();
     const selected = props.selected && metadata.current.get(props.selected);
     if (selected) model.getItem(modelPath(selected))?.select();
@@ -93,10 +102,14 @@ export const PierreFileTree = forwardRef<PierreTreeHandle, Props>(function Pierr
       // Subscribe only after that renderer exists, then follow virtual rows.
       const update = () => {
         const paths = new Set<string>();
+        const rendered = new Set<string>();
         for (const row of root.querySelectorAll("[data-item-path]")) {
           const path = normalize(row.getAttribute("data-item-path") ?? "");
+          rendered.add(path);
           if (metadata.current.get(path)?.type === "dir") paths.add(path);
         }
+        renderedPaths.current = rendered;
+        latest.current.onRowsRendered?.(rendered);
         const next = [...paths];
         setVisibleFolders(old => old.join("\0") === next.join("\0") ? old : next);
       };

@@ -496,7 +496,7 @@
   min-height: 0;
   overflow: auto;
   /* No horizontal inset: rows span edge to edge (VS Code explorer). */
-  padding: 8px 0;
+  padding: 0;
   scrollbar-width: thin;
 }
 

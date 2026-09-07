@@ -399,10 +399,20 @@ export function FileTree({
     };
   }, [projectId]);
 
+  const pendingPages = useRef(new Map<string, number>());
   function loadMore(path: string) {
-    const page = directoryPagesRef.current[path];
-    if (!page?.nextCursor || loadingMore.has(path)) return;
-    void load(path, page.nextCursor);
+    const page = directoryPages[path];
+    const generation = queryGeneration.current;
+    if (!page?.nextCursor || loadingMore.has(path) || pendingPages.current.get(path) === generation || refreshErrors.has(path)) return;
+    pendingPages.current.set(path, generation);
+    const failed = () => {
+      if (queryGeneration.current === generation) setRefreshErrors(previous => new Set(previous).add(path));
+    };
+    void load(path, page.nextCursor).then(result => {
+      if (!result || result.error || result.error_code) failed();
+    }).catch(failed).finally(() => {
+      if (pendingPages.current.get(path) === generation) pendingPages.current.delete(path);
+    });
   }
 
   function refetchRoot() {
@@ -1079,7 +1089,11 @@ export function FileTree({
     visit("");
     return result;
   }, [dirs]);
-  const visibleDirectories = ["", ...expanded];
+  const visibleDirectories = ["", ...expanded].filter(dir => {
+    let parent = parentOf(dir);
+    while (parent) { if (!expanded.has(parent)) return false; parent = parentOf(parent); }
+    return true;
+  });
   function renderTree() {
     return <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       {creating ? <div className={styles.treeRow}>
@@ -1093,13 +1107,18 @@ export function FileTree({
       {dirs[""] === "loading" || dirs[""] === undefined ? <div className={styles.treeHint}>{text("Loading…", "加载中…")}</div> : null}
       <div style={{ flex: 1, minHeight: 0 }}>
         <PierreFileTree key={projectId} ref={pierreRef} projectId={projectId} entries={pierreEntries} query={searchMode === "highlight" && !fuzzySearch ? filter : undefined} matches={filter.trim() ? new Set(searchMatches.map(match => match.path)) : undefined} expanded={expanded} selected={(filter.trim() ? currentSearchPath : null) ?? selected?.path ?? activePath ?? null}
+          onRowsRendered={paths => {
+            for (const dir of visibleDirectories) {
+              const entries = dirs[dir];
+              if (Array.isArray(entries) && entries.length && paths.has(joinPath(dir, entries[entries.length - 1].name))) loadMore(dir);
+            }
+          }}
           onExpandedChange={next => { setExpanded(next); for (const path of next) if (dirs[path] === undefined) void load(path); }}
           onSelect={(path, type) => setSelected({ path, type })} onOpen={openFile} onContextMenu={onRowContextMenu} />
       </div>
       {visibleDirectories.map(dir => <div key={dir}>
         {dir && dirs[dir] === "loading" ? <div className={styles.treeHint}>{dir} · {text("Loading…", "加载中…")}</div> : null}
         {dirs[dir] === "error" || refreshErrors.has(dir) ? <button type="button" className={styles.treeRow} onClick={refetchRoot}>{dir || "/"} · {text("Refresh failed — retry", "刷新失败，重试")}</button> : null}
-        {directoryPages[dir]?.nextCursor ? <button type="button" className={styles.treeRow} aria-label={text("Load more entries", "加载更多条目")} disabled={loadingMore.has(dir)} onClick={() => loadMore(dir)}>{dir || "/"} · {loadingMore.has(dir) ? text("Loading…", "加载中…") : text("Load more", "加载更多")}</button> : null}
       </div>)}
     </div>;
   }

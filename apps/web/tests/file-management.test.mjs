@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createElement as h, act, Fragment } from "react";
+import React, { createElement as h, act, Fragment } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { parseHTML } from "linkedom";
@@ -203,7 +203,7 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
   const projectId = "refresh-tree";
   let sizeRequests = 0;
   const requests = []; const held = []; let holding = false; let refreshed = false; const heldPages = [];
-  let holdingPages = false; let failPage = false;
+  let holdingPages = false; let failPage = true;
   const entry = (name, type, size = 0) => ({ name, type, size, mtime: 1 });
   globalThis.__fileManagementQuery = async (action, payload) => {
     if (action === "list_projects") return { projects: [{ id: projectId, path: "/project" }, { id: "other-project", path: "/other" }] };
@@ -226,7 +226,17 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     assert.ok(sizeRequests > 0, "visible folder starts a size scan after shadow renderer mounts");
     await click('[data-item-path="src/"]');
     assert.match(query('[data-item-path="src/empty.txt"]').textContent, /0 B/);
-    await click('button[aria-label="Load more entries"]');
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+    const failedPageRequests = requests.length;
+    const autoRetry = [...document.querySelectorAll("button")].find(node => node.textContent.includes("Refresh failed — retry"));
+    assert.ok(autoRetry, "automatic pagination exposes failure instead of silently stopping");
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+    assert.equal(requests.length, failedPageRequests, "failed pagination does not loop");
+    failPage = false;
+    await act(async () => autoRetry.dispatchEvent(new window.MouseEvent("click", {bubbles:true,composed:true})));
+
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+    assert.equal(document.querySelector('button[aria-label="Load more entries"]'), null);
     assert.match(query('[data-item-path="src/data.bin"]').textContent, /1.0 KiB/);
     await click('[data-item-path="src/data.bin"]');
     const path = () => document.querySelector('nav[aria-label="File path"]').textContent;
@@ -259,7 +269,8 @@ test("file tree refresh preserves expanded paths and file sizes, and path copy u
     await act(async () => retry.dispatchEvent(new window.MouseEvent("click", { bubbles: true, composed: true })));
     assert.ok(query('[data-item-path="src/data.bin"]'));
     assert.doesNotMatch(document.body.textContent, /Refresh failed/);
-    await click('button[aria-label="Load more entries"]');
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+    assert.equal(document.querySelector('button[aria-label="Load more entries"]'), null);
     assert.match(query('[data-item-path="src/last.txt"]').textContent, /7 B/);
     const copy = document.querySelector('button[aria-label="Copy absolute path"]');
     assert.ok(copy, "right-hand copy button");
@@ -322,4 +333,46 @@ test("Pierre search follows current fuzzy result and preserves folder identity",
     assert.equal(row("src/zebra.py").getAttribute("aria-selected"), "false");
     assert.deepEqual([...shadow.querySelectorAll('[data-item-type="file"][data-item-path]')].map(node => node.getAttribute("data-item-path")), ["src/zebra.py", "src/alpha.ts"]);
   } finally { await act(async () => root.unmount()); Object.assign(globalThis, saved); }
+});
+
+test("Pierre nested folder collapse survives state synchronization and refresh", async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver, IntersectionObserver: globalThis.IntersectionObserver };
+  globalThis.window = parsed.window; globalThis.document = parsed.document;
+  const browserGlobals = ["HTMLDivElement", "ShadowRoot", "HTMLElement", "HTMLStyleElement", "Element", "HTMLTemplateElement", "SVGElement", "HTMLInputElement", "Node", "MutationObserver", "customElements"];
+  for (const key of browserGlobals) { saved[key] = globalThis[key]; globalThis[key] = parsed.window[key]; }
+  Object.defineProperties(parsed.window.HTMLElement.prototype, {
+    scrollTop: { configurable: true, writable: true, value: 0 },
+    clientHeight: { configurable: true, get: () => 600 },
+    clientWidth: { configurable: true, get: () => 300 },
+  });
+  parsed.window.HTMLElement.prototype.scrollTo = function(options) { this.scrollTop = options.top ?? this.scrollTop; };
+  saved.requestAnimationFrame = globalThis.requestAnimationFrame;
+  saved.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = callback => setTimeout(callback, 0);
+  globalThis.cancelAnimationFrame = clearTimeout;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+  globalThis.IntersectionObserver = class { observe() {} disconnect() {} };
+  const root = createRoot(document.getElementById("root"));
+  const entries = [{path:"src",type:"dir",size:0},{path:"src/nested",type:"dir",size:0},{path:"src/nested/file.txt",type:"file",size:7}];
+  function Harness({rows=entries}) {
+    const [expanded,setExpanded] = React.useState(new Set(["src", "src/nested"]));
+    const [selected,setSelected] = React.useState("src/nested/file.txt");
+    return h(api.PierreFileTree,{projectId:"collapse",entries:rows,expanded,selected,onExpandedChange:setExpanded,onSelect:setSelected,onOpen:noop,onContextMenu:noop});
+  }
+  window.MouseEvent = window.Event;
+  try {
+    await act(async()=>root.render(h(Harness)));
+    const shadow=document.querySelector("file-tree-container").shadowRoot;
+    const row=path=>shadow.querySelector(`[role="treeitem"][data-item-path="${path}"]`);
+    await act(async()=>row("src/").dispatchEvent(new window.MouseEvent("click",{bubbles:true,composed:true})));
+    assert.equal(row("src/").getAttribute("aria-expanded"),"false");
+    assert.equal(row("src/nested/"),null);
+    await act(async()=>root.render(h(Harness,{rows:[...entries]})));
+    assert.equal(row("src/").getAttribute("aria-expanded"),"false","refresh does not reopen parent");
+    await act(async()=>row("src/").dispatchEvent(new window.MouseEvent("click",{bubbles:true,composed:true})));
+    assert.equal(row("src/nested/").getAttribute("aria-expanded"),"true","child expansion survives parent collapse");
+    assert.ok(row("src/nested/file.txt"));
+  } finally { await act(async()=>root.unmount()); Object.assign(globalThis,saved); }
 });

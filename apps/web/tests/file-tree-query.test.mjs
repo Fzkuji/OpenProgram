@@ -7,13 +7,13 @@ const source = readFileSync(
   "utf8",
 ).replace(/\r\n/g, "\n");
 
-test("FileTree pages directories with snapshot cursors and an accessible load-more row", () => {
+test("FileTree pages directories with snapshot cursors and automatic near-end pagination", () => {
   assert.match(source, /interface DirectoryPage/);
   assert.match(source, /nextCursor: string \| null/);
   assert.match(source, /project_file_tree/);
   assert.match(source, /cursor, snapshot_id/);
-  assert.match(source, /Load more/);
-  assert.match(source, /aria-label=\{text\("Load more entries"/);
+  assert.match(source, /onRowsRendered/);
+  assert.doesNotMatch(source, /aria-label=\{text\("Load more entries"/);
   assert.match(source, /all\.findIndex\(\(candidate\) => candidate\.name === entry\.name\)/);
 });
 
