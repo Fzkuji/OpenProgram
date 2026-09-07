@@ -318,7 +318,8 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
             </span>}
           </label>
         )}
-        <div className={styles.actions} role="group" aria-label={text("Decision actions", "答复操作")}>
+      </div>
+        <div className={`${styles.actions} ${styles.footer}`} onKeyDown={onKey} role="group" aria-label={text("Decision actions", "答复操作")}>
           {cur.kind === "approval" && !discussionOpen && (
             <ApprovalChoices disabled={answerLocked} step={cur} answer={curAns} onChange={(a) => { if (!answerLocked) patch(idx, a); }} />
           )}
@@ -349,7 +350,6 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
           ))}
           </div>
         </div>
-      </div>
     </>
   );
 }

@@ -204,3 +204,10 @@
   margin-inline: 0;
   resize: vertical;
 }
+
+/* Keep decisions anchored while the independently scrolling body grows. */
+.footer {
+  flex: 0 0 auto;
+  padding: 0 12px 12px;
+  margin-top: auto;
+}
