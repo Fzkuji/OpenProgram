@@ -23,7 +23,8 @@
   position: relative;
   min-width: 0;
   border-radius: var(--ui-button-radius);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
+  box-shadow: inset 0 0 0 1px var(--border);
   color: var(--text-primary);
   font-size: var(--fs-base);
   line-height: 1.5;
