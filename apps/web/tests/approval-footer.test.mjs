@@ -77,55 +77,21 @@ async function mounted(q, check) {
   } finally { await act(async () => root.unmount()); host.remove(); }
 }
 
-test("approval choices and discussion share the bottom action row with Send", async () => {
-  await mounted(decision, async ({ host, button, frames, discussed }) => {
-    const footer = host.querySelector('[aria-label="Decision actions"]');
-    assert.ok(footer, "one shared bottom action row");
-    for (const label of ["Allow once", "Allow this operation in this project", "Deny", "Chat about this", "Send"]) assert.ok(footer.contains(button(label)), label);
-    assert.equal(button("Chat about this").nextElementSibling, button("Send"));
-    assert.equal(button("Send").disabled, true);
-    await act(async () => button("Allow once").click());
-    assert.equal(frames.length, 0);
-    assert.equal(button("Allow once").getAttribute("aria-pressed"), "true");
-    const enter = new Event("keydown", { bubbles: true, cancelable: true });
-    Object.defineProperty(enter, "key", { value: "Enter" });
-    await act(async () => button("Chat about this").dispatchEvent(enter));
-    assert.equal(enter.defaultPrevented, false, "native button activation must not submit the selected approval");
-    assert.equal(frames.length, 0);
-    await act(async () => button("Chat about this").click());
-    assert.deepEqual(discussed, []);
-    assert.ok(host.querySelector("textarea"));
-    assert.equal(button("Send discussion").disabled, true);
-    await act(async () => button("Cancel").click());
-    assert.ok(button("Allow once"));
-    assert.equal(frames.length, 0);
-  });
-});
-for (const [label, scope] of [["Allow once", "once"], ["Allow this operation in this project", "always"], ["Deny", null], ["Always allow this path", "always_path"]]) {
-  test(`${label} only sends its original outcome on Send`, async () => {
-    const q = scope === "always_path" ? { ...decision, allowedScopes: ["once", "always_path", "always"], args: { _sandbox_escalation: { from: "sandbox", to: "host", path: "/tmp/test" } } } : decision;
-    await mounted(q, async ({ button, frames, resolved }) => {
+for (const [label, action] of [["Allow once", "execution.wait.answer"], ["Deny", "execution.wait.decline"]]) {
+  test(`approval ${label} submits one decision directly`, async () => {
+    await mounted(decision, async ({ host, button, frames, resolved }) => {
+      const footer = host.querySelector('[aria-label="Decision actions"]');
+      assert.equal(footer.querySelectorAll("button").length, 2);
+      assert.equal(button("Send"), undefined);
+      assert.equal(button("Chat about this"), undefined);
       await act(async () => button(label).click());
-      assert.equal(frames.length, 0);
-      await act(async () => button("Send").click());
       assert.equal(frames.length, 1);
-      assert.equal(frames[0].action, scope ? "execution.wait.answer" : "execution.wait.decline");
-      assert.equal(frames[0].execution_id, "exec-one");
-      assert.equal(frames[0].expected_version, 3);
-      if (scope) assert.deepEqual(frames[0].payload.answer, { answer: "approve", scope });
-      assert.deepEqual(resolved, ["wait-one"]);
+      assert.equal(frames[0].action, action);
+      assert.deepEqual(resolved, [decision.id]);
     });
   });
 }
-test("approval without advertised scopes offers only one-time approval and denial", async () => {
-  await mounted({ ...decision, allowedScopes: undefined }, async ({ button }) => {
-    assert.ok(button("Allow once"));
-    assert.ok(button("Deny"));
-    assert.equal(button("Allow this operation in this project"), undefined);
-    assert.equal(button("Always allow this path"), undefined);
-  });
-});
-test("answer remains unresolved until the server acknowledges it", async () => {
+test("approval remains pending until its answer is acknowledged", async () => {
   await mounted(decision, async ({ button, resolved }) => {
     let acknowledge;
     respond = async (_url, init) => new Promise(resolve => {
@@ -133,9 +99,9 @@ test("answer remains unresolved until the server acknowledges it", async () => {
       acknowledge = () => resolve(Response.json({ command: { ...command, status: "applied" } }));
     });
     await act(async () => button("Allow once").click());
-    await act(async () => button("Send").click());
     assert.deepEqual(resolved, []);
     assert.equal(button("Sending…").disabled, true);
+    assert.equal(button("Deny").disabled, true);
     await act(async () => acknowledge());
     assert.deepEqual(resolved, [decision.id]);
   });
@@ -162,7 +128,7 @@ async function discussionMounted(check) {
   const requests = [], sent = [], removed = [], notices = [], frames = [];
   globalThis.approvalSocket = { readyState: 1, send: value => frames.push(JSON.parse(value)) };
   const onToast = e => notices.push(e.detail); window.addEventListener("op:toast", onToast);
-  const q = { ...decision, sessionId: "origin", tool: "process" };
+  const q = { ...decision, kind: "ask", sessionId: "origin", tool: "process" };
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
   const draft = "My unsent question";
@@ -267,12 +233,11 @@ test("discussion queues until the rejected execution clears and retries a discon
   });
 });
 
-test("pending discussion blocks approval via Ctrl and Meta Enter", async () => {
+test("pending discussion blocks another answer via Ctrl and Meta Enter", async () => {
   await discussionMounted(async ({ host, click, frames }) => {
     let finish;
     respond = async (_url, init) => new Promise(resolve => { finish = () => resolve(Response.json({ command: { ...JSON.parse(init.body), status: "applied" } })); });
-    const allow = [...host.querySelectorAll("button")].find(b => b.textContent === "Allow once");
-    await act(async () => allow.click());
+    const allow = host.querySelector("[data-decision]");
     await act(async () => click());
     for (const modifier of ["ctrlKey", "metaKey"]) {
       const enter = new Event("keydown", { bubbles: true, cancelable: true });

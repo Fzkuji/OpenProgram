@@ -1370,7 +1370,7 @@ class AgentProductionDriver:
                         raise AgentDriverError("invalid_wait", "wait metadata cannot replace presentation fields")
                     wait_request.update(dict(request_metadata))
                     timeout = pre_wait.get("timeout", 300.0)
-                    if type(timeout) not in {int, float} or timeout <= 0:
+                    if timeout is not None and (type(timeout) not in {int, float} or timeout <= 0):
                         raise AgentDriverError("invalid_wait", "approval wait timeout is invalid")
                     policy = pre_wait.get("policy_snapshot")
                     if not isinstance(policy, Mapping):
@@ -1388,7 +1388,7 @@ class AgentProductionDriver:
                             pending_command_ids=tuple(checkpoint.payload["pending_command_ids"]),
                         ),
                         kind=wait_kind, request=wait_request,
-                        policy_snapshot=dict(policy), expires_at=time.time() + float(timeout),
+                        policy_snapshot=dict(policy), expires_at=0 if timeout is None else time.time() + float(timeout),
                         wait_id=wait_id, agent_checkpoint=checkpoint,
                     )
                     try:

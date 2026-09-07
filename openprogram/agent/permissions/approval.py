@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 from typing import Callable
 
+from .file_state import capture as capture_file_state
+
 from .policy import (
     _ONE_SHOT_FORCE_APPROVAL_TOOLS, _RISKY_TOOLS,
     _hard_constraint_violation, permission_decision,
@@ -106,6 +108,7 @@ def wrap_with_approval(
                 "approval_reason": reason,
                 "allowed_scopes": scopes,
                 "permission_version": getattr(req, "_permission_version", 0),
+                "file_preconditions": capture_file_state(name, args),
                 "accept_edits_safe": bool(getattr(agent_tool, "_accept_edits_safe", False)),
                 "working_dir": current_worktree_path() or os.getcwd(),
             },
@@ -114,7 +117,7 @@ def wrap_with_approval(
                 "on_decline": "fail", "on_timeout": "fail",
                 "allowed_scopes": scopes,
             },
-            "timeout": 300.0,
+            "timeout": None,
         }
 
     def _denied(
@@ -167,7 +170,18 @@ def wrap_with_approval(
     async def _run_original(
         call_id, args, cancel, on_update, *, already_escalated=False,
     ):
-        result = await orig_execute(call_id, args, cancel, on_update)
+        try:
+            from .file_state import check_current, current_files
+            check_current()
+            # Restored approvals retain a durable baseline across worker restarts.
+            from openprogram.store.snapshot.read_tracking import mark_seen
+            for path in current_files():
+                mark_seen(path)
+        except (OSError, ValueError) as exc:
+            return _denied(str(exc), "APPROVAL_FILE_CHANGED")
+        from .file_state import file_scope
+        with file_scope():
+            result = await orig_execute(call_id, args, cancel, on_update)
         sandbox = _sandbox_metadata(result)
         if not sandbox or sandbox.get("kind") != "denied":
             return result
@@ -354,10 +368,18 @@ async def await_user_approval(
         current_execution = get_current_execution_id()
         if (execution is None or execution.session_id != req.session_id
                 or wait.request.get("tool") != tool_name
+                or wait.request.get("args") != args
                 or (current_execution and current_execution != wait.execution_id)
                 or (tool_call_id and wait.request.get("tool_call_id") != tool_call_id)):
             return False, "approval does not authorize this operation", "once"
         if wait.status is WaitStatus.RESOLVED:
+            from .file_state import validate
+            if tool_name in {"edit", "write", "apply_patch"} and "file_preconditions" not in wait.request:
+                return False, "This file approval has no saved file state. Read the current file and request a new approval.", "once"
+            try:
+                validate(dict(wait.request.get("file_preconditions") or {}))
+            except (OSError, ValueError) as exc:
+                return False, str(exc), "once"
             value = wait.answer
             answer, scope = (
                 (value.get("answer"), value.get("scope", "once"))

@@ -97,8 +97,8 @@ def edit(file_path: str,
     except Exception as e:
         return f"Error: mutation journal preparation failed for {file_path}: {e}"
     try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(new_text)
+        from openprogram.agent.permissions.file_state import write_checked
+        write_checked(file_path, new_text)
     except Exception as e:
         if prepared:
             checkpoint_abort_edit(file_path, str(e))

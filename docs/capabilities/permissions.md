@@ -12,22 +12,26 @@ Use the permission menu in Web or the installed App, or `/permissions` in the te
 
 Bypass does not override explicit deny or ask rules, mandatory plan-exit or self-update approval, plugin restrictions, identity capabilities, or Sandbox.
 
-Approval choices appear at the bottom left of the request. Select Allow once,
-Allow this operation in this project, or Deny, then use Send on the right to submit.
-The project option is offered only when the operation supports a persistent exact
-rule. It applies to the same operation in future sessions in that project.
-Self-update requests offer only one-time approval. A failed rule save is reported
-and does not execute the operation. Chat about this sits
-next to Send. It opens a feedback field while keeping the original question or
-operation visible. Opening or cancelling this field sends nothing. Write your
-feedback and choose Send discussion: after the current wait is declined, your
-feedback and its original context are sent to the same conversation. The model
-replies without executing tools. A declined or expired request leaves an explicit result in its conversation history. Deny alone declines the operation without
-sending a discussion message. Your ordinary chat draft is unchanged.
-The request remains visible until the server confirms the answer. If delivery is
-unknown, retry the original answer; retrying does not create a different approval.
-Refreshing restores the current request, execution version and supported scopes.
-On narrow windows, these controls wrap within the same bottom action area.
+Tool approvals show the current operation and two actions: Allow once and Deny.
+Clicking either submits that decision directly. The request closes only after
+server confirmation; an unconfirmed answer can retry the same decision.
+Persistent rules remain available in History project settings.
+
+Human tool approvals have no default time limit. Waiting saves execution progress
+and releases the active execution attempt; reopening the App restores the pending
+request. Cancelling the task withdraws its approval. Expired older requests are not
+reactivated and cannot authorize a new operation.
+
+For `edit`, `write`, and `apply_patch`, approval records the target files' state.
+Before executing and immediately before writing, the tools check that state.
+A deleted target is not recreated with the old approval. Changed files require
+reading the current contents before proposing another operation. The UI shows
+only the current proposal, without a before/after history. Arbitrary shell
+commands do not declare all their file targets, so this file-specific check does
+not cover arbitrary command side effects.
+
+Ordinary questions retain their answer controls and Chat about this discussion
+entry. Tool approval does not include a discussion editor.
 
 ## Change permissions during a task
 
@@ -45,7 +49,7 @@ Open History → Projects, select the project, and open Settings → Permission 
 
 The interface waits for a project-specific server confirmation before clearing a submitted rule. Failed or unconfirmed saves preserve the input and show a status message. Successful changes update other open views of that project. The next operation in an authenticated interactive owner session reads the current rules, including changes made during a running turn. Already authorized operations retain their authorization; existing approval waits still require their own answer. Already admitted sub-agents retain their captured policy.
 
-Allow once and Deny answer only the current request; they do not create project rules. Allow this operation in this project writes an exact rule and verifies it was saved before execution continues. Removing that rule affects future authorization, not the historical result of an operation that already ran.
+Allow once and Deny answer only the current request; they do not create project rules. Removing a saved project rule affects future authorization, not the historical result of an operation that already ran.
 
 ## Understand a refusal
 

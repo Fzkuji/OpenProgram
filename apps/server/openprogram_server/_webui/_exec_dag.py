@@ -475,9 +475,21 @@ def reconcile_interrupted_runs() -> int:
                 continue
             sid = sess["id"]
             shim = SessionNodeWriter(store, sid)
+            # A durable approval has ended its process intentionally. Restart
+            # must not turn its resumable assistant node into an interruption.
+            from openprogram.execution import default_store as execution_store
+            from openprogram.execution.waits import DurableWaitStore
+            executions = execution_store()
+            waiting_nodes = set()
+            for wait in DurableWaitStore(executions).list_open(session_id=sid):
+                source = executions.get_execution_input(wait.execution_id)
+                if source and source.assistant_message_id:
+                    waiting_nodes.add(source.assistant_message_id)
             for node in store.get_nodes(sid):
                 meta = node.metadata or {}
                 status = meta.get("status")
+                if node.id in waiting_nodes:
+                    continue
                 if status not in {"running", "cancelling"}:
                     continue
                 if status == "cancelling":

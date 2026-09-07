@@ -316,6 +316,11 @@ export function useWS(): void {
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const store = useSessionStore.getState();
             const sid = String(execution.session_id || "");
+            if (["cancelled", "completed", "failed", "interrupted"].includes(String(execution.status))) {
+              for (const decision of store.pendingDecisions) {
+                if (decision.executionId === eid) store.dequeueDecision(decision.id);
+              }
+            }
             if (sid) {
               const current = store.messagesById[eid];
               // 终态不可回退：stopSession 已乐观把消息标 cancelled，服务端
@@ -676,12 +681,18 @@ export function useWS(): void {
           {
             const sid = (d as Record<string, unknown>)?.id;
             if (typeof sid === "string" && sid) {
+              const previousDecisions = useSessionStore.getState().pendingDecisions.filter((q) => q.sessionId === sid);
               void fetch(`/api/questions?session_id=${encodeURIComponent(sid)}`)
                 .then((r) => (r.ok ? r.json() : null))
                 .then((j) => {
-                  const qs = j && Array.isArray(j.questions) ? j.questions : [];
+                  if (!j || !Array.isArray(j.questions)) return;
+                  const qs = j.questions;
                   import("@/lib/session-store").then(({ useSessionStore }) => {
                     const store = useSessionStore.getState();
+                    const openIds = new Set(qs.map((q: Record<string, unknown>) => String(q.id)));
+                    for (const prior of previousDecisions) {
+                      if (!openIds.has(prior.id) && store.pendingDecisions.includes(prior)) store.dequeueDecision(prior.id);
+                    }
                     for (const dd of qs as Record<string, unknown>[]) {
                       if (!dd.id) continue;
                       store.enqueueDecision({

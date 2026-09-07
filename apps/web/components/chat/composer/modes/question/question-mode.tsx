@@ -321,9 +321,21 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
       </div>
         <div className={`${styles.actions} ${styles.footer}`} onKeyDown={onKey} role="group" aria-label={text("Decision actions", "答复操作")}>
           {cur.kind === "approval" && !discussionOpen && (
-            <ApprovalChoices disabled={answerLocked} step={cur} answer={curAns} onChange={(a) => { if (!answerLocked) patch(idx, a); }} />
+            <div className={styles.actionButtons}>
+              <button type="button" className={styles.navBtn}
+                disabled={answerPending || (answerLocked && (curAns as { pick: string }).pick !== "deny")}
+                onClick={() => { patch(idx, { pick: "deny" }); void sendAnswer("execution.wait.decline"); }}>
+                {text("Deny", "拒绝")}
+              </button>
+              <button type="button" className={`${styles.navBtn} ${styles.navBtnPrimary}`}
+                disabled={answerPending || (answerLocked && (curAns as { pick: string }).pick !== "once")}
+                aria-busy={answerPending}
+                onClick={() => { patch(idx, { pick: "once" }); void sendAnswer("execution.wait.answer", { answer: APPROVE_ANSWER, scope: "once" }); }}>
+                {answerPending ? text("Sending…", "提交中…") : text("Allow once", "同意")}
+              </button>
+            </div>
           )}
-          <div className={styles.actionButtons}>
+          {cur.kind !== "approval" && <div className={styles.actionButtons}>
             {discussionOpen ? <>
               <button type="button" className={styles.navBtn} disabled={feedbackLocked}
                 onClick={() => setDiscussionOpen(false)}>{text("Cancel", "取消")}</button>
@@ -348,7 +360,7 @@ export function QuestionMode({ decision: q, onResolve, onChatAbout }: QuestionMo
               {b.label}
             </button>
           ))}
-          </div>
+          </div>}
         </div>
     </>
   );
@@ -497,41 +509,5 @@ function StepBody({
         />
       ) : null}
     </>
-  );
-}
-
-function ApprovalChoices({ step, answer, onChange, disabled = false }: {
-  disabled?: boolean;
-  step: Extract<Step, { kind: "approval" }>;
-  answer: Answer;
-  onChange: (a: Answer) => void;
-}) {
-  const { text } = useTranslation();
-    const pick = (answer as { pick: ApprovalPick | null }).pick;
-    const esc = step.escalation;
-    const scopes = step.allowedScopes ?? ["once"];
-    const picks: ApprovalPick[] = ["once", ...(["always_path", "always"] as const)
-      .filter(scope => scopes.includes(scope) && (scope !== "always_path" || Boolean(esc?.path))), "deny"];
-    const label: Record<ApprovalPick, string> = {
-      once: esc ? text("Allow once", "本次放行") : text("Allow once", "允许一次"),
-      always_path: text("Always allow this path", "总是允许此路径"),
-      always: esc ? text("Always allow", "总是允许") : text("Allow this operation in this project", "允许此项目中的相同操作"),
-      deny: text("Deny", "拒绝"),
-    };
-  return (
-        <div className={`${styles.options} ${styles.approvalOptions}`} role="group" aria-label={text("Approval options", "审批选项")}>
-          {picks.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={styles.opt + (pick === p ? " " + styles.optPicked : "")}
-              disabled={disabled}
-              aria-pressed={pick === p}
-              onClick={() => onChange({ pick: pick === p ? null : p })}
-            >
-              {pick === p ? "✓ " : ""}{label[p]}
-            </button>
-          ))}
-        </div>
   );
 }

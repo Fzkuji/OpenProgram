@@ -10,6 +10,27 @@ export function useWaitAnswer(q: PendingDecision | null, onResolve: (id: string)
   const { text } = useTranslation();
   const [, render] = useState(0);
   const requests = useRef(new Map<string, { command: WaitCommand; busy: boolean }>());
+  async function reconcileRejected() {
+    if (!q) return;
+    try {
+      const response = await fetch(`/api/questions?session_id=${encodeURIComponent(q.sessionId)}`);
+      if (!response.ok) throw new Error("Unable to check request");
+      const data = await response.json();
+      if (!Array.isArray(data.questions)) throw new Error("Invalid request list");
+      const current = data.questions.find((item: { id: string }) => item.id === q.id);
+      if (!current) {
+        onResolve(q.id);
+        showToast(text("This request is no longer pending. Nothing was executed by this answer.", "这条请求已结束，本次答复没有执行操作。"), { tone: "error" });
+        return;
+      }
+      const { useSessionStore } = await import("@/lib/session-store");
+      useSessionStore.getState().enqueueDecision({ ...q,
+        expectedVersion: Number(current.expected_version),
+        waitGeneration: Number(current.wait_generation),
+      });
+    } catch { /* Preserve an unconfirmed request for reconnect recovery. */ }
+    showToast(text("The answer was rejected. Check the current request before retrying.", "答复被拒绝，请检查当前请求后重试。"), { tone: "error" });
+  }
   async function sendAnswer(action: "execution.wait.answer" | "execution.wait.decline", value?: unknown) {
     if (!q?.executionId || !Number.isInteger(q.expectedVersion)) {
       showToast(text("The request is not ready. Reconnect and retry.", "请求尚未就绪，请重连后重试。"), { tone: "error" });
@@ -31,7 +52,7 @@ export function useWaitAnswer(q: PendingDecision | null, onResolve: (id: string)
       const result = await postExecutionCommand(request.command, AbortSignal.timeout(15000));
       if (result.command_id === request.command.command_id && result.status === "rejected") {
         requests.current.delete(q.id);
-        showToast(text("The answer was rejected. Check the current request before retrying.", "答复被拒绝，请检查当前请求后重试。"), { tone: "error" });
+        await reconcileRejected();
         return;
       }
       if (result.command_id !== request.command.command_id || result.status !== "applied") {
@@ -44,7 +65,7 @@ export function useWaitAnswer(q: PendingDecision | null, onResolve: (id: string)
       if (error instanceof ExecutionApiError && error.command?.command_id === request.command.command_id
           && error.command.status === "rejected") {
         requests.current.delete(q.id);
-        showToast(text("The answer was rejected. Check the current request before retrying.", "答复被拒绝，请检查当前请求后重试。"), { tone: "error" });
+        await reconcileRejected();
         return;
       }
       showToast(text("Answer not confirmed. Retry to send the same answer.", "答复尚未确认，请重试发送同一答复。"), { tone: "error" });

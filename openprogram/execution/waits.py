@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 import uuid
 from dataclasses import dataclass
@@ -56,7 +57,7 @@ class WaitRecord:
     answer_ref: str | None
     outcome: str | None
     created_at: float
-    expires_at: float
+    expires_at: float  # Zero means no deadline; claim leases still expire.
     resolved_at: float | None
     updated_at: float
     request: Mapping[str, Any]
@@ -150,12 +151,12 @@ class DurableWaitStore:
             raise ExecutionConflict("invalid_wait_kind", "unsupported wait kind")
         if not execution_id or not attempt_id or type(generation) is not int:
             raise ExecutionConflict("invalid_wait", "execution, attempt, and generation are required")
-        if type(expires_at) not in {int, float}:
+        if type(expires_at) not in {int, float} or not math.isfinite(expires_at):
             raise ExecutionConflict("invalid_wait", "wait expiry must be numeric")
         request_bytes = self._encode(dict(request), limit=_MAX_WAIT_REQUEST_BYTES, field="request")
         policy_bytes = self._encode(dict(policy_snapshot), limit=_MAX_WAIT_REQUEST_BYTES, field="policy snapshot")
         now = time.time()
-        if expires_at <= now:
+        if expires_at != 0 and expires_at <= now:
             raise ExecutionConflict("invalid_wait_expiry", "wait expiry must be in the future")
         wait_id = wait_id or f"wait_{uuid.uuid4().hex}"
         execution = self.executions._require_execution(connection, execution_id)
@@ -378,7 +379,7 @@ class DurableWaitStore:
             row = connection.execute("SELECT * FROM execution_waits WHERE wait_id = ?", (wait_id,)).fetchone()
             if row is None:
                 return False
-            if row["status"] != WaitStatus.OPEN.value or int(row["claim_generation"]) != generation or float(row["expires_at"]) <= current:
+            if row["status"] != WaitStatus.OPEN.value or int(row["claim_generation"]) != generation or (0 < float(row["expires_at"]) <= current):
                 return False
             changed = connection.execute(
                 "UPDATE execution_waits SET status = 'claimed', claim_owner = ?, claim_expires_at = ?, updated_at = ? WHERE wait_id = ? AND status = 'open' AND claim_generation = ?",
@@ -390,7 +391,7 @@ class DurableWaitStore:
         current = time.time() if now is None else float(now)
         with self.executions._transaction() as connection:
             result = connection.execute(
-                "UPDATE execution_waits SET status = 'open', claim_generation = claim_generation + 1, claim_owner = NULL, claim_expires_at = NULL, updated_at = ? WHERE status = 'claimed' AND claim_expires_at IS NOT NULL AND claim_expires_at <= ? AND expires_at > ?",
+                "UPDATE execution_waits SET status = 'open', claim_generation = claim_generation + 1, claim_owner = NULL, claim_expires_at = NULL, updated_at = ? WHERE status = 'claimed' AND claim_expires_at IS NOT NULL AND claim_expires_at <= ? AND (expires_at = 0 OR expires_at > ?)",
                 (current, current, current),
             )
             return int(result.rowcount)
@@ -408,7 +409,7 @@ class DurableWaitStore:
                 "UPDATE execution_waits SET status = 'open', "
                 "claim_generation = claim_generation + 1, claim_owner = NULL, "
                 "claim_expires_at = NULL, updated_at = ? "
-                "WHERE status = 'claimed' AND expires_at > ? AND NOT EXISTS ("
+                "WHERE status = 'claimed' AND (expires_at = 0 OR expires_at > ?) AND NOT EXISTS ("
                 "SELECT 1 FROM attempts AS a JOIN executions AS e "
                 "ON e.execution_id = a.execution_id "
                 "WHERE a.attempt_id = execution_waits.attempt_id "
@@ -426,7 +427,7 @@ class DurableWaitStore:
         current = time.time() if now is None else float(now)
         with self.executions._transaction() as connection:
             rows = connection.execute(
-                "SELECT wait_id, execution_id FROM execution_waits WHERE status IN ('open', 'claimed') AND expires_at <= ?", (current,)
+                "SELECT wait_id, execution_id FROM execution_waits WHERE status IN ('open', 'claimed') AND expires_at > 0 AND expires_at <= ?", (current,)
             ).fetchall()
             for row in rows:
                 connection.execute(
@@ -498,7 +499,7 @@ class DurableWaitStore:
                 resolved_duplicate = True
                 result_command = command
             else:
-                if float(row["expires_at"]) <= now:
+                if 0 < float(row["expires_at"]) <= now:
                     connection.execute(
                         "UPDATE execution_waits SET status = 'expired', outcome = 'timeout', claim_owner = NULL, claim_expires_at = NULL, resolved_at = ?, updated_at = ? WHERE wait_id = ? AND status IN ('open', 'claimed')",
                         (now, now, wait_id),

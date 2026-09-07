@@ -133,7 +133,7 @@ class ExecutionProjectionReadModel:
                 return  # A legacy shared anchor cannot authorize a parent write.
         writer = SessionNodeWriter(default_db(), execution.session_id, advance_head=False)
         node = writer.load().nodes.get(source.assistant_message_id)
-        if node is None or (node.metadata or {}).get("status") not in {None, "running", "error"}:
+        if node is None or (node.metadata or {}).get("status") not in {None, "running", "error", "interrupted"}:
             return
         reason = execution.reason_code
         if (reason in {"wait_declined", "wait_timeout"}

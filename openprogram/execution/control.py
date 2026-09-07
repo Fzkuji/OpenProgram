@@ -585,7 +585,7 @@ class RuntimeControlService:
                 raise AgentSafePointConflict("invalid_wait_policy", f"{field} has an invalid disposition")
         wall_deadline = policy_snapshot.get("wall_deadline_at")
         if wall_deadline is not None and (
-            type(wall_deadline) not in {int, float} or expires_at > wall_deadline
+            type(wall_deadline) not in {int, float} or expires_at == 0 or expires_at > wall_deadline
         ):
             raise AgentSafePointConflict("invalid_wait_policy", "wait expiry exceeds its wall deadline")
         try:

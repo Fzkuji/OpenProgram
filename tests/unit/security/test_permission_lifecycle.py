@@ -11,7 +11,9 @@ from openprogram.agent.types import AgentTool, AgentToolResult
     ("self_update_prepare", None),
     ("exit_plan_mode", None),
 ])
-def test_bypass_preserves_required_approval_manifest(name, rules):
+def test_bypass_preserves_required_approval_manifest(name, rules, monkeypatch):
+    # The interactive wrapper reads current project rules at each operation.
+    monkeypatch.setattr("openprogram.programs.permission_rule.load_merged_rules", lambda _sid: rules)
     async def execute(*args):
         return AgentToolResult(content=[], details={})
     req = TurnRequest(session_id="manifest-audit", user_text="test", agent_id="main",

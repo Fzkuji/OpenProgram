@@ -184,7 +184,7 @@ def test_expired_wait_rejects_command_without_losing_timeout_record(tmp_path) ->
         policy_snapshot={"version": 1}, expires_at=9_999_999_999,
     )
     with executions._transaction() as connection:
-        connection.execute("UPDATE execution_waits SET expires_at = 0 WHERE wait_id = ?", (wait.wait_id,))
+        connection.execute("UPDATE execution_waits SET expires_at = 1 WHERE wait_id = ?", (wait.wait_id,))
     dispatch = asyncio.run(RuntimeControlService(executions, attempts, DriverRegistry()).request_wait_answer(
         command_id="expired_answer", execution_id=execution.execution_id,
         expected_version=execution.status_version, actor={"surface": "test"},
@@ -371,10 +371,70 @@ def test_timeout_policy_is_persisted_and_settled_on_startup(tmp_path) -> None:
         wait_id="wait_timeout",
     )
     with executions._transaction() as connection:
-        connection.execute("UPDATE execution_waits SET expires_at = 0 WHERE wait_id = ?", (suspended.wait.wait_id,))
+        connection.execute("UPDATE execution_waits SET expires_at = 1 WHERE wait_id = ?", (suspended.wait.wait_id,))
 
     recover_execution_startup(control_service=service)
 
     timed_out = DurableWaitStore(executions).get_wait("wait_timeout")
     assert timed_out is not None and timed_out.status is WaitStatus.EXPIRED
     assert executions.get_execution(execution.execution_id).status.value == "failed"
+
+
+def test_no_deadline_wait_survives_long_delay_and_store_reopen(tmp_path):
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    waits = DurableWaitStore(executions)
+    wait = waits.open_wait(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, kind='approval',
+        request={'prompt': 'Allow?'}, policy_snapshot={'version': 1}, expires_at=0,
+    )
+    restored = DurableWaitStore(ExecutionStore(tmp_path / 'executions.db'))
+    assert restored.expire_due(now=wait.created_at + 86400 * 365) == 0
+    assert restored.get_wait(wait.wait_id).status is WaitStatus.OPEN
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    result = asyncio.run(service.request_wait_answer(
+        command_id='long_wait_answer', execution_id=execution.execution_id,
+        expected_version=execution.status_version, actor={'surface': 'test'},
+        wait_id=wait.wait_id, generation=0, answer={'answer': 'allow', 'scope': 'once'},
+    ))
+    assert result.command.status.value == 'applied'
+
+
+@pytest.mark.parametrize('change', ['unchanged', 'modified', 'deleted'])
+def test_file_approval_rechecks_durable_state_on_resume(tmp_path, monkeypatch, change):
+    from types import SimpleNamespace
+    from openprogram.agent.permissions.approval import await_user_approval
+    from openprogram.agent.permissions.file_state import capture
+    from openprogram.agent.run_control import set_preapproved_wait_id, reset_preapproved_wait_id
+    path = tmp_path / 'approved.txt'
+    path.write_text('original')
+    args = {'file_path': str(path), 'content': 'replacement'}
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    wait = DurableWaitStore(executions).open_wait(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, kind='approval', expires_at=0,
+        request={'prompt': 'Allow?', 'tool': 'write', 'args': args,
+                 'file_preconditions': capture('write', args)},
+        policy_snapshot={'version': 1},
+    )
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    asyncio.run(service.request_wait_answer(
+        command_id='file_answer', execution_id=execution.execution_id,
+        expected_version=execution.status_version, actor={'surface': 'test'},
+        wait_id=wait.wait_id, generation=0, answer={'answer': 'approve', 'scope': 'once'},
+    ))
+    if change == 'modified': path.write_text('user contents')
+    if change == 'deleted': path.unlink()
+    monkeypatch.setattr(execution_module, 'default_store', lambda: ExecutionStore(tmp_path / 'executions.db'))
+    token = set_preapproved_wait_id(wait.wait_id)
+    try:
+        approved, reason, _ = asyncio.run(await_user_approval(
+            req=SimpleNamespace(session_id=execution.session_id), tool_name='write', args=args, on_event=lambda _: None,
+        ))
+    finally:
+        reset_preapproved_wait_id(token)
+    assert approved is (change == 'unchanged')
+    if change == 'deleted':
+        assert 'no longer exists' in reason
+        assert not path.exists()
+    if change == 'modified': assert path.read_text() == 'user contents'
