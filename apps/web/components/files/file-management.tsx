@@ -60,7 +60,7 @@ export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: s
   const ref = useRef<HTMLElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
   const parts = path.split("/").filter(Boolean);
-  const [firstVisible, setFirstVisible] = useState(Math.max(0, parts.length - 1));
+  const [{ firstVisible, leadingWidth }, setLayout] = useState<{ firstVisible: number; leadingWidth?: number }>({ firstVisible: Math.max(0, parts.length - 1) });
   useEffect(() => {
     let disposed = false;
     const fit = () => {
@@ -78,7 +78,17 @@ export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: s
           remaining -= segments[first++];
         }
       }
-      setFirstVisible(first);
+      // Use spare space for one readable ancestor fragment instead of
+      // discarding an entire segment just because its full name cannot fit.
+      let leadingWidth: number | undefined;
+      if (first > 0) {
+        const spare = available - rootWidth - remaining - (first > 1 ? widths[1] + 16 : 0);
+        if (spare >= 48) {
+          first--;
+          leadingWidth = spare - 2; // The surrounding nav contributes its gap.
+        }
+      }
+      setLayout({ firstVisible: first, leadingWidth });
     };
     const observer = new ResizeObserver(fit);
     if (ref.current) observer.observe(ref.current);
@@ -90,7 +100,7 @@ export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: s
   return <><nav ref={ref} className={styles.fileBreadcrumb} aria-label={text("File path", "文件路径")}>
     <span ref={measureRef} className={styles.fileBreadcrumbMeasure} aria-hidden="true">{[root, "…", ...parts].map((name, i) => <span key={i}>{name}</span>)}</span>
     {crumb(root, "")}{firstVisible > 0 ? <span className={styles.fileCrumbPart}><ChevronRight /><Popover><PopoverTrigger asChild><button title={text("Parent folders", "上级文件夹")}>…</button></PopoverTrigger><PopoverContent className={styles.fileCrumbMenu}>{parts.slice(0, firstVisible).map((part, i) => <div key={i}>{crumb(part, parts.slice(0, i + 1).join("/"))}</div>)}</PopoverContent></Popover></span> : null}
-    {parts.map((part, i) => i < firstVisible ? null : <span className={styles.fileCrumbPart} key={i}><ChevronRight />{crumb(part, parts.slice(0, i + 1).join("/"))}</span>)}
+    {parts.map((part, i) => i < firstVisible ? null : <span className={styles.fileCrumbPart} style={i === firstVisible && leadingWidth !== undefined ? { maxWidth: leadingWidth } : undefined} key={i}><ChevronRight />{crumb(part, parts.slice(0, i + 1).join("/"))}</span>)}
   </nav><button type="button" className={styles.iconBtn} disabled={!absolutePath} aria-label={text("Copy absolute path", "复制绝对路径")} title={text("Copy absolute path", "复制绝对路径")} onClick={() => { if (absolutePath) void copyText(absolutePath); }}><Copy /></button></>;
 }
 

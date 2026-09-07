@@ -158,6 +158,11 @@ test("breadcrumb uses available width and reveals more ancestors when resized", 
     await act(async () => root.render(h(api.FileBreadcrumb, { root: "fzkuji", path: "Desktop/EasyEdit/easyeditor/evaluate", onLocate: noop })));
     const visible = () => [...document.querySelectorAll('nav button')].map(button => button.textContent);
     assert.deepEqual(visible(), ["fzkuji", "…", "EasyEdit", "easyeditor", "evaluate"]);
+    available = 190;
+    await act(async () => resize());
+    assert.deepEqual(visible(), ["fzkuji", "…", "easyeditor", "evaluate"], "use spare width for a truncated ancestor");
+    const partial = document.querySelector('button[title="Desktop/EasyEdit/easyeditor"]');
+    assert.equal(partial.parentElement.style.maxWidth, "56px");
     available = 400;
     await act(async () => resize());
     assert.deepEqual(visible(), ["fzkuji", "Desktop", "EasyEdit", "easyeditor", "evaluate"]);
