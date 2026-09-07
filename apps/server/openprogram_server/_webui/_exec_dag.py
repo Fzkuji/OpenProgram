@@ -317,6 +317,10 @@ def _poll(session_id: str, msg_id: str, func_name: str,
                 sig = json.dumps(tree, default=str, sort_keys=True)
                 if force or sig != state["last_tree"]:
                     state["last_tree"] = sig
+                    # Standalone function calls have no assistant caller.
+                    # Address their existing code node instead of sending an
+                    # empty message id that the transcript reducer discards.
+                    frame_msg_id = msg_id or tree["path"]
                     if on_event is not None:
                         try:
                             on_event({
@@ -324,7 +328,7 @@ def _poll(session_id: str, msg_id: str, func_name: str,
                                 "data": {
                                     "type": "tree_update",
                                     "session_id": session_id,
-                                    "msg_id": msg_id,
+                                    "msg_id": frame_msg_id,
                                     "tree": tree,
                                     "function": func_name,
                                 },
@@ -332,7 +336,7 @@ def _poll(session_id: str, msg_id: str, func_name: str,
                         except Exception:
                             pass
                     else:
-                        _s._broadcast_chat_response(session_id, msg_id, {
+                        _s._broadcast_chat_response(session_id, frame_msg_id, {
                             "type": "tree_update",
                             "tree": tree,
                             "function": func_name,
