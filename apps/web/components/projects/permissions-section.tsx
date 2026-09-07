@@ -6,23 +6,17 @@
  * 规则语法见 permission_rule.py（ToolName 或 ToolName(pattern)）。
  * 见 permission-model.md §2.2 / §4.6。
  */
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 import { useTranslation } from "@/lib/i18n";
 import { wsRequest } from "@/lib/net/ws-request";
-import { getSocket } from "@/lib/runtime-bridge/state";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type Behavior = "deny" | "ask" | "allow";
 type Rules = Record<Behavior, string[]>;
 
 const EMPTY: Rules = { deny: [], ask: [], allow: [] };
-
-function wsSend(payload: unknown): boolean {
-  const ws = getSocket();
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-  ws.send(JSON.stringify(payload));
-  return true;
-}
 
 const BEHAVIORS: { key: Behavior; en: string; zh: string; color: string }[] = [
   { key: "deny", en: "Deny", zh: "拒绝", color: "var(--danger, #d72518)" },
@@ -32,46 +26,69 @@ const BEHAVIORS: { key: Behavior; en: string; zh: string; color: string }[] = [
 
 export function PermissionsSection({ projectId }: { projectId: string }) {
   const { text } = useTranslation();
+  const currentProject = useRef(projectId);
+  currentProject.current = projectId;
+  const [pending, setPending] = useState(false);
+  const busy = useRef(false);
+  const [notice, setNotice] = useState("");
   const [rules, setRules] = useState<Rules>(EMPTY);
   const [draft, setDraft] = useState<Record<Behavior, string>>({
     deny: "", ask: "", allow: "",
   });
 
-  const refresh = useCallback(async () => {
-    if (!projectId) return;
-    const d = await wsRequest<{ project_id: string } & Rules>(
-      "list_permission_rules", { project_id: projectId }, "permission_rules",
-    );
-    if (d) setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
+  type Reply = Partial<Rules> & { project_id?: string; status?: string; error?: string };
+  const request = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
+    return wsRequest<Reply>(action, { project_id: projectId, ...payload }, "permission_rules",
+      (d) => d.project_id === projectId, 10000, { requestId: true });
   }, [projectId]);
-
-  // 收后端广播的 permission_rules 帧（只认本项目）。
   useEffect(() => {
+    const controller = new AbortController();
+    setRules(EMPTY);
+    setDraft({ deny: "", ask: "", allow: "" });
+    setNotice("");
+    const refresh = async () => {
+      const d = await request("list_permission_rules");
+      if (controller.signal.aborted) return;
+      if (!d || d.status === "error") {
+        setNotice(d?.error || text("Could not load rules. Reconnect and reopen this project.", "无法加载规则，请恢复连接后重新打开项目。"));
+        return;
+      }
+      setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
+    };
     function onRules(e: WindowEventMap["op:permission-rules"]) {
-      const d = e.detail;
-      if (d?.project_id !== projectId) return;
+      const d = e.detail as Reply;
+      if (d?.project_id !== projectId || d.status === "error") return;
       setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
     }
     window.addEventListener("op:permission-rules", onRules);
-    refresh();
-    return () => window.removeEventListener("op:permission-rules", onRules);
-  }, [projectId, refresh]);
+    void refresh();
+    return () => { controller.abort(); window.removeEventListener("op:permission-rules", onRules); };
+  }, [projectId, request, text]);
 
-  const add = useCallback((behavior: Behavior) => {
-    const rule = draft[behavior].trim();
-    if (!rule || !projectId) return;
-    wsSend({ action: "add_permission_rule", project_id: projectId, behavior, rule });
-    setDraft((d) => ({ ...d, [behavior]: "" }));
-  }, [draft, projectId]);
-
-  const remove = useCallback((behavior: Behavior, rule: string) => {
-    if (!projectId) return;
-    wsSend({ action: "remove_permission_rule", project_id: projectId, behavior, rule });
-  }, [projectId]);
+  const mutate = async (behavior: Behavior, rule: string, add: boolean) => {
+    if (!rule || busy.current) return;
+    busy.current = true;
+    setPending(true);
+    setNotice("");
+    try {
+      const d = await request(add ? "add_permission_rule" : "remove_permission_rule", { behavior, rule });
+      if (currentProject.current !== projectId) return;
+      if (!d || d.status === "error") {
+        setNotice(d?.error || text("Save not confirmed. Your input is preserved; retry after reconnecting.", "尚未确认保存，输入已保留；恢复连接后可重试。"));
+        return;
+      }
+      setRules({ deny: d.deny ?? [], ask: d.ask ?? [], allow: d.allow ?? [] });
+      if (add) setDraft((old) => ({ ...old, [behavior]: old[behavior].trim() === rule ? "" : old[behavior] }));
+      setNotice(text("Saved", "已保存"));
+    } finally { busy.current = false; setPending(false); }
+  };
+  const add = (behavior: Behavior) => void mutate(behavior, draft[behavior].trim(), true);
+  const remove = (behavior: Behavior, rule: string) => void mutate(behavior, rule, false);
 
   return (
-    <div>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
+    <div aria-busy={pending}>
+      {notice && <p role="status">{notice}</p>}
+      <p style={{ color: "var(--text-muted)", fontSize: "var(--fs-base)", marginTop: 0 }}>
         {text(
           "Rules travel with the project. Syntax: ToolName or ToolName(pattern), e.g. bash(git:*).",
           "规则跟随项目保存。语法：工具名 或 工具名(模式)，如 bash(git:*)。",
@@ -89,7 +106,7 @@ export function PermissionsSection({ projectId }: { projectId: string }) {
           </div>
 
           {rules[key].length === 0 ? (
-            <div style={{ color: "var(--text-muted)", fontSize: 13, paddingLeft: 16 }}>
+            <div style={{ color: "var(--text-muted)", fontSize: "var(--fs-base)", paddingLeft: 16 }}>
               {text("No rules.", "暂无规则。")}
             </div>
           ) : (
@@ -101,22 +118,25 @@ export function PermissionsSection({ projectId }: { projectId: string }) {
                   background: "var(--bg-tertiary)", marginBottom: 4,
                 }}>
                   <code style={{ fontFamily: "var(--font-mono)" }}>{rule}</code>
-                  <button
+                  <Button
                     type="button"
+                    disabled={pending}
                     onClick={() => remove(key, rule)}
                     style={{
                       background: "none", border: "none", cursor: "pointer",
                       color: "var(--text-muted)", fontSize: 16,
                     }}
                     aria-label={text("Remove", "删除")}
-                  >×</button>
+                  >×</Button>
                 </li>
               ))}
             </ul>
           )}
 
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-            <input
+            <Input
+              disabled={pending}
+              aria-label={`${text(en, zh)} ${text("rule", "规则")}`}
               value={draft[key]}
               onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
               onKeyDown={(e) => { if (e.key === "Enter") add(key); }}
@@ -127,15 +147,16 @@ export function PermissionsSection({ projectId }: { projectId: string }) {
                 color: "var(--text-primary)",
               }}
             />
-            <button
+            <Button
               type="button"
+              disabled={pending || !draft[key].trim()}
               onClick={() => add(key)}
               style={{
                 padding: "6px 14px", borderRadius: 8,
                 border: "1px solid var(--border)", background: "var(--bg-tertiary)",
                 color: "var(--text-primary)", cursor: "pointer",
               }}
-            >{text("Add", "添加")}</button>
+            >{text("Add", "添加")}</Button>
           </div>
         </div>
       ))}

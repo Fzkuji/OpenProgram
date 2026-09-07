@@ -15,6 +15,10 @@ def current_permission_request(request):
     if state.get("principal_id") == req.principal_id:
         req.permission_mode = state["mode"]
         req._permission_version = state["version"]
+    # Project rule edits apply at the next operation boundary, including
+    # revocations made in History while this owner turn is running.
+    from openprogram.programs.permission_rule import load_merged_rules
+    req.permission_rules = load_merged_rules(req.session_id)
     return req
 
 

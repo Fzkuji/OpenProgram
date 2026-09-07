@@ -39,6 +39,14 @@ Changes are session-specific. Other windows receive the confirmed mode; stale up
 
 The effective default is the session override, then the project default, then Ask permissions. A sub-agent created by an authenticated owner Agent inherits the parent’s effective permission mode and explicit rules at creation. For example, a parent using Bypass can create a sub-agent that runs ordinary commands without approval. The sub-agent keeps its own identity and non-interactive restrictions; explicit ask rules and mandatory approvals still prevent operations that require an approver. Later mode changes do not rewrite already admitted sub-agents. Independent scheduled tasks and external channels do not acquire owner permissions or Bypass from a local session.
 
+## Manage project rules in History
+
+Open History → Projects, select the project, and open Settings → Permission Rules. The three lists contain that project's Deny, Ask and Allow rules. Add a rule with `ToolName` or `ToolName(pattern)` syntax; remove an existing rule to revoke it. To change a rule, remove the old entry and add its replacement. Deny takes precedence over Ask, which takes precedence over Allow. Session and global rules can still affect the result even when the project list is empty.
+
+The interface waits for a project-specific server confirmation before clearing a submitted rule. Failed or unconfirmed saves preserve the input and show a status message. Successful changes update other open views of that project. The next operation in an authenticated interactive owner session reads the current rules, including changes made during a running turn. Already authorized operations retain their authorization; existing approval waits still require their own answer. Already admitted sub-agents retain their captured policy.
+
+Allow once and Deny answer only the current request; they do not create project rules. Allow this operation in this project writes an exact rule and verifies it was saved before execution continues. Removing that rule affects future authorization, not the historical result of an operation that already ran.
+
 ## Understand a refusal
 
 For Windows path rules, forward slashes avoid escaping ambiguity: for example,

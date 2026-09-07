@@ -44,7 +44,8 @@ def _persist_always_allow_rule(session_id: str, tool_name: str, args: dict) -> b
             allow.append(serialized)
         settings["permission_rules"] = rules
         _projects.save_project_settings(proj.id, settings)
-        return True
+        saved = _projects.load_project_settings(proj.id)
+        return serialized in (saved.get("permission_rules") or {}).get("allow", [])
     except Exception:
         return False
 

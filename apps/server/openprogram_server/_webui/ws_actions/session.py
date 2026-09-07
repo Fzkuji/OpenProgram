@@ -1239,39 +1239,54 @@ def _broadcast_permission_rules(project_id: str) -> None:
     }}))
 
 
-async def handle_list_permission_rules(ws, cmd: dict):
-    pid = _resolve_project_id(cmd)
-    if pid:
-        _broadcast_permission_rules(pid)
-
-
-def _mutate_project_rule(cmd: dict, *, add: bool) -> None:
-    pid = _resolve_project_id(cmd)
-    behavior = cmd.get("behavior")     # "allow" | "deny" | "ask"
-    rule = (cmd.get("rule") or "").strip()
-    if not (pid and behavior in ("allow", "deny", "ask") and rule):
-        return
+async def _reply_permission_rules(ws, cmd: dict, *, add: bool | None = None):
     from openprogram.store.project import project_store as _projects
-    settings = _projects.load_project_settings(pid)
-    rules = settings.get("permission_rules") or {"allow": [], "deny": [], "ask": []}
-    lst = rules.setdefault(behavior, [])
-    if add and rule not in lst:
-        lst.append(rule)
-    elif not add and rule in lst:
-        lst.remove(rule)
-    settings["permission_rules"] = rules
-    _projects.save_project_settings(pid, settings)
-    _broadcast_permission_rules(pid)
+    from openprogram.programs.permission_rule import parse_rule
+    import re
+
+    pid = _resolve_project_id(cmd)
+    response = {"project_id": pid, "request_id": cmd.get("request_id"),
+                "action": cmd.get("action"), "status": "ok"}
+    try:
+        if not pid or _projects.get_project(pid) is None:
+            raise ValueError("Project not found")
+        if add is not None:
+            behavior, raw = cmd.get("behavior"), cmd.get("rule")
+            if behavior not in ("allow", "deny", "ask") or not isinstance(raw, str):
+                raise ValueError("Invalid permission rule")
+            rule = raw.strip()
+            if not rule or len(rule) > 8192:
+                raise ValueError("Invalid permission rule")
+            if add and not re.fullmatch(r"[\w.*:-]+", parse_rule(rule).tool_name):
+                raise ValueError("Use ToolName or ToolName(pattern)")
+            settings = _projects.load_project_settings(pid)
+            rules = _project_rules(pid)
+            entries = rules[behavior]
+            if add and rule not in entries:
+                entries.append(rule)
+            elif not add and rule in entries:
+                entries.remove(rule)
+            settings["permission_rules"] = rules
+            _projects.save_project_settings(pid, settings)
+            if _project_rules(pid) != rules:
+                raise OSError("Permission rules could not be saved")
+            _broadcast_permission_rules(pid)
+        response.update(_project_rules(pid))
+    except (ValueError, OSError, TypeError) as exc:
+        response.update(status="error", error=str(exc))
+    await ws.send_text(json.dumps({"type": "permission_rules", "data": response}))
+
+
+async def handle_list_permission_rules(ws, cmd: dict):
+    await _reply_permission_rules(ws, cmd)
 
 
 async def handle_add_permission_rule(ws, cmd: dict):
-    """加一条规则到项目层的 allow/deny/ask 列表。"""
-    _mutate_project_rule(cmd, add=True)
+    await _reply_permission_rules(ws, cmd, add=True)
 
 
 async def handle_remove_permission_rule(ws, cmd: dict):
-    """从项目层移除一条规则。"""
-    _mutate_project_rule(cmd, add=False)
+    await _reply_permission_rules(ws, cmd, add=False)
 
 
 # ── 会话额外工作目录（additional-working-directories.md §3.2）──
