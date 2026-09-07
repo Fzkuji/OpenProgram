@@ -9,6 +9,83 @@ import tempfile
 
 import pytest
 
+from tests.support.waiting import wait_until
+
+
+def _is_under(path: Path | str | None, root: Path) -> bool:
+    if path is None:
+        return False
+    try:
+        resolved = Path(path).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return resolved == root or resolved.is_relative_to(root)
+
+
+def _release_native_workspace(root: Path) -> None:
+    """Drain process-local singletons redirected into the eager runtime copy."""
+    from openprogram.agent.job import runner as runner_mod
+    from openprogram.agent.job.runner import shutdown_runner
+    from openprogram.execution.projections import stop_projection_worker
+    from openprogram.execution.store import _store_for_path
+    from openprogram.store.session import session_store as ss_mod
+    from openprogram.usage.ledger import default_ledger
+
+    existing = runner_mod._runner
+    if existing is not None:
+        maintenance_threads = (
+            existing._dispatcher_thread,
+            existing._reconciler_thread,
+            existing._budget_thread,
+        )
+        existing.shutdown(wait=True)
+        if not wait_until(lambda: all(not thread.is_alive() for thread in maintenance_threads)):
+            raise RuntimeError(
+                "JobRunner maintenance thread still running after shutdown; "
+                "not clearing the singleton or deleting the workspace"
+            )
+        shutdown_runner()
+    if not stop_projection_worker():
+        raise RuntimeError("execution projection worker did not stop before native workspace cleanup")
+    cached = getattr(ss_mod, "_default_store", None)
+    if cached is not None and _is_under(getattr(cached, "root_path", None), root):
+        cached.close()
+        ss_mod._default_store = None
+    default_ledger.close()
+    _store_for_path.cache_clear()
+
+
+def _native_workspace_dir(tmp_path: Path):
+    directory = tempfile.TemporaryDirectory(dir=tmp_path, prefix="controller-native-")
+    root = Path(directory.name)
+    try:
+        yield root
+    finally:
+        _release_native_workspace(root)
+        directory.cleanup()
+
+
+def _start_redirected_state_writers(root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from openprogram import paths
+    from openprogram.agent.job.runner import get_runner, shutdown_runner
+    from openprogram.agent.session_db import default_db
+    from openprogram.store.session import session_store as ss_mod
+
+    state = root / "owner" / ".openprogram"
+    monkeypatch.setattr(paths, "get_state_dir", lambda: state)
+    monkeypatch.setattr(
+        "openprogram.worker.lock.is_held_by", lambda _pid: True, raising=False,
+    )
+    monkeypatch.setattr("openprogram.agent.job.runner._broadcast", lambda *a, **k: None)
+    shutdown_runner()
+    ss_mod._default_store = None
+    db = default_db()
+    db.create_session("late-writer", "main")
+    get_runner()
+    assert db.root_path.resolve().is_relative_to(root.resolve())
+    assert (state / "sessions").is_dir()
+    assert (state / "usage.db").is_file() or (state / "executions.db").is_file()
+
 
 @pytest.fixture
 def fake_resources(tmp_path, monkeypatch):
@@ -69,8 +146,47 @@ def test_snapshot_failure_does_not_publish_or_leave_partial_copy(fake_resources,
 @pytest.fixture
 def native_workspace(tmp_path):
     # The complete runtime is large; do not retain copies in pytest's cache.
-    with tempfile.TemporaryDirectory(dir=tmp_path, prefix="controller-native-") as directory:
-        yield Path(directory)
+    yield from _native_workspace_dir(tmp_path)
+
+
+def test_native_workspace_stops_redirected_state_writers_before_cleanup(tmp_path, monkeypatch):
+    from openprogram.agent.job import runner as runner_mod
+
+    gen = _native_workspace_dir(tmp_path)
+    root = next(gen)
+    original_cleanup = tempfile.TemporaryDirectory.cleanup
+    cleanup_observed = False
+    try:
+        _start_redirected_state_writers(root, monkeypatch)
+        runner = runner_mod._runner
+        assert runner is not None
+        maintenance_threads = (
+            runner._dispatcher_thread,
+            runner._reconciler_thread,
+            runner._budget_thread,
+        )
+        assert wait_until(lambda: all(thread.is_alive() for thread in maintenance_threads))
+        assert root.exists()
+
+        def check_cleanup(directory):
+            nonlocal cleanup_observed
+            if Path(directory.name) == root:
+                assert all(not thread.is_alive() for thread in maintenance_threads)
+                assert root.exists()
+                cleanup_observed = True
+            original_cleanup(directory)
+
+        monkeypatch.setattr(tempfile.TemporaryDirectory, "cleanup", check_cleanup)
+        with pytest.raises(StopIteration):
+            next(gen)
+        assert cleanup_observed
+        assert not root.exists()
+    finally:
+        # Also release writers when checking a broken fixture implementation.
+        _release_native_workspace(root)
+        gen.close()
+        if root.exists():
+            shutil.rmtree(root)
 
 
 def test_native_controller_imports_after_original_runtime_is_moved(native_workspace, monkeypatch):
