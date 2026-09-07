@@ -641,7 +641,7 @@
 .fileBreadcrumb button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 32px; padding: 6px 8px; background: transparent; border: 0; border-radius: var(--ui-list-radius); cursor: pointer; }
 .fileBreadcrumb > button { flex: 0 0 auto; max-width: 40%; }
 .fileBreadcrumb button:hover, .fileCrumbMenu button:hover { background: var(--bg-hover); }
-.fileBreadcrumb svg { width: 12px; height: 12px; flex-shrink: 0; }
+.fileBreadcrumb svg { width: 12px; height: 12px; margin-inline: -4px; flex-shrink: 0; pointer-events: none; }
 .fileCrumbPart { display: flex; align-items: center; gap: 0; min-width: 0; flex-shrink: 0; }
 .fileCrumbPart:last-child { color: var(--text-primary); flex: 0 1 auto; }
 .fileCrumbMenu { width: max-content; min-width: 140px; max-width: min(300px, calc(100vw - 24px)); }

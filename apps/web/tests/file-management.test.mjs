@@ -162,15 +162,15 @@ test("breadcrumb uses available width and reveals more ancestors when resized", 
     assert.deepEqual(visible(), ["fzkuji", "Desktop", "EasyEdit", "easyeditor", "evaluate"], "compact separators expose another ancestor");
     available = 190;
     await act(async () => resize());
-    assert.deepEqual(visible(), ["fzkuji", "…", "easyeditor", "evaluate"], "use spare width for a truncated ancestor");
+    assert.deepEqual(visible(), ["fzkuji", "…", "easyeditor", "evaluate"], "compact arrows fit the ancestor without truncation");
     const partial = document.querySelector('button[data-path="Desktop/EasyEdit/easyeditor"]');
-    assert.equal(partial.parentElement.style.maxWidth, "66px");
+    assert.equal(partial.parentElement.style.maxWidth, "");
     available = 400;
     await act(async () => resize());
     assert.deepEqual(visible(), ["fzkuji", "Desktop", "EasyEdit", "easyeditor", "evaluate"]);
     available = 220;
     await act(async () => resize());
-    assert.deepEqual(visible(), ["fzkuji", "…", "easyeditor", "evaluate"]);
+    assert.deepEqual(visible(), ["fzkuji", "…", "EasyEdit", "easyeditor", "evaluate"]);
   } finally {
     await act(async () => root.unmount());
     prototype.getBoundingClientRect = oldRect;

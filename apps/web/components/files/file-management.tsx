@@ -75,12 +75,12 @@ export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: s
       if (!available) return;
       const widths = Array.from(measureRef.current.children, item => item.getBoundingClientRect().width);
       const rootWidth = Math.min(widths[0], available * .4);
-      // Each non-root segment adds only the 12px chevron; CSS gaps are zero.
-      const segments = widths.slice(2).map(width => width + 12);
+      // The 12px chevron has -4px margins on each side; buttons keep their padding.
+      const segments = widths.slice(2).map(width => width + 4);
       let remaining = segments.reduce((sum, width) => sum + width, 0);
       let first = 0;
       if (rootWidth + remaining > available) {
-        while (first < segments.length - 1 && rootWidth + widths[1] + 12 + remaining > available) {
+        while (first < segments.length - 1 && rootWidth + widths[1] + 4 + remaining > available) {
           remaining -= segments[first++];
         }
       }
@@ -88,7 +88,7 @@ export function FileBreadcrumb({ root, path, absolutePath, onLocate }: { root: s
       // discarding an entire segment just because its full name cannot fit.
       let leadingWidth: number | undefined;
       if (first > 0) {
-        const spare = available - rootWidth - remaining - (first > 1 ? widths[1] + 12 : 0);
+        const spare = available - rootWidth - remaining - (first > 1 ? widths[1] + 4 : 0);
         if (spare >= 48) {
           first--;
           leadingWidth = spare;
