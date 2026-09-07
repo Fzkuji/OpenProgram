@@ -96,8 +96,10 @@ class ResourceUseStore:
 
 @contextmanager
 def resource_use(kind: str, title: str, target: str = "", *, store=None):
-    """Report an integration's period of use with trusted runtime attribution.
+    """Report use of a complete software/environment object with trusted attribution.
 
+    Identify the actual application, VM, container or remote environment.
+    Commands, scripts, processes, files and execution output belong in Activity.
     Leaving the context releases the use record, never the external resource.
     Integrations retain their existing control and teardown responsibilities.
     """

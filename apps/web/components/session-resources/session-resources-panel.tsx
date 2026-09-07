@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Box, File, Globe, Monitor, Pin, PinOff, Search, Server, Terminal, X } from "lucide-react";
+import { useState } from "react";
+import { Box, Globe, Monitor, Pin, PinOff, Search, Server, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { resourceSessionId, sessionResourceRows, type SessionResource } from "@/lib/state/session-resources";
 import { useSessionResources } from "@/lib/use-session-resources";
 import { useSessionStore } from "@/lib/session-store";
-import { getProcess } from "@/lib/net/process-client";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./session-resources.module.css";
 
@@ -26,22 +25,11 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<SessionResource | null>(null);
-  const [output, setOutput] = useState<string | null>(null);
-  useEffect(() => {
-    setOutput(null);
-    if (selected?.source !== "process") return;
-    const controller = new AbortController();
-    void getProcess(selected.sourceId, controller.signal, (selected.scopeSessionId || selected.sessionId)).then(
-      result => { if (!controller.signal.aborted) setOutput(result.output); },
-      () => { if (!controller.signal.aborted) setOutput(text("Output unavailable", "无法读取输出")); },
-    );
-    return () => controller.abort();
-  }, [selected?.id, text]);
   const needle = query.trim().toLocaleLowerCase();
   const rows = sessionResourceRows(tabs, backend.rows, sessionId);
   const names: Record<string, string> = {
-    web: text("Webpage", "网页"), file: text("File", "文件"), terminal: text("Terminal", "终端"), docker: "Docker", vm: "VM",
-    ssh: "SSH", desktop: text("Desktop", "桌面"), process: text("Process", "进程"),
+    web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: "VM",
+    remote: text("Remote environment", "远程环境"), desktop: text("Desktop", "桌面"),
   };
   const groups = new Map<string, { title: string; rows: SessionResource[] }>();
   for (const row of rows) {
@@ -54,7 +42,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
     groups.get(key)!.rows.push(row);
   }
   const ordered = [...groups];
-  const icons = { web: Globe, file: File, docker: Box, vm: Monitor, ssh: Server, desktop: Monitor, process: Terminal, terminal: Terminal };
+  const icons = { web: Globe, docker: Box, vm: Monitor, remote: Server, desktop: Monitor };
   const statusName = (status: string) => ({
     open: text("Open", "已打开"), in_use: text("In use", "使用中"), attached: text("Attached", "已关联"),
     running: text("Running", "运行中"), starting: text("Starting", "启动中"), stopping: text("Stopping", "停止中"), unknown: text("Unknown", "状态未知"), released: text("Released", "已释放"),
@@ -83,7 +71,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
           return <div key={row.id} className={styles.row} data-resource-kind={row.kind}
             data-active={selected?.id === row.id || row.sourceId === activeId}>
             <button type="button" className={styles.page} title={row.target} onClick={() => {
-              if (row.source === "web" || row.source === "file" || row.source === "terminal") {
+              if (row.source === "web") {
                 useCenterTabs.getState().setActive(row.sourceId);
                 if (window.location.pathname !== "/chat" && !window.location.pathname.startsWith("/s/")) router.push("/chat");
               } else setSelected(row);
@@ -104,7 +92,6 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
       <button type="button" className={styles.action} aria-label={text("Close resource details", "关闭资源详情")} onClick={() => setSelected(null)}><X size={14} /></button>
       <strong>{selected.title}</strong><p>{names[selected.kind] || selected.kind} · {statusName(rows.find(row => row.id === selected.id)?.status || "released")}</p>
       <p>{selected.target}</p>
-      {selected.source === "process" && <pre>{output ?? text("Loading output…", "正在读取输出…")}</pre>}
     </div>}
   </section>;
 }

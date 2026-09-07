@@ -32,9 +32,11 @@ def test_dead_or_reused_owner_is_not_an_active_resource(tmp_path, monkeypatch):
     assert store.list("session-a") == []
 
 
-def test_docker_reports_use_only_while_running(tmp_path, monkeypatch):
+@pytest.mark.parametrize("backend_kind", ["docker", "ssh"])
+def test_code_backends_do_not_register_software_resources(tmp_path, monkeypatch, backend_kind):
     from openprogram.session_resources import ResourceUseStore
     from openprogram.backend.docker import DockerBackend
+    from openprogram.backend.ssh import SshBackend
     from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
@@ -42,15 +44,14 @@ def test_docker_reports_use_only_while_running(tmp_path, monkeypatch):
     store = ResourceUseStore()
     def run(*args, **kwargs):
         rows = store.list("session-a")
-        assert len(rows) == 1
-        assert rows[0]["kind"] == "docker"
-        assert rows[0]["target"] == "ubuntu:24.04"
+        assert rows == []
         from subprocess import CompletedProcess
         return CompletedProcess(args, 0, "ok", "")
     token = set_current_session_id("session-a")
     try:
-        with patch("openprogram.backend.docker.subprocess.run", run):
-            assert DockerBackend().run("true", 1).exit_code == 0
+        with patch(f"openprogram.backend.{backend_kind}.subprocess.run", run):
+            backend = DockerBackend() if backend_kind == "docker" else SshBackend("example.test")
+            assert backend.run("true", 1).exit_code == 0
         assert store.list("session-a") == []
     finally:
         reset_current_session_id(token)
@@ -94,7 +95,7 @@ def test_resource_route_denies_other_session_before_reading(tmp_path, monkeypatc
     assert not (tmp_path / "session-resources.db").exists()
 
 
-def test_resource_route_authorizes_scope_once_and_combines_processes(tmp_path, monkeypatch):
+def test_resource_route_keeps_processes_in_activity_only(tmp_path, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from openprogram.webui.routes import processes
@@ -116,7 +117,9 @@ def test_resource_route_authorizes_scope_once_and_combines_processes(tmp_path, m
     with TestClient(app) as client:
         result = client.get("/api/session/allowed/resources")
     assert result.status_code == 200
-    assert {row["source"] for row in result.json()["items"]} == {"usage", "process"}
+    assert {row["source"] for row in result.json()["items"]} == {"usage"}
+    assert [row["kind"] for row in result.json()["items"]] == ["vm"]
+    assert store.get(record["id"])["status"] == "starting"
     assert len(checked) == 1
     assert result.headers["cache-control"] == "no-store"
     store.update(record["id"], status="exited")

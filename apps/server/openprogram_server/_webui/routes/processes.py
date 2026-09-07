@@ -66,20 +66,6 @@ def register(app):
             for record in ResourceUseStore().list(session_id, scope):
                 check_owner(record)
                 items.append({**record, "source": "usage", "status": "attached" if record["kind"] in {"vm", "desktop"} else "in_use"})
-            from openprogram.processes.store import ACTIVE
-            for record in ProcessStore().list(session_id, scope):
-                if record["status"] not in ACTIVE:
-                    continue
-                check_owner(record)
-                public = public_record(record)
-                items.append({
-                    "id": record["id"], "session_id": record["session_id"],
-                    "execution_id": record.get("execution_id"), "source": "process",
-                    "kind": record["backend_id"] if record["backend_id"] in {"docker", "ssh"} else "process",
-                    "title": public.get("display", {}).get("name") or "Process",
-                    "target": record.get("cwd") or record["backend_id"],
-                    "status": record["status"], "started_at": record["started_at"],
-                })
             return JSONResponse({"items": items, "now": time.time()}, headers={"Cache-Control": "no-store"})
         except Exception as exc:
             return _error(exc)

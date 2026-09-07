@@ -25,7 +25,7 @@ test("switching sessions isolates web, file and heterogeneous backend resources"
   const a = sessionResourceRows(tabs, backend, "a");
   const b = sessionResourceRows(tabs, backend, "b");
   assert.deepEqual(a.map(r => r.kind), ["web", "docker", "vm", "device"]);
-  assert.deepEqual(b.map(r => r.kind), ["web", "file", "docker", "vm", "device"]);
+  assert.deepEqual(b.map(r => r.kind), ["web", "docker", "vm", "device"]);
   assert.ok(a.every(r => r.sessionId === "a"));
   assert.ok(b.every(r => r.sessionId === "b"));
   assert.deepEqual(sessionResourceRows(tabs, backend, null), []);
@@ -33,10 +33,16 @@ test("switching sessions isolates web, file and heterogeneous backend resources"
 });
 
 test("authorized descendant scope does not relabel or include another session's resource", () => {
-  const item = { id: "r1", session_id: "child", source: "process", kind: "docker", title: "Docker", target: "image", status: "running" };
+  const item = { id: "r1", session_id: "child", source: "usage", kind: "vm", title: "Docker", target: "image", status: "running" };
   const rows = backendResourceRows([item], "parent");
   assert.equal(rows[0].sessionId, "child");
   assert.equal(rows[0].scopeSessionId, "parent");
   assert.deepEqual(sessionResourceRows([], rows, "parent"), []);
   assert.equal(sessionResourceRows([], [...rows, ...rows], "child").length, 1);
+});
+
+test("code views and process records never become software resources", () => {
+  const legacy = backendResourceRows([{ id: "p", session_id: "b", source: "process", kind: "docker", title: "Code", target: "image", status: "running" }], "b");
+  const rows = sessionResourceRows(tabs, legacy, "b");
+  assert.deepEqual(rows.map(r => r.kind), ["web"]);
 });
