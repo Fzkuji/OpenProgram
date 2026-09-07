@@ -80,7 +80,7 @@ Browser Workflow 表单只显示任务和可选目标 URL。动作上限、超�
 不会申请权限。TUI 的 `/doctor` 和 `GET /api/system/access` 使用同一套检查。
 未开放可选桌面权限不会阻止普通对话或升级。
 
-macOS 托管安装通过内置的 **OpenProgram Runtime** 应用运行后台和 Python 子进程，
+macOS 托管安装通过内置的 **OpenProgram** 应用运行后台和 Python 子进程，
 使用 OpenProgram 图标和稳定的应用标识。系统设置中应查找这个名称；安装程序不会
 替用户授权。录屏和辅助功能权限分别按实际执行进程检查。本机系统设置中的“设置权限”
 只会在用户点击后申请缺少的权限，已有授权保持不变。在系统中确认后返回页面，

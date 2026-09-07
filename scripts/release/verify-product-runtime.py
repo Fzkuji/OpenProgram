@@ -309,7 +309,7 @@ def main() -> int:
                 "tui": tui_relative,
             },
         }
-        worker_relative = "OpenProgram Runtime.app/Contents/MacOS/OpenProgram Runtime"
+        worker_relative = "OpenProgram Runtime.app/Contents/MacOS/OpenProgram"
         if platform.system() == "Darwin" and (root / worker_relative).is_file():
             manifest["worker_python"] = worker_relative
         manifest_path.write_text(

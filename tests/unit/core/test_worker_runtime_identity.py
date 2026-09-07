@@ -9,7 +9,7 @@ def test_worker_uses_declared_named_runtime(tmp_path, monkeypatch):
     python = root / 'python/bin/python3'
     python.parent.mkdir(parents=True)
     python.touch()
-    helper = root / 'OpenProgram Runtime.app/Contents/MacOS/OpenProgram Runtime'
+    helper = root / 'OpenProgram Runtime.app/Contents/MacOS/OpenProgram'
     helper.parent.mkdir(parents=True)
     helper.write_text('helper')
     helper.chmod(0o755)
@@ -44,18 +44,18 @@ def test_worker_rejects_helper_outside_runtime(tmp_path, monkeypatch):
 
 def test_direct_cli_reexec_keeps_arguments(monkeypatch):
     calls = []
-    monkeypatch.setattr(lifecycle, 'worker_executable', lambda: '/managed/OpenProgram Runtime')
+    monkeypatch.setattr(lifecycle, 'worker_executable', lambda: '/managed/OpenProgram')
     monkeypatch.setattr(lifecycle.sys, 'executable', '/managed/python')
     monkeypatch.setattr(lifecycle.sys, 'argv', ['openprogram', 'programs', 'run', 'gui_agent', '-a', 'task=hello world'])
     monkeypatch.setattr(lifecycle.os, 'execv', lambda exe, argv: calls.append((exe, argv)))
     lifecycle.use_named_runtime_for_cli()
-    assert calls[0][0] == '/managed/OpenProgram Runtime'
+    assert calls[0][0] == '/managed/OpenProgram'
     assert calls[0][1][-7:] == ['-m', 'openprogram', 'programs', 'run', 'gui_agent', '-a', 'task=hello world']
 
 
 def test_cli_preserves_unbuffered_interpreter_not_business_flags(monkeypatch):
     calls = []
-    monkeypatch.setattr(lifecycle, 'worker_executable', lambda: '/managed/OpenProgram Runtime')
+    monkeypatch.setattr(lifecycle, 'worker_executable', lambda: '/managed/OpenProgram')
     monkeypatch.setattr(lifecycle.sys, 'executable', '/managed/python')
     monkeypatch.setattr(lifecycle.sys, 'argv', ['openprogram', 'worker', 'run'])
     monkeypatch.setattr(lifecycle.sys, 'orig_argv', ['/managed/python', '-I', '-B', '-u', '-X', 'utf8', '-m', 'openprogram', 'worker', 'run'])
@@ -71,7 +71,7 @@ def test_cli_preserves_unbuffered_interpreter_not_business_flags(monkeypatch):
 @pytest.mark.parametrize("options", [["-u", "-mopenprogram"], ["-Iumopenprogram"], ["-Iuc", "ignored code"], ["-uWignore", "-mopenprogram"], ["-uW", "ignore", "-mopenprogram"]])
 def test_cli_compact_module_option_stops_interpreter_scan(monkeypatch, options):
     calls = []
-    monkeypatch.setattr(lifecycle, 'worker_executable', lambda: '/managed/OpenProgram Runtime')
+    monkeypatch.setattr(lifecycle, 'worker_executable', lambda: '/managed/OpenProgram')
     monkeypatch.setattr(lifecycle.sys, 'executable', '/managed/python')
     monkeypatch.setattr(lifecycle.sys, 'argv', ['openprogram', '--help'])
     monkeypatch.setattr(lifecycle.sys, 'orig_argv', ['/managed/python', *options, '--help'])

@@ -10,9 +10,10 @@ import shutil
 import subprocess
 import tempfile
 
-NAME = 'OpenProgram Runtime'
+NAME = 'OpenProgram'
+BUNDLE = 'OpenProgram Runtime.app'
 IDENTIFIER = 'ai.openprogram.runtime'
-RELATIVE = f'{NAME}.app/Contents/MacOS/{NAME}'
+RELATIVE = f'{BUNDLE}/Contents/MacOS/{NAME}'
 
 
 def build(root: Path, python: Path, icon: Path) -> Path:
@@ -23,7 +24,7 @@ def build(root: Path, python: Path, icon: Path) -> Path:
         'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'], text=True).strip()
     library = prefix / 'lib' / f'libpython{version}.dylib'
     old_id = subprocess.check_output(['otool', '-D', str(library)], text=True).splitlines()[1].strip()
-    target = root / f'{NAME}.app'
+    target = root / BUNDLE
     stage = Path(tempfile.mkdtemp(prefix='.openprogram-runtime-', suffix='.app', dir=root))
     try:
         contents = stage / 'Contents'
