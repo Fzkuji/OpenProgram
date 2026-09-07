@@ -638,8 +638,8 @@
 /* Files retains the shared Explorer controls, with a separate path row. */
 .filePathRow { display: flex; align-items: center; min-width: 0; min-height: 30px; gap: 4px; }
 .fileBreadcrumb { position: relative; display: flex; align-items: center; min-width: 0; flex: 1; gap: 0; overflow: hidden; font-size: 14px; color: var(--text-dim); }
-.fileBreadcrumb button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 32px; padding: 6px 2px; background: transparent; border: 0; border-radius: var(--ui-list-radius); cursor: pointer; }
-.fileBreadcrumb > button { padding-left: 8px; flex: 0 0 auto; max-width: 40%; }
+.fileBreadcrumb button { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 32px; padding: 6px 8px; background: transparent; border: 0; border-radius: var(--ui-list-radius); cursor: pointer; }
+.fileBreadcrumb > button { flex: 0 0 auto; max-width: 40%; }
 .fileBreadcrumb button:hover, .fileCrumbMenu button:hover { background: var(--bg-hover); }
 .fileBreadcrumb svg { width: 12px; height: 12px; flex-shrink: 0; }
 .fileCrumbPart { display: flex; align-items: center; gap: 0; min-width: 0; flex-shrink: 0; }
@@ -669,9 +669,7 @@
 .fileDetailHeading { display: flex; align-items: center; justify-content: space-between; }
 
 .fileBreadcrumbMeasure { position: absolute; visibility: hidden; pointer-events: none; display: flex; width: max-content; height: 0; overflow: hidden; }
-.fileBreadcrumbMeasure > span { display: inline-block; flex: none; padding: 6px 2px; white-space: nowrap; }
-
-.fileBreadcrumbMeasure > span:first-child { padding-left: 8px; }
+.fileBreadcrumbMeasure > span { display: inline-block; flex: none; padding: 6px 8px; white-space: nowrap; }
 
 .folderSizeScanning { color: var(--text-tertiary); animation: folder-size-pulse 1.8s ease-in-out infinite; }
 @keyframes folder-size-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
