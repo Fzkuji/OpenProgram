@@ -137,3 +137,35 @@ test("renewed visibility and details activation revalidate one shared size job",
     Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
   }
 });
+
+test("breadcrumb uses available width and reveals more ancestors when resized", async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver };
+  globalThis.window = parsed.window; globalThis.document = parsed.document;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let available = 300, resize;
+  const widths = { fzkuji: 30, "…": 10, Desktop: 70, EasyEdit: 65, easyeditor: 60, evaluate: 60 };
+  const prototype = parsed.window.HTMLElement.prototype;
+  const oldRect = prototype.getBoundingClientRect;
+  const oldWidth = Object.getOwnPropertyDescriptor(prototype, "clientWidth");
+  prototype.getBoundingClientRect = function () { return { width: widths[this.textContent] ?? 0 }; };
+  Object.defineProperty(prototype, "clientWidth", { configurable: true, get: () => available });
+  globalThis.ResizeObserver = class { constructor(callback) { resize = callback; } observe() {} disconnect() {} };
+  const root = createRoot(document.getElementById("root"));
+  try {
+    await act(async () => root.render(h(api.FileBreadcrumb, { root: "fzkuji", path: "Desktop/EasyEdit/easyeditor/evaluate", onLocate: noop })));
+    const visible = () => [...document.querySelectorAll('nav button')].map(button => button.textContent);
+    assert.deepEqual(visible(), ["fzkuji", "…", "EasyEdit", "easyeditor", "evaluate"]);
+    available = 400;
+    await act(async () => resize());
+    assert.deepEqual(visible(), ["fzkuji", "Desktop", "EasyEdit", "easyeditor", "evaluate"]);
+    available = 220;
+    await act(async () => resize());
+    assert.deepEqual(visible(), ["fzkuji", "…", "easyeditor", "evaluate"]);
+  } finally {
+    await act(async () => root.unmount());
+    prototype.getBoundingClientRect = oldRect;
+    if (oldWidth) Object.defineProperty(prototype, "clientWidth", oldWidth); else delete prototype.clientWidth;
+    Object.assign(globalThis, saved);
+  }
+});
