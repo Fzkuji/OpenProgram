@@ -26,7 +26,6 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Box } from "lucide-react";
 import { SessionResourcesPanel } from "../session-resources/session-resources-panel";
 import { usePathname } from "next/navigation";
 import { useSessionStore } from "@/lib/session-store";
@@ -42,6 +41,7 @@ import {
 // Animated nav icons (pqoqubbw/icons), shared with the left sidebar.
 import {
   ActivityIcon,
+  BoxIcon,
   type AnimatedNavIconHandle,
   FolderOpenIcon,
   PanelLeftCloseIcon,
@@ -93,6 +93,7 @@ export function RightSidebar() {
   const toggleIconRef = useRef<AnimatedNavIconHandle>(null);
   const filesIconRef = useRef<AnimatedNavIconHandle>(null);
   const runningIconRef = useRef<AnimatedNavIconHandle>(null);
+  const resourcesIconRef = useRef<AnimatedNavIconHandle>(null);
   // Files 视图的树 scope：当前中央 tab 的项目（文件 tab 自带
   // projectId；会话/新标签页回落到会话绑定的项目）。
   const activeTab = useCenterTabs((s) =>
@@ -277,17 +278,20 @@ export function RightSidebar() {
           </span>
         </div>
 
-        <button type="button"
+        <div role="button" tabIndex={0}
           className={sidebarNavItemClass + " right-nav-item" + (view === VIEW_RESOURCES ? " " + sidebarNavItemActiveClass : "")}
           data-view={VIEW_RESOURCES}
           onClick={() => onNavClick(VIEW_RESOURCES)}
+          onKeyDown={activateOnKey(() => onNavClick(VIEW_RESOURCES))}
+          onMouseEnter={() => resourcesIconRef.current?.startAnimation?.()}
+          onMouseLeave={() => resourcesIconRef.current?.stopAnimation?.()}
           title={text("Session resources", "会话资源")}
           aria-label={text("Session resources", "会话资源")}
           aria-expanded={open && view === VIEW_RESOURCES}
           aria-controls="sessionResourcesPanel">
-          <span className={sidebarNavIconClass}><Box size={20} /></span>
+          <span className={sidebarNavIconClass}><BoxIcon ref={resourcesIconRef} size={20} /></span>
           <span className={sidebarNavLabelClass}>{text("Resources", "资源")}</span>
-        </button>
+        </div>
       </div>
 
       <div className="right-view-host">
