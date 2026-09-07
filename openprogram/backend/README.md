@@ -21,8 +21,15 @@ edits take effect without restarting anything.
 
 ## Files in this directory
 
+- **`_gui_child.py`** — Copied into the isolated scratch directory; never imported by the host
 - **`base.py`** — Backend ABC + shared RunResult type
 - **`docker.py`** — Docker backend
+- **`gui.py`** — Mandatory local isolation for the persistent GUI interpreter
+- **`gui_agent.py`** — Host-owned isolated GUI tool for the existing standard Agent runtime
+- **`gui_broker.py`** — Host-owned GUI primitive admission and durable receipts
+- **`gui_browser.py`** — Bind an existing owned WebUseSession to the isolated GUI interpreter
+- **`gui_browser_resources.py`** — Invocation-owned browser capabilities for an isolated GUI script
+- **`gui_runner.py`** — Persistent isolated Python transport, without host or GUI capabilities
 - **`local.py`** — Local backend
 - **`process.py`** — Collect a local command with execution cancellation and child cleanup
 - **`ssh.py`** — SSH backend

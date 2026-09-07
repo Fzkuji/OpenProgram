@@ -34,6 +34,7 @@ relies on.
 - **`_providers.py`** — Shared provider-registry scaffolding for tools with pluggable backends
 - **`_registry.py`** — Explicit + auto-discovered registry of @agentic_function modules
 - **`_runtime.py`** — @function decorator + runtime layer
+- **`gui_browser_agent.py`** — Browser GUI tasks through the standard Agent and isolated Python tool
 - **`gui_harness_bridge.py`** — Optional adapter from the installed GUI Agent Harness to web_use
 - **`meta_storage.py`** — Profile-scoped persistence for tool profiles and Functions UI metadata
 - **`permission_rule.py`** — 权限规则字符串的解析、序列化、匹配。
