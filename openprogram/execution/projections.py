@@ -103,7 +103,8 @@ class ExecutionProjectionReadModel:
                     ),
                 )
                 current_advanced = current_write.rowcount == 1
-        if item.projection_kind == "dag" and execution.status.value == "failed" and execution.reason_code == "agent_runner_error":
+        if (item.projection_kind == "dag" and execution.status.value == "failed"
+                and execution.reason_code in {"agent_runner_error", "wait_declined", "wait_timeout"}):
             # This is an outbox projection: failure retries independently of
             # canonical completion, including after a worker restart.
             self._project_failed_assistant(execution)
@@ -134,8 +135,19 @@ class ExecutionProjectionReadModel:
         node = writer.load().nodes.get(source.assistant_message_id)
         if node is None or (node.metadata or {}).get("status") not in {None, "running", "error"}:
             return
-        fields = {"metadata": {"status": "error", "error": "agent_runner_error",
+        reason = execution.reason_code
+        if (reason in {"wait_declined", "wait_timeout"}
+                and (node.metadata or {}).get("error") == reason
+                and (node.metadata or {}).get("status") == "error"):
+            return
+        fields = {"metadata": {"status": "error", "error": reason,
                                "finished_at": execution.terminal_at or execution.updated_at}}
+        if reason in {"wait_declined", "wait_timeout"}:
+            notice = ("[declined] This request was declined."
+                      if reason == "wait_declined" else "[expired] This request expired before an answer was received.")
+            fields["output"] = f"{node.output}\n\n{notice}".strip()
+            writer.update(source.assistant_message_id, **fields)
+            return
         if not node.output:
             output = ""
             if execution.checkpoint_head_id:

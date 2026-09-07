@@ -22,7 +22,7 @@ next to Send. It opens a feedback field while keeping the original question or
 operation visible. Opening or cancelling this field sends nothing. Write your
 feedback and choose Send discussion: after the current wait is declined, your
 feedback and its original context are sent to the same conversation. The model
-replies without executing tools. Deny alone declines the operation without
+replies without executing tools. A declined or expired request leaves an explicit result in its conversation history. Deny alone declines the operation without
 sending a discussion message. Your ordinary chat draft is unchanged.
 The request remains visible until the server confirms the answer. If delivery is
 unknown, retry the original answer; retrying does not create a different approval.
