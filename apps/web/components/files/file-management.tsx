@@ -155,7 +155,11 @@ export function invalidateFolderSizes(projectId: string) {
 function useFolderSize(projectId: string, path: string, enabled: boolean, priority = false) {
   const job = getJob(projectId, path);
   const value = useSyncExternalStore(listener => { job.listeners.add(listener); return () => { job.listeners.delete(listener); }; }, () => job.value, () => job.value);
-  useEffect(() => { if (enabled && ["unknown", "cached"].includes(job.value.state)) void scan(job, false, priority); }, [enabled, job, value.state, priority]);
+  useEffect(() => {
+    if (!enabled) return;
+    if (job.value.state === "complete") publish(job, { ...job.value, state: "cached" });
+    if (["unknown", "cached"].includes(job.value.state)) void scan(job, false, priority);
+  }, [enabled, job, priority, job.generation]);
   return { value, start: (restart = false) => void scan(job, restart, true), cancel: () => {
     job.cancelled = true;
     if (!job.running && job.value.token) void fileManagementQuery<SizeResult>("project_folder_size", projectId, path, { operation: "cancel", token: job.value.token }).then(result => publish(job, result ?? { ...job.value, state: "cancelled", token: null }));

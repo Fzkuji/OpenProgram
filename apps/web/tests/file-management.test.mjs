@@ -100,3 +100,40 @@ for (const state of ["incomplete", "complete"]) test(`refresh preserves ${state}
     delete globalThis.__fileManagementQuery;
   }
 });
+
+test("renewed visibility and details activation revalidate one shared size job", async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, IntersectionObserver: globalThis.IntersectionObserver };
+  globalThis.window = parsed.window; globalThis.document = parsed.document;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.IntersectionObserver = class {
+    constructor(callback) { this.callback = callback; }
+    observe() { queueMicrotask(() => this.callback([{ isIntersecting: true }])); }
+    disconnect() {}
+  };
+  let bytes = 12, starts = 0;
+  const projectId = "reactivate";
+  globalThis.__fileManagementQuery = async (action, payload) => {
+    if (action === "project_file_info") return { type: "dir", name: "src", absolute_path: "/src", size: null, mtime: 1, created_at: null, permissions: "drwxr-xr-x" };
+    if (payload.operation === "start") { starts++; return { state: "complete", bytes, entries: 1, skipped: 0, token: null }; }
+    return { state: "unknown" };
+  };
+  const root = createRoot(document.getElementById("root"));
+  const row = (key) => h(api.FolderSize, { key, projectId, path: "src" });
+  try {
+    await act(async () => root.render(row("sidebar")));
+    assert.match(document.body.textContent, /≈ 12 B/);
+    await act(async () => root.render(null));
+    bytes = 999; starts = 0;
+    await act(async () => root.render(h(Fragment, null, row("sidebar"), row("central"))));
+    assert.equal(starts, 1, "both visible views must share the verification");
+    assert.equal((document.body.textContent.match(/≈ 999 B/g) ?? []).length, 2);
+    bytes = 50; starts = 0;
+    await act(async () => root.render(h(Fragment, null, row("sidebar"), row("central"), h(api.FileDetails, { projectId, path: "src", onClose: noop, inline: true }))));
+    assert.equal(starts, 1, "opening details verifies the existing shared sample");
+    assert.equal((document.body.textContent.match(/≈ 50 B/g) ?? []).length, 3);
+  } finally {
+    await act(async () => root.unmount());
+    Object.assign(globalThis, saved); delete globalThis.__fileManagementQuery;
+  }
+});
