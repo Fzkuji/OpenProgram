@@ -60,7 +60,7 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 "multiline": True,
             },
             "max_steps": {
-                "description": "Maximum number of actions",
+                "description": "Maximum GUI Agent iterations",
                 "hidden": True,
                 "advanced": True,
             },
@@ -70,7 +70,7 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 "advanced": True,
             },
             "surface": {
-                "description": "Legacy capability preference",
+                "description": "Browser execution path or legacy capability preference",
                 "hidden": True,
                 "advanced": True,
             },
@@ -118,7 +118,7 @@ def install_gui_harness_web_use(original: Callable | None = None):
         runtime=None,
         allow_general: bool = False,
     ) -> dict:
-        """Run the unified Harness capability loop."""
+        """Run the standard browser Agent or the existing desktop/VM controller."""
         if max_steps is None:
             steps: int | None = DEFAULT_MAX_STEPS
         else:
@@ -143,6 +143,12 @@ def install_gui_harness_web_use(original: Callable | None = None):
         }.get(selected_surface, "")
         if backend and not preferred:
             preferred = "browser_use"
+        if preferred == "browser_use":
+            from openprogram.programs.gui_browser_agent import run_browser_gui_agent
+            return _normalize_gui_result(run_browser_gui_agent(
+                task=task, max_steps=steps, max_seconds=seconds, backend=backend,
+                runtime=runtime, allow_general=allow_general,
+            ))
         call_args = {
             "task": task,
             "max_steps": steps if steps is not None else 0,

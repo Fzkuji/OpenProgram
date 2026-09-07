@@ -5,6 +5,7 @@ import asyncio
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+from contextvars import copy_context
 import itertools
 import json
 import math
@@ -656,21 +657,15 @@ class BrowserPageController:
         assertion: str = "",
         x: float | None = None,
         y: float | None = None,
+        *, before_dispatch=None,
     ) -> Any:
-        result = self._owner.submit(
-            self._execute,
-            action,
-            expected_frame_id,
-            ref,
-            url,
-            text,
-            key,
-            value,
-            amount,
-            assertion,
-            x,
-            y,
-        ).result()
+        def dispatch():
+            if before_dispatch is not None:
+                before_dispatch()
+            kwargs = {"before_dispatch": before_dispatch} if before_dispatch is not None else {}
+            return self._execute(action, expected_frame_id, ref, url, text, key,
+                                 value, amount, assertion, x, y, **kwargs)
+        result = self._owner.submit(copy_context().run, dispatch).result()
         self._last_action = action
         self._last_result = result
         self._action_seq += 1
@@ -735,9 +730,15 @@ class BrowserPageController:
         assertion: str = "",
         x: float | None = None,
         y: float | None = None,
+        *, before_dispatch=None,
     ) -> Any:
+        def run(fn, *args, **kwargs):
+            if before_dispatch is not None:
+                before_dispatch()
+            return fn(*args, **kwargs)
+
         if action == "observe":
-            return self._observe()
+            return run(self._observe)
         if action in {"screenshot", "verify"} and not expected_frame_id and self._frame:
             expected_frame_id = self._frame["frame_id"]
         if action == "verify":
@@ -745,7 +746,7 @@ class BrowserPageController:
                 return {"ok": False, "reason_code": "stale_observation"}
             if not assertion or not isinstance(value, str) or not value.strip():
                 return {"ok": False, "reason_code": "invalid_assertion"}
-            return self._verify(self._page(), expected_frame_id, assertion, value)
+            return run(self._verify, self._page(), expected_frame_id, assertion, value)
         stale = self._require_fresh(expected_frame_id)
         if stale:
             return stale
@@ -762,7 +763,7 @@ class BrowserPageController:
                     request_bound_screenshot,
                 )
 
-                capture = request_bound_screenshot(
+                capture = run(request_bound_screenshot,
                     self.binding_id,
                     timeout=5.0,
                     expected_page_revision=self.page_revision,
@@ -786,7 +787,7 @@ class BrowserPageController:
                 except (ValueError, TypeError):
                     return {"ok": False, "reason_code": "screenshot_failed"}
             else:
-                image = page.screenshot(full_page=False, scale="css")
+                image = run(page.screenshot, full_page=False, scale="css")
             after = page.evaluate(_VIEWPORT_SCRIPT)
             if before != after or not self._fresh(expected_frame_id):
                 return self._invalidate_frame()
@@ -801,7 +802,7 @@ class BrowserPageController:
                 },
             )
         if action == "wait":
-            page.wait_for_timeout(max(0, min(int(amount), 5000)))
+            run(page.wait_for_timeout, max(0, min(int(amount), 5000)))
             return {"ok": True, "frame_id": expected_frame_id}
         capped = self._write_allowed()
         if capped:
@@ -809,10 +810,10 @@ class BrowserPageController:
         if action == "navigate":
             if not _is_http_url(url):
                 return {"ok": False, "reason_code": "unsupported_url"}
-            page.goto(url)
+            run(page.goto, url)
             return self._mutated(f"navigated to {url}")
         if action == "scroll":
-            page.mouse.wheel(0, int(amount))
+            run(page.mouse.wheel, 0, int(amount))
             return self._mutated(f"scrolled {int(amount)}px")
         if action == "click":
             if not ref:
@@ -833,7 +834,7 @@ class BrowserPageController:
                     or point_x >= viewport["width"] or point_y >= viewport["height"]
                 ):
                     return {"ok": False, "reason_code": "invalid_coordinate"}
-                self._agent_click(lambda: page.mouse.click(point_x, point_y))
+                self._agent_click(lambda: run(page.mouse.click, point_x, point_y))
                 return self._mutated(
                     f"clicked viewport point ({point_x:g}, {point_y:g})"
                 )
@@ -847,22 +848,22 @@ class BrowserPageController:
                 return {"ok": False, "reason_code": "target_disabled"}
             if self.binding_id:
                 self._agent_click(
-                    lambda: target.evaluate(_BACKGROUND_REF_CLICK_SCRIPT)
+                    lambda: run(target.evaluate, _BACKGROUND_REF_CLICK_SCRIPT)
                 )
             else:
-                self._agent_click(target.click)
+                self._agent_click(lambda: run(target.click))
             return self._mutated(f"clicked {ref}")
         if action == "type":
-            target.fill(text)
+            run(target.fill, text)
             return self._mutated(f"typed {len(text)} character(s) into {ref}")
         if action == "press":
-            target.press(key)
+            run(target.press, key)
             return self._mutated(f"pressed {key} on {ref}")
         if action == "hover":
-            target.hover()
+            run(target.hover)
             return self._mutated(f"hovered {ref}")
         if action == "select":
-            target.select_option(value)
+            run(target.select_option, value)
             return self._mutated(f"selected an option in {ref}")
         return {"ok": False, "reason_code": "unsupported_action"}
 

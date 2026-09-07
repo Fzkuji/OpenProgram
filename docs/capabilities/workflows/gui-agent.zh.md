@@ -1,6 +1,6 @@
 # GUI Agent
 
-给它一个自然语言任务。根控制器重复选择一个有界能力：`computer_use` 操作本机桌面，`browser_use` 操作 OpenProgram 后台 Page，`vm_use` 操作已配置的远程虚拟机。每次能力调用中由规划器选择的参数和完整结果都会追加到下一轮模型决策的上下文。模型通过提交终态结束任务；动作数和时间限制只作为安全边界。
+给它一个自然语言任务。未显式选择浏览器路径时，根控制器重复选择一个有界能力：`computer_use` 操作本机桌面，`browser_use` 操作 OpenProgram 后台 Page，`vm_use` 操作已配置的远程虚拟机。每次能力调用中由规划器选择的参数和完整结果都会追加到下一轮模型决策的上下文。模型通过提交终态结束任务；动作数和时间限制只作为安全边界。
 
 本机与 VM 感知使用 YOLO 组件检测（GPA-GUI-Detector）、OCR（macOS 用 Apple Vision，Linux / Windows 用 EasyOCR）和模板匹配。动作层覆盖鼠标、键盘和剪贴板。浏览器操作使用 Page 的 DOM/CDP target，不使用桌面坐标。
 
@@ -26,9 +26,19 @@ Programs 卡片只填写 `task`，不要求用户选择 surface。控制器每�
 openprogram programs run gui_agent -a task="在不置顶窗口的情况下检查并完成当前内置浏览器表单"
 ```
 
-受信任调用方还可以提供隐藏的控制器设置：`max_steps` 是动作安全上限，默认 150；`max_seconds` 是可选的总耗时安全上限；`app_name` 选择组件记忆；`backend` 指定已有 Page backend；`vm_url` 启用 `vm_use`。旧 `surface` 字段只作为兼容性偏好继续接受，不会把运行固定在某种能力上，也不出现在公开函数 schema 中。
+受信任调用方还可以提供隐藏的控制器设置：`max_steps` 是动作安全上限，默认 150；`max_seconds` 是可选的总耗时安全上限；`app_name` 选择组件记忆；`backend` 指定已有 Page backend；`vm_url` 启用 `vm_use`。`surface="browser"`，或未指定其他 surface 时设置 `backend`，会选择下文的标准浏览器 Agent 路径。其他 surface 设置仍为兼容性偏好。这些设置不出现在公开函数 schema 中。
 
-控制流程如下：
+## 显式浏览器执行
+
+在有效的 macOS Runtime 执行中，受信任调用方可以选择 `surface="browser"`。该路径使用一个标准 `agent()` 循环和持久、隔离的 `gui_exec` Python 工具，列出上下文授权的 Page，获取一次性 Page 权限并返回不透明句柄。它不会自动创建 Page，也不调用旧能力规划器。默认 backend 为 `open_claude_chrome`；不支持操作校验的显式 MCP backend 返回 `infeasible`，不会静默选择其他 backend。
+
+此路径的 `max_steps` 限制 Agent 迭代次数。每次 Python 调用另有 30 秒和 100 次 broker 操作上限。`allow_general=false` 只提供 GUI 工具；设为 `true` 时还会提供标准工具，但仍受继承权限与拒绝规则约束，并排除递归 `gui_agent`。Python 状态在本次调用中持续保留，截图字节作为正常 Agent 图片内容返回。缺少执行身份或不支持进程隔离时拒绝执行。
+
+模型提出最终浏览器断言，Agent 返回后由宿主对所属 Page 的当前观察状态检查。只有断言成立且本次调用不存在未确定的原语副作用，才报告成功。结果包含验证 effect 和断言证据；模型选择的断言不等于任意任务所有要求都已得到证明。脚本完成不能单独报告成功。清理会先撤销句柄，再释放 Page 租约；清理错误会阻止成功结果。清理仍可能等待正在执行的浏览器操作；执行中取消的时间上限和默认 App 验收尚未验证。
+
+## 自动能力执行
+
+未显式选择浏览器路径时，采用以下流程：
 
 1. `plan_next_capability` 接收任务、当前可用状态和完整的有序能力调用历史。
 2. 它选择 `computer_use`、`browser_use`、`vm_use`，或者提交一个终态。
@@ -46,7 +56,7 @@ openprogram programs run gui_agent -a task="在不置顶窗口的情况下检查
 
 桌面坐标输入始终作用于当前前台 GUI。控制器取得准确的 macOS 进程和窗口目标后，`computer_use` 也可以只截取该窗口，并通过 Accessibility 执行控件支持的按压、文本赋值或滚动动作，不激活目标。一个不激活应用、不接收鼠标事件的提示层会跟随该窗口并标记当前动作，不移动系统鼠标。浏览器动作在选中的 Page 后台执行，不激活标签页、不置顶 OpenProgram 窗口，也不移动系统鼠标。根据已记录的结果，控制器可以在不同能力之间切换。
 
-所有运行共用终态字段：`status`（`succeeded`、`infeasible` 或 `failed`）、`success`、`reason_code`、`summary` 和 `handoff_instruction`。成功与否由 runner 决定，不由 conclusion 模型决定。只有 `succeeded` 的 `success` 为 true；infeasible 和 failed 一律返回 `success=false`。infeasible 还保留 blocker、标记和用户接手说明。结果同时包含有序能力调用历史和耗时。
+所有运行共用终态字段：`status`（`succeeded`、`infeasible` 或 `failed`）、`success`、`reason_code`、`summary` 和 `handoff_instruction`。成功与否由 runner 决定，不由 conclusion 模型决定。只有 `succeeded` 的 `success` 为 true；infeasible 和 failed 一律返回 `success=false`。infeasible 还保留 blocker、标记和用户接手说明。自动能力路径还包含有序能力调用历史和耗时。
 
 `max_seconds` 会在每次模型或能力调用前检查，并在调用返回后再次检查。超过截止时间才返回的终态提交会被拒绝，并统一为超时失败。Provider 取消采用协作式机制，因此已经发出的 provider 请求可能略晚于配置的总耗时边界才返回，但该迟到结果不会把任务变成成功。
 

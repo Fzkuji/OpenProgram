@@ -1,6 +1,6 @@
 # GUI Agent
 
-Give it one natural-language task. Its root controller repeatedly chooses one bounded capability: `computer_use` for the local desktop, `browser_use` for an OpenProgram background Page, or `vm_use` for a configured remote virtual machine. Every capability's planner-selected arguments and full result are appended to the next model decision's context. The model ends the task by proposing a terminal result; action and time limits remain safety boundaries.
+Give it one natural-language task. Without an explicit browser selection, its root controller repeatedly chooses one bounded capability: `computer_use` for the local desktop, `browser_use` for an OpenProgram background Page, or `vm_use` for a configured remote virtual machine. Every capability's planner-selected arguments and full result are appended to the next model decision's context. The model ends the task by proposing a terminal result; action and time limits remain safety boundaries.
 
 Local and VM perception combines YOLO component detection (GPA-GUI-Detector), OCR (Apple Vision on macOS, EasyOCR on Linux / Windows), and template matching. The action layer covers mouse, keyboard, and clipboard. Browser operations use the Page's DOM/CDP target instead of desktop coordinates.
 
@@ -26,9 +26,19 @@ For a task that is naturally satisfied by the current built-in browser Page, use
 openprogram programs run gui_agent -a task="Inspect and complete the current built-in browser form without foregrounding the window"
 ```
 
-Trusted callers can also supply hidden controller settings: `max_steps` is the action safety limit (default 150); `max_seconds` is the optional wall-clock safety limit; `app_name` selects component memory; `backend` pins an existing Page backend; and `vm_url` enables `vm_use`. The old `surface` field is accepted only as a compatibility preference. It does not lock the run to one capability and is absent from the public function schema.
+Trusted callers can also supply hidden controller settings: `max_steps` is the action safety limit (default 150); `max_seconds` is the optional wall-clock safety limit; `app_name` selects component memory; `backend` pins an existing Page backend; and `vm_url` enables `vm_use`. `surface="browser"`, or a `backend` without another surface, selects the standard browser Agent path described below. Other surface settings remain compatibility preferences. These settings are absent from the public function schema.
 
-The control sequence is:
+## Explicit browser execution
+
+Inside an active macOS Runtime execution, trusted callers can select `surface="browser"`. This path uses one standard `agent()` loop with the persistent, isolated `gui_exec` Python tool. It lists context-authorized Pages, acquires single-use Page capabilities, and exposes opaque handles. It does not open a new Page automatically or run the legacy capability planner. The default backend is `open_claude_chrome`; explicit MCP backends without operation guards return `infeasible` rather than silently selecting another backend.
+
+`max_steps` limits Agent iterations on this path. Each Python call is separately bounded to 30 seconds and 100 broker operations. `allow_general=false` exposes only the GUI tool; `true` also makes standard tools available subject to inherited permissions and deny rules, excluding recursive `gui_agent`. Python state persists for this invocation; screenshot bytes are returned as normal Agent image content. Missing execution identity or unsupported process isolation fails closed.
+
+The model proposes a final browser assertion. The host checks it against the owned Page and current frame after the Agent returns. Success requires that assertion to pass and no unresolved primitive effects from this invocation. The result includes the verification effect and assertion evidence; a model-selected assertion does not prove every aspect of an arbitrary task. Script completion alone cannot report success. Handles are revoked before Page leases are released, and cleanup errors prevent a successful result. Cleanup may still wait for an already-running browser operation; bounded in-flight cancellation and default-App acceptance remain unverified.
+
+## Automatic capability execution
+
+The following sequence applies when no explicit browser path is selected:
 
 1. `plan_next_capability` receives the task, current availability, and complete ordered capability history.
 2. It selects `computer_use`, `browser_use`, `vm_use`, or proposes a terminal result.
@@ -46,7 +56,7 @@ Desktop observations include the frontmost application and screenshot coordinate
 
 Desktop coordinate input always applies to the current foreground GUI. When the controller has an exact macOS process and window target, `computer_use` may instead use window-only capture and supported Accessibility press, text-value, or scroll actions without activating the target. A non-activating, mouse-ignoring indicator follows that window and marks the current action without moving the system pointer. Browser actions use the selected Page in the background and do not activate its tab, raise the OpenProgram window, or move the system pointer. The controller may switch between these capabilities when the recorded results require it.
 
-All runs share the same terminal fields: `status` (`succeeded`, `infeasible`, or `failed`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. `success` is true only for `succeeded`. Infeasible and failed results always return `success=false`; infeasible results retain the blocker, marker, and user handoff instruction. The result also contains the ordered capability history and timing.
+All runs share the same terminal fields: `status` (`succeeded`, `infeasible`, or `failed`), `success`, `reason_code`, `summary`, and `handoff_instruction`. The runner, not the conclusion model, determines success. `success` is true only for `succeeded`. Infeasible and failed results always return `success=false`; infeasible results retain the blocker, marker, and user handoff instruction. The automatic capability path also contains its ordered capability history and timing.
 
 `max_seconds` is enforced before each model or capability call and again after it returns. A terminal proposal that arrives after the deadline is rejected and normalized as a timeout failure. Provider cancellation is cooperative, so an in-flight provider request can return slightly after the configured wall-clock boundary; it still cannot turn that run into success.
 
