@@ -680,6 +680,17 @@ class JobRunner:
             self._project_pending_canonical_terminal(pending)
             return
         job = _store_load(execution.session_id, execution.execution_id)
+        if (
+            job is not None
+            and not is_terminal(job.status)
+            and terminal_fields is None
+            and status is JobStatus.COMPLETED
+            and self._local_owner_will_project_completed(execution.execution_id)
+        ):
+            # Dispatcher inserts _jobs/_done_events before the pool future
+            # exists and before _wait_for_canonical_driver stamps result_text.
+            # Reconstructing COMPLETED here would freeze an empty absorbing row.
+            return
         if job is not None and not is_terminal(job.status):
             projection_fields = terminal_fields or _terminal_fields(
                 status, execution.reason_code or status.value,
@@ -827,6 +838,22 @@ class JobRunner:
         if clear_resume is not None:
             clear_resume(job_id)
         return True
+
+    def _local_owner_will_project_completed(self, job_id: str) -> bool:
+        """True while this runner still owns the worker that stamps result_text.
+
+        The dispatcher writes ``_jobs`` and ``_done_events`` before activating
+        the canonical driver and before ``_pool.submit(_run_one)``, so ``future``
+        may still be None when the driver is already terminal.
+        ``_wait_for_canonical_driver`` pops both maps only after it attempts
+        the field-bearing projection.
+        """
+        with self._lock:
+            entry = self._jobs.get(job_id)
+            if entry is None or job_id not in self._done_events:
+                return False
+            future = entry.get("future")
+            return future is None or not future.done()
 
     def _project_existing_canonical_terminals(self) -> list[tuple[str, str]]:
         """Close projection gaps after canonical finish before a crash."""

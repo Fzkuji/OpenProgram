@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import threading
 
 from tests.component.agent.async_job_support import fake_worker, store_fixture
@@ -851,3 +852,121 @@ def test_force_termination_releases_exact_owner_after_background_escalation(
     finally:
         release_worker.set()
         runner.shutdown()
+
+
+@contextmanager
+def _hold_owner_after_canonical_complete(tmp_path, monkeypatch):
+    import openprogram.agent.job.runner as runner_module
+    from openprogram.agent.job.runner import JobRunner
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.agent.sub_agent_run import AgentTurnResult
+    from openprogram.usage.ledger import UsageLedger
+    from tests.support.waiting import wait_until
+
+    monkeypatch.setattr(
+        "openprogram.paths.get_execution_db_path",
+        lambda: tmp_path / "execution.sqlite3",
+    )
+    monkeypatch.setattr(runner_module, "_broadcast", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "openprogram.agent.production_driver.AgentProductionDriver._default_turn_runner",
+        staticmethod(lambda **_k: AgentTurnResult(
+            head_id="head_ok", final_text="hello",
+        )),
+    )
+    ledger = None
+    runner = None
+    allow = threading.Event()
+    try:
+        ledger = UsageLedger(tmp_path / "usage.db")
+        runner = JobRunner(max_workers=1, governor=ResourceGovernor(ledger))
+        entered = threading.Event()
+        original_wait = runner._wait_for_canonical_driver
+
+        def hold(*args, **kwargs):
+            entered.set()
+            assert allow.wait(5)
+            return original_wait(*args, **kwargs)
+
+        runner._wait_for_canonical_driver = hold
+        job_id = runner.spawn_job(
+            session_id="p1", prompt="canonical complete", agent_id="main",
+        )
+        assert entered.wait(5)
+        assert wait_until(
+            lambda: (
+                (execution := runner._execution_store.get_execution(job_id)) is not None
+                and execution.status.value == "completed"
+            ),
+            timeout=5,
+        )
+        yield runner, ledger, job_id, allow
+    finally:
+        allow.set()
+        try:
+            if runner is not None:
+                runner.shutdown()
+        finally:
+            if ledger is not None:
+                ledger.close()
+
+
+def test_reconciler_does_not_absorb_empty_completed_while_local_owner_will_project(
+    tmp_path, store_fixture, monkeypatch,
+):
+    from openprogram.agent.job.types import JobStatus, is_terminal
+
+    with _hold_owner_after_canonical_complete(tmp_path, monkeypatch) as (
+        runner, ledger, job_id, allow,
+    ):
+        with runner._lock:
+            assert job_id in runner._jobs
+            assert job_id in runner._done_events
+        before = runner.get_job(job_id)
+        assert before is not None and not is_terminal(before.status)
+        assert before.result_text is None
+        admission = ledger.connection().execute(
+            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
+        ).fetchone()
+        assert admission is not None and admission[0] != "released"
+
+        runner._project_existing_canonical_terminals()
+
+        held = runner.get_job(job_id)
+        assert held is not None and not is_terminal(held.status)
+        assert held.result_text is None
+        assert ledger.connection().execute(
+            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
+        ).fetchone()[0] != "released"
+
+        allow.set()
+        final = runner.await_job(job_id, timeout=5)
+        assert final is not None
+        assert final.status is JobStatus.COMPLETED
+        assert final.result_text == "hello"
+        assert ledger.connection().execute(
+            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
+        ).fetchone()[0] == "released"
+
+
+def test_reconciler_reconstructs_completed_when_local_owner_is_gone(
+    tmp_path, store_fixture, monkeypatch,
+):
+    from openprogram.agent.job.types import JobStatus
+
+    with _hold_owner_after_canonical_complete(tmp_path, monkeypatch) as (
+        runner, ledger, job_id, _allow,
+    ):
+        with runner._lock:
+            runner._jobs.pop(job_id, None)
+            runner._done_events.pop(job_id, None)
+
+        runner._project_existing_canonical_terminals()
+
+        recovered = runner.get_job(job_id)
+        assert recovered is not None
+        assert recovered.status is JobStatus.COMPLETED
+        assert recovered.result_text is None
+        assert ledger.connection().execute(
+            "SELECT state FROM job_admissions WHERE job_id = ?", (job_id,),
+        ).fetchone()[0] == "released"
