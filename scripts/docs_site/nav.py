@@ -345,6 +345,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("UI · Browser and tabs", "界面 · 浏览器与标签页", [
             "reference/design/ui/browser-extensions.html",
             "reference/design/ui/built-in-browser.html",
+            "reference/design/ui/session-resources.html",
             "reference/design/ui/center-tabs-and-split-layout.html",
             "reference/design/ui/remote-web-access.html",
             "reference/design/ui/remote-web-access.md",
@@ -473,6 +474,7 @@ PAGE_ORDER: dict[str, int] = {
     # Center tabs: authoritative tab/group/view state and split-layout design.
     "reference/design/ui/center-tabs-and-split-layout.html": 1009,
     "reference/design/ui/built-in-browser.html": 1010,
+    "reference/design/ui/session-resources.html": 1010,
     "reference/design/ui/browser-extensions.html": 1011,
     "reference/design/ui/integrated-terminal.html": 1012,
     "reference/design/ui/composer-local-attachment-paths.html": 1013,

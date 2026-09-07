@@ -36,6 +36,11 @@ class SshBackend(Backend):
 
     def run(self, command: str, timeout: float,
             cwd: str | None = None) -> RunResult:
+        from openprogram.session_resources import resource_use
+        with resource_use("ssh", "SSH", self.target):
+            return self._run(command, timeout, cwd)
+
+    def _run(self, command: str, timeout: float, cwd: str | None) -> RunResult:
         try:
             proc = subprocess.run(
                 self._ssh_argv(command, cwd),

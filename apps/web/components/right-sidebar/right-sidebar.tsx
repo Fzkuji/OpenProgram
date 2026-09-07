@@ -26,8 +26,6 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Globe } from "lucide-react";
-import { WebPagesPanel } from "./web-pages-panel";
 import { usePathname } from "next/navigation";
 import { useSessionStore } from "@/lib/session-store";
 import { useTranslation } from "@/lib/i18n";
@@ -63,7 +61,6 @@ import {
 
 // View IDs that round-trip through the `data-view` attribute — e.g.
 // "detail" picks `<div data-view="detail">`.
-const VIEW_PAGES = "pages";
 const VIEW_FILES = "files";
 const VIEW_RUNNING = "running";
 
@@ -71,7 +68,7 @@ export function RightSidebar() {
   const { t, text } = useTranslation();
   const open = useSessionStore((s) => s.rightDock.open);
   const storedView = useSessionStore((s) => s.rightDock.view);
-  const view = storedView === "debugger" ? VIEW_RUNNING : storedView;
+  const view = storedView === "pages" ? VIEW_FILES : storedView === "debugger" ? VIEW_RUNNING : storedView;
   const setRightDockOpen = useSessionStore((s) => s.setRightDockOpen);
   const setRightDockView = useSessionStore((s) => s.setRightDockView);
   const [visible, setVisible] = useState(true);
@@ -107,7 +104,6 @@ export function RightSidebar() {
     && pathname === `/s/${encodeURIComponent(currentSessionId ?? "")}`
     ? activeTab.sessionId ?? null
     : null;
-  const pageCount = useCenterTabs(s => s.tabs.filter(tab => tab.kind === "web").length);
   const currentProject = useCurrentProject();
   const treeProjectId =
     activeTab?.kind === "file"
@@ -277,18 +273,10 @@ export function RightSidebar() {
             {text("Activity", "运行记录")}
           </span>
         </div>
-        <button type="button" className={sidebarNavItemClass + " right-nav-item text-left" +
-          (view === VIEW_PAGES ? " " + sidebarNavItemActiveClass : "")}
-          data-view={VIEW_PAGES} onClick={() => onNavClick(VIEW_PAGES)}
-          title={text("Webpages grouped by conversation", "按会话分组的网页")}
-          aria-label={`${text("Pages", "网页")} (${pageCount})`}>
-          <span className={sidebarNavIconClass}><Globe size={20} /></span>
-          <span className={sidebarNavLabelClass}>{text("Pages", "网页")} · {pageCount}</span>
-        </button>
+
       </div>
 
       <div className="right-view-host">
-        <div className="right-view" data-view={VIEW_PAGES}><WebPagesPanel /></div>
         {/* Files view — the default: a plain project file tree. */}
         <div className="right-view" data-view={VIEW_FILES}>
           {treeProjectId ? (

@@ -28,6 +28,11 @@ class DockerBackend(Backend):
 
     def run(self, command: str, timeout: float,
             cwd: str | None = None) -> RunResult:
+        from openprogram.session_resources import resource_use
+        with resource_use("docker", "Docker", self.image):
+            return self._run(command, timeout, cwd)
+
+    def _run(self, command: str, timeout: float, cwd: str | None) -> RunResult:
         try:
             proc = subprocess.run(
                 self._argv(command, cwd),

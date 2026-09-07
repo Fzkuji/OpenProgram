@@ -170,7 +170,11 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 for key, value in call_args.items()
                 if key in signature.parameters
             }
-        return _normalize_gui_result(original_impl(**call_args))
+        from openprogram.session_resources import resource_use
+        attached_vm = call_args.get("vm_url") or ""
+        kind = "vm" if attached_vm else "desktop"
+        with resource_use(kind, "VM" if attached_vm else (app_name or "Desktop"), attached_vm or app_name):
+            return _normalize_gui_result(original_impl(**call_args))
 
     # ``programs run`` resolves a registered function's module and then looks
     # up the public function name on that module.  The wrapper is defined here

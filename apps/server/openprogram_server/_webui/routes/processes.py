@@ -45,6 +45,45 @@ def _error(exc):
 
 
 def register(app):
+    @app.get("/api/session/{session_id}/resources")
+    def session_resources(session_id: str, request: Request):
+        try:
+            _authorize(request, session_id)
+            from openprogram.execution import default_store
+            from openprogram.execution.conversation_scope import conversation_executions
+            from openprogram.session_resources import ResourceUseStore
+            scope = {item.execution_id: item for item in conversation_executions(default_store(), session_id)}
+            from openprogram.execution.authorization import ExecutionAuthorizationError
+            def check_owner(record):
+                execution_id = record.get("execution_id")
+                if execution_id:
+                    execution = scope.get(execution_id)
+                    if execution is None or execution.session_id != record["session_id"]:
+                        raise ExecutionAuthorizationError("not_found")
+                elif record["session_id"] != session_id:
+                    raise ExecutionAuthorizationError("not_found")
+            items = []
+            for record in ResourceUseStore().list(session_id, scope):
+                check_owner(record)
+                items.append({**record, "source": "usage", "status": "attached" if record["kind"] in {"vm", "desktop"} else "in_use"})
+            from openprogram.processes.store import ACTIVE
+            for record in ProcessStore().list(session_id, scope):
+                if record["status"] not in ACTIVE:
+                    continue
+                check_owner(record)
+                public = public_record(record)
+                items.append({
+                    "id": record["id"], "session_id": record["session_id"],
+                    "execution_id": record.get("execution_id"), "source": "process",
+                    "kind": record["backend_id"] if record["backend_id"] in {"docker", "ssh"} else "process",
+                    "title": public.get("display", {}).get("name") or "Process",
+                    "target": record.get("cwd") or record["backend_id"],
+                    "status": record["status"], "started_at": record["started_at"],
+                })
+            return JSONResponse({"items": items, "now": time.time()}, headers={"Cache-Control": "no-store"})
+        except Exception as exc:
+            return _error(exc)
+
     @app.get("/api/session/{session_id}/processes")
     def session_processes(session_id: str, request: Request):
         try:
