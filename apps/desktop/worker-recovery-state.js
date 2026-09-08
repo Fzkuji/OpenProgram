@@ -15,10 +15,8 @@ function recordWorkerCommandExit(coordinator, action, exitCode) {
   if (exitCode === 0) return;
   coordinator.workerSpawned = false;
   if (action === "start") coordinator.startRejected = true;
-  if (action === "restart") {
-    coordinator.restartIssued = false;
-    coordinator.unreachableProbes = 0;
-  }
+  // A failed restart can leave the worker waiting for system authorization.
+  // Only a successful health probe renews the forced-restart allowance.
 }
 
 function startRecoveryCycle(state) {

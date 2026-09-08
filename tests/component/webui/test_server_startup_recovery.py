@@ -121,6 +121,31 @@ def test_legacy_dag_recovery_does_not_block_public_lifespan(
     assert finished.wait(timeout=1)
 
 
+def test_rewind_recovery_is_lazy_and_not_a_lifespan_gate(monkeypatch):
+    """Global rewind enumeration must not run before the public app is ready."""
+    from openprogram.webui import server
+
+    called = threading.Event()
+
+    def recover_all_rewinds():
+        called.set()
+        return 0
+
+    monkeypatch.setattr("openprogram.agent._rewind.recover_all_rewinds", recover_all_rewinds)
+    monkeypatch.setattr(server, "_recover_execution_control", _async_noop)
+    monkeypatch.setattr(server, "reconcile_interrupted_runs", lambda: 0)
+    monkeypatch.setattr("openprogram.mcp.load_mcp_servers", _async_noop)
+    monkeypatch.setattr("openprogram.mcp.shutdown_mcp_servers", _async_noop)
+    monkeypatch.setattr("openprogram.skills.watcher.start_watcher", lambda **_: None)
+    monkeypatch.setattr("openprogram.plugins.autoupdate.start", lambda: None)
+
+    app = server.create_app()
+    with TestClient(app, base_url="http://127.0.0.1:18100") as client:
+        response = client.get("/healthz")
+        assert response.status_code == 200
+    assert not called.is_set()
+
+
 def test_legacy_dag_recovery_waits_on_real_session_lock_after_health(
     tmp_path, monkeypatch,
 ):

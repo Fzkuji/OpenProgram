@@ -86,4 +86,35 @@ assert.deepEqual(
   "two windows in the same backend outage must spawn the worker once",
 );
 
+const failedRestartState = createRecoveryState();
+const failedRestartCoordinator = createRecoveryCoordinator();
+startRecoveryCycle(failedRestartState);
+const failedActions = [];
+for (let i = 0; i < 20; i += 1) {
+  assert.equal(beginRecoveryProbe(failedRestartState, i * 3_000), true);
+  const action = finishRecoveryProbe(
+    failedRestartState, failedRestartCoordinator, false, false, i * 3_000,
+  );
+  if (action) {
+    failedActions.push(action);
+    recordWorkerCommandExit(failedRestartCoordinator, action === "spawn" ? "start" : "restart", 1);
+  }
+}
+assert.deepEqual(
+  failedActions, ["spawn", "restart"],
+  "a failed restart must not repeatedly kill a worker waiting for system access",
+);
+assert.equal(beginRecoveryProbe(failedRestartState, 60_000), true);
+assert.equal(
+  finishRecoveryProbe(failedRestartState, failedRestartCoordinator, true, true, 60_000), "load",
+  "health checks must recover the page after the worker becomes available",
+);
+assert.equal(failedRestartCoordinator.restartIssued, false);
+startRecoveryCycle(failedRestartState);
+assert.equal(beginRecoveryProbe(failedRestartState, 63_000), true);
+assert.equal(
+  finishRecoveryProbe(failedRestartState, failedRestartCoordinator, false, false, 63_000), "spawn",
+  "verified recovery resets the allowance for a later outage",
+);
+
 console.log("worker recovery checks passed");

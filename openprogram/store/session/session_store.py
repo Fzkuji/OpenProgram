@@ -29,11 +29,22 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from contextvars import ContextVar
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 _log = logging.getLogger(__name__)
+
+# Rewind recovery re-enters SessionStore through ``get_session`` and the
+# durable HEAD CAS.  RLock makes that re-entry legal, but it does not prevent
+# ``_open -> recover_session_rewinds -> _open`` from recursing forever.  Keep
+# the suppression scoped to the current thread/context and session so a
+# recovery of one store/session does not suppress lazy recovery for another
+# store, even when both use the same session id.
+_REWIND_RECOVERY_SESSIONS: ContextVar[frozenset[tuple[object, str]]] = ContextVar(
+    "openprogram_rewind_recovery_sessions", default=frozenset(),
+)
 
 from openprogram.context.nodes import Call, ROLE_CODE, ROLE_USER, ROLE_LLM
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
@@ -604,6 +615,31 @@ class SessionStore:
                 self._session_locks[session_id] = lock
             return lock
 
+    @contextmanager
+    def _rewind_recovery_scope(self, session_id: str):
+        active = _REWIND_RECOVERY_SESSIONS.get()
+        key = (self, session_id)
+        token = _REWIND_RECOVERY_SESSIONS.set(active | {key})
+        try:
+            yield
+        finally:
+            _REWIND_RECOVERY_SESSIONS.reset(token)
+
+    def _recover_session_rewinds_before_exposure(self, session_id: str) -> None:
+        """Replay this session's pending rewind journal before returning it.
+
+        The recovery implementation is imported lazily to keep the session
+        store independent from the agent layer at module import time.  The
+        per-session lock held by ``_open`` serializes this with writers; the
+        recovery scope suppresses only the recursive opens needed by its
+        existing HEAD/CAS callbacks.
+        """
+        if (self, session_id) in _REWIND_RECOVERY_SESSIONS.get():
+            return
+        from openprogram.agent._rewind import recover_session_rewinds
+
+        recover_session_rewinds(session_id, store=self)
+
     def _session_dir(self, session_id: str) -> Path:
         """Where ``session_id``'s git repo lives.
 
@@ -713,6 +749,12 @@ class SessionStore:
                                 _node_caller,
                             )
                             git.mark_synced()
+                # A cached session may be the callback target of an active
+                # CheckpointStore transaction (its get_head/CAS callbacks
+                # re-enter SessionStore while the intent lock is held).  The
+                # first public open after a process/session cache miss is the
+                # restart boundary that needs lazy replay; explicit rewind
+                # entry points also recover before planning or applying.
                 return cached
             if not sdir.exists() and not create_if_missing:
                 return None
@@ -737,6 +779,16 @@ class SessionStore:
                 # unaffected by being dropped from this dict.
                 while len(self._sessions) > self._cache_cap:
                     self._sessions.popitem(last=False)
+            try:
+                self._recover_session_rewinds_before_exposure(session_id)
+            except BaseException:
+                # Do not publish a session whose recovery did not finish.  A
+                # later public open must retry recovery instead of returning
+                # the partially exposed cached index.
+                with self._lock:
+                    if self._sessions.get(session_id) == (git, idx):
+                        self._sessions.pop(session_id, None)
+                raise
             return git, idx
 
     @contextmanager

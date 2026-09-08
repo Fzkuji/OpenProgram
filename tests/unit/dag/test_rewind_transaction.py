@@ -343,6 +343,97 @@ def test_mixed_interrupted_intent_is_automatically_rolled_back(store, tmp_path):
     assert store.get_session("s-mixed-recovery")["head_id"] == assistants[-1]
 
 
+def test_fresh_public_session_open_recovers_prepared_rewind_before_head_use(
+    store, tmp_path,
+):
+    """A reopened public SessionStore repairs its journal before exposing HEAD."""
+    from openprogram.agent._rewind import recover_session_rewinds
+
+    first = tmp_path / "work" / "first.py"
+    assistants, journal = _seed_three_turns(store, "s-lazy-recovery", first)
+    second = tmp_path / "work" / "second.py"
+    second.write_text("before\n", encoding="utf-8")
+    journal.backup_before_edit(assistants[-1], str(second))
+    second.write_text("after\n", encoding="utf-8")
+    journal.commit_after_edit(assistants[-1], str(second), operation="edit")
+    turn_ids = list(reversed(assistants))
+    plan = journal.plan_rewind_operation(turn_ids)
+    first.write_text("v0\n", encoding="utf-8")
+    key = "lazy-recovery"
+    manifest.save(journal._rewind_intent_path(key), {
+        "version": 1,
+        "transaction_id": "rewind_lazy_recovery",
+        "idempotency_key": key,
+        "turn_ids": turn_ids,
+        "expected_head_id": assistants[-1],
+        "target_head_id": "ROOT",
+        "target_msg_id": "u1",
+        "status": "applying",
+        "actions": plan["actions"],
+        "conflicts": [],
+        "unavailable": [],
+        "error": None,
+    })
+
+    reopened = SessionStore(store.root_path)
+    row = reopened.get_session("s-lazy-recovery")
+    _git, index = reopened._open("s-lazy-recovery")
+
+    assert row is not None
+    assert index.head_id == assistants[-1]
+    assert first.read_text(encoding="utf-8") == "v3\n"
+    assert second.read_text(encoding="utf-8") == "after\n"
+    assert journal.read_rewind_intent(key)["status"] == "rolled_back"
+    assert recover_session_rewinds("s-lazy-recovery", store=reopened) == []
+
+
+def test_failed_lazy_recovery_withdraws_session_cache_and_retries(
+    tmp_path, monkeypatch,
+):
+    from openprogram.agent import _rewind
+
+    store = SessionStore(tmp_path / "sessions")
+    store.create_session("s-recovery-retry", "main")
+    store.invalidate_cache("s-recovery-retry")
+
+    def fail(_session_id, *, store):
+        raise RuntimeError("recovery unavailable")
+
+    monkeypatch.setattr(_rewind, "recover_session_rewinds", fail)
+    with pytest.raises(RuntimeError, match="recovery unavailable"):
+        store.get_session("s-recovery-retry")
+    assert "s-recovery-retry" not in store._sessions  # noqa: SLF001
+
+    calls = []
+    monkeypatch.setattr(
+        _rewind,
+        "recover_session_rewinds",
+        lambda session_id, *, store: calls.append((store, session_id)) or [],
+    )
+    assert store.get_session("s-recovery-retry") is not None
+    assert calls == [(store, "s-recovery-retry")]
+
+
+def test_recovery_scope_isolated_by_store_identity(tmp_path, monkeypatch):
+    from openprogram.agent import _rewind
+
+    root = tmp_path / "sessions"
+    first = SessionStore(root)
+    first.create_session("same-session", "main")
+    second = SessionStore(root)
+    calls = []
+    monkeypatch.setattr(
+        _rewind,
+        "recover_session_rewinds",
+        lambda session_id, *, store: calls.append((store, session_id)) or [],
+    )
+
+    with first._rewind_recovery_scope("same-session"):  # noqa: SLF001
+        assert second.get_session("same-session") is not None
+
+    assert calls == [(second, "same-session")]
+
+
 def test_idempotent_replay_is_bound_to_original_target(store, tmp_path):
     from openprogram.agent._rewind import plan_rewind, rewind_to
 

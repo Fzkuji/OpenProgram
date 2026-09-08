@@ -62,16 +62,17 @@ def recover_session_rewinds(session_id: str, *, store=None) -> list[dict]:
     from openprogram.store.snapshot.checkpoint import CheckpointStore
 
     store = store or default_store()
-    if store._open(session_id) is None:
-        return []
-    journal = CheckpointStore(store._session_dir(session_id))
-    recovered = journal.recover_rewind_intents(
-        get_head=lambda: _head(store, session_id),
-        compare_and_set_head=lambda intent, expected, target: _cas_for_intent(
-            store, session_id, intent, expected, target,
-        ),
-    )
-    return recovered + journal.recover_history_intents()
+    with store._rewind_recovery_scope(session_id):
+        if store._open(session_id) is None:
+            return []
+        journal = CheckpointStore(store._session_dir(session_id))
+        recovered = journal.recover_rewind_intents(
+            get_head=lambda: _head(store, session_id),
+            compare_and_set_head=lambda intent, expected, target: _cas_for_intent(
+                store, session_id, intent, expected, target,
+            ),
+        )
+        return recovered + journal.recover_history_intents()
 
 
 def recover_all_rewinds() -> int:
@@ -295,21 +296,22 @@ def rewind_to(
     if idempotency_key:
         existing = journal.read_rewind_intent(idempotency_key)
         if existing is not None:
-            result = journal.apply_rewind_operation(
-                existing.get("turn_ids") or [],
-                expected_head_id=existing.get("expected_head_id"),
-                target_head_id=existing.get("target_head_id"),
-                get_head=lambda: _head(store, session_id),
-                compare_and_set_head=lambda expected, target: _cas_for_intent(
-                    store, session_id, existing, expected, target,
-                ),
-                idempotency_key=idempotency_key,
-                target_msg_id=target_msg_id,
-                user_text=existing.get("user_text", ""),
-                source_branch_id=existing.get("source_branch_id"),
-                target_branch_id=existing.get("target_branch_id"),
-                expected_plan_hash=expected_plan_hash,
-            )
+            with store._rewind_recovery_scope(session_id):
+                result = journal.apply_rewind_operation(
+                    existing.get("turn_ids") or [],
+                    expected_head_id=existing.get("expected_head_id"),
+                    target_head_id=existing.get("target_head_id"),
+                    get_head=lambda: _head(store, session_id),
+                    compare_and_set_head=lambda expected, target: _cas_for_intent(
+                        store, session_id, existing, expected, target,
+                    ),
+                    idempotency_key=idempotency_key,
+                    target_msg_id=target_msg_id,
+                    user_text=existing.get("user_text", ""),
+                    source_branch_id=existing.get("source_branch_id"),
+                    target_branch_id=existing.get("target_branch_id"),
+                    expected_plan_hash=expected_plan_hash,
+                )
             return _operation_response(
                 session_id, target_msg_id, result,
                 nodes_rewound=len(existing.get("turn_ids") or []) * 2,
@@ -334,21 +336,22 @@ def rewind_to(
         "source_branch_id": plan["source_branch_id"],
         "target_branch_id": target_branch_id,
     }
-    result = journal.apply_rewind_operation(
-        plan["turn_ids"],
-        expected_head_id=plan["source_head_id"],
-        target_head_id=plan["target_head_id"],
-        get_head=lambda: _head(store, session_id),
-        compare_and_set_head=lambda expected, target: _cas_for_intent(
-            store, session_id, intent_context, expected, target,
-        ),
-        idempotency_key=key,
-        target_msg_id=target_msg_id,
-        user_text=plan["user_text"],
-        source_branch_id=plan["source_branch_id"],
-        target_branch_id=target_branch_id,
-        expected_plan_hash=plan["plan_hash"],
-    )
+    with store._rewind_recovery_scope(session_id):
+        result = journal.apply_rewind_operation(
+            plan["turn_ids"],
+            expected_head_id=plan["source_head_id"],
+            target_head_id=plan["target_head_id"],
+            get_head=lambda: _head(store, session_id),
+            compare_and_set_head=lambda expected, target: _cas_for_intent(
+                store, session_id, intent_context, expected, target,
+            ),
+            idempotency_key=key,
+            target_msg_id=target_msg_id,
+            user_text=plan["user_text"],
+            source_branch_id=plan["source_branch_id"],
+            target_branch_id=target_branch_id,
+            expected_plan_hash=plan["plan_hash"],
+        )
     if result.get("status") == "committed" and not result.get("replayed"):
         try:
             store.commit_turn(session_id, "rewind")
