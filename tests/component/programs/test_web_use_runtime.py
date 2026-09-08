@@ -3258,6 +3258,249 @@ def test_observe_with_url_session_only_act_uses_live_registry_session(monkeypatc
     assert adapters["open_claude_chrome"].calls[-1][0] == "act"
 
 
+class _NativeObserveAdapter:
+    """BrowserPageController observe shape: frame_id, no ok."""
+
+    supports_operation_guard = True
+
+    def __init__(self, name):
+        self.name = name
+        self.calls = []
+
+    def observe(self, session, arguments, *, before_dispatch=None):
+        del session, arguments
+        if before_dispatch is not None:
+            before_dispatch()
+        self.calls.append("observe")
+        return {
+            "frame_id": "frame_1_b6a848a6",
+            "url": "http://127.0.0.1:62147/page/1",
+            "origin": "http://127.0.0.1:62147",
+            "title": "Resource test PAGE",
+            "target": {
+                "kind": "web_tab",
+                "tab_id": "tab-opened",
+                "target_id": "target-opened",
+            },
+            "viewport": {"width": 1280, "height": 800},
+        }
+
+    def act(self, session, arguments, *, before_dispatch=None):
+        del session
+        if before_dispatch is not None:
+            before_dispatch()
+        self.calls.append(("act", dict(arguments)))
+        return {"ok": True, "detail": "clicked"}
+
+    def verify(self, session, arguments, *, before_dispatch=None):
+        del session, arguments, before_dispatch
+        return {"ok": True, "passed": True}
+
+    def close(self, session):
+        del session
+        self.calls.append("close")
+
+
+def _public_open_transport(webtab):
+    def request_on_ws(_ws, command, timeout=15.0):
+        del timeout
+        if command.get("op") == "open":
+            return {
+                "ok": True,
+                "window_id": "win",
+                "tab_id": "tab-opened",
+                "target_id": "target-opened",
+                "url": command.get("url") or "http://127.0.0.1:62147/page/1",
+                "title": "Resource test PAGE",
+                "geometry_revision": 7,
+                "page_revision": 99,
+                "access_revision": 99,
+                "created": True,
+                "reused": False,
+            }
+        window_id = command.get("window_id")
+        tab_id = command.get("tab_id")
+        for entry in webtab._bindings.values():
+            if entry[1] == window_id and entry[2] == tab_id:
+                return {
+                    "ok": True,
+                    "window_id": entry[1],
+                    "tab_id": entry[2],
+                    "target_id": entry[3],
+                    "geometry_revision": entry[7],
+                }
+        return {"ok": False, "reason_code": "page_context_stale"}
+
+    return request_on_ws
+
+
+@pytest.mark.parametrize("entry", ["web_use", "direct"])
+def test_public_url_observe_keeps_binding_for_first_session_act(
+    monkeypatch, entry,
+):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.programs.workflow.browser.web_use_runtime import (
+        SUPPORTED_BACKENDS,
+        WebUseSessionRegistry,
+    )
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    adapters = {name: _NativeObserveAdapter(name) for name in SUPPORTED_BACKENDS}
+    registry = WebUseSessionRegistry(
+        adapters=adapters,
+        release_context=surface_context.release_bindings,
+    )
+    owner = object()
+    webtab.ensure_connection_revision(owner)
+    webtab._desktop_windows[owner] = "win"
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(webtab, "request_on_ws", _public_open_transport(webtab))
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context, "web_use_owner_id", lambda context=None: "owner-native",
+    )
+    url = "http://127.0.0.1:62147/page/1"
+    try:
+        if entry == "web_use":
+            observed = module.web_use(
+                command="observe",
+                backend="open_claude_chrome",
+                arguments={"url": url},
+            )
+        else:
+            observed = module.execute_direct_web_use(
+                {
+                    "command": "observe",
+                    "backend": "open_claude_chrome",
+                    "arguments": {"url": url},
+                },
+                owner_id="owner-native",
+            )
+        assert "ok" not in observed or observed.get("ok") is not False
+        assert observed.get("ok") is not False
+        assert observed["frame_id"] == "frame_1_b6a848a6"
+        assert observed["web_session_id"].startswith("cs_")
+        assert observed.get("closed") is not True
+        assert "page_context_token" not in observed
+        assert webtab._bindings
+        binding_id = next(iter(webtab._bindings))
+        assert webtab.request_bound_tab(binding_id).get("ok") is True
+
+        if entry == "web_use":
+            acted = module.web_use(
+                command="act",
+                backend="open_claude_chrome",
+                web_session_id=observed["web_session_id"],
+                arguments={
+                    "action": "click",
+                    "expected_frame_id": observed["frame_id"],
+                },
+            )
+        else:
+            acted = module.execute_direct_web_use(
+                {
+                    "command": "act",
+                    "backend": "open_claude_chrome",
+                    "web_session_id": observed["web_session_id"],
+                    "arguments": {
+                        "action": "click",
+                        "expected_frame_id": observed["frame_id"],
+                    },
+                },
+                owner_id="owner-native",
+            )
+        assert acted.get("ok") is not False
+        assert acted.get("closed") is not True
+        assert acted["web_session_id"] == observed["web_session_id"]
+        assert adapters["open_claude_chrome"].calls[-1][0] == "act"
+        assert webtab._bindings
+    finally:
+        for binding_id in list(webtab._bindings):
+            webtab.release_binding(binding_id)
+        webtab.release_connection(owner)
+        registry.close_all()
+
+
+@pytest.mark.parametrize("entry", ["web_use", "direct"])
+def test_public_url_observe_releases_binding_when_frame_is_missing(
+    monkeypatch, entry,
+):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.programs.workflow.browser.web_use_runtime import (
+        SUPPORTED_BACKENDS,
+        WebUseSessionRegistry,
+    )
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    class _NoFrame(_NativeObserveAdapter):
+        def observe(self, session, arguments, *, before_dispatch=None):
+            del session, arguments
+            if before_dispatch is not None:
+                before_dispatch()
+            self.calls.append("observe")
+            return {"title": "empty"}
+
+    adapters = {name: _NoFrame(name) for name in SUPPORTED_BACKENDS}
+    registry = WebUseSessionRegistry(
+        adapters=adapters,
+        release_context=surface_context.release_bindings,
+    )
+    owner = object()
+    webtab.ensure_connection_revision(owner)
+    webtab._desktop_windows[owner] = "win"
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(webtab, "request_on_ws", _public_open_transport(webtab))
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context, "web_use_owner_id", lambda context=None: "owner-native",
+    )
+    try:
+        if entry == "web_use":
+            observed = module.web_use(
+                command="observe",
+                backend="open_claude_chrome",
+                arguments={"url": "http://127.0.0.1:62147/page/1"},
+            )
+        else:
+            observed = module.execute_direct_web_use(
+                {
+                    "command": "observe",
+                    "backend": "open_claude_chrome",
+                    "arguments": {"url": "http://127.0.0.1:62147/page/1"},
+                },
+                owner_id="owner-native",
+            )
+        assert observed.get("ok") is False
+        assert not webtab._bindings
+        session_id = observed.get("web_session_id") or ""
+        if session_id:
+            again = registry.execute(
+                command="act",
+                backend="open_claude_chrome",
+                web_session_id=session_id,
+                owner_id="owner-native",
+                arguments={
+                    "action": "click",
+                    "expected_frame_id": "frame_1_b6a848a6",
+                },
+            )
+            assert again.get("reason_code") == "web_session_not_found"
+            assert again.get("closed") is not True or again.get("ok") is False
+    finally:
+        for binding_id in list(webtab._bindings):
+            webtab.release_binding(binding_id)
+        webtab.release_connection(owner)
+        registry.close_all()
+
+
 def test_invalid_arguments_keep_live_session_unmarked_closed():
     from openprogram.programs.workflow.browser.web_use_runtime import (
         WebUseSessionRegistry,

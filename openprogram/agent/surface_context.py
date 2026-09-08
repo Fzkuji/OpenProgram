@@ -630,13 +630,7 @@ def open_page(
                 "reason_code": "page_context_stale",
                 "error": f"opened Page could not be bound ({type(exc).__name__})",
             }
-    revisions = {
-        key: _revision(result.get(key))
-        for key in (
-            "page_revision", "access_revision", "geometry_revision",
-        )
-        if _revision(result.get(key))
-    } or webtab.binding_revisions(binding_id)
+    revisions = webtab.binding_revisions(binding_id)
     aliases = ["web:1"]
     if not background:
         aliases.append("focused")

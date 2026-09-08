@@ -1685,6 +1685,21 @@ def _open_page_error(opened: dict) -> dict:
     }
 
 
+def _opened_observation_is_live(observed) -> bool:
+    """True when observe-on-open returned a reusable live Page session."""
+    if not isinstance(observed, dict):
+        return False
+    if observed.get("ok") is False:
+        return False
+    if observed.get("closed") is True:
+        return False
+    if not str(observed.get("frame_id") or "").strip():
+        return False
+    if not str(observed.get("web_session_id") or "").strip():
+        return False
+    return True
+
+
 def _start_session_on_opened_page(*, context, owner_id: str, backend: str, arguments: dict):
     from openprogram.agent import surface_context
     from .web_use_runtime import get_registry
@@ -1713,6 +1728,17 @@ def _start_session_on_opened_page(*, context, owner_id: str, backend: str, argum
     if isinstance(observed, dict):
         observed = dict(observed)
         observed.pop("page_context_token", None)
+    if _opened_observation_is_live(observed):
+        return observed
+    surface_context.release_bindings(context)
+    if not isinstance(observed, dict):
+        return {
+            "ok": False,
+            "reason_code": "desktop_unavailable",
+            "error": "desktop app opened a tab but the Page could not be observed",
+        }
+    if observed.get("ok") is not False:
+        observed["ok"] = False
     return observed
 
 
@@ -1849,8 +1875,7 @@ def web_use(
         except Exception:
             surface_context.release_bindings(context)
             raise
-        if not observed.get("ok"):
-            surface_context.release_bindings(context)
+        if observed.get("ok") is False:
             return observed
         if command == "observe" or str(arguments.get("action") or "") in {
             "", "navigate",
@@ -1958,8 +1983,7 @@ def execute_direct_web_use(arguments: dict, *, owner_id: str):
         except Exception:
             surface_context.release_bindings(opened)
             raise
-        if not observed.get("ok"):
-            surface_context.release_bindings(opened)
+        if observed.get("ok") is False:
             return observed
         if command == "observe" or str(nested.get("action") or "") in {
             "", "navigate",

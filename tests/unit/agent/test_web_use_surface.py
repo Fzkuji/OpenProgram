@@ -631,6 +631,53 @@ def test_open_page_opens_background_tab_on_registered_desktop(monkeypatch):
         webtab.release_connection(owner)
 
 
+def test_open_page_uses_registered_binding_revisions_when_native_geometry_is_set(
+    monkeypatch,
+):
+    from openprogram.agent import surface_context
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions import webtab
+
+    owner = _WS()
+    webtab.ensure_connection_revision(owner)
+    webtab._desktop_windows[owner] = "window-1"
+    monkeypatch.setattr(server, "_ws_connections", [owner])
+    monkeypatch.setattr(
+        webtab,
+        "request_on_ws",
+        lambda ws, command, timeout=15.0: {
+            "ok": True,
+            "window_id": "window-1",
+            "tab_id": "w:https://example.test/",
+            "target_id": "target-opened",
+            "url": "https://example.test/",
+            "title": "Example",
+            "geometry_revision": 7,
+            "page_revision": 99,
+            "access_revision": 99,
+            "created": True,
+            "reused": False,
+        },
+    )
+    context = {}
+    try:
+        context = surface_context.open_page("https://example.test/")
+        surface = context["surfaces"][0]
+        owned = webtab.binding_revisions(surface["binding_id"])
+        assert owned["geometry_revision"] == 7
+        assert surface["geometry_revision"] == owned["geometry_revision"]
+        assert surface["page_revision"] == owned["page_revision"]
+        assert surface["access_revision"] == owned["access_revision"]
+        assert surface["page_revision"] != 99
+        assert surface["access_revision"] != 99
+        assert owned["page_revision"] > 0
+        assert owned["access_revision"] > 0
+    finally:
+        for surface in context.get("surfaces") or []:
+            webtab.release_binding(surface["binding_id"])
+        webtab.release_connection(owner)
+
+
 def test_open_page_forwards_background_contract_through_child_bridge(monkeypatch):
     from openprogram.agent import surface_context
     from openprogram.webui.ws_actions import webtab
