@@ -451,3 +451,169 @@ def test_file_approval_rechecks_durable_state_on_resume(tmp_path, monkeypatch, c
         assert 'no longer exists' in reason
         assert not path.exists()
     if change == 'modified': assert path.read_text() == 'user contents'
+
+
+def _decision_fragment(step_id: str = "provider:decision") -> CheckpointFragment:
+    return CheckpointFragment(
+        safe_point_kind="agent.provider.decision.after",
+        frontier=({"step_id": step_id, "phase": "after_provider"},),
+        state_refs={"continuation": {"version": 1}},
+    )
+
+
+def _suspend_ask(service, execution, attempt, wait_id, *, step_id="provider:decision", policy=None):
+    return service.open_wait_at_safe_point(
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_version=execution.status_version,
+        fragment=_decision_fragment(step_id),
+        kind="ask",
+        request={"prompt": "Continue?"},
+        policy_snapshot=policy or {
+            "version": 1,
+            "on_answer": "continue",
+            "on_decline": "fail",
+            "on_timeout": "fail",
+        },
+        expires_at=9_999_999_999,
+        wait_id=wait_id,
+    )
+
+
+def _running_attempt(attempts, executions, execution_id):
+    current = executions.get_execution(execution_id)
+    assert current is not None and current.current_attempt_id is not None
+    attempt = attempts.get(current.current_attempt_id)
+    assert attempt is not None
+    return current, attempt
+
+
+def test_startup_ignores_historical_wait_resume_and_recovers_current_wait(
+    tmp_path,
+) -> None:
+    from openprogram.execution.startup import recover_execution_startup
+
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    activations = []
+
+    async def activate(next_attempt, activation):
+        activations.append((next_attempt.attempt_id, activation.checkpoint.checkpoint_id))
+        return None
+
+    service = RuntimeControlService(
+        executions, attempts, DriverRegistry(), activator=activate,
+    )
+    first = _suspend_ask(service, execution, attempt, "wait_a")
+    asyncio.run(service.request_wait_answer(
+        command_id="answer_a", execution_id=execution.execution_id,
+        expected_version=first.execution.status_version, actor={"surface": "test"},
+        wait_id="wait_a", generation=first.wait.claim_generation, answer="yes",
+    ))
+    running, next_attempt = _running_attempt(attempts, executions, execution.execution_id)
+    second = _suspend_ask(
+        service, running, next_attempt, "wait_b", step_id="provider:decision:b",
+    )
+    first_resume = executions.get_command("wait-resume:wait_a:answered")
+    assert first_resume is not None and first_resume.status.value == "applied"
+    assert second.checkpoint.checkpoint_id != first.checkpoint.checkpoint_id
+    assert len(activations) == 1
+
+    recover_execution_startup(control_service=service)
+    asyncio.run(service.recover_wait_outcomes())
+
+    latest = executions.get_execution(execution.execution_id)
+    assert latest is not None
+    assert latest.status.value == "paused"
+    assert latest.reason_code == "wait_open"
+    assert latest.checkpoint_head_id == second.checkpoint.checkpoint_id
+    assert latest.current_attempt_id is None
+    assert DurableWaitStore(executions).get_wait("wait_b").status is WaitStatus.OPEN
+    assert len(activations) == 1
+    replayed = executions.get_command("wait-resume:wait_a:answered")
+    assert replayed is not None
+    assert replayed.expected_version == first_resume.expected_version
+    assert replayed.status.value == "applied"
+
+    DurableWaitStore(executions).resolve_with_command(
+        command_id="answer_b_before_restart", execution_id=execution.execution_id,
+        expected_version=latest.status_version, actor={"surface": "test"},
+        kind=CommandKind.WAIT_ANSWER, wait_id="wait_b", generation=0,
+        answer="yes",
+    )
+    recover_execution_startup(control_service=service)
+    asyncio.run(service.recover_wait_outcomes())
+
+    resumed = executions.get_execution(execution.execution_id)
+    assert resumed is not None and resumed.status.value == "running"
+    assert len(activations) == 2
+    assert activations[1][1] == second.checkpoint.checkpoint_id
+
+
+@pytest.mark.parametrize("stale_kind", ["fail", "cancel", "scheduler", "null_checkpoint"])
+def test_stale_wait_outcome_does_not_own_later_wait_frontier(tmp_path, stale_kind) -> None:
+    from openprogram.execution.startup import recover_execution_startup
+
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    activations = []
+    scheduled = []
+
+    async def activate(next_attempt, activation):
+        activations.append(next_attempt.attempt_id)
+        return None
+
+    service = RuntimeControlService(
+        executions, attempts, DriverRegistry(), activator=activate,
+    )
+    if stale_kind in {"fail", "cancel"}:
+        first = _suspend_ask(
+            service, execution, attempt, "wait_a",
+            policy={
+                "version": 1,
+                "on_answer": "continue",
+                "on_decline": stale_kind,
+                "on_timeout": "fail",
+            },
+        )
+        DurableWaitStore(executions).resolve_with_command(
+            command_id="decline_a", execution_id=execution.execution_id,
+            expected_version=first.execution.status_version, actor={"surface": "test"},
+            kind=CommandKind.WAIT_DECLINE, wait_id="wait_a", generation=0,
+        )
+        asyncio.run(service.request_continue(
+            command_id="continue_after_stale_a",
+            execution_id=execution.execution_id,
+            expected_version=first.execution.status_version,
+            actor={"surface": "test"},
+        ))
+    else:
+        first = _suspend_ask(service, execution, attempt, "wait_a")
+        asyncio.run(service.request_wait_answer(
+            command_id="answer_a", execution_id=execution.execution_id,
+            expected_version=first.execution.status_version, actor={"surface": "test"},
+            wait_id="wait_a", generation=first.wait.claim_generation, answer="yes",
+        ))
+    running, next_attempt = _running_attempt(attempts, executions, execution.execution_id)
+    second = _suspend_ask(
+        service, running, next_attempt, "wait_b", step_id="provider:decision:b",
+    )
+    if stale_kind == "null_checkpoint":
+        with executions._transaction() as connection:
+            connection.execute(
+                "UPDATE execution_waits SET checkpoint_id = NULL WHERE wait_id = ?",
+                ("wait_a",),
+            )
+    if stale_kind == "scheduler":
+        service.set_wait_resume_scheduler(lambda wait, _execution: scheduled.append(wait.wait_id))
+
+    recover_execution_startup(control_service=service)
+    asyncio.run(service.recover_wait_outcomes())
+
+    latest = executions.get_execution(execution.execution_id)
+    assert latest is not None
+    assert latest.status.value == "paused"
+    assert latest.reason_code == "wait_open"
+    assert latest.checkpoint_head_id == second.checkpoint.checkpoint_id
+    assert DurableWaitStore(executions).get_wait("wait_b").status is WaitStatus.OPEN
+    assert scheduled == []
+    assert executions.get_command("wait-cancel:wait_a:declined") is None

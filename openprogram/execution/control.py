@@ -484,6 +484,9 @@ class RuntimeControlService:
             or execution.reason_code != "wait_open"
         ):
             return execution
+        wait_checkpoint_id = getattr(wait, "checkpoint_id", None)
+        if not wait_checkpoint_id or wait_checkpoint_id != execution.checkpoint_head_id:
+            return execution
         outcome = wait.outcome
         policy_key = {
             "answered": "on_answer", "declined": "on_decline", "timeout": "on_timeout",
