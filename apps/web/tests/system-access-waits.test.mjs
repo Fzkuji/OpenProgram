@@ -192,3 +192,28 @@ test("a successful empty projection while hidden cannot arm a stale live wait on
     await act(async () => root.unmount()); host.remove();
   }
 });
+
+test("pre-mount live wait waits for authoritative GET before native setup", async () => {
+  const sid = "deferred-authority-session";
+  const wait = {...waiting, session_id: sid, wait_id: "deferred-authority-wait"};
+  let releaseWaits;
+  const waitsPending = new Promise(resolve => { releaseWaits = resolve; });
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options.method || "GET"]);
+    if (url.includes("/waits?")) return waitsPending;
+    const row = {id: "screen_recording", status: "not_granted", can_request: true};
+    return Response.json(options.method === "POST" ? row : {capabilities: [row]});
+  };
+  rememberSystemAccessWait(wait, true);
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SystemAccessWaits, {sessionId: sid})));
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
+    releaseWaits(Response.json({waits: []}));
+    await act(async () => {});
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
+    assert.equal(host.textContent, "");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
