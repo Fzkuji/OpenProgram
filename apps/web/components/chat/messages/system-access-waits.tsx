@@ -43,18 +43,13 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
           const rows: AccessWait[] = data.waits
             .map((wait: unknown) => rememberSystemAccessWait(wait))
             .filter((wait): wait is AccessWait => wait !== null);
-          const owned = [
-            ...rows.filter(wait => wait.session_id === sid),
-            ...rememberedSystemAccessWaits(sid).filter(
-              wait => live.current.has(wait.wait_id)
-                && !handled.current.has(wait.wait_id)
-                && !rows.some(row => row.wait_id === wait.wait_id),
-            ),
-          ];
+          // A successful, structurally valid response is authoritative for
+          // this session. Cached live frames bridge a mount race only until
+          // this response arrives; they must not survive an empty projection.
+          const owned = rows.filter(wait => wait.session_id === sid);
           const activeIds = new Set(owned.map(wait => wait.wait_id));
           for (const previous of rememberedSystemAccessWaits(sid)) {
-            if (!activeIds.has(previous.wait_id)
-              && (!live.current.has(previous.wait_id) || handled.current.has(previous.wait_id))) {
+            if (!activeIds.has(previous.wait_id)) {
               forgetSystemAccessWait(previous);
               live.current.delete(previous.wait_id);
               handled.current.delete(previous.wait_id);

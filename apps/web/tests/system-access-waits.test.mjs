@@ -58,7 +58,7 @@ window.clearInterval = callback => timers.delete(callback);
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { SystemAccessWaits } = await import("../components/chat/messages/system-access-waits.tsx");
-const { rememberSystemAccessWait } = await import("../lib/system-access-wait-state.ts");
+const { rememberSystemAccessWait, rememberedSystemAccessWaits } = await import("../lib/system-access-wait-state.ts");
 const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution",required_capabilities:["screen_recording"]};
 
  test("durable waiting UI opens native setup once, restores without prompting, and never retries", async () => {
@@ -142,4 +142,53 @@ test("replayed waits restore status without opening native setup", async () => {
     assert.match(host.textContent, /Waiting for system authorization/);
     assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
   } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("a successful empty wait projection clears an unhandled pre-mount live wait", async () => {
+  const sid = "stale-pre-mount-session";
+  const wait = {...waiting, session_id: sid, wait_id: "stale-pre-mount-wait"};
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options.method || "GET"]);
+    if (url.includes("/waits?")) return Response.json({waits: []});
+    const row = {id: "screen_recording", status: "not_granted", can_request: true};
+    return Response.json(options.method === "POST" ? row : {capabilities: [row]});
+  };
+  rememberSystemAccessWait(wait, true);
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SystemAccessWaits, {sessionId: sid})));
+    assert.equal(host.textContent, "");
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
+    assert.deepEqual(rememberedSystemAccessWaits(sid), []);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("a successful empty projection while hidden cannot arm a stale live wait on focus", async () => {
+  const sid = "stale-hidden-session";
+  const wait = {...waiting, session_id: sid, wait_id: "stale-hidden-wait"};
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options.method || "GET"]);
+    if (url.includes("/waits?")) return Response.json({waits: []});
+    const row = {id: "screen_recording", status: "not_granted", can_request: true};
+    return Response.json(options.method === "POST" ? row : {capabilities: [row]});
+  };
+  rememberSystemAccessWait(wait, true);
+  const previousVisibility = document.visibilityState;
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SystemAccessWaits, {sessionId: sid})));
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
+    assert.equal(host.textContent, "");
+  } finally {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: previousVisibility });
+    await act(async () => root.unmount()); host.remove();
+  }
 });
