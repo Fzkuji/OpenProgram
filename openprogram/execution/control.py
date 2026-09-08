@@ -482,6 +482,7 @@ class RuntimeControlService:
             execution.status is not ExecutionStatus.PAUSED
             or execution.current_attempt_id is not None
             or execution.reason_code != "wait_open"
+            or wait.checkpoint_id != execution.checkpoint_head_id
         ):
             return execution
         outcome = wait.outcome
