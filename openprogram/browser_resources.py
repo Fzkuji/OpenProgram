@@ -160,10 +160,12 @@ class BrowserResourceStore:
         conversation = conversation_session_id or session_id
         with self.connect() as db:
             current = db.execute(
-                "SELECT generation, sequence, lifecycle, live FROM browser_resources WHERE resource_id=?",
+                "SELECT generation, sequence, lifecycle FROM browser_resources "
+                "WHERE resource_id=?",
                 (resource_id,),
             ).fetchone()
-            generation = max(int(connection_generation or 0), 1)
+            incoming_generation = int(connection_generation or 0)
+            generation = max(incoming_generation, 1)
             sequence = 0
             existing_lifecycle = ""
             if current is not None:
@@ -172,19 +174,48 @@ class BrowserResourceStore:
                 existing_lifecycle = str(current["lifecycle"] or "")
             # Closed/unavailable metadata is not a live target. A new Page needs
             # a new page_key; the same resource_id must not flip back to idle.
+            # Incoming epoch is stored as excluded.connection_generation so the
+            # UPDATE predicate can reject zero/older writers without Python
+            # rewriting them to the current epoch.
             if existing_lifecycle in {"closed", "unavailable"}:
                 live = False
             db.execute(
                 """INSERT INTO browser_resources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(resource_id) DO UPDATE SET
-                title=CASE WHEN excluded.title='' THEN browser_resources.title ELSE excluded.title END,
-                target=CASE WHEN excluded.target='' THEN browser_resources.target ELSE excluded.target END,
+                title=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                    THEN browser_resources.title
+                    WHEN excluded.connection_generation=0 THEN browser_resources.title
+                    WHEN excluded.connection_generation < browser_resources.connection_generation
+                    THEN browser_resources.title
+                    WHEN excluded.title='' THEN browser_resources.title
+                    ELSE excluded.title END,
+                target=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                    THEN browser_resources.target
+                    WHEN excluded.connection_generation=0 THEN browser_resources.target
+                    WHEN excluded.connection_generation < browser_resources.connection_generation
+                    THEN browser_resources.target
+                    WHEN excluded.target='' THEN browser_resources.target
+                    ELSE excluded.target END,
                 tab_id=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
-                    THEN browser_resources.tab_id ELSE excluded.tab_id END,
+                    THEN browser_resources.tab_id
+                    WHEN excluded.connection_generation=0 THEN browser_resources.tab_id
+                    WHEN excluded.connection_generation < browser_resources.connection_generation
+                    THEN browser_resources.tab_id
+                    WHEN ifnull(browser_resources.tab_id,'') != '' THEN browser_resources.tab_id
+                    ELSE excluded.tab_id END,
                 window_id=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
-                    THEN browser_resources.window_id ELSE excluded.window_id END,
+                    THEN browser_resources.window_id
+                    WHEN excluded.connection_generation=0 THEN browser_resources.window_id
+                    WHEN excluded.connection_generation < browser_resources.connection_generation
+                    THEN browser_resources.window_id
+                    WHEN ifnull(browser_resources.window_id,'') != '' THEN browser_resources.window_id
+                    ELSE excluded.window_id END,
                 connection_generation=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
-                    THEN browser_resources.connection_generation ELSE excluded.connection_generation END,
+                    THEN browser_resources.connection_generation
+                    WHEN excluded.connection_generation=0 THEN browser_resources.connection_generation
+                    WHEN excluded.connection_generation < browser_resources.connection_generation
+                    THEN browser_resources.connection_generation
+                    ELSE excluded.connection_generation END,
                 generation=excluded.generation,
                 lifecycle=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
                     THEN browser_resources.lifecycle ELSE excluded.lifecycle END,
@@ -194,7 +225,7 @@ class BrowserResourceStore:
                 (
                     resource_id, "web", str(title or "")[:160], sanitized,
                     str(tab_id or "")[:512], str(window_id or "")[:160],
-                    int(connection_generation or 0), generation, sequence,
+                    incoming_generation, generation, sequence,
                     "connected" if live else "unavailable", 1 if live else 0,
                     None, now,
                 ),
@@ -232,13 +263,33 @@ class BrowserResourceStore:
                 )
         return assoc_id
 
-    def update_display(self, resource_id: str, *, title: str = "", target: str = "") -> None:
+    def update_display(
+        self, resource_id: str, *, title: str = "", target: str = "",
+        connection_generation: int | None = None,
+    ) -> None:
         if not resource_id:
             return
+        title = str(title or "")[:160]
+        sanitized = display_target(target) if target else ""
+        if not title and not sanitized:
+            return
+        incoming = int(connection_generation or 0)
         with self.connect() as db:
             db.execute(
-                "UPDATE browser_resources SET title=?, target=?, updated_at=? WHERE resource_id=?",
-                (str(title or "")[:160], display_target(target), time.time(), resource_id),
+                """UPDATE browser_resources SET
+                title=CASE WHEN ?='' THEN title ELSE ? END,
+                target=CASE WHEN ?='' THEN target ELSE ? END,
+                updated_at=?
+                WHERE resource_id=?
+                AND lifecycle NOT IN ('closed','unavailable')
+                AND (
+                    connection_generation=0
+                    OR (? > 0 AND ? >= connection_generation)
+                )""",
+                (
+                    title, title, sanitized, sanitized, time.time(), resource_id,
+                    incoming, incoming,
+                ),
             )
 
     def clear_execution_use(self, execution_id: str) -> None:
@@ -753,13 +804,34 @@ def _current_attribution():
 
 def attribute_operating_page(page_key: str) -> None:
     """Retain the current invocation's association. Operating/active is set
-    only from an admitted act dispatch receipt."""
+    only from an admitted act dispatch receipt. Does not publish native
+    window/tab or title/URL."""
     if not page_key:
         return
     attribution = _current_attribution()
     if not attribution.get("execution_id") and not attribution.get("session_id"):
         return
     BrowserResourceStore().retain(page_key=page_key, live=True, **attribution)
+
+
+def publish_bound_page(
+    page_key: str,
+    *,
+    window_id: str = "",
+    tab_id: str = "",
+    connection_generation: int = 0,
+    title: str = "",
+    target: str = "",
+) -> None:
+    """Write trusted binding identity and controller display in one retain."""
+    if not page_key:
+        return
+    BrowserResourceStore().retain(
+        page_key=page_key, window_id=window_id, tab_id=tab_id,
+        title=title, target=target,
+        connection_generation=int(connection_generation or 0),
+        live=True, **_current_attribution(),
+    )
 
 
 def retain_from_binding(

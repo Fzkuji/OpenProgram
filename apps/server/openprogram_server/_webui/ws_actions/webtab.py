@@ -269,6 +269,24 @@ def binding_page_key(binding_id: str) -> str:
     return page_key_for_revision(entry[5])
 
 
+def binding_page_descriptor(binding_id: str) -> dict[str, Any]:
+    """Return exact live binding identity. Empty if the handle is gone."""
+    with _lock:
+        entry = _bindings.get(binding_id)
+        connection_revision = (
+            _connection_revisions.get(entry[0]) if entry is not None else None
+        )
+    if entry is None:
+        return {}
+    return {
+        "window_id": entry[1],
+        "tab_id": entry[2],
+        "target_id": entry[3],
+        "page_key": page_key_for_revision(entry[5]),
+        "connection_generation": int(connection_revision or 0),
+    }
+
+
 def binding_revisions(binding_id: str) -> dict[str, int]:
     """Return server-owned Page/access revisions for one live capability."""
     with _lock:

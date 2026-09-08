@@ -266,7 +266,13 @@ def test_retain_does_not_erase_title_when_binding_has_no_url(tmp_path, monkeypat
     webtab.ensure_connection_revision(owner)
     binding_id = webtab.register_binding(owner, "win", "tab-a", "target-1")
     page_key = webtab.binding_page_key(binding_id)
-    store.update_display(page_key, title="Plans overview", target="https://user:secret@example.test/p?token=1")
+    store.update_display(
+        page_key, title="Plans overview",
+        target="https://user:secret@example.test/p?token=1",
+        connection_generation=int(
+            webtab.binding_page_descriptor(binding_id).get("connection_generation") or 0
+        ),
+    )
     retain_from_binding(binding_id, "win", "tab-a", "target-1", 1)
     row = store.get_resource(page_key)
     assert row["title"] == "Plans overview"

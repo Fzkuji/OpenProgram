@@ -230,6 +230,11 @@ def capture(raw: Any, ws) -> dict | None:
             surface["page_key"],
             title=str(surface.get("title") or ""),
             target=str(result.get("url") or ""),
+            connection_generation=int(
+                webtab.binding_page_descriptor(binding_id).get(
+                    "connection_generation"
+                ) or 0
+            ),
         )
     except Exception:
         pass
@@ -410,6 +415,11 @@ def capture_active() -> dict:
             surface["page_key"],
             title=str(surface.get("title") or ""),
             target=str(result.get("url") or ""),
+            connection_generation=int(
+                webtab.binding_page_descriptor(binding_id).get(
+                    "connection_generation"
+                ) or 0
+            ),
         )
     except Exception:
         pass
@@ -660,6 +670,11 @@ def open_page(
             str(surface.get("page_key") or ""),
             title=str(surface.get("title") or ""),
             target=str(result.get("url") or normalized),
+            connection_generation=int(
+                webtab.binding_page_descriptor(binding_id).get(
+                    "connection_generation"
+                ) or 0
+            ),
         )
     except Exception:
         pass
