@@ -31,6 +31,7 @@ await build({
       setSnapshot,
     } from "./lib/state/web-tab-pip-store";
     export {
+      ingestBrowserResource,
       resetBrowserResources,
       getPreviewPreference,
       selectResourcePreview,
@@ -167,7 +168,7 @@ const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const {
   WebTabPip, WebTabPane, useCenterTabs, useWebTabPip,
-  resetBrowserResources, getPreviewPreference, selectResourcePreview,
+  ingestBrowserResource, resetBrowserResources, getPreviewPreference, selectResourcePreview,
   togglePreviewExpanded, hideResourcePreview, getSnapshot, setSnapshot,
   pipChatRect, pipDockEdge, pipHostMode, pipPresentationSize,
   PIP_DEFAULT_WIDTH, PIP_EXPANDED_HEIGHT, PIP_EXPANDED_WIDTH, PIP_MIN_WIDTH,
@@ -455,4 +456,119 @@ test("expand while docked updates dock size and native leftover bounds", async (
     const restoredStage = host.querySelector("[data-pip-dock]");
     assert.equal(restoredStage.style.getPropertyValue("--web-pip-dock-width"), "410px");
   });
+});
+
+function hiddenPage(index, title = "127.0.0.1") {
+  const url = `http://127.0.0.1/${index}`;
+  return {
+    id: `w:${url}`,
+    kind: "web",
+    url,
+    title,
+    agentOpened: true,
+    agentSessionId: "a",
+  };
+}
+
+function browserAssoc({ id, tabId, title, sequence = 1, target }) {
+  return {
+    id,
+    resource_id: `page-${id}`,
+    session_id: "a",
+    conversation_session_id: "a",
+    execution_id: "exec-a",
+    branch_id: "br-a",
+    branch_name: "Research",
+    agent_name: "Research Agent",
+    tab_id: tabId,
+    window_id: "main",
+    kind: "web",
+    title,
+    target: target || `http://127.0.0.1/${id}`,
+    status: "open",
+    source: "browser",
+    control_state: "idle",
+    generation: 1,
+    sequence,
+  };
+}
+
+function renderedPipTitle(host) {
+  return host.querySelector("[data-pip='true'] span")?.textContent;
+}
+
+test("floating PiP shows the current matching resource title for never-opened hidden pages", async () => {
+  resetBrowserResources();
+  boundsCalls.length = 0;
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  const first = hiddenPage(1);
+  const second = hiddenPage(2);
+  const unattributed = hiddenPage("none");
+  const untitled = hiddenPage("url-only", "");
+  useCenterTabs.setState({
+    tabs: [session, first, second, unattributed, untitled],
+    activeId: session.id,
+    groups: [],
+    splitWebTabId: null,
+  });
+  ingestBrowserResource(browserAssoc({
+    id: "assoc-stale",
+    tabId: "w:http://other.test/stale",
+    title: "Stale other page",
+    target: "http://other.test/stale",
+  }), "a");
+  ingestBrowserResource(browserAssoc({
+    id: "assoc-1", tabId: first.id, title: "Resource test 1", target: first.url,
+  }), "a");
+  ingestBrowserResource(browserAssoc({
+    id: "assoc-2", tabId: second.id, title: "Resource test 2", target: second.url,
+  }), "a");
+  selectResourcePreview("a", null, "assoc-stale");
+  useWebTabPip.getState().show(first.id, session.id);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(Shell)));
+    await act(async () => { flushObservers(); });
+    assert.equal(useCenterTabs.getState().activeId, session.id);
+    assert.equal(host.querySelector("[data-web-pip-dock]"), null);
+    assert.equal(host.querySelector("[data-pip='true']")?.getAttribute("data-pip-host"), "chat");
+    assert.equal(renderedPipTitle(host), "Resource test 1");
+
+    await act(async () => {
+      ingestBrowserResource(browserAssoc({
+        id: "assoc-1", tabId: first.id, title: "Resource test 1 renamed",
+        target: first.url, sequence: 2,
+      }), "a");
+    });
+    assert.equal(renderedPipTitle(host), "Resource test 1 renamed");
+
+    await act(async () => {
+      selectResourcePreview("a", null, "assoc-2");
+      useWebTabPip.getState().show(second.id, session.id);
+    });
+    assert.equal(renderedPipTitle(host), "Resource test 2");
+
+    await act(async () => {
+      selectResourcePreview("a", null, "assoc-stale");
+    });
+    assert.equal(renderedPipTitle(host), "Resource test 2");
+
+    await act(async () => {
+      useWebTabPip.getState().show(unattributed.id, session.id);
+    });
+    assert.equal(renderedPipTitle(host), "127.0.0.1");
+
+    await act(async () => {
+      useWebTabPip.getState().show(untitled.id, session.id);
+    });
+    assert.equal(renderedPipTitle(host), untitled.url);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    useWebTabPip.getState().end();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserResources();
+  }
 });

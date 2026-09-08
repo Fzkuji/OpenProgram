@@ -292,7 +292,7 @@ export function WebTabPip() {
   if (!tabId || !tab || !live) return null;
   if (host === "page" && !pageDock) return null;
 
-  const title = tab.title || url;
+  const title = resource?.title || tab.title || url;
   const followLabel = text("Follow current branch", "跟随当前分支");
   const usePage = text("Use in webpage", "在网页中使用");
   const hideLabel = text("Hide", "隐藏");
