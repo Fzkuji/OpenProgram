@@ -303,6 +303,67 @@ def _json_value(value: Any, *, name: str, cap: int | None = None) -> tuple[dict[
     return _descriptor(payload), payload
 
 
+def decode_turn_display(
+    state: "AgentCheckpointV1",
+    *,
+    store: Any,
+    execution_id: str,
+) -> list[dict[str, Any]]:
+    """Rebuild the public turn trace without applying wait decline/expiry.
+
+    Prefers the optional ``turn_display`` blob. Legacy checkpoints without
+    that ref use the same assistant/tool-result walk as projection, and leave
+    unfinished current-decision tools without a result so continue can fill
+    them. This is display only; it does not authorize effect replay.
+    """
+    display_ref = state.payload.get("turn_display_ref")
+    if isinstance(display_ref, Mapping):
+        loaded = state.read_json_ref(store, execution_id, display_ref)
+        if isinstance(loaded, list):
+            return [dict(item) for item in loaded if isinstance(item, Mapping)]
+    blocks: list[dict[str, Any]] = []
+    tools: dict[str, dict[str, Any]] = {}
+    for action in state.payload.get("completed_actions") or ():
+        if not isinstance(action, Mapping) or not isinstance(action.get("result_ref"), Mapping):
+            continue
+        message = state.read_json_ref(store, execution_id, action["result_ref"])
+        if not isinstance(message, Mapping):
+            continue
+        if message.get("role") == "assistant":
+            for item in message.get("content", []):
+                if not isinstance(item, Mapping):
+                    continue
+                kind = item.get("type")
+                if kind in {"text", "thinking"}:
+                    text = item.get(kind, "")
+                    if isinstance(text, str) and text:
+                        blocks.append({"type": kind, "text": text})
+                elif kind == "toolCall":
+                    tool_id = item.get("id")
+                    if not isinstance(tool_id, str) or not tool_id:
+                        continue
+                    block = {
+                        "type": "tool",
+                        "tool": item.get("name"),
+                        "tool_call_id": tool_id,
+                        "input": json.dumps(item.get("arguments", {}), default=str),
+                    }
+                    blocks.append(block)
+                    tools[tool_id] = block
+        elif message.get("role") == "toolResult":
+            tool_id = message.get("tool_call_id")
+            if tool_id in tools:
+                tools[tool_id].update(
+                    result="\n".join(
+                        item.get("text", "")
+                        for item in message.get("content", [])
+                        if isinstance(item, Mapping) and item.get("type") == "text"
+                    ),
+                    is_error=bool(message.get("is_error", False)),
+                )
+    return blocks
+
+
 def _validate_loaded_tools(names: Any, snapshot: Mapping[str, Any] | None = None) -> None:
     if (
         not isinstance(names, list)
@@ -346,6 +407,7 @@ class AgentCheckpointV1:
         pending_messages: list[Mapping[str, Any]] | None = None,
         pending_command_ids: list[str] | None = None,
         loaded_deferred_tools: list[str] | None = None,
+        turn_display: list[Mapping[str, Any]] | None = None,
     ) -> "AgentCheckpointV1":
         if safe_point.get("phase") not in {"after_provider", "after_tool"}:
             raise AgentCheckpointError("checkpoint_schema_invalid", "checkpoint phase is invalid")
@@ -390,6 +452,10 @@ class AgentCheckpointV1:
         assistant_ref = add("assistant_message_delta", assistant_message, cap=MAX_AGENT_DELTA_BYTES)
         snapshot_ref = add("resolved_model_system_tool_snapshot", resolved_snapshot)
         tool_refs = [add(f"tool_result_delta.{index}", result, cap=MAX_AGENT_DELTA_BYTES) for index, result in enumerate(tool_results)]
+        display_ref = (
+            add("turn_display", list(turn_display), cap=MAX_AGENT_DELTA_BYTES)
+            if turn_display is not None else None
+        )
 
         receipt_values: list[dict[str, Any]] = []
         for index, receipt in enumerate(terminal_effect_receipts):
@@ -490,6 +556,8 @@ class AgentCheckpointV1:
             "pending_command_ids": list(pending_command_ids or []),
             "loaded_deferred_tools": list(loaded_deferred_tools or []),
         }
+        if display_ref is not None:
+            payload["turn_display_ref"] = display_ref
         checkpoint = cls(payload=payload, blob_payloads=blobs)
         checkpoint.validate()
         if len(checkpoint.to_bytes()) > MAX_AGENT_CHECKPOINT_BYTES:
@@ -510,7 +578,7 @@ class AgentCheckpointV1:
         }
         if (
             not isinstance(value, Mapping)
-            or set(value) - {"loaded_deferred_tools"} != required
+            or set(value) - {"loaded_deferred_tools", "turn_display_ref"} != required
             or value.get("schema_version") != AGENT_CHECKPOINT_SCHEMA_VERSION
         ):
             raise AgentCheckpointError("checkpoint_schema_invalid", "unsupported Agent checkpoint schema")
@@ -591,6 +659,8 @@ class AgentCheckpointV1:
             *(f"terminal_effect_receipt.{index}" for index in range(len(value["terminal_effect_receipts"]))),
             *(f"pending_message.{index}" for index in range(len(value["pending_messages"]))),
         }
+        if "turn_display_ref" in value:
+            expected_ref_names.add("turn_display")
         # Historical results can outlive the current provider/tool decision.
         # Match the builder's content deduplication and exact semantic names;
         # arbitrary extra state refs remain invalid.
@@ -624,6 +694,10 @@ class AgentCheckpointV1:
                 raise AgentCheckpointError("state_ref_invalid", "checkpoint state ref does not match its field")
             if checked["ref"] not in self.blob_payloads and self.blob_payloads:
                 raise AgentCheckpointError("state_ref_invalid", "checkpoint blob payload is missing")
+        if "turn_display_ref" in value:
+            display_ref = _validate_descriptor(value["turn_display_ref"])
+            if refs.get("turn_display") != display_ref:
+                raise AgentCheckpointError("state_ref_invalid", "turn display ref does not match state refs")
         decision = value["current_decision"]
         if (
             not isinstance(decision, Mapping)

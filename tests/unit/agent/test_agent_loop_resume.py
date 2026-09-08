@@ -4,8 +4,14 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+
 from openprogram.agent.agent_loop import agent_loop_resume
-from openprogram.agent.continuation import AgentCheckpointV1, AgentContinuation
+from openprogram.agent.continuation import (
+    AgentCheckpointError,
+    AgentCheckpointV1,
+    AgentContinuation,
+)
 from openprogram.agent.dispatcher.types import TurnRequest
 from openprogram.agent.types import AgentContext, AgentLoopConfig, AgentTool, AgentToolResult
 from openprogram.providers.types import (
@@ -40,6 +46,7 @@ def _continuation(
     decision: AssistantMessage | None = None,
     tool_results: tuple[ToolResultMessage, ...] = (),
     next_tool_index: int = 0,
+    turn_display: list[dict] | None = None,
 ) -> AgentContinuation:
     from openprogram.agent.continuation import runtime_contract_snapshot
 
@@ -104,6 +111,7 @@ def _continuation(
         next_tool_index=next_tool_index, repeat_failures={},
         completed_actions=completed_actions,
         terminal_effect_receipts=receipts,
+        turn_display=turn_display,
     )
     return AgentContinuation(
         request=request, checkpoint=SimpleNamespace(), state=state,
@@ -192,6 +200,89 @@ def test_after_tool_resume_executes_only_the_unfinished_tool_suffix():
 
     assert asyncio.run(run())
     assert calls == {"provider": 1, "first": 0, "second": 1}
+
+
+def test_agent_checkpoint_keeps_the_terminal_receipt_cap():
+    from openprogram.agent.continuation import (
+        MAX_AGENT_TERMINAL_EFFECT_RECEIPTS,
+        AgentCheckpointError,
+    )
+
+    receipts = [
+        {
+            "effect_id": f"effect-{index}",
+            "frontier_step_id": f"after:{index}",
+            "action_id": f"action-{index}",
+            "outcome": "committed",
+            "receipt": {"n": index},
+        }
+        for index in range(MAX_AGENT_TERMINAL_EFFECT_RECEIPTS + 1)
+    ]
+    with pytest.raises(AgentCheckpointError, match="too many terminal effect receipts"):
+        AgentCheckpointV1.build(
+            safe_point={
+                "kind": "agent.provider.decision.after",
+                "step_id": "after_provider:p",
+                "phase": "after_provider",
+                "sentinel": "resume-from-checkpoint",
+            },
+            frontier=[{"step_id": "after_provider:p", "phase": "after_provider", "branch_id": "main"}],
+            turn={
+                "user_message_id": "user-1",
+                "assistant_message_id": "user-1_reply",
+                "base_history_head_id": "user-1",
+            },
+            assistant_message=_assistant([TextContent(text="x")]).model_dump(mode="json"),
+            tool_results=[],
+            resolved_snapshot={"model": {"id": "fake"}, "system_prompt": "", "tools": []},
+            provider_action_id="action-0",
+            tool_call_ids=[],
+            next_tool_index=0,
+            repeat_failures={},
+            completed_actions=[
+                {"action_id": f"action-{index}", "input_hash": "h"}
+                for index in range(len(receipts))
+            ],
+            terminal_effect_receipts=receipts,
+        )
+
+
+def test_agent_checkpoint_turn_display_ref_is_owned():
+    import json
+
+    display = [
+        {"type": "text", "text": "Earlier progress."},
+        {
+            "type": "tool", "tool": "second", "tool_call_id": "call-finished",
+            "result": "second:ok",
+        },
+    ]
+    continuation = _continuation(turn_display=display)
+    payload = continuation.state.payload
+    assert "turn_display_ref" in payload
+    assert "turn_display" in payload["state_refs"]
+    continuation.state.validate()
+    raw = continuation.state.blob_payloads[payload["turn_display_ref"]["ref"]]
+    assert json.loads(raw.decode("utf-8")) == display
+
+
+def test_agent_checkpoint_legacy_payload_omits_turn_display_ref():
+    continuation = _continuation()
+    payload = continuation.state.payload
+    assert "turn_display_ref" not in payload
+    assert "turn_display" not in payload["state_refs"]
+    continuation.state.validate()
+
+
+def test_agent_checkpoint_rejects_a_foreign_turn_display_ref():
+    continuation = _continuation(turn_display=[{"type": "text", "text": "kept"}])
+    payload = dict(continuation.state.payload)
+    payload["turn_display_ref"] = payload["assistant_message_delta_ref"]
+    with pytest.raises(AgentCheckpointError, match="turn display ref"):
+        AgentCheckpointV1(
+            payload=payload,
+            blob_payloads=continuation.state.blob_payloads,
+        ).validate()
 
 
 def test_terminal_after_provider_resume_never_replays_the_provider():

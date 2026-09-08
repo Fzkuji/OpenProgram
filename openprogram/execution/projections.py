@@ -231,25 +231,18 @@ class ExecutionProjectionReadModel:
             state = AgentCheckpointV1.load(self.store, checkpoint)
             if state.payload["turn"]["assistant_message_id"] != assistant_id:
                 return []
-            blocks: list[dict] = []
-            tools: dict[str, dict] = {}
-            for action in state.payload["completed_actions"]:
-                message = state.read_json_ref(self.store, execution.execution_id, action["result_ref"])
-                if message.get("role") == "assistant":
-                    for item in message.get("content", []):
-                        kind = item.get("type")
-                        if kind in {"text", "thinking"}:
-                            blocks.append({"type": kind, "text": item.get(kind, "")})
-                        elif kind == "toolCall":
-                            block = {"type": "tool", "tool": item["name"],
-                                     "tool_call_id": item["id"], "input": json.dumps(item.get("arguments", {}))}
-                            blocks.append(block)
-                            tools[item["id"]] = block
-                elif message.get("role") == "toolResult" and message.get("tool_call_id") in tools:
-                    tools[message["tool_call_id"]].update(
-                        result="\n".join(item.get("text", "") for item in message.get("content", []) if item.get("type") == "text"),
-                        is_error=message.get("is_error", False),
-                    )
+            from openprogram.agent.continuation import decode_turn_display
+
+            blocks = decode_turn_display(
+                state, store=self.store, execution_id=execution.execution_id,
+            )
+            tools = {
+                tool_id: block
+                for block in blocks
+                if block.get("type") == "tool"
+                and isinstance((tool_id := block.get("tool_call_id")), str)
+                and tool_id
+            }
             pending = state.payload["current_decision"]["tool_call_ids"][state.payload["next_tool_index"]:]
             for tool_id in pending:
                 if tool_id in tools and "result" not in tools[tool_id]:

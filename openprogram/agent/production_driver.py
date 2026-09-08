@@ -58,6 +58,7 @@ from openprogram.agent.continuation import (
     AgentCheckpointV1,
     AgentContinuation,
     canonical_json_bytes,
+    decode_turn_display,
     validate_runtime_contract,
 )
 
@@ -1132,6 +1133,8 @@ class AgentProductionDriver:
         prior_actions: list[dict[str, Any]] = []
         prior_receipts: list[dict[str, Any]] = []
         completed_tool_results: list[dict[str, Any]] = []
+        decision_action_ids: set[str] = set()
+        display_blocks: list[dict[str, Any]] = []
         provider_action_id = ""
         provider_effect_id = ""
         provider_input_hash = ""
@@ -1161,6 +1164,18 @@ class AgentProductionDriver:
             provider_action_id = continuation.provider_action_id
             latest_assistant = continuation.assistant_message.model_dump(mode="json")
             latest_snapshot = dict(continuation.resolved_snapshot)
+            decision_action_ids.update(
+                str(item.get("action_id"))
+                for item in (*prior_actions, *prior_receipts)
+                if isinstance(item.get("action_id"), str) and item["action_id"]
+            )
+            display_blocks.extend(
+                decode_turn_display(
+                    continuation.state,
+                    store=self.executions,
+                    execution_id=continuation.checkpoint.execution_id,
+                )
+            )
             for action in prior_actions:
                 if action.get("action_id") == provider_action_id:
                     candidate_hash = action.get("input_hash")
@@ -1251,13 +1266,38 @@ class AgentProductionDriver:
             next_tool_index = payload.get("next_tool_index")
             if not isinstance(next_tool_index, int):
                 next_tool_index = 0 if phase == "after_provider" else len(completed_tool_results)
-            action_values = [*prior_actions]
-            receipt_values = [*prior_receipts]
+            # The Agent checkpoint is a resume cursor for the current provider
+            # decision. Committed historical effects stay in the effect ledger;
+            # copying them here overflows the bounded receipt/state-ref caps
+            # and prevents pause after a long turn.
+            if kind in {"provider.after", "provider.finished"}:
+                keep_ids = {item for item in (action_id, provider_action_id) if item}
+            else:
+                keep_ids = set(decision_action_ids)
+                if provider_action_id:
+                    keep_ids.add(provider_action_id)
+                if action_id:
+                    keep_ids.add(action_id)
+            action_values: list[dict[str, Any]] = []
+            seen_action_ids: set[str] = set()
+            for item in prior_actions:
+                item_id = item.get("action_id")
+                if item_id in keep_ids and item_id not in seen_action_ids:
+                    action_values.append(item)
+                    seen_action_ids.add(item_id)
+            receipt_values: list[dict[str, Any]] = []
+            seen_receipt_ids: set[str] = set()
+            for item in prior_receipts:
+                item_id = item.get("action_id")
+                if item_id in keep_ids and item_id not in seen_receipt_ids:
+                    receipt_values.append(item)
+                    seen_receipt_ids.add(item_id)
             if kind == "wait.before_tool":
                 if not provider_effect_id or not provider_input_hash or provider_terminal_receipt is None:
                     raise AgentDriverError("checkpoint_schema_invalid", "wait has no committed provider decision")
                 if not any(item.get("action_id") == provider_action_id for item in action_values):
                     action_values.append({"action_id": provider_action_id, "input_hash": provider_input_hash, "result": latest_assistant})
+                    seen_action_ids.add(provider_action_id)
                 if not any(item.get("effect_id") == provider_effect_id for item in receipt_values):
                     receipt_values.append({
                         "effect_id": provider_effect_id,
@@ -1266,17 +1306,20 @@ class AgentProductionDriver:
                         "outcome": "committed",
                         "receipt": dict(provider_terminal_receipt),
                     })
+                    seen_receipt_ids.add(provider_action_id)
             if effect_id is not None:
                 if action_id is None or input_hash is None or terminal_receipt is None:
                     raise AgentDriverError("checkpoint_schema_invalid", "effect safe point is missing a receipt")
-                action_values.append({"action_id": action_id, "input_hash": input_hash, "result": latest_assistant if phase == "after_provider" else completed_tool_results[-1]})
-                receipt_values.append({
-                    "effect_id": effect_id,
-                    "frontier_step_id": f"{phase}:{action_id}",
-                    "action_id": action_id,
-                    "outcome": "committed",
-                    "receipt": dict(terminal_receipt),
-                })
+                if action_id not in seen_action_ids:
+                    action_values.append({"action_id": action_id, "input_hash": input_hash, "result": latest_assistant if phase == "after_provider" else completed_tool_results[-1]})
+                if action_id not in seen_receipt_ids:
+                    receipt_values.append({
+                        "effect_id": effect_id,
+                        "frontier_step_id": f"{phase}:{action_id}",
+                        "action_id": action_id,
+                        "outcome": "committed",
+                        "receipt": dict(terminal_receipt),
+                    })
             pending_commands = [
                 command.command_id
                 for command in self._control_service().executions.list_commands(attempt.execution_id)
@@ -1318,6 +1361,7 @@ class AgentProductionDriver:
                     terminal_effect_receipts=receipt_values,
                     pending_command_ids=pending_commands,
                     loaded_deferred_tools=payload.get("loaded_deferred_tools", []),
+                    turn_display=list(display_blocks),
                 )
             except AgentCheckpointError as exc:
                 raise AgentDriverError(exc.code, str(exc)) from exc
@@ -1544,6 +1588,21 @@ class AgentProductionDriver:
                 provider_effect_id = effect_id
                 provider_input_hash = input_hash
                 provider_terminal_receipt = dict(terminal_receipt)
+                for item in latest_assistant.get("content", []):
+                    if not isinstance(item, Mapping):
+                        continue
+                    item_type = item.get("type")
+                    if item_type == "text" and isinstance(item.get("text"), str) and item["text"]:
+                        display_blocks.append({"type": "text", "text": item["text"]})
+                    elif item_type == "thinking" and isinstance(item.get("thinking"), str) and item["thinking"]:
+                        display_blocks.append({"type": "thinking", "text": item["thinking"]})
+                    elif item_type == "toolCall":
+                        display_blocks.append({
+                            "type": "tool",
+                            "tool": item.get("name"),
+                            "tool_call_id": item.get("id"),
+                            "input": json.dumps(item.get("arguments") or {}, default=str),
+                        })
             elif kind == "tool.after":
                 result = payload.get("result")
                 if not isinstance(result, Mapping):
@@ -1554,11 +1613,22 @@ class AgentProductionDriver:
                     "is_error": bool(payload.get("is_error")),
                     "result_hash": json_digest(result),
                 }
+                tool_call_id = payload.get("tool_call_id")
+                result_text = "\n".join(
+                    str(item.get("text") or "")
+                    for item in (result.get("content") or ())
+                    if isinstance(item, Mapping) and item.get("type") == "text"
+                )
+                for block in reversed(display_blocks):
+                    if block.get("type") == "tool" and block.get("tool_call_id") == tool_call_id:
+                        block["result"] = result_text
+                        block["is_error"] = bool(payload.get("is_error"))
+                        break
             else:
                 raise AgentDriverError("invalid_safe_point", "unsupported Agent safe point")
             def remember_completed_action() -> None:
-                # Retain every completed effect, including those before a control
-                # command arrived, independently of the current provider decision.
+                # Keep the current provider decision as the resume cursor.
+                # Earlier committed writes are already in the effect ledger.
                 prior_actions.append({
                     "action_id": action_id, "input_hash": input_hash,
                     "result": dict(latest_assistant) if kind in {"provider.after", "provider.finished"} else dict(result),
@@ -1569,6 +1639,17 @@ class AgentProductionDriver:
                     "action_id": action_id, "outcome": "committed",
                     "receipt": dict(terminal_receipt),
                 })
+                if kind in {"provider.after", "provider.finished"}:
+                    decision_action_ids.clear()
+                    decision_action_ids.add(action_id)
+                    prior_actions[:] = [
+                        item for item in prior_actions if item.get("action_id") == action_id
+                    ]
+                    prior_receipts[:] = [
+                        item for item in prior_receipts if item.get("action_id") == action_id
+                    ]
+                else:
+                    decision_action_ids.add(action_id)
 
             command = None if kind == "provider.finished" else current_command(service, attempt.execution_id)
             if command is None:
