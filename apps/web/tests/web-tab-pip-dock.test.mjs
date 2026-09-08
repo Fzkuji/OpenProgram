@@ -207,8 +207,10 @@ test("expand after a stored float rect keeps the collapsed rect", () => {
   assert.equal(chat.width, PIP_EXPANDED_WIDTH);
   assert.equal(chat.height, PIP_EXPANDED_HEIGHT);
   assert.equal(stored.width, 400);
-  assert.equal(PIP_DEFAULT_WIDTH, 360);
-  assert.equal(PIP_DEFAULT_HEIGHT, 280);
+  assert.equal(PIP_DEFAULT_WIDTH, 640);
+  assert.equal(PIP_DEFAULT_HEIGHT, 390);
+  assert.equal(PIP_EXPANDED_WIDTH, 720);
+  assert.equal(PIP_EXPANDED_HEIGHT, 435);
   assert.equal(PIP_MIN_WIDTH, 240);
 });
 
@@ -422,8 +424,11 @@ test("idle chat PiP has no enabled Take over; active shows Take over", async () 
       }, "a");
     });
     const resume = chromeButton(host, "Resume");
+    const moreWhilePaused = labeledButton(host, "More");
     assert.ok(resume);
+    assert.ok(moreWhilePaused);
     assert.equal(resume.disabled, false);
+    assert.equal(resume.parentElement, moreWhilePaused.parentElement);
     assert.equal(chromeButton(host, "Take over"), undefined);
     await act(async () => {
       ingestBrowserResource({

@@ -1287,8 +1287,9 @@
   top: 78px;
   right: 12px;
   z-index: 8;
-  width: 360px;
-  height: 280px;
+  box-sizing: border-box;
+  width: 640px;
+  height: 390px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
@@ -1349,13 +1350,21 @@
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
-  min-width: 0;
+  flex-shrink: 0;
 }
 .webPipChrome .webToolbarBtn {
   width: 24px;
   height: 24px;
   min-width: 24px;
   flex: 0 0 24px;
+}
+.webPipChrome .webToolbarBtn svg {
+  width: 14px;
+  height: 14px;
+}
+.webPipChrome .webToolbarBtn:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-bright);
 }
 .webPipStage {
   position: relative;
@@ -1382,7 +1391,7 @@
 }
 .webPipExpanded {
   width: min(720px, calc(100% - 24px));
-  height: min(480px, calc(100% - 24px));
+  height: min(435px, calc(100% - 24px));
 }
 .browserControl {
   display: flex;

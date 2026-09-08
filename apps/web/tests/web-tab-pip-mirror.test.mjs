@@ -43,8 +43,13 @@ test("PiP screenshot maps pixel points onto a letterboxed contain fit", () => {
   assert.match(css, /\.webPipActions \{[\s\S]*?flex-wrap: nowrap/);
   assert.match(css, /\.webPipTitle \{[\s\S]*?min-width: 0/);
   assert.match(css, /\.webPipChrome \.webToolbarBtn \{[\s\S]*?width: 24px/);
-  assert.match(css, /\.webPip \{[\s\S]*?width: 360px/);
+  assert.match(css, /\.webPipChrome \.webToolbarBtn svg \{[\s\S]*?width: 14px/);
+  assert.match(css, /\.webPipActions \{[\s\S]*?flex-wrap: nowrap/);
+  assert.match(css, /\.webPipActions \{[\s\S]*?flex-shrink: 0/);
+  assert.match(css, /\.webPip \{[\s\S]*?width: 640px/);
+  assert.match(css, /\.webPip \{[\s\S]*?height: 390px/);
   assert.match(css, /\.webPipExpanded \{[\s\S]*?720px/);
+  assert.match(css, /\.webPipExpanded \{[\s\S]*?435px/);
   assert.match(css, /\.webPipBody \{[\s\S]*?margin: 0/);
   assert.doesNotMatch(css, /\.webPipBar \{/);
   assert.doesNotMatch(css, /\.webPipBarBtn/);

@@ -80,6 +80,8 @@ test("resource click selects a read-only preview without pinning or changing the
     assert.match(host.textContent, /Research/);
     const button = [...host.querySelectorAll("button")].find(b => b.title === page.url);
     assert.ok(button);
+    assert.ok(previewInConversationButton(host, "Example Domain"));
+    assert.equal([...host.querySelectorAll("button")].some(b => b.textContent === "↗"), false);
     await act(async () => button.click());
     const state = useCenterTabs.getState();
     assert.equal(state.activeId, session.id);
@@ -104,6 +106,11 @@ test("resource click selects a read-only preview without pinning or changing the
 function openInTabButton(host, title) {
   return [...host.querySelectorAll("button")]
     .find(button => button.getAttribute("aria-label") === `Open in tab: ${title}`);
+}
+
+function previewInConversationButton(host, title) {
+  return [...host.querySelectorAll("button")]
+    .find(button => button.getAttribute("aria-label") === `Preview in conversation: ${title}`);
 }
 
 test("five agent-opened session pages stay out of the top strip by default", () => {
@@ -193,6 +200,90 @@ test("Open in tab reveals the exact existing page as the current top tab", async
     assert.equal(again.activeId, page.id);
     assert.equal(again.tabs.find(tab => tab.id === page.id).url, page.url);
     assert.ok(topLevelTabs(again.tabs, again.groups).some(tab => tab.id === page.id));
+  } finally {
+    await act(async () => root.unmount()); host.remove();
+    useWebTabPip.getState().end();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserResources();
+  }
+});
+
+test("explicit Preview in conversation keeps the hidden Page identity and adds no top tab", async () => {
+  resetBrowserResources();
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  const page = pageTab("w:preview-hidden", "a", "https://hidden.preview.test/", { title: "Hidden preview" });
+  const documentIds = [session.id, page.id];
+  useCenterTabs.setState({ tabs: [session, page], activeId: session.id, groups: [], splitWebTabId: null });
+  useWebTabPip.getState().end();
+  globalThis.resourceBackend = {
+    rows: [{
+      id: "assoc-preview", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Hidden preview",
+      target: page.url, status: "open", source: "browser", sourceId: page.id, resourceId: "page-preview",
+      tabId: page.id, branchId: "br-a", branchName: "Research",
+      controlState: "idle", generation: 1, sequence: 1,
+    }],
+    currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true,
+  };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    assert.ok(!topLevelTabs(useCenterTabs.getState().tabs, []).some(tab => tab.id === page.id));
+    const button = previewInConversationButton(host, "Hidden preview");
+    assert.ok(button);
+    await act(async () => button.click());
+    const state = useCenterTabs.getState();
+    assert.deepEqual(state.tabs.map(tab => tab.id), documentIds);
+    assert.equal(state.tabs.find(tab => tab.id === page.id).url, page.url);
+    assert.equal(state.activeId, session.id);
+    assert.ok(!topLevelTabs(state.tabs, state.groups).some(tab => tab.id === page.id));
+    assert.equal(useWebTabPip.getState().tabId, page.id);
+    assert.equal(useWebTabPip.getState().ownerTabId, session.id);
+    assert.equal(getPreviewPreference("a", "br-a").mode, "manual");
+    assert.equal(getPreviewPreference("a", "br-a").targetId, "assoc-preview");
+    assert.equal(getPreviewPreference("a", "br-a").hidden, false);
+  } finally {
+    await act(async () => root.unmount()); host.remove();
+    useWebTabPip.getState().end();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserResources();
+  }
+});
+
+test("Preview in conversation from an active webpage returns to the owning session", async () => {
+  resetBrowserResources();
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  const page = pageTab("w:live-preview", "a", "https://live.preview.test/", { title: "Live preview", webPinned: true });
+  useCenterTabs.setState({ tabs: [session, page], activeId: page.id, groups: [], splitWebTabId: null });
+  useWebTabPip.getState().end();
+  globalThis.resourceBackend = {
+    rows: [{
+      id: "assoc-live", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Live preview",
+      target: page.url, status: "open", source: "browser", sourceId: page.id, resourceId: "page-live",
+      tabId: page.id, branchId: "br-a", branchName: "Research",
+      controlState: "idle", generation: 1, sequence: 1,
+    }],
+    currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true,
+  };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    const before = useCenterTabs.getState();
+    assert.equal(before.activeId, page.id);
+    assert.ok(topLevelTabs(before.tabs, before.groups).some(tab => tab.id === page.id));
+    const button = previewInConversationButton(host, "Live preview");
+    assert.ok(button);
+    await act(async () => button.click());
+    const state = useCenterTabs.getState();
+    assert.equal(state.activeId, session.id);
+    assert.equal(state.tabs.filter(tab => tab.id === page.id).length, 1);
+    assert.equal(state.tabs.find(tab => tab.id === page.id).url, page.url);
+    assert.equal(state.tabs.find(tab => tab.id === page.id).webPinned, true);
+    assert.equal(useWebTabPip.getState().tabId, page.id);
+    assert.equal(useWebTabPip.getState().ownerTabId, session.id);
+    assert.equal(getPreviewPreference("a", "br-a").mode, "manual");
+    assert.equal(getPreviewPreference("a", "br-a").targetId, "assoc-live");
   } finally {
     await act(async () => root.unmount()); host.remove();
     useWebTabPip.getState().end();

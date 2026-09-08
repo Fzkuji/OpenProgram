@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Box, Globe, Monitor, Search, Server, X } from "lucide-react";
+import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Search, Server, X } from "lucide-react";
 import { useWebTabPip } from "@/lib/state/web-tab-pip-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -47,6 +47,14 @@ function bindPreview(sessionId: string, row: SessionResource | undefined, hidden
     return;
   }
   useWebTabPip.getState().show(tabId, ownerTabId);
+}
+
+function previewInConversation(sessionId: string, row: SessionResource) {
+  const ownerTabId = ownerTabIdFor(sessionId);
+  const tabs = useCenterTabs.getState();
+  const active = tabs.tabs.find(item => item.id === tabs.activeId);
+  if (ownerTabId && active?.kind === "web") tabs.setActive(ownerTabId);
+  bindPreview(sessionId, row, false);
 }
 
 function SessionResourceList({ sessionId }: { sessionId: string | null }) {
@@ -138,12 +146,20 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
               <small>{subtitle}</small></span></button>
             {operating && <span className={styles.dot} aria-hidden="true" />}
             {tab && <button type="button" className={styles.action}
+              aria-label={`${text("Preview in conversation", "在会话中预览")}: ${row.title}`}
+              title={text("Preview in conversation", "在会话中预览")} onClick={() => {
+                if (!sessionId) return;
+                selectResourcePreview(sessionId, viewedBranch, row.id);
+                previewInConversation(sessionId, row);
+                render(value => value + 1);
+              }}><PictureInPicture2 size={14} aria-hidden="true" /></button>}
+            {tab && <button type="button" className={styles.action}
               aria-label={`${text("Open in tab", "在标签中打开")}: ${row.title}`}
               title={text("Open in tab", "在标签中打开")} onClick={() => {
                 const tabId = existingResourceTabId(row, tabs);
                 if (tabId) revealExistingWebTab(tabId, useCenterTabs.getState());
                 else render(value => value + 1);
-              }}>↗</button>}
+              }}><ExternalLink size={14} aria-hidden="true" /></button>}
             {tab && <button type="button" className={styles.action} aria-label={`${text("Close webpage", "关闭网页")}: ${row.title}`}
               title={text("Close webpage", "关闭网页")} onClick={() => {
                 const result = requestCloseBrowserPage(row, tabs);

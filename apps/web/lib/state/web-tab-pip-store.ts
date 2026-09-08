@@ -12,10 +12,10 @@ export { startWebTabCaptureLoop } from "./web-tab-capture-loop";
  *  store. Position/size live only in memory. */
 export const PIP_MIN_WIDTH = 240;
 export const PIP_MIN_HEIGHT = 160;
-export const PIP_DEFAULT_WIDTH = 360;
-export const PIP_DEFAULT_HEIGHT = 280;
+export const PIP_DEFAULT_WIDTH = 640;
+export const PIP_DEFAULT_HEIGHT = 390;
 export const PIP_EXPANDED_WIDTH = 720;
-export const PIP_EXPANDED_HEIGHT = 480;
+export const PIP_EXPANDED_HEIGHT = 435;
 
 export type WebTabPipRect = {
   x: number;

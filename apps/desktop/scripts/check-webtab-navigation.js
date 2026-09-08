@@ -4895,6 +4895,7 @@ assert.match(source, /ipcMain\.on\("webtab:sync-visible"/);
 assert.match(source, /ipcMain\.on\("webtab:set-pip-zoom"/);
 assert.match(source, /ipcMain\.handle\("webtab:show-action"/);
 assert.match(source, /webtab:human-input/);
+assert.match(source, /const HIDDEN_WEBTAB_BOUNDS = \{ x: 0, y: 0, width: 1920, height: 1080 \}/);
 assert.match(source, /const PIP_VIRTUAL_WIDTH = 1920/);
 assert.match(source, /if \(!record\.pipLayoutZoom\) wc\.setZoomFactor\(factor\)/);
 assert.match(source, /ipcMain\.on\("tab-transfer:prepare"/);
@@ -5545,6 +5546,7 @@ async function checkHumanInputYieldingAndActionCue() {
   hooks.ensureView(ctxA, hiddenId, "https://example.com/hidden");
   const hidden = generatedNativeRecords.at(-1);
   hidden.controls[0].resolve();
+  assert.deepEqual(hidden.currentBounds(), { x: 0, y: 0, width: 1920, height: 1080 });
   const hiddenBounds = hidden.currentBounds();
   const hiddenVisibility = hidden.visibility.slice();
   const hiddenZoom = hidden.nativeCalls.zoom.slice();

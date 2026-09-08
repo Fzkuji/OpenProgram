@@ -2204,7 +2204,7 @@ function loadView(record, url) {
 // re-mounts the renderer pane, which calls ensure again — reloading
 // here would throw away scroll/form/SPA state and defeat the whole
 // persistent-view design. Explicit navigation goes through navigate.
-const HIDDEN_WEBTAB_BOUNDS = { x: 0, y: 0, width: 1280, height: 800 };
+const HIDDEN_WEBTAB_BOUNDS = { x: 0, y: 0, width: 1920, height: 1080 };
 
 function ensureView(ctx, id, url) {
   if (!ctx || typeof id !== "string" || !id) return null;
