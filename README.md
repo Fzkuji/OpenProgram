@@ -39,6 +39,7 @@
 
 - [Install](#install)
 - [Quick start](#quick-start)
+- [Integrated Projects](#integrated-projects)
 - [News](#news)
 - [Why OpenProgram?](#why-openprogram)
   - [1. Agentic Function — the primitive everything else is built on](#1-agentic-function--the-primitive-everything-else-is-built-on)
@@ -84,7 +85,21 @@ Confirm with one printed reply:
 openprogram --print "Introduce yourself in one sentence"
 ```
 
-GUI Agent, Research Agent, and Wiki Agent ship with every supported release. Third-party Programs use `openprogram programs install <owner>/<repo>`. Details: [Getting Started](docs/start/GETTING_STARTED.md).
+Details: [Getting Started](docs/start/GETTING_STARTED.md).
+
+## Integrated Projects
+
+Our three open-source agent projects are integrated into OpenProgram and included in every supported release. Visit their repositories for source code, documentation, and contributions.
+
+| Project | What it does |
+|---|---|
+| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Operates desktop applications from task instructions using screenshots and GUI actions. |
+| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Automates research workflows, from literature review and experiments to paper drafts. |
+| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Organizes notes, documents, and conversations into an Obsidian knowledge vault with `[[wikilinks]]`. |
+
+If a project is useful to you, consider starring its repository or contributing an issue or pull request.
+
+Additional Programs can be installed with `openprogram programs install <owner>/<repo>`. See [Installing harnesses](docs/capabilities/installing-harnesses.md).
 
 ## News
 
