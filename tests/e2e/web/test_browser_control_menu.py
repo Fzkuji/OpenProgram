@@ -138,7 +138,7 @@ def _html() -> str:
 
 
 def test_web_operation_history_menu_opens_and_dismisses_in_the_same_page() -> None:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
 
     with tempfile.TemporaryDirectory(prefix="openprogram-control-menu-") as directory:
         bundle = Path(directory) / "control-bar.js"
@@ -198,15 +198,14 @@ def test_web_operation_history_menu_opens_and_dismisses_in_the_same_page() -> No
                     page.get_by_role("menu").wait_for()
                     page.keyboard.press("Escape")
                     assert page.get_by_role("menu").count() == 0
-                    assert page.evaluate(
-                        "() => document.activeElement && document.activeElement.getAttribute('aria-label')"
-                    ) == "Operation history"
+                    expect(history).to_be_focused()
 
                     history.focus()
                     page.keyboard.press("Space")
                     page.get_by_role("menu").wait_for()
                     page.keyboard.press("Escape")
                     assert page.get_by_role("menu").count() == 0
+                    expect(history).to_be_focused()
                     assert context.pages == [page]
                 finally:
                     if browser is not None:
