@@ -89,13 +89,13 @@ Details: [Getting Started](docs/start/GETTING_STARTED.md).
 
 ## Integrated Projects
 
-Our three open-source agent projects are integrated into OpenProgram and included in every supported release. Visit their repositories for source code, documentation, and contributions.
+Our open-source projects cover desktop automation, research workflows, and agent memory. Visit their repositories for source code, documentation, and contributions.
 
 | Project | What it does |
 |---|---|
 | [GUI&nbsp;Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Operates desktop applications from task instructions using screenshots and GUI actions. |
 | [Research&nbsp;Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Automates research workflows, from literature review and experiments to paper drafts. |
-| [Wiki&nbsp;Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Organizes notes, documents, and conversations into an Obsidian knowledge vault with `[[wikilinks]]`. |
+| [Scriptorium](https://github.com/Fzkuji/Scriptorium) | Maintains agent memory as readable Markdown notes, with facts cited to source messages and MCP access. Successor to Wiki Agent. |
 
 If a project is useful to you, consider starring its repository or contributing an issue or pull request.
 
