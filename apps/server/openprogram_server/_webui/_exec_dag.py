@@ -439,6 +439,123 @@ def live_progress(session_id: str, msg_id: str, func_name: str, on_event=None):
 
 # Interrupted-run repair
 
+_RESTART_ERROR = "Worker restarted before this turn finished"
+_RESTART_OUTPUT = "[interrupted] worker restarted mid-turn"
+_ACTIVE_CANONICAL_STATUSES = {
+    "queued", "running", "pausing", "paused", "cancelling",
+    "reconciliation_required",
+}
+_CURRENT_CANONICAL_STATUSES = {
+    "queued", "running", "pausing", "cancelling",
+}
+
+
+def _canonical_anchors(executions, session_id: str) -> dict[str, object]:
+    """Map persisted assistant anchors to their newest canonical execution."""
+    anchors: dict[str, object] = {}
+    try:
+        records = executions.list_for_session(session_id)
+        records = sorted(
+            records,
+            key=lambda item: (item.updated_at, item.created_at, item.status_version),
+            reverse=True,
+        )
+        for execution in records:
+            source = executions.get_execution_input(execution.execution_id)
+            assistant_id = source.assistant_message_id if source else None
+            if assistant_id and assistant_id not in anchors:
+                anchors[assistant_id] = execution
+    except Exception:
+        return {}
+    return anchors
+
+
+def _repair_canonical_node(node, execution, shim) -> bool:
+    """Project canonical lifecycle state over an obsolete restart marker."""
+    canonical = getattr(getattr(execution, "status", None), "value", None)
+    meta = node.metadata or {}
+    synthetic_error = meta.get("error") == _RESTART_ERROR
+    synthetic_output = node.output == _RESTART_OUTPUT
+    synthetic_marker = synthetic_error or synthetic_output
+    target = {
+        "queued": "running",
+        "running": "running",
+        "pausing": "running",
+        "paused": "paused",
+        "cancelling": "cancelling",
+        "reconciliation_required": "paused",
+        "completed": "completed",
+        "failed": "error",
+        "cancelled": "cancelled",
+    }.get(canonical)
+    if target is None:
+        # A real canonical interruption remains an interruption. It does not
+        # authorize deleting the evidence written by the interruption path.
+        return False
+    if canonical in _ACTIVE_CANONICAL_STATUSES:
+        if meta.get("status") == "interrupted" and not synthetic_marker:
+            return False
+        if meta.get("status") in {"completed", "error", "cancelled"}:
+            return False
+    elif not synthetic_marker:
+        # Terminal projection is authoritative only when it is repairing the
+        # marker this reconciler itself wrote. Preserve real terminal output.
+        return False
+    patch = {}
+    if meta.get("status") != target:
+        patch["status"] = target
+    if synthetic_error:
+        patch.update(error=None, error_type=None, interrupted_at=None)
+    if not patch and not synthetic_output:
+        return False
+    fields = {"metadata": patch} if patch else {}
+    if synthetic_output:
+        fields["output"] = ""
+    try:
+        shim.update(node.id, **fields)
+    except Exception:
+        return False
+    return True
+
+
+def reconcile_session_projection(session_id: str) -> int:
+    """Repair one session's stale restart projection during hydration."""
+    from openprogram.agent.session_db import default_db
+    from openprogram.execution import default_store as execution_store
+    from openprogram.store import SessionNodeWriter
+    from openprogram.programs.workflow.goal.ownership import goal_owner
+
+    store = default_db()
+    with goal_owner(store, session_id) as acquired:
+        if not acquired:
+            return 0
+        executions = execution_store()
+        anchors = _canonical_anchors(executions, session_id)
+        if not anchors:
+            return 0
+        shim = SessionNodeWriter(store, session_id)
+        fixed = 0
+        for node in store.get_nodes(session_id):
+            execution = anchors.get(node.id)
+            if execution is not None:
+                fixed += int(_repair_canonical_node(node, execution, shim))
+        canonical_paused = any(
+            getattr(getattr(item, "status", None), "value", None)
+            in {"paused", "reconciliation_required"}
+            for item in anchors.values()
+        ) and not any(
+            getattr(getattr(item, "status", None), "value", None)
+            in _CURRENT_CANONICAL_STATUSES
+            for item in anchors.values()
+        )
+        session = store.get_session(session_id) or {}
+        if canonical_paused and session.get("status") in {
+            "running", "cancelling", "interrupted",
+        }:
+            store.update_session(session_id, status="idle")
+            fixed += 1
+        return fixed
+
 def reconcile_interrupted_runs() -> int:
     """Finish durable cancellations and mark abandoned runs interrupted.
 
@@ -484,6 +601,7 @@ def reconcile_interrupted_runs() -> int:
             from openprogram.execution import default_store as execution_store
             from openprogram.execution.waits import DurableWaitStore
             executions = execution_store()
+            canonical_anchors = _canonical_anchors(executions, sid)
             waiting_nodes = set()
             for wait in DurableWaitStore(executions).list_open(session_id=sid):
                 source = executions.get_execution_input(wait.execution_id)
@@ -492,6 +610,19 @@ def reconcile_interrupted_runs() -> int:
             for node in store.get_nodes(sid):
                 meta = node.metadata or {}
                 status = meta.get("status")
+                canonical = canonical_anchors.get(node.id)
+                if canonical is not None:
+                    repaired = _repair_canonical_node(node, canonical, shim)
+                    fixed += int(repaired)
+                    canonical_status = getattr(
+                        getattr(canonical, "status", None), "value", None,
+                    )
+                    if canonical_status in _ACTIVE_CANONICAL_STATUSES:
+                        continue
+                    if repaired and canonical_status in {
+                        "completed", "failed", "cancelled",
+                    }:
+                        continue
                 if node.id in waiting_nodes:
                     continue
                 if status not in {"running", "cancelling"}:
@@ -516,13 +647,11 @@ def reconcile_interrupted_runs() -> int:
                     continue
                 new_meta = dict(meta)
                 new_meta["status"] = "interrupted"
-                new_meta.setdefault(
-                    "error", "Worker restarted before this turn finished",
-                )
+                new_meta.setdefault("error", _RESTART_ERROR)
                 new_meta["interrupted_at"] = time.time()
                 output = node.output
                 if not output:
-                    output = "[interrupted] worker restarted mid-turn"
+                    output = _RESTART_OUTPUT
                 try:
                     shim.update(node.id, output=output, metadata=new_meta)
                     fixed += 1
@@ -566,7 +695,32 @@ def reconcile_interrupted_runs() -> int:
             except Exception:
                 pass
             session_status = sess.get("status") or ""
-            if session_status in {"running", "cancelling"}:
+            canonical_active = any(
+                getattr(getattr(item, "status", None), "value", None)
+                in _ACTIVE_CANONICAL_STATUSES
+                for item in canonical_anchors.values()
+            )
+            canonical_paused = any(
+                getattr(getattr(item, "status", None), "value", None)
+                in {"paused", "reconciliation_required"}
+                for item in canonical_anchors.values()
+            ) and not any(
+                getattr(getattr(item, "status", None), "value", None)
+                in _CURRENT_CANONICAL_STATUSES
+                for item in canonical_anchors.values()
+            )
+            if canonical_paused and session_status in {
+                "running", "cancelling", "interrupted",
+            }:
+                # The legacy session row has no paused state.  Keep it out of
+                # the running spinner while the canonical wait projection is
+                # paused and the system-access card is authoritative.
+                try:
+                    store.update_session(sid, status="idle")
+                    fixed += 1
+                except Exception:
+                    pass
+            elif session_status in {"running", "cancelling"} and not canonical_active:
                 try:
                     store.update_session(
                         sid,

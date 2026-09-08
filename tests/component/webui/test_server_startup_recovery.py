@@ -74,3 +74,162 @@ def test_canonical_execution_recovery_failure_blocks_startup(monkeypatch):
         asyncio.run(run_lifespan())
 
     assert events == []
+
+
+def test_dag_recovery_preserves_canonical_paused_execution_after_wait_resolution(
+    tmp_path, monkeypatch,
+):
+    """A resolved wait can leave a paused execution before continuation owns it."""
+    from openprogram.context.nodes import Call, ROLE_CODE
+    from openprogram.execution import CapabilitySet, ExecutionStore
+    from openprogram.execution.attempts import AttemptStore
+    from openprogram.store import SessionNodeWriter
+    from openprogram.store.session.session_store import SessionStore
+    from openprogram.webui import _exec_dag
+    from openprogram.execution.model import ExecutionStatus
+
+    sessions = SessionStore(tmp_path / "sessions")
+    sessions.create_session("system-recovery", "main")
+    sessions.update_session("system-recovery", status="running")
+    sessions.update_session("system-recovery", status="running")
+    SessionNodeWriter(sessions, "system-recovery").append(Call(
+        id="assistant-system-recovery",
+        role=ROLE_CODE,
+        name="agentic_workflow",
+        output="",
+        metadata={"status": "running", "execution_kind": "agentic_function"},
+    ))
+    executions = ExecutionStore(tmp_path / "executions.sqlite")
+    revision = executions.create_revision(manifest={"entrypoint": "agent"})
+    execution = executions.admit_execution(
+        execution_id="execution-system-recovery",
+        run_id="run-system-recovery",
+        session_id="system-recovery",
+        revision_id=revision.revision_id,
+        input_ref="input:system-recovery",
+        input_hash="hash:system-recovery",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "owner"},
+        config_snapshot_ref="config:system-recovery",
+        assistant_message_id="assistant-system-recovery",
+        capabilities=CapabilitySet(pause=True),
+    )
+    executions.transition_execution(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        target=ExecutionStatus.PAUSED,
+        reason_code="system_access_required",
+    )
+    current_node_id = "assistant-current-recovery"
+    SessionNodeWriter(sessions, "system-recovery").append(Call(
+        id=current_node_id,
+        role=ROLE_CODE,
+        name="agentic_workflow",
+        output="",
+        metadata={"status": "running", "execution_kind": "agentic_function"},
+    ))
+    current = executions.admit_execution(
+        execution_id="execution-current-recovery",
+        run_id="run-current-recovery",
+        session_id="system-recovery",
+        revision_id=revision.revision_id,
+        input_ref="input:current-recovery",
+        input_hash="hash:current-recovery",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "owner"},
+        config_snapshot_ref="config:current-recovery",
+        assistant_message_id=current_node_id,
+        capabilities=CapabilitySet(pause=True),
+    )
+    current_attempts = AttemptStore(executions)
+    leased, reserved = current_attempts.lease(
+        current.execution_id,
+        expected_version=current.status_version,
+        owner_id="current-worker",
+        ttl_seconds=30,
+        attempt_id="current-attempt",
+    )
+    _current_attempt, current = current_attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: executions)
+
+    _exec_dag.reconcile_interrupted_runs()
+
+    node = sessions.get_nodes("system-recovery")[0]
+    assert node.metadata["status"] == "paused"
+    assert node.metadata.get("error") is None
+    assert node.output == ""
+    current_node = next(
+        item for item in sessions.get_nodes("system-recovery")
+        if item.id == current_node_id
+    )
+    assert current_node.metadata["status"] == "running"
+    assert sessions.get_session("system-recovery")["status"] == "running"
+
+
+def test_projection_cleans_only_synthetic_marker_and_preserves_cancel_output():
+    from types import SimpleNamespace
+
+    from openprogram.context.nodes import Call, ROLE_CODE
+    from openprogram.execution.model import ExecutionStatus
+    from openprogram.webui import _exec_dag
+
+    node = Call(
+        id="cancelled-system-recovery",
+        role=ROLE_CODE,
+        output="user-visible cancellation output",
+        metadata={
+            "status": "interrupted",
+            "error": "Worker restarted before this turn finished",
+            "interrupted_at": 2.0,
+            "reason_code": "cancel.user",
+        },
+    )
+    updates = []
+
+    class _Shim:
+        def update(self, node_id, **fields):
+            updates.append((node_id, fields))
+
+    changed = _exec_dag._repair_canonical_node(
+        node, SimpleNamespace(status=ExecutionStatus.CANCELLED), _Shim(),
+    )
+
+    assert changed is True
+    assert updates == [(
+        "cancelled-system-recovery",
+        {"metadata": {
+            "status": "cancelled", "error": None, "error_type": None,
+            "interrupted_at": None,
+        }},
+    )]
+    assert node.output == "user-visible cancellation output"
+
+
+def test_projection_leaves_real_canonical_interruption_unchanged():
+    from types import SimpleNamespace
+
+    from openprogram.context.nodes import Call, ROLE_CODE
+    from openprogram.execution.model import ExecutionStatus
+    from openprogram.webui import _exec_dag
+
+    node = Call(
+        id="real-interruption",
+        role=ROLE_CODE,
+        output="real interruption output",
+        metadata={"status": "interrupted", "error": "process crashed"},
+    )
+    updates = []
+
+    class _Shim:
+        def update(self, node_id, **fields):
+            updates.append((node_id, fields))
+
+    assert _exec_dag._repair_canonical_node(
+        node, SimpleNamespace(status=ExecutionStatus.INTERRUPTED), _Shim(),
+    ) is False
+    assert updates == []

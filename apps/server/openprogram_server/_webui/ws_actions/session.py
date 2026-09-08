@@ -720,6 +720,15 @@ async def handle_load_session(ws, cmd: dict):
         if _exists:
             conv = _s._get_or_create_session(session_id)
     if conv:
+        # Hydration is also a recovery boundary.  A worker restart marker can
+        # be written during the handoff from a resolved wait to its next
+        # continuation; canonical execution state must repair that projection
+        # before messages are serialized for the client.
+        try:
+            from openprogram.webui._exec_dag import reconcile_session_projection
+            reconcile_session_projection(session_id)
+        except Exception as exc:
+            _s._log(f"[load_session] canonical projection repair {session_id}: {exc}")
         from openprogram.context.git import (
             active_branch_chain,
             deepest_leaf,

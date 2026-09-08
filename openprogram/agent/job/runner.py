@@ -1996,12 +1996,22 @@ class JobRunner:
             reason_code="pause.canonical",
         )
 
-    def _queue_wait_resume(self, wait, execution) -> None:
+    def _queue_wait_resume(self, wait, execution) -> object | None:
         """Re-admit a resolved Job wait through the normal resource queue."""
         # Conversation executions share this database but have no Job
-        # admission. Their own control service recovers their continuations.
+        # admission. Delegate to the canonical control service so a JobRunner
+        # reconciliation pass cannot resolve their wait and leave the same
+        # execution paused without an activator.
         if self._execution_store.get_job_agent_input(execution.execution_id) is None:
-            return
+            from openprogram.execution.control import default_control_service
+
+            control = default_control_service()
+            if control is getattr(self, "_execution_control", None):
+                return
+            current = control.executions.get_execution(execution.execution_id)
+            if current is None:
+                return
+            return control._resume_wait_if_required(wait=wait, execution=current)
         self.queue_job_resume(
             command_id=f"wait-resume:{wait.wait_id}:{wait.outcome}",
             execution_id=execution.execution_id,

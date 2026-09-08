@@ -129,6 +129,110 @@ def test_job_recovery_leaves_conversation_wait_to_its_control_service(tmp_path):
     assert executions.get_execution(execution.execution_id) == execution
 
 
+def test_job_recovery_delegates_conversation_wait_to_canonical_control_service(
+    tmp_path, monkeypatch,
+):
+    from openprogram.agent.job.runner import JobRunner
+
+    executions, _, execution, _ = _active_execution(tmp_path)
+    resumed = []
+
+    class _CanonicalControl:
+        def __init__(self, store):
+            self.executions = store
+
+        async def _resume_wait_if_required(self, *, wait, execution):
+            resumed.append((wait, execution.execution_id))
+            return execution
+
+    canonical = _CanonicalControl(executions)
+    monkeypatch.setattr(
+        "openprogram.execution.control.default_control_service",
+        lambda: canonical,
+    )
+    runner = JobRunner.__new__(JobRunner)
+    runner._execution_store = executions
+    runner._execution_control = object()
+
+    result = runner._queue_wait_resume(None, execution)
+    assert result is not None
+    asyncio.run(result)
+    assert resumed == [(None, execution.execution_id)]
+
+
+def test_resolved_system_wait_reaches_canonical_continuation_after_job_reconcile(
+    tmp_path, monkeypatch,
+):
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.agent.job.runner import JobRunner
+
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        expected_version=execution.status_version,
+        fragment=CheckpointFragment(
+            safe_point_kind="agent.provider.decision.after",
+            frontier=({"step_id": "system-access"},),
+            state_refs={"continuation": {"version": 1}},
+        ),
+        kind="system_access",
+        request={"required_capabilities": ["screen_recording"]},
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0,
+        wait_id="job-system-access-resume",
+    )
+    wait = DurableWaitStore(executions)
+    wait.resolve_system_access(
+        suspended.wait.wait_id,
+        report={"capabilities": [{"id": "screen_recording", "status": "granted"}]},
+        owner_id="worker-test",
+    )
+    activations = []
+
+    async def activate(attempt, activation):
+        activations.append((attempt.attempt_id, activation.checkpoint.checkpoint_id))
+
+    canonical = RuntimeControlService(
+        executions, attempts, DriverRegistry(), activator=activate,
+    )
+    job_control = RuntimeControlService(executions, attempts, DriverRegistry())
+
+    monkeypatch.setattr(
+        "openprogram.execution.control.default_control_service",
+        lambda: canonical,
+    )
+    runner = JobRunner.__new__(JobRunner)
+    runner._execution_store = executions
+    runner._execution_control = job_control
+    job_control.set_wait_resume_scheduler(runner._queue_wait_resume)
+
+    asyncio.run(job_control.recover_wait_outcomes())
+
+    resumed = executions.get_execution(execution.execution_id)
+    assert resumed is not None
+    assert resumed.status is ExecutionStatus.RUNNING
+    assert resumed.current_attempt_id is not None
+    assert resumed.current_attempt_id != attempt.attempt_id
+    assert activations == [(
+        resumed.current_attempt_id,
+        suspended.checkpoint.checkpoint_id,
+    )]
+
+    # The resolved wait remains in the durable outcome log, but the canonical
+    # continuation is idempotent once the same execution owns a new attempt.
+    asyncio.run(job_control.recover_wait_outcomes())
+    again = executions.get_execution(execution.execution_id)
+    assert again is not None
+    assert again.current_attempt_id == resumed.current_attempt_id
+    assert activations == [(
+        resumed.current_attempt_id,
+        suspended.checkpoint.checkpoint_id,
+    )]
+
+
 def test_reconciler_schedules_recovery_on_an_existing_event_loop():
     from openprogram.agent.job.runner import JobRunner
 
