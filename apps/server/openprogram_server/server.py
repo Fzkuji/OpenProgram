@@ -1795,12 +1795,19 @@ def create_app(*, owner_auth=None, port: int = 18100):
     async def _reconcile_interrupted_runs():
         """Flip DAG nodes frozen at status='running' (a previous worker
         was killed mid-run) to 'error'. See webui/_exec_dag.py."""
-        try:
-            n = reconcile_interrupted_runs()
-            if n:
-                _log(f"[startup] reconciled {n} interrupted run node(s)")
-        except Exception as e:  # noqa: BLE001
-            _log(f"[startup] reconcile_interrupted_runs failed: {e}")
+        def _run_legacy_recovery() -> None:
+            try:
+                n = reconcile_interrupted_runs()
+                if n:
+                    _log(f"[startup] reconciled {n} interrupted run node(s)")
+            except Exception as e:  # noqa: BLE001
+                _log(f"[startup] reconcile_interrupted_runs failed: {e}")
+
+        threading.Thread(
+            target=_run_legacy_recovery,
+            name="openprogram-legacy-dag-recovery",
+            daemon=True,
+        ).start()
 
     async def _recover_interrupted_rewinds():
         """Resolve durable rewind intents before sessions are served."""

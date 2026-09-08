@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 
 import pytest
+from fastapi.testclient import TestClient
 
 
 async def _async_noop():
@@ -15,12 +18,14 @@ def test_canonical_execution_recovery_runs_before_legacy_dag_recovery(
     from openprogram.webui import server
 
     events = []
+    dag_done = threading.Event()
 
     async def recover_execution_control():
         events.append("execution")
 
     def reconcile_interrupted_runs():
         events.append("dag")
+        dag_done.set()
         return 0
 
     monkeypatch.setattr(server, "_recover_execution_control", recover_execution_control)
@@ -39,6 +44,7 @@ def test_canonical_execution_recovery_runs_before_legacy_dag_recovery(
 
     asyncio.run(run_lifespan())
 
+    assert dag_done.wait(timeout=1)
     assert events == ["execution", "dag"]
 
 
@@ -74,6 +80,94 @@ def test_canonical_execution_recovery_failure_blocks_startup(monkeypatch):
         asyncio.run(run_lifespan())
 
     assert events == []
+
+
+def test_legacy_dag_recovery_does_not_block_public_lifespan(
+    monkeypatch,
+):
+    """A legacy history lock must not delay the public health endpoint."""
+    from openprogram.webui import server
+
+    entered = threading.Event()
+    released = threading.Event()
+    finished = threading.Event()
+
+    def blocked_recovery():
+        entered.set()
+        released.wait(timeout=5)
+        finished.set()
+        return 0
+
+    monkeypatch.setattr(server, "reconcile_interrupted_runs", blocked_recovery)
+    monkeypatch.setattr(server, "_recover_execution_control", _async_noop)
+    monkeypatch.setattr("openprogram.mcp.load_mcp_servers", _async_noop)
+    monkeypatch.setattr("openprogram.mcp.shutdown_mcp_servers", _async_noop)
+    monkeypatch.setattr("openprogram.skills.watcher.start_watcher", lambda **_: None)
+    monkeypatch.setattr("openprogram.plugins.autoupdate.start", lambda: None)
+    monkeypatch.setattr("openprogram.agent._rewind.recover_all_rewinds", lambda: 0)
+
+    app = server.create_app()
+    started_at = time.monotonic()
+    try:
+        with TestClient(app, base_url="http://127.0.0.1:18100") as client:
+            assert time.monotonic() - started_at < 2
+            assert entered.wait(timeout=1)
+            response = client.get("/healthz")
+            assert response.status_code == 200
+            assert response.json() == {"status": "ok"}
+    finally:
+        released.set()
+
+    assert finished.wait(timeout=1)
+
+
+def test_legacy_dag_recovery_waits_on_real_session_lock_after_health(
+    tmp_path, monkeypatch,
+):
+    """A real session lock cannot prevent the public lifespan from yielding."""
+    from openprogram.execution import ExecutionStore
+    from openprogram.store.session.session_store import SessionStore
+    from openprogram.webui import _exec_dag, server
+
+    sessions = SessionStore(tmp_path / "sessions")
+    session_id = "legacy-lock-session"
+    sessions.create_session(session_id, "main")
+    executions = ExecutionStore(tmp_path / "executions.sqlite")
+    entered = threading.Event()
+    finished = threading.Event()
+
+    def reconcile_interrupted_runs():
+        entered.set()
+        result = _exec_dag.reconcile_interrupted_runs()
+        finished.set()
+        return result
+
+    monkeypatch.setattr(server, "reconcile_interrupted_runs", reconcile_interrupted_runs)
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: executions)
+    monkeypatch.setattr(server, "_recover_execution_control", _async_noop)
+    monkeypatch.setattr("openprogram.mcp.load_mcp_servers", _async_noop)
+    monkeypatch.setattr("openprogram.mcp.shutdown_mcp_servers", _async_noop)
+    monkeypatch.setattr("openprogram.skills.watcher.start_watcher", lambda **_: None)
+    monkeypatch.setattr("openprogram.plugins.autoupdate.start", lambda: None)
+    monkeypatch.setattr("openprogram.agent._rewind.recover_all_rewinds", lambda: 0)
+
+    session_lock = sessions._session_lock(session_id)  # noqa: SLF001
+    session_lock.acquire()
+    try:
+        app = server.create_app()
+        with TestClient(app, base_url="http://127.0.0.1:18100") as client:
+            assert entered.wait(timeout=1)
+            response = client.get("/healthz")
+            assert response.status_code == 200
+            assert response.json() == {"status": "ok"}
+            assert not finished.wait(timeout=0.1)
+            session_lock.release()
+            assert finished.wait(timeout=1)
+            session_lock = None
+    finally:
+        if session_lock is not None:
+            session_lock.release()
 
 
 def test_dag_recovery_preserves_canonical_paused_execution_after_wait_resolution(
