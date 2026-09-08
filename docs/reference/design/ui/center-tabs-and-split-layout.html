@@ -480,7 +480,7 @@
     <section id="model">
       <h2>1 · 概念模型</h2>
       <div class="invariant">
-        <p>会话 S 与网页 W 的<strong>配对</strong>是唯一一等关系。分屏与悬浮窗是同一配对的两种呈现。一个 WebTab 叶子同一时刻只有一个页面宿主：center pane、split pane，或某会话的 PiP。</p>
+        <p>会话 S 与网页 W 的<strong>配对</strong>是唯一一等关系。分屏与悬浮窗是同一配对的两种呈现。一个 WebTab 叶子同一时刻只有一个原生 <code>WebContentsView</code> 矩形；聊天 PiP 是该 Page 的只读图像。同一叶子作为普通顶部标签活动时，宿主在 <code>.webFrame</code> 旁侧（过窄则下方）预留渲染进程停靠区，原生页面与只读 PiP 同时可见，不把页面换成遮罩或截图。</p>
         <p class="why">配对来自 agent 在 S 打开 W、用户把 W 拖进 S 的分屏/组、收起时建立，或 agent 操作一张尚未配对的页。<code>show()</code> 与 <code>registerPipPair</code> 写入配对表；覆盖函数只决定这份配对此刻画在哪个宿主。独立网页在被 agent 操作之前没有配对，也就没有「收起到悬浮窗」。</p>
       </div>
 
@@ -503,7 +503,7 @@
         <article class="layer">
           <b>宿主 host</b>
           <span>真正画出页面的地方。由 <code>pipCoversCenter(tabId, ownerTabId, center)</code> 从「绑定 × 当前激活标签」纯函数推导。组件不另存「显隐」状态。</span>
-          <em>pane · pip · none（遮罩 / 消失）</em>
+          <em>pane · chat PiP · page dock · none</em>
         </article>
       </div>
 
@@ -629,15 +629,15 @@
       </table>
 
       <h3>3.3 覆盖函数 <code>pipCoversCenter</code></h3>
-      <p>小窗渲染（且 native view 摆到 PiP 位置）当且仅当 <code>pipCoverBase</code> 与 owner 校验同时成立：</p>
+      <p>小窗渲染当且仅当 <code>pipCoversCenter</code> 成立：<code>pipCoverBase</code> 与 owner 校验同时为真，且 <code>activeId</code> 是 owner 会话或同一 live 叶子。分屏仍独占原生 bounds（<code>splitWebTabId === tabId</code> 时小窗不画）。</p>
       <ol>
         <li>叶子仍在且 <code>kind === "web"</code>；</li>
-        <li><code>activeId !== tabId</code> — 用户盯着该标签时让位给 pane；</li>
-        <li>叶子不在当前激活组的 <code>visibleIds</code> — 分屏已经在画它，不再叠一层；</li>
-        <li>当前激活标签 <code>kind === "session"</code> — 小窗只浮在聊天面板上；</li>
-        <li><code>activeId === ownerTabId</code> — 只属于 owner。</li>
+        <li>叶子不在当前激活组的 <code>visibleIds</code>（除非它就是 <code>activeId</code>）— 分屏已经在画它，不再叠一层；</li>
+        <li><code>splitWebTabId !== tabId</code>；</li>
+        <li>当前激活标签是会话，或就是该叶子；</li>
+        <li><code>activeId === ownerTabId</code> 或 <code>activeId === tabId</code>。</li>
       </ol>
-      <p><code>WebTabPip</code> 把 1–5 收成 <code>live</code>；不满足则返回 <code>null</code> 并撤销 bounds。store 订阅 center-tabs：owner 或叶子被删 → <code>end()</code>；background 引用失效 → 清记忆。</p>
+      <p><code>pipHostMode</code> 把覆盖结果分成聊天悬浮与页面停靠：聊天宿主把 PiP 浮在 <code>.center-pane-chat</code>；页面宿主用 CSS grid 预留停靠区，原生 bounds 仍只测 <code>.webFrame</code>。不满足则组件返回 <code>null</code>。store 订阅 center-tabs：owner 或叶子被删 → <code>end()</code>；background 引用失效 → 清记忆。</p>
     </section>
 
     <!-- ============================================================ -->
@@ -648,11 +648,11 @@
       <p>配对表可以记下多张页，活跃绑定只有一份。呈现是 <code>pipCoversCenter</code> 的输出（条件 5）。切到会话 B 时 store 仍持有 <code>(ex.dev, A)</code>，组件因 <code>live === false</code> 不画；切回 A 同一函数再为真。这不是两次事件。</p>
       <p>「切回重现」只对<strong>活跃绑定</strong>成立。用户在小窗点 ✕ 走的是 <code>hide()</code>，绑定进入 background，切回 A 出现的是 composer 里的「显示网页预览」，不是自动弹出的小窗。</p>
 
-      <h3><span class="rule">R2</span>直接打开被绑定的网页 → 暗色遮罩</h3>
-      <p><code>WebTabPane</code>（desktop / iframe 两套后端同一判定）用 <code>pipBoundTabId() === tabId</code> 得到 <code>pipBound</code>。为真时：</p>
+      <h3><span class="rule">R2</span>直接打开被绑定的网页 → 原生页面与只读 PiP 并存</h3>
+      <p><code>pipCoversCenter</code> 在 <code>activeId === tabId</code> 时仍为真。<code>WebTabPane</code> 保持工具栏全宽，用 CSS grid 在 <code>.webFrame</code> 旁侧（过窄则下方）预留停靠区；<code>WebTabPip</code> 进入该停靠区，不把 PiP 标成 native occluder，也不渲染 <code>PipBoundMask</code>。</p>
       <ul>
-        <li>正文渲染 <code>PipBoundMask</code>：<code>usePipSnapshots</code> 最后一帧打底 + 暗层 +「正在由『{owner 标题}』控制」+「结束浮动」(<code>end()</code>) / 「转到该会话」(<code>setActive(ownerTabId)</code>)；</li>
-        <li>desktop 跳过 <code>ensureWebView</code> 与 bounds 上报。被绑定期间 native view 的唯一合法宿主是 <code>WebTabPip</code>。看遮罩时 PiP 也不 live，页面暂时没有宿主，所以用截图占位。</li>
+        <li>desktop 继续 <code>ensureWebView</code>，原生 bounds 只来自测得的 <code>.webFrame</code>。视口变窄是真实 reflow，走现有 <code>geometryRevision</code>。</li>
+        <li>PiP 仍是 <code>capture</code> 图像，不挂第二份 native view，不把停靠坐标写回聊天悬浮位置。</li>
       </ul>
 
       <h3><span class="rule">R5</span>工具栏「收起到悬浮窗」：目标解析</h3>
@@ -771,7 +771,7 @@
           <tr><td>agent 交互揭示（未配对或本会话配对）</td><td>同上 · <code>revealAgentWebTab</code>；<code>desktop-bridge.ts</code> 的 <code>op=preview/activate</code> 在 reveal 成功后 <code>waitForWebTabReady</code> 再跑。split 路径 <code>registerPipPair</code></td></tr>
           <tr><td>owner / 叶子关闭时清绑定与配对</td><td><code>web-tab-pip-store.ts</code> 末尾 <code>useCenterTabs.subscribe</code></td></tr>
           <tr><td>小窗：live、拖拽、bounds、截图、展开 / 全屏 / ✕</td><td><code>apps/web/components/center-tabs/web-tab-pip.tsx</code> · <code>WebTabPip</code>；挂在 <code>app-shell.tsx</code> 的 <code>.center-body</code> 内，默认 <code>.webPip</code> 右上、<code>top:78px</code>（头部按钮下方）</td></tr>
-          <tr><td>R2 遮罩与 pane 让位</td><td><code>web-tab-pane.tsx</code> · <code>PipBoundMask</code>；<code>DesktopWebTabPane</code> / <code>IframeWebTabPane</code> 的 <code>pipBound</code> 分支</td></tr>
+          <tr><td>R2 同页停靠</td><td><code>web-tab-pane.tsx</code> · <code>WebPaneStage</code> / <code>data-web-pip-dock</code>；<code>web-tab-pip-store.ts</code> 的 <code>pipHostMode</code>；原生 bounds 仍测 <code>.webFrame</code></td></tr>
           <tr><td>截图缓存</td><td><code>usePipSnapshots</code> / <code>getSnapshot</code> / <code>setSnapshot</code>；PiP 卸载与拖动时 <code>bridge.webTab.capture</code></td></tr>
           <tr><td>agent open / close / 回执</td><td><code>apps/web/lib/desktop-bridge.ts</code> · <code>installDesktopMenuHandlers</code> 内 WS 分支；<code>closeAgentWebTabResult</code>；<code>restorePriorActiveTabAfterFailedWebOpen</code></td></tr>
           <tr><td>会话↔网页配对、可见性</td><td>同上 · <code>surfaceRefForChat</code>（PiP 回退读 <code>peekWebTabPipId</code> / <code>peekWebTabPipOwnerId</code>）/ <code>visibleWebTab</code> / <code>visibleWebTabById</code>（用 <code>peekLiveWebTabPipId</code>）/ <code>browserPageInventory</code></td></tr>
@@ -804,7 +804,7 @@
         <p><span class="flag">「不劫持」只管叶子，不管槽位。</span>R3 的 fork 让 B 得到新实例，但同一句 <code>show(id, B)</code> 覆盖全局唯一绑定。A 的规范叶子还在，绑定没了；切回 A 小窗不重现。用户对另一张网页点「收起到悬浮窗」同样静默顶掉旧绑定。产品句「不劫持」若理解为「A 的悬浮窗资产不被拿走」，实现没有做到。</p>
       </div>
       <div class="card warn">
-        <p><span class="flag">show 不解组。</span>agent 把已在别人 group 里的规范叶子绑成自己的 PiP 时，不调用 <code>ungroupTab</code>。回到该组会看到 R2 遮罩：组成员还在，页面宿主却声明给了另一个会话。</p>
+        <p><span class="flag">show 不解组。</span>agent 把已在别人 group 里的规范叶子绑成自己的 PiP 时，不调用 <code>ungroupTab</code>。回到该组时组成员还在；若该叶子是 <code>activeId</code>，页面停靠会画 PiP，而不是把页面让给遮罩。</p>
       </div>
       <div class="card info">
         <p><span class="flag info">region 口径不统一。</span><code>surfaceRefForChat</code> 把未入组的配对页（含 PiP）标成 <code>region:"right"</code>；<code>browserPageInventory</code> 把未入组且可见的页标成 <code>"center"</code>。agent 看到的左右/中心与库存不一致。</p>
@@ -843,11 +843,11 @@
     mask: {
       title: "直接打开被绑定的网页",
       hint: "覆盖函数 · pipCoversCenter",
-      lead: "条件 2 失败，PiP 不画。pane 因 pipBound 渲染遮罩，native view 两边都不上报。",
+      lead: "覆盖仍为真。pane 预留停靠区，native bounds 只覆盖 .webFrame，PiP 在渲染进程里可见。",
       tabs: [["会话 A", false], ["会话 B", false], ["ex.dev", true]],
       frame: "mask",
-      checks: [1, 0, 1, 0, 0],
-      kv: "<b>绑定</b> 仍在<br><b>宿主</b> none + 遮罩声明「内容属于会话 A」"
+      checks: [1, 1, 1, 1, 1],
+      kv: "<b>绑定</b> 仍在<br><b>宿主</b> page dock · 原生 .webFrame + 只读 PiP"
     },
     file: {
       title: "激活文件 / 终端等",
@@ -856,7 +856,7 @@
       tabs: [["会话 A", false], ["main.py", true], ["ex.dev", false]],
       frame: "file",
       checks: [1, 1, 1, 0, 0],
-      kv: "<b>绑定</b> 仍在<br><b>宿主</b> none · 再点 ex.dev 会走到遮罩场景"
+      kv: "<b>绑定</b> 仍在<br><b>宿主</b> none · 再点 ex.dev 会走到页面停靠场景"
     },
     hide: {
       title: "✕ 关闭预览之后",
@@ -892,7 +892,7 @@
     if (kind === "chat-pip") return chat + pip;
     if (kind === "chat") return chat;
     if (kind === "file") return '<div class="file-block">文件 / 终端 pane · PiP 不覆盖</div>';
-    if (kind === "mask") return '<div class="mask"><div>正在由「会话 A」控制</div><div class="mask-btns"><span aria-hidden="true">结束浮动</span><span aria-hidden="true">转到该会话</span></div></div>';
+    if (kind === "mask") return '<div class="split-body"><div>原生 .webFrame</div><div class="pip" style="position:static;width:auto;height:auto">只读 PiP 停靠</div></div>';
     if (kind === "chip") return chat + '<div class="chip" aria-hidden="true">显示网页预览</div>';
     if (kind === "fork") return chat + '<div class="pip fork-pip"><div class="pip-bar"><span>ex.dev · fork</span><span>✕</span></div><div class="pip-page">B 的独立实例</div></div>';
     return chat;

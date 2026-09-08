@@ -2424,6 +2424,16 @@ const {
   collapseWebTabToPip,
   pipCollapseTargetFor,
   pipCoversCenter,
+  pipDockEdge,
+  pipHostMode,
+  pipChatRect,
+  pipPresentationSize,
+  PIP_DEFAULT_HEIGHT,
+  PIP_DEFAULT_WIDTH,
+  PIP_EXPANDED_HEIGHT,
+  PIP_EXPANDED_WIDTH,
+  PIP_MIN_HEIGHT,
+  PIP_MIN_WIDTH,
   pipPairedOwnerFor,
   registerPipPair,
   revealAgentWebTab,
@@ -2581,6 +2591,39 @@ assert.equal(
   pipCoversCenter(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
   true,
 );
+assert.equal(
+  pipHostMode(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
+  "page",
+  "the same live Page tab hosts a reserved renderer dock, not a covering overlay",
+);
+useCenterTabs.getState().setActive(pipOwnerA);
+assert.equal(pipHostMode(pipOwnedId, pipOwnerA, useCenterTabs.getState()), "chat");
+useCenterTabs.getState().setActive(pipOwnedId);
+assert.equal(pipHostMode(pipOwnedId, pipOwnerA, useCenterTabs.getState()), "page");
+assert.deepEqual(
+  pipPresentationSize({ x: 40, y: 90, width: 400, height: 250 }, false),
+  { width: 400, height: 250 },
+);
+assert.deepEqual(
+  pipPresentationSize({ x: 40, y: 90, width: 400, height: 250 }, true),
+  { width: PIP_EXPANDED_WIDTH, height: PIP_EXPANDED_HEIGHT },
+  "expand uses the expanded presentation size even after a prior drag/resize",
+);
+assert.deepEqual(
+  pipPresentationSize({ x: 40, y: 90, width: 400, height: 250 }, true, { width: 500, height: 300 }),
+  { width: 500, height: 300 },
+);
+assert.deepEqual(
+  pipChatRect({ x: 40, y: 90, width: 400, height: 250 }, false, { x: 0, y: 0, width: 900, height: 700 }),
+  { x: 40, y: 90, width: 400, height: 250 },
+);
+assert.equal(pipDockEdge(900, PIP_DEFAULT_WIDTH), "end");
+assert.equal(pipDockEdge(500, PIP_DEFAULT_WIDTH), "bottom");
+assert.equal(pipDockEdge(560, PIP_MIN_WIDTH), "end");
+assert.equal(PIP_DEFAULT_WIDTH, 360);
+assert.equal(PIP_DEFAULT_HEIGHT, 220);
+assert.equal(PIP_MIN_WIDTH, 240);
+assert.equal(PIP_MIN_HEIGHT, 160);
 
 globalThis.window.openprogramDesktop = { isDesktop: true, windowId: "main" };
 useCenterTabs.getState().setActive(pipOwnerA);

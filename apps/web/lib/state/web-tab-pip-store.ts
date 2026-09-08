@@ -12,6 +12,12 @@ export { startWebTabCaptureLoop } from "./web-tab-capture-loop";
  *  store. Position/size live only in memory. */
 export const PIP_MIN_WIDTH = 240;
 export const PIP_MIN_HEIGHT = 160;
+export const PIP_DEFAULT_WIDTH = 360;
+export const PIP_DEFAULT_HEIGHT = 220;
+export const PIP_EXPANDED_WIDTH = 720;
+export const PIP_EXPANDED_HEIGHT = 480;
+export const PIP_PAGE_NATIVE_MIN_WIDTH = 320;
+export const PIP_PAGE_NATIVE_MIN_HEIGHT = 160;
 
 export type WebTabPipRect = {
   x: number;
@@ -19,6 +25,9 @@ export type WebTabPipRect = {
   width: number;
   height: number;
 };
+
+export type PipHostMode = "chat" | "page";
+export type PipDockEdge = "end" | "bottom";
 
 type PipCenterState = {
   tabs: readonly { id: string; kind: string }[];
@@ -43,22 +52,54 @@ export function registerPipPair(tabId: string, ownerTabId: string): void {
   pairedOwnerByTabId.set(tabId, ownerTabId);
 }
 
+const pipPageDocks = new Map<string, HTMLElement>();
+const pipPageDockListeners = new Set<() => void>();
+
+/** Pane dock host for the live-page PiP portal. Ref attach/detach is the
+ *  lifecycle; PiP re-reads on subscribe instead of a one-shot query. */
+export function setPipPageDock(tabId: string, el: HTMLElement | null): void {
+  const current = pipPageDocks.get(tabId) ?? null;
+  if (el) {
+    if (current === el) return;
+    pipPageDocks.set(tabId, el);
+  } else if (current) {
+    pipPageDocks.delete(tabId);
+  } else {
+    return;
+  }
+  for (const listen of pipPageDockListeners) listen();
+}
+
+export function peekPipPageDock(tabId: string): HTMLElement | null {
+  return pipPageDocks.get(tabId) ?? null;
+}
+
+export function subscribePipPageDock(listen: () => void): () => void {
+  pipPageDockListeners.add(listen);
+  return () => {
+    pipPageDockListeners.delete(listen);
+  };
+}
+
 export const useWebTabPip = create<{
   tabId: string | null;
   ownerTabId: string | null;
   backgroundTabId: string | null;
   backgroundOwnerTabId: string | null;
   rect: WebTabPipRect | null;
+  expandedSize: { width: number; height: number } | null;
   show: (tabId: string, ownerTabId: string) => void;
   hide: () => void;
   end: () => void;
   setRect: (rect: WebTabPipRect) => void;
+  setExpandedSize: (size: { width: number; height: number } | null) => void;
 }>((set) => ({
   tabId: null,
   ownerTabId: null,
   backgroundTabId: null,
   backgroundOwnerTabId: null,
   rect: null,
+  expandedSize: null,
   show: (tabId, ownerTabId) => {
     registerPipPair(tabId, ownerTabId);
     set({
@@ -79,8 +120,10 @@ export const useWebTabPip = create<{
     ownerTabId: null,
     backgroundTabId: null,
     backgroundOwnerTabId: null,
+    expandedSize: null,
   }),
   setRect: (rect) => set({ rect }),
+  setExpandedSize: (expandedSize) => set({ expandedSize }),
 }));
 
 export function peekWebTabPipId(): string | null {
@@ -236,6 +279,60 @@ export function pipCoversCenter(
 ): boolean {
   return pipCoverBase(tabId, state) && !!ownerTabId
     && (state.activeId === ownerTabId || state.activeId === tabId);
+}
+
+/** Chat keeps the floating overlay. The same live Page tab reserves a
+ *  renderer dock beside the native `.webFrame` instead of covering it. */
+export function pipHostMode(
+  tabId: string | null,
+  ownerTabId: string | null,
+  state: PipCenterState = useCenterTabs.getState(),
+): PipHostMode | null {
+  if (!tabId || !pipCoversCenter(tabId, ownerTabId, state)) return null;
+  return state.activeId === tabId ? "page" : "chat";
+}
+
+export function pipPresentationSize(
+  rect: WebTabPipRect | null,
+  expanded: boolean,
+  expandedSize: { width: number; height: number } | null = null,
+): { width: number; height: number } {
+  if (expanded) {
+    return {
+      width: expandedSize?.width ?? PIP_EXPANDED_WIDTH,
+      height: expandedSize?.height ?? PIP_EXPANDED_HEIGHT,
+    };
+  }
+  return {
+    width: rect?.width ?? PIP_DEFAULT_WIDTH,
+    height: rect?.height ?? PIP_DEFAULT_HEIGHT,
+  };
+}
+
+export function pipDockEdge(
+  paneWidth: number,
+  dockWidth: number,
+): PipDockEdge {
+  if (paneWidth <= 0) return "end";
+  return paneWidth >= PIP_PAGE_NATIVE_MIN_WIDTH + Math.max(PIP_MIN_WIDTH, dockWidth)
+    ? "end"
+    : "bottom";
+}
+
+export function pipChatRect(
+  rect: WebTabPipRect | null,
+  expanded: boolean,
+  box: WebTabPipRect,
+  expandedSize: { width: number; height: number } | null = null,
+): WebTabPipRect {
+  const size = pipPresentationSize(rect, expanded, expandedSize);
+  const origin = rect
+    ? { x: rect.x, y: rect.y }
+    : {
+      x: box.x + Math.max(0, box.width - size.width - 12),
+      y: box.y + 78,
+    };
+  return clampPipRect({ ...origin, ...size }, box);
 }
 
 export function clampPipRect(

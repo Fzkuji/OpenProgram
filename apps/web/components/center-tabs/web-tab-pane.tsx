@@ -21,8 +21,8 @@
  *    open-externally escape hatch stays always visible. No
  *    back/forward buttons: iframe history is unreliable cross-origin.
  */
-import { useEffect, useId, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, ExternalLink, House, PictureInPicture2, RotateCw, Star, X } from "lucide-react";
 
 import {
@@ -46,6 +46,10 @@ import { normalizeWebUrl, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   collapseWebTabToPip,
   pipCollapseTargetFor,
+  pipDockEdge,
+  pipHostMode,
+  pipPresentationSize,
+  setPipPageDock,
   useWebTabPip,
 } from "@/lib/state/web-tab-pip-store";
 import {
@@ -55,7 +59,13 @@ import {
   markScopeYielding,
   requestExplicitPause,
 } from "@/lib/state/browser-control";
-import { listedBrowserResources, previewTabId, useBrowserResourceStore } from "@/lib/state/session-resources";
+import {
+  getPreviewPreference,
+  listedBrowserResources,
+  previewTabId,
+  useBrowserResourceStore,
+  viewedBranchFor,
+} from "@/lib/state/session-resources";
 import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
@@ -140,6 +150,74 @@ function CollapseToPipButton({ tabId }: { tabId: string }) {
     >
       <PictureInPicture2 size={14} />
     </button>
+  );
+}
+
+function useLivePagePipDock(tabId: string) {
+  const pipTabId = useWebTabPip((s) => s.tabId);
+  const ownerTabId = useWebTabPip((s) => s.ownerTabId);
+  const rect = useWebTabPip((s) => s.rect);
+  const expandedSize = useWebTabPip((s) => s.expandedSize);
+  const tabs = useCenterTabs((s) => s.tabs);
+  const activeId = useCenterTabs((s) => s.activeId);
+  const groups = useCenterTabs((s) => s.groups);
+  const splitWebTabId = useCenterTabs((s) => s.splitWebTabId);
+  useBrowserResourceStore((s) => s.preferences);
+  useBrowserResourceStore((s) => s.viewedBranch);
+  const mode = pipHostMode(pipTabId, ownerTabId, { tabs, activeId, groups, splitWebTabId });
+  const owner = ownerTabId ? tabs.find((tab) => tab.id === ownerTabId) : undefined;
+  const sessionId = owner?.kind === "session" ? owner.sessionId || null : null;
+  const expanded = sessionId
+    ? getPreviewPreference(sessionId, viewedBranchFor(sessionId)).expanded
+    : false;
+  return {
+    docked: mode === "page" && pipTabId === tabId,
+    size: pipPresentationSize(rect, expanded, expandedSize),
+  };
+}
+
+function WebPaneStage({
+  tabId,
+  children,
+}: {
+  tabId: string;
+  children: ReactNode;
+}) {
+  const { docked, size } = useLivePagePipDock(tabId);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [paneWidth, setPaneWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const report = () => {
+      const width = el.getBoundingClientRect().width;
+      setPaneWidth((prev) => (prev === width ? prev : width));
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [docked, size.width, size.height]);
+  const edge = docked ? pipDockEdge(paneWidth, size.width) : undefined;
+  return (
+    <div
+      ref={stageRef}
+      className={styles.webStage}
+      data-pip-dock={edge}
+      style={docked ? {
+        ["--web-pip-dock-width" as string]: `${Math.round(size.width)}px`,
+        ["--web-pip-dock-height" as string]: `${Math.round(size.height)}px`,
+      } : undefined}
+    >
+      {children}
+      {docked ? (
+        <div
+          className={styles.webPipDock}
+          data-web-pip-dock={tabId}
+          ref={(node) => setPipPageDock(tabId, node)}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -508,12 +586,14 @@ function DesktopWebTabPane({
           </button>
         </div>
       ) : null}
+      <WebPaneStage tabId={tabId}>
       <div
         ref={bodyRef}
         className={styles.webFrame}
         onPointerDown={() => yieldFromLiveTab(tabId, { type: "pointerdown" })}
         onWheel={() => yieldFromLiveTab(tabId, { type: "wheel" })}
       />
+      </WebPaneStage>
     </div>
   );
 }
@@ -620,6 +700,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
       {url.startsWith("file:") ? (
         /* Browsers silently block file:// in iframes — say so instead of
            showing a blank frame. */
+        <WebPaneStage tabId={tabId}>
         <div
           className={styles.webFrame}
           style={{
@@ -637,6 +718,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
             "本地文件仅能在桌面应用中打开。",
           )}
         </div>
+        </WebPaneStage>
       ) : (
         <>
           <div className={styles.webHint}>
@@ -651,6 +733,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
               {text("Open externally", "外部打开")}
             </button>
           </div>
+          <WebPaneStage tabId={tabId}>
           <iframe
             key={frameEpoch}
             className={styles.webFrame}
@@ -660,6 +743,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
             title={text("Web page", "网页")}
             onPointerDown={() => yieldFromLiveTab(tabId, { type: "pointerdown" })}
           />
+          </WebPaneStage>
         </>
       )}
     </div>

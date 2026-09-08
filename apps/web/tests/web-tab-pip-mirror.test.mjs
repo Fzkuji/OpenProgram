@@ -24,6 +24,11 @@ test("live tab stays usable and is not replaced by a bound mask", () => {
   assert.match(paneSource, /onKeyDownCapture=\{handleRendererShortcut\}/);
   assert.doesNotMatch(paneSource, /yieldFromLiveTab\(tabId, \{ type: "keydown"/);
   assert.match(paneSource, /data-state=\{control \? displayedControlState\(control\)/);
+  assert.match(paneSource, /data-native-view-occluder="true"/);
+  assert.doesNotMatch(paneSource, /\[data-pip\]/);
+  assert.match(paneSource, /data-web-pip-dock=\{tabId\}/);
+  assert.match(paneSource, /measureWebTabBounds\(el\)/);
+  assert.doesNotMatch(paneSource, /remainingNative|subtractRect|largest-leftover/);
 });
 
 test("PiP screenshot maps pixel points onto a letterboxed contain fit", () => {
@@ -31,6 +36,14 @@ test("PiP screenshot maps pixel points onto a letterboxed contain fit", () => {
   assert.match(css, /\.webPipShot \{[\s\S]*?object-fit: contain/);
   assert.match(css, /\.webPip\[data-state="active"\]/);
   assert.match(css, /\.webPane\[data-state="yielding"\]/);
+  assert.match(css, /\.webPipChrome \{[\s\S]*?flex-direction: column/);
+  assert.match(css, /\.webPipActions \{[\s\S]*?flex-wrap: wrap/);
+  assert.match(css, /\.webPipTitle \{[\s\S]*?min-width: 0/);
+  assert.match(css, /\.webStage\[data-pip-dock="end"\]/);
+  assert.match(css, /\.webStage\[data-pip-dock="bottom"\]/);
+  assert.match(pipSource, /aria-label=\{followLabel\}/);
+  assert.match(pipSource, /<GitBranch /);
+  assert.doesNotMatch(pipSource, />\{followLabel\}</);
   assert.doesNotMatch(css, /\.browserControl\[data-state="active"\] \{\s*box-shadow: inset/);
   assert.doesNotMatch(pipSource, /recordOperationCue/);
   assert.doesNotMatch(pipSource, /left: `\$\{marker\.point\.x\}%`/);

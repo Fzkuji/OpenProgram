@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Eye, Maximize2, Minimize2, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Eye, GitBranch, Maximize2, Minimize2, X } from "lucide-react";
 
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
@@ -28,10 +29,17 @@ import { revealExistingWebTab } from "@/lib/state/web-page-management";
 import {
   clampPipRect,
   getSnapshot,
-  pipCoversCenter,
+  PIP_MIN_HEIGHT,
+  PIP_MIN_WIDTH,
+  peekPipPageDock,
+  pipChatRect,
+  pipHostMode,
+  pipPresentationSize,
   setSnapshot,
   startWebTabCaptureLoop,
+  subscribePipPageDock,
   useWebTabPip,
+  type PipHostMode,
   type WebTabPipRect,
 } from "@/lib/state/web-tab-pip-store";
 import { BrowserControlBar } from "./browser-control-bar";
@@ -107,7 +115,9 @@ export function WebTabPip() {
   const ownerTabId = useWebTabPip((s) => s.ownerTabId);
   const hide = useWebTabPip((s) => s.hide);
   const rect = useWebTabPip((s) => s.rect);
+  const expandedSize = useWebTabPip((s) => s.expandedSize);
   const setRect = useWebTabPip((s) => s.setRect);
+  const setExpandedSize = useWebTabPip((s) => s.setExpandedSize);
   const tabs = useCenterTabs((s) => s.tabs);
   const activeId = useCenterTabs((s) => s.activeId);
   const groups = useCenterTabs((s) => s.groups);
@@ -121,10 +131,13 @@ export function WebTabPip() {
   const pref = sessionId ? getPreviewPreference(sessionId, branchId) : null;
   const connected = useBrowserResourceStore(s => s.connected);
   useBrowserResourceStore(s => s.ingestClock);
+  useBrowserResourceStore(s => s.preferences);
   const resource = tabId ? resourceForTab(tabId) : undefined;
   const control = resource ? controlResourceFromSession(resource) : null;
   const center = { tabs, activeId, groups, splitWebTabId };
-  const live = !!tabId && !!ownerTabId && pipCoversCenter(tabId, ownerTabId, center);
+  const host: PipHostMode | null = pipHostMode(tabId, ownerTabId, center);
+  const live = host !== null;
+  const expanded = !!pref?.expanded;
   const rootRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PipDrag | null>(null);
   const pendingRectRef = useRef<WebTabPipRect | null>(null);
@@ -132,6 +145,8 @@ export function WebTabPip() {
   const shotRef = useRef<HTMLImageElement>(null);
   const captureGenRef = useRef(0);
   const [freshness, setFreshness] = useState<"live" | "last-frame" | "unavailable">("unavailable");
+  const [dock, setDock] = useState<HTMLElement | null>(null);
+  const [chatBox, setChatBox] = useState<WebTabPipRect | null>(null);
   const [, render] = useState(0);
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
@@ -166,14 +181,50 @@ export function WebTabPip() {
     }
   }, [live]);
 
+  useLayoutEffect(() => {
+    if (host !== "page" || !tabId) {
+      setDock(null);
+      return;
+    }
+    const sync = () => {
+      const next = peekPipPageDock(tabId);
+      setDock((prev) => (prev === next ? prev : next));
+    };
+    sync();
+    return subscribePipPageDock(sync);
+  }, [host, tabId, live]);
+
+  useLayoutEffect(() => {
+    if (!tabId || !live) return;
+    showShot(getSnapshot(tabId) ?? null);
+  }, [host, tabId, live, dock]);
+
+  useLayoutEffect(() => {
+    const el = rootRef.current;
+    if (!el || host !== "chat") {
+      setChatBox(null);
+      return;
+    }
+    const next = containerBox(el);
+    setChatBox((prev) => (
+      prev
+        && prev.x === next.x
+        && prev.y === next.y
+        && prev.width === next.width
+        && prev.height === next.height
+        ? prev
+        : next
+    ));
+  }, [host, live, expanded, rect, expandedSize]);
+
   useEffect(() => {
     const el = rootRef.current;
-    if (!el || !live) return;
+    if (!el || !live || host !== "chat") return;
     const parent = el.offsetParent;
     if (!(parent instanceof HTMLElement)) return;
     const reclamp = () => {
       const current = useWebTabPip.getState().rect;
-      if (!current) return;
+      if (!current || expanded) return;
       const next = clampPipRect(current, containerBox(el));
       if (
         next.x !== current.x || next.y !== current.y
@@ -187,7 +238,7 @@ export function WebTabPip() {
     const chat = parent.querySelector(".center-pane-chat");
     if (chat instanceof HTMLElement) ro.observe(chat);
     return () => ro.disconnect();
-  }, [live, setRect]);
+  }, [live, host, expanded, setRect]);
 
   useEffect(() => {
     if (!tabId || !live) return;
@@ -225,17 +276,21 @@ export function WebTabPip() {
     };
   }, [bridge, tabId, live]);
 
-  const placed = !!rect;
-  const pipStyle = placed ? {
-    left: rect.x,
-    top: rect.y,
-    width: rect.width,
-    height: rect.height,
+  const presented = host === "chat" && chatBox
+    ? pipChatRect(rect, expanded, chatBox, expandedSize)
+    : null;
+  const pipStyle = host === "page" || !presented ? undefined : {
+    left: presented.x,
+    top: presented.y,
+    width: presented.width,
+    height: presented.height,
     right: "auto",
     bottom: "auto",
-  } : undefined;
+  };
 
+  const pageDock = host === "page" ? dock : null;
   if (!tabId || !tab || !live) return null;
+  if (host === "page" && !pageDock) return null;
 
   const title = tab.title || url;
   const followLabel = text("Follow current branch", "跟随当前分支");
@@ -254,13 +309,16 @@ export function WebTabPip() {
       : text("Image preview unavailable", "无法预览图像");
 
   const liveRect = (el: HTMLElement) =>
-    rect ?? measuredRect(el);
+    host === "page"
+      ? { x: 0, y: 0, ...pipPresentationSize(rect, expanded, expandedSize) }
+      : presented ?? rect ?? measuredRect(el);
 
   const previewRect = (
     el: HTMLElement,
     drag: PipDrag,
     next: WebTabPipRect,
   ) => {
+    if (host === "page") return;
     if (drag.kind === "move") {
       el.style.transform = `translate(${next.x - drag.origin.x}px, ${next.y - drag.origin.y}px)`;
       return;
@@ -276,14 +334,28 @@ export function WebTabPip() {
   const commitRect = (el: HTMLElement, next: WebTabPipRect) => {
     el.style.transform = "";
     el.style.willChange = "";
+    el.classList.remove(styles.webPipDragging);
+    if (host === "page") {
+      if (expanded) setExpandedSize({ width: next.width, height: next.height });
+      else {
+        const current = useWebTabPip.getState().rect;
+        setRect({
+          x: current?.x ?? 0,
+          y: current?.y ?? 78,
+          width: next.width,
+          height: next.height,
+        });
+      }
+      return;
+    }
     el.style.left = `${next.x}px`;
     el.style.top = `${next.y}px`;
     el.style.width = `${next.width}px`;
     el.style.height = `${next.height}px`;
     el.style.right = "auto";
     el.style.bottom = "auto";
-    el.classList.remove(styles.webPipDragging);
-    setRect(next);
+    if (expanded) setExpandedSize({ width: next.width, height: next.height });
+    else setRect(next);
   };
 
   const onDragPointerDown = (
@@ -291,6 +363,7 @@ export function WebTabPip() {
     event: React.PointerEvent<HTMLElement>,
   ) => {
     if (event.button !== 0) return;
+    if (host === "page" && kind === "move") return;
     const el = rootRef.current;
     if (!el) return;
     event.preventDefault();
@@ -314,13 +387,33 @@ export function WebTabPip() {
     if (!drag || drag.pointerId !== event.pointerId || !el) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    const next = clampPipRect(
-      drag.kind === "move"
-        ? { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }
-        : { ...drag.origin, width: drag.origin.width + dx, height: drag.origin.height + dy },
-      containerBox(el),
-    );
+    const next = host === "page"
+      ? {
+        x: 0,
+        y: 0,
+        width: Math.max(PIP_MIN_WIDTH, drag.origin.width + dx),
+        height: Math.max(PIP_MIN_HEIGHT, drag.origin.height + dy),
+      }
+      : clampPipRect(
+        drag.kind === "move"
+          ? { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }
+          : { ...drag.origin, width: drag.origin.width + dx, height: drag.origin.height + dy },
+        containerBox(el),
+      );
     pendingRectRef.current = next;
+    if (host === "page") {
+      if (expanded) setExpandedSize({ width: next.width, height: next.height });
+      else {
+        const current = useWebTabPip.getState().rect;
+        setRect({
+          x: current?.x ?? 0,
+          y: current?.y ?? 78,
+          width: next.width,
+          height: next.height,
+        });
+      }
+      return;
+    }
     if (rafRef.current) return;
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = 0;
@@ -349,11 +442,12 @@ export function WebTabPip() {
     }
   };
 
-  return (
+  const node = (
     <div
       ref={rootRef}
-      className={`${styles.webPip} ${pref?.expanded ? styles.webPipExpanded : ""}`}
+      className={`${styles.webPip} ${expanded ? styles.webPipExpanded : ""}`}
       data-pip="true"
+      data-pip-host={host}
       role="complementary"
       aria-label={title}
       data-state={control ? displayedControlState(control) : "readonly"}
@@ -366,8 +460,11 @@ export function WebTabPip() {
         onPointerUp={onDragPointerUp}
         onPointerCancel={onDragPointerUp}
       >
-        <span className={styles.webPipTitle} title={`${title} · ${modeLabel}`}>{title}</span>
-        <small className={styles.webPipMode}>{modeLabel}</small>
+        <div className={styles.webPipIdentity}>
+          <span className={styles.webPipTitle} title={`${title} · ${modeLabel}`}>{title}</span>
+          <small className={styles.webPipMode}>{modeLabel}</small>
+        </div>
+        <div className={styles.webPipActions}>
         <button
           type="button"
           className={styles.webToolbarBtn}
@@ -383,7 +480,7 @@ export function WebTabPip() {
           title={followLabel}
           aria-label={followLabel}
         >
-          {followLabel}
+          <GitBranch size={14} />
         </button>
         <button
           type="button"
@@ -421,6 +518,7 @@ export function WebTabPip() {
         >
           <X size={14} />
         </button>
+        </div>
       </div>
       <BrowserControlBar resource={control} compact />
       <div className={styles.webPipStage}>
@@ -462,4 +560,6 @@ export function WebTabPip() {
       </div>
     </div>
   );
+
+  return pageDock ? createPortal(node, pageDock) : node;
 }
