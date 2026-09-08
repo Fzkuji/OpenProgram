@@ -195,6 +195,8 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
     )
 
     assert rejected["reason_code"] == "page_context_stale"
+    assert rejected["closed"] is True
+    assert rejected["web_session_id"] == observed["web_session_id"]
     assert validations == ["binding-1"]
     assert adapter.calls == [("observe", {}), ("close", {})]
     assert released == ["ctx-1"]
@@ -202,6 +204,23 @@ def test_registry_rejects_action_when_bound_page_revision_changes():
         command="act", web_session_id=observed["web_session_id"],
         owner_id="owner-1",
     )["reason_code"] == "web_session_not_found"
+    listed = registry.list_pages(
+        owner_id="owner-1",
+        context={
+            "context_id": "ctx-retry",
+            "surfaces": [{
+                "binding_id": "binding-1", "surface_key": "p1",
+            }],
+        },
+    )
+    recovered = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        owner_id="owner-1",
+        page_context_token=listed["pages"][0]["page_context_token"],
+    )
+    assert recovered.get("ok") is not False
+    assert recovered["web_session_id"] != observed["web_session_id"]
+    assert recovered.get("closed") is not True
 
 
 def test_registry_revalidates_visibility_before_each_existing_session_command():
@@ -1233,6 +1252,7 @@ def test_failed_first_observe_releases_session_and_page_context():
     session_id = result["web_session_id"]
 
     assert result["reason_code"] == "target_lost"
+    assert result["closed"] is True
     assert registry.execute(
         command="act", web_session_id=session_id, owner_id="owner-1",
     )["reason_code"] == "web_session_not_found"
@@ -3164,17 +3184,111 @@ def test_observe_with_url_opens_desktop_tab_when_no_page(monkeypatch):
     assert opens == ["https://example.test/form"]
     assert result["ok"] is True
     assert result["web_session_id"] == "cs_opened"
-    assert result["page_context_token"] == "pct_opened"
+    assert result["frame_id"] == "frame-1"
+    assert "page_context_token" not in result
 
     opens.clear()
     acted = module.web_use(
         command="act",
-        arguments={"action": "navigate", "url": "https://example.test/form"},
+        web_session_id=result["web_session_id"],
+        arguments={"action": "click", "expected_frame_id": "frame-1"},
     )
-    assert opens == ["https://example.test/form"]
+    assert opens == []
     assert acted["ok"] is True
     assert acted["web_session_id"] == "cs_opened"
-    assert acted["page_context_token"] == "pct_opened"
+    assert "page_context_token" not in acted
+    assert acted.get("closed") is not True
+
+
+def test_observe_with_url_session_only_act_uses_live_registry_session(monkeypatch):
+    from openprogram.agent import surface_context
+    from openprogram.programs.workflow import browser as module
+    from openprogram.programs.workflow.browser import web_use_runtime
+    from openprogram.programs.workflow.browser.web_use_runtime import (
+        SUPPORTED_BACKENDS,
+        WebUseSessionRegistry,
+    )
+
+    adapters = {name: _Adapter(name) for name in SUPPORTED_BACKENDS}
+    registry = WebUseSessionRegistry(
+        adapters=adapters,
+        binding_validator=_allow_binding,
+        release_context=lambda context: None,
+    )
+    monkeypatch.setattr(web_use_runtime, "get_registry", lambda: registry)
+    monkeypatch.setattr(surface_context, "current", lambda: None)
+    monkeypatch.setattr(
+        surface_context, "web_use_owner_id", lambda context=None: "owner-open",
+    )
+    monkeypatch.setattr(
+        surface_context,
+        "open_page",
+        lambda url: {
+            "context_id": "page_ctx_opened",
+            "window_id": "win",
+            "surfaces": [{
+                "binding_id": "binding-opened",
+                "surface_key": "p1",
+                "window_id": "win",
+                "tab_id": "tab-1",
+            }],
+        },
+    )
+
+    result = module.web_use(
+        command="observe",
+        backend="open_claude_chrome",
+        arguments={"url": "https://example.test/page/1"},
+    )
+    assert result.get("ok") is not False
+    assert result["web_session_id"].startswith("cs_")
+    assert result.get("frame_id") == "frame-1"
+    assert "page_context_token" not in result
+    assert result.get("closed") is not True
+
+    acted = module.web_use(
+        command="act",
+        backend="open_claude_chrome",
+        web_session_id=result["web_session_id"],
+        arguments={"action": "click", "expected_frame_id": "frame-1"},
+    )
+    assert acted.get("ok") is not False
+    assert acted["web_session_id"] == result["web_session_id"]
+    assert acted.get("closed") is not True
+    assert adapters["open_claude_chrome"].calls[-1][0] == "act"
+
+
+def test_invalid_arguments_keep_live_session_unmarked_closed():
+    from openprogram.programs.workflow.browser.web_use_runtime import (
+        WebUseSessionRegistry,
+    )
+
+    adapters = {
+        name: _Adapter(name) for name in (
+            "playwright_mcp", "chrome_devtools_mcp", "open_claude_chrome",
+        )
+    }
+    registry = WebUseSessionRegistry(
+        adapters=adapters, binding_validator=_allow_binding,
+    )
+    observed = registry.execute(
+        command="observe", backend="open_claude_chrome",
+        binding_id="binding-1", owner_id="owner-1",
+        page_context={"context_id": "ctx-1"},
+    )
+    rejected = registry.execute(
+        command="act", web_session_id=observed["web_session_id"],
+        owner_id="owner-1", arguments={},
+    )
+    assert rejected["reason_code"] == "invalid_arguments"
+    assert rejected.get("closed") is not True
+    assert rejected["web_session_id"] == observed["web_session_id"]
+    still = registry.execute(
+        command="observe", web_session_id=observed["web_session_id"],
+        owner_id="owner-1",
+    )
+    assert still.get("ok") is not False
+    assert still.get("closed") is not True
 
 
 def test_act_with_url_rejects_non_http_scheme(monkeypatch):

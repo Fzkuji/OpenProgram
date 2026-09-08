@@ -640,6 +640,21 @@ class BrowserPageController:
         return target, None
 
     def _mutated(self, detail: str, *, point: dict | None = None) -> dict[str, Any]:
+        identity: dict[str, Any] = {}
+        try:
+            page = self._page()
+            session = self._session()
+            identity = {
+                "url": page.url,
+                "title": page.title(),
+                "target": {
+                    "kind": "web_tab",
+                    "tab_id": session.get("app_tab_id"),
+                    "target_id": session.get("app_target_id"),
+                },
+            }
+        except Exception:
+            identity = {}
         self._mutations += 1
         self._frame = None
         self._dispose_refs()
@@ -647,7 +662,7 @@ class BrowserPageController:
         self._screenshot_frame = ""
         self._screenshot_viewport = None
         self._navigation_time_origin = None
-        payload = {"ok": True, "detail": detail, "observe_required": True}
+        payload = {"ok": True, "detail": detail, "observe_required": True, **identity}
         if point is not None:
             payload["point"] = point
         return payload
@@ -1697,7 +1712,7 @@ def _start_session_on_opened_page(*, context, owner_id: str, backend: str, argum
     )
     if isinstance(observed, dict):
         observed = dict(observed)
-        observed["page_context_token"] = token
+        observed.pop("page_context_token", None)
     return observed
 
 
@@ -1847,7 +1862,6 @@ def web_use(
                 backend=backend,
                 web_session_id=str(observed.get("web_session_id") or ""),
                 owner_id=owner_id,
-                page_context_token=str(observed.get("page_context_token") or ""),
                 page_context=context,
                 arguments=arguments,
             )
@@ -1856,9 +1870,6 @@ def web_use(
             raise
         if isinstance(result, dict):
             result = dict(result)
-            result.setdefault(
-                "page_context_token", observed.get("page_context_token"),
-            )
             result.setdefault("web_session_id", observed.get("web_session_id"))
         return result
 
@@ -1959,15 +1970,11 @@ def execute_direct_web_use(arguments: dict, *, owner_id: str):
             backend=str(arguments.get("backend") or ""),
             web_session_id=str(observed.get("web_session_id") or ""),
             owner_id=owner_id,
-            page_context_token=str(observed.get("page_context_token") or ""),
             page_context=opened,
             arguments=nested,
         )
         if isinstance(result, dict):
             result = dict(result)
-            result.setdefault(
-                "page_context_token", observed.get("page_context_token"),
-            )
             result.setdefault("web_session_id", observed.get("web_session_id"))
         return result
     return registry.execute(

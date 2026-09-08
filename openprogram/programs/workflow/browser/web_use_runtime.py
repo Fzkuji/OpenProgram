@@ -56,6 +56,62 @@ def _result_frame_id(result: Any) -> str:
     return str(payload.get("frame_id") or "").strip()
 
 
+def _trusted_binding(session: WebUseSession) -> dict[str, Any]:
+    """Native window/tab/generation only from a live server binding for this Page."""
+    if not session.binding_id or not session.page_key:
+        return {}
+    try:
+        from openprogram.webui.ws_actions.webtab import binding_page_descriptor
+        descriptor = binding_page_descriptor(session.binding_id)
+    except Exception:
+        return {}
+    if not descriptor:
+        return {}
+    if str(descriptor.get("page_key") or "") != session.page_key:
+        return {}
+    window_id = str(descriptor.get("window_id") or "")
+    tab_id = str(descriptor.get("tab_id") or "")
+    generation = int(descriptor.get("connection_generation") or 0)
+    if not window_id or not tab_id or generation <= 0:
+        return {}
+    return {
+        "window_id": window_id,
+        "tab_id": tab_id,
+        "connection_generation": generation,
+    }
+
+
+def _controller_display(session: WebUseSession, result: Any = None) -> dict[str, str]:
+    """title/URL from BrowserPageController observe frame or _mutated after success."""
+    frame = getattr(session.controller, "_frame", None) if session.controller else None
+    if isinstance(frame, dict):
+        title = str(frame.get("title") or "")
+        url = str(frame.get("url") or "")
+        if title or url:
+            return {"title": title, "target": url}
+    payload = result.json_data if isinstance(result, ToolReturn) else result
+    if isinstance(payload, dict) and (
+        payload.get("observe_required") is True or payload.get("frame_id")
+    ):
+        title = str(payload.get("title") or "")
+        url = str(payload.get("url") or "")
+        if title or url:
+            return {"title": title, "target": url}
+    return {}
+
+
+def _publish_bound_page(session: WebUseSession, result: Any = None) -> None:
+    identity = _trusted_binding(session)
+    if not identity:
+        return
+    display = _controller_display(session, result)
+    try:
+        from openprogram.browser_resources import publish_bound_page
+        publish_bound_page(session.page_key, **identity, **display)
+    except Exception:
+        pass
+
+
 def _is_timeout_error(exc: Exception) -> bool:
     if isinstance(exc, TimeoutError):
         return True
@@ -85,6 +141,19 @@ class WebUseSession:
     closing: bool = False
     closed: bool = False
     inflight_ops: int = 0
+
+
+def _session_fields(session: WebUseSession, *, reused: bool = False) -> dict[str, Any]:
+    """Reusable session handle, or closed after this command cleaned it."""
+    fields = {
+        "web_session_id": session.id,
+        "backend": session.backend,
+    }
+    if reused:
+        fields["session_reused"] = True
+    if session.closed:
+        fields["closed"] = True
+    return fields
 
 
 class ControllerBackend:
@@ -426,11 +495,11 @@ class WebUseSessionRegistry:
                 return {
                     "ok": False,
                     "reason_code": "write_fenced",
-                    "web_session_id": session.id,
-                    "backend": session.backend,
+                    **_session_fields(session),
                 }
 
         follow_receipt = None
+        cleaned = False
         with session.operation_lock:
             with self._lock:
                 owner_closing = (
@@ -444,8 +513,7 @@ class WebUseSessionRegistry:
                     return {
                         "ok": False,
                         "reason_code": "write_fenced",
-                        "web_session_id": session.id,
-                        "backend": session.backend,
+                        **_session_fields(session),
                     }
             if session.owner_id and owner_id != session.owner_id:
                 return {"ok": False, "reason_code": "web_session_owner_mismatch"}
@@ -453,8 +521,7 @@ class WebUseSessionRegistry:
                 return {
                     "ok": False,
                     "reason_code": "backend_mismatch",
-                    "web_session_id": session.id,
-                    "backend": session.backend,
+                    **_session_fields(session),
                 }
 
             if command in {"act", "verify"}:
@@ -473,8 +540,7 @@ class WebUseSessionRegistry:
                         "ok": False,
                         "reason_code": "invalid_arguments",
                         "missing_arguments": missing,
-                        "web_session_id": session.id,
-                        "backend": session.backend,
+                        **_session_fields(session),
                     }
 
             if command in {"observe", "act", "verify"}:
@@ -517,8 +583,7 @@ class WebUseSessionRegistry:
                     return {
                         "ok": False,
                         "reason_code": reason_code,
-                        "web_session_id": session.id,
-                        "backend": session.backend,
+                        **_session_fields(session),
                     }
 
             adapter = self._adapters[session.backend]
@@ -539,7 +604,7 @@ class WebUseSessionRegistry:
                 elif command in {"act", "verify"} and writes_fenced(session.page_key):
                     return {
                         "ok": False, "reason_code": "write_fenced",
-                        "web_session_id": session.id, "backend": session.backend,
+                        **_session_fields(session),
                     }
             dispatched_op_id = None
             try:
@@ -636,7 +701,7 @@ class WebUseSessionRegistry:
                                 pass
                     return {
                         "ok": False, "reason_code": "write_fenced",
-                        "web_session_id": session.id, "backend": session.backend,
+                        **_session_fields(session),
                     }
                 if command == "observe" and not session.closing:
                     self._cleanup_session(session, suppress_errors=True)
@@ -682,7 +747,8 @@ class WebUseSessionRegistry:
             frame_id = _result_frame_id(result)
             if frame_id:
                 session.state["frame_id"] = frame_id
-            if created_session and not frame_id:
+            cleaned = bool(created_session and not frame_id)
+            if cleaned:
                 self._cleanup_session(session, suppress_errors=True)
 
         if follow_receipt:
@@ -695,21 +761,19 @@ class WebUseSessionRegistry:
                 except Exception:
                     pass
 
+        failed = isinstance(result, dict) and result.get("ok") is False
+        if command in {"observe", "act"} and not failed and not cleaned:
+            _publish_bound_page(session, result)
+
         if isinstance(result, ToolReturn):
             metadata = (
                 dict(result.json_data) if isinstance(result.json_data, dict) else {}
             )
-            metadata["web_session_id"] = session.id
-            metadata["backend"] = session.backend
-            if reused_session:
-                metadata["session_reused"] = True
+            metadata.update(_session_fields(session, reused=reused_session))
             result.json_data = metadata
             return result
         payload = dict(result) if isinstance(result, dict) else {"result": result}
-        payload["web_session_id"] = session.id
-        payload["backend"] = session.backend
-        if reused_session:
-            payload["session_reused"] = True
+        payload.update(_session_fields(session, reused=reused_session))
         return payload
 
     def close_all(self) -> None:
