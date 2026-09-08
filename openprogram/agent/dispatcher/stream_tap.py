@@ -75,8 +75,12 @@ def make_stream_tap(
 
                 _tool_name = (meta.get("tool")
                               or evt.get("tool") or "")
+                _node_id = f"{assistant_msg_id}_t_{tid}"
+                _store = _db()
+                if _store.message_exists(req.session_id, _node_id):
+                    return
                 _node = Call(
-                    id=f"{assistant_msg_id}_t_{tid}",
+                    id=_node_id,
                     created_at=time.time(),
                     role=ROLE_CODE,
                     name=_tool_name,
@@ -89,7 +93,7 @@ def make_stream_tap(
                     },
                 )
                 SessionNodeWriter(
-                    _db(), req.session_id,
+                    _store, req.session_id,
                 ).append(_node)
         except Exception:
             # Event-tap boundary: this runs inside the provider's stream

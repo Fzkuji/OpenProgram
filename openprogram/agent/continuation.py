@@ -1069,6 +1069,7 @@ class AgentContinuation:
     assistant_message: AssistantMessage
     tool_results: tuple[ToolResultMessage, ...]
     resolved_snapshot: Mapping[str, Any]
+    display: tuple[dict[str, Any], ...] = ()
 
     @classmethod
     def from_checkpoint(
@@ -1109,6 +1110,9 @@ class AgentContinuation:
         ):
             raise AgentCheckpointError("checkpoint_schema_invalid", "resolved snapshot is invalid")
         validate_runtime_contract(snapshot, snapshot)
+        display_blocks = decode_turn_display(
+            state, store=store, execution_id=checkpoint.execution_id,
+        )
         return cls(
             request=request,
             checkpoint=checkpoint,
@@ -1116,6 +1120,7 @@ class AgentContinuation:
             assistant_message=assistant,
             tool_results=results,
             resolved_snapshot=dict(snapshot),
+            display=tuple(dict(card) for card in display_blocks),
         )
 
     @property

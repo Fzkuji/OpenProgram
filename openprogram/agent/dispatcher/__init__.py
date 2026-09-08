@@ -227,10 +227,10 @@ def process_agent_continuation(
     A continuation owns an already-persisted user node and assistant
     placeholder.  Re-entering ``_process_turn_once`` would append both again,
     start a second memory write, and run the normal finalizer twice.  This
-    path therefore only rebuilds provider context, executes the durable
-    frontier, and finalizes the original assistant id once it really ends.
+    path therefore only rebuilds provider context, binds the original
+    per-turn identity, executes the durable frontier, and finalizes the
+    original assistant id once it really ends.
     """
-    from openprogram.agent.dispatcher.loop_runner import run_loop_blocking
     from openprogram.agent.dispatcher.persistence import persist_assistant_message
     from openprogram.agent.dispatcher.finalize import finalize_turn
     from openprogram.agent.dispatcher.turn_writer import TurnWriter
@@ -251,15 +251,36 @@ def process_agent_continuation(
         raise RuntimeError("continuation assistant placeholder is missing")
     history = rendered_history(db, req.session_id, head_id=user_msg_id) or []
     context = execution_context if execution_context is not None else {}
-    final_text, usage, tool_calls = run_loop_blocking(
-        req=req,
-        history=history,
-        on_event=on_event,
-        cancel_event=cancel_event,
-        assistant_msg_id=assistant_msg_id,
-        execution_context=context,
-        continuation=continuation,
+    # Resume is not a new admission: keep the original user node, assistant
+    # placeholder, and assistant id. Bind the same per-turn identity the
+    # first attempt used so web_use owner tokens stay valid across pause.
+    _bindings = TurnBindings.bind(
+        req=req, assistant_msg_id=assistant_msg_id, db=db,
+        snapshot_project_baseline=False,
     )
+    _agentic_tool_names: set[str] = set()
+    _ordered_blocks: list[dict] = []
+    _on_event_persist = make_stream_tap(
+        on_event=on_event,
+        req=req,
+        assistant_msg_id=assistant_msg_id,
+        placeholder_inserted=True,
+        agentic_tool_names=_agentic_tool_names,
+    )
+    try:
+        final_text, usage, tool_calls = _run_loop_blocking(
+            req=req,
+            history=history,
+            on_event=_on_event_persist,
+            cancel_event=cancel_event,
+            assistant_msg_id=assistant_msg_id,
+            agentic_tool_names_out=_agentic_tool_names,
+            ordered_blocks_out=_ordered_blocks,
+            execution_context=context,
+            continuation=continuation,
+        )
+    finally:
+        _bindings.release()
     if context.get("safe_point_committed"):
         result = TurnResult(
             final_text="",
@@ -277,8 +298,8 @@ def process_agent_continuation(
         final_text=final_text,
         history=history,
         tool_calls=tool_calls,
-        _ordered_blocks=[],
-        _agentic_tool_names=set(),
+        _ordered_blocks=_ordered_blocks,
+        _agentic_tool_names=_agentic_tool_names,
         _placeholder_inserted=True,
         cancel_event=cancel_event,
         assistant_msg_id=assistant_msg_id,

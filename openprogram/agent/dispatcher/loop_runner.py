@@ -48,6 +48,177 @@ from openprogram.agent.continuation import validate_runtime_contract
 if TYPE_CHECKING:
     from openprogram.agent.dispatcher.types import EventCallback, TurnRequest
 
+
+def _ordered_block_from_content(block: object) -> dict | None:
+    """Map one provider content block onto the persisted ordered-card shape."""
+    btype = getattr(block, "type", None)
+    if btype == "text":
+        text = getattr(block, "text", "") or ""
+        return {"type": "text", "text": text} if text else None
+    if btype == "thinking":
+        text = getattr(block, "thinking", "") or ""
+        return {"type": "thinking", "text": text} if text else None
+    if btype == "toolCall":
+        tool_id = getattr(block, "id", None)
+        name = getattr(block, "name", None)
+        args = getattr(block, "arguments", None)
+        try:
+            payload = json.dumps(args, default=str) if args is not None else None
+        except (TypeError, ValueError):
+            payload = None
+        return {
+            "type": "tool",
+            "tool": name,
+            "tool_call_id": tool_id,
+            "input": payload,
+        }
+    return None
+
+
+def _cards_are_suffix(haystack: list[dict], needle: list[dict]) -> bool:
+    if not needle:
+        return True
+    if len(haystack) < len(needle):
+        return False
+    tail = haystack[-len(needle):]
+    for left, right in zip(tail, needle):
+        if left.get("type") != right.get("type"):
+            return False
+        if left.get("type") == "tool":
+            if str(left.get("tool_call_id") or "") != str(right.get("tool_call_id") or ""):
+                return False
+        elif str(left.get("text") or "") != str(right.get("text") or ""):
+            return False
+    return True
+
+
+def _seed_continuation_cards(
+    continuation,
+    *,
+    ordered_blocks_out: list[dict] | None,
+    tool_calls: list[dict],
+    final_text_parts: list[str],
+) -> set[str]:
+    """Restore the full pre-pause trace, then current-decision fallback."""
+    seen_tool_ids: set[str] = set()
+
+    def _note_tool(tool_id: object, *, tool: object = None, result=None,
+                   is_error=None, input_value=None) -> None:
+        if not tool_id:
+            return
+        key = str(tool_id)
+        existing = next(
+            (row for row in tool_calls if row.get("tool_call_id") == key),
+            None,
+        )
+        if existing is None:
+            tool_calls.append({
+                "id": key,
+                "tool_call_id": key,
+                "tool": tool,
+                "result": result,
+                "is_error": is_error,
+                "input": input_value,
+            })
+        else:
+            if tool is not None and not existing.get("tool"):
+                existing["tool"] = tool
+            if result is not None and existing.get("result") is None:
+                existing["result"] = result
+            if is_error is not None and existing.get("is_error") is None:
+                existing["is_error"] = is_error
+            if input_value is not None and existing.get("input") is None:
+                existing["input"] = input_value
+        seen_tool_ids.add(key)
+
+    decision_cards: list[dict] = []
+    for block in continuation.assistant_message.content:
+        ordered = _ordered_block_from_content(block)
+        if ordered is None:
+            continue
+        decision_cards.append(ordered)
+        if ordered.get("type") == "text" and ordered.get("text"):
+            final_text_parts.append(ordered["text"])
+        if ordered.get("type") == "tool":
+            _note_tool(
+                ordered.get("tool_call_id"),
+                tool=ordered.get("tool"),
+                input_value=ordered.get("input"),
+            )
+
+    display = tuple(getattr(continuation, "display", ()) or ())
+    if display:
+        for card in display:
+            if not isinstance(card, Mapping):
+                continue
+            item = dict(card)
+            kind = item.get("type")
+            if ordered_blocks_out is not None:
+                ordered_blocks_out.append(item)
+            if kind == "tool":
+                _note_tool(
+                    item.get("tool_call_id"),
+                    tool=item.get("tool"),
+                    result=item.get("result"),
+                    is_error=item.get("is_error"),
+                    input_value=item.get("input"),
+                )
+        if ordered_blocks_out is not None:
+            overlap = 0
+            for n in range(len(decision_cards), 0, -1):
+                if _cards_are_suffix(ordered_blocks_out, decision_cards[:n]):
+                    overlap = n
+                    break
+            present = {
+                str(block.get("tool_call_id"))
+                for block in ordered_blocks_out
+                if block.get("type") == "tool" and block.get("tool_call_id")
+            }
+            for ordered in decision_cards[overlap:]:
+                if (
+                    ordered.get("type") == "tool"
+                    and ordered.get("tool_call_id")
+                    and str(ordered["tool_call_id"]) in present
+                ):
+                    continue
+                ordered_blocks_out.append(dict(ordered))
+        for result in continuation.tool_results:
+            _note_tool(
+                result.tool_call_id,
+                tool=result.tool_name,
+                result=_shorten(result),
+                is_error=result.is_error,
+            )
+        return seen_tool_ids
+
+    for ordered in decision_cards:
+        if ordered_blocks_out is not None:
+            ordered_blocks_out.append(ordered)
+    for result in continuation.tool_results:
+        _note_tool(
+            result.tool_call_id,
+            tool=result.tool_name,
+            result=_shorten(result),
+            is_error=result.is_error,
+        )
+        tool_id = str(result.tool_call_id or "")
+        if (
+            ordered_blocks_out is not None
+            and tool_id
+            and not any(
+                block.get("type") == "tool" and block.get("tool_call_id") == tool_id
+                for block in (ordered_blocks_out or [])
+            )
+        ):
+            ordered_blocks_out.append({
+                "type": "tool",
+                "tool": result.tool_name,
+                "tool_call_id": tool_id,
+                "input": None,
+            })
+    return seen_tool_ids
+
+
 _log = logging.getLogger(__name__)
 
 _INDEPENDENT_BROWSER_TOOLS = {
@@ -178,9 +349,9 @@ def run_loop_blocking(
     """
     from openprogram.agent.agent_loop import agent_loop, agent_loop_resume
     from openprogram.agent.types import AgentContext, AgentLoopConfig
-    # A continuation runs on its own thread, outside TurnBindings. Bind the
-    # current durable project/worktree while resolving the contract so the
-    # raw system prompt contains the same cwd that will be dispatched.
+    # Continuation already binds TurnBindings in process_agent_continuation.
+    # Nested worktree here only covers resolve_agent_runtime when this
+    # function is invoked without those bindings (tests and older callers).
     _worktree_token = None
     if continuation is not None:
         from openprogram.agent.internals._workdir import runtime_location_for
@@ -630,12 +801,14 @@ def run_loop_blocking(
             "provider_request_count": 0, "agent_iteration_count": 0,
         }
         tool_calls: list[dict] = []
+        seen_tool_ids: set[str] = set()
         if continuation is not None:
-            for block in continuation.assistant_message.content:
-                if getattr(block, "type", None) == "text" and getattr(block, "text", ""):
-                    final_text_parts.append(block.text)
-                    if ordered_blocks_out is not None:
-                        ordered_blocks_out.append({"type": "text", "text": block.text})
+            seen_tool_ids = _seed_continuation_cards(
+                continuation,
+                ordered_blocks_out=ordered_blocks_out,
+                tool_calls=tool_calls,
+                final_text_parts=final_text_parts,
+            )
             prior_usage = continuation.assistant_message.usage
             usage_total.update({
                 "input_tokens": int(getattr(prior_usage, "input", 0) or 0),
@@ -645,14 +818,6 @@ def run_loop_blocking(
                 "provider_request_count": 1,
                 "agent_iteration_count": 1,
             })
-            for result in continuation.tool_results:
-                tool_calls.append({
-                    "id": result.tool_call_id,
-                    "tool_call_id": result.tool_call_id,
-                    "tool": result.tool_name,
-                    "result": _shorten(result),
-                    "is_error": result.is_error,
-                })
         # Capture tool_use inputs so we can rebuild the same
         # collapsible scaffold on reload. tool_execution_end events
         # don't carry the input args, so we stash them at start time.
@@ -756,36 +921,19 @@ def run_loop_blocking(
                         if ordered_blocks_out is not None and msg is not None:
                             try:
                                 for blk in getattr(msg, "content", None) or []:
-                                    btype = getattr(blk, "type", None)
-                                    if btype == "text":
-                                        _t = getattr(blk, "text", "") or ""
-                                        if _t:
-                                            ordered_blocks_out.append(
-                                                {"type": "text", "text": _t}
-                                            )
-                                    elif btype == "thinking":
-                                        _t = getattr(blk, "thinking", "") or ""
-                                        if _t:
-                                            ordered_blocks_out.append(
-                                                {"type": "thinking", "text": _t}
-                                            )
-                                    elif btype == "toolCall":
-                                        _tid = getattr(blk, "id", None)
-                                        _name = getattr(blk, "name", None)
-                                        _args = getattr(blk, "arguments", None)
-                                        try:
-                                            _input = (
-                                                json.dumps(_args, default=str)
-                                                if _args is not None else None
-                                            )
-                                        except (TypeError, ValueError):
-                                            _input = None
-                                        ordered_blocks_out.append({
-                                            "type": "tool",
-                                            "tool": _name,
-                                            "tool_call_id": _tid,
-                                            "input": _input,
-                                        })
+                                    ordered = _ordered_block_from_content(blk)
+                                    if ordered is None:
+                                        continue
+                                    tool_id = ordered.get("tool_call_id")
+                                    if (
+                                        ordered.get("type") == "tool"
+                                        and tool_id
+                                        and str(tool_id) in seen_tool_ids
+                                    ):
+                                        continue
+                                    ordered_blocks_out.append(ordered)
+                                    if ordered.get("type") == "tool" and tool_id:
+                                        seen_tool_ids.add(str(tool_id))
                             except Exception:
                                 # Provider block shapes vary; a normalisation miss
                                 # costs one rendered block, not the turn.

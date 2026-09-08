@@ -188,8 +188,16 @@ def persist_assistant_message(
                         "tool": blk.get("tool") or _tc.get("tool"),
                         "tool_call_id": _tid,
                         "input": blk.get("input") or _tc.get("input"),
-                        "result": _tc.get("result"),
-                        "is_error": _tc.get("is_error"),
+                        "result": (
+                            _tc.get("result")
+                            if _tc.get("result") is not None
+                            else blk.get("result")
+                        ),
+                        "is_error": (
+                            _tc.get("is_error")
+                            if _tc.get("is_error") is not None
+                            else blk.get("is_error")
+                        ),
                     })
                 else:
                     blocks.append(dict(blk))

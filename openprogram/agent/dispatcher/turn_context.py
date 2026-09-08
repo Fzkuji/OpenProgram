@@ -7,7 +7,7 @@ ContextVar that @agentic_function's _inject_runtime consults.
 
 ``TurnBindings.bind`` sets every per-turn ContextVar (session id, turn
 id, worktree cwd, GraphStore, DAG runtime), installs the session-scoped
-deferred-tool set and snapshots the project auto-commit baseline.
+deferred-tool set and optionally snapshots the project auto-commit baseline.
 ``release`` resets the tokens — the caller runs it in a ``finally`` so
 success, exception and early-return paths all unwind identically.
 """
@@ -50,7 +50,14 @@ class TurnBindings:
         self._execution_id_token = None
 
     @classmethod
-    def bind(cls, *, req: "TurnRequest", assistant_msg_id: str, db) -> "TurnBindings":
+    def bind(
+        cls,
+        *,
+        req: "TurnRequest",
+        assistant_msg_id: str,
+        db,
+        snapshot_project_baseline: bool = True,
+    ) -> "TurnBindings":
         self = cls()
         self._req_session_id = req.session_id
         # A normal foreground turn has no outer execution owner. Bind its
@@ -140,10 +147,16 @@ class TurnBindings:
         # touches anything, so the turn-end commit can tell the user's
         # uncommitted work apart from the agent's edits (Strategy A). None
         # when disabled / ad-hoc session. Best-effort — never blocks a turn.
-        try:
-            from openprogram.store.project import project_commit as _pc
-            self.project_baseline = _pc.snapshot_baseline(req.session_id)
-        except Exception:
+        # Continuation must not re-snapshot: auto-init can commit a
+        # not-yet-git project, and a second snapshot treats post-pause
+        # agent dirt as the user's.
+        if snapshot_project_baseline:
+            try:
+                from openprogram.store.project import project_commit as _pc
+                self.project_baseline = _pc.snapshot_baseline(req.session_id)
+            except Exception:
+                self.project_baseline = None
+        else:
             self.project_baseline = None
         # Expose the GraphStore via ContextVar so deep code (Runtime.exec,
         # ask_user, @agentic_function decorator, and the file-checkpoint
