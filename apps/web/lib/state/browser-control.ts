@@ -5,6 +5,7 @@ import {
   listedBrowserResources,
   previewTabId,
   requestResourceControl,
+  useBrowserResourceStore,
   type BrowserControlState,
   type BrowserLastOperation,
   type SessionResource,
@@ -98,19 +99,55 @@ function pendingKey(resourceId: string, generation: number): string {
   return `${resourceId}:${generation}`;
 }
 
+function clearPendingLease(resourceId: string, generation: number): void {
+  const key = pendingKey(resourceId, generation);
+  const current = useBrowserControlStore.getState();
+  if (!current.pending[key] && !current.inflight[key]) return;
+  const pending = { ...current.pending };
+  delete pending[key];
+  const inflight = { ...current.inflight };
+  delete inflight[key];
+  useBrowserControlStore.setState({ pending, inflight });
+}
+
+function acknowledgeIngestedControl(): void {
+  const current = new Map<string, {
+    resourceId: string;
+    generation: number;
+    sequence: number;
+    states: Set<string>;
+  }>();
+  for (const row of listedBrowserResources()) {
+    const resourceId = row.resourceId || row.id;
+    const generation = row.generation || 0;
+    const sequence = row.sequence ?? 0;
+    const key = pendingKey(resourceId, generation);
+    const state = row.controlState || "unknown";
+    const seen = current.get(key);
+    if (!seen || sequence > seen.sequence) {
+      current.set(key, { resourceId, generation, sequence, states: new Set([state]) });
+    } else if (sequence === seen.sequence) {
+      seen.states.add(state);
+    }
+  }
+  for (const group of current.values()) {
+    if (![...group.states].every(state => state === "paused" || state === "closed")) continue;
+    clearPendingLease(group.resourceId, group.generation);
+  }
+}
+
+useBrowserResourceStore.subscribe((state, prev) => {
+  if (state.rows === prev.rows) return;
+  acknowledgeIngestedControl();
+});
+
 export function displayedControlState(
   resource: BrowserControlResource,
   opts: { now?: number } = {},
 ): BrowserControlState {
   const backend = resource.controlState || "unknown";
   if (!browserConnectionOpen() && backend !== "closed") return "unknown";
-  if (backend === "paused" || backend === "closed") {
-    const pending = { ...useBrowserControlStore.getState().pending };
-    delete pending[pendingKey(resource.resourceId, resource.generation)];
-    useBrowserControlStore.setState({ pending });
-    return backend;
-  }
-  if (backend === "stop_unconfirmed") return backend;
+  if (backend === "paused" || backend === "closed" || backend === "stop_unconfirmed") return backend;
   const lease = useBrowserControlStore.getState().pending[pendingKey(resource.resourceId, resource.generation)];
   if (!lease) return backend;
   const now = opts.now ?? Date.now();
@@ -195,12 +232,7 @@ async function postPauseOnce(
     const state = posted.control_state
       || ("controlState" in posted ? (posted as { controlState?: BrowserControlState }).controlState : undefined);
     if (state === "paused") {
-      const next = useBrowserControlStore.getState();
-      const pending = { ...next.pending };
-      delete pending[key];
-      const inflight = { ...next.inflight };
-      delete inflight[key];
-      useBrowserControlStore.setState({ pending, inflight });
+      clearPendingLease(row.resourceId, row.generation);
       return "paused";
     }
     const inflight = { ...useBrowserControlStore.getState().inflight };
@@ -259,11 +291,10 @@ export async function requestResumeAgent(
       || ("controlState" in posted ? (posted as { controlState?: BrowserControlState }).controlState : undefined)
       || "unknown";
     if (state === "paused") return "paused";
-    const pending = { ...useBrowserControlStore.getState().pending };
-    delete pending[pendingKey(row.resourceId, row.generation)];
+    clearPendingLease(row.resourceId, row.generation);
     const resumeError = { ...useBrowserControlStore.getState().resumeError };
     delete resumeError[row.resourceId];
-    useBrowserControlStore.setState({ pending, resumeError });
+    useBrowserControlStore.setState({ resumeError });
     return state;
   } catch (error) {
     useBrowserControlStore.setState(state => ({

@@ -424,3 +424,163 @@ test("stale incarnation on the same tab does not close a live Page", () => {
   assert.deepEqual(pending.map(item => item.resourceId), ["page-new"]);
   assert.equal(pending[0].generation, 1);
 });
+
+test("paused displayedControlState reads do not notify or mutate pending", () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  const paused = resource({ id: "page-a", resourceId: "page-a", conversationSessionId: "a", controlState: "paused" });
+  let updates = 0;
+  const unsub = useBrowserControlStore.subscribe(() => { updates += 1; });
+  assert.equal(displayedControlState(paused), "paused");
+  assert.equal(displayedControlState(paused), "paused");
+  assert.equal(displayedControlState(paused), "paused");
+  unsub();
+  assert.equal(updates, 0);
+  assert.deepEqual(useBrowserControlStore.getState().pending, {});
+});
+
+test("pending yield ack is cleared on paused ingest, not on a paused read", () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  markScopeYielding(resource());
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  let updates = 0;
+  const unsub = useBrowserControlStore.subscribe(() => { updates += 1; });
+  assert.equal(displayedControlState(resource({ controlState: "paused" })), "paused");
+  assert.equal(updates, 0);
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  ingestPage({ control_state: "paused", sequence: 2 });
+  unsub();
+  assert.equal(useBrowserControlStore.getState().pending["page-a:1"], undefined);
+  assert.equal(displayedControlState(resource({ controlState: "paused" })), "paused");
+  assert.ok(updates >= 1);
+});
+
+test("paused ingest clears only the matching resource generation lease", () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  markScopeYielding(resource({ generation: 1 }));
+  markScopeYielding(resource({ id: "assoc-b", resourceId: "page-b", generation: 1 }));
+  ingestPage({ control_state: "paused", sequence: 2 });
+  assert.equal(useBrowserControlStore.getState().pending["page-a:1"], undefined);
+  assert.ok(useBrowserControlStore.getState().pending["page-b:1"]);
+  ingestPage({
+    id: "assoc-b", resource_id: "page-b", tab_id: "w:b", title: "Other",
+    target: "https://b.test", control_state: "closed", sequence: 2, execution_id: "exec-b",
+  });
+  assert.equal(useBrowserControlStore.getState().pending["page-b:1"], undefined);
+});
+
+test("disconnected paused reads stay unknown without dropping the lease", () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  markScopeYielding(resource());
+  setBrowserConnection(false);
+  let updates = 0;
+  const unsub = useBrowserControlStore.subscribe(() => { updates += 1; });
+  assert.equal(displayedControlState(resource({ controlState: "paused" })), "unknown");
+  assert.equal(displayedControlState(resource({ controlState: "paused" })), "unknown");
+  unsub();
+  assert.equal(updates, 0);
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  setBrowserConnection(true);
+  assert.equal(displayedControlState(resource({ controlState: "paused" })), "paused");
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+});
+
+test("stale same-Page paused association does not ACK a live yield lease", () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  ingestPage({
+    id: "assoc-old", branch_id: "old", control_state: "paused", sequence: 1,
+    execution_id: "exec-old",
+  });
+  ingestPage({
+    id: "assoc-live", branch_id: "live", control_state: "active", sequence: 2,
+    execution_id: "exec-live",
+  });
+  const live = resource({ id: "assoc-live", controlState: "active" });
+  markScopeYielding(live);
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  assert.equal(displayedControlState(live), "yielding");
+
+  let updates = 0;
+  const unsub = useBrowserControlStore.subscribe(() => { updates += 1; });
+  ingestPage({
+    id: "assoc-live", branch_id: "live", control_state: "active", sequence: 3,
+    execution_id: "exec-live", title: "Plans+",
+  });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  assert.equal(displayedControlState(live), "yielding");
+
+  ingestPage({
+    id: "assoc-other", resource_id: "page-b", tab_id: "w:b", title: "Other",
+    target: "https://b.test", control_state: "paused", sequence: 1, execution_id: "exec-b",
+  });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+
+  ingestPage({
+    id: "assoc-older", branch_id: "older", control_state: "closed", sequence: 0,
+    execution_id: "exec-older",
+  });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  assert.equal(displayedControlState(live), "yielding");
+
+  const beforeRead = updates;
+  assert.equal(displayedControlState(resource({
+    id: "assoc-old", controlState: "paused",
+  })), "paused");
+  assert.equal(updates, beforeRead);
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+
+  ingestPage({
+    id: "assoc-live", branch_id: "live", control_state: "paused", sequence: 4,
+    execution_id: "exec-live",
+  });
+  unsub();
+  assert.equal(useBrowserControlStore.getState().pending["page-a:1"], undefined);
+  assert.ok(updates > beforeRead);
+});
+
+test("same-Page generation isolation and tied max-sequence conflict stay conservative", () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  ingestPage({
+    id: "assoc-g1", generation: 1, control_state: "active", sequence: 1,
+    execution_id: "exec-g1",
+  });
+  ingestPage({
+    id: "assoc-g2", generation: 2, control_state: "active", sequence: 1,
+    execution_id: "exec-g2",
+  });
+  markScopeYielding(resource({ id: "assoc-g1", generation: 1 }));
+  markScopeYielding(resource({ id: "assoc-g2", generation: 2 }));
+  ingestPage({
+    id: "assoc-g2", generation: 2, control_state: "paused", sequence: 2,
+    execution_id: "exec-g2",
+  });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  assert.equal(useBrowserControlStore.getState().pending["page-a:2"], undefined);
+
+  ingestPage({
+    id: "assoc-tie-active", generation: 1, control_state: "active", sequence: 3,
+    execution_id: "exec-tie-active",
+  });
+  ingestPage({
+    id: "assoc-tie-paused", generation: 1, control_state: "paused", sequence: 3,
+    execution_id: "exec-tie-paused",
+  });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+
+  ingestPage({
+    id: "assoc-g1", generation: 1, control_state: "closed", sequence: 4,
+    execution_id: "exec-g1",
+  });
+  assert.equal(useBrowserControlStore.getState().pending["page-a:1"], undefined);
+});
