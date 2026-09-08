@@ -1288,8 +1288,8 @@
   right: 12px;
   z-index: 8;
   box-sizing: border-box;
-  width: 400px;
-  height: 255px;
+  width: 300px;
+  height: 198.75px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);

@@ -21,8 +21,8 @@ export type { PipResizeDir } from "./web-tab-pip-geometry";
  *  store. Position/size live only in memory. */
 export const PIP_MIN_WIDTH = 240;
 export const PIP_MIN_HEIGHT = 160;
-export const PIP_DEFAULT_WIDTH = 400;
-export const PIP_DEFAULT_HEIGHT = 255;
+export const PIP_DEFAULT_WIDTH = 300;
+export const PIP_DEFAULT_HEIGHT = 198.75;
 export const PIP_EXPANDED_WIDTH = 720;
 export const PIP_EXPANDED_HEIGHT = 435;
 

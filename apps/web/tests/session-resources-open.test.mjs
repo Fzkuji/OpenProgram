@@ -325,7 +325,7 @@ test("hide keeps the page and does not change the live tab identity", () => {
   resetBrowserResources();
 });
 
-test("current branch group uses a trailing chevron and keyboard-collapses without hiding other groups", async () => {
+test("current branch group uses a title-adjacent section chevron and keyboard-collapses without hiding other groups", async () => {
   resetBrowserResources();
   const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
   const currentPage = pageTab("w:a", "a", "https://example.org", { title: "Example Domain" });
@@ -352,17 +352,22 @@ test("current branch group uses a trailing chevron and keyboard-collapses withou
   const root = createRoot(host);
   try {
     await act(async () => root.render(createElement(SessionResourcesPanel)));
-    const current = host.querySelector('[data-resource-group="br-a"]');
-    const other = host.querySelector('[data-resource-group="br-b"]');
-    assert.equal(current?.tagName, "BUTTON");
-    assert.equal(current.getAttribute("type"), "button");
+    const currentBlock = host.querySelector('[data-resource-group="br-a"]');
+    const otherBlock = host.querySelector('[data-resource-group="br-b"]');
+    const current = currentBlock?.querySelector("[aria-expanded]");
+    const other = otherBlock?.querySelector("[aria-expanded]");
+    assert.equal(currentBlock.getAttribute("data-current"), "true");
+    assert.equal(otherBlock.getAttribute("data-current"), null);
+    assert.equal(current.getAttribute("role"), "button");
     assert.equal(current.getAttribute("aria-expanded"), "true");
-    assert.equal(current.getAttribute("data-current"), "true");
-    assert.equal(current.querySelector("span")?.textContent, "Research");
-    assert.equal(current.querySelector("small")?.textContent, "Current");
-    assert.ok(current.querySelector("svg:last-of-type"));
+    const title = current.firstElementChild;
+    assert.equal(title?.textContent, "Research");
+    const chevron = title.nextElementSibling;
+    assert.ok(chevron?.querySelector("svg"), "chevron sits immediately after the title");
+    assert.ok(!chevron.textContent.trim());
+    assert.equal(currentBlock.querySelector("small")?.textContent, "Current");
+    assert.ok(!current.contains(currentBlock.querySelector("small")), "Current trails the section, not the chevron");
     assert.equal(other.getAttribute("aria-expanded"), "true");
-    assert.equal(other.getAttribute("data-current"), null);
     assert.ok(host.querySelector('[title="https://example.org"]'));
     await act(async () => {
       current.focus();

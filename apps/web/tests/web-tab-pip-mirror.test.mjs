@@ -46,8 +46,8 @@ test("PiP screenshot maps pixel points onto a letterboxed contain fit", () => {
   assert.match(css, /\.webPipChrome \.webToolbarBtn svg \{[\s\S]*?width: 14px/);
   assert.match(css, /\.webPipActions \{[\s\S]*?flex-wrap: nowrap/);
   assert.match(css, /\.webPipActions \{[\s\S]*?flex-shrink: 0/);
-  assert.match(css, /\.webPip \{[\s\S]*?width: 400px/);
-  assert.match(css, /\.webPip \{[\s\S]*?height: 255px/);
+  assert.match(css, /\.webPip \{[\s\S]*?width: 300px/);
+  assert.match(css, /\.webPip \{[\s\S]*?height: 198\.75px/);
   assert.doesNotMatch(css, /linear-gradient\(135deg/);
   assert.match(pipSource, /data-pip-resize=\{dir\}/);
   assert.match(pipSource, /PIP_RESIZE_DIRS/);

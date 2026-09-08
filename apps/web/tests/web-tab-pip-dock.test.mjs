@@ -242,8 +242,8 @@ test("expand after a stored float rect keeps the collapsed rect", () => {
   assert.equal(chat.width, PIP_EXPANDED_WIDTH);
   assert.equal(chat.height, PIP_EXPANDED_HEIGHT);
   assert.equal(stored.width, 400);
-  assert.equal(PIP_DEFAULT_WIDTH, 400);
-  assert.equal(PIP_DEFAULT_HEIGHT, 255);
+  assert.equal(PIP_DEFAULT_WIDTH, 300);
+  assert.equal(PIP_DEFAULT_HEIGHT, 198.75);
   assert.equal(PIP_EXPANDED_WIDTH, 720);
   assert.equal(PIP_EXPANDED_HEIGHT, 435);
   assert.equal(PIP_MIN_WIDTH, 240);

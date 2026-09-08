@@ -2618,8 +2618,8 @@ assert.deepEqual(
   pipChatRect({ x: 40, y: 90, width: 400, height: 250 }, false, { x: 0, y: 0, width: 900, height: 700 }),
   { x: 40, y: 90, width: 400, height: 250 },
 );
-assert.equal(PIP_DEFAULT_WIDTH, 400);
-assert.equal(PIP_DEFAULT_HEIGHT, 255);
+assert.equal(PIP_DEFAULT_WIDTH, 300);
+assert.equal(PIP_DEFAULT_HEIGHT, 198.75);
 assert.equal(PIP_MIN_WIDTH, 240);
 assert.equal(PIP_MIN_HEIGHT, 160);
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Box, ChevronDown, ExternalLink, Globe, Monitor, PictureInPicture2, Search, Server, X } from "lucide-react";
+import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Search, Server, X } from "lucide-react";
+import { SectionHeader } from "@/components/sidebar/section-header";
 import { useWebTabPip } from "@/lib/state/web-tab-pip-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -26,7 +27,6 @@ import {
 import { revealExistingWebTab } from "@/lib/state/web-page-management";
 import { useSessionResources } from "@/lib/use-session-resources";
 import { useTranslation } from "@/lib/i18n";
-import { activateOnKey } from "@/lib/utils";
 import styles from "./session-resources.module.css";
 
 export function SessionResourcesPanel() {
@@ -124,19 +124,20 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
             return value[group.key] === closed ? value : { ...value, [group.key]: closed };
           });
         };
-        return <div key={group.key}>
-        <button type="button" className={styles.group}
+        return <div key={group.key} className={`group/sec ${styles.groupBlock}`}
           data-resource-group={group.key}
           data-current={group.current ? "true" : undefined}
-          aria-expanded={open}
-          title={group.current ? `${group.title} · ${currentLabel}` : group.title}
-          onClick={toggleGroup}
-          onKeyDown={activateOnKey(toggleGroup)}>
-          <span className={styles.groupTitle}>{group.title}</span>
-          {group.current ? <small className={styles.groupCurrent}>{currentLabel}</small> : null}
-          <small className={styles.groupCount}>{group.rows.length}</small>
-          <ChevronDown size={12} strokeWidth={2} aria-hidden="true" className={styles.groupChevron} />
-        </button>
+          title={group.current ? `${group.title} · ${currentLabel}` : group.title}>
+        <SectionHeader
+          name={group.title}
+          collapsible
+          collapsed={!open}
+          onToggle={toggleGroup}
+          actions={<span className={styles.groupMeta}>
+            {group.current ? <small className={styles.groupCurrent}>{currentLabel}</small> : null}
+            <small className={styles.groupCount}>{group.rows.length}</small>
+          </span>}
+        />
         {open && group.rows.map(row => {
           const Icon = icons[row.kind as keyof typeof icons] || Box;
           const tab = previewTabId(row) ? tabs.find(item => item.id === previewTabId(row)) : undefined;
