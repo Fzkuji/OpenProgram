@@ -143,8 +143,8 @@ release_install_lock() {
   fi
 }
 cleanup() {
-  release_install_lock
   rm -rf "$wheel_dir"
+  release_install_lock
 }
 trap cleanup EXIT
 trap 'exit 129' HUP
