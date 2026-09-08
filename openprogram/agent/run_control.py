@@ -589,23 +589,36 @@ def _persist_job_cancel_intent(
         return False
 
 
-def _find_job(execution_id: str) -> Any | None:
+def _find_job(
+    execution_id: str, *, session_id: str | None = None,
+) -> Any | None:
     try:
         from openprogram.agent.job import runner as job_runner
         existing = job_runner._runner
         if existing is not None:
             job = existing.get_job(execution_id)
-            if job is not None:
+            if job is not None and (
+                session_id is None
+                or getattr(job, "parent_session_id", None) == session_id
+            ):
                 return job
     except Exception:
         pass
     try:
         from openprogram.agent.job.store import load_job
-        store = _canonical_store()
-        for session in store.list_sessions(limit=10**9, include_archived=True):
-            job = load_job(session["id"], execution_id)
-            if job is not None:
+        if session_id is not None:
+            job = load_job(session_id, execution_id)
+            if (
+                job is not None
+                and getattr(job, "parent_session_id", None) == session_id
+            ):
                 return job
+        else:
+            store = _canonical_store()
+            for session in store.list_sessions(limit=10**9, include_archived=True):
+                job = load_job(session["id"], execution_id)
+                if job is not None:
+                    return job
     except Exception:
         pass
     return None
@@ -627,12 +640,18 @@ def _canonical_store(store: Any | None = None) -> Any:
 
 
 def _find_dag_execution(
-    store: Any, execution_id: str, *, session_id: str | None = None,
+    store: Any,
+    execution_id: str,
+    *,
+    session_id: str | None = None,
+    strict_session: bool = False,
 ) -> tuple[str, Any] | None:
     if session_id:
         node = _get_node(store, session_id, execution_id)
         if node is not None:
             return session_id, node
+        if strict_session:
+            return None
     try:
         sessions = store.list_sessions(limit=10**9, include_archived=True)
     except Exception:
@@ -645,13 +664,23 @@ def _find_dag_execution(
     return None
 
 
-def _find_execution(store: Any, execution_id: str) -> tuple[str, Any] | None:
-    found = _find_dag_execution(store, execution_id)
+def _find_execution(
+    store: Any, execution_id: str, *, session_id: str | None = None,
+) -> tuple[str, Any] | None:
+    found = _find_dag_execution(
+        store,
+        execution_id,
+        session_id=session_id,
+        strict_session=session_id is not None,
+    )
     if found is not None:
         return found
-    job = _find_job(execution_id)
+    job = _find_job(execution_id, session_id=session_id)
     if job is not None:
-        return job.parent_session_id, _job_execution_view(job)
+        return (
+            getattr(job, "parent_session_id", None) or session_id,
+            _job_execution_view(job),
+        )
     return None
 
 
@@ -782,7 +811,9 @@ def register_execution_owner(
     with _execution_cancel_lock:
         try:
             from openprogram.agent.session_db import default_db
-            found = _find_execution(default_db(), execution_id)
+            found = _find_execution(
+                default_db(), execution_id, session_id=session_id,
+            )
             if found is not None:
                 _found_session, record = found
                 status = _node_status(record)

@@ -519,6 +519,63 @@ def test_late_owner_registration_reconciles_persisted_cancel(store):
     assert not run_control.owner_is_alive("exec-1")
 
 
+def test_known_owner_registration_does_not_scan_unrelated_sessions(monkeypatch):
+    blocked = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    class _Store:
+        def list_sessions(self, **_kwargs):
+            return [{"id": "unrelated-owner"}, {"id": "target-owner"}]
+
+        def get_nodes(self, session_id):
+            calls.append(session_id)
+            if session_id == "unrelated-owner":
+                blocked.set()
+                release.wait(2)
+            return []
+
+    store = _Store()
+    monkeypatch.setattr(
+        "openprogram.agent.session_db.default_db", lambda: store,
+    )
+    from openprogram.agent.job import store as job_store
+
+    job_lookups: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        job_store,
+        "load_job",
+        lambda session_id, execution_id: job_lookups.append(
+            (session_id, execution_id)
+        ) or None,
+    )
+
+    event = threading.Event()
+    result: list[bool] = []
+    done = threading.Event()
+
+    def claim() -> None:
+        result.append(run_control.claim_cancel_event(
+            "target-owner", event, execution_id="exec-canonical",
+        ))
+        done.set()
+
+    thread = threading.Thread(target=claim)
+    thread.start()
+    try:
+        assert done.wait(1)
+        assert not blocked.is_set()
+        assert calls == ["target-owner"]
+        assert job_lookups == [("target-owner", "exec-canonical")]
+        assert result == [True]
+    finally:
+        release.set()
+        run_control.unregister_cancel_event(
+            "target-owner", event, execution_id="exec-canonical",
+        )
+        thread.join(timeout=1)
+
+
 def test_forced_tool_passes_canonical_execution_id(monkeypatch):
     from openprogram.agent.dispatcher import forced_tool
     from openprogram.agent import surface_context
