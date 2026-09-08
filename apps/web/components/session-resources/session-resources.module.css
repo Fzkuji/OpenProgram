@@ -3,12 +3,36 @@
 .search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-bright); font: inherit; font-size: 12px; }
 .search:focus-within { outline: 2px solid var(--focus-ring); }
 .list { flex: 1; overflow-y: auto; min-height: 0; }
-.group { display: flex; align-items: center; gap: 7px; padding: 9px 6px; cursor: pointer; color: var(--text-secondary); font-size: 12px; list-style: none; }
-.group::-webkit-details-marker { display: none; }
-.group::before { content: "›"; width: 10px; flex-shrink: 0; }
-details[open] > .group::before { transform: rotate(90deg); }
-.group span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.group small { font-variant-numeric: tabular-nums; }
+.group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--ui-list-h);
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-list-radius);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+.group:hover { background: var(--bg-hover); color: var(--text-primary); }
+.groupTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.groupCurrent, .groupCount { flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
+.groupCount { font-variant-numeric: tabular-nums; }
+.groupChevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 150ms ease-out, color 150ms ease-out;
+  transform: rotate(-90deg);
+}
+.group[aria-expanded="true"] .groupChevron { transform: rotate(0deg); }
+.group:hover .groupChevron, .group:focus-visible .groupChevron { color: var(--text-primary); }
 .row { display: flex; align-items: center; border-radius: 7px; gap: 2px; padding: 3px; min-height: 44px; }
 .row:hover { background: var(--bg-hover); }
 .row[data-active="true"] { background: var(--bg-selected); }

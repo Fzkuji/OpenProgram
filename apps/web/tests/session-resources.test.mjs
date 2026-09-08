@@ -17,6 +17,7 @@ import {
   followCurrentBranch,
   hideResourcePreview,
   showResourcePreview,
+  togglePreviewExpanded,
   latestFollowTarget,
   requestResourceControl,
   recoverSessionResources,
@@ -280,6 +281,107 @@ test("follow tracks admitted operations only and hide does not reopen from later
   pref = getPreviewPreference("a", "br-a");
   assert.equal(pref.hidden, false);
   assert.equal(pref.targetId, "assoc-a");
+});
+
+test("expand preserves follow or fixed mode; pin and unpin keep expanded", () => {
+  resetBrowserResources();
+  ingestBrowserResource(browserItem(), "a");
+  ingestBrowserResource(browserItem({
+    id: "assoc-b", resource_id: "page-b", tab_id: "w:b", title: "Pricing",
+    target: "https://b.test", sequence: 2,
+  }), "a");
+  followCurrentBranch("a", "br-a");
+  let pref = togglePreviewExpanded("a", "br-a");
+  assert.equal(pref.mode, "follow");
+  assert.equal(pref.expanded, true);
+  pref = togglePreviewExpanded("a", "br-a");
+  assert.equal(pref.mode, "follow");
+  assert.equal(pref.expanded, false);
+  togglePreviewExpanded("a", "br-a");
+  pref = selectResourcePreview("a", "br-a", "assoc-a");
+  assert.equal(pref.mode, "manual");
+  assert.equal(pref.targetId, "assoc-a");
+  assert.equal(pref.expanded, true);
+  ingestBrowserResource(browserItem({
+    id: "assoc-b", resource_id: "page-b", tab_id: "w:b", title: "Pricing",
+    target: "https://b.test", sequence: 3,
+    last_operation: { id: "op-pin", action: "click", phase: "dispatched" },
+  }), "a");
+  pref = getPreviewPreference("a", "br-a");
+  assert.equal(pref.mode, "manual");
+  assert.equal(pref.targetId, "assoc-a");
+  assert.equal(latestFollowTarget("a", "br-a"), "assoc-b");
+  pref = followCurrentBranch("a", "br-a");
+  assert.equal(pref.mode, "follow");
+  assert.equal(pref.targetId, "assoc-b");
+  assert.equal(pref.expanded, true);
+  ingestBrowserResource(browserItem({
+    sequence: 4,
+    last_operation: { id: "op-follow", action: "click", phase: "dispatched" },
+  }), "a");
+  pref = getPreviewPreference("a", "br-a");
+  assert.equal(pref.mode, "follow");
+  assert.equal(pref.targetId, "assoc-a");
+  assert.equal(pref.expanded, true);
+});
+
+test("admitted operations follow per session and branch; pinned targets stay", () => {
+  resetBrowserResources();
+  const sessionTabs = [
+    { id: "s:a", kind: "session", sessionId: "a" },
+    { id: "s:b", kind: "session", sessionId: "b" },
+    { id: "w:a1", kind: "web" },
+    { id: "w:a2", kind: "web" },
+    { id: "w:b1", kind: "web" },
+    { id: "w:b2", kind: "web" },
+    { id: "w:x", kind: "web" },
+  ];
+  ingestBrowserResource(browserItem({
+    id: "a-br-a-1", resource_id: "page-a1", tab_id: "w:a1", title: "A1",
+  }), "a");
+  ingestBrowserResource(browserItem({
+    id: "a-br-a-2", resource_id: "page-a2", tab_id: "w:a2", title: "A2", sequence: 2,
+  }), "a");
+  ingestBrowserResource(browserItem({
+    id: "a-br-b-1", resource_id: "page-ab1", tab_id: "w:b1", branch_id: "br-b",
+    branch_name: "Build", title: "AB1",
+  }), "a");
+  ingestBrowserResource(browserItem({
+    id: "b-br-a-1", resource_id: "page-b1", session_id: "b", conversation_session_id: "b",
+    tab_id: "w:x", title: "B1",
+  }), "b");
+  followCurrentBranch("a", "br-a");
+  selectResourcePreview("a", "br-b", "a-br-b-1");
+  followCurrentBranch("b", "br-a");
+  ingestBrowserResource(browserItem({
+    id: "a-br-a-2", resource_id: "page-a2", tab_id: "w:a2", title: "A2", sequence: 3,
+    last_operation: { id: "op-a2", action: "click", phase: "dispatched" },
+  }), "a");
+  ingestBrowserResource(browserItem({
+    id: "a-br-b-2", resource_id: "page-ab2", tab_id: "w:b2", branch_id: "br-b",
+    branch_name: "Build", title: "AB2", sequence: 2,
+    last_operation: { id: "op-ab2", action: "click", phase: "dispatched" },
+  }), "a");
+  ingestBrowserResource(browserItem({
+    id: "b-br-a-1", resource_id: "page-b1", session_id: "b", conversation_session_id: "b",
+    tab_id: "w:x", title: "B1", sequence: 2,
+    last_operation: { id: "op-b1", action: "click", phase: "dispatched" },
+  }), "b");
+  let pref = getPreviewPreference("a", "br-a");
+  assert.equal(pref.mode, "follow");
+  assert.equal(pref.targetId, "a-br-a-2");
+  assert.deepEqual(followPreviewBinding("a", "br-a", sessionTabs), { tabId: "w:a2", ownerTabId: "s:a" });
+  pref = getPreviewPreference("a", "br-b");
+  assert.equal(pref.mode, "manual");
+  assert.equal(pref.targetId, "a-br-b-1");
+  assert.equal(latestFollowTarget("a", "br-b"), "a-br-b-2");
+  assert.deepEqual(followPreviewBinding("a", "br-b", sessionTabs), { tabId: "w:b1", ownerTabId: "s:a" });
+  pref = getPreviewPreference("b", "br-a");
+  assert.equal(pref.mode, "follow");
+  assert.equal(pref.targetId, "b-br-a-1");
+  assert.equal(getPreviewPreference("a", "br-a").targetId, "a-br-a-2");
+  assert.equal(latestFollowTarget("a", "br-a"), "a-br-a-2");
+  assert.equal(latestFollowTarget("b", "br-a"), "b-br-a-1");
 });
 
 test("resource control posts pause or resume and failed rows are not paused", async () => {

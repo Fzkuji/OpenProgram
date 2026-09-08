@@ -50,7 +50,7 @@ If the Agent opens a page while you stay in chat, Desktop shows that live WebTab
 
 Actions remain bound to the originating window and WebTab. The default path uses DOM, ARIA, page text, and element references. A single current-viewport screenshot is used only for a visual task or when the page cannot be located structurally. The product does not add OCR, object detection, iterative crops, component memory, vision memory, or workflow replay to this path.
 
-The preview header shows whether it is following the Agent or showing a manually selected page. Manual inspection keeps that page selected; choose Follow to return to the Agent’s current page. This selection does not change the Agent’s target.
+The preview header shows Auto preview or Fixed preview. Auto preview tracks the page the Agent is operating. Pin preview holds the current page; Unpin preview returns to automatic display of that Agent-operated page. This selection does not change the Agent’s target, resume or start the Agent, or change the page’s lifetime or top-tab placement. Session resources has no separate pin control. The default chat preview is 400×255 (400×225 image plus the header). Drag the header to move it; resize from any of the four edges or four corners. The overlay keeps the image aspect ratio (16:9 by default). There is no visible corner grip; the pointer changes at the outer border. Resizing the preview does not resize or zoom the underlying page. In Resources, each group heading is a full-row control with a trailing chevron matching the left sidebar project rows.
 
 ## Browser extensions
 

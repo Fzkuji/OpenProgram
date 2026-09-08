@@ -2531,7 +2531,7 @@ assert.deepEqual(
     { x: -20, y: -10, width: 100, height: 80 },
     { x: 0, y: 0, width: 400, height: 300 },
   ),
-  { x: 0, y: 0, width: 240, height: 160 },
+  { x: 0, y: 0, width: 260, height: 160 },
 );
 assert.deepEqual(
   clampPipRect(
@@ -2618,8 +2618,8 @@ assert.deepEqual(
   pipChatRect({ x: 40, y: 90, width: 400, height: 250 }, false, { x: 0, y: 0, width: 900, height: 700 }),
   { x: 40, y: 90, width: 400, height: 250 },
 );
-assert.equal(PIP_DEFAULT_WIDTH, 640);
-assert.equal(PIP_DEFAULT_HEIGHT, 390);
+assert.equal(PIP_DEFAULT_WIDTH, 400);
+assert.equal(PIP_DEFAULT_HEIGHT, 255);
 assert.equal(PIP_MIN_WIDTH, 240);
 assert.equal(PIP_MIN_HEIGHT, 160);
 
@@ -2872,13 +2872,23 @@ const pipSource = await readFile(
   "utf8",
 );
 assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("move"/);
-assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("resize"/);
+assert.match(pipSource, /onPointerDown=\{\(event\) => onDragPointerDown\("resize", event, dir\)\}/);
+assert.match(pipSource, /data-pip-resize=\{dir\}/);
+assert.match(pipSource, /PIP_RESIZE_DIRS\.map/);
 assert.match(pipSource, /setSnapshot\(id, dataUrl\)/);
 assert.match(
   pipSource,
-  /useEffect\(\(\) => \{\s*if \(live\) return;\s*dragRef\.current = null;\s*pendingRectRef\.current = null;\s*captureGenRef\.current \+= 1;[\s\S]*?cancelAnimationFrame\(rafRef\.current\);\s*rafRef\.current = 0;[\s\S]*?\}, \[live\]\);/,
+  /useEffect\(\(\) => \{\s*if \(live\) return;\s*endActiveDragRef\.current\(false\);\s*captureGenRef\.current \+= 1;\s*\}, \[live\]\);/,
   "owner loss during drag must cancel interaction state before PiP can remount",
 );
+assert.match(pipSource, /useEffect\(\(\) => \(\) => \{\s*endActiveDragRef\.current\(false\);\s*\}, \[\]\);/);
+assert.match(
+  pipSource,
+  /const finishDrag = \(persist: boolean\) => \{[\s\S]*?dragRef\.current = null;[\s\S]*?cancelAnimationFrame\(rafRef\.current\);[\s\S]*?pendingRectRef\.current = null;[\s\S]*?releasePointerCapture\(drag\.pointerId\)/,
+  "drag helper must clear pointer, RAF, and pending rect on discard",
+);
+assert.match(pipSource, /endActiveDragRef\.current = finishDrag/);
+assert.match(pipSource, /endActiveDragRef\.current\(false\);[\s\S]*?captureGenRef\.current === gen/);
 assert.match(pipSource, /translate\(\$\{next\.x - drag\.origin\.x\}px/);
 assert.match(pipSource, /requestAnimationFrame/);
 assert.match(pipSource, /bridge\?\.webTab\.capture|webTab\.capture/);
@@ -2948,6 +2958,9 @@ const pipCss = await readFile(
   "utf8",
 );
 assert.match(pipCss, /\.webPipResize/);
+assert.match(pipCss, /z-index: 6/);
+assert.match(pipCss, /z-index: 7/);
+assert.doesNotMatch(pipCss, /linear-gradient\(135deg/);
 assert.match(pipCss, /\.webPipDragging/);
 assert.match(pipCss, /\.webPipShot/);
 assert.match(pipCss, /object-fit:\s*contain/);
