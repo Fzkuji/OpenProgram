@@ -93,9 +93,9 @@ Our three open-source agent projects are integrated into OpenProgram and include
 
 | Project | What it does |
 |---|---|
-| [GUI Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Operates desktop applications from task instructions using screenshots and GUI actions. |
-| [Research Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Automates research workflows, from literature review and experiments to paper drafts. |
-| [Wiki Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Organizes notes, documents, and conversations into an Obsidian knowledge vault with `[[wikilinks]]`. |
+| [GUI&nbsp;Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Operates desktop applications from task instructions using screenshots and GUI actions. |
+| [Research&nbsp;Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Automates research workflows, from literature review and experiments to paper drafts. |
+| [Wiki&nbsp;Agent](https://github.com/Fzkuji/Wiki-Agent-Harness) | Organizes notes, documents, and conversations into an Obsidian knowledge vault with `[[wikilinks]]`. |
 
 If a project is useful to you, consider starring its repository or contributing an issue or pull request.
 
