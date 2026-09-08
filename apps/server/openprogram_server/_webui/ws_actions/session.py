@@ -1110,6 +1110,25 @@ async def handle_load_session(ws, cmd: dict):
             for q in DurableWaitStore(default_store()).list_open(session_id=session_id):
                 request = dict(q.request)
                 execution = default_store().get_execution(q.execution_id)
+                if q.kind == "system_access":
+                    await ws.send_text(json.dumps({
+                        "type": "system_access.waiting",
+                        "data": {
+                            "id": q.wait_id,
+                            "wait_id": q.wait_id,
+                            "kind": q.kind,
+                            "session_id": session_id,
+                            "execution_id": q.execution_id,
+                            "required_capabilities": list(request.get("required_capabilities", [])),
+                            "capabilities": list(request.get("capabilities", [])),
+                            "wait_generation": q.claim_generation,
+                            "expected_version": execution.status_version if execution is not None else 0,
+                            "expires_at": q.expires_at,
+                            "reason_code": "system_access_required",
+                            "live": False,
+                        },
+                    }, default=str))
+                    continue
                 await ws.send_text(json.dumps({
                     "type": "question.asked",
                     "data": {

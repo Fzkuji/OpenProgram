@@ -2,55 +2,91 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SystemAccessRecovery } from "./system-access-recovery";
+import {
+  forgetSystemAccessWait,
+  markSystemAccessWaitHandled,
+  rememberedSystemAccessWaits,
+  rememberSystemAccessWait,
+  takeLiveSystemAccessWaits,
+  type SystemAccessWait,
+} from "@/lib/system-access-wait-state";
 
-type AccessWait = {
-  wait_id: string;
-  session_id: string;
-  execution_id: string;
-  required_capabilities: string[];
-};
+type AccessWait = SystemAccessWait;
 
 /** This is a projection of worker-owned waits. It never dispatches a task. */
 export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
   const [waits, setWaits] = useState<AccessWait[]>([]);
   const live = useRef(new Set<string>());
+  const handled = useRef(new Set<string>());
   const hasWaits = useRef(false);
   hasWaits.current = waits.length > 0;
   useEffect(() => {
-    setWaits([]);
+    const restored = sessionId ? rememberedSystemAccessWaits(sessionId) : [];
+    const liveRestored = sessionId ? takeLiveSystemAccessWaits(sessionId) : [];
+    setWaits(restored);
     live.current.clear();
+    handled.current.clear();
+    for (const wait of liveRestored) live.current.add(wait.wait_id);
     if (!sessionId) return;
+    const sid = sessionId;
     const controller = new AbortController();
     let version = 0;
     async function refresh() {
       const current = ++version;
       try {
-        const response = await fetch(`/api/system/access/waits?session_id=${encodeURIComponent(sessionId!)}`, {
+        const response = await fetch(`/api/system/access/waits?session_id=${encodeURIComponent(sid)}`, {
           cache: "no-store", signal: controller.signal,
         });
         if (!response.ok) return;
-        const data = await response.json();
+        const data = await response.json() as { waits?: unknown[] };
         if (!controller.signal.aborted && current === version && Array.isArray(data.waits)) {
-          setWaits(data.waits.filter((wait: AccessWait) => wait.session_id === sessionId));
+          const rows: AccessWait[] = data.waits
+            .map((wait: unknown) => rememberSystemAccessWait(wait))
+            .filter((wait): wait is AccessWait => wait !== null);
+          const owned = [
+            ...rows.filter(wait => wait.session_id === sid),
+            ...rememberedSystemAccessWaits(sid).filter(
+              wait => live.current.has(wait.wait_id)
+                && !handled.current.has(wait.wait_id)
+                && !rows.some(row => row.wait_id === wait.wait_id),
+            ),
+          ];
+          const activeIds = new Set(owned.map(wait => wait.wait_id));
+          for (const previous of rememberedSystemAccessWaits(sid)) {
+            if (!activeIds.has(previous.wait_id)
+              && (!live.current.has(previous.wait_id) || handled.current.has(previous.wait_id))) {
+              forgetSystemAccessWait(previous);
+              live.current.delete(previous.wait_id);
+              handled.current.delete(previous.wait_id);
+            }
+          }
+          setWaits(owned);
         }
       } catch { /* Keep the last known wait; a failed read is not resolution. */ }
     }
     function update(event: Event) {
       const { type, data } = (event as CustomEvent).detail || {};
-      if (data?.session_id !== sessionId) return;
+      if (data?.session_id !== sid) return;
       ++version;
       if (type === "system_access.waiting") {
-        live.current.add(data.wait_id);
-        setWaits(previous => [...previous.filter(wait => wait.wait_id !== data.wait_id), data]);
+        const wait = rememberSystemAccessWait(data, data.live === true);
+        if (!wait) return;
+        if (data.live === true) live.current.add(wait.wait_id);
+        setWaits(previous => [
+          ...previous.filter(previousWait => previousWait.wait_id !== wait.wait_id),
+          wait,
+        ]);
       } else {
+        forgetSystemAccessWait(data);
         live.current.delete(data.wait_id);
+        handled.current.delete(data.wait_id);
         setWaits(previous => previous.filter(wait => wait.wait_id !== data.wait_id));
       }
       void refresh();
     }
     const reload = () => { void refresh(); };
     const executionChanged = (event: Event) => {
-      if ((event as CustomEvent).detail?.execution?.session_id === sessionId) reload();
+      if ((event as CustomEvent).detail?.execution?.session_id === sid) reload();
     };
     const connected = (event: Event) => { if ((event as CustomEvent).detail?.connected) reload(); };
     window.addEventListener("op:system-access", update);
@@ -76,7 +112,12 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
       <SystemAccessRecovery
         requiredCapabilities={required}
         autoOpen={waits.some(wait => live.current.has(wait.wait_id))}
-        onAutoOpen={() => { for (const wait of waits) live.current.delete(wait.wait_id); }}
+        onAutoOpen={() => {
+          for (const wait of waits) {
+            handled.current.add(wait.wait_id);
+            markSystemAccessWaitHandled(wait);
+          }
+        }}
       />
     </div>
   </div>;

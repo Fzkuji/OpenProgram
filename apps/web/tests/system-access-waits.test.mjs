@@ -58,6 +58,7 @@ window.clearInterval = callback => timers.delete(callback);
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { SystemAccessWaits } = await import("../components/chat/messages/system-access-waits.tsx");
+const { rememberSystemAccessWait } = await import("../lib/system-access-wait-state.ts");
 const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution",required_capabilities:["screen_recording"]};
 
  test("durable waiting UI opens native setup once, restores without prompting, and never retries", async () => {
@@ -75,7 +76,7 @@ const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution"
     await act(async () => root.render(createElement(SystemAccessWaits,{sessionId:"session"})));
     assert.equal(host.textContent, "");
     waits = [waiting];
-    await act(async () => window.dispatchEvent(new CustomEvent("op:system-access", {detail:{type:"system_access.waiting",data:waiting}})));
+    await act(async () => window.dispatchEvent(new CustomEvent("op:system-access", {detail:{type:"system_access.waiting",data:{...waiting,live:true}}})));
     assert.match(host.textContent,/Waiting for system authorization/);
     assert.equal(calls.filter(([,method])=>method==="POST").length,1);
     const second = {...waiting, wait_id:"second-wait",execution_id:"second-execution"};
@@ -99,5 +100,46 @@ const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution"
     assert.equal(host.textContent, "");
     assert.equal(calls.every(([url])=>url.startsWith("/api/system/access")),true);
     assert.equal(calls.filter(([,method])=>method==="POST").length,1);
-  } finally { await act(async () => root.unmount()); host.remove(); }
+ } finally { await act(async () => root.unmount()); host.remove(); }
  });
+
+test("a live wait received before the session pane mounts is adopted once", async () => {
+  const sid = "pre-mount-session";
+  const wait = {...waiting, session_id: sid, wait_id: "pre-mount-wait"};
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options.method || "GET"]);
+    if (url.includes("/waits?")) return Response.json({waits: [wait]});
+    const row = {id: "screen_recording", status: "not_granted", can_request: true};
+    return Response.json(options.method === "POST" ? row : {capabilities: [row]});
+  };
+  rememberSystemAccessWait(wait, true);
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SystemAccessWaits, {sessionId: sid})));
+    assert.match(host.textContent, /Waiting for system authorization/);
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 1);
+    await act(async () => root.unmount());
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 1);
+  } finally { host.remove(); }
+});
+
+test("replayed waits restore status without opening native setup", async () => {
+  const sid = "replayed-session";
+  const wait = {...waiting, session_id: sid, wait_id: "replayed-wait"};
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push([url, options.method || "GET"]);
+    if (url.includes("/waits?")) return Response.json({waits: [wait]});
+    const row = {id: "screen_recording", status: "not_granted", can_request: true};
+    return Response.json(options.method === "POST" ? row : {capabilities: [row]});
+  };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SystemAccessWaits, {sessionId: sid})));
+    assert.match(host.textContent, /Waiting for system authorization/);
+    assert.equal(calls.filter(([, method]) => method === "POST").length, 0);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

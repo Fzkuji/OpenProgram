@@ -495,6 +495,130 @@ def test_canonical_continuation_restores_hydration_and_live_controls(
             server._running_tasks.pop(sid, None)
 
 
+def test_session_reload_replays_system_access_with_native_wait_frame(
+    tmp_path, monkeypatch,
+):
+    from openprogram.execution.waits import DurableWaitStore
+    from openprogram.webui import server
+    from openprogram.webui.ws_actions.session import handle_load_session
+
+    session_id = "reload-system-access-frame"
+    executions = ExecutionStore(tmp_path / "system-access-replay.sqlite3")
+    revision = executions.create_revision(manifest={"entrypoint": "agent"})
+    execution = executions.create_execution(
+        execution_id="exec-system-access-replay",
+        run_id="run-system-access-replay",
+        session_id=session_id,
+        revision_id=revision.revision_id,
+        capabilities=CapabilitySet(),
+    )
+    attempts = AttemptStore(executions)
+    leased, reserved = attempts.lease(
+        execution.execution_id,
+        expected_version=execution.status_version,
+        owner_id="system-access-replay-test",
+        ttl_seconds=30,
+    )
+    attempt, execution = attempts.activate(
+        leased.attempt_id,
+        generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    waits = DurableWaitStore(executions)
+    ordinary = waits.open_wait(
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        kind="approval",
+        request={"prompt": "Allow this file write?", "options": ["allow", "deny"]},
+        policy_snapshot={"version": 1, "kind": "approval"},
+        expires_at=9_999_999_999,
+        wait_id="wait-ordinary-replay",
+    )
+    system = waits.open_wait(
+        execution_id=execution.execution_id,
+        attempt_id=attempt.attempt_id,
+        generation=attempt.generation,
+        kind="system_access",
+        request={
+            "required_capabilities": ["screen_recording"],
+            "capabilities": ["screen_recording"],
+        },
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0,
+        wait_id="wait-system-access-replay",
+    )
+
+    sessions = SessionStore(tmp_path / "system-access-replay-sessions")
+    sessions.create_session(session_id, "main")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.store.session.session_store._default_store", sessions)
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: executions)
+    monkeypatch.setattr(server, "_get_provider_info", lambda sid=None: {})
+    monkeypatch.setattr(server, "refresh_context_stats", lambda sid: None)
+    monkeypatch.setattr(server, "_is_run_active", lambda sid: False)
+    with server._sessions_lock:
+        server._sessions[session_id] = {"id": session_id}
+
+    try:
+        ws = FakeWS()
+        asyncio.run(handle_load_session(ws, {"session_id": session_id}))
+    finally:
+        with server._sessions_lock:
+            server._sessions.pop(session_id, None)
+
+    approval_frame = next(
+        frame for frame in ws.frames
+        if frame["type"] == "question.asked"
+    )
+    assert approval_frame["data"] == {
+        "id": ordinary.wait_id,
+        "session_id": session_id,
+        "kind": "approval",
+        "execution_id": execution.execution_id,
+        "wait_generation": ordinary.claim_generation,
+        "expected_version": execution.status_version,
+        "allowed_scopes": None,
+        "tool": None,
+        "args": None,
+        "risk_level": None,
+        "prompt": "Allow this file write?",
+        "options": ["allow", "deny"],
+        "multi": False,
+        "allow_custom": True,
+        "detail": "",
+        "schema": {},
+        "questions": [],
+        "expires_at": ordinary.expires_at,
+    }
+    assert not any(
+        frame["type"] == "question.asked"
+        and frame["data"].get("kind") == "system_access"
+        for frame in ws.frames
+    )
+    system_frame = next(
+        frame for frame in ws.frames
+        if frame["type"] == "system_access.waiting"
+    )
+    assert system_frame == {
+        "type": "system_access.waiting",
+        "data": {
+            "id": system.wait_id,
+            "wait_id": system.wait_id,
+            "kind": "system_access",
+            "session_id": session_id,
+            "execution_id": execution.execution_id,
+            "required_capabilities": ["screen_recording"],
+            "capabilities": ["screen_recording"],
+            "wait_generation": system.claim_generation,
+            "expected_version": execution.status_version,
+            "expires_at": 0,
+            "reason_code": "system_access_required",
+            "live": False,
+        },
+    }
+
+
 def test_real_web_stop_envelope_is_applied_by_runtime_handler(tmp_path, monkeypatch):
     import os
     import subprocess

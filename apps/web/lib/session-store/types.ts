@@ -7,6 +7,7 @@ export type MessageStatus =
   | "pending"
   | "streaming"
   | "running"
+  | "paused"
   | "cancelling"
   | "done"
   | "completed"

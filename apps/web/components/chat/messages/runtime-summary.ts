@@ -37,12 +37,13 @@ function epochMs(value: number): number {
   return value > 1e12 ? value : value * 1000;
 }
 
-function durationMs({ status, timestamp, now = Date.now(), tree }: RuntimeSummaryInput): number | null {
+function durationMs(input: RuntimeSummaryInput): number | null {
+  const { timestamp, now = Date.now(), tree } = input;
   if (Number.isFinite(tree?.duration_ms)) return Math.max(0, tree!.duration_ms!);
   if (tree?.start_time && tree.end_time) {
     return Math.max(0, epochMs(tree.end_time) - epochMs(tree.start_time));
   }
-  if (timestamp && RUNNING.has((status || "").toLowerCase())) {
+  if (timestamp && RUNNING.has(resolvedStatus(input))) {
     return Math.max(0, now - epochMs(timestamp));
   }
   return null;
@@ -90,10 +91,10 @@ function workflowPayload(output: unknown): Record<string, unknown> | null {
 }
 
 function resolvedStatus(input: RuntimeSummaryInput): string {
+  const payload = workflowPayload(input.tree?.output);
   const outer = (input.status || input.tree?.status || "").toLowerCase();
   if (RUNNING.has(outer)) return outer;
 
-  const payload = workflowPayload(input.tree?.output);
   const inner = String(payload?.status || "").toLowerCase();
   const outerIsGeneric = ["", "completed", "done", "success"].includes(outer);
   if (outerIsGeneric && input.fnName === "gui_agent") {
@@ -245,13 +246,14 @@ export function runtimeSummaryLabel(input: RuntimeSummaryInput): string {
     pending: text("Running…", "运行中…"),
     running: text("Running…", "运行中…"),
     streaming: text("Running…", "运行中…"),
+    paused: text("Paused", "已暂停"),
     cancelled: text("Cancelled", "已取消"),
     canceled: text("Cancelled", "已取消"),
     interrupted: text("Interrupted", "已中断"),
     capped: text("Stopped", "已停止"),
   };
-  const status = input.fnName === "gui_agent" && workflowPayload(input.tree?.output)?.reason_code === "system_access_required"
-    ? text("Waiting for system access", "等待系统授权")
+  const status = rawStatus === "paused" && input.fnName === "gui_agent"
+    ? text("Paused", "已暂停")
     : errored
     ? text("Error", "出错")
     : guiFailed

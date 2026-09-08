@@ -1188,7 +1188,7 @@ export const MessageList = memo(function MessageList({
       {paintRows && showPending ? (
         <PendingReplyIndicator timestamp={runningTask?.started_at} />
       ) : null}
-      <SystemAccessWaits key={sessionId} sessionId={sessionId} />
+      {paintRows ? <SystemAccessWaits key={sessionId} sessionId={sessionId} /> : null}
       {paintRows ? <SelfUpdateHistory key={sessionId} sessionId={sessionId} /> : null}
       {/* Messages typed during the run — dimmed rows under the live
           turn, drained one at a time when it ends. */}

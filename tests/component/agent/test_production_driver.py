@@ -237,6 +237,8 @@ def test_gui_agent_safe_point_waits_before_tool_effect_and_resumes_once(tmp_path
         store, attempts, DriverRegistry(), activator=activate,
     )
     driver = AgentProductionDriver(store, control_service=control)
+    frames = []
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
     request = TurnRequest(
         session_id=running.session_id, user_text="run GUI", agent_id="default",
         source="component", user_msg_id="user-system-public",
@@ -273,6 +275,8 @@ def test_gui_agent_safe_point_waits_before_tool_effect_and_resumes_once(tmp_path
     assert paused.reason_code == "system_access_required"
     wait = DurableWaitStore(store).list_open(execution_id=execution.execution_id)[0]
     assert wait.kind == "system_access" and wait.expires_at == 0
+    waiting = next(frame for frame in frames if frame["type"] == "system_access.waiting")
+    assert waiting["data"]["live"] is True
     assert not [effect for effect in EffectStore(store).list_unresolved(execution.execution_id)
                 if effect.metadata.get("kind") == "tool.before"]
 
@@ -332,6 +336,8 @@ def test_forced_gui_entry_uses_durable_system_wait_before_subprocess(tmp_path, m
         return {"ok": True}
 
     monkeypatch.setattr("openprogram.agent.dispatcher.dispatch_forced_tool_call", fake_dispatch)
+    frames = []
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
     monkeypatch.setattr(system_access.platform, "system", lambda: "Darwin")
     monkeypatch.setitem(sys.modules, "Quartz", SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: False))
     monkeypatch.setitem(sys.modules, "ApplicationServices", SimpleNamespace(AXIsProcessTrusted=lambda: False))
@@ -351,6 +357,8 @@ def test_forced_gui_entry_uses_durable_system_wait_before_subprocess(tmp_path, m
     asyncio.run(wait_done())
     wait = DurableWaitStore(store).list_open(execution_id=execution.execution_id)[0]
     assert wait.kind == "system_access"
+    waiting = next(frame for frame in frames if frame["type"] == "system_access.waiting")
+    assert waiting["data"]["live"] is True
     assert calls == []
 
     monkeypatch.setattr(system_access, "report", lambda: {

@@ -130,7 +130,7 @@ export function RuntimeBlock({
   useMarkdownReady();
 
   const sessionId = useSessionStore((s) => s.currentSessionId);
-  const streaming =
+  const running =
     msg.status === "streaming" ||
     msg.status === "pending" ||
     msg.status === "running" ||
@@ -138,8 +138,15 @@ export function RuntimeBlock({
   const { fn } = parseRun(msg.function || msg.content || "");
   const fnName = msg.function || fn;
   const tree = displayTree(msg);
-  const needsAccess = fnName === "gui_agent" && !streaming && systemAccessRequired(tree?.output).length > 0;
-  const accessRecovery = needsAccess ? <SystemAccessRecovery output={tree?.output} autoOpen={false} /> : null;
+  const systemAccessPaused = msg.status === "paused";
+  const needsAccess = systemAccessPaused
+    || (fnName === "gui_agent" && systemAccessRequired(tree?.output).length > 0);
+  const accessRecovery = fnName === "gui_agent"
+    && !systemAccessPaused
+    && !running
+    && systemAccessRequired(tree?.output).length > 0
+    ? <SystemAccessRecovery output={tree?.output} autoOpen={false} /> : null;
+  const streaming = running && !systemAccessPaused;
 
   useEffect(() => {
     if (nested || !streaming) return;

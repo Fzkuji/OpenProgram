@@ -1207,6 +1207,7 @@ class AgentProductionDriver:
                 "expected_version": suspension.execution.status_version,
                 "expires_at": 0,
                 "reason_code": "system_access_required",
+                "live": True,
             }})
         except Exception:
             _log.debug("failed to publish forced system access wait", exc_info=True)
@@ -1596,6 +1597,7 @@ class AgentProductionDriver:
                                 "required_capabilities": list(wait_request.get("required_capabilities", [])),
                                 "capabilities": list(wait_request.get("capabilities", [])),
                                 "reason_code": "system_access_required",
+                                "live": True,
                             })
                         sink({"type": frame_type, "data": data})
                     except Exception:

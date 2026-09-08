@@ -63,6 +63,10 @@ import { refreshStatusSource, setRunning, updateStatus } from "@/lib/runtime-bri
 import { refreshChannelBadge } from "@/lib/runtime-bridge/conversations";
 import { loadExecutionCursors, recordExecutionCursor } from "@/lib/net/execution-cursor";
 import { pushStatusBadge } from "@/lib/top-bar-sync";
+import {
+  forgetSystemAccessWait,
+  rememberSystemAccessWait,
+} from "@/lib/system-access-wait-state";
 
 export function useWS(): void {
   useEffect(() => {
@@ -328,10 +332,18 @@ export function useWS(): void {
               const terminal = new Set(
                 ["cancelled", "completed", "failed", "interrupted", "error", "done"],
               );
-              if (current && !(terminal.has(String(current.status)) && !terminal.has(String(execution.status)))) {
-                store.updateMessage(sid, eid, {
-                  status: execution.status as never,
-                });
+              const displayStatus = execution.status === "paused"
+                && execution.reason_code === "system_access_required"
+                ? "paused"
+                : execution.status as never;
+              const targetIds = displayStatus === "paused"
+                ? messageIds
+                : [eid];
+              for (const targetId of targetIds) {
+                const target = store.messagesById[targetId];
+                if (target && !(terminal.has(String(target.status)) && !terminal.has(String(execution.status)))) {
+                  store.updateMessage(sid, targetId, { status: displayStatus });
+                }
               }
             }
             const task = sid ? store.runningTasks[sid] : undefined;
@@ -512,9 +524,28 @@ export function useWS(): void {
         case "system_access.waiting":
         case "system_access.resolved":
           if (msg.type === "system_access.waiting" && d) {
+            // Only the worker's live request may arm native setup. A
+            // session_loaded/reconnect replay is a status restoration and
+            // must remain passive until the owner explicitly acts.
+            rememberSystemAccessWait(d, d.live === true);
+            const sid = typeof d.session_id === "string" ? d.session_id : "";
+            const eid = typeof d.execution_id === "string" ? d.execution_id : "";
+            const task = sid ? useSessionStore.getState().runningTasks[sid] : undefined;
+            if (sid && eid) {
+              const store = useSessionStore.getState();
+              const targetIds = [eid, task?.execution_id === eid ? task.msg_id : undefined]
+                .filter((id): id is string => Boolean(id));
+              for (const targetId of new Set(targetIds)) {
+                if (store.messagesById[targetId]) {
+                  store.updateMessage(sid, targetId, { status: "paused" });
+                }
+              }
+            }
             for (const request of pendingExecutionReplayRequests([d])) {
               if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(request));
             }
+          } else if (msg.type === "system_access.resolved" && d) {
+            forgetSystemAccessWait(d);
           }
           window.dispatchEvent(new CustomEvent("op:system-access", { detail: { type: msg.type, data: d } }));
           return true;
