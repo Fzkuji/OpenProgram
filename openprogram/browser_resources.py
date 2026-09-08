@@ -748,7 +748,7 @@ def _named_branch_entries(session_store, session_id: str, nodes: Mapping[str, An
             if head and head not in named:
                 named[head] = tip
     except Exception:
-        pass
+        _log.debug("browser branch listing unavailable session_id=%s", session_id, exc_info=True)
     return named
 
 
@@ -836,7 +836,8 @@ def _current_attribution():
                 user_message_id = user_message_id or display.get("user_message_id")
                 assistant_message_id = assistant_message_id or display.get("assistant_message_id")
         except Exception:
-            pass
+            _log.debug("browser execution attribution metadata unavailable execution_id=%s",
+                       execution_id, exc_info=True)
     return {
         "session_id": session_id,
         "execution_id": execution_id,
@@ -1270,14 +1271,14 @@ def _lease_execution_ids(resource_id: str) -> list[str]:
                     if execution_id:
                         ids.append(str(execution_id))
     except Exception:
-        pass
+        _log.debug("browser lease registry lookup failed resource_id=%s", resource_id, exc_info=True)
     try:
         resource = BrowserResourceStore().get_resource(resource_id)
         controller = (resource or {}).get("pause_execution_id")
         if controller:
             ids.append(str(controller))
     except Exception:
-        pass
+        _log.debug("browser resource controller lookup failed resource_id=%s", resource_id, exc_info=True)
     if ids:
         return list(dict.fromkeys(ids))
     try:
@@ -1285,7 +1286,7 @@ def _lease_execution_ids(resource_id: str) -> list[str]:
             if assoc.get("execution_id"):
                 ids.append(str(assoc["execution_id"]))
     except Exception:
-        pass
+        _log.debug("browser resource associations lookup failed resource_id=%s", resource_id, exc_info=True)
     return list(dict.fromkeys(ids))
 
 
@@ -1528,7 +1529,8 @@ def page_keys_for_socket_tab(ws, window_id: str, tab_id: str) -> list[str]:
                 continue
             keys.append(resource_id)
     except Exception:
-        pass
+        _log.debug("browser page key projection unavailable window_id=%s tab_id=%s",
+                   window_id, tab_id, exc_info=True)
     return list(dict.fromkeys(key for key in keys if key))
 
 
@@ -1547,7 +1549,7 @@ async def handle_human_page_input(*, ws, window_id: str, tab_id: str, input_seq:
                 bump=opened,
             )
         except Exception:
-            pass
+            _log.debug("browser page state update failed page_key=%s", page_key, exc_info=True)
         if not opened:
             continue
         resource = store.get_resource(page_key) or {}
@@ -1591,4 +1593,4 @@ async def handle_human_page_input(*, ws, window_id: str, tab_id: str, input_seq:
                 if row is not None:
                     emit_browser_resource(row, page_key=page_key)
             except Exception:
-                pass
+                _log.debug("browser failure-state publication failed page_key=%s", page_key, exc_info=True)

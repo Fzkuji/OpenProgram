@@ -70,6 +70,15 @@ test -f "$installed_asar" || {
   printf 'the installed App archive was not found: %s\n' "$installed_asar" >&2
   exit 1
 }
+
+# This refresh mutates the installed App later. Refuse a non-ad-hoc outer
+# signature before any installed-App mutation, so a Developer ID package is
+# never left partially refreshed by this local ad hoc path.
+existing_outer_signature="$(codesign --display --verbose=4 "$app_path" 2>&1 || true)"
+if grep -Eq '^Authority=' <<<"$existing_outer_signature"; then
+  printf '%s\n' 'refusing to replace a non-ad-hoc outer App signature during local refresh' >&2
+  exit 1
+fi
 sync_gui_harness=0
 if test "$(git -C "$gui_harness_repo" rev-parse --is-inside-work-tree 2>/dev/null || :)" = true; then
   sync_gui_harness=1
@@ -400,6 +409,33 @@ if test -n "$(git -C "$repo_root" status --porcelain --untracked-files=no)"; the
 fi
 printf '%s\n' "$revision" > \
   "$app_path/Contents/Resources/openprogram-source-revision"
+
+# Repair only invalid nested Framework/App bundles, deepest paths first.
+# Do not recurse into valid code or touch the separately signed runtime helper.
+while IFS= read -r -d '' inner_bundle; do
+  if ! codesign --verify --strict "$inner_bundle" >/dev/null 2>&1; then
+    inner_signature="$(codesign --display --verbose=4 "$inner_bundle" 2>&1 || true)"
+    if grep -Eq '^Authority=' <<<"$inner_signature"; then
+      printf '%s\n' "refusing to replace a non-ad-hoc nested signature: $inner_bundle" >&2
+      exit 1
+    fi
+    printf 'repairing invalid nested signature: %s\n' "$inner_bundle" >&2
+    codesign --force --sign - --timestamp=none \
+      --preserve-metadata=entitlements,requirements,flags "$inner_bundle"
+    codesign --verify --strict "$inner_bundle"
+  fi
+done < <(find "$app_path/Contents/Frameworks" -depth -type d \
+  \( -name '*.framework' -o -name '*.app' \) -print0)
+
+# Resource/source-marker writes happen after packaging. Restore the local
+# ad hoc signature on the outer App only; nested runtime identity/signature
+# remains owned by build-macos-runtime-app.py.
+codesign --force --sign - --timestamp=none \
+  --preserve-metadata=entitlements,requirements,flags "$app_path"
+codesign --verify --strict "$app_path"
+codesign --verify --strict \
+  "$runtime_root/OpenProgram.app"
+codesign --verify --deep --strict "$app_path"
 
 # A KeepAlive launchd service can restart the worker while the wheel is still
 # being replaced. Stop that interim process after installation so the next

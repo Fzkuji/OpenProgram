@@ -10,6 +10,7 @@ from contextvars import copy_context
 from dataclasses import dataclass
 import json
 import hashlib
+import logging
 import threading
 import time
 from types import MappingProxyType
@@ -22,6 +23,8 @@ from openprogram.execution.model import ExecutionStatus
 from openprogram.execution.state_blobs import ExecutionStateBlobStore
 from openprogram.execution.store import MAX_AGENT_STATE_BLOB_BYTES
 from openprogram.programs import ToolReturn
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -197,5 +200,5 @@ class GuiBroker:
                 self._effects.mark_uncertain(effect.effect_id, expected_status=EffectStatus.DISPATCHED,
                                              receipt=diagnostic)
             except Exception:
-                pass
+                _log.warning("failed to mark GUI effect uncertain effect_id=%s", effect.effect_id, exc_info=True)
             raise

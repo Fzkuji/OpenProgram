@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
 import time
 
@@ -17,6 +18,8 @@ from openprogram.programs._execution_common import _normalize_result
 from .gui_broker import GuiBroker
 from .gui_browser import register_browser_page
 from .gui_runner import GuiPythonRunner
+
+_log = logging.getLogger(__name__)
 
 
 class GuiAgentTools:
@@ -108,7 +111,7 @@ class GuiAgentTools:
                 try:
                     await asyncio.shield(worker)
                 except (Exception, asyncio.CancelledError):
-                    pass
+                    _log.debug("GUI worker cleanup failed during cancellation", exc_info=True)
             raise
         except Exception as exc:
             raw = ToolReturn(text=f"{type(exc).__name__}: {exc}", is_error=True)

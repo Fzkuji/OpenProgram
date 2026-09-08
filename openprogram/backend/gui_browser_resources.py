@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import threading
 import uuid
 
 from openprogram.agent import surface_context
 from openprogram.programs import ToolReturn
 from .gui_browser import register_browser_page
+
+_log = logging.getLogger(__name__)
 
 
 class GuiBrowserResources:
@@ -43,7 +46,7 @@ class GuiBrowserResources:
             try:
                 self.close()
             except BaseException:
-                pass
+                _log.debug("browser resource scope cleanup failed during initialization", exc_info=True)
             raise
 
     def __enter__(self):
@@ -110,7 +113,8 @@ class GuiBrowserResources:
                 try:
                     self._registry.execute(command="close", owner_id=self._owner, web_session_id=session_id)
                 except BaseException:
-                    pass
+                    _log.debug("browser page cleanup failed after observation error owner=%s session_id=%s",
+                                self._owner, session_id, exc_info=True)
             raise
 
     def close(self):
