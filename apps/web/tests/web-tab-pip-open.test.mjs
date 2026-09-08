@@ -81,14 +81,18 @@ function hiddenPages() {
 
 function toolbarOpenPage(host) {
   const pip = host.querySelector("[data-pip='true']");
-  const bar = pip?.children[1];
-  return [...(bar?.querySelectorAll("button") || [])]
-    .find(button => button.textContent === "Open page");
+  const chrome = pip?.firstElementChild;
+  return [...(chrome?.querySelectorAll("button") || [])]
+    .find(button => button.getAttribute("aria-label") === "Open page" || button.textContent === "Open page");
 }
 
-function fallbackOpenPage(host) {
-  return [...host.querySelectorAll("button")]
-    .find(button => button.textContent === "Open page" && button !== toolbarOpenPage(host));
+function bodyOpenPage(host) {
+  const pip = host.querySelector("[data-pip='true']");
+  const chrome = pip?.firstElementChild;
+  return [...(pip?.querySelectorAll("button") || [])]
+    .find(button =>
+      (button.getAttribute("aria-label") === "Open page" || button.textContent === "Open page")
+      && !chrome?.contains(button));
 }
 
 async function withPip(run) {
@@ -146,7 +150,7 @@ test("PiP toolbar Open page reveals the exact hidden page as the current top tab
     hidden.forEach(tab => assert.ok(!visibleBefore.includes(tab.id)));
     const button = toolbarOpenPage(host);
     assert.ok(button);
-    assert.equal(fallbackOpenPage(host) !== button, true);
+    assert.equal(bodyOpenPage(host), undefined);
     await act(async () => button.click());
     assertRevealedExactPage({ page, hidden, session, prefBefore });
     assert.equal(host.querySelector("[data-pip='true']"), null, "opening the Page hides the chat preview");
@@ -155,11 +159,18 @@ test("PiP toolbar Open page reveals the exact hidden page as the current top tab
   });
 });
 
-test("PiP fallback Open page reveals the exact hidden page as the current top tab", async () => {
+test("last-frame PiP keeps Open page on chrome and has no body duplicate", async () => {
   await withPip(async ({ host, page, hidden, session, prefBefore }) => {
-    const button = fallbackOpenPage(host);
+    const pip = host.querySelector("[data-pip='true']");
+    const chrome = pip.firstElementChild;
+    assert.ok(pip.textContent.includes("Last frame") || pip.textContent.includes("unavailable"));
+    assert.equal(bodyOpenPage(host), undefined);
+    const buttons = [...pip.querySelectorAll("button")];
+    assert.ok(buttons.length > 0);
+    buttons.forEach(button => assert.equal(chrome.contains(button), true));
+    const button = toolbarOpenPage(host);
     assert.ok(button);
-    assert.equal(toolbarOpenPage(host) !== button, true);
+    assert.equal(chrome.contains(button), true);
     await act(async () => button.click());
     assertRevealedExactPage({ page, hidden, session, prefBefore });
     assert.equal(host.querySelector("[data-pip='true']"), null, "opening the Page hides the chat preview");

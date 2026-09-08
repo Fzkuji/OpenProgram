@@ -1307,11 +1307,12 @@
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-height: 28px;
   height: 28px;
   flex-shrink: 0;
-  padding: 0 4px 0 8px;
+  padding: 0 2px 0 8px;
+  overflow: hidden;
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
   cursor: grab;
@@ -1330,8 +1331,8 @@
   color: var(--text-bright);
 }
 .webPipMode {
-  flex: 0 1 4.5em;
-  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 5.5em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1339,46 +1340,22 @@
   color: var(--text-muted);
 }
 .webPipMode[data-resume-error="true"] {
-  flex: 1 1 7em;
+  color: var(--danger-soft);
 }
-.webPipBar {
+.webPipActions {
   display: flex;
+  flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  padding: 0 4px;
-  overflow: hidden;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
-}
-.webPipBarBtn {
-  box-sizing: border-box;
-  height: 22px;
-  min-width: 0;
+  gap: 2px;
   flex: 0 0 auto;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 22px;
-  white-space: nowrap;
-  cursor: pointer;
+  min-width: 0;
 }
-.webPipBarBtn:hover {
-  background: var(--bg-hover);
-  color: var(--text-bright);
-}
-.webPipBarBtn:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-.webPipBar .webToolbarBtn {
-  margin-left: auto;
+.webPipChrome .webToolbarBtn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  flex: 0 0 24px;
 }
 .webPipStage {
   position: relative;

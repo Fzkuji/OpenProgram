@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Maximize2, Minimize2, MoreVertical, X } from "lucide-react";
+import { ExternalLink, Locate, Maximize2, Minimize2, MoreVertical, Pause, Play, X } from "lucide-react";
 
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
@@ -54,8 +54,6 @@ import {
 } from "@/lib/state/web-tab-pip-store";
 
 import styles from "./center-tabs.module.css";
-
-const COMPACT_PIP_WIDTH = 300;
 
 type PipDrag = {
   kind: "move" | "resize";
@@ -133,18 +131,10 @@ function PipActionMark({
 }
 
 function PipMoreMenu({
-  compact,
-  followVisible,
-  followLabel,
-  onFollow,
   historyItems,
   historyLabel,
   showLabel,
 }: {
-  compact: boolean;
-  followVisible: boolean;
-  followLabel: string;
-  onFollow: () => void;
   historyItems: SidebarMenuItem[];
   historyLabel: string;
   showLabel: string;
@@ -154,9 +144,6 @@ function PipMoreMenu({
   const moreLabel = text("More", "更多");
   const native = typeof window !== "undefined" && !!window.openprogramDesktop?.contextMenu;
   const items: SidebarMenuItem[] = [
-    ...(compact && followVisible
-      ? [{ id: "follow", label: followLabel, onSelect: onFollow }]
-      : []),
     {
       id: "show-actions",
       label: showLabel,
@@ -179,7 +166,6 @@ function PipMoreMenu({
         aria-label={moreLabel}
         aria-haspopup="menu"
         aria-expanded={menu.open}
-        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           if (menu.open) menu.close();
           else menu.show(event, items);
@@ -197,15 +183,11 @@ function PipMoreMenu({
           className={styles.webToolbarBtn}
           title={moreLabel}
           aria-label={moreLabel}
-          onPointerDown={(event) => event.stopPropagation()}
         >
           <MoreVertical size={14} aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className={MENU_PANEL}>
-        {compact && followVisible ? (
-          <DropdownMenuItem onSelect={onFollow}>{followLabel}</DropdownMenuItem>
-        ) : null}
         <DropdownMenuItem onSelect={() => { toggleShowActions(); }}>
           {showActionsEnabled() ? "✓ " : ""}{showLabel}
         </DropdownMenuItem>
@@ -258,7 +240,6 @@ export function WebTabPip() {
   const captureGenRef = useRef(0);
   const [freshness, setFreshness] = useState<"live" | "last-frame" | "unavailable">("unavailable");
   const [chatBox, setChatBox] = useState<WebTabPipRect | null>(null);
-  const [compact, setCompact] = useState(false);
   const [, render] = useState(0);
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
@@ -314,8 +295,6 @@ export function WebTabPip() {
         ? prev
         : next
     ));
-    const width = el.getBoundingClientRect().width;
-    setCompact(width > 0 && width < COMPACT_PIP_WIDTH);
   }, [live, expanded, rect, expandedSize]);
 
   useEffect(() => {
@@ -333,8 +312,6 @@ export function WebTabPip() {
       ) {
         setRect(next);
       }
-      const width = el.getBoundingClientRect().width;
-      setCompact(width > 0 && width < COMPACT_PIP_WIDTH);
     };
     const ro = new ResizeObserver(reclamp);
     ro.observe(parent);
@@ -430,8 +407,6 @@ export function WebTabPip() {
     || controlState === "stop_unconfirmed"
     || !connected
     || (takeoverKind === "resume" && controlState !== "paused");
-  const followOnBar = pref?.mode === "manual" && !compact;
-  const followInMore = pref?.mode === "manual" && compact;
   const history = control ? operationHistory(control.resourceId) : [];
   const historyLabel = text("Operation history", "操作历史");
   const showLabel = text("Show actions", "显示操作");
@@ -566,95 +541,93 @@ export function WebTabPip() {
         onPointerUp={onDragPointerUp}
         onPointerCancel={onDragPointerUp}
       >
-        <span className={styles.webPipTitle} title={`${title} · ${modeLabel}`}>{title}</span>
+        <span className={styles.webPipTitle} title={`${title} · ${modeLabel}${statusText ? ` · ${statusText}` : ""}`}>{title}</span>
         {statusText ? (
           <small
             className={styles.webPipMode}
             data-resume-error={resumeError ? "true" : undefined}
             title={resumeError ? `${stateText}: ${resumeError}` : stateText}
+            aria-label={resumeError ? `${stateText}: ${resumeError}` : stateText}
             role={resumeError ? "status" : undefined}
             aria-live={resumeError ? "polite" : undefined}
           >
             {statusText}
           </small>
         ) : null}
-        <button
-          type="button"
-          className={styles.webToolbarBtn}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => {
-            if (sessionId) togglePreviewExpanded(sessionId, branchId);
-            render(value => value + 1);
-          }}
-          title={expandLabel}
-          aria-label={expandLabel}
-        >
-          {pref?.expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-        </button>
-        <button
-          type="button"
-          className={styles.webToolbarBtn}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => {
-            if (sessionId) hideResourcePreview(sessionId, branchId);
-            hide();
-          }}
-          title={hideLabel}
-          aria-label={hideLabel}
-        >
-          <X size={14} />
-        </button>
-      </div>
-      <div className={styles.webPipBar}>
-        <button
-          type="button"
-          className={styles.webPipBarBtn}
-          onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}
-        >
-          {openPage}
-        </button>
-        {takeoverKind && control ? (
+        <div className={styles.webPipActions} onPointerDown={(event) => event.stopPropagation()}>
           <button
             type="button"
-            className={styles.webPipBarBtn}
-            disabled={takeoverDisabled}
-            title={resumeError || takeoverLabel}
-            aria-label={resumeError ? `${takeoverLabel}: ${resumeError}` : takeoverLabel}
-            onClick={() => {
-              void (takeoverKind === "resume" ? requestResumeAgent(control) : requestExplicitPause(control));
-            }}
+            className={styles.webToolbarBtn}
+            onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}
+            title={openPage}
+            aria-label={openPage}
           >
-            {takeoverLabel}
+            <ExternalLink size={14} aria-hidden="true" />
           </button>
-        ) : null}
-        {followOnBar ? (
-          <button type="button" className={styles.webPipBarBtn} onClick={followCurrent}>
-            {followLabel}
+          {takeoverKind && control ? (
+            <button
+              type="button"
+              className={styles.webToolbarBtn}
+              disabled={takeoverDisabled}
+              title={resumeError || takeoverLabel}
+              aria-label={resumeError ? `${takeoverLabel}: ${resumeError}` : takeoverLabel}
+              onClick={() => {
+                void (takeoverKind === "resume" ? requestResumeAgent(control) : requestExplicitPause(control));
+              }}
+            >
+              {takeoverKind === "resume"
+                ? <Play size={14} aria-hidden="true" />
+                : <Pause size={14} aria-hidden="true" />}
+            </button>
+          ) : null}
+          {pref?.mode === "manual" ? (
+            <button
+              type="button"
+              className={styles.webToolbarBtn}
+              onClick={followCurrent}
+              title={followLabel}
+              aria-label={followLabel}
+            >
+              <Locate size={14} aria-hidden="true" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={styles.webToolbarBtn}
+            onClick={() => {
+              if (sessionId) togglePreviewExpanded(sessionId, branchId);
+              render(value => value + 1);
+            }}
+            title={expandLabel}
+            aria-label={expandLabel}
+          >
+            {pref?.expanded ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />}
           </button>
-        ) : null}
-        <PipMoreMenu
-          compact={compact}
-          followVisible={followInMore}
-          followLabel={followLabel}
-          onFollow={followCurrent}
-          historyItems={historyItems}
-          historyLabel={historyLabel}
-          showLabel={showLabel}
-        />
+          <PipMoreMenu
+            historyItems={historyItems}
+            historyLabel={historyLabel}
+            showLabel={showLabel}
+          />
+          <button
+            type="button"
+            className={styles.webToolbarBtn}
+            onClick={() => {
+              if (sessionId) hideResourcePreview(sessionId, branchId);
+              hide();
+            }}
+            title={hideLabel}
+            aria-label={hideLabel}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        </div>
       </div>
       <div className={styles.webPipStage}>
         <div className={styles.webPipBody}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img ref={shotRef} className={styles.webPipShot} alt="" />
           {frameState !== "live" && (
-            <div className={styles.webPipFallback}>
-              {freshLabel}
-              {tabId ? (
-                <button type="button" className={styles.webPipBarBtn} onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}>
-                  {openPage}
-                </button>
-              ) : null}
-            </div>
+            <div className={styles.webPipFallback}>{freshLabel}</div>
           )}
           {marker?.point ? (
             <PipActionMark

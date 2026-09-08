@@ -233,9 +233,16 @@ function labeledButton(host, label) {
     || button.textContent === label);
 }
 
-function pipBarButtons(host) {
+function pipChromeButtons(host) {
   const pip = host.querySelector("[data-pip='true']");
-  return [...(pip?.children[1]?.querySelectorAll("button") || [])];
+  return [...(pip?.firstElementChild?.querySelectorAll("button") || [])];
+}
+
+function chromeButton(host, label) {
+  return pipChromeButtons(host).find(button =>
+    button.getAttribute("aria-label") === label
+    || button.getAttribute("title") === label
+    || button.textContent === label);
 }
 
 function installNativeMenu() {
@@ -323,17 +330,16 @@ async function withShell(run) {
   }
 }
 
-test("chat PiP chrome is two named rows without duplicate Eye or Follow wrapping", async () => {
+test("chat PiP chrome is one row with icon actions and no second toolbar", async () => {
   await withShell(async ({ host }) => {
     assert.equal(host.querySelector("[data-web-pip-dock]"), null);
     const pip = host.querySelector("[data-pip='true']");
     assert.ok(pip);
     assert.equal(pip.getAttribute("data-pip-host"), "chat");
-    assert.equal(pip.children.length, 3);
-    const openPage = pipBarButtons(host).find(button => button.textContent === "Open page");
-    const follow = pipBarButtons(host).find(button => button.textContent === "Follow");
-    const takeover = pipBarButtons(host).find(button =>
-      button.textContent === "Take over" || button.textContent === "Pause Agent and take over");
+    assert.equal(pip.children.length, 2);
+    const openPage = chromeButton(host, "Open page");
+    const follow = chromeButton(host, "Follow");
+    const takeover = chromeButton(host, "Take over") || chromeButton(host, "Pause Agent and take over");
     const more = labeledButton(host, "More");
     const expand = labeledButton(host, "Expand");
     const hide = labeledButton(host, "Hide");
@@ -342,29 +348,38 @@ test("chat PiP chrome is two named rows without duplicate Eye or Follow wrapping
     assert.equal(labeledButton(host, "Use in webpage"), undefined);
     assert.equal(labeledButton(host, "Follow current branch"), undefined);
     assert.equal(labeledButton(host, "Show actions"), undefined);
+    const chrome = pip.firstElementChild;
+    const actions = chrome?.querySelector("div");
+    assert.equal(chrome.contains(openPage), true);
+    assert.equal(chrome.contains(follow), true);
+    assert.equal(chrome.contains(expand), true);
+    assert.equal(chrome.contains(more), true);
+    assert.equal(chrome.contains(hide), true);
+    assert.equal(actions.contains(openPage) && actions.contains(hide), true);
     const title = pip.querySelector("span");
     const status = pip.querySelector("small");
     assert.equal(title?.textContent, "Resource test 1");
     assert.equal(status?.textContent, "Idle");
     assert.equal(title.title.includes("Manual inspection"), true);
+    assert.equal(pipChromeButtons(host).length, 5);
   });
 });
 
-test("Follow is only on the bar while inspecting manually", async () => {
+test("Follow is only on the chrome while inspecting manually", async () => {
   await withShell(async ({ host, session }) => {
-    assert.ok(pipBarButtons(host).some(button => button.textContent === "Follow"));
+    assert.ok(chromeButton(host, "Follow"));
     await act(async () => {
       followCurrentBranch("a", null);
     });
     assert.equal(getPreviewPreference("a", null).mode, "follow");
-    assert.equal(pipBarButtons(host).some(button => button.textContent === "Follow"), false);
+    assert.equal(chromeButton(host, "Follow"), undefined);
     assert.equal(useCenterTabs.getState().activeId, session.id);
   });
 });
 
 test("idle chat PiP has no enabled Take over; active shows Take over", async () => {
   await withShell(async ({ host, page }) => {
-    assert.equal(pipBarButtons(host).some(button => button.textContent === "Take over"), false);
+    assert.equal(chromeButton(host, "Take over"), undefined);
     await act(async () => {
       ingestBrowserResource({
         id: "assoc-1",
@@ -383,9 +398,11 @@ test("idle chat PiP has no enabled Take over; active shows Take over", async () 
         execution_id: "exec-a",
       }, "a");
     });
-    const takeover = pipBarButtons(host).find(button => button.textContent === "Take over");
+    const takeover = chromeButton(host, "Take over");
     assert.ok(takeover);
     assert.equal(takeover.disabled, false);
+    assert.ok(chromeButton(host, "Follow"));
+    assert.equal(pipChromeButtons(host).length, 6);
     await act(async () => {
       ingestBrowserResource({
         id: "assoc-1",
@@ -404,10 +421,10 @@ test("idle chat PiP has no enabled Take over; active shows Take over", async () 
         execution_id: "exec-a",
       }, "a");
     });
-    const resume = pipBarButtons(host).find(button => button.textContent === "Resume");
+    const resume = chromeButton(host, "Resume");
     assert.ok(resume);
     assert.equal(resume.disabled, false);
-    assert.equal(pipBarButtons(host).some(button => button.textContent === "Take over"), false);
+    assert.equal(chromeButton(host, "Take over"), undefined);
     await act(async () => {
       ingestBrowserResource({
         id: "assoc-1",
@@ -426,10 +443,10 @@ test("idle chat PiP has no enabled Take over; active shows Take over", async () 
         execution_id: "exec-a",
       }, "a");
     });
-    const unconfirmed = pipBarButtons(host).find(button => button.textContent === "Take over");
+    const unconfirmed = chromeButton(host, "Take over");
     assert.ok(unconfirmed);
     assert.equal(unconfirmed.disabled, true);
-    assert.equal(pipBarButtons(host).some(button => button.textContent === "Resume"), false);
+    assert.equal(chromeButton(host, "Resume"), undefined);
   });
 });
 
@@ -452,7 +469,7 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
       execution_id: "exec-a",
     };
     await act(async () => { ingestBrowserResource(pausedRow, "a"); });
-    const resume = pipBarButtons(host).find(button => button.textContent === "Resume");
+    const resume = chromeButton(host, "Resume");
     assert.ok(resume);
     assert.equal(host.querySelector("[data-pip='true']")?.getAttribute("data-state"), "paused");
     globalThis.controlReply = () => { throw new Error("lease expired"); };
@@ -472,10 +489,11 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
     assert.equal(status.getAttribute("role"), "status");
     assert.equal(status.getAttribute("aria-live"), "polite");
     assert.equal(status.getAttribute("title").includes("lease expired"), true);
-    const stillResume = pipBarButtons(host).find(button => button.textContent === "Resume");
+    const stillResume = chromeButton(host, "Resume: lease expired") || chromeButton(host, "Resume");
     assert.ok(stillResume);
     assert.equal(stillResume.disabled, false);
     assert.equal(stillResume.getAttribute("aria-label"), "Resume: lease expired");
+    assert.equal(host.querySelector("[data-pip='true'] span")?.title.includes("lease expired"), true);
     assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.kind === "web").length, 1);
 
     await act(async () => { useCenterTabs.getState().setActive(page.id); });
@@ -491,7 +509,7 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
     assert.equal(chatPip.textContent.includes("lease expired"), true);
 
     globalThis.controlReply = () => ({ ...pausedRow, control_state: "active", sequence: 4 });
-    const retry = pipBarButtons(host).find(button => button.textContent === "Resume");
+    const retry = chromeButton(host, "Resume: lease expired") || chromeButton(host, "Resume");
     await act(async () => {
       retry.click();
       await Promise.resolve();
@@ -502,7 +520,7 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
     assert.ok(recovered);
     assert.equal(recovered.textContent.includes("lease expired"), false);
     assert.equal(recovered.getAttribute("data-state"), "active");
-    assert.ok(pipBarButtons(host).some(button => button.textContent === "Take over"));
+    assert.ok(chromeButton(host, "Take over"));
     assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.kind === "web").length, 1);
     assert.equal(useCenterTabs.getState().activeId, session.id);
   });
@@ -638,6 +656,7 @@ test("PiP More native history is a reachable submenu, not a disabled parent", as
     assert.ok(more);
     await act(async () => clickButton(more, { detail: 1, clientX: 12, clientY: 34 }));
     assert.equal(menu.popups.length, 1);
+    assert.equal(menu.popups[0].items.some(item => item.id === "follow" || item.label === "Follow"), false);
     const history = menu.popups[0].items.find(item => item.id === "history");
     assert.ok(history);
     assert.equal(history.disabled, undefined);
