@@ -1,5 +1,6 @@
 "use client";
 
+import { Clock3, Eye, Pause, Play } from "lucide-react";
 import {
   displayedControlState,
   liveOperationMarker,
@@ -14,13 +15,14 @@ import {
 } from "@/lib/state/browser-control";
 import { browserConnectionOpen, useBrowserResourceStore } from "@/lib/state/session-resources";
 import { useTranslation } from "@/lib/i18n";
+import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
+import { useSidebarMenu, type SidebarMenuItem } from "@/components/sidebar/use-sidebar-menu";
 import styles from "./center-tabs.module.css";
 
 function statusLabel(
@@ -43,6 +45,7 @@ export function BrowserControlBar({
   compact?: boolean;
 }) {
   const { text } = useTranslation();
+  const historyMenu = useSidebarMenu();
   useBrowserControlStore(s => s.showActions);
   useBrowserControlStore(s => s.pending);
   useBrowserControlStore(s => s.resumeError);
@@ -60,10 +63,18 @@ export function BrowserControlBar({
   const showLabel = text("Show actions", "显示操作");
   const historyLabel = text("Operation history", "操作历史");
   const history = operationHistory(resource.resourceId);
+  const historyItems: SidebarMenuItem[] = history.length === 0
+    ? [{ id: "empty", label: text("No operations yet.", "尚无操作。"), disabled: true }]
+    : history.map(item => ({
+      id: item.id,
+      label: `${item.action} · ${item.phase}${item.error ? ` · ${item.error}` : ""}`,
+      disabled: true,
+    }));
   const resumeError = resumeErrorFor(resource.resourceId);
   const connected = browserConnectionOpen();
   const resumeDisabled = !connected || state !== "paused";
   const pauseDisabled = state === "yielding" || state === "unknown" || state === "stop_unconfirmed" || !connected;
+  const nativeHistory = typeof window !== "undefined" && !!window.openprogramDesktop?.contextMenu;
   return (
     <div className={styles.browserControl} data-compact={compact ? "true" : "false"}>
       <span className={styles.browserControlStatus}>{statusLabel(state, text)}</span>
@@ -72,27 +83,45 @@ export function BrowserControlBar({
         type="button"
         className={styles.webToolbarBtn}
         aria-pressed={showActionsEnabled()}
+        aria-label={showLabel}
         title={showLabel}
         onClick={() => { toggleShowActions(); }}
       >
-        {showLabel}
+        <Eye size={14} aria-hidden="true" />
       </button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button type="button" className={styles.webToolbarBtn} title={historyLabel} aria-label={historyLabel}>
-            {historyLabel}
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className={MENU_PANEL} data-native-view-occluder="true">
-          {history.length === 0
-            ? <DropdownMenuItem disabled>{text("No operations yet.", "尚无操作。")}</DropdownMenuItem>
-            : history.map(item => (
-              <DropdownMenuItem key={item.id} disabled>
-                {item.action} · {item.phase}{item.error ? ` · ${item.error}` : ""}
-              </DropdownMenuItem>
-            ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {nativeHistory ? (
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          title={historyLabel}
+          aria-label={historyLabel}
+          aria-haspopup="menu"
+          aria-expanded={historyMenu.open}
+          onClick={(event) => {
+            if (historyMenu.open) historyMenu.close();
+            else historyMenu.show(event, historyItems);
+          }}
+        >
+          <Clock3 size={14} aria-hidden="true" />
+        </button>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className={styles.webToolbarBtn} title={historyLabel} aria-label={historyLabel}>
+              <Clock3 size={14} aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className={MENU_PANEL}>
+            {history.length === 0
+              ? <DropdownMenuItem disabled>{text("No operations yet.", "尚无操作。")}</DropdownMenuItem>
+              : history.map(item => (
+                <DropdownMenuItem key={item.id} disabled>
+                  {item.action} · {item.phase}{item.error ? ` · ${item.error}` : ""}
+                </DropdownMenuItem>
+              ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       <button
         type="button"
         className={styles.webToolbarBtn}
@@ -103,7 +132,9 @@ export function BrowserControlBar({
           void (state === "paused" ? requestResumeAgent(live) : requestExplicitPause(live));
         }}
       >
-        {pauseLabel}
+        {state === "paused"
+          ? <Play size={14} aria-hidden="true" />
+          : <Pause size={14} aria-hidden="true" />}
       </button>
     </div>
   );
