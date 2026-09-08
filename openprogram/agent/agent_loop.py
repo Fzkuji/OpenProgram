@@ -510,12 +510,9 @@ async def _run_loop(
                         "The model did not call the hidden structured-output submission tool",
                         code="missing_submission",
                     )
-                # End the stream cleanly with whatever we've got. The
-                # consumer (dispatcher / cli_chat) treats a normal
-                # stream end as a successful turn — no more, no less.
-                ev_stream.push(AgentEventAgentEnd(messages=new_messages))
-                ev_stream.end(new_messages)
-                return
+                raise RuntimeError(
+                    f"Agent iteration limit ({iteration_cap}) reached with pending work"
+                )
             if not first_turn:
                 ev_stream.push(AgentEventTurnStart())
             else:

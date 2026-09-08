@@ -1779,14 +1779,26 @@ def web_use(
     web_session_id: str = "",
     arguments: dict | None = None,
     runtime=None,
-) -> dict:
+) -> dict | ToolReturn:
     """List, observe, or control exact Pages in OpenProgram's built-in browser.
 
     Start with ``list_pages``. Select a returned ``page_context_token`` for
     ``observe``; do not pass a URL as ``page``. ``observe`` or ``act`` with
     ``url`` opens a desktop web tab when no Page is available.
     """
-    del runtime
+    result = _execute_web_use(
+        command, backend, page, page_context_token, web_session_id, arguments,
+    )
+    if result.get("ok") is False:
+        return ToolReturn(json_data=result, is_error=True)
+    return result
+
+
+def _execute_web_use(
+    command: str, backend: str = "", page: str = "",
+    page_context_token: str = "", web_session_id: str = "",
+    arguments: dict | None = None,
+) -> dict:
     from openprogram.agent import surface_context
     from .web_use_runtime import get_registry
 

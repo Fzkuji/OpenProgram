@@ -345,7 +345,7 @@ test("chat PiP chrome is two named rows without duplicate Eye or Follow wrapping
     const title = pip.querySelector("span");
     const status = pip.querySelector("small");
     assert.equal(title?.textContent, "Resource test 1");
-    assert.equal(status?.textContent, "Idle");
+    assert.equal(status?.textContent, "Manual inspection · Idle");
     assert.equal(title.title.includes("Manual inspection"), true);
   });
 });

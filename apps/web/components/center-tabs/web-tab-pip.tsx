@@ -406,7 +406,7 @@ export function WebTabPip() {
   const controlState = control ? displayedControlState(control) : null;
   const stateText = controlState ? statusLabel(controlState, text) : "";
   const resumeError = control ? resumeErrorFor(control.resourceId) : undefined;
-  const statusText = resumeError || stateText;
+  const statusText = [modeLabel, resumeError || stateText].filter(Boolean).join(" · ");
   const frameState = !connected && freshness === "live" ? "last-frame" : freshness;
   const freshLabel = frameState === "live"
     ? text("Read-only image mirror", "只读图像镜像")

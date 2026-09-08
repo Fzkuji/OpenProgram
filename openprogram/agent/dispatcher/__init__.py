@@ -251,15 +251,19 @@ def process_agent_continuation(
         raise RuntimeError("continuation assistant placeholder is missing")
     history = rendered_history(db, req.session_id, head_id=user_msg_id) or []
     context = execution_context if execution_context is not None else {}
-    final_text, usage, tool_calls = run_loop_blocking(
-        req=req,
-        history=history,
-        on_event=on_event,
-        cancel_event=cancel_event,
-        assistant_msg_id=assistant_msg_id,
-        execution_context=context,
-        continuation=continuation,
-    )
+    bindings = TurnBindings.bind(req=req, assistant_msg_id=assistant_msg_id, db=db)
+    try:
+        final_text, usage, tool_calls = run_loop_blocking(
+            req=req,
+            history=history,
+            on_event=on_event,
+            cancel_event=cancel_event,
+            assistant_msg_id=assistant_msg_id,
+            execution_context=context,
+            continuation=continuation,
+        )
+    finally:
+        bindings.release()
     if context.get("safe_point_committed"):
         result = TurnResult(
             final_text="",
