@@ -3,8 +3,17 @@ import { create } from "zustand";
 import { webTabId } from "@/lib/state/center-tab-ids";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { clampPipRectAspect } from "./web-tab-pip-geometry";
 
 export { startWebTabCaptureLoop } from "./web-tab-capture-loop";
+export {
+  PIP_HEADER_HEIGHT,
+  PIP_RESIZE_DIRS,
+  clampPipRectAspect,
+  pipContentAspect,
+  resizePipRect,
+} from "./web-tab-pip-geometry";
+export type { PipResizeDir } from "./web-tab-pip-geometry";
 
 /** Ephemeral picture-in-picture host for an agent-opened WebTab.
  *  Not persisted — closing the preview or expanding to split/fullscreen
@@ -12,8 +21,8 @@ export { startWebTabCaptureLoop } from "./web-tab-capture-loop";
  *  store. Position/size live only in memory. */
 export const PIP_MIN_WIDTH = 240;
 export const PIP_MIN_HEIGHT = 160;
-export const PIP_DEFAULT_WIDTH = 640;
-export const PIP_DEFAULT_HEIGHT = 390;
+export const PIP_DEFAULT_WIDTH = 300;
+export const PIP_DEFAULT_HEIGHT = 198.75;
 export const PIP_EXPANDED_WIDTH = 720;
 export const PIP_EXPANDED_HEIGHT = 435;
 
@@ -295,20 +304,7 @@ export function clampPipRect(
   rect: WebTabPipRect,
   box: WebTabPipRect,
 ): WebTabPipRect {
-  const width = Math.max(
-    PIP_MIN_WIDTH,
-    Math.min(rect.width, Math.max(PIP_MIN_WIDTH, box.width)),
-  );
-  const height = Math.max(
-    PIP_MIN_HEIGHT,
-    Math.min(rect.height, Math.max(PIP_MIN_HEIGHT, box.height)),
-  );
-  return {
-    x: Math.max(box.x, Math.min(rect.x, box.x + box.width - width)),
-    y: Math.max(box.y, Math.min(rect.y, box.y + box.height - height)),
-    width,
-    height,
-  };
+  return clampPipRectAspect(rect, box, PIP_MIN_WIDTH, PIP_MIN_HEIGHT);
 }
 
 useCenterTabs.subscribe((state) => {

@@ -32,6 +32,7 @@ await build({
 const { window } = parseHTML("<html><body></body></html>");
 globalThis.window = window;
 globalThis.document = window.document;
+document.oninput = null;
 globalThis.CustomEvent = window.CustomEvent;
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.localStorage = {
@@ -111,6 +112,21 @@ function openInTabButton(host, title) {
 function previewInConversationButton(host, title) {
   return [...host.querySelectorAll("button")]
     .find(button => button.getAttribute("aria-label") === `Preview in conversation: ${title}`);
+}
+
+function keydown(key) {
+  const event = new window.Event("keydown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "key", { value: key });
+  return event;
+}
+
+function setInput(input, value) {
+  input.type ||= "text";
+  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set
+    || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+  if (setter) setter.call(input, value);
+  else input.value = value;
+  input.dispatchEvent(new window.Event("input", { bubbles: true }));
 }
 
 test("five agent-opened session pages stay out of the top strip by default", () => {
@@ -307,4 +323,76 @@ test("hide keeps the page and does not change the live tab identity", () => {
   useWebTabPip.getState().end();
   useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
   resetBrowserResources();
+});
+
+test("current branch group uses a title-adjacent section chevron and keyboard-collapses without hiding other groups", async () => {
+  resetBrowserResources();
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  const currentPage = pageTab("w:a", "a", "https://example.org", { title: "Example Domain" });
+  const otherPage = pageTab("w:b", "a", "https://other.test", { title: "Other page" });
+  useCenterTabs.setState({
+    tabs: [session, currentPage, otherPage],
+    activeId: session.id, groups: [], splitWebTabId: null,
+  });
+  globalThis.resourceBackend = {
+    rows: [{
+      id: "assoc-a", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Example Domain",
+      target: currentPage.url, status: "open", source: "browser", sourceId: currentPage.id, resourceId: "page-a",
+      tabId: currentPage.id, branchId: "br-a", branchName: "Research",
+      controlState: "idle", generation: 1, sequence: 1,
+    }, {
+      id: "assoc-b", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Other page",
+      target: otherPage.url, status: "open", source: "browser", sourceId: otherPage.id, resourceId: "page-b",
+      tabId: otherPage.id, branchId: "br-b", branchName: "Preview live check",
+      controlState: "idle", generation: 1, sequence: 1,
+    }],
+    currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true,
+  };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    const currentBlock = host.querySelector('[data-resource-group="br-a"]');
+    const otherBlock = host.querySelector('[data-resource-group="br-b"]');
+    const current = currentBlock?.querySelector("[aria-expanded]");
+    const other = otherBlock?.querySelector("[aria-expanded]");
+    assert.equal(currentBlock.getAttribute("data-current"), "true");
+    assert.equal(otherBlock.getAttribute("data-current"), null);
+    assert.equal(current.getAttribute("role"), "button");
+    assert.equal(current.getAttribute("aria-expanded"), "true");
+    const title = current.firstElementChild;
+    assert.equal(title?.textContent, "Research");
+    const chevron = title.nextElementSibling;
+    assert.ok(chevron?.querySelector("svg"), "chevron sits immediately after the title");
+    assert.ok(!chevron.textContent.trim());
+    assert.equal(currentBlock.querySelector("small")?.textContent, "Current");
+    assert.ok(!current.contains(currentBlock.querySelector("small")), "Current trails the section, not the chevron");
+    assert.equal(other.getAttribute("aria-expanded"), "true");
+    assert.ok(host.querySelector('[title="https://example.org"]'));
+    await act(async () => {
+      current.focus();
+      current.dispatchEvent(keydown("Enter"));
+    });
+    assert.equal(current.getAttribute("aria-expanded"), "false", "Enter toggles the group once");
+    assert.equal(host.querySelector('[title="https://example.org"]'), null);
+    assert.equal(other.getAttribute("aria-expanded"), "true");
+    assert.ok(host.querySelector('[title="https://other.test"]'));
+    const search = host.querySelector('input[aria-label="Search resources"]');
+    await act(async () => setInput(search, "Example"));
+    assert.equal(current.getAttribute("aria-expanded"), "true");
+    assert.ok(host.querySelector('[title="https://example.org"]'));
+    await act(async () => setInput(search, ""));
+    assert.equal(current.getAttribute("aria-expanded"), "false", "collapse persists after search clears");
+    await act(async () => {
+      current.focus();
+      current.dispatchEvent(keydown(" "));
+    });
+    assert.equal(current.getAttribute("aria-expanded"), "true", "Space toggles the group once");
+    assert.ok(host.querySelector('[title="https://example.org"]'));
+    assert.equal(other.getAttribute("aria-expanded"), "true");
+  } finally {
+    await act(async () => root.unmount()); host.remove();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserResources();
+  }
 });

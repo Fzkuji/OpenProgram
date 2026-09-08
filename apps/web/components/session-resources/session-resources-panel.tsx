@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Search, Server, X } from "lucide-react";
+import { SectionHeader } from "@/components/sidebar/section-header";
 import { useWebTabPip } from "@/lib/state/web-tab-pip-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
@@ -113,16 +114,31 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
       {groups.length === 0 && <p className={styles.empty}>{needle ? text("No matching resources", "没有匹配的资源")
         : !backend.loaded ? text("Loading resources…", "正在加载资源…")
           : sessionId ? text("This session has no resources in use.", "当前会话没有正在使用的资源。") : text("Select a session to view its resources.", "选择会话以查看其资源。")}</p>}
-      {groups.map(group => <details key={group.key} open={!!needle || (group.key === "unavailable" ? collapsed[group.key] === false : !collapsed[group.key])} onToggle={event => {
-        if (needle) return;
-        const closed = !event.currentTarget.open;
-        setCollapsed(value => value[group.key] === closed ? value : { ...value, [group.key]: closed });
-      }}>
-        <summary className={styles.group} title={group.title}>
-          <span>{group.title}{group.current ? ` · ${text("Current", "当前")}` : ""}</span>
-          <small>{group.rows.length}</small>
-        </summary>
-        {group.rows.map(row => {
+      {groups.map(group => {
+        const open = !!needle || (group.key === "unavailable" ? collapsed[group.key] === false : !collapsed[group.key]);
+        const currentLabel = text("Current", "当前");
+        const toggleGroup = () => {
+          if (needle) return;
+          setCollapsed(value => {
+            const closed = open;
+            return value[group.key] === closed ? value : { ...value, [group.key]: closed };
+          });
+        };
+        return <div key={group.key} className={`group/sec ${styles.groupBlock}`}
+          data-resource-group={group.key}
+          data-current={group.current ? "true" : undefined}
+          title={group.current ? `${group.title} · ${currentLabel}` : group.title}>
+        <SectionHeader
+          name={group.title}
+          collapsible
+          collapsed={!open}
+          onToggle={toggleGroup}
+          actions={<span className={styles.groupMeta}>
+            {group.current ? <small className={styles.groupCurrent}>{currentLabel}</small> : null}
+            <small className={styles.groupCount}>{group.rows.length}</small>
+          </span>}
+        />
+        {open && group.rows.map(row => {
           const Icon = icons[row.kind as keyof typeof icons] || Box;
           const tab = previewTabId(row) ? tabs.find(item => item.id === previewTabId(row)) : undefined;
           const operating = resourceIsOperating(row);
@@ -176,7 +192,8 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
               }}><X size={14} /></button>}
           </div>;
         })}
-      </details>)}
+      </div>;
+      })}
     </div>
     {selected && <div className={styles.detail}>
       <button type="button" className={styles.action} aria-label={text("Close resource details", "关闭资源详情")} onClick={() => setSelected(null)}><X size={14} /></button>

@@ -531,7 +531,7 @@ export function latestFollowTarget(sessionId: string, branchId: string | null): 
 
 export function selectResourcePreview(sessionId: string, branchId: string | null, resourceId: string): PreviewPreference {
   return writePref(sessionId, branchId, {
-    targetId: resourceId, mode: "manual", hidden: false, expanded: false,
+    targetId: resourceId, mode: "manual", hidden: false,
   });
 }
 
@@ -540,7 +540,6 @@ export function followCurrentBranch(sessionId: string, branchId: string | null):
     mode: "follow",
     targetId: latestFollowTarget(sessionId, branchId),
     hidden: false,
-    expanded: false,
   });
 }
 
@@ -558,7 +557,7 @@ export function showResourcePreview(sessionId: string, branchId: string | null):
 
 export function togglePreviewExpanded(sessionId: string, branchId: string | null): PreviewPreference {
   const pref = getPreviewPreference(sessionId, branchId);
-  return writePref(sessionId, branchId, { expanded: !pref.expanded, mode: "manual" });
+  return writePref(sessionId, branchId, { expanded: !pref.expanded });
 }
 
 export async function requestResourceControl(

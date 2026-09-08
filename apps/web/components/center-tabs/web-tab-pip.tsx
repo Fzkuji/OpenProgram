@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ExternalLink, Locate, Maximize2, Minimize2, MoreVertical, Pause, Play, X } from "lucide-react";
+import { ExternalLink, Maximize2, Minimize2, MoreVertical, Pause, Pin, Play, X } from "lucide-react";
 
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
@@ -34,6 +34,7 @@ import {
   latestFollowTarget,
   listedBrowserResources,
   previewTabId,
+  selectResourcePreview,
   togglePreviewExpanded,
   useBrowserResourceStore,
   viewedBranchFor,
@@ -43,15 +44,21 @@ import { revealExistingWebTab } from "@/lib/state/web-page-management";
 import {
   clampPipRect,
   getSnapshot,
+  PIP_DEFAULT_HEIGHT,
+  PIP_DEFAULT_WIDTH,
   PIP_MIN_HEIGHT,
   PIP_MIN_WIDTH,
+  PIP_RESIZE_DIRS,
   pipChatRect,
   pipHostMode,
+  resizePipRect,
   setSnapshot,
   startWebTabCaptureLoop,
   useWebTabPip,
+  type PipResizeDir,
   type WebTabPipRect,
 } from "@/lib/state/web-tab-pip-store";
+import type { WebTabCaptureLoop } from "@/lib/state/web-tab-capture-loop";
 
 import styles from "./center-tabs.module.css";
 
@@ -61,6 +68,10 @@ type PipDrag = {
   startX: number;
   startY: number;
   origin: WebTabPipRect;
+  bounds: WebTabPipRect;
+  tabId: string;
+  target: HTMLElement;
+  dir?: PipResizeDir;
 };
 
 function containerBox(el: HTMLElement): WebTabPipRect {
@@ -208,7 +219,6 @@ export function WebTabPip() {
   const rect = useWebTabPip((s) => s.rect);
   const expandedSize = useWebTabPip((s) => s.expandedSize);
   const setRect = useWebTabPip((s) => s.setRect);
-  const setExpandedSize = useWebTabPip((s) => s.setExpandedSize);
   const tabs = useCenterTabs((s) => s.tabs);
   const activeId = useCenterTabs((s) => s.activeId);
   const groups = useCenterTabs((s) => s.groups);
@@ -238,6 +248,9 @@ export function WebTabPip() {
   const rafRef = useRef(0);
   const shotRef = useRef<HTMLImageElement>(null);
   const captureGenRef = useRef(0);
+  const captureLoopRef = useRef<WebTabCaptureLoop | null>(null);
+  const dragFinishingRef = useRef(false);
+  const endActiveDragRef = useRef<(persist: boolean) => void>(() => {});
   const [freshness, setFreshness] = useState<"live" | "last-frame" | "unavailable">("unavailable");
   const [chatBox, setChatBox] = useState<WebTabPipRect | null>(null);
   const [, render] = useState(0);
@@ -260,18 +273,13 @@ export function WebTabPip() {
   };
 
   useEffect(() => () => {
-    if (rafRef.current) window.cancelAnimationFrame(rafRef.current);
+    endActiveDragRef.current(false);
   }, []);
 
   useEffect(() => {
     if (live) return;
-    dragRef.current = null;
-    pendingRectRef.current = null;
+    endActiveDragRef.current(false);
     captureGenRef.current += 1;
-    if (rafRef.current) {
-      window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
   }, [live]);
 
   useLayoutEffect(() => {
@@ -303,6 +311,7 @@ export function WebTabPip() {
     const parent = el.offsetParent;
     if (!(parent instanceof HTMLElement)) return;
     const reclamp = () => {
+      if (dragRef.current) return;
       const current = useWebTabPip.getState().rect;
       if (!current || expanded) return;
       const next = clampPipRect(current, containerBox(el));
@@ -341,18 +350,21 @@ export function WebTabPip() {
       },
       capture,
       onFrame: (id, dataUrl) => {
+        if (captureGenRef.current !== gen || dragRef.current) return;
         setSnapshot(id, dataUrl);
-        if (captureGenRef.current !== gen) return;
         showShot(dataUrl);
         setFreshness("live");
       },
       onUnavailable: (id) => {
-        if (captureGenRef.current !== gen) return;
+        if (captureGenRef.current !== gen || dragRef.current) return;
         setFreshness(getSnapshot(id) ? "last-frame" : "unavailable");
       },
     });
+    captureLoopRef.current = loop;
     return () => {
       loop.stop();
+      if (captureLoopRef.current === loop) captureLoopRef.current = null;
+      endActiveDragRef.current(false);
       if (captureGenRef.current === gen) captureGenRef.current += 1;
     };
   }, [bridge, tabId, live]);
@@ -372,14 +384,29 @@ export function WebTabPip() {
   if (!tabId || !tab || !live) return null;
 
   const title = resource?.title || tab.title || url;
-  const followLabel = text("Follow", "跟随");
   const openPage = text("Open page", "打开页面");
   const hideLabel = text("Hide", "隐藏");
   const expandLabel = pref?.expanded ? text("Collapse", "收起") : text("Expand", "展开");
-  const resizeLabel = text("Resize preview", "调整预览大小");
-  const modeLabel = pref?.mode === "follow"
-    ? text("Following Agent", "跟随 Agent")
-    : text("Manual inspection", "手动查看");
+  const resizeLabels: Record<PipResizeDir, string> = {
+    n: text("Resize from top", "从顶部调整大小"),
+    ne: text("Resize from top right", "从右上角调整大小"),
+    e: text("Resize from right", "从右侧调整大小"),
+    se: text("Resize from bottom right", "从右下角调整大小"),
+    s: text("Resize from bottom", "从底部调整大小"),
+    sw: text("Resize from bottom left", "从左下角调整大小"),
+    w: text("Resize from left", "从左侧调整大小"),
+    nw: text("Resize from top left", "从左上角调整大小"),
+  };
+  const pinned = pref?.mode === "manual";
+  const pinLabel = pinned
+    ? text("Unpin preview", "取消固定预览")
+    : text("Pin preview", "固定预览");
+  const pinHint = pinned
+    ? text("Return to automatic display of the page the Agent is operating", "恢复自动显示 Agent 正在操作的页面")
+    : text("Hold the current page", "保持当前页面");
+  const modeLabel = pinned
+    ? text("Fixed preview", "固定预览")
+    : text("Auto preview", "自动预览");
   const controlState = control ? displayedControlState(control) : null;
   const stateText = controlState ? statusLabel(controlState, text) : "";
   const resumeError = control ? resumeErrorFor(control.resourceId) : undefined;
@@ -418,12 +445,16 @@ export function WebTabPip() {
       disabled: true,
     }));
 
-  const followCurrent = () => {
+  const togglePinnedPreview = () => {
     if (!sessionId) return;
-    const next = followCurrentBranch(sessionId, branchId);
-    const target = listedBrowserResources().find(row => row.id === (next.targetId || latestFollowTarget(sessionId, branchId)));
-    const nextTab = previewTabId(target);
-    if (nextTab && ownerTabId) useWebTabPip.getState().show(nextTab, ownerTabId);
+    if (pinned) {
+      const next = followCurrentBranch(sessionId, branchId);
+      const target = listedBrowserResources().find(row => row.id === (next.targetId || latestFollowTarget(sessionId, branchId)));
+      const nextTab = previewTabId(target);
+      if (nextTab && ownerTabId) useWebTabPip.getState().show(nextTab, ownerTabId);
+    } else if (resource?.id) {
+      selectResourcePreview(sessionId, branchId, resource.id);
+    }
     render(value => value + 1);
   };
 
@@ -446,7 +477,7 @@ export function WebTabPip() {
     el.style.bottom = "auto";
   };
 
-  const commitRect = (el: HTMLElement, next: WebTabPipRect) => {
+  const applyInlineRect = (el: HTMLElement, next: WebTabPipRect) => {
     el.style.transform = "";
     el.style.willChange = "";
     el.classList.remove(styles.webPipDragging);
@@ -456,13 +487,65 @@ export function WebTabPip() {
     el.style.height = `${next.height}px`;
     el.style.right = "auto";
     el.style.bottom = "auto";
-    if (expanded) setExpandedSize({ width: next.width, height: next.height });
-    else setRect(next);
   };
+
+  const persistRect = (
+    el: HTMLElement | null,
+    next: WebTabPipRect,
+    kind: "move" | "resize",
+  ) => {
+    if (el) applyInlineRect(el, next);
+    const collapsed = {
+      x: next.x,
+      y: next.y,
+      width: rect?.width ?? PIP_DEFAULT_WIDTH,
+      height: rect?.height ?? PIP_DEFAULT_HEIGHT,
+    };
+    if (expanded) {
+      if (kind === "resize") {
+        useWebTabPip.setState({
+          rect: collapsed,
+          expandedSize: { width: next.width, height: next.height },
+        });
+        return;
+      }
+      setRect(collapsed);
+      return;
+    }
+    setRect(next);
+  };
+
+  const finishDrag = (persist: boolean) => {
+    const drag = dragRef.current;
+    if (!drag || dragFinishingRef.current) return;
+    dragFinishingRef.current = true;
+    dragRef.current = null;
+    if (rafRef.current) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    const next = pendingRectRef.current;
+    pendingRectRef.current = null;
+    const el = rootRef.current;
+    if (drag.target.hasPointerCapture(drag.pointerId)) {
+      drag.target.releasePointerCapture(drag.pointerId);
+    }
+    const pip = useWebTabPip.getState();
+    const commit = persist && !!next && live && pip.tabId === drag.tabId;
+    if (commit && next) {
+      persistRect(el, clampPipRect(next, el ? containerBox(el) : drag.bounds), drag.kind);
+    } else if (el) {
+      applyInlineRect(el, drag.origin);
+    }
+    if (persist) captureLoopRef.current?.resume();
+    dragFinishingRef.current = false;
+  };
+  endActiveDragRef.current = finishDrag;
 
   const onDragPointerDown = (
     kind: "move" | "resize",
     event: React.PointerEvent<HTMLElement>,
+    dir?: PipResizeDir,
   ) => {
     if (event.button !== 0) return;
     const el = rootRef.current;
@@ -475,11 +558,15 @@ export function WebTabPip() {
       startX: event.clientX,
       startY: event.clientY,
       origin: liveRect(el),
+      bounds: containerBox(el),
+      tabId,
+      target: event.currentTarget,
+      dir,
     };
     pendingRectRef.current = dragRef.current.origin;
     el.classList.add(styles.webPipDragging);
     el.style.willChange = kind === "move" ? "transform" : "left, top, width, height";
-    showShot(getSnapshot(tabId) ?? null);
+    captureLoopRef.current?.pause();
   };
 
   const onDragPointerMove = (event: React.PointerEvent<HTMLElement>) => {
@@ -488,12 +575,20 @@ export function WebTabPip() {
     if (!drag || drag.pointerId !== event.pointerId || !el) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    const next = clampPipRect(
-      drag.kind === "move"
-        ? { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }
-        : { ...drag.origin, width: drag.origin.width + dx, height: drag.origin.height + dy },
-      containerBox(el),
-    );
+    const next = drag.kind === "move"
+      ? clampPipRect(
+        { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy },
+        drag.bounds,
+      )
+      : resizePipRect(
+        drag.origin,
+        dx,
+        dy,
+        drag.bounds,
+        PIP_MIN_WIDTH,
+        PIP_MIN_HEIGHT,
+        drag.dir ?? "se",
+      );
     pendingRectRef.current = next;
     if (rafRef.current) return;
     rafRef.current = window.requestAnimationFrame(() => {
@@ -509,18 +604,13 @@ export function WebTabPip() {
   const onDragPointerUp = (event: React.PointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    if (rafRef.current) {
-      window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-    }
-    const el = rootRef.current;
-    const next = pendingRectRef.current;
-    dragRef.current = null;
-    pendingRectRef.current = null;
-    if (el && next) commitRect(el, next);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    finishDrag(true);
+  };
+
+  const onDragPointerCancel = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    finishDrag(true);
   };
 
   return (
@@ -539,7 +629,8 @@ export function WebTabPip() {
         onPointerDown={(event) => onDragPointerDown("move", event)}
         onPointerMove={onDragPointerMove}
         onPointerUp={onDragPointerUp}
-        onPointerCancel={onDragPointerUp}
+        onPointerCancel={onDragPointerCancel}
+        onLostPointerCapture={onDragPointerCancel}
       >
         <span className={styles.webPipTitle} title={`${title}${statusText || modeLabel ? ` · ${statusText || modeLabel}` : ""}`}>{title}</span>
         {statusText ? (
@@ -580,17 +671,17 @@ export function WebTabPip() {
                 : <Pause size={14} aria-hidden="true" />}
             </button>
           ) : null}
-          {pref?.mode === "manual" ? (
-            <button
-              type="button"
-              className={styles.webToolbarBtn}
-              onClick={followCurrent}
-              title={followLabel}
-              aria-label={followLabel}
-            >
-              <Locate size={14} aria-hidden="true" />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className={styles.webToolbarBtn}
+            aria-pressed={pinned}
+            aria-label={pinLabel}
+            title={pinHint}
+            style={pinned ? { background: "var(--bg-hover)", color: "var(--text-bright)" } : undefined}
+            onClick={togglePinnedPreview}
+          >
+            <Pin size={14} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className={styles.webToolbarBtn}
@@ -640,18 +731,24 @@ export function WebTabPip() {
             />
           ) : null}
         </div>
+      </div>
+      {PIP_RESIZE_DIRS.map((dir) => (
         <div
+          key={dir}
           className={styles.webPipResize}
+          data-dir={dir}
+          data-pip-resize={dir}
           role="separator"
-          aria-orientation="horizontal"
-          aria-label={resizeLabel}
-          title={resizeLabel}
-          onPointerDown={(event) => onDragPointerDown("resize", event)}
+          aria-orientation={dir === "e" || dir === "w" ? "vertical" : "horizontal"}
+          aria-label={resizeLabels[dir]}
+          title={resizeLabels[dir]}
+          onPointerDown={(event) => onDragPointerDown("resize", event, dir)}
           onPointerMove={onDragPointerMove}
           onPointerUp={onDragPointerUp}
-          onPointerCancel={onDragPointerUp}
+          onPointerCancel={onDragPointerCancel}
+          onLostPointerCapture={onDragPointerCancel}
         />
-      </div>
+      ))}
     </div>
   );
 }
