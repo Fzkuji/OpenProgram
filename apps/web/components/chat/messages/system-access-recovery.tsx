@@ -8,10 +8,10 @@ import { systemAccessRequired } from "@/lib/system-access-result";
 type Row = { id: string; status: string; can_request?: boolean };
 
 /** Native setup belongs to the visible owner UI, never to model-written prose. */
-export function SystemAccessRecovery({ output, autoOpen, onContinue, onAutoOpen }: {
-  output: unknown; autoOpen: boolean; onContinue?: () => void; onAutoOpen?: () => void;
+export function SystemAccessRecovery({ output, requiredCapabilities, autoOpen, onAutoOpen }: {
+  output?: unknown; requiredCapabilities?: string[]; autoOpen: boolean; onAutoOpen?: () => void;
 }) {
-  const required = systemAccessRequired(output);
+  const required = requiredCapabilities ?? systemAccessRequired(output);
   const { text } = useTranslation();
   const [rows, setRows] = useState<Row[]>([]);
   const [pending, setPending] = useState(false);
@@ -19,7 +19,6 @@ export function SystemAccessRecovery({ output, autoOpen, onContinue, onAutoOpen 
   const [checked, setChecked] = useState(false);
   const [visibleNow, setVisibleNow] = useState(() => typeof document !== "undefined" && document.visibilityState === "visible");
   const requested = useRef(new Set<string>());
-  const resumed = useRef(false);
   const [armed, setArmed] = useState(false);
   const version = useRef(0);
   const busy = useRef(false);
@@ -39,6 +38,7 @@ export function SystemAccessRecovery({ output, autoOpen, onContinue, onAutoOpen 
         const response = await fetch("/api/system/access", { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error(String(response.status));
         const data = await response.json();
+        if (!Array.isArray(data.capabilities)) throw new Error("Invalid access report");
         if (!controller.signal.aborted && current === version.current) { setRows(data.capabilities); setChecked(true); setError(""); }
       } catch {
         if (!controller.signal.aborted && current === version.current) { setChecked(false); setError(text("Could not verify system access.", "无法确认系统权限。")); }
@@ -57,6 +57,7 @@ export function SystemAccessRecovery({ output, autoOpen, onContinue, onAutoOpen 
     return () => window.clearInterval(timer);
   }, [local, armed]);
   const missing = required.filter(id => !rows.some(row => row.id === id && row.status === "granted"));
+  const requestable = missing.filter(id => rows.some(row => row.id === id && row.status === "not_granted" && row.can_request));
   async function setup(id: string) {
     const signal = lifetime.current?.signal;
     if (!signal || signal.aborted || busy.current) return;
@@ -78,42 +79,25 @@ export function SystemAccessRecovery({ output, autoOpen, onContinue, onAutoOpen 
   }, [autoOpen, local, visibleNow, armed]);
   useEffect(() => {
     const action = systemAccessAction(local, visibleNow, armed, checked, pending,
-      resumed.current, missing, requested.current);
+      requestable, requested.current);
     if (action?.type === "request") {
       requested.current.add(action.id);
       void setup(action.id);
-    } else if (action?.type === "resume" && onContinue) {
-      void resume();
     }
-  }, [local, visibleNow, armed, checked, pending, missing.join(",")]);
-  async function resume() {
-    const signal = lifetime.current?.signal;
-    if (!signal || signal.aborted || busy.current) return;
-    busy.current = true; ++version.current;
-    setPending(true);
-    try {
-      const response = await fetch("/api/system/access", { cache: "no-store", signal });
-      if (!response.ok) throw new Error(String(response.status));
-      const data = await response.json();
-      if (signal.aborted) return;
-      if (document.visibilityState !== "visible") { resumed.current = false; setVisibleNow(false); return; }
-      setRows(data.capabilities);
-      if (required.every(id => data.capabilities.some((row: Row) => row.id === id && row.status === "granted"))) { resumed.current = true; onContinue?.(); }
-      else { resumed.current = false; setError(text("Access has not taken effect for the executor yet.", "执行程序的权限尚未生效。")); }
-    } catch { if (!signal.aborted) { resumed.current = false; setChecked(false); setError(text("Could not verify system access.", "无法确认系统权限。")); } }
-    finally { if (!signal.aborted) { busy.current = false; setPending(false); } }
-  }
+  }, [local, visibleNow, armed, checked, pending, requestable.join(",")]);
   return <div role="status" aria-label={text("System access", "系统权限")}
     style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", color: "var(--text-secondary)", fontSize: "inherit" }}>
     <span>{error || (!local ? text("Waiting for authorization on the execution computer.", "等待执行电脑完成系统授权。")
       : checked && !missing.length ? text("System access is ready.", "系统权限已就绪。")
-      : text("Waiting for system authorization…", "等待系统授权…"))}</span>
-    {local && missing.length > 0 && <button type="button" disabled={pending || !checked}
+      : checked && missing.some(id => rows.some(row => row.id === id && row.status !== "not_granted" && row.status !== "granted"))
+        ? text("System access could not be verified. Your task is still waiting.", "暂时无法确认系统权限，任务仍在等待。")
+        : text("Waiting for system authorization…", "等待系统授权…"))}</span>
+    {local && requestable.length > 0 && <button type="button" disabled={pending || !checked}
       style={{ border: 0, background: "none", padding: 0, color: "var(--text-secondary)", font: "inherit", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}
       onClick={() => {
         if (!armed) setArmed(true);
-        requested.current.add(missing[0]);
-        void setup(missing[0]);
+        requested.current.add(requestable[0]);
+        void setup(requestable[0]);
       }}>{text("Open System Settings", "打开系统设置")}</button>}
   </div>;
 }

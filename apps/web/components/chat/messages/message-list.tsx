@@ -63,6 +63,7 @@ const JUMP_LATEST_FADE_MS = 280;
 
 import { AssistantBubble } from "./assistant-bubble";
 import { AttachCard } from "./attach-card";
+import { SystemAccessWaits } from "./system-access-waits";
 import { MessageRail } from "./message-rail";
 import { AgentBranchBanner } from "./agent-branch-banner";
 import { RuntimeBlock } from "./runtime-block";
@@ -1187,6 +1188,7 @@ export const MessageList = memo(function MessageList({
       {paintRows && showPending ? (
         <PendingReplyIndicator timestamp={runningTask?.started_at} />
       ) : null}
+      <SystemAccessWaits key={sessionId} sessionId={sessionId} />
       {paintRows ? <SelfUpdateHistory key={sessionId} sessionId={sessionId} /> : null}
       {/* Messages typed during the run — dimmed rows under the live
           turn, drained one at a time when it ends. */}

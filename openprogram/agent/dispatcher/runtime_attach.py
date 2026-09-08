@@ -473,4 +473,10 @@ def _wrap_agentic_runtime_block(
             setattr(wrapped, _attr, getattr(agent_tool, _attr, None))
         except AttributeError:
             _log.debug("could not copy %s onto tool wrapper", _attr)
+    manifest = getattr(agent_tool, "_interaction_manifest", None)
+    if callable(manifest):
+        try:
+            setattr(wrapped, "_interaction_manifest", manifest)
+        except AttributeError:
+            _log.debug("could not copy _interaction_manifest onto tool wrapper")
     return wrapped

@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 import sys
 
+import pytest
+
 from openprogram import system_access
 
 
@@ -67,3 +69,28 @@ def test_explicit_request_only_prompts_missing_capability(monkeypatch):
     assert opened == ['accessibility']
     assert row['settings_opened']
     assert row['status'] == 'not_granted'
+
+
+def test_gui_agent_desktop_manifest_requires_missing_macos_capabilities(monkeypatch):
+    monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
+    monkeypatch.setitem(sys.modules, 'Quartz', SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: False))
+    monkeypatch.setitem(sys.modules, 'ApplicationServices', SimpleNamespace(AXIsProcessTrusted=lambda: True))
+
+    manifest = system_access.access_manifest_for_tool(
+        'gui_agent', {'task': 'Open the app', 'surface': 'desktop'}
+    )
+
+    assert manifest is not None
+    assert manifest['kind'] == 'system_access'
+    assert manifest['required_capabilities'] == ['screen_recording']
+    assert manifest['request_metadata']['tool'] == 'gui_agent'
+    assert manifest['policy_snapshot']['on_grant'] == 'continue'
+
+
+@pytest.mark.parametrize('args', [
+    {'task': 'Use browser', 'surface': 'browser'},
+    {'task': 'Use VM', 'surface': 'vm', 'vm_url': 'http://vm'},
+])
+def test_gui_agent_remote_surfaces_skip_system_access_manifest(monkeypatch, args):
+    monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
+    assert system_access.access_manifest_for_tool('gui_agent', args) is None

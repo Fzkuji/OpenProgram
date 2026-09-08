@@ -121,4 +121,6 @@ access setup never retries a declined operation.
 
 ### System authorization
 
-Local desktop tasks request missing system access through the native authorization flow. The task row only shows a brief status and an Open System Settings text action, without a separate permission card, form, or Continue button. The active waiting task rechecks access and continues once after authorization takes effect. Viewing history never executes a task automatically. Navigating away stops automatic continuation. System access does not replace operation approval.
+Local desktop tasks pause before desktop actions when system access is missing. OpenProgram requests the missing permission through the native authorization flow and opens the corresponding System Settings page when necessary. The conversation shows a brief waiting status and an Open System Settings text action, without a permission form or Continue button.
+
+The background worker saves the waiting task and checks whether permission has taken effect for its own process. Once access is available, it continues the same task once. Closing the page does not stop this check. If an application restart is needed, the saved task is checked again after startup. Cancelling the task prevents later continuation. A failed check keeps the task waiting; it is never treated as permission granted. Viewing an old conversation does not itself start an operation or reopen system prompts. System access does not replace operation approval.

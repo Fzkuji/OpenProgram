@@ -57,6 +57,53 @@ def register(app):
         from openprogram.system_access import report
         return JSONResponse(report(), headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/system/access/waits")
+    def system_access_waits_api(request: Request, session_id: str | None = None):
+        """Return owner-authorized durable desktop access waits for reconnect."""
+        from openprogram.execution import default_store
+        from openprogram.execution.waits import DurableWaitStore
+        from openprogram.webui.routes.lifecycle import _actor_and_session, _authorize_read
+
+        actor, bound_session = _actor_and_session(request)
+        if bound_session is not None:
+            if session_id is not None and session_id != bound_session:
+                return JSONResponse({"waits": []}, status_code=404)
+            session_id = bound_session
+        if session_id is None:
+            scoped_sessions = actor.get("session_ids") if isinstance(actor, dict) else None
+            if not isinstance(scoped_sessions, (list, tuple, set, frozenset)) or not scoped_sessions:
+                return JSONResponse({"waits": []}, status_code=404)
+
+        store = default_store()
+        waits = DurableWaitStore(store).list_open(session_id=session_id)
+        if session_id is None:
+            allowed = {str(item) for item in scoped_sessions}
+            waits = [
+                wait for wait in waits
+                if (execution := store.get_execution(wait.execution_id)) is not None
+                and str(execution.session_id) in allowed
+            ]
+        visible = []
+        for wait in waits:
+            if wait.kind != "system_access":
+                continue
+            execution = store.get_execution(wait.execution_id)
+            if execution is None or not _authorize_read(actor, session_id, execution, "execution.snapshot"):
+                continue
+            visible.append({
+                "wait_id": wait.wait_id,
+                "kind": wait.kind,
+                "session_id": execution.session_id,
+                "execution_id": wait.execution_id,
+                "wait_generation": wait.claim_generation,
+                "expected_version": execution.status_version,
+                "required_capabilities": list(wait.request.get("required_capabilities", [])),
+                "capabilities": list(wait.request.get("capabilities", [])),
+                "expires_at": wait.expires_at,
+                "reason_code": "system_access_required",
+            })
+        return JSONResponse({"waits": visible}, headers={"Cache-Control": "no-store"})
+
     @app.post("/api/system/access/{capability}")
     def request_system_access_api(capability: str, request: Request):
         from openprogram.backend_endpoint import is_loopback_host

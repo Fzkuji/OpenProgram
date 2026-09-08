@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+import sys
 import threading
 import time
 from types import SimpleNamespace
@@ -37,6 +38,7 @@ def _admitted(tmp_path, *, execution_id="exec-agent-1"):
             safe_point_kinds=(
                 "agent.provider.decision.after",
                 "agent.tool.action.after",
+                "agent.wait.before_tool",
             ),
             state_schema_version=1,
         ),
@@ -201,6 +203,168 @@ def test_agent_driver_declares_only_p0_safe_point_capabilities():
         ),
         state_schema_version=1,
     )
+
+
+def test_gui_agent_safe_point_waits_before_tool_effect_and_resumes_once(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from openprogram import system_access
+    from openprogram.agent.continuation import runtime_contract_snapshot
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.execution.effects import EffectStore
+    from openprogram.execution.waits import DurableWaitStore, WaitStatus
+    from openprogram.providers.types import Model
+
+    store, execution = _admitted(tmp_path, execution_id="exec-system-public")
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id, expected_version=execution.status_version,
+        owner_id="system-public", ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    activations = []
+
+    async def activate(next_attempt, activation):
+        activations.append((next_attempt.execution_id, activation.checkpoint.checkpoint_id))
+
+    control = RuntimeControlService(
+        store, attempts, DriverRegistry(), activator=activate,
+    )
+    driver = AgentProductionDriver(store, control_service=control)
+    request = TurnRequest(
+        session_id=running.session_id, user_text="run GUI", agent_id="default",
+        source="component", user_msg_id="user-system-public",
+    )
+    request._execution_revision_id = running.revision_id
+    hook = driver._safe_point_hook(active, request, threading.Event())
+    snapshot = runtime_contract_snapshot(
+        model=Model(id="fake", name="fake", api="openai-completions", provider="openai", base_url="https://example.invalid/v1"),
+        system_prompt="system", tools=[], request=request,
+    )
+    monkeypatch.setattr(system_access.platform, "system", lambda: "Darwin")
+    monkeypatch.setitem(sys.modules, "Quartz", SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: False))
+    monkeypatch.setitem(sys.modules, "ApplicationServices", SimpleNamespace(AXIsProcessTrusted=lambda: False))
+    args = {"task": "Open the desktop app", "surface": "desktop"}
+    manifest = system_access.access_manifest_for_tool("gui_agent", args)
+    assert manifest is not None
+
+    assert hook("provider.before", {
+        "resolved_snapshot": snapshot, "context": {"messages": []},
+        "supports_idempotency_key": True,
+    }) is False
+    assert hook("provider.after", {
+        "message": {"role": "assistant", "content": [], "api": "fake",
+                     "provider": "fake", "model": "fake"},
+        "provider_request_id": "request-system-public", "usage": {},
+    }) is False
+    payload = {
+        "tool_call_id": "gui-call", "tool_name": "gui_agent",
+        "arguments": args, "next_tool_index": 0, "pre_wait": manifest,
+    }
+    assert hook("tool.before", payload) is True
+    paused = store.get_execution(execution.execution_id)
+    assert paused is not None and paused.status is ExecutionStatus.PAUSED
+    assert paused.reason_code == "system_access_required"
+    wait = DurableWaitStore(store).list_open(execution_id=execution.execution_id)[0]
+    assert wait.kind == "system_access" and wait.expires_at == 0
+    assert not [effect for effect in EffectStore(store).list_unresolved(execution.execution_id)
+                if effect.metadata.get("kind") == "tool.before"]
+
+    monkeypatch.setattr(system_access, "report", lambda: {
+        "platform": "Darwin",
+        "capabilities": [
+            {"id": "screen_recording", "status": "granted"},
+            {"id": "accessibility", "status": "granted"},
+        ],
+    })
+    asyncio.run(control.recover_wait_outcomes())
+    asyncio.run(control.recover_wait_outcomes())
+    resumed = store.get_execution(execution.execution_id)
+    assert resumed is not None and resumed.status is ExecutionStatus.RUNNING
+    assert activations == [(execution.execution_id, wait.checkpoint_id)]
+    assert DurableWaitStore(store).get_wait(wait.wait_id).status is WaitStatus.RESOLVED
+
+
+def test_forced_gui_entry_uses_durable_system_wait_before_subprocess(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from openprogram import system_access
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.execution.control import RuntimeControlService
+    from openprogram.execution.driver import DriverRegistry
+    from openprogram.execution.waits import DurableWaitStore
+
+    store = ExecutionStore(tmp_path / "forced-system.sqlite3")
+    revision = store.create_revision(manifest={"entrypoint": "forced"})
+    payload = {
+        "version": 1, "kind": "forced_tool", "tool_name": "gui_agent",
+        "tool_input": {"task": "Open desktop", "surface": "desktop"},
+        "source": "web", "agent_id": "main",
+    }
+    execution = store.admit_execution(
+        execution_id="exec-forced-system", run_id="run-forced-system",
+        session_id="session-forced-system", revision_id=revision.revision_id,
+        input_ref="input:forced-system", input_hash="forced-system-hash",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "owner"}, config_snapshot_ref="config:forced-system",
+        capabilities=AgentProductionDriver.capabilities_for_payload(payload),
+        agent_turn_payload=payload,
+    )
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(
+        execution.execution_id, expected_version=execution.status_version,
+        owner_id="forced-system", ttl_seconds=30,
+    )
+    active, running = attempts.activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    calls = []
+
+    def fake_dispatch(**kwargs):
+        calls.append(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr("openprogram.agent.dispatcher.dispatch_forced_tool_call", fake_dispatch)
+    monkeypatch.setattr(system_access.platform, "system", lambda: "Darwin")
+    monkeypatch.setitem(sys.modules, "Quartz", SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: False))
+    monkeypatch.setitem(sys.modules, "ApplicationServices", SimpleNamespace(AXIsProcessTrusted=lambda: False))
+    control = RuntimeControlService(store, attempts, DriverRegistry())
+    driver = AgentProductionDriver(store, control_service=control)
+
+    async def resume(attempt, activation):
+        binding = await driver.activate(attempt, activation)
+        driver.activation_committed(binding)
+        await binding.handle.done
+
+    control.activator = resume
+    binding = asyncio.run(driver.activate(active, activation=None))
+    driver.activation_committed(binding)
+    async def wait_done():
+        return await binding.handle.done
+    asyncio.run(wait_done())
+    wait = DurableWaitStore(store).list_open(execution_id=execution.execution_id)[0]
+    assert wait.kind == "system_access"
+    assert calls == []
+
+    monkeypatch.setattr(system_access, "report", lambda: {
+        "platform": "Darwin",
+        "capabilities": [
+            {"id": "screen_recording", "status": "granted"},
+            {"id": "accessibility", "status": "granted"},
+        ],
+    })
+    asyncio.run(control.recover_wait_outcomes())
+    asyncio.run(control.recover_wait_outcomes())
+    assert len(calls) == 1
+    resumed = store.get_execution(execution.execution_id)
+    assert resumed is not None and resumed.status is ExecutionStatus.COMPLETED
 
 
 def test_ordinary_agent_and_job_advertise_branch_capabilities():

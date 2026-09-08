@@ -481,7 +481,7 @@ class RuntimeControlService:
         if (
             execution.status is not ExecutionStatus.PAUSED
             or execution.current_attempt_id is not None
-            or execution.reason_code != "wait_open"
+            or execution.reason_code not in {"wait_open", "system_access_required"}
         ):
             return execution
         wait_checkpoint_id = getattr(wait, "checkpoint_id", None)
@@ -490,10 +490,11 @@ class RuntimeControlService:
         outcome = wait.outcome
         policy_key = {
             "answered": "on_answer", "declined": "on_decline", "timeout": "on_timeout",
+            "granted": "on_grant",
         }.get(outcome)
         if policy_key is None:
             return execution
-        disposition = str(wait.policy_snapshot.get(policy_key, "continue" if outcome == "answered" else "fail"))
+        disposition = str(wait.policy_snapshot.get(policy_key, "continue" if outcome in {"answered", "granted"} else "fail"))
         if disposition == "continue":
             scheduler = self._wait_resume_scheduler
             if scheduler is not None:
@@ -539,6 +540,33 @@ class RuntimeControlService:
         """
         from .waits import DurableWaitStore
 
+        waits = DurableWaitStore(self.executions)
+        # System access is resolved only by a worker on the execution host.
+        # The report is read-only and a failed or unknown probe leaves the
+        # durable wait open for a later reconciliation pass.
+        from openprogram.system_access import report as system_access_report
+        for wait in waits.list_open():
+            if wait.kind != "system_access":
+                continue
+            try:
+                granted = waits.resolve_system_access(
+                    wait.wait_id, report=system_access_report(), owner_id=self.owner_id,
+                )
+            except Exception:
+                granted = None
+            if granted is not None:
+                try:
+                    from openprogram.events import emit_ws_frame
+                    execution = self.executions.get_execution(granted.execution_id)
+                    emit_ws_frame({"type": "system_access.resolved", "data": {
+                        "wait_id": granted.wait_id,
+                        "execution_id": granted.execution_id,
+                        "session_id": execution.session_id if execution else None,
+                        "required_capabilities": list(granted.request.get("required_capabilities", [])),
+                    }})
+                except Exception:
+                    _log.debug("failed to publish system access resolution", exc_info=True)
+
         from openprogram.agent.permissions import reconcile_permission_waits
         permission_sessions = set()
         for wait in DurableWaitStore(self.executions).list_open():
@@ -549,7 +577,7 @@ class RuntimeControlService:
         for session_id in permission_sessions:
             await reconcile_permission_waits(session_id, service=self)
         recovered: list[ExecutionRecord] = []
-        for wait in DurableWaitStore(self.executions).list_outcomes():
+        for wait in waits.list_outcomes():
             execution = self.executions.get_execution(wait.execution_id)
             if execution is None:
                 continue
@@ -586,7 +614,8 @@ class RuntimeControlService:
 
         if policy_snapshot.get("version") != 1:
             raise AgentSafePointConflict("invalid_wait_policy", "safe-point wait policy must use version 1")
-        for field in ("on_answer", "on_decline", "on_timeout"):
+        policy_fields = ("on_grant",) if kind == "system_access" else ("on_answer", "on_decline", "on_timeout")
+        for field in policy_fields:
             value = policy_snapshot.get(field)
             if value is not None and value not in {"continue", "fail", "cancel"}:
                 raise AgentSafePointConflict("invalid_wait_policy", f"{field} has an invalid disposition")
@@ -665,17 +694,18 @@ class RuntimeControlService:
                     checkpoint_id=checkpoint.checkpoint_id,
                     wait_id=wait_id,
                 )
+                wait_reason = "system_access_required" if kind == "system_access" else "wait_open"
                 pausing = self.executions._transition_execution(
                     connection, execution_id,
                     expected_version=updated.status_version,
                     target=ExecutionStatus.PAUSING,
-                    reason_code="wait_open",
+                    reason_code=wait_reason,
                 )
                 paused = self.executions._transition_execution(
                     connection, execution_id,
                     expected_version=pausing.status_version,
                     target=ExecutionStatus.PAUSED,
-                    reason_code="wait_open",
+                    reason_code=wait_reason,
                     clear_owner=True,
                 )
                 ended = self.attempts._end_for_owner_loss(

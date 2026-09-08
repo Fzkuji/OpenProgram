@@ -87,6 +87,14 @@ class AgentDriverHandle:
     done: Any
 
 
+@dataclass(frozen=True)
+class _SafePointHandoff:
+    """Marker returned after publishing a durable execution wait."""
+
+    _execution_safe_point_handoff: bool = True
+    failed: bool = False
+
+
 class _ThreadResultFuture(Future[Any]):
     """A result future that remains awaitable from an activation loop.
 
@@ -376,11 +384,18 @@ class AgentProductionDriver:
         envelope = normalize_agent_turn_payload(payload)
         if envelope["kind"] == "chat":
             return self.activation.build_request(record, activation)
-        if activation is not None and (activation.checkpoint is not None or activation.steer_inputs):
+        if activation is not None and activation.steer_inputs:
             raise AgentDriverError(
                 "unsupported_activation_state",
-                "forced-tool activations do not support Agent checkpoints",
+                "forced-tool activations do not support steering",
             )
+        if activation is not None and activation.checkpoint is not None:
+            marker = activation.checkpoint.state_refs.get("forced_tool")
+            if not isinstance(marker, Mapping) or marker.get("version") != 1:
+                raise AgentDriverError(
+                    "unsupported_activation_state",
+                    "forced-tool activation checkpoint is not a system access handoff",
+                )
         return ForcedToolActivation(
             session_id=record.session_id,
             tool_name=envelope["tool_name"],
@@ -432,7 +447,23 @@ class AgentProductionDriver:
             )
         envelope = normalize_agent_turn_payload(payload)
         if envelope["kind"] != "chat":
-            return CapabilitySet()
+            tool_name = str(envelope.get("tool_name") or "")
+            tool_input = envelope.get("tool_input")
+            surface = str(tool_input.get("surface") or "").strip().lower() if isinstance(tool_input, Mapping) else ""
+            desktop_wait = (
+                tool_name == "gui_agent"
+                and surface in {"", "desktop"}
+                and isinstance(tool_input, Mapping)
+                and not tool_input.get("vm_url")
+                and not (not surface and tool_input.get("backend"))
+            )
+            if not desktop_wait:
+                return CapabilitySet()
+            return CapabilitySet(
+                pause=True,
+                safe_point_kinds=("agent.wait.before_tool",),
+                state_schema_version=AGENT_CHECKPOINT_SCHEMA_VERSION,
+            )
         request = envelope["request"]
         text = str(request.get("user_text") or "").lstrip()
         if (
@@ -506,12 +537,7 @@ class AgentProductionDriver:
                 request.advance_head = False
         steer_inputs = tuple(activation.steer_inputs) if activation is not None else ()
         continuation = None
-        if activation is not None and activation.checkpoint is not None:
-            if isinstance(request, ForcedToolActivation):
-                raise AgentDriverError(
-                    "unsupported_activation_state",
-                    "forced-tool activations do not support Agent checkpoints",
-                )
+        if activation is not None and activation.checkpoint is not None and not isinstance(request, ForcedToolActivation):
             try:
                 continuation = AgentContinuation.from_checkpoint(
                     store=self.executions,
@@ -1031,6 +1057,13 @@ class AgentProductionDriver:
                     execution_context=execution_context,
                 )
             elif isinstance(request, ForcedToolActivation):
+                from openprogram.system_access import access_manifest_for_tool
+                manifest = access_manifest_for_tool(
+                    request.tool_name, dict(request.tool_input),
+                )
+                if manifest is not None:
+                    self._open_forced_system_access_wait(attempt, request, manifest)
+                    return _SafePointHandoff()
                 from openprogram.agent.dispatcher import dispatch_forced_tool_call
 
                 result = dispatch_forced_tool_call(
@@ -1105,6 +1138,78 @@ class AgentProductionDriver:
                 cancel_event,
                 execution_id=attempt.execution_id,
             )
+
+    def _open_forced_system_access_wait(
+        self,
+        attempt: AttemptRecord,
+        request: ForcedToolActivation,
+        manifest: Mapping[str, Any],
+    ) -> None:
+        """Suspend a forced local GUI entry before its subprocess is spawned."""
+        from openprogram.execution.checkpoints import CheckpointFragment
+
+        execution = self.executions.get_execution(attempt.execution_id)
+        if execution is None:
+            raise AgentDriverError(
+                "execution_not_found",
+                "execution disappeared before system access wait",
+            )
+        digest = hashlib.sha256(canonical_json_bytes({
+            "execution_id": attempt.execution_id,
+            "generation": attempt.generation,
+            "tool_name": request.tool_name,
+            "tool_input": dict(request.tool_input),
+        })).hexdigest()[:32]
+        wait_id = f"wait_{digest}"
+        request_data = {
+            "prompt": str(manifest.get("prompt") or ""),
+            "options": list(manifest.get("options") or ()),
+            "multi": bool(manifest.get("multi", False)),
+            "allow_custom": bool(manifest.get("allow_custom", False)),
+            "detail": str(manifest.get("detail") or ""),
+            "schema": dict(manifest.get("schema") or {}),
+            "questions": list(manifest.get("questions") or ()),
+            **dict(manifest.get("request_metadata") or {}),
+        }
+        suspension = self._control_service().open_wait_at_safe_point(
+            execution_id=attempt.execution_id,
+            attempt_id=attempt.attempt_id,
+            generation=attempt.generation,
+            expected_version=execution.status_version,
+            fragment=CheckpointFragment(
+                safe_point_kind="agent.wait.before_tool",
+                frontier=({"step_id": "forced_tool.before", "phase": "before_tool"},),
+                state_refs={"forced_tool": {
+                    "version": 1,
+                    "tool_name": request.tool_name,
+                    "tool_input": dict(request.tool_input),
+                }},
+            ),
+            kind="system_access",
+            request=request_data,
+            policy_snapshot=dict(manifest.get("policy_snapshot") or {
+                "version": 1, "kind": "system_access", "on_grant": "continue",
+            }),
+            expires_at=0,
+            wait_id=wait_id,
+        )
+        try:
+            from openprogram.events import emit_ws_frame
+            emit_ws_frame({"type": "system_access.waiting", "data": {
+                "id": suspension.wait.wait_id,
+                "wait_id": suspension.wait.wait_id,
+                "kind": "system_access",
+                "session_id": request.session_id,
+                "execution_id": attempt.execution_id,
+                "required_capabilities": list(request_data.get("required_capabilities", [])),
+                "capabilities": list(request_data.get("capabilities", [])),
+                "wait_generation": suspension.wait.claim_generation,
+                "expected_version": suspension.execution.status_version,
+                "expires_at": 0,
+                "reason_code": "system_access_required",
+            }})
+        except Exception:
+            _log.debug("failed to publish forced system access wait", exc_info=True)
 
     def _safe_point_hook(
         self,
@@ -1378,12 +1483,36 @@ class AgentProductionDriver:
                 if not provider_action_id or not tool_call_id:
                     raise AgentDriverError("checkpoint_schema_invalid", "wait has no stable provider or tool identity")
                 wait_kind = str(pre_wait.get("kind") or "")
-                if wait_kind not in {"approval", "ask", "ask_many", "confirm", "form"}:
+                if wait_kind not in {"approval", "ask", "ask_many", "confirm", "form", "system_access"}:
                     raise AgentDriverError("invalid_wait", "wait kind is not supported at an Agent tool boundary")
-                wait_id = "wait_" + digest(
+                wait_id_parts = [
                     attempt.execution_id, provider_action_id, tool_call_id, wait_kind,
-                )[:32]
+                ]
+                if wait_kind == "system_access":
+                    wait_id_parts.append(str(attempt.generation))
+                wait_id = "wait_" + digest(*wait_id_parts)[:32]
                 existing = DurableWaitStore(self.executions).get_wait(wait_id)
+                if wait_kind == "system_access":
+                    from openprogram.system_access import access_manifest_for_tool
+                    # The manifest was captured while building the tool list;
+                    # re-probe at the canonical boundary before opening or
+                    # reusing a wait so a grant race does not suspend a task
+                    # after access is already available.
+                    refreshed = access_manifest_for_tool(
+                        str(payload.get("tool_name") or ""),
+                        dict(payload.get("arguments") or {}),
+                    )
+                    if refreshed is None:
+                        return False
+                    pre_wait = refreshed
+                    if existing is not None and existing.status is WaitStatus.RESOLVED:
+                        # A resolved receipt is tied to an earlier executor
+                        # report. Never reuse it after a revocation race.
+                        wait_id = "wait_" + digest(
+                            attempt.execution_id, provider_action_id, tool_call_id,
+                            wait_kind, str(attempt.generation), "recheck",
+                        )[:32]
+                        existing = DurableWaitStore(self.executions).get_wait(wait_id)
                 if existing is not None:
                     if existing.status is WaitStatus.RESOLVED:
                         payload["preapproved_wait_id"] = wait_id
@@ -1444,7 +1573,8 @@ class AgentProductionDriver:
                             # live notification on the shared event stream.
                             from openprogram.events import emit_ws_frame
                             sink = emit_ws_frame
-                        sink({"type": "question.asked", "data": {
+                        frame_type = "system_access.waiting" if wait_kind == "system_access" else "question.asked"
+                        data = {
                             "id": suspension.wait.wait_id,
                             "session_id": request.session_id,
                             "kind": wait_kind, "prompt": wait_request["prompt"],
@@ -1458,7 +1588,16 @@ class AgentProductionDriver:
                             "wait_generation": suspension.wait.claim_generation,
                             "expected_version": suspension.execution.status_version,
                             "expires_at": suspension.wait.expires_at,
-                        }})
+                        }
+                        if wait_kind == "system_access":
+                            data.update({
+                                "wait_id": suspension.wait.wait_id,
+                                "execution_id": attempt.execution_id,
+                                "required_capabilities": list(wait_request.get("required_capabilities", [])),
+                                "capabilities": list(wait_request.get("capabilities", [])),
+                                "reason_code": "system_access_required",
+                            })
+                        sink({"type": frame_type, "data": data})
                     except Exception:
                         _log.exception("failed to publish durable approval wait")
                     return True

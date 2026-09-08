@@ -31,7 +31,7 @@ class WaitStatus(str, Enum):
 _TERMINAL_WAIT_STATUSES = frozenset({
     WaitStatus.RESOLVED, WaitStatus.DECLINED, WaitStatus.EXPIRED, WaitStatus.CANCELLED,
 })
-_WAIT_KINDS = frozenset({"ask", "confirm", "approval", "form", "ask_many"})
+_WAIT_KINDS = frozenset({"ask", "confirm", "approval", "form", "ask_many", "system_access"})
 _MAX_WAIT_REQUEST_BYTES = 256 * 1024
 _MAX_WAIT_ANSWER_BYTES = 64 * 1024
 _APPROVAL_ANSWERS = frozenset({"approve", "allow", "允许", "yes", "是"})
@@ -277,7 +277,8 @@ class DurableWaitStore:
             raise cls._invalid_answer("wait policy kind does not match the request")
         if policy.get("version") != 1:
             raise cls._invalid_answer("wait policy version is invalid")
-        for field in ("on_answer", "on_decline", "on_timeout"):
+        fields = ("on_grant",) if kind == "system_access" else ("on_answer", "on_decline", "on_timeout")
+        for field in fields:
             disposition = policy.get(field)
             if disposition is not None and disposition not in {"continue", "fail", "cancel"}:
                 raise cls._invalid_answer(f"wait policy {field} is invalid")
@@ -319,6 +320,8 @@ class DurableWaitStore:
                     raise cls._invalid_answer("ask_many question is invalid")
                 cls._validate_choice(answer[index], question, label=f"ask_many[{index}]")
             return
+        if kind == "system_access":
+            raise cls._invalid_answer("system access waits cannot be answered")
         raise cls._invalid_answer("unsupported wait kind")
 
     def _record(self, row) -> WaitRecord:
@@ -464,6 +467,56 @@ class DurableWaitStore:
             )
         return len(rows)
 
+    def resolve_system_access(
+        self, wait_id: str, *, report: Mapping[str, Any], owner_id: str,
+    ) -> WaitRecord | None:
+        """Resolve a system wait only after a fresh executor capability report."""
+        capabilities = report.get("capabilities") if isinstance(report, Mapping) else None
+        rows = {
+            str(row.get("id")): row
+            for row in (capabilities or ())
+            if isinstance(row, Mapping) and row.get("id")
+        }
+        now = time.time()
+        with self.executions._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM execution_waits WHERE wait_id = ?", (wait_id,)
+            ).fetchone()
+            if row is None or row["kind"] != "system_access" or row["status"] != WaitStatus.OPEN.value:
+                return None
+            request = self._decode_ref(str(row["execution_id"]), str(row["request_ref"]))
+            required = request.get("required_capabilities", []) if isinstance(request, Mapping) else []
+            if not isinstance(required, list) or not required or any(
+                rows.get(str(capability), {}).get("status") != "granted"
+                for capability in required
+            ):
+                return None
+            execution = self.executions._require_execution(connection, row["execution_id"])
+            if (
+                execution.status is not ExecutionStatus.PAUSED
+                or execution.current_attempt_id is not None
+                or execution.checkpoint_head_id != row["checkpoint_id"]
+                or execution.status in {
+                    ExecutionStatus.CANCELLED, ExecutionStatus.COMPLETED,
+                    ExecutionStatus.FAILED, ExecutionStatus.INTERRUPTED,
+                }
+            ):
+                return None
+            changed = connection.execute(
+                "UPDATE execution_waits SET status = 'resolved', claim_owner = ?, claim_expires_at = NULL, outcome = 'granted', resolved_at = ?, updated_at = ? WHERE wait_id = ? AND status = 'open'",
+                (owner_id, now, now, wait_id),
+            ).rowcount
+            if changed != 1:
+                return None
+            self.executions._append_event(
+                connection, execution_id=execution.execution_id,
+                execution_version=execution.status_version,
+                kind="execution.wait.granted",
+                payload={"wait_id": wait_id, "generation": int(row["claim_generation"]), "outcome": "granted"},
+                created_at=now,
+            )
+        return self.get_wait(wait_id)
+
     def resolve_with_command(
         self,
         *, command_id: str, execution_id: str, expected_version: int,
@@ -495,6 +548,11 @@ class DurableWaitStore:
             row = connection.execute("SELECT * FROM execution_waits WHERE wait_id = ?", (wait_id,)).fetchone()
             if row is None or row["execution_id"] != execution_id:
                 raise ExecutionConflict("wait_not_found", "wait does not belong to execution")
+            if row["kind"] == "system_access":
+                raise ExecutionConflict(
+                    "invalid_wait_command",
+                    "system access waits are resolved by the execution worker",
+                )
             if duplicate:
                 resolved_duplicate = True
                 result_command = command

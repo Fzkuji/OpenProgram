@@ -9,7 +9,7 @@ import sqlite3
 from .model import CapabilitySet
 
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 _LEGACY_SCHEMA_VERSION = 1
 _PREVIOUS_SCHEMA_VERSION = 2
 _FORK_RETRY_SCHEMA_VERSION = 3
@@ -23,6 +23,7 @@ _RESOURCE_SAGA_SCHEMA_VERSION = 10
 _JOB_DURABLE_SCHEMA_VERSION = 11
 _PARTIAL_RUNTIME_CONTROL_SCHEMA_VERSION = 12
 _RUNTIME_CONTROL_WITHOUT_WAITS_SCHEMA_VERSION = 13
+_SYSTEM_ACCESS_WAIT_SCHEMA_VERSION = 14
 _FINISH_REPAIR_SLOT_LIMIT = 4096
 
 # These are the only projections emitted by the canonical execution store.
@@ -70,6 +71,8 @@ def initialize_schema(connection: sqlite3.Connection) -> None:
         _RUNTIME_CONTROL_WITHOUT_WAITS_SCHEMA_VERSION,
     }:
         _migrate_v11(connection)
+    elif current == _SYSTEM_ACCESS_WAIT_SCHEMA_VERSION:
+        _migrate_v14(connection)
     elif current == SCHEMA_VERSION:
         _create_current_schema(connection)
     else:
@@ -941,7 +944,7 @@ def _create_durable_wait_schema(connection: sqlite3.Connection) -> None:
             FOREIGN KEY(execution_id) REFERENCES executions(execution_id),
             FOREIGN KEY(attempt_id) REFERENCES attempts(attempt_id),
             FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(checkpoint_id),
-            CHECK(kind IN ('ask', 'confirm', 'approval', 'form', 'ask_many')),
+            CHECK(kind IN ('ask', 'confirm', 'approval', 'form', 'ask_many', 'system_access')),
             CHECK(status IN ('open', 'claimed', 'resolved', 'declined', 'expired', 'cancelled')),
             CHECK(claim_generation >= 0),
             CHECK(generation >= 0)
@@ -956,6 +959,30 @@ def _create_durable_wait_schema(connection: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS execution_waits_claim_expiry "
         "ON execution_waits(status, claim_expires_at, expires_at)"
     )
+
+
+def _migrate_v14(connection: sqlite3.Connection) -> None:
+    """Add the execution-owned system access wait kind."""
+    if connection.in_transaction:
+        raise UnsupportedSchema(
+            _SYSTEM_ACCESS_WAIT_SCHEMA_VERSION,
+            "cannot migrate system access waits inside an active transaction",
+        )
+    try:
+        connection.execute("BEGIN")
+        connection.execute("DROP INDEX IF EXISTS execution_waits_execution_status")
+        connection.execute("DROP INDEX IF EXISTS execution_waits_claim_expiry")
+        connection.execute("ALTER TABLE execution_waits RENAME TO execution_waits_v14")
+        _create_durable_wait_schema(connection)
+        connection.execute(
+            "INSERT INTO execution_waits (wait_id, execution_id, attempt_id, generation, checkpoint_id, kind, request_ref, request_hash, policy_snapshot_ref, status, claim_generation, claim_owner, claim_expires_at, answer_ref, outcome, created_at, expires_at, resolved_at, updated_at) "
+            "SELECT wait_id, execution_id, attempt_id, generation, checkpoint_id, kind, request_ref, request_hash, policy_snapshot_ref, status, claim_generation, claim_owner, claim_expires_at, answer_ref, outcome, created_at, expires_at, resolved_at, updated_at FROM execution_waits_v14"
+        )
+        connection.execute("DROP TABLE execution_waits_v14")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
 
 
 def _migrate_v1(connection: sqlite3.Connection) -> None:

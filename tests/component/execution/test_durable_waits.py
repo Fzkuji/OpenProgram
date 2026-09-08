@@ -413,6 +413,109 @@ def test_no_deadline_wait_survives_long_delay_and_store_reopen(tmp_path):
     assert result.command.status.value == 'applied'
 
 
+def test_system_access_wait_is_worker_resolved_and_cannot_accept_question_answer(tmp_path):
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, expected_version=execution.status_version,
+        fragment=_decision_fragment(), kind="system_access",
+        request={"tool": "gui_agent", "required_capabilities": ["screen_recording"]},
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0, wait_id="wait_system_access",
+    )
+    waits = DurableWaitStore(executions)
+
+    with pytest.raises(ExecutionConflict) as raised:
+        waits.resolve_with_command(
+            command_id="system-answer", execution_id=execution.execution_id,
+            expected_version=suspended.execution.status_version, actor={"surface": "test"},
+            kind=CommandKind.WAIT_ANSWER, wait_id=suspended.wait.wait_id,
+            generation=suspended.wait.claim_generation, answer={"answer": "allow", "scope": "once"},
+        )
+    assert raised.value.code == "invalid_wait_command"
+    assert waits.get_wait(suspended.wait.wait_id).status is WaitStatus.OPEN
+    with pytest.raises(ExecutionConflict) as declined:
+        waits.resolve_with_command(
+            command_id="system-decline", execution_id=execution.execution_id,
+            expected_version=suspended.execution.status_version, actor={"surface": "test"},
+            kind=CommandKind.WAIT_DECLINE, wait_id=suspended.wait.wait_id,
+            generation=suspended.wait.claim_generation, answer="no",
+        )
+    assert declined.value.code == "invalid_wait_command"
+
+    resolved = waits.resolve_system_access(
+        suspended.wait.wait_id,
+        report={"capabilities": [{"id": "screen_recording", "status": "granted"}]},
+        owner_id="worker-test",
+    )
+    assert resolved is not None
+    assert resolved.status is WaitStatus.RESOLVED
+    assert resolved.outcome == "granted"
+    restored = DurableWaitStore(ExecutionStore(tmp_path / "executions.db")).get_wait(
+        suspended.wait.wait_id
+    )
+    assert restored is not None and restored.outcome == "granted"
+
+
+def test_system_access_wait_unknown_or_cancelled_never_resumes(tmp_path):
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, expected_version=execution.status_version,
+        fragment=_decision_fragment(), kind="system_access",
+        request={"tool": "gui_agent", "required_capabilities": ["accessibility"]},
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0, wait_id="wait_system_cancelled",
+    )
+    waits = DurableWaitStore(executions)
+    assert waits.resolve_system_access(
+        suspended.wait.wait_id,
+        report={"capabilities": [{"id": "accessibility", "status": "unknown"}]},
+        owner_id="worker-test",
+    ) is None
+    assert waits.get_wait(suspended.wait.wait_id).status is WaitStatus.OPEN
+    assert waits.cancel_execution(execution.execution_id) == 1
+    assert waits.resolve_system_access(
+        suspended.wait.wait_id,
+        report={"capabilities": [{"id": "accessibility", "status": "granted"}]},
+        owner_id="worker-test",
+    ) is None
+    assert waits.get_wait(suspended.wait.wait_id).status is WaitStatus.CANCELLED
+
+
+def test_system_access_grant_recovery_resumes_same_checkpoint_once(tmp_path):
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    activations = []
+
+    async def activate(next_attempt, activation):
+        activations.append((next_attempt.attempt_id, activation.checkpoint.checkpoint_id))
+
+    service = RuntimeControlService(
+        executions, attempts, DriverRegistry(), activator=activate,
+    )
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, expected_version=execution.status_version,
+        fragment=_decision_fragment(), kind="system_access",
+        request={"tool": "gui_agent", "required_capabilities": ["screen_recording"]},
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0, wait_id="wait_system_resume",
+    )
+    waits = DurableWaitStore(executions)
+    waits.resolve_system_access(
+        suspended.wait.wait_id,
+        report={"capabilities": [{"id": "screen_recording", "status": "granted"}]},
+        owner_id="worker-test",
+    )
+
+    asyncio.run(service.recover_wait_outcomes())
+    asyncio.run(service.recover_wait_outcomes())
+    assert len(activations) == 1
+    assert activations[0][1] == suspended.checkpoint.checkpoint_id
+
+
 @pytest.mark.parametrize('change', ['unchanged', 'modified', 'deleted'])
 def test_file_approval_rechecks_durable_state_on_resume(tmp_path, monkeypatch, change):
     from types import SimpleNamespace

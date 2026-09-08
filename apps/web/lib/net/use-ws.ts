@@ -509,6 +509,15 @@ export function useWS(): void {
         // runtime.ask/confirm/approval —— 系统停下来等用户决定。入 composer
         // 的 pendingDecisions 队列，由输入框 question/approval mode 承接呈现
         // （docs/design/ui/composer-interaction-modes.md）。不再走独立浮窗。
+        case "system_access.waiting":
+        case "system_access.resolved":
+          if (msg.type === "system_access.waiting" && d) {
+            for (const request of pendingExecutionReplayRequests([d])) {
+              if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(request));
+            }
+          }
+          window.dispatchEvent(new CustomEvent("op:system-access", { detail: { type: msg.type, data: d } }));
+          return true;
         case "question.asked":
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const dd = (d || {}) as Record<string, unknown>;

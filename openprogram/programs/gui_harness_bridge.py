@@ -149,8 +149,10 @@ def install_gui_harness_web_use(original: Callable | None = None):
                 task=task, max_steps=steps, max_seconds=seconds, backend=backend,
                 runtime=runtime, allow_general=allow_general,
             ))
-        # Check before planning: no model call or desktop effect is needed to
-        # discover a known missing local OS grant. Explicit remote surfaces skip it.
+        # Direct callers that bypass the canonical Agent safe-point still
+        # receive the structured advisory result used by the Functions/CLI
+        # surfaces. Canonical Agent dispatch checks the same report before
+        # this function is entered and owns the durable wait.
         if selected_surface in {"", "desktop"} and not vm_url:
             from openprogram.system_access import report
             access = report()

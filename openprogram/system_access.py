@@ -6,6 +6,7 @@ absence must not make a headless installation unhealthy.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import platform
 import socket
@@ -14,6 +15,7 @@ import threading
 import time
 
 _REQUEST_LOCK = threading.Lock()
+_log = logging.getLogger(__name__)
 _MAC = {
     'screen_recording': ('Screen recording', 'Quartz', 'CGPreflightScreenCaptureAccess',
                          'Privacy & Security > Screen & System Audio Recording'),
@@ -76,9 +78,54 @@ def report() -> dict:
             bundle = importlib.import_module('Foundation').NSBundle.mainBundle()
             application = str(bundle.objectForInfoDictionaryKey_('CFBundleName') or '')
         except Exception:
-            pass
+            _log.debug("bundle name lookup unavailable", exc_info=True)
     return {'platform': system, 'application': application, 'host': socket.gethostname(), 'executable': sys.executable,
             'pid': os.getpid(), 'checked_at': time.time(), 'capabilities': rows}
+
+
+def access_manifest_for_tool(tool_name: str, args: dict | None) -> dict | None:
+    """Return a pre-effect durable wait manifest for local desktop GUI use.
+
+    Browser and VM GUI paths have their own access boundary.  Only the
+    macOS desktop executor has explicit OS capabilities that can be waited on
+    before the GUI agent plans or dispatches an effect.
+    """
+    if str(tool_name) != 'gui_agent' or not isinstance(args, dict):
+        return None
+    surface = str(args.get('surface') or '').strip().lower()
+    if surface not in {'', 'desktop'} or args.get('vm_url'):
+        return None
+    # The bridge treats a backend without an explicit desktop surface as the
+    # browser execution path.
+    if not surface and args.get('backend'):
+        return None
+    snapshot = report()
+    if snapshot.get('platform') != 'Darwin':
+        return None
+    capabilities = [dict(row) for row in snapshot.get('capabilities', ())
+                    if isinstance(row, dict) and row.get('id') in _MAC]
+    missing = [row for row in capabilities if row.get('status') != 'granted']
+    if not missing:
+        return None
+    required = [str(row['id']) for row in missing]
+    return {
+        'kind': 'system_access',
+        'required_capabilities': required,
+        'capabilities': capabilities,
+        'prompt': 'Desktop access is required before this GUI task can run.',
+        'options': [], 'multi': False, 'allow_custom': False,
+        'detail': 'Authorize the required capabilities on the execution computer, then return to OpenProgram.',
+        'schema': {}, 'questions': [], 'timeout': None,
+        'request_metadata': {
+            'tool': 'gui_agent', 'args': dict(args),
+            'required_capabilities': required,
+            'capabilities': capabilities,
+            'source': 'system_access',
+        },
+        'policy_snapshot': {
+            'version': 1, 'kind': 'system_access', 'on_grant': 'continue',
+        },
+    }
 
 
 def _open_settings(capability: str) -> bool:

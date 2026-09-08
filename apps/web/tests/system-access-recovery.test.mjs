@@ -29,11 +29,11 @@ function harness(autoOpen, responses) {
  return {flush,language:async()=>{text=(en)=>en;dirty=true;await flush();},poll:async()=>{for(const fn of timers)fn();await flush();},unmount:()=>{mounted=false;for(const slot of slots)slot?.cleanup?.();},get calls(){return calls;},get resumed(){return resumed;},get view(){return view;},get timers(){return timers.size;}};
 }
 const grant=()=>({ok:true,json:async()=>({capabilities:[{id:'screen_recording',status:'granted'}]})});
-test('actual recovery retries a failed final check after a later successful poll exactly once',async()=>{
+test('actual recovery never retries the function after failed or successful checks',async()=>{
  const h=harness(true,[grant(),{ok:false,status:503},grant(),grant(),grant()]);
  await h.flush();assert.equal(h.resumed,0);
- await h.poll();assert.equal(h.resumed,1);
- await h.poll();assert.equal(h.resumed,1);
+ await h.poll();assert.equal(h.resumed,0);
+ await h.poll();assert.equal(h.resumed,0);
  assert.equal(h.calls.some(([,method])=>method==='POST'),false);
  h.unmount();assert.equal(h.timers,0);
 });
@@ -47,8 +47,23 @@ test('unmount during the final check does not dispatch a retry',async()=>{
  const h=harness(true,[grant(),()=>pending]);await h.flush();h.unmount();release(grant());await h.flush();assert.equal(h.resumed,0);assert.equal(h.timers,0);
 });
 
-test('changing language during final check does not consume continuation',async()=>{
+test('changing language during a check never dispatches a continuation',async()=>{
  let release;const pending=new Promise(resolve=>release=resolve);
  const h=harness(true,[grant(),()=>pending,grant(),grant()]);await h.flush();
- await h.language();release(grant());await h.flush();assert.equal(h.resumed,1);h.unmount();
+ await h.language();release(grant());await h.flush();assert.equal(h.resumed,0);h.unmount();
+});
+
+test('native denial prompts once; later grant remains worker-owned',async()=>{
+ const denied={ok:true,json:async()=>({capabilities:[{id:'screen_recording',status:'not_granted',can_request:true}]})};
+ const requested={ok:true,json:async()=>({id:'screen_recording',status:'not_granted',can_request:true})};
+ const h=harness(true,[denied,requested,denied,denied,grant()]);
+ await h.flush();await h.poll();await h.poll();
+ assert.equal(h.calls.filter(([,method])=>method==='POST').length,1);
+ assert.equal(h.resumed,0);h.unmount();
+});
+
+test('unknown capability status never triggers an authorization request',async()=>{
+ const h=harness(true,[{ok:true,json:async()=>({capabilities:[{id:'screen_recording',status:'unknown',can_request:false}]})}]);
+ await h.flush();assert.equal(h.calls.some(([,method])=>method==='POST'),false);
+ assert.match(JSON.stringify(h.view),/could not be verified/);h.unmount();
 });

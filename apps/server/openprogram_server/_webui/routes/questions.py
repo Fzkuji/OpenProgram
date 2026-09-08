@@ -36,7 +36,10 @@ def register(app):
                 return JSONResponse(content={"questions": []}, status_code=404)
 
         store = default_store()
-        waits = DurableWaitStore(store).list_open(session_id=session_id)
+        waits = [
+            wait for wait in DurableWaitStore(store).list_open(session_id=session_id)
+            if wait.kind != "system_access"
+        ]
         if session_id is None:
             waits = [
                 wait for wait in waits
