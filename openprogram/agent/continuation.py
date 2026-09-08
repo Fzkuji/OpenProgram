@@ -303,6 +303,168 @@ def _json_value(value: Any, *, name: str, cap: int | None = None) -> tuple[dict[
     return _descriptor(payload), payload
 
 
+def _store_turn_display(
+    cards: list[Mapping[str, Any]] | None,
+    add,
+) -> dict[str, Any]:
+    """Persist display cards without blocking the resume-cursor checkpoint.
+
+    Small traces stay on ``turn_display_ref`` under the 64KiB delta cap.
+    Native observe traces that exceed that cap use the existing 1MiB state-blob
+    primitive, then page at 1MiB when needed. Display refs are optional.
+    """
+    if cards is None:
+        return {}
+    payload_cards = [dict(card) for card in cards if isinstance(card, Mapping)]
+    try:
+        return {
+            "turn_display_ref": add(
+                "turn_display", payload_cards, cap=MAX_AGENT_DELTA_BYTES,
+            ),
+        }
+    except AgentCheckpointError as exc:
+        if exc.code != "checkpoint_too_large":
+            raise
+    try:
+        return {
+            "turn_display_ref": add(
+                "turn_display", payload_cards, cap=MAX_AGENT_STATE_BLOB_BYTES,
+            ),
+        }
+    except AgentCheckpointError as exc:
+        if exc.code != "checkpoint_too_large":
+            raise
+    slim: list[dict[str, Any]] = []
+    for index, card in enumerate(payload_cards):
+        item = dict(card)
+        if len(canonical_json_bytes(item)) > MAX_AGENT_STATE_BLOB_BYTES:
+            result = item.get("result")
+            if isinstance(result, str) and result:
+                item.pop("result", None)
+                item["result_ref"] = add(
+                    f"turn_display_result.{index}",
+                    result,
+                    cap=MAX_AGENT_STATE_BLOB_BYTES,
+                )
+        slim.append(item)
+    pages: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for item in slim:
+        trial = [*current, item]
+        if current and len(canonical_json_bytes(trial)) > MAX_AGENT_STATE_BLOB_BYTES:
+            pages.append(current)
+            current = [item]
+        else:
+            current = trial
+    if current:
+        pages.append(current)
+    return {
+        "turn_display_refs": [
+            add(f"turn_display.{index}", page, cap=MAX_AGENT_STATE_BLOB_BYTES)
+            for index, page in enumerate(pages)
+        ],
+    }
+
+
+def _is_turn_display_ref_name(name: str) -> bool:
+    return (
+        name == "turn_display"
+        or name.startswith("turn_display.")
+        or name.startswith("turn_display_result.")
+    )
+
+
+def _drop_unreferenced_blobs(
+    refs: dict[str, dict[str, Any]],
+    blobs: dict[str, bytes],
+    removed: list[Mapping[str, Any]],
+) -> None:
+    named = {descriptor["ref"] for descriptor in refs.values()}
+    for descriptor in removed:
+        digest = descriptor.get("ref")
+        if isinstance(digest, str) and digest not in named:
+            blobs.pop(digest, None)
+
+
+def _page_result_ref_names(
+    refs: dict[str, dict[str, Any]],
+    blobs: dict[str, bytes],
+    descriptor: Mapping[str, Any],
+) -> list[str]:
+    raw = blobs.get(descriptor["ref"]) if isinstance(descriptor, Mapping) else None
+    if not isinstance(raw, bytes):
+        return []
+    try:
+        page = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    if not isinstance(page, list):
+        return []
+    names: list[str] = []
+    for card in page:
+        if not isinstance(card, Mapping):
+            continue
+        result_ref = card.get("result_ref")
+        if not isinstance(result_ref, Mapping):
+            continue
+        digest = result_ref.get("ref")
+        for name, owned in refs.items():
+            if (
+                name.startswith("turn_display_result.")
+                and owned.get("ref") == digest
+                and name not in names
+            ):
+                names.append(name)
+                break
+    return names
+
+
+def _retain_turn_display_within_ref_budget(
+    display_fields: dict[str, Any],
+    refs: dict[str, dict[str, Any]],
+    blobs: dict[str, bytes],
+) -> dict[str, Any]:
+    """Keep a prefix of optional display refs that fit ``MAX_AGENT_STATE_REFS``.
+
+    Cursor refs stay. Overflow display names are dropped. A content-addressed
+    blob is removed only when no remaining state_ref still names it.
+    """
+    if not display_fields or len(refs) <= MAX_AGENT_STATE_REFS:
+        return display_fields
+    remaining = MAX_AGENT_STATE_REFS - sum(
+        1 for name in refs if not _is_turn_display_ref_name(name)
+    )
+    kept_names: set[str] = set()
+    kept_fields: dict[str, Any] = {}
+    if remaining > 0 and "turn_display_ref" in display_fields:
+        kept_names.add("turn_display")
+        kept_fields["turn_display_ref"] = display_fields["turn_display_ref"]
+    elif remaining > 0 and isinstance(display_fields.get("turn_display_refs"), list):
+        kept_pages: list[Any] = []
+        for index, descriptor in enumerate(display_fields["turn_display_refs"]):
+            extra = [
+                name
+                for name in _page_result_ref_names(refs, blobs, descriptor)
+                if name not in kept_names
+            ]
+            cost = 1 + len(extra)
+            if remaining < cost:
+                break
+            remaining -= cost
+            kept_names.add(f"turn_display.{index}")
+            kept_names.update(extra)
+            kept_pages.append(descriptor)
+        if kept_pages:
+            kept_fields["turn_display_refs"] = kept_pages
+    removed = [
+        refs.pop(name)
+        for name in list(refs)
+        if _is_turn_display_ref_name(name) and name not in kept_names
+    ]
+    _drop_unreferenced_blobs(refs, blobs, removed)
+    return kept_fields
+
+
 def decode_turn_display(
     state: "AgentCheckpointV1",
     *,
@@ -316,11 +478,33 @@ def decode_turn_display(
     unfinished current-decision tools without a result so continue can fill
     them. This is display only; it does not authorize effect replay.
     """
+    def _inflate(card: Mapping[str, Any]) -> dict[str, Any]:
+        item = dict(card)
+        result_ref = item.get("result_ref")
+        if isinstance(result_ref, Mapping) and "result" not in item:
+            loaded_result = state.read_json_ref(store, execution_id, result_ref)
+            if isinstance(loaded_result, str):
+                item["result"] = loaded_result
+            item.pop("result_ref", None)
+        return item
+
+    page_refs = state.payload.get("turn_display_refs")
+    if isinstance(page_refs, list) and page_refs:
+        blocks: list[dict[str, Any]] = []
+        for descriptor in page_refs:
+            if not isinstance(descriptor, Mapping):
+                continue
+            loaded = state.read_json_ref(store, execution_id, descriptor)
+            if not isinstance(loaded, list):
+                continue
+            blocks.extend(_inflate(item) for item in loaded if isinstance(item, Mapping))
+        if blocks:
+            return blocks
     display_ref = state.payload.get("turn_display_ref")
     if isinstance(display_ref, Mapping):
         loaded = state.read_json_ref(store, execution_id, display_ref)
         if isinstance(loaded, list):
-            return [dict(item) for item in loaded if isinstance(item, Mapping)]
+            return [_inflate(item) for item in loaded if isinstance(item, Mapping)]
     blocks: list[dict[str, Any]] = []
     tools: dict[str, dict[str, Any]] = {}
     for action in state.payload.get("completed_actions") or ():
@@ -452,10 +636,6 @@ class AgentCheckpointV1:
         assistant_ref = add("assistant_message_delta", assistant_message, cap=MAX_AGENT_DELTA_BYTES)
         snapshot_ref = add("resolved_model_system_tool_snapshot", resolved_snapshot)
         tool_refs = [add(f"tool_result_delta.{index}", result, cap=MAX_AGENT_DELTA_BYTES) for index, result in enumerate(tool_results)]
-        display_ref = (
-            add("turn_display", list(turn_display), cap=MAX_AGENT_DELTA_BYTES)
-            if turn_display is not None else None
-        )
 
         receipt_values: list[dict[str, Any]] = []
         for index, receipt in enumerate(terminal_effect_receipts):
@@ -534,6 +714,14 @@ class AgentCheckpointV1:
             actions.append(action)
         if any(ref["ref"] not in covered_tool_refs for ref in tool_refs):
             raise AgentCheckpointError("checkpoint_schema_invalid", "tool results have no completed action")
+        display_fields = _store_turn_display(
+            None if turn_display is None else list(turn_display), add,
+        )
+        display_fields = _retain_turn_display_within_ref_budget(
+            display_fields, refs, blobs,
+        )
+        if len(refs) > MAX_AGENT_STATE_REFS:
+            raise AgentCheckpointError("state_ref_limit", "Agent checkpoint has too many state refs")
         payload = {
             "schema_version": AGENT_CHECKPOINT_SCHEMA_VERSION,
             "safe_point": dict(safe_point),
@@ -556,8 +744,7 @@ class AgentCheckpointV1:
             "pending_command_ids": list(pending_command_ids or []),
             "loaded_deferred_tools": list(loaded_deferred_tools or []),
         }
-        if display_ref is not None:
-            payload["turn_display_ref"] = display_ref
+        payload.update(display_fields)
         checkpoint = cls(payload=payload, blob_payloads=blobs)
         checkpoint.validate()
         if len(checkpoint.to_bytes()) > MAX_AGENT_CHECKPOINT_BYTES:
@@ -578,7 +765,7 @@ class AgentCheckpointV1:
         }
         if (
             not isinstance(value, Mapping)
-            or set(value) - {"loaded_deferred_tools", "turn_display_ref"} != required
+            or set(value) - {"loaded_deferred_tools", "turn_display_ref", "turn_display_refs"} != required
             or value.get("schema_version") != AGENT_CHECKPOINT_SCHEMA_VERSION
         ):
             raise AgentCheckpointError("checkpoint_schema_invalid", "unsupported Agent checkpoint schema")
@@ -661,6 +848,13 @@ class AgentCheckpointV1:
         }
         if "turn_display_ref" in value:
             expected_ref_names.add("turn_display")
+        if isinstance(value.get("turn_display_refs"), list):
+            expected_ref_names.update(
+                f"turn_display.{index}" for index in range(len(value["turn_display_refs"]))
+            )
+        expected_ref_names.update(
+            name for name in refs if name.startswith("turn_display_result.")
+        )
         # Historical results can outlive the current provider/tool decision.
         # Match the builder's content deduplication and exact semantic names;
         # arbitrary extra state refs remain invalid.
@@ -698,6 +892,17 @@ class AgentCheckpointV1:
             display_ref = _validate_descriptor(value["turn_display_ref"])
             if refs.get("turn_display") != display_ref:
                 raise AgentCheckpointError("state_ref_invalid", "turn display ref does not match state refs")
+        if "turn_display_refs" in value:
+            page_refs = value["turn_display_refs"]
+            if not isinstance(page_refs, list) or not page_refs:
+                raise AgentCheckpointError("state_ref_invalid", "turn display pages are invalid")
+            for index, descriptor in enumerate(page_refs):
+                checked = _validate_descriptor(descriptor)
+                if refs.get(f"turn_display.{index}") != checked:
+                    raise AgentCheckpointError("state_ref_invalid", "turn display page ref does not match state refs")
+        for name, descriptor in refs.items():
+            if name.startswith("turn_display_result."):
+                _validate_descriptor(descriptor)
         decision = value["current_decision"]
         if (
             not isinstance(decision, Mapping)
