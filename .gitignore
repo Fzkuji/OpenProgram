@@ -73,6 +73,7 @@ apps/web/.pip-open-test-*/
 apps/web/.control-bar-test-*/
 apps/web/.turn-files-test-*/
 apps/web/scripts/run-secret-replacement-*.mjs
+apps/cli/.auth_probe_*.mjs
 # Release staging copies web/out here before building the wheel.
 apps/server/openprogram_server/_webui/_frontend/
 # Keep ignoring staging produced by releases before the Server migration.
