@@ -450,10 +450,13 @@ class SessionStore:
                 continue
             # Empty shells: no history, older than 1 hour.
             if (now - created) > self._EMPTY_SHELL_AGE:
-                has_history = (sdir / "history").is_dir() and any(
-                    (sdir / "history").iterdir()
-                ) if (sdir / "history").exists() else False
-                if not has_history:
+                # An existing history directory is sufficient evidence to
+                # retain the session. Listing it here makes worker startup
+                # depend on remote filesystem directory enumeration (for
+                # example project-bound CloudStorage sessions). Empty
+                # history directories are harmless; missing/non-directory
+                # history paths remain eligible for cleanup.
+                if not (sdir / "history").is_dir():
                     to_delete.append(sid)
                     continue
             # Expired archives.

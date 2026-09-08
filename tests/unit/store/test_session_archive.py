@@ -5,6 +5,7 @@ time (see docs/reference/design/runtime/session/index-consistency.html).
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 
@@ -107,3 +108,46 @@ def test_set_archived_reports_unknown_sessions(tmp_path: Path) -> None:
     store = _store(tmp_path)
 
     assert store.set_archived("nope", True) is False
+
+
+def test_reopen_does_not_enumerate_existing_history(tmp_path: Path, monkeypatch) -> None:
+    """Startup cleanup must not list a remote-backed history directory."""
+    root = tmp_path / "sessions"
+    store = SessionStore(root)
+    store.create_session(
+        "existing-history",
+        "main",
+        created_at=time.time() - 7200.0,
+        updated_at=time.time() - 7200.0,
+    )
+    store._flush_index()
+    history = root / "existing-history" / "history"
+    original_iterdir = Path.iterdir
+
+    def fail_history_enumeration(path):
+        if path == history:
+            raise AssertionError("existing history must not be enumerated")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", fail_history_enumeration)
+    reopened = SessionStore(root)
+
+    assert reopened.get_session("existing-history") is not None
+
+
+def test_reopen_still_removes_old_session_without_history(tmp_path: Path) -> None:
+    root = tmp_path / "sessions"
+    store = SessionStore(root)
+    store.create_session(
+        "missing-history",
+        "main",
+        created_at=time.time() - 7200.0,
+        updated_at=time.time() - 7200.0,
+    )
+    store._flush_index()
+    shutil.rmtree(root / "missing-history" / "history")
+
+    reopened = SessionStore(root)
+
+    assert reopened.get_session("missing-history") is None
+    assert not (root / "missing-history").exists()
