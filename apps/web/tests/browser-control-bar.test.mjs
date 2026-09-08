@@ -94,9 +94,10 @@ const {
 const LONG_LABELS = [
   "Show actions",
   "Operation history",
-  "Pause Agent and take over",
-  "Resume Agent",
-  "Yielding",
+  "Pause Agent to use page",
+  "Continue Agent",
+  "Pausing…",
+  "Retry pause",
 ];
 
 function pageRow(control_state = "active", sequence = 1) {
@@ -206,8 +207,8 @@ test("compact control buttons keep takeover labels on title and aria-label inste
     assert.equal(host.firstElementChild?.getAttribute("data-compact"), "true");
     assertIconButton(labeledButton(host, "Show actions"), "Show actions");
     assertIconButton(labeledButton(host, "Operation history"), "Operation history");
-    assertIconButton(labeledButton(host, "Pause Agent and take over"), "Pause Agent and take over");
-    const pause = labeledButton(host, "Pause Agent and take over");
+    assertIconButton(labeledButton(host, "Pause Agent to use page"), "Pause Agent to use page");
+    const pause = labeledButton(host, "Pause Agent to use page");
     assert.equal(pause.disabled, false);
     assert.equal(labeledButton(host, "Show actions").getAttribute("aria-pressed"), "true");
   });
@@ -224,7 +225,7 @@ test("show actions click toggles pressed state without changing pause", async ()
     assert.equal(showActionsEnabled(), true);
     assert.equal(show.getAttribute("aria-pressed"), "true");
     assert.equal(globalThis.controlPosts.length, 0);
-    assert.equal(labeledButton(host, "Pause Agent and take over").disabled, false);
+    assert.equal(labeledButton(host, "Pause Agent to use page").disabled, false);
   });
 });
 
@@ -235,7 +236,7 @@ test("pause click posts pause, then resume posts after acknowledgement", async (
       if (body.action === "pause") return new Promise(resolve => { settlePause = resolve; });
       return pageRow("active", 3);
     };
-    const pause = labeledButton(host, "Pause Agent and take over");
+    const pause = labeledButton(host, "Pause Agent to use page");
     await act(async () => {
       pause.click();
       await Promise.resolve();
@@ -243,13 +244,13 @@ test("pause click posts pause, then resume posts after acknowledgement", async (
     assert.equal(globalThis.controlPosts.length, 1);
     assert.equal(globalThis.controlPosts[0].body.action, "pause");
     assert.match(globalThis.controlPosts[0].url, /\/api\/session\/a\/resources\/page-a\/control$/);
-    const yielding = labeledButton(host, "Yielding");
-    assertIconButton(yielding, "Yielding");
+    const yielding = labeledButton(host, "Pausing…");
+    assertIconButton(yielding, "Pausing…");
     assert.equal(yielding.disabled, true);
-    assert.equal(labeledButton(host, "Resume Agent"), undefined);
+    assert.equal(labeledButton(host, "Continue Agent"), undefined);
     await act(async () => { settlePause(pageRow("paused", 2)); });
-    const resume = labeledButton(host, "Resume Agent");
-    assertIconButton(resume, "Resume Agent");
+    const resume = labeledButton(host, "Continue Agent");
+    assertIconButton(resume, "Continue Agent");
     assert.equal(resume.disabled, false);
     await act(async () => {
       resume.click();
@@ -262,57 +263,72 @@ test("pause click posts pause, then resume posts after acknowledgement", async (
 
 test("idle and closed do not render an enabled Pause", async () => {
   await mounted(host => {
-    assert.equal(host.textContent.includes("Idle"), true);
-    assert.equal(labeledButton(host, "Pause Agent and take over"), undefined);
-    assert.equal(labeledButton(host, "Resume Agent"), undefined);
+    assert.equal(host.textContent.includes("Ready to use"), true);
+    assert.equal(labeledButton(host, "Pause Agent to use page"), undefined);
+    assert.equal(labeledButton(host, "Continue Agent"), undefined);
+    assert.equal(labeledButton(host, "Retry pause"), undefined);
     assertIconButton(labeledButton(host, "Show actions"), "Show actions");
     assertIconButton(labeledButton(host, "Operation history"), "Operation history");
   }, { controlState: "idle" });
 
   await mounted(host => {
-    assert.equal(labeledButton(host, "Pause Agent and take over"), undefined);
-    assert.equal(labeledButton(host, "Resume Agent"), undefined);
+    assert.equal(labeledButton(host, "Pause Agent to use page"), undefined);
+    assert.equal(labeledButton(host, "Continue Agent"), undefined);
   }, { controlState: "closed" });
 });
 
-test("stop unconfirmed keeps a disabled Take over and does not look paused", async () => {
-  await mounted(host => {
-    const pause = labeledButton(host, "Pause Agent and take over");
-    assert.ok(pause);
-    assert.equal(pause.disabled, true);
-    assert.equal(labeledButton(host, "Resume Agent"), undefined);
-    assert.equal(host.firstElementChild?.textContent.includes("Stop unconfirmed"), true);
+test("stop unconfirmed shows Retry pause enabled when connected", async () => {
+  await mounted(async host => {
+    const retry = labeledButton(host, "Retry pause");
+    assertIconButton(retry, "Retry pause");
+    assert.equal(retry.disabled, false);
+    assert.equal(labeledButton(host, "Continue Agent"), undefined);
+    assert.equal(labeledButton(host, "Pause Agent to use page"), undefined);
+    assert.equal(host.firstElementChild?.textContent.includes("Could not pause. Try again"), true);
+    assert.equal(host.firstElementChild?.textContent.includes("Paused"), false);
+    await act(async () => {
+      retry.click();
+      await Promise.resolve();
+    });
+    assert.equal(globalThis.controlPosts.length, 1);
+    assert.equal(globalThis.controlPosts[0].body.action, "pause");
   }, { controlState: "stop_unconfirmed" });
 });
 
-test("yielding unknown and disconnect disable takeover", async () => {
+test("yielding unknown and disconnect disable pause without a false failure", async () => {
   await mounted(host => {
-    const pause = labeledButton(host, "Yielding");
-    assertIconButton(pause, "Yielding");
+    const pause = labeledButton(host, "Pausing…");
+    assertIconButton(pause, "Pausing…");
     assert.equal(pause.disabled, true);
+    assert.equal(host.textContent.includes("Pausing…"), true);
   }, { controlState: "yielding" });
 
   await mounted(host => {
-    const pause = labeledButton(host, "Pause Agent and take over");
+    const pause = labeledButton(host, "Pause Agent to use page");
     assert.equal(pause.disabled, true);
+    assert.equal(host.textContent.includes("Could not confirm status"), true);
+    assert.equal(host.textContent.includes("Could not pause"), false);
+    assert.equal(labeledButton(host, "Retry pause"), undefined);
   }, { controlState: "unknown" });
 
   await mounted(host => {
-    const pause = labeledButton(host, "Pause Agent and take over");
+    const pause = labeledButton(host, "Pause Agent to use page");
     assert.equal(pause.disabled, true);
+    assert.equal(host.textContent.includes("Connection lost"), true);
+    assert.equal(host.textContent.includes("Could not pause"), false);
   }, { connected: false });
 });
 
 test("resume stays off after disconnect from a paused page", async () => {
   await mounted(async host => {
-    const resume = labeledButton(host, "Resume Agent");
-    assertIconButton(resume, "Resume Agent");
+    const resume = labeledButton(host, "Continue Agent");
+    assertIconButton(resume, "Continue Agent");
     assert.equal(resume.disabled, false);
     await act(async () => {
       setBrowserConnection(false);
       ingestBrowserResource(pageRow("paused", 2), "a");
     });
-    const disconnected = labeledButton(host, "Pause Agent and take over") || labeledButton(host, "Resume Agent");
+    const disconnected = labeledButton(host, "Pause Agent to use page") || labeledButton(host, "Continue Agent");
     assert.ok(disconnected);
     assert.equal(disconnected.disabled, true);
   }, { controlState: "paused" });

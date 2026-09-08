@@ -28,12 +28,17 @@ import styles from "./center-tabs.module.css";
 function statusLabel(
   state: ReturnType<typeof displayedControlState>,
   text: (en: string, zh: string) => string,
+  connected: boolean,
 ): string {
-  if (state === "yielding") return text("Yielding", "正在让出");
+  if (state === "yielding") return text("Pausing…", "正在暂停…");
   if (state === "paused") return text("Paused", "已暂停");
-  if (state === "stop_unconfirmed") return text("Stop unconfirmed", "停止未确认");
-  if (state === "unknown") return text("Unknown", "未知");
-  if (state === "idle" || state === "closed") return text("Idle", "空闲");
+  if (state === "stop_unconfirmed") return text("Could not pause. Try again", "暂停失败，请重试");
+  if (state === "unknown") {
+    return connected
+      ? text("Could not confirm status", "无法确认状态")
+      : text("Connection lost", "连接已断开");
+  }
+  if (state === "idle" || state === "closed") return text("Ready to use", "可直接操作");
   return text("Active", "活动中");
 }
 
@@ -55,11 +60,15 @@ export function BrowserControlBar({
   if (!resource) return null;
   const live = listedResource(resource);
   const state = displayedControlState(live);
+  const connected = browserConnectionOpen();
+  const shownStatus = statusLabel(state, text, connected);
   const pauseLabel = state === "paused"
-    ? text("Resume Agent", "恢复 Agent")
+    ? text("Continue Agent", "让 Agent 继续")
     : state === "yielding"
-      ? text("Yielding", "正在让出")
-      : text("Pause Agent and take over", "暂停 Agent 并接管");
+      ? text("Pausing…", "正在暂停…")
+      : state === "stop_unconfirmed"
+        ? text("Retry pause", "重试暂停")
+        : text("Pause Agent to use page", "暂停 Agent，我来操作");
   const showLabel = text("Show actions", "显示操作");
   const historyLabel = text("Operation history", "操作历史");
   const history = operationHistory(resource.resourceId);
@@ -71,14 +80,13 @@ export function BrowserControlBar({
       disabled: true,
     }));
   const resumeError = resumeErrorFor(resource.resourceId);
-  const connected = browserConnectionOpen();
   const resumeDisabled = !connected || state !== "paused";
-  const pauseDisabled = state === "yielding" || state === "unknown" || state === "stop_unconfirmed" || !connected;
+  const pauseDisabled = state === "yielding" || state === "unknown" || !connected;
   const showTakeover = state !== "idle" && state !== "closed";
   const nativeHistory = typeof window !== "undefined" && !!window.openprogramDesktop?.contextMenu;
   return (
     <div className={styles.browserControl} data-compact={compact ? "true" : "false"}>
-      <span className={styles.browserControlStatus}>{statusLabel(state, text)}</span>
+      <span className={styles.browserControlStatus} title={shownStatus}>{shownStatus}</span>
       {resumeError && <span className={styles.browserControlStatus}>{resumeError}</span>}
       <button
         type="button"

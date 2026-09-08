@@ -18,6 +18,7 @@ await build({
     export { useWebTabPip } from "./lib/state/web-tab-pip-store";
     export { topLevelTabs } from "./lib/state/web-page-management";
     export { resetBrowserResources, getPreviewPreference, hideResourcePreview } from "./lib/state/session-resources";
+    export { useBrowserControlStore, resetBrowserControl } from "./lib/state/browser-control";
   `, resolveDir: webPath },
   bundle: true, format: "esm", jsx: "automatic", outfile: bundle,
   packages: "external", platform: "node", tsconfig: join(webPath, "tsconfig.json"),
@@ -47,6 +48,7 @@ const { createRoot } = await import("react-dom/client");
 const {
   SessionResourcesPanel, useCenterTabs, useWebTabPip, topLevelTabs,
   resetBrowserResources, getPreviewPreference, hideResourcePreview,
+  useBrowserControlStore, resetBrowserControl,
 } = await import(pathToFileURL(bundle));
 
 function pageTab(id, sessionId, url, extra = {}) {
@@ -393,6 +395,49 @@ test("current branch group uses a title-adjacent section chevron and keyboard-co
   } finally {
     await act(async () => root.unmount()); host.remove();
     useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserResources();
+  }
+});
+
+function mountPanel() {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  return { host, root };
+}
+
+test("pending close notices use plain pause failure labels without internal counts", async () => {
+  resetBrowserResources();
+  resetBrowserControl();
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  useCenterTabs.setState({ tabs: [session], activeId: session.id, groups: [], splitWebTabId: null });
+  globalThis.resourceBackend = {
+    rows: [], currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true,
+  };
+  const pending = {
+    tabId: "w:a", resourceId: "page-a", generation: 1,
+    associationIds: ["assoc-a", "assoc-b"], executionIds: ["exec-a"],
+  };
+  const { host, root } = mountPanel();
+  try {
+    useBrowserControlStore.setState({ pendingCloses: [{ ...pending }] });
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    assert.match(host.textContent, /Waiting for Agent to pause before closing the page…/);
+    assert.doesNotMatch(host.textContent, /references|executions|2|1/);
+
+    useBrowserControlStore.setState({ pendingCloses: [{ ...pending, error: "Stop unconfirmed" }] });
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    assert.match(host.textContent, /Could not pause Agent\. The page is still open\./);
+    assert.doesNotMatch(host.textContent, /Stop unconfirmed|Unknown/);
+
+    useBrowserControlStore.setState({ pendingCloses: [{ ...pending, error: "Unknown" }] });
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    assert.match(host.textContent, /Could not confirm the page status\. Check the connection and try again\./);
+    assert.doesNotMatch(host.textContent, /Stop unconfirmed|Unknown|Could not pause Agent/);
+  } finally {
+    await act(async () => root.unmount()); host.remove();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserControl();
     resetBrowserResources();
   }
 });
