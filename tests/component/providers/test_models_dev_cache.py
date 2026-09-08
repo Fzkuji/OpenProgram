@@ -19,26 +19,39 @@ from openprogram.webui._model_listing import listing
 from openprogram.providers import storage as st
 
 
+def _reset_mem_cache() -> None:
+    with md._cache_lock:
+        md._cache.update({
+            "data": None,
+            "fetched_at": 0.0,
+            "last_attempt_at": 0.0,
+            "refreshing": False,
+        })
+
+
 @pytest.fixture(autouse=True)
 def _reset_cache(tmp_path, monkeypatch):
     # Isolate the disk-cache fallback too (22d98d80): on a dev machine
     # ~/.openprogram/cache/models_dev.json exists, and a failed fetch
     # deliberately serves it — which would mask the fail-TTL behaviour
     # these tests pin down.
+    #
+    # Disk-stale ``_load`` calls ``_start_background_refresh``. Capture that
+    # callback instead of spawning a daemon so refresh cannot outlive this
+    # test's safe_client / disk-path patches. Tests that exercise refresh
+    # drain the list while those patches still apply (unit disk-cache
+    # pattern). Leftover callbacks are dropped, not run after teardown.
+    scheduled: list = []
     monkeypatch.setattr(md, "_disk_cache_path", lambda: tmp_path / "models_dev.json")
-    md._cache.update({
-        "data": None,
-        "fetched_at": 0.0,
-        "last_attempt_at": 0.0,
-        "refreshing": False,
-    })
-    yield
-    md._cache.update({
-        "data": None,
-        "fetched_at": 0.0,
-        "last_attempt_at": 0.0,
-        "refreshing": False,
-    })
+    monkeypatch.setattr(
+        md,
+        "_start_background_refresh",
+        lambda: scheduled.append(md._refresh_cache),
+    )
+    _reset_mem_cache()
+    yield scheduled
+    scheduled.clear()
+    _reset_mem_cache()
 
 
 class _Resp:
@@ -137,19 +150,28 @@ def test_tier2_providers_appear_in_list_providers(monkeypatch):
     assert row["model_count"] == 1
 
 
-def test_failed_fetch_falls_back_to_disk_cache(monkeypatch, tmp_path):
+def test_failed_fetch_falls_back_to_disk_cache(monkeypatch, tmp_path, _reset_cache):
     """When the network is down but a previous success was persisted,
     _load serves the stale catalogue instead of an empty dict."""
     import json
 
+    scheduled = _reset_cache
     (tmp_path / "models_dev.json").write_text(
         json.dumps({"openrouter": {"models": {"x": {}}}}), encoding="utf-8"
     )
+    calls = {"n": 0}
 
     def _get(url, timeout=10):
+        calls["n"] += 1
         raise RuntimeError("network down")
 
     _patch_safe_get(monkeypatch, _get)
 
     data = md._load()
     assert data and "openrouter" in data
+    assert calls["n"] == 0
+    assert scheduled == [md._refresh_cache]
+    scheduled[0]()
+    assert calls["n"] == 1
+    assert md._cache["data"] == data
+    assert md._cache["refreshing"] is False
