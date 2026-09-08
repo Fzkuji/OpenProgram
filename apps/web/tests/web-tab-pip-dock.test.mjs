@@ -359,7 +359,7 @@ test("chat PiP chrome is one row with icon actions and no second toolbar", async
     const title = pip.querySelector("span");
     const status = pip.querySelector("small");
     assert.equal(title?.textContent, "Resource test 1");
-    assert.equal(status?.textContent, "Idle");
+    assert.equal(status?.textContent, "Idle · Manual inspection");
     assert.equal(title.title.includes("Manual inspection"), true);
     assert.equal(pipChromeButtons(host).length, 5);
   });

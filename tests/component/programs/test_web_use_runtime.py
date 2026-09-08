@@ -2444,7 +2444,8 @@ def test_temporary_page_capture_is_released_when_lease_rejects(monkeypatch, rout
         result = module.web_use(
             command="observe", backend="playwright_mcp",
         )
-        assert result["reason_code"] == "page_in_use"
+        assert result.is_error is True
+        assert result.json_data["reason_code"] == "page_in_use"
     assert released == [context]
 
 
@@ -3135,6 +3136,8 @@ def test_observe_with_page_token_does_not_capture_active(monkeypatch):
         backend="playwright_mcp",
         page_context_token="page_ctx_deadbeef",
     )
+    assert result.is_error is True
+    result = result.json_data
     assert result["reason_code"] == "page_context_not_found"
     assert captures == []
 
@@ -3478,6 +3481,9 @@ def test_public_url_observe_releases_binding_when_frame_is_missing(
                 },
                 owner_id="owner-native",
             )
+        if entry == "web_use":
+            assert observed.is_error is True
+            observed = observed.json_data
         assert observed.get("ok") is False
         assert not webtab._bindings
         session_id = observed.get("web_session_id") or ""
@@ -3548,6 +3554,8 @@ def test_act_with_url_rejects_non_http_scheme(monkeypatch):
         command="act",
         arguments={"action": "navigate", "url": "file:///etc/passwd"},
     )
+    assert result.is_error is True
+    result = result.json_data
     assert result["ok"] is False
     assert result["reason_code"] == "unsupported_url"
     assert "SCHEME_FORBIDDEN" in result["error"]
@@ -3571,6 +3579,8 @@ def test_act_with_url_reports_desktop_unavailable(monkeypatch):
         command="act",
         arguments={"action": "navigate", "url": "https://example.test/"},
     )
+    assert result.is_error is True
+    result = result.json_data
     assert result["ok"] is False
     assert result["reason_code"] == "desktop_unavailable"
     assert "Launch the desktop app" in result["error"]
@@ -3607,6 +3617,9 @@ def test_open_page_cleanup_contract_reaches_public_web_use_entries(
         else module.execute_direct_web_use(arguments, owner_id="owner-test")
     )
 
+    if entry == "web_use":
+        assert result.is_error is True
+        result = result.json_data
     assert result == cleanup
 
 

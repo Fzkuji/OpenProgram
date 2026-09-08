@@ -2722,3 +2722,44 @@ def test_paged_turn_display_decode_uses_temp_store(tmp_path):
     assert decoded[1]["result"] == "small"
     assert decoded[2]["result"].startswith("A:")
     assert decoded[3]["result"].startswith("B:")
+
+
+def test_iteration_exhaustion_finishes_canonical_execution_as_failed(tmp_path):
+    from openprogram.agent.agent_loop import agent_loop
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.agent.types import AgentContext, AgentLoopConfig, AgentTool, AgentToolResult
+    from openprogram.providers.types import AssistantMessage, EventDone, Model, TextContent, ToolCall, UserMessage
+
+    store, execution = _admitted(tmp_path)
+    attempts = AttemptStore(store)
+    leased, reserved = attempts.lease(execution.execution_id,
+        expected_version=execution.status_version, owner_id="limit-owner", ttl_seconds=30)
+    active, _running = attempts.activate(leased.attempt_id,
+        generation=leased.generation, expected_execution_version=reserved.status_version)
+
+    def run_turn(**kwargs):
+        async def run():
+            message = AssistantMessage(content=[ToolCall(id="again", name="again", arguments={})],
+                api="fake", provider="fake", model="fake", stop_reason="toolUse", timestamp=1)
+            async def stream(*_):
+                yield EventDone(reason="toolUse", message=message)
+            async def execute(*_):
+                return AgentToolResult(content=[TextContent(text="pending")])
+            tool = AgentTool(name="again", label="again", description="again",
+                parameters={"type": "object", "properties": {}}, execute=execute)
+            events = agent_loop([UserMessage(content="continue", timestamp=0)],
+                AgentContext(tools=[tool]), AgentLoopConfig(
+                    model=Model(id="fake", name="fake", api="fake", provider="fake", base_url="https://example.invalid"),
+                    convert_to_llm=lambda messages: messages, max_iterations=1),
+                stream_fn=stream)
+            return await events.result()
+        return asyncio.run(run())
+
+    driver = AgentProductionDriver(store, turn_runner=run_turn)
+    result = asyncio.run(driver._run_attempt(active,
+        TurnRequest(session_id=execution.session_id, agent_id="default",
+            user_text="continue", source="component"), threading.Event()))
+    assert result.failed
+    assert "iteration limit" in result.error
+    assert store.get_execution(execution.execution_id).status is ExecutionStatus.FAILED

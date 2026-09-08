@@ -383,7 +383,7 @@ export function WebTabPip() {
   const controlState = control ? displayedControlState(control) : null;
   const stateText = controlState ? statusLabel(controlState, text) : "";
   const resumeError = control ? resumeErrorFor(control.resourceId) : undefined;
-  const statusText = resumeError || stateText;
+  const statusText = [resumeError || stateText, modeLabel].filter(Boolean).join(" · ");
   const frameState = !connected && freshness === "live" ? "last-frame" : freshness;
   const freshLabel = frameState === "live"
     ? text("Read-only image mirror", "只读图像镜像")
@@ -541,7 +541,7 @@ export function WebTabPip() {
         onPointerUp={onDragPointerUp}
         onPointerCancel={onDragPointerUp}
       >
-        <span className={styles.webPipTitle} title={`${title} · ${modeLabel}${statusText ? ` · ${statusText}` : ""}`}>{title}</span>
+        <span className={styles.webPipTitle} title={`${title}${statusText || modeLabel ? ` · ${statusText || modeLabel}` : ""}`}>{title}</span>
         {statusText ? (
           <small
             className={styles.webPipMode}

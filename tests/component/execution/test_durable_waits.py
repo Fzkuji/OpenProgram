@@ -617,3 +617,51 @@ def test_stale_wait_outcome_does_not_own_later_wait_frontier(tmp_path, stale_kin
     assert DurableWaitStore(executions).get_wait("wait_b").status is WaitStatus.OPEN
     assert scheduled == []
     assert executions.get_command("wait-cancel:wait_a:declined") is None
+
+
+@pytest.mark.parametrize("answer_latest", [False, True])
+def test_recovery_only_applies_outcome_for_current_wait_checkpoint(tmp_path, answer_latest):
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    activated = []
+
+    async def activate(next_attempt, activation):
+        activated.append(next_attempt)
+
+    service = RuntimeControlService(executions, attempts, DriverRegistry(), activator=activate)
+
+    def suspend(current, owner, wait_id):
+        return service.open_wait_at_safe_point(
+            execution_id=current.execution_id, attempt_id=owner.attempt_id,
+            generation=owner.generation, expected_version=current.status_version,
+            fragment=CheckpointFragment(
+                safe_point_kind="agent.provider.decision.after",
+                frontier=({"step_id": wait_id, "phase": "after_provider"},),
+                state_refs={"continuation": {"version": 1}},
+            ),
+            kind="ask", request={"prompt": wait_id},
+            policy_snapshot={"version": 1, "on_answer": "continue", "on_decline": "fail"},
+            expires_at=0, wait_id=wait_id,
+        )
+
+    first = suspend(execution, attempt, "first")
+    answered = asyncio.run(service.request_wait_answer(
+        command_id="answer-first", execution_id=execution.execution_id,
+        expected_version=first.execution.status_version, actor={"surface": "test"},
+        wait_id="first", generation=0, answer="yes",
+    ))
+    second = suspend(answered.execution, activated[-1], "second")
+    if answer_latest:
+        DurableWaitStore(executions).resolve_with_command(
+            command_id="answer-second", execution_id=execution.execution_id,
+            expected_version=second.execution.status_version, actor={"surface": "test"},
+            kind=CommandKind.WAIT_ANSWER, wait_id="second", generation=0, answer="yes",
+        )
+    asyncio.run(service.recover_wait_outcomes())
+    asyncio.run(service.recover_wait_outcomes())
+    current = executions.get_execution(execution.execution_id)
+    assert len(activated) == (2 if answer_latest else 1)
+    assert current.checkpoint_head_id == second.checkpoint.checkpoint_id
+    assert current.status.value == ("running" if answer_latest else "paused")
+    assert DurableWaitStore(executions).get_wait("second").status.value == (
+        "resolved" if answer_latest else "open"
+    )

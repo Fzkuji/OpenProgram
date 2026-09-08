@@ -651,3 +651,18 @@ def test_mixed_submission_repairs_without_executing_ordinary_tool():
     final = next(message for message in reversed(messages) if message.role == "assistant")
     assert final.structured_output == {"answer": 9}
     assert final.structured_output_attempt == 2
+
+
+def test_iteration_cap_with_pending_ordinary_tool_is_not_success():
+    ordinary = AgentTool(
+        name="ordinary", description="Ordinary tool",
+        parameters={"type": "object", "properties": {}}, label="ordinary",
+        execute=lambda *args: asyncio.sleep(
+            0, result=AgentToolResult(content=[TextContent(text="executed")])
+        ),
+    )
+    with pytest.raises(RuntimeError, match="iteration limit"):
+        asyncio.run(_run_loop(
+            [_assistant([ToolCall(id="ordinary", name="ordinary", arguments={})])],
+            [ordinary], max_iterations=1, response_format=None,
+        ))

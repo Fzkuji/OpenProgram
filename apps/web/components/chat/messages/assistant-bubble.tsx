@@ -130,6 +130,12 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
   const currentSessionId = useSessionStore((s) => s.currentSessionId);
   const bubbleSessionId = sessionIdOverride || currentSessionId || undefined;
   const { text } = useTranslation();
+  const waitingApproval = useSessionStore((s) => s.pendingDecisions.some((decision) => {
+    const order = s.executionUpdateOrders[decision.executionId];
+    return decision.kind === "approval" && decision.sessionId === bubbleSessionId
+      && order?.sessionId === bubbleSessionId && !order.terminal
+      && order.messageIds.includes(msg.id);
+  }));
   // Align the side avatar to the first line of text (re-measures as the
   // message grows / blocks expand).
   const { containerRef, avatarTop } = useAvatarAlign(msg.id);
@@ -482,9 +488,14 @@ export function AssistantBubble({ msg, verdict, sessionIdOverride }: {
                 </div>
               ) : null}
               {hasContent ? <MarkdownText text={contentText} /> : null}
-              {streaming && !hasContent ? <TypingIndicator /> : null}
+              {streaming && !hasContent && !waitingApproval ? <TypingIndicator /> : null}
             </>
           )}
+          {waitingApproval ? (
+            <div className="pending-body" role="status">
+              <span className="pending-label">{text("Waiting for approval", "等待审批")}</span>
+            </div>
+          ) : null}
           {verdict ? (
             <details className="goal-verdict">
               <summary>{verdict.summary}</summary>

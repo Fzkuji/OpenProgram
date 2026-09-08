@@ -50,6 +50,8 @@ OpenProgram 不导入密码、支付或地址自动填充数据、下载记录�
 
 动作始终绑定发起聊天的窗口与 WebTab。默认使用 DOM、ARIA、页面文本和 element refs；只有视觉任务或结构化方式无法定位页面时，才使用一张当前 viewport screenshot。该路径不增加 OCR、object detector、多轮裁剪、component memory、vision memory 或 workflow replay。
 
+预览标题旁显示“跟随 Agent”或“手动查看”。手动查看会保留你选择的页面；点击“跟随”才恢复显示 Agent 当前操作的页面。选择预览页面不会改变 Agent 的操作目标。
+
 ## 浏览器扩展
 
 Chrome Web Store 与 Edge Add-ons 页面可以作为普通网页打开，但 OpenProgram 不安装浏览器扩展，不下载 CRX，不从其他浏览器导入扩展，也不提供扩展管理页。应用使用标准 Electron/Chromium。Electron 只暴露部分 Chrome Extensions API，并明确不以兼容任意 Chrome Web Store 扩展为目标；OpenProgram 不维护定制 Chromium/Electron 分支，也不为扩展兼容增加另一套浏览器运行时。完整 runtime 内已有的 Playwright Chromium 只属于浏览器自动化后端，不承载 Desktop Browser Pane 或扩展。
