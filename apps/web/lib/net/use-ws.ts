@@ -10,6 +10,7 @@
  * and non-React modules can reach it.
  */
 import { useEffect } from "react";
+import { executionMessageIds, pendingExecutionReplayRequests } from "./execution-message-recovery";
 import { useFunctions } from "@/lib/state/functions-store";
 
 import { permissionSnapshotPatch } from "@/lib/session-store/permission-state";
@@ -287,6 +288,7 @@ export function useWS(): void {
             reason_code?: string;
             event_sequence?: number;
             foreground_task?: unknown;
+            display?: { user_message_id?: unknown; assistant_message_id?: unknown };
           } }).execution || d;
           if (!execution?.execution_id) return true;
           const eventCursor = (msg as { event_cursor?: unknown }).event_cursor
@@ -301,10 +303,7 @@ export function useWS(): void {
             user_message_id?: unknown;
             assistant_message_id?: unknown;
           } } | undefined)?.input;
-          const messageIds = [input?.user_message_id, input?.assistant_message_id]
-            .filter((messageId): messageId is string => (
-              typeof messageId === "string" && Boolean(messageId)
-            ));
+          const messageIds = executionMessageIds(execution, input);
           if (!useSessionStore.getState().acceptExecutionUpdate(
             eid,
             eventSequence,
@@ -514,6 +513,9 @@ export function useWS(): void {
           import("@/lib/session-store").then(({ useSessionStore }) => {
             const dd = (d || {}) as Record<string, unknown>;
             if (!dd.id) return;
+            for (const request of pendingExecutionReplayRequests([dd])) {
+              if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(request));
+            }
             useSessionStore.getState().enqueueDecision({
               id: String(dd.id),
               sessionId: String(dd.session_id || ""),
@@ -687,6 +689,9 @@ export function useWS(): void {
                 .then((j) => {
                   if (!j || !Array.isArray(j.questions)) return;
                   const qs = j.questions;
+                  for (const request of pendingExecutionReplayRequests(qs)) {
+                    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(request));
+                  }
                   import("@/lib/session-store").then(({ useSessionStore }) => {
                     const store = useSessionStore.getState();
                     const openIds = new Set(qs.map((q: Record<string, unknown>) => String(q.id)));
