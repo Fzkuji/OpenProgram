@@ -24,6 +24,7 @@ import {
   viewedBranchFor,
   type SessionResource,
 } from "@/lib/state/session-resources";
+import { revealExistingWebTab } from "@/lib/state/web-page-management";
 import {
   clampPipRect,
   getSnapshot,
@@ -388,7 +389,7 @@ export function WebTabPip() {
           type="button"
           className={styles.webToolbarBtn}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => useCenterTabs.getState().setActive(tabId)}
+          onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}
           title={usePage}
           aria-label={usePage}
         >
@@ -430,7 +431,7 @@ export function WebTabPip() {
             <div className={styles.webPipFallback}>
               {freshLabel}
               {tabId ? (
-                <button type="button" className={styles.webToolbarBtn} onClick={() => useCenterTabs.getState().setActive(tabId)}>
+                <button type="button" className={styles.webToolbarBtn} onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}>
                   {usePage}
                 </button>
               ) : null}
