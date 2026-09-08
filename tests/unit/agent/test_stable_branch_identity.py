@@ -22,15 +22,80 @@ def test_original_path_keeps_fixed_identity_when_head_moves(tmp_path):
     writer = SessionNodeWriter(db, "conversation")
     writer.append(Call(id="u1", role="user", predecessor="ROOT", seq=1))
     writer.append(Call(id="a1", role="llm", predecessor="u1", seq=2))
-    first, _ = resolve_stable_branch("conversation", "a1", session_store=db)
+    db.set_branch_name("conversation", "a1", "五页计数器发布验收")
+    first, first_name = resolve_stable_branch("conversation", "a1", session_store=db)
     writer.append(Call(id="u2", role="user", predecessor="a1", seq=3))
     writer.append(Call(id="a2", role="llm", predecessor="u2", seq=4))
-    later, _ = resolve_stable_branch("conversation", "a2", session_store=db)
+    later, later_name = resolve_stable_branch("conversation", "a2", session_store=db)
     assert first == later
     assert first != "conversation:a2"
+    assert first_name == "五页计数器发布验收"
+    assert later_name == "五页计数器发布验收"
     db.set_head("conversation", "a2")
-    current, _ = current_branch("conversation", session_store=db)
+    current, current_name = current_branch("conversation", session_store=db)
     assert current == first
+    assert current_name == "五页计数器发布验收"
+
+
+def test_later_explicit_rename_wins_on_the_same_origin(tmp_path):
+    from openprogram.browser_resources import resolve_stable_branch
+
+    db = SessionStore(tmp_path / "sessions")
+    writer = SessionNodeWriter(db, "conversation")
+    writer.append(Call(id="u1", role="user", predecessor="ROOT", seq=1))
+    writer.append(Call(id="a1", role="llm", predecessor="u1", seq=2))
+    db.set_branch_name("conversation", "a1", "first-label")
+    writer.append(Call(id="u2", role="user", predecessor="a1", seq=3))
+    writer.append(Call(id="a2", role="llm", predecessor="u2", seq=4))
+    db.set_branch_name("conversation", "a2", "renamed-label")
+    branch_id, name = resolve_stable_branch("conversation", "a2", session_store=db)
+    assert branch_id.endswith(":u1")
+    assert name == "renamed-label"
+
+
+def test_distinct_fork_names_stay_separate(tmp_path):
+    from openprogram.browser_resources import resolve_stable_branch
+
+    db = SessionStore(tmp_path / "sessions")
+    _lineage(db, "conversation")
+    db.set_branch_name("conversation", "a2", "trunk-label")
+    db.set_branch_name("conversation", "a2retry", "fork-label")
+    original_id, original_name = resolve_stable_branch(
+        "conversation", "a2", session_store=db,
+    )
+    sibling_id, sibling_name = resolve_stable_branch(
+        "conversation", "a2retry", session_store=db,
+    )
+    later_id, later_name = resolve_stable_branch(
+        "conversation", "a3", session_store=db,
+    )
+    earlier_id, earlier_name = resolve_stable_branch(
+        "conversation", "a1", session_store=db,
+    )
+    assert original_id.endswith(":u1")
+    assert sibling_id.endswith(":a2retry")
+    assert later_id == sibling_id
+    assert earlier_id == original_id
+    assert original_name == "trunk-label"
+    assert earlier_name == "trunk-label"
+    assert sibling_name == "fork-label"
+    assert later_name == "fork-label"
+
+
+def test_missing_branch_name_stays_null(tmp_path):
+    from openprogram.browser_resources import current_branch, resolve_stable_branch
+
+    db = SessionStore(tmp_path / "sessions")
+    writer = SessionNodeWriter(db, "conversation")
+    writer.append(Call(id="u1", role="user", predecessor="ROOT", seq=1))
+    writer.append(Call(id="a1", role="llm", predecessor="u1", seq=2))
+    branch_id, name = resolve_stable_branch("conversation", "a1", session_store=db)
+    db.set_head("conversation", "a1")
+    current_id, current_name = current_branch("conversation", session_store=db)
+    assert branch_id.endswith(":u1")
+    assert name is None
+    assert current_id == branch_id
+    assert current_name is None
 
 
 def test_nested_fork_uses_deepest_divergence(tmp_path):
@@ -84,7 +149,36 @@ def test_branch_refs_are_reused_when_they_name_the_same_lineage(tmp_path):
     }
     git.write_meta(meta)
     idx.meta = meta
-    keep, _ = resolve_stable_branch("conversation", "a1", session_store=db)
-    fork, _ = resolve_stable_branch("conversation", "a2", session_store=db)
+    db.set_branch_name("conversation", "a1", "keep-name")
+    db.set_branch_name("conversation", "a2", "fork-name")
+    keep, keep_name = resolve_stable_branch("conversation", "a1", session_store=db)
+    fork, fork_name = resolve_stable_branch("conversation", "a2", session_store=db)
     assert keep == "branch_keep"
     assert fork == "branch_fork"
+    assert keep_name == "keep-name"
+    assert fork_name == "fork-name"
+
+
+def test_active_branch_ref_keeps_name_when_ref_head_is_not_a_tip(tmp_path):
+    from openprogram.browser_resources import current_branch
+
+    db = SessionStore(tmp_path / "sessions")
+    writer = SessionNodeWriter(db, "conversation")
+    writer.append(Call(id="u1", role="user", predecessor="ROOT", seq=1))
+    writer.append(Call(id="a1", role="llm", predecessor="u1", seq=2))
+    db.set_branch_name("conversation", "a1", "五页计数器发布验收")
+    pair = db._open("conversation")
+    git, idx = pair
+    meta = dict(idx.meta)
+    meta["branch_refs"] = {
+        "branch_keep": {"branch_id": "branch_keep", "head_id": "a1"},
+    }
+    meta["active_branch_id"] = "branch_keep"
+    git.write_meta(meta)
+    idx.meta = meta
+    writer.append(Call(id="u2", role="user", predecessor="a1", seq=3))
+    writer.append(Call(id="a2", role="llm", predecessor="u2", seq=4))
+    db.set_head("conversation", "a2")
+    current, name = current_branch("conversation", session_store=db)
+    assert current == "branch_keep"
+    assert name == "五页计数器发布验收"

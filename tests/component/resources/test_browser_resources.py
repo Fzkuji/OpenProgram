@@ -74,6 +74,49 @@ def test_retained_browser_page_survives_invocation_and_is_listed(tmp_path, monke
     assert row["branch_id"].endswith(":u1")
     assert body["current_branch_id"] != row["branch_id"]
     assert body["current_branch_id"].endswith(":a2retry")
+    assert row["branch_name"] is None
+    assert body["current_branch_name"] is None
+
+
+def test_listed_resource_keeps_origin_name_after_head_moves(tmp_path, monkeypatch):
+    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.webui.routes import processes
+
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    db = _conversation(tmp_path)
+    db.set_branch_name("parent", "a1", "五页计数器发布验收")
+    db.set_branch_name("parent", "a2retry", "retry-fork")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    store = BrowserResourceStore(tmp_path / "session-resources.db")
+    store.retain(
+        page_key="page:1", window_id="win", tab_id="tab-a",
+        title="Plans", target="https://example.test/path",
+        connection_generation=3, session_id="parent", execution_id="exec-1",
+        user_message_id="u1", assistant_message_id="a1", agent_name="Research",
+        conversation_session_id="parent",
+    )
+    store.clear_execution_use("exec-1")
+    monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: None)
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.conversation_executions",
+        lambda *args: [_exec("exec-1", "parent")],
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        lambda *args: {"exec-1": None},
+    )
+    app = FastAPI()
+    processes.register(app)
+    with TestClient(app) as client:
+        result = client.get("/api/session/parent/resources")
+    assert result.status_code == 200
+    body = result.json()
+    row = next(item for item in body["items"] if item.get("source") == "browser")
+    assert row["branch_id"].endswith(":u1")
+    assert row["branch_name"] == "五页计数器发布验收"
+    assert body["current_branch_id"].endswith(":a2retry")
+    assert body["current_branch_name"] == "retry-fork"
 
 
 def test_same_url_does_not_merge_distinct_pages(tmp_path, monkeypatch):

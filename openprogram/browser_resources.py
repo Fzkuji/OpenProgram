@@ -717,6 +717,60 @@ def _is_ancestor(nodes, ancestor_id: str, descendant_id: str) -> bool:
     return False
 
 
+def _entry_branch_name(info) -> str | None:
+    label = info.get("name") if isinstance(info, dict) else info
+    if isinstance(label, str) and label.strip():
+        return label.strip()
+    return None
+
+
+def _named_branch_entries(session_store, session_id: str, nodes: Mapping[str, Any]):
+    named = {}
+    try:
+        session = session_store.get_session(session_id) or {}
+    except Exception:
+        session = {}
+    raw = session.get("branches")
+    if isinstance(raw, dict):
+        named.update(raw)
+    if named:
+        return named
+    for node_id in nodes:
+        try:
+            meta = session_store.get_branch_meta(session_id, node_id)
+        except Exception:
+            continue
+        if meta:
+            named[node_id] = meta
+    try:
+        for tip in session_store.list_branches(session_id):
+            head = tip.get("head_msg_id")
+            if head and head not in named:
+                named[head] = tip
+    except Exception:
+        pass
+    return named
+
+
+def _branch_name_for_origin(session_store, session_id: str, origin: str | None, nodes):
+    if not origin or session_store is None:
+        return None
+    matches = []
+    for head_id, info in _named_branch_entries(session_store, session_id, nodes).items():
+        name = _entry_branch_name(info)
+        if not name or _origin_id(nodes, head_id) != origin:
+            continue
+        updated = 0.0
+        if isinstance(info, dict):
+            updated = float(info.get("updated_at") or info.get("created_at") or 0)
+        seq = getattr(nodes.get(head_id), "seq", -1)
+        matches.append((updated, seq if seq is not None else -1, str(head_id), name))
+    if not matches:
+        return None
+    matches.sort()
+    return matches[-1][3]
+
+
 def resolve_stable_branch(session_id: str, anchor_id: str | None, *, session_store=None):
     if not session_id or not anchor_id:
         return None, None
@@ -726,15 +780,7 @@ def resolve_stable_branch(session_id: str, anchor_id: str | None, *, session_sto
         return None, None
     ref = _ref_for_origin(session_store, session_id, origin, nodes, anchor_id)
     branch_id = ref or f"{session_id}:{origin}"
-    name = None
-    try:
-        for tip in session_store.list_branches(session_id):
-            if _origin_id(nodes, tip.get("head_msg_id")) == origin:
-                name = tip.get("name")
-                break
-    except Exception:
-        name = None
-    return branch_id, name
+    return branch_id, _branch_name_for_origin(session_store, session_id, origin, nodes)
 
 
 def current_branch(session_id: str, *, session_store=None):
@@ -749,12 +795,11 @@ def current_branch(session_id: str, *, session_store=None):
     refs = meta.get("branch_refs") or {}
     if isinstance(active, str) and isinstance(refs, dict) and active in refs:
         head = (refs.get(active) or {}).get("head_id")
-        name = None
-        for tip in session_store.list_branches(session_id):
-            if tip.get("head_msg_id") == head:
-                name = tip.get("name")
-                break
-        return active, name
+        nodes, session_store = _load_nodes(session_id, session_store)
+        origin = _origin_id(nodes, head)
+        return active, _branch_name_for_origin(
+            session_store, session_id, origin, nodes,
+        )
     session = session_store.get_session(session_id) or {}
     head = session.get("head_id") or pair[1].head_id
     return resolve_stable_branch(session_id, head, session_store=session_store)
