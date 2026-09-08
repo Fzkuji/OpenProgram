@@ -250,8 +250,13 @@ def test_gui_agent_safe_point_waits_before_tool_effect_and_resumes_once(tmp_path
         system_prompt="system", tools=[], request=request,
     )
     monkeypatch.setattr(system_access.platform, "system", lambda: "Darwin")
-    monkeypatch.setitem(sys.modules, "Quartz", SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: False))
-    monkeypatch.setitem(sys.modules, "ApplicationServices", SimpleNamespace(AXIsProcessTrusted=lambda: False))
+    monkeypatch.setattr(system_access, "report", lambda: {
+        "platform": "Darwin",
+        "capabilities": [
+            {"id": "screen_recording", "status": "not_granted", "can_request": True},
+            {"id": "accessibility", "status": "not_granted", "can_request": True},
+        ],
+    })
     args = {"task": "Open the desktop app", "surface": "desktop"}
     manifest = system_access.access_manifest_for_tool("gui_agent", args)
     assert manifest is not None
@@ -339,8 +344,13 @@ def test_forced_gui_entry_uses_durable_system_wait_before_subprocess(tmp_path, m
     frames = []
     monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
     monkeypatch.setattr(system_access.platform, "system", lambda: "Darwin")
-    monkeypatch.setitem(sys.modules, "Quartz", SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: False))
-    monkeypatch.setitem(sys.modules, "ApplicationServices", SimpleNamespace(AXIsProcessTrusted=lambda: False))
+    monkeypatch.setattr(system_access, "report", lambda: {
+        "platform": "Darwin",
+        "capabilities": [
+            {"id": "screen_recording", "status": "not_granted", "can_request": True},
+            {"id": "accessibility", "status": "not_granted", "can_request": True},
+        ],
+    })
     control = RuntimeControlService(store, attempts, DriverRegistry())
     driver = AgentProductionDriver(store, control_service=control)
 

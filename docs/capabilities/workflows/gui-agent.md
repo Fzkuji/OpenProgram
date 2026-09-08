@@ -100,7 +100,7 @@ On macOS, managed installations run the worker and its Python children through
 **OpenProgram**, an embedded application with the OpenProgram icon and
 a stable bundle identifier. This is the name to look for in System Settings;
 the installer does not grant its permissions. Screen recording and Accessibility
-are checked separately for the executing process. In local System settings, **Set up access** explicitly requests
+are checked separately in a fresh process of the executable used for desktop tasks. In local System settings, **Set up access** explicitly requests
 only a missing permission; an existing grant is left untouched. Complete the
 system confirmation, then return to the page for automatic verification.
 Remote clients must arrange authorization on the execution computer. A grant
@@ -123,4 +123,4 @@ access setup never retries a declined operation.
 
 Local desktop tasks pause before desktop actions when system access is missing. OpenProgram requests the missing permission through the native authorization flow and opens the corresponding System Settings page when necessary. The conversation shows a brief waiting status and an Open System Settings text action, without a permission form or Continue button.
 
-The background worker saves the waiting task and checks whether permission has taken effect for its own process. Once access is available, it continues the same task once. Closing the page does not stop this check. If an application restart is needed, the saved task is checked again after startup. Cancelling the task prevents later continuation. A failed check keeps the task waiting; it is never treated as permission granted. Viewing an old conversation does not itself start an operation or reopen system prompts. System access does not replace operation approval.
+The background worker saves the waiting task and checks permission through a fresh OpenProgram process, using the same executable as the desktop task. This avoids reusing a permission result retained before the system setting changed. These checks do not request permission. Once access is available, it continues the same task once. Closing the page does not stop this check. If an application restart is needed, the saved task is checked again after startup. Cancelling the task prevents later continuation. A failed check keeps the task waiting; it is never treated as permission granted. Viewing an old conversation does not itself start an operation or reopen system prompts. System access does not replace operation approval.

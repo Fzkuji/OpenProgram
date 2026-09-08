@@ -15,11 +15,14 @@ from openprogram.execution.store import ExecutionConflict, ExecutionStore
 from openprogram.execution.waits import DurableWaitStore, WaitStatus
 
 
-def _active_execution(tmp_path):
+def _active_execution(
+    tmp_path, *, execution_id="exec_wait", attempt_id="attempt_wait", session_id=None,
+):
     executions = ExecutionStore(tmp_path / "executions.db")
     revision = executions.create_revision(manifest={"entrypoint": "chat"})
+    session_id = session_id or ("session_wait" if execution_id == "exec_wait" else f"session_{execution_id}")
     execution = executions.create_execution(
-        execution_id="exec_wait", run_id="run_wait", session_id="session_wait",
+        execution_id=execution_id, run_id=f"run_{execution_id}", session_id=session_id,
         revision_id=revision.revision_id,
         capabilities=CapabilitySet(
             pause=True,
@@ -30,7 +33,7 @@ def _active_execution(tmp_path):
     attempts = AttemptStore(executions)
     leased, reserved = attempts.lease(
         execution.execution_id, expected_version=execution.status_version,
-        owner_id="worker_wait", ttl_seconds=30, attempt_id="attempt_wait",
+        owner_id=f"worker_{execution_id}", ttl_seconds=30, attempt_id=attempt_id,
     )
     attempt, execution = attempts.activate(
         leased.attempt_id, generation=leased.generation,
@@ -514,6 +517,53 @@ def test_system_access_grant_recovery_resumes_same_checkpoint_once(tmp_path):
     asyncio.run(service.recover_wait_outcomes())
     assert len(activations) == 1
     assert activations[0][1] == suspended.checkpoint.checkpoint_id
+
+
+def test_system_access_reconciliation_uses_one_fresh_report_per_pass(tmp_path, monkeypatch):
+    executions, attempts, execution, attempt = _active_execution(tmp_path)
+    _, _, execution_two, attempt_two = _active_execution(
+        tmp_path, execution_id="exec_wait_two", attempt_id="attempt_wait_two",
+    )
+    activations = []
+
+    async def activate(next_attempt, activation):
+        activations.append((next_attempt.attempt_id, activation.checkpoint.checkpoint_id))
+
+    service = RuntimeControlService(
+        executions, attempts, DriverRegistry(), activator=activate,
+    )
+    suspended = service.open_wait_at_safe_point(
+        execution_id=execution.execution_id, attempt_id=attempt.attempt_id,
+        generation=attempt.generation, expected_version=execution.status_version,
+        fragment=_decision_fragment(), kind="system_access",
+        request={"tool": "gui_agent", "required_capabilities": ["screen_recording"]},
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0, wait_id="wait_system_fresh_report",
+    )
+    suspended_two = service.open_wait_at_safe_point(
+        execution_id=execution_two.execution_id, attempt_id=attempt_two.attempt_id,
+        generation=attempt_two.generation, expected_version=execution_two.status_version,
+        fragment=_decision_fragment(), kind="system_access",
+        request={"tool": "gui_agent", "required_capabilities": ["screen_recording"]},
+        policy_snapshot={"version": 1, "kind": "system_access", "on_grant": "continue"},
+        expires_at=0, wait_id="wait_system_fresh_report_two",
+    )
+    reports = []
+    monkeypatch.setattr(
+        "openprogram.system_access.report",
+        lambda: reports.append("fresh") or {
+            "capabilities": [{"id": "screen_recording", "status": "granted"}],
+        },
+    )
+
+    asyncio.run(service.recover_wait_outcomes())
+    asyncio.run(service.recover_wait_outcomes())
+
+    assert reports == ["fresh"]
+    assert len(activations) == 2
+    assert {checkpoint_id for _, checkpoint_id in activations} == {
+        suspended.checkpoint.checkpoint_id, suspended_two.checkpoint.checkpoint_id,
+    }
 
 
 @pytest.mark.parametrize('change', ['unchanged', 'modified', 'deleted'])

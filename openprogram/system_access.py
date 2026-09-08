@@ -6,16 +6,26 @@ absence must not make a headless installation unhealthy.
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
 import platform
 import socket
+from pathlib import Path
+import subprocess
 import sys
 import threading
 import time
 
 _REQUEST_LOCK = threading.Lock()
 _log = logging.getLogger(__name__)
+_NATIVE_PROBE_SCHEMA = 1
+_NATIVE_PROBE_TIMEOUT = 5.0
+_NATIVE_PROBE_MAX_OUTPUT = 16 * 1024
+_NATIVE_PROBE_SCRIPT = (
+    'from openprogram.system_access import _native_probe_entry; '
+    '_native_probe_entry()'
+)
 _MAC = {
     'screen_recording': ('Screen recording', 'Quartz', 'CGPreflightScreenCaptureAccess',
                          'Privacy & Security > Screen & System Audio Recording'),
@@ -24,29 +34,153 @@ _MAC = {
 }
 
 
-def _mac_status(capability: str) -> dict:
-    label, module, method, setting = _MAC[capability]
+def _mac_row(capability: str, *, status: str, detail: str) -> dict:
+    label, _, _, setting = _MAC[capability]
     row = {'id': capability, 'label': label, 'status': 'unknown', 'optional': True,
            'instruction': f'On this execution Mac, open System Settings > {setting}. '
                           'Authorize the executing application shown by macOS. '
                           'Return here to check again; if macOS requires it, restart that application.',
            'can_request': False}
-    try:
-        granted = bool(getattr(importlib.import_module(module), method)())
-        row.update(status='granted' if granted else 'not_granted', can_request=not granted)
-        row['detail'] = 'Authorized for this process.' if granted else 'Not authorized for this process.'
-    except ImportError:
-        row.update(status='unavailable', detail='Native permission dependencies are missing. Repair the installation.')
-    except Exception as exc:
-        row['detail'] = f'Permission check failed ({type(exc).__name__}); authorization is unknown.'
+    if status in {'granted', 'not_granted', 'unavailable'}:
+        row.update(status=status, can_request=status == 'not_granted')
+    row['detail'] = detail
     return row
+
+
+def _native_identity() -> dict[str, str]:
+    identity = {'executable': str(Path(sys.executable).resolve())}
+    try:
+        bundle = importlib.import_module('Foundation').NSBundle.mainBundle()
+        identity['application'] = str(bundle.objectForInfoDictionaryKey_('CFBundleName') or '')
+        identity['bundle_id'] = str(bundle.bundleIdentifier() or '')
+        identity['bundle_path'] = str(bundle.bundlePath() or '')
+    except Exception:
+        _log.debug('native application identity unavailable', exc_info=True)
+    return identity
+
+
+def _native_probe_entry() -> None:
+    """Private child entry for nonprompting native checks and explicit requests."""
+    request = None
+    if len(sys.argv) == 3 and sys.argv[1] == '--request':
+        request = sys.argv[2]
+        if request not in _MAC:
+            raise ValueError('unsupported native capability request')
+    elif len(sys.argv) != 1:
+        raise ValueError('invalid native probe arguments')
+
+    rows = []
+    for capability, (_, module, method, _) in _MAC.items():
+        try:
+            native = importlib.import_module(module)
+            if request == capability:
+                if capability == 'screen_recording':
+                    native.CGRequestScreenCaptureAccess()
+                else:
+                    native.AXIsProcessTrustedWithOptions(
+                        {native.kAXTrustedCheckOptionPrompt: True}
+                    )
+            granted = bool(getattr(native, method)())
+            rows.append({
+                'id': capability,
+                'status': 'granted' if granted else 'not_granted',
+                'detail': 'Authorized in the fresh named executor.' if granted
+                else 'Not authorized in the fresh named executor.',
+            })
+        except ImportError as exc:
+            rows.append({
+                'id': capability,
+                'status': 'unavailable',
+                'detail': f'Native permission dependencies are missing ({type(exc).__name__}).',
+            })
+        except Exception as exc:
+            rows.append({
+                'id': capability,
+                'status': 'unknown',
+                'detail': f'Fresh native check failed ({type(exc).__name__}).',
+            })
+    print(json.dumps({
+        'schema': _NATIVE_PROBE_SCHEMA,
+        'identity': _native_identity(),
+        'capabilities': rows,
+    }, sort_keys=True), flush=True)
+
+
+def _native_probe(request_capability: str | None = None) -> dict | None:
+    executable = os.path.abspath(sys.executable)
+    identity_executable = str(Path(executable).resolve())
+    command = [executable, '-I', '-B', '-c', _NATIVE_PROBE_SCRIPT]
+    if request_capability is not None:
+        if request_capability not in _MAC:
+            raise ValueError('unsupported native capability request')
+        command.extend(['--request', request_capability])
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=_NATIVE_PROBE_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        _log.debug('fresh native access probe failed to start: %s', exc)
+        return None
+    stdout = result.stdout if isinstance(result.stdout, str) else ''
+    if result.returncode != 0 or len(stdout.encode('utf-8', 'replace')) > _NATIVE_PROBE_MAX_OUTPUT:
+        _log.debug('fresh native access probe exited unsuccessfully: %s', result.returncode)
+        return None
+    try:
+        payload = json.loads(stdout)
+    except (TypeError, ValueError, RecursionError):
+        _log.debug('fresh native access probe returned malformed JSON')
+        return None
+    if not isinstance(payload, dict) or payload.get('schema') != _NATIVE_PROBE_SCHEMA:
+        return None
+    identity = payload.get('identity')
+    if not isinstance(identity, dict) or identity.get('executable') != identity_executable:
+        _log.debug('fresh native access probe identity did not match the executor')
+        return None
+    capabilities = payload.get('capabilities')
+    if not isinstance(capabilities, list):
+        return None
+    parsed = {}
+    for row in capabilities:
+        if not isinstance(row, dict) or row.get('id') not in _MAC or row.get('id') in parsed:
+            return None
+        if row.get('status') not in {'granted', 'not_granted', 'unknown', 'unavailable'}:
+            return None
+        parsed[row['id']] = {
+            'status': row['status'],
+            'detail': str(row.get('detail') or 'Fresh native check returned no detail.'),
+        }
+    if set(parsed) != set(_MAC):
+        return None
+    return {'identity': identity, 'capabilities': parsed}
+
+
+def _mac_status(capability: str) -> dict:
+    probe = _native_probe()
+    if probe is None:
+        return _mac_row(
+            capability, status='unknown',
+            detail='The fresh native permission check failed; authorization is unknown.',
+        )
+    current = probe['capabilities'].get(capability)
+    if current is None:
+        return _mac_row(capability, status='unknown', detail='Native authorization is unknown.')
+    return _mac_row(capability, **current)
 
 
 def report() -> dict:
     """Return fresh advisory status for this process, not the connecting client."""
     system = platform.system()
     if system == 'Darwin':
-        rows = [_mac_status(key) for key in _MAC]
+        probe = _native_probe()
+        rows = []
+        for key in _MAC:
+            current = probe['capabilities'].get(key) if probe is not None else None
+            rows.append(_mac_row(
+                key,
+                status=current['status'] if current is not None else 'unknown',
+                detail=current['detail'] if current is not None
+                else 'The fresh native permission check failed; authorization is unknown.',
+            ))
     elif system == 'Linux':
         wayland = bool(os.environ.get('WAYLAND_DISPLAY'))
         display = bool(os.environ.get('DISPLAY'))
@@ -150,11 +284,7 @@ def request_access(capability: str) -> dict:
         before = _mac_status(capability)
         if before['status'] == 'granted' or not before['can_request']:
             return before
-        if capability == 'screen_recording':
-            importlib.import_module('Quartz').CGRequestScreenCaptureAccess()
-        else:
-            ax = importlib.import_module('ApplicationServices')
-            ax.AXIsProcessTrustedWithOptions({ax.kAXTrustedCheckOptionPrompt: True})
+        _native_probe(request_capability=capability)
         after = _mac_status(capability)
         if after['status'] != 'granted':
             after['settings_opened'] = _open_settings(capability)

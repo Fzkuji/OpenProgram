@@ -545,12 +545,21 @@ class RuntimeControlService:
         # The report is read-only and a failed or unknown probe leaves the
         # durable wait open for a later reconciliation pass.
         from openprogram.system_access import report as system_access_report
-        for wait in waits.list_open():
-            if wait.kind != "system_access":
+        open_waits = waits.list_open()
+        system_access_snapshot = None
+        if any(wait.kind == "system_access" for wait in open_waits):
+            try:
+                # One fresh executor probe is shared by every open wait in this
+                # reconciliation pass; report() itself never requests access.
+                system_access_snapshot = system_access_report()
+            except Exception:
+                _log.debug("fresh system access reconciliation failed", exc_info=True)
+        for wait in open_waits:
+            if wait.kind != "system_access" or system_access_snapshot is None:
                 continue
             try:
                 granted = waits.resolve_system_access(
-                    wait.wait_id, report=system_access_report(), owner_id=self.owner_id,
+                    wait.wait_id, report=system_access_snapshot, owner_id=self.owner_id,
                 )
             except Exception:
                 granted = None

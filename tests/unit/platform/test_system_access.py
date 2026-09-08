@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 import sys
 
 import pytest
@@ -8,20 +7,29 @@ from openprogram import system_access
 
 def test_macos_checks_both_and_does_not_prompt(monkeypatch):
     monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
-    calls = []
-    monkeypatch.setitem(sys.modules, 'Quartz', SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: False))
-    monkeypatch.setitem(sys.modules, 'ApplicationServices', SimpleNamespace(AXIsProcessTrusted=lambda: calls.append('ax') or True))
+    monkeypatch.setattr(system_access, '_native_probe', lambda: {
+        'identity': {'executable': sys.executable},
+        'capabilities': {
+            'screen_recording': {'status': 'not_granted', 'detail': 'fresh'},
+            'accessibility': {'status': 'granted', 'detail': 'fresh'},
+        },
+    })
     report = system_access.report()
     rows = {row['id']: row for row in report['capabilities']}
     assert rows['screen_recording']['status'] == 'not_granted'
     assert rows['accessibility']['status'] == 'granted'
-    assert calls == ['ax']
 
 
 def test_granted_request_is_noop(monkeypatch):
     monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
     monkeypatch.setattr(system_access, '_open_settings', lambda cap: (_ for _ in ()).throw(AssertionError('must not open settings')))
-    monkeypatch.setitem(sys.modules, 'Quartz', SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: True))
+    monkeypatch.setattr(system_access, '_native_probe', lambda request_capability=None: {
+        'identity': {'executable': sys.executable},
+        'capabilities': {
+            'screen_recording': {'status': 'granted', 'detail': 'fresh'},
+            'accessibility': {'status': 'granted', 'detail': 'fresh'},
+        },
+    })
     assert system_access.request_access('screen_recording')['status'] == 'granted'
 
 
@@ -38,7 +46,7 @@ def test_linux_is_not_granted_from_display(monkeypatch):
 
 def test_probe_failure_is_not_denial(monkeypatch):
     monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
-    monkeypatch.setitem(sys.modules, 'Quartz', SimpleNamespace())
+    monkeypatch.setattr(system_access, '_native_probe', lambda: None)
     assert system_access.report()['capabilities'][0]['status'] == 'unknown'
 
 
@@ -61,11 +69,19 @@ def test_explicit_request_only_prompts_missing_capability(monkeypatch):
     calls = []
     opened = []
     monkeypatch.setattr(system_access, '_open_settings', lambda cap: opened.append(cap) or True)
-    monkeypatch.setitem(sys.modules, 'ApplicationServices', SimpleNamespace(
-        AXIsProcessTrusted=lambda: False, kAXTrustedCheckOptionPrompt='prompt',
-        AXIsProcessTrustedWithOptions=lambda options: calls.append(options)))
+    def probe(request_capability=None):
+        calls.append(request_capability)
+        status = 'not_granted'
+        return {
+            'identity': {'executable': sys.executable},
+            'capabilities': {
+                'screen_recording': {'status': status, 'detail': 'fresh'},
+                'accessibility': {'status': status, 'detail': 'fresh'},
+            },
+        }
+    monkeypatch.setattr(system_access, '_native_probe', probe)
     row = system_access.request_access('accessibility')
-    assert calls == [{'prompt': True}]
+    assert calls == [None, 'accessibility', None]
     assert opened == ['accessibility']
     assert row['settings_opened']
     assert row['status'] == 'not_granted'
@@ -73,8 +89,13 @@ def test_explicit_request_only_prompts_missing_capability(monkeypatch):
 
 def test_gui_agent_desktop_manifest_requires_missing_macos_capabilities(monkeypatch):
     monkeypatch.setattr(system_access.platform, 'system', lambda: 'Darwin')
-    monkeypatch.setitem(sys.modules, 'Quartz', SimpleNamespace(CGPreflightScreenCaptureAccess=lambda: False))
-    monkeypatch.setitem(sys.modules, 'ApplicationServices', SimpleNamespace(AXIsProcessTrusted=lambda: True))
+    monkeypatch.setattr(system_access, '_native_probe', lambda: {
+        'identity': {'executable': sys.executable},
+        'capabilities': {
+            'screen_recording': {'status': 'not_granted', 'detail': 'fresh'},
+            'accessibility': {'status': 'granted', 'detail': 'fresh'},
+        },
+    })
 
     manifest = system_access.access_manifest_for_tool(
         'gui_agent', {'task': 'Open the app', 'surface': 'desktop'}
