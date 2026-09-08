@@ -1,16 +1,30 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Eye, GitBranch, Maximize2, Minimize2, X } from "lucide-react";
+import { Maximize2, Minimize2, MoreVertical, X } from "lucide-react";
 
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useTranslation } from "@/lib/i18n";
+import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useSidebarMenu, type SidebarMenuItem } from "@/components/sidebar/use-sidebar-menu";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
   controlResourceFromSession,
   displayedControlState,
   liveOperationMarker,
+  operationHistory,
+  requestExplicitPause,
+  requestResumeAgent,
+  resumeErrorFor,
+  showActionsEnabled,
+  toggleShowActions,
+  useBrowserControlStore,
 } from "@/lib/state/browser-control";
 import { fittedImageRect, mapOperationPoint } from "@/lib/state/browser-marker-geometry";
 import {
@@ -31,20 +45,17 @@ import {
   getSnapshot,
   PIP_MIN_HEIGHT,
   PIP_MIN_WIDTH,
-  peekPipPageDock,
   pipChatRect,
   pipHostMode,
-  pipPresentationSize,
   setSnapshot,
   startWebTabCaptureLoop,
-  subscribePipPageDock,
   useWebTabPip,
-  type PipHostMode,
   type WebTabPipRect,
 } from "@/lib/state/web-tab-pip-store";
-import { BrowserControlBar } from "./browser-control-bar";
 
 import styles from "./center-tabs.module.css";
+
+const COMPACT_PIP_WIDTH = 300;
 
 type PipDrag = {
   kind: "move" | "resize";
@@ -92,6 +103,18 @@ function resourceForTab(tabId: string): SessionResource | undefined {
   return listedBrowserResources().find(row => previewTabId(row) === tabId);
 }
 
+function statusLabel(
+  state: ReturnType<typeof displayedControlState>,
+  text: (en: string, zh: string) => string,
+): string {
+  if (state === "yielding") return text("Yielding", "正在让出");
+  if (state === "paused") return text("Paused", "已暂停");
+  if (state === "stop_unconfirmed") return text("Stop unconfirmed", "停止未确认");
+  if (state === "unknown") return text("Unknown", "未知");
+  if (state === "idle" || state === "closed") return text("Idle", "空闲");
+  return text("Active", "活动中");
+}
+
 function PipActionMark({
   point,
   body,
@@ -107,6 +130,92 @@ function PipActionMark({
   const pos = mapOperationPoint(point, fitted, image);
   if (!pos) return null;
   return <span className={styles.browserActionMark} style={{ left: pos.left, top: pos.top }} aria-hidden="true" />;
+}
+
+function PipMoreMenu({
+  compact,
+  followVisible,
+  followLabel,
+  onFollow,
+  historyItems,
+  historyLabel,
+  showLabel,
+}: {
+  compact: boolean;
+  followVisible: boolean;
+  followLabel: string;
+  onFollow: () => void;
+  historyItems: SidebarMenuItem[];
+  historyLabel: string;
+  showLabel: string;
+}) {
+  const { text } = useTranslation();
+  const menu = useSidebarMenu();
+  const moreLabel = text("More", "更多");
+  const native = typeof window !== "undefined" && !!window.openprogramDesktop?.contextMenu;
+  const items: SidebarMenuItem[] = [
+    ...(compact && followVisible
+      ? [{ id: "follow", label: followLabel, onSelect: onFollow }]
+      : []),
+    {
+      id: "show-actions",
+      label: showLabel,
+      checked: showActionsEnabled(),
+      onSelect: () => { toggleShowActions(); },
+    },
+    {
+      id: "history",
+      label: historyLabel,
+      separatorBefore: true,
+      children: historyItems,
+    },
+  ];
+  if (native) {
+    return (
+      <button
+        type="button"
+        className={styles.webToolbarBtn}
+        title={moreLabel}
+        aria-label={moreLabel}
+        aria-haspopup="menu"
+        aria-expanded={menu.open}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          if (menu.open) menu.close();
+          else menu.show(event, items);
+        }}
+      >
+        <MoreVertical size={14} aria-hidden="true" />
+      </button>
+    );
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          title={moreLabel}
+          aria-label={moreLabel}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <MoreVertical size={14} aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className={MENU_PANEL}>
+        {compact && followVisible ? (
+          <DropdownMenuItem onSelect={onFollow}>{followLabel}</DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem onSelect={() => { toggleShowActions(); }}>
+          {showActionsEnabled() ? "✓ " : ""}{showLabel}
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled>{historyLabel}</DropdownMenuItem>
+        {historyItems.map((item) => (
+          <DropdownMenuItem key={item.id} disabled>{item.label}</DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export function WebTabPip() {
@@ -132,11 +241,14 @@ export function WebTabPip() {
   const connected = useBrowserResourceStore(s => s.connected);
   useBrowserResourceStore(s => s.ingestClock);
   useBrowserResourceStore(s => s.preferences);
+  useBrowserControlStore(s => s.showActions);
+  useBrowserControlStore(s => s.pending);
+  useBrowserControlStore(s => s.resumeError);
+  useBrowserControlStore(s => s.history);
   const resource = tabId ? resourceForTab(tabId) : undefined;
   const control = resource ? controlResourceFromSession(resource) : null;
   const center = { tabs, activeId, groups, splitWebTabId };
-  const host: PipHostMode | null = pipHostMode(tabId, ownerTabId, center);
-  const live = host !== null;
+  const live = pipHostMode(tabId, ownerTabId, center) === "chat";
   const expanded = !!pref?.expanded;
   const rootRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PipDrag | null>(null);
@@ -145,8 +257,8 @@ export function WebTabPip() {
   const shotRef = useRef<HTMLImageElement>(null);
   const captureGenRef = useRef(0);
   const [freshness, setFreshness] = useState<"live" | "last-frame" | "unavailable">("unavailable");
-  const [dock, setDock] = useState<HTMLElement | null>(null);
   const [chatBox, setChatBox] = useState<WebTabPipRect | null>(null);
+  const [compact, setCompact] = useState(false);
   const [, render] = useState(0);
   const bridge = desktopBridge();
   const url = tab?.url || (tabId?.startsWith("w:") ? tabId.slice(2) : "");
@@ -182,26 +294,13 @@ export function WebTabPip() {
   }, [live]);
 
   useLayoutEffect(() => {
-    if (host !== "page" || !tabId) {
-      setDock(null);
-      return;
-    }
-    const sync = () => {
-      const next = peekPipPageDock(tabId);
-      setDock((prev) => (prev === next ? prev : next));
-    };
-    sync();
-    return subscribePipPageDock(sync);
-  }, [host, tabId, live]);
-
-  useLayoutEffect(() => {
     if (!tabId || !live) return;
     showShot(getSnapshot(tabId) ?? null);
-  }, [host, tabId, live, dock]);
+  }, [tabId, live]);
 
   useLayoutEffect(() => {
     const el = rootRef.current;
-    if (!el || host !== "chat") {
+    if (!el || !live) {
       setChatBox(null);
       return;
     }
@@ -215,11 +314,13 @@ export function WebTabPip() {
         ? prev
         : next
     ));
-  }, [host, live, expanded, rect, expandedSize]);
+    const width = el.getBoundingClientRect().width;
+    setCompact(width > 0 && width < COMPACT_PIP_WIDTH);
+  }, [live, expanded, rect, expandedSize]);
 
   useEffect(() => {
     const el = rootRef.current;
-    if (!el || !live || host !== "chat") return;
+    if (!el || !live) return;
     const parent = el.offsetParent;
     if (!(parent instanceof HTMLElement)) return;
     const reclamp = () => {
@@ -232,13 +333,16 @@ export function WebTabPip() {
       ) {
         setRect(next);
       }
+      const width = el.getBoundingClientRect().width;
+      setCompact(width > 0 && width < COMPACT_PIP_WIDTH);
     };
     const ro = new ResizeObserver(reclamp);
     ro.observe(parent);
+    ro.observe(el);
     const chat = parent.querySelector(".center-pane-chat");
     if (chat instanceof HTMLElement) ro.observe(chat);
     return () => ro.disconnect();
-  }, [live, host, expanded, setRect]);
+  }, [live, expanded, setRect]);
 
   useEffect(() => {
     if (!tabId || !live) return;
@@ -276,10 +380,10 @@ export function WebTabPip() {
     };
   }, [bridge, tabId, live]);
 
-  const presented = host === "chat" && chatBox
+  const presented = live && chatBox
     ? pipChatRect(rect, expanded, chatBox, expandedSize)
     : null;
-  const pipStyle = host === "page" || !presented ? undefined : {
+  const pipStyle = !presented ? undefined : {
     left: presented.x,
     top: presented.y,
     width: presented.width,
@@ -288,37 +392,73 @@ export function WebTabPip() {
     bottom: "auto",
   };
 
-  const pageDock = host === "page" ? dock : null;
   if (!tabId || !tab || !live) return null;
-  if (host === "page" && !pageDock) return null;
 
   const title = resource?.title || tab.title || url;
-  const followLabel = text("Follow current branch", "跟随当前分支");
-  const usePage = text("Use in webpage", "在网页中使用");
+  const followLabel = text("Follow", "跟随");
+  const openPage = text("Open page", "打开页面");
   const hideLabel = text("Hide", "隐藏");
   const expandLabel = pref?.expanded ? text("Collapse", "收起") : text("Expand", "展开");
   const resizeLabel = text("Resize preview", "调整预览大小");
   const modeLabel = pref?.mode === "follow"
     ? text("Following Agent", "跟随 Agent")
     : text("Manual inspection", "手动查看");
+  const controlState = control ? displayedControlState(control) : null;
+  const stateText = controlState ? statusLabel(controlState, text) : "";
+  const resumeError = control ? resumeErrorFor(control.resourceId) : undefined;
+  const statusText = resumeError || stateText;
   const frameState = !connected && freshness === "live" ? "last-frame" : freshness;
   const freshLabel = frameState === "live"
     ? text("Read-only image mirror", "只读图像镜像")
     : frameState === "last-frame"
       ? text("Last frame", "最后一帧")
       : text("Image preview unavailable", "无法预览图像");
+  const takeoverKind = !controlState || controlState === "idle" || controlState === "closed"
+    ? null
+    : controlState === "paused"
+      ? "resume"
+      : controlState === "yielding"
+        ? "yielding"
+        : "takeover";
+  const takeoverLabel = takeoverKind === "resume"
+    ? text("Resume", "恢复")
+    : takeoverKind === "yielding"
+      ? text("Yielding", "正在让出")
+      : text("Take over", "接管");
+  const takeoverDisabled = takeoverKind === "yielding"
+    || controlState === "unknown"
+    || controlState === "stop_unconfirmed"
+    || !connected
+    || (takeoverKind === "resume" && controlState !== "paused");
+  const followOnBar = pref?.mode === "manual" && !compact;
+  const followInMore = pref?.mode === "manual" && compact;
+  const history = control ? operationHistory(control.resourceId) : [];
+  const historyLabel = text("Operation history", "操作历史");
+  const showLabel = text("Show actions", "显示操作");
+  const historyItems: SidebarMenuItem[] = history.length === 0
+    ? [{ id: "empty", label: text("No operations yet.", "尚无操作。"), disabled: true }]
+    : history.map(item => ({
+      id: item.id,
+      label: `${item.action} · ${item.phase}${item.error ? ` · ${item.error}` : ""}`,
+      disabled: true,
+    }));
 
-  const liveRect = (el: HTMLElement) =>
-    host === "page"
-      ? { x: 0, y: 0, ...pipPresentationSize(rect, expanded, expandedSize) }
-      : presented ?? rect ?? measuredRect(el);
+  const followCurrent = () => {
+    if (!sessionId) return;
+    const next = followCurrentBranch(sessionId, branchId);
+    const target = listedBrowserResources().find(row => row.id === (next.targetId || latestFollowTarget(sessionId, branchId)));
+    const nextTab = previewTabId(target);
+    if (nextTab && ownerTabId) useWebTabPip.getState().show(nextTab, ownerTabId);
+    render(value => value + 1);
+  };
+
+  const liveRect = (el: HTMLElement) => presented ?? rect ?? measuredRect(el);
 
   const previewRect = (
     el: HTMLElement,
     drag: PipDrag,
     next: WebTabPipRect,
   ) => {
-    if (host === "page") return;
     if (drag.kind === "move") {
       el.style.transform = `translate(${next.x - drag.origin.x}px, ${next.y - drag.origin.y}px)`;
       return;
@@ -335,19 +475,6 @@ export function WebTabPip() {
     el.style.transform = "";
     el.style.willChange = "";
     el.classList.remove(styles.webPipDragging);
-    if (host === "page") {
-      if (expanded) setExpandedSize({ width: next.width, height: next.height });
-      else {
-        const current = useWebTabPip.getState().rect;
-        setRect({
-          x: current?.x ?? 0,
-          y: current?.y ?? 78,
-          width: next.width,
-          height: next.height,
-        });
-      }
-      return;
-    }
     el.style.left = `${next.x}px`;
     el.style.top = `${next.y}px`;
     el.style.width = `${next.width}px`;
@@ -363,7 +490,6 @@ export function WebTabPip() {
     event: React.PointerEvent<HTMLElement>,
   ) => {
     if (event.button !== 0) return;
-    if (host === "page" && kind === "move") return;
     const el = rootRef.current;
     if (!el) return;
     event.preventDefault();
@@ -387,33 +513,13 @@ export function WebTabPip() {
     if (!drag || drag.pointerId !== event.pointerId || !el) return;
     const dx = event.clientX - drag.startX;
     const dy = event.clientY - drag.startY;
-    const next = host === "page"
-      ? {
-        x: 0,
-        y: 0,
-        width: Math.max(PIP_MIN_WIDTH, drag.origin.width + dx),
-        height: Math.max(PIP_MIN_HEIGHT, drag.origin.height + dy),
-      }
-      : clampPipRect(
-        drag.kind === "move"
-          ? { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }
-          : { ...drag.origin, width: drag.origin.width + dx, height: drag.origin.height + dy },
-        containerBox(el),
-      );
+    const next = clampPipRect(
+      drag.kind === "move"
+        ? { ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy }
+        : { ...drag.origin, width: drag.origin.width + dx, height: drag.origin.height + dy },
+      containerBox(el),
+    );
     pendingRectRef.current = next;
-    if (host === "page") {
-      if (expanded) setExpandedSize({ width: next.width, height: next.height });
-      else {
-        const current = useWebTabPip.getState().rect;
-        setRect({
-          x: current?.x ?? 0,
-          y: current?.y ?? 78,
-          width: next.width,
-          height: next.height,
-        });
-      }
-      return;
-    }
     if (rafRef.current) return;
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = 0;
@@ -442,15 +548,15 @@ export function WebTabPip() {
     }
   };
 
-  const node = (
+  return (
     <div
       ref={rootRef}
       className={`${styles.webPip} ${expanded ? styles.webPipExpanded : ""}`}
       data-pip="true"
-      data-pip-host={host}
+      data-pip-host="chat"
       role="complementary"
       aria-label={title}
-      data-state={control ? displayedControlState(control) : "readonly"}
+      data-state={controlState || "readonly"}
       style={pipStyle}
     >
       <div
@@ -460,38 +566,18 @@ export function WebTabPip() {
         onPointerUp={onDragPointerUp}
         onPointerCancel={onDragPointerUp}
       >
-        <div className={styles.webPipIdentity}>
-          <span className={styles.webPipTitle} title={`${title} · ${modeLabel}`}>{title}</span>
-          <small className={styles.webPipMode}>{modeLabel}</small>
-        </div>
-        <div className={styles.webPipActions}>
-        <button
-          type="button"
-          className={styles.webToolbarBtn}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => {
-            if (!sessionId) return;
-            const next = followCurrentBranch(sessionId, branchId);
-            const target = listedBrowserResources().find(row => row.id === (next.targetId || latestFollowTarget(sessionId, branchId)));
-            const nextTab = previewTabId(target);
-            if (nextTab && ownerTabId) useWebTabPip.getState().show(nextTab, ownerTabId);
-            render(value => value + 1);
-          }}
-          title={followLabel}
-          aria-label={followLabel}
-        >
-          <GitBranch size={14} />
-        </button>
-        <button
-          type="button"
-          className={styles.webToolbarBtn}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}
-          title={usePage}
-          aria-label={usePage}
-        >
-          <Eye size={14} />
-        </button>
+        <span className={styles.webPipTitle} title={`${title} · ${modeLabel}`}>{title}</span>
+        {statusText ? (
+          <small
+            className={styles.webPipMode}
+            data-resume-error={resumeError ? "true" : undefined}
+            title={resumeError ? `${stateText}: ${resumeError}` : stateText}
+            role={resumeError ? "status" : undefined}
+            aria-live={resumeError ? "polite" : undefined}
+          >
+            {statusText}
+          </small>
+        ) : null}
         <button
           type="button"
           className={styles.webToolbarBtn}
@@ -518,9 +604,44 @@ export function WebTabPip() {
         >
           <X size={14} />
         </button>
-        </div>
       </div>
-      <BrowserControlBar resource={control} compact />
+      <div className={styles.webPipBar}>
+        <button
+          type="button"
+          className={styles.webPipBarBtn}
+          onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}
+        >
+          {openPage}
+        </button>
+        {takeoverKind && control ? (
+          <button
+            type="button"
+            className={styles.webPipBarBtn}
+            disabled={takeoverDisabled}
+            title={resumeError || takeoverLabel}
+            aria-label={resumeError ? `${takeoverLabel}: ${resumeError}` : takeoverLabel}
+            onClick={() => {
+              void (takeoverKind === "resume" ? requestResumeAgent(control) : requestExplicitPause(control));
+            }}
+          >
+            {takeoverLabel}
+          </button>
+        ) : null}
+        {followOnBar ? (
+          <button type="button" className={styles.webPipBarBtn} onClick={followCurrent}>
+            {followLabel}
+          </button>
+        ) : null}
+        <PipMoreMenu
+          compact={compact}
+          followVisible={followInMore}
+          followLabel={followLabel}
+          onFollow={followCurrent}
+          historyItems={historyItems}
+          historyLabel={historyLabel}
+          showLabel={showLabel}
+        />
+      </div>
       <div className={styles.webPipStage}>
         <div className={styles.webPipBody}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -529,8 +650,8 @@ export function WebTabPip() {
             <div className={styles.webPipFallback}>
               {freshLabel}
               {tabId ? (
-                <button type="button" className={styles.webToolbarBtn} onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}>
-                  {usePage}
+                <button type="button" className={styles.webPipBarBtn} onClick={() => revealExistingWebTab(tabId, useCenterTabs.getState())}>
+                  {openPage}
                 </button>
               ) : null}
             </div>
@@ -560,6 +681,4 @@ export function WebTabPip() {
       </div>
     </div>
   );
-
-  return pageDock ? createPortal(node, pageDock) : node;
 }

@@ -74,6 +74,7 @@ export function BrowserControlBar({
   const connected = browserConnectionOpen();
   const resumeDisabled = !connected || state !== "paused";
   const pauseDisabled = state === "yielding" || state === "unknown" || state === "stop_unconfirmed" || !connected;
+  const showTakeover = state !== "idle" && state !== "closed";
   const nativeHistory = typeof window !== "undefined" && !!window.openprogramDesktop?.contextMenu;
   return (
     <div className={styles.browserControl} data-compact={compact ? "true" : "false"}>
@@ -122,20 +123,22 @@ export function BrowserControlBar({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      <button
-        type="button"
-        className={styles.webToolbarBtn}
-        disabled={state === "paused" ? resumeDisabled : pauseDisabled}
-        title={pauseLabel}
-        aria-label={pauseLabel}
-        onClick={() => {
-          void (state === "paused" ? requestResumeAgent(live) : requestExplicitPause(live));
-        }}
-      >
-        {state === "paused"
-          ? <Play size={14} aria-hidden="true" />
-          : <Pause size={14} aria-hidden="true" />}
-      </button>
+      {showTakeover ? (
+        <button
+          type="button"
+          className={styles.webToolbarBtn}
+          disabled={state === "paused" ? resumeDisabled : pauseDisabled}
+          title={pauseLabel}
+          aria-label={pauseLabel}
+          onClick={() => {
+            void (state === "paused" ? requestResumeAgent(live) : requestExplicitPause(live));
+          }}
+        >
+          {state === "paused"
+            ? <Play size={14} aria-hidden="true" />
+            : <Pause size={14} aria-hidden="true" />}
+        </button>
+      ) : null}
     </div>
   );
 }

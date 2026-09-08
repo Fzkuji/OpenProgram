@@ -260,6 +260,31 @@ test("pause click posts pause, then resume posts after acknowledgement", async (
   });
 });
 
+test("idle and closed do not render an enabled Pause", async () => {
+  await mounted(host => {
+    assert.equal(host.textContent.includes("Idle"), true);
+    assert.equal(labeledButton(host, "Pause Agent and take over"), undefined);
+    assert.equal(labeledButton(host, "Resume Agent"), undefined);
+    assertIconButton(labeledButton(host, "Show actions"), "Show actions");
+    assertIconButton(labeledButton(host, "Operation history"), "Operation history");
+  }, { controlState: "idle" });
+
+  await mounted(host => {
+    assert.equal(labeledButton(host, "Pause Agent and take over"), undefined);
+    assert.equal(labeledButton(host, "Resume Agent"), undefined);
+  }, { controlState: "closed" });
+});
+
+test("stop unconfirmed keeps a disabled Take over and does not look paused", async () => {
+  await mounted(host => {
+    const pause = labeledButton(host, "Pause Agent and take over");
+    assert.ok(pause);
+    assert.equal(pause.disabled, true);
+    assert.equal(labeledButton(host, "Resume Agent"), undefined);
+    assert.equal(host.firstElementChild?.textContent.includes("Stop unconfirmed"), true);
+  }, { controlState: "stop_unconfirmed" });
+});
+
 test("yielding unknown and disconnect disable takeover", async () => {
   await mounted(host => {
     const pause = labeledButton(host, "Yielding");

@@ -148,6 +148,34 @@ test("parent Resources keep authorized child-owned browser Pages", () => {
   assert.equal(groupSessionResources(listed, "br-parent")[0].key, "br-parent");
 });
 
+test("unnamed branch groups use short origin, not the raw branch id", () => {
+  const branchId = "local_139d9ce9-b16e-4fb6-ac85-712ef0e5b03a:6bf13196";
+  const unnamed = backendResourceRows([
+    browserItem({ branch_id: branchId, branch_name: null }),
+  ], "a");
+  const unnamedGroups = groupSessionResources(unnamed, branchId);
+  assert.equal(unnamedGroups[0].key, branchId);
+  assert.equal(unnamedGroups[0].title, "6bf13196");
+  assert.equal(unnamedGroups[0].title.includes("local_"), false);
+
+  const promoted = backendResourceRows([
+    browserItem({ branch_id: branchId, branch_name: null }),
+    browserItem({
+      id: "assoc-named", branch_id: branchId, branch_name: "五页计数器发布验收", sequence: 2,
+    }),
+  ], "a");
+  assert.equal(groupSessionResources(promoted, branchId)[0].title, "五页计数器发布验收");
+  assert.equal(groupSessionResources(promoted, branchId)[0].key, branchId);
+
+  const firstNamed = backendResourceRows([
+    browserItem({ branch_id: branchId, branch_name: "Research" }),
+    browserItem({
+      id: "assoc-later", branch_id: branchId, branch_name: "Build", sequence: 2,
+    }),
+  ], "a");
+  assert.equal(groupSessionResources(firstNamed, branchId)[0].title, "Research");
+});
+
 test("closed Pages move to a collapsed unavailable group and leave live counts", () => {
   const rows = backendResourceRows([
     browserItem({ id: "assoc-live", status: "open", control_state: "active" }),

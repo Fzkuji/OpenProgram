@@ -13,11 +13,9 @@ export { startWebTabCaptureLoop } from "./web-tab-capture-loop";
 export const PIP_MIN_WIDTH = 240;
 export const PIP_MIN_HEIGHT = 160;
 export const PIP_DEFAULT_WIDTH = 360;
-export const PIP_DEFAULT_HEIGHT = 220;
+export const PIP_DEFAULT_HEIGHT = 280;
 export const PIP_EXPANDED_WIDTH = 720;
 export const PIP_EXPANDED_HEIGHT = 480;
-export const PIP_PAGE_NATIVE_MIN_WIDTH = 320;
-export const PIP_PAGE_NATIVE_MIN_HEIGHT = 160;
 
 export type WebTabPipRect = {
   x: number;
@@ -26,8 +24,7 @@ export type WebTabPipRect = {
   height: number;
 };
 
-export type PipHostMode = "chat" | "page";
-export type PipDockEdge = "end" | "bottom";
+export type PipHostMode = "chat";
 
 type PipCenterState = {
   tabs: readonly { id: string; kind: string }[];
@@ -50,35 +47,6 @@ export function pipPairedOwnerFor(tabId: string): string | null {
  *  Split-open uses this; PiP `show()` goes through it too. */
 export function registerPipPair(tabId: string, ownerTabId: string): void {
   pairedOwnerByTabId.set(tabId, ownerTabId);
-}
-
-const pipPageDocks = new Map<string, HTMLElement>();
-const pipPageDockListeners = new Set<() => void>();
-
-/** Pane dock host for the live-page PiP portal. Ref attach/detach is the
- *  lifecycle; PiP re-reads on subscribe instead of a one-shot query. */
-export function setPipPageDock(tabId: string, el: HTMLElement | null): void {
-  const current = pipPageDocks.get(tabId) ?? null;
-  if (el) {
-    if (current === el) return;
-    pipPageDocks.set(tabId, el);
-  } else if (current) {
-    pipPageDocks.delete(tabId);
-  } else {
-    return;
-  }
-  for (const listen of pipPageDockListeners) listen();
-}
-
-export function peekPipPageDock(tabId: string): HTMLElement | null {
-  return pipPageDocks.get(tabId) ?? null;
-}
-
-export function subscribePipPageDock(listen: () => void): () => void {
-  pipPageDockListeners.add(listen);
-  return () => {
-    pipPageDockListeners.delete(listen);
-  };
 }
 
 export const useWebTabPip = create<{
@@ -263,11 +231,11 @@ function pipCoverBase(tabId: string, state: PipCenterState): boolean {
   const group = state.activeId
     ? state.groups.find((item) => item.memberIds.includes(state.activeId!))
     : undefined;
-  if (group?.visibleIds.includes(tabId) && state.activeId !== tabId) return false;
+  if (group?.visibleIds.includes(tabId)) return false;
   if (state.splitWebTabId === tabId) return false;
   if (state.activeId) {
     const active = state.tabs.find((tab) => tab.id === state.activeId);
-    if (active && active.kind !== "session" && active.id !== tabId) return false;
+    if (active && active.kind !== "session") return false;
   }
   return true;
 }
@@ -277,19 +245,17 @@ export function pipCoversCenter(
   ownerTabId: string | null,
   state: PipCenterState = useCenterTabs.getState(),
 ): boolean {
-  return pipCoverBase(tabId, state) && !!ownerTabId
-    && (state.activeId === ownerTabId || state.activeId === tabId);
+  return pipCoverBase(tabId, state) && !!ownerTabId && state.activeId === ownerTabId;
 }
 
-/** Chat keeps the floating overlay. The same live Page tab reserves a
- *  renderer dock beside the native `.webFrame` instead of covering it. */
+/** Chat PiP is a floating overlay on the owner conversation only. */
 export function pipHostMode(
   tabId: string | null,
   ownerTabId: string | null,
   state: PipCenterState = useCenterTabs.getState(),
 ): PipHostMode | null {
   if (!tabId || !pipCoversCenter(tabId, ownerTabId, state)) return null;
-  return state.activeId === tabId ? "page" : "chat";
+  return "chat";
 }
 
 export function pipPresentationSize(
@@ -307,16 +273,6 @@ export function pipPresentationSize(
     width: rect?.width ?? PIP_DEFAULT_WIDTH,
     height: rect?.height ?? PIP_DEFAULT_HEIGHT,
   };
-}
-
-export function pipDockEdge(
-  paneWidth: number,
-  dockWidth: number,
-): PipDockEdge {
-  if (paneWidth <= 0) return "end";
-  return paneWidth >= PIP_PAGE_NATIVE_MIN_WIDTH + Math.max(PIP_MIN_WIDTH, dockWidth)
-    ? "end"
-    : "bottom";
 }
 
 export function pipChatRect(

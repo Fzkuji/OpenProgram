@@ -286,6 +286,13 @@ export function resourceIsUnavailable(row: SessionResource): boolean {
   return row.status === "closed" || row.controlState === "closed";
 }
 
+/** Unnamed branch groups show the origin after the last colon, truncated
+ *  to 8 characters. The grouping key stays the full branch id. */
+function unnamedBranchTitle(branchId: string): string {
+  const origin = branchId.includes(":") ? branchId.slice(branchId.lastIndexOf(":") + 1) : branchId;
+  return origin.slice(0, 8) || branchId;
+}
+
 export function groupSessionResources(rows: readonly SessionResource[], currentBranchId: string | null): ResourceGroup[] {
   const groups = new Map<string, ResourceGroup>();
   for (const row of rows) {
@@ -294,12 +301,12 @@ export function groupSessionResources(rows: readonly SessionResource[], currentB
     if (!group) {
       group = {
         key,
-        title: key === "unavailable" ? "Unavailable" : key === "unassigned" ? "Unassigned" : (row.branchName || key),
+        title: key === "unavailable" ? "Unavailable" : key === "unassigned" ? "Unassigned" : (row.branchName || unnamedBranchTitle(key)),
         current: key === currentBranchId,
         rows: [],
       };
       groups.set(key, group);
-    } else if (row.branchName && group.title === key) {
+    } else if (row.branchName && (group.title === key || group.title === unnamedBranchTitle(key))) {
       group.title = row.branchName;
     }
     group.rows.push(row);

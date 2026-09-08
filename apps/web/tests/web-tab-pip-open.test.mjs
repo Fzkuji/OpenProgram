@@ -50,6 +50,19 @@ window.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} };
 globalThis.ResizeObserver = window.ResizeObserver;
 window.requestAnimationFrame = () => 0;
 window.cancelAnimationFrame = () => {};
+window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+window.HTMLElement.prototype.hasPointerCapture = () => false;
+window.HTMLElement.prototype.setPointerCapture = () => {};
+window.HTMLElement.prototype.releasePointerCapture = () => {};
+window.HTMLElement.prototype.scrollIntoView = () => {};
+if (!globalThis.DOMRect) {
+  globalThis.DOMRect = class DOMRect {
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x; this.y = y; this.width = width; this.height = height;
+      this.top = y; this.left = x; this.right = x + width; this.bottom = y + height;
+    }
+  };
+}
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const {
@@ -66,14 +79,16 @@ function hiddenPages() {
     pageTab(`w:hidden-${index}`, "a", `https://hidden.test/${index}`, { title: `Hidden ${index}` }));
 }
 
-function toolbarUsePage(host) {
-  return [...host.querySelectorAll("button")]
-    .find(button => button.getAttribute("aria-label") === "Use in webpage");
+function toolbarOpenPage(host) {
+  const pip = host.querySelector("[data-pip='true']");
+  const bar = pip?.children[1];
+  return [...(bar?.querySelectorAll("button") || [])]
+    .find(button => button.textContent === "Open page");
 }
 
-function fallbackUsePage(host) {
+function fallbackOpenPage(host) {
   return [...host.querySelectorAll("button")]
-    .find(button => button.textContent === "Use in webpage" && button.getAttribute("aria-label") !== "Use in webpage");
+    .find(button => button.textContent === "Open page" && button !== toolbarOpenPage(host));
 }
 
 async function withPip(run) {
@@ -114,7 +129,7 @@ function assertRevealedExactPage({ page, hidden, session, prefBefore }) {
   assert.equal(state.tabs.find(tab => tab.id === page.id).agentSessionId, "a");
   assert.deepEqual(state.tabs.map(tab => tab.id), [session.id, page.id, ...hidden.map(tab => tab.id)]);
   const visible = topLevelTabs(state.tabs, state.groups).map(tab => tab.id);
-  assert.ok(visible.includes(page.id), "Use in webpage must add the existing page to the top strip");
+  assert.ok(visible.includes(page.id), "Open page must add the existing page to the top strip");
   assert.equal(visible.filter(id => id === page.id).length, 1);
   hidden.forEach(tab => assert.ok(!visible.includes(tab.id)));
   assert.ok(visible.includes(session.id));
@@ -124,25 +139,29 @@ function assertRevealedExactPage({ page, hidden, session, prefBefore }) {
   assert.deepEqual(getPreviewPreference("a", null), prefBefore);
 }
 
-test("PiP toolbar Use in webpage reveals the exact hidden page as the current top tab", async () => {
+test("PiP toolbar Open page reveals the exact hidden page as the current top tab", async () => {
   await withPip(async ({ host, page, hidden, session, prefBefore }) => {
     const visibleBefore = topLevelTabs(useCenterTabs.getState().tabs, []).map(tab => tab.id);
     assert.ok(!visibleBefore.includes(page.id));
     hidden.forEach(tab => assert.ok(!visibleBefore.includes(tab.id)));
-    const button = toolbarUsePage(host);
+    const button = toolbarOpenPage(host);
     assert.ok(button);
-    assert.equal(fallbackUsePage(host) !== button, true);
+    assert.equal(fallbackOpenPage(host) !== button, true);
     await act(async () => button.click());
     assertRevealedExactPage({ page, hidden, session, prefBefore });
+    assert.equal(host.querySelector("[data-pip='true']"), null, "opening the Page hides the chat preview");
+    assert.equal(useWebTabPip.getState().tabId, page.id);
+    assert.equal(useWebTabPip.getState().ownerTabId, session.id);
   });
 });
 
-test("PiP fallback Use in webpage reveals the exact hidden page as the current top tab", async () => {
+test("PiP fallback Open page reveals the exact hidden page as the current top tab", async () => {
   await withPip(async ({ host, page, hidden, session, prefBefore }) => {
-    const button = fallbackUsePage(host);
+    const button = fallbackOpenPage(host);
     assert.ok(button);
-    assert.equal(toolbarUsePage(host) !== button, true);
+    assert.equal(toolbarOpenPage(host) !== button, true);
     await act(async () => button.click());
     assertRevealedExactPage({ page, hidden, session, prefBefore });
+    assert.equal(host.querySelector("[data-pip='true']"), null, "opening the Page hides the chat preview");
   });
 });

@@ -20,10 +20,11 @@ await build({
     export {
       useWebTabPip,
       pipChatRect,
-      pipDockEdge,
+      pipCoversCenter,
       pipHostMode,
       pipPresentationSize,
       PIP_DEFAULT_WIDTH,
+      PIP_DEFAULT_HEIGHT,
       PIP_EXPANDED_HEIGHT,
       PIP_EXPANDED_WIDTH,
       PIP_MIN_WIDTH,
@@ -37,17 +38,25 @@ await build({
       selectResourcePreview,
       togglePreviewExpanded,
       hideResourcePreview,
+      followCurrentBranch,
     } from "./lib/state/session-resources";
+    export { recordOperationCue, resetBrowserControl, resumeErrorFor } from "./lib/state/browser-control";
   `, resolveDir: webPath },
   bundle: true, format: "esm", jsx: "automatic", outfile: bundle,
   packages: "external", platform: "node", tsconfig: join(webPath, "tsconfig.json"),
   loader: { ".css": "empty" },
   plugins: [{ name: "dock-services", setup(b) {
     b.onResolve({ filter: /desktop-bridge/ }, () => ({ path: "desktop-bridge", namespace: "test-services" }));
-    b.onResolve({ filter: /browser-control-bar/ }, () => ({ path: "control-bar", namespace: "test-services" }));
+    b.onResolve({ filter: /net\/fetch-client/ }, () => ({ path: "fetch-client", namespace: "test-services" }));
     b.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: "next-nav", namespace: "test-services" }));
-    b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents: a.path === "control-bar"
-      ? "export function BrowserControlBar() { return null; }"
+    b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents: a.path === "fetch-client"
+      ? `export async function jsonFetch(url, init) {
+            const body = JSON.parse(init.body || "{}");
+            globalThis.controlPosts = globalThis.controlPosts || [];
+            globalThis.controlPosts.push({ url: String(url), body });
+            if (typeof globalThis.controlReply === "function") return globalThis.controlReply({ url, body });
+            return { id: "assoc-1", resource_id: "page-1", control_state: "paused", session_id: "a", conversation_session_id: "a", tab_id: "w:https://page.test/1", kind: "web", title: "Resource test 1", target: "https://page.test/1", status: "open", source: "browser", generation: 1, sequence: 3 };
+          }`
       : a.path === "next-nav"
       ? "export const useRouter = () => ({ push() {}, replace() {} }); export const usePathname = () => '/chat';"
       : `
@@ -124,6 +133,20 @@ function flushObservers() {
 }
 window.requestAnimationFrame = () => 0;
 window.cancelAnimationFrame = () => {};
+window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+window.HTMLElement.prototype.hasPointerCapture = () => false;
+window.HTMLElement.prototype.setPointerCapture = () => {};
+window.HTMLElement.prototype.releasePointerCapture = () => {};
+window.HTMLElement.prototype.scrollIntoView = () => {};
+if (!globalThis.DOMRect) {
+  globalThis.DOMRect = class DOMRect {
+    constructor(x = 0, y = 0, width = 0, height = 0) {
+      this.x = x; this.y = y; this.width = width; this.height = height;
+      this.top = y; this.left = x; this.right = x + width; this.bottom = y + height;
+    }
+  };
+}
+globalThis.PointerEvent = window.PointerEvent || window.MouseEvent;
 globalThis.webTabBoundsCalls = boundsCalls;
 globalThis.webTabBoundsRemoved = { count: 0 };
 
@@ -157,9 +180,7 @@ HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
   }
   if (this.hasAttribute("data-pip-dock")) return box(0, 80, stageWidth, 520);
   if (this.getAttribute("data-pip") === "true") {
-    return this.getAttribute("data-pip-host") === "page"
-      ? box(stageWidth - 360, 80, 360, 520)
-      : box(stageWidth - 372, 78, 360, 220);
+    return box(stageWidth - 372, 78, 360, 280);
   }
   return box(0, 0, stageWidth, 700);
 };
@@ -169,15 +190,11 @@ const { createRoot } = await import("react-dom/client");
 const {
   WebTabPip, WebTabPane, useCenterTabs, useWebTabPip,
   ingestBrowserResource, resetBrowserResources, getPreviewPreference, selectResourcePreview,
-  togglePreviewExpanded, hideResourcePreview, getSnapshot, setSnapshot,
-  pipChatRect, pipDockEdge, pipHostMode, pipPresentationSize,
-  PIP_DEFAULT_WIDTH, PIP_EXPANDED_HEIGHT, PIP_EXPANDED_WIDTH, PIP_MIN_WIDTH,
+  togglePreviewExpanded, hideResourcePreview, followCurrentBranch, getSnapshot, setSnapshot,
+  pipChatRect, pipCoversCenter, pipHostMode, pipPresentationSize,
+  PIP_DEFAULT_WIDTH, PIP_DEFAULT_HEIGHT, PIP_EXPANDED_HEIGHT, PIP_EXPANDED_WIDTH, PIP_MIN_WIDTH,
+  recordOperationCue, resetBrowserControl, resumeErrorFor,
 } = await import(pathToFileURL(bundle));
-
-function overlap(a, b) {
-  return Math.max(a.x, b.x) < Math.min(a.x + a.width, b.x + b.width)
-    && Math.max(a.y, b.y) < Math.min(a.y + a.height, b.y + b.height);
-}
 
 test("expand after a stored float rect keeps the collapsed rect", () => {
   const stored = { x: 48, y: 96, width: 400, height: 250 };
@@ -190,9 +207,9 @@ test("expand after a stored float rect keeps the collapsed rect", () => {
   assert.equal(chat.width, PIP_EXPANDED_WIDTH);
   assert.equal(chat.height, PIP_EXPANDED_HEIGHT);
   assert.equal(stored.width, 400);
-  assert.equal(pipDockEdge(900, PIP_DEFAULT_WIDTH), "end");
-  assert.equal(pipDockEdge(500, PIP_DEFAULT_WIDTH), "bottom");
-  assert.equal(pipDockEdge(PIP_MIN_WIDTH + 319, PIP_MIN_WIDTH), "bottom");
+  assert.equal(PIP_DEFAULT_WIDTH, 360);
+  assert.equal(PIP_DEFAULT_HEIGHT, 280);
+  assert.equal(PIP_MIN_WIDTH, 240);
 });
 
 function Shell() {
@@ -209,8 +226,49 @@ function Shell() {
   );
 }
 
+function labeledButton(host, label) {
+  return [...host.querySelectorAll("button")].find(button =>
+    button.getAttribute("aria-label") === label
+    || button.getAttribute("title") === label
+    || button.textContent === label);
+}
+
+function pipBarButtons(host) {
+  const pip = host.querySelector("[data-pip='true']");
+  return [...(pip?.children[1]?.querySelectorAll("button") || [])];
+}
+
+function installNativeMenu() {
+  const popups = [];
+  const closed = [];
+  const resolvers = [];
+  window.openprogramDesktop = {
+    contextMenu: {
+      popup(request) {
+        popups.push(request);
+        return new Promise(resolve => { resolvers.push(resolve); });
+      },
+      close(id) { closed.push(id); },
+    },
+  };
+  return { popups, closed, resolvers };
+}
+
+function clickButton(button, { detail = 0, clientX = 12, clientY = 34 } = {}) {
+  const event = new window.Event("click", { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    detail: { value: detail },
+    clientX: { value: clientX },
+    clientY: { value: clientY },
+  });
+  button.dispatchEvent(event);
+}
+
 async function withShell(run) {
   resetBrowserResources();
+  resetBrowserControl();
+  globalThis.controlPosts = [];
+  globalThis.controlReply = undefined;
   boundsCalls.length = 0;
   stageWidth = 1000;
   globalThis.webTabCapture = undefined;
@@ -229,6 +287,21 @@ async function withShell(run) {
     groups: [],
     splitWebTabId: null,
   });
+  ingestBrowserResource({
+    id: "assoc-1",
+    resource_id: "page-1",
+    session_id: "a",
+    conversation_session_id: "a",
+    tab_id: page.id,
+    kind: "web",
+    title: "Resource test 1",
+    target: page.url,
+    status: "open",
+    source: "browser",
+    control_state: "idle",
+    generation: 1,
+    sequence: 1,
+  }, "a");
   selectResourcePreview("a", null, "assoc-1");
   useWebTabPip.getState().show(page.id, session.id);
   const host = document.createElement("div");
@@ -244,144 +317,276 @@ async function withShell(run) {
     useWebTabPip.getState().end();
     useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
     resetBrowserResources();
+    resetBrowserControl();
+    delete window.openprogramDesktop;
     globalThis.webTabCapture = undefined;
   }
 }
 
-test("chat PiP toolbar keeps full names without overlapping control text", async () => {
+test("chat PiP chrome is two named rows without duplicate Eye or Follow wrapping", async () => {
   await withShell(async ({ host }) => {
     assert.equal(host.querySelector("[data-web-pip-dock]"), null);
     const pip = host.querySelector("[data-pip='true']");
     assert.ok(pip);
     assert.equal(pip.getAttribute("data-pip-host"), "chat");
-    const follow = [...host.querySelectorAll("button")]
-      .find(button => button.getAttribute("aria-label") === "Follow current branch");
-    const usePage = [...host.querySelectorAll("button")]
-      .find(button => button.getAttribute("aria-label") === "Use in webpage");
-    const expand = [...host.querySelectorAll("button")]
-      .find(button => button.getAttribute("aria-label") === "Expand");
-    const hide = [...host.querySelectorAll("button")]
-      .find(button => button.getAttribute("aria-label") === "Hide");
-    assert.ok(follow && usePage && expand && hide);
-    assert.equal(follow.getAttribute("title"), "Follow current branch");
-    assert.ok(!follow.textContent.includes("Follow current branch"));
-    assert.ok(!follow.textContent.includes("Manual inspection"));
+    assert.equal(pip.children.length, 3);
+    const openPage = pipBarButtons(host).find(button => button.textContent === "Open page");
+    const follow = pipBarButtons(host).find(button => button.textContent === "Follow");
+    const takeover = pipBarButtons(host).find(button =>
+      button.textContent === "Take over" || button.textContent === "Pause Agent and take over");
+    const more = labeledButton(host, "More");
+    const expand = labeledButton(host, "Expand");
+    const hide = labeledButton(host, "Hide");
+    assert.ok(openPage && follow && more && expand && hide);
+    assert.equal(takeover, undefined);
+    assert.equal(labeledButton(host, "Use in webpage"), undefined);
+    assert.equal(labeledButton(host, "Follow current branch"), undefined);
+    assert.equal(labeledButton(host, "Show actions"), undefined);
     const title = pip.querySelector("span");
-    const mode = pip.querySelector("small");
+    const status = pip.querySelector("small");
     assert.equal(title?.textContent, "Resource test 1");
-    assert.equal(mode?.textContent, "Manual inspection");
-    assert.notEqual(title?.parentElement, follow.parentElement);
+    assert.equal(status?.textContent, "Idle");
+    assert.equal(title.title.includes("Manual inspection"), true);
   });
 });
 
-test("activating the page mounts a fresh pane and portals PiP into the dock", async () => {
+test("Follow is only on the bar while inspecting manually", async () => {
+  await withShell(async ({ host, session }) => {
+    assert.ok(pipBarButtons(host).some(button => button.textContent === "Follow"));
+    await act(async () => {
+      followCurrentBranch("a", null);
+    });
+    assert.equal(getPreviewPreference("a", null).mode, "follow");
+    assert.equal(pipBarButtons(host).some(button => button.textContent === "Follow"), false);
+    assert.equal(useCenterTabs.getState().activeId, session.id);
+  });
+});
+
+test("idle chat PiP has no enabled Take over; active shows Take over", async () => {
+  await withShell(async ({ host, page }) => {
+    assert.equal(pipBarButtons(host).some(button => button.textContent === "Take over"), false);
+    await act(async () => {
+      ingestBrowserResource({
+        id: "assoc-1",
+        resource_id: "page-1",
+        session_id: "a",
+        conversation_session_id: "a",
+        tab_id: page.id,
+        kind: "web",
+        title: "Resource test 1",
+        target: page.url,
+        status: "open",
+        source: "browser",
+        control_state: "active",
+        generation: 1,
+        sequence: 2,
+        execution_id: "exec-a",
+      }, "a");
+    });
+    const takeover = pipBarButtons(host).find(button => button.textContent === "Take over");
+    assert.ok(takeover);
+    assert.equal(takeover.disabled, false);
+    await act(async () => {
+      ingestBrowserResource({
+        id: "assoc-1",
+        resource_id: "page-1",
+        session_id: "a",
+        conversation_session_id: "a",
+        tab_id: page.id,
+        kind: "web",
+        title: "Resource test 1",
+        target: page.url,
+        status: "open",
+        source: "browser",
+        control_state: "paused",
+        generation: 1,
+        sequence: 3,
+        execution_id: "exec-a",
+      }, "a");
+    });
+    const resume = pipBarButtons(host).find(button => button.textContent === "Resume");
+    assert.ok(resume);
+    assert.equal(resume.disabled, false);
+    assert.equal(pipBarButtons(host).some(button => button.textContent === "Take over"), false);
+    await act(async () => {
+      ingestBrowserResource({
+        id: "assoc-1",
+        resource_id: "page-1",
+        session_id: "a",
+        conversation_session_id: "a",
+        tab_id: page.id,
+        kind: "web",
+        title: "Resource test 1",
+        target: page.url,
+        status: "open",
+        source: "browser",
+        control_state: "stop_unconfirmed",
+        generation: 1,
+        sequence: 4,
+        execution_id: "exec-a",
+      }, "a");
+    });
+    const unconfirmed = pipBarButtons(host).find(button => button.textContent === "Take over");
+    assert.ok(unconfirmed);
+    assert.equal(unconfirmed.disabled, true);
+    assert.equal(pipBarButtons(host).some(button => button.textContent === "Resume"), false);
+  });
+});
+
+test("failed Resume shows lease expired on chat PiP and the Page toolbar, then success clears it", async () => {
   await withShell(async ({ host, page, session }) => {
-    assert.equal(host.querySelector("[data-web-pip-dock]"), null);
-    assert.equal(host.querySelector("[data-pip='true']")?.getAttribute("data-pip-host"), "chat");
+    const pausedRow = {
+      id: "assoc-1",
+      resource_id: "page-1",
+      session_id: "a",
+      conversation_session_id: "a",
+      tab_id: page.id,
+      kind: "web",
+      title: "Resource test 1",
+      target: page.url,
+      status: "open",
+      source: "browser",
+      control_state: "paused",
+      generation: 1,
+      sequence: 3,
+      execution_id: "exec-a",
+    };
+    await act(async () => { ingestBrowserResource(pausedRow, "a"); });
+    const resume = pipBarButtons(host).find(button => button.textContent === "Resume");
+    assert.ok(resume);
+    assert.equal(host.querySelector("[data-pip='true']")?.getAttribute("data-state"), "paused");
+    globalThis.controlReply = () => { throw new Error("lease expired"); };
+    await act(async () => {
+      resume.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    assert.equal(globalThis.controlPosts.at(-1)?.body.action, "resume");
+    assert.equal(resumeErrorFor("page-1"), "lease expired");
+    const pip = host.querySelector("[data-pip='true']");
+    assert.ok(pip);
+    assert.equal(pip.getAttribute("data-state"), "paused");
+    assert.equal(pip.textContent.includes("lease expired"), true);
+    const status = pip.querySelector("[data-resume-error='true']");
+    assert.ok(status);
+    assert.equal(status.getAttribute("role"), "status");
+    assert.equal(status.getAttribute("aria-live"), "polite");
+    assert.equal(status.getAttribute("title").includes("lease expired"), true);
+    const stillResume = pipBarButtons(host).find(button => button.textContent === "Resume");
+    assert.ok(stillResume);
+    assert.equal(stillResume.disabled, false);
+    assert.equal(stillResume.getAttribute("aria-label"), "Resume: lease expired");
+    assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.kind === "web").length, 1);
+
+    await act(async () => { useCenterTabs.getState().setActive(page.id); });
+    await act(async () => { flushObservers(); });
+    assert.equal(host.querySelector("[data-pip='true']"), null);
+    assert.equal(host.textContent.includes("lease expired"), true);
+    assert.equal(useCenterTabs.getState().activeId, page.id);
+
+    await act(async () => { useCenterTabs.getState().setActive(session.id); });
+    const chatPip = host.querySelector("[data-pip='true']");
+    assert.ok(chatPip);
+    assert.equal(chatPip.getAttribute("data-state"), "paused");
+    assert.equal(chatPip.textContent.includes("lease expired"), true);
+
+    globalThis.controlReply = () => ({ ...pausedRow, control_state: "active", sequence: 4 });
+    const retry = pipBarButtons(host).find(button => button.textContent === "Resume");
+    await act(async () => {
+      retry.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    assert.equal(resumeErrorFor("page-1"), undefined);
+    const recovered = host.querySelector("[data-pip='true']");
+    assert.ok(recovered);
+    assert.equal(recovered.textContent.includes("lease expired"), false);
+    assert.equal(recovered.getAttribute("data-state"), "active");
+    assert.ok(pipBarButtons(host).some(button => button.textContent === "Take over"));
+    assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.kind === "web").length, 1);
+    assert.equal(useCenterTabs.getState().activeId, session.id);
+  });
+});
+
+test("activating the page hides the chat preview and gives the native Page the full area", async () => {
+  await withShell(async ({ host, page, session }) => {
+    const prefBefore = { ...getPreviewPreference("a", null) };
     const floatRect = { x: 40, y: 90, width: 400, height: 250 };
     useWebTabPip.getState().setRect(floatRect);
     await act(async () => {
       useCenterTabs.getState().setActive(page.id);
     });
     await act(async () => { flushObservers(); });
-    assert.equal(pipHostMode(page.id, session.id, useCenterTabs.getState()), "page");
-    const dock = host.querySelector("[data-web-pip-dock]");
-    const stage = host.querySelector("[data-pip-dock]");
-    const pip = host.querySelector("[data-pip='true']");
-    assert.ok(dock);
-    assert.equal(stage.getAttribute("data-pip-dock"), "end");
-    assert.equal(pip?.getAttribute("data-pip-host"), "page");
-    assert.equal(dock.contains(pip), true);
+    assert.equal(pipHostMode(page.id, session.id, useCenterTabs.getState()), null);
+    assert.equal(pipCoversCenter(page.id, session.id, useCenterTabs.getState()), false);
+    assert.equal(host.querySelector("[data-pip='true']"), null);
+    assert.equal(host.querySelector("[data-web-pip-dock]"), null);
+    assert.equal(host.querySelector("[data-pip-dock]"), null);
     const latest = boundsCalls.at(-1);
     assert.equal(latest.id, page.id);
-    const frame = { x: latest.x, y: latest.y, width: latest.width, height: latest.height };
-    const dockBox = dock.getBoundingClientRect();
-    const reserved = { x: dockBox.left, y: dockBox.top, width: dockBox.width, height: dockBox.height };
-    assert.equal(overlap(frame, reserved), false);
-    assert.ok(latest.width < stageWidth);
+    assert.equal(latest.width, stageWidth);
+    assert.equal(useWebTabPip.getState().tabId, page.id);
+    assert.equal(useWebTabPip.getState().ownerTabId, session.id);
     assert.equal(useWebTabPip.getState().rect.x, floatRect.x);
-    assert.equal(useWebTabPip.getState().rect.y, floatRect.y);
+    assert.deepEqual(getPreviewPreference("a", null), prefBefore);
   });
 });
 
-test("narrow pane docks below the live page instead of hiding it", async () => {
-  await withShell(async ({ host, page }) => {
-    stageWidth = 500;
+test("split visibility of the same Page hides the chat preview", async () => {
+  await withShell(async ({ host, page, session }) => {
     await act(async () => {
-      useCenterTabs.getState().setActive(page.id);
+      useCenterTabs.setState({
+        groups: [{
+          id: "g1",
+          memberIds: [session.id, page.id],
+          visibleIds: [session.id, page.id],
+          focusedId: session.id,
+        }],
+        activeId: session.id,
+      });
     });
-    await act(async () => { flushObservers(); });
-    const stage = host.querySelector("[data-pip-dock]");
-    assert.equal(stage.getAttribute("data-pip-dock"), "bottom");
-    const latest = boundsCalls.at(-1);
-    assert.ok(latest.width > 0 && latest.height > 0);
-    const dock = host.querySelector("[data-web-pip-dock]");
-    const reserved = dock.getBoundingClientRect();
-    assert.equal(overlap(
-      { x: latest.x, y: latest.y, width: latest.width, height: latest.height },
-      { x: reserved.left, y: reserved.top, width: reserved.width, height: reserved.height },
-    ), false);
-    assert.ok(host.querySelector("[data-pip='true']"));
+    assert.equal(pipCoversCenter(page.id, session.id, useCenterTabs.getState()), false);
+    assert.equal(host.querySelector("[data-pip='true']"), null);
+    assert.equal(useWebTabPip.getState().tabId, page.id);
   });
 });
 
-test("hide restores the native viewport and returning to chat keeps the float rect", async () => {
+test("returning to chat restores the preview unless Hide was used", async () => {
   await withShell(async ({ host, page, session }) => {
     const floatRect = { x: 52, y: 110, width: 380, height: 240 };
     useWebTabPip.getState().setRect(floatRect);
+    setSnapshot(page.id, "data:image/png,keep-frame");
     await act(async () => {
       useCenterTabs.getState().setActive(page.id);
     });
     await act(async () => { flushObservers(); });
-    const docked = boundsCalls.at(-1);
-    assert.ok(docked.width < stageWidth);
+    assert.equal(host.querySelector("[data-pip='true']"), null);
+    const opened = boundsCalls.at(-1);
+    assert.equal(opened.width, stageWidth);
+    await act(async () => {
+      useCenterTabs.getState().setActive(session.id);
+    });
+    const chatPip = host.querySelector("[data-pip='true']");
+    assert.equal(chatPip?.getAttribute("data-pip-host"), "chat");
+    assert.equal(useWebTabPip.getState().rect.x, floatRect.x);
+    const restored = chatPip?.querySelector("img");
+    assert.ok((restored?.getAttribute("src") || restored?.src || "").includes("keep-frame"));
+
     await act(async () => {
       hideResourcePreview("a", null);
       useWebTabPip.getState().hide();
     });
-    await act(async () => { flushObservers(); });
-    assert.equal(host.querySelector("[data-web-pip-dock]"), null);
     assert.equal(host.querySelector("[data-pip='true']"), null);
-    const restored = boundsCalls.at(-1);
-    assert.ok(restored.width >= docked.width);
-    await act(async () => {
-      useCenterTabs.getState().setActive(session.id);
-      useWebTabPip.getState().show(page.id, session.id);
-    });
-    assert.equal(useWebTabPip.getState().rect.x, floatRect.x);
-    assert.equal(useWebTabPip.getState().rect.y, floatRect.y);
-    const chatPip = host.querySelector("[data-pip='true']");
-    assert.equal(chatPip?.getAttribute("data-pip-host"), "chat");
-    assert.equal(chatPip?.closest("[data-web-pip-dock]"), null);
-  });
-});
-
-test("float to dock to float reapplies the stored snapshot without a capture tick", async () => {
-  await withShell(async ({ host, page, session }) => {
-    setSnapshot(page.id, "data:image/png,keep-frame");
-    globalThis.webTabCapture = () => new Promise(() => {});
-    const chatImg = host.querySelector("[data-pip='true'] img");
-    assert.ok(chatImg);
     await act(async () => {
       useCenterTabs.getState().setActive(page.id);
     });
-    const dockPip = host.querySelector("[data-web-pip-dock] [data-pip='true']");
-    const dockImg = dockPip?.querySelector("img");
-    assert.ok(dockPip);
-    assert.ok(dockImg);
-    assert.ok((dockImg.getAttribute("src") || dockImg.src).includes("keep-frame"));
-    assert.equal(dockImg.style.display, "block");
-    assert.equal(getSnapshot(page.id), "data:image/png,keep-frame");
     await act(async () => {
       useCenterTabs.getState().setActive(session.id);
     });
-    const chatPip = host.querySelector("[data-pip='true']");
-    const restored = chatPip?.querySelector("img");
-    assert.equal(chatPip?.getAttribute("data-pip-host"), "chat");
-    assert.equal(host.querySelector("[data-web-pip-dock]"), null);
-    assert.equal(chatPip?.closest("[data-web-pip-dock]"), null);
-    assert.ok((restored?.getAttribute("src") || restored?.src || "").includes("keep-frame"));
-    assert.equal(restored.style.display, "block");
+    assert.equal(host.querySelector("[data-pip='true']"), null);
+    assert.equal(useWebTabPip.getState().tabId, null);
+    assert.equal(useWebTabPip.getState().backgroundTabId, page.id);
+    assert.equal(getPreviewPreference("a", null).hidden, true);
   });
 });
 
@@ -412,50 +617,39 @@ test("expand after a stored rect does not write the expanded size into collapse"
   });
 });
 
-test("expand while docked updates dock size and native leftover bounds", async () => {
-  await withShell(async ({ host, page }) => {
-    const floatRect = { x: 30, y: 80, width: 410, height: 230 };
-    useWebTabPip.getState().setRect(floatRect);
+test("PiP More native history is a reachable submenu, not a disabled parent", async () => {
+  const menu = installNativeMenu();
+  await withShell(async ({ host }) => {
     await act(async () => {
-      useCenterTabs.getState().setActive(page.id);
+      recordOperationCue({
+        resourceId: "page-1",
+        generation: 1,
+        operation: {
+          id: "op-1",
+          action: "click",
+          phase: "acknowledged",
+          frame_id: "frame-1",
+          geometry_revision: 3,
+          point: { x: 10, y: 20, width: 100, height: 80 },
+        },
+      });
     });
-    await act(async () => { flushObservers(); });
-    const collapsed = boundsCalls.at(-1);
-    const stage = host.querySelector("[data-pip-dock]");
-    assert.equal(stage.getAttribute("data-pip-dock"), "end");
-    assert.equal(stage.style.getPropertyValue("--web-pip-dock-width"), "410px");
-    const expand = [...host.querySelectorAll("button")]
-      .find(button => button.getAttribute("aria-label") === "Expand");
-    assert.ok(expand);
-    await act(async () => { expand.click(); });
-    await act(async () => { flushObservers(); });
-    assert.equal(getPreviewPreference("a", null).expanded, true);
-    assert.equal(useWebTabPip.getState().rect.width, 410);
-    const expandedStage = host.querySelector("[data-pip-dock]");
-    assert.equal(
-      expandedStage.style.getPropertyValue("--web-pip-dock-width"),
-      `${PIP_EXPANDED_WIDTH}px`,
-    );
-    assert.equal(
-      expandedStage.style.getPropertyValue("--web-pip-dock-height"),
-      `${PIP_EXPANDED_HEIGHT}px`,
-    );
-    const expandedBounds = boundsCalls.at(-1);
-    assert.ok(
-      expandedBounds.width !== collapsed.width || expandedBounds.height !== collapsed.height,
-      "native leftover must change when the dock expands",
-    );
-    const collapse = [...host.querySelectorAll("button")]
-      .find(button => button.getAttribute("aria-label") === "Collapse");
-    assert.ok(collapse);
-    await act(async () => { collapse.click(); });
-    await act(async () => { flushObservers(); });
-    assert.equal(getPreviewPreference("a", null).expanded, false);
-    assert.equal(useWebTabPip.getState().rect.width, 410);
-    assert.equal(useWebTabPip.getState().rect.x, 30);
-    const restoredStage = host.querySelector("[data-pip-dock]");
-    assert.equal(restoredStage.style.getPropertyValue("--web-pip-dock-width"), "410px");
+    const more = labeledButton(host, "More");
+    assert.ok(more);
+    await act(async () => clickButton(more, { detail: 1, clientX: 12, clientY: 34 }));
+    assert.equal(menu.popups.length, 1);
+    const history = menu.popups[0].items.find(item => item.id === "history");
+    assert.ok(history);
+    assert.equal(history.disabled, undefined);
+    assert.equal(history.label, "Operation history");
+    assert.deepEqual(history.children, [
+      { id: "op-1", label: "click · acknowledged", disabled: true },
+    ]);
+    assert.equal(document.querySelector("[data-native-view-occluder]"), null);
+    assert.equal(document.querySelector('[role="menu"]'), null);
+    assert.equal(host.querySelector("[data-pip='true']")?.getAttribute("data-pip-host"), "chat");
   });
+  assert.equal(menu.closed.length, 1);
 });
 
 function hiddenPage(index, title = "127.0.0.1") {

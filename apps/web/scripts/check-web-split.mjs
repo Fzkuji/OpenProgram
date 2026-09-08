@@ -2424,7 +2424,6 @@ const {
   collapseWebTabToPip,
   pipCollapseTargetFor,
   pipCoversCenter,
-  pipDockEdge,
   pipHostMode,
   pipChatRect,
   pipPresentationSize,
@@ -2478,7 +2477,8 @@ assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), tru
 assert.equal(visibleWebTab()?.id, pipOnlyId);
 useCenterTabs.getState().setActive(pipOnlyId);
 assert.equal(useCenterTabs.getState().activeId, pipOnlyId);
-assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), true);
+assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), false);
+assert.equal(peekLiveWebTabPipId(), null);
 assert.equal(collapseWebTabToPip(pipOnlyId), true);
 assert.equal(peekWebTabPipId(), pipOnlyId);
 assert.equal(peekWebTabPipOwnerId(), "s:chat");
@@ -2589,17 +2589,18 @@ assert.equal(peekWebTabPipOwnerId(), pipOwnerA);
 assert.equal(pipBoundTabId(), pipOwnedId);
 assert.equal(
   pipCoversCenter(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
-  true,
+  false,
 );
 assert.equal(
   pipHostMode(pipOwnedId, pipOwnerA, useCenterTabs.getState()),
-  "page",
-  "the same live Page tab hosts a reserved renderer dock, not a covering overlay",
+  null,
+  "opening the Page hides the chat preview; the native Page keeps the full content area",
 );
+assert.equal(peekLiveWebTabPipId(), null);
 useCenterTabs.getState().setActive(pipOwnerA);
 assert.equal(pipHostMode(pipOwnedId, pipOwnerA, useCenterTabs.getState()), "chat");
 useCenterTabs.getState().setActive(pipOwnedId);
-assert.equal(pipHostMode(pipOwnedId, pipOwnerA, useCenterTabs.getState()), "page");
+assert.equal(pipHostMode(pipOwnedId, pipOwnerA, useCenterTabs.getState()), null);
 assert.deepEqual(
   pipPresentationSize({ x: 40, y: 90, width: 400, height: 250 }, false),
   { width: 400, height: 250 },
@@ -2617,11 +2618,8 @@ assert.deepEqual(
   pipChatRect({ x: 40, y: 90, width: 400, height: 250 }, false, { x: 0, y: 0, width: 900, height: 700 }),
   { x: 40, y: 90, width: 400, height: 250 },
 );
-assert.equal(pipDockEdge(900, PIP_DEFAULT_WIDTH), "end");
-assert.equal(pipDockEdge(500, PIP_DEFAULT_WIDTH), "bottom");
-assert.equal(pipDockEdge(560, PIP_MIN_WIDTH), "end");
 assert.equal(PIP_DEFAULT_WIDTH, 360);
-assert.equal(PIP_DEFAULT_HEIGHT, 220);
+assert.equal(PIP_DEFAULT_HEIGHT, 280);
 assert.equal(PIP_MIN_WIDTH, 240);
 assert.equal(PIP_MIN_HEIGHT, 160);
 
