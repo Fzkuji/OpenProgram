@@ -396,7 +396,7 @@ test("chat PiP chrome is one row with icon actions and no second toolbar", async
     assert.equal(pip.children.length, 10);
     const openPage = chromeButton(host, "Open page");
     const pin = chromeButton(host, "Unpin preview");
-    const takeover = chromeButton(host, "Take over") || chromeButton(host, "Pause Agent and take over");
+    const takeover = chromeButton(host, "Pause Agent to use page") || chromeButton(host, "Retry pause");
     const more = labeledButton(host, "More");
     const expand = labeledButton(host, "Expand");
     const hide = labeledButton(host, "Hide");
@@ -417,7 +417,7 @@ test("chat PiP chrome is one row with icon actions and no second toolbar", async
     const title = pip.querySelector("span");
     const status = pip.querySelector("small");
     assert.equal(title?.textContent, "Resource test 1");
-    assert.equal(status?.textContent, "Idle · Fixed preview");
+    assert.equal(status?.textContent, "Ready to use · Fixed preview");
     assert.equal(title.title.includes("Fixed preview"), true);
     assert.equal(pin.getAttribute("aria-pressed"), "true");
     assert.equal(pin.getAttribute("title"), "Return to automatic display of the page the Agent is operating");
@@ -438,7 +438,7 @@ test("Pin toggle stays on the chrome and switches auto and fixed preview", async
     assert.ok(pin);
     assert.equal(pin.getAttribute("aria-pressed"), "false");
     assert.equal(chromeButton(host, "Unpin preview"), undefined);
-    assert.equal(host.querySelector("small")?.textContent, "Idle · Auto preview");
+    assert.equal(host.querySelector("small")?.textContent, "Ready to use · Auto preview");
     assert.equal(pipChromeButtons(host).length, 5);
     assert.equal(useCenterTabs.getState().activeId, session.id);
     assert.deepEqual(globalThis.controlPosts, []);
@@ -454,9 +454,10 @@ test("Pin toggle stays on the chrome and switches auto and fixed preview", async
   });
 });
 
-test("idle chat PiP has no enabled Take over; active shows Take over", async () => {
+test("idle chat PiP has no pause control; active shows Pause Agent to use page", async () => {
   await withShell(async ({ host, page }) => {
-    assert.equal(chromeButton(host, "Take over"), undefined);
+    assert.equal(chromeButton(host, "Pause Agent to use page"), undefined);
+    assert.equal(host.querySelector("small")?.textContent.includes("Ready to use"), true);
     await act(async () => {
       ingestBrowserResource({
         id: "assoc-1",
@@ -475,7 +476,7 @@ test("idle chat PiP has no enabled Take over; active shows Take over", async () 
         execution_id: "exec-a",
       }, "a");
     });
-    const takeover = chromeButton(host, "Take over");
+    const takeover = chromeButton(host, "Pause Agent to use page");
     assert.ok(takeover);
     assert.equal(takeover.disabled, false);
     assert.ok(chromeButton(host, "Unpin preview"));
@@ -498,13 +499,13 @@ test("idle chat PiP has no enabled Take over; active shows Take over", async () 
         execution_id: "exec-a",
       }, "a");
     });
-    const resume = chromeButton(host, "Resume");
+    const resume = chromeButton(host, "Continue Agent");
     const moreWhilePaused = labeledButton(host, "More");
     assert.ok(resume);
     assert.ok(moreWhilePaused);
     assert.equal(resume.disabled, false);
     assert.equal(resume.parentElement, moreWhilePaused.parentElement);
-    assert.equal(chromeButton(host, "Take over"), undefined);
+    assert.equal(chromeButton(host, "Pause Agent to use page"), undefined);
     await act(async () => {
       ingestBrowserResource({
         id: "assoc-1",
@@ -523,10 +524,12 @@ test("idle chat PiP has no enabled Take over; active shows Take over", async () 
         execution_id: "exec-a",
       }, "a");
     });
-    const unconfirmed = chromeButton(host, "Take over");
+    const unconfirmed = chromeButton(host, "Retry pause");
     assert.ok(unconfirmed);
-    assert.equal(unconfirmed.disabled, true);
-    assert.equal(chromeButton(host, "Resume"), undefined);
+    assert.equal(unconfirmed.disabled, false);
+    assert.equal(chromeButton(host, "Continue Agent"), undefined);
+    assert.equal(chromeButton(host, "Pause Agent to use page"), undefined);
+    assert.equal(host.querySelector("small")?.textContent.includes("Could not pause. Try again"), true);
   });
 });
 
@@ -549,7 +552,7 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
       execution_id: "exec-a",
     };
     await act(async () => { ingestBrowserResource(pausedRow, "a"); });
-    const resume = chromeButton(host, "Resume");
+    const resume = chromeButton(host, "Continue Agent");
     assert.ok(resume);
     assert.equal(host.querySelector("[data-pip='true']")?.getAttribute("data-state"), "paused");
     globalThis.controlReply = () => { throw new Error("lease expired"); };
@@ -569,10 +572,10 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
     assert.equal(status.getAttribute("role"), "status");
     assert.equal(status.getAttribute("aria-live"), "polite");
     assert.equal(status.getAttribute("title").includes("lease expired"), true);
-    const stillResume = chromeButton(host, "Resume: lease expired") || chromeButton(host, "Resume");
+    const stillResume = chromeButton(host, "Continue Agent: lease expired") || chromeButton(host, "Continue Agent");
     assert.ok(stillResume);
     assert.equal(stillResume.disabled, false);
-    assert.equal(stillResume.getAttribute("aria-label"), "Resume: lease expired");
+    assert.equal(stillResume.getAttribute("aria-label"), "Continue Agent: lease expired");
     assert.equal(host.querySelector("[data-pip='true'] span")?.title.includes("lease expired"), true);
     assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.kind === "web").length, 1);
 
@@ -589,7 +592,7 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
     assert.equal(chatPip.textContent.includes("lease expired"), true);
 
     globalThis.controlReply = () => ({ ...pausedRow, control_state: "active", sequence: 4 });
-    const retry = chromeButton(host, "Resume: lease expired") || chromeButton(host, "Resume");
+    const retry = chromeButton(host, "Continue Agent: lease expired") || chromeButton(host, "Continue Agent");
     await act(async () => {
       retry.click();
       await Promise.resolve();
@@ -600,7 +603,7 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
     assert.ok(recovered);
     assert.equal(recovered.textContent.includes("lease expired"), false);
     assert.equal(recovered.getAttribute("data-state"), "active");
-    assert.ok(chromeButton(host, "Take over"));
+    assert.ok(chromeButton(host, "Pause Agent to use page"));
     assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.kind === "web").length, 1);
     assert.equal(useCenterTabs.getState().activeId, session.id);
   });

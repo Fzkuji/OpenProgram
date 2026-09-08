@@ -102,8 +102,10 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
     {backend.unavailable && <p role="status" className={styles.notice}>{text("Some resource statuses could not be refreshed.", "部分资源状态未能刷新。")}</p>}
     {pendingClose && <p role="status" className={styles.notice}>
       {pendingClose.error
-        ? `${text("Stop unconfirmed", "停止未确认")}: ${pendingClose.error}`
-        : `${text("Stopping", "正在停止")} · ${pendingClose.associationIds.length} ${text("references", "引用")}${pendingClose.executionIds.length ? ` · ${pendingClose.executionIds.length} ${text("executions", "执行")}` : ""}`}
+        ? pendingClose.error === "Stop unconfirmed"
+          ? text("Could not pause Agent. The page is still open.", "暂停 Agent 失败，页面仍保持打开。")
+          : text("Could not confirm the page status. Check the connection and try again.", "无法确认页面状态，请检查连接后重试。")
+        : text("Waiting for Agent to pause before closing the page…", "正在暂停 Agent，完成后关闭页面…")}
     </p>}
     {pref?.hidden && sessionId && <button type="button" className={styles.showPreview} onClick={() => {
       const next = showResourcePreview(sessionId, viewedBranch);

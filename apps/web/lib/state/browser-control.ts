@@ -30,6 +30,7 @@ export type PendingYield = {
   commandId: string;
   generation: number;
   posted: boolean;
+  failed?: boolean;
 };
 
 export type PendingClose = {
@@ -131,7 +132,7 @@ function acknowledgeIngestedControl(): void {
     }
   }
   for (const group of current.values()) {
-    if (![...group.states].every(state => state === "paused" || state === "closed")) continue;
+    if (![...group.states].every(state => state === "paused" || state === "closed" || state === "idle")) continue;
     clearPendingLease(group.resourceId, group.generation);
   }
 }
@@ -147,12 +148,15 @@ export function displayedControlState(
 ): BrowserControlState {
   const backend = resource.controlState || "unknown";
   if (!browserConnectionOpen() && backend !== "closed") return "unknown";
-  if (backend === "paused" || backend === "closed" || backend === "stop_unconfirmed") return backend;
+  if (backend === "paused" || backend === "closed" || backend === "idle") return backend;
   const lease = useBrowserControlStore.getState().pending[pendingKey(resource.resourceId, resource.generation)];
-  if (!lease) return backend;
-  const now = opts.now ?? Date.now();
-  if (now - lease.since >= STOP_UNCONFIRMED_MS) return "stop_unconfirmed";
-  return "yielding";
+  if (lease && !lease.failed) {
+    const now = opts.now ?? Date.now();
+    if (now - lease.since >= STOP_UNCONFIRMED_MS) return "stop_unconfirmed";
+    return "yielding";
+  }
+  if (backend === "stop_unconfirmed" || lease?.failed) return "stop_unconfirmed";
+  return backend;
 }
 
 function toControlResource(resource: BrowserControlResource | SessionResource): BrowserControlResource {
@@ -181,6 +185,14 @@ export function markScopeYielding(
   const row = toControlResource(resource);
   if (!row.resourceId) return displayedControlState(row);
   const key = pendingKey(row.resourceId, row.generation);
+  if (row.controlState === "idle" || row.controlState === "closed") {
+    const current = useBrowserControlStore.getState();
+    if (current.pending[key] || current.inflight[key]) {
+      clearPendingLease(row.resourceId, row.generation);
+      notify();
+    }
+    return displayedControlState(row);
+  }
   const current = useBrowserControlStore.getState();
   if (!current.pending[key]) {
     useBrowserControlStore.setState({
@@ -216,34 +228,69 @@ async function postPauseOnce(
   const current = useBrowserControlStore.getState();
   const lease = current.pending[key];
   if (!lease) return displayedControlState(row);
-  if (lease.posted || current.inflight[key]) return displayedControlState(row);
+  if (current.inflight[key]) return displayedControlState(row);
+  const shown = displayedControlState(row);
+  const expiredOrFailed = shown === "stop_unconfirmed" || !!lease.failed;
+  if (lease.posted && !expiredOrFailed) return shown;
+  const retryPosted = lease.posted && expiredOrFailed;
+  const commandId = retryPosted ? crypto.randomUUID() : lease.commandId;
   useBrowserControlStore.setState({
-    pending: { ...current.pending, [key]: { ...lease, posted: true } },
+    pending: {
+      ...current.pending,
+      [key]: {
+        ...lease,
+        posted: true,
+        failed: false,
+        commandId,
+        since: expiredOrFailed ? Date.now() : lease.since,
+      },
+    },
     inflight: { ...current.inflight, [key]: true },
   });
+  notify();
   try {
     const posted = await (deps.postControl || requestResourceControl)({
       conversationSessionId: row.conversationSessionId,
       resourceId: row.resourceId,
       action: "pause",
-      commandId: lease.commandId,
+      commandId,
       generation: row.generation,
     });
     const state = posted.control_state
       || ("controlState" in posted ? (posted as { controlState?: BrowserControlState }).controlState : undefined);
-    if (state === "paused") {
+    if (state === "paused" || state === "idle" || state === "closed") {
       clearPendingLease(row.resourceId, row.generation);
-      return "paused";
+      notify();
+      return state;
     }
-    const inflight = { ...useBrowserControlStore.getState().inflight };
+    const latest = useBrowserControlStore.getState();
+    const inflight = { ...latest.inflight };
     delete inflight[key];
+    const currentLease = latest.pending[key];
+    if (state === "stop_unconfirmed") {
+      useBrowserControlStore.setState({
+        inflight,
+        pending: currentLease
+          ? { ...latest.pending, [key]: { ...currentLease, failed: true } }
+          : latest.pending,
+      });
+      notify();
+      return "stop_unconfirmed";
+    }
     useBrowserControlStore.setState({ inflight });
-    if (state === "stop_unconfirmed") return "stop_unconfirmed";
   } catch {
-    const inflight = { ...useBrowserControlStore.getState().inflight };
+    const latest = useBrowserControlStore.getState();
+    const inflight = { ...latest.inflight };
     delete inflight[key];
-    useBrowserControlStore.setState({ inflight });
+    const currentLease = latest.pending[key];
+    useBrowserControlStore.setState({
+      inflight,
+      pending: currentLease
+        ? { ...latest.pending, [key]: { ...currentLease, failed: true } }
+        : latest.pending,
+    });
   }
+  notify();
   return displayedControlState(row);
 }
 

@@ -584,3 +584,171 @@ test("same-Page generation isolation and tied max-sequence conflict stay conserv
   });
   assert.equal(useBrowserControlStore.getState().pending["page-a:1"], undefined);
 });
+
+test("idle page has no agent work: manual input does not mint a pause lease", async () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  ingestPage({ control_state: "idle", status: "idle", execution_id: undefined });
+  const idle = resource({ controlState: "idle" });
+  const posted = [];
+  assert.equal(markScopeYielding(idle), "idle");
+  assert.deepEqual(useBrowserControlStore.getState().pending, {});
+  const fromInput = await signalHumanBrowserInput(idle, {
+    post: true,
+    postControl: async (input) => { posted.push(input); return { control_state: "idle" }; },
+  });
+  const fromPause = await requestExplicitPause(idle, {
+    postControl: async (input) => { posted.push(input); return { control_state: "idle" }; },
+  });
+  assert.equal(fromInput, "idle");
+  assert.equal(fromPause, "idle");
+  assert.equal(posted.length, 0);
+  assert.equal(displayedControlState(idle), "idle");
+});
+
+test("stale idle confirmation beats a leftover pending lease instead of Stop unconfirmed", () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  markScopeYielding(resource(), { now: () => 1000 });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  assert.equal(displayedControlState(resource({ controlState: "idle" }), { now: 7000 }), "idle");
+  ingestPage({ control_state: "idle", status: "idle", sequence: 12, generation: 5, execution_id: undefined });
+  markScopeYielding(resource({ generation: 5, controlState: "idle" }), { now: () => 1000 });
+  ingestPage({ control_state: "idle", status: "idle", sequence: 12, generation: 5, execution_id: undefined });
+  assert.equal(useBrowserControlStore.getState().pending["page-a:5"], undefined);
+  assert.equal(displayedControlState(resource({ generation: 5, controlState: "idle" }), { now: 7000 }), "idle");
+});
+
+test("fresh idle ingest resolves pending; active, generation, concurrent, and disconnect guards stay", () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  ingestPage({ control_state: "active", sequence: 1, generation: 1 });
+  markScopeYielding(resource({ generation: 1 }));
+  ingestPage({ control_state: "active", sequence: 2, generation: 1 });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  assert.equal(displayedControlState(resource({ controlState: "active" })), "yielding");
+
+  ingestPage({
+    id: "assoc-b", resource_id: "page-b", tab_id: "w:b", title: "Other",
+    target: "https://b.test", control_state: "idle", sequence: 9, generation: 1, execution_id: "exec-b",
+  });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+
+  ingestPage({ id: "assoc-g2", generation: 2, control_state: "idle", sequence: 1, execution_id: "exec-g2" });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+
+  ingestPage({
+    id: "assoc-stale-idle", branch_id: "old", control_state: "idle", sequence: 2, generation: 1,
+    execution_id: "exec-old",
+  });
+  ingestPage({
+    id: "assoc-live", branch_id: "live", control_state: "active", sequence: 3, generation: 1,
+    execution_id: "exec-live",
+  });
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  assert.equal(displayedControlState(resource({ id: "assoc-live", controlState: "active" })), "yielding");
+
+  setBrowserConnection(false);
+  assert.equal(displayedControlState(resource({ controlState: "idle" })), "unknown");
+  assert.ok(useBrowserControlStore.getState().pending["page-a:1"]);
+  setBrowserConnection(true);
+
+  ingestPage({
+    id: "assoc-live", branch_id: "live", control_state: "idle", status: "idle", sequence: 4, generation: 1,
+    execution_id: undefined,
+  });
+  assert.equal(useBrowserControlStore.getState().pending["page-a:1"], undefined);
+  assert.equal(displayedControlState(resource({ controlState: "idle" })), "idle");
+});
+
+test("requestExplicitPause retries stop_unconfirmed timeout, backend state, and failed request", async () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  markScopeYielding(resource(), { now: () => Date.now() - 6000 });
+  assert.equal(displayedControlState(resource()), "stop_unconfirmed");
+  const timeoutPosts = [];
+  assert.equal(await requestExplicitPause(resource(), {
+    postControl: async (input) => { timeoutPosts.push(input); return { control_state: "yielding" }; },
+  }), "yielding");
+  assert.equal(timeoutPosts.length, 1);
+  assert.equal(await requestExplicitPause(resource(), {
+    postControl: async (input) => { timeoutPosts.push(input); return { control_state: "yielding" }; },
+  }), "yielding");
+  assert.equal(timeoutPosts.length, 1);
+  const lease = useBrowserControlStore.getState().pending["page-a:1"];
+  useBrowserControlStore.setState({
+    pending: {
+      ...useBrowserControlStore.getState().pending,
+      "page-a:1": { ...lease, since: Date.now() - 6000 },
+    },
+  });
+  assert.equal(displayedControlState(resource()), "stop_unconfirmed");
+  assert.equal(await requestExplicitPause(resource(), {
+    postControl: async (input) => { timeoutPosts.push(input); return { control_state: "yielding" }; },
+  }), "yielding");
+  assert.equal(timeoutPosts.length, 2);
+  assert.notEqual(timeoutPosts[0].commandId, timeoutPosts[1].commandId);
+
+  resetBrowserControl();
+  const backendPosts = [];
+  assert.equal(await requestExplicitPause(resource(), {
+    postControl: async (input) => { backendPosts.push(input); return { control_state: "stop_unconfirmed" }; },
+  }), "stop_unconfirmed");
+  assert.equal(await requestExplicitPause(resource(), {
+    postControl: async (input) => { backendPosts.push(input); return { control_state: "paused" }; },
+  }), "paused");
+  assert.equal(backendPosts.length, 2);
+  assert.equal(useBrowserControlStore.getState().pending["page-a:1"], undefined);
+
+  resetBrowserControl();
+  const failedPosts = [];
+  assert.equal(await requestExplicitPause(resource(), {
+    postControl: async () => { throw new Error("pause failed"); },
+  }), "stop_unconfirmed");
+  assert.equal(await requestExplicitPause(resource(), {
+    postControl: async (input) => { failedPosts.push(input); return { control_state: "idle" }; },
+  }), "idle");
+  assert.equal(failedPosts.length, 1);
+  assert.equal(useBrowserControlStore.getState().pending["page-a:1"], undefined);
+});
+
+test("retry of ingested stop_unconfirmed is yielding while the pause POST is pending", async () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  ingestPage({ control_state: "stop_unconfirmed" });
+  const live = resource({ controlState: "stop_unconfirmed" });
+  assert.equal(displayedControlState(live), "stop_unconfirmed");
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  const posts = [];
+  const pending = requestExplicitPause(live, {
+    postControl: async (input) => {
+      posts.push(input);
+      entered();
+      await gate;
+      return { control_state: "stop_unconfirmed" };
+    },
+  });
+  await started;
+  assert.equal(posts.length, 1);
+  assert.equal(displayedControlState(live), "yielding");
+  assert.equal(useBrowserControlStore.getState().inflight["page-a:1"], true);
+  assert.equal(await requestExplicitPause(live, {
+    postControl: async (input) => {
+      posts.push(input);
+      return { control_state: "paused" };
+    },
+  }), "yielding");
+  assert.equal(posts.length, 1);
+  release();
+  assert.equal(await pending, "stop_unconfirmed");
+  assert.equal(displayedControlState(live), "stop_unconfirmed");
+  assert.equal(useBrowserControlStore.getState().inflight["page-a:1"], undefined);
+});

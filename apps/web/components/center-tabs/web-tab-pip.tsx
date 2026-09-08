@@ -115,12 +115,17 @@ function resourceForTab(tabId: string): SessionResource | undefined {
 function statusLabel(
   state: ReturnType<typeof displayedControlState>,
   text: (en: string, zh: string) => string,
+  connected: boolean,
 ): string {
-  if (state === "yielding") return text("Yielding", "正在让出");
+  if (state === "yielding") return text("Pausing…", "正在暂停…");
   if (state === "paused") return text("Paused", "已暂停");
-  if (state === "stop_unconfirmed") return text("Stop unconfirmed", "停止未确认");
-  if (state === "unknown") return text("Unknown", "未知");
-  if (state === "idle" || state === "closed") return text("Idle", "空闲");
+  if (state === "stop_unconfirmed") return text("Could not pause. Try again", "暂停失败，请重试");
+  if (state === "unknown") {
+    return connected
+      ? text("Could not confirm status", "无法确认状态")
+      : text("Connection lost", "连接已断开");
+  }
+  if (state === "idle" || state === "closed") return text("Ready to use", "可直接操作");
   return text("Active", "活动中");
 }
 
@@ -408,7 +413,7 @@ export function WebTabPip() {
     ? text("Fixed preview", "固定预览")
     : text("Auto preview", "自动预览");
   const controlState = control ? displayedControlState(control) : null;
-  const stateText = controlState ? statusLabel(controlState, text) : "";
+  const stateText = controlState ? statusLabel(controlState, text, connected) : "";
   const resumeError = control ? resumeErrorFor(control.resourceId) : undefined;
   const statusText = [resumeError || stateText, modeLabel].filter(Boolean).join(" · ");
   const frameState = !connected && freshness === "live" ? "last-frame" : freshness;
@@ -423,15 +428,18 @@ export function WebTabPip() {
       ? "resume"
       : controlState === "yielding"
         ? "yielding"
-        : "takeover";
+        : controlState === "stop_unconfirmed"
+          ? "retry"
+          : "pause";
   const takeoverLabel = takeoverKind === "resume"
-    ? text("Resume", "恢复")
+    ? text("Continue Agent", "让 Agent 继续")
     : takeoverKind === "yielding"
-      ? text("Yielding", "正在让出")
-      : text("Take over", "接管");
+      ? text("Pausing…", "正在暂停…")
+      : takeoverKind === "retry"
+        ? text("Retry pause", "重试暂停")
+        : text("Pause Agent to use page", "暂停 Agent，我来操作");
   const takeoverDisabled = takeoverKind === "yielding"
     || controlState === "unknown"
-    || controlState === "stop_unconfirmed"
     || !connected
     || (takeoverKind === "resume" && controlState !== "paused");
   const history = control ? operationHistory(control.resourceId) : [];

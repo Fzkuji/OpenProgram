@@ -61,7 +61,7 @@ test("PiP screenshot maps pixel points onto a letterboxed contain fit", () => {
   assert.doesNotMatch(css, /data-pip-dock/);
   assert.doesNotMatch(css, /margin: 0 10px 10px 0/);
   assert.match(pipSource, /Open page/);
-  assert.match(pipSource, /Take over/);
+  assert.match(pipSource, /Pause Agent to use page/);
   assert.match(pipSource, /<ExternalLink /);
   assert.match(pipSource, /<Pin /);
   assert.doesNotMatch(pipSource, /<Locate /);
