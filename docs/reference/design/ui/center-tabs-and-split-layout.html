@@ -829,7 +829,7 @@
       <p>实现采用现有 Zustand 标签库、布局规范化与路由激活路径。标签 ID 标识标签实例，sessionId 标识当前会话；不再根据会话 ID 推断标签身份。历史只记录 sessionId、title、draft，不复制输入或消息。新建标签遇到已有 ID 时分配唯一后缀。源窗口转移删除在异步确认前后核对准备时的会话历史；导航改变快照则取消旧转移，回滚不覆盖新的导航状态。</p>
       <p>路由同步只响应 pathname 变化；会话确认由 markSessionReady 更新。用户标签导航由当前标签的 sessionId / draft 变化触发，避免旧 currentSessionId 的中间更新覆盖新导航。删除只依据已加载列表中确定移除的 ID，未加载记录不算删除。</p>
       <p>比较范围：保留本页现有网页、split 与 PiP 参考与边界；会话历史是应用内状态，不采用浏览器全局 History 作为每标签记录，不改变网页前进后退、服务端协议或权限。独立标签可显示同一会话，但输入仍共享同一会话键。</p>
-      <h3>实现状态</h3><p data-session-navigation-status="review-pending">独立规格审查、质量审查、最终完整验证和已安装 App 验收待完成。</p>
+      <h3>实现状态</h3><p data-session-navigation-status="complete">会话标签历史已实现。独立规格与质量审查通过；Web 测试、桌面检查、契约测试、TypeScript、生产构建和文档链接检查通过。默认安装 App 已验证原位切换、后退与前进、未发送草稿恢复，以及网页标签下新建会话标签。</p>
     </section>
   </main>
 </div>
