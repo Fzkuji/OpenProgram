@@ -359,4 +359,3 @@ test("preview retry recovers a failed row without touching closed tabs", async (
   assert.ok(ensured.some((item) => item[0] === "w:fail"));
   assert.ok(!ensured.some((item) => item[0] === "w:closed"));
 });
-
