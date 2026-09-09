@@ -61,7 +61,7 @@
   <h1>左侧栏层级设计</h1>
   <div class="note">项目行 = 和 Functions/Chats 一字不差的一级行（同 32px 行高/字号/悬停），图标槽放📁，行尾 chevron；
     会话行 = 二级：文字精确对齐 x=36（一级文字起点），28px 矮一档、13px 小一号、图标槽中心 x=16 画竖引导线。</div>
-  <div class="toggle on" onclick="this.classList.toggle('on');document.getElementById('sb').classList.toggle('showguides')">对齐标尺</div>
+  <div class="toggle on">对齐标尺</div>
 
   <div class="sidebar showguides" id="sb">
     <div class="guides"><div class="g16"></div><div class="g36"></div></div>
@@ -74,7 +74,7 @@
     <div class="sect">PROJECTS</div>
 
     <div class="proj-group open">
-      <div class="row proj open" onclick="this.parentElement.classList.toggle('open');this.classList.toggle('open')">
+      <div class="row proj open">
         <span class="ic">📁</span><span class="lb">OpenProgram</span><span class="plus" title="新会话">＋</span><span class="chev">▶</span>
       </div>
       <div class="kids">
@@ -85,7 +85,7 @@
     </div>
 
     <div class="proj-group">
-      <div class="row proj" onclick="this.parentElement.classList.toggle('open');this.classList.toggle('open')">
+      <div class="row proj">
         <span class="ic">📁</span><span class="lb">NativeMem</span><span class="plus">＋</span><span class="chev">▶</span>
       </div>
       <div class="kids">
@@ -101,5 +101,17 @@
   <div class="legend"><span class="b">─ ─ 蓝线 x=36：一级文字起点 = 二级文字左缘</span><span class="g">─ ─ 绿线 x=16：图标槽中心 = 引导线</span></div>
   <div class="note">未绑定项目的会话不伪装成文件夹——按今天 recents 的原样放在弱分区标题下，左缘回到 8px。<br>
     展开状态记忆到 localStorage；含当前会话的项目自动展开。项目行悬停出现 ＋（该项目新会话）。</div>
+<script>
+document.querySelector('.toggle').addEventListener('click', function () {
+  this.classList.toggle('on');
+  document.getElementById('sb').classList.toggle('showguides');
+});
+document.querySelectorAll('.row.proj').forEach(function (row) {
+  row.addEventListener('click', function () {
+    this.parentElement.classList.toggle('open');
+    this.classList.toggle('open');
+  });
+});
+</script>
 </body>
 </html>

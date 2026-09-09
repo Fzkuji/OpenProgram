@@ -343,7 +343,7 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
   <div class="u-msg"><div class="u-bubble">你能开一个agent，帮我去看看今天天气吗，我在北京亚洲金融大厦</div></div>
 
   <div class="tl" id="tl1">
-    <div class="tl-toggle" onclick="document.getElementById('tl1').classList.toggle('open')">
+    <div class="tl-toggle">
       <span>思考 ×2 · 函数 ×1 · 子代理: 查询北京天气</span><span class="chev">›</span>
     </div>
     <div class="tl-collapse"><div class="tl-collapse-inner">
@@ -352,7 +352,7 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
         <div class="step-head"><span class="step-icon k-thinking"><svg viewBox="0 0 24 24"><path d="M12 3.5l2 5.6 5.6 2-5.6 2-2 5.6-2-5.6-5.6-2 5.6-2 2-5.6z"/></svg></span>
           <span class="step-title">思考</span>
           <span class="step-note">需要先核对当前日期，再决定查询口径…</span>
-          <span class="step-act"><button class="btn" onclick="event.stopPropagation()">复制</button></span></div>
+          <span class="step-act"><button class="btn">复制</button></span></div>
         <div class="step-body"><div class="step-body-clip"><div class="step-body-inner">用户在北京亚洲金融大厦，要今天的天气。我先用 bash 核对系统日期，确认"今天"是哪一天，然后开一个子代理去做实时查询，最后汇总成简短建议。</div></div></div>
       </div>
       <div class="step">
@@ -365,13 +365,13 @@ h2{font-size:16px;color:var(--accent-orange);margin:44px 0 4px;display:flex;gap:
         <div class="step-head"><span class="step-icon k-subagent"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span>
           <span class="step-title link">子代理: 查询北京天气</span>
           <span class="step-note">已完成</span>
-          <span class="step-act"><button class="btn" onclick="event.stopPropagation()">复制</button><button class="btn" onclick="event.stopPropagation()">Switch ↗</button></span></div>
+          <span class="step-act"><button class="btn">复制</button><button class="btn">Switch ↗</button></span></div>
       </div>
       <div class="step" data-step-toggle>
         <div class="step-head"><span class="step-icon k-thinking"><svg viewBox="0 0 24 24"><path d="M12 3.5l2 5.6 5.6 2-5.6 2-2 5.6-2-5.6-5.6-2 5.6-2 2-5.6z"/></svg></span>
           <span class="step-title">思考</span>
           <span class="step-note">子代理结果可信，整理成出行建议…</span>
-          <span class="step-act"><button class="btn" onclick="event.stopPropagation()">复制</button></span></div>
+          <span class="step-act"><button class="btn">复制</button></span></div>
         <div class="step-body"><div class="step-body-clip"><div class="step-body-inner">数据来自中国天气网 + Open-Meteo，两源一致。整理成三行：现况、区间、建议。</div></div></div>
       </div>
     </div>
@@ -405,14 +405,14 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
         <div class="step-head"><span class="step-icon k-thinking"><svg viewBox="0 0 24 24"><path d="M12 3.5l2 5.6 5.6 2-5.6 2-2 5.6-2-5.6-5.6-2 5.6-2 2-5.6z"/></svg></span>
           <span class="step-title">思考</span>
           <span class="step-note">点开的行长这样——内容与标题条同宽对齐</span>
-          <span class="step-act"><button class="btn" onclick="event.stopPropagation()">复制</button></span></div>
+          <span class="step-act"><button class="btn">复制</button></span></div>
         <div class="step-body"><div class="step-body-clip"><div class="step-body-inner">展开的内容块只有一层浅底色，没有边框、没有自己的头部——头就是上面那行。内容块左缘与标题条对齐（不再额外缩进）。再点一次行收回去。只有思考行内联展开；函数/子代理的详情在右栏。</div></div></div>
       </div>
       <div class="step open" data-step-toggle>
         <div class="step-head"><span class="step-icon k-function"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg></span>
           <span class="step-title link">函数调用</span>
           <span class="step-note">research_agent · 内部还有子调用 → 展开是缩进一层的子时间线</span>
-          <span class="step-act"><button class="btn" onclick="event.stopPropagation()">复制</button></span></div>
+          <span class="step-act"><button class="btn">复制</button></span></div>
         <div class="tl-sub"><div class="tl-sub-clip"><div class="tl-sub-inner">
           <div class="step">
             <div class="step-head"><span class="step-icon k-function"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg></span>
@@ -438,7 +438,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
         <div class="step-head"><span class="step-icon k-function"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg></span>
           <span class="step-title link">函数调用</span>
           <span class="step-note">deep_lookup · 点击非标题区域逐级展开</span>
-          <span class="step-act"><button class="btn" onclick="event.stopPropagation()">复制</button></span></div>
+          <span class="step-act"><button class="btn">复制</button></span></div>
         <div class="tl-sub"><div class="tl-sub-clip"><div class="tl-sub-inner">
           <div class="step"><div class="step-head"><span class="step-icon k-function"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg></span><span class="step-title link">search_index</span><span class="step-note">命中 18 条候选</span><span class="step-act"><button class="btn">复制</button></span></div></div>
           <div class="step"><div class="step-head"><span class="step-icon k-llm"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></span><span class="step-title link">LLM</span><span class="step-note">筛选并合并重复结果</span><span class="step-act"><button class="btn">复制</button></span></div></div>
@@ -485,7 +485,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
     <div class="runtime-program-avatar" aria-hidden="true">ƒ</div>
     <div class="runtime-program-content">
       <div class="tl" id="runtime-demo">
-        <button class="tl-toggle" type="button" onclick="document.getElementById('runtime-demo').classList.toggle('open')">
+        <button class="tl-toggle" type="button">
           <span>weather_report · 已完成 · 00:03 · 今天小雨转暴雨，24～28°C…</span><span class="chev">›</span>
         </button>
         <div class="tl-collapse"><div class="tl-collapse-inner">
@@ -494,7 +494,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
               <div class="step-head"><span class="step-icon k-function"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg></span>
                 <span class="step-title link">weather_report</span>
                 <span class="step-note">{"city": "北京"} · 3.2s → 今天小雨转暴雨，24～28°C…</span>
-                <span class="step-act"><button class="btn" onclick="event.stopPropagation()">复制</button></span></div>
+                <span class="step-act"><button class="btn">复制</button></span></div>
               <div class="tl-sub"><div class="tl-sub-clip"><div class="tl-sub-inner">
                 <div class="step">
                   <div class="step-head"><span class="step-icon k-function"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg></span>
@@ -591,7 +591,7 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
               <div class="step-head"><span class="step-icon k-subagent"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span>
                 <span class="step-title link">Sub-agent: 检索近期论文</span>
                 <span class="step-note" id="demo-subagent-note">运行中…</span>
-                <span class="step-act"><button class="btn" type="button" onclick="event.stopPropagation()">复制</button><button class="btn" type="button" onclick="event.stopPropagation()">Switch ↗</button></span></div>
+                <span class="step-act"><button class="btn" type="button">复制</button><button class="btn" type="button">Switch ↗</button></span></div>
             </div>
           </div>
         </div></div>
@@ -832,6 +832,15 @@ Agent 回复发起的 function 及其执行树只属于该回复的执行时间�
 <div class="rule"><b>视觉验收条件：</b>聊天卡最多显示 3 个初始文件名，不加载 diff；最多扩展到 20 个路径，其余进入 Review；Changes 同时只挂载一个有界 diff；This turn / Current branch / Workspace 的来源标签始终可见；历史 Restore 使用独立 impact sheet，不把 Undo/Revert/Restore/Branch 堆在卡片 header。完整数据与恢复验收见<a href="../runtime/operations/file-management.html#acceptance">权威运行时设计</a>。<br><b>实现状态：</b>生产聊天卡保留外框与 header 分隔线，顶部高度为 40px，使用 19px Feather 文件修改语义图标；Undo/Redo/Revert/Reapply 只显示当前可执行的一项，Review 使用中性色描边按钮。center Review 已实现 This turn / Current branch / Workspace、有界文件与 diff 分页、actor/producer/linked impact；branch checkout mismatch banner 会在文件修改前要求 Keep current files 或 Restore branch code。运行时与视觉实现均已通过 Task A–E 的独立审查。字体、三层背景、8ch 固定统计列、仅 Collapse footer、紧凑间距和浅色主背景修订已通过独立审查；历史预检提示移入 header 的实现也已通过本轮独立 specification review 与 quality review。</div>
 
 <script>
+document.getElementById('tl1').querySelector(':scope > .tl-toggle').addEventListener('click',()=>{
+  document.getElementById('tl1').classList.toggle('open');
+});
+document.getElementById('runtime-demo').querySelector(':scope > .tl-toggle').addEventListener('click',()=>{
+  document.getElementById('runtime-demo').classList.toggle('open');
+});
+document.querySelectorAll('.step-act .btn').forEach(btn=>{
+  btn.addEventListener('click',event=>event.stopPropagation());
+});
 document.querySelectorAll('[data-step-toggle]').forEach(step=>{
   const head=step.querySelector(':scope>.step-head');
   if(!head)return;
