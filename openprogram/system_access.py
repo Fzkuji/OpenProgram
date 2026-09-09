@@ -164,7 +164,8 @@ def _mac_status(capability: str) -> dict:
     current = probe['capabilities'].get(capability)
     if current is None:
         return _mac_row(capability, status='unknown', detail='Native authorization is unknown.')
-    return _mac_row(capability, **current)
+    from openprogram.system_access_identity import observe
+    return observe(_mac_row(capability, **current))
 
 
 def report() -> dict:
@@ -181,6 +182,8 @@ def report() -> dict:
                 detail=current['detail'] if current is not None
                 else 'The fresh native permission check failed; authorization is unknown.',
             ))
+        from openprogram.system_access_identity import observe
+        rows = [observe(row) for row in rows]
     elif system == 'Linux':
         wayland = bool(os.environ.get('WAYLAND_DISPLAY'))
         display = bool(os.environ.get('DISPLAY'))
@@ -284,6 +287,8 @@ def request_access(capability: str) -> dict:
         before = _mac_status(capability)
         if before['status'] == 'granted' or not before['can_request']:
             return before
+        from openprogram.system_access_identity import prepare_request
+        prepare_request(before)
         _native_probe(request_capability=capability)
         after = _mac_status(capability)
         if after['status'] != 'granted':
