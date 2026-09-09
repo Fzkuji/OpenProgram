@@ -346,8 +346,44 @@ function loadResolvedChrome({
   const filePrefs = userDataPath
     ? readPrefsFile(path.join(userDataPath, PREFS_FILE_NAME))
     : {};
+  // The renderer writes this snapshot from its current localStorage values.
+  // Raw LevelDB scans cannot distinguish live values from neighboring/history
+  // records and must only serve as migration when no valid snapshot exists.
+  if (LEGACY_THEME_STYLES.includes(filePrefs.style) && THEME_MODES.includes(filePrefs.mode)) {
+    return resolveFromPrefBag(filePrefs, systemDark);
+  }
   const chromiumPrefs = userDataPath ? readChromium(userDataPath) : {};
   return resolveFromPrefBag(mergePrefSources(chromiumPrefs, filePrefs), systemDark);
+}
+
+const TRACE_SOURCES = new Set([
+  "bootstrap", "apply", "settings-style", "settings-mode", "settings-accent", "settings-css",
+  "settings-mount", "message-send", "system", "storage", "dom-change", "startup", "native-system", "chrome",
+]);
+
+/** Local, bounded metadata only. Diagnostic failure never interrupts the UI. */
+function recordThemeEvent(userDataPath, payload = {}) {
+  try {
+    const file = path.join(userDataPath, "theme-events.json");
+    let records = [];
+    try {
+      if (fs.statSync(file).size <= 65536) {
+        const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+        if (Array.isArray(saved)) records = saved.slice(-63);
+      }
+    } catch { /* First run or unreadable log. */ }
+    records.push({
+      time: new Date().toISOString(),
+      source: TRACE_SOURCES.has(payload?.source) ? payload.source : "unknown",
+      theme: isThemeId(payload?.theme) ? payload.theme : null,
+      previousTheme: isThemeId(payload?.previousTheme) ? payload.previousTheme : null,
+      style: THEME_STYLES.includes(payload?.style) ? payload.style : null,
+      mode: THEME_MODES.includes(payload?.mode) ? payload.mode : null,
+      storedMode: THEME_MODES.includes(payload?.storedMode) ? payload.storedMode : null,
+      systemDark: typeof payload?.systemDark === "boolean" ? payload.systemDark : null,
+    });
+    fs.writeFileSync(file, JSON.stringify(records));
+  } catch { /* Best-effort diagnostics. */ }
 }
 
 function buildErrorPageHtml(chrome, workerCommand) {
@@ -392,6 +428,7 @@ function directoryListingCss(chrome) {
 }
 
 module.exports = {
+  recordThemeEvent,
   THEME_IDS,
   THEME_STYLES,
   LEGACY_THEME_STYLES,

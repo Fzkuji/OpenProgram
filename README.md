@@ -95,13 +95,11 @@ Our open-source projects cover desktop automation, research workflows, and agent
 
 | Project | What it does |
 |---|---|
-| [GUI&nbsp;Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Operates desktop applications from task instructions using screenshots and GUI actions. |
-| [Research&nbsp;Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Automates research workflows, from literature review and experiments to paper drafts. |
-| [Scriptorium](https://github.com/Fzkuji/Scriptorium) | Maintains agent memory as readable Markdown notes, with facts cited to source messages and MCP access. Successor to Wiki Agent. |
+| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | **GUI&nbsp;Automation**<br>Operates&nbsp;desktop&nbsp;apps&nbsp;with&nbsp;screenshots&nbsp;and&nbsp;actions. |
+| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | **Research&nbsp;Automation**<br>Automates&nbsp;literature&nbsp;reviews,&nbsp;experiments,&nbsp;and&nbsp;paper&nbsp;drafts. |
+| [Scriptorium](https://github.com/Fzkuji/Scriptorium) | **Agent&nbsp;Memory**<br>Stores&nbsp;and&nbsp;retrieves&nbsp;source-cited&nbsp;Markdown&nbsp;memories&nbsp;via&nbsp;MCP. |
 
-If a project is useful to you, consider starring its repository or contributing an issue or pull request.
-
-Additional Programs can be installed with `openprogram programs install <owner>/<repo>`. See [Installing harnesses](docs/capabilities/installing-harnesses.md).
+Install more: `openprogram programs install <owner>/<repo>` ([guide](docs/capabilities/installing-harnesses.md)).
 
 ## News
 

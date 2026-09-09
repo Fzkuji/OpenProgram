@@ -20,11 +20,10 @@ import { wsRequest } from "@/lib/net/ws-request";
 import { ProjectOperationDialog, type ProjectOperation } from "./project-operation-dialog";
 
 const item = itemCls(false) + " outline-none " + styles.menuItem;
-export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, onActivate}: {
+export function ProjectMenu({project, children, onOpen, onNewSession, onSaved}: {
   project: EditableProject;
   children: (trigger: ReactNode) => ReactNode;
   onOpen: () => void; onNewSession: () => void; onSaved: (project:EditableProject) => void;
-  onActivate?: () => void;
 }) {
   const { text } = useTranslation();
   const view = useRecentsView();
@@ -44,7 +43,6 @@ export function ProjectMenu({project, children, onOpen, onNewSession, onSaved, o
     setRecentsView({pinnedProjects:pinned?view.pinnedProjects.filter(id=>id!==project.id):[...view.pinnedProjects,project.id]});
   }
   function showMenu(event: MouseEvent<HTMLElement>) {
-    onActivate?.();
     menu.show(event, [
       { id: "new-chat", label: text("New chat", "新建聊天"), onSelect: onNewSession },
       { id: "open", label: text("Open project", "打开项目"), onSelect: onOpen },

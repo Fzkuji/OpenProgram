@@ -196,7 +196,7 @@ function themePrefsPath() {
   return path.join(app.getPath("userData"), themeChrome.PREFS_FILE_NAME);
 }
 
-function resolveStartupChrome() {
+function resolveStartupChrome(source = "startup") {
   let systemDark = true;
   try {
     systemDark = require("electron").nativeTheme.shouldUseDarkColors !== false;
@@ -207,6 +207,7 @@ function resolveStartupChrome() {
     userDataPath: app.getPath("userData"),
     systemDark,
   });
+  themeChrome.recordThemeEvent(app.getPath("userData"), { source, ...resolved, previousTheme: null, systemDark });
   currentChrome = resolved.chrome;
   return resolved;
 }
@@ -4145,12 +4146,17 @@ registerSingleMainWindow({
     registerWebTabIpc();
     registerTabTransferIpc();
     registerUpdateIpc();
+    ipcMain.on("theme:trace", (event, payload) => {
+      // Only the app document can write diagnostics, not embedded websites.
+      if (!BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.webContents === event.sender)) return;
+      themeChrome.recordThemeEvent(app.getPath("userData"), payload);
+    });
     ipcMain.on("theme:set-chrome", (_event, payload) => {
       applyWindowChrome(payload || {});
     });
     try {
       require("electron").nativeTheme.on("updated", () => {
-        const resolved = resolveStartupChrome();
+        const resolved = resolveStartupChrome("native-system");
         applyWindowChrome({
           theme: resolved.theme,
           style: resolved.style,

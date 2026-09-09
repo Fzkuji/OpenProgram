@@ -152,6 +152,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
   },
   theme: {
     setChrome: (payload) => ipcRenderer.send("theme:set-chrome", payload),
+    trace: (payload) => ipcRenderer.send("theme:trace", payload),
   },
   terminal: {
     start: (request) => ipcRenderer.invoke("terminal:start", request),

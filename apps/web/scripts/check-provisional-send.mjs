@@ -856,4 +856,23 @@ assert.equal(
   "a background session must not inherit the focused chat's settings",
 );
 
+// Successful submission records only appearance metadata, even if logging fails.
+const themeEvents = [];
+window.localStorage = globalThis.localStorage;
+window.matchMedia = () => ({ matches: false });
+document.documentElement = { getAttribute: () => "dark" };
+window.openprogramDesktop = { theme: { trace: (event) => themeEvents.push(event) } };
+values.set("agentic_theme_mode", "dark");
+setSocket({ readyState: 1, send() {} });
+const diagnosticSend = () => sendChatMessage({ text: "PRIVATE_MESSAGE_SENTINEL",
+  sessionId: "theme-diagnostic", thinking: "medium", toolsEnabled: false,
+  webSearchEnabled: false, background: true });
+assert.equal(diagnosticSend(), true);
+assert.equal(themeEvents.at(-1).source, "message-send");
+assert.equal(themeEvents.at(-1).theme, "dark");
+assert.equal(values.get("agentic_theme_mode"), "dark");
+assert.doesNotMatch(JSON.stringify(themeEvents), /PRIVATE_MESSAGE_SENTINEL|theme-diagnostic/);
+window.openprogramDesktop.theme.trace = () => { throw new Error("diagnostic unavailable"); };
+assert.equal(diagnosticSend(), true);
+
 console.log("provisional send checks passed");
