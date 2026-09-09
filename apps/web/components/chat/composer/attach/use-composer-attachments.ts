@@ -314,6 +314,7 @@ export function useComposerAttachments(
   }, [publishAttachments]);
 
   const removeImage = useCallback((id: string) => {
+    setImageError(null);
     const ownerKey = activeChatKeyRef.current;
     if (!ownerKey) {
       setPendingImages((prev) => {
