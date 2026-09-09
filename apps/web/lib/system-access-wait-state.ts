@@ -13,6 +13,7 @@ export type SystemAccessWait = {
  * setup request.
  */
 const openBySession = new Map<string, Map<string, SystemAccessWait>>();
+const handledBySession = new Map<string, Set<string>>();
 const liveBySession = new Map<string, Map<string, SystemAccessWait>>();
 
 function put(
@@ -44,7 +45,7 @@ export function rememberSystemAccessWait(
     ),
   };
   put(openBySession, normalized);
-  if (live) put(liveBySession, normalized);
+  if (live && !systemAccessWaitHandled(normalized)) put(liveBySession, normalized);
   return normalized;
 }
 
@@ -52,6 +53,9 @@ export function forgetSystemAccessWait(value: unknown): void {
   if (!value || typeof value !== "object") return;
   const wait = value as Partial<SystemAccessWait>;
   if (typeof wait.wait_id !== "string" || typeof wait.session_id !== "string") return;
+  const handled = handledBySession.get(wait.session_id);
+  handled?.delete(wait.wait_id);
+  if (handled?.size === 0) handledBySession.delete(wait.session_id);
   for (const map of [openBySession, liveBySession]) {
     const session = map.get(wait.session_id);
     session?.delete(wait.wait_id);
@@ -70,10 +74,17 @@ export function takeLiveSystemAccessWaits(sessionId: string): SystemAccessWait[]
   return [...session.values()];
 }
 
+export function systemAccessWaitHandled(wait: SystemAccessWait): boolean {
+  return handledBySession.get(wait.session_id)?.has(wait.wait_id) ?? false;
+}
+
 export function markSystemAccessWaitHandled(value: unknown): void {
   if (!value || typeof value !== "object") return;
   const wait = value as Partial<SystemAccessWait>;
   if (typeof wait.wait_id !== "string" || typeof wait.session_id !== "string") return;
+  let handled = handledBySession.get(wait.session_id);
+  if (!handled) { handled = new Set(); handledBySession.set(wait.session_id, handled); }
+  handled.add(wait.wait_id);
   const session = liveBySession.get(wait.session_id);
   session?.delete(wait.wait_id);
   if (session?.size === 0) liveBySession.delete(wait.session_id);

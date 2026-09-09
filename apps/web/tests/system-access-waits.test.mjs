@@ -91,6 +91,8 @@ const waiting = {wait_id:"os-wait",session_id:"session",execution_id:"execution"
     await act(async () => root.render(createElement(SystemAccessWaits,{sessionId:"session"})));
     assert.match(host.textContent,/Waiting for system authorization/);
     assert.equal(calls.filter(([,method])=>method==="POST").length,1);
+    await act(async () => window.dispatchEvent(new CustomEvent("op:system-access", {detail:{type:"system_access.waiting",data:{...waiting,live:true}}})));
+    assert.equal(calls.filter(([,method])=>method==="POST").length,1, "duplicate live wait after remount must not prompt again");
     failRead = true;
     await act(async () => window.dispatchEvent(new Event("focus")));
     assert.match(host.textContent,/Waiting for system authorization/);

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { SystemAccessRecovery } from "./system-access-recovery";
 import {
   forgetSystemAccessWait,
+  systemAccessWaitHandled,
   markSystemAccessWaitHandled,
   rememberedSystemAccessWaits,
   rememberSystemAccessWait,
@@ -18,7 +19,6 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
   const [waits, setWaits] = useState<AccessWait[]>([]);
   const live = useRef(new Set<string>());
   const verified = useRef(new Set<string>());
-  const handled = useRef(new Set<string>());
   const hasWaits = useRef(false);
   hasWaits.current = waits.length > 0;
   useEffect(() => {
@@ -27,7 +27,6 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
     setWaits(restored);
     live.current.clear();
     verified.current.clear();
-    handled.current.clear();
     for (const wait of liveRestored) live.current.add(wait.wait_id);
     if (!sessionId) return;
     const sid = sessionId;
@@ -59,7 +58,6 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
               forgetSystemAccessWait(previous);
               live.current.delete(previous.wait_id);
               verified.current.delete(previous.wait_id);
-              handled.current.delete(previous.wait_id);
             }
           }
           setWaits(owned);
@@ -73,7 +71,7 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
       if (type === "system_access.waiting") {
         const wait = rememberSystemAccessWait(data, data.live === true);
         if (!wait) return;
-        if (data.live === true) {
+        if (data.live === true && !systemAccessWaitHandled(wait)) {
           live.current.add(wait.wait_id);
           verified.current.delete(wait.wait_id);
         }
@@ -85,7 +83,6 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
         forgetSystemAccessWait(data);
         live.current.delete(data.wait_id);
         verified.current.delete(data.wait_id);
-        handled.current.delete(data.wait_id);
         setWaits(previous => previous.filter(wait => wait.wait_id !== data.wait_id));
       }
       void refresh();
@@ -117,11 +114,10 @@ export function SystemAccessWaits({ sessionId }: { sessionId: string | null }) {
     <div className="message-content">
       <SystemAccessRecovery
         requiredCapabilities={required}
-        autoOpen={waits.some(wait => live.current.has(wait.wait_id)
+        autoOpen={waits.some(wait => !systemAccessWaitHandled(wait) && live.current.has(wait.wait_id)
           && verified.current.has(wait.wait_id))}
         onAutoOpen={() => {
           for (const wait of waits) {
-            handled.current.add(wait.wait_id);
             markSystemAccessWaitHandled(wait);
           }
         }}
