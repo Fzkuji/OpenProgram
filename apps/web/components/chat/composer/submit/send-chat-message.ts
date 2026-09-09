@@ -19,8 +19,10 @@ import {
   clearPendingUserText,
   getPendingUserTimestamp,
   getPendingUserText,
+  getPendingUserAck,
   hasPendingFirstAck,
   hasPendingUserText,
+  pendingUserHasAttachments,
   setPendingFirstAck,
   setPendingUserText,
 } from "@/lib/pending-user-text";
@@ -61,6 +63,9 @@ export interface ChatAttachment {
   filename?: string;
   /** Internal provenance used by the web backend's path-marker rewrite. */
   source_path?: string;
+  /** Original bytes/type when the displayed model image was resized. */
+  original_data?: string;
+  original_media_type?: string;
 }
 
 interface SendMessageBridgeArgs {
@@ -83,11 +88,16 @@ interface SendMessageBridgeArgs {
    *  and `setRunning` are singletons belonging to the focused chat and
    *  flipping them from a background send would corrupt its UI. */
   background?: boolean;
+  /** Cleanup runs only after the backend emits chat_ack for this turn. */
+  onAck?: () => void;
+  hasAttachments?: boolean;
 }
 
 function reservePendingChatSend(
   sessionId: string | null,
   text: string,
+  onAck?: () => void,
+  hasAttachments = false,
 ): (() => void) | null {
   if (!sessionId) return () => {};
   if (sessionId.startsWith("local_") && hasPendingFirstAck(sessionId)) {
@@ -96,14 +106,19 @@ function reservePendingChatSend(
   const previousText = getPendingUserText(sessionId);
   const previousTimestamp = getPendingUserTimestamp(sessionId);
   const hadPreviousText = hasPendingUserText(sessionId);
-  setPendingUserText(sessionId, text);
+  const previousAck = getPendingUserAck(sessionId);
+  const previousHasAttachments = pendingUserHasAttachments(sessionId);
+  setPendingUserText(sessionId, text, Date.now(), { onAck, hasAttachments });
   if (sessionId.startsWith("local_")) {
     setPendingFirstAck(sessionId);
   }
   return () => {
     if (getPendingUserText(sessionId) === text) {
       if (hadPreviousText && previousText !== undefined) {
-        setPendingUserText(sessionId, previousText, previousTimestamp ?? Date.now());
+        setPendingUserText(sessionId, previousText, previousTimestamp ?? Date.now(), {
+          onAck: previousAck,
+          hasAttachments: previousHasAttachments,
+        });
       } else {
         clearPendingUserText(sessionId);
       }
@@ -130,6 +145,8 @@ export function sendChatMessage({
   serviceTier,
   attachments,
   background = false,
+  onAck,
+  hasAttachments = Boolean(attachments?.length),
 }: SendMessageBridgeArgs): boolean {
   const ws = getSocket();
   if (!ws || ws.readyState !== WebSocket.OPEN) return false;
@@ -141,7 +158,12 @@ export function sendChatMessage({
       thinking, toolsEnabled, toolsProfile, webSearchEnabled, serviceTier, background,
     });
   }
-  const rollbackPendingSend = reservePendingChatSend(sessionId, text);
+  const rollbackPendingSend = reservePendingChatSend(
+    sessionId,
+    text,
+    onAck,
+    hasAttachments,
+  );
   if (!rollbackPendingSend) {
     // A second browser event before the first ACK is already represented by
     // the in-flight provisional send. Treat it as handled without writing a
@@ -230,6 +252,10 @@ export function sendChatMessage({
       media_type: a.media_type,
       ...(a.filename ? { filename: a.filename } : {}),
       ...(a.source_path ? { source_path: a.source_path } : {}),
+      ...(a.original_data !== undefined ? { original_data: a.original_data } : {}),
+      ...(a.original_media_type !== undefined
+        ? { original_media_type: a.original_media_type }
+        : {}),
     }));
   }
   // First message of a brand-new conversation: attach the channel
@@ -259,7 +285,9 @@ export function sendChatMessage({
   }
   traceThemeEvent("message-send");
   const acceptedAt = Date.now();
-  if (sessionId) setPendingUserText(sessionId, text, acceptedAt);
+  if (sessionId) {
+    setPendingUserText(sessionId, text, acceptedAt, { onAck, hasAttachments });
+  }
   // Close the clear→ACK race for every session, not only provisional
   // drafts. A queued send is already in flight once the socket accepted
   // the frame; marking that session busy now prevents a repeated

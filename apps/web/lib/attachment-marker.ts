@@ -5,6 +5,7 @@ export interface LocalFilePathBridge {
 }
 
 interface PendingImageForEnvelope {
+  order?: number;
   sourcePath?: string;
   sizeBytes: number;
   attachment: {
@@ -16,10 +17,12 @@ interface PendingImageForEnvelope {
 }
 
 interface PendingDocForEnvelope {
+  order?: number;
   filename: string;
   ext: string;
   sourcePath?: string;
   dataB64?: string | null;
+  directoryListing?: string;
   mediaType?: string;
   sizeBytes: number;
 }
@@ -128,7 +131,9 @@ export function buildAttachmentEnvelope(
   pendingDocs: PendingDocForEnvelope[],
 ) {
   const mentions: string[] = [];
-  const imagesPayload = pendingImages.map((image) => {
+  const groups: { order: number; text: string[] }[] = [];
+  const imagesPayload = pendingImages.map((image, index) => {
+    const start = mentions.length;
     const payload = {
       ...image.attachment,
       ...(image.sourcePath ? { source_path: image.sourcePath } : {}),
@@ -146,6 +151,12 @@ export function buildAttachmentEnvelope(
         image.sourcePath,
       ));
     }
+    if (!image.sourcePath) {
+      const filename = image.attachment.filename || `image-${index + 1}.${image.attachment.media_type.split("/").pop() || "png"}`;
+      const ext = filename.includes(".") ? filename.split(".").pop()! : "image";
+      mentions.push(`[attachment: ${safeMarkerText(filename)} (${safeMarkerText(ext)}, ${Math.max(1, Math.round(image.sizeBytes / 1024))} KB)]`);
+    }
+    groups.push({ order: image.order ?? index, text: mentions.slice(start) });
     return payload;
   });
   const docsPayload: Array<{
@@ -155,18 +166,22 @@ export function buildAttachmentEnvelope(
     filename: string;
     source_path?: string;
   }> = [];
-  for (const doc of pendingDocs) {
+  for (const [index, doc] of pendingDocs.entries()) {
+    const start = mentions.length;
     const safeName = safeMarkerText(doc.filename);
     const safeExt = safeMarkerText(doc.ext || "file");
     const meta = `${safeExt}, ${Math.max(1, Math.round(doc.sizeBytes / 1024))} KB`;
     mentions.push(
       doc.sourcePath
         ? localAttachmentMention(doc.filename, doc.ext, doc.sizeBytes, doc.sourcePath)
-        : doc.dataB64
+        : typeof doc.dataB64 === "string"
           ? `[attachment: ${safeName} (${meta})]`
           : `[attachment: ${safeName} (${meta}, too large — not sent)]`,
     );
-    if (doc.dataB64) {
+    if (doc.ext === "folder" && doc.directoryListing) {
+      mentions.push(`First-level directory listing for ${JSON.stringify(doc.sourcePath)}:\n${doc.directoryListing}`);
+    }
+    if (!doc.sourcePath && typeof doc.dataB64 === "string") {
       docsPayload.push({
         type: "document",
         data: doc.dataB64,
@@ -175,6 +190,7 @@ export function buildAttachmentEnvelope(
         ...(doc.sourcePath ? { source_path: doc.sourcePath } : {}),
       });
     }
+    groups.push({ order: doc.order ?? pendingImages.length + index, text: mentions.slice(start) });
   }
-  return { mentions, imagesPayload, docsPayload };
+  return { mentions: groups.sort((a, b) => a.order - b.order).flatMap((group) => group.text), imagesPayload, docsPayload };
 }

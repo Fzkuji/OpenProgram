@@ -24,9 +24,11 @@ import {
   readDroppedTextFile,
   readFileAsBase64,
   readImageFile,
-  ACCEPTED_IMAGE_MIME,
+  planDroppedFiles,
+  MAX_DOC_BYTES,
 } from "./image-attach";
 import type { PendingDoc } from "./file-tiles";
+import { captureDropEntries, firstDirectoryLevel, type DroppedEntry } from "./folder-drop";
 import {
   attachmentOwnerIsClosed,
   loadAttachments,
@@ -37,6 +39,7 @@ import {
   addDocsForChat,
   addImagesForChat,
   mergeAttachments,
+  nextAttachmentOrder,
   removeDocForChat,
   removeImageForChat,
   setAttachmentsForChat,
@@ -60,13 +63,17 @@ export interface UseComposerAttachmentsResult {
   addDocs: (docs: PendingDoc[]) => void;
   removeDoc: (id: string) => void;
   onPickImages: () => void;
+  addFiles: (files: File[]) => Promise<void>;
   onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   /** Revoke image preview URLs + reset both attachment lists. Called
    *  by submit() once the WS payload is gone. */
-  clearAfterSubmit: (ownerKey: string | null) => void;
+  clearAfterSubmit: (
+    ownerKey: string | null,
+    captured?: { imageIds: string[]; docIds: string[] },
+  ) => void;
 }
 
 function revokeAttachmentPreviews(data: StoredAttachments): void {
@@ -437,22 +444,20 @@ export function useComposerAttachments(
   // Images go to the image strip, text files to inline tiles, binary
   // to placeholder tiles. Nothing is rejected — everything dropped
   // shows up so the user always sees feedback.
-  const processDroppedFiles = useCallback(async (files: File[]) => {
+  const processDroppedFiles = useCallback(async (files: File[], entries = new Map<File, DroppedEntry>()) => {
     if (files.length === 0) return;
     const ownerKey = activeChatKeyRef.current;
-    const imageFiles: File[] = [];
-    const otherFiles: File[] = [];
-    for (const f of files) {
-      if (ACCEPTED_IMAGE_MIME.has(f.type)) imageFiles.push(f);
-      else otherFiles.push(f);
-    }
+    const current = (ownerKey
+      ? attachmentsByChatRef.current.get(ownerKey)
+      : undefined) ?? { images: [], docs: [] };
+    const planned = planDroppedFiles(files, nextAttachmentOrder(current));
     // STAGE 1 — immediately push placeholder chips for every file so
     // the user sees something the very next frame after dropping.
     // ``loading: true`` makes the chip render a skeleton in place of
     // the thumbnail / badge until stage 2 fills in the real data.
-    // This is the pattern claude.ai uses: drop → tiles appear
-    // instantly with a shimmer → content fills in.
-    const imagePlaceholders: PendingImage[] = imageFiles.map((f) => ({
+    // Insertion ``order`` is assigned from the original drop list so a
+    // later image decode cannot reshuffle documents ahead of images.
+    const imagePlaceholders: PendingImage[] = planned.images.map(({ file: f, order }) => ({
       id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       previewUrl: null,
       sizeBytes: f.size,
@@ -464,12 +469,13 @@ export function useComposerAttachments(
       },
       sourcePath: localSourcePath(f, desktopBridge()),
       loading: true,
+      order,
     }));
-    const docPlaceholders: PendingDoc[] = otherFiles.map((f) => ({
+    const docPlaceholders: PendingDoc[] = planned.docs.map(({ file: f, order }) => ({
       id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       filename: f.name,
       sourcePath: localSourcePath(f, desktopBridge()),
-      ext: f.name.includes(".")
+      ext: entries.has(f) ? "folder" : f.name.includes(".")
         ? f.name.split(".").pop()!.toLowerCase()
         : "",
       content: null,
@@ -477,47 +483,74 @@ export function useComposerAttachments(
       mediaType: f.type || undefined,
       sizeBytes: f.size,
       loading: true,
+      order,
     }));
     addImagesForOwner(ownerKey, imagePlaceholders);
     addDocsForOwner(ownerKey, docPlaceholders);
 
     // STAGE 2 — kick off the actual reads in parallel; each one
     // patches its placeholder in place when done so the chip never
-    // unmounts. Errors leave the chip in ``loading: false`` with no
-    // thumbnail; the user can × it manually.
+    // unmounts. Errors stay on that item and block send.
     imagePlaceholders.forEach((placeholder, i) => {
-      const f = imageFiles[i];
+      const f = planned.images[i].file;
       readImageFile(f, f.name || undefined)
         .then((real) => {
           updateImageForOwner(ownerKey, placeholder.id, {
             previewUrl: real.previewUrl,
             attachment: real.attachment,
             loading: false,
+            error: undefined,
           });
         })
         .catch((err) => {
-          updateImageForOwner(ownerKey, placeholder.id, { loading: false });
+          updateImageForOwner(ownerKey, placeholder.id, {
+            loading: false,
+            error: String(err),
+          });
           if (activeChatKeyRef.current === ownerKey) setImageError(String(err));
         });
     });
     docPlaceholders.forEach((placeholder, i) => {
-      const f = otherFiles[i];
-      // EVERY non-image file is delivered to the agent the same way:
-      // its bytes are saved under the session workdir (backend) and the
-      // message references it by PATH — never inlined. So always capture
-      // ``dataB64`` for the upload. We additionally try a text decode,
-      // but ONLY to power the local preview modal (``content``) — that
-      // text is never sent to the model.
+      const f = planned.docs[i].file;
+      if (placeholder.ext === "folder") {
+        if (!placeholder.sourcePath) {
+          updateDocForOwner(ownerKey, placeholder.id, { loading: false, error: "Add folders from the desktop app" });
+          return;
+        }
+        void firstDirectoryLevel(entries.get(f)!).then((listing) => {
+          updateDocForOwner(ownerKey, placeholder.id, { loading: false, content: listing, directoryListing: listing });
+        }).catch(() => {
+          updateDocForOwner(ownerKey, placeholder.id, { loading: false, error: "Cannot read folder" });
+        });
+        return;
+      }
+      if (placeholder.sourcePath) {
+        // Native documents are references. The optional local preview is never sent.
+        updateDocForOwner(ownerKey, placeholder.id, { loading: false });
+        void readDroppedTextFile(f).then((preview) => {
+          updateDocForOwner(ownerKey, placeholder.id, { content: preview?.content ?? null });
+        });
+        return;
+      }
       Promise.all([readFileAsBase64(f), readDroppedTextFile(f)])
         .then(([b64, textRead]) => {
+          const error = f.size > MAX_DOC_BYTES
+            ? `file too large`
+            : b64 == null
+              ? "Read failed"
+              : undefined;
           updateDocForOwner(ownerKey, placeholder.id, {
             dataB64: b64,
             content: textRead ? textRead.content : null,
             loading: false,
+            error,
           });
         })
         .catch(() => {
-          updateDocForOwner(ownerKey, placeholder.id, { loading: false });
+          updateDocForOwner(ownerKey, placeholder.id, {
+            loading: false,
+            error: "Read failed",
+          });
         });
     });
   }, [
@@ -569,7 +602,7 @@ export function useComposerAttachments(
       for (let i = 0; i < dt.files.length; i++) {
         dropped.push(dt.files[i]);
       }
-      await processDroppedFiles(dropped);
+      await processDroppedFiles(dropped, captureDropEntries(dt));
     }
     // Only the focused (unbound) composer listens at window level — two
     // sets of listeners would route one drop into both sessions.
@@ -605,30 +638,50 @@ export function useComposerAttachments(
     async (e: React.DragEvent<HTMLDivElement>) => {
       if (!e.dataTransfer.types.includes("Files")) return;
       e.preventDefault();
+      e.stopPropagation();
       setDragActive(false);
       const dropped: File[] = [];
       for (let i = 0; i < e.dataTransfer.files.length; i++) {
         dropped.push(e.dataTransfer.files[i]);
       }
-      await processDroppedFiles(dropped);
+      await processDroppedFiles(dropped, captureDropEntries(e.dataTransfer));
     },
     [processDroppedFiles],
   );
 
-  const clearAfterSubmit = useCallback((ownerKey: string | null) => {
+  const clearAfterSubmit = useCallback((
+    ownerKey: string | null,
+    captured?: { imageIds: string[]; docIds: string[] },
+  ) => {
+    const imageIds = new Set(captured?.imageIds ?? []);
+    const docIds = new Set(captured?.docIds ?? []);
     if (!ownerKey) {
       if (activeChatKeyRef.current !== null) return;
-      revokeAttachmentPreviews({ images: pendingImages, docs: pendingDocs });
-      setPendingImages([]);
-      setPendingDocs([]);
+      setPendingImages((current) => {
+        const removed = current.filter((image) => imageIds.has(image.id));
+        revokeAttachmentPreviews({ images: removed, docs: [] });
+        return current.filter((image) => !imageIds.has(image.id));
+      });
+      setPendingDocs((current) => {
+        const removed = current.filter((doc) => docIds.has(doc.id));
+        revokeAttachmentPreviews({ images: [], docs: removed });
+        return current.filter((doc) => !docIds.has(doc.id));
+      });
       return;
     }
     const attachments = attachmentsByChatRef.current.get(ownerKey)
       ?? { images: [], docs: [] };
-    revokeAttachmentPreviews(attachments);
-    noteAttachmentsCleared(ownerKey);
-    publishAttachments(ownerKey, { images: [], docs: [] });
-  }, [noteAttachmentsCleared, pendingDocs, pendingImages, publishAttachments]);
+    const removedImages = attachments.images.filter((image) => imageIds.has(image.id));
+    const removedDocs = attachments.docs.filter((doc) => docIds.has(doc.id));
+    if (removedImages.length === 0 && removedDocs.length === 0) return;
+    for (const image of removedImages) noteAttachmentRemoval(ownerKey, "image", image.id);
+    for (const doc of removedDocs) noteAttachmentRemoval(ownerKey, "doc", doc.id);
+    revokeAttachmentPreviews({ images: removedImages, docs: removedDocs });
+    publishAttachments(ownerKey, {
+      images: attachments.images.filter((image) => !imageIds.has(image.id)),
+      docs: attachments.docs.filter((doc) => !docIds.has(doc.id)),
+    });
+  }, [noteAttachmentRemoval, pendingDocs, pendingImages, publishAttachments]);
 
   return {
     pendingImages,
@@ -643,6 +696,7 @@ export function useComposerAttachments(
     addDocs,
     removeDoc,
     onPickImages,
+    addFiles: processDroppedFiles,
     onFileInputChange,
     onDragOver,
     onDragLeave,

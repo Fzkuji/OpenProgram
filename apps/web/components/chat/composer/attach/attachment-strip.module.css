@@ -1,0 +1,164 @@
+.attachmentStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  box-sizing: border-box;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 16px 16px 8px;
+}
+
+.attachmentItem {
+  width: 248px;
+  max-width: 100%;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.attachmentItemPending {
+  border-color: color-mix(in srgb, var(--text-muted) 45%, var(--border));
+}
+
+.attachmentItemError {
+  border-color: var(--accent-red, #b2767b);
+}
+
+.preview {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.preview:focus-visible,
+.remove:focus-visible {
+  outline: 2px solid var(--accent, #285bbb);
+  outline-offset: 2px;
+}
+
+.thumb,
+.formatIcon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 5px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.thumb {
+  background: var(--bg-tertiary, #eff1f5);
+}
+
+.thumbImg {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  display: block;
+}
+
+.formatIcon {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary, #ced7ee);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.formatIconPdf {
+  background: color-mix(in srgb, var(--accent-red, #c45) 18%, var(--bg-tertiary));
+}
+
+.formatIconSheet {
+  background: color-mix(in srgb, #3a7 18%, var(--bg-tertiary));
+}
+
+.formatIconFolder {
+  background: color-mix(in srgb, #ca8 22%, var(--bg-tertiary));
+}
+
+.copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.name {
+  display: block;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 20px;
+}
+
+.meta {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 18px;
+}
+
+.attachmentItemError .meta {
+  color: var(--accent-red, #f0b4bc);
+}
+
+.attachmentItemPending .meta {
+  color: color-mix(in srgb, var(--text-muted) 70%, #d4c597);
+}
+
+.remove {
+  width: 18px;
+  flex: 0 0 18px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 17px;
+  line-height: 24px;
+  cursor: pointer;
+}
+
+.remove:hover {
+  color: var(--text-primary);
+}
+
+.errorNote {
+  flex: 1 0 100%;
+  font-size: 12px;
+  color: var(--accent-red, #e4b6bc);
+  margin: 2px 4px 0;
+}
+
+.fileInput {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .attachmentItem {
+    width: 100%;
+  }
+}

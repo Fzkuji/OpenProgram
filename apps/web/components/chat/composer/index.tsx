@@ -40,10 +40,10 @@ import { SendIcon, StopIcon } from "./icons";
 import { type AnimatedNavIconHandle } from "@/components/animated-icons";
 import { type SlashCommand } from "./slash/slash-commands";
 import { SlashMenu } from "./slash/slash-menu";
-import { FileTiles } from "./attach/file-tiles";
+import { AttachmentStrip } from "./attach/attachment-strip";
+import { attachmentsBlockSend } from "./attach/attachment-session-cache";
 import { useComposerAttachments } from "./attach/use-composer-attachments";
 import { useFileMention } from "./attach/use-file-mention";
-import { ImageAttachStrip } from "./attach/image-attach-strip";
 import { useFnFormState } from "./modes/fn-form/use-fn-form-state";
 import { useFnFormWrapper } from "./modes/fn-form/use-fn-form-wrapper";
 import { useFnFormSubmit } from "./modes/fn-form/use-fn-form-submit";
@@ -135,6 +135,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     fileInputRef,
     composerRootRef,
     addImagesForOwner,
+    addFiles,
     removeImage,
     setImageError,
     removeDoc,
@@ -153,6 +154,7 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
     setInput,
     activeChatKey,
     addImagesForOwner,
+    addFiles,
     setImageError,
   });
 
@@ -529,9 +531,13 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
   // let submitFnForm's setError path light up the missing field's red
   // border instead. The button still LOOKS dim (data-fn-missing) and
   // its title spells out which field is blocking.
+  const attachmentBlock = attachmentsBlockSend(pendingImages, pendingDocs);
+  const hasAttachments = pendingImages.length > 0 || pendingDocs.length > 0;
   const sendDisabled = fnFormActive
     ? false
-    : !input.trim() || pasteMissing.size > 0;
+    : attachmentBlock != null
+      || pasteMissing.size > 0
+      || (!input.trim() && !hasAttachments);
   const sendTitle = fnFormActive
     ? missingFnParams.length > 0
       ? text(
@@ -541,6 +547,10 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
       : fnFormSubmitAction?.label ?? text("Run", "运行")
     : pasteMissing.size > 0
     ? text("Paste content lost. Remove the red chip and re-paste.", "粘贴内容已丢失。请移除红色标签后重新粘贴。")
+    : attachmentBlock === "loading"
+    ? text("Wait for attachments to finish reading", "请等待附件读取完成")
+    : attachmentBlock === "error"
+    ? text("Remove or replace the failed attachment", "请移除或重新添加失败的附件")
     : text("Send message", "发送消息");
 
   /* ---- Render -------------------------------------------------------- */
@@ -648,15 +658,16 @@ export function Composer({ sessionId: boundSessionId }: { sessionId?: string } =
             disabled={panel.disabled}
           />
         )}
-        <ImageAttachStrip
+        <AttachmentStrip
           pendingImages={pendingImages}
+          pendingDocs={pendingDocs}
           imageError={imageError}
           fileInputRef={fileInputRef}
           onFileInputChange={onFileInputChange}
-          onRemove={removeImage}
+          onRemoveImage={removeImage}
+          onRemoveDoc={removeDoc}
           onDismissError={() => setImageError(null)}
         />
-        <FileTiles docs={pendingDocs} onRemove={removeDoc} />
 
         <ComposerBody
           bound={bound}

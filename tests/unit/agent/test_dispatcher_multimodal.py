@@ -41,7 +41,7 @@ from openprogram.providers.types import (
 
 def _stub_model() -> Model:
     return Model(id="stub", name="stub", api="completion",
-                 provider="openai", base_url="https://x")
+                 provider="openai", base_url="https://x", input=["text", "image"])
 
 
 def _build_partial(t: str = "") -> AssistantMessage:
@@ -282,3 +282,30 @@ def test_per_turn_tools_override_beats_profile(
         )
     assert seen_tools
     assert seen_tools[0] == ["read"]
+
+
+def test_new_image_is_rejected_for_text_only_model_before_provider_call(tmp_db, monkeypatch):
+    monkeypatch.setattr(D, "_load_agent_profile", lambda agent_id: {
+        "id": agent_id, "system_prompt": "", "tools": [],
+    })
+    monkeypatch.setattr(D, "_resolve_model", lambda *args, **kwargs: Model(
+        id="text-only", name="Text only", api="completion", provider="openai",
+        base_url="https://unused.invalid", input=["text"],
+    ))
+    events = []
+    called = []
+    async def provider(*args, **kwargs):
+        called.append(True)
+        yield EventDone(reason="stop", message=_build_final("ignored image"))
+    original = D._run_loop_blocking
+    def run(*, req, history, on_event, cancel_event, **kwargs):
+        return original(req=req, history=history, on_event=on_event,
+                        cancel_event=cancel_event, stream_fn=provider)
+    with patch.object(D, "_run_loop_blocking", run):
+        result = D.process_user_turn(D.TurnRequest(
+            session_id="text-only", user_text="Inspect this", agent_id="main", source="web",
+            attachments=[{"type": "image", "data": "AAAA", "media_type": "image/png"}],
+        ), on_event=events.append)
+    assert not called
+    assert result.error is not None
+    assert "image input" in str(result.error).lower()

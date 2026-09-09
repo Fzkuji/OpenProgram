@@ -14,15 +14,18 @@
  * previews); text + binary drops use this tile.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "@/lib/i18n";
+import { formatAttachmentSize, imagePreviewDataUrl, type PendingImage } from "./image-attach";
 
 export interface PendingDoc {
   id: string;
   filename: string;
   /** Original native path when Electron supplied this File. */
   sourcePath?: string;
+  /** Bounded first-level listing, only for folders. */
+  directoryListing?: string;
   /** Lower-cased extension without the dot — used for the badge.
    *  Empty when the file has no recognizable extension. */
   ext: string;
@@ -42,6 +45,10 @@ export interface PendingDoc {
   /** True while the file is still being read. Shows a subtle
    *  shimmer in place of the badge until reading finishes. */
   loading?: boolean;
+  /** Monotonic insertion rank shared with images in the same chat. */
+  order?: number;
+  /** Read failure shown on this item; blocks send. */
+  error?: string;
 }
 
 interface FileTilesProps {
@@ -289,15 +296,28 @@ function FileTile({ doc, onRemove }: { doc: PendingDoc; onRemove: () => void }) 
   );
 }
 
-function FilePreviewModal({
-  doc, onClose,
-}: { doc: PendingDoc; onClose: () => void }) {
+export function FilePreviewModal({
+  doc, image, onClose,
+}: {
+  doc?: PendingDoc;
+  image?: PendingImage;
+  onClose: () => void;
+}) {
   const { text } = useTranslation();
-  // Esc closes. Defensive — only attach the listener while open.
+  const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+      // The preview currently has one action: close. Keep keyboard focus inside it.
+      if (e.key === "Tab") { e.preventDefault(); dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus(); }
+    }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (previous?.isConnected) previous.focus();
+    };
   }, [onClose]);
   if (typeof document === "undefined") return null;
   return createPortal(
@@ -317,6 +337,10 @@ function FilePreviewModal({
       }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={image?.attachment.filename || doc?.filename || text("Attachment preview", "附件预览")}
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "min(720px, 90vw)",
@@ -343,11 +367,10 @@ function FilePreviewModal({
             fontSize: 13,
             color: "var(--text-primary)",
             flex: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            overflowWrap: "anywhere",
+            whiteSpace: "normal",
           }}>
-            {doc.filename}
+            {image?.attachment.filename || doc?.filename || ""}
           </span>
           <button
             type="button"
@@ -365,6 +388,14 @@ function FilePreviewModal({
             }}
           >×</button>
         </div>
+        <div style={{ padding: "10px 16px 0", fontSize: 12, color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+          <div>{formatAttachmentSize(image?.sizeBytes ?? doc?.sizeBytes, { folder: doc?.ext === "folder" })}</div>
+          <div>{image ? text("An original copy is saved with the message when sent.", "发送后，原图副本保存在聊天中。")
+            : doc?.sourcePath ? text("Reference to the original file", "引用原文件")
+            : text("A copy is saved with the message when sent.", "发送后，文件副本保存在聊天中。")}</div>
+          {doc?.sourcePath && <div>{doc.sourcePath}</div>}
+          {(image?.error || doc?.error) && <div role="alert">{image?.error || doc?.error}</div>}
+        </div>
         <div
           style={{
             flex: 1,
@@ -378,11 +409,23 @@ function FilePreviewModal({
             wordBreak: "break-word",
           }}
         >
-          {doc.content === null ? (
+          {image && (imagePreviewDataUrl(image.attachment) || image.previewUrl) ? (
+            <img
+              src={imagePreviewDataUrl(image.attachment) || image.previewUrl || ""}
+              alt={image.attachment.filename || text("image", "图片")}
+              style={{
+                display: "block",
+                maxWidth: "100%",
+                maxHeight: "60vh",
+                margin: "0 auto",
+                objectFit: "contain",
+              }}
+            />
+          ) : doc?.content === null || doc == null ? (
             <span style={{ color: "var(--text-muted)" }}>
               {text(
-                "No text preview for this file. It's saved to the session workdir and referenced by path in the message — the agent opens it on demand with its file tools.",
-                "该文件无文本预览。它会保存到会话工作目录，并在消息中以路径引用——agent 需要时用文件工具按需打开。",
+                "No text preview. The assistant can read this file when the task requires it.",
+                "此文件没有文字预览。助手会根据任务需要读取。",
               )}
             </span>
           ) : doc.content || (

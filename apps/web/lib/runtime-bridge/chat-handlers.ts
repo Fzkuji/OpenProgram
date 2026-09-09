@@ -57,6 +57,7 @@ import {
 } from "@/lib/state/context-breakdown-cache";
 import { convToChatMsgs } from "@/lib/conv-mapper";
 import {
+  acknowledgePendingUserText,
   clearPendingFirstAck,
   clearPendingUserText,
   getPendingUserText,
@@ -157,6 +158,9 @@ export function wsHandleChatAck(data: ChatAckData): void {
         created_at: Date.now() / 1000,
       };
     }
+    // Keep the ACK boundary here as well as in the message reducer so a
+    // direct handler call cannot clear a composer before backend acceptance.
+    acknowledgePendingUserText(sid);
     clearPendingUserText(sid);
     clearPendingFirstAck(sid);
     // Mirror the (seeded or pre-existing) conv into the React store so the

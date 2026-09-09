@@ -29,6 +29,13 @@ from openprogram.execution.attempts import (
     AttemptStatus,
     AttemptStore,
 )
+from openprogram.execution.agent_input_budget import (
+    AGENT_IMAGE_BYTES_MAX,
+    AGENT_TURN_IMAGE_BYTES_MAX,
+    AGENT_TURN_INPUT_MAX_BYTES,
+    AgentInputBudgetError,
+    budget_payload,
+)
 from openprogram.execution.control import RuntimeControlService
 from openprogram.execution.driver import (
     ActivationInput,
@@ -128,7 +135,9 @@ InputResolver = Callable[[Any], Mapping[str, Any]]
 TurnRunner = Callable[..., Any]
 
 AGENT_TURN_INPUT_VERSION = 1
-MAX_AGENT_TURN_INPUT_BYTES = 256 * 1024
+MAX_AGENT_TURN_INPUT_BYTES = AGENT_TURN_INPUT_MAX_BYTES
+MAX_AGENT_IMAGE_BYTES = AGENT_IMAGE_BYTES_MAX
+MAX_AGENT_TURN_IMAGE_BYTES = AGENT_TURN_IMAGE_BYTES_MAX
 AGENT_SAFE_POINT_KINDS = (
     "agent.provider.decision.after",
     "agent.tool.action.after",
@@ -196,7 +205,14 @@ def normalize_agent_turn_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             raise AgentDriverError("invalid_input", "forced_tool input requires an object tool_input")
         value["tool_input"] = _json_safe(copy.deepcopy(dict(value["tool_input"])))
     value = _json_safe(value)
-    encoded = _json_payload(value)
+    # Image media is already carried separately from instructions. Give only
+    # validated image data its own bounded budget; names and all other fields
+    # still count toward the normal text/tool-input limit.
+    try:
+        budget_value = budget_payload(value)
+    except AgentInputBudgetError as exc:
+        raise AgentDriverError(exc.code, str(exc)) from exc
+    encoded = _json_payload(budget_value)
     if len(encoded.encode("utf-8")) > MAX_AGENT_TURN_INPUT_BYTES:
         raise AgentDriverError("input_too_large", "Agent admission input exceeds the size limit")
     return value

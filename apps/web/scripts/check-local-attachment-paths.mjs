@@ -111,6 +111,7 @@ const envelope = buildAttachmentEnvelope(
 );
 assert.deepEqual(envelope.mentions, [
   '[attachment: photo.png (png, 3 KB) @json "/Users/test/photo.png"]',
+  '[attachment: pasted.png (png, 1 KB)]',
   '[attachment: notes.txt (txt, 2 KB) @json "/Users/test/notes.txt"]',
   '[attachment: Project Folder (file, 1 KB) @json "/Users/test/Project Folder"]',
   "[attachment: browser.pdf (pdf, 4 KB)]",
@@ -123,9 +124,6 @@ assert.deepEqual(envelope.imagesPayload, [{
   type: "image", data: "browser-image", media_type: "image/png", filename: "pasted.png",
 }]);
 assert.deepEqual(envelope.docsPayload, [{
-  type: "document", data: "doc-b64", media_type: "text/plain", filename: "notes.txt",
-  source_path: "/Users/test/notes.txt",
-}, {
   type: "document", data: "browser-doc", media_type: "application/pdf", filename: "browser.pdf",
 }]);
 

@@ -15,7 +15,7 @@
  * payload is, and the preview is rebuilt from it on load.
  */
 
-import type { PendingImage } from "./image-attach";
+import { originalImageBytes, type PendingImage } from "./image-attach";
 import type { PendingDoc } from "./file-tiles";
 
 const DB_NAME = "openprogram-composer";
@@ -89,9 +89,9 @@ function waitForTransaction(tx: IDBTransaction): Promise<void> {
 function serialize(a: StoredAttachments): StoredAttachments {
   return {
     images: a.images
-      .filter((i) => !i.loading && i.attachment?.data)
+      .filter((i) => !i.loading && (i.attachment?.data || i.error))
       .map((i) => ({ ...i, previewUrl: null })),
-    docs: a.docs.filter((d) => !d.loading && d.dataB64),
+    docs: a.docs.filter((d) => !d.loading && (d.sourcePath || typeof d.dataB64 === "string" || d.error)),
   };
 }
 
@@ -149,13 +149,12 @@ export async function loadAttachments(
         const images = (v.images || []).map((i) => {
           let previewUrl: string | null = null;
           try {
-            if (i.attachment?.data) {
-              const byteStr = atob(i.attachment.data);
+            const original = originalImageBytes(i.attachment || {});
+            if (original) {
+              const byteStr = atob(original.data);
               const bytes = new Uint8Array(byteStr.length);
               for (let k = 0; k < byteStr.length; k++) bytes[k] = byteStr.charCodeAt(k);
-              const blob = new Blob([bytes], {
-                type: i.attachment.media_type || "image/png",
-              });
+              const blob = new Blob([bytes], { type: original.media_type });
               previewUrl = URL.createObjectURL(blob);
             }
           } catch {

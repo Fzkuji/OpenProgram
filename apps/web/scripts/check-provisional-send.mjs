@@ -32,7 +32,9 @@ const values = new Map();
 globalThis.window = {
   addEventListener: () => {},
   dispatchEvent: () => {},
-  location: { pathname: "/chat" },
+  location: { pathname: "/chat", hash: "", search: "" },
+  history: { state: null, replaceState: () => {} },
+  fetch: async () => ({ status: 204 }),
 };
 // The composer's `setRunning` import reaches runtime-bridge/ui + the DAG
 // module, both of which install document-level listeners at import time.
@@ -121,6 +123,44 @@ assert.ok(
 );
 
 const { applyChatWsMessage } = await import("../lib/net/chat-stream.ts");
+const { releaseChatOperationError } = await import("../lib/net/use-ws.ts");
+
+// The backend reports chat admission/save failures as operation_error. This
+// is consumed before chat_response dispatch, so exercise the real release
+// helper and verify that the same draft can submit again with its lock gone.
+const operationErrorSession = "local_operation-error-chat";
+let operationErrorCleanupCount = 0;
+assert.equal(sendChatMessage({
+  text: "retry after operation error",
+  sessionId: operationErrorSession,
+  thinking: "medium",
+  toolsEnabled: true,
+  webSearchEnabled: false,
+  hasAttachments: true,
+  onAck: () => { operationErrorCleanupCount += 1; },
+}), true);
+assert.ok(useSessionStore.getState().runningTasks[operationErrorSession]);
+assert.equal(
+  releaseChatOperationError({
+    action: "chat",
+    session_id: operationErrorSession,
+    code: "handler_error",
+  }),
+  true,
+);
+assert.equal(operationErrorCleanupCount, 0, "operation_error cannot run ACK cleanup");
+assert.equal(pendingUserText.hasPendingFirstAck(operationErrorSession), false);
+assert.equal(useSessionStore.getState().runningTasks[operationErrorSession], undefined);
+assert.equal(sendChatMessage({
+  text: "retry after operation error",
+  sessionId: operationErrorSession,
+  thinking: "medium",
+  toolsEnabled: true,
+  webSearchEnabled: false,
+  hasAttachments: true,
+}), true, "the rejected chat draft must be retryable");
+pendingUserText.clearPendingUserText(operationErrorSession);
+pendingUserText.clearPendingFirstAck(operationErrorSession);
 applyChatWsMessage({
   type: "chat_ack",
   data: { session_id: provisional, msg_id: "sent-user-1", text: "first" },
@@ -134,6 +174,113 @@ assert.ok(
   Number.isFinite(useSessionStore.getState().messagesById["sent-user-1_reply"].timestamp),
   "the live assistant placeholder must have a timestamp as soon as it appears",
 );
+
+// Draft cleanup belongs to the backend ACK boundary. A successful socket
+// write must leave the reservation alive, a definitive error must retain it,
+// and a run_active rejection must never put an attachment turn into the
+// text-only retry queue.
+const ackBoundarySession = "local_ack-boundary";
+let ackCleanupCount = 0;
+setSocket({ readyState: 1, send: (payload) => sent.push(JSON.parse(payload)) });
+assert.equal(sendChatMessage({
+  text: "caption with image",
+  sessionId: ackBoundarySession,
+  attachments: [{
+    type: "image",
+    data: "aW1hZ2U=",
+    media_type: "image/png",
+    original_data: "b3JpZ2luYWw=",
+    original_media_type: "image/jpeg",
+  }],
+  thinking: "medium",
+  toolsEnabled: true,
+  webSearchEnabled: false,
+  onAck: () => { ackCleanupCount += 1; },
+}), true);
+assert.deepEqual(
+  sent.at(-1).attachments[0],
+  {
+    type: "image",
+    data: "aW1hZ2U=",
+    media_type: "image/png",
+    original_data: "b3JpZ2luYWw=",
+    original_media_type: "image/jpeg",
+  },
+  "resized-image sends must preserve optional original bytes for backend storage",
+);
+assert.equal(ackCleanupCount, 0, "socket write success cannot run ACK cleanup");
+assert.equal(
+  pendingUserText.pendingUserHasAttachments(ackBoundarySession),
+  true,
+  "the pending turn retains its attachment identity until ACK",
+);
+applyChatWsMessage({
+  type: "chat_ack",
+  data: { session_id: ackBoundarySession, msg_id: "accepted-attachment", text: "caption with image" },
+});
+assert.equal(ackCleanupCount, 1, "backend chat_ack must run the captured cleanup once");
+pendingUserText.clearPendingUserText(ackBoundarySession);
+pendingUserText.clearPendingFirstAck(ackBoundarySession);
+
+const rejectedAttachmentSession = "local_rejected-attachment";
+let rejectedCleanupCount = 0;
+assert.equal(sendChatMessage({
+  text: "caption with rejected image",
+  sessionId: rejectedAttachmentSession,
+  attachments: [{ type: "image", data: "aW1hZ2U=", media_type: "image/png" }],
+  thinking: "medium",
+  toolsEnabled: true,
+  webSearchEnabled: false,
+  hasAttachments: true,
+  onAck: () => { rejectedCleanupCount += 1; },
+}), true);
+applyChatWsMessage({
+  type: "chat_response",
+  data: { type: "error", session_id: rejectedAttachmentSession, msg_id: "rejected-attachment", reason: "rejected" },
+});
+assert.equal(rejectedCleanupCount, 0, "definitive rejection must retain the draft");
+assert.equal(
+  pendingUserText.hasPendingFirstAck(rejectedAttachmentSession),
+  false,
+  "definitive rejection must release the duplicate-submit lock",
+);
+pendingUserText.clearPendingUserText(rejectedAttachmentSession);
+pendingUserText.clearPendingFirstAck(rejectedAttachmentSession);
+
+const runActiveAttachmentSession = "local_run-active-attachment";
+let runActiveCleanupCount = 0;
+assert.equal(sendChatMessage({
+  text: "retry this image",
+  sessionId: runActiveAttachmentSession,
+  // A native path-only document has no inline payload but is still an
+  // attachment turn and must not enter the text-only retry queue.
+  thinking: "medium",
+  toolsEnabled: true,
+  webSearchEnabled: false,
+  hasAttachments: true,
+  onAck: () => { runActiveCleanupCount += 1; },
+}), true);
+applyChatWsMessage({
+  type: "chat_response",
+  data: {
+    type: "error",
+    session_id: runActiveAttachmentSession,
+    msg_id: "run-active-attachment",
+    code: "run_active",
+    retry_query: "retry this image",
+  },
+});
+await Promise.resolve();
+const { useSendQueue } = await import("../lib/state/send-queue.ts");
+assert.equal(runActiveCleanupCount, 0, "run_active is not durable ACK");
+assert.equal(
+  useSendQueue.getState().queues[runActiveAttachmentSession],
+  undefined,
+  "run_active must not requeue an attachment turn as plain text",
+);
+// Keep the original provisional-send assertions below independent of the
+// boundary frames used by this focused check.
+sent.length = 1;
 
 useSessionStore.getState().appendMessage("timestamp-system", {
   id: "system-without-explicit-time",
@@ -694,11 +841,16 @@ assert.match(
 assert.match(composer, /const submitOwnerKey = activeChatKey \?\? currentSessionId;/);
 assert.match(
   composer,
-  /const handled = sendChatMessage\([\s\S]*?if \(!handled\) return;[\s\S]*?setComposerInputFor\(submitOwnerKey, ""\)/,
-  "Composer must keep its captured text and attachments when WS send fails",
+  /const handled = sendChatMessage\([\s\S]*?onAck:[\s\S]*?clearAttachmentsAfterSubmit\(submitOwnerKey, capturedAttachmentIds\)[\s\S]*?if \(!handled\) return;/,
+  "Composer must defer draft and attachment cleanup until the backend ACK",
 );
 assert.match(composer, /setComposerInputFor\(submitOwnerKey, ""\)/);
-assert.match(composer, /clearAttachmentsAfterSubmit\(submitOwnerKey\)/);
+assert.match(composer, /clearAttachmentsAfterSubmit\(submitOwnerKey, capturedAttachmentIds\)/);
+assert.match(
+  composer,
+  /hasAttachments: pendingImages\.length \+ pendingDocs\.length > 0/,
+  "path-only native documents must remain attachment turns for rejection handling",
+);
 assert.match(composer, /action:\s*"set_conversation_channel"/);
 assert.match(composer, /draftChannelChoiceFor\([^,]+,\s*dispatchSessionId,?\s*\)/);
 assert.match(
@@ -720,7 +872,7 @@ const attachmentHook = readFileSync(
   ),
   "utf8",
 );
-assert.match(attachmentHook, /clearAfterSubmit = useCallback\(\(ownerKey:/);
+assert.match(attachmentHook, /clearAfterSubmit = useCallback\(\(\s*ownerKey:/);
 assert.match(attachmentHook, /attachmentOwnerIsClosed\(chatKey\)/);
 assert.match(attachmentHook, /onAttachmentOwnerClosed\(\(chatKey\) =>/);
 assert.match(attachmentHook, /revokeAttachmentPreviews\(closedAttachments\)/);
@@ -734,6 +886,15 @@ assert.match(attachmentHook, /if \(!mountedRef\.current\) \{[\s\S]*releaseAttach
 const chatHandlers = readFileSync(
   new URL("../lib/runtime-bridge/chat-handlers.ts", import.meta.url),
   "utf8",
+);
+const useWsSource = readFileSync(
+  new URL("../lib/net/use-ws.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  useWsSource,
+  /operation_error[\s\S]*releaseChatOperationError\(msg\.data\)/,
+  "operation_error chat frames must release only the pending chat send before generic consumption",
 );
 const useWs = readFileSync(
   new URL("../lib/net/use-ws.ts", import.meta.url),

@@ -2186,6 +2186,10 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
                 app, host=_host, port=port,
                 log_level="warning",
                 access_log=False,
+                # Up to 64 MiB of saved attachments plus 20 MiB of image
+                # send versions, base64 encoded; the chat handler enforces
+                # the decoded per-file and per-turn budgets.
+                ws_max_size=128 * 1024 * 1024,
                 proxy_headers=False,
             )
             server = uvicorn.Server(config)

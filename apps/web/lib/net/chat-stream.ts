@@ -43,9 +43,12 @@ import {
 } from "@/lib/session-store";
 import { sessionAckIsActive, useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
+  acknowledgePendingUserText,
   clearPendingUserText,
+  clearPendingFirstAck,
   getPendingUserTimestamp,
   getPendingUserText,
+  pendingUserHasAttachments,
 } from "@/lib/pending-user-text";
 
 interface StreamEvent {
@@ -258,6 +261,10 @@ function handleAck(
         .updateMessage(sid, rid, { display: "runtime" });
     }
   }
+  // The frame is the backend's durable acceptance boundary. Run the
+  // composer cleanup only now; socket.write success is not acceptance.
+  acknowledgePendingUserText(sid);
+  clearPendingFirstAck(sid);
 }
 
 /** Fetch the assistant reply bubble, creating it on first use. Keeps
@@ -299,13 +306,25 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // must return BEFORE finalize() would mint a stray error bubble.
   if (d.type === "error" && d.code === "run_active") {
     const rejected = typeof d.retry_query === "string" ? d.retry_query : "";
-    if (rejected) {
+    // Attachment turns cannot be represented by the text-only retry queue.
+    // Leave their original composer draft and files in place for an explicit
+    // retry instead of silently converting the turn to plain text.
+    if (rejected && !pendingUserHasAttachments(sid)) {
       void import("@/lib/state/send-queue").then((m) =>
         m.requeueRejected(sid, rejected),
       );
     }
     clearPendingUserText(sid);
+    clearPendingFirstAck(sid);
     return;
+  }
+
+  // A terminal backend rejection is not an ACK. Release only the internal
+  // ACK reservation so the user can submit the unchanged composer draft
+  // again; the composer cleanup callback is deliberately discarded.
+  if (d.type === "error") {
+    clearPendingUserText(sid);
+    clearPendingFirstAck(sid);
   }
 
   // A user turn — either echoed back by the server or broadcast from a

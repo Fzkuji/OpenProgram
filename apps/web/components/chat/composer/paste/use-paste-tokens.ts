@@ -36,6 +36,7 @@ export interface PasteTokensOptions {
   activeChatKey: string | null;
   addImagesForOwner(ownerKey: string | null, images: PendingImage[]): void;
   setImageError(message: string | null): void;
+  addFiles?: (files: File[]) => Promise<void>;
 }
 
 export function usePasteTokens({
@@ -43,6 +44,7 @@ export function usePasteTokens({
   setInput,
   activeChatKey,
   addImagesForOwner,
+  addFiles,
   setImageError,
 }: PasteTokensOptions) {
   // Subscribing to the store rerenders the chip row whenever a paste is
@@ -108,6 +110,12 @@ export function usePasteTokens({
         if (hasImage) {
           const pasteOwnerKey = activeChatKey;
           e.preventDefault();
+          if (addFiles) {
+            const files = Array.from(items).filter((item) => item.kind === "file")
+              .map((item) => item.getAsFile()).filter((file): file is File => file !== null);
+            void addFiles(files);
+            return;
+          }
           void collectImagesFromTransfer(e.clipboardData!)
             .then(({ images, errors }) => {
               if (images.length) addImagesForOwner(pasteOwnerKey, images);
@@ -145,7 +153,7 @@ export function usePasteTokens({
         ta.setSelectionRange(pos, pos);
       });
     },
-    [activeChatKey, input, setInput, addImagesForOwner, setImageError],
+    [activeChatKey, input, setInput, addImagesForOwner, addFiles, setImageError],
   );
 
   // Remove a paste chip — also strips the token from the textarea.

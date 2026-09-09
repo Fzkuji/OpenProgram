@@ -67,6 +67,30 @@ import {
   forgetSystemAccessWait,
   rememberSystemAccessWait,
 } from "@/lib/system-access-wait-state";
+import {
+  clearPendingFirstAck,
+  clearPendingUserText,
+  hasPendingFirstAck,
+  hasPendingUserText,
+} from "@/lib/pending-user-text";
+
+/** Release only a chat turn rejected before chat_ack. The composer owns the
+ * draft and attachments, so this intentionally never invokes ACK cleanup. */
+export function releaseChatOperationError(
+  data?: Record<string, unknown>,
+): boolean {
+  if (data?.action !== "chat") return false;
+  const sid = typeof data.session_id === "string" ? data.session_id : "";
+  if (!sid) return false;
+  if (!hasPendingUserText(sid) && !hasPendingFirstAck(sid)) return false;
+  clearPendingUserText(sid);
+  clearPendingFirstAck(sid);
+  const task = useSessionStore.getState().runningTasks[sid];
+  if (task && !task.execution_id && !task.msg_id) {
+    useSessionStore.getState().setRunningTaskFor(sid, null, "always");
+  }
+  return true;
+}
 
 export function useWS(): void {
   useEffect(() => {
@@ -93,6 +117,9 @@ export function useWS(): void {
           }));
           return true;
         }
+      }
+      if (msg.type === "operation_error" || msg.type === "action_error") {
+        releaseChatOperationError(msg.data);
       }
       if (consumeCommandErrorFrame(msg, translateText)) return true;
       const d = msg.data;

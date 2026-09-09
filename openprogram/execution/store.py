@@ -14,6 +14,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Collection, Iterator, Mapping
 
+from .agent_input_budget import (
+    AGENT_TURN_INPUT_MAX_BYTES,
+    AgentInputBudgetError,
+    budget_payload,
+)
 from ._schema import PROJECTION_KINDS, SCHEMA_VERSION, UnsupportedSchema, initialize_schema
 from .model import (
     AuditEvent,
@@ -59,7 +64,7 @@ class ProjectionConflict(ExecutionStoreError):
 
 
 _AGENT_TURN_INPUT_VERSION = 1
-_AGENT_TURN_INPUT_MAX_BYTES = 256 * 1024
+_AGENT_TURN_INPUT_MAX_BYTES = AGENT_TURN_INPUT_MAX_BYTES
 _AGENT_TURN_INPUT_KINDS = frozenset({"chat", "forced_tool"})
 _FINISH_REPAIR_HIGH_WATERMARK = 4096
 _FINISH_REPAIR_PAGE_LIMIT = 4096
@@ -102,7 +107,9 @@ def _validate_agent_turn_payload(payload: Mapping[str, Any]) -> None:
         if not isinstance(payload.get("tool_input", {}), Mapping):
             raise ExecutionConflict("invalid_agent_input", "forced_tool input requires an object tool_input")
     try:
-        encoded = _json(payload)
+        encoded = _json(budget_payload(payload))
+    except AgentInputBudgetError as exc:
+        raise ExecutionConflict(exc.code, str(exc)) from exc
     except (TypeError, ValueError) as exc:
         raise ExecutionConflict("invalid_agent_input", "Agent turn input must be JSON serializable") from exc
     if len(encoded.encode("utf-8")) > _AGENT_TURN_INPUT_MAX_BYTES:

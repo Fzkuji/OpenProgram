@@ -16,6 +16,78 @@ export interface AttachmentMergeChanges {
 
 export type AttachmentsByChat = Map<string, StoredAttachments>;
 
+export type OrderedComposerAttachment =
+  | { kind: "image"; item: PendingImage }
+  | { kind: "doc"; item: PendingDoc };
+
+export function nextAttachmentOrder(data: StoredAttachments): number {
+  let max = -1;
+  for (const item of data.images) {
+    if (typeof item.order === "number" && Number.isFinite(item.order) && item.order > max) {
+      max = item.order;
+    }
+  }
+  for (const item of data.docs) {
+    if (typeof item.order === "number" && Number.isFinite(item.order) && item.order > max) {
+      max = item.order;
+    }
+  }
+  return max + 1;
+}
+
+function withOrders<T extends { order?: number }>(
+  current: StoredAttachments,
+  incoming: T[],
+): T[] {
+  let order = nextAttachmentOrder(current);
+  return incoming.map((item) => (
+    typeof item.order === "number" && Number.isFinite(item.order)
+      ? item
+      : { ...item, order: order++ }
+  ));
+}
+
+export function orderedComposerAttachments(
+  data: StoredAttachments,
+): OrderedComposerAttachment[] {
+  const explicit = data.images.some((item) => typeof item.order === "number")
+    || data.docs.some((item) => typeof item.order === "number");
+  const entries = [
+    ...data.images.map((item, index) => ({
+      kind: "image" as const,
+      item,
+      order: typeof item.order === "number" && Number.isFinite(item.order)
+        ? item.order
+        : index,
+      fallback: index,
+    })),
+    ...data.docs.map((item, index) => ({
+      kind: "doc" as const,
+      item,
+      order: typeof item.order === "number" && Number.isFinite(item.order)
+        ? item.order
+        : data.images.length + index,
+      fallback: data.images.length + index,
+    })),
+  ];
+  if (!explicit) return entries;
+  return entries
+    .sort((left, right) => left.order - right.order || left.fallback - right.fallback);
+}
+
+export function attachmentsBlockSend(
+  images: PendingImage[],
+  docs: PendingDoc[],
+): "loading" | "error" | null {
+  if (images.some((item) => item.loading) || docs.some((item) => item.loading)) {
+    return "loading";
+  }
+  if (images.some((item) => item.error) || docs.some((item) => item.error)) {
+    return "error";
+  }
+  return null;
+}
+
 function currentAttachments(
   attachmentsByChat: AttachmentsByChat,
   chatKey: string,
@@ -44,7 +116,7 @@ export function addImagesForChat(
 ): StoredAttachments {
   const current = currentAttachments(attachmentsByChat, chatKey);
   return replaceAttachments(attachmentsByChat, chatKey, {
-    images: [...current.images, ...images],
+    images: [...current.images, ...withOrders(current, images)],
   });
 }
 
@@ -55,7 +127,7 @@ export function addDocsForChat(
 ): StoredAttachments {
   const current = currentAttachments(attachmentsByChat, chatKey);
   return replaceAttachments(attachmentsByChat, chatKey, {
-    docs: [...current.docs, ...docs],
+    docs: [...current.docs, ...withOrders(current, docs)],
   });
 }
 

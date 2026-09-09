@@ -158,7 +158,7 @@ def _count_and_preview(raw: bytes, kind: str):
 
 def _inject_mention(text: str, name: str, dest, count, oversize: bool,
                     size_bytes: int = 0, mime: str = "",
-                    source_path: str = "") -> str:
+                    source_path: str = "", saved_version: bool = False) -> str:
     """Rewrite this file's path-less ``[attachment: name (meta)]`` mention
     to embed the saved absolute path + (page/line) count — or mark it
     oversize. The count goes INSIDE the captured parens group so the
@@ -191,7 +191,7 @@ def _inject_mention(text: str, name: str, dest, count, oversize: bool,
                 return text
             marker = _att.format_marker(
                 marker_name,
-                source_path,
+                dest if saved_version else source_path,
                 size_bytes,
                 mime=mime,
                 count=count or "",
@@ -271,7 +271,7 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
     skip this entirely: the frontend emits the absolute path directly,
     no copy. See ``at-mention.ts`` / ``/api/file-resolve``.)
 
-    Best-effort: a save failure leaves that file's mention untouched.
+    A save failure rejects the send so the composer can retain the draft.
     """
     import base64
     import hashlib
@@ -308,29 +308,21 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
         dedup = {}
 
     new_text = text
-    previews: list[str] = []
     turn_bytes = 0
     index_dirty = False
 
     for idx, d in enumerate(incoming, start=1):
-        data = d.get("data")
+        data = d.get("original_data", d.get("data")) if d.get("type") == "image" else d.get("data")
         name = _attachment_name(d, idx)
-        if not data:
-            continue
+        if not isinstance(data, str) or len(data) > 4 * ((MAX_ATTACH_BYTES + 2) // 3):
+            raise ValueError(f"Cannot read attachment: {name}")
         try:
-            raw = base64.b64decode(data, validate=False)
-        except Exception:
-            continue
-        if not raw:
-            continue
-        # Oversize (per-file + per-turn aggregate): tell the model it was
-        # dropped rather than hand it a path to a file that isn't there.
+            raw = base64.b64decode(data, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Cannot read attachment: {name}") from exc
         if len(raw) > MAX_ATTACH_BYTES or (turn_bytes + len(raw)) > MAX_TURN_ATTACH_BYTES:
-            new_text = _inject_mention(
-                new_text, name, None, None, oversize=True,
-                source_path=d.get("source_path") or "",
-            )
-            continue
+            raise ValueError(f"Attachment size limit exceeded: {name}")
+        turn_bytes += len(raw)
 
         sha = hashlib.sha256(raw).hexdigest()
         dest = None
@@ -362,30 +354,26 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
                     i += 1
                 if not dest.exists():
                     dest.write_bytes(raw)
-                    turn_bytes += len(raw)
-            except OSError:
-                continue
+            except OSError as exc:
+                raise ValueError(f"Cannot save attachment: {name}") from exc
             dedup[sha] = dest.name
             index_dirty = True
 
         kind = _decoded_kind(raw, name)
-        count_str, preview = _count_and_preview(raw, kind)
+        # Documents are read by tools on demand, never inserted into the prompt.
+        count_str = _count_and_preview(raw, "text")[0] if kind == "text" else None
         raw_source_path = d.get("source_path")
         source_path = raw_source_path if isinstance(raw_source_path, str) else ""
+        # Images always belong to the chat as a saved version. A later read
+        # must not switch to a modified or removed desktop original.
         new_text = _inject_mention(new_text, name, dest, count_str,
                                    oversize=False, size_bytes=len(raw),
-                                   mime=d.get("media_type") or "",
-                                   source_path=source_path)
-        if preview:
-            previews.append(_preview_block(str(dest), preview, count_str, kind))
+                                   mime=d.get("original_media_type") or d.get("media_type") or "",
+                                   source_path=source_path,
+                                   saved_version=d.get("type") == "image")
 
     if index_dirty:
         _write_private_json(index_path, dedup)
-    # Append the one-time head previews after the prose. They are bounded
-    # (<=PREVIEW_CAP each, this turn only) and stripped from the bubble by
-    # the chip parser, so the user sees a chip while the model gets a look.
-    if previews:
-        new_text = (new_text + "\n\n" + "\n".join(previews)).strip()
     return new_text
 
 
@@ -396,7 +384,7 @@ def _attachments_for_dispatch(incoming: list) -> list | None:
     to the model; only the duplicate attachment-object metadata is removed.
     """
     images = [
-        {key: value for key, value in item.items() if key != "source_path"}
+        {key: value for key, value in item.items() if key not in {"source_path", "original_data", "original_media_type"}}
         for item in incoming if item.get("type") != "document"
     ]
     return images or None
@@ -493,10 +481,13 @@ async def handle_chat(ws, cmd: dict):
     # untouched; web_search_flag and tools_profile are persisted as intent.
     raw_attachments = cmd.get("attachments") or None
     attachments = None
+    if raw_attachments is not None and (not isinstance(raw_attachments, list) or len(raw_attachments) > 20):
+        raise ValueError("Attachments must be a list of at most 20 files")
     if isinstance(raw_attachments, list) and raw_attachments:
-        attachments = [a for a in raw_attachments if isinstance(a, dict) and a.get("data")]
-        if not attachments:
-            attachments = None
+        if any(not isinstance(a, dict) or not isinstance(a.get("data"), str)
+               for a in raw_attachments):
+            raise ValueError("Invalid attachment payload")
+        attachments = raw_attachments
     if not text and not attachments:
         return
     if not text and attachments:

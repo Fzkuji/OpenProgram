@@ -616,3 +616,61 @@ def test_a_real_bound_project_is_a_root(state, tmp_path, monkeypatch):
         "openprogram.store.project.project_store.project_for_session",
         lambda sid: _Proj())
     assert proj_dir.resolve() in att.sendable_roots("s1")
+
+
+def test_dragged_image_uses_saved_version_even_when_original_changes(state, tmp_path):
+    from openprogram.webui.ws_actions import chat
+    original = tmp_path / "original.png"
+    original.write_bytes(_PNG)
+    message = att.format_marker(original.name, original, len(_PNG), mime="image/png")
+    saved_text = chat._persist_attachments("saved-image", [{
+        "type": "image", "filename": original.name, "source_path": str(original),
+        "media_type": "image/png", "data": base64.b64encode(_PNG).decode(),
+    }], message)
+    saved_path = Path(att.find_markers(saved_text)[0][2])
+    assert saved_path != original
+    original.write_bytes(b"changed")
+    assert saved_path.read_bytes() == _PNG
+
+
+def test_uploaded_document_is_referenced_without_inlining_body(state):
+    from openprogram.webui.ws_actions import chat
+    body = b"PRIVATE_DOCUMENT_BODY_2948\n"
+    out = chat._persist_attachments("doc-no-inline", [{
+        "type": "document", "filename": "notes.txt", "media_type": "text/plain",
+        "data": base64.b64encode(body).decode(),
+    }], "Read the attached document")
+    assert "PRIVATE_DOCUMENT_BODY_2948" not in out
+    assert "attachment-preview" not in out
+    assert Path(att.find_markers(out)[0][2]).read_bytes() == body
+
+
+def test_invalid_upload_fails_instead_of_sending_without_file(state):
+    from openprogram.webui.ws_actions import chat
+    with pytest.raises(ValueError, match="attachment"):
+        chat._persist_attachments("invalid-upload", [{
+            "type": "document", "filename": "notes.txt", "data": "!!!invalid!!!",
+        }], "Read the attached document")
+
+
+def test_empty_document_is_saved_and_referenced(state):
+    from openprogram.webui.ws_actions import chat
+    out = chat._persist_attachments("empty-upload", [{
+        "type": "document", "filename": "empty.txt", "data": "",
+    }], "Read the attached document")
+    assert Path(att.find_markers(out)[0][2]).read_bytes() == b""
+
+
+def test_resized_image_saves_original_but_dispatches_send_version(state):
+    from openprogram.webui.ws_actions import chat
+    original = _PNG + b"original"
+    incoming = [{"type": "image", "filename": "photo.png",
+                 "data": base64.b64encode(_PNG).decode(), "media_type": "image/png",
+                 "original_data": base64.b64encode(original).decode(),
+                 "original_media_type": "image/png"}]
+    out = chat._persist_attachments("resized-image", incoming, "describe")
+    assert Path(att.find_markers(out)[0][2]).read_bytes() == original
+    dispatched = chat._attachments_for_dispatch(incoming)
+    assert dispatched[0]["data"] == base64.b64encode(_PNG).decode()
+    assert "original_data" not in dispatched[0]
+    assert "original_media_type" not in dispatched[0]

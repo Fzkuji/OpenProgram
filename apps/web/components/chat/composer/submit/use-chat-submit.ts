@@ -26,6 +26,7 @@ import { enqueueMessage } from "@/lib/state/send-queue";
 import { steerQueuedMessage } from "@/lib/state/steer-message";
 import { useFunctions } from "@/lib/state/functions-store";
 import { buildAttachmentEnvelope } from "@/lib/attachment-marker";
+import { attachmentsBlockSend } from "../attach/attachment-session-cache";
 import { expandAtMentions } from "../attach/at-mention";
 import { expandPasteTokens, missingPasteIds } from "../paste/paste-store";
 import { sendChatMessage } from "./send-chat-message";
@@ -156,12 +157,10 @@ export function useChatSubmit({
       promptNeedModel();
       return;
     }
-    // Block submit while any attachment is still being decoded — the
-    // placeholder chips have empty ``attachment.data`` / null
-    // ``content``, which would deliver broken payloads. The user
-    // sees the chips in a loading shimmer; they just need to wait.
-    if (pendingImages.some((p) => p.loading)
-        || pendingDocs.some((d) => d.loading)) {
+    // Block submit while any attachment is still being decoded or a
+    // read failed. Sending would drop the item or deliver an empty
+    // payload; keep the draft so the user can wait, retry, or remove.
+    if (attachmentsBlockSend(pendingImages, pendingDocs)) {
       return;
     }
     // Slash dispatch is decided by the REGISTRY (runCommand returns false
@@ -207,6 +206,11 @@ export function useChatSubmit({
       expanded = `${mentions.join("\n")}\n\n${expanded}`;
     }
     const attachmentsPayload = [...imagesPayload, ...docsPayload];
+    const capturedAttachmentIds = {
+      imageIds: pendingImages.map((image) => image.id),
+      docIds: pendingDocs.map((doc) => doc.id),
+    };
+    const originalDraft = input;
     // Delegate to legacy `sendMessage` (chat.js) so the user bubble +
     // welcome-hide + assistant placeholder + isRunning flip all fire
     // before the WS payload goes out. Composer is just the trigger.
@@ -222,18 +226,27 @@ export function useChatSubmit({
       toolsProfile,
       webSearchEnabled,
       serviceTier: fastEnabled && fastSupported ? "priority" : undefined,
+      // Native path-only docs have no inline WS attachment payload, but they
+      // still belong to this attachment turn for run_active handling.
+      hasAttachments: pendingImages.length + pendingDocs.length > 0,
+      onAck: () => {
+        // ACK cleanup is owner-keyed and conditional: a session switch or
+        // edits made while the frame was in flight must keep the newer draft.
+        const currentDraft = submitOwnerKey
+          ? useSessionStore.getState().composerDrafts[submitOwnerKey] ?? ""
+          : useSessionStore.getState().composerDrafts.__new__ ?? "";
+        if (currentDraft === originalDraft) {
+          setComposerInputFor(submitOwnerKey, "");
+        }
+        clearAttachmentsAfterSubmit(submitOwnerKey, capturedAttachmentIds);
+      },
     });
     // The bridge already writes this exact socket. A false result means the
     // write did not complete; keep the captured draft + attachments intact so
     // the user can retry after reconnect instead of writing the same socket
     // again through the raw helper.
     if (!handled) return;
-    setComposerInputFor(submitOwnerKey, "");
     setHistoryIndex(-1);
-    // Revoke + clear pending images / docs now that the WS payload
-    // is out the door. Hook handles URL.revokeObjectURL for each
-    // image's preview blob.
-    clearAttachmentsAfterSubmit(submitOwnerKey);
     slash.close();
   }, [
     clearAttachmentsAfterSubmit,

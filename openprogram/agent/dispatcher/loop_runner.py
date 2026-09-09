@@ -308,6 +308,13 @@ def resolve_agent_runtime(
     if surface_prompt and saved_system_prompt is None:
         system_prompt = f"{system_prompt}\n\n{surface_prompt}"
     model = _dispatcher._resolve_model(agent_profile, req.model_override)
+    if "image" not in (model.input or []) and any(
+        isinstance(attachment, dict) and attachment.get("type") == "image"
+        and attachment.get("data") for attachment in (req.attachments or [])
+    ):
+        raise ValueError(
+            "The selected model does not support image input. Choose a model that supports images."
+        )
     contract = runtime_contract_snapshot(
         model=model, system_prompt=system_prompt, tools=tools, request=req,
         structured_output=req.response_format, toolset=agent_profile.get("toolset"),

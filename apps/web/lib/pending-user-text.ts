@@ -18,6 +18,13 @@
 const pendingText: Record<string, string> = Object.create(null);
 const pendingTimestamp: Record<string, number> = Object.create(null);
 const pendingFirstAck: Record<string, true> = Object.create(null);
+const pendingAckCallbacks: Record<string, (() => void) | undefined> = Object.create(null);
+const pendingHasAttachments: Record<string, boolean> = Object.create(null);
+
+export interface PendingUserTextOptions {
+  onAck?: () => void;
+  hasAttachments?: boolean;
+}
 
 export function getPendingUserText(sessionId: string): string | undefined {
   return pendingText[sessionId];
@@ -35,14 +42,42 @@ export function setPendingUserText(
   sessionId: string,
   text: string,
   timestamp = Date.now(),
+  options?: PendingUserTextOptions,
 ): void {
   pendingText[sessionId] = text;
   pendingTimestamp[sessionId] = timestamp;
+  if (options) {
+    pendingAckCallbacks[sessionId] = options.onAck;
+    pendingHasAttachments[sessionId] = options.hasAttachments === true;
+  }
 }
 
 export function clearPendingUserText(sessionId: string): void {
   delete pendingText[sessionId];
   delete pendingTimestamp[sessionId];
+  delete pendingAckCallbacks[sessionId];
+  delete pendingHasAttachments[sessionId];
+}
+
+export function getPendingUserAck(sessionId: string): (() => void) | undefined {
+  return pendingAckCallbacks[sessionId];
+}
+
+export function pendingUserHasAttachments(sessionId: string): boolean {
+  return pendingHasAttachments[sessionId] === true;
+}
+
+/** Run the cleanup registered for the exact turn after chat_ack. */
+export function acknowledgePendingUserText(sessionId: string): void {
+  const callback = pendingAckCallbacks[sessionId];
+  delete pendingAckCallbacks[sessionId];
+  delete pendingHasAttachments[sessionId];
+  if (!callback) return;
+  try {
+    callback();
+  } catch (error) {
+    console.error("[pending-user-text] ACK cleanup failed:", error);
+  }
 }
 
 export function hasPendingFirstAck(sessionId: string): boolean {
