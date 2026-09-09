@@ -93,8 +93,8 @@ Our open-source projects cover desktop automation, research workflows, and agent
 
 | Project | What it does |
 |---|---|
-| [GUI&nbsp;Agent](https://github.com/Fzkuji/GUI-Agent-Harness) | Operates desktop applications from task instructions using screenshots and GUI actions. |
-| [Research&nbsp;Agent](https://github.com/Fzkuji/Research-Agent-Harness) | Automates research workflows, from literature review and experiments to paper drafts. |
+| [GUI&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/GUI-Agent-Harness) | Operates desktop applications from task instructions using screenshots and GUI actions. |
+| [Research&nbsp;Agent&nbsp;Harness](https://github.com/Fzkuji/Research-Agent-Harness) | Automates research workflows, from literature review and experiments to paper drafts. |
 | [Scriptorium](https://github.com/Fzkuji/Scriptorium) | Maintains agent memory as readable Markdown notes, with facts cited to source messages and MCP access. Successor to Wiki Agent. |
 
 If a project is useful to you, consider starring its repository or contributing an issue or pull request.
