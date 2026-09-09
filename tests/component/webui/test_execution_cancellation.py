@@ -210,7 +210,8 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
     assert body["execution_id"] == record.execution_id
     assert body["status"] == "cancelled"
     assert result["command"]["status"] == "applied"
-    update = next(frame for frame in emitted if frame["type"] == "execution.updated")
+    update = next(frame for frame in emitted if frame["type"] == "execution.updated"
+                  and frame.get("event_cursor", {}).get("execution_id") == record.execution_id)
     assert update["event_cursor"]["execution_id"] == record.execution_id
     assert update["data"]["execution"] == update["execution"]
     assert update["data"]["event_cursor"] == update["event_cursor"]
