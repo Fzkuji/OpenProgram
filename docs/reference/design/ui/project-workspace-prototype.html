@@ -185,7 +185,7 @@
     </div>
     <div class="rbody" id="ftree"></div>
     <div class="dagpanel" id="dagpanel">
-      <div class="daghead">🕘 History — proxy 重构 <span class="x" onclick="dag(false)">✕</span></div>
+      <div class="daghead">🕘 History — proxy 重构 <span class="x dag-close">✕</span></div>
       <div class="dagtools">
         <span class="chip on">Viewport</span><span class="chip">Context</span>
       </div>
@@ -254,7 +254,7 @@ function renderToolbar(){
       <span class="chip">🧠 thinking: auto</span>
       <span class="chip green">🛡 Ask permissions</span>
       <span class="tspacer"></span>
-      <span class="ticon" title="History DAG" onclick="dag(true)">🕘</span>
+      <span class="ticon" title="History DAG" data-action="history-dag">🕘</span>
       <span class="ticon" title="本会话设置">⚙️</span>`;
   } else if(t.type==='file'){
     const f=FILES[t.name];
@@ -264,6 +264,8 @@ function renderToolbar(){
   } else {
     tb.innerHTML=`<span style="color:var(--text3)">新标签页</span>`;
   }
+  const historyTrigger=tb.querySelector('[data-action="history-dag"]');
+  if(historyTrigger) historyTrigger.onclick=()=>dag(true);
 }
 
 function renderContent(){
@@ -275,7 +277,7 @@ function renderContent(){
       <div class="msgs">
         <div class="m-user">把 socksio 的问题修一下，顺便整理 proxy 设计</div>
         <div class="m-ai">根因是 ALL_PROXY=socks5 时 httpx 在构造客户端就要求 socksio。依赖收进 <span class="mono" style="color:var(--accent)">httpx[socks]</span>，代理解析统一到一个入口，1594 个测试全过。</div>
-        <div class="m-tool" onclick="openFile('http_proxy.py')">✏️ Edit <span class="fp mono">providers/utils/http_proxy.py</span></div>
+        <div class="m-tool" data-action="open-file" data-file="http_proxy.py">✏️ Edit <span class="fp mono">providers/utils/http_proxy.py</span></div>
         <div class="m-ai" style="color:var(--text2);font-size:12px">↑ 点文件路径 → 右边树高亮 + 新开一个文件 tab（就像浏览器点链接）</div>
       </div>
       <div class="composer">Ask for follow-up changes…
@@ -297,6 +299,8 @@ function renderContent(){
     </div>`;
   }
   host.appendChild(pane);
+  const fileTrigger=pane.querySelector('[data-action="open-file"]');
+  if(fileTrigger) fileTrigger.onclick=()=>openFile(fileTrigger.dataset.file);
 }
 
 function renderAll(){ renderTabs(); renderToolbar(); renderContent(); }
@@ -308,6 +312,8 @@ function openFile(n){
   document.querySelectorAll('.tnode').forEach(x=>x.classList.toggle('on',x.dataset.f===n));
 }
 function dag(show){ document.getElementById('dagpanel').classList.toggle('on',show); }
+
+document.querySelector('.dag-close').onclick=()=>dag(false);
 
 /* 左侧栏 */
 document.querySelectorAll('.phead').forEach(h=>h.onclick=()=>h.parentElement.classList.toggle('open'));
