@@ -463,6 +463,10 @@ def _canonical_anchors(executions, session_id: str) -> dict[str, object]:
         for execution in records:
             source = executions.get_execution_input(execution.execution_id)
             assistant_id = source.assistant_message_id if source else None
+            if execution.parent_execution_id:
+                parent = executions.get_execution_input(execution.parent_execution_id)
+                if parent is not None and parent.assistant_message_id == assistant_id:
+                    continue
             if assistant_id and assistant_id not in anchors:
                 anchors[assistant_id] = execution
     except Exception:
