@@ -380,7 +380,7 @@ def test_hydration_projects_cancelled_wait_without_erasing_output(tmp_path, monk
     )
     if shared_parent:
         execution = executions.admit_execution(
-            execution_id="cancel-child", run_id="cancel-child-run", session_id="cancel-wait",
+            execution_id="cancel-child", run_id="cancel-run", session_id="cancel-wait",
             parent_execution_id=execution.execution_id,
             revision_id=revision.revision_id, input_ref="input:child", input_hash="hash:child",
             entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
