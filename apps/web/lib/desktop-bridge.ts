@@ -2000,7 +2000,7 @@ export async function handleRemoveSource(
   );
   // Dry-run the removal to learn the post-removal payload for the journal,
   // then revert; the journal must be durable before the real mutation.
-  const removal = removeTransferredTabs(ids, { persist: false });
+  const removal = removeTransferredTabs(ids, { persist: false, expectedTabs: payload.tabs });
   if (!removal.ok) {
     unlockTransfer(payload);
     await transfer.sourceRemoved(token, false, false);
@@ -2043,14 +2043,25 @@ export async function handleRemoveSource(
     await transfer.sourceRemoved(token, false, false);
     return;
   }
+  // A navigation during journalOpened invalidates the prepared snapshot.
+  // No source mutation has occurred: discard the staged journal instead of
+  // restoring its old before-image over the user's newer navigation.
+  const currentRemoval = removeTransferredTabs(ids, { persist: false, expectedTabs: payload.tabs });
+  if (!currentRemoval.ok) {
+    unregisterPendingTransfer(token);
+    deleteTransferJournal(token);
+    replaceCenterTabsPayload(snapshotCenterTabsPayload(), { persist: true });
+    unlockTransfer(payload);
+    await transfer.sourceRemoved(token, false, false);
+    return;
+  }
   sourceWaiterRecovery.set(
     token,
     new Map(webIds.map((id) => [id, webTabReadyWaiters.get(id)])),
   );
   let removed = false;
   try {
-    removed = removeTransferredTabs(ids, { persist: false }).ok
-      && applySessionTransfer(afterSession, { persist: false });
+    removed = applySessionTransfer(afterSession, { persist: false });
     if (removed) {
       applyFileDraftSnapshot(entry.afterFileDrafts);
       for (const id of webIds) forgetTransferredWebView(bridge, id);

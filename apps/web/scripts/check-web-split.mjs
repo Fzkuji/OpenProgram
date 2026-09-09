@@ -3933,6 +3933,27 @@ const t5SourceBase = {
   );
 }
 
+// Session navigation invalidates a prepared transfer, including while main
+// acknowledges the source journal. Rollback must retain the newer history.
+for (const duringJournal of [false, true]) {
+  plainTabsModule.replaceCenterTabsPayload(t5SourceBase, { persist: true });
+  plainTabs.getState().setActive("s:local_move");
+  const token = `session-navigation-race-${duringJournal}`;
+  const navigate = () => plainTabs.getState().openSessionTab("new-destination", "New destination");
+  const { bridge, calls } = makeTransferBridge(t5SourcePayload, {
+    journalOpened: async () => { if (duringJournal) navigate(); return true; },
+  });
+  if (!duringJournal) navigate();
+  await bridgeModule.handleRemoveSource(bridge, { token, payload: t5SourcePayload });
+  const current = plainTabs.getState().tabs.find(tab => tab.id === "s:local_move");
+  assert.equal(current?.sessionId, "new-destination", "stale transfer cannot remove a navigated session");
+  assert.deepEqual(current.sessionHistory.entries.map(entry => entry.sessionId), ["local_move", "new-destination"]);
+  assert.ok(calls.some(([name, receipt, ok]) => name === "sourceRemoved" && receipt === token && ok === false));
+  await bridgeModule.handleTransferRolledBack(bridge, { token, sourceId: "main", destinationId: "other" });
+  assert.deepEqual(plainTabs.getState().tabs.find(tab => tab.id === current.id), current);
+  assert.deepEqual(JSON.parse(values.get("centerTabs:main")).tabs.find(tab => tab.id === current.id), current);
+}
+
 // Source removal with a stale main acknowledgement restores the tab and
 // keeps the journal for the rolled-back event to finalize.
 {

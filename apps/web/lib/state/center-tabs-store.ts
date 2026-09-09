@@ -1294,7 +1294,7 @@ export function insertTransferredTabs(
 
 export function removeTransferredTabs(
   ids: string[],
-  _options: { persist: false },
+  _options: { persist: false; expectedTabs?: readonly CenterTab[] },
 ): {
   ok: boolean;
   empty: boolean;
@@ -1306,7 +1306,19 @@ export function removeTransferredTabs(
   const removed = new Set(ids);
   const valid = ids.length > 0
     && removed.size === ids.length
-    && ids.every((id) => before.tabs.some((tab) => tab.id === id));
+    && ids.every((id) => before.tabs.some((tab) => tab.id === id))
+    && (_options.expectedTabs ?? []).every(expected => {
+      if (expected.kind !== "session") return true;
+      const current = before.tabs.find(tab => tab.id === expected.id);
+      if (current?.kind !== "session") return false;
+      const navigation = (tab: CenterTab) => {
+        const history = sessionHistory(tab);
+        return { index: history.index, entries: history.entries.map(entry => ({
+          sessionId: entry.sessionId, title: entry.title, draft: !!entry.draft,
+        })) };
+      };
+      return JSON.stringify(navigation(current)) === JSON.stringify(navigation(expected));
+    });
   if (!valid) return { ok: false, empty: before.tabs.length === 0, before, after: before };
 
   const activeIndex = before.tabs.findIndex((tab) => tab.id === before.activeId);
