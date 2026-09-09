@@ -346,6 +346,12 @@ function loadResolvedChrome({
   const filePrefs = userDataPath
     ? readPrefsFile(path.join(userDataPath, PREFS_FILE_NAME))
     : {};
+  // The renderer writes this snapshot from its current localStorage values.
+  // Raw LevelDB scans cannot distinguish live values from neighboring/history
+  // records and must only serve as migration when no valid snapshot exists.
+  if (LEGACY_THEME_STYLES.includes(filePrefs.style) && THEME_MODES.includes(filePrefs.mode)) {
+    return resolveFromPrefBag(filePrefs, systemDark);
+  }
   const chromiumPrefs = userDataPath ? readChromium(userDataPath) : {};
   return resolveFromPrefBag(mergePrefSources(chromiumPrefs, filePrefs), systemDark);
 }
