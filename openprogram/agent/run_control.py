@@ -592,33 +592,36 @@ def _persist_job_cancel_intent(
 def _find_job(
     execution_id: str, *, session_id: str | None = None,
 ) -> Any | None:
-    try:
-        from openprogram.agent.job import runner as job_runner
-        existing = job_runner._runner
-        if existing is not None:
-            job = existing.get_job(execution_id)
-            if job is not None and (
-                session_id is None
-                or getattr(job, "parent_session_id", None) == session_id
-            ):
-                return job
-    except Exception:
-        pass
-    try:
-        from openprogram.agent.job.store import load_job
-        if session_id is not None:
+    if session_id is not None:
+        try:
+            from openprogram.agent.job.store import load_job
+
             job = load_job(session_id, execution_id)
             if (
                 job is not None
                 and getattr(job, "parent_session_id", None) == session_id
             ):
                 return job
-        else:
-            store = _canonical_store()
-            for session in store.list_sessions(limit=10**9, include_archived=True):
-                job = load_job(session["id"], execution_id)
-                if job is not None:
-                    return job
+        except Exception:
+            pass
+        return None
+
+    try:
+        from openprogram.agent.job import runner as job_runner
+        existing = job_runner._runner
+        if existing is not None:
+            job = existing.get_job(execution_id)
+            if job is not None:
+                return job
+    except Exception:
+        pass
+    try:
+        from openprogram.agent.job.store import load_job
+        store = _canonical_store()
+        for session in store.list_sessions(limit=10**9, include_archived=True):
+            job = load_job(session["id"], execution_id)
+            if job is not None:
+                return job
     except Exception:
         pass
     return None

@@ -576,6 +576,74 @@ def test_known_owner_registration_does_not_scan_unrelated_sessions(monkeypatch):
         thread.join(timeout=1)
 
 
+def test_known_owner_registration_skips_job_runner_cache_miss_scan(monkeypatch):
+    from openprogram.agent.job.runner import JobRunner
+
+    entered = threading.Event()
+    release = threading.Event()
+    done = threading.Event()
+    result: list[bool] = []
+    job_lookups: list[tuple[str, str]] = []
+
+    class _Root:
+        def exists(self):
+            return True
+
+        def iterdir(self):
+            entered.set()
+            release.wait(2)
+            return iter(())
+
+    class _Store:
+        root_path = _Root()
+
+        def get_nodes(self, session_id):
+            assert session_id == "known-session"
+            return []
+
+        def list_sessions(self, **_kwargs):
+            raise AssertionError("known lookup must not enumerate sessions")
+
+    runner = JobRunner.__new__(JobRunner)
+    runner._lock = threading.RLock()
+    runner._jobs = {}
+    store = _Store()
+    monkeypatch.setattr("openprogram.agent.job.runner._runner", runner)
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
+    monkeypatch.setattr("openprogram.store.default_store", lambda: store)
+    from openprogram.agent.job import store as job_store
+
+    monkeypatch.setattr(
+        job_store,
+        "load_job",
+        lambda session_id, execution_id: job_lookups.append(
+            (session_id, execution_id)
+        ) or None,
+    )
+
+    event = threading.Event()
+
+    def claim() -> None:
+        result.append(run_control.claim_cancel_event(
+            "known-session", event, execution_id="exec-not-in-runner",
+        ))
+        done.set()
+
+    thread = threading.Thread(target=claim)
+    thread.start()
+    try:
+        assert done.wait(1)
+        assert not entered.is_set()
+        assert job_lookups == [("known-session", "exec-not-in-runner")]
+        assert result == [True]
+    finally:
+        release.set()
+        run_control.unregister_cancel_event(
+            "known-session", event, execution_id="exec-not-in-runner",
+        )
+        thread.join(timeout=1)
+
+
 def test_forced_tool_passes_canonical_execution_id(monkeypatch):
     from openprogram.agent.dispatcher import forced_tool
     from openprogram.agent import surface_context
