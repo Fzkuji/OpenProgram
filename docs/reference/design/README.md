@@ -150,7 +150,7 @@ Proactivity applications (built on the base):
 | [`ui/app-icon.html`](ui/app-icon.html) | macOS app icon source layers, Apple-managed enclosure, packaging, and legacy fallback boundary |
 | [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | Collapsible app and Settings nav; Providers list stays expanded |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | Indicator dots |
-| [`ui/attachment-handling.md`](ui/attachment-handling.md) | Attachment handling ([rendered](ui/attachment-handling.html)) |
+| [`ui/attachment-handling.html`](ui/attachment-handling.html) | Complete attachment design, framework comparison, and implementation contract |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer interaction modes |
 | [`ui/gui-agent.html`](ui/gui-agent.html) | GUI agent entry, state machine, result contract, and implementation status |
 | [`ui/state-layer.md`](ui/state-layer.md) | Web state layer: per-session vs global stores, session-scope container plan |

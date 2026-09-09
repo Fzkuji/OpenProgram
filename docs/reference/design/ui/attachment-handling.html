@@ -1,28 +1,323 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>附件处理 · 设计审阅</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Attachment handling design</title>
 <style>
 :root{color-scheme:light dark;--bg:#f8f9fb;--panel:#fff;--fg:#202632;--muted:#5a6577;--line:#d9dfe9;--accent:#245eb8;--warm:#99531b;--soft:#eef3fc}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif}a{color:var(--accent);text-underline-offset:3px}main{max-width:1120px;margin:auto;padding:44px 28px 80px}header{max-width:850px}h1{font-size:clamp(28px,4vw,42px);line-height:1.25;margin:10px 0 20px;font-weight:650}h2{font-size:23px;margin:0 0 18px}h3{font-size:17px;margin:0 0 9px}p{margin:9px 0 16px}.eyebrow{font-size:12px;letter-spacing:.1em;color:var(--muted)}.status{display:inline-block;padding:4px 10px;border:1px solid var(--line);border-radius:5px;color:var(--warm);font-size:13px}.lead{font-size:18px;line-height:1.65}.muted,small{color:var(--muted)}nav{position:sticky;top:0;background:var(--bg);padding:13px 0;display:flex;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line);z-index:2}nav a{text-decoration:none;font-size:14px}section{padding-top:38px;scroll-margin-top:90px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.card,.simulation{padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:9px}.value{font-size:28px;line-height:1.3;color:var(--accent);font-variant-numeric:tabular-nums}.card p{font-size:14px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:13px 15px;border-bottom:1px solid var(--line)}th{background:var(--soft);font-weight:600}tr:last-child td{border-bottom:0}code{font:12px/1.6 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere;background:var(--soft);border-radius:3px;padding:2px 4px}.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;list-style:none;padding:0;counter-reset:step}.flow li{border-top:3px solid var(--accent);padding:15px;background:var(--panel);counter-increment:step}.flow li:before{content:counter(step);display:block;color:var(--accent);font-size:24px}.flow strong{display:block;margin:6px 0}.flow span{font-size:14px;color:var(--muted)}.control{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:18px 0}select{padding:8px;font:inherit;max-width:100%;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:4px}.result{padding:16px;border-left:3px solid var(--accent);background:var(--soft);margin:14px 0}.result p:last-child{margin-bottom:0}.state-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.state{padding:16px;border:1px solid var(--line);border-radius:7px}.state h3{color:var(--accent)}.state small{display:block}ul{padding-left:23px}li{margin:7px 0}details{border-top:1px solid var(--line);padding:15px 0}summary{cursor:pointer;font-weight:600}summary:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.note{border-left:3px solid var(--warm);padding:4px 0 4px 16px;margin:24px 0}footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}@media(prefers-color-scheme:dark){:root{--bg:#181b20;--panel:#20242b;--fg:#e3e8ef;--muted:#aeb8c7;--line:#3c4553;--accent:#8ab8ff;--warm:#e9b17c;--soft:#253248}}@media(max-width:720px){main{padding:25px 17px 50px}.grid,.state-grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}nav{gap:9px 18px}th,td{padding:10px;font-size:13px}section{scroll-margin-top:120px}.lead{font-size:16px}}@media(max-width:410px){.flow{grid-template-columns:1fr}nav{position:static}}@media print{nav,.simulation{display:none}main{max-width:none}.card,.state{break-inside:avoid}body{background:#fff;color:#111}a{color:inherit}}
+
+section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;background:var(--soft)}td p{margin:0}nav{gap:10px 18px}.status{margin:8px 0}.language{font-size:14px}.flow{margin:24px 0}caption{text-align:left;padding:10px 0}#reference-explorer{scroll-margin-top:110px}.toc-link{white-space:normal}section section{padding-top:0}h2,h3{overflow-wrap:anywhere}
 </style></head><body><main>
-<header><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>可靠地保存附件，<br>明确地交付给模型</h1><span class="status">设计完成后进入实施 · 当前未修改运行代码</span><p class="lead">图片已经保存到磁盘，却仍以完整 base64 进入 256 KiB 的执行输入。修复需要同时处理持久引用、大小预算和提交确认，保留现有文件预览与按需读取能力。</p><p class="muted">面向实现与评审。本文是现有设计的审阅视图；完整契约以 <a href="attachment-handling.md">英文正文</a>为准，并有 <a href="attachment-handling.zh.md">中文对照</a>。音视频、OCR 和原生 PDF 属于后续扩展。</p></header>
-<nav aria-label="内容导航"><a href="#evidence">当前问题</a><a href="#references">框架对比</a><a href="#design">目标流程</a><a href="#budgets">预算</a><a href="#recovery">失败恢复</a><a href="#plan">实施与验收</a></nav>
-<section id="evidence"><h2>当前问题有三个相互关联的部分</h2><div class="grid"><article class="card"><div class="value">5 MiB</div><h3>前端允许的图片大小</h3><p>192 像素缩略图只用于界面，发送的仍是完整图片 base64；界面允许添加不等于后端能接收。</p></article><article class="card"><div class="value">256 KiB</div><h3>整个执行输入的上限</h3><p>文字、规则、元数据和图片 base64 共同计量。执行准入失败发生在用户消息写入之前。</p></article><article class="card"><div class="value">WebSocket.send</div><h3>清空输入发生得过早</h3><p>发出即清空文字和附件，尚未等到持久保存确认。错误只有短暂提示，重新打开可能只剩标题。</p></article></div><p class="note">本地最小准入探针：100 KiB 二进制内容通过；200 KiB 和 1 MiB 被拒绝。该探针不验证图片格式，也不调用 Provider。实际空白会话另有同类错误日志，原请求各字段大小未保留。</p></section>
-<section id="references"><h2>采用各框架的具体机制，不合并不同接口的承诺</h2><div class="table-wrap"><table><thead><tr><th>官方范围</th><th>核实结果</th><th>采用／保留边界</th></tr></thead><tbody>
-<tr><td><a href="https://learn.chatgpt.com/docs/app-server">Codex app-server</a><br><a href="https://github.com/openai/codex/blob/main/codex-rs/attachment-store/src/lib.rs">attachment-store 源码</a></td><td>区分图片与本地图片输入；保存接口返回引用，也保留 inline 实现。</td><td>借鉴身份与编码分离。不能声称 Codex 全部不内联；不推断私有桌面实现。</td></tr>
-<tr><td><a href="https://opencode.ai/v2/docs/attachments">OpenCode V2</a></td><td>准入前校验；单项解码预算与图片尺寸／编码预算分离。</td><td>采用预算分层和图片派生；该 prompt 附件接口的 PDF 限制不用于削减 OpenProgram 的 PDF 工具支持。</td></tr>
-<tr><td><a href="https://docs.openclaw.ai/nodes/media-understanding">OpenClaw 媒体理解</a><br><a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/managed-image-attachments.ts">受管理图片源码</a></td><td>受管理媒体引用；处理结果明确；外部文档内容有来源边界。</td><td>采用结果状态和可访问性检查。暂存期限不能用于已提交历史。</td></tr>
-<tr><td><a href="https://code.claude.com/docs/en/common-workflows">Claude Code 工作流</a></td><td>粘贴、拖入、图片路径与文件引用。</td><td>保留输入方式；此资料不是完整存储架构证据。</td></tr>
-</tbody></table></div><p class="muted">基于公开资料和当前源码核对。OpenCode V2、Codex app-server、OpenClaw Gateway 分别保留接口范围，不将“支持附件”当作相同能力。</p></section>
-<section id="design"><h2>一个会话附件存储，四个明确的阶段</h2><ol class="flow"><li><strong>上传和校验</strong><span>先检查归属、数量、编码和字节；不在聊天 WebSocket 中重复传完整文件。</span></li><li><strong>保存不可变原件</strong><span>会话目录保存原件与摘要；工具可读副本不承担历史身份。</span></li><li><strong>提交有序引用</strong><span>执行输入只含文字、引用和配置；仍受 256 KiB 限制。</span></li><li><strong>按模型构造内容</strong><span>读取图片表示或有界预览；记录模型实际收到什么。</span></li></ol><p>引用包含附件 ID、所属会话、摘要、实际字节数、检测 MIME 和文件名。原始 Desktop 路径保留为来源，客户端不能用路径字符串创建读取权限。旧路径标记与旧 inline 历史继续可读。</p><details><summary>为什么不直接增大上限或把图片压到 192 KiB？</summary><p>提高上限保留了重复序列化和庞大执行输入，也没有修复草稿恢复。压到约 192 KiB 仍需预留元数据空间，并可能使截图文字不可读。图片压缩服从 Provider 预算；执行输入通过引用控制大小。仅记录 Desktop 原始路径也不能保证文件被编辑或删除后的回放。</p></details><details><summary>为什么不直接使用现有 execution state-blob store？</summary><p>它要求已存在的 execution／attempt 所有权，而附件上传先于执行、又可能跨多次 attempt。复用摘要校验约定，不放宽它的所有权契约；不新增远程对象存储或多后端框架。</p></details><details><summary>重放、分支、迁移和回收的约束</summary><p>原件由引用 ID 和摘要标识；工具副本在按引用读取前校验，被修改则保留修改并从原件创建新副本。附件预览通过鉴权的附件 content 接口读原件，不依赖可变 file-raw 路径。历史、排队工作、checkpoint 和授权分支仍引用时保留；Archive 不删除。fork／attach／merge 复制字节并建立目标会话归属，导出／导入携带 manifest 和内容，项目迁移按会话位置索引解析。服务端持久草稿 claim 也属于保留依据；关闭浏览器不释放，明确移除或成功转为历史归属才释放对应 claim。只有无引用且经过宽限期的暂存数据能回收，不能删除共享项目目录来回收单会话附件。</p></details></section>
-<section id="budgets"><h2>文件大小、执行输入和模型成本分别计量</h2><div class="simulation"><h3>查看同一附件在两个方案中的请求大小</h3><p class="muted">仅说明编码与引用的大小关系；不运行上传或模型调用。引用大小按 1 KiB 示例计算。</p><div class="control"><label for="size">单图片原始大小</label><select id="size"><option value="102400">100 KiB</option><option value="204800" selected>200 KiB</option><option value="1048576">1 MiB</option><option value="5242880">5 MiB</option></select></div><div class="result" id="size-result" aria-live="polite"></div><small>base64 = 4 × ceil(原始字节 ÷ 3)。真实执行输入还包含文字、权限规则与其他元数据。引用方案仍需单独通过上传和 Provider 预算。</small></div><div class="table-wrap" style="margin-top:20px"><table><thead><tr><th>对象</th><th>建议默认值</th><th>关键约束</th></tr></thead><tbody><tr><td>文件与批次</td><td>32 MiB／文件，64 MiB／轮，16 项</td><td>解码字节计量；去重命中仍计入总量。</td></tr><tr><td>执行输入</td><td>256 KiB</td><td>仅文字、规则、元数据和引用；不直接放媒体内容。</td></tr><tr><td>图片派生表示</td><td>最长边 2000 px，base64 ≤5 MiB</td><td>遵从 Provider 限制，另限解码像素／帧数及资源；原件保留，转换可见。</td></tr><tr><td>文字预览</td><td>4096 UTF-8 字节／项，32 KiB／轮</td><td>计入包装与截断提示；另限提取页数和时间。</td></tr></tbody></table></div><p class="note">这些数值是待实现验收的产品方案。图片／PDF 的 token 成本不是 O(1)，历史预览也不保证后续成本为零。十个 30 MiB PDF 会超过总量，不应作为可成功上传的示例。</p></section>
-<section id="recovery"><h2>用户能看见结果，也能恢复输入</h2><div class="state-grid"><div class="state"><h3>上传中</h3><p>report.pdf · 60%</p><small>草稿保留；此状态不代表已创建执行。以下为状态示意，不是操作按钮。</small></div><div class="state"><h3>提交结果未知</h3><p>连接中断，正在核对提交结果。</p><small>同 ID 的重试只执行一次；不同 ID 是独立提交，不按文字内容自动合并。</small></div><div class="state"><h3>明确拒绝</h3><p>附件总量超过 64 MiB。</p><small>文字和其他附件保留；可移除、替换或重试。</small></div></div><p><code>PUT /api/session/{sid}/attachments/{upload_id}</code> 接收单个上传；<code>chat</code> 携带提交 ID；<code>GET /api/session/{sid}/submissions/{submission_id}</code> 返回 not_found、pending、accepted、rejected 或 conflict。查询必须鉴权并检查会话读取权限，ID 本身不授予访问。这些是拟新增／扩展的公共契约，不是现有 API。</p><p>上传预留按用户、会话和 upload_id 计量，中断／取消／校验失败释放；每轮大小独立按全部选中引用计量，含去重命中。详细并发规则见正文。</p><p>收到确认后，只清除对应提交快照；等待期间新增的文字和附件保留。SQLite 执行记录与 Git 用户消息不是同一事务，准入成功但消息保存失败也必须有可核对的结果。</p><div class="control"><label for="delivery">检查模型交付方式</label><select id="delivery"><option value="vision">图片＋视觉模型</option><option value="text">图片＋纯文字模型</option><option value="pdf">PDF＋分页读取工具</option><option value="error">附件不可读取</option></select></div><div class="result" id="delivery-result" aria-live="polite"></div></section>
-<section id="plan"><h2>实施顺序和完成条件</h2><div class="table-wrap"><table><thead><tr><th>阶段</th><th>修改边界</th><th>完成条件</th></tr></thead><tbody><tr><td>A · 持久引用</td><td>统一入站、不可变原件、准入 schema、激活及历史转换、Web／Channel 调用方。</td><td>真实有效的 1 MiB 图片到达 mock Provider；执行输入不含 base64；重启、旧历史、越权和损坏引用有覆盖。</td></tr><tr><td>B · 可靠提交</td><td>流式上传、临时聊天归属、提交 ID、持久错误、精确 ACK 清理。</td><td>上传中断、丢 ACK、重载、重复点击、切换聊天均不丢附件、不重复执行；默认 App 首次发送截图成功。</td></tr><tr><td>C · 交付与生命周期</td><td>图片派生、模态检查、真实状态、分支／保留／迁移／导出。</td><td>模型切换、图片顺序、Unicode 字节上限、去重总量和窄屏状态均符合契约。</td></tr><tr><td>后续模态</td><td>原生 PDF、扫描 PDF、OCR、音视频。</td><td>独立 Provider 契约与预算通过验收，才声明支持。</td></tr></tbody></table></div><details><summary>代码与验证定位</summary><p>共享边界为 <code>production_driver.py</code> 和 <code>TurnRequest</code>；Web 入站为 <code>ws_actions/chat.py</code>；模型图片转换为 <code>dispatcher/loop_runner.py</code>；输入保留涉及附件缓存、提交与命令错误处理。仅修改 Web handler 无法修复其他入口。</p><p>从 <code>tests/unit/attachments/</code>、Channel 附件测试、production-driver 组件测试及 Web provisional-send／local-attachment-paths 检查开始，增加真实入口与确定性 mock Provider 验收，再执行仓库完整检查。正式实现需独立规格／质量审查，提交后通过默认 App 刷新脚本验收。</p></details></section>
-<section id="status"><h2>实现状态</h2><p><strong>已检查：</strong>当前源码、附件相关设计、官方资料和准入大小复现。现有保存、标记、去重、预览和草稿缓存可复用。</p><p><strong>未实现：</strong>A、B、C 及后续模态扩展。本文不表示任何运行修复已发布，不修改已存聊天或安装的 App。</p><p><a href="chat-attachments.html">双向附件与预览</a>负责显示和输出范围；<a href="composer-local-attachment-paths.html">本地路径来源</a>继续保留。入站存储、执行准入和生命周期以本设计正文为准。</p></section>
-<footer>OpenProgram 工程设计 · 当前契约与待实现状态分离。原始文件与提取文字均按外部数据处理，文件工具权限不因附件路径而扩大。</footer>
-</main><script>
-const size=document.getElementById('size');const sizeResult=document.getElementById('size-result');
-function updateSize(){const bytes=Number(size.value);const encoded=4*Math.ceil(bytes/3);sizeResult.textContent='当前方案：仅 base64 已占 '+(encoded/1024).toFixed(1)+' KiB，'+(encoded>262144?'超过 256 KiB 限制。':'尚未超限，但还需加上文字与元数据。')+' 目标方案：此附件引用示例占 1 KiB；文件内容按独立预算检查。'}
-const delivery=document.getElementById('delivery');const deliveryResult=document.getElementById('delivery-result');
-const descriptions={vision:'图片已包含：Provider 获得校验后的原件或派生图片。界面可显示转换尺寸和原件入口。',text:'图片未包含在模型输入中。只有已启用且授权的图像工具可读时才接受回退；否则拒绝提交并保留草稿。接收后撤权则明确结束执行，不继续丢图回答。',pdf:'已包含有界预览，其余页面可按需读取。没有可提取文字时如实显示；不声称模型已阅读整份 PDF。',error:'提交未接受：保留文字和附件，显示缺失、损坏、无权限或超限的具体原因。'};
-function updateDelivery(){deliveryResult.textContent=descriptions[delivery.value]}
-size.addEventListener('change',updateSize);delivery.addEventListener('change',updateDelivery);updateSize();updateDelivery();
-</script></body></html>
+<header><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>Attachment handling design</h1><span class="status">Reviewed design · Runtime changes are not implemented</span><p class="lead">Store originals reliably. Admit small references. Confirm submission before clearing drafts.</p><p>This HTML document is the complete attachment contract, framework comparison, implementation plan, and acceptance specification for Web, Desktop, and channel input. The English version is authoritative. Implementation status is recorded at the end.</p><p class="language"><a href="attachment-handling.zh.html" lang="zh-CN">Chinese</a></p></header>
+<nav aria-label="Contents"><a class="toc-link" href="#current">Current implementation</a><a class="toc-link" href="#frameworks">Frameworks</a><a class="toc-link" href="#choices">Scope choices</a><a class="toc-link" href="#contract">Target contract</a><a class="toc-link" href="#budgets">Budgets and delivery</a><a class="toc-link" href="#submission">Submission and lifecycle</a><a class="toc-link" href="#plan">Plan and acceptance</a><a class="toc-link" href="#status">Implementation status</a></nav>
+<ol class="flow" aria-label="Attachment lifecycle"><li><strong>Validate upload</strong><span>Authenticate ownership and check decoded file limits.</span></li><li><strong>Store original</strong><span>Keep an immutable session-owned snapshot and digest.</span></li><li><strong>Admit references</strong><span>Persist ordered references with a stable submission ID.</span></li><li><strong>Build model input</strong><span>Read a permitted image representation or bounded preview.</span></li></ol>
+<section id="current">
+<h2>Verified current behavior</h2>
+<p>The Web composer reads image bytes into base64, builds a separate 192-pixel thumbnail, and permits images up to 5 MiB. It does not resize the image sent to the model. Documents have a 32 MiB client limit. The backend saves uploads, including images, through <code>_persist_attachments</code>, adds path markers and bounded text/PDF previews, and filters documents out of <code>TurnRequest.attachments</code>. Image base64 remains in that request.</p>
+<p><code>normalize_agent_turn_payload</code> limits the complete serialized admission envelope to 256 KiB. Consequently a 200 KiB binary image, represented as base64 with a small text request, already fails this boundary. This was reproduced without a provider call; the probe tests envelope sizing, not image decoding. A live failed chat also records <code>input_too_large</code>. The log does not establish which original attachment or field supplied the excess bytes.</p>
+<p>Admission runs before <code>_append_msg</code>. The session and title may exist even when admission fails, leaving no user node. <code>sendChatMessage</code> reports WebSocket transmission success, and <code>useChatSubmit</code> immediately clears text and attachments. An uncorrelated command error produces a generic transient toast, not a recoverable submission record.</p>
+<p>The backend's 32 MiB per-file and 64 MiB aggregate checks run after base64 decoding. The aggregate counter increases only for newly written files; dedup hits do not consume it. A skipped oversized image is not explicitly removed from the separate dispatch list. These are source-confirmed gaps, not live exploit tests. The OpenAI Responses converter also removes image blocks for models without image input; the current frontend does not provide a matching delivery explanation. Existing marker parsing, source-path provenance, preview paths, dedup, and file access policies remain useful.</p>
+<p>Source locations: <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py">Web intake and persistence</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/production_driver.py">admission and activation</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts">composer submission</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/attach/image-attach.ts">image input</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/action-error.ts">error handling</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/_shared/openai_responses.py">provider conversion</a>.</p>
+
+</section>
+<section id="frameworks">
+<h2>Official reference corpus</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Framework / scope</th>
+<th>Verified design</th>
+<th>Decision for OpenProgram</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Codex public app-server and Rust protocol</td>
+<td>Typed text/image/local-image input; local image paths are converted during request serialization.</td>
+<td>Separate attachment identity from provider encoding. Do not infer private desktop behavior from the public protocol.</td>
+</tr>
+<tr>
+<td>Codex <code>attachment-store</code> crate</td>
+<td>Persistence returns <code>AttachmentRef</code> with URL and optional file ID. An <code>InlineAttachmentStore</code> also exists.</td>
+<td>Adopt durable references; do not claim every Codex attachment is offloaded, and do not copy a storage-backend abstraction when one local store suffices.</td>
+</tr>
+<tr>
+<td>OpenCode V2 attachments</td>
+<td>The server materializes supported file/data inputs before prompt admission; per-item decoded limit is 20 MiB. Image processing separately limits dimensions and encoded bytes. V2 documents text and PNG/JPEG/GIF/WebP visibility; PDF and other unsupported binaries are not model-visible through that prompt attachment path.</td>
+<td>Adopt pre-admission validation and separate image budgets. Retain OpenProgram's PDF paging instead of reducing support to this V2 subset.</td>
+</tr>
+<tr>
+<td>OpenClaw Gateway / media understanding</td>
+<td>Managed media can be offloaded; outcomes distinguish native vision, processing, skipped input, and failure. Extracted document content is explicitly untrusted. Tool-read fallback depends on runtime access to the file.</td>
+<td>Adopt explicit delivery outcomes and runtime-readable references. Do not adopt channel-specific retention defaults for durable conversation history.</td>
+</tr>
+<tr>
+<td>Claude Code documented workflow</td>
+<td>Supports pasted/dropped images, image paths, and file/directory mentions.</td>
+<td>Preserve these input methods. This documentation does not establish a general attachment storage architecture.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Sources: <a href="https://learn.chatgpt.com/docs/app-server">Codex app-server</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs">Codex input types</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/attachment-store/src/lib.rs">Codex attachment store</a>, <a href="https://opencode.ai/v2/docs/attachments">OpenCode V2 attachments</a>, <a href="https://github.com/anomalyco/opencode/blob/dev/packages/core/src/config/attachments.ts">OpenCode image configuration</a>, <a href="https://docs.openclaw.ai/nodes/media-understanding">OpenClaw media understanding</a>, <a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/managed-image-attachments.ts">OpenClaw managed images</a>, <a href="https://docs.openclaw.ai/gateway/cloud-sessions">OpenClaw cloud attachment placement</a>, <a href="https://code.claude.com/docs/en/common-workflows">Claude Code images and file references</a>.</p>
+<p>These sources describe different interfaces and versions. A transport accepting an image is not evidence of durable storage, and a file appearing in the UI is not evidence that the model received its contents.</p>
+
+</section>
+<section id="choices">
+<h2>Choice of scope</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Alternative</th>
+<th>Assessment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Increase the admission limit to fit base64</td>
+<td>Rejected as the primary repair: retains repeated serialization and bloated execution/history inputs, and does not fix lost drafts or provider limits.</td>
+</tr>
+<tr>
+<td>Compress every image below approximately 192 KiB</td>
+<td>Rejected: metadata reduces that budget further and fine-text screenshots can become unreadable. Compression serves provider/image budgets, not the admission envelope.</td>
+</tr>
+<tr>
+<td>Store only the original desktop path</td>
+<td>Rejected for attached snapshots: later edits, temporary-file deletion, and remote placement change what can be read. Live project mentions keep their separate semantics.</td>
+</tr>
+<tr>
+<td>Session-owned immutable bytes with small references</td>
+<td>Selected: fixes the shared admission boundary and gives replay, previews, and transport a consistent identity using one local store.</td>
+</tr>
+</tbody>
+</table></div>
+
+</section>
+<section id="contract">
+<h2>Target contract</h2>
+<p>Attachment bytes are materialized and validated before a turn is admitted. Admission and history carry small, ordered, session-owned references. Provider conversion reads only the selected representation. User-visible delivery state records what was actually included, not just whether the file uploaded.</p>
+<p>A reference contains a schema version, opaque attachment ID, owner session, digest, decoded byte length, detected MIME, filename, and optional original-path provenance. The client cannot choose a trusted storage path or mint ownership. Filenames and paths remain data, not instructions or capabilities.</p>
+<p>Use one local session attachment store, with immutable originals and optional derived image representations. Place the canonical bytes under the owning session directory, outside the agent-mutable workdir; retain the current readable workdir copy or materialize one when a file tool needs it. The existing absolute-path marker and preview-path syntax remain compatible display/tool projections, not the immutable identity. No cross-session dedup or remote object-storage service is required.</p>
+<p>The existing execution state-blob store requires an execution/attempt owner. Uploads exist before admission and can survive multiple attempts, so that API cannot directly own their lifecycle. Reuse its digest/verification conventions without weakening its ownership checks.</p>
+<p>For Web uploads, introduce an authenticated streaming upload boundary that returns a reference after complete validation. It binds provisional chat ownership through server state before accepting bytes. Desktop source paths remain provenance; the managed snapshot is what a queued/replayed turn reads. Channels, CLI, and legacy inline clients normalize through the same ingestion primitive. Compatibility decoding is bounded before allocation and never persists base64 in new admission envelopes.</p>
+<h3>Original, tool copy, and public read boundary</h3>
+<p>The reference ID and digest identify the authoritative snapshot. A projection record maps <code>(owner_session, attachment_id, digest)</code> to any workdir copy. Before giving a reference-aware tool a path, verify the copy's bytes. Reuse a matching copy; otherwise create a new non-clobber copy from the original and update the projection. Preserve the Agent-edited file as an ordinary project file; never overwrite it or silently treat it as the original attachment. Ordinary path-based tools still read the explicit path's current contents.</p>
+<p>The proposed authenticated <code>GET /api/session/{sid}/attachments/{attachment_id}/content</code> serves the owned immutable original or an explicitly identified derivative for attachment previews and replay. Existing <code>/api/file-raw</code> remains for live files and legacy markers, not as the authority for new snapshot references. Serving an attachment does not grant arbitrary filesystem access; active file formats use download or an isolated preview, not execution in the application origin.</p>
+<h3>Public upload and submission contract</h3>
+<p>These are proposed interfaces, not existing routes. <code>PUT /api/session/{sid}/attachments/{upload_id}</code> streams one file with declared filename, length, MIME, and digest, all verified against received bytes. For a provisional chat, it atomically registers upload ownership for the authenticated caller; an existing chat must pass its normal authorization. A completed identical upload returns the same attachment reference. Reusing an ID for different content conflicts; an unfinished upload can restart after its old active writer is released.</p>
+<p>Each completed upload also returns a durable <code>draft_claim_id</code>, scoped to the authenticated principal, session, and upload selection. Store that claim server-side with the attachment reference; provisional ownership is a GC retention root, not just a browser hint. Repeated identical uploads reuse the same claim; another selection of the same bytes has a distinct claim even if the stored original is deduplicated. An explicit authenticated <code>DELETE /api/session/{sid}/attachment-drafts/{claim_id}</code> releases only that selection when the user removes it or discards its draft. Browser close/disconnection does not release it. Acceptance transfers precisely the submitted claims to history/execution ownership; rejection leaves them retained. Other selections and draft edits remain claimed. A storage quota can reject new uploads but cannot silently evict these retained drafts.</p>
+<p>The existing WebSocket <code>chat</code> action gains <code>submission_id</code>, ordered attachment references, and the exact draft claim IDs selected for that submission. Proposed <code>GET /api/session/{sid}/submissions/{submission_id}</code> returns the durable result only after authentication and normal session-read authorization. Identifiers alone grant no access; unauthorized and nonexistent sessions produce the same safe not-found response. Within an authorized session, a missing submission returns <code>not_found</code>. Add a <code>chat_submissions</code> record in the execution database keyed by <code>(session_id, submission_id)</code>, with authenticated owner, canonical input hash, ordered reference IDs, status, execution ID, deterministic user-message ID, and a safe error code. Claim the key before admission; concurrent requests with the same <code>(session_id, submission_id)</code> and canonical input share one result and execution. Different submission IDs represent independent user submissions, even when their content matches, and obey existing session concurrency/queue rules. There is no content-based deduplication of user intent. Reload and retry reuse the original ID rather than creating another one.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Submission result</th>
+<th>Meaning and client behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>not_found</code></td>
+<td>No durable submission claim is known. Retain the draft and resend the same ID/content; do not allocate a new ID.</td>
+</tr>
+<tr>
+<td><code>pending</code></td>
+<td>The request is claimed but user-message persistence is not confirmed. Keep the draft and reconcile; the server resumes or closes the recorded operation after a crash.</td>
+</tr>
+<tr>
+<td><code>accepted</code></td>
+<td>Both execution and deterministic user node are persisted. <code>chat_ack</code> and the query return the same submission ID, user-message ID, and execution ID. Only this result clears the exact submitted draft.</td>
+</tr>
+<tr>
+<td><code>rejected</code></td>
+<td>The operation definitively failed. Return a bounded code and retain input. A changed/repaired draft uses a new submission ID; repeating the old ID returns its recorded rejection.</td>
+</tr>
+<tr>
+<td><code>conflict</code></td>
+<td>The same key was supplied with different content/ordered references. Do not change the stored original record or start another execution.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A query, reload, or repeated request never resolves <code>pending</code> by creating a second execution. Server reconciliation uses the stored execution/user-message identities to finish message persistence or record rejection; titles are not evidence of success.</p>
+
+</section>
+<section id="budgets">
+<h2>Budgets and delivery</h2>
+<p>Proposed initial defaults retain the existing 32 MiB document and 64 MiB per-turn decoded budgets. Add an explicit 16-attachment limit. Keep the 256 KiB admission envelope limit after removing media bytes; it still bounds text, metadata, rules, and references. These are product defaults to verify, not borrowed provider guarantees.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Budget</th>
+<th>Enforcement and meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Upload bytes</td>
+<td>Streamed decoded bytes; reserve and count every selected attachment even on a dedup hit. Validate file count and aggregate bytes before admission.</td>
+</tr>
+<tr>
+<td>Legacy base64</td>
+<td>Estimate decoded size before decoding, validate encoding, then verify actual size. Socket ingress needs an explicit transport cap; do not assume the file cap protects the WebSocket frame.</td>
+</tr>
+<tr>
+<td>Image representation</td>
+<td>Preserve original; prepare a derivative with a proposed 2000-pixel longest side and at most 5 MiB encoded base64, further reduced by active provider limits. Detect MIME and decoding failures. Bound decoded pixel/frame counts, decoder memory, and processing time before accepting a derivative. Record transformations.</td>
+</tr>
+<tr>
+<td>Text/PDF preview</td>
+<td>At most 4096 UTF-8 bytes per file and 32 KiB total, including wrappers and truncation notices; bound extraction time and page work separately. Existing PDF slicing is character-based and cannot prove a byte cap.</td>
+</tr>
+<tr>
+<td>Provider request</td>
+<td>Apply model modality, image count, image dimensions, encoded bytes, and token/context limits at conversion. Metadata limits never replace this check.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Budget scope is explicit: upload reservations belong to <code>(authenticated owner, session, upload_id)</code> and charge temporary-storage quota while a writer is active. Abort, validation failure, cancellation, or expiration releases the reservation and removes its incomplete temporary file. A completed upload charges stored bytes until reclaimed; repeating it does not charge storage twice. The per-turn 64 MiB / 16-item budget is recomputed from every ordered selected reference under the submission claim, including repeated/deduplicated content, independently of upload storage accounting. Duplicate submissions do not reserve it twice. Concurrent tabs have separate upload IDs and submission claims, while existing session execution concurrency rules still apply. Reclaim completed but unclaimed uploads only after checking server-side draft claims, pending submissions, and durable history ownership; a disconnected client is not proof of abandonment.</p>
+<p>For animated images, unsupported formats, transparency, or fine text, conversion must not silently discard meaningful content. Preserve the original, state any derivative selection, and provide an original-resolution path when supported. Decoder failure is an attachment failure, not a successful thumbnail fallback.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Model delivery</th>
+<th>Visible result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Supported image + vision model</td>
+<td>Native image from verified derivative/original</td>
+<td>Image included; transformation details available</td>
+</tr>
+<tr>
+<td>Image + text-only model</td>
+<td>Readable reference and explicit tool fallback only if an enabled, authorized image tool can read it</td>
+<td>File available for tools; image not included in model input</td>
+</tr>
+<tr>
+<td>Text/code</td>
+<td>Bounded untrusted preview and readable reference</td>
+<td>Preview included; remainder available on demand</td>
+</tr>
+<tr>
+<td>PDF</td>
+<td>Bounded text preview/page summary and PDF tool access</td>
+<td>Preview included, or no extractable text with a usable file</td>
+</tr>
+<tr>
+<td>Other binary</td>
+<td>Readable file reference; no fabricated extracted content</td>
+<td>File available for tools</td>
+</tr>
+<tr>
+<td>Image + text-only model + no currently usable authorized image tool</td>
+<td>Reject with <code>attachment_delivery_unavailable</code>; never remove the image silently</td>
+<td>Preserve draft; select a vision model, enable an authorized tool, or remove the image</td>
+</tr>
+<tr>
+<td>Missing, denied, corrupt, or oversized file</td>
+<td>Block that submission and retain the draft</td>
+<td>Specific error; remove/replace/retry without losing other attachments</td>
+</tr>
+</tbody>
+</table></div>
+<p>Native PDF blocks are a later extension: require explicit provider support, page/byte/token budgets, and integration tests. Scanned-PDF image rendering, OCR, audio, video, and remote URL fetching are not prerequisites for repairing image submission. Existing <code>@</code>/typed-path references retain live-file semantics; an explicit attached snapshot and a live project reference must be distinguishable.</p>
+<p>If a tool is disabled, denied by policy, or unable to read the file, it is not a usable fallback. If approval is still required, retain input and complete the existing approval flow before accepting that delivery mode. The selected delivery plan is checked at admission and again at activation; a later revocation ends the accepted execution with a persistent specific error, rather than running a text-only answer. Model capability changes cannot silently drop an already attached image.</p>
+<p>The cost claim is bounded text preview cost, not constant total model cost. Vision tokens and native document tokens scale with representation. Earlier previews can remain in later context; they are not guaranteed to cost zero on subsequent turns. Ten 30 MiB files exceed the proposed aggregate budget and are rejected before admission.</p>
+
+<aside class="simulation" id="reference-explorer" aria-label="Inspect request size and delivery">
+<h3>Inspect request size and delivery</h3><p class="muted">Illustrative sizing only; no upload or provider request runs here. A reference is shown as 1 KiB; actual metadata and provider limits are checked separately.</p>
+<div class="control"><label for="size">Original image size</label><select id="size"><option value="102400">100 KiB</option><option value="204800" selected>200 KiB</option><option value="1048576">1 MiB</option><option value="5242880">5 MiB</option></select></div><div class="result" id="size-result" aria-live="polite"></div>
+<div class="control"><label for="delivery">Delivery</label><select id="delivery"><option value="vision">Image + vision model</option><option value="text">Image + text-only model</option><option value="pdf">PDF + paged-read tool</option><option value="error">Unreadable attachment</option></select></div><div class="result" id="delivery-result" aria-live="polite"></div></aside>
+</section>
+<section id="submission">
+<h2>Submission, recovery, and ownership</h2>
+<ol>
+<li>Persist the unsent draft, selected attachment IDs, original input, and a stable client submission ID in the existing per-chat draft/IndexedDB system. Upload progress and failures stay attached to the originating chat, including split views.</li>
+<li>Upload, validate, and prepare representations. Upload completion does not mean the turn was accepted.</li>
+<li>Send text and ordered references with the submission ID. The server checks ownership, bytes, capability, and metadata budgets, then records a submission-to-execution mapping and the user-message persistence outcome. A positive acknowledgement identifies the committed user node and execution.</li>
+<li>Clear only the acknowledged submission snapshot. Preserve text/attachments added while the request was pending. Do not revoke previews needed by pending or failed submissions.</li>
+<li>On a definitive rejection, keep the draft with a persistent, specific error. On timeout/disconnection, show that the result is unknown and reconcile using the same ID. Never create a new execution simply because an acknowledgement was lost. Same ID with changed content is a conflict.</li>
+</ol>
+<p>Crash cases between execution admission and user-node persistence need explicit reconciliation; the SQLite execution store and Git session store are not one atomic transaction. A failed persistence operation must not return success or leave an apparently running empty chat. Session title creation is presentation state, not acceptance evidence.</p>
+<p>Digest verification prevents a modified workdir file from changing queued input. References resolve only within authorized session ownership; guessed IDs, cross-session references, traversal, symlink escapes, and stale grants fail closed. Authorized fork/attach/export transfers retain or copy the required bytes and establish new ownership; string-copying a reference is insufficient. Project moves resolve ownership through the current session location index.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Lifetime operation</th>
+<th>Ownership rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Preview / replay</td>
+<td>Resolve the immutable ID, verify digest and owner, and read the requested original/derivative; never substitute a mutable copy.</td>
+</tr>
+<tr>
+<td>Fork / attach / merge</td>
+<td>After existing session authorization, materialize referenced bytes under the destination session and register destination-owned IDs; preserve provenance and order. Failure aborts the transfer rather than leaving dangling references. Source deletion cannot remove the destination's copy.</td>
+</tr>
+<tr>
+<td>Archive / delete</td>
+<td>Archive keeps data. Delete removes only data owned by that session once its active work is settled under normal deletion policy; never remove a shared project directory.</td>
+</tr>
+<tr>
+<td>Export / import</td>
+<td>Export includes reference manifests and verified originals; a missing required original is an explicit export error. Import validates hashes and creates destination-owned IDs before making imported history available.</td>
+</tr>
+<tr>
+<td>Project relocation</td>
+<td>Move the complete owned session store and update its location atomically through the existing location mechanism, with recovery for interrupted moves; references remain location-independent.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Untrusted extracted text uses a consistent external-content wrapper with escaped delimiters and a bounded size. Wrapping is provenance, not complete prompt-injection protection. Existing tool authorization and file-read checks remain authoritative.</p>
+<p>Originals remain available while referenced by server-side draft claims, history, queued work, checkpoints, or authorized branches. Unclaimed uploads can be reclaimed only after a grace period and a complete ownership check; grace duration is configured during implementation. Archive preserves attachments. Delete/export/import/relocate operate on owned data and manifests together. Never delete a project workdir to reclaim one session's media.</p>
+
+</section>
+<section id="plan">
+<h2>Implementation plan and acceptance</h2>
+<p>Each phase updates this document's final status, product documentation, and focused evidence before the next phase begins. No phase is considered usable until its end-to-end acceptance passes.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Changes</th>
+<th>Required acceptance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A: durable references</td>
+<td>Shared ingestion and session-owned originals; admission schema compatibility; activation/history conversion; Web and channel image callers</td>
+<td>A valid 1 MiB image is saved and reaches a mocked provider once; new admission input has references and stays below 256 KiB. Restart, retry, missing/corrupt bytes, migration and unauthorized reference cases are covered. Existing small inline history still loads.</td>
+</tr>
+<tr>
+<td>B: reliable submission</td>
+<td>Streaming upload, provisional ownership, correlated submission ID, persistent error and exact-snapshot acknowledgement handling</td>
+<td>Real Web entry tests cover oversize, partial upload, lost ACK, reload, double submit, tab switch, edits during submission, upload reservation release, same-ID concurrent retries, independent different-ID submissions, and offline draft restoration beyond the unclaimed-upload grace period. No silent attachment loss or duplicate execution. Default Desktop accepts a real screenshot on the first send.</td>
+</tr>
+<tr>
+<td>C: delivery and lifecycle</td>
+<td>Bounded image derivatives, truthful file state, model-switch behavior, retention/branch/export rules</td>
+<td>Verify text-only versus vision requests, absent/denied fallback and later revocation, current/replayed image order, Unicode previews, total limits including dedup, transformed-image disclosure, branch/delete/move/export lifetime, and narrow-layout UI.</td>
+</tr>
+<tr>
+<td>Later: additional modalities</td>
+<td>Native PDF adapters, scanned PDF extraction, audio/video</td>
+<td>Separate provider-specific contracts, budgets and acceptance before advertising support.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Primary implementation boundaries: <code>chat.py</code>, <code>production_driver.py</code>, <code>dispatcher/types.py</code>, <code>dispatcher/loop_runner.py</code>, session location/serialization code, channel attachment normalization, composer attachment cache and submission code, command-error handling, and existing file-preview routes. Do not implement the size correction solely in the Web route: every canonical image caller shares the admission limit.</p>
+<p>Verification uses actual chat/intake boundaries plus a deterministic mocked provider, not only helper assertions. Existing starting suites are <code>tests/unit/attachments/</code>, <code>tests/unit/channels/test_channels_attachments.py</code>, and <code>tests/component/agent/test_production_driver.py</code>; Web checks include provisional-send and local-attachment-paths. Full Python/Web/Desktop gates follow the repository test policy. A final implementation requires independent specification and quality reviews, a clean commit, and default-App verification through <code>scripts/refresh-local-app.sh</code>. No remote write is implied.</p>
+
+</section>
+<section id="status">
+<h2>Implementation status</h2>
+<p>Existing and inspected: uploaded-file persistence, per-session dedup intent, markers with source/preview paths, bounded preview intent, image blocks, composer IndexedDB drafts, and file previews. Their limits and failure semantics do not yet satisfy the target contract.</p>
+<p>Reproduced: 100 KiB binary data encoded into a minimal image envelope passes admission; 200 KiB and 1 MiB fail the 256 KiB check. This is a local admission probe, not a provider or full upload test. The linked empty-chat incident independently records the same error category.</p>
+<p>Designed, not implemented: phases A, B, C, and the later modality extension. No runtime code, stored conversation, or installed App is changed by this design update. The <a href="chat-attachments.html">two-way attachment and preview document</a> covers the display/output scope; this document owns inbound storage, admission, delivery, and lifecycle.</p>
+
+</section>
+</main><script>const size=document.getElementById('size');const sizeResult=document.getElementById('size-result');
+function updateSize(){const encoded=4*Math.ceil(Number(size.value)/3);sizeResult.textContent='Current inline base64: '+(encoded/1024).toFixed(1)+' KiB. '+(encoded>262144?'Exceeds the 256 KiB admission cap.':'Text and other metadata still have to fit.')+' Proposed reference example: 1 KiB; file and provider budgets remain separate.';}
+const delivery=document.getElementById('delivery');const deliveryResult=document.getElementById('delivery-result');const descriptions={"vision": "Image included: the provider receives a verified original or derivative. Transformation details and the original remain available.", "text": "Accept a tool fallback only when an enabled, authorized image tool can read the file. Otherwise reject and preserve the draft; later revocation ends the execution explicitly.", "pdf": "A bounded preview is included; remaining pages are read on demand. Do not claim the whole PDF was read, or fabricate text when extraction is empty.", "error": "Reject the submission with a specific missing, corrupt, denied, or oversized attachment error. Retain text and selected attachments."};
+function updateDelivery(){deliveryResult.textContent=descriptions[delivery.value];}
+size.addEventListener('change',updateSize);delivery.addEventListener('change',updateDelivery);updateSize();updateDelivery();</script></body></html>

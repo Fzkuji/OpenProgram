@@ -16,7 +16,7 @@ Web UI surfaces — the surface system, indicator dots, attachment handling, cha
 - [`composer-tool-profile-menu.html`](composer-tool-profile-menu.html) — Tools action and profile submenu behavior
 - [`programs-source-categories.html`](programs-source-categories.html) — Programs grouping and source-category behavior
 - [`composer-interaction-modes.md`](composer-interaction-modes.md) — composer interaction modes
-- [`attachment-handling.md`](attachment-handling.md) — attachment handling: how an attached file reaches the model ([rendered](attachment-handling.html))
+- [`attachment-handling.html`](attachment-handling.html) — complete attachment design: storage, admission, delivery, recovery, and acceptance
 - [`chat-attachments.html`](chat-attachments.html) — chat attachments both ways: what the transcript shows, how the agent hands a file back, how a readable file opens
 - [`gui-agent.html`](gui-agent.html) — GUI agent entry, state machine, result contract, and implementation status
 - [`indicator-dots.md`](indicator-dots.md) — indicator dots
