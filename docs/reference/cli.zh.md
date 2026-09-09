@@ -29,7 +29,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 |------|------|----------|
 | `openprogram` | 打开聊天；裸跑会先问开终端 UI 还是 Web UI，没有 worker 时自动拉起 | — |
 | `openprogram tui`（别名 `chat`） | 在 Windows、macOS 或 Linux 直接启动 Ink 终端 UI；无法提供 raw input 的终端回退到 Rich | `--print`、`--resume`、`--no-alt-screen`、`--screen-reader` 在动词后同样可用 |
-| `openprogram web` | 启动服务并打开浏览器 UI（`http://localhost:18100`） | `--port`（默认：已存偏好，否则 18100）、`--web-port`（同一个单端口的旧别名）、`--no-browser` |
+| `openprogram web` | 启动服务并打开浏览器 UI（`http://localhost:18100`） | `--web-port`（仅本次运行；默认：已存偏好，否则 18100）、`--no-browser` |
 
 ## 后台服务
 
@@ -57,7 +57,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 |------|------|----------|
 | `setup` | 首次运行的设置向导 | `menu` 打开交互选择器；给一个分区名直达（model / tools / agent / skills / ui / memory / profile / search / tts / channels / backend） |
 | `config` | 查看 / 修改设置 | `list`（全部设置：值、分组、生效方式）、`get <key>`、`set <key> <value>` |
-| `ports` | 查看 / 持久化 Web UI 的单端口 | `--frontend PORT`（默认 18100）、`--backend PORT`（`--frontend` 的旧别名，两个端口已合并） |
+| `ports` | 查看 / 持久化 Web UI 的单端口 | `--port PORT`（默认 18100） |
 | `completion` | 输出 shell 补全脚本 | `bash` / `zsh` / `powershell` / `pwsh` |
 
 ### providers —— LLM provider 与凭据
@@ -66,17 +66,17 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 
 | 动词 | 作用 |
 |------|------|
-| `login <provider>` | 登录一个 provider；`--api-key` / `--api-key-stdin` 非交互提供 key，`--profile` 指定凭据 profile，`--method` 强制指定登录方式 |
+| `login <provider>` | 登录一个 provider；`--api-key` / `--api-key-stdin` 非交互提供 key，`--account` 指定账号，`--method` 强制指定登录方式 |
 | `logout` | 移除一个 provider 的凭据 |
-| `list` | 按 profile 列出凭据池 |
+| `list` | 按账号列出凭据池 |
 | `available`（别名 `search`、`catalog`） | 列出全部可配置的 provider，可加 QUERY 过滤 |
 | `status` | 检查一个 provider 当前的凭据 |
-| `use` | 设置一个 provider 用哪个账号（profile） |
+| `use` | 设置一个 provider 使用哪个账号 |
 | `discover` / `adopt` | 扫描外部来源的凭据 / 收编进凭据库 |
 | `doctor` | 诊断凭据（过期、刷新、冷却、冲突） |
 | `setup` | 交互式首次配置 |
 | `aliases` | 列出 provider 短名别名 |
-| `profiles` | 凭据 profile 管理（`list` / `create` / `delete`） |
+| `accounts` | 账号管理（`list` / `create` / `delete`） |
 | `migrate` | 把存储的凭据迁移到当前格式 |
 
 不带动词的 `openprogram providers` 打印当前全部凭据的状态表。
@@ -85,13 +85,27 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 
 | 动词 | 作用 |
 |------|------|
+| `token create` | 创建并打印本地 stdio MCP server 的认证 token |
+| `serve` | 通过本地 stdio 提供认证后的 MCP server |
 | `list` | 列出全部已配置的 MCP server 及状态 |
 | `show` | 显示一个 server 的工具与完整 schema |
 | `add` | 添加 stdio 命令型 server，写入 `mcp_servers.json` 并立即启动 |
 | `rm` | 移除（停止 + 删配置） |
 | `restart` / `enable` / `disable` | 重启 / 启用并启动 / 停止并标记禁用（保留配置） |
-| `edit` | 用 `$EDITOR` 直接编辑 `mcp_servers.json` |
+| `edit` | 兼容入口：报告直接编辑配置已移除；请用 `add` / `rm` 或 MCP 设置页 |
 | `test` | 临时启动一个配置，验证能起来并返回工具列表，不落盘 |
+
+`token create` 把原始 token 打印为一行，但不会设置
+`OPENPROGRAM_MCP_TOKEN`。只运行一次，复制打印出的那一行，在 `serve` 前设置变量：
+
+```bash
+openprogram mcp token create
+export OPENPROGRAM_MCP_TOKEN="<把上一步打印的 token 粘贴到这里>"
+openprogram mcp serve
+```
+
+如果 token 已经存在，请使用此前保存的 token。`serve` 要求
+`OPENPROGRAM_MCP_TOKEN` 与已保存的 token 完全匹配。
 
 ### browser —— 浏览器工具
 
@@ -163,7 +177,7 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 | `setup` | 交互向导：选频道、登录（扫码 / token）、绑定 agent |
 | `accounts` | 管理频道机器人账号（WeChat、Telegram 等） |
 | `bindings` | 把入站频道消息路由到 agent |
-| `access` | 谁能进到 agent：`list`、`approve <code>`、`allow <user_id>`、`revoke <user_id>`、`policy pairing\|open`。一个账号可以批准任意多个发信人（见[聊天渠道](../integrations/channels.zh.md#谁能和你的机器人说话)） |
+| `access` | 谁能进到 agent：`list`、`approve <code>`、`allow <user_id>`、`revoke <user_id>`。未知发信人走默认 pairing 流程；owner 可以用 `allow <user_id>` 将已知的平台 user ID 直接加入 allowlist（见[聊天渠道](../integrations/channels.zh.md#谁能和你的机器人说话)） |
 
 ### memory —— 持久记忆
 
@@ -171,11 +185,11 @@ openprogram --profile <name>     # 状态目录 profile，改道到 ~/.openprogr
 
 | 动词 | 作用 |
 |------|------|
-| `status` | owner 视图：workspace 路径/revision、文件与关系计数、writer 健康状态、承诺计数与记录 |
-| `recall` | 搜索 wiki + 近期 journal，打印原始片段；`--days N` 限定 journal 窗口（默认 30） |
-| `show` / `edit` | 打印 / 用 `$EDITOR` 编辑一个 wiki 页 |
-| `sleep` | 立即跑一轮 sleep 整理（light → deep → REM）；`--phase light\|deep\|rem` 只跑一个阶段 |
-| `reflections` | 打印 `wiki/reflections.md` 最新条目 |
+| `status` | 显示 workspace 内容、revision、writer 健康状态和 pending turns |
+| `recall QUERY...` | 搜索记忆并打印匹配段落 |
+| `show PATH` / `edit PATH` | 打印 / 用 `$EDITOR` 编辑一个记忆文件 |
+| `sleep` | 立即整理 topic 文件；`--model MODEL` 指定整理模型 |
+| `backfill` | 写入没有被 Topic 引用的可信 source 记录；`--model MODEL` 指定写入模型 |
 | `export` | 把整个记忆目录 tar+gzip 打包；`--out PATH` 指定输出文件（默认 `./openprogram-memory-<date>.tar.gz`） |
 
 ## 维护

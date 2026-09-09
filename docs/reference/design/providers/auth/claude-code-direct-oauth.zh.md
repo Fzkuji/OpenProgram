@@ -89,7 +89,7 @@ wire，token 从 `anthropic` pool 解析。模型 alias 归一化（opus / sonne
 ## WebUI 中的账号管理
 
 claude-code 的账号走通用账号路由，而非 provider 专属路由。
-`webui/routes/accounts.py` 通过 `_pool_id` 把 claude-code 映射到 anthropic pool，
+`apps/server/openprogram_server/_webui/routes/accounts.py` 通过 `_pool_id` 把 claude-code 映射到 anthropic pool，
 于是所有通用路由都按 pool 存取；`_api_key_env` 对 claude-code 返回 `""`，
 从而强制 `add_mode=login` 并隐藏 key 粘贴框。`setup_hints.py` 把该 provider
 描述为"以订阅 OAuth 直连 Anthropic"，并说明两种登录方式。

@@ -53,8 +53,8 @@ model reachability, and the centralized status-to-message mapper.
 
 ## 3. The entry point
 
-`openprogram/webui/_model_listing/credentials.py`, re-exported from
-`_model_catalog/__init__.py`.
+`apps/server/openprogram_server/_webui/_model_listing/credentials.py`, re-exported from
+`apps/server/openprogram_server/_webui/_model_listing/__init__.py`.
 
 ```python
 def validate_credential(
@@ -184,11 +184,12 @@ places must agree, or the provider half-works:
 
 - `_kind_for` → `anthropic_compat`, so the credential probe hits
   `{base}/v1/models`;
-- `_model_catalog/providers.py::_PROVIDER_DEFAULT_API` must stamp
+- `openprogram/providers/metadata.py::default_api_for` must resolve
   `anthropic-messages`, so fetched and custom rows route to the right stream
   function rather than `POST /chat/completions` — matching `models_generated`;
-- `_model_catalog/fetchers` routes `anthropic-messages` providers to the
-  base_url-aware `_fetch_anthropic`, because the OpenAI-compatible
+- `apps/server/openprogram_server/_webui/_model_listing/fetchers/__init__.py`
+  routes `anthropic-messages` providers to the base_url-aware Anthropic fetcher,
+  because the OpenAI-compatible
   `GET {base}/models` 404s on a `/anthropic` host.
 
 `test_model_fetch_routing.py` pins the api stamp to `models_generated` so the

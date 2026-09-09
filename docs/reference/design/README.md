@@ -1,11 +1,23 @@
-# Design Documents
+# Design and implementation documents
 
-Current design notes for OpenProgram, grouped by subsystem to mirror the code
-layout under `openprogram/`. Read this index first, then the doc you need.
+This directory maintains subsystem designs, implementation locations and remaining
+boundaries. Ownership spans both `openprogram/` and `apps/`; the core package alone
+is not a complete implementation map.
 
-Each subdirectory collects the designs for one area. Within a group, the doc
-that defines the *current* implementation is listed first; the rest are
-supporting notes / investigations that should not override it.
+## Reading entry points
+
+| Question | Document |
+|---|---|
+| Where are subsystem designs and implementation status? | [Implementation navigation](implementation-status.html) |
+| Which directories own implementation and compatibility? | [Repository design](repository-structure.html) and [implementation map](repository-structure-implementation.html) |
+| How does a conversation execute? | [Framework overview](framework-overview.md) |
+| Which verification layers apply? | [Test system](testing/test-system.html) |
+| How should HTML implementation documents be authored and verified? | [HTML rendering and authoring](docs-site.html) |
+
+Design bodies explain behavior and constraints. An implementation-status appendix
+records implemented, partial, unimplemented and out-of-scope items. Source presence,
+passing tests, publication and installed-App acceptance are separate states. This
+index routes readers to topic owners without maintaining another completion score.
 
 ## context/ — context engine, commits, tool aging
 
@@ -36,8 +48,8 @@ Event base:
 
 | Doc | Topic |
 |---|---|
-| [`proactive/event-layer.md`](proactive/event-layer.md) | Unified Event model, framework placement, diagram, event boundaries (**landed: class A/B events all emitted, gate can block**, [visualization](proactive/event-layer.html)) |
-| [`proactive/framework-evolution.md`](proactive/framework-evolution.md) | Framework evolution: current → target → five migration steps (steps 1·2·3 done, [visualization](proactive/framework-evolution.html)) |
+| [`proactive/event-layer.md`](proactive/event-layer.md) | Unified Event model, framework placement, diagram, event boundaries ([visualization](proactive/event-layer.html)) |
+| [`proactive/framework-evolution.md`](proactive/framework-evolution.md) | Framework evolution: current → target → five migration steps ([visualization](proactive/framework-evolution.html)) |
 
 Proactivity applications (built on the base):
 
@@ -80,7 +92,6 @@ Proactivity applications (built on the base):
 | [`runtime/permission-model.md`](runtime/permission-model.md) / [`runtime/sandbox.md`](runtime/sandbox.md) | Stable link targets that point to the canonical execution-security design |
 | [`runtime/ssrf-protection.html`](runtime/ssrf-protection.html) | Outbound URL and SSRF design: current gaps, Hermes/OpenClaw/OWASP comparison, scoped trust policy, transport requirements, and full acceptance gates |
 | [`runtime/agent-collaboration.md`](runtime/agent-collaboration.md) | Agent collaboration: cross-branch communication primitives ([tool surface](runtime/agent-collab-architecture.html), [eight reference implementations compared](runtime/agent-collab-comparison.html)) |
-| [`runtime/agent-resource-governance.html`](runtime/agent-resource-governance.html) | Agent resource governance: current implementation, framework comparison, durable scheduling and enforceable budget plan |
 | [`runtime/tool-toggle-management.md`](runtime/tool-toggle-management.md) | Tool toggles / toolset management design |
 | [`runtime/additional-working-directories.md`](runtime/additional-working-directories.md) | Multiple working directories per session |
 
@@ -179,9 +190,9 @@ Extension gating design + reference comparison — see
 | [`framework-overview.md`](framework-overview.md) | Framework overview: one conversation from input to output |
 | [`framework-comparison.html`](framework-comparison.html) | Whole-framework comparison against twelve reference implementations by design axis: where we lead, where we lag, and what they have that we never considered (rendered) |
 | [`feature-matrix.html`](feature-matrix.html) | The same twelve implementations scanned by feature list instead of design axis: 160 user-facing features in one grid, what only they have, what only we have (rendered) |
-| [`docs-site.md`](docs-site.md) | The documentation site itself (build, nav, bilingual routing) |
+| [`docs-site.html`](docs-site.html) | The documentation site itself (build, nav, bilingual routing) |
 | [`repository-structure.html`](repository-structure.html) | Repository boundaries, long-file split policy, and documentation information architecture |
-| [`repository-structure-implementation.md`](repository-structure-implementation.md) | Implementation ledger for the repository structure design |
+| [`repository-structure-implementation.html`](repository-structure-implementation.html) | Source ownership, compatibility boundaries and verification for repository structure |
 
 ## research/ — investigations
 
@@ -197,23 +208,13 @@ Extension gating design + reference comparison — see
 | [`distribution/automatic-updates.html`](distribution/automatic-updates.html) | Stable Release discovery, verified macOS/Windows Desktop installer handoff, managed CLI atomic activation, trust boundaries, UI states, and implementation evidence |
 | [`distribution/implementation-plan.md`](distribution/implementation-plan.md) | Historical distribution implementation evidence not duplicated by the current designs |
 
-## plans/ — dated implementation plans
+## plans/ — supporting implementation plans
 
 | Doc | Topic |
 |---|---|
 | [`plans/proactive-implementation.md`](plans/proactive-implementation.md) | Proactive layer implementation plan |
-| [`plans/cache-control-passthrough.md`](plans/cache-control-passthrough.md) | Per-block passthrough of Anthropic `cache_control` (landed) |
+| [`plans/cache-control-passthrough.md`](plans/cache-control-passthrough.md) | Per-block passthrough of Anthropic `cache_control` |
 | [`plans/2026-07-08-credential-connection-unification.md`](plans/2026-07-08-credential-connection-unification.md) | Credential/connection unification migration |
-
-## Removed docs
-
-There is no `archive/` directory: superseded docs were deleted outright rather
-than moved aside. Recover them from git history if needed.
-
-Previously removed:
-- `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — iteration drafts, superseded by `models.md`
-- `claude-code-meridian-profile.md` — the Meridian proxy was dropped; purely historical
-- `*-references.md` — investigation snapshots / raw research notes (slash-commands / tui-upgrade / user-input-requests)
 
 ## TODO-doc-code-gaps.md
 
@@ -221,13 +222,11 @@ Previously removed:
 
 ## Conventions
 
-- One subdirectory per subsystem, mirroring `openprogram/`. New design docs go
-  into the matching group, not the flat root. Add a group when a topic grows
-  past a couple of files.
-- Each group lists the *current* source first; supporting notes follow.
-- API reference belongs under `docs/api/`; design rationale belongs here.
-- For function-authoring rules, `../agentic-programming/writing-functions/function-metadata.md` is
-  the source of truth — shorter files link to it rather than repeating it.
-- The decorator field is `render_range={"callers": N, "subcalls": M}` —
-  `callers` caps pre-frame nodes by seq, `subcalls` caps in-frame nodes by seq.
-  Both code and docs use these names exclusively.
+- Maintain one current design per topic. Supporting implementation notes link to it rather than copying its body.
+- Use present tense; retrieve historical commits, dates and review rounds from Git.
+- Implementation notes explain entry points, source ownership, data and state transitions, failure handling, compatibility and verification, followed by an implementation-status appendix.
+- Every published page is HTML. Prefer native HTML for implementation documents with diagrams, state and evidence structures; short usage text may remain Markdown source.
+- Default `.md` / `.html` pages are entirely English; `.zh.md` / `.zh.html` pages are Chinese counterparts. Update English first, then synchronize Chinese.
+- API documentation belongs under `docs/reference/api/`; product usage belongs in the relevant product tab.
+- Use relative document links within the site and GitHub links for repository source.
+- Rebuild the site before running `python -m scripts.docs_site.checklinks`.

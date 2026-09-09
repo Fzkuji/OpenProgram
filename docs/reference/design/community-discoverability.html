@@ -9,7 +9,7 @@
 <h1>Community discoverability design</h1>
 <p>This change converts repository visitors into useful questions, reports, and contributions without adding a separate community platform.</p>
 <h2>Current gaps</h2>
-<p>The repository already has Issues and Discussions, but its contribution guide still names the pre-rebrand repository, there is no public security policy, and the issue chooser accepts unstructured reports. Private vulnerability reporting was also disabled.</p>
+<p>The repository uses the canonical <code>Fzkuji/OpenProgram</code> contribution links, a public security policy, structured issue forms, and a link to GitHub Security Advisories for private vulnerability reports. These repository-visible contracts are implemented in <code>.github/CONTRIBUTING.md</code>, <code>.github/SECURITY.md</code>, <code>.github/ISSUE_TEMPLATE/</code>, and the pull-request template. Whether the external GitHub advisory setting is enabled is not established by repository files.</p>
 <h2>Reference behavior and decisions</h2>
 <ul>
 <li>GitHub surfaces <code>.github/CONTRIBUTING.md</code> in repository contribution flows. Adopt one canonical guide with current setup and validation commands.</li>

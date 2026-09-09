@@ -12,7 +12,7 @@ openprogram/agent/management/
 openprogram/agent/
   └─ _model_tools.py        ← 门控点：tools、MCP
 
-openprogram/webui/ws_actions/
+apps/server/openprogram_server/_webui/ws_actions/
   └─ chat.py                ← 门控点：skills (/skill X 命令)
 
 openprogram/programs/
@@ -64,7 +64,7 @@ class AgentSpec:
 
 ## 门控点 1 —— skills (/skill 命令)
 
-**`openprogram/webui/ws_actions/chat.py:90-116`**
+**`apps/server/openprogram_server/_webui/ws_actions/chat.py`**
 
 当用户输入 `/skill X` 时，处理器会：
 
@@ -155,9 +155,10 @@ def _apply_mcp_gate(tool_list):
 
 ## 向后兼容
 
-带有 `skills: ["pdf", "drawio"]`（裸列表而非 dict）的旧 agent 配置会在加载时被规范化：`AgentSpec.from_dict` 把 `skills: list` 迁移为 `skills: {disabled: list}`，因此现有配置无需任何修改即可继续工作。
-
-同样，`tools: ["bash", "read"]` 仍然有效 —— 列表形式被视为白名单（旧的 `enabled` 语义）。
+当前持久化 schema 要求 `skills`、`tools` 和 `mcp` 都是对象。`AgentSpec.from_dict`
+目前把这些值直接传给 `dict()`；因此 `skills: ["pdf", "drawio"]` 或
+`tools: ["bash", "read"]` 这样的旧裸列表在加载时会抛出 `ValueError`，不会静默迁移。
+如果需要继续读取已有的列表格式，应另行实现兼容迁移并加入验证。
 
 ## 测试
 

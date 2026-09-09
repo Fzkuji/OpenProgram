@@ -23,7 +23,7 @@
   <p><strong>批准的设计：</strong><code>docs/reference/design/integrations/web-use.html</code>。</p>
   <p><strong>基线：</strong><code>717d4e17</code>。实现从隔离 worktree 和分支 <code>codex/browser-agent-20260814</code> 开始。</p>
   <p><strong>生产文件：</strong><code>openprogram/programs/workflow/browser/__init__.py</code>、<code>openprogram/programs/_registry.py</code>、<code>openprogram/programs/__init__.py</code>、<code>openprogram/agent/authority.py</code>。</p>
-  <p><strong>测试文件：</strong><code>tests/unit/test_browser_agent.py</code>。</p>
+  <p><strong>测试文件：</strong><code>tests/component/programs/test_browser_agent.py</code>。</p>
 </div>
 
 <h2>行为契约</h2>
@@ -39,7 +39,7 @@
 </ul>
 
 <h2>Public-entry RED</h2>
-<p><code>python -m pytest -q tests/unit/test_browser_agent.py</code> 必须先证明以下缺口：</p>
+<p><code>python -m pytest -q tests/component/programs/test_browser_agent.py</code> 必须先证明以下缺口：</p>
 <ul>
   <li><code>browser_agent</code> 尚未注册。</li>
   <li>没有 DOM/ARIA/ref observation 与 viewport screenshot 的受限工具。</li>
@@ -60,8 +60,8 @@
 
 <h2>Full gate manifest</h2>
 <ul>
-  <li><code>python -m pytest -q tests/unit/test_browser_agent.py tests/unit/test_browser_tool.py tests/unit/test_webtab_control.py</code></li>
-  <li><code>python -m pytest -q tests/unit/test_session_config_tools_intent.py tests/unit/test_tool_expansion_deterministic.py tests/agentic_programming/test_self_recursion_guard.py</code></li>
+  <li><code>python -m pytest -q tests/component/programs/test_browser_agent.py tests/component/webui/test_browser_tool.py tests/unit/webui/test_webtab_control.py</code></li>
+  <li><code>python -m pytest -q tests/unit/store/test_session_config_tools_intent.py tests/unit/programs/test_tool_expansion_deterministic.py tests/unit/programs/test_self_recursion_guard.py</code></li>
   <li><code>python -m scripts.docs_site.checklinks</code></li>
   <li><code>git diff --check</code></li>
 </ul>
@@ -98,7 +98,7 @@
   <thead><tr><th>项目</th><th>证据</th><th>状态</th></tr></thead>
   <tbody>
     <tr><td>Base commit</td><td><code>717d4e17</code></td><td class="pass">记录完成</td></tr>
-    <tr><td>RED</td><td><code>python -m pytest -q tests/unit/test_browser_agent.py</code>：9 failed，缺失公开模块与全部约束。</td><td class="pass">记录完成</td></tr>
+    <tr><td>RED</td><td><code>python -m pytest -q tests/component/programs/test_browser_agent.py</code>：9 failed，缺失公开模块与全部约束。</td><td class="pass">记录完成</td></tr>
     <tr><td>GREEN / affected</td><td>Focused browser/browser-control group：51 passed；registry/tool-selection group：25 passed。</td><td class="pass">通过</td></tr>
     <tr><td>Specification review</td><td>独立只读 review 对实现提交 <code>37b2c37c</code> 逐项核对 8 条行为契约与安全边界；zero remaining findings。</td><td class="pass">PASS</td></tr>
     <tr><td>Quality review</td><td>首轮 <code>CHANGES_REQUIRED</code> 的取消、URL scheme、cleanup 三项已由 <code>af33c608</code> 修复。Fresh review 对候选 <code>d0996f7b</code> 复核全部 changed boundary，确认此前 <code>KeyboardInterrupt</code> 结论为误判；zero remaining findings。</td><td class="pass">PASS</td></tr>
@@ -181,7 +181,7 @@
 <h2>任务 4：浏览器多 Page 与 popup handoff</h2>
 <div class="card">
   <p><strong>Base：</strong><code>54c466e9</code>。<strong>范围：</strong>当前 OpenProgram window 的 web Page inventory、background exact target、popup opener 归属，以及 <code>browser_agent/gui_agent</code> 的显式 Page 切换。</p>
-  <p><strong>生产文件：</strong><code>apps/desktop/main.js</code>、<code>apps/desktop/preload.js</code>、<code>apps/web/lib/desktop-bridge.ts</code>、<code>apps/web/lib/state/center-tabs-store.ts</code>、<code>openprogram/webui/ws_actions/webtab.py</code>、<code>openprogram/agent/surface_context.py</code>、<code>agentic_functions/browser_agent/__init__.py</code>。<strong>排除：</strong>桌面软件控制、跨窗口 inventory、OCR/YOLO/memory、自动 backend fallback。</p>
+  <p><strong>生产文件：</strong><code>apps/desktop/main.js</code>、<code>apps/desktop/preload.js</code>、<code>apps/web/lib/desktop-bridge.ts</code>、<code>apps/web/lib/state/center-tabs-store.ts</code>、<code>apps/server/openprogram_server/_webui/ws_actions/webtab.py</code>、<code>openprogram/agent/surface_context.py</code>、<code>openprogram/programs/gui_browser_agent.py</code>。<strong>排除：</strong>桌面软件控制、跨窗口 inventory、OCR/YOLO/memory、自动 backend fallback。</p>
   <p><strong>RED：</strong>同窗口 A/B/popup C inventory；C 保存 opener=A；token 绑定 exact target；background B observe/act 不改变 visible/active/focus；GUI Agent 写动作后发现 C 并以 token 切换；没有已挂载 native Page 时返回空 inventory；close/target replacement/disconnect 撤销能力。<strong>Gate：</strong>相关 Python tests、desktop navigation check、Web split/compound checks、TypeScript、生产 Web build、docs build/links、安装版 18100 E2E、diff/status。</p>
 </div>
 <table>

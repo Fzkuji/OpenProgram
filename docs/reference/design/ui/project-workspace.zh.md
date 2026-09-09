@@ -10,20 +10,22 @@ web 端不只是"带项目 chip 的聊天"，而是一个工作区：项目文�
 | 资产 | 位置 | 用于 |
 |---|---|---|
 | Project 实体层（id/name/path/sessions、settings.json） | `openprogram/store/project/project_store.py` | 全部 |
-| Project WS actions（list/create/remove/config/sessions/workdirs） | `openprogram/webui/ws_actions/project.py` | 列表页、工作区 |
+| Project WS actions（list/create/remove/config/sessions/workdirs） | `apps/server/openprogram_server/_webui/ws_actions/project.py` | 列表页、工作区 |
 | `/projects` 页（列表 + settings/sessions/info tab） | `apps/web/components/projects/projects-page.tsx` | 演化为新列表页 |
 | 聊天组件群（composer、messages、top-bar） | `apps/web/components/chat/` | 工作区左栏 |
 | 右侧栏骨架（history/detail/context 视图） | `apps/web/components/right-sidebar/` | 聊天概览面板 |
 | Memory 页编辑器（edit/preview 模式、保存） | `apps/web/components/memory/` | 文件编辑（第 5 档） |
-| `wsRequest` + ws action 注册机制 | `apps/web/lib/net/ws-request.ts`、`webui/server.py` | 全部新 API |
-| `/api/pick-folder` 原生目录选择 | `apps/web/app/api/pick-folder` | 添加项目 |
+| `wsRequest` + ws action 注册机制 | `apps/web/lib/net/ws-request.ts`、`apps/server/openprogram_server/server.py` | 全部新 API |
+| `/api/pick-folder` 原生目录选择 | `apps/server/openprogram_server/_webui/routes/workdir.py` | 添加项目 |
 
-真正缺的是两件：(a) 限定在项目内的**文件 API**；(b) 聊天视图从路由单例
-改成**按 sessionId 可挂载**。
+项目文件 WS API、文件树、文件查看器和中心文件 Tab 已经实现。剩余工作是：(a) 组合
+这些能力的 `/projects/[id]` 路由；(b) 聊天视图改成**按 sessionId 可挂载**；(c) 会话
+Overview 面板。
 
 ## 2. 后端：项目文件 API
 
-新模块 `openprogram/webui/ws_actions/files.py`，按既有方式注册。
+已实现的模块 `apps/server/openprogram_server/_webui/ws_actions/files.py` 和 `files_ws.py`
+按既有方式注册。
 
 | Action | 请求 | 应答 |
 |---|---|---|
@@ -33,7 +35,7 @@ web 端不只是"带项目 chip 的聊天"，而是一个工作区：项目文�
 
 第 5 档再加 `project_file_write` / `create` / `rename` / `delete`。
 
-`webui/server.py` 的 Starlette app 上加一条 HTTP 路由，服务不适合走
+`apps/server/openprogram_server/server.py` 的 Starlette app 上加一条 HTTP 路由，服务不适合走
 JSON 帧的字节流：
 
 ```
@@ -126,7 +128,8 @@ Next 路由 `apps/web/app/(shell)/projects/[id]/page.tsx`，三栏：
   而不是一个会话下拉。
 * **Run tab / workflow 可视化**：workflow 保持纯 Python
   函数（prompt 在 docstring、单一入口），不引入图 DSL。执行图从框架
-  本就记录的事件流**派生**（`webui/_exec_dag.py`、`graph_builder.py`、
+本就记录的事件流**派生**（`apps/server/openprogram_server/_webui/_exec_dag.py`、
+`apps/server/openprogram_server/_webui/graph_builder.py`、
   session DAG 渲染器），run tab 是活视图：哪个节点在跑、哪些完成、
   点节点看输入输出。与 LangGraph 的刻意对照：先声明再执行 vs
   记录先行——任意 Python 控制流零埋点自动成图。
@@ -164,4 +167,5 @@ Next 路由 `apps/web/app/(shell)/projects/[id]/page.tsx`，三栏：
 
 ## 附录：实现状态
 
-已完成设计，尚未实现。
+文件 WS API、文件树、只读查看器、文件 Tab 和写入路径合同已经实现。项目 workspace
+路由、会话 Overview 面板和项目列表改造仍是计划项；原型描述的是目标组合，不是已发布路由。

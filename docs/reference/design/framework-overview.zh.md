@@ -1,10 +1,10 @@
 # 框架总览：一次对话从输入到产出
 
 > 本文把整个框架串起来：单轮/多轮上下文、事件层、agent 运行、协作、DAG，
-> 在一次对话的时间轴上如何咬合。所有 `file:line` 指向当前代码。
+> 在一次对话的时间轴上如何咬合。文件和符号引用指向当前代码；易漂移的行号不作为依据。
 > 已设计但尚未落地的部分集中在末尾「已知边界」。
 
-**贯穿全文的一句话：整个框架靠一个进程级事件总线把各子系统解耦相连。** dispatcher、agent loop、工具执行、存储、协作彼此不直接调用对方的 UI/广播逻辑，而是 `emit` 一个事件，谁关心谁订阅（`events/bus.py:141` `emit` / `:159` `subscribe`）。事件层有两条 lane：**异步旁观**（`EventBus`，谁也拦不住正在发生的事）和**同步问询**（`tool_gate`，全框架唯一能拦住工具执行的点）。
+**贯穿全文的一句话：整个框架靠一个进程级事件总线把各子系统解耦相连。** dispatcher、agent loop、工具执行、存储、协作彼此不直接调用对方的 UI/广播逻辑，而是 `emit` 一个事件，谁关心谁订阅（`openprogram/events/bus.py` 的 `EventBus.emit` / `EventBus.subscribe`）。事件层有两条 lane：**异步旁观**（`EventBus`，谁也拦不住正在发生的事）和**同步问询**（`tool_gate`，全框架唯一能拦住工具执行的点）。
 
 ---
 
@@ -17,7 +17,7 @@
 ```
 用户输入一句话
    │
-   ▼  [入口] process_user_turn(req)              dispatcher/__init__.py:97（同步，内部起 asyncio loop 跑到完）
+   ▼  [入口] process_user_turn(req)              `openprogram/agent/dispatcher/__init__.py` 的 `process_user_turn`（同步，内部起 asyncio loop 跑到完）
    │
    ├─▶ 1. session 建立/加载                       :175 get_session / :177 create_session
    │
@@ -36,7 +36,7 @@
    │       assistant_msg_id = user_msg_id+"_reply" :164
    │       写 assistant 占位行 + set_head           :460；status="running" :464
    │
-   ├─▶ 5. ★ 调模型前：上下文引擎先跑一遍 ★          _run_loop_blocking :754
+   ├─▶ 5. ★ 调模型前：上下文引擎先跑一遍 ★          `openprogram/agent/dispatcher/loop_runner.py` 的 `run_loop_blocking`
    │       a. ContextEngine.prepare(...)           :885  ← DAG 历史渲染成 LLM messages（TurnPrep）
    │       b. should_auto_compact(prep)?           :896
    │            是 → snip（免费删最老 turn）不够 → compact（LLM 压缩）→ 重新 prepare（:907/:941/:976）
@@ -59,7 +59,7 @@
 
 ### 入口：dispatcher
 
-`process_user_turn(req, *, on_event, cancel_event)` 是全框架**唯一**对话入口（`dispatcher/__init__.py:97`）。它是**同步**的，便于 channel worker 线程直接调用，内部自起 asyncio loop 跑 `agent_loop` 到完。返回 `TurnResult`（`dispatcher/types.py:102`）。
+`process_user_turn(req, *, on_event, cancel_event)` 是全框架**唯一**对话入口（`openprogram/agent/dispatcher/__init__.py` 的 `process_user_turn`）。它是**同步**的，便于 channel worker 线程直接调用，内部自起 asyncio loop 跑 `agent_loop` 到完。返回 `TurnResult`（`dispatcher/types.py:102`）。
 
 ### turn_id 绑 ContextVar——框架解耦的另一根脊柱
 
@@ -81,7 +81,7 @@
 
 ### ★ 调模型前：上下文引擎先跑一遍（每轮自动压缩主路径）★
 
-这是最容易被忽略、但每个 turn 都发生的一层。step 5 的实体是 `_run_loop_blocking`（`dispatcher/__init__.py:754`），它在进 `agent_loop` **之前**：
+这是最容易被忽略、但每个 turn 都发生的一层。step 5 的实体是 `_run_loop_blocking`（`openprogram/agent/dispatcher/loop_runner.py` 的 `run_loop_blocking`），它在进 `agent_loop` **之前**：
 
 1. `ContextEngine.prepare(agent, session, history, model, tools)`（`:885` → `engine.py:194`）：把 DAG 历史**渲染成 LLM 输入** messages（默认走 DAG 渲染 `_build_messages_from_dag` `engine.py:558`；config `context.render="legacy"` 回退到 commit-chain）。返回 `TurnPrep`（`context/types.py:102`）。
 2. `should_auto_compact(prep)`（`:896`）为真时——**这是上下文超预算时真正触发的链路**：先 `snip`（免费删最老 turn），不够再 `_ctx_engine.compact(...)`（LLM 压缩），然后**重新 prepare**（三段重试 `:907`/`:941`/`:976`）。
@@ -104,11 +104,11 @@
 
 ### 工具执行：tool.before 拦截
 
-`_execute_tool_calls`（`agent_loop.py:654`）对每个 tool call：
+`_execute_tool_calls`（`openprogram/agent/agent_loop.py` 的 `_execute_tool_calls`）对每个 tool call：
 
 1. push `AgentEventToolStart`（`:675`）+ 插件 hook `TOOL_BEFORE_USE`（`:686`，best-effort）。
 2. **事件层 tool.before**：`make_event("tool.before",...)` + `emit`（`:695`）——一份事件，异步旁观和同步问询共用。
-3. **同步 gate**：`decide_tool_gate(before_ev)`（`:701`）。**全框架唯一能拦住工具执行的点**（`events/tool_gate.py:53`）：任一 gate 返回 deny 即拦（理由合并），gate 抛错按 allow（fail-open）。被拦 `raise ToolGateDenied`（`:708`），deny 理由作为 error tool result 回模型。**对 subagent 也生效**——gate 在 `permission_mode` approval 包装之外，`bypass` 关不掉它（`events/tool_gate.py:14–15`）。
+3. **同步 gate**：`decide_tool_gate(before_ev)`（`:701`）。**全框架唯一能拦住工具执行的点**（`openprogram/events/tool_gate.py` 的 `decide_tool_gate`）：任一 gate 返回 deny 即拦（理由合并），gate 抛错按 allow（fail-open）。被拦 `raise ToolGateDenied`（`:708`），deny 理由作为 error tool result 回模型。**对 subagent 也生效**——gate 在 `permission_mode` approval 包装之外，`bypass` 关不掉它（`events/tool_gate.py:14–15`）。
 4. `tool.execute(...)`（`:731`），前后做 cwd 快照 + 文件 checkpoint。
 5. push `AgentEventToolEnd`（`:758/:766`）+ emit `tool.after`（`:772`）。
 6. 组 `ToolResultMessage` 回灌（`:792`）。每次工具后检查 steering（`:806`），命中则跳过剩余工具、回灌 steering。
@@ -120,7 +120,7 @@
 
 ### DAG 更新——贯穿全程，不是单独一步
 
-user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_function` 内部节点，都通过 `_store` ContextVar 落入同一 `SessionNodeWriter`，turn 末 `commit_turn`（`session_store.py:504`）把整棵工作树作为一次 turn 提交——append-only、无可变"当前态"镜像文件，两个 agent 并发写不会撞同一文件。
+user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_function` 内部节点，都通过 `_store` ContextVar 落入同一 `SessionNodeWriter`，turn 末 `commit_turn`（`openprogram/store/session/session_store.py` 的 `commit_turn`）把整棵工作树作为一次 turn 提交——append-only、无可变"当前态"镜像文件，两个 agent 并发写不会撞同一文件。
 
 ---
 
@@ -130,7 +130,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 
 实际在发的事件（全仓 `emit_safe` / `emit_ws_frame` / `make_event` 扫描 + 核对）。两类：进总线的 typed 事件（异步旁观 + 同步问询）和透传前端的 `ws.frame`。
 
-| 事件 type | 谁发（file:line） | 谁收 | 备注 |
+| 事件 type | 谁发（文件和符号） | 谁收 | 备注 |
 |---|---|---|---|
 | `user.prompt_submitted` | dispatcher `:346` | proactive observer（`proactive/state.py:61`） | 用户消息已提交 |
 | `tool.before` | agent_loop `:695` | **tool_gate（同步）** + 旁观 | 唯一拦截位 |
@@ -148,7 +148,7 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 | `channel.message_inbound` | channels | 旁观 | 入站消息 |
 | `memory.ingest_started` / `.ended` | memory | 旁观 | 记忆摄入 |
 | `skills.changed` / `plugins.update_available` / `sessions.listed` / `branches.listed` | 各子系统 | UI / 旁观 | 列表与可用更新 |
-| `ws.frame`（`events/bus.py:115`） | 外部源 `emit_ws_frame`（`:118`） | `webui/server.py:1192`（原样广播） | 透传信封：外部源不直连 webui `_broadcast` |
+| `ws.frame`（`openprogram/events/bus.py`） | 外部源 `emit_ws_frame`（`:118`） | `openprogram/webui/server.py`（原样广播） | 透传信封：外部源不直连 webui `_broadcast` |
 
 **订阅侧实际位点**：proactive 引擎订阅**全部**事件再按 `on` 过滤（`proactive/engine.py:145`）；webui 只订 `ws.frame`（`server.py:1192`）；channels question bridge 只订 `question.asked`（`_question_bridge.py:43`）。
 
@@ -230,4 +230,4 @@ user 节点（`:298`）、assistant 占位、每个工具结果、`@agentic_func
 
 ## 主线锚点速查
 
-dispatcher 入口 `dispatcher/__init__.py:97`；turn_id 绑定 `:379`；历史/分支解析 `:186–198`；user 节点写入 `:298`；**调模型前 prepare/auto-compact** `_run_loop_blocking :885/:896/:1074`；finalize `:711`/`dispatcher/finalize.py:175`（ContextCommit 回填 `:283`、after_turn `:308`→`engine.py:437`）。事件总线 `events/bus.py:141/159/241`；tool.before 拦截 `agent_loop.py:695/:701` + `events/tool_gate.py:53`。上下文 `engine.py:194` + 两条压缩路径（auto-compact `_run_loop_blocking:896` / microcompact `microcompact.py:76`）。agent loop `agent_loop.py:114/205/654`；子 agent `sub_agent_run.py:41`。协作 `send_message.py:186/393`，深度上限 `:35`。
+dispatcher 入口 `openprogram/agent/dispatcher/__init__.py` 的 `process_user_turn`；turn_id 绑定 `:379`；历史/分支解析 `:186–198`；user 节点写入 `:298`；**调模型前 prepare/auto-compact** `_run_loop_blocking :885/:896/:1074`；finalize `:711`/`dispatcher/finalize.py:175`（ContextCommit 回填 `:283`、after_turn `:308`→`engine.py:437`）。事件总线 `events/bus.py:141/159/241`；tool.before 拦截 `agent_loop.py:695/:701` + `openprogram/events/tool_gate.py` 的 `decide_tool_gate`。上下文 `engine.py:194` + 两条压缩路径（auto-compact `openprogram/agent/dispatcher/loop_runner.py` 的 `run_loop_blocking` / `microcompact.py`）。agent loop `agent_loop.py:114/205/654`；子 agent `sub_agent_run.py:41`。协作 `send_message.py:186/393`，深度上限 `:35`。

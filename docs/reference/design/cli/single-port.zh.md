@@ -56,13 +56,15 @@ Electron 壳 → Python worker（FastAPI，单端口）
 - 前端只跟自己的源站说话（`/ws`、`/api/...` 相对路径）。
 
 动态路由段（`(shell)/s/[sessionId]`、`(shell)/skills/[...name]`、
-`(shell)/settings/providers/[providerId]`、`plugin/[name]/[...slug]`）都是
+`(shell)/settings/providers/[providerId]`、`/plugin/<name>/<slug...>`）都是
 返回 null 或纯客户端从 `pathname` 解析参数的占位页。静态导出不带
 `generateStaticParams` 会拒绝它们，因此这些 page 文件不存在；SPA 回退
-（3.2）为这些路径返回壳页面，客户端路由处理其余部分。若某段真有服务端
+（3.2）为这些路径返回壳页面，客户端路由处理其余部分。plugin 页面是
+`apps/web/app/plugin/page.tsx`，从 `pathname` 解析名称和 slug。若某段真有服务端
 逻辑，则保留它并加一个返回占位值的 `generateStaticParams`。
 
-`app/api/[...path]/route.ts` 和 `app/files/[...path]/route.ts` 不存在。
+`app/api/[...path]/route.ts` 和 `app/files/[...path]/route.ts` 不存在；当前后端路由由
+Python worker 提供。
 
 ### 3.2 worker 托管导出产物
 
@@ -77,12 +79,12 @@ Electron 壳 → Python worker（FastAPI，单端口）
   `npm run build`。Node 从此只是**构建期**依赖；打包发布版直接携带预构建的
   `out/`，运行时完全不碰 Node。
 
-### 3.3 没有进程看护
+### 3.3 当前进程看护边界
 
-没有任何东西拉起或监视 Node 进程。`openprogram/worker/web.py`（spawn、
-端口回收、manifest 补丁、BUILD_ID 监视）、`apps/web/scripts/with-parent-watch.mjs`
-以及 `openprogram/worker/runner.py` 里的 `start_web_frontend` 调用在这里都
-没有对应物。
+当前 worker 路径不会拉起或监视 Node 进程。活动入口是 `openprogram/worker/runner.py`，它调用
+`openprogram.webui.start_web` 和 `apps/server/openprogram_server/_webui/frontend.py:ensure_frontend_built`。
+旧的 `openprogram/worker/web.py` 与 `apps/web/scripts/with-parent-watch.mjs` 仍保留在 checkout
+中，包含 `start_web_frontend` 等双端口代码，但当前 runner 不会调用它们；这些文件的清理另行决定。
 
 ### 3.4 端口语义
 
@@ -142,4 +144,5 @@ checkout 保留开发构建流程。
 
 ## 附录：实现状态
 
-单端口设计已实现。桌面监管和分发状态由上面链接的安装与打包设计记录。
+当前 runner 和 frontend mount 已实现单端口设计。旧双端口 manager 仍保留在 checkout 中，但不在活动
+调用路径上。桌面监管和分发状态由上面链接的安装与打包设计记录。

@@ -121,7 +121,7 @@ A comprehensive comparison of the session management mechanisms across four proj
 | **Disk budget** | None | None | `enforceSessionDiskBudget`: optional, cleans up by total disk usage | None |
 | **Archive on delete** | None (deletes the file directly) | None (CASCADE deletes directly) | Yes (transcript file is archived rather than deleted directly) | None (deletes the directory directly) |
 | **Maintenance mode** | — | — | "warn" (default, warn only) / "enforce" (actually execute) | — |
-| **updated_at maintenance** | Implicit (file mtime) | SQLite trigger-driven | Written by the application layer | Written by the application layer (automatically set to `time.time()` during `_persist_meta`) |
+| **updated_at maintenance** | Implicit (file mtime) | SQLite trigger-driven | Written by the application layer | Written by the application layer when a message is appended; metadata-only writes do not advance recency |
 | **message_count maintenance** | Not tracked | SQLite trigger-driven +1/-1 | Not tracked | Not tracked |
 
 ## 11. Title (Naming)

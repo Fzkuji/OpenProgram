@@ -364,30 +364,21 @@ Stop in the UI or the agent decides to abort.
 
 ## Appendix: Implementation Status
 
-None of the above has landed yet. The runtime today has no task entity — only
-the in-memory `_running_tasks` dict driving the spinner, which is lost on
-refresh — no explicit state machine (a function returning is what "done"
-means), no query interface, and no plan-mode concurrency, since `/task` is
-synchronous and serial. Cancel exists at whole-session granularity
-(`_cancel_events`) but not per task; the worker model is one daemon thread per
-session (`_execute_in_context`) rather than a shared pool; the attach card is
-written only on completion; the agent has only the synchronous `task` tool;
-and there is no Tasks panel in the UI.
+The design is partially implemented. Current code has durable job records, an explicit state machine, a persisted store, a worker runner, and query/wait/cancel operations.
 
-The landing order, in dependency order:
-
-| Step | File | Main change |
+| Capability | Current evidence | Status |
 |---|---|---|
-| 1 | `openprogram/agent/job/types.py` (new) | `JobStatus` enum + `Task` dataclass (D1) + transition-rules helper |
-| 2 | `openprogram/agent/job/store.py` (new) | `TaskStore` interface; persist `jobs.json` in the session repo (D4); also implement `MockTaskStore` for tests |
-| 3 | `openprogram/agent/job/runner.py` (new) | `JobRunner` singleton: `submit / cancel / get / list`; holds the `ThreadPoolExecutor` (D3) + `_cancel_events` (D5); startup hook marks orphan tasks errored (D12) |
-| 4 | `openprogram/agent/sub_agent_run.py` | Extract `_run_one(task: Task, *, cancel_event)` wrapping `process_user_turn`; add the async entry `submit_agent_task(...)`; keep `run_agent_turn(...)` but route it internally through `runner.submit(...).result()` |
-| 5 | `openprogram/agent/job/agent_tools.py` (new) | `@function` implementations of `spawn_job / await_task / cancel_job / await_tasks`, bound to the toolset (D10) |
-| 6 | `openprogram/webui/ws_actions/task.py` (new) | 4 handlers corresponding to D9; register in `ws_actions/__init__.py` |
-| 7 | `openprogram/webui/_execute/__init__.py::_run_spawn` | Switch to `submit_agent_task`; write the placeholder attach card with job_id + status=running |
-| 8 | `openprogram/context/commit/generator.py` | When handling attach nodes, check `extra.attach.status`: running / cancelled / errored do not expand, only placeholder (D8) |
-| 9 | `openprogram/programs/tools/agents/agent/agent/agent.py` | `_agent_impl` internally switches to `submit_agent_task` + defaults to foreground; returns job_id when `run_in_background=True` |
-| 10 | `apps/web/components/right-sidebar/tasks-panel.tsx` (new) | UI representation (D11); subscribes to the `job_status` ws event |
-| 11 | `apps/web/components/chat/messages/attach-card.tsx` | Render the status badge (running / done / cancelled / error) |
-| 12 | `openprogram/agent/dispatcher.py::process_user_turn` | On startup, check `OPENPROGRAM_JOB_WORKERS` and initialize the runner singleton (idempotent) |
-| 13 | Tests | unit: state machine, runner submit + cancel + crash recovery; integration: spawn → await, N concurrent, cancel mid-flight (D13) |
+| Job entity and state machine | openprogram/agent/job/types.py: Job, JobStatus, transition validation | Implemented |
+| Durable storage | openprogram/agent/job/store.py: load_job, list_jobs, update_job_status | Implemented |
+| Worker admission and execution | openprogram/agent/job/runner.py: JobRunner, spawn_job, OPENPROGRAM_JOB_WORKERS | Implemented, with end-to-end execution/resource acceptance still required |
+| Query and waiting | JobRunner get/list/await methods; programs/tools/agents/agent/list_jobs and job_output | Implemented |
+| Cancellation | JobRunner.cancel_execution and runner terminal-state finalization | Implemented at JobRunner level; UI/tool coverage is entry-point specific |
+| WebSocket status | apps/server/openprogram_server/_webui/ws_actions/job.py (spawn/list/get); apps/web/lib/net/use-ws.ts (job_status, spawn_job_result) | Implemented for these actions |
+| Branch-side status view | apps/web/components/right-sidebar/branches/index.tsx subscribes to job status broadcasts | Implemented; this is not a separate Tasks panel |
+| Attach-card lifecycle | Job.attach_pointer_id and runner/dispatcher integration | Partially implemented; verify each attach state and recovery path before treating it as complete |
+| Resource governance | JobRunner constructs and uses ResourceGovernor and exposes resource projections | Partially integrated; token/cost/runtime/idle enforcement is a separate contract |
+| Tests and crash matrix | State and runner tests exist, but the full spawn-to-await, concurrent cancellation, and crash-recovery matrix remains a verification obligation | Not a claim of full acceptance |
+
+The implementation supports durable jobs and normal query/cancel flows, but this appendix does not claim that every UI, resource, attach-card, or crash-recovery requirement has passed. The separate Tasks panel, mid-flight output streaming, cross-process execution, automatic retry, and DAG-shaped dependencies remain out of scope or future work.
+
+Use the paths above as the source of truth. Do not reintroduce the old _running_tasks-only description or list existing files as new files.

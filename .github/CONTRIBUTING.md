@@ -29,7 +29,7 @@ public APIs, installation profiles, and current capabilities.
 4. Before requesting review, run:
 
    ```bash
-   uv run --locked --extra dev ruff check openprogram tests scripts tools
+   uv run --locked --extra dev ruff check openprogram tests scripts
    uv run --locked --extra dev python -m pytest -q tests/contracts
    uv run --locked --extra dev python -m pytest -q tests/unit
    uv run --locked --extra dev python -m pytest -q tests/component

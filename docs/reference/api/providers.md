@@ -132,7 +132,7 @@ Claude via a **Claude subscription** — connects directly to `api.anthropic.com
 rt = create_runtime(provider="claude-code", model="claude-sonnet-4")
 ```
 
-Setup: log in once with the Claude Code CLI (`claude login`) so the OAuth token can be adopted, or add a Claude account with `openprogram providers claude-code accounts add`.
+Setup: log in once with the Claude Code CLI (`claude login`) so the OAuth token can be adopted, or use the unified account flow with `openprogram providers login claude-code`.
 
 ### Options (forwarded to the runtime)
 

@@ -121,7 +121,7 @@ Claude Code、OpenCode、OpenClaw、OpenProgram（我们的设计）四个项目
 | **磁盘预算** | 无 | 无 | `enforceSessionDiskBudget`：可选，按总磁盘占用清理 | 无 |
 | **删除时归档** | 无（直接删文件） | 无（CASCADE 直接删） | 有（transcript 文件归档而非直接删） | 无（直接删目录） |
 | **维护模式** | — | — | "warn"（默认只警告）/ "enforce"（真正执行） | — |
-| **updated_at 维护** | 隐式（文件 mtime） | SQLite trigger 自动 | 应用层写入 | 应用层写入（`_persist_meta` 时自动设 `time.time()`） |
+| **updated_at 维护** | 隐式（文件 mtime） | SQLite trigger 自动 | 应用层写入 | 应用层在追加消息时写入；只改元数据不会推进 recency |
 | **message_count 维护** | 不跟踪 | SQLite trigger 自动 +1/-1 | 不跟踪 | 不跟踪 |
 
 ## 11. 标题（命名）

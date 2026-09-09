@@ -67,9 +67,9 @@ store/
 > module lives under its sub-package — there are no flat top-level module
 > aliases.
 
-Designs: [`git-as-entity-memory.md`](../../docs/design/memory/git-as-entity-memory.md)
-(why git), [`overview.md`](../../docs/design/memory/overview.md) (entity layer),
-[`file-management.md`](../../docs/design/runtime/file-management.md) (snapshot / commit
+Designs: [`git-as-entity-memory.md`](../../docs/reference/design/memory/git-as-entity-memory.md)
+(why git), [`overview.md`](../../docs/reference/design/memory/overview.md) (entity layer),
+[`file-management.html`](../../docs/reference/design/runtime/operations/file-management.html) (snapshot / commit
 / worktree / read-before-edit — how they combine).
 
 ## ① Session storage — on-disk layout

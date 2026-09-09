@@ -48,7 +48,7 @@ The storage and rotation machinery it builds on:
   cooldown durations with `mark_failure` / `mark_success` / `clear_cooldown`
   (`auth/pool.py:57-276`); and the credential-provider wrappers `apply_failure` /
   `apply_success` (`auth/credential_provider.py`).
-- A multi-profile REST surface (`webui/_auth_routes.py`: `/profiles`, `/pools`,
+- A multi-profile REST surface (`apps/server/openprogram_server/_webui/_auth_routes.py`: `/profiles`, `/pools`,
   `/pools/.../credentials`, `/doctor`, SSE `/events`).
 - The unified login endpoints (`/api/providers/{id}/login/{start,poll,submit,
   cancel}`) and `<ProviderLogin>`.

@@ -1,5 +1,9 @@
 # 实体记忆 (Entity Memory)
 
+> **实现状态：**本文是实体记忆的提议设计。下文的 Session-Git 和 Project-Git
+> 生命周期尚未在当前 Memory runtime 实现。当前实现是
+> [`overview.md`](overview.md) 所述的 Source/Topic/Core workspace。
+
 ## 1. 概念
 
 实体记忆是不可变的真实历史记录，基于 git 存储。"实体"= 真实发生过的事，可逐步回溯。

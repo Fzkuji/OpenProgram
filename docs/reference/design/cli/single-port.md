@@ -62,14 +62,17 @@ Electron shell → Python worker (FastAPI, single port)
 - Frontend code talks to its own origin (`/ws`, `/api/...` relative URLs).
 
 Dynamic page segments (`(shell)/s/[sessionId]`, `(shell)/skills/[...name]`,
-`(shell)/settings/providers/[providerId]`, `plugin/[name]/[...slug]`) are
+`(shell)/settings/providers/[providerId]`, `/plugin/<name>/<slug...>`) are
 route markers that render null or resolve params client-side from
 `pathname`. Static export rejects them without `generateStaticParams`, so
 those page files do not exist; the SPA fallback (3.2) serves the shell for
-those paths and client-side routing handles the rest. A segment that does
+those paths and client-side routing handles the rest. The plugin page is
+`apps/web/app/plugin/page.tsx`; it resolves the name and slug from `pathname`.
+A segment that does
 real work keeps a `generateStaticParams` returning one placeholder instead.
 
-`app/api/[...path]/route.ts` and `app/files/[...path]/route.ts` do not exist.
+`app/api/[...path]/route.ts` and `app/files/[...path]/route.ts` do not exist;
+the current backend routes are served by the Python worker.
 
 ### 3.2 The worker serves the export
 
@@ -84,12 +87,15 @@ real work keeps a `generateStaticParams` returning one placeholder instead.
   `npm run build` once at startup. Node is then a **build-time** dependency
   only; a packaged release ships `out/` pre-built and never invokes Node.
 
-### 3.3 No process supervision
+### 3.3 Current process supervision boundary
 
-Nothing spawns or watches a Node process. `openprogram/worker/web.py`
-(spawn, port reclaim, manifest patch, BUILD_ID watcher),
-`apps/web/scripts/with-parent-watch.mjs`, and the `start_web_frontend` call in
-`openprogram/worker/runner.py` have no counterpart here.
+The current worker path does not spawn or watch a Node process. The active
+entry is `openprogram/worker/runner.py`, which calls `openprogram.webui.start_web`
+and `apps/server/openprogram_server/_webui/frontend.py:ensure_frontend_built`.
+The older `openprogram/worker/web.py` module and
+`apps/web/scripts/with-parent-watch.mjs` remain in the checkout as legacy
+dual-port code, including `start_web_frontend`, but the current runner does not
+call them. They are retained for a separate cleanup decision.
 
 ### 3.4 Port semantics
 
@@ -157,5 +163,7 @@ checkouts retain the development build flow.
 
 ## Appendix: Implementation Status
 
-The single-port design is implemented. Desktop supervision and distribution
-status are tracked by the installation and packaging design linked above.
+The single-port design is implemented in the current runner and frontend
+mount. The legacy dual-port manager remains in the checkout but is outside the
+active call path. Desktop supervision and distribution status are tracked by
+the installation and packaging design linked above.

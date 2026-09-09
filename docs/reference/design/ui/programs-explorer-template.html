@@ -4,7 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenProgram · Programs Explorer</title>
-  <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <!--
+    Icon assets are copied from the repository's installed lucide-react package
+    (v1.32.0). Lucide Icons and Contributors, ISC License:
+    Copyright (c) 2026 Lucide Icons and Contributors.
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+    The software is provided "as is", without warranty of any kind.
+    Feather-derived icons retain the MIT notice: Copyright (c) 2013-present
+    Cole Bemis; permission is granted to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies, subject to inclusion of the
+    copyright and permission notices. These notices are retained because this
+    standalone document embeds the path data directly.
+  -->
   <style>
     :root {
       color-scheme: dark;
@@ -387,7 +400,46 @@
   </aside>
 
   <script>
-    lucide.createIcons({ attrs: { "stroke-width": 1.7 } });
+    // Local equivalent of lucide.createIcons: the document stays standalone and
+    // keeps the existing data-lucide names and dynamic folder toggle behavior.
+    const ICON_MARKUP = Object.freeze({
+      search: '<path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle>',
+      "rotate-cw": '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path>',
+      "chevron-up": '<path d="m18 15-6-6-6 6"></path>',
+      "chevron-down": '<path d="m6 9 6 6 6-6"></path>',
+      x: '<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>',
+      "list-filter": '<path d="M2 5h20"></path><path d="M6 12h12"></path><path d="M9 19h6"></path>',
+      highlighter: '<path d="m9 11-6 6v3h9l3-3"></path><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path>',
+      "scan-search": '<path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><circle cx="12" cy="12" r="3"></circle><path d="m16 16-1.9-1.9"></path>',
+      "folder-open": '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"></path>',
+      folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>',
+      bot: '<path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path>',
+      workflow: '<rect width="8" height="8" x="3" y="3" rx="2"></rect><path d="M7 11v4a2 2 0 0 0 2 2h4"></path><rect width="8" height="8" x="13" y="13" rx="2"></rect>',
+      boxes: '<path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"></path><path d="m7 16.5-4.74-2.85"></path><path d="m7 16.5 5-3"></path><path d="M7 16.5v5.17"></path><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"></path><path d="m17 16.5-5-3"></path><path d="m17 16.5 4.74-2.85"></path><path d="M17 16.5v5.17"></path><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"></path><path d="M12 8 7.26 5.15"></path><path d="m12 8 4.74-2.85"></path><path d="M12 13.5V8"></path>'
+    });
+    function createIcons({ attrs = {} } = {}) {
+      document.querySelectorAll("i[data-lucide]").forEach((placeholder) => {
+        const name = placeholder.getAttribute("data-lucide");
+        const markup = ICON_MARKUP[name];
+        if (!markup) return;
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("fill", "none");
+        svg.setAttribute("stroke", "currentColor");
+        svg.setAttribute("stroke-linecap", "round");
+        svg.setAttribute("stroke-linejoin", "round");
+        svg.setAttribute("width", "24");
+        svg.setAttribute("height", "24");
+        Object.entries(attrs).forEach(([key, value]) => svg.setAttribute(key, String(value)));
+        for (const attr of placeholder.attributes) {
+          if (attr.name !== "data-lucide") svg.setAttribute(attr.name, attr.value);
+        }
+        if (!svg.hasAttribute("aria-hidden")) svg.setAttribute("aria-hidden", "true");
+        svg.innerHTML = markup;
+        placeholder.replaceWith(svg);
+      });
+    }
+    createIcons({ attrs: { "stroke-width": 1.7 } });
     const searchToggle = document.querySelector("#searchToggle");
     const searchPanel = document.querySelector("#searchPanel");
     const searchInput = document.querySelector("#searchInput");
@@ -539,7 +591,7 @@
       node.classList.toggle("collapsed");
       const icon = row.querySelector("svg");
       icon.outerHTML = `<i data-lucide="${node.classList.contains("collapsed") ? "folder" : "folder-open"}" class="tree-icon folder" aria-hidden="true"></i>`;
-      lucide.createIcons({ attrs: { "stroke-width": 1.7 } });
+      createIcons({ attrs: { "stroke-width": 1.7 } });
     });
   </script>
 </body>

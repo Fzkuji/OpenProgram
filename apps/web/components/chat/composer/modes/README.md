@@ -18,7 +18,7 @@
 （store 字段或 pendingDecisions 的新 kind），在 `composer/index.tsx` 的路由里
 加一支。
 
-设计与决策：[../../../../../docs/design/ui/composer-interaction-modes.md](../../../../../docs/design/ui/composer-interaction-modes.md)。
+设计与决策：[../../../../../../docs/reference/design/ui/composer-interaction-modes.md](../../../../../../docs/reference/design/ui/composer-interaction-modes.md)。
 
 > 历史：早先有过一个 `ComposerMode` 注册表对象接口（types.ts/index.ts），
 > 但 fn-form 的提交逻辑与高度动画跟容器 ref 深度耦合，硬塞进固定接口要大改

@@ -31,7 +31,7 @@ openprogram --profile <name>     # state-directory profile, reroutes to ~/.openp
 |------|------|----------|
 | `openprogram` | Open the chat; a bare run first asks terminal UI vs web UI, auto-launches a worker if none is running | — |
 | `openprogram tui` (alias `chat`) | Launch the Ink terminal UI directly on Windows, macOS, or Linux; terminals without raw input fall back to Rich | `--print`, `--resume`, `--no-alt-screen`, and `--screen-reader` also work after the verb |
-| `openprogram web` | Start the service and open the browser UI (`http://localhost:18100`) | `--port` (default: stored pref, then 18100), `--web-port` (legacy alias for the same single port), `--no-browser` |
+| `openprogram web` | Start the service and open the browser UI (`http://localhost:18100`) | `--web-port` (this run only; default: stored pref, then 18100), `--no-browser` |
 
 ## Background service
 
@@ -59,7 +59,7 @@ The `worker` subcommands offer finer control:
 |------|------|----------|
 | `setup` | First-run setup wizard | `menu` opens the interactive picker; give a section name to jump straight there (model / tools / agent / skills / ui / memory / profile / search / tts / channels / backend) |
 | `config` | View / change settings | `list` (every setting: value, group, apply mode), `get <key>`, `set <key> <value>` |
-| `ports` | View / persist the single Web UI port | `--frontend PORT` (default 18100), `--backend PORT` (legacy alias for `--frontend`; the ports are merged) |
+| `ports` | View / persist the single Web UI port | `--port PORT` (default 18100) |
 | `completion` | Print a shell completion script | `bash` / `zsh` / `powershell` / `pwsh` |
 
 ### providers — LLM providers and credentials
@@ -68,17 +68,17 @@ The `worker` subcommands offer finer control:
 
 | Verb | What it does |
 |------|------|
-| `login <provider>` | Log in to a provider; `--api-key` / `--api-key-stdin` supply the key non-interactively, `--profile` selects the credential profile, `--method` forces a specific login method |
+| `login <provider>` | Log in to a provider; `--api-key` / `--api-key-stdin` supply the key non-interactively, `--account` selects the account, `--method` forces a specific login method |
 | `logout` | Remove a provider's credentials |
-| `list` | List credential pools by profile |
+| `list` | List credential pools by account |
 | `available` (aliases `search`, `catalog`) | List every configurable provider, optionally filtered with QUERY |
 | `status` | Check a provider's current credentials |
-| `use` | Set which account (profile) a provider uses |
+| `use` | Set which account a provider uses |
 | `discover` / `adopt` | Scan external credential sources / import them into the credential store |
 | `doctor` | Diagnose credentials (expiry, refresh, cooldown, conflicts) |
 | `setup` | Interactive first-time setup |
 | `aliases` | List provider short-name aliases |
-| `profiles` | Credential profile management (`list` / `create` / `delete`) |
+| `accounts` | Account management (`list` / `create` / `delete`) |
 | `migrate` | Migrate stored credentials to the current format |
 
 `openprogram providers` with no verb prints the status table for all current credentials.
@@ -87,13 +87,28 @@ The `worker` subcommands offer finer control:
 
 | Verb | What it does |
 |------|------|
+| `token create` | Create and print a token for the authenticated local stdio MCP server |
+| `serve` | Serve the authenticated MCP server over local stdio |
 | `list` | List every configured MCP server and its status |
 | `show` | Show a server's tools and full schemas |
 | `add` | Add a stdio command server; writes `mcp_servers.json` and starts it immediately |
 | `rm` | Remove (stop + delete config) |
 | `restart` / `enable` / `disable` | Restart / enable and start / stop and mark disabled (config kept) |
-| `edit` | Edit `mcp_servers.json` directly with `$EDITOR` |
+| `edit` | Compatibility command that reports raw config editing was removed; use `add` / `rm` or the MCP settings page |
 | `test` | Start a config temporarily to verify it comes up and returns its tool list, without persisting |
+
+`token create` prints the raw token on one line but does not set
+`OPENPROGRAM_MCP_TOKEN`. Run it once, copy the printed line, and set the
+variable before `serve`:
+
+```bash
+openprogram mcp token create
+export OPENPROGRAM_MCP_TOKEN="<paste the token printed above>"
+openprogram mcp serve
+```
+
+If a token already exists, reuse the token you previously saved. `serve`
+requires an exact `OPENPROGRAM_MCP_TOKEN` match.
 
 ### browser — browser tools
 
@@ -165,7 +180,7 @@ The `worker` subcommands offer finer control:
 | `setup` | Interactive wizard: pick a channel, log in (QR code / token), bind an agent |
 | `accounts` | Manage channel bot accounts (WeChat, Telegram, etc.) |
 | `bindings` | Route inbound channel messages to agents |
-| `access` | Who reaches the agent: `list`, `approve <code>`, `allow <user_id>`, `revoke <user_id>`, `policy pairing\|open`. An account takes any number of approved senders ([Chat Channels](../integrations/channels.md#who-can-talk-to-your-bot)) |
+| `access` | Who reaches the agent: `list`, `approve <code>`, `allow <user_id>`, `revoke <user_id>`. Unknown senders follow the default pairing flow; the owner can use `allow <user_id>` to add a known platform user ID directly to the allowlist ([Chat Channels](../integrations/channels.md#who-can-talk-to-your-bot)) |
 
 ### memory — persistent memory
 
@@ -173,11 +188,11 @@ One workspace per instance, shared by every agent and every conversation includi
 
 | Verb | What it does |
 |------|------|
-| `status` | Owner view of workspace path/revision, file and relation counts, writer health, and commitment counts/records |
-| `recall` | Search the wiki + recent journal, print raw snippets; `--days N` limits the journal window (default 30) |
-| `show` / `edit` | Print / edit a wiki page with `$EDITOR` |
-| `sleep` | Run a sleep consolidation pass now (light → deep → REM); `--phase light\|deep\|rem` runs one phase only |
-| `reflections` | Print the latest entries of `wiki/reflections.md` |
+| `status` | Show workspace contents, revision, writer health, and pending turns |
+| `recall QUERY...` | Search memory and print matching paragraphs |
+| `show PATH` / `edit PATH` | Print / edit one memory file with `$EDITOR` |
+| `sleep` | Reorganise topic files now; `--model MODEL` selects the organising model |
+| `backfill` | Write trusted source records that no topic cites; `--model MODEL` selects the writer |
 | `export` | tar+gzip the whole memory directory; `--out PATH` sets the output file (default `./openprogram-memory-<date>.tar.gz`) |
 
 ## Maintenance

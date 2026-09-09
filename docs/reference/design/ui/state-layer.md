@@ -6,7 +6,7 @@ where each kind of state lives, why the split is drawn where it is, and what
 goes wrong under any other arrangement.
 
 No frontend expertise is assumed. The ideas you need are introduced first,
-then an inventory of the real code with `file:line` references, then the
+then an inventory of the real code with file references, then the
 design itself in section 6.
 
 ---
@@ -19,7 +19,7 @@ one object holding both data (`currentSessionId`, `composerDrafts`) and the
 functions that change it (`setCurrentConv`, `setComposerInput`). Any component
 anywhere in the page can read any field from that box without it being passed
 down through props. The main box is
-`apps/web/lib/session-store/index.ts:400`.
+`apps/web/lib/session-store/index.ts`.
 
 **A component subscribes to a slice.** When a component calls
 `useSessionStore((s) => s.conversations)`, React re-renders that component
@@ -44,8 +44,8 @@ root cause of most of section 5.
 
 `apps/web/lib/session-store/index.ts` declares its shape in the `ConvState`
 interface and its initial values in the `create<ConvState>` call. Every field
-below falls into one of three groups. Fields marked **removed** are listed
-because they show what the design rules out; they no longer exist in the code.
+below falls into one of three groups. Removed fields are discussed in the
+historical design sections, but are omitted from this current inventory.
 
 ### Group A — isolated per session
 
@@ -55,21 +55,20 @@ converges on.
 
 | Field | Declared at | What it holds |
 | --- | --- | --- |
-| `conversations` | `apps/web/lib/session-store/index.ts:68` | sidebar summary per session (keyed, but see Group C — it is a *list*, not per-session view state) |
-| `messagesById` | `apps/web/lib/session-store/index.ts:70` | every loaded message, keyed by message id |
-| `messageOrder` | `apps/web/lib/session-store/index.ts:72` | ordered message-id list per session |
-| `pendingProjectsByChat` | `apps/web/lib/session-store/index.ts:81` | project chosen for an unsent chat, keyed by provisional chat key |
-| `runningTasks` | `apps/web/lib/session-store/index.ts:90` | per-session running task; drives each composer's send/stop button |
-| `trees` | `apps/web/lib/session-store/index.ts:96` | latest live context tree per session |
-| `tokens` | `apps/web/lib/session-store/index.ts:103` | token usage per session |
-| `contextWindow` | `apps/web/lib/session-store/index.ts:112` | context-window size per session |
-| `heads` | `apps/web/lib/session-store/index.ts:115` | active DAG head (selected branch tip) per session |
-| `additionalWorkingDirsBySession` | `apps/web/lib/session-store/index.ts:146` | extra working directories per session |
-| `composerDrafts` | `apps/web/lib/session-store/index.ts:182` | unsent composer text per session, persisted to localStorage |
-| `composerSettingsBySession` | `apps/web/lib/session-store/index.ts:194` | tool toggles / thinking effort per session, persisted |
-| `contextPanelFor` | `apps/web/lib/session-store/index.ts:211` | *which* session has the `/context` popover open — a single field used as a per-session flag; see section 5. **Removed**: it is now `contextPanelOpen` on each session's own store. |
+| `conversations` | `apps/web/lib/session-store/index.ts` | sidebar summary per session (keyed, but see Group C — it is a *list*, not per-session view state) |
+| `messagesById` | `apps/web/lib/session-store/index.ts` | every loaded message, keyed by message id |
+| `messageOrder` | `apps/web/lib/session-store/index.ts` | ordered message-id list per session |
+| `pendingProjectsByChat` | `apps/web/lib/session-store/index.ts` | project chosen for an unsent chat, keyed by provisional chat key |
+| `runningTasks` | `apps/web/lib/session-store/index.ts` | per-session running task; drives each composer's send/stop button |
+| `trees` | `apps/web/lib/session-store/index.ts` | latest live context tree per session |
+| `tokens` | `apps/web/lib/session-store/index.ts` | token usage per session |
+| `contextWindow` | `apps/web/lib/session-store/index.ts` | context-window size per session |
+| `heads` | `apps/web/lib/session-store/index.ts` | active DAG head (selected branch tip) per session |
+| `additionalWorkingDirsBySession` | `apps/web/lib/session-store/index.ts` | extra working directories per session |
+| `composerDrafts` | `apps/web/lib/session-store/index.ts` | unsent composer text per session, persisted to localStorage |
+| `composerSettingsBySession` | `apps/web/lib/session-store/index.ts` | tool toggles / thinking effort per session, persisted |
 
-`pendingDecisions` (`apps/web/lib/session-store/index.ts:244`) is a hybrid worth
+`pendingDecisions` (`apps/web/lib/session-store/index.ts`) is a hybrid worth
 calling out: it is a flat FIFO array, but each entry carries its own
 `sessionId` (`apps/web/lib/session-store/types.ts:60`), and the composer filters
 the queue down to its own session at
@@ -86,24 +85,21 @@ overwrites the first or is forced to read the first's value.
 
 | Field | Declared at | Why it should be scoped |
 | --- | --- | --- |
-| `currentSessionId` | `apps/web/lib/session-store/index.ts:74` | "the" active session. With two panes there are two, and one is merely the *focused* one. |
-| `activeChatKey` | `apps/web/lib/session-store/index.ts:77` | same, for unsent drafts using a provisional `local_*` id |
-| `runningTask` | `apps/web/lib/session-store/index.ts:86` | deprecated in favour of `runningTasks[sid]`; kept alive only so legacy `setRunning(false)` callers kept working. **Removed.** |
-| `composerInput` | `apps/web/lib/session-store/index.ts:178` | the *live* draft of the focused session; a mirror of `composerDrafts[focused]`. **Removed.** |
-| `composerSettings` | `apps/web/lib/session-store/index.ts:193` | the *live* settings of the focused session; a mirror of `composerSettingsBySession[focused]`. **Removed.** |
-| `composerFocusTick` | `apps/web/lib/session-store/index.ts:206` | a counter bumped to ask "the" composer to focus its textarea; with two composers it is ambiguous which one obeys |
-| `fnFormFunction` | `apps/web/lib/session-store/index.ts:217` | which function's parameter form has replaced the textarea. Belongs to one composer, not the app. |
-| `fnFormPrefill` | `apps/web/lib/session-store/index.ts:226` | prefilled arguments for that form |
-| `fnFormForkOf` | `apps/web/lib/session-store/index.ts:227` | fork anchor node for a re-run |
-| `fnFormClosing` | `apps/web/lib/session-store/index.ts:235` | close-animation flag for that form |
-| `welcomeVisible` | `apps/web/lib/session-store/index.ts:165` | whether the chat area shows the welcome screen — a per-pane condition |
-| `transcriptLoadingId` | `apps/web/lib/session-store/index.ts:172` | holds *one* in-flight session id; two panes can be loading at once |
-| `branchInfo` | `apps/web/lib/session-store/index.ts:62` | branch chip for "the current conversation" |
-| `statusBadge` | `apps/web/lib/session-store/index.ts:65` | topbar status label; derived from one session's run state |
-| `paused` | `apps/web/lib/session-store/index.ts:92` | pause flag, per running session in principle |
-| `providerInfo` | `apps/web/lib/session-store/index.ts:94` | provider/model shown in the header for the current session |
-| `detailNode` | `apps/web/lib/session-store/index.ts:261` | selected DAG node shown in the right rail |
-| `nodeSelected` | `apps/web/lib/session-store/index.ts:271` | "a DAG node is selected" gate |
+| `currentSessionId` | `apps/web/lib/session-store/index.ts` | "the" active session. With two panes there are two, and one is merely the *focused* one. |
+| `activeChatKey` | `apps/web/lib/session-store/index.ts` | same, for unsent drafts using a provisional `local_*` id |
+| `composerFocusTick` | `apps/web/lib/session-store/index.ts` | a counter bumped to ask "the" composer to focus its textarea; with two composers it is ambiguous which one obeys |
+| `fnFormFunction` | `apps/web/lib/session-store/index.ts` | which function's parameter form has replaced the textarea. Belongs to one composer, not the app. |
+| `fnFormPrefill` | `apps/web/lib/session-store/index.ts` | prefilled arguments for that form |
+| `fnFormForkOf` | `apps/web/lib/session-store/index.ts` | fork anchor node for a re-run |
+| `fnFormClosing` | `apps/web/lib/session-store/index.ts` | close-animation flag for that form |
+| `welcomeVisible` | `apps/web/lib/session-store/index.ts` | whether the chat area shows the welcome screen — a per-pane condition |
+| `transcriptLoadingId` | `apps/web/lib/session-store/index.ts` | holds *one* in-flight session id; two panes can be loading at once |
+| `branchInfo` | `apps/web/lib/session-store/index.ts` | branch chip for "the current conversation" |
+| `statusBadge` | `apps/web/lib/session-store/index.ts` | topbar status label; derived from one session's run state |
+| `paused` | `apps/web/lib/session-store/index.ts` | pause flag, per running session in principle |
+| `providerInfo` | `apps/web/lib/session-store/index.ts` | provider/model shown in the header for the current session |
+| `detailNode` | `apps/web/lib/session-store/index.ts` | selected DAG node shown in the right rail |
+| `nodeSelected` | `apps/web/lib/session-store/index.ts` | "a DAG node is selected" gate |
 
 `detailNode` and `nodeSelected` are listed here because they *describe* a
 session's DAG, but they are deliberately a non-goal — see section 9.
@@ -115,10 +111,10 @@ values.
 
 | Field | Declared at | What it is |
 | --- | --- | --- |
-| `wsStatus` | `apps/web/lib/session-store/index.ts:48` | WebSocket connection state |
-| `agentSettings` | `apps/web/lib/session-store/index.ts:51` | Chat/Exec model badges, mirrored from `window._agentSettings` |
-| `conversations` | `apps/web/lib/session-store/index.ts:68` | the session *list* for the sidebar (a catalogue of all sessions, not one session's view state) |
-| `rightDock` | `apps/web/lib/session-store/index.ts:256` | right sidebar open/collapsed and which view, persisted to localStorage |
+| `wsStatus` | `apps/web/lib/session-store/index.ts` | WebSocket connection state |
+| `agentSettings` | `apps/web/lib/session-store/index.ts` | Chat/Exec model badges, mirrored from `window._agentSettings` |
+| `conversations` | `apps/web/lib/session-store/index.ts` | the session *list* for the sidebar (a catalogue of all sessions, not one session's view state) |
+| `rightDock` | `apps/web/lib/session-store/index.ts` | right sidebar open/collapsed and which view, persisted to localStorage |
 
 ---
 
@@ -476,7 +472,7 @@ verification that the frame still reaches its session.
 
 **The right sidebar and the DAG stay single-instance, following the focused
 session.** `detailNode` and `nodeSelected`
-(`apps/web/lib/session-store/index.ts:261`, `:271`) remain global. Nothing renders
+(`apps/web/lib/session-store/index.ts`) remain global. Nothing renders
 them twice: the right rail is one dock
 (`apps/web/components/right-sidebar/right-sidebar.tsx:407`, `:575`), and there is no
 plan to give each pane its own DAG. They can keep reading the focused session

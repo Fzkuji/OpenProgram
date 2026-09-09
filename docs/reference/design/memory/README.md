@@ -2,11 +2,16 @@
 
 ## Definition
 
-Memory = **entity memory** (the complete, immutable, real history) + **abstract memory** (a compact index distilled from the entities).
+The committed Memory subsystem is a Markdown workspace with three active layers:
+append-only Source evidence, model-written Topic blocks, and Runtime-derived
+Core/Timeline/Recent/Relations views. The current implementation and its
+transaction, authority, and failure contracts are defined in [`overview.md`](overview.md).
 
-Entity memory is the ground truth: backed by git, one commit per turn, tamper-proof. Abstract memory is a navigation map derived from the entity layer; every entry carries a provenance pointer back to its source in the entity layer. The LLM is injected with abstract memory only; when it needs details, the LLM follows the pointers to navigate back to the entity layer and fetch them itself.
+Entity memory and the Git-backed Session-Git/Project-Git model below are a
+proposed future layer. They are not the current source of truth and are not
+required for the active Source/Topic writer.
 
-## Architecture
+## Proposed entity/abstract architecture
 
 ```
 entity memory (raw, git, immutable, complete)
@@ -22,15 +27,20 @@ abstract memory (derived, compact, provenance-linked)
          │
          │  recall: inject only the abstract layer; the LLM uses tools to navigate back to entities
          ▼
-LLM Context
+LLM Context (proposed recall path)
 ```
+
+The diagram is a design target. The active implementation does not currently
+create one Git repository per session, auto-commit every turn into entity
+memory, or provide a Graph view. See the implementation status below before
+using the proposal as a code map.
 
 ## Design Principles
 
-1. **Git-native** — entity memory uses git directly; no reinventing the wheel. Commits are immutable, the log is the timeline, and checkout is the time machine.
-2. **Provenance-linked** — the abstract layer does not replace the entity layer; it indexes it. Every abstract memory entry carries the coordinates `(project, session, commit, timestamp)` pointing back to its source.
+1. **Git-native (proposed entity layer)** — entity memory would use Git directly. This is not the storage contract of the current Source/Topic workspace.
+2. **Provenance-linked** — the active Topic layer links to Source frames; a future entity layer would additionally carry `(project, session, commit, timestamp)` coordinates.
 3. **Bi-temporal** — every memory records two times: `event_time` (when the thing happened) and `ingestion_time` (when it was written down). This supports time-travel queries and contradiction detection.
-4. **LLM-navigated recall** — never dump raw chat into the context. Inject only the compact map; the LLM walks back to the entity layer with tools on demand to fetch details.
+4. **Scoped recall** — the current runtime injects the active Core and uses memory tools over the Source/Topic workspace. Git navigation from the model remains a proposal.
 
 ## Sub-documents
 
@@ -81,5 +91,5 @@ the tier its caller resolved, and blocks resting on pending evidence reach
 neither recall nor Core. Per-tier redaction of block content is still designed
 only, in [`authority-handoff.md`](authority-handoff.md).
 Hold-and-approve requests, branch-semantic provenance, cross-session spawn
-relations and event-driven writer notification remain separate deferred
-designs.
+relations, the entity Git layer, the Graph view, and event-driven writer
+notification remain separate deferred designs.

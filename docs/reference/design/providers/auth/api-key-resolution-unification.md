@@ -82,10 +82,10 @@ the roughly 30 call sites are unaffected:
 
 - `get_env_api_key` (runtime) → `resolve_api_key`, which is where the runtime
   path gains the config.json fallback.
-- `storage._resolve_api_key` (webui/model-catalog) → `resolve_api_key` for
+- `storage._resolve_api_key` (server model listing) → `resolve_api_key` for
   known providers; community and models.dev providers keep the env-var fallback.
-- `_model_catalog/providers.py:_is_configured` and
-  `providers/registry.py:check_providers` → `is_configured`.
+- `providers/registry.py:check_providers` and the server model-listing
+  configuration checks → `is_configured`.
 - `credentials.provider_id_for_env_var` re-exports the canonical function.
 
 `server.py`'s provider table and `routes/providers.py:45` keep `_get_api_key`,

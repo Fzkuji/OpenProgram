@@ -15,11 +15,25 @@ openprogram mcp show drawio                       # 该 server 的工具与完�
 全部子命令：
 
 ```bash
+openprogram mcp token create       # 为本地 stdio MCP server 创建 token
+openprogram mcp serve              # 通过 stdio 提供认证后的 MCP server
 openprogram mcp list | show | add | rm | restart | enable | disable | edit | test
 ```
 
+`token create` 只把新建的 token 原样打印为一行，不会设置当前 shell 的环境变量。
+只运行一次，复制这一行，在启动 `serve` 前绑定到进程：
+
+```bash
+openprogram mcp token create
+export OPENPROGRAM_MCP_TOKEN="<把上一步打印的 token 粘贴到这里>"
+openprogram mcp serve
+```
+
+如果 token 已经存在，请使用此前保存的 token，不要再次运行 `token create`。
+`serve` 在缺少或不匹配 `OPENPROGRAM_MCP_TOKEN` 时会拒绝认证。
+
 - `rm` 停止并删除配置；`enable` / `disable` 切换（disable 保留配置）。
-- `edit` 用 `$EDITOR` 直接改配置文件——HTTP / SSE 类型的 server 目前通过它添加（`add` 只覆盖 stdio）。
+- `edit` 只作为兼容入口保留，会报告直接编辑配置已移除，因为它会暴露已存储的 secret。请用 `add` / `rm` 或 MCP 设置页；`add` 用于 stdio server。
 - `test` 用一份临时配置试拉起 server 并确认能返回工具列表，不写盘。
 
 管理命令与常驻的 OpenProgram 后台 worker 通信；worker 未运行时先 `openprogram worker start` 启动（用 `openprogram status` 查看状态）。

@@ -12,22 +12,23 @@ file tree right, with the project list as an expandable table.
 | Asset | Where | Reused for |
 |---|---|---|
 | Project entity layer (id/name/path/sessions, settings.json) | `openprogram/store/project/project_store.py` | everything |
-| Project WS actions (list/create/remove/config/sessions/workdirs) | `openprogram/webui/ws_actions/project.py` | list page, workspace |
+| Project WS actions (list/create/remove/config/sessions/workdirs) | `apps/server/openprogram_server/_webui/ws_actions/project.py` | list page, workspace |
 | `/projects` page (list + settings/sessions/info tabs) | `apps/web/components/projects/projects-page.tsx` | evolves into the new list page |
 | Chat component tree (composer, messages, top-bar) | `apps/web/components/chat/` | workspace left pane |
 | Right sidebar shell (history/detail/context views) | `apps/web/components/right-sidebar/` | chat overview panel |
 | Memory page editor (edit/preview mode, save) | `apps/web/components/memory/` | file editing (slice 5) |
-| `wsRequest` helper + ws action registry | `apps/web/lib/net/ws-request.ts`, `webui/server.py` | all new APIs |
-| `/api/pick-folder` native folder picker | `apps/web/app/api/pick-folder` | add-project flow |
+| `wsRequest` helper + ws action registry | `apps/web/lib/net/ws-request.ts`, `apps/server/openprogram_server/server.py` | all new APIs |
+| `/api/pick-folder` native folder picker | `apps/server/openprogram_server/_webui/routes/workdir.py` | add-project flow |
 
-The main missing pieces are (a) a **file API** scoped to a project, and
-(b) the chat view being **mountable by sessionId** instead of owning the
-whole route.
+The project file WS API, file tree, file viewer, and center file tabs are now
+implemented. The remaining workspace work is (a) the `/projects/[id]` route
+that composes these pieces, (b) a chat view mountable by sessionId, and (c)
+the session Overview panel.
 
 ## 2. Backend: project file API
 
-New module `openprogram/webui/ws_actions/files.py`, registered like the
-other action modules.
+The implemented modules `apps/server/openprogram_server/_webui/ws_actions/files.py`
+and `files_ws.py` are registered like the other action modules.
 
 | Action | Request | Reply |
 |---|---|---|
@@ -38,7 +39,7 @@ other action modules.
 Slice 5 adds `project_file_write`, `project_file_create`,
 `project_file_rename`, `project_file_delete`.
 
-One HTTP route on the existing Starlette app in `webui/server.py` for
+One HTTP route on the existing Starlette app in `apps/server/openprogram_server/server.py` for
 bytes that don't belong in JSON frames:
 
 ```
@@ -151,7 +152,8 @@ tabs.
 * **Run tabs / workflow visualization**: workflows stay
   plain Python functions (prompts in docstrings, single entry point) —
   no graph DSL. The execution graph is *derived* from the event stream
-  the harness already records (`webui/_exec_dag.py`, `graph_builder.py`,
+the harness already records (`apps/server/openprogram_server/_webui/_exec_dag.py`,
+`apps/server/openprogram_server/_webui/graph_builder.py`,
   session DAG renderer), so a run tab is a live view: which node is
   running, what finished, click a node for inputs/outputs. This is the
   deliberate contrast with LangGraph: declare-then-execute vs
@@ -200,4 +202,7 @@ Prototype: `project-workspace-prototype.html`.
 
 ## Appendix: Implementation Status
 
-Designed, not yet built.
+The file WS API, file tree, read-only viewer, file tabs, and write-path
+contracts are implemented. The project workspace route, session Overview
+panel, and project-list redesign remain planned; the prototype describes their
+target composition rather than a shipped route.

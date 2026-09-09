@@ -1,8 +1,18 @@
-# 设计文档
+# 设计与实现文档
 
-OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下的代码布局保持一致。先读本索引，再读你需要的那篇文档。
+本目录按子系统维护当前设计、实现位置和未完成边界。代码由 `openprogram/` 和 `apps/` 共同承担，不能仅按核心包目录查找实现。
 
-每个子目录汇集某一领域的设计。在同一分组内，定义*当前*实现的文档排在最前；其余是支撑性的笔记 / 调研，不应覆盖前者。
+## 阅读入口
+
+| 目的 | 文档 |
+|---|---|
+| 查找子系统设计与实现状态 | [实现文档导航](implementation-status.html) |
+| 理解目录所有权和兼容入口 | [仓库结构设计](repository-structure.html)及[实现说明](repository-structure-implementation.html) |
+| 理解完整执行过程 | [框架概览](framework-overview.zh.md) |
+| 查找测试层级和验证要求 | [测试系统](testing/test-system.html) |
+| 编写和验收 HTML 实现文档 | [HTML 展示与编写规范](docs-site.zh.html) |
+
+设计正文描述行为和约束；文末“实现状态”集中列出已实现、部分实现、未实现与范围外事项。源码存在、测试通过、发布完成和本地 App 验收是不同状态。索引仅负责导航，不重复维护功能完成率。
 
 ## context/ — context 引擎、commit、工具老化
 
@@ -32,8 +42,8 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 
 | Doc | Topic |
 |---|---|
-| [`proactive/event-layer.md`](proactive/event-layer.md) | 统一 Event 模型 + 框架定位 + 框架图 + 事件边界与演进（**已落地：A/B 类事件全在发，gate 可拦**，[可视化](proactive/event-layer.html)） |
-| [`proactive/framework-evolution.md`](proactive/framework-evolution.md) | 框架演进：现状 → 目标 → 五步迁移（步 1·2·3 ✅，[可视化](proactive/framework-evolution.html)） |
+| [`proactive/event-layer.md`](proactive/event-layer.md) | 统一 Event 模型 + 框架定位 + 框架图 + 事件边界与演进（[可视化](proactive/event-layer.html)） |
+| [`proactive/framework-evolution.md`](proactive/framework-evolution.md) | 框架演进：现状 → 目标 → 五步迁移（[可视化](proactive/framework-evolution.html)） |
 
 主动性应用（建在底座上）：
 
@@ -171,9 +181,9 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`framework-overview.md`](framework-overview.md) | 框架总览：一次对话从输入到产出 |
 | [`framework-comparison.html`](framework-comparison.html) | 整框架对标：按设计维度和十二家横向比，强在哪、弱在哪、别人有什么我们没想到（图解） |
 | [`feature-matrix.html`](feature-matrix.html) | 功能清单对标：同样十二家改按功能清单扫，160 项一张大表，只有别人有的、只有我们有的（图解） |
-| [`docs-site.md`](docs-site.zh.md) | 文档站本身（构建、导航、双语路由） |
+| [`docs-site.html`](docs-site.zh.html) | 文档站本身（构建、导航、双语路由） |
 | [`repository-structure.html`](repository-structure.html) | 仓库边界、超长文件拆分规则与文档信息架构 |
-| [`repository-structure-implementation.md`](repository-structure-implementation.md) | 仓库结构设计的实施台账 |
+| [`repository-structure-implementation.html`](repository-structure-implementation.html) | 仓库结构的代码位置、兼容边界和验证方法 |
 
 ## research/ — 调研
 
@@ -189,22 +199,13 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 | [`distribution/automatic-updates.html`](distribution/automatic-updates.html) | Stable Release 发现、macOS/Windows Desktop 校验后打开 installer、managed CLI 原子激活、信任边界、界面状态与实现证据 |
 | [`distribution/implementation-plan.md`](distribution/implementation-plan.md) | 不与当前设计重复的历史分发实现证据 |
 
-## plans/ — 带日期的实施计划
+## plans/ — 配套实施计划
 
 | Doc | Topic |
 |---|---|
 | [`plans/proactive-implementation.md`](plans/proactive-implementation.md) | 主动性层实施计划 |
-| [`plans/cache-control-passthrough.md`](plans/cache-control-passthrough.md) | Anthropic `cache_control` 逐块透传（已落地） |
+| [`plans/cache-control-passthrough.md`](plans/cache-control-passthrough.md) | Anthropic `cache_control` 逐块透传 |
 | [`plans/2026-07-08-credential-connection-unification.md`](plans/2026-07-08-credential-connection-unification.md) | 凭证/连接统一迁移 |
-
-## 已删除的文档
-
-不存在 `archive/` 目录：被取代的文档是直接删除的，需要时从 git 历史找回。
-
-历史上删除过：
-- `model-catalog-dynamic.md` / `model-catalog-per-provider.md` — 迭代草稿，被 `models.md` 取代
-- `claude-code-meridian-profile.md` — Meridian proxy 已砍，纯历史
-- `*-references.md` — 调研快照/原始研究笔记（slash-commands / tui-upgrade / user-input-requests）
 
 ## TODO-doc-code-gaps.md
 
@@ -212,12 +213,11 @@ OpenProgram 当前的设计笔记，按子系统分组，与 `openprogram/` 下�
 
 ## 约定
 
-- 每个子系统一个子目录，与 `openprogram/` 对应。新设计文档放进匹配的分组，
-  而不是扁平的根目录。当某个主题增长到超过几个文件时，新建一个分组。
-- 每个分组先列*当前*的来源；支撑性笔记随后。
-- API 参考归在 `docs/api/` 下；设计依据归在这里。
-- 函数 authoring 规则以 `../agentic-programming/writing-functions/function-metadata.md` 为
-  准——较短的文件链接到它，而不是重复其内容。
-- 装饰器字段为 `render_range={"callers": N, "subcalls": M}` ——
-  `callers` 按 seq 限制帧前节点数，`subcalls` 按 seq 限制帧内节点数。
-  代码和文档都仅使用这两个名字。
+- 每个主题维护一份当前设计，相关实现说明链接到它，不复制设计正文。
+- 正文使用现在时；历史提交、日期和逐轮评审记录通过 Git 查询。
+- 实现说明依次说明入口、代码所有权、数据与状态变化、失败处理、兼容边界、验证方法，文末集中列出实现状态。
+- 所有页面统一以 HTML 展示；需要图示、状态与证据结构的实现文档优先维护为原生 HTML。简短用法可以保留 Markdown 源码。
+- 默认 `.md` / `.html` 为全英文，`.zh.md` / `.zh.html` 为中文对照；先更新英文，再同步中文。
+- API 文档位于 `docs/reference/api/`；产品用法放在对应产品 Tab。
+- 站内使用相对文档链接；仓库源码使用 GitHub 链接。
+- 修改后先构建站点，再运行 `python -m scripts.docs_site.checklinks`。

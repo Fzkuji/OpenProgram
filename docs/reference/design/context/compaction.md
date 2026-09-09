@@ -243,10 +243,10 @@ Every section above is implemented:
 - §3 segment substitution — `render_context` in `context/nodes.py`
   (`active_summary`, `summary_covers_ids`).
 - §5 HEAD integrity — the chain-extension append rule in
-  `store/session/session_store.py`; `webui/persistence.py` `save_meta` strips
+  `store/session/session_store.py`; `apps/server/openprogram_server/_webui/persistence.py` `save_meta` strips
   `head_id` unconditionally and `save_messages` is gone; the CLI turn path
   writes rows through `db.append_message`.
-- §6 graph contract — `webui/graph_builder.py`.
+- §6 graph contract — `apps/server/openprogram_server/_webui/graph_builder.py`.
 - §8 invariants — `tests/unit/context/test_compaction_covers.py`,
   `tests/unit/dag/test_graph_builder_covers.py`,
   `tests/integration/dag/test_dag_mutation_scenarios.py`.

@@ -2,7 +2,7 @@
 
 > 本文定义所有者如何在本机、可信局域网或 VPN、SSH 隧道，以及所有者自行运维的
 > HTTPS 反向代理上使用 OpenProgram 现有 Web UI。英文正文是规范基准；本文和独立
-> HTML 页面表达同一设计。关联代码：`openprogram/webui/owner_auth.py`、
+> HTML 页面表达同一设计。关联代码：`apps/server/openprogram_server/_webui/owner_auth.py`、
 > `openprogram/backend_endpoint.py`、
 > `apps/server/openprogram_server/server.py`、`apps/cli/python/openprogram_cli/_impl/commands/web.py`、
 > `apps/web/lib/net/owner-auth-bootstrap.ts`、`openprogram/agent/authority.py`。
@@ -62,10 +62,10 @@ SSH、VPN、nginx、Caddy 和证书自动化是独立运维组件。使用这些
 
 ### 2.1 当前已经存在的能力
 
-`openprogram/webui/server.py` 中的 `_web_config()` 默认使用 `127.0.0.1`，并读取
+`apps/server/openprogram_server/server.py` 中的 `_web_config()` 默认使用 `127.0.0.1`，并读取
 `web.host` 和 `web.allowed_origins`。`create_app()` 使用 FastAPI lifespan context，
 并为 HTTP 与 WebSocket ASGI scope 安装
-`openprogram/webui/owner_auth.py` 中的 `OwnerAuthMiddleware`。该 middleware 在 route
+`apps/server/openprogram_server/_webui/owner_auth.py` 中的 `OwnerAuthMiddleware`。该 middleware 在 route
 dispatch 前验证 canonical request origin，对受保护的 HTTP、SSE 与 WebSocket 使用同一套
 cookie 或 Bearer 认证规则，并且只在认证成功后附加当前 profile 的 owner authority。
 WebSocket 校验发生在 `websocket.accept` 之前。
@@ -85,15 +85,13 @@ nonce/HMAC ownership challenge 验证 active listener，再只为 effective Orig
 URL。`/healthz` 现在只返回 `{"status":"ok"}`；需要认证的
 运维诊断位于 `/api/diagnostics`。
 
-Provider API 的部分响应默认掩码，但仍有两条生产路径返回明文：
+Provider API 的响应默认掩码。凭据 reveal 已不再支持：旧 account route 返回 `410`，
+`GET /api/config/key/{env_var}?reveal=1` 返回 `404`，两条路径都不返回 secret。前端没有
+credential-reveal 控件或明文 response 字段。项目文件的 reveal 是独立的文件定位动作，
+不是凭据读取路径。
 
-- `GET /api/providers/{provider}/accounts/{name}/reveal`；
-- `GET /api/config/key/{env_var}?reveal=1`。
-
-当前剩余缺口小于最终契约的完整范围：两条 reveal 路径及其 frontend control 仍然存在；
-启动输出还没有包含 6.1 节要求的全部字段和直接 HTTP 警告。现有可执行覆盖包含 middleware、
-token 生命周期、bootstrap coordinator、CLI URL 生成、HTTP 和 WebSocket，但尚未覆盖 6.3
-节完整的 browser、SSE、restart、multi-profile 与 nginx/Caddy 验收矩阵。
+当前剩余缺口小于最终契约的完整范围：启动输出以及 6.3 节完整的 browser、SSE、restart、
+multi-profile 与 nginx/Caddy 验收矩阵仍需单独核验。
 
 ### 2.2 为什么 loopback 也必须使用 token
 
@@ -537,7 +535,7 @@ request。Backend 不把界面显示的掩码解释成 secret 值。
 mask，保证至少隐藏五个字符。长度不足十二的值，以及可见字符不是 ASCII 的值，统一显示
 `••••••••`，不会通过 mask 编码短 credential 的原始长度。Mask 只用于显示，write payload 永远不接受它。
 
-Account reveal route 整体删除并返回 `404`。Config-key 掩码状态 route 保留，但带
+Account reveal route 整体删除并返回 `410`。Config-key 掩码状态 route 保留，但带
 `reveal` query parameter 的请求返回 `404`，不能改变为明文 response。无关的
 project-file reveal action 继续受文件权限和 Web 认证控制；它不是 credential retrieval
 endpoint。
@@ -610,8 +608,8 @@ Ownership-challenge route 只执行有界 nonce/revision proof 契约，不授�
    数据、credential 数据或详细诊断。
 13. Security header 阻止 framing；protected/auth/credential response 使用 `no-store`，
     `401` response 声明 Bearer realm。
-14. 两种 reveal 请求返回 `404`；config-key replace/preserve/DELETE 与 account
-    replace/preserve/remove 执行上文精确 schema 和 status code；8–11 字符 credential 使用
+14. legacy account reveal route 返回 `410`，config-key reveal query 返回 `404`；config-key
+    replace/preserve/DELETE 与 account replace/preserve/remove 执行上文精确 schema 和 status code；8–11 字符 credential 使用
     固定 mask，mask 永远不能写入，frontend build 和 type 中没有 reveal action 或
     full-secret response field。
 15. nginx 与 Caddy smoke deployment 可以通过 HTTPS 传输已认证 HTTP、SSE、WebSocket，
@@ -633,10 +631,10 @@ Ownership-challenge route 只执行有界 nonce/revision proof 契约，不授�
 
 | 项目 | 证据 |
 |---|---|
-| 默认 loopback bind | `openprogram/webui/server.py` 中的 `_web_config()` 默认使用 `127.0.0.1` |
+| 默认 loopback bind | `apps/server/openprogram_server/server.py` 中的 `_web_config()` 默认使用 `127.0.0.1` |
 | FastAPI lifespan | `create_app()` 使用 `_lifespan`，不存在已弃用的 `@app.on_event` handler |
 | 稳定的 per-profile owner principal 与显式 owner/paired authority tier | `openprogram/agent/authority.py`；Web、TUI、desktop、runtime 和已配对 channel 入口附加 tier；`tests/unit/providers/test_authority_scope.py` 与 permission 测试覆盖固定档位表 |
-| Owner 进程 credential | `openprogram/webui/owner_auth.py` 中的 `OwnerAuthState` 生成 32 字节 token、持有 `<state-dir>/web.lock`、原子写入 owner-only `<state-dir>/web/token`、派生 profile-specific cookie、使用 `hmac.compare_digest` 比较解码后的 token，并且只清理自己拥有的状态；`test_process_token_is_owner_only_locked_and_replaced_after_release` 覆盖 lock、mode、替换、repr 隐去 token 和 release 后轮换 |
+| Owner 进程 credential | `apps/server/openprogram_server/_webui/owner_auth.py` 中的 `OwnerAuthState` 生成 32 字节 token、持有 `<state-dir>/web.lock`、原子写入 owner-only `<state-dir>/web/token`、派生 profile-specific cookie、使用 `hmac.compare_digest` 比较解码后的 token，并且只清理自己拥有的状态；`test_process_token_is_owner_only_locked_and_replaced_after_release` 覆盖 lock、mode、替换、repr 隐去 token 和 release 后轮换 |
 | Canonical effective Origin | `canonicalize_origin()` 与 `resolve_effective_origins()` 验证精确 Origin、执行显式 HTTP 网段限制、加入有限 loopback 默认值，并在非 loopback bind 没有 Origin 时失败；参数化 owner-auth 测试覆盖接受与拒绝的输入 |
 | 共同 owner-auth 边界 | `create_app()` 在 route 前安装 `OwnerAuthMiddleware`，保护 HTTP 和 WebSocket ASGI scope，并执行 cookie/Bearer 选择、Host/Origin/CSRF 校验、通用 `401`/`403`、no-store 与 owner-authority 附加；owner-auth 测试覆盖 HTTP mutation 与 accept 前 WebSocket |
 | Fragment bootstrap backend 与 frontend coordinator | `POST /api/auth/bootstrap`、`apps/web/lib/net/owner-auth-bootstrap.ts` 和 `OwnerAuthBoundary` 已实现 body-token 交换、同步清除 fragment、禁止 Web Storage 与应用挂载 gate；`apps/web/scripts/check-owner-auth-bootstrap.mjs`、TypeScript 检查和 production Web build 验证 frontend 契约 |

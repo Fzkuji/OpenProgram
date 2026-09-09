@@ -1,17 +1,7 @@
 # Open Items Where Design Docs Are Out of Sync With Code
 
-Audit date: 2026-06-18 (second audit)
 
-This file records the divergences between the design docs and the actual code, ordered by priority. Once a divergence is fixed, delete its entry here.
-
----
-
-## ~~Path errors~~ (fixed)
-
-### ~~extension-gating/implementation.md~~
-- ~~Paths written in the doc: `openprogram/agent/management/gating.py`, `openprogram/agent/management/manager.py`~~
-- ~~Actual paths: `openprogram/agent/management/gating.py`, `openprogram/agent/management/manager.py`~~
-- Status: ✅ Corrected; the doc paths are now right.
+This file records the divergences between the design docs and the actual code, ordered by priority. This file retains only unresolved divergences; historical fixes are recorded in Git.
 
 ---
 
@@ -27,19 +17,6 @@ This file records the divergences between the design docs and the actual code, o
 
 ---
 
-## Stale status markers (MEDIUM)
-
-### ~~memory/memory-v2.md → merged into memory/overview.md~~
-- ~~Phase markers disagreed: Phase 2 marked "❌ not started" while §0.5 said the pre-read layer had landed.~~
-- Status: ✅ Merged into `memory/overview.md`. The phase markers are gone; the doc now carries a single "Implementation status" appendix describing what runs today (linear journal/wiki/core chain) versus the entity/virtual target.
-
-### ~~context/contextgit.md → merged into context/storage-and-engine.md~~
-- ~~Doc marker: "Status: proposal, not implemented"~~
-- Status: ✅ Merged into `context/overview.md` together with context-commit-chain / context-engine-spec / context-attach-merge / cross-turn (the DAG foundation lives in `context/git/dag.py`; the upper layer is not yet built).
-
----
-
-## Implementation lag (design is valid but the code has not fully caught up)
 
 ---
 
@@ -48,18 +25,6 @@ This file records the divergences between the design docs and the actual code, o
 ### runtime/ is missing a process_runner design doc
 - `agent/process_runner.py` is an important subprocess-execution module (spawn, stop, user-input bridge)
 - There is no corresponding design doc.
-
----
-
-## Docs confirmed correct in this audit
-
-The following docs were audited and are fully consistent with the code; no changes needed:
-
-- `runtime/execution/execution-control.html` — the current status appendix distinguishes implemented cancellation and steering foundations from the unimplemented unified control architecture
-- `runtime/operations/user-input-requests.md` — Phase 1+2 have landed (QuestionRegistry, the three Transports including the newly added TTYTransport)
-- `function/calling-unification.md` — already uses the "profiles" terminology, consistent with the code
-- `extension-gating/implementation.md` — paths are now correct
-- `context/overview.md` (merged from contextgit and four others + the overview diagram) — status markers are correct
 
 ---
 
@@ -73,15 +38,7 @@ The following docs were audited and are fully consistent with the code; no chang
   inside it is another bare exec that again sees itself → infinite recursion. Each level returns
   `{'error': "'info|warning|success|error'"}` (wiki's internal enum validation failure),
   the upper-level model receives the error → retries and calls itself again.
-- **Resolved (commit `1f6f5fce`)**: changed from "self-deny by hiding the tool" to "situational guidance + a recursion-depth ceiling as a backstop".
-  - The situational hint (`runtime._situational_prefix`) is injected at the start of the user turn, telling the model "you are inside X, calling X = infinite recursion, use the lower-level tools", with the docstring demoted to the back → directly negating the premise "this should route to wiki_agent".
-  - Backstop: `_MAX_AGENTIC_RECURSION_DEPTH=5`, counted per function name; exceeding 5 levels for the same name raises `RecursionError`.
-  - self-deny has been removed, the tool list contains the function itself, relying on guidance rather than hiding.
-  - Design doc: `docs/reference/design/runtime/execution/agentic-self-recursion.md`; tests: `tests/unit/programs/test_self_recursion_guard.py` (8 cases).
 - **Remaining** (to do, see #2): scoping the toolset for each harness's exec + detecting cross-function cycles (A→B→A) (currently only direct self-recursion is guarded).
-- Session record: `~/.openprogram/sessions/local_d125e9a9c3/history/`
-  the context_tree shows 7 levels of nesting (4d76→0c07→0964→c6f9→f1c9→4379→8746→100c).
-
 ### 2. Whether harness-internal toolsets need to be restricted
 - Problem: for harnesses like wiki_agent/research_agent/gui_agent, should their own internal exec see only "the tools needed to do their actual job", rather than the full set?
 - Current state: full set by default (full); self-deny only blocks a harness from calling itself; one harness can still call another (wiki calls research, research calls gui) — which can lead to "going off track".
@@ -91,41 +48,22 @@ The following docs were audited and are fully consistent with the code; no chang
 ### 3. Tool Profile selection does not yet affect actual tool resolution
 - Problem: the chat-box profile picker lets you choose a profile and the backend persists the active profile, but **after picking a profile the tools actually used in that conversation are still decided by the Tools toggle (on/off)**, the profile's tool list is not sent to the dispatcher as tools_override.
 - Fix: the WS chat action passes the active profile name → the dispatcher resolves it with `agent_tools(toolset=<profile>)` → only that set of tools is provided.
-- Location: `webui/ws_actions/chat.py:313-316` (the tools_override logic) + the submit function in `composer/index.tsx`.
+- Location: `apps/server/openprogram_server/_webui/ws_actions/chat.py:313-316` (the tools_override logic) + the submit function in `apps/web/components/chat/composer/index.tsx`.
 
 ### 4. Splitting the Programs page into Agentic/Built-in tabs (in progress)
 - Design: a tab bar at the top (similar to the Wiki/Journal/Core on the Memory page), splitting into Agentic (function management + folders) and Built-in Tools (profile management).
 - Current state: the tab bar is added, tab state is added, the sidebar is hidden on the builtin tab, agentic content is hidden on the builtin tab, and tools show only on the builtin tab. CSS is added.
 - To do: typecheck + build + browser verification, to confirm the per-tab rendering is correct.
 
-### 5. ~~The Programs page delete action still uses the native confirm()~~
-- ✅ Fixed: searched and confirmed there are no leftover native `confirm()` calls; all have been replaced with ConfirmDialog.
-
-### 6. ~~The tool right-click menu on the Programs page is unreasonable~~
-- ✅ Fixed: `functions-page.tsx:579` is now `tab === "agentic" ? contentCtx : undefined`, so the builtin tab does not trigger contentCtx.
-
----
-
-## Open problems in the Agentic Function runtime
-
 ### 7. Checkpoint resume
 - **Problem**: when `runtime.exec` inside an agentic function fails all 6 consecutive retries (provider unreachable), it raises directly, the function terminates, and it cannot be recovered.
 - **Current state**: the DAG state is complete (the frame node is marked `status="error"`, all child nodes are preserved), `_render_history_messages` loads history from the DAG, and the infrastructure is in place.
 - **Plan**: provide a `resume_function(session_id, node_id)` entry point — set the frame node's status back to `running`, re-call `runtime.exec` with the same frame_node_id, and the DAG history is automatically reconnected. Add a "retry" button in the webui to trigger it.
 - **Core change**: needs a "re-entry" entry point + restoring the contextvars (_call_id, etc.) + rebuilding the runtime/agent context.
-- **Location**: `agentic_programming/function.py` (the wrapper layer), `agentic_programming/runtime.py` (the exec layer).
+- **Location**: `openprogram/agentic_programming/function.py` (the wrapper layer), `openprogram/agentic_programming/runtime.py` (the exec layer).
 
-### ~~8. Bash tool does not track file modifications~~
-- ✅ Resolved (`69432d88`): triggered through the unified entry point — `_execute_tool_calls` diffs the file state before and after bash runs, and automatically makes a checkpoint for any changed files.
+### 8. Bash tool file-modification tracking
 - Known limitation: it currently only scans the top-level files of the cwd, subdirectory changes are not covered (to be changed to a recursive scan later).
 - Additionally, the ④ system-level sandbox (`cf2edde5`) also restricts at the source the range of files bash can touch.
 
 ---
-
-## ~~Other open items~~ (fixed)
-
-### ~~research_agent's bad default `toolset=("harness",)`~~
-- ✅ Fixed: changed to `toolset=("research",)` (2026-06-18).
-
-### ~~The stale comment on the "full" static list in the design doc~~
-- ✅ Fixed: the `functions/__init__.py` TOOLSETS["full"] comment is updated, explaining that full is now just a named preset and that exposure is collected dynamically by `exposed_names()`.

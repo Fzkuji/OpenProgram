@@ -20,7 +20,7 @@ fast tier at all.
 
 ## 2. Detection: `supports_fast(provider, model)` — three branches
 
-Entry point: `openprogram/webui/_model_listing/listing.py`. Strips the
+Entry point: `apps/server/openprogram_server/_webui/_model_listing/listing.py`. Strips the
 wire-format `"provider:"` prefix first (the runtime records the current
 model as `openai-codex:gpt-5.5`).
 
@@ -64,11 +64,11 @@ list.**
 
 | Layer | Location | Persistence |
 |---|---|---|
-| Codex official endpoint | `webui/_model_listing/fetchers/codex.py::_fetch_codex_live` | remote; 10-min in-memory browse cache, **no disk cache** |
+| Codex official endpoint | `openprogram/providers/openai_codex/list_models.py` | remote; 10-min in-memory browse cache, **no disk cache** |
 | config spec row (with `fast`/`thinking_levels`/`context`) | on enable, `fetch_and_normalize`'s normalised row is written to `~/.openprogram/config.json`; the Fetch button (`fetch_models_remote`) heals enabled rows with fresh endpoint data | config file (this is the "write to a file" step) |
 | `Model.fast` field | `_build_model_from_row` reads the config row's `fast` (row wins; codex rows always carry it); enters `ENABLED_MODELS` at registry build | memory only (in-process dict, sourced from config) |
 | claude-code hand table | `providers/enabled_models.py::default_fast` (only the Opus part is on the detection path now) | source code |
-| models.dev catalogue | `webui/_model_listing/sources/models_dev.py` | remote; 1h in-memory cache, no disk cache |
+| models.dev catalogue | `openprogram/providers/sources/models_dev.py` | remote; 1h in-memory cache, no disk cache |
 
 Flow: **official endpoint → normalise → config.json → registry →
 supports_fast / dispatch**. Offline / not signed in → the endpoint returns an
@@ -81,7 +81,7 @@ isn't a regression.
 ```
 connect / session switch / model switch / every turn ack+settle
   → frontend loadAgentSettings()  (lib/runtime-bridge/providers.ts)
-  → GET /api/agent_settings       (webui/routes/runtime.py)
+      → GET /api/agent_settings       (apps/server/openprogram_server/_webui/routes/runtime.py)
       chat.fast = supports_fast(session's provider, model)   ← recomputed
   → zustand agentSettings.chat.fast
   → composer re-renders: shows/hides the Fast menu item and chip
@@ -107,10 +107,10 @@ openprogram/providers/types.py                     Model.fast field
 openprogram/providers/enabled_models.py            default_fast (claude-code Opus only) + config-row backfill
 openprogram/providers/openai_codex/{openai_codex,runtime}.py   service_tier passthrough; codex_cli_rs identity + _CODEX_CLIENT_VERSION
 openprogram/providers/anthropic/{anthropic,_claude_code_direct_runtime}.py  Claude fast wire + registration backfill
-openprogram/webui/_model_listing/fetchers/codex.py official endpoint fetch + normalise (fast/thinking/context source)
-openprogram/webui/_model_listing/fetchers/__init__.py  orchestration: passes through fetcher fast/thinking, enrich can't overwrite
-openprogram/webui/_model_listing/listing.py        supports_fast entry; list_models_for_provider prefers fetcher thinking
-openprogram/webui/routes/runtime.py                /api/agent_settings emits chat.fast
+openprogram/providers/openai_codex/list_models.py                    official endpoint fetch + normalise (fast/thinking/context source)
+apps/server/openprogram_server/_webui/_model_listing/fetchers/__init__.py  orchestration: passes through fetcher fast/thinking, enrich can't overwrite
+apps/server/openprogram_server/_webui/_model_listing/listing.py        supports_fast entry; list_models_for_provider prefers fetcher thinking
+apps/server/openprogram_server/_webui/routes/runtime.py                /api/agent_settings emits chat.fast
 apps/web/lib/session-store/types.ts                     AgentBadgeInfo.fast type
 apps/web/components/chat/composer/index.tsx             toggle visibility + send gate
 ```

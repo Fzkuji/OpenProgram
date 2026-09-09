@@ -22,7 +22,11 @@ openprogram providers doctor     # 诊断凭据：过期、刷新、冷却、冲
 openprogram setup                # 重新走一遍配置向导
 ```
 
-也可以直接设置环境变量（`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`）后重启服务。
+Provider API key 从 OpenProgram 的凭据库读取。如果 key 已经在环境变量里，先运行
+`openprogram providers discover`，再用
+`openprogram providers adopt env:<变量名>` 收编对应的 source。也可以用
+`openprogram providers login <provider> --api-key-stdin` 从 stdin 导入 key。
+只重启服务不会自动导入 shell 环境变量中的 key。
 
 ## 我的数据存在哪里？
 

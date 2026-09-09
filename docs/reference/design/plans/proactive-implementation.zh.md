@@ -72,7 +72,7 @@ tool allowlist。它跑在一个独立小池里，并发 1–2，可被用户任
 
 ## 7. 验证方式
 
-每一处接线改动都按同一套查：`py_compile`、相关单测、`openprogram worker restart`、
+每一处接线改动都按同一套查：`py_compile`、相关单测、仓库规定的本地刷新流程、
 `/healthz` 正常，以及经 web UI 发一条真实消息（前端改动要先 `npm --prefix apps/web run build`）。
 
 事件顺序的验证方式是跑一个带工具调用的 turn，读该会话的 `events.jsonl`
@@ -82,12 +82,12 @@ metadata 里带 session 和 turn。
 
 ## 附录：实现状态
 
-迁移分五步，已落地四步。先启用总线并接入 agent 内部的事件源；接着是 `file.changed`
-与 `tool.before` 同步问询点；然后是外部源桥接（一座真的 auth 桥，加上 context、
-channels、memory、web UI 的源头 tap）；再然后把 web UI 从发送方改成订阅方，外部源
-发 `ws.frame` 信封、web UI 原样转发。前四步中除第四步改动了旧路径外都是纯加法。
-第五步——`openprogram/proactive/` 规则层及其 Policy、挡路、旁观行为——尚未落地，
-验收标准是 proactive 不碰任何子系统内部，纯靠订阅工作。
+总线、源头 tap、外部源桥接、订阅式 web UI，以及 `openprogram/proactive/` 包都已在当前
+源码中存在。规则层入口是 `openprogram/proactive/engine.py::install_proactive`，Policy
+位于 `openprogram/proactive/policies/`。包和 Policy 已实现，但当前
+`openprogram/worker/runner.py` 没有在 worker 启动时调用 `install_proactive()`；worker
+启动时安装的是另一个独立的 event bridge。因此 worker 生命周期接线仍是明确的未实现边界。
+原五步顺序作为设计历史保留；当前状态以源码路径和测试为准。
 
 已落地的各部分位置：
 
@@ -105,7 +105,6 @@ channels、memory、web UI 的源头 tap）；再然后把 web UI 从发送方�
 | 外部源不再 import web UI | `task/runner.py`、`sub_agent_run.py`、`worktree/manager.py`、`functions/watcher.py`、`channels/_broadcast.py` |
 | 单测（30 个） | `tests/agent/test_event_bus.py`、`test_tool_gate.py`、`test_event_bridges.py` |
 
-实测验证覆盖了真实 turn 上的完整事件序列、`file.changed`、gate 的端到端测试、
-`skills.changed`，以及一次 WebSocket 探针——确认 job_status 的四个状态都经新链路
-到达前端。有一条环境注意事项要带下去：worker 的工作目录是 home，因此项目 skills
-目录解析成 `~/skills`。
+单测覆盖事件总线、tool gate、事件桥和 proactive policies。Installed-App 与实时
+WebSocket 验收属于独立检查，本设计记录不宣称已经完成。有一条环境注意事项要带下去：
+worker 的工作目录是 home，因此项目 skills 目录解析成 `~/skills`。

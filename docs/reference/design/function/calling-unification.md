@@ -3,7 +3,8 @@
 How an LLM picks a function from a list, the framework runs it, and the
 result feeds back as the model's next-turn input. For the moment-by-moment
 loop mechanics (how the LLM picks the next tool inside one
-``runtime.exec`` call), see ``docs/agentic-programming/tool-calling.md``.
+``runtime.exec`` call), see
+``docs/capabilities/agentic-programming/choosing-the-next-step/tool-calling.md``.
 
 The governing principle is **default-on, user-curated**: a registered
 tool is usable with zero configuration; the user narrows from there.
@@ -21,11 +22,11 @@ LLM), but the *thing in the API request* stays ``tool`` to match SDK
 terminology.
 
 ```
-我们(编写姿势)                       LLM API wire / providers/types.py
+Authoring surface                     LLM API wire / providers/types.py
 ─────────────────────────────────────────────────────────────────
-@function 装饰器                       Tool / ToolCall / ToolResultMessage
-@agentic_function 装饰器               tools=[...] 字段
-agent_tools() / get_agent_tool() …    tool_calls=[...] 字段
+@function decorator                    Tool / ToolCall / ToolResultMessage
+@agentic_function decorator            tools=[...] field
+agent_tools() / get_agent_tool() …    tool_calls=[...] field
 ```
 
 The boundary is **the wire format**: providers serialize each
@@ -613,7 +614,7 @@ openprogram/programs/_runtime.py
   function decorator                                    user-facing
   ToolReturn dataclass                                  optional return type
   _normalize_result, _cap_result_text                   truncation
-  _persist_full_result                                  落盘
+  _persist_full_result                                  persist full result
   _effective_max_chars, _current_context_window_chars   dynamic ceiling
   _TailAccumulator                                      streaming tail
   _parse_docstring, _build_parameters_schema            schema autoderive
@@ -656,7 +657,7 @@ openprogram/agentic_programming/function.py
                                                        program /
                                                        webui
 
-openprogram/agent/dispatcher.py
+openprogram/agent/dispatcher/__init__.py
   install_loaded_deferred(...)                         called at session
                                                        start
   agent_tools(toolset=, source=, only_available=True)  Layer 2-5

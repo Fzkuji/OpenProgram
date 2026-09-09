@@ -154,8 +154,10 @@ Updates to the title, status, pinned, archived, unread, and other fields all go 
 ```
 Caller calls update_session(session_id, title="New title", pinned=True, ...)
   → Write meta.json (only the fields that were passed in are updated)
-  → Update the corresponding fields in _index[session_id] + updated_at
+  → Update the corresponding fields in _index[session_id] (without changing updated_at)
   → Atomically write the registry to disk
+
+updated_at advances on the append-message path only; metadata updates such as rename, pin, archive, and read/unread changes preserve the existing recency value.
 ```
 
 The broadcast is initiated by the WebSocket handler layer via `_broadcast` after it calls `update_session`; both rename and flags go through the broadcast:

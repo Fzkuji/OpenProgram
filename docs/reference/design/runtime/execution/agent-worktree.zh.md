@@ -474,37 +474,21 @@ dependencies 里，它只通过`semble`（一个 MCP 开发工具）传递引入
 
 ## 附录：实现状态
 
-本设计尚未落地。它依赖的各部分现状：
+worktree 子系统已经部分实现。当前状态如下：
 
-| 能力 | 当前行为 |
-|---|---|
-| 用户真实 repo 的 worktree 隔离 | 无，create/merge/discard 全部是新增 |
-| Agent cwd 绑定 worktree | 无，runtime 走 session-git `workdir/` |
-| Bash 工具传 cwd | `LocalBackend.run` 接收 `cwd`，bash 函数没传 |
-| Edit/Write/Read 校验 worktree 边界 | 无，只校验绝对路径 |
-| Worktree 状态机持久化 | 无，session-git 里的 `worktrees/<id>.json` 是新增 |
-| UI worktree chip | 无 |
-| Worktree × Task 整合 | 无，依赖 async task 系统，后者本身仍在设计中 |
-| Sub-agent worktree 机制 | 在 sub-agent 改为 peer session 时已移除，本设计不复用 |
-| `.worktreeinclude` 未跟踪文件同步 | 已落地——`openprogram/worktree/include_sync.py`，从 `WorktreeManager.create_worktree` 调用 |
-
-按依赖顺序要做的事：
-
-| 步骤 | 文件 | 主要改动 |
+| 能力 | 当前证据 | 状态 |
 |---|---|---|
-| 1 | 新建 `openprogram/worktree/types.py` | `Worktree` dataclass + `WorktreeStatus` Enum + 序列化 |
-| 2 | 新建 `openprogram/worktree/manager.py` | `WorktreeManager`：create / merge / discard / list / keep；底层 `subprocess.run(["git", "worktree", ...])`；持久化到 `<session-repo>/worktrees/<id>.json` |
-| 3 | 新建 `openprogram/worktree/_paths.py` | worktree path 策略：`~/.openprogram/worktrees/<id>-<slug>/`；隔离校验（D4）|
-| 4 | 改 `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` 优先返回 active worktree path |
-| 5 | 改 `openprogram/agent/dispatcher.py` | turn 开始时读 session.meta.active_worktree_id → 设 `_current_worktree_path` ContextVar |
-| 6 | 改 `openprogram/programs/tools/files/bash/bash.py` | 调 `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | 改 `openprogram/programs/tools/files/edit/edit.py` + write/read | 路径落在 worktree 之外时写 warning（D6）|
-| 8 | 新建 `openprogram/programs/tools/files/worktree/` | 4 个 @function 工具：worktree_create / worktree_merge / worktree_discard / worktree_list；走 WorktreeManager |
-| 9 | 改 `openprogram/store/session/session_store.py` | session.meta 加 `active_worktree_id` 字段；helper `set_active_worktree` / `get_active_worktree` |
-| 10 | 新建 `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree`（用户手动 UI 操作）|
-| 11 | 新建 `apps/web/components/chat/composer/worktree-chip.tsx` | chip 组件 + hover panel + Merge/Discard/Keep 按钮 |
-| 12 | 改 `apps/web/components/chat/composer/composer.tsx` | 引入 chip |
-| 13 | 改 ContextCommit item metadata 渲染 | 工具调用 item 显示 worktree_id 角标 |
-| 14 | 改 `openprogram/agent/dispatcher.py` 写 marker | worktree_create / merge / discard 写 system 节点进 ContextCommit |
-| 15 | （依赖 async-task）`openprogram/tasks/lifecycle.py` 接 hook | task cancel → `WorktreeManager.on_task_cancel`；task create 可选 attach worktree |
-| 16 | Tests | unit: WorktreeManager（create/merge/discard 路径校验、隔离校验）；integration: agent in worktree → merge 全流程 |
+| Worktree 实体与状态机 | openprogram/worktree/types.py：Worktree、WorktreeStatus | 已实现 |
+| 持久化与生命周期管理器 | openprogram/worktree/store.py；openprogram/worktree/manager.py：create_worktree、merge_worktree、discard_worktree、keep_worktree、list_worktrees | 已实现 |
+| include 文件同步 | openprogram/worktree/include_sync.py，由 WorktreeManager.create_worktree 调用 | 已实现 |
+| Agent 侧操作 | openprogram/programs/tools/files/worktree/：worktree_create、worktree_merge、worktree_discard、worktree_keep、worktree_list | 已实现 |
+| Turn/workdir 绑定 | openprogram/worktree/context.py；openprogram/agent/dispatcher/turn_context.py | 当前 context bridge 已实现；边界行为仍需集成验证 |
+| WebSocket 操作 | apps/server/openprogram_server/_webui/ws_actions/worktree.py：list、get、merge、discard、keep | 已实现 |
+| Worktree × Job 生命周期 | openprogram/agent/job/types.py 带有 worktree_id；openprogram/agent/job/runner.py 绑定 worktree context | 部分接入；自动取消/丢弃策略仍需单独验收 |
+| Edit/read/write 边界校验 | 已有 worktree context 和路径 helper | 需要逐一验证各文件工具及越界路径 |
+| UI worktree chip 与 metadata 渲染 | 抽查路径中未找到对应当前 UI 实现 | 未实现/仍为设计项 |
+| 端到端测试 | 已有 Manager 和工具覆盖，但完整 create → agent edit → merge/discard 流程仍需验收 | 不宣称全部验收通过 |
+
+因此，本设计既不是“完全不存在”，也不能视为全部验收通过。已实现的 manager、持久化、工具、context bridge 和 WebSocket action 应作为当前行为维护；UI chip、完整文件工具边界矩阵、自动取消策略和完整集成测试仍是明确缺口。
+
+以下设计边界不变：远程 push、cherry-pick/rebase、冲突解决 UI、跨仓库 worktree、discard 备份、namespace 隔离，以及 session 关闭后的自动清理。

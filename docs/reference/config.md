@@ -14,7 +14,7 @@ The settings registry is defined in `openprogram/config_schema.py` (the single s
 
 | key | Group | Meaning | Default | Applies |
 |-----|------|------|------|------|
-| `ui.web_port` | Ports | legacy alias for the single port (kept for the deprecation window) | 18100 | next start |
+| `ui.web_port` | Ports | the single worker port for the API, WebSocket, and Web UI | 18100 | next start |
 | `ui.open_browser` | Ports | whether `openprogram web` opens the browser automatically | true | next start |
 | `search.default_provider` | Search | default web search provider; `auto` picks the highest-priority configured one | auto | live |
 | `memory.backend` | Memory | `local` (on-disk memory) or `none` (no prompt memory, recall, automatic writes, organizer, or memory threads) | local | next start |
@@ -38,7 +38,7 @@ The top-level keys actually written to `~/.openprogram/config.json` (do not edit
 
 | Key | Meaning | Code |
 |----|------|------|
-| `ui` | `{port, web_port, open_browser}`, see the table above | `openprogram/config_schema.py` |
+| `ui` | `{web_port, open_browser}`, see the table above | `openprogram/config_schema.py` |
 | `search` | `{default_provider}` | `openprogram/setup.py` |
 | `memory` | `{backend, writer: {model}}`, see the table above | `openprogram/config_schema.py`, `openprogram/memory/` |
 | `tools` | `{disabled: [tool name, ...]}` | `openprogram/setup.py`, `openprogram/config_schema.py` |

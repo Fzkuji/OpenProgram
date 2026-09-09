@@ -166,7 +166,7 @@ discoverable only through `/help` text, and the palette is where `/config`,
 
 ## 5. Transport
 
-The TUI panel rides the worker WebSocket already in use. `webui/ws_actions/settings.py`
+The TUI panel rides the worker WebSocket already in use. `apps/server/openprogram_server/_webui/ws_actions/settings.py`
 exports an `ACTIONS` dict with `get_settings` and `set_setting`, registered into
 the server dispatch table the same way every other action module is. The panel
 sends `{action:'get_settings'}` and `{action:'set_setting', key, value}` over
@@ -185,5 +185,5 @@ than duplicating them. Keybind editing is designed away rather than deferred
 work in progress (§4).
 
 Authoritative code: `openprogram/config_schema.py`,
-`openprogram/webui/ws_actions/settings.py`,
+`apps/server/openprogram_server/_webui/ws_actions/settings.py`,
 `apps/cli/src/components/SettingsPanel.tsx`.

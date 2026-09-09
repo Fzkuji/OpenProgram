@@ -82,12 +82,12 @@
   <p class="subtitle">按用户从配置、创建、排队、运行到终态诊断的完整流程，说明 OpenProgram 当前已有什么、参考实现怎样限制资源，以及后续需要建立的统一治理契约。</p>
 
   <div class="status">
-    <div><span class="k">文档状态</span><b>设计完成，审查后实现已集成</b></div>
+    <div><span class="k">文档状态</span><b>设计与实现部分完成，当前链路仍有缺口</b></div>
     <div><span class="k">产品边界</span><b>单用户、本机、常驻 worker</b></div>
-    <div><span class="k">验收状态</span><b>Task 1–5 已实现，集中规格与质量审查 PASS</b></div>
+    <div><span class="k">验收状态</span><b>原语与部分入口已实现，完整验收未完成</b></div>
   </div>
 
-  <div class="note"><b>实现状态边界。</b>durable dispatcher 公平性、lease generation owner fencing、崩溃恢复、runtime/idle 强制、价格来源真值、provider chokepoint 上的 token/cost reserve/start/settle，以及 model tools、Web、CLI、TUI 共用的 JobResourceView 均已实现，并有事务边界故障注入证据。预算只对绑定了受治理任务的调用生效；CLI、测试等未治理调用保持原有 best-effort 记账语义不变。</div>
+  <div class="note"><b>实现状态边界。</b>当前 Job、ResourceGovernor、admission、资源投影与时间边界已经存在，但这不等于所有 provider、runtime/idle、Web/TUI/CLI/model 入口和恢复路径都已完成统一接入。下文只把源码和当前可见协议列为证据，并单独列出尚未完成的执行链和用户面缺口。</div>
 
   <nav aria-label="目录">
     <a href="#scope">00 范围与结论</a>
@@ -126,19 +126,19 @@
 
   <p><span class="tag">本设计不实现</span>后台会话 UI、MCP server、购买或充值、组织计费、跨机器集群调度。共享 DTO、reason code、预算 scope 和 reservation 协议可以被这些系统以后复用，但本页不预设其产品交互。</p>
 
-  <h2 id="current">01 实施前基线：基础资源账本已存在，执行链仍未完成</h2>
-  <p><code>main@990bfe36</code> 已不再只是全局线程池：<code>ResourceGovernor</code> 已提供统一 admission、每会话 live/queued/cumulative 限制、budget scope、token/cost reservation 原语和稳定 reason code。当前主要问题是这些原语尚未全部接入真实执行链：runner 仍会立刻提交 executor 后在线程中轮询，provider 调用没有使用 token/cost reservation，runtime/idle 只保存上限而不强制，用户界面也没有等价资源视图。</p>
+  <h2 id="current">01 当前实施状态：admission、资源账本与执行控制已接入，仍有明确缺口</h2>
+  <p>当前工作树已经把 Job、ResourceGovernor、durable admission、owner lease/reconcile、运行时间边界和资源视图接入主要执行链。源码证据支持这些能力存在；本轮没有重跑产品测试，因此历史验证结果保留在 Git 中，以下只区分源码确认的实现、源码确认的缺口和本轮未重新验证的范围。</p>
 
   <div class="table-wrap">
   <table class="wide">
     <tr><th>现有机制</th><th>已经确认的行为</th><th>治理缺口</th><th>证据</th></tr>
-    <tr><td>全局执行池与 admission</td><td><code>OPENPROGRAM_JOB_WORKERS</code> 仍是唯一全局容量；runner 与同步 agent 入口已调用 <code>ResourceGovernor.admit_job()</code>，SQLite 用 <code>BEGIN IMMEDIATE</code> 保护计数。</td><td>runner 仍把所有已 admission 任务提交到 executor，再由 worker 轮询 <code>try_start()</code>；被限流 session 可占满线程并阻止其他 session 执行。</td><td><span class="source">openprogram/agent/job/runner.py · admit_job_entity / spawn_job / _run_one<br>openprogram/agent/resource_governance.py · admit_job / try_start</span></td></tr>
-    <tr><td>任务与资源持久状态</td><td>Job 已有 <code>budget_scope_id</code>、<code>effective_limits</code>、<code>reason_code</code>；usage DB 已有 admissions、budget scopes 与 reservations。</td><td>资源状态和 jobs.json 的跨文件/数据库恢复仍需逐崩溃点验证；未合并的 owner-fencing 修复不能视为 main 行为。</td><td><span class="source">openprogram/agent/job/types.py<br>openprogram/usage/ledger.py<br>openprogram/agent/resource_governance.py</span></td></tr>
-    <tr><td>会话限制</td><td><code>max_live_per_session</code>、<code>max_queued_per_session</code>、<code>max_jobs_per_session</code> 已进入 config schema，并由 governor 原子检查。</td><td>Web/TUI/CLI 尚不能完整查看 configured/effective/source、queue position 与 retryable reason；公平 dispatcher 尚未进入 main。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/agent/resource_governance.py · resolve_resource_limits / _capacity</span></td></tr>
-    <tr><td>取消与恢复</td><td>取消继续按父子关系级联，运行任务使用 cancel/kill/watchdog；governor 已有 lease、stopping 与 release 原语。</td><td>当前 main 尚未完成 owner-fenced reconciler 和“线程真正退出后才返还 live”的全部竞争条件修复。</td><td><span class="source">openprogram/agent/job/runner.py · cancel_job / _run_one<br>openprogram/agent/resource_governance.py · renew_lease / request_stop / release_task</span></td></tr>
+    <tr><td>全局执行池与 admission</td><td><code>OPENPROGRAM_JOB_WORKERS</code> 仍是唯一全局容量；runner 与同步 agent 入口已调用 <code>ResourceGovernor.admit_job()</code>，SQLite 用 <code>BEGIN IMMEDIATE</code> 保护计数。</td><td>JobRunner 已启动 durable dispatcher、reconciler 和 budget loop；本轮未重跑 whole-product gate。</td><td><span class="source">openprogram/agent/job/runner.py · admit_job_entity / spawn_job / _run_one<br>openprogram/agent/resource_governance.py · admit_job / try_start</span></td></tr>
+    <tr><td>任务与资源持久状态</td><td>Job 已有 <code>budget_scope_id</code>、<code>effective_limits</code>、<code>reason_code</code>；usage DB 已有 admissions、budget scopes 与 reservations。</td><td>Job、canonical execution store、ResourceSaga 和 startup recovery 源码已存在；崩溃竞争矩阵本轮未重新验证。</td><td><span class="source">openprogram/agent/job/types.py<br>openprogram/usage/ledger.py<br>openprogram/agent/resource_governance.py</span></td></tr>
+    <tr><td>会话限制</td><td><code>max_live_per_session</code>、<code>max_queued_per_session</code>、<code>max_jobs_per_session</code> 已进入 config schema，并由 governor 原子检查。</td><td>当前源码已有 JobResourceView 和 Web/CLI/TUI/model surfaces；入口一致性与公平性回归本轮未重跑。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/agent/resource_governance.py · resolve_resource_limits / _capacity</span></td></tr>
+    <tr><td>取消与恢复</td><td>取消继续按父子关系级联，运行任务使用 cancel/kill/watchdog；governor 已有 lease、stopping 与 release 原语。</td><td>当前源码已有 RuntimeControlService、终态恢复、lease reconcile 和 stopping/release 路径；跨进程竞争证据本轮未重新验证。</td><td><span class="source">openprogram/agent/job/runner.py · cancel_execution / _run_one<br>openprogram/agent/resource_governance.py · renew_lease / request_stop / release_task</span></td></tr>
     <tr><td>token / cost</td><td>scope、reservation、start、settle 数据结构和事务方法已存在；unknown cost 仍由 usage ledger 保留来源。</td><td><code>reserve_tokens()</code>、<code>reserve_cost()</code> 当前只有测试调用；真实 provider 请求没有安全上界预占、output cap 收紧、结算或未知价格 fail-closed。</td><td><span class="source">openprogram/agent/resource_governance.py · reserve_tokens / reserve_cost / settle_reservation<br>tests/component/runtime/test_resource_governance.py</span></td></tr>
-    <tr><td>runtime / idle</td><td>配置和 budget scope 可以保存 <code>max_runtime_seconds</code>、<code>idle_timeout_seconds</code>；既有 provider/tool timeout 仍独立工作。</td><td>main runner 没有 active timer、meaningful activity、deadline clamp 或 non-preemptible operation gate；排队时间与运行时间也未形成完整用户诊断。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/providers/utils/deadline.py<br>openprogram/agent/job/runner.py</span></td></tr>
-    <tr><td>用户状态</td><td>Web 与模型工具已有任务 list/get/cancel 和状态广播；<code>JobResourceView</code> 可生成基础结构。</td><td>Web/TUI/CLI/model 尚未共享完整 DTO；token/cost/runtime 的 <code>used</code> 或 <code>shared_remaining</code> 仍可能为空，不能据此宣称预算已执行。</td><td><span class="source">openprogram/agent/resource_governance.py · JobResourceView / build_task_resource_view<br>openprogram/webui/ws_actions/task.py<br>openprogram/programs/tools/agents/agent/list_tasks/</span></td></tr>
+    <tr><td>runtime / idle</td><td>配置和 budget scope 可以保存 <code>max_runtime_seconds</code>、<code>idle_timeout_seconds</code>；既有 provider/tool timeout 仍独立工作。</td><td>当前 runner 已有 budget loop、time limits、bounded_operation_timeout 和 non-preemptible guard；各操作类型回归矩阵本轮未重新验证。</td><td><span class="source">openprogram/config_schema.py<br>openprogram/providers/utils/deadline.py<br>openprogram/agent/job/runner.py</span></td></tr>
+    <tr><td>用户状态</td><td>Web 与模型工具已有任务 list/get/cancel 和状态广播；<code>JobResourceView</code> 可生成基础结构。</td><td>当前源码已有 JobResourceView、job_status resource 投影及 Web/CLI/TUI/model 读取面；各界面一致性测试本轮未重新验证。</td><td><span class="source">openprogram/agent/resource_governance.py · JobResourceView / build_task_resource_view<br>apps/server/openprogram_server/_webui/ws_actions/job.py<br>openprogram/programs/tools/agents/agent/list_jobs/</span></td></tr>
   </table>
   </div>
 
@@ -360,7 +360,7 @@
       <tr><td>Web</td><td>Job status + resource state、queue position、session live/queued/cumulative、四类剩余额、cost known/unknown、reason。</td><td>沿用现有 task/branch 卡片和 cancel；不新增后台会话 UI。</td><td>现有 <code>job_status</code> event 增加可选 resource 字段。</td></tr>
       <tr><td>TUI</td><td>紧凑 session 容量、选中任务剩余额和停止原因。</td><td>复用任务列表/详情/停止操作；不要求新的全屏产品面。</td><td>字段缺失时按 legacy task 展示，不猜测 0。</td></tr>
       <tr><td>CLI</td><td>人类可读表格与稳定 JSON：effective limits、usage、reservations、reason、retryable。</td><td>复用任务查询与取消命令面；JSON 供自动诊断。</td><td>新增字段向后兼容，Job 原状态枚举不变。</td></tr>
-      <tr><td>模型工具</td><td><code>list_tasks/task_output/task_stop</code> 返回同一 reason 和简化剩余额。</td><td>admission 拒绝是结构化 tool result，不创建不存在的 Job 记录。</td><td>原文本结果保留，附加机器可读字段。</td></tr>
+      <tr><td>模型工具</td><td><code>list_jobs、job_output、JobRunner.cancel_execution</code> 返回同一 reason 和简化剩余额。</td><td>admission 拒绝是结构化 tool result，不创建不存在的 Job 记录。</td><td>原文本结果保留，附加机器可读字段。</td></tr>
     </table>
     </div>
 
@@ -501,7 +501,7 @@ Job JSON + optional fields:
   </div>
 
   <h2 id="gate">15 Feature matrix 实心圆机械 gate</h2>
-  <p>feature matrix 的“并发数与每会话派生总量上限”在基础基线 <code>main@990bfe36</code> 尚未满足下列机械 gate；审查后集成候选 <code>33dd7d2c</code> 已满足这些条件，因此当前 <code>●</code> 有对应代码、审查和自动化证据：</p>
+  <p>feature matrix 的“并发数与每会话派生总量上限”在基础基线 <code>当前工作树基线</code> 尚未满足下列机械 gate；当前工作树是否满足这些条件必须由对应源码和验证结果逐项确认，不能用候选分支记录代替：</p>
   <ol>
     <li>稳定配置 schema 已实现，并能从 Web/TUI/CLI 查看全局默认、session override 与有效值。</li>
     <li>所有 agent/Job 创建入口都经过统一 admission；不存在 Web、同步 agent、target inbox 或 runner 直调绕过。</li>
@@ -514,24 +514,22 @@ Job JSON + optional fields:
 
   <div class="note good"><b>计分边界。</b>该矩阵行只验收“并发数与每会话派生总量上限”，不要求 token/cost/runtime/idle 四类预算全部完成才改这一行；四类预算若以后形成独立能力项，应使用各自完整 gate。反过来，仅完成 UI、schema 或单进程 semaphore 也不能把本行改为实心圆。</div>
 
-  <h2 id="implementation">16 实现与验证记录</h2>
-  <div class="table-wrap">
-  <table class="wide">
-    <tr><th>范围</th><th>已确认合同与实现证据</th><th>验证或审查</th><th>状态</th></tr>
-    <tr><td><code>main@990bfe36</code><br>foundation 来源 <code>8f62da5a</code></td><td>配置解析、SQLite schema、admission、per-session live/queued/cumulative、budget scope、reservation 原语、reason code、基础 view。</td><td><code>tests/component/runtime/test_resource_governance.py</code> 的 foundation 用例存在；代码审计确认 reservation 仅被测试调用。</td><td class="m">否；执行链与用户面不完整</td></tr>
-    <tr><td><code>codex/resource-governance-runtime-20260811@ace9a907</code></td><td>oldest-eligible dispatcher、owner fencing/reconcile、runtime/idle monitor 与 bounded-operation helper。</td><td>2026-08-12 fresh：<code>tests/component/runtime/test_resource_governance.py tests/unit/test_async_task.py</code>，52 passed；该分支未做独立 spec/quality review，也未包含后续 integration fixes。</td><td class="m">否；只作为待复用候选</td></tr>
-    <tr><td>Task 1<br>durable dispatcher 与 ownership</td><td><code>b132a783</code>、<code>94ce3636</code>：dispatcher 只提交 durable claim 后的任务；按最旧 eligible admission 调度；lease generation/owner fence 保护 live 与 stopping；pending finalization、worker loss、取消和重复 reconcile 保持终态持久化与名额释放幂等。</td><td>跨线程/进程 claim、dispatcher restart、lease expiry、finalization fault injection 纳入 affected 与 full suite。</td><td class="yes">已实现</td></tr>
-    <tr><td>Task 2<br>job scope 与 conservative preflight</td><td><code>a064f9be</code>、<code>da4660d8</code>：不可变 job governance context 绑定 job/scope/limits；provider preflight 计入 prompt、messages、tools、structured-output/request envelope 和已审计 adapter 上界；严格预算缺少安全 token 或价格上界时 fail closed；credential resolution 明确位于 preflight 之后。</td><td>集中规格审查唯一 HIGH 指向 preflight-before-credential；<code>da4660d8</code> scoped re-review：<code>PASS (0 findings)</code>。</td><td class="yes">已实现并通过规格复审</td></tr>
-    <tr><td>Task 3<br>provider reserve/start/settle</td><td><code>8e6ecc9a</code>、<code>1570c2c2</code>、<code>03cbbe1a</code>：<code>stream()</code>/<code>stream_simple()</code> 在 provider I/O 前 reserve 并 clamp output cap，I/O 前标记 started，以 provider 权威用量原子追加 <code>UsageEvent</code> 并 settle；未知价格、late/double terminal、consumer cancellation、adapter retry 与 replay identity 均保持保守 exposure 和幂等会计。</td><td>provider enforcement、metering truth、stream fixes、record/replay identity 与事务边界故障注入均纳入 full gate。</td><td class="yes">已实现</td></tr>
-    <tr><td>Task 4<br>runtime、idle 与 operation bounds</td><td><code>6dea9388</code>：runtime 从 durable claim 后开始；真实 provider/tool/child activity 更新 idle；provider/tool 操作使用自身 timeout、job runtime、idle 与 cancel grace 的最小正界；超限进入 stopping 并沿既有 descendant cancellation/finalization 路径释放。</td><td>queue-time exclusion、keepalive、nested deadline、并发 cancel/expiry、subprocess termination 与 non-preemptible operation 用例纳入 affected suite。</td><td class="yes">已实现</td></tr>
-    <tr><td>Task 5<br>canonical resource DTO</td><td><code>4102992f</code>、<code>bc9a14ef</code>、<code>14020be9</code>：model tools、Web <code>job_status/tasks_list/task/cancel_job/spawn_job_result</code>、Python CLI、Ink TUI 共享 canonical <code>JobResourceView</code>；界面不独立推算 limits/usage；rejected spawn 保留稳定 reason/retryable 且不虚构 job id；child effective-limit snapshot 与 ancestor scope 一致。</td><td>集中质量审查唯一 MEDIUM 指向 ancestor snapshot；<code>14020be9</code> scoped re-review：<code>PASS (0 findings)</code>。Web、CLI、TUI、model DTO 合同测试通过。</td><td class="yes">已实现并通过质量复审</td></tr>
-    <tr><td>审查后集成候选<br><code>33dd7d2c</code></td><td>包含资源关键实现链 <code>b132a783..bc9a14ef</code>，以及规格修复 <code>da4660d8</code> 和质量修复 <code>14020be9</code>。集中 whole-feature 规格与质量审查均已完成；whole-branch 五维审查为 <code>PASS (0 findings)</code>。该结论不声称 Task 1–5 各自存在独立 reviewer。</td><td>Python full：5265 passed、10 skipped、2 deselected、1 xfailed；CLI：134 passed、2 skipped，typecheck 与 build 通过；Web：22 项 mechanical checks、<code>tsc --noEmit</code> 与 production build（no lint）通过；docs：490 pages、0 broken links；changed Python Ruff、lock check 与 <code>git diff --check</code> 通过。</td><td class="yes">完成</td></tr>
-    <tr><td>已知 whole-repository gate</td><td>Web 全量 <code>npm run lint</code> 仍报告未使用变量、<code>any</code> 等既有 lint violations；同一命令在 <code>origin/main</code> 已失败，不归因于本资源治理实现。该基线阻塞没有被 Web mechanical checks、TypeScript 或 no-lint production build 替代为“lint 通过”。</td><td>当前 integration checkout fresh readback 仍可复现；资源相关 changed-file checks 未发现新增 blocker。</td><td class="partial">基线阻塞保留记录</td></tr>
-    <tr><td>合入 main 的最终集成<br><code>0266a046</code>（修复 <code>bc2fd416</code>）</td><td>集成分支与最新 main（含 admission 无条件释放、spec 迁移 deepcopy 探测、matrix 恢复）双向合并；JobResourceView 快照语义定案为 runtime/idle 冻结、parent/task 来源限额取持久化快照、session/global 来源限额跟随当前配置、畸形快照回退 durable limits；合并后独立 SPEC 与 QUALITY 复审均 PASS，复审发现的 resolver 改名残留调用、缺失 time import 与重复 import 已修。</td><td>Python full：5286 passed、11 skipped、2 deselected、1 xfailed；CLI：141 passed，typecheck 通过；Web：task-resource checks、<code>tsc --noEmit</code> 与 production build 通过，whole lint 与 origin/main 基线错误集完全一致（30 处既有）；docs：493 pages、0 broken links；feature matrix：160 rows、84.5 分、67 gaps、6 ours-only；changed Ruff、compileall、lock check 与 <code>git diff --check</code> 通过。</td><td class="yes">完成</td></tr>
-  </table>
-  </div>
+  <h2 id="implementation">16 当前实现与验证边界</h2>
+<p>本节记录当前工作树中可直接定位的实现和仍需验收的边界。它不记录日期、commit SHA 或迁移过程；历史演变通过 git 查看。</p>
+<div class="table-wrap">
+<table class="wide">
+<tr><th>范围</th><th>当前源码证据</th><th>当前状态</th><th>仍需确认的缺口</th></tr>
+<tr><td>Job 实体与状态</td><td>openprogram/agent/job/types.py：Job、JobStatus、合法转移和 worktree_id；openprogram/agent/job/store.py：持久化读写与状态更新。</td><td class="yes">已实现</td><td>崩溃恢复、终态幂等和跨进程竞争仍需按完整矩阵验收。</td></tr>
+<tr><td>Runner 与 admission</td><td>openprogram/agent/job/runner.py：JobRunner、durable dispatcher、reconciler、budget loop、spawn_job、cancel_execution、list_jobs、await_job；ResourceGovernor 在 runner 初始化和运行链路中使用。</td><td class="yes">已实现并接入主要执行链</td><td>whole-product gate、跨进程竞争和 worker-loss 证据本轮未重跑。</td></tr>
+<tr><td>Job WebSocket 与模型工具</td><td>apps/server/openprogram_server/_webui/ws_actions/job.py：spawn/list/get；openprogram/programs/tools/agents/agent/list_jobs/、job_output/；runner 提供取消。</td><td class="yes">主要入口已实现</td><td>取消入口一致性和 DTO/reason/retryable 回归本轮未重跑；独立 Tasks panel 不属于当前实现。</td></tr>
+<tr><td>Web 状态</td><td>apps/web/lib/net/use-ws.ts：job_status、spawn_job_result；apps/web/components/right-sidebar/branches/index.tsx 与 attach-card.tsx：状态和资源订阅。</td><td class="yes">主要用户面已实现</td><td>独立 Tasks panel 不属于当前实现；资源剩余、queue position、unknown cost 和恢复状态的回归测试本轮未重跑。</td></tr>
+<tr><td>ResourceGovernor admission/lease/reconcile</td><td>openprogram/agent/resource_governance.py：admit_job、claim_next、renew_lease、reconcile、scope 和 resource view；runner 已接入。</td><td class="yes">原语与主要执行接线已实现</td><td>token/cost provider chokepoint 仍需逐 adapter 确认；本轮未重跑全量验证。</td></tr>
+<tr><td>验证边界</td><td>当前文档和源码抽查提供路径与符号依据；历史验证记录保留在 Git。</td><td class="partial">Not reverified</td><td>本次文档修复未运行构建或测试；不能把未重跑测试写成实现缺失。</td></tr>
+</table>
+</div>
+<p class="note warn"><b>状态规则。</b>“原语存在”“入口能返回状态”和“完整执行链已通过验收”是三个不同状态。后续更新本页时必须分别填写，不能用历史审查表或候选分支记录代替当前工作树证据。</p>
 
-  <h2>证据索引</h2>
+<h2>证据索引</h2>
   <div class="table-wrap">
   <table>
     <tr><th>主题</th><th>本仓库证据</th></tr>
@@ -539,7 +537,7 @@ Job JSON + optional fields:
     <tr><td>派生和消息预算</td><td><code>openprogram/programs/tools/agents/agent/agent/agent.py</code>；<code>openprogram/programs/tools/agents/send_message/send_message/depth.py</code>；<code>openprogram/config_schema.py</code></td></tr>
     <tr><td>Usage 与 provider 记录</td><td><code>openprogram/usage/event.py</code>；<code>openprogram/usage/ledger.py</code>；<code>openprogram/usage/recorder.py</code>；<code>openprogram/providers/stream.py</code></td></tr>
     <tr><td>Deadline 与函数 timeout</td><td><code>openprogram/providers/utils/deadline.py</code>；<code>openprogram/programs/_runtime.py</code></td></tr>
-    <tr><td>任务界面与协议</td><td><code>openprogram/webui/ws_actions/task.py</code>、Web branch/task cards、<code>openprogram/programs/tools/agents/agent/list_tasks/</code>、<code>task_output/</code>、<code>task_stop/</code></td></tr>
+    <tr><td>任务界面与协议</td><td><code>apps/server/openprogram_server/_webui/ws_actions/job.py</code>、Web branch/task cards、<code>openprogram/programs/tools/agents/agent/list_jobs/</code>、<code>job_output/</code>、JobRunner.cancel_execution</td></tr>
     <tr><td>竞品与既有设计</td><td><a href="agent-collab-comparison.html">agent-collab-comparison.html</a>；<a href="agent-collaboration.zh.html">agent-collaboration.zh.html</a>；<a href="execution/async-job-lifecycle.zh.html">async-job-lifecycle.zh.html</a>；<a href="../usage-metering.zh.html">usage-metering.zh.html</a></td></tr>
   </table>
   </div>

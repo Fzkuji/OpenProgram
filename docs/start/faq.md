@@ -22,7 +22,12 @@ openprogram providers doctor     # diagnose credentials: expiry, refresh, cooldo
 openprogram setup                # re-run the setup wizard
 ```
 
-You can also set an environment variable directly (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`) and restart the service.
+Provider API keys are read from OpenProgram's credential store. If a key is
+already in the environment, run `openprogram providers discover`, then adopt
+the matching `env:<VARIABLE>` source with `openprogram providers adopt
+env:<VARIABLE>`. You can also use
+`openprogram providers login <provider> --api-key-stdin` to import a key from
+stdin. Restarting the service alone does not import a shell environment key.
 
 ## Where is my data stored?
 

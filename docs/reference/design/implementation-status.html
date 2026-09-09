@@ -1,151 +1,52 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenProgram implementation status and handoff</title>
-  <style>
-    :root { color-scheme: light dark; --muted: #667085; --line: #d0d5dd; --panel: #f8fafc; --ok: #067647; --warn: #b54708; --todo: #344054; }
-    body { max-width: 1080px; margin: 0 auto; padding: 32px 24px 64px; font: 16px/1.55 system-ui, sans-serif; }
-    h1, h2, h3 { line-height: 1.2; }
-    h1 { margin-bottom: 8px; }
-    h2 { margin-top: 40px; }
-    code { font-size: .9em; }
-    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-    th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
-    th { background: var(--panel); }
-    .meta, .note { color: var(--muted); }
-    .status { white-space: nowrap; font-weight: 650; }
-    .complete { color: var(--ok); }
-    .partial { color: var(--warn); }
-    .pending { color: var(--todo); }
-    .callout { border-left: 4px solid var(--line); padding: 10px 16px; background: var(--panel); }
-    li { margin: 6px 0; }
-  </style>
-</head>
-<body>
-  <h1>OpenProgram implementation status and handoff</h1>
-  <p class="meta">Snapshot: 2026-08-13. Integrated candidate: <code>codex/implementation-integration-20260812@33dd7d2c</code>.</p>
+<style>
+.doc-intro { border-left: 3px solid var(--acc); padding: 4px 0 4px 18px; margin: 18px 0 28px; }
+.doc-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
+.doc-flow > div { padding: 16px; background: var(--bg-code); border-radius: 8px; min-width: 0; }
+.doc-flow strong { display: block; color: var(--tx); }
+.doc-flow p { margin: 8px 0 0; font-size: 14px; }
+.doc-scroll { max-width: 100%; overflow-x: auto; }
+.doc-scroll:focus-visible, summary:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; }
+code { overflow-wrap: anywhere; }
+details { padding: 12px 0; border-bottom: 1px solid var(--bd); }
+summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 680px) { .doc-flow { grid-template-columns: 1fr; } }
+</style>
 
-  <div class="callout">
-    <p>This page separates reviewed integration evidence from mainline publication. <code>33dd7d2c</code> is the single integrated candidate reviewed here; it is not in <code>origin/main</code> unless a row says so.</p>
-  </div>
-
-  <h2>Status definitions</h2>
-  <ul>
-    <li><strong>Review-passed branch:</strong> implementation exists at the exact commit and independent scoped reviews reported zero remaining findings.</li>
-    <li><strong>Review-passed integrated candidate:</strong> the implementation is present in the single combined head, its scoped specification and quality reviews passed, and fresh whole-branch review reported zero remaining findings.</li>
-    <li><strong>Merged to main:</strong> reviewed head has been merged into <code>origin/main</code> and passes the combined regression gate.</li>
-    <li><strong>Partial:</strong> earlier tasks are review-passed, but the tracked plan still has required implementation or evidence tasks.</li>
-    <li><strong>Candidate only:</strong> code or reports exist, but there is no single accepted integration head with final review evidence.</li>
-  </ul>
-
-  <h2>Current feature status</h2>
-  <table>
-    <thead><tr><th>Area</th><th>Status</th><th>Authoritative branch / commit</th><th>Evidence and remaining work</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>Record/replay reliability</td>
-        <td class="status complete">Merged to main</td>
-        <td><code>origin/main</code><br><code>1d6f52ec..c846beb6</code></td>
-        <td>The nine reliability changes are on <code>origin/main</code>. They form part of the integration base for subsequent branches.</td>
-      </tr>
-      <tr>
-        <td>MCP server</td>
-        <td class="status complete">Merged to main</td>
-        <td><code>codex/mcp-server-20260812@0cd698de</code><br>merge <code>2b99f893</code></td>
-        <td>Tasks 1–9 completed; final spec and quality reviews reported zero remaining findings. Full regression at the merge head: 3157 passed.</td>
-      </tr>
-      <tr>
-        <td>Provider initialization lifecycle</td>
-        <td class="status complete">Merged to main</td>
-        <td><code>codex/provider-runtime-design-20260812@f76ed3d6</code><br>merge <code>3c31c99d</code></td>
-        <td>Provider initialization lifecycle with record/replay activation-failure handling that installs a blocked provider instead of crashing the runtime.</td>
-      </tr>
-      <tr>
-        <td>Session index consistency</td>
-        <td class="status complete">Merged to main</td>
-        <td><code>codex/session-index-20260812</code><br>merge <code>d37c8590</code></td>
-        <td>Session index writes are locked; <code>updated_at</code> invariant is preserved across concurrent readers and writers.</td>
-      </tr>
-      <tr>
-        <td>DAG persistence observability</td>
-        <td class="status complete">Merged to main</td>
-        <td><code>codex/dag-observability-20260812</code><br>merged this round</td>
-        <td>Persistence failures in <code>openprogram/agentic_programming/function.py</code> now emit a warning log instead of being silently swallowed. Focused test suite: 6 passed.</td>
-      </tr>
-      <tr>
-        <td>Websocket command lifecycle</td>
-        <td class="status complete">Merged to main</td>
-        <td><code>84fe7da9..e831d0f0</code> on <code>origin/main</code></td>
-        <td>The websocket lifecycle series (definition through finalized evidence) is on <code>origin/main</code>.</td>
-      </tr>
-      <tr>
-        <td>Runtime URL / SSRF protection</td>
-        <td class="status complete">Review-passed branch</td>
-        <td><code>codex/commitments-heartbeat-20260811@1d93bbe5</code><br>remote matches local</td>
-        <td>Tasks 1–10 and the final whole-branch review passed. Final evidence included security 812, affected 2932, runtime checker 0, docs links 0. The branch must be integrated without conflating it with unrelated work carried by the same branch.</td>
-      </tr>
-      <tr>
-        <td>JSON Schema structured output</td>
-        <td class="status partial">Partial: Tasks 1–5 complete</td>
-        <td><code>codex/json-schema-completion-20260812@86ca66d5</code><br>remote matches local</td>
-        <td>Capability negotiation, provider mappings, stream lifecycle, CLI/Web entrypoints, and replay v2 passed review. Session-title migration and final evidence/matrix work remain.</td>
-      </tr>
-      <tr>
-        <td>Credential-file hardening</td>
-        <td class="status complete">Review-passed integrated candidate</td>
-        <td><code>codex/implementation-integration-20260812@33dd7d2c</code></td>
-        <td>Tasks 1–5 are integrated: private inventory and atomic publication, inventory-driven doctor/repair, omit/replace/delete secret editing, truthful deletion with cache invalidation, and staged restore with validated journaling, rollback, and recovery. Scoped specification and quality reviews passed with zero remaining findings; fresh whole-branch review also passed with zero findings. OS keychain integration remains explicitly out of scope.</td>
-      </tr>
-      <tr>
-        <td>Agent resource governance</td>
-        <td class="status complete">Review-passed integrated candidate</td>
-        <td><code>codex/implementation-integration-20260812@33dd7d2c</code></td>
-        <td>Tasks 1–6 are integrated: durable fair dispatch and recovery, immutable budget attribution and credential-free preflight, provider reservation/start/settlement accounting, runtime and bounded-operation enforcement, and one canonical <code>JobResourceView</code> across model tools, Web, CLI, and TUI. Scoped specification and quality reviews passed with zero remaining findings; fresh whole-branch review also passed with zero findings. The existing implemented matrix cell remains unchanged.</td>
-      </tr>
-      <tr>
-        <td>Commitments and heartbeat</td>
-        <td class="status complete">Review-passed integrated candidate</td>
-        <td><code>codex/implementation-integration-20260812@33dd7d2c</code></td>
-        <td>The commitment lifecycle, deterministic heartbeat, owner projections, and design evidence are integrated together with the reviewed concurrent claim and cancellation repairs. The notification state machine preserves the <code>due</code> then <code>overdue:7</code> progression, reminder delivery no longer holds the workspace write lock across retries, and each concurrent notification step is claimed once before send. Scoped specification and quality reviews passed with zero remaining findings; fresh whole-branch review also passed with zero findings. Delivery remains at-least-once by design.</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <h2>Implementation packages still required</h2>
-
-  <h3>1. JSON Schema structured output: Tasks 6–7</h3>
-  <ol>
-    <li>Replace title text parsing in <code>openprogram/agent/dispatcher/titles.py</code> with <code>Runtime.exec(..., response_format=TITLE_SCHEMA)</code>. Preserve Unicode trim, the 80-code-point storage limit, and the existing placeholder on typed failure.</li>
-    <li>Update <code>docs/reference/design/runtime/session/name.md</code> and <code>tests/unit/context/test_dispatcher_compaction_title.py</code>.</li>
-    <li>After the title tests pass, update the structured-output HTML, Runtime API pages, session-title page, and feature matrix. The matrix may become complete only after Tasks 1–6 and fresh spec/quality reviews pass.</li>
-    <li>Source plan: <code>docs/superpowers/plans/2026-08-12-json-schema-structured-output-completion.md</code> on the JSON branch.</li>
-  </ol>
-
-  <h3>2. Smaller uncompleted hardening work</h3>
-  <ul>
-    <li><code>credential_process</code>: argv is executed without shell interpolation, the timeout is configurable with a 60-second default, and successful results are cached. Helper stderr now passes through the diagnostics redactor before it reaches a failure message or a log, so a helper that echoes the credential it was fetching cannot leak it.</li>
-    <li><code>commit-push-pr</code>: a dry run performs the local, reversible steps and prints the push and PR it would have taken without contacting the remote. <code>git_push_argv</code> and <code>gh_pr_create_argv</code> raise <code>RemoteWriteNotAuthorized</code> unless <code>git.allow_remote_write</code> is on or the caller passes <code>allowed=True</code>, so an unauthorized remote write fails before <code>git</code> or <code>gh</code> runs.</li>
-    <li>Retain the existing discussion backlog in <a href="TODO-improvements.html">TODO improvements</a>: provider metadata corruption visibility, packaged Web/docs resources, typed frontend state migration, and the remaining oversized Python modules.</li>
-  </ul>
-
-  <h2>Integration and release order</h2>
-  <ol>
-    <li><strong>Keep the accepted candidate exact.</strong> Treat <code>33dd7d2c</code> as the reviewed integration input; later tracked implementation, test, or dependency changes require applicable scoped re-review and a fresh combined gate.</li>
-    <li><strong>Finish the remaining JSON plan separately.</strong> Preserve its independent implementation and review evidence until it has a complete gate.</li>
-    <li><strong>Publish only after an exact release decision.</strong> Reconcile the candidate against the selected mainline, rerun the documented release gate, and record the resulting merge commit rather than treating this documentation commit as implementation evidence.</li>
-  </ol>
-
-  <h2>Current combined-gate evidence</h2>
-  <ul>
-    <li>Fresh full Python suite at <code>33dd7d2c</code>: <code>5265 passed, 10 skipped, 2 deselected, 1 xfailed, 44 warnings</code>.</li>
-    <li>Fresh whole-branch review across the five tracked dimensions: <code>PASS</code>, zero findings. The commitments, resource-governance, and credential-hardening scoped specification and quality reviews are each <code>PASS</code> with zero remaining findings.</li>
-    <li>Documentation build: <code>490 pages</code>; link checker: <code>0 broken</code>. CLI tests: <code>134 passed, 2 skipped</code>; CLI typecheck passed. Web contract checks, <code>tsc</code>, and <code>next build --no-lint</code> passed.</li>
-    <li>The whole Web npm lint command still fails on files unchanged from <code>origin/main</code>; the same failure was reproduced there, so this page does not claim that the whole Web lint gate passed.</li>
-    <li>Mechanical feature-matrix result is <code>160 features, 88.5 score, 63 gaps, 6 OpenProgram-only</code>. This canonical count includes the currently verified OpenProgram rows for cross-channel session attachment, documentation Q&amp;A, PR worktree creation, <code>.worktreeinclude</code> synchronization, and diff security review; other gate metrics on this page remain unchanged.</li>
-  </ul>
-
-  <p class="note">This is a reviewed integration snapshot, not a release declaration. <code>33dd7d2c</code> is the implementation evidence; later documentation commits do not replace it.</p>
-</body>
-</html>
+<h1>OpenProgram implementation navigation</h1>
+<p>Use this page to find the current owner of a design and its implementation evidence. It does not certify an integration branch, release, or installed application.</p>
+<p>Designs explain intended behavior; implementation notes locate code and verification. Historical review results remain in Git history.</p>
+<h2 id="implementation-section-1">Find the implementation documentation</h2>
+<div class="doc-scroll" role="region" tabindex="0" aria-label="Implementation navigation table"><table><thead><tr><th>Area</th><th>Design</th><th>Supporting documentation</th><th>What to inspect</th></tr></thead><tbody>
+<tr><td>Repository ownership</td><td><a href="repository-structure.html">Design</a></td><td><a href="repository-structure-implementation.html">Implementation context</a></td><td>Application roots, compatibility surfaces and verification.</td></tr>
+<tr><td>Execution control</td><td><a href="runtime/execution/execution-control.html">Design</a></td><td><a href="runtime/overview.md">Implementation context</a></td><td>Pause, resume, cancellation, recovery and surface synchronization.</td></tr>
+<tr><td>Goal execution</td><td><a href="runtime/goal-framework-implementation-comparison.html">Design</a></td><td><a href="runtime/goal.md">Implementation context</a></td><td>Controller lifecycle, persistence and remaining acceptance.</td></tr>
+<tr><td>Sessions and DAG</td><td><a href="runtime/dag/overview.md">Design</a></td><td><a href="runtime/session/README.md">Implementation context</a></td><td>Graph semantics, storage and session operations.</td></tr>
+<tr><td>Permissions and sandbox</td><td><a href="runtime/sandbox-architecture.html">Design</a></td><td><a href="runtime/permission-model.md">Implementation context</a></td><td>Authority, approvals and execution boundaries.</td></tr>
+<tr><td>Memory</td><td><a href="memory/memory-architecture.html">Design</a></td><td><a href="memory/README.md">Implementation context</a></td><td>Memory ownership, recall and implementation boundaries.</td></tr>
+<tr><td>Web integration</td><td><a href="integrations/web-use.html">Design</a></td><td><a href="integrations/web-use-implementation.html">Implementation context</a></td><td>Browser integration and its implementation evidence.</td></tr>
+<tr><td>Record and replay</td><td><a href="providers/record-replay.html">Design</a></td><td><a href="providers/record-replay.md">Implementation context</a></td><td>Provider recording, replay and failure handling.</td></tr>
+<tr><td>MCP server</td><td><a href="integrations/mcp-server.html">Design</a></td><td><a href="integrations/mcp-integration.md">Implementation context</a></td><td>Server exposure and MCP integration.</td></tr>
+<tr><td>Distribution</td><td><a href="distribution/installation-packaging.html">Design</a></td><td><a href="distribution/automatic-updates.html">Implementation context</a></td><td>Packaging, activation, updates and release acceptance.</td></tr>
+<tr><td>Testing</td><td><a href="testing/test-system.html">Design</a></td><td><a href="repository-structure-implementation.html">Implementation context</a></td><td>Verification layers and source-layout checks.</td></tr>
+</tbody></table></div>
+<p>For other areas, use the <a href="README.md">subsystem index</a>. The <a href="feature-matrix.html">framework feature comparison</a> has a separate comparison scope; it is not a release acceptance report.</p>
+<h2 id="implementation-section-2">Read implementation status precisely</h2>
+<div class="doc-scroll" role="region" tabindex="0" aria-label="Implementation navigation table"><table><thead><tr><th>State</th><th>Required meaning</th></tr></thead><tbody>
+<tr><td>Implemented</td><td>The described contract has an implementation and the required verification evidence. State the verified boundary explicitly.</td></tr>
+<tr><td>Partial</td><td>Some paths exist, but named implementation or acceptance requirements remain.</td></tr>
+<tr><td>Unimplemented</td><td>The design specifies behavior for which implementation is still required.</td></tr>
+<tr><td>Out of scope</td><td>The behavior is excluded from the current design; it is not an implicit implementation task.</td></tr>
+<tr><td>Not reverified</td><td>Existing evidence has not been checked against the current source or target environment. Do not convert it into a current pass.</td></tr>
+</tbody></table></div>
+<h2 id="implementation-section-3">What each implementation document contains</h2>
+<ol>
+<li>Public entry points and the observable behavior they provide.</li>
+<li>Source owners and links to the implementation, including compatibility entry points.</li>
+<li>Data ownership, state transitions and persistence boundaries.</li>
+<li>Failure, cancellation and recovery behavior where applicable.</li>
+<li>Reproducible verification commands and the specific contract each checks.</li>
+<li>An implementation-status appendix listing remaining work and acceptance gaps.</li>
+</ol>
+<p>Maintain architectural rationale in the topic's design. Keep implementation notes focused on the source mapping and verification. Use Git history for migration chronology and previous review output rather than duplicating them across pages.</p>
+<h2 id="implementation-section-4">Implementation status</h2>
+<p>This navigation update does not rerun subsystem tests or establish publication, deployment or installed-App acceptance. Consult the linked topic for its evidence and reverify the affected contract before changing its status.</p>

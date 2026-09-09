@@ -479,37 +479,21 @@ dependency set — it only ships transitively via `semble`, an MCP dev tool).
 
 ## Appendix: Implementation Status
 
-None of this design has landed. The pieces it needs, and where they stand:
+The worktree subsystem is partially implemented. The current state is:
 
-| Capability | Present behavior |
-|---|---|
-| Worktree isolation in the user's real repo | absent; create/merge/discard is entirely new |
-| Agent cwd bound to worktree | absent; the runtime uses session-git `workdir/` |
-| Bash tool passing cwd | `LocalBackend.run` accepts `cwd`, the bash function does not pass it |
-| Edit/Write/Read checking worktree boundary | absent; only absolute paths are checked |
-| Worktree state machine persistence | absent; `worktrees/<id>.json` in session-git is new |
-| UI worktree chip | absent |
-| Worktree × Task integration | absent; depends on the async task system, itself still in design |
-| Sub-agent worktree mechanism | removed when sub-agents became peer sessions; not reused here |
-| `.worktreeinclude` untracked-file sync | landed — `openprogram/worktree/include_sync.py`, called from `WorktreeManager.create_worktree` |
-
-The work, in dependency order:
-
-| Step | File | Main change |
+| Capability | Current evidence | Status |
 |---|---|---|
-| 1 | new `openprogram/worktree/types.py` | `Worktree` dataclass + `WorktreeStatus` Enum + serialization |
-| 2 | new `openprogram/worktree/manager.py` | `WorktreeManager`: create / merge / discard / list / keep; underlying `subprocess.run(["git", "worktree", ...])`; persists to `<session-repo>/worktrees/<id>.json` |
-| 3 | new `openprogram/worktree/_paths.py` | worktree path policy: `~/.openprogram/worktrees/<id>-<slug>/`; isolation check (D4) |
-| 4 | edit `openprogram/agent/internals/_workdir.py` | `apply_default_workdir` prefers returning the active worktree path |
-| 5 | edit `openprogram/agent/dispatcher.py` | at the start of a turn, read session.meta.active_worktree_id → set the `_current_worktree_path` ContextVar |
-| 6 | edit `openprogram/programs/tools/files/bash/bash.py` | call `backend.run(cmd, cwd=_current_worktree_path.get())` |
-| 7 | edit `openprogram/programs/tools/files/edit/edit.py` + write/read | warning when path outside worktree (D6) |
-| 8 | new `openprogram/programs/tools/files/worktree/` | 4 @function tools: worktree_create / worktree_merge / worktree_discard / worktree_list; go through WorktreeManager |
-| 9 | edit `openprogram/store/session/session_store.py` | add an `active_worktree_id` field to session.meta; helpers `set_active_worktree` / `get_active_worktree` |
-| 10 | new `openprogram/webui/ws_actions/worktree.py` | `list_worktrees` / `keep_worktree` / `discard_worktree` (user manual UI operations) |
-| 11 | new `apps/web/components/chat/composer/worktree-chip.tsx` | chip component + hover panel + Merge/Discard/Keep buttons |
-| 12 | edit `apps/web/components/chat/composer/composer.tsx` | bring in the chip |
-| 13 | edit ContextCommit item metadata rendering | tool call items show a worktree_id badge |
-| 14 | edit `openprogram/agent/dispatcher.py` to write markers | worktree_create / merge / discard write system nodes into ContextCommit |
-| 15 | (depends on async-task) hook into `openprogram/tasks/lifecycle.py` | task cancel → `WorktreeManager.on_task_cancel`; task create can optionally attach a worktree |
-| 16 | Tests | unit: WorktreeManager (create/merge/discard path checks, isolation check); integration: agent in worktree → merge full flow |
+| Worktree entity and state machine | openprogram/worktree/types.py: Worktree, WorktreeStatus | Implemented |
+| Persistence and lifecycle manager | openprogram/worktree/store.py; openprogram/worktree/manager.py: create_worktree, merge_worktree, discard_worktree, keep_worktree, list_worktrees | Implemented |
+| Include-file synchronization | openprogram/worktree/include_sync.py, called from WorktreeManager.create_worktree | Implemented |
+| Agent-facing operations | openprogram/programs/tools/files/worktree/: worktree_create, worktree_merge, worktree_discard, worktree_keep, worktree_list | Implemented |
+| Turn/workdir binding | openprogram/worktree/context.py; openprogram/agent/dispatcher/turn_context.py | Implemented for the current context bridge; boundary behavior needs integration verification |
+| WebSocket operations | apps/server/openprogram_server/_webui/ws_actions/worktree.py: list, get, merge, discard, keep | Implemented |
+| Worktree × Job lifecycle | openprogram/agent/job/types.py carries worktree_id; openprogram/agent/job/runner.py binds worktree context | Partially integrated; automatic cancel/discard policy remains a separate acceptance item |
+| Edit/read/write boundary enforcement | Worktree-aware context and path helpers exist | Requires verification for every file tool and escape path |
+| UI worktree chip and metadata rendering | No matching current UI implementation was found in the inspected paths | Not implemented / remains design work |
+| End-to-end tests | Manager and tool coverage exists, but the complete create → agent edit → merge/discard flow remains an acceptance obligation | Not a claim of full acceptance |
+
+The design is neither entirely absent nor fully accepted. The implemented manager, persistence, tools, context bridge, and WebSocket actions should be maintained as current behavior. The UI chip, full file-tool boundary matrix, automatic cancellation policy, and complete integration tests remain explicit gaps.
+
+The following design boundaries remain unchanged: remote push, cherry-pick/rebase, conflict-resolution UI, cross-repository worktrees, discard backups, namespace isolation, and automatic cleanup after session close.

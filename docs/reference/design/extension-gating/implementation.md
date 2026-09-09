@@ -12,7 +12,7 @@ openprogram/agent/management/
 openprogram/agent/
   └─ _model_tools.py        ← gate site for: tools, MCP
 
-openprogram/webui/ws_actions/
+apps/server/openprogram_server/_webui/ws_actions/
   └─ chat.py                ← gate site for: skills (/skill X command)
 
 openprogram/programs/
@@ -64,7 +64,7 @@ Each block is a plain `dict` so JSON round-trips trivially. Defaults are all-emp
 
 ## Gate site 1 — skills (/skill command)
 
-**`openprogram/webui/ws_actions/chat.py:90-116`**
+**`apps/server/openprogram_server/_webui/ws_actions/chat.py`**
 
 When the user types `/skill X` the handler:
 
@@ -155,9 +155,12 @@ A single `apply_all_gates(profile, ...)` chokepoint earlier in the stack is reje
 
 ## Backward compatibility
 
-Old agent profiles with `skills: ["pdf", "drawio"]` (a bare list, not a dict) are normalised at load time: `AgentSpec.from_dict` migrates `skills: list` → `skills: {disabled: list}`, so existing profiles keep working with no edits.
-
-Similarly `tools: ["bash", "read"]` continues to be valid — the list form is treated as a whitelist (the old `enabled` semantics).
+The current persisted schema requires `skills`, `tools`, and `mcp` to be
+objects. `AgentSpec.from_dict` currently passes those values through `dict()`;
+legacy bare lists such as `skills: ["pdf", "drawio"]` or
+`tools: ["bash", "read"]` therefore raise `ValueError` during loading. They
+are not silently migrated. A compatibility migration is an explicit follow-up
+when existing list-shaped profiles need to remain readable.
 
 ## Testing
 

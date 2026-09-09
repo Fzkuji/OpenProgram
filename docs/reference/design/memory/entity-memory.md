@@ -1,5 +1,10 @@
 # Entity Memory
 
+> **Implementation status:** This is a proposed entity-memory design. The
+> Session-Git and Project-Git lifecycle described below is not implemented in
+> the current Memory runtime. The active implementation is the
+> Source/Topic/Core workspace documented in [`overview.md`](overview.md).
+
 ## 1. Concept
 
 Entity memory is an immutable, factual historical record backed by git storage. An "entity" is something that actually happened and can be traced back step by step.

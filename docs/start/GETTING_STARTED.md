@@ -26,15 +26,19 @@ openprogram
 
 The first run enters a setup wizard that walks you through provider configuration — import credentials from a logged-in Claude Code / Codex / Gemini CLI, or paste an API key — then drops you straight into the terminal chat. Re-run the wizard any time with `openprogram setup`.
 
-You can also skip the wizard with environment variables:
+If a provider key is already in your environment, import it into OpenProgram's
+credential store instead of pasting it into the wizard:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...     # Claude
-export OPENAI_API_KEY=sk-...            # GPT
-export GEMINI_API_KEY=...               # Gemini (GOOGLE_API_KEY also works)
+export OPENAI_API_KEY=sk-...
+openprogram providers discover
+openprogram providers adopt env:OPENAI_API_KEY
 ```
 
-Sanity check: `openprogram providers` lists the detected credentials.
+Repeat the last command with the matching `env:<VARIABLE>` source id for
+another provider. Alternatively, pipe a key directly to
+`openprogram providers login <provider> --api-key-stdin`. Sanity check:
+`openprogram providers` lists the stored credentials.
 
 ## Step 3: Open the web UI
 

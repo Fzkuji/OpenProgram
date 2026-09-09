@@ -170,4 +170,6 @@ Two design notes worth keeping, because the code shape is not obvious from the d
 - Accounting fires **at the terminal event, before the yield**, guarded by a `recorded` flag. The consumer of the async generator (`agent_loop`) returns directly on the done event, which suspends the generator at its `yield` — anything placed after the loop would never run.
 - The former `agent/compaction/` directory (about 1180 lines) was dead code with no import, dynamic reference, or side-effect load, and was deleted; nothing in it needed a usage scope.
 
-Designed but not built: §9 extension hooks, and a CLI `op usage` command.
+Designed but not built: §9 extension hooks. There is currently no `op usage` or
+`openprogram usage` CLI command; usage is exposed through the Web/API endpoints
+described above.

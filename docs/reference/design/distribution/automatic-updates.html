@@ -583,7 +583,7 @@
       <div class="status-strip" aria-label="实现状态">
         <div class="status-cell ready"><div class="k">Design</div><div class="v">已确定</div><div class="detail">一个 stable 通道，一套 Release 合同</div></div>
         <div class="status-cell ready"><div class="k">Implementation</div><div class="v">已合入 main</div><div class="detail">Desktop、managed CLI、Release gate</div></div>
-        <div class="status-cell ready"><div class="k">Delivery</div><div class="v">v0.7.0 已发布</div><div class="detail">首个 updater-enabled stable Release</div></div>
+        <div class="status-cell ready"><div class="k">Source baseline</div><div class="v">v0.8.1</div><div class="detail">当前源码与 runtime/package 版本基线；远端 latest 未在本页重新核验</div></div>
         <div class="status-cell ready"><div class="k">Dependency</div><div class="v">0 个新增 updater 包</div><div class="detail">Electron/Node、Python 与 shell 原生能力</div></div>
       </div>
 
@@ -797,11 +797,11 @@
         <article class="evidence-card pass"><div class="label">Implemented</div><h3>Managed CLI 完整路径</h3><p>Release manifest gate、immutable installer、环境隔离、dry-run/JSON、真实 old→new current 切换与 launcher 失败保留旧版本已覆盖。</p><code>uv run pytest -q tests/component/config/test_formal_release_updates.py tests/component/config/test_distribution_release.py</code></article>
         <article class="evidence-card pass"><div class="label">Verified</div><h3>安全与失败路径</h3><p>逐跳 host 验证、metadata/download stall abort、short write、随机 exclusive 临时文件、checksum/size 清理、并发 Promise 和状态修复已验证。</p><code>apps/desktop/scripts/check-update-service.js</code></article>
         <article class="evidence-card pass"><div class="label">Verified</div><h3>文档与发布门禁</h3><p>双语安装/升级文档、Release latest 验证、文档构建、链接、Desktop/Web/TypeScript 与 workflow 静态门禁纳入发布检查。</p><code>python -m scripts.docs_site.checklinks</code></article>
-        <article class="evidence-card pass"><div class="label">Release-visible acceptance</div><h3>v0.7.0 stable Release</h3><p><a href="https://github.com/Fzkuji/OpenProgram/releases/tag/v0.7.0">v0.7.0</a> 已以 non-draft、non-prerelease 发布；四平台 runtime、四个 CLI installer、两种 macOS Desktop、manifest、checksums 与 latest endpoint 门禁全部通过。</p></article>
+        <article class="evidence-card pass"><div class="label">Repository release record</div><h3>v0.8.1 acceptance record</h3><p>仓库中的 v0.8.1 acceptance 记录了 runtime、CLI、Desktop、manifest 和 checksum 资产边界。源码版本不能证明当前 GitHub published release；本页不重新访问 GitHub latest，也不把历史远端资产检查当作当前运行中客户端验收。</p></article>
         <article class="evidence-card pending"><div class="label">Installed-client acceptance</div><h3>真实客户端更新交互</h3><p>尚未操作当前用户窗口验证版本发现、平台 installer 打开、长时间运行与 sleep/resume 排程；这些交互不由发布资产 smoke 代替。Windows 还必须在正式 release runner 使用真实证书通过 Authenticode gate。</p></article>
-        <article class="evidence-card pending"><div class="label">Compatibility acceptance</div><h3>v0.6.6 及更早版本的一次性过渡</h3><p>Desktop 需要手动安装首个含 updater 的 v0.7.0 DMG；CLI/server 重新运行一次公开 installer。安装 v0.7.0 后，后续版本才使用更新 UI 和 managed upgrade 命令。</p></article>
+        <article class="evidence-card pending"><div class="label">Historical compatibility acceptance</div><h3>v0.6.6 及更早版本的一次性过渡</h3><p>历史记录中，Desktop 需要手动安装首个含 updater 的 v0.7.0 DMG；CLI/server 需要重新运行公开 installer。这是 v0.7.0 的迁移背景，不是当前 v0.8.1 的发布状态。</p></article>
       </div>
-      <div class="release-handoff"><h3>发布后的明确状态</h3><p>v0.7.0 是首个包含 updater 的正式 GitHub Release，完整资产、唯一 <code>release-manifest.json</code>、stable 字段与 Release workflow gate 均已验证。v0.6.6 及更早 Desktop 不含该 updater，仍需手动安装 v0.7.0；当前证据不包含前台客户端更新交互。</p></div>
+      <div class="release-handoff"><h3>当前状态与历史背景</h3><p>v0.7.0 是历史上首个包含 updater 的正式 release；当前源码和安装脚本版本基线为 v0.8.1。v0.6.6 及更早 Desktop 的迁移说明仍保留为历史背景；当前证据不包含前台客户端更新交互，因此 installed-client acceptance 仍待单独验证。</p></div>
     </section>
 
     <footer class="footer"><span>Canonical design: distribution / automatic updates</span><span>设计与代码持续同步 · 历史通过 Git 查看</span></footer>

@@ -141,8 +141,10 @@ def _truncate(text: str | None, max_len: int = 80) -> str | None:
 ```
 调用方调 update_session(session_id, title="新标题", pinned=True, ...)
   → 写 meta.json（只更新传入的字段）
-  → 更新 _index[session_id] 中对应字段 + updated_at
+  → 更新 _index[session_id] 中对应字段（不改变 updated_at）
   → 注册表原子写磁盘
+
+updated_at 只在追加消息路径推进；rename、pin、archive 和 read/unread 等元数据更新保留原有 recency。
 ```
 
 广播由 WebSocket handler 层在调用 `update_session` 之后通过 `_broadcast` 发起，rename 与 flags 均走广播：

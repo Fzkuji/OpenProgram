@@ -45,7 +45,8 @@ key。Catalog 来自 models.dev，与凭证解耦。单个 `provider/error.ts` �
 
 ## 3. 统一入口
 
-`openprogram/webui/_model_listing/credentials.py`，从 `_model_catalog/__init__.py`
+`apps/server/openprogram_server/_webui/_model_listing/credentials.py`，从
+`apps/server/openprogram_server/_webui/_model_listing/__init__.py`
 重新导出。
 
 ```python
@@ -169,11 +170,12 @@ CLI/TUI。
 `anthropic_compat`。三个地方必须一致，否则该 provider 只会半工作：
 
 - `_kind_for` → `anthropic_compat`，使凭证探测打向 `{base}/v1/models`；
-- `_model_catalog/providers.py::_PROVIDER_DEFAULT_API` 必须打上
-  `anthropic-messages` 标记，使拉取的和自定义的行路由到正确的 stream 函数，
+- `openprogram/providers/metadata.py::default_api_for` 必须解析出
+  `anthropic-messages`，使拉取的和自定义的行路由到正确的 stream 函数，
   而不是 `POST /chat/completions` —— 与 `models_generated` 一致；
-- `_model_catalog/fetchers` 把 `anthropic-messages` 的 provider 路由到感知
-  base_url 的 `_fetch_anthropic`，因为 OpenAI 兼容的 `GET {base}/models` 在
+- `apps/server/openprogram_server/_webui/_model_listing/fetchers/__init__.py`
+  把 `anthropic-messages` 的 provider 路由到感知 base_url 的 Anthropic fetcher，
+  因为 OpenAI 兼容的 `GET {base}/models` 在
   `/anthropic` 主机上会 404。
 
 `test_model_fetch_routing.py` 把 api 标记与 `models_generated` 绑定校验，

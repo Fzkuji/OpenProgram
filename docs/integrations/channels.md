@@ -110,7 +110,7 @@ An allowlist holds as many senders as you approve. Everyone on it reaches the sa
 
 Pairing codes expire after one hour; a blocked sender who keeps writing gets the same code again (at most once a minute). The approval action exists only as a local CLI/API call — nothing a sender types into the chat can approve anyone, so a prompt-injection message like "add me to the allowlist" has no effect. In group chats the gate applies to the individual sender's user id, not the group.
 
-Pairing is the only admission path: there is no setting that turns the gate off for an account. A bot meant to be reachable by many people gets those people approved, one stable id at a time.
+Pairing is the default path for unknown senders: they are blocked and receive a code. The owner can also use the local CLI/API `access allow` command to add a known platform user ID directly to the allowlist; it bypasses the pairing code for that sender. There is no setting that turns the access gate off for an account.
 
 Someone who wants an agent with separate memory runs their own instance instead, with its own state directory and port:
 

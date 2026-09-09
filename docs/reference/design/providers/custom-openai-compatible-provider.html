@@ -14,8 +14,8 @@
   <h1>Custom OpenAI-Compatible Provider</h1>
   <p>A custom provider is an OpenAI Chat Completions-compatible service configured by name, Base URL, and API key. The provider type determines the wire protocol; model names do not.</p>
 
-  <h2>Verified gap</h2>
-  <p>A host-only Base URL currently produces <code>/models</code> and <code>/chat/completions</code>. Some services expose their compatible API below <code>/v1</code>. An HTML website response with status 200 is also currently accepted as a valid credential response.</p>
+  <h2>Resolved behavior</h2>
+  <p>The historical host-only behavior produced <code>/models</code> and <code>/chat/completions</code>, and a non-JSON 200 response was once accepted as a valid credential response. The current resolver adds <code>/v1</code> for a host-only custom Base URL, and the credential/model-listing path requires a JSON response.</p>
 
   <h2>Address contract</h2>
   <table>

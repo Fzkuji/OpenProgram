@@ -132,7 +132,7 @@ rt = create_runtime(provider="gemini", api_key="...", model="gemini-2.5-flash")
 rt = create_runtime(provider="claude-code", model="claude-sonnet-4")
 ```
 
-准备:用 Claude Code CLI 登录一次(`claude login`)让 OAuth token 可被收编,或用 `openprogram providers claude-code accounts add` 添加 Claude 账号。
+准备：用 Claude Code CLI 登录一次（`claude login`）让 OAuth token 可被收编，或用统一账号流程执行 `openprogram providers login claude-code`。
 
 ### 选项(转发给 runtime)
 

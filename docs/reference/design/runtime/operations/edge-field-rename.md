@@ -52,26 +52,26 @@ Rationale:
 
 | File | Symbol | Role |
 |---|---|---|
-| `context/nodes.py` | `Call.caller` | the dataclass edge field, semantics = caller |
-| `store/session/_msg_adapter.py` | `_msg_to_node` | msg's `caller` → `Call.caller`; msg's `predecessor` → `Call.predecessor` (popped out of metadata so no mirror survives) |
-| `store/session/_msg_adapter.py` | `_node_to_msg` | reverse: emits two explicit keys, `caller` + `predecessor` |
-| `store/session/session_store.py` | `_node_conv_predecessor` | reads `Call.predecessor` |
-| `store/session/session_store.py` | `_node_caller` | reads `Call.caller` |
-| `store/session/memory_index.py` | `append(node, predecessor, caller)` | two indexes: `children_by_predecessor` (conv) / `children_by_caller` (caller) |
-| `webui/graph_builder.py` | `build_session_graph` | builds the graph dict with two explicit keys, `predecessor` + `caller` |
-| `webui/graph_layout/_common.py` | `predecessor_of` / `caller_of` | two explicit accessors; each layout module calls the one it needs |
-| `webui/graph_layout/tier.py` | — | uses `caller_of` (sub-call indentation) |
-| `webui/graph_layout/{lane,depth,topology}.py` | — | use `predecessor_of` (conversation chain) |
+| `openprogram/context/nodes.py` | `Call.caller` | the dataclass edge field, semantics = caller |
+| `openprogram/store/session/_msg_adapter.py` | `_msg_to_node` | msg's `caller` → `Call.caller`; msg's `predecessor` → `Call.predecessor` (popped out of metadata so no mirror survives) |
+| `openprogram/store/session/_msg_adapter.py` | `_node_to_msg` | reverse: emits two explicit keys, `caller` + `predecessor` |
+| `openprogram/store/session/session_store.py` | `_node_conv_predecessor` | reads `Call.predecessor` |
+| `openprogram/store/session/session_store.py` | `_node_caller` | reads `Call.caller` |
+| `openprogram/store/session/memory_index.py` | `append(node, predecessor, caller)` | two indexes: `children_by_predecessor` (conv) / `children_by_caller` (caller) |
+| `apps/server/openprogram_server/_webui/graph_builder.py` | `build_session_graph` | builds the graph dict with two explicit keys, `predecessor` + `caller` |
+| `apps/server/openprogram_server/_webui/graph_layout/_common.py` | `predecessor_of` / `caller_of` | two explicit accessors; each layout module calls the one it needs |
+| `apps/server/openprogram_server/_webui/graph_layout/tier.py` | — | uses `caller_of` (sub-call indentation) |
+| `apps/server/openprogram_server/_webui/graph_layout/{lane,depth,topology}.py` | — | use `predecessor_of` (conversation chain) |
 
 ### Frontend
 
 | File | Symbol | Role |
 |---|---|---|
-| `dag/types.ts` | `GNode` | carries `predecessor` (conv) and `caller` (sub-call) |
-| `dag/types.ts` | `layoutParent(n)` | returns `n.predecessor` (conv predecessor), used to build the tree |
-| `dag/pipeline.ts` | `render` | `n.caller` determines internal; `m.predecessor` drives the conversation chain; `_signature` uses `predecessor` |
-| `dag/render/{edges,nodes,badges}.ts` | — | read `predecessor` to draw edges / detect branches |
-| `conversations.ts` | `LegacyMessage` / `BranchRow` | msg/branch dict flow, both keys carried through |
+| `apps/web/lib/runtime-bridge/dag/types.ts` | `GNode` | carries `predecessor` (conv) and `caller` (sub-call) |
+| `apps/web/lib/runtime-bridge/dag/types.ts` | `layoutParent(n)` | returns `n.predecessor` (conv predecessor), used to build the tree |
+| `apps/web/lib/runtime-bridge/dag/pipeline.ts` | `render` | `n.caller` determines internal; `m.predecessor` drives the conversation chain; `_signature` uses `predecessor` |
+| `apps/web/lib/runtime-bridge/dag/render/{edges,nodes,badges}.ts` | — | read `predecessor` to draw edges / detect branches |
+| `apps/web/lib/runtime-bridge/conversations.ts` | `LegacyMessage` / `BranchRow` | msg/branch dict flow, both keys carried through |
 
 ### WS Protocol
 

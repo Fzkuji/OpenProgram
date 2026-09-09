@@ -19,12 +19,12 @@
 ## 导入
 
 ```python
-from openprogram import agentic_function
-from openprogram.agentic_programming.runtime import Runtime
+from openprogram import agentic_function, Runtime, Session, decision
 from openprogram.providers.registry import create_runtime
 ```
 
-只有 `agentic_function` 是 `openprogram` 顶层再导出的符号；`Runtime` 和 `create_runtime` 等都需要按完整路径导入。
+`agentic_function`、`Runtime`、`Session` 和 `decision` 都从 `openprogram`
+顶层导出。`create_runtime` 这类 provider helper 仍需从完整路径导入。
 
 ## 快速示例
 
