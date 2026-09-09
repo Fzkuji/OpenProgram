@@ -213,8 +213,8 @@ def test_disconnect_leaves_unavailable_descriptor_without_live_lease(tmp_path, m
         "parent", executions=[_exec("exec-1", "parent")],
         parents={"exec-1": None}, session_store=db,
     )
-    assert rows[0]["status"] in {"closed", "unknown"}
-    assert rows[0]["control_state"] == "closed"
+    assert rows[0]["status"] == "unknown"
+    assert rows[0]["control_state"] == "idle"
     assert rows[0]["generation"] >= 3
 
 

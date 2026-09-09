@@ -6,6 +6,7 @@ import {
   sessionResourceRows,
   backendResourceRows,
   groupSessionResources,
+  resourceIsUnavailable,
   ingestBrowserResource,
   applyResourceSnapshot,
   beginResourceSnapshotClock,
@@ -189,8 +190,34 @@ test("closed Pages move to a collapsed unavailable group and leave live counts",
   assert.deepEqual(groups.map(group => group.key), ["br-a", "unavailable"]);
   assert.equal(groups[0].rows.length, 1);
   assert.equal(groups[0].rows[0].id, "assoc-live");
-  assert.equal(groups[1].title, "Unavailable");
+  assert.equal(groups[1].title, "Closed pages");
   assert.equal(groups[1].rows[0].id, "assoc-dead");
+});
+
+test("retained live Pages stay in the branch group across closed control and restore statuses", () => {
+  const retained = [
+    browserItem({ status: "open", control_state: "closed" }),
+    browserItem({ id: "assoc-unknown", resource_id: "page-u", status: "unknown", control_state: "closed", sequence: 2 }),
+    browserItem({ id: "assoc-restoring", resource_id: "page-r", status: "restoring", control_state: "unknown", sequence: 3 }),
+    browserItem({ id: "assoc-failed", resource_id: "page-f", status: "restore_failed", control_state: "unknown", sequence: 4 }),
+  ].map(item => backendResourceRows([item], "a")[0]);
+  for (const row of retained) {
+    assert.equal(resourceIsUnavailable(row), false, row.status);
+  }
+  const groups = groupSessionResources(retained, "br-a");
+  assert.deepEqual(groups.map(group => group.key), ["br-a"]);
+  assert.equal(groups[0].rows.length, 4);
+  assert.equal(resourceIsUnavailable(backendResourceRows([
+    browserItem({ status: "closed", control_state: "unknown" }),
+  ], "a")[0]), true);
+});
+
+test("listed rows do not add a synthetic tab duplicate for an existing Page", () => {
+  const backend = backendResourceRows([browserItem({ tab_id: "w:a" })], "a");
+  const listed = sessionResourceRows(tabs, backend, "a");
+  assert.equal(listed.filter(row => row.kind === "web").length, 1);
+  assert.equal(listed[0].id, "assoc-a");
+  assert.ok(!listed.some(row => row.id === "tab:w:a"));
 });
 
 test("ingest ignores stale generation or sequence and resets on session change", () => {

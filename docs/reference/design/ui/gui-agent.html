@@ -204,7 +204,8 @@ browser_use(subtask)
 <p>A desktop iteration with feedback normally has three model requests before optional localization/retry. This is a structural count, not measured latency. The first iteration omits prior-step verification. AX window actions bypass OCR/YOLO; other desktop/VM paths can use detection and localization.</p>
 <p>The macOS window registry exposes only <code>window_press</code>, <code>window_set_text</code>, <code>window_scroll</code> and terminal markers. Global-input functions elsewhere do not expand this entry. Browser actions include click/type/press/hover/scroll/select, but no exposed drag or persistent script entry.</p>
 <p>
-<code>Runtime.exec</code> already uses DAG-rendered history and gates inner tools under caller authority. A second context engine is unnecessary. <code>execute_code</code> starts a fresh Python subprocess and cannot preserve UI handles or variables across calls.</p> <a class="ref" href="#S1">[S1]</a> <a class="ref" href="#S2">[S2]</a> <a class="ref" href="#S3">[S3]</a> <a class="ref" href="#S4">[S4]</a> <a class="ref" href="#S5">[S5]</a>
+<code>Runtime.exec</code> already uses DAG-rendered history and gates inner tools under caller authority. A second context engine is unnecessary. <code>execute_code</code> starts a fresh Python subprocess and cannot preserve UI handles or variables across calls.</p>
+<p>Stable retained identity is the tab/resource association: tab id, conversation session, and branch grouping, plus last confirmed URL and title. The live page key, CDP/BrowserView handles, frames, and action leases are ephemeral to one process. Desktop views use the native <code>persist:webtabs</code> partition; the web UI persists center-tab descriptors in local storage. Today a new worker incarnation marks retained live rows unavailable, sets control to closed, and the frontend can dump unknown or closed-control rows into a generic Unavailable group. Reopening can load a stale URL while the sidebar still shows a later title. That is a verified gap against the restart contract below; it is not accepted product behavior.</p> <a class="ref" href="#S1">[S1]</a> <a class="ref" href="#S2">[S2]</a> <a class="ref" href="#S3">[S3]</a> <a class="ref" href="#S4">[S4]</a> <a class="ref" href="#S5">[S5]</a>
 </section>
 <section id="comparison">
 <h2 tabindex="-1">Capability comparison</h2>
@@ -596,6 +597,11 @@ receipt = {
 <td>Old scripts cannot act after restart.</td>
 </tr>
 <tr>
+<td>App or worker process restart with retained Pages</td>
+<td>Keep the retained tab/resource association. Recreate a new verified native Page/binding with a fresh capability identity. Reload the last confirmed URL and title. Restore in the background. Do not duplicate retained tabs. Do not reopen user-closed Pages. Keep a hidden PiP hidden. Old live handles stay invalid.</td>
+<td>See restart recovery contract below. Default-App and worker-restart acceptance remain pending.</td>
+</tr>
+<tr>
 <td>Cancel during drag</td>
 <td>Stop new input, release mouse/modifiers, terminate/reap runner.</td>
 <td>No stuck button, orphan process or late write.</td>
@@ -615,6 +621,39 @@ receipt = {
 </div>
 <p>Reuse the existing execution-control safe points, cancellation and owner generations rather than creating a second scheduler. Persist serializable resource descriptors and last confirmed operation receipts. A crash destroys live namespace state: recover at a script boundary, rebind and reobserve; do not promise to resume a Python stack or replay a sequence of UI writes.</p>
 <p>Public result semantics stay <code>succeeded</code>, <code>infeasible</code> or <code>failed</code>; cancellation remains the execution system's cancelled state. Pause/approval/takeover are resumable control states, not successful results. Include reason, unresolved criterion, last verified state and artifact evidence. Failed cleanup cannot rewrite an actual task failure as success.</p> <a class="ref" href="#S11">[S11]</a>
+<h3>Browser restart recovery</h3>
+<p>A worker or Desktop process death is not a user Close webpage. The retained tab/resource association (tab id, session, branch, last confirmed URL and title) survives. The previous live page key, frames, CDP/BrowserView handles, and action leases do not. After the App and worker are healthy, restore each still-retained tab automatically in the background by creating a new verified native Page/binding with a fresh capability identity, loading the last confirmed URL, without raising the window, adding extra top tabs, or showing a previously hidden PiP. Compact PiP chrome, the vertical Files / Activity / Resources sidebar, and branch-grouped resource rows stay as specified in Resources and operation preview. Locale follows App language settings.</p>
+<p>Last confirmed URL and title must agree on that retained association. A later navigation that was persisted must not reopen an earlier Google URL under an arXiv title. Distinct retained tabs stay distinct even when URLs match. Explicitly closed Pages remain closed and appear only under Closed pages (已关闭的网页), not as live rows. Hidden PiP is a preview preference, not a failure.</p>
+<p>Process incarnation may mark old live handles unavailable for safety and must drop them. It must not treat the retained tab association as user-closed, must not duplicate that tab, and must not move a recoverable restore or disconnect into a generic Unavailable group. The row stays in its original branch while restore runs or fails.</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th scope="col">User-visible status (EN / ZH)</th>
+<th scope="col">Meaning</th>
+<th scope="col">Grouping</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Restoring page… / 正在恢复网页…</td>
+<td>Background restore started; the new native binding is not ready.</td>
+<td>Original branch. No Agent lease. No Continue Agent control from restore itself.</td>
+</tr>
+<tr>
+<td>Could not restore page / 网页恢复失败</td>
+<td>Bounded restore of the last confirmed URL failed.</td>
+<td>Original branch. User may open or retry. No duplicate retained tab.</td>
+</tr>
+<tr>
+<td>Reconnect page / 需要重新连接</td>
+<td>The new binding is missing or disconnected; the retained tab is still listed.</td>
+<td>Original branch. Not generic Unavailable. Not Closed pages.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Restoring page presence does not require or imply Continue Agent. Idle pages stay Ready to use. New task actions still need ordinary fresh observation and authorization after the new binding exists. Old binding, frame, and action handles remain invalid. Do not bypass authority or app security; do not auto-resume old Agent actions, write fences, or input leases; do not promise DOM, form fields, scroll position, or in-page JavaScript state across process death. Cookies and storage already in <code>persist:webtabs</code> may apply on reload. Implementation of this contract is pending tests and default-App validation.</p>
 </section>
 <section id="experience">
 <span id="invocation"></span>
@@ -906,6 +945,14 @@ render();
 <tr>
 <td>Reject unrestricted raw object exposure</td>
 <td>Generated code cannot bypass target/permission checks through CDP or host input.</td>
+</tr>
+<tr>
+<td>Adopt background restore of retained tab associations on process restart</td>
+<td>Reuse retained tab id, session/branch, last URL/title, center-tab persistence, and <code>persist:webtabs</code>. Recreate a new native Page/binding. Old live handles may be marked unavailable. No duplicate retained tabs. User-closed Pages stay in Closed pages. Hidden PiP stays hidden. Recoverable restore stays in the original branch.</td>
+</tr>
+<tr>
+<td>Reject DOM/form resume and automatic Agent continuation after process death</td>
+<td>A crash destroys live renderer and lease state. Reload the last confirmed URL on a new binding. Idle restore does not show Continue Agent. New writes need ordinary fresh observation and authorization.</td>
 </tr>
 <tr>
 <td>Reject automatic backend/foreground fallback</td>
@@ -1203,8 +1250,8 @@ render();
 <tr><td>Resources and unified preview</td><td>The browser implementation retains exact Pages with conversation-branch and child-agent provenance, provides Auto/Fixed preview selection with a PiP-only Pin toggle, an explicit Preview in conversation control, and captures a proportional image without mounting another Page. The existing vertical Files, Activity and Resources navigation remains. A resource row click selects a read-only chat preview; Preview in conversation keeps the same Page identity and, from an active webpage, returns to the owning session. Explicit Open page reveals the exact existing Page as an ordinary top tab and hides that preview. Returning to the conversation restores the preview unless the user hid it. A webpage tab and its PiP never display together; the native Page fills the content area under the ordinary Web toolbar. Never-shown Pages use a 1920×1080 CSS-pixel creation viewport; after a visible Page returns, last native bounds remain. Default chat PiP content is 300×168.75 plus a single header, clamped in a smaller chat, with undistorted contain. Resources has no Pin control. The real Page stays interactive. Browser control uses the existing execution pause/resume commands and records bounded operation cues and history. Chat PiP chrome is a single compact row (title, control status, Open page, contextual Pause Agent to use page, Continue Agent, or Retry pause, persistent Pin preview / Unpin preview, Expand/Collapse, More, Hide); Idle and closed show Ready to use and have no Pause or Continue control. Resource-row and PiP icon buttons share the compact 24px/14px Lucide toolbar pattern. Resources has no search field. A hidden PiP is restored by Preview in conversation on the resource row; a row click keeps existing select behavior. Hide keeps the Page. There is no standalone Show preview control.</td><td>Browser source work for this preview UX is implemented in Web and the Desktop hidden-creation default; specification, quality, default-App native exclusive-preview, multi-page and takeover acceptance have not passed, and the full three-run gate remains pending. Native application and VM preview/control adapters, child-approval gaps, and demonstration recording/training remain separate planned work. This row does not mark the GUI Agent project complete.</td></tr>
 <tr>
 <td>P5 recovery and UX</td>
-<td>Shared execution controls and current indicator identified.</td>
-<td>Not implemented as target; crash/partial-effect/default-App acceptance missing.</td>
+<td>Shared execution controls and current indicator identified. Restart recovery for retained browser Pages is specified in Failure, cancellation and restart recovery.</td>
+<td>Browser restart restore is not implemented as the target contract. Current incarnation handling can dump retained associations into Unavailable and desync URL from title. Default-App, worker-restart, new-binding, original-branch grouping, Closed pages only for explicit close, hidden-PiP preference, and URL/title consistency acceptance are pending. Do not mark this row implemented until tests and those gates pass.</td>
 </tr>
 <tr>
 <td>P6 product comparison</td>

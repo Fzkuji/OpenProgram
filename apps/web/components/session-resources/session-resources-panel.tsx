@@ -24,9 +24,20 @@ import {
   settlePendingClose,
 } from "@/lib/state/browser-control";
 import { revealExistingWebTab } from "@/lib/state/web-page-management";
+import { desktopBridge, retryRestoreWebTab } from "@/lib/desktop-bridge";
 import { useSessionResources } from "@/lib/use-session-resources";
 import { useTranslation } from "@/lib/i18n";
 import styles from "./session-resources.module.css";
+
+function retryRecoverablePage(row: SessionResource, tabs: { id: string }[]): void {
+  if (row.status !== "unknown" && row.status !== "restore_failed") return;
+  if (row.kind !== "web" && row.source !== "browser") return;
+  const tabId = existingResourceTabId(row, tabs);
+  if (!tabId) return;
+  const bridge = desktopBridge();
+  if (!bridge) return;
+  void retryRestoreWebTab(bridge, tabId).catch(() => undefined);
+}
 
 export function SessionResourcesPanel() {
   const sessionId = useCenterTabs(s => resourceSessionId(s.tabs.find(tab => tab.id === s.activeId)));
@@ -75,19 +86,25 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   const pref = sessionId ? getPreviewPreference(sessionId, viewedBranch) : null;
   const groups = groupSessionResources(rows, viewedBranch).map(group => {
     const title = group.key === "unavailable"
-      ? text("Unavailable", "不可用")
+      ? text("Closed pages", "已关闭的网页")
       : group.key === "unassigned"
         ? text("Unassigned", "未归属")
         : group.title;
     return { ...group, title };
   }).filter(group => group.rows.length > 0);
   const icons = { web: Globe, docker: Box, vm: Monitor, remote: Server, desktop: Monitor };
-  const statusName = (status: string) => ({
-    open: text("Open", "已打开"), idle: text("Idle", "空闲"), in_use: text("In use", "使用中"),
-    attached: text("Attached", "已关联"), running: text("Running", "运行中"),
-    starting: text("Starting", "启动中"), stopping: text("Stopping", "停止中"),
-    closed: text("Closed", "已关闭"), unknown: text("Unknown", "状态未知"), released: text("Released", "已释放"),
-  }[status] || status);
+  const statusName = (row: SessionResource) => {
+    const pageRow = row.kind === "web" || row.source === "browser" || row.source === "web";
+    if (pageRow && row.status === "restoring") return text("Restoring page…", "正在恢复网页…");
+    if (pageRow && row.status === "restore_failed") return text("Could not restore page", "网页恢复失败");
+    return ({
+      open: text("Open", "已打开"), idle: text("Idle", "空闲"), in_use: text("In use", "使用中"),
+      attached: text("Attached", "已关联"), running: text("Running", "运行中"),
+      starting: text("Starting", "启动中"), stopping: text("Stopping", "停止中"),
+      closed: text("Closed", "已关闭"), released: text("Released", "已释放"),
+      unknown: text("Reconnect", "需要重新连接"),
+    } as Record<string, string>)[row.status] || row.status;
+  };
 
   return <section className={styles.panel} aria-label={text("Session resources", "会话资源")}>
     {backend.unavailable && <p role="status" className={styles.notice}>{text("Some resource statuses could not be refreshed.", "部分资源状态未能刷新。")}</p>}
@@ -130,7 +147,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
           const operating = resourceIsOperating(row);
           const subtitle = [
             names[row.kind] || row.kind,
-            operating ? text("Operating", "操作中") : statusName(row.status),
+            operating ? text("Operating", "操作中") : statusName(row),
             row.agentName === "main" ? text("Main agent", "主 Agent") : row.agentName,
           ].filter(Boolean).join(" · ");
           return <div key={row.id} className={styles.row} data-resource-kind={row.kind}
@@ -142,6 +159,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
                 if (row.kind === "web" || row.source === "browser") {
                   selectResourcePreview(sessionId, viewedBranch, row.id);
                   bindPreview(sessionId, row, false);
+                  retryRecoverablePage(row, tabs);
                   render(value => value + 1);
                 } else setSelected(row);
               }}><Icon size={16} aria-hidden="true" /><span><strong>{row.title}</strong>
@@ -153,6 +171,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
                 if (!sessionId) return;
                 selectResourcePreview(sessionId, viewedBranch, row.id);
                 previewInConversation(sessionId, row);
+                retryRecoverablePage(row, tabs);
                 render(value => value + 1);
               }}><PictureInPicture2 size={14} aria-hidden="true" /></button>}
             {tab && <button type="button" className={styles.action}
@@ -160,7 +179,8 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
               title={text("Open in tab", "在标签中打开")} onClick={() => {
                 const tabId = existingResourceTabId(row, tabs);
                 if (tabId) revealExistingWebTab(tabId, useCenterTabs.getState());
-                else render(value => value + 1);
+                retryRecoverablePage(row, tabs);
+                if (!tabId) render(value => value + 1);
               }}><ExternalLink size={14} aria-hidden="true" /></button>}
             {tab && <button type="button" className={styles.action} aria-label={`${text("Close webpage", "关闭网页")}: ${row.title}`}
               title={text("Close webpage", "关闭网页")} onClick={() => {
@@ -183,7 +203,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
     </div>
     {selected && <div className={styles.detail}>
       <button type="button" className={styles.action} aria-label={text("Close resource details", "关闭资源详情")} onClick={() => setSelected(null)}><X size={14} /></button>
-      <strong>{selected.title}</strong><p>{names[selected.kind] || selected.kind} · {statusName(rows.find(row => row.id === selected.id)?.status || "released")}</p>
+      <strong>{selected.title}</strong><p>{names[selected.kind] || selected.kind} · {statusName(rows.find(row => row.id === selected.id) || selected)}</p>
       <p>{selected.target}</p>
     </div>}
   </section>;

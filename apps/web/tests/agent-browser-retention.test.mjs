@@ -103,7 +103,8 @@ test("agent-attributed opening and popups retain background Pages without steali
     } } });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(useCenterTabs.getState().activeId, manual.id, "an agent may not switch the user's tab or conversation");
-    assert.equal(sent.at(-1)?.ok, true, "background opens must not depend on a visible chat route");
+    const openResult = sent.find((message) => message.action === "webtab_result" && message.req_id === `open:${index}`);
+    assert.equal(openResult?.ok, true, "background opens must not depend on a visible chat route");
   }
   assert.equal(resolved.length, 5);
   assert.deepEqual(activated, []);
@@ -146,7 +147,7 @@ test("a selected image mirror supplies exact Page context without native visibil
   } } });
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(calls, [[page.id, true]]);
-  assert.equal(sent.at(-1)?.ok, true);
+  assert.equal(sent.find((message) => message.action === "webtab_result" && message.req_id === "mirror-context")?.ok, true);
   assert.equal(useCenterTabs.getState().activeId, "s:origin");
   useCenterTabs.getState().setActive("s:other");
   assert.equal(surfaceRefForChat("origin", true), null);

@@ -283,7 +283,7 @@ export function sessionResourceRows(
 }
 
 export function resourceIsUnavailable(row: SessionResource): boolean {
-  return row.status === "closed" || row.controlState === "closed";
+  return row.status === "closed";
 }
 
 /** Unnamed branch groups show the origin after the last colon, truncated
@@ -301,7 +301,7 @@ export function groupSessionResources(rows: readonly SessionResource[], currentB
     if (!group) {
       group = {
         key,
-        title: key === "unavailable" ? "Unavailable" : key === "unassigned" ? "Unassigned" : (row.branchName || unnamedBranchTitle(key)),
+        title: key === "unavailable" ? "Closed pages" : key === "unassigned" ? "Unassigned" : (row.branchName || unnamedBranchTitle(key)),
         current: key === currentBranchId,
         rows: [],
       };

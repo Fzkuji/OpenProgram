@@ -24,12 +24,14 @@ def _clean_webtab():
     webtab._desktop_windows.clear()
     webtab._connection_revisions.clear()
     webtab._page_revisions.clear()
+    webtab._restore_jobs.clear()
     yield
     webtab._pending.clear()
     webtab._bindings.clear()
     webtab._desktop_windows.clear()
     webtab._connection_revisions.clear()
     webtab._page_revisions.clear()
+    webtab._restore_jobs.clear()
 
 
 @pytest.mark.parametrize("kind", ["pointer", "key", "scroll", "navigate"])

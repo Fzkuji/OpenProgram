@@ -19,6 +19,15 @@ _fences: dict[str, dict[str, Any]] = {}
 _input_seqs: dict[str, int] = {}
 _PROCESS_INCARNATION = uuid.uuid4().hex[:12]
 UNASSIGNED = "unassigned"
+_FROZEN_LIFECYCLES = frozenset({
+    "closed", "unavailable", "restoring", "restore_failed", "superseded",
+})
+_RESTORABLE_LIFECYCLES = frozenset({
+    "restoring", "unavailable", "restore_failed",
+})
+_FROZEN_SQL = (
+    "'closed','unavailable','restoring','restore_failed','superseded'"
+)
 
 
 def resource_db_path() -> Path:
@@ -103,6 +112,10 @@ class BrowserResourceStore:
                 "CREATE TABLE IF NOT EXISTS browser_resource_meta ("
                 "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS browser_resource_presentation (
+                resource_id TEXT PRIMARY KEY, presentation_id TEXT NOT NULL)"""
+            )
             meta = db.execute(
                 "SELECT value FROM browser_resource_meta WHERE key='incarnation'",
             ).fetchone()
@@ -112,13 +125,20 @@ class BrowserResourceStore:
                     (_PROCESS_INCARNATION,),
                 )
             elif meta["value"] != _PROCESS_INCARNATION:
+                now = time.time()
                 db.execute(
                     """UPDATE browser_resources SET live=0, lifecycle='unavailable',
-                    sequence=sequence+1, updated_at=? WHERE live=1""",
-                    (time.time(),),
+                    sequence=sequence+1, connection_generation=0, updated_at=?
+                    WHERE live=1 AND lifecycle NOT IN ('closed','superseded')""",
+                    (now,),
                 )
                 db.execute(
-                    "UPDATE browser_resource_control SET control_state='closed'"
+                    """UPDATE browser_resource_control SET control_state='idle',
+                    pause_command_id=NULL, pause_execution_id=NULL
+                    WHERE resource_id IN (
+                        SELECT resource_id FROM browser_resources
+                        WHERE lifecycle='unavailable' AND live=0
+                    )"""
                 )
                 db.execute(
                     "UPDATE browser_resource_meta SET value=? WHERE key='incarnation'",
@@ -177,49 +197,49 @@ class BrowserResourceStore:
             # Incoming epoch is stored as excluded.connection_generation so the
             # UPDATE predicate can reject zero/older writers without Python
             # rewriting them to the current epoch.
-            if existing_lifecycle in {"closed", "unavailable"}:
+            if existing_lifecycle in _FROZEN_LIFECYCLES:
                 live = False
             db.execute(
-                """INSERT INTO browser_resources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                f"""INSERT INTO browser_resources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(resource_id) DO UPDATE SET
-                title=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                title=CASE WHEN browser_resources.lifecycle IN ({_FROZEN_SQL})
                     THEN browser_resources.title
                     WHEN excluded.connection_generation=0 THEN browser_resources.title
                     WHEN excluded.connection_generation < browser_resources.connection_generation
                     THEN browser_resources.title
                     WHEN excluded.title='' THEN browser_resources.title
                     ELSE excluded.title END,
-                target=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                target=CASE WHEN browser_resources.lifecycle IN ({_FROZEN_SQL})
                     THEN browser_resources.target
                     WHEN excluded.connection_generation=0 THEN browser_resources.target
                     WHEN excluded.connection_generation < browser_resources.connection_generation
                     THEN browser_resources.target
                     WHEN excluded.target='' THEN browser_resources.target
                     ELSE excluded.target END,
-                tab_id=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                tab_id=CASE WHEN browser_resources.lifecycle IN ({_FROZEN_SQL})
                     THEN browser_resources.tab_id
                     WHEN excluded.connection_generation=0 THEN browser_resources.tab_id
                     WHEN excluded.connection_generation < browser_resources.connection_generation
                     THEN browser_resources.tab_id
                     WHEN ifnull(browser_resources.tab_id,'') != '' THEN browser_resources.tab_id
                     ELSE excluded.tab_id END,
-                window_id=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                window_id=CASE WHEN browser_resources.lifecycle IN ({_FROZEN_SQL})
                     THEN browser_resources.window_id
                     WHEN excluded.connection_generation=0 THEN browser_resources.window_id
                     WHEN excluded.connection_generation < browser_resources.connection_generation
                     THEN browser_resources.window_id
                     WHEN ifnull(browser_resources.window_id,'') != '' THEN browser_resources.window_id
                     ELSE excluded.window_id END,
-                connection_generation=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                connection_generation=CASE WHEN browser_resources.lifecycle IN ({_FROZEN_SQL})
                     THEN browser_resources.connection_generation
                     WHEN excluded.connection_generation=0 THEN browser_resources.connection_generation
                     WHEN excluded.connection_generation < browser_resources.connection_generation
                     THEN browser_resources.connection_generation
                     ELSE excluded.connection_generation END,
                 generation=excluded.generation,
-                lifecycle=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                lifecycle=CASE WHEN browser_resources.lifecycle IN ({_FROZEN_SQL})
                     THEN browser_resources.lifecycle ELSE excluded.lifecycle END,
-                live=CASE WHEN browser_resources.lifecycle IN ('closed','unavailable')
+                live=CASE WHEN browser_resources.lifecycle IN ({_FROZEN_SQL})
                     THEN 0 ELSE excluded.live END,
                 updated_at=excluded.updated_at""",
                 (
@@ -230,6 +250,14 @@ class BrowserResourceStore:
                     None, now,
                 ),
             )
+            if db.execute(
+                "SELECT 1 FROM browser_resource_presentation WHERE resource_id=?",
+                (resource_id,),
+            ).fetchone() is None:
+                db.execute(
+                    "INSERT INTO browser_resource_presentation VALUES (?,?)",
+                    (resource_id, resource_id),
+                )
             assoc_id = _association_id(resource_id, conversation, execution_id)
             existing = db.execute(
                 "SELECT id FROM browser_resource_associations WHERE resource_id=? AND "
@@ -281,7 +309,7 @@ class BrowserResourceStore:
                 target=CASE WHEN ?='' THEN target ELSE ? END,
                 updated_at=?
                 WHERE resource_id=?
-                AND lifecycle NOT IN ('closed','unavailable')
+                AND lifecycle NOT IN ('closed','unavailable','restoring','restore_failed','superseded')
                 AND (
                     connection_generation=0
                     OR (? > 0 AND ? >= connection_generation)
@@ -309,16 +337,202 @@ class BrowserResourceStore:
         with self.connect() as db:
             db.execute(
                 """UPDATE browser_resources SET live=0, lifecycle='unavailable',
-                sequence=sequence+1, updated_at=? WHERE resource_id=?""",
+                sequence=sequence+1, updated_at=?
+                WHERE resource_id=? AND lifecycle NOT IN ('closed','superseded')""",
                 (time.time(), resource_id),
             )
             db.execute(
-                """UPDATE browser_resource_control SET control_state='closed',
+                """UPDATE browser_resource_control SET control_state='idle',
+                pause_command_id=NULL, pause_execution_id=NULL
+                WHERE resource_id=? AND control_state != 'closed'""",
+                (resource_id,),
+            )
+        clear_page_write_fence(resource_id)
+
+    def mark_window_restorable(self, window_id: str, lifecycle: str) -> list[str]:
+        if not window_id or lifecycle not in {"restoring", "restore_failed"}:
+            return []
+        ids = []
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT resource_id FROM browser_resources
+                WHERE window_id=? AND lifecycle IN ('restoring','unavailable','restore_failed')""",
+                (window_id,),
+            ).fetchall()
+            ids = [row["resource_id"] for row in rows]
+        for resource_id in ids:
+            if lifecycle == "restoring":
+                self.mark_restoring(resource_id)
+            else:
+                self.mark_restore_failed(resource_id)
+        return ids
+
+    def mark_restoring(self, resource_id: str) -> None:
+        with self.connect() as db:
+            db.execute(
+                """UPDATE browser_resources SET live=0, lifecycle='restoring',
+                sequence=sequence+1, updated_at=?
+                WHERE resource_id=? AND lifecycle NOT IN ('closed','superseded')""",
+                (time.time(), resource_id),
+            )
+            db.execute(
+                """UPDATE browser_resource_control SET control_state='idle',
                 pause_command_id=NULL, pause_execution_id=NULL
                 WHERE resource_id=?""",
                 (resource_id,),
             )
         clear_page_write_fence(resource_id)
+
+    def mark_restore_failed(self, resource_id: str) -> None:
+        with self.connect() as db:
+            db.execute(
+                """UPDATE browser_resources SET live=0, lifecycle='restore_failed',
+                sequence=sequence+1, updated_at=?
+                WHERE resource_id=? AND lifecycle NOT IN ('closed','superseded')""",
+                (time.time(), resource_id),
+            )
+            db.execute(
+                """UPDATE browser_resource_control SET control_state='idle',
+                pause_command_id=NULL, pause_execution_id=NULL
+                WHERE resource_id=?""",
+                (resource_id,),
+            )
+        clear_page_write_fence(resource_id)
+
+    def adopt_successor(
+        self,
+        *,
+        successor_id: str,
+        window_id: str,
+        tab_id: str,
+        connection_generation: int = 0,
+        title: str = "",
+        target: str = "",
+    ) -> str:
+        """Mint a live successor Page and move verified tab ownership here.
+
+        Predecessor must share exact window_id and tab_id and must not be
+        closed. Associations are copied; act authority is not.
+        """
+        if not successor_id or not window_id or not tab_id:
+            return successor_id
+        now = time.time()
+        sanitized = display_target(target) if target else ""
+        incoming = int(connection_generation or 0)
+        with self.connect() as db:
+            closed = db.execute(
+                """SELECT 1 FROM browser_resources
+                WHERE window_id=? AND tab_id=? AND lifecycle='closed'
+                AND resource_id=?""",
+                (window_id, tab_id, successor_id),
+            ).fetchone()
+            if closed is not None:
+                return successor_id
+            pred = db.execute(
+                """SELECT * FROM browser_resources
+                WHERE window_id=? AND tab_id=? AND resource_id!=?
+                AND lifecycle IN ('restoring','unavailable','restore_failed')
+                ORDER BY updated_at DESC""",
+                (window_id, tab_id, successor_id),
+            ).fetchone()
+            if pred is not None and str(pred["lifecycle"] or "") == "closed":
+                pred = None
+            if pred is None:
+                return successor_id
+            pred_title = str((pred["title"] if pred else "") or "")
+            pred_target = str((pred["target"] if pred else "") or "")
+            title_out = (str(title or "")[:160] or pred_title)[:160]
+            target_out = sanitized or pred_target
+            pred_generation = int(pred["generation"] or 1)
+            pred_sequence = int(pred["sequence"] or 0)
+            generation = max(incoming, pred_generation + 1)
+            sequence = pred_sequence + 1
+            current = db.execute(
+                "SELECT generation, sequence, lifecycle FROM browser_resources WHERE resource_id=?",
+                (successor_id,),
+            ).fetchone()
+            if current is not None:
+                if str(current["lifecycle"] or "") in {"closed", "superseded"}:
+                    return successor_id
+                generation = max(int(current["generation"] or 1), generation)
+                sequence = max(int(current["sequence"] or 0) + 1, sequence)
+            db.execute(
+                """INSERT INTO browser_resources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(resource_id) DO UPDATE SET
+                title=CASE WHEN excluded.title='' THEN browser_resources.title ELSE excluded.title END,
+                target=CASE WHEN excluded.target='' THEN browser_resources.target ELSE excluded.target END,
+                tab_id=excluded.tab_id,
+                window_id=excluded.window_id,
+                connection_generation=excluded.connection_generation,
+                generation=excluded.generation,
+                sequence=excluded.sequence,
+                lifecycle='connected',
+                live=1,
+                updated_at=excluded.updated_at""",
+                (
+                    successor_id, "web", title_out, target_out,
+                    tab_id, window_id, incoming, generation, sequence,
+                    "connected", 1, None, now,
+                ),
+            )
+            if pred is not None:
+                pred_id = pred["resource_id"]
+                pred_pres = db.execute(
+                    "SELECT presentation_id FROM browser_resource_presentation WHERE resource_id=?",
+                    (pred_id,),
+                ).fetchone()
+                presentation_id = str(
+                    (pred_pres["presentation_id"] if pred_pres else pred_id) or pred_id
+                )
+                db.execute(
+                    """INSERT INTO browser_resource_presentation VALUES (?,?)
+                    ON CONFLICT(resource_id) DO UPDATE SET presentation_id=excluded.presentation_id""",
+                    (successor_id, presentation_id),
+                )
+                assocs = db.execute(
+                    "SELECT * FROM browser_resource_associations WHERE resource_id=?",
+                    (pred_id,),
+                ).fetchall()
+                for assoc in assocs:
+                    db.execute(
+                        """DELETE FROM browser_resource_associations
+                        WHERE resource_id=? AND id!=?
+                        AND ifnull(conversation_session_id,'')=?
+                        AND ifnull(execution_id,'')=?""",
+                        (
+                            successor_id, assoc["id"],
+                            assoc["conversation_session_id"] or "",
+                            assoc["execution_id"] or "",
+                        ),
+                    )
+                    db.execute(
+                        "UPDATE browser_resource_associations SET resource_id=? WHERE id=?",
+                        (successor_id, assoc["id"]),
+                    )
+                db.execute(
+                    """UPDATE browser_resources SET live=0, lifecycle='superseded',
+                    sequence=sequence+1, updated_at=? WHERE resource_id=?""",
+                    (now, pred_id),
+                )
+            existing_control = db.execute(
+                "SELECT last_input_seq FROM browser_resource_control WHERE resource_id=?",
+                (successor_id,),
+            ).fetchone()
+            last_seq = int((existing_control["last_input_seq"] if existing_control else 0) or 0)
+            if existing_control is None:
+                db.execute(
+                    "INSERT INTO browser_resource_control VALUES (?,?,?,?,?)",
+                    (successor_id, "idle", None, None, last_seq),
+                )
+            else:
+                db.execute(
+                    """UPDATE browser_resource_control SET control_state='idle',
+                    pause_command_id=NULL, pause_execution_id=NULL,
+                    last_input_seq=? WHERE resource_id=?""",
+                    (last_seq, successor_id),
+                )
+        clear_page_write_fence(successor_id)
+        return successor_id
 
     def mark_closed(self, resource_id: str) -> None:
         with self.connect() as db:
@@ -427,6 +641,13 @@ class BrowserResourceStore:
         data = dict(row)
         if control is not None:
             data.update(dict(control))
+        with self.connect() as db:
+            pres = db.execute(
+                "SELECT presentation_id FROM browser_resource_presentation WHERE resource_id=?",
+                (resource_id,),
+            ).fetchone()
+        if pres is not None:
+            data["presentation_id"] = pres["presentation_id"]
         return data
 
     def list_rows(
@@ -463,6 +684,12 @@ class BrowserResourceStore:
                 row["resource_id"]: dict(row)
                 for row in db.execute("SELECT * FROM browser_resources")
             }
+            presentations = {
+                row["resource_id"]: row["presentation_id"]
+                for row in db.execute("SELECT resource_id, presentation_id FROM browser_resource_presentation")
+            }
+            for rid, resource in resources.items():
+                resource["presentation_id"] = presentations.get(rid) or rid
             controls = {
                 row["resource_id"]: dict(row)
                 for row in db.execute("SELECT * FROM browser_resource_control")
@@ -476,6 +703,8 @@ class BrowserResourceStore:
                 continue
             resource = resources.get(assoc["resource_id"])
             if resource is None:
+                continue
+            if (resource.get("lifecycle") or "") == "superseded":
                 continue
             anchor = _projected_anchor(
                 assoc, conversation_session_id, executions_by_id, parents, inputs,
@@ -553,9 +782,18 @@ def _public_row(resource, assoc, control, conversation_session_id, branch_id, br
     lifecycle = resource.get("lifecycle") or "unavailable"
     fenced = writes_fenced(resource["resource_id"])
     stored_state = control.get("control_state") or "idle"
-    if not live or lifecycle in {"unavailable", "closed"}:
+    if lifecycle == "closed":
         control_state = "closed"
-        status = "closed" if lifecycle == "closed" else "unknown"
+        status = "closed"
+    elif lifecycle == "restore_failed":
+        control_state = "idle"
+        status = "restore_failed"
+    elif lifecycle == "restoring":
+        control_state = "idle"
+        status = "restoring"
+    elif not live or lifecycle == "unavailable":
+        control_state = "idle"
+        status = "unknown"
     elif stored_state == "paused":
         control_state = "paused"
         status = "open"
@@ -582,8 +820,9 @@ def _public_row(resource, assoc, control, conversation_session_id, branch_id, br
         except (TypeError, ValueError):
             operation = None
     key = branch_id or UNASSIGNED
+    presentation = resource.get("presentation_id") or resource["resource_id"]
     return {
-        "id": f"browser:{resource['resource_id']}:{key}",
+        "id": f"browser:{presentation}:{key}",
         "resource_id": resource["resource_id"],
         "session_id": assoc.get("session_id"),
         "conversation_session_id": conversation_session_id,
@@ -1521,7 +1760,9 @@ def page_keys_for_socket_tab(ws, window_id: str, tab_id: str) -> list[str]:
                 continue
             if not int(row.get("live") or 0):
                 continue
-            if (row.get("lifecycle") or "") in {"closed", "unavailable"}:
+            if (row.get("lifecycle") or "") in {
+                "closed", "unavailable", "restoring", "restore_failed", "superseded",
+            }:
                 continue
             if (row.get("control_state") or "") == "closed":
                 continue

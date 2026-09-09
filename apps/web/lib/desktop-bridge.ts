@@ -77,7 +77,12 @@ import {
   draftChannelChoiceHost,
 } from "@/lib/runtime-bridge/draft-channel-choice";
 import { getSocket } from "@/lib/runtime-bridge/state";
-import { ingestBrowserResource, type BackendResource } from "@/lib/state/session-resources";
+import {
+  ingestBrowserResource,
+  listedBrowserResources,
+  recoverSessionResources,
+  type BackendResource,
+} from "@/lib/state/session-resources";
 import { recordOperationCue, showActionsEnabled } from "@/lib/state/browser-control";
 import { hasNavigate, navigate } from "@/lib/navigate";
 import type {
@@ -294,6 +299,172 @@ export function ensureWebView(
 ): void {
   bridge.webTab.ensure(id, url);
   liveViewIds.add(id);
+}
+
+/** Scheme+host+path used to compare a display-only SQLite target with a full URL. */
+export function displayPathOf(url: string): string {
+  const value = (url || "").trim();
+  if (!value) return "";
+  try {
+    const parsed = new URL(value);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Native live URL always wins. When the view is gone, keep the persisted
+ * full URL (query/hash) if it is the same document as the display-only
+ * resource target; only replace it when SQLite names a different document.
+ */
+export function reconcileRestoredWebUrl(
+  nativeUrl: string | null | undefined,
+  resourceTarget: string | null | undefined,
+  persistedUrl: string | null | undefined,
+  nativeConfirmed = false,
+): string {
+  const native = (nativeUrl || "").trim();
+  if (native) return native;
+  const persisted = (persistedUrl || "").trim();
+  const stored = (resourceTarget || "").trim();
+  if (nativeConfirmed && persisted) return persisted;
+  if (persisted && stored) {
+    const persistedPath = displayPathOf(persisted);
+    const storedPath = displayPathOf(stored);
+    if (persistedPath === storedPath || persistedPath === stored) return persisted;
+    return stored;
+  }
+  return persisted || stored;
+}
+
+function listedRowsForTab(tabId: string) {
+  return listedBrowserResources().filter((row) => row.tabId === tabId && row.kind === "web");
+}
+
+function tabIsExplicitlyClosed(tabId: string): boolean {
+  const rows = listedRowsForTab(tabId);
+  return rows.length > 0 && rows.every((row) => row.status === "closed");
+}
+
+function restorableResourceForTab(tabId: string) {
+  if (tabIsExplicitlyClosed(tabId)) return undefined;
+  return listedRowsForTab(tabId).find((row) => row.status !== "closed");
+}
+
+function webTabStillPresent(tabId: string) {
+  return useCenterTabs.getState().tabs.some((tab) => tab.id === tabId && tab.kind === "web");
+}
+
+export async function restoreRetainedWebViews(
+  bridge: DesktopBridge,
+  opts: { tabIds?: readonly string[]; retryFailed?: boolean } = {},
+): Promise<void> {
+  const current = useCenterTabs.getState().tabs.filter((tab) => tab.kind === "web");
+  const candidateIds = (opts.tabIds ?? current.map((tab) => tab.id)).filter((id, index, all) => (
+    all.indexOf(id) === index
+  ));
+  const sessionIds = [...new Set(current.flatMap((tab) => (
+    candidateIds.includes(tab.id) && tab.agentSessionId ? [tab.agentSessionId] : []
+  )))];
+  if (listedBrowserResources().length === 0 && sessionIds.length > 0) {
+    await Promise.all(sessionIds.map((sessionId) => (
+      recoverSessionResources(sessionId).catch(() => undefined)
+    )));
+  }
+  for (const tabId of candidateIds) {
+    if (!webTabStillPresent(tabId)) continue;
+    if (tabIsExplicitlyClosed(tabId)) continue;
+    let nativeUrl = "";
+    let nativeTitle = "";
+    try {
+      const native = await bridge.webTab.inspect?.(tabId);
+      nativeUrl = native?.url || "";
+      nativeTitle = native?.title || "";
+    } catch {
+      nativeUrl = "";
+    }
+    if (!webTabStillPresent(tabId)) continue;
+    if (tabIsExplicitlyClosed(tabId)) continue;
+    const tab = useCenterTabs.getState().tabs.find((item) => item.id === tabId && item.kind === "web");
+    if (!tab) continue;
+    const resource = restorableResourceForTab(tabId);
+    const url = reconcileRestoredWebUrl(
+      nativeUrl,
+      resource?.target,
+      tab.url,
+      Number(tab.urlNativeAt) > 0,
+    );
+    if (!url) continue;
+    const alreadyLive = liveViewIds.has(tabId) && !!nativeUrl;
+    if (opts.retryFailed && liveViewIds.has(tabId) && resource?.status === "restore_failed") {
+      bridge.webTab.navigate(tabId, url);
+    } else if (!alreadyLive) {
+      ensureWebView(bridge, tabId, url);
+    }
+    if (!webTabStillPresent(tabId)) continue;
+    if (nativeUrl) {
+      if (nativeUrl !== tab.url || (nativeTitle && nativeTitle !== tab.title)) {
+        useCenterTabs.getState().updateWebTab(tabId, {
+          url: nativeUrl,
+          urlNativeAt: Date.now(),
+          ...(nativeTitle ? { title: nativeTitle } : {}),
+        });
+      }
+      continue;
+    }
+    if (url !== tab.url) {
+      useCenterTabs.getState().updateWebTab(tabId, {
+        url,
+        ...(resource?.title ? { title: resource.title } : {}),
+      });
+    }
+  }
+}
+
+function persistNativeWebTabState(state: {
+  id?: string;
+  url?: string;
+  title?: string;
+  faviconUrl?: string;
+}): void {
+  if (!state.id) return;
+  const patch: { url?: string; title?: string; faviconUrl?: string; urlNativeAt?: number } = {};
+  if (state.url) {
+    patch.url = state.url;
+    patch.urlNativeAt = Date.now();
+  }
+  if (state.title) patch.title = state.title;
+  if (state.faviconUrl !== undefined) patch.faviconUrl = state.faviconUrl;
+  if (Object.keys(patch).length === 0) return;
+  useCenterTabs.getState().updateWebTab(state.id, patch);
+}
+
+export async function retryRestoreWebTab(
+  bridge: DesktopBridge,
+  tabId: string,
+): Promise<void> {
+  const tab = useCenterTabs.getState().tabs.find((item) => item.id === tabId && item.kind === "web");
+  if (!tab) return;
+  const listed = listedBrowserResources().filter((row) => row.tabId === tabId && row.kind === "web");
+  if (listed.length > 0 && listed.every((row) => row.status === "closed")) return;
+  const resource = listed.find((row) => row.status !== "closed");
+  const sessionId = tab.agentSessionId || resource?.conversationSessionId || resource?.sessionId;
+  if (sessionId) {
+    await recoverSessionResources(sessionId).catch(() => undefined);
+  }
+  if (!webTabStillPresent(tabId) || tabIsExplicitlyClosed(tabId)) return;
+  await restoreRetainedWebViews(bridge, { tabIds: [tabId], retryFailed: true });
+  reregisterDesktopWindow(bridge);
+}
+
+function reregisterDesktopWindow(bridge: DesktopBridge): void {
+  const ws = getSocket();
+  if (ws?.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({
+    action: "webtab_register",
+    window_id: bridge.windowId,
+  }));
 }
 
 /** Destroy views whose center tab no longer exists. Runs on every
@@ -950,14 +1121,21 @@ export function installDesktopMenuHandlers(): void {
   const bridge = desktopBridge();
   if (!bridge) return;
   installed = true;
+  const startupWebTabIds = useCenterTabs.getState().tabs
+    .filter((tab) => tab.kind === "web")
+    .map((tab) => tab.id);
   window.addEventListener("op-desktop-new-tab", () => {
     useCenterTabs.getState().openNewTabPage();
     showCenterSurface();
   });
   subscribeWebTabPopups(bridge);
   subscribeBrowserHumanInput(bridge);
+  bridge.webTab.onState((state) => persistNativeWebTabState(state));
   window.addEventListener("op:browser-connection", (event: Event) => {
-    if ((event as CustomEvent<{ connected: boolean }>).detail?.connected) return;
+    if ((event as CustomEvent<{ connected: boolean }>).detail?.connected) {
+      void restoreRetainedWebViews(bridge).then(() => reregisterDesktopWindow(bridge));
+      return;
+    }
     for (const id of liveViewIds) void bridge.webTab.showAction?.(id, null).catch(() => {});
   });
   window.addEventListener("op:browser-actions-changed", () => {
@@ -1195,7 +1373,17 @@ export function installDesktopMenuHandlers(): void {
           ? selectedMirrorTabById(d.tab_id)
           : visibleWebTabById(d.tab_id))
         : null;
-      runOp(tab);
+      const resource = tab?.kind === "web" ? restorableResourceForTab(tab.id) : undefined;
+      if (
+        tab?.kind === "web"
+        && resource
+        && resource.status !== "closed"
+        && resource.status !== "open"
+      ) {
+        void retryRestoreWebTab(bridge, tab.id).finally(() => runOp(tab));
+      } else {
+        runOp(tab);
+      }
       return;
     }
 
@@ -1381,6 +1569,9 @@ export function installDesktopMenuHandlers(): void {
     };
     useCenterTabs.subscribe(reconcileNativeResources);
     reconcileNativeResources();
+    void restoreRetainedWebViews(bridge, { tabIds: startupWebTabIds }).then(
+      () => reregisterDesktopWindow(bridge),
+    );
   });
 }
 

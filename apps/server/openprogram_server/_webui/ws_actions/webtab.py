@@ -11,6 +11,7 @@ installDesktopMenuHandlers）收到后 openWebTab(url) 并经同一条 WS 回
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import itertools
@@ -30,6 +31,8 @@ _page_revisions: dict[tuple[int, str], int] = {}
 _desktop_windows: dict[Any, str] = {}
 _next_revision = itertools.count(1)
 _instance_id = uuid.uuid4().hex[:12]
+_restore_jobs: dict[int, tuple[int, asyncio.Task]] = {}
+_RESTORABLE = frozenset({"restoring", "unavailable", "restore_failed"})
 RESPONSE_TIMEOUT_REASON_CODE = "desktop_response_timeout"
 _PNG_DATA_URL_PREFIX = "data:image/png;base64,"
 # Leave JSON framing headroom below Uvicorn's 16 MiB WebSocket message limit.
@@ -164,10 +167,17 @@ def register_binding(
             bool(allow_background),
         )
         connection_generation = connection_revision
+    page_key = page_key_for_revision(page_revision)
     try:
-        from openprogram.browser_resources import retain_from_binding
+        from openprogram.browser_resources import retain_from_binding, BrowserResourceStore
         retain_from_binding(
             binding_id, window_id, tab_id, target_id, connection_generation,
+        )
+        BrowserResourceStore().adopt_successor(
+            successor_id=page_key,
+            window_id=window_id,
+            tab_id=tab_id,
+            connection_generation=connection_generation,
         )
     except Exception:
         pass
@@ -203,11 +213,15 @@ def release_connection(ws) -> None:
                 wake.append(ev)
     for ev in wake:
         ev.set()
+    job = _restore_jobs.pop(id(ws), None)
+    if job is not None and not job[1].done():
+        job[1].cancel()
     if page_keys:
         try:
-            from openprogram.browser_resources import mark_binding_unavailable
+            from openprogram.browser_resources import BrowserResourceStore
+            store = BrowserResourceStore()
             for page_key in dict.fromkeys(page_keys):
-                mark_binding_unavailable(page_key=page_key)
+                store.mark_unavailable(page_key)
         except Exception:
             pass
 
@@ -731,6 +745,111 @@ async def handle_webtab_result(ws, cmd: dict):
     ev.set()
 
 
+def _connection_revision_of(ws) -> int | None:
+    with _lock:
+        return _connection_revisions.get(ws)
+
+
+def restore_window_pages(ws, window_id: str, expected_revision: int | None = None) -> None:
+    """Rebind native inventory Pages onto fresh keys; transfer stored tab ownership."""
+    from openprogram.webui.ws_actions.runtime import trusted_runtime_actor
+    if trusted_runtime_actor(getattr(ws, "scope", None), surface="ws") is None:
+        return
+    generation = _connection_revision_of(ws)
+    if generation is None:
+        return
+    if expected_revision is not None and generation != expected_revision:
+        return
+    from openprogram.browser_resources import (
+        BrowserResourceStore, publish_bound_page,
+    )
+    store = BrowserResourceStore()
+    store.mark_window_restorable(window_id, "restoring")
+    result = request_on_ws(ws, {"op": "list", "window_id": window_id}, timeout=12.0)
+    if expected_revision is not None and _connection_revision_of(ws) != expected_revision:
+        return
+    pages = result.get("pages") if result.get("ok") else None
+    if not result.get("ok") or not isinstance(pages, list):
+        store.mark_window_restorable(window_id, "restore_failed")
+        return
+    seen_tabs: set[str] = set()
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        tab_id = page.get("tab_id")
+        target_id = page.get("target_id")
+        if not isinstance(tab_id, str) or not tab_id:
+            continue
+        seen_tabs.add(tab_id)
+        if not isinstance(target_id, str) or not target_id:
+            for resource_id in store.page_keys_for_tab(window_id, tab_id):
+                row = store.get_resource(resource_id) or {}
+                if (row.get("lifecycle") or "") in _RESTORABLE:
+                    store.mark_restore_failed(resource_id)
+            continue
+        try:
+            binding_id = register_binding(
+                ws, window_id, tab_id, target_id, allow_background=True,
+                expected_connection_revision=generation,
+            )
+            title = page.get("title") if isinstance(page.get("title"), str) else ""
+            url = page.get("url") if isinstance(page.get("url"), str) else ""
+            publish_bound_page(
+                binding_page_key(binding_id),
+                window_id=window_id,
+                tab_id=tab_id,
+                connection_generation=generation,
+                title=title,
+                target=url,
+            )
+        except Exception:
+            for resource_id in store.page_keys_for_tab(window_id, tab_id):
+                row = store.get_resource(resource_id) or {}
+                if (row.get("lifecycle") or "") in _RESTORABLE:
+                    store.mark_restore_failed(resource_id)
+    if not seen_tabs:
+        store.mark_window_restorable(window_id, "restore_failed")
+        return
+    with store.connect() as db:
+        leftovers = db.execute(
+            """SELECT resource_id, tab_id FROM browser_resources
+            WHERE window_id=? AND lifecycle='restoring'""",
+            (window_id,),
+        ).fetchall()
+    for row in leftovers:
+        if (row["tab_id"] or "") not in seen_tabs:
+            store.mark_restore_failed(row["resource_id"])
+
+
+def schedule_window_restore(ws, window_id: str, revision: int) -> asyncio.Task | None:
+    """Start at most one restore job per socket revision; return immediately."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+    key = id(ws)
+    existing = _restore_jobs.get(key)
+    if existing is not None and existing[0] == revision and not existing[1].done():
+        return existing[1]
+    if existing is not None and not existing[1].done():
+        existing[1].cancel()
+
+    async def _run() -> None:
+        try:
+            await asyncio.to_thread(restore_window_pages, ws, window_id, revision)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            current = _restore_jobs.get(key)
+            task = asyncio.current_task()
+            if current is not None and current[1] is task:
+                _restore_jobs.pop(key, None)
+
+    task = loop.create_task(_run())
+    _restore_jobs[key] = (revision, task)
+    return task
+
+
 async def handle_webtab_register(ws, cmd: dict):
     """Associate one authenticated renderer socket with its Desktop window."""
     window_id = cmd.get("window_id")
@@ -740,6 +859,11 @@ async def handle_webtab_register(ws, cmd: dict):
         if ws not in _connection_revisions:
             _connection_revisions[ws] = next(_next_revision)
         _desktop_windows[ws] = window_id
+        revision = _connection_revisions[ws]
+    from openprogram.webui.ws_actions.runtime import trusted_runtime_actor
+    if trusted_runtime_actor(getattr(ws, "scope", None), surface="ws") is None:
+        return
+    schedule_window_restore(ws, window_id, revision)
 
 
 async def handle_webtab_closed(ws, cmd: dict):

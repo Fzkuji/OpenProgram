@@ -115,6 +115,8 @@ export interface CenterTab {
   /** Web tabs only — current http(s) URL (may drift from the id
    *  after in-pane navigation). */
   url?: string;
+  /** Epoch ms when `url` last came from a trusted native navigation event. */
+  urlNativeAt?: number;
   /** Popup web tabs only — exact opener tab in this renderer window. */
   openerTabId?: string;
   /** Agent-created page attribution, independent of the active session/view. */
@@ -229,7 +231,7 @@ export interface CenterTabsState {
    *  later title reporting from the sidecar browser). Id stays fixed. */
   updateWebTab: (
     id: string,
-    patch: { url?: string; title?: string; faviconUrl?: string },
+    patch: { url?: string; title?: string; faviconUrl?: string; urlNativeAt?: number },
   ) => void;
   /** Replace a web tab in place with the built-in new-tab page. */
   replaceWebTabWithNewTabPage: (id: string) => void;
@@ -847,11 +849,19 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const faviconUrl =
           patch.faviconUrl ??
           (patch.url && patch.url !== tab.url ? undefined : tab.faviconUrl);
-        if (url === tab.url && title === tab.title && faviconUrl === tab.faviconUrl) {
+        const urlNativeAt = patch.urlNativeAt ?? (
+          patch.url && patch.url !== tab.url ? undefined : tab.urlNativeAt
+        );
+        if (
+          url === tab.url
+          && title === tab.title
+          && faviconUrl === tab.faviconUrl
+          && urlNativeAt === tab.urlNativeAt
+        ) {
           return {};
         }
         const tabs = s.tabs.map((t) =>
-          t.id === id ? { ...t, url, title, faviconUrl } : t
+          t.id === id ? { ...t, url, title, faviconUrl, urlNativeAt } : t
         );
         return commitCenterTabsState(s, { tabs });
       }),

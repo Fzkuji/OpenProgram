@@ -26,9 +26,24 @@ await build({
   loader: { ".css": "empty" },
   plugins: [{ name: "panel-services", setup(b) {
     b.onResolve({ filter: /^(next\/navigation|@\/lib\/use-session-resources)$/ }, a => ({ path: a.path, namespace: "test-services" }));
-    b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents: a.path === "next/navigation"
-      ? 'export const useRouter = () => ({ push() {} });'
-      : `export const useSessionResources = () => globalThis.resourceBackend || { rows: [], currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true };` }));
+    b.onResolve({ filter: /desktop-bridge/ }, () => ({ path: "desktop-bridge", namespace: "test-services" }));
+    b.onLoad({ filter: /.*/, namespace: "test-services" }, a => {
+      if (a.path === "next/navigation") {
+        return { contents: "export const useRouter = () => ({ push() {} });" };
+      }
+      if (a.path === "desktop-bridge") {
+        return { contents: `
+          export function desktopBridge() { return globalThis.openprogramDesktop || { windowId: "main" }; }
+          export function retryRestoreWebTab(bridge, tabId) {
+            (globalThis.retryRestoreCalls ||= []).push(tabId);
+            return globalThis.retryRestoreResult
+              ? globalThis.retryRestoreResult(bridge, tabId)
+              : Promise.resolve();
+          }
+        ` };
+      }
+      return { contents: `export const useSessionResources = () => globalThis.resourceBackend || { rows: [], currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true };` };
+    });
   }}],
 });
 const { window } = parseHTML("<html><body></body></html>");
@@ -494,6 +509,77 @@ test("pending close notices use plain pause failure labels without internal coun
   }
 });
 
+test("restore statuses stay on the original branch with localized labels", async () => {
+  resetBrowserResources();
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  const page = pageTab("w:a", "a", "https://arxiv.org/abs/1", { title: "arXiv" });
+  useCenterTabs.setState({ tabs: [session, page], activeId: session.id, groups: [], splitWebTabId: null });
+  hideResourcePreview("a", "br-a");
+  globalThis.resourceBackend = {
+    rows: [
+      {
+        id: "assoc-restoring", sessionId: "a", scopeSessionId: "a", kind: "web", title: "arXiv",
+        target: "https://arxiv.org/abs/1", status: "restoring", source: "browser", sourceId: page.id,
+        resourceId: "page-a", tabId: page.id, branchId: "br-a", branchName: "Research",
+        controlState: "unknown", generation: 2, sequence: 4,
+      },
+      {
+        id: "assoc-failed", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Plans overview",
+        target: "https://a.test", status: "restore_failed", source: "browser", sourceId: "w:b",
+        resourceId: "page-b", tabId: "w:b", branchId: "br-a", branchName: "Research",
+        controlState: "unknown", generation: 2, sequence: 5,
+      },
+      {
+        id: "assoc-unknown", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Needs reconnect",
+        target: "https://reconnect.test", status: "unknown", source: "browser", sourceId: "w:c",
+        resourceId: "page-c", tabId: "w:c", branchId: "br-a", branchName: "Research",
+        controlState: "closed", generation: 2, sequence: 6,
+      },
+      {
+        id: "assoc-closed", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Old tab",
+        target: "https://closed.test", status: "closed", source: "browser", sourceId: "w:d",
+        resourceId: "page-d", tabId: "w:d", branchId: "br-a", branchName: "Research",
+        controlState: "closed", generation: 1, sequence: 1,
+      },
+    ],
+    currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true,
+  };
+  const { host, root } = mountPanel();
+  try {
+    await act(async () => { setLocale("en"); root.render(createElement(SessionResourcesPanel)); });
+    const branch = host.querySelector('[data-resource-group="br-a"]');
+    const closed = host.querySelector('[data-resource-group="unavailable"]');
+    assert.ok(branch);
+    assert.ok(closed);
+    assert.match(branch.textContent, /Restoring page…/);
+    assert.match(branch.textContent, /Could not restore page/);
+    assert.match(branch.textContent, /Reconnect/);
+    assert.match(branch.textContent, /arXiv/);
+    assert.doesNotMatch(branch.textContent, /Old tab/);
+    assert.match(closed.textContent, /Closed pages/);
+    assert.match(closed.querySelector("small")?.textContent || "", /1/);
+    const closedToggle = closed.querySelector("[aria-expanded]");
+    assert.ok(closedToggle);
+    await act(async () => {
+      closedToggle.dispatchEvent(keydown("Enter"));
+    });
+    assert.match(closed.textContent, /Old tab/);
+    assert.doesNotMatch(host.textContent, /Unavailable/);
+    assert.equal(getPreviewPreference("a", "br-a").hidden, true);
+    await act(async () => { setLocale("zh"); });
+    assert.match(host.querySelector('[data-resource-group="br-a"]').textContent, /正在恢复网页…/);
+    assert.match(host.querySelector('[data-resource-group="br-a"]').textContent, /网页恢复失败/);
+    assert.match(host.querySelector('[data-resource-group="br-a"]').textContent, /需要重新连接/);
+    assert.match(host.querySelector('[data-resource-group="unavailable"]').textContent, /已关闭的网页/);
+    assert.match(host.textContent, /arXiv/);
+  } finally {
+    setLocale("en");
+    await act(async () => root.unmount()); host.remove();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserResources();
+  }
+});
+
 test("labels follow App language without remount; user titles stay verbatim", async () => {
   resetBrowserResources();
   const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
@@ -563,6 +649,116 @@ test("labels follow App language without remount; user titles stay verbatim", as
   } finally {
     setLocale("en");
     await act(async () => root.unmount()); host.remove();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserResources();
+  }
+});
+
+test("preview and Open in tab retry only recoverable pages with the exact tab id", async () => {
+  resetBrowserResources();
+  globalThis.retryRestoreCalls = [];
+  globalThis.retryRestoreResult = undefined;
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  const other = { id: "s:b", kind: "session", sessionId: "b", title: "Chat B" };
+  const failed = pageTab("w:fail", "a", "https://arxiv.org/abs/1", { title: "arXiv" });
+  const unknown = pageTab("w:unknown", "a", "https://reconnect.test", { title: "Needs reconnect" });
+  const healthy = pageTab("w:ok", "a", "https://ok.test", { title: "Healthy" });
+  const closed = pageTab("w:closed", "a", "https://closed.test", { title: "Old tab" });
+  const restoring = pageTab("w:restoring", "a", "https://restoring.test", { title: "Restoring" });
+  const documentIds = [session.id, other.id, failed.id, unknown.id, healthy.id, closed.id, restoring.id];
+  useCenterTabs.setState({
+    tabs: [session, other, failed, unknown, healthy, closed, restoring],
+    activeId: session.id, groups: [], splitWebTabId: null,
+  });
+  hideResourcePreview("a", "br-a");
+  globalThis.resourceBackend = {
+    rows: [
+      {
+        id: "assoc-fail", sessionId: "a", scopeSessionId: "a", kind: "web", title: "arXiv",
+        target: failed.url, status: "restore_failed", source: "browser", sourceId: "page-fail",
+        resourceId: "page-fail", tabId: failed.id, branchId: "br-a", branchName: "Research",
+        controlState: "unknown", generation: 2, sequence: 4,
+      },
+      {
+        id: "assoc-unknown", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Needs reconnect",
+        target: unknown.url, status: "unknown", source: "browser", sourceId: "page-u",
+        resourceId: "page-u", tabId: unknown.id, branchId: "br-a", branchName: "Research",
+        controlState: "unknown", generation: 2, sequence: 5,
+      },
+      {
+        id: "assoc-ok", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Healthy",
+        target: healthy.url, status: "open", source: "browser", sourceId: "page-ok",
+        resourceId: "page-ok", tabId: healthy.id, branchId: "br-a", branchName: "Research",
+        controlState: "idle", generation: 1, sequence: 1,
+      },
+      {
+        id: "assoc-closed", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Old tab",
+        target: closed.url, status: "closed", source: "browser", sourceId: "page-closed",
+        resourceId: "page-closed", tabId: closed.id, branchId: "br-a", branchName: "Research",
+        controlState: "closed", generation: 1, sequence: 1,
+      },
+      {
+        id: "assoc-restoring", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Restoring",
+        target: restoring.url, status: "restoring", source: "browser", sourceId: "page-r",
+        resourceId: "page-r", tabId: restoring.id, branchId: "br-a", branchName: "Research",
+        controlState: "unknown", generation: 2, sequence: 6,
+      },
+    ],
+    currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true,
+  };
+  const { host, root } = mountPanel();
+  try {
+    await act(async () => { setLocale("en"); root.render(createElement(SessionResourcesPanel)); });
+    const closedGroup = host.querySelector('[data-resource-group="unavailable"]');
+    await act(async () => closedGroup.querySelector("[aria-expanded]").dispatchEvent(keydown("Enter")));
+
+    await act(async () => previewInConversationButton(host, "Healthy").click());
+    await act(async () => openInTabButton(host, "Healthy").click());
+    await act(async () => previewInConversationButton(host, "Old tab").click());
+    await act(async () => openInTabButton(host, "Old tab").click());
+    await act(async () => previewInConversationButton(host, "Restoring").click());
+    assert.deepEqual(globalThis.retryRestoreCalls, []);
+    assert.equal(getPreviewPreference("a", "br-a").hidden, false);
+
+    hideResourcePreview("a", "br-a");
+    await act(async () => [...host.querySelectorAll("button")].find(button => button.title === failed.url).click());
+    assert.deepEqual(globalThis.retryRestoreCalls, [failed.id]);
+    globalThis.retryRestoreCalls = [];
+    globalThis.retryRestoreResult = () => Promise.reject(new Error("restore failed"));
+    await act(async () => previewInConversationButton(host, "arXiv").click());
+    assert.deepEqual(globalThis.retryRestoreCalls, [failed.id]);
+    globalThis.retryRestoreResult = undefined;
+    globalThis.retryRestoreCalls = [];
+    await act(async () => previewInConversationButton(host, "arXiv").click());
+    assert.deepEqual(globalThis.retryRestoreCalls, [failed.id]);
+    assert.equal(useWebTabPip.getState().tabId, failed.id);
+    assert.equal(useCenterTabs.getState().activeId, session.id);
+    assert.deepEqual(useCenterTabs.getState().tabs.map(tab => tab.id), documentIds);
+    assert.equal(getPreviewPreference("a", "br-a").hidden, false);
+
+    globalThis.retryRestoreCalls = [];
+    await act(async () => openInTabButton(host, "Needs reconnect").click());
+    assert.deepEqual(globalThis.retryRestoreCalls, [unknown.id]);
+    assert.equal(useCenterTabs.getState().activeId, unknown.id);
+    assert.deepEqual(useCenterTabs.getState().tabs.map(tab => tab.id), documentIds);
+    assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.url === unknown.url).length, 1);
+
+    let finish;
+    globalThis.retryRestoreCalls = [];
+    globalThis.retryRestoreResult = () => new Promise((resolve) => { finish = resolve; });
+    useCenterTabs.setState({ activeId: session.id });
+    await act(async () => previewInConversationButton(host, "arXiv").click());
+    assert.deepEqual(globalThis.retryRestoreCalls, [failed.id]);
+    useCenterTabs.setState({ activeId: other.id });
+    await act(async () => finish());
+    assert.equal(useCenterTabs.getState().activeId, other.id);
+    assert.deepEqual(useCenterTabs.getState().tabs.map(tab => tab.id), documentIds);
+  } finally {
+    globalThis.retryRestoreResult = undefined;
+    globalThis.retryRestoreCalls = [];
+    setLocale("en");
+    await act(async () => root.unmount()); host.remove();
+    useWebTabPip.getState().end();
     useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
     resetBrowserResources();
   }

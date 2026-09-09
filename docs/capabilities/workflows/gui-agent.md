@@ -48,6 +48,8 @@ Using the real webpage requests a pause: clicking, typing, scrolling, and naviga
 
 Closing a Page affects every branch reference to that same Page. An active Page first requests stopping; it stays available until stopping is confirmed. Closing is separate from hiding the preview. Disconnection or an unavailable target shows the last image as stale. Saved resource metadata does not restore an Agent input lease or recreate a closed Page.
 
+If the App or worker restarts, pages you had not closed come back in the background without extra top tabs. The retained tab, session, and branch stay; the last confirmed title and URL stay. The App creates a new live page for that retained tab. Previous live handles are invalid. Explicitly closed pages stay under **Closed pages**. A hidden preview stays hidden until you select the resource or use **Preview in conversation**. Rows that are restoring, failed to restore, or need a reconnect stay in the original branch and show **Restoring page…**, **Could not restore page**, or **Reconnect page**. They do not move to a generic Unavailable group. Restoring a page does not require **Continue Agent**. Idle pages stay **Ready to use**. New task actions still use a fresh observation and current permission on the new page. In-page DOM and form values from the old process are not restored. Restart recovery is approved intended behavior; implementation acceptance is still pending.
+
 These browser controls operate on exact OpenProgram Pages. Native application windows, the shared host desktop, and VM displays retain their own capability and input-scope restrictions described below.
 
 ## Automatic capability execution

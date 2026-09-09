@@ -55,6 +55,24 @@ const {
   setDesktopSplitLayoutAvailable,
 } = await import("../lib/desktop-bridge.ts");
 
+function acceptWebTabSocket(sent, windowId = "main") {
+  return {
+    readyState: WebSocket.OPEN,
+    send(payload) {
+      const message = JSON.parse(payload);
+      if (message.action === "webtab_result") {
+        sent.push(message);
+        return;
+      }
+      if (message.action === "webtab_register") {
+        assert.equal(message.window_id, windowId, "startup webtab_register must name this window");
+        return;
+      }
+      assert.equal(message.action, "webtab_closed", "only lifecycle notifications may accompany command replies");
+    },
+  };
+}
+
 function transferStub() {
   const unsubscribe = () => {};
   return {
@@ -123,14 +141,7 @@ test("agent Page open reports cleanup failure and visible reuse ownership", asyn
   };
 
   const sent = [];
-  setSocket({
-    readyState: WebSocket.OPEN,
-    send(payload) {
-      const message = JSON.parse(payload);
-      if (message.action === "webtab_result") sent.push(message);
-      else assert.equal(message.action, "webtab_closed", "only lifecycle notifications may accompany command replies");
-    },
-  });
+  setSocket(acceptWebTabSocket(sent));
   installDesktopMenuHandlers();
   const closeTab = useCenterTabs.getState().closeTab;
   const ensureExclusiveWebTab = useCenterTabs.getState().ensureExclusiveWebTab;
@@ -480,14 +491,7 @@ test("background Page resolve deadline never sends a late reply", async (t) => {
     resolved.push(id);
     return pendingResolution.promise;
   };
-  setSocket({
-    readyState: WebSocket.OPEN,
-    send(payload) {
-      const message = JSON.parse(payload);
-      if (message.action === "webtab_result") sent.push(message);
-      else assert.equal(message.action, "webtab_closed", "only lifecycle notifications may accompany command replies");
-    },
-  });
+  setSocket(acceptWebTabSocket(sent));
 
   const resetTabs = () => {
     useCenterTabs.setState({
@@ -696,14 +700,7 @@ test("visible route failure rolls back only an agent-created Page", async () => 
   const ensureExclusiveWebTab = useCenterTabs.getState().ensureExclusiveWebTab;
   const priorPathname = window.location.pathname;
   const sent = [];
-  setSocket({
-    readyState: WebSocket.OPEN,
-    send(payload) {
-      const message = JSON.parse(payload);
-      if (message.action === "webtab_result") sent.push(message);
-      else assert.equal(message.action, "webtab_closed", "only lifecycle notifications may accompany command replies");
-    },
-  });
+  setSocket(acceptWebTabSocket(sent));
   window.location.pathname = "/settings";
 
   const resetTabs = () => {
