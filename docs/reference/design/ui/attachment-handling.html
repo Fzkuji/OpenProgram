@@ -6,7 +6,7 @@
 section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;background:var(--soft)}td p{margin:0}nav{gap:10px 18px}.status{margin:8px 0}.language{font-size:14px}.flow{margin:24px 0}caption{text-align:left;padding:10px 0}#reference-explorer{scroll-margin-top:110px}.toc-link{white-space:normal}section section{padding-top:0}h2,h3{overflow-wrap:anywhere}
 </style></head><body><main>
 <header><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>Attachment handling design</h1><span class="status">Reviewed design · Runtime changes are not implemented</span><p class="lead">Store originals reliably. Admit small references. Confirm submission before clearing drafts.</p><p>This HTML document is the complete attachment contract, framework comparison, implementation plan, and acceptance specification for Web, Desktop, and channel input. The English version is authoritative. Implementation status is recorded at the end.</p><p class="language"><a href="attachment-handling.zh.html" lang="zh-CN">Chinese</a></p></header>
-<nav aria-label="Contents"><a class="toc-link" href="#current">Current implementation</a><a class="toc-link" href="#frameworks">Frameworks</a><a class="toc-link" href="#choices">Scope choices</a><a class="toc-link" href="#contract">Target contract</a><a class="toc-link" href="#budgets">Budgets and delivery</a><a class="toc-link" href="#submission">Submission and lifecycle</a><a class="toc-link" href="#plan">Plan and acceptance</a><a class="toc-link" href="#status">Implementation status</a></nav>
+<nav aria-label="Contents"><a class="toc-link" href="#current">Current implementation</a><a class="toc-link" href="#frameworks">Frameworks</a><a class="toc-link" href="#choices">Selected design</a><a class="toc-link" href="#contract">Target contract</a><a class="toc-link" href="#budgets">Budgets and delivery</a><a class="toc-link" href="#submission">Submission and lifecycle</a><a class="toc-link" href="#plan">Plan and acceptance</a><a class="toc-link" href="#status">Implementation status</a></nav>
 <ol class="flow" aria-label="Attachment lifecycle"><li><strong>Validate upload</strong><span>Authenticate ownership and check decoded file limits.</span></li><li><strong>Store original</strong><span>Keep an immutable session-owned snapshot and digest.</span></li><li><strong>Admit references</strong><span>Persist ordered references with a stable submission ID.</span></li><li><strong>Build model input</strong><span>Read a permitted image representation or bounded preview.</span></li></ol>
 <section id="current">
 <h2>Verified current behavior</h2>
@@ -60,34 +60,32 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 
 </section>
 <section id="choices">
-<h2>Choice of scope</h2>
+<h2>Selected design</h2>
 <div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Alternative</th>
-<th>Assessment</th>
-</tr>
-</thead>
+<thead><tr><th>Design</th><th>Implementation</th><th>Reason</th></tr></thead>
 <tbody>
 <tr>
-<td>Increase the admission limit to fit base64</td>
-<td>Rejected as the primary repair: retains repeated serialization and bloated execution/history inputs, and does not fix lost drafts or provider limits.</td>
+<td>Session-owned immutable originals</td>
+<td>Store originals and their digests in the owning session; provide verified copies for file tools.</td>
+<td>Queued input, replay, and previews resolve to the same attachment content.</td>
 </tr>
 <tr>
-<td>Compress every image below approximately 192 KiB</td>
-<td>Rejected: metadata reduces that budget further and fine-text screenshots can become unreadable. Compression serves provider/image budgets, not the admission envelope.</td>
+<td>Ordered references in admission input</td>
+<td>Persist text, settings, and ordered attachment references within the 256 KiB admission budget.</td>
+<td>Attachment bytes have independent storage and upload budgets, keeping execution records small.</td>
 </tr>
 <tr>
-<td>Store only the original desktop path</td>
-<td>Rejected for attached snapshots: later edits, temporary-file deletion, and remote placement change what can be read. Live project mentions keep their separate semantics.</td>
+<td>Capability-aware model delivery</td>
+<td>Build image input or bounded text previews according to model capabilities and provider limits.</td>
+<td>The model receives a supported representation, and the UI reports its actual delivery mode.</td>
 </tr>
 <tr>
-<td>Session-owned immutable bytes with small references</td>
-<td>Selected: fixes the shared admission boundary and gives replay, previews, and transport a consistent identity using one local store.</td>
+<td>Durable submission confirmation</td>
+<td>Use a stable submission ID and retain draft claims until the user message and execution are confirmed persisted.</td>
+<td>Interrupted submissions remain recoverable, and retries of the same submission execute once.</td>
 </tr>
 </tbody>
 </table></div>
-
 </section>
 <section id="contract">
 <h2>Target contract</h2>

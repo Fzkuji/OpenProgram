@@ -6,7 +6,7 @@
 section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;background:var(--soft)}td p{margin:0}nav{gap:10px 18px}.status{margin:8px 0}.language{font-size:14px}.flow{margin:24px 0}caption{text-align:left;padding:10px 0}#reference-explorer{scroll-margin-top:110px}.toc-link{white-space:normal}section section{padding-top:0}h2,h3{overflow-wrap:anywhere}
 </style></head><body><main>
 <header><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>附件处理设计</h1><span class="status">已审阅设计 · 运行修改尚未实现</span><p class="lead">可靠保存原件，以小型引用进入执行，确认提交后再清理草稿。</p><p>这份 HTML 包含 Web、Desktop 和 Channel 入站附件的完整契约、框架对比、实施计划及验收条件。英文版为准，中英文内容对应；实现状态集中列在文末。</p><p class="language"><a href="attachment-handling.html" lang="en">English</a></p></header>
-<nav aria-label="内容导航"><a class="toc-link" href="#current">当前实现</a><a class="toc-link" href="#frameworks">框架对比</a><a class="toc-link" href="#choices">方案选择</a><a class="toc-link" href="#contract">目标契约</a><a class="toc-link" href="#budgets">预算与交付</a><a class="toc-link" href="#submission">提交与生命周期</a><a class="toc-link" href="#plan">实施与验收</a><a class="toc-link" href="#status">实现状态</a></nav>
+<nav aria-label="内容导航"><a class="toc-link" href="#current">当前实现</a><a class="toc-link" href="#frameworks">框架对比</a><a class="toc-link" href="#choices">采用的设计</a><a class="toc-link" href="#contract">目标契约</a><a class="toc-link" href="#budgets">预算与交付</a><a class="toc-link" href="#submission">提交与生命周期</a><a class="toc-link" href="#plan">实施与验收</a><a class="toc-link" href="#status">实现状态</a></nav>
 <ol class="flow" aria-label="附件生命周期"><li><strong>上传校验</strong><span>确认所属会话，检查实际解码字节与格式。</span></li><li><strong>保存原件</strong><span>保留会话所属的不可变快照和摘要。</span></li><li><strong>引用准入</strong><span>保存有序引用及稳定的提交 ID。</span></li><li><strong>模型交付</strong><span>读取允许的图片表示或有界预览。</span></li></ol>
 <section id="current">
 <h2>当前实现与已确认问题</h2>
@@ -60,34 +60,32 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 
 </section>
 <section id="choices">
-<h2>方案选择</h2>
+<h2>采用的设计</h2>
 <div class="table-wrap"><table>
-<thead>
-<tr>
-<th>方案</th>
-<th>判断</th>
-</tr>
-</thead>
+<thead><tr><th>设计</th><th>做法</th><th>理由</th></tr></thead>
 <tbody>
 <tr>
-<td>直接增大执行输入限制以容纳 base64</td>
-<td>不作为主要修复：重复序列化和庞大执行／历史输入仍存在，也不解决草稿丢失和 Provider 上限。</td>
+<td>会话所属的不可变原件</td>
+<td>原件与摘要保存在所属会话中，文件工具使用经过校验的副本。</td>
+<td>排队输入、回放和预览始终对应同一份附件内容。</td>
 </tr>
 <tr>
-<td>把所有图片压到约 192 KiB 以下</td>
-<td>不采用：元数据还要占空间，细小文字截图可能不可读；压缩应服从图像和 Provider 预算，不是执行输入大小。</td>
+<td>执行输入保存有序引用</td>
+<td>在 256 KiB 准入预算内保存文字、配置和有序附件引用。</td>
+<td>附件字节使用独立的存储与上传预算，执行记录保持较小体积。</td>
 </tr>
 <tr>
-<td>只保存 Desktop 原始路径</td>
-<td>不适用于附件快照：后续编辑、临时文件删除和远程部署会改变读取结果；实时项目引用保留独立语义。</td>
+<td>按模型能力交付内容</td>
+<td>根据模型模态和 Provider 限制，构造图片输入或有界文字预览。</td>
+<td>模型收到其支持的内容表示，界面显示实际交付方式。</td>
 </tr>
 <tr>
-<td>会话所属的不可变字节＋小型引用</td>
-<td>采用：用一个本地存储修复共享准入边界，并统一回放、预览和传输使用的身份。</td>
+<td>持久确认后清理草稿</td>
+<td>使用稳定提交 ID，用户消息与执行确认保存前持续保留草稿引用。</td>
+<td>提交中断后能够恢复，同一提交的重试只执行一次。</td>
 </tr>
 </tbody>
 </table></div>
-
 </section>
 <section id="contract">
 <h2>目标契约</h2>
