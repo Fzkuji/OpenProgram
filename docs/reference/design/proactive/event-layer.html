@@ -4,8 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenProgram · 事件层设计</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#0a1322; --panel:#101d31; --panel2:#0d1828;
@@ -213,7 +211,7 @@ footer a{color:var(--cyan); text-decoration:none}
   <a href="#pos"><span class="no">05</span>总线与定位</a>
   <a href="#lanes"><span class="no">06</span>观察 / 拦截</a>
   <a href="#rules"><span class="no">07</span>两条原则</a>
-  <div class="foot">design doc · v1<br>docs/design/proactive/</div>
+  <div class="foot">design doc · v1<br>docs/reference/design/proactive/</div>
 </nav>
 
 <main><div class="wrap">
@@ -513,11 +511,11 @@ footer a{color:var(--cyan); text-decoration:none}
       <p>源和消费者互不认识，所以<b>加事件只动 emit 那一处</b>：框架内函数加一行，一类动作在公共入口加一次。加类型、给 payload 加字段都零风险；<b>改老结构才会伤老订阅者</b>——这也是 payload / metadata 用开放 dict 的理由。</p>
     </div>
   </div>
-  <div class="note">落地顺序与接线点（file:line）见 <b>docs/plans/proactive-implementation.md</b>：先把 A 类收口成总线并验证完整事件序列 → 补 file.changed 和工具前可截 → 桥进 B 类 → 补并发 lane 区分。</div>
+  <div class="note">当前接线点以 <code>openprogram/events/{registry,bus,bridges}.py</code> 和实际 emit 点为准；事件表中的 file:line 必须随这些实现同步更新。主动规则层仍是独立的延期设计。</div>
 </section>
 
 <footer>
-  <span>OpenProgram · docs/design/proactive/event-layer</span>
+  <span>OpenProgram · docs/reference/design/proactive/event-layer</span>
   <span>md 源文件同目录 · <a href="#arch">回到图</a></span>
 </footer>
 

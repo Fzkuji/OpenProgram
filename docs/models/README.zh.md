@@ -25,12 +25,12 @@ openprogram providers setup      # 交互式：扫描现有凭据 → 登录 →
 | `login <provider>` | 登录一个 provider。自动选择合适的方式（OAuth 或 API key）；脚本里可用 `--api-key-stdin` |
 | `logout <provider>` | 删除该 provider 的凭据 |
 | `status <provider>` | 检查当前凭据是否可用 |
-| `list` | 按 profile 列出已配置的凭据池 |
+| `list` | 按账号列出已配置的凭据池 |
 | `available [QUERY]` | 列出全部可配置的 provider 目录（含社区目录），可按关键词过滤 |
 | `discover` / `adopt` | 扫描本机已有凭据（Codex CLI、环境变量等）并导入，见[认证与凭据](auth.md) |
-| `use <provider> [profile]` | 多账号时选择该 provider 当前跑哪个账号 |
+| `use <provider> [account]` | 多账号时选择该 provider 当前跑哪个账号 |
 | `doctor` | 诊断凭据：过期、刷新、冷却、冲突 |
-| `aliases` / `profiles` / `migrate` | 短名别名、账号 profile 管理、凭据格式迁移 |
+| `aliases` / `accounts` / `migrate` | 短名别名、账号管理、凭据格式迁移 |
 
 ## 启用模型（enabled models）
 

@@ -1,5 +1,10 @@
 # Entity Memory on Git: Session-Git + Project-Git
 
+> **Implementation status:** This is a deferred design proposal. The current
+> Memory runtime does not create `openprogram/memory/session_git/`, commit one
+> Git revision per turn, or provide the replay/project-Git lifecycle described
+> here. See [`overview.md`](overview.md) for the active Source/Topic design.
+
 ## Mental Model
 
 "Entity memory" = things that actually happened, replayable step by step. Git is
@@ -300,7 +305,7 @@ No conflict. The commit chain is "the context view the LLM sees", while git is
 A commit can be selectively exported to git (e.g. the user wants to see "what the
 LLM saw back then"), but it's not mandatory.
 
-## Appendix: Build Order
+## Appendix: Proposed Build Order
 
 The work splits into five independently verifiable pieces:
 

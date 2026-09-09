@@ -47,26 +47,26 @@
 
 | 文件 | 符号 | 作用 |
 |---|---|---|
-| `context/nodes.py` | `Call.caller` | dataclass 的边字段，语义 = caller |
-| `store/session/_msg_adapter.py` | `_msg_to_node` | msg 的 `caller` → `Call.caller`；msg 的 `predecessor` → `Call.predecessor`（从 metadata 里 pop 掉，不留镜像） |
-| `store/session/_msg_adapter.py` | `_node_to_msg` | 反向：输出 `caller` + `predecessor` 两个明确的 key |
-| `store/session/session_store.py` | `_node_conv_predecessor` | 读 `Call.predecessor` |
-| `store/session/session_store.py` | `_node_caller` | 读 `Call.caller` |
-| `store/session/memory_index.py` | `append(node, predecessor, caller)` | 两个索引：`children_by_predecessor`（conv）/ `children_by_caller`（caller） |
-| `webui/graph_builder.py` | `build_session_graph` | 构建 graph dict，用 `predecessor` + `caller` 两个明确 key |
-| `webui/graph_layout/_common.py` | `predecessor_of` / `caller_of` | 两个明确的访问函数，各 layout 模块按需调对应的那个 |
-| `webui/graph_layout/tier.py` | — | 用 `caller_of`（子调用缩进） |
-| `webui/graph_layout/{lane,depth,topology}.py` | — | 用 `predecessor_of`（对话链） |
+| `openprogram/context/nodes.py` | `Call.caller` | dataclass 的边字段，语义 = caller |
+| `openprogram/store/session/_msg_adapter.py` | `_msg_to_node` | msg 的 `caller` → `Call.caller`；msg 的 `predecessor` → `Call.predecessor`（从 metadata 里 pop 掉，不留镜像） |
+| `openprogram/store/session/_msg_adapter.py` | `_node_to_msg` | 反向：输出 `caller` + `predecessor` 两个明确的 key |
+| `openprogram/store/session/session_store.py` | `_node_conv_predecessor` | 读 `Call.predecessor` |
+| `openprogram/store/session/session_store.py` | `_node_caller` | 读 `Call.caller` |
+| `openprogram/store/session/memory_index.py` | `append(node, predecessor, caller)` | 两个索引：`children_by_predecessor`（conv）/ `children_by_caller`（caller） |
+| `apps/server/openprogram_server/_webui/graph_builder.py` | `build_session_graph` | 构建 graph dict，用 `predecessor` + `caller` 两个明确 key |
+| `apps/server/openprogram_server/_webui/graph_layout/_common.py` | `predecessor_of` / `caller_of` | 两个明确的访问函数，各 layout 模块按需调对应的那个 |
+| `apps/server/openprogram_server/_webui/graph_layout/tier.py` | — | 用 `caller_of`（子调用缩进） |
+| `apps/server/openprogram_server/_webui/graph_layout/{lane,depth,topology}.py` | — | 用 `predecessor_of`（对话链） |
 
 ### 前端
 
 | 文件 | 符号 | 作用 |
 |---|---|---|
-| `dag/types.ts` | `GNode` | 带 `predecessor`（conv）和 `caller`（子调用） |
-| `dag/types.ts` | `layoutParent(n)` | 返回 `n.predecessor`（conv 前驱），构建树用 |
-| `dag/pipeline.ts` | `render` | `n.caller` 判 internal；`m.predecessor` 驱动对话链；`_signature` 用 `predecessor` |
-| `dag/render/{edges,nodes,badges}.ts` | — | 读 `predecessor` 画连线 / 判分支 |
-| `conversations.ts` | `LegacyMessage` / `BranchRow` | msg/branch dict 流转，两个 key 都透传 |
+| `apps/web/lib/runtime-bridge/dag/types.ts` | `GNode` | 带 `predecessor`（conv）和 `caller`（子调用） |
+| `apps/web/lib/runtime-bridge/dag/types.ts` | `layoutParent(n)` | 返回 `n.predecessor`（conv 前驱），构建树用 |
+| `apps/web/lib/runtime-bridge/dag/pipeline.ts` | `render` | `n.caller` 判 internal；`m.predecessor` 驱动对话链；`_signature` 用 `predecessor` |
+| `apps/web/lib/runtime-bridge/dag/render/{edges,nodes,badges}.ts` | — | 读 `predecessor` 画连线 / 判分支 |
+| `apps/web/lib/runtime-bridge/conversations.ts` | `LegacyMessage` / `BranchRow` | msg/branch dict 流转，两个 key 都透传 |
 
 ### WS 协议
 

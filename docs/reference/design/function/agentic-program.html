@@ -271,7 +271,7 @@ Skill 只来自用户项目、用户目录、插件和远端缓存，全部经<c
   <text x="716" y="90" fill="#a5a190" font-size="11">最少成功数闸门，再一次聚合调用。它写成了工具。</text>
 </svg>
 <div class="legend">
-<code>mixture_of_agents</code>（<code>openprogram/programs/tools/agents/mixture_of_agents/mixture_of_agents.py:290</code>）用<code>asyncio.gather</code>并行发N个模型，
+<code>mixture_of_agents</code>（<code>openprogram/programs/tools/agents/mixture_of_agents.py:290</code>）用<code>asyncio.gather</code>并行发N个模型，
 用<code>MIN_SUCCESSFUL_REFERENCES</code>做闸门，再调一次聚合模型。步骤、扇出、闸门全在代码里，站在谱的最右端，
 但它经<code>complete_simple</code>直连provider，不经<code>runtime.exec</code>，所以一个ModelCall节点都不落。
 <b>结论：装饰器选的是「内部要不要记账」，和「多少写进代码」是两个维度。</b>
@@ -374,7 +374,7 @@ Skill 只来自用户项目、用户目录、插件和远端缓存，全部经<c
 
 <div class="fw">
   <h4>extract_pdf_figures</h4>
-  <p class="sig">openprogram/programs/workflow/extract_pdf_figures/__init__.py:98</p>
+  <p class="sig">openprogram/programs/workflow/document/extract_pdf_figures/__init__.py:98</p>
   <p class="why">整份文件里唯一需要判断的是看图给框。翻页、映射坐标、裁剪、写盘全是代码。模型答错一页不影响其余页。</p>
   <div class="flow">
     <div class="fx code"><div class="k">CODE</div><div class="t">_parse_pages</div><div class="d">页码范围解析成 lo, hi</div></div>
@@ -1130,7 +1130,7 @@ OpenProgram 不随包分发默认 skill；产品工作流由 Programs 提供。�
   <p class="a"><b>已经统一的部分比想象的多。</b><code>@agentic_function._register_as_tool</code>（<code>function.py:963</code>）调的就是<code>@function</code>用的那个<code>_build_and_register_tool</code>（<code>_runtime.py:1037</code>）。同一个<code>_registry</code>，同一个tools数组，同样六层门禁，20个关键字参数同名同义（<code>name</code>、<code>description</code>、<code>parameters</code>、<code>label</code>、<code>toolset</code>、<code>unsafe_in</code>、<code>check_fn</code>、<code>requires_env</code>、<code>can_use</code>、<code>defer</code>、<code>cache</code>等）。所以<b>注册路径、工具面暴露、调用约定这三样差得很小。</b></p>
   <p class="a"><b>真正差的第一样：参数schema生成器是两份，而且已经漂了。</b><code>_build_parameters_schema</code>（<code>_runtime.py:426</code>）会读docstring的<code>Args:</code>段、把可选参数放宽成允许null、递归写<code>additionalProperties:false</code>、用<code>get_type_hints</code>解字符串注解、认PEP-604的<code>X | None</code>、认<code>Literal</code>。<code>_build_agentic_tool_spec</code>（<code>function.py:1302</code>）一样都没有：它读<code>input={}</code>的UI元数据，只判<code>typing.Union</code>而PEP-604的origin是<code>types.UnionType</code>，认不出的一律落到<code>{"type":"string"}</code>。
   <code>_runtime.py:312-321</code>有一整段注释说明这个union问题曾经打断过生产里的工具调用，<b>那个修复没有搬到agentic这边，现在还是活的。</b>这一处该合，合完删约60行近似重复，顺手修掉一个活问题。</p>
-  <p class="a"><b>真正差的第二样：<code>_is_agentic</code>不是装饰，是开关。</b>它扛着九处行为：<code>loop_runner.py:108</code>决定渲染成带执行图的运行块还是折叠的工具卡；<code>runtime_attach.py:128</code>决定要不要fork出子进程跑（为了停止键能SIGKILL整个进程组）；<code>forced_tool.py:74</code>和<code>webui/routes/chat.py:184</code>是两道硬门，非agentic直接报错或400；<code>tree.py:93</code>决定进不进Functions面板的内建列表。合成一个装饰器就要把这九处压进一个参数，那个参数一翻就同时翻九件事，和两个装饰器是同一回事，只是更难发现。</p>
+  <p class="a"><b>真正差的第二样：<code>_is_agentic</code>不是装饰，是开关。</b>它扛着九处行为：<code>loop_runner.py:108</code>决定渲染成带执行图的运行块还是折叠的工具卡；<code>runtime_attach.py:128</code>决定要不要fork出子进程跑（为了停止键能SIGKILL整个进程组）；<code>forced_tool.py:74</code>和<code>apps/server/openprogram_server/_webui/routes/chat.py</code>是两道硬门，非agentic直接报错或400；<code>tree.py:93</code>决定进不进Functions面板的内建列表。合成一个装饰器就要把这九处压进一个参数，那个参数一翻就同时翻九件事，和两个装饰器是同一回事，只是更难发现。</p>
   <p class="a"><b>还有一个名字撞车得先解决。</b><code>_build_and_register_tool(expose: bool)</code>的<code>expose</code>是「给不给模型看」，<code>@agentic_function(expose="io"|"llm"|"full"|"hidden")</code>的<code>expose</code>是「DAG里露多少」。两个不相干的意思共用一个词，而且agentic那边压根没给注册函数传<code>expose</code>（<code>function.py:963-977</code>），永远取<code>True</code>。</p>
   <p class="a"><b>为什么概念统一而实现不统一是可接受的：因为两个装饰器区分的从来不是概念位置。</b><code>mixture_of_agents</code>用<code>@function</code>写了一个完全固化的多步流程，站在谱的最右端；<code>interaction_demo</code>用<code>@agentic_function</code>写了一个很小的东西。装饰器选的是<b>内部要不要记账</b>：<code>@agentic_function</code>的模型调用走<code>runtime.exec</code>，每次落一个ModelCall节点进DAG，受<code>expose</code>／<code>render_range</code>约束；<code>@function</code>的模型调用（<code>mixture_of_agents</code>用<code>complete_simple</code>直连）不进DAG，只在usage里记一笔<code>call_kind="tool"</code>。这是一个和「多少写进代码」正交的维度，不该合并。</p>
   <p class="a">代价对比：合schema生成器约删60行、修一个活问题、改两个调用点，<b>该做</b>；合装饰器要把九处行为压进一个开关、先给<code>expose</code>解歧义、还要在「description取第一段还是取整份docstring」里二选一（4个agentic function的docstring就是提示词，截成第一段会直接改掉它们的行为），<b>不该做</b>。</p>

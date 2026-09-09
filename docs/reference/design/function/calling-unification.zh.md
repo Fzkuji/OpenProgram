@@ -3,7 +3,7 @@
 LLM 如何从列表中挑选一个函数、框架如何运行它，以及运行结果如何作为模型
 下一轮的输入回灌。关于逐步推进的循环机制（LLM 如何在一次
 ``runtime.exec`` 调用内挑选下一个工具），参见
-``docs/agentic-programming/tool-calling.md``。
+``docs/capabilities/agentic-programming/choosing-the-next-step/tool-calling.md``。
 
 主导原则是 **default-on, user-curated**（默认开启、由用户裁剪）：一个已注册的
 工具无需任何配置即可使用；用户从这里开始收窄范围。
@@ -653,7 +653,7 @@ openprogram/agentic_programming/function.py
                                                        program /
                                                        webui
 
-openprogram/agent/dispatcher.py
+openprogram/agent/dispatcher/__init__.py
   install_loaded_deferred(...)                         called at session
                                                        start
   agent_tools(toolset=, source=, only_available=True)  Layer 2-5

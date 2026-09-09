@@ -19,12 +19,13 @@ There are no meta functions like `create()` / `fix()` — writing, modifying, an
 ## Imports
 
 ```python
-from openprogram import agentic_function
-from openprogram.agentic_programming.runtime import Runtime
+from openprogram import agentic_function, Runtime, Session, decision
 from openprogram.providers.registry import create_runtime
 ```
 
-Only `agentic_function` is re-exported as a top-level `openprogram` symbol; `Runtime`, `create_runtime`, and the rest must be imported by their full paths.
+`agentic_function`, `Runtime`, `Session`, and `decision` are re-exported from
+the top-level `openprogram` package. Provider helpers such as `create_runtime`
+are imported from their full paths.
 
 ## Quick Example
 

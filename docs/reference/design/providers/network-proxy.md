@@ -1,29 +1,28 @@
 # Outbound network proxy
 
-Every httpx client in the process resolves proxies with the same semantics —
-httpx's own env semantics — and the hardened clients receive them via `mounts=`
-so that hardening and proxying compose. Product-facing documentation lives in
+Provider HTTP traffic has two separate concerns: httpx environment-proxy
+diagnostics, and the managed client's outbound security policy. Managed
+clients are built through `openprogram.security.safe_http`; they do not consume
+the mount map from `http_proxy.py`. An enforcing proxy is part of
+`OutboundSecurityConfig.policy_proxy`, so URL policy and proxy routing are
+evaluated together. Product-facing documentation lives in
 `docs/server/configuration.md`.
 
 ## 1. Why one resolver
 
-The failure this prevents is a process with two different proxy semantics
-depending on which code path a request happens to take. Three outbound paths
-coexist, and if each resolves proxies on its own they disagree:
+The implementation keeps the following outbound paths distinct:
 
 | Path | Who uses it | Proxy semantics without a shared resolver |
 |---|---|---|
-| Hardened client (`providers/utils/http_client.py`) | anthropic, openai_codex, google_gemini_cli streaming | Only `HTTPS_PROXY`/`HTTP_PROXY` (uppercase) read by a hand-written resolver. `ALL_PROXY` ignored, **`NO_PROXY` ignored** (no bypass list), lowercase vars ignored — because the client always receives an explicit `transport=`, so httpx skips its own env handling (`allow_env_proxies = trust_env and transport is None`). |
+| Managed client (`providers/utils/http_client.py`) | provider SDK and streaming paths | Uses `safe_http` with a consumer-specific URL policy. A policy proxy is explicit in `OutboundSecurityConfig.policy_proxy`; the client does not activate `get_proxy_mounts()` or unmanaged proxy environment state. |
 | SDK / ad-hoc raw httpx | OpenAI-compat chat (openai SDK inside `openai_completions` / `openai_responses`), OAuth flows, token refresh, model listing, "test provider" button | Full httpx env semantics: lowercase beats uppercase, `ALL_PROXY` honoured, `NO_PROXY` honoured. |
 | CLI subprocess | claude_code, codex CLI, gemini CLI | Inherits the shell env; the external CLI does its own proxy handling. |
 
-The consequences of that divergence are concrete: the same provider behaves
-differently between "test provider" (raw httpx), actual chat (SDK), and the
-Anthropic path (hardened); a user with a proxy plus a `NO_PROXY` whitelist —
-say a mainland-direct API endpoint — has that whitelist silently ignored on the
-hardened path; and the connection hardening (TCP keepalive, force-IPv4,
-generous streaming timeouts) covers only the hand-written providers while the
-openai SDK builds a fresh default client per call.
+The managed path deliberately has stronger URL and credential policy than a
+plain httpx client. A provider request therefore must not silently inherit an
+unmanaged process proxy: callers either use the managed security configuration
+or use a deliberately scoped plain client whose httpx environment semantics are
+documented at that call site.
 
 A socks proxy makes the divergence visible immediately: a shell with
 `ALL_PROXY=socks5://127.0.0.1:7891` crashes every API-routed provider with
@@ -51,56 +50,53 @@ Source: `references/openclaw/src/infra/net/proxy-env.ts`, `proxy-fetch.ts`,
 - Provider HTTP helpers all route through these helpers; the SSRF guard
   (`fetch-guard.ts`) composes with the same `matchesNoProxy`.
 
-The direction is the same one taken here — a single resolver with standard env
-semantics plus a first-party override. OpenClaw goes further with proxy
+OpenProgram borrows the useful diagnostic property that standard environment
+variables have one documented interpretation, while its managed provider path
+adds a separate policy-proxy boundary. OpenClaw goes further with proxy
 lifecycle validation and SSRF gating, which this design does not need.
 
 ## 3. Resolution order
 
-1. `OPENPROGRAM_PROXY_URL` — explicit first-party override. When set, all
-   traffic goes through it (any scheme httpx supports: `http://`,
-   `https://`, `socks5://`). `NO_PROXY` bypasses are still honoured.
+1. `OPENPROGRAM_PROXY_URL` — explicit first-party override used by the
+   diagnostic helper and callers that deliberately use the environment proxy
+   map. It is not an implicit override for managed clients.
 2. Standard environment variables, parsed by httpx's own
    `get_environment_proxies()`: `http_proxy`/`HTTP_PROXY`,
    `https_proxy`/`HTTPS_PROXY`, `all_proxy`/`ALL_PROXY`,
    `no_proxy`/`NO_PROXY`. Using httpx's parser rather than a reimplementation
-   guarantees the hardened path and every plain `httpx.AsyncClient()` in
-   the process agree byte-for-byte — the exact property whose absence causes
-   the divergence in §1. Note this delegates to urllib's `getproxies()`, so on
+   gives diagnostic callers the same parsing behavior as httpx. Note this
+   delegates to urllib's `getproxies()`, so on
    macOS/Windows the OS-level proxy settings apply when no env vars are
    set — same as any Python process.
-3. Built-in loopback bypass: `localhost` / `127.0.0.1` / `[::1]` never go
-   through a proxy, `NO_PROXY` or not. Local services (the worker, a
-   localhost ollama, a local OpenAI-compatible endpoint) break behind
-   forward proxies like Clash, which refuse loopback CONNECTs — a failure
-   mode that presents as a spurious 502.
+3. Managed provider clients do not use this environment resolution as an
+   implicit security-policy override. If a managed request must use a proxy,
+   declare it in `OutboundSecurityConfig.policy_proxy`; the policy layer then
+   validates the proxy and target relationship before opening the connection.
 
 ## 4. Mechanics
 
-- `providers/utils/http_proxy.py` exposes `get_proxy_mounts()` returning
-  the httpx mount map (`pattern -> proxy URL or None-for-bypass`), with the
-  `OPENPROGRAM_PROXY_URL` override folded in. Its single consumer is
-  `http_client.py`.
-- `providers/utils/http_client.py::build_async_client` builds one
-  hardened `AsyncHTTPTransport` per mount entry (same socket options /
-  IPv4 / keepalive as the default transport, plus `proxy=`), passes them
-  as `mounts=`, and keeps the hardened no-proxy transport as the default.
-  `trust_env` stays default-True so TLS env vars (`SSL_CERT_FILE`, …)
-  keep working; httpx skips its own env-proxy pass because an explicit
-  `transport=` is present.
-- The openai SDK paths (`openai_completions.py`, `openai_responses.py`)
-  pass `http_client=get_shared_async_client("openai-sdk")` — SDK
-  requests get the same proxy semantics AND the keepalive/IPv4 hardening,
-  and reuse one connection pool per event loop instead of a fresh client
-  per call. The SDK does not close externally-supplied clients; lifecycle
-  stays with `aclose_current_loop_clients()`.
+- `providers/utils/http_proxy.py` exposes `get_proxy_mounts()` as a diagnostic
+  helper for the environment proxy map and the `OPENPROGRAM_PROXY_URL`
+  override. Managed provider clients do not consume this map; the rescue
+  command uses it to report configured proxy state.
+- `providers/utils/http_client.py::build_async_client` delegates to
+  `safe_async_client` or `configured_safe_async_client`. The managed client
+  applies the registered consumer's URL policy, bounded timeouts, and socket
+  hardening. When a policy proxy is configured, `safe_http` creates the
+  decision-aware proxy transport and strips proxy credentials from requests
+  before dispatch.
+- The OpenAI, Anthropic, and Google SDK consumers are registered in
+  `openprogram/security/safe_http.py` with an injected-transport disposition.
+  Their shared-client lifecycle remains explicit; it is not implemented by
+  passing `mounts=` from `http_proxy.py`.
 - One-shot raw httpx clients (OAuth flows, token refresh, marketplace,
   model listing) are plain `httpx.AsyncClient()`s on purpose:
   their env semantics are already identical by construction, and they
   don't need streaming hardening. `OPENPROGRAM_PROXY_URL` does not apply
   to them, which is an accepted limit rather than an oversight.
-- `socksio` is a hard dependency (`httpx[socks]`) so a socks `ALL_PROXY`
-  never kills client construction.
+- A plain httpx caller that opts into SOCKS environment handling must provide
+  the corresponding `httpx[socks]` dependency; managed clients do not infer
+  that dependency from an ambient `ALL_PROXY`.
 - `openprogram rescue` carries a proxy probe: it reports the resolved proxy
   configuration and fails with an exact fix when a socks proxy is
   configured but socksio is missing.
@@ -125,12 +121,15 @@ lifecycle validation and SSRF gating, which this design does not need.
 ## 6. Invariants
 
 1. Any new provider HTTP code MUST get its client from
-   `build_async_client` / `get_shared_async_client` — never construct
-   `httpx.AsyncClient` with hand-rolled proxy kwargs.
-2. Never pass `proxy=` or `proxies=` directly; proxy selection lives in
-   `get_proxy_mounts()` only.
-3. `get_proxy_mounts()` uses httpx's parser. If httpx ever privatises or
-   moves `get_environment_proxies`, mirror its semantics — do not invent
-   new ones, since divergent semantics is the problem described in §1.
-4. `tests/component/security/test_http_proxy.py` pins the resolution rules (override
-   precedence, NO_PROXY bypass, per-URL transport selection).
+   `build_async_client` / `get_shared_async_client` and a registered
+   `safe_http` consumer; never construct a managed client with hand-rolled
+   proxy kwargs.
+2. Never use `get_proxy_mounts()` as a substitute for
+   `OutboundSecurityConfig.policy_proxy` on a managed request.
+3. `get_proxy_mounts()` remains an environment-resolution diagnostic. If
+   httpx moves `get_environment_proxies`, keep this helper's diagnostic output
+   aligned with httpx rather than treating it as the managed transport
+   contract.
+4. `tests/component/security/test_http_proxy.py` pins both the diagnostic
+   resolution rules and the fact that unmanaged environment proxies do not
+   activate a managed provider client.

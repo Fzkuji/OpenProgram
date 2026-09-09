@@ -73,7 +73,7 @@ notification; the accounts panel is only for diagnosis.
   `billing_blocked` is excluded, so validation is the only way back.
 - `auth/usage.py _account_healthy` — `billing_blocked` counts as unhealthy for
   rotation alongside `revoked` and `needs_reauth`.
-- `webui/routes/accounts.py` — a successful Validate writes `status="valid"`
+- `apps/server/openprogram_server/_webui/routes/accounts.py` — a successful Validate writes `status="valid"`
   and clears the cooldown and `last_error` only when the probe proves the key
   is usable now (OpenRouter `GET /key` remaining, or an explicit layer-2
   ping 200). Auth-only `GET /models` 200 does not write `valid` and does not

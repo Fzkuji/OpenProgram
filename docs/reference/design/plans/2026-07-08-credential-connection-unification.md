@@ -132,18 +132,14 @@ value triggers migration rather than a corruption error.
 
 ## Appendix: Implementation Status
 
-Designed, not yet landed. The intended order is: introduce `CredentialData` and
-its flat serialization; add the one-shot migrator; wire the migrator into store
-load and add the `auth migrate` command; add `ResolvedConnection` and
-`resolve_connection`, keeping `_extract_token` briefly as a thin wrapper over
-it; convert every construction site (auth methods, auth sources, provider auth
-adapters, web routes, CLI) using the construction mapping above; convert every
-match site using the kind-matching table; change `acquire_pooled` to return a
-`ResolvedConnection` and make the wire layer prefer credential base URL and
-headers; then delete the dead `_claude_max_proxy_registry.py` and
-`_max_proxy_runtime.py`.
-
-Each step is test-first, and the auth and provider suites are the regression
-gate. Verification of the migrator should be run against a *copy* of a real
-credential store, checking that the migrated files carry `kind` and no longer
-carry `__type__`.
+Implemented in the current auth path. `CredentialData` and schema version 3 are
+defined in `openprogram/auth/types.py`; `ResolvedConnection` and
+`resolve_connection` are in `openprogram/auth/resolver.py`; payload conversion
+and store migration are in `openprogram/auth/_migrate_payload.py`; first-load
+migration is wired by `openprogram/auth/store.py`; and `openprogram auth migrate`
+is exposed by `openprogram/auth/cli.py`. Provider pooling now receives the
+resolved connection, and the wire layer can prefer credential endpoint and
+headers. The original construction/matching tables remain useful as the design
+contract. The remaining acceptance boundary is migration against a copy of a
+real credential store and the normal auth/provider regression suites; this page
+does not claim those checks were run here.

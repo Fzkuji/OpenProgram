@@ -128,4 +128,5 @@ span = { id, parent_id, name/kind, start, end, status, attributes, events[] }
 
 本文是选型调研，讲为什么选 span。具体的数据模型、上下文检索，以及两套调用路径
 合并的设计在 [`../runtime/dag/overview.md`](../runtime/dag/overview.md)
-（权威）；调用流程骨架在 `agent-call-flow.md`。
+（权威）；调用流程骨架在
+[`../runtime/execution/agent-call-flow.md`](../runtime/execution/agent-call-flow.md)。

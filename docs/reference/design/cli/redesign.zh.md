@@ -139,7 +139,7 @@ Ctrl+K 通过同一个 `Picker` 浮层渲染斜杠命令注册表（名称加描
 
 ## 5. 传输层
 
-TUI 面板搭乘已经在用的 worker WebSocket。`webui/ws_actions/settings.py`
+TUI 面板搭乘已经在用的 worker WebSocket。`apps/server/openprogram_server/_webui/ws_actions/settings.py`
 导出一个带 `get_settings` 和 `set_setting` 的 `ACTIONS` 字典，以与其他
 每个 action 模块相同的方式注册进服务器派发表。面板通过它在
 `list_models` 和 `set_default_agent` 中已经使用的同一个 `BackendClient`
@@ -157,5 +157,5 @@ Search 和 Tools（逐工具开关）。Model、effort、theme 和 providers 通
 尚未完成的在建工作（§4）。
 
 权威代码：`openprogram/config_schema.py`、
-`openprogram/webui/ws_actions/settings.py`、
+`apps/server/openprogram_server/_webui/ws_actions/settings.py`、
 `apps/cli/src/components/SettingsPanel.tsx`。

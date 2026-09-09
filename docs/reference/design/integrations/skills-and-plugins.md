@@ -99,7 +99,7 @@ openprogram/
     marketplace.py      # multiple marketplaces, claude-code schema adapter
     trust.py            # trust policy + persistence
     bundled/
-  webui/routes/
+  apps/server/openprogram_server/_webui/routes/
     skills.py
     plugins.py
 ```
@@ -145,7 +145,7 @@ openprogram/
 | providers | The provider registry (corresponding to the openprogram provider system, opencode style) |
 | agents | The subagent registry |
 | hooks | The event bus (PreToolUse / PostToolUse / SessionStart / Stop, etc.) |
-| web | Static assets mounted at `/plugin/<name>/static/`, rendered by the Next.js dynamic route `/plugin/[name]/[...slug]` |
+| web | Static assets are served through the worker's SPA fallback; `apps/web/app/plugin/page.tsx` parses `/plugin/<name>/<slug...>` from `pathname` and the backend serves the plugin web entrypoint |
 | sidebar | Pushed to the plugin section of the sidebar store (unique) |
 
 ### Sandbox (layered)
@@ -181,7 +181,7 @@ Chats
   - Installed: `UnifiedInstalledCell`-style rows
   - Marketplace: marketplace selector + card browsing + install (porting `BrowseMarketplace / AddMarketplace / DiscoverPlugins`)
   - Errors: porting `PluginErrors`
-- `/plugin/[name]/[...slug]` — dynamically render the plugin's own frontend (from `web/dist`)
+- `/plugin/<name>/<slug...>` — `apps/web/app/plugin/page.tsx` resolves the plugin name and slug client-side; the backend serves the plugin web entrypoint from `web/dist`
 - `/skills/[name]/trace` — Skill invocation record visualization (unique)
 
 ### Components
@@ -231,7 +231,7 @@ The design is complete; delivery is ordered in four blocks, each usable on its o
 
 - **Skills** — four-source loader, watchdog and WS broadcast, SKILL.md parsing (triggers / category / optional), the `/skills` page, the SkillTool built-in tool with invoke trace, and remote discovery. The package ships no default skills.
 - **Plugins, local** — unified parsing of the three manifests; installation from pip / npm / git / path; layered sandbox and trust; injection of the commands / skills / mcpServers / providers / hooks / agents entrypoints; the Installed and Errors pages with Validate / Options / Reload.
-- **Plugins, frontend and sidebar** — `web` entrypoint asset mounting, `/plugin/[name]/[...slug]` dynamic rendering, sidebar registration items.
+- **Plugins, frontend and sidebar** — `web` entrypoint asset mounting, client-side `/plugin/<name>/<slug...>` resolution, and sidebar registration items.
 - **Marketplace** — multiple marketplaces with the claude-code schema adapter, plus the BrowseMarketplace / AddMarketplace / DiscoverPlugins surfaces.
 
 Three points are left open and do not block the blocks above:

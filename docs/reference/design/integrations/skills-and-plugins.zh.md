@@ -98,7 +98,7 @@ openprogram/
     marketplace.py      # 多 marketplace、claude-code schema 适配
     trust.py            # 信任策略 + 持久化
     bundled/
-  webui/routes/
+  apps/server/openprogram_server/_webui/routes/
     skills.py
     plugins.py
 ```
@@ -144,7 +144,7 @@ openprogram/
 | providers | provider 注册表（对应 openprogram provider 体系，opencode 风格） |
 | agents | subagent 注册表 |
 | hooks | 事件总线（PreToolUse / PostToolUse / SessionStart / Stop 等） |
-| web | 静态资源挂载到 `/plugin/<name>/static/`，Next.js 动态路由 `/plugin/[name]/[...slug]` 渲染 |
+| web | 静态资源通过 worker 的 SPA fallback 提供；`apps/web/app/plugin/page.tsx` 从 `pathname` 解析 `/plugin/<name>/<slug...>`，后端提供 plugin web entrypoint |
 | sidebar | 推到 sidebar store 的 plugin section（独有） |
 
 ### 沙箱（分层）
@@ -180,7 +180,7 @@ Chats
   - Installed：`UnifiedInstalledCell`-style 行
   - Marketplace：marketplace 选择器 + 卡片浏览 + 安装（移植 `BrowseMarketplace / AddMarketplace / DiscoverPlugins`）
   - Errors：移植 `PluginErrors`
-- `/plugin/[name]/[...slug]` — 动态渲染 plugin 自带前端（来自 `web/dist`）
+- `/plugin/<name>/<slug...>` — `apps/web/app/plugin/page.tsx` 在客户端解析 plugin 名称和 slug；后端提供来自 `web/dist` 的 plugin web entrypoint
 - `/skills/[name]/trace` — Skill 调用记录可视化（独有）
 
 ### 组件
@@ -230,7 +230,7 @@ apps/web/components/plugins/
 
 - **Skills** —— 四来源 loader、watchdog 与 WS 广播、SKILL.md 解析（triggers / category / optional）、`/skills` 页面、SkillTool 内置工具与 invoke trace、远端 discovery。安装包不提供默认 skill。
 - **Plugins 本地** —— 三 manifest 统一解析；pip / npm / git / path 四种来源安装；沙箱分层与 trust；commands / skills / mcpServers / providers / hooks / agents 入口注入；Installed 与 Errors 页面，含 Validate / Options / Reload。
-- **Plugins 前端与侧栏** —— `web` entrypoint 资源挂载、`/plugin/[name]/[...slug]` 动态渲染、sidebar 注册项。
+- **Plugins 前端与侧栏** —— `web` entrypoint 资源挂载、客户端解析 `/plugin/<name>/<slug...>`、sidebar 注册项。
 - **Marketplace** —— 多 marketplace 与 claude-code schema 适配，以及 BrowseMarketplace / AddMarketplace / DiscoverPlugins 界面。
 
 三个待定项，不阻塞上述任何一块：

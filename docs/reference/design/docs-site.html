@@ -1,0 +1,186 @@
+<style>
+.doc-intro { border-left: 3px solid var(--acc); padding: 4px 0 4px 18px; margin: 18px 0 28px; }
+.doc-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
+.doc-flow > div { padding: 16px; background: var(--bg-code); border-radius: 8px; min-width: 0; }
+.doc-flow strong { display: block; color: var(--tx); }
+.doc-flow p { margin: 8px 0 0; font-size: 14px; }
+.doc-scroll { max-width: 100%; overflow-x: auto; }
+.doc-scroll:focus-visible, summary:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; }
+code { overflow-wrap: anywhere; }
+details { padding: 12px 0; border-bottom: 1px solid var(--bd); }
+summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 680px) { .doc-flow { grid-template-columns: 1fr; } }
+</style>
+<h1 id="documentation-html-rendering-and-authoring">Documentation HTML rendering and authoring<a class="header-anchor" href="#documentation-html-rendering-and-authoring">#</a></h1>
+<p>For contributors maintaining product and implementation documentation. Every published page is HTML, with shared navigation, search and theme controls. The source format is chosen for the document: native HTML for visual implementation/design documents, Markdown for short usage and reference text.</p>
+<h2 id="rendering-paths">Rendering paths<a class="header-anchor" href="#rendering-paths">#</a></h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Documentation table"><table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Published result</th>
+<th>Author responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Markdown</td>
+<td>HTML article in the site layout</td>
+<td>Headings, prose, commands and relative document links.</td>
+</tr>
+<tr>
+<td>HTML fragment</td>
+<td>HTML article in the same layout</td>
+<td>Semantic sections, diagrams and optional native interactions; use the site theme variables.</td>
+</tr>
+<tr>
+<td>Standalone HTML</td>
+<td>Site page containing an iframe, plus a <code>.raw.html</code> payload</td>
+<td>Own responsive layout, theme and internal navigation. The outer site controls remain available.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Prefer HTML fragments for implementation documents that should share the site layout. A standalone document is appropriate when its visualization needs an independent viewport. The iframe separates layout; it is not a security sandbox for untrusted scripts.</p>
+<h2 id="implementation-ownership">Implementation ownership<a class="header-anchor" href="#implementation-ownership">#</a></h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Documentation table"><table>
+<thead>
+<tr>
+<th>Owner</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scripts/docs_site/nav.py</code></td>
+<td>Source discovery, language pairing, nine tabs, section placement and <code>PAGE_ORDER</code>.</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/build.py</code></td>
+<td>Rendering, relative-link conversion, static assets, search records and atomic output replacement.</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/template.py</code></td>
+<td>Shared document layout and page metadata.</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/search.py</code></td>
+<td>Search-index construction.</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/assets/site.css</code></td>
+<td>Typography, spacing, responsive layout and light/dark variables.</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/assets/site.js</code></td>
+<td>Navigation, theme/language controls, search, fullscreen and code copying.</td>
+</tr>
+<tr>
+<td><code>apps/server/openprogram_server/_webui/routes/docs.py</code></td>
+<td>Source-versus-packaged site selection and the default worker's <code>/docs/</code> mount.</td>
+</tr>
+</tbody>
+</table></div>
+<p>See the <a href="https://github.com/Fzkuji/OpenProgram/tree/main/scripts/docs_site">builder source</a> and <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/routes/docs.py">serving implementation</a>.</p>
+<h2 id="reading-and-visual-design">Reading and visual design<a class="header-anchor" href="#reading-and-visual-design">#</a></h2>
+<p>Start with the document's question, audience, scope and implementation boundary. Explain the public entry and data/state flow before implementation details. Use a source map for ownership, a diagram for control or data flow, and a final implementation-status section for remaining work and evidence gaps.</p>
+<p>Use the existing <code>--bg</code>, <code>--bg-code</code>, <code>--tx</code>, <code>--tx-soft</code>, <code>--acc</code> and <code>--bd</code> theme variables in fragments. The site uses the Web application's warm neutral palette and orange accent. Do not repeat a fixed light-only palette inside an article.</p>
+<p>Use semantic headings with stable <code>id</code> values so HTML sections appear in the page navigation. Tables need a locally scrollable container when their columns cannot fit a narrow screen. Diagrams need an accessible title and description. Native disclosure controls can separate detailed evidence from the main explanation. Keyboard focus, reduced motion and mobile reading are part of document acceptance.</p>
+<p>The site theme preference is stored as <code>op-docs-theme</code>; <code>documentThemeChange</code> is dispatched on the site window when the toggle changes. An iframe has its own document and does not automatically receive that event. Keep a standalone page's theme behavior explicit or use a fragment to inherit the shared theme.</p>
+<h2 id="navigation-and-bilingual-sources">Navigation and bilingual sources<a class="header-anchor" href="#navigation-and-bilingual-sources">#</a></h2>
+<p>The nine tabs are <code>start</code>, <code>install</code>, <code>capabilities</code>, <code>interfaces</code>, <code>models</code>, <code>integrations</code>, <code>server</code>, <code>reference</code> and virtual <code>design</code>. Design sources stay under <code>docs/reference/design/</code>; there is no <code>docs/design/</code> source directory.</p>
+<p><code>TAB_SECTIONS</code> declares product reading order; <code>PAGE_ORDER</code> controls explicit page ordering. Remaining pages are grouped by directory. Directory headings use configured labels or README titles. Do not assume that the sidebar is a literal filesystem tree or that all pages are ordered by filename.</p>
+<p>English is the default. <code>topic.zh.md</code> pairs with <code>topic.md</code>, and <code>topic.zh.html</code> pairs with <code>topic.html</code>. The Chinese source is attached to the English page and reached through the language control, rather than appearing as a second sidebar entry. Update both members when changing a bilingual topic.</p>
+<p>The builder supports existing same-name Markdown/HTML companions by assigning the HTML companion a <code>.viz.html</code> output. A relative <code>topic.md</code> link targets the text output; a relative <code>topic.html</code> link targets the HTML companion at <code>topic.viz.html</code>, preserving its section anchor. The Chinese HTML companion uses <code>topic.zh.viz.html</code>, while the Chinese Markdown output keeps <code>topic.zh.html</code>; language controls use these distinct outputs. This compatibility behavior does not justify maintaining two copies of the same explanation. Compare content before consolidating: retain distinct diagrams and evidence and update their incoming links.</p>
+<p>Generated output and static-only folders are excluded from page discovery. <code>docs/superpowers/</code> is explicitly excluded. A leading underscore alone is not an exclusion rule: the proactive research archive currently remains discoverable.</p>
+<h2 id="build-and-serving">Build and serving<a class="header-anchor" href="#build-and-serving">#</a></h2>
+<pre><code class="language-sh">python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.build
+python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.checklinks
+python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.checklang
+python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.check_landing
+</code></pre>
+<p>Run these commands from the repository root with the documentation dependencies available. The <a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">contributor guide</a> lists the <code>uv run</code> environment. The link checker reads built HTML, so rebuild before checking.</p>
+<p><code>checklang</code> currently checks default product Markdown only; it excludes the design directory and does not scan HTML sources. A pass does not establish bilingual compliance for all design pages. Review the language and counterpart of revised HTML separately.</p>
+<p>The build regenerates code-derived CLI/config/provider reference pages, writes <code>docs/_site.tmp/</code>, and replaces <code>docs/_site/</code> after successful rendering. <code>docs/_site/</code> is ignored by Git. Files under <code>docs/_static_root/</code> are published at the site root without entering navigation or search.</p>
+<p>A source checkout serves its <code>docs/_site/</code>. An installed runtime can serve bundled documentation under the Server's <code>_frontend/docs/</code>; rebuilding a different checkout does not update that bundle. Compare the served page with the expected output before claiming local acceptance. Default local verification uses <code>http://localhost:18100/docs/</code>. Completed application updates use <code>scripts/refresh-local-app.sh</code> under the repository's local-App rules.</p>
+<p>The source worker checks for a rebuild when registering documentation routes; ordinary HTTP reads do not scan or rebuild the source tree. There is no continuous watch mode.</p>
+<h2 id="design-alternatives">Design alternatives<a class="header-anchor" href="#design-alternatives">#</a></h2>
+<p>The existing design chooses the in-repository Python renderer to preserve native HTML/SVG/script content and integrate with the single-port worker. The alternative comparison concerns this project's requirements, not a current capability survey of external products.</p>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Documentation table"><table>
+<thead>
+<tr>
+<th>Consideration</th>
+<th>Current Python renderer</th>
+<th>VitePress alternative</th>
+<th>MkDocs alternative</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Existing native visual documents</td>
+<td>Preserve as fragments or independent pages</td>
+<td>Requires evaluating integration with the component/layout system</td>
+<td>Requires evaluating raw-HTML and theme integration</td>
+</tr>
+<tr>
+<td>Shared navigation and search</td>
+<td>Maintained in this repository</td>
+<td>Evaluate built-in navigation and search against project needs</td>
+<td>Evaluate built-in navigation and search against project needs</td>
+</tr>
+<tr>
+<td>Toolchain</td>
+<td>Python rendering and static browser assets</td>
+<td>Additional Node-based documentation build</td>
+<td>Python-based documentation build and theme configuration</td>
+</tr>
+<tr>
+<td>Maintenance ownership</td>
+<td>The project owns layout, navigation and accessibility</td>
+<td>Framework configuration and upgrade maintenance</td>
+<td>Framework/theme configuration and upgrade maintenance</td>
+</tr>
+</tbody>
+</table></div>
+<p>The renderer uses <code>markdown-it-py</code>, <code>mdit-py-plugins</code> and Pygments. It produces static assets without a client framework or an editor/CMS. A framework migration is outside this documentation update.</p>
+<h2 id="implementation-status">Implementation status<a class="header-anchor" href="#implementation-status">#</a></h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="Documentation table"><table>
+<thead>
+<tr>
+<th>Area</th>
+<th>State</th>
+<th>Boundary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Markdown, fragment and standalone HTML rendering</td>
+<td>Present in source</td>
+<td>Existing content can render with different layout responsibilities.</td>
+</tr>
+<tr>
+<td>Bilingual routing and nine-tab navigation</td>
+<td>Present in source</td>
+<td>Pairing does not translate the document body.</td>
+</tr>
+<tr>
+<td>Atomic build and packaged serving</td>
+<td>Present in source</td>
+<td>Build success is distinct from updating an installed bundle.</td>
+</tr>
+<tr>
+<td>Shared document design</td>
+<td>Applied to revised implementation pages</td>
+<td>Existing standalone pages still require individual visual review.</td>
+</tr>
+<tr>
+<td>Frontmatter <code>scripts</code> / <code>styles</code> asset injection</td>
+<td>Not implemented</td>
+<td>Keep required code/assets in supported HTML paths; do not document this as available.</td>
+</tr>
+<tr>
+<td>Continuous source watching</td>
+<td>Not implemented</td>
+<td>Rebuild explicitly after changes.</td>
+</tr>
+</tbody>
+</table></div>

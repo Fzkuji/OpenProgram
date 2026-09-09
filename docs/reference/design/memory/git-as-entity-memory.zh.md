@@ -1,5 +1,10 @@
 # 实体记忆走 Git: Session-Git + Project-Git
 
+> **实现状态：**本文是延期的设计提案。当前 Memory runtime 不会创建
+> `openprogram/memory/session_git/`，不会每轮提交一个 Git revision，也没有实现
+> 本文描述的 replay/project-Git 生命周期。当前 Source/Topic 设计见
+> [`overview.md`](overview.md)。
+
 ## 心智模型
 
 "实体记忆"= 真实发生过的事, 可逐步回溯. Git 天生就是这个范式 (commit
@@ -249,7 +254,7 @@ chat 顶部 / 右栏:
 
 commit 可以选择性 export 到 git (e.g. 用户想看"那时 LLM 看到啥"), 但不是强制.
 
-## 附录: 构建顺序
+## 附录: 提议的构建顺序
 
 工作拆成五块, 每块独立可验证:
 

@@ -4,7 +4,7 @@
 > from the same machine, a trusted LAN or VPN, an SSH tunnel, or an
 > owner-operated HTTPS reverse proxy. The English text is normative; the
 > Chinese translation and the standalone HTML page present the same design.
-> Related code: `openprogram/webui/owner_auth.py`,
+> Related code: `apps/server/openprogram_server/_webui/owner_auth.py`,
 > `openprogram/backend_endpoint.py`,
 > `apps/server/openprogram_server/server.py`, `apps/cli/python/openprogram_cli/_impl/commands/web.py`,
 > `apps/web/lib/net/owner-auth-bootstrap.ts`, and
@@ -80,10 +80,10 @@ when any of them is present.
 
 ### 2.1 What exists now
 
-`_web_config()` in `openprogram/webui/server.py` defaults to `127.0.0.1` and
+`_web_config()` in `apps/server/openprogram_server/server.py` defaults to `127.0.0.1` and
 loads `web.host` plus `web.allowed_origins`. `create_app()` uses a FastAPI
 lifespan context and installs `OwnerAuthMiddleware` from
-`openprogram/webui/owner_auth.py` for HTTP and WebSocket ASGI scopes. The
+`apps/server/openprogram_server/_webui/owner_auth.py` for HTTP and WebSocket ASGI scopes. The
 middleware validates the canonical request origin before route dispatch,
 applies one cookie-or-Bearer authentication policy to protected HTTP, SSE, and
 WebSocket traffic, and attaches the active profile's owner authority only after
@@ -108,19 +108,17 @@ fragment URL only for an effective origin. `/healthz` now returns only
 `{"status":"ok"}`; authenticated operational diagnostics are available at
 `/api/diagnostics`.
 
-Credential responses are masked by default in part of the provider API, while
-two production paths still return plaintext:
+Credential responses are masked by default. Credential reveal is no longer
+supported: the legacy account route returns `410`, and
+`GET /api/config/key/{env_var}?reveal=1` returns `404`; neither route returns a
+secret. The frontend has no credential-reveal control or plaintext response
+field. Project-file reveal is a separate file-navigation action and is not a
+credential retrieval path.
 
-- `GET /api/providers/{provider}/accounts/{name}/reveal`;
-- `GET /api/config/key/{env_var}?reveal=1`.
-
-The remaining implementation gaps are narrower than the final contract. The
-two reveal paths and their frontend controls still exist. Startup reporting
-does not yet emit every field and direct-HTTP warning specified in section 6.1.
-The current executable coverage includes middleware, token lifecycle,
-bootstrap coordination, CLI URL generation, HTTP, and WebSocket cases, but not
-the complete browser, SSE, restart, multi-profile, or nginx/Caddy acceptance
-matrix in section 6.3.
+The remaining implementation gaps are narrower than the final contract.
+Startup reporting and the complete browser, SSE, restart, multi-profile, and
+nginx/Caddy acceptance matrix remain separate verification areas described in
+section 6.3.
 
 ### 2.2 Why loopback still requires a token
 
@@ -638,7 +636,7 @@ characters are not ASCII, use the fixed string `••••••••`.
 The mask therefore does not encode the original length for short credentials.
 It is presentation-only and is never accepted in a write payload.
 
-The account reveal route is removed and returns `404`. The masked config-key
+The account reveal route is removed and returns `410`. The masked config-key
 status route remains, but a request containing the `reveal` query parameter is
 rejected with `404`; it never changes the response to plaintext. The unrelated
 project-file reveal action remains subject to normal file authorization and Web
@@ -723,8 +721,9 @@ The feature is complete only when these behaviors are executable tests:
    session data, filesystem data, credential data, or detailed diagnostics.
 13. Security headers reject framing; protected/auth/credential responses are
     `no-store`, and `401` responses advertise the Bearer realm.
-14. Both reveal forms return `404`; config-key replace/preserve/DELETE and
-    account replace/preserve/remove execute the exact schemas and status codes
+14. The legacy account reveal route returns `410`, and the config-key reveal
+    query returns `404`; config-key replace/preserve/DELETE and account
+    replace/preserve/remove execute the exact schemas and status codes
     specified above; 8–11-character credentials use the fixed mask, masks are
     never accepted, and frontend builds and types contain no reveal action or
     full-secret response field.
@@ -751,10 +750,10 @@ production paths and tests.
 
 | Item | Evidence |
 |---|---|
-| Default loopback bind | `_web_config()` in `openprogram/webui/server.py` defaults to `127.0.0.1` |
+| Default loopback bind | `_web_config()` in `apps/server/openprogram_server/server.py` defaults to `127.0.0.1` |
 | FastAPI lifespan | `create_app()` uses `_lifespan`; deprecated `@app.on_event` handlers are absent |
 | Stable per-profile owner principal and explicit owner/paired authority tiers | `openprogram/agent/authority.py`; Web, TUI, desktop, runtime, and paired channel entry points attach a tier; `tests/unit/providers/test_authority_scope.py` and permission tests cover the fixed tier table |
-| Owner process credential | `OwnerAuthState` in `openprogram/webui/owner_auth.py` generates the 32-byte token, holds `<state-dir>/web.lock`, atomically writes the owner-only `<state-dir>/web/token`, derives the profile-specific cookie, compares decoded tokens with `hmac.compare_digest`, and removes only its owned state; `test_process_token_is_owner_only_locked_and_replaced_after_release` covers lock, mode, replacement, redacted representation, and rotation after release |
+| Owner process credential | `OwnerAuthState` in `apps/server/openprogram_server/_webui/owner_auth.py` generates the 32-byte token, holds `<state-dir>/web.lock`, atomically writes the owner-only `<state-dir>/web/token`, derives the profile-specific cookie, compares decoded tokens with `hmac.compare_digest`, and removes only its owned state; `test_process_token_is_owner_only_locked_and_replaced_after_release` covers lock, mode, replacement, redacted representation, and rotation after release |
 | Canonical effective origins | `canonicalize_origin()` and `resolve_effective_origins()` validate exact origins, enforce the explicit HTTP network set, add narrow loopback defaults, and fail a non-loopback bind without an origin; parameterized owner-auth tests cover accepted and rejected forms |
 | Common owner-auth boundary | `OwnerAuthMiddleware` is installed by `create_app()` before routing, protects HTTP and WebSocket ASGI scopes, applies cookie/Bearer selection, Host/Origin/CSRF checks, generic `401`/`403` responses, no-store headers, and owner-authority attachment; owner-auth tests cover HTTP mutation and pre-accept WebSocket cases |
 | Fragment bootstrap backend and frontend coordinator | `POST /api/auth/bootstrap`, `apps/web/lib/net/owner-auth-bootstrap.ts`, and `OwnerAuthBoundary` implement body-token exchange, synchronous fragment removal, no Web Storage, and application gating; `apps/web/scripts/check-owner-auth-bootstrap.mjs`, TypeScript checking, and the production Web build exercise the frontend contract |

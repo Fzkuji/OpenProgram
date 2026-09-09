@@ -431,7 +431,24 @@ git add openprogram/mcp/server/server.py openprogram/mcp/server/__init__.py open
 git commit -m "feat: serve authenticated MCP over stdio"
 ```
 
-### Task 9: Record implementation evidence and run the complete release gate
+## Appendix: Current implementation status
+
+The MCP server described by this plan is present in the current source. The
+implementation is in `openprogram/mcp/server/` (`auth.py`, `contracts.py`,
+`server.py`, `service.py`, and `tools.py`), with CLI dispatch in
+`openprogram/_cli_cmds/mcp.py` and `openprogram/cli.py`. The current server
+authenticates before entering stdio, exposes the fixed wrapper tools, applies
+paired non-interactive authority, and owns cancellation cleanup. The locked
+dependency and protocol baseline remain `mcp==1.29.0` and MCP 2025-11-25.
+
+The plan below is historical implementation sequencing. It is retained to
+explain the contract and review order; it is not a list of unimplemented work.
+Current completion evidence and any remaining installed/runtime acceptance
+boundary belong to the canonical MCP server design page and its tests. This
+audit did not run the test or documentation gates, so it does not claim a new
+pass count or release acceptance.
+
+### Historical Task 9: Record implementation evidence and run the complete release gate
 
 **Files:**
 
@@ -468,4 +485,4 @@ git commit -m "docs: record MCP server implementation evidence"
 - Review Tasks 3–4 together for security: no owner credential reuse, no clientInfo authorization, no empty-list fallback to all tools, and no request-controlled authority fields.
 - Review Tasks 6–7 together for fail-closed behavior: every rejection precedes invocation, questions do not wait, cancellation leaves no later result or side effect.
 - Review Task 8 with the SDK client, not hand-written JSON-RPC frames. The SDK's observed cancellation behavior is part of the acceptance baseline.
-- Task 9 is the only task authorized to mark Layer 3 as implemented or add implementation evidence to the HTML.
+- The original Task 9 was the historical step for recording Layer 3 evidence; the current implementation status is maintained by the canonical MCP server design page.

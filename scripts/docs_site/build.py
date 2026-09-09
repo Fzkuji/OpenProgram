@@ -237,6 +237,14 @@ def relink_internal(body_html: str, cur_dir: Path) -> str:
             anchor = "#" + anchor
         if url.endswith(".md"):
             url = url[:-3] + ".html"
+        elif url.endswith(".html"):
+            source = DOCS_ROOT / cur_dir / url
+            primary = (source.with_name(source.name[:-8] + ".html")
+                       if source.name.endswith(".zh.html") else source)
+            if source.is_file() and primary.is_file() and primary.with_suffix(".md").is_file():
+                # Match nav._dedupe_md_html: an explicit HTML source link
+                # selects the visualization, not its Markdown sibling.
+                url = url[:-5] + ".viz.html"
         if not url:  # pure anchor like "#foo" already handled above
             return f'{attr}"{anchor}"'
         # resolve relative to the current page's directory, then make absolute

@@ -16,7 +16,7 @@ def test_internal_plans_are_not_part_of_the_public_docs_build() -> None:
     assert not any(path.startswith("superpowers/") for path in paths)
     assert any(path.startswith("reference/design/plans/") for path in paths)
     assert "reference/design/repository-structure.html" in paths
-    assert "reference/design/repository-structure-implementation.md" in paths
+    assert "reference/design/repository-structure-implementation.html" in paths
 
 
 def test_gui_agent_design_covers_flow_boundaries_and_file_ownership() -> None:
@@ -154,3 +154,74 @@ def test_gui_agent_design_keeps_the_capability_loop_and_context_contract() -> No
     )
     assert gui_page.zh_src == design_dir / "gui-agent.zh.html"
     assert gui_page.zh_out == Path("reference/design/ui/gui-agent.zh.html")
+
+
+def test_companion_source_links_match_discovered_output_paths(tmp_path, monkeypatch):
+    import pytest
+    pytest.importorskip("markdown_it")
+    pytest.importorskip("mdit_py_plugins")
+    from scripts.docs_site import build
+
+    section = tmp_path / "section"
+    section.mkdir()
+    (section / "topic.md").write_text("# Topic\n", encoding="utf-8")
+    (section / "topic.html").write_text('<h1>Diagram</h1><h2 id="flow">Flow</h2>', encoding="utf-8")
+    (section / "standalone.html").write_text("<h1>Standalone</h1>", encoding="utf-8")
+    monkeypatch.setattr(build, "DOCS_ROOT", tmp_path)
+    monkeypatch.setattr(build, "DEPLOY_BASE", "/docs/")
+    pages = {page.rel.as_posix(): page.out.as_posix() for page in discover(tmp_path)}
+    from html.parser import HTMLParser
+
+    class Links(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.urls = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "a":
+                self.urls.append(dict(attrs)["href"])
+
+    links = Links()
+    links.feed(build.relink_internal(
+        '<a href="topic.md">Text</a><a href="topic.html#flow">Diagram</a>'
+        '<a href="standalone.html">Standalone</a><a href="topic.viz.html">Published</a>',
+        Path("section"),
+    ))
+    assert links.urls == [
+        "/docs/" + pages["section/topic.md"],
+        "/docs/" + pages["section/topic.html"] + "#flow",
+        "/docs/" + pages["section/standalone.html"],
+        "/docs/" + pages["section/topic.html"],
+    ]
+
+
+def test_bilingual_companions_keep_distinct_language_outputs(tmp_path, monkeypatch):
+    import pytest
+    pytest.importorskip("markdown_it")
+    pytest.importorskip("mdit_py_plugins")
+    from scripts.docs_site import build
+
+    section = tmp_path / "section"
+    section.mkdir()
+    for name in ("topic.md", "topic.html", "topic.zh.html"):
+        (section / name).write_text("<h1>Topic</h1>", encoding="utf-8")
+    monkeypatch.setattr(build, "DOCS_ROOT", tmp_path)
+    monkeypatch.setattr(build, "DEPLOY_BASE", "/docs/")
+
+    # The HTML translation must work with or without a Markdown translation.
+    for markdown_translation in (False, True):
+        if markdown_translation:
+            (section / "topic.zh.md").write_text("# Topic", encoding="utf-8")
+        pages = {page.rel.suffix: page for page in discover(tmp_path)}
+        outputs = [output for page in pages.values()
+                   for output in (page.out, page.zh_out) if output is not None]
+        assert len(outputs) == len(set(outputs))
+        assert pages[".html"].zh_out == Path("section/topic.zh.viz.html")
+        assert build.relink_internal('<a href="topic.zh.html#flow">Diagram</a>', Path("section")) == (
+            '<a href="/docs/section/topic.zh.viz.html#flow">Diagram</a>'
+        )
+        if markdown_translation:
+            assert pages[".md"].zh_out == Path("section/topic.zh.html")
+            assert build.relink_internal('<a href="topic.zh.md">Text</a>', Path("section")) == (
+                '<a href="/docs/section/topic.zh.html">Text</a>'
+            )

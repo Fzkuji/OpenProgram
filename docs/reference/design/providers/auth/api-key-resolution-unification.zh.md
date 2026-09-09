@@ -70,10 +70,10 @@ config 兜底始终开启：config.json 里的 key 无论 env 如何都是用户
 
 - `get_env_api_key`（运行时）→ `resolve_api_key`，运行时路径由此获得 config.json
   兜底。
-- `storage._resolve_api_key`（webui/model-catalog）→ 对已知 provider 走
+- `storage._resolve_api_key`（server model listing）→ 对已知 provider 走
   `resolve_api_key`；community 与 models.dev 类 provider 保留 env-var 兜底。
-- `_model_catalog/providers.py:_is_configured` 与
-  `providers/registry.py:check_providers` → `is_configured`。
+- `providers/registry.py:check_providers` 与 server model-listing 的配置检查
+  → `is_configured`。
 - `credentials.provider_id_for_env_var` 重新导出规范实现。
 
 `server.py` 的 provider 表与 `routes/providers.py:45` 保留 `_get_api_key`，

@@ -346,27 +346,21 @@ agent 自己想撤。
 
 ## 附录：实现状态
 
-以上尚未落地。当前 runtime 没有 task entity——只有驱动 spinner 的内存
-`_running_tasks` dict，refresh 即丢；没有显式状态机（函数返回就代表"完成"）；
-没有查询接口；也没有 plan mode 并发，因为 `/task` 是同步串行的。Cancel 存在于
-整 session 粒度（`_cancel_events`），没有单 task 粒度；worker 模型是每 session
-一个 daemon thread（`_execute_in_context`）而非共享 pool；attach card 完成后才
-写；agent 只有同步的 `task` 工具；UI 也没有 Tasks panel。
+本设计已经部分实现。当前代码已有持久化 Job 记录、明确状态机、持久化 store、worker runner，以及查询、等待和取消操作。
 
-落地顺序按依赖排列：
-
-| 步骤 | 文件 | 主要改动 |
+| 能力 | 当前证据 | 状态 |
 |---|---|---|
-| 1 | `openprogram/agent/job/types.py` (新建) | `JobStatus` enum + `Task` dataclass (D1) + 转移规则 helper |
-| 2 | `openprogram/agent/job/store.py` (新建) | `TaskStore` 接口；落 `jobs.json` 在 session repo (D4)；同时实现 `MockTaskStore` 给测试用 |
-| 3 | `openprogram/agent/job/runner.py` (新建) | `JobRunner` 单例：`submit / cancel / get / list`；持有 `ThreadPoolExecutor` (D3) + `_cancel_events` (D5)；startup hook 标 orphan task errored (D12) |
-| 4 | `openprogram/agent/sub_agent_run.py` | 拆出 `_run_one(task: Task, *, cancel_event)` 包装 `process_user_turn`；新加 `submit_agent_task(...)` 异步入口；保留 `run_agent_turn(...)` 但内部走 `runner.submit(...).result()` |
-| 5 | `openprogram/agent/job/agent_tools.py` (新建) | `@function` 实现 `spawn_job / job_output / job_stop / await_tasks`，绑定到 toolset (D10) |
-| 6 | `openprogram/webui/ws_actions/task.py` (新建) | 4 个 handler 对应 D9；注册到 `ws_actions/__init__.py` |
-| 7 | `openprogram/webui/_execute/__init__.py::_run_spawn` | 改用 `submit_agent_task`；写 placeholder attach card 时带 job_id + status=running |
-| 8 | `openprogram/context/commit/generator.py` | 处理 attach 节点时检查 `extra.attach.status`：running / cancelled / errored 不展开，只占位 (D8) |
-| 9 | `openprogram/programs/tools/agents/agent/agent/agent.py` | `_agent_impl` 内部改走 `submit_agent_task` + 默认前台；`run_in_background=True` 时返回 job_id |
-| 10 | `apps/web/components/right-sidebar/tasks-panel.tsx` (新建) | UI 表达 (D11)；订阅 `job_status` ws 事件 |
-| 11 | `apps/web/components/chat/messages/attach-card.tsx` | 渲染 status badge (running / done / cancelled / error) |
-| 12 | `openprogram/agent/dispatcher.py::process_user_turn` | 启动时检查 `OPENPROGRAM_JOB_WORKERS` 并初始化 runner 单例（idempotent） |
-| 13 | Tests | unit：state machine、runner submit + cancel + crash 恢复；integration：spawn → await、并发 N、cancel mid-flight (D13) |
+| Job 实体与状态机 | openprogram/agent/job/types.py：Job、JobStatus、转移校验 | 已实现 |
+| 持久化存储 | openprogram/agent/job/store.py：load_job、list_jobs、update_job_status | 已实现 |
+| Worker admission 与执行 | openprogram/agent/job/runner.py：JobRunner、spawn_job、OPENPROGRAM_JOB_WORKERS | 已实现，但仍需完整执行链和资源链验收 |
+| 查询与等待 | JobRunner 的 get/list/await 方法；programs/tools/agents/agent/list_jobs 和 job_output | 已实现 |
+| 取消 | JobRunner.cancel_execution 与 runner 的终态收敛 | JobRunner 层已实现；UI/工具覆盖取决于具体入口 |
+| WebSocket 状态 | apps/server/openprogram_server/_webui/ws_actions/job.py（spawn/list/get）；apps/web/lib/net/use-ws.ts（job_status、spawn_job_result） | 这些 action 已实现 |
+| 分支侧状态视图 | apps/web/components/right-sidebar/branches/index.tsx 订阅 job 状态广播 | 已实现；不是独立 Tasks panel |
+| Attach card 生命周期 | Job.attach_pointer_id 与 runner/dispatcher 接线 | 部分实现；各状态和恢复路径仍需逐项验收 |
+| 资源治理 | JobRunner 构造并使用 ResourceGovernor，并提供资源投影 | 部分接入；token/cost/runtime/idle 强制是独立契约 |
+| 测试与崩溃矩阵 | 已有状态机和 runner 测试，但完整 spawn 到 await、并发取消和崩溃恢复矩阵仍需验证 | 不宣称全部验收通过 |
+
+因此，实现已支持持久化 Job 以及常规查询/取消流程，但不能据此宣称所有 UI、资源、attach card 和崩溃恢复要求都已通过。独立 Tasks panel、中途输出流式订阅、跨进程执行、自动重试和 DAG 形状依赖仍属于范围外或后续工作。
+
+更新本附录时应以上述路径为准；不要重新写回旧的“只有 _running_tasks”描述，也不要把已经存在的文件列为新文件。

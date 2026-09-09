@@ -237,9 +237,9 @@
   <div class="tbl">
   <table>
     <tr><th>面</th><th>位置</th><th>规模</th><th>契约</th></tr>
-    <tr><td><b>FastAPI 路由</b></td><td><code>webui/server.py</code> 的 <code>create_app()</code>，路由在 <code>webui/routes/</code></td><td>198 条 / 约 25 个模块</td><td class="m">2 条有精确相等断言</td></tr>
-    <tr><td><b>WebSocket <code>/ws</code></b></td><td><code>_websocket_handler</code>，动作来自 <code>webui/ws_actions/</code></td><td>约 100 个动作，约 120 种事件</td><td class="n">无</td></tr>
-    <tr><td><b>工具注册表</b></td><td><code>functions/_runtime.py</code> 的 <code>_registry</code></td><td>按工具名索引</td><td class="n">无外部契约</td></tr>
+    <tr><td><b>FastAPI 路由</b></td><td><code>apps/server/openprogram_server/server.py</code> 的 <code>create_app()</code>，路由在 <code>apps/server/openprogram_server/_webui/routes/</code></td><td>198 条 / 约 25 个模块</td><td class="m">2 条有精确相等断言</td></tr>
+    <tr><td><b>WebSocket <code>/ws</code></b></td><td><code>_websocket_handler</code>，动作来自 <code>apps/server/openprogram_server/_webui/ws_actions/</code></td><td>约 100 个动作，约 120 种事件</td><td class="n">无</td></tr>
+    <tr><td><b>工具注册表</b></td><td><code>openprogram/programs/_runtime.py</code> 的 <code>_registry</code></td><td>按工具名索引</td><td class="n">无外部契约</td></tr>
   </table>
   </div>
 
@@ -322,7 +322,7 @@
     <div class="plat" style="border-top-color:#d4843a">
       <div class="k">ERROR</div>
       <h3 style="color:#d4843a">is_error 三处均为一等字段</h3>
-      <div class="noun">functions/_runtime.py · agent/types.py</div>
+      <div class="noun">openprogram/programs/_runtime.py · agent/types.py</div>
       <div class="row"><div class="t">工具层</div><div class="v"><code>ToolResult</code> 有一等的 <code>is_error: bool</code>。</div></div>
       <div class="row"><div class="t">框架层</div><div class="v"><code>AgentToolResult</code> 已有一等的 <code>is_error: bool</code>；Runtime、approval、agent loop 与 MCP 转换均读取该字段，<code>details</code> 只保留诊断信息。</div></div>
       <div class="row"><div class="t">事件层</div><div class="v"><code>AgentEventToolEnd</code> 有一等的 <code>is_error</code>。</div></div>

@@ -2,7 +2,7 @@
 
 > This document ties the whole framework together: how single-turn and
 > multi-turn context, the event layer, the agent run, collaboration, and the DAG
-> mesh along the timeline of one conversation. Every `file:line` reference points
+> mesh along the timeline of one conversation. File and symbol references point
 > at the current code. Parts that are designed but not yet landed are collected
 > in "Known Boundaries" at the end.
 
@@ -10,7 +10,7 @@
 connected by a single process-wide event bus.** The dispatcher, the agent loop,
 tool execution, storage, and collaboration never call each other's UI or
 broadcast logic. They `emit` an event, and whoever cares subscribes
-(`events/bus.py:141` `emit` / `:159` `subscribe`). The event layer has two lanes:
+(`openprogram/events/bus.py` `EventBus.emit` / `EventBus.subscribe`). The event layer has two lanes:
 **asynchronous observation** (`EventBus` — nobody can stop what is already
 happening) and **synchronous consultation** (`tool_gate` — the one place in the
 framework that can stop a tool from executing).
@@ -28,7 +28,7 @@ branch shows up.
 ```
 user types a sentence
    │
-   ▼  [entry] process_user_turn(req)              dispatcher/__init__.py:97 (sync; runs its own asyncio loop to completion)
+   ▼  [entry] process_user_turn(req)              openprogram/agent/dispatcher/__init__.py `process_user_turn` (sync; runs its own asyncio loop to completion)
    │
    ├─▶ 1. session created / loaded                 :175 get_session / :177 create_session
    │
@@ -48,10 +48,10 @@ user types a sentence
    │       assistant_msg_id = user_msg_id+"_reply" :164
    │       assistant placeholder row written + set_head  :460; status="running" :464
    │
-   ├─▶ 5. ★ before the model call: the context engine runs ★   _run_loop_blocking :754
+   ├─▶ 5. ★ before the model call: the context engine runs ★   `openprogram/agent/dispatcher/loop_runner.py::run_loop_blocking`
    │       a. ContextEngine.prepare(...)           :885  ← DAG history rendered into LLM messages (TurnPrep)
    │       b. should_auto_compact(prep)?           :896
-   │            yes → snip (free: drop the oldest turn); still over → compact (LLM summarization) → prepare again (:907/:941/:976)
+   │            yes → snip (free: drop the oldest turn); still over → compact (LLM summarization) → prepare again (snip/compact/prepare retry path)
    │       c. assemble the prompt (added once per loop, so the prompt cache prefix stays intact)
    │       d. agent_loop([prompt], context, ...)   :1074 → into the core loop (see below)
    │
@@ -72,10 +72,10 @@ user types a sentence
 ### Entry point: the dispatcher
 
 `process_user_turn(req, *, on_event, cancel_event)` is the framework's **only**
-conversation entry point (`dispatcher/__init__.py:97`). It is **synchronous** so a
+conversation entry point (`openprogram/agent/dispatcher/__init__.py::process_user_turn`). It is **synchronous** so a
 channel worker thread can call it directly; internally it starts its own asyncio
 loop and runs `agent_loop` to completion. It returns a `TurnResult`
-(`dispatcher/types.py:102`).
+(`openprogram/agent/dispatcher/types.py` `TurnResult`).
 
 ### turn_id bound to a ContextVar — the other spine of the decoupling
 
@@ -112,7 +112,7 @@ moment ago (hanging under ROOT), multi-turn holds a full parent chain.
 ### ★ Before the model call: the context engine runs (the per-turn auto-compaction path) ★
 
 This layer is easy to overlook and happens on every turn. Step 5 is
-`_run_loop_blocking` (`dispatcher/__init__.py:754`), which runs **before**
+`run_loop_blocking` (`openprogram/agent/dispatcher/loop_runner.py`), which runs **before**
 entering `agent_loop`:
 
 1. `ContextEngine.prepare(agent, session, history, model, tools)` (`:885` →
@@ -124,7 +124,7 @@ entering `agent_loop`:
    actually fires when context exceeds the budget** — `snip` runs first (free:
    drop the oldest turn); if that is not enough, `_ctx_engine.compact(...)` (LLM
    summarization) runs, then **prepare runs again** (a three-stage retry at
-   `:907`/`:941`/`:976`).
+   (snip/compact/prepare retry path)).
 3. The prompt is assembled (added once per loop, so the cached prefix is not
    broken by repetition).
 4. `agent_loop([prompt], context, config, ...)` (`:1074`) enters the core loop.
@@ -134,7 +134,7 @@ entering `agent_loop`:
 
 ### Core loop: call the model → tools → feed results back → repeat
 
-`agent_loop` (`agent_loop.py:114`) builds an `EventStream`; the inner loop of
+`agent_loop` (`openprogram/agent/agent_loop.py`) builds an `EventStream`; the inner loop of
 `_run_loop` (`:205`, loop at `:236`) does:
 
 1. push `AgentEventTurnStart` (pushed on every inner turn, `:246`).
@@ -150,7 +150,7 @@ more tool".
 
 ### Tool execution: the tool.before interception
 
-`_execute_tool_calls` (`agent_loop.py:654`) does this for each tool call:
+`_execute_tool_calls` (`openprogram/agent/agent_loop.py`) does this for each tool call:
 
 1. push `AgentEventToolStart` (`:675`) + the plugin hook `TOOL_BEFORE_USE`
    (`:686`, best-effort).
@@ -191,7 +191,7 @@ more tool".
 The user node (`:298`), the assistant placeholder, every tool result, and the
 nodes inside an `@agentic_function` all land in the same `SessionNodeWriter` through
 the `_store` ContextVar. At the end of the turn `commit_turn`
-(`session_store.py:504`) commits the whole working tree as one turn — append-only,
+(`openprogram/store/session/session_store.py::commit_turn`) commits the whole working tree as one turn — append-only,
 with no mutable "current state" mirror file, so two agents writing concurrently
 never collide on the same file.
 
@@ -205,7 +205,7 @@ The events actually in flight. Two kinds: typed events on the bus (asynchronous
 observation + synchronous consultation), and `ws.frame` envelopes passed through
 to the front end.
 
-| Event type | Emitted by (file:line) | Consumed by | Notes |
+| Event type | Emitted by (file and symbol) | Consumed by | Notes |
 |---|---|---|---|
 | `user.prompt_submitted` | dispatcher `:346` | proactive observer (`proactive/state.py:61`) | user message committed |
 | `tool.before` | agent_loop `:695` | **tool_gate (synchronous)** + observers | the only interception point |
@@ -223,15 +223,15 @@ to the front end.
 | `channel.message_inbound` | channels | observers | inbound message |
 | `memory.ingest_started` / `.ended` | memory | observers | memory ingestion |
 | `skills.changed` / `plugins.update_available` / `sessions.listed` / `branches.listed` | various subsystems | UI / observers | lists and available updates |
-| `ws.frame` (`events/bus.py:115`) | external sources via `emit_ws_frame` (`:118`) | `webui/server.py:1192` (broadcast verbatim) | passthrough envelope: external sources never touch webui `_broadcast` directly |
+| `ws.frame` (`openprogram/events/bus.py`) | external sources via `emit_ws_frame` | `openprogram/webui/server.py` (broadcast verbatim) | passthrough envelope: external sources never touch webui `_broadcast` directly |
 
 **Subscriber sites**: the proactive engine subscribes to **all** events and
 filters by `on` (`proactive/engine.py:145`); the webui subscribes only to
-`ws.frame` (`server.py:1192`); the channels question bridge subscribes only to
+`ws.frame` (`openprogram/webui/server.py`); the channels question bridge subscribes only to
 `question.asked` (`_question_bridge.py:43`).
 
 **Event contract**: `emit` is fire-and-forget, and a handler that raises never
-propagates back to the emitter (`events/bus.py:141–157` + `_call:182–198` prints to
+propagates back to the emitter (`openprogram/events/bus.py` prints to
 stderr); an async handler with no running loop is skipped; `emit_safe` (`:96`)
 wraps the whole thing in try/swallow. The event layer never breaks the caller's
 code path.
@@ -383,13 +383,13 @@ a "sent" line in the initiator's chat stream.
 
 ## Anchor Quick Reference
 
-Dispatcher entry `dispatcher/__init__.py:97`; turn_id binding `:379`;
+Dispatcher entry `openprogram/agent/dispatcher/__init__.py::process_user_turn`; turn_id binding `:379`;
 history/branch resolution `:186–198`; user node write `:298`; **prepare /
-auto-compact before the model call** `_run_loop_blocking :885/:896/:1074`;
+auto-compact before the model call** `openprogram/agent/dispatcher/loop_runner.py::run_loop_blocking`;
 finalize `:711` / `dispatcher/finalize.py:175` (ContextCommit backfill `:283`,
-after_turn `:308` → `engine.py:437`). Event bus `events/bus.py:141/159/241`;
+after_turn in `openprogram/context/engine.py`). Event bus `openprogram/events/bus.py::EventBus`;
 tool.before interception `agent_loop.py:695/:701` + `events/tool_gate.py:53`. Context
 `engine.py:194` plus the two compaction paths (auto-compact
-`_run_loop_blocking:896` / microcompact `microcompact.py:76`). Agent loop
+`openprogram/agent/dispatcher/loop_runner.py::run_loop_blocking` / `microcompact.py`). Agent loop
 `agent_loop.py:114/205/654`; subagents `sub_agent_run.py:41`. Collaboration
 `send_message.py:186/393`, depth cap `:35`.

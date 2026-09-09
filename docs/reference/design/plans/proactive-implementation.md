@@ -88,7 +88,7 @@ which makes the DAG gap a known item rather than a prerequisite.
 ## 7. Verification approach
 
 Every wiring change is checked the same way: `py_compile`, the relevant unit
-tests, `openprogram worker restart`, a healthy `/healthz`, and a real message
+tests, the repository's documented local refresh flow, a healthy `/healthz`, and a real message
 sent through the web UI (frontend changes need `npm --prefix apps/web run build` first).
 
 Event ordering is checked by running a turn that calls a tool and reading
@@ -99,16 +99,16 @@ carrying session and turn in its metadata.
 
 ## Appendix: Implementation Status
 
-The migration runs in five steps, four of them landed. The bus was enabled and
-the in-agent sources connected; `file.changed` and the synchronous `tool.before`
-query point followed; then the external-source bridge (a real auth bridge plus
-taps in context, channels, memory, and the web UI); then the web UI was
-converted from an emitter into a subscriber, with external sources emitting
-`ws.frame` envelopes that the web UI forwards unchanged. Steps one through four
-are pure additions except the fourth, which reroutes an existing path. The fifth
-step — the `openprogram/proactive/` rule layer with its policy, blocking, and
-observing behaviour — has not landed; its acceptance criterion is that proactive
-touches no subsystem internals and works purely by subscription.
+The bus, source taps, external-source bridge, subscriber-based web UI, and the
+`openprogram/proactive/` package are present in the current source. The rule
+layer entry point is `openprogram/proactive/engine.py::install_proactive`, with
+policies under `openprogram/proactive/policies/`. The package and policies are
+implemented, but the current `openprogram/worker/runner.py` does not call
+`install_proactive()` at worker startup; only the separate event bridge is
+installed there. Worker lifecycle integration therefore remains an explicit
+unimplemented boundary. The original five-step sequence is retained as design
+history; current implementation status is determined from the paths and tests
+below.
 
 As built, the pieces sit here:
 
@@ -126,8 +126,8 @@ As built, the pieces sit here:
 | External sources decoupled from the web UI import | `task/runner.py`, `sub_agent_run.py`, `worktree/manager.py`, `functions/watcher.py`, `channels/_broadcast.py` |
 | Unit tests (30) | `tests/agent/test_event_bus.py`, `test_tool_gate.py`, `test_event_bridges.py` |
 
-Live validation covered the full event sequence on a real turn, `file.changed`,
-an end-to-end gate test, `skills.changed`, and a WebSocket probe confirming that
-all four job_status states reach the frontend through the new chain. One
-environment note carried forward: the worker's working directory is the home
-directory, so the project skills directory resolves to `~/skills`.
+The unit suite covers the event bus, tool gate, event bridges, and proactive
+policies. Installed-App and live WebSocket acceptance are separate checks and
+are not claimed by this design record. One environment note carried forward:
+the worker's working directory is the home directory, so the project skills
+directory resolves to `~/skills`.

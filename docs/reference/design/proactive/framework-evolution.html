@@ -4,8 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenProgram · 框架演进</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#0a1322; --panel:#101d31; --panel2:#0d1828;
@@ -203,11 +201,11 @@ footer a{color:var(--cyan); text-decoration:none}
     <span><b>AuthStore 自身</b>桥接，不动它</span>
     <span><b>前端 WS 协议</b>webui 切换后对前端透明</span>
   </div>
-  <div class="note">文字源：<a href="framework-evolution.html">framework-evolution.md</a> · 事件层本体设计：<a href="event-layer.html">event-layer.html</a> · 接线点（file:line）与分步验证：docs/plans/proactive-implementation.md</div>
+  <div class="note">文字源：<a href="framework-evolution.html">framework-evolution.md</a> · 事件层本体设计：<a href="event-layer.html">event-layer.html</a> · 当前接线点：<code>openprogram/events/{registry,bus,bridges}.py</code> 与各实际 emit 点</div>
 </section>
 
 <footer>
-  <span>OpenProgram · docs/design/proactive/framework-evolution</span>
+  <span>OpenProgram · docs/reference/design/proactive/framework-evolution</span>
   <span><a href="#asis">现状</a> · <a href="#tobe">目标</a> · <a href="event-layer.html">事件层 →</a></span>
 </footer>
 

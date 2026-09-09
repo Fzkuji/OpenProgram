@@ -15,11 +15,27 @@ openprogram mcp show drawio                       # that server's tools and full
 All subcommands:
 
 ```bash
+openprogram mcp token create       # create a token for the local stdio MCP server
+openprogram mcp serve              # serve the authenticated MCP server over stdio
 openprogram mcp list | show | add | rm | restart | enable | disable | edit | test
 ```
 
+`token create` prints the newly created token as one raw line; it does not set the
+shell environment. Run it once, copy that line, and bind it to the serving
+process before `serve`:
+
+```bash
+openprogram mcp token create
+export OPENPROGRAM_MCP_TOKEN="<paste the token printed above>"
+openprogram mcp serve
+```
+
+If the token already exists, reuse the token you saved instead of running
+`token create` again. `serve` rejects a missing or mismatched
+`OPENPROGRAM_MCP_TOKEN`.
+
 - `rm` stops the server and deletes its config; `enable` / `disable` toggle it (disable keeps the config).
-- `edit` opens the config file in `$EDITOR` — HTTP / SSE servers are currently added this way (`add` only covers stdio).
+- `edit` is retained only as a compatibility command and reports that raw config editing was removed because it exposed stored secrets. Use `add` / `rm` or the MCP settings page; `add` covers stdio servers.
 - `test` spins the server up with a throwaway config and confirms it returns a tool list, without writing anything to disk.
 
 The management commands talk to the resident OpenProgram background worker; if it is not running, start it with `openprogram worker start` (check with `openprogram status`).

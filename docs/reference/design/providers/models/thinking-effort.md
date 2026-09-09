@@ -192,10 +192,10 @@ When `get_thinking_spec()` cannot find a thinking.json, it returns the OpenAI-co
 | `providers/thinking_spec.py` | loads thinking.json, translate_reasoning, derive_thinking_levels, alias, fallback |
 | `providers/thinking_catalog.py` | uses derive_thinking_fields at startup to populate the thinking fields of the Model object |
 | `providers/types.py` | `ThinkingLevel` type definition, `SimpleStreamOptions.reasoning` field |
-| `webui/_thinking.py` | UI picker construction (takes data from listing), apply_thinking_effort (sets the value at runtime) |
-| `webui/_model_listing/listing.py` | list_models_for_provider (the single entry point that uniformly derives thinking_levels) |
-| `webui/_model_listing/fetchers/__init__.py` | Fetch enrichment: automatically calls probe_thinking |
-| `webui/_model_listing/fetchers/anthropic.py` | Anthropic Fetch: extracts thinking_levels from capabilities |
+| `apps/server/openprogram_server/_webui/_thinking.py` | UI picker construction (takes data from listing), apply_thinking_effort (sets the value at runtime) |
+| `apps/server/openprogram_server/_webui/_model_listing/listing.py` | list_models_for_provider (the single entry point that uniformly derives thinking_levels) |
+| `apps/server/openprogram_server/_webui/_model_listing/fetchers/__init__.py` | Fetch enrichment: automatically calls probe_thinking |
+| `openprogram/providers/anthropic/list_models.py` | Anthropic Fetch: extracts thinking_levels from capabilities |
 | `agent/session_config.py` | `VALID_THINKING` validation, `reasoning_from_config` conversion |
 
 ## 11. Actual Levels Per Model

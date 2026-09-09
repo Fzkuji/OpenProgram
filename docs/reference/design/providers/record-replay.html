@@ -464,7 +464,7 @@ replay:
       <tr><td><code>openprogram/providers/__init__.py</code></td><td>删除 built-in 注册和 record/replay 激活调用，仅保留导出。</td><td>消除包导入对运行状态和文件系统的影响。</td></tr>
       <tr><td><code>openprogram/providers/recording.py</code></td><td>保留格式与管理函数；激活函数由生命周期显式调用，不再参与 import。</td><td>不移动已经稳定的录制/回放逻辑。</td></tr>
       <tr><td><code>openprogram/auth/credential_provider.py</code></td><td>把 provider side-effect import 改为显式 <code>register_builtins()</code>。</td><td>auth 只需要 adapter 注册，不应激活 replay。</td></tr>
-      <tr><td><code>openprogram/webui/server.py</code></td><td>在线程启动前显式初始化 provider runtime。</td><td>保留现有单线程 preload 意图，并把失败边界变为显式 API。</td></tr>
+      <tr><td><code>apps/server/openprogram_server/server.py</code></td><td>在线程启动前显式初始化 provider runtime。</td><td>保留现有单线程 preload 意图，并把失败边界变为显式 API。</td></tr>
       <tr><td><code>openprogram/worker/runner.py</code></td><td>在 <code>start_web()</code>、provider warm-up 和 channel 线程之前显式初始化。</td><td>worker 对无效 replay 配置统一 fail-fast，不允许后台线程独立触发首次初始化。</td></tr>
       <tr><td><code>openprogram/cli/__init__.py</code></td><td>删除 recordings 环境变量哨兵，继续直接分派管理函数。</td><td>管理恢复由模块边界保证。</td></tr>
       <tr><td><code>tests/component/providers/test_provider_initialization.py</code></td><td>新增 import purity、状态机、并发、失败原子性、auth/Web 边界测试。</td><td>生命周期测试与格式、CLI 测试分开。</td></tr>

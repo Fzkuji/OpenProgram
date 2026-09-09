@@ -251,10 +251,10 @@ follows the graph instead of lagging one request behind:
 
 | Change | Site |
 |---|---|
-| compaction lands mid-turn | `webui/_execute/chat.py` (`compaction_finished`) |
-| model switch | `webui/routes/runtime.py`, `webui/ws_actions/runtime.py` |
-| branch checkout / delete | `webui/ws_actions/branch.py` |
-| sibling checkout | `webui/_chat_routes.py` |
+| compaction lands mid-turn | `apps/server/openprogram_server/_webui/_execute/chat.py` (`compaction_finished`) |
+| model switch | `apps/server/openprogram_server/_webui/routes/runtime.py`, `apps/server/openprogram_server/_webui/ws_actions/runtime.py` |
+| branch checkout / delete | `apps/server/openprogram_server/_webui/ws_actions/branch.py` |
+| sibling checkout | `apps/server/openprogram_server/_webui/_chat_routes.py` |
 
 A measurement belongs to the branch it was taken on: `session_context_stats`
 keeps the `measured` basis only while HEAD has not moved, and re-estimates for

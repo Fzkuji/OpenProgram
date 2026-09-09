@@ -48,7 +48,6 @@ Code references:
 Documentation references:
 
 - `docs/README.md`
-- `docs/archive/README_DRAFT.md`
 
 Sync rule:
 

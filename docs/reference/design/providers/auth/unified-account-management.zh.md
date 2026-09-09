@@ -42,7 +42,7 @@ credential 在读取时推导，因此无需重新登录。label 可以重复，
   `mark_failure` / `mark_success` / `clear_cooldown`（`auth/pool.py:57-276`）；
   以及 credential_provider 封装 `apply_failure` / `apply_success`
   （`auth/credential_provider.py`）。
-- 一套多 profile REST 界面（`webui/_auth_routes.py`：`/profiles`、`/pools`、
+- 一套多 profile REST 界面（`apps/server/openprogram_server/_webui/_auth_routes.py`：`/profiles`、`/pools`、
   `/pools/.../credentials`、`/doctor`、SSE `/events`）。
 - 统一登录端点（`/api/providers/{id}/login/{start,poll,submit,cancel}`）
   与 `<ProviderLogin>`。

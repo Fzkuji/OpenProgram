@@ -308,7 +308,7 @@
   <section class="section" id="current">
     <div class="section-head">
       <div class="num">02</div>
-      <div><h2>当前实现与待补控制</h2><p>Owner process token、canonical Origin、fragment bootstrap、共同 HTTP/WS 认证边界、auth-url 和最小 health 已进入生产路径；secret 不可取回与完整部署验收仍未完成。</p></div>
+      <div><h2>当前实现与待补控制</h2><p>Owner process token、canonical Origin、fragment bootstrap、共同 HTTP/WS 认证边界、auth-url、最小 health 与 secret 不可取回已进入生产路径；完整部署验收仍未完成。</p></div>
     </div>
     <div class="grid2">
       <article class="card cyan">
@@ -318,7 +318,7 @@
       </article>
       <article class="card amber">
         <div class="k">Remaining work</div><h3>收敛 secret 与验收范围</h3>
-        <p>两条 plaintext reveal 路径和 frontend control 仍需删除，并实现独立的 config-key 与 account replace/preserve/delete schema。</p>
+        <p>两条 plaintext reveal 路径已删除；legacy account route 返回 410，config-key reveal query 返回 404，credential response 只保留掩码；replace/preserve/delete schema 已实现。</p>
         <p>还缺少直接 HTTP startup warning、独立 SSE、真实 browser bootstrap/WS、restart、bind-failure、multi-profile 与 nginx/Caddy smoke 验收。</p>
       </article>
     </div>
@@ -565,7 +565,7 @@ openprogram web auth-url \
 
     <h3 style="margin-top:25px">Secret 不可取回</h3>
     <div class="grid3">
-      <article class="card current"><div class="k">Remove</div><h3>删除两条 reveal</h3><p>Account reveal route 返回 404；config-key status 保留掩码，但出现 <code>reveal</code> query 时返回 404。</p></article>
+      <article class="card current"><div class="k">Remove</div><h3>删除两条 reveal</h3><p>Account reveal route 返回 410；config-key status 保留掩码，但出现 <code>reveal</code> query 时返回 404。</p></article>
       <article class="card target"><div class="k">Return</div><h3>响应只含掩码</h3><p>返回 <code>has_value</code> 与 <code>masked</code>/<code>masked_key</code>。长度至少 12 时格式为 <code>sk-…abc4</code>，保证隐藏至少五位；短值固定八个圆点。</p></article>
       <article class="card target"><div class="k">Replace / delete</div><h3>两类动作分别定义</h3><p>Config key 用 <code>POST /api/config</code> 替换、<code>DELETE /api/config/key/{env}</code> 删除；API-key account 用专用 update 替换、<code>accounts/remove</code> 删除整个 account。空值和 mask 都无效。</p></article>
     </div>
@@ -591,7 +591,7 @@ openprogram web auth-url \
       <li>Malformed Authorization 不能回退到有效 cookie。</li>
       <li>静态 asset 与最小 health 不含 session、filesystem、credential metadata。</li>
       <li>CSP/X-Frame-Options 阻止 framing；认证与敏感 response 使用 no-store。</li>
-      <li>两种 reveal 请求为 404；config key 与 account 各自执行精确 replace/preserve/delete schema，8–11 字符使用固定 mask，frontend type 无明文 field。</li>
+      <li>Legacy account reveal 请求为 410，config-key reveal query 为 404；config key 与 account 各自执行精确 replace/preserve/delete schema，8–11 字符使用固定 mask，frontend type 无明文 field。</li>
       <li>nginx/Caddy HTTPS 下 HTTP、SSE、WS 均能认证，backend 保持 loopback。</li>
       <li>Channel turn 保留 paired authority tier，不取得 Web owner authority。</li>
       <li>同 hostname、不同端口的 profile server 使用不同 cookie 名称并独立认证。</li>

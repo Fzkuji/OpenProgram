@@ -31,7 +31,7 @@ lanes, tiers and branch badges that a 288px rail truncates.
 |---|---|
 | Perspective state | `CenterTab.dagView` (`apps/web/lib/state/center-tabs-store.ts`) — not persisted; a reload opens on the transcript |
 | Controls | `apps/web/components/chat/view-controls.tsx` |
-| Graph host | `apps/web/components/chat/dag-view.tsx` — renders `#historyPanel` + `.history-body`, the elements `pipeline.ts` and `render/visibility.ts` select |
+| Graph host | `apps/web/components/chat/dag-view.tsx` — renders `#historyPanel` + `.history-body`, the elements `apps/web/lib/runtime-bridge/dag/pipeline.ts` and `apps/web/lib/runtime-bridge/dag/render/visibility.ts` select |
 | Perspective swap | `.center-pane-chat[data-center-view]` in `apps/web/app/styles/dag/view-host.css` |
 
 Both surfaces stay mounted and swap by `display`: the renderer paints into the
@@ -57,7 +57,7 @@ the user drives directly.
 | drag on empty canvas | pan |
 | drag starting on a node | the node's — click and double-click still work |
 
-**Wheel triage** (`interaction/canvas.ts`): ctrl/⌘ + wheel zooms — browsers deliver a
+**Wheel triage** (`apps/web/lib/runtime-bridge/dag/interaction/canvas.ts`): ctrl/⌘ + wheel zooms — browsers deliver a
 trackpad pinch as a wheel event with `ctrlKey` set, and ⌘+wheel is the
 explicit zoom chord — at a rate tuned for a pinch's small continuous deltas.
 A mouse wheel zooms at wheel rate — a mouse has no pinch. macOS scroll
@@ -83,7 +83,7 @@ pixels for exactly this reason. The dot radius rides the zoom too (clamped
 
 **View state survives re-renders.** The graph repaints on every capture; moving
 the camera each time would drag the view around while the user is reading. Pan
-and zoom live in `store/globals` keyed by session, and only arriving at a
+and zoom live in `apps/web/lib/runtime-bridge/dag/store/globals.ts` keyed by session, and only arriving at a
 different session re-fits. Resizing the pane never re-fits — the user's angle on
 the graph is theirs to keep.
 
@@ -94,7 +94,7 @@ it sits and however tall it grows, rendered only while the DAG perspective is
 showing. The zoom cluster is one pill holding − · readout · +: the buttons
 step by exactly one wheel notch (`ZOOM_STEP`), and clicking the readout
 resets to 100% — both anchored on the pane's centre, since a button has no
-cursor to anchor on. The readout is written imperatively by `interaction/canvas.ts` on
+cursor to anchor on. The readout is written imperatively by `apps/web/lib/runtime-bridge/dag/interaction/canvas.ts` on
 every view change, because routing a gesture's every wheel event through
 React state would repaint the tree sixty times a second.
 
@@ -103,15 +103,15 @@ env-pill rule (`composer.module.css`), so they are the same 24px filled pill
 as the env chips beside them — same fill, inset ring, shadow, and hover — and
 can never drift from them. The legend panel wears `MENU_PANEL`
 (`components/chat/top-bar/menu-styles`), the one frame every popover menu in
-the app shares; `styles/dag/hud.css` keeps only HUD-internal layout (the zoom
+the app shares; `apps/web/app/styles/dag/hud.css` keeps only HUD-internal layout (the zoom
 cluster's segments, the legend's upward anchoring and rows).
 
 | Piece | Where |
 |---|---|
 | Pan / zoom / fit | `apps/web/lib/runtime-bridge/dag/interaction/canvas.ts` (`zoomStep` / `resetZoom` for the HUD buttons) |
-| View state | `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` in `dag/store/globals.ts` |
+| View state | `_viewTx` / `_viewTy` / `_viewScale` / `_viewSession` in `apps/web/lib/runtime-bridge/dag/store/globals.ts` |
 | Surface + lattice | `.history-body` in `apps/web/app/styles/dag/canvas.css` |
-| HUD | `DagHud` in `apps/web/components/chat/dag-view.tsx`; pill look from the env-pill rule in `composer.module.css`, legend frame from `MENU_PANEL`, internals in `styles/dag/hud.css` |
+| HUD | `DagHud` in `apps/web/components/chat/dag-view.tsx`; pill look from the env-pill rule in `composer.module.css`, legend frame from `MENU_PANEL`, internals in `apps/web/app/styles/dag/hud.css` |
 
 ### The composer belongs to the pane, not to the transcript
 
@@ -135,13 +135,13 @@ order does the rest — the graph sits under the composer's `z-index: 5`. Shrink
 
 The canvas runs edge to edge under the composer — panning past it is one
 gesture, and the fit centres the graph in the strip above it
-(`interaction/canvas.ts::fitCanvas`), so nothing needs a reserved padding band.
+(`apps/web/lib/runtime-bridge/dag/interaction/canvas.ts::fitCanvas`), so nothing needs a reserved padding band.
 
 ### Branch switching lives in the graph
 
 There is no branch strip above the canvas. Each branch's name is a button drawn
 in the graph itself, anchored below the branch's last conversation-layer node
-(`render/badges.ts`, §5): the active branch's tag is outlined and tinted in its
+(`apps/web/lib/runtime-bridge/dag/render/badges.ts`, §5): the active branch's tag is outlined and tinted in its
 lane colour, and clicking any other tag checks that branch out. The graph
 already draws the branch structure; a strip above it would repeat that
 information and cut a line across the pane's floating view controls. Rename,
@@ -207,7 +207,7 @@ looked exactly like that.
 - **Column (horizontal) = lane start column + tier indent**
 - **Row (vertical) = depth**
 
-Both axes step in the same unit (`COL_W == ROW_H`, `dag/types.ts`), offset from
+Both axes step in the same unit (`COL_W == ROW_H`, `apps/web/lib/runtime-bridge/dag/types.ts`), offset from
 the origin by `PAD_X` / `PAD_Y` — the square lattice the canvas paints its dots
 on.
 
@@ -311,7 +311,7 @@ shoulder (§12) and the capsule's coverage count (§9).
 
 ## 3. Edges: color = branch, line style = type (orthogonal)
 
-Each lane has one color (`dag/types.ts` `LANE_COLORS`). Any edge uses the lane color of
+Each lane has one color (`apps/web/lib/runtime-bridge/dag/types.ts` `LANE_COLORS`). Any edge uses the lane color of
 the branch it belongs to / points at; **never give a category of edge a fixed color.** Type
 is conveyed only by line style:
 
@@ -446,22 +446,22 @@ apps/web/lib/runtime-bridge/dag/
                                 attribute every call and spawn to an anchor's
                                 time-ordered thread, decide visibility from the
                                 open set
-  layout/geometry.ts the implementation of section 1. Packs the backend's
+  apps/web/lib/runtime-bridge/dag/layout/geometry.ts the implementation of section 1. Packs the backend's
                      lane / tier / depth into lattice `(col, row)` positions for
                      CHAIN nodes (fork lanes one gap column out, fork roots on
                      their sibling's row), then places every open thread
                      recursively beside its anchor, shifts later chain rows by
                      the insertion, and reserves each thread column.
                      **tier and lane are NOT computed here** — the backend
-                     computes them in `openprogram/webui/graph_layout/` and ships
+                     computes them in `apps/server/openprogram_server/_webui/graph_layout/` and ships
                      them on the node; the front end only consumes the values.
-  render/edges.ts    the line-style table of section 3
-  render/nodes.ts    the shapes + status strokes + badges of section 4
-  render/badges.ts   the branch-name badge of section 5
-  store/globals.ts   expansion state, lastGraph, signatures
+  apps/web/lib/runtime-bridge/dag/render/edges.ts    the line-style table of section 3
+  apps/web/lib/runtime-bridge/dag/render/nodes.ts    the shapes + status strokes + badges of section 4
+  apps/web/lib/runtime-bridge/dag/render/badges.ts   the branch-name badge of section 5
+  apps/web/lib/runtime-bridge/dag/store/globals.ts   expansion state, lastGraph, signatures
 ```
 
-The backend `openprogram/webui/graph_builder.py` produces the node array (including the
+The backend `apps/server/openprogram_server/_webui/graph_builder.py` produces the node array (including the
 `branch_name` stamp, caller/predecessor), and `graph_layout/` does the lane/tier/depth
 annotation — **tier specifically in `graph_layout/tier.py`**. Verification tool: `python scripts/dag_dump.py <session_id>` prints
 lane/tier/depth + an ASCII grid.
@@ -625,7 +625,7 @@ The persister writes `metadata.covers_ids` — the exact chain nodes the summary
 replaces (context/persistence.py). Ids, not a seq interval: seq intervals span
 sibling branches in a DAG, so a dead fork whose seqs fall inside
 `[first_seq, last_seq]` would fold behind a capsule that never summarised it,
-and the answer would change whenever HEAD moved. `webui/graph_builder.py`
+and the answer would change whenever HEAD moved. `apps/server/openprogram_server/_webui/graph_builder.py`
 passes the list through, adds the caller subtrees hanging off covered turns (a
 covered turn folds with its calls), drops ids that no longer exist, and puts
 the result on the summary row as `covers_ids`.
@@ -679,7 +679,7 @@ Nothing else — no window competes with the expansion. The right rail's
 Details view still fills quietly for whenever the user opens it.
 
 **Right-click → the SAME card expands in place.** Not a second window: the
-one card element deepens where it stands (`interaction/tooltip.ts expandTooltip`) — every
+one card element deepens where it stands (`apps/web/lib/runtime-bridge/dag/interaction/tooltip.ts expandTooltip`) — every
 field, longer previews, coverage state, context standing, id — and the verbs
 join at its bottom: checkout to this branch · fork from this node · fork and
 edit this message (user turns only) · copy node id · view raw JSON. One row
@@ -706,12 +706,12 @@ Nothing here adds a verb to the protocol:
 | fork from node | `POST /api/chat/checkout` | fork *is* checkout plus intent — a turn sent from a HEAD that already has children is by definition a sibling of them, which is how the transcript's "branch from here" button works too |
 | fork and edit | `POST /api/chat/checkout` to the node's **predecessor**, then the text into the composer | the user edits and sends; that send is an ordinary send against the new HEAD, so it forks with no protocol change and no "send from node X" concept to keep alive. The predecessor is the fork point precisely because the edited message has to stand *beside* the original, not after it — the same shape `POST /api/chat/edit` produces |
 
-The inspector and menu are built imperatively (`render/inspector.ts`) because
+The inspector and menu are built imperatively (`apps/web/lib/runtime-bridge/dag/render/inspector.ts`) because
 the graph is: they float over an SVG the renderer owns, keyed to node geometry,
 outside React's tree.
 
 **Legend.** A collapsible card names the shapes and the two greys, opened from
-the canvas HUD beside the fit button (`components/chat/dag-view.tsx`). It starts
+the canvas HUD beside the fit button (`apps/web/components/chat/dag-view.tsx`). It starts
 collapsed — the vocabulary is small and learnable, so the legend is for the
 first few sessions rather than a permanent fixture on the canvas.
 
@@ -750,7 +750,7 @@ squares once opened — and its own thread sits one column further right,
 opened by clicking the square. While the spawn square is on
 screen (its owner's thread is open — the opt-in that keeps the default
 canvas clean), a badge pill (the same pill as branch badges,
-render/badges.ts) sits at its RIGHT as the square's name tag; clicking it
+apps/web/lib/runtime-bridge/dag/render/badges.ts) sits at its RIGHT as the square's name tag; clicking it
 checks the agent chain's tip out as the active branch — taking over the
 agent's conversation. Badges never cover a node: every visible glyph seeds the
 badge collision boxes, so a badge that would land on one steps down a row. The model is recursive and so is the picture: every level reads
@@ -771,7 +771,7 @@ dispatch, work and return are one column read top to bottom. The old dashed
 attach-return curve only draws when both of its ends are chain-visible, which
 an agent-internal tip never is any more.
 
-**View state.** `_threadOpen` in `store/globals.ts`, keyed by anchor id (chain
+**View state.** `_threadOpen` in `apps/web/lib/runtime-bridge/dag/store/globals.ts`, keyed by anchor id (chain
 turn or spawn head — one vocabulary). Never persisted, reset on session
 switch, exactly as in §9. A spawn head is visible only while every thread
 above it is open; its items likewise — visibility is the whole ancestor
@@ -783,27 +783,27 @@ The whole spec is implemented. Where each part lives:
 
 | Spec item | Implementation |
 |---|---|
-| Infinite canvas (pan / zoom / fit / dot lattice) | `dag/interaction/canvas.ts` + `.history-body` in `styles/dag/canvas.css`; view state in `dag/store/globals.ts`; HUD in `components/chat/dag-view.tsx` |
-| §1 lane / tier / depth layout | `dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement that inserts later chain rows and reserves thread columns); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `apps/web/scripts/check-dag-subagent.mjs` |
+| Infinite canvas (pan / zoom / fit / dot lattice) | `apps/web/lib/runtime-bridge/dag/interaction/canvas.ts` + `.history-body` in `apps/web/app/styles/dag/canvas.css`; view state in `apps/web/lib/runtime-bridge/dag/store/globals.ts`; HUD in `apps/web/components/chat/dag-view.tsx` |
+| §1 lane / tier / depth layout | `apps/web/lib/runtime-bridge/dag/layout/geometry.ts::computeGeometry` (tier-packed chain lanes with per-lane tier zeroing, preorder rows, scene-3 fork rows + gap column, recursive thread placement that inserts later chain rows and reserves thread columns); lattice, no-overlap, thread columns/rows and fork geometry all executed and asserted by `apps/web/scripts/check-dag-subagent.mjs` |
 | §2 rule ③ glyphs are cells | no shape is sized from text, and no text draws on the canvas beyond the shoulder count and the capsule note |
-| §4 HEAD breathing glow | `render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `styles/dag/nodes.css` (reduced-motion → steady glow); every glyph stays hollow (`render/shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`pipeline.ts` via `threadModel.anchorOf`) |
-| §0/§12 call-thread aggregation | `passes/thread.ts` (`buildThreadModel`: anchor merge, event attribution, recursive visibility); `render/nodes.ts` draws the shoulder count (`history-thread-count`); `_threadOpen` in `store/globals.ts` |
-| Rule ② corollary (no placeholder box) | `render/shapes.ts`: no `square_outline`; task renders as a plain square |
+| §4 HEAD breathing glow | `apps/web/lib/runtime-bridge/dag/render/nodes.ts` stamps `data-head` + the branch colour as `color`; `dag-head-glow` keyframes in `apps/web/app/styles/dag/nodes.css` (reduced-motion → steady glow); every glyph stays hollow (`apps/web/lib/runtime-bridge/dag/render/shapes.ts`); HEAD pointing at a merged reply re-seats on its anchor (`apps/web/lib/runtime-bridge/dag/pipeline.ts` via `threadModel.anchorOf`) |
+| §0/§12 call-thread aggregation | `apps/web/lib/runtime-bridge/dag/passes/thread.ts` (`buildThreadModel`: anchor merge, event attribution, recursive visibility); `apps/web/lib/runtime-bridge/dag/render/nodes.ts` draws the shoulder count (`history-thread-count`); `_threadOpen` in `apps/web/lib/runtime-bridge/dag/store/globals.ts` |
+| Rule ② corollary (no placeholder box) | `apps/web/lib/runtime-bridge/dag/render/shapes.ts`: no `square_outline`; task renders as a plain square |
 | §4 status on the stroke | `graph_builder` emits status; `nodes.ts` draws it on the stroke (running dashed+breathing / error red+! / cancelled grayed) |
-| §5 badge anchoring | `render/badges.ts`: anchor at last conversation-layer node, half-column left shift when a line crosses the anchor cell, measured-pixel-box collision slides down one row |
-| Scene 8 merge shape and lines | `render/shapes.ts` `merge_dot` (◉); `edges.ts` merge-in line peer-colored 2.4px solid |
+| §5 badge anchoring | `apps/web/lib/runtime-bridge/dag/render/badges.ts`: anchor at last conversation-layer node, half-column left shift when a line crosses the anchor cell, measured-pixel-box collision slides down one row |
+| Scene 8 merge shape and lines | `apps/web/lib/runtime-bridge/dag/render/shapes.ts` `merge_dot` (◉); `edges.ts` merge-in line peer-colored 2.4px solid |
 | Scenes 8/10 attach pointer | backend filters it (display=runtime) + `graph_builder` stamps the ref onto the embed host (`attach_returns`); `edges.ts` draws the long-dash return line |
 | §4 cross-session ↗ | `graph_builder` stamps `spawn_remote` from target-root provenance and `spawn_out` from the source attach's target session; `nodes.ts` draws ↗ on both sides. Cross-session badge navigation is not implemented |
 | §1 spawn root tier | `graph_layout`: tier=1 / same-row depth / new lane; `task_followup` without an attach pointer re-parents onto the receiving turn (`filter.py` fallback) |
-| Composer shared by both perspectives | `styles/chat/center-pane.css` hides `#chatArea`, not `#chatView`; asserted by `apps/web/scripts/check-center-tabs.mjs` |
-| In-graph branch tags (checkout buttons) | `render/badges.ts`; hover styles on `.history-branch-tag` in `styles/dag/badges.css` |
+| Composer shared by both perspectives | `apps/web/app/styles/chat/center-pane.css` hides `#chatArea`, not `#chatView`; asserted by `apps/web/scripts/check-center-tabs.mjs` |
+| In-graph branch tags (checkout buttons) | `apps/web/lib/runtime-bridge/dag/render/badges.ts`; hover styles on `.history-branch-tag` in `apps/web/app/styles/dag/badges.css` |
 | §8 coverage query | `routes/tree.py::_coverage_nodes` fills `/context-range`'s `nodes`; tested in `tests/unit/context/test_context_range_coverage.py` |
-| §8 aged / spilled drawing | `render/nodes.ts` (stroke-opacity + `▤`), fed by `_coverageSet` in `store/globals.ts` |
-| §9 `covers_ids` on the wire | `webui/graph_builder.py` resolves `metadata.covers` to ids; tested in `tests/unit/dag/test_graph_builder_covers.py` |
-| §9 capsule shape | `render/shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
-| §9 fold + pleats + ghosts | `passes/fold-summaries.ts` (fold), `render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `store/globals.ts`; executed by `apps/web/scripts/check-dag-summary.mjs` |
-| §10 archived failure | `render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
-| §11 one card, two states / fork & edit | `dag/interaction/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `interaction/nodes.ts`; the actions go through `POST /api/chat/checkout` |
-| §11 legend | `DagLegend` in `components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `styles/dag/hud.css` |
-| §12 call thread + agent spawn | `render/shapes.ts` (spawn → square), `passes/thread.ts` (model), `layout/geometry.ts` (recursive placement), `render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `render/nodes.ts` (`data-thread*`, shoulder count), `interaction/nodes.ts` (`toggleThreadOpen`); executed by `apps/web/scripts/check-dag-subagent.mjs` |
+| §8 aged / spilled drawing | `apps/web/lib/runtime-bridge/dag/render/nodes.ts` (stroke-opacity + `▤`), fed by `_coverageSet` in `apps/web/lib/runtime-bridge/dag/store/globals.ts` |
+| §9 `covers_ids` on the wire | `apps/server/openprogram_server/_webui/graph_builder.py` resolves `metadata.covers` to ids; tested in `tests/unit/dag/test_graph_builder_covers.py` |
+| §9 capsule shape | `apps/web/lib/runtime-bridge/dag/render/shapes.ts` `capsule` (keyed on `covers_ids`, tagged `data-shape` so `_applyShapeSize` leaves its geometry alone) |
+| §9 fold + pleats + ghosts | `apps/web/lib/runtime-bridge/dag/passes/fold-summaries.ts` (fold), `apps/web/lib/runtime-bridge/dag/render/nodes.ts` (pleats, `已压缩 · N 轮` caption, ghost stroke), `apps/web/lib/runtime-bridge/dag/render/edges.ts` (dashed ghost edge), `_summaryExpanded` in `apps/web/lib/runtime-bridge/dag/store/globals.ts`; executed by `apps/web/scripts/check-dag-summary.mjs` |
+| §10 archived failure | `apps/web/lib/runtime-bridge/dag/render/nodes.ts::_isArchivedFailure` — `status=error` AND off the HEAD chain; grey overrides §4's red |
+| §11 one card, two states / fork & edit | `apps/web/lib/runtime-bridge/dag/interaction/tooltip.ts`: `renderNodeInfo` feeds both states, `expandTooltip` deepens the card in place; `apps/web/lib/runtime-bridge/dag/render/inspector.ts` builds only the verb list (+ raw JSON layer), wired in `apps/web/lib/runtime-bridge/dag/interaction/nodes.ts`; the actions go through `POST /api/chat/checkout` |
+| §11 legend | `DagLegend` in `apps/web/components/chat/dag-view.tsx` (inside the canvas HUD), `.dag-legend` in `apps/web/app/styles/dag/hud.css` |
+| §12 call thread + agent spawn | `apps/web/lib/runtime-bridge/dag/render/shapes.ts` (spawn → square), `apps/web/lib/runtime-bridge/dag/passes/thread.ts` (model), `apps/web/lib/runtime-bridge/dag/layout/geometry.ts` (recursive placement), `apps/web/lib/runtime-bridge/dag/render/edges.ts` (dotted thread line, centre-to-centre chain edges, scene-3 bridge), `apps/web/lib/runtime-bridge/dag/render/nodes.ts` (`data-thread*`, shoulder count), `apps/web/lib/runtime-bridge/dag/interaction/nodes.ts` (`toggleThreadOpen`); executed by `apps/web/scripts/check-dag-subagent.mjs` |
 | §12 the name on the wire | `task/runner.py::_update_attach_card` stamps `attach.label` from the task; `ws_actions/session.py::_annotate_spawn_origin` carries it to the spawn root as `spawned_from.label`; tested in `tests/unit/test_task_attach_integration.py` |

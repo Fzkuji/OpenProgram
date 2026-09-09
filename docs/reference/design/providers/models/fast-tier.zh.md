@@ -17,7 +17,7 @@
 
 ## 2. 判定：`supports_fast(provider, model)` 三支
 
-入口：`openprogram/webui/_model_listing/listing.py`。判定前先剥
+入口：`apps/server/openprogram_server/_webui/_model_listing/listing.py`。判定前先剥
 `"provider:"` 线格式前缀（运行时把当前模型记成 `openai-codex:gpt-5.5`）。
 
 1. **openai-codex → 读注册表落盘的 `Model.fast`**。这个字段不是手写的，
@@ -53,11 +53,11 @@ codex 的原则：**信息全从官网实时拿，不手写任何模型清单**�
 
 | 层 | 位置 | 持久化 |
 |---|---|---|
-| codex 官方端点 | `webui/_model_listing/fetchers/codex.py::_fetch_codex_live` | 远端；`_browse_models` 10 分钟内存缓存，**无磁盘缓存** |
+| codex 官方端点 | `openprogram/providers/openai_codex/list_models.py` | 远端；`_browse_models` 10 分钟内存缓存，**无磁盘缓存** |
 | config spec 行（含 `fast`/`thinking_levels`/`context`） | 用户启用某模型时，`fetch_and_normalize` 归一化后的整行写进 `~/.openprogram/config.json`；Fetch 按钮（`fetch_models_remote`）用新端点数据 heal 已启用行 | 配置文件（这就是"存文件"这一环） |
 | `Model.fast` 字段 | `_build_model_from_row` 读 config 行的 `fast`（行有值就用，codex 行总带值）；注册表构建时进 `ENABLED_MODELS` | 仅内存（进程内 dict，源头是 config） |
 | claude-code 手写表 | `providers/enabled_models.py::default_fast`（仅剩 Opus 部分在判定路径上） | 源码 |
-| models.dev 目录 | `webui/_model_listing/sources/models_dev.py` | 远端；1h 内存缓存，无磁盘缓存 |
+| models.dev 目录 | `openprogram/providers/sources/models_dev.py` | 远端；1h 内存缓存，无磁盘缓存 |
 
 数据流：**官方端点 → 归一化 → config.json → 注册表 → supports_fast /
 dispatch**。断网 / 没登录时端点返回 error、保留已存 config 行不覆盖——反正没
@@ -68,7 +68,7 @@ token 也 dispatch 不了这些模型，token-less 浏览拿不到列表不算�
 ```
 连接建立 / 会话切换 / 模型切换 / 每轮消息 ack+结束
   → 前端 loadAgentSettings()（lib/runtime-bridge/providers.ts）
-  → GET /api/agent_settings（webui/routes/runtime.py）
+  → GET /api/agent_settings（apps/server/openprogram_server/_webui/routes/runtime.py）
       chat.fast = supports_fast(当前会话的 provider, model)   ← 每次现算
   → zustand agentSettings.chat.fast
   → composer 订阅重渲染：显/隐 "高速" 菜单项与 chip
@@ -94,10 +94,10 @@ openprogram/providers/types.py                     Model.fast 字段
 openprogram/providers/enabled_models.py            default_fast（仅 claude-code Opus）+ 配置行回填
 openprogram/providers/openai_codex/{openai_codex,runtime}.py   service_tier 透传；codex_cli_rs 身份 + _CODEX_CLIENT_VERSION
 openprogram/providers/anthropic/{anthropic,_claude_code_direct_runtime}.py  Claude fast 线路 + 注册回填
-openprogram/webui/_model_listing/fetchers/codex.py 官方端点拉取 + 归一化（fast/thinking/context 来源）
-openprogram/webui/_model_listing/fetchers/__init__.py  编排：透传 fetcher 的 fast/thinking，enrich 不覆盖
-openprogram/webui/_model_listing/listing.py        supports_fast 判定入口；list_models_for_provider 优先用 fetcher thinking
-openprogram/webui/routes/runtime.py                /api/agent_settings 下发 chat.fast
+openprogram/providers/openai_codex/list_models.py                    官方端点拉取 + 归一化（fast/thinking/context 来源）
+apps/server/openprogram_server/_webui/_model_listing/fetchers/__init__.py  编排：透传 fetcher 的 fast/thinking，enrich 不覆盖
+apps/server/openprogram_server/_webui/_model_listing/listing.py        supports_fast 判定入口；list_models_for_provider 优先用 fetcher thinking
+apps/server/openprogram_server/_webui/routes/runtime.py                /api/agent_settings 下发 chat.fast
 apps/web/lib/session-store/types.ts                     AgentBadgeInfo.fast 类型
 apps/web/components/chat/composer/index.tsx             开关显隐 + 发送门控
 ```

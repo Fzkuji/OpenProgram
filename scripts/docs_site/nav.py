@@ -181,6 +181,8 @@ def _dedupe_md_html(pages: list[Page]) -> list[Page]:
             for p in group:
                 if p.kind == "html":
                     p.out = p.rel.parent / f"{p.rel.stem}.viz.html"
+                    if p.zh_out is not None:
+                        p.zh_out = p.zh_out.with_suffix(".viz.html")
                     p.title = f"{p.title} (viz)"
                 result.append(p)
         else:
@@ -239,7 +241,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "capabilities/agentic-programming/embedding-in-your-own-stack.md"]),
         ("Writing functions", "编写函数", [
             "capabilities/agentic-programming/writing-functions/pure-python.md",
-            "capabilities/agentic-programming/writing-workflow-function.md",
+            "capabilities/agentic-programming/writing-functions/agentic-function.md",
             "capabilities/agentic-programming/writing-functions/function-metadata.md"]),
         ("Choosing the next step", "选择下一步", [
             "capabilities/agentic-programming/choosing-the-next-step/tool-calling.md",
@@ -439,6 +441,10 @@ PAGE_ORDER: dict[str, int] = {
     "comparisons/ai-agent-frameworks.md": 8,
     "comparisons/related-projects.md": 9,
     "reference/design": 900,  # design-notes archive always last
+    "reference/design/implementation-status.html": 1,
+    "reference/design/repository-structure.html": 2,
+    "reference/design/repository-structure-implementation.html": 3,
+    "reference/design/docs-site.html": 4,
     # The context notes read in order: the layer, then compaction, then how the
     # blocks are composed and compared, then the two rendered companions.
     "reference/design/context/README.md": 0,

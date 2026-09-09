@@ -170,4 +170,5 @@ metering 复用但不修改：`models.py:calculate_cost`、`_event_parsing.py:ex
 - 记账在**终止 event 处、yield 之前**触发，由 `recorded` flag 防双计。async generator 的消费者（`agent_loop`）在收到 done event 时直接 return，把生成器挂起在 `yield` 处——放在循环之后的代码永不执行。
 - 原 `agent/compaction/` 目录（约 1180 行）是死代码，无任何 import、动态引用或副作用加载，已删除；其中没有任何路径需要 usage scope。
 
-已设计未实现：第 9 节的扩展留口，以及 CLI `op usage` 命令。
+已设计未实现：第 9 节的扩展留口。当前没有 `op usage` 或
+`openprogram usage` CLI 命令；usage 通过上文所述的 Web/API endpoint 暴露。

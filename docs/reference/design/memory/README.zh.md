@@ -2,11 +2,15 @@
 
 ## 定义
 
-记忆 = **实体记忆**（完整不可变的真实历史）+ **抽象记忆**（从实体提炼的紧凑索引）。
+当前提交的 Memory 子系统是一个 Markdown workspace，包含三层现役内容：
+追加式 Source 证据、模型写入的 Topic block，以及 Runtime 派生的
+Core/Timeline/Recent/Relations 视图。当前实现及其事务、权限和失败契约以
+[`overview.zh.md`](overview.zh.md) 为准。
 
-实体记忆是 ground truth，基于 git，每 turn 一 commit，不可篡改。抽象记忆是从实体层派生的导航地图，每条都带 provenance 指针回指实体层出处。LLM 只注入抽象记忆；需要细节时，LLM 自己顺着指针导航回实体层去取。
+下面的实体记忆和 Git-backed Session-Git/Project-Git 是未来设计，不是当前
+Source/Topic 写入器的真实来源，也不是当前代码地图。
 
-## 架构
+## 提议的实体/抽象架构
 
 ```
 实体记忆 (raw, git, immutable, complete)
@@ -22,15 +26,18 @@
          │
          │  召回 (recall)：只注入抽象，LLM 用工具导航回实体
          ▼
-LLM Context
+LLM Context（提议的召回路径）
 ```
+
+这张图是设计目标。当前实现不会为每个 session 创建 Git 仓库，不会把每轮自动
+commit 到实体记忆，也没有 Graph 视图。阅读代码或维护文档时先看下面的实现状态。
 
 ## 设计原则
 
-1. **Git-native** — 实体记忆直接用 git，不造轮子。commit 不可变、log 是时间线、checkout 是时光机。
-2. **Provenance-linked** — 抽象层不替代实体层，而是给它建索引。每条抽象记忆带坐标 `(project, session, commit, timestamp)` 指回出处。
+1. **Git-native（未来实体层）** — 实体记忆未来可直接使用 Git；这不是当前 Source/Topic workspace 的存储契约。
+2. **Provenance-linked** — 当前 Topic 层链接到 Source frame；未来实体层再增加 `(project, session, commit, timestamp)` 坐标。
 3. **Bi-temporal** — 每条记忆记两个时间：`event_time`（事情发生时）和 `ingestion_time`（记下来时）。支持时间旅行查询和矛盾检测。
-4. **LLM-navigated recall** — 不灌 raw chat 进 context。只注入紧凑地图，LLM 按需用工具走回实体层取细节。
+4. **有范围的召回** — 当前 Runtime 注入现役 Core，并通过 Source/Topic workspace 上的记忆工具读取；由模型直接导航 Git 仍是提议。
 
 ## 子文档
 
@@ -55,4 +62,4 @@ LLM Context
 
 记忆工具、CLI和Web UI已经注册。已提交基线包含writer状态、一次性trusted Source backfill、`memory.backend=none`边界以及从SessionDB到watcher状态的组合集成测试。真实writer验收已处理2条符合写入条件的消息，此后历史backfill已在正式工作区执行完毕：154个frame中有137个被引用，共232次引用出现。
 
-Topic block新增的Source引用必须解析到`trusted` frame，并且必须属于本次事务自己归档的证据，因此任何工具路径都无法引用`pending` Source或把无关Source挂到新段落上。写入失败归入一个封闭的`MemoryWriteFailureCode`枚举，状态文件、CLI、工具、API和Web UI共用同一契约；idle watcher在跨进程锁下逐条持久化终态结果；未配对群聊归档有明确的频率与存储上限。按请求方档位过滤读取已部分实现：`memory.read`独立成capability，读取路径接收调用方解析好的档位，pending证据支撑的block不进入召回与Core；按档位删改block正文仍见[`authority-handoff.md`](authority-handoff.md)设计。越权请求hold队列、分支语义provenance、跨会话spawn关系和事件通知writer仍作为独立设计延期。
+Topic block新增的Source引用必须解析到`trusted` frame，并且必须属于本次事务自己归档的证据，因此任何工具路径都无法引用`pending` Source或把无关Source挂到新段落上。写入失败归入一个封闭的`MemoryWriteFailureCode`枚举，状态文件、CLI、工具、API和Web UI共用同一契约；idle watcher在跨进程锁下逐条持久化终态结果；未配对群聊归档有明确的频率与存储上限。按请求方档位过滤读取已部分实现：`memory.read`独立成capability，读取路径接收调用方解析好的档位，pending证据支撑的block不进入召回与Core；按档位删改block正文仍见[`authority-handoff.md`](authority-handoff.md)设计。越权请求hold队列、分支语义provenance、跨会话spawn关系、实体Git层、Graph视图和事件通知writer仍作为独立设计延期。

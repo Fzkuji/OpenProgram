@@ -26,15 +26,17 @@ openprogram
 
 第一次运行会进入 setup 向导，引导你完成 provider 配置——从已登录的 Claude Code / Codex / Gemini CLI 导入凭据，或输入一个 API key——随后直接打开终端聊天界面。随时可以用 `openprogram setup` 重新运行向导。
 
-也可以用环境变量跳过向导：
+如果环境里已经有 provider key，可以把它导入 OpenProgram 的凭据库，省去在向导里再次粘贴：
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...     # Claude
-export OPENAI_API_KEY=sk-...            # GPT
-export GEMINI_API_KEY=...               # Gemini（GOOGLE_API_KEY 也可以）
+export OPENAI_API_KEY=sk-...
+openprogram providers discover
+openprogram providers adopt env:OPENAI_API_KEY
 ```
 
-确认检查：`openprogram providers` 会列出检测到的凭据。
+其他 provider 使用对应的 `env:<变量名>` source id 重复最后一条命令。也可以把 key
+通过 stdin 直接交给 `openprogram providers login <provider> --api-key-stdin`。
+确认检查：`openprogram providers` 会列出已存储的凭据。
 
 ## 第 3 步：打开 web 界面
 

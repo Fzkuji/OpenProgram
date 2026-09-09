@@ -14,7 +14,7 @@ openprogram config set ui.web_port 8101
 
 | key | 分组 | 含义 | 默认 | 生效 |
 |-----|------|------|------|------|
-| `ui.web_port` | Ports | 单端口的遗留别名（弃用过渡期保留） | 18100 | next start |
+| `ui.web_port` | Ports | API、WebSocket 和 Web UI 共用的 worker 单端口 | 18100 | next start |
 | `ui.open_browser` | Ports | `openprogram web` 是否自动开浏览器 | true | next start |
 | `search.default_provider` | Search | 默认 web 搜索 provider，`auto` 选优先级最高的已配置项 | auto | live |
 | `memory.backend` | Memory | `local`（磁盘记忆）或 `none`（不注入记忆、不召回、不自动写入、不整理，也不启动记忆线程） | local | next start |
@@ -38,7 +38,7 @@ openprogram config set ui.web_port 8101
 
 | 键 | 含义 | 代码 |
 |----|------|------|
-| `ui` | `{port, web_port, open_browser}`，见上表 | `openprogram/config_schema.py` |
+| `ui` | `{web_port, open_browser}`，见上表 | `openprogram/config_schema.py` |
 | `search` | `{default_provider}` | `openprogram/setup.py` |
 | `memory` | `{backend, writer: {model}}`，见上表 | `openprogram/config_schema.py`、`openprogram/memory/` |
 | `tools` | `{disabled: [工具名, ...]}` | `openprogram/setup.py`、`openprogram/config_schema.py` |

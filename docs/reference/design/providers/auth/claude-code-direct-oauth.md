@@ -103,7 +103,7 @@ claude-code uses the same PKCE framework as codex.
 ## Account management in the WebUI
 
 claude-code's accounts go through the general account routes, not
-provider-specific ones. `webui/routes/accounts.py` maps claude-code to the
+provider-specific ones. `apps/server/openprogram_server/_webui/routes/accounts.py` maps claude-code to the
 anthropic pool via `_pool_id`, so every general route stores and fetches by
 pool, and `_api_key_env` returns `""` for claude-code, which forces
 `add_mode=login` and hides the key-paste field. `setup_hints.py` describes the

@@ -25,7 +25,7 @@ openprogram --profile dev ports --port 18200
 OPENPROGRAM_WEB_PORT=18200 openprogram web
 
 # 3. 命令行参数，只对这一次 `openprogram web` 生效
-openprogram web --port 18200
+openprogram web --web-port 18200
 ```
 
 

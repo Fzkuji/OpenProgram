@@ -25,12 +25,12 @@ openprogram providers setup      # interactive: scan existing credentials → lo
 | `login <provider>` | Log in to a provider. Picks the right method automatically (OAuth or API key); use `--api-key-stdin` in scripts |
 | `logout <provider>` | Delete the provider's credentials |
 | `status <provider>` | Check whether the current credentials work |
-| `list` | List the configured credential pools by profile |
+| `list` | List the configured credential pools by account |
 | `available [QUERY]` | List every configurable provider catalog entry (including community ones), optionally filtered by keyword |
 | `discover` / `adopt` | Scan credentials already on this machine (Codex CLI, environment variables, etc.) and import them — see [Authentication and credentials](auth.md) |
-| `use <provider> [profile]` | With multiple accounts, choose which one the provider currently runs on |
+| `use <provider> [account]` | With multiple accounts, choose which one the provider currently runs on |
 | `doctor` | Diagnose credentials: expiry, refresh, cooldown, conflicts |
-| `aliases` / `profiles` / `migrate` | Short-name aliases, account profile management, credential format migration |
+| `aliases` / `accounts` / `migrate` | Short-name aliases, account management, credential format migration |
 
 ## Enabled models
 

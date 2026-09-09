@@ -1,0 +1,186 @@
+<style>
+.doc-intro { border-left: 3px solid var(--acc); padding: 4px 0 4px 18px; margin: 18px 0 28px; }
+.doc-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
+.doc-flow > div { padding: 16px; background: var(--bg-code); border-radius: 8px; min-width: 0; }
+.doc-flow strong { display: block; color: var(--tx); }
+.doc-flow p { margin: 8px 0 0; font-size: 14px; }
+.doc-scroll { max-width: 100%; overflow-x: auto; }
+.doc-scroll:focus-visible, summary:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; }
+code { overflow-wrap: anywhere; }
+details { padding: 12px 0; border-bottom: 1px solid var(--bd); }
+summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 680px) { .doc-flow { grid-template-columns: 1fr; } }
+</style>
+<h1 id="文档-html-展示与编写规范">文档 HTML 展示与编写规范<a class="header-anchor" href="#文档-html-展示与编写规范">#</a></h1>
+<p>本文面向维护产品和实现文档的贡献者。所有发布页面都以 HTML 展示，共享导航、搜索和主题控件。源码按内容选择：需要可视化的实现与设计文档使用原生 HTML，简短用法与参考文字保留 Markdown。</p>
+<h2 id="渲染方式">渲染方式<a class="header-anchor" href="#渲染方式">#</a></h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="文档表格"><table>
+<thead>
+<tr>
+<th>源码</th>
+<th>发布结果</th>
+<th>作者负责的内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Markdown</td>
+<td>文档站布局中的 HTML 正文</td>
+<td>标题、说明、命令和相对文档链接。</td>
+</tr>
+<tr>
+<td>HTML 片段</td>
+<td>同一布局中的 HTML 正文</td>
+<td>语义化章节、图示和必要的原生交互；使用站点主题变量。</td>
+</tr>
+<tr>
+<td>独立 HTML</td>
+<td>包含 iframe 的站点页面和 <code>.raw.html</code> 正文</td>
+<td>自身的响应式布局、主题和内部导航；外层站点控件仍然可用。</td>
+</tr>
+</tbody>
+</table></div>
+<p>需要共享文档站布局的实现文档优先使用 HTML 片段。可视化需要独立视口时使用完整 HTML 页面。iframe 用于隔离布局，不是不可信脚本的安全沙箱。</p>
+<h2 id="实现位置">实现位置<a class="header-anchor" href="#实现位置">#</a></h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="文档表格"><table>
+<thead>
+<tr>
+<th>所属文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scripts/docs_site/nav.py</code></td>
+<td>源文件发现、语言配对、九个 Tab、分组和 <code>PAGE_ORDER</code>。</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/build.py</code></td>
+<td>渲染、相对链接转换、静态资源、搜索记录和构建产物原子替换。</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/template.py</code></td>
+<td>共享页面布局和元数据。</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/search.py</code></td>
+<td>搜索索引构建。</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/assets/site.css</code></td>
+<td>字体、间距、响应式布局和深浅主题变量。</td>
+</tr>
+<tr>
+<td><code>scripts/docs_site/assets/site.js</code></td>
+<td>导航、主题与语言控件、搜索、全屏和代码复制。</td>
+</tr>
+<tr>
+<td><code>apps/server/openprogram_server/_webui/routes/docs.py</code></td>
+<td>源码或打包文档的选择，以及默认 worker 的 <code>/docs/</code> 挂载。</td>
+</tr>
+</tbody>
+</table></div>
+<p>参见<a href="https://github.com/Fzkuji/OpenProgram/tree/main/scripts/docs_site">构建器源码</a>和<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/routes/docs.py">服务实现</a>。</p>
+<h2 id="阅读结构与视觉规范">阅读结构与视觉规范<a class="header-anchor" href="#阅读结构与视觉规范">#</a></h2>
+<p>开头说明文档回答的问题、读者、范围和实现边界。先解释公开入口与数据、状态变化，再展开实现细节。代码映射表用于说明所有权，图示用于说明控制或数据流，文末“实现状态”集中列出剩余工作和证据缺口。</p>
+<p>HTML 片段使用现有的 <code>--bg</code>、<code>--bg-code</code>、<code>--tx</code>、<code>--tx-soft</code>、<code>--acc</code> 和 <code>--bd</code> 变量。站点采用与 Web 应用一致的暖中性色和橙色强调色，不在正文内另设固定的浅色配色。</p>
+<p>标题使用语义化层级和稳定的 <code>id</code>，让 HTML 章节进入本页导航。表格在窄屏无法容纳全部列时使用局部滚动容器。图示提供可访问的标题和说明。原生折叠控件用于区分详细证据与主要解释。键盘焦点、减少动态效果设置和手机阅读都属于文档验收范围。</p>
+<p>站点主题偏好保存为 <code>op-docs-theme</code>，切换时在站点窗口派发 <code>documentThemeChange</code>。iframe 有独立文档，不会自动接收该事件。独立页面需要明确维护自己的主题行为，或使用片段继承共享主题。</p>
+<h2 id="导航与双语源码">导航与双语源码<a class="header-anchor" href="#导航与双语源码">#</a></h2>
+<p>九个 Tab 为 <code>start</code>、<code>install</code>、<code>capabilities</code>、<code>interfaces</code>、<code>models</code>、<code>integrations</code>、<code>server</code>、<code>reference</code> 和虚拟的 <code>design</code>。设计源码位于 <code>docs/reference/design/</code>，不存在 <code>docs/design/</code> 源码目录。</p>
+<p><code>TAB_SECTIONS</code> 定义产品阅读顺序，<code>PAGE_ORDER</code> 定义显式页面顺序。其余页面按目录分组，目录标题使用配置名称或 README 标题。不能把侧栏理解为文件树的直接复制，也不能假定所有页面都按文件名排序。</p>
+<p>英文为默认版本。<code>topic.zh.md</code> 与 <code>topic.md</code> 配对，<code>topic.zh.html</code> 与 <code>topic.html</code> 配对。中文源码通过语言控件访问，不单独占用第二个侧栏入口。修改双语主题时同步两种语言。</p>
+<p>构建器兼容已有的同名 Markdown/HTML 配对，为 HTML 附属页分配 <code>.viz.html</code> 输出。相对 <code>topic.md</code> 链接指向正文输出，相对 <code>topic.html</code> 链接指向 HTML 附属页的 <code>topic.viz.html</code> 输出，并保留章节锚点。中文 HTML 附属页输出为 <code>topic.zh.viz.html</code>，中文 Markdown 正文仍为 <code>topic.zh.html</code>；语言控件分别指向这些独立地址。这项兼容机制不意味着应维护两份相同说明。合并前比较内容，保留独立图示和证据，并更新引用链接。</p>
+<p>构建产物和仅用于静态资源的目录不参与页面发现，<code>docs/superpowers/</code> 被显式排除。仅以下划线开头不会自动排除：主动性研究归档当前仍会被发现。</p>
+<h2 id="构建与本地展示">构建与本地展示<a class="header-anchor" href="#构建与本地展示">#</a></h2>
+<pre><code class="language-sh">python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.build
+python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.checklinks
+python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.checklang
+python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.check_landing
+</code></pre>
+<p>在仓库根目录、具有文档构建依赖的环境中运行上述命令。<a href="https://github.com/Fzkuji/OpenProgram/blob/main/.github/CONTRIBUTING.md">贡献指南</a>列出 <code>uv run</code> 环境。链接检查读取构建后的 HTML，因此必须先构建再检查。</p>
+<p><code>checklang</code> 目前只检查产品区默认 Markdown，排除了设计目录，也不扫描 HTML 源码。该命令通过不能证明所有设计页面都满足双语约定；修订的 HTML 需要单独检查语言与对应版本。</p>
+<p>构建器重新生成由代码派生的 CLI、配置和 Provider 参考页，先写入 <code>docs/_site.tmp/</code>，成功后替换 <code>docs/_site/</code>。<code>docs/_site/</code> 被 Git 忽略。<code>docs/_static_root/</code> 中的文件发布到站点根，不进入导航或搜索。</p>
+<p>源码实例读取其 <code>docs/_site/</code>。已安装 runtime 可以读取 Server <code>_frontend/docs/</code> 中的打包文档；构建另一个 checkout 不会更新该目录。声明本地验收完成前，要比较实际响应内容与预期产物。默认本地验收地址为 <code>http://localhost:18100/docs/</code>。完成应用更新时，遵循仓库本地 App 规则使用 <code>scripts/refresh-local-app.sh</code>。</p>
+<p>源码 worker 在注册文档路由时检查是否需要重建，普通 HTTP 读取不会扫描或重建源码树。当前没有持续 watch 模式。</p>
+<h2 id="方案比较">方案比较<a class="header-anchor" href="#方案比较">#</a></h2>
+<p>现有设计选择仓库内的 Python 渲染器，以保留原生 HTML、SVG 和脚本内容，并接入单端口 worker。以下比较针对本项目需求，不作为外部产品最新能力调查。</p>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="文档表格"><table>
+<thead>
+<tr>
+<th>考虑项</th>
+<th>当前 Python 渲染器</th>
+<th>VitePress 方案</th>
+<th>MkDocs 方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>已有原生可视化文档</td>
+<td>保留为片段或独立页面</td>
+<td>需要评估组件与布局系统的接入方式</td>
+<td>需要评估原始 HTML 与主题接入方式</td>
+</tr>
+<tr>
+<td>共享导航与搜索</td>
+<td>由本仓库维护</td>
+<td>对照项目需求评估内置导航和搜索</td>
+<td>对照项目需求评估内置导航和搜索</td>
+</tr>
+<tr>
+<td>工具链</td>
+<td>Python 渲染与静态浏览器资源</td>
+<td>增加基于 Node 的文档构建</td>
+<td>基于 Python 的文档构建与主题配置</td>
+</tr>
+<tr>
+<td>维护职责</td>
+<td>项目维护布局、导航和可访问性</td>
+<td>框架配置与升级维护</td>
+<td>框架和主题配置及升级维护</td>
+</tr>
+</tbody>
+</table></div>
+<p>渲染器使用 <code>markdown-it-py</code>、<code>mdit-py-plugins</code> 和 Pygments，产出静态资源，不引入客户端框架或编辑器/CMS。本次文档优化不迁移站点框架。</p>
+<h2 id="实现状态">实现状态<a class="header-anchor" href="#实现状态">#</a></h2>
+<div class="doc-scroll" tabindex="0" role="region" aria-label="文档表格"><table>
+<thead>
+<tr>
+<th>范围</th>
+<th>状态</th>
+<th>边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Markdown、片段和独立 HTML 渲染</td>
+<td>源码已具备</td>
+<td>不同内容格式承担不同布局职责。</td>
+</tr>
+<tr>
+<td>双语路由与九个 Tab</td>
+<td>源码已具备</td>
+<td>配对机制不会翻译正文。</td>
+</tr>
+<tr>
+<td>原子构建与打包资源服务</td>
+<td>源码已具备</td>
+<td>构建成功与更新已安装资源是不同状态。</td>
+</tr>
+<tr>
+<td>统一文档设计</td>
+<td>已应用到本次重做的实现页面</td>
+<td>既有独立页面仍需逐项视觉检查。</td>
+</tr>
+<tr>
+<td>frontmatter <code>scripts</code> / <code>styles</code> 资源注入</td>
+<td>未实现</td>
+<td>使用已支持的 HTML 方式保存代码与资源，不应描述为现有功能。</td>
+</tr>
+<tr>
+<td>持续监视源码</td>
+<td>未实现</td>
+<td>修改后显式重建。</td>
+</tr>
+</tbody>
+</table></div>

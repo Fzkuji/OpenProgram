@@ -32,14 +32,14 @@ against the current unsaved state of the working tree.
 ACP (Agent Client Protocol) is the editor-agnostic standard for editors
 driving an external agent. Implementing the server side maps three matrix
 rows at once: editors like Zed drive OpenProgram sessions directly
-(被IDE经ACP驱动), the editor ships selection and open-file context with each
-request (编辑器选区与打开文件进上下文), and the editor becomes an entry
-point without any self-built extension (官方IDE扩展, partially). One stdio
+(driven through ACP by an IDE), the editor ships selection and open-file context with each
+request (editor selection and open file are added to context), and the editor becomes an entry
+point without any self-built extension (official IDE extension, partially). One stdio
 protocol adapter over the existing session/tool loop. Starts after LSP lands.
 
 ## Matrix re-audit
 
-桌面GUI控制 is marked absent, but GUI-Agent-Harness is exactly that
+Desktop GUI control is marked absent, but GUI-Agent-Harness is exactly that
 capability, installed as a program. Re-audit the row against the matrix's
 own evidence rules (installed-harness capability vs built-in).
 
