@@ -921,7 +921,7 @@ assert.doesNotMatch(
   /tabRef\.current\?\.parentElement/,
 );
 assert.match(ntp, /const draftId = useCenterTabs\.getState\(\)\.claimDraftSessionTab\(\);[\s\S]*newSession\(draftId\);/);
-assert.match(strip, /currentSessionId === null[\s\S]*activeTab\?\.draft/);
+assert.match(strip, /\}, \[pathname, openSessionTab, openDraftSessionTab\]\);/);
 assert.match(strip, /closingInstances = useRef<Map<string, CenterTab>>/);
 assert.match(strip, /const \[closingIds, setClosingIds\] = useState<Set<string>>/);
 assert.match(
@@ -939,7 +939,7 @@ assert.match(
 );
 assert.match(
   strip,
-  /Active center-tab focus[\s\S]*useEffect\(\(\) => \{[\s\S]*activateSession\(tab\);[\s\S]*\}, \[activeId, sessionActivationRequest\]\);/,
+  /Active center-tab focus[\s\S]*useEffect\(\(\) => \{[\s\S]*activateSession\(tab\);[\s\S]*\}, \[activeId, activeSessionId, activeSessionDraft, sessionActivationRequest\]\);/,
 );
 const onTabClick = strip.slice(
   strip.indexOf("function onTabClick"),

@@ -58,6 +58,7 @@ function navigate(path) {
 }
 window.history = { state: null, pushState: (_state, _title, path) => navigate(path),
   replaceState: (_state, _title, path) => { window.location.pathname = path; window.location.hash = ""; } };
+globalThis.history = window.history;
 globalThis.reopenRouter = { push: navigate };
 const { act, createElement, useSyncExternalStore } = await import("react");
 globalThis.reopenRouteHook = () => useSyncExternalStore(
@@ -65,6 +66,7 @@ globalThis.reopenRouteHook = () => useSyncExternalStore(
   () => window.location.pathname,
 );
 const { createRoot } = await import("react-dom/client");
+const { setNavigate } = await import("../lib/navigate.ts");
 const { useTabLifecycle } = await import("../components/center-tabs/use-tab-lifecycle.ts");
 const { useCenterTabs } = await import("../lib/state/center-tabs-store.ts");
 const { readCenterTabsPayload, persistedState } = await import("../lib/state/center-tabs-persistence.ts");
@@ -141,12 +143,14 @@ function transcript(socket, id = "origin") {
 async function mounted(check) {
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host);
+  setNavigate(navigate);
   try {
     await act(async () => root.render(createElement(Receiver)));
     assert.equal(sockets.length, 1);
     await check(host, root, sockets[0]);
   } finally {
     await act(async () => root.unmount()); host.remove();
+    setNavigate(null);
     await Promise.all(ackTasks);
   }
 }
@@ -165,21 +169,22 @@ for (const [name, tabs, activeId] of [
     await act(async () => useSessionStore.getState().setCurrentConv("origin"));
     await act(async () => socket.onopen());
     assert.ok(socket.sent.some((v) => v.action === "load_session" && v.session_id === "origin"));
-    assert.equal(useCenterTabs.getState().activeId, "s:origin");
-    assert.equal(host.querySelectorAll('[data-tab="s:origin"]').length, 1);
+    assert.equal(useCenterTabs.getState().activeId, activeId);
+    assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === activeId).sessionId, "origin");
+    assert.equal(host.querySelectorAll(`[data-tab="${activeId}"]`).length, 1);
     assert.deepEqual(ackRequests, []);
     await act(async () => { transcript(socket); await Promise.all(ackTasks); });
     assert.equal(ackRequests.length, 1);
     assert.equal(recovery.state().status, "acknowledged");
     await act(async () => { transcript(socket); await Promise.all(ackTasks); });
     assert.equal(ackRequests.length, 1);
-    assert.equal(host.querySelectorAll('[data-tab="s:origin"]').length, 1);
+    assert.equal(host.querySelectorAll(`[data-tab="${activeId}"]`).length, 1);
     assert.ok(!navigations.includes("/s/other") && !navigations.includes("/chat"));
   });
 });
 
 test("manual tab selection before loading cancels relocation and late ACK", async () => {
-  await setup([other, original], other.id);
+  await setup([other, original], original.id);
   await mounted(async (host, root, socket) => {
     await act(async () => useSessionStore.getState().setCurrentConv("origin"));
     await act(async () => host.querySelector('[data-tab="s:other"]').click());
@@ -198,14 +203,15 @@ test("remount before ACK reuses the persisted origin tab", async () => {
   await setup([other], other.id);
   await mounted(async () => {
     await act(async () => useSessionStore.getState().setCurrentConv("origin"));
-    assert.equal(useCenterTabs.getState().activeId, "s:origin");
+    assert.equal(useCenterTabs.getState().activeId, "s:other");
     assert.deepEqual(ackRequests, []);
   });
   assert.equal(sockets[0].readyState, 3);
   useCenterTabs.setState(persistedState(readCenterTabsPayload()));
   sockets = [];
   await mounted(async (host, root, socket) => {
-    assert.equal(host.querySelectorAll('[data-tab="s:origin"]').length, 1);
+    assert.equal(host.querySelectorAll('[data-tab="s:origin"]').length, 0);
+    assert.equal(useCenterTabs.getState().tabs[0].sessionId, "origin");
     assert.equal(host.querySelectorAll('[data-tab="s:other"]').length, 1);
     await act(async () => { transcript(socket); await Promise.all(ackTasks); });
     assert.equal(ackRequests.length, 1);
@@ -223,5 +229,51 @@ test("detached window keeps its own persisted tabs and never ACKs main recovery"
     assert.deepEqual(ackRequests, []);
     assert.equal(localStorage.getItem("centerTabs:main"), mainTabs);
     assert.notEqual(window.location.pathname, "/s/origin");
+  });
+});
+
+
+test("session navigation preserves draft input through intermediate state and deletion", async () => {
+  await setup([other], other.id, "detached");
+  await mounted(async () => {
+    const tabId = useCenterTabs.getState().activeId;
+    await act(async () => useSessionStore.getState().setCurrentConv("other"));
+    useSessionStore.getState().setComposerInputFor("other", "keep this input");
+    await act(async () => useCenterTabs.getState().openSessionTab("next", "Next"));
+    assert.equal(window.location.pathname, "/s/next");
+    // AppShell/session loading can still report the old session before the
+    // new route's load finishes. It must not become another navigation.
+    await act(async () => useSessionStore.getState().setCurrentConv("other"));
+    assert.equal(useCenterTabs.getState().tabs.find(t => t.id === tabId).sessionId, "next");
+    assert.equal(useCenterTabs.getState().tabs.find(t => t.id === tabId).sessionHistory.entries.length, 2);
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    assert.equal(window.location.pathname, "/s/other");
+    assert.equal(useSessionStore.getState().composerDrafts.other, "keep this input");
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(1));
+    assert.equal(window.location.pathname, "/s/next");
+    await act(async () => useSessionStore.setState({ conversations: { other: {title: "Other"}, next: {title: "Next"} } }));
+    await act(async () => useSessionStore.setState({ conversations: { next: {title: "Next"} } }));
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    assert.equal(window.location.pathname, "/s/next");
+    assert.deepEqual(useCenterTabs.getState().tabs.find(t => t.id === tabId).sessionHistory.entries.map(e => e.sessionId), ["next"]);
+  });
+});
+
+test("back restores the same unsent draft and its typed input", async () => {
+  await setup([other], other.id, "detached");
+  await mounted(async () => {
+    let draft;
+    await act(async () => { draft = useCenterTabs.getState().openDraftSessionTab(); });
+    const id = useCenterTabs.getState().activeId;
+    useSessionStore.getState().setComposerInputFor(draft, "unsent text");
+    await act(async () => useCenterTabs.getState().openSessionTab("target", "Target"));
+    assert.equal(window.location.pathname, "/s/target");
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    assert.equal(window.location.pathname, "/chat");
+    assert.equal(useSessionStore.getState().activeChatKey, draft);
+    assert.equal(useSessionStore.getState().composerDrafts[draft], "unsent text");
+    assert.equal(useCenterTabs.getState().activeId, id);
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(1));
+    assert.equal(window.location.pathname, "/s/target");
   });
 });

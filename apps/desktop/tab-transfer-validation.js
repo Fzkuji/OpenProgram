@@ -117,6 +117,27 @@ function validateTransferPayload(ctx, value) {
       const item = optionalBoolean(tab[field], `tab.${field}`);
       if (item !== undefined) normalized[field] = item;
     }
+    if (tab.kind === "session" && tab.sessionHistory !== undefined) {
+      const history = tab.sessionHistory;
+      if (!isPlainObject(history) || !Array.isArray(history.entries)
+        || !history.entries.length || !Number.isInteger(history.index)
+        || history.index < 0 || history.index >= history.entries.length) {
+        throw new TypeError("Invalid session history");
+      }
+      const entries = history.entries.map(entry => {
+        if (!isPlainObject(entry)) throw new TypeError("Invalid session history entry");
+        boundedString(entry.sessionId, "history.sessionId", 16 * 1024, true);
+        boundedString(entry.title, "history.title", 4 * 1024);
+        const draft = optionalBoolean(entry.draft, "history.draft");
+        return { sessionId: entry.sessionId, title: entry.title ?? "", draft: !!draft };
+      });
+      if (entries[history.index].sessionId !== tab.sessionId
+        || entries[history.index].title !== (tab.title ?? "")
+        || entries[history.index].draft !== !!tab.draft) {
+        throw new TypeError("Session history does not match current session");
+      }
+      normalized.sessionHistory = { entries, index: history.index };
+    }
     tabs.push(normalized);
   }
 
@@ -224,8 +245,11 @@ function validateTransferPayload(ctx, value) {
   }
 
   const rawChats = value.chats ?? [];
-  if (!Array.isArray(rawChats) || rawChats.length > 3) {
-    throw new TypeError("chats must be an array with at most three entries");
+  const chatLimit = Math.max(3, new Set(tabs.flatMap(tab =>
+    tab.kind === "session" ? (tab.sessionHistory?.entries ?? [tab]).map(entry => entry.sessionId) : [],
+  )).size);
+  if (!Array.isArray(rawChats) || rawChats.length > chatLimit) {
+    throw new TypeError("chats exceed the transferred session history");
   }
   const chats = [];
   for (const chat of rawChats) {

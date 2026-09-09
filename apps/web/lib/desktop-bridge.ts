@@ -1,3 +1,4 @@
+import { sessionHistory } from "./state/session-tab-history";
 /**
  * Desktop bridge — typed accessor for the Electron preload API
  * (`window.openprogramDesktop`) plus the renderer-side bookkeeping the
@@ -961,7 +962,8 @@ export function surfaceRefForChat(
   const bridge = desktopBridge();
   if (!bridge || !sessionId) return null;
   const state = useCenterTabs.getState();
-  const chat = state.tabs.find(
+  const chat = state.tabs.find(tab => tab.id === state.activeId
+    && tab.kind === "session" && tab.sessionId === sessionId) ?? state.tabs.find(
     (tab) => tab.kind === "session" && tab.sessionId === sessionId,
   );
   if (!chat) return null;
@@ -1692,6 +1694,8 @@ function sourceSessionAfter(
   const moved = new Set<string>();
   for (const chat of payload.chats) {
     moved.add(chat.chatKey);
+    if (afterCenter.tabs.some(tab => tab.kind === "session"
+      && sessionHistory(tab).entries.some(entry => entry.sessionId === chat.chatKey))) continue;
     delete after.composerDrafts[chat.chatKey];
     delete after.composerSettingsBySession[chat.chatKey];
     delete after.pendingProjectsByChat[chat.chatKey];
@@ -1811,23 +1815,26 @@ export function buildTransferPayload(
   const payloadFileDrafts: DesktopTransferPayload["fileDrafts"] = [];
   for (const tab of tabs) {
     if (tab.kind === "session" && tab.sessionId) {
-      const chatKey = tab.sessionId;
-      const wasActive = session.activeChatKey === chatKey;
-      const chat: ChatTransferState = { chatKey, wasActive };
-      if (session.composerDrafts[chatKey] !== undefined) {
-        chat.composerDraft = session.composerDrafts[chatKey];
+      for (const entry of sessionHistory(tab).entries) {
+        const chatKey = entry.sessionId;
+        if (!chatKey || chats.some(chat => chat.chatKey === chatKey)) continue;
+        const wasActive = tab.sessionId === chatKey && session.activeChatKey === chatKey;
+        const chat: ChatTransferState = { chatKey, wasActive };
+        if (session.composerDrafts[chatKey] !== undefined) {
+          chat.composerDraft = session.composerDrafts[chatKey];
+        }
+        if (session.composerSettingsBySession[chatKey]) {
+          chat.composerSettings = structuredClone(
+            session.composerSettingsBySession[chatKey],
+          );
+        }
+        if (session.pendingProjectsByChat[chatKey]) {
+          chat.pendingProjectId = session.pendingProjectsByChat[chatKey];
+        }
+        const choice = draftChannelChoiceFor(host, chatKey);
+        if (choice) chat.draftChannelChoice = structuredClone(choice);
+        chats.push(chat);
       }
-      if (session.composerSettingsBySession[chatKey]) {
-        chat.composerSettings = structuredClone(
-          session.composerSettingsBySession[chatKey],
-        );
-      }
-      if (session.pendingProjectsByChat[chatKey]) {
-        chat.pendingProjectId = session.pendingProjectsByChat[chatKey];
-      }
-      const choice = draftChannelChoiceFor(host, chatKey);
-      if (choice) chat.draftChannelChoice = structuredClone(choice);
-      chats.push(chat);
     } else if (tab.kind === "file" && tab.projectId && tab.path) {
       const key = fileDraftKey(tab.projectId, tab.path);
       const value = fileDrafts.get(key);

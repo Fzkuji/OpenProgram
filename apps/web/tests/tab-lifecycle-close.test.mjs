@@ -33,11 +33,11 @@ test("human onTabsClose waits on the shared browser close helper before animatin
   assert.doesNotMatch(finish, /selectTabsReadyForHumanClose|requestCloseBrowserPage/);
 });
 
-test("internal conversation reap and finishClose stay raw closeTab", () => {
+test("internal conversation reap prunes history without human-close side effects", () => {
   const reap = lifecycle.slice(
     lifecycle.indexOf("const prevConvIds"),
     lifecycle.indexOf("function activateSession"),
   );
-  assert.match(reap, /useCenterTabs\.getState\(\)\.closeTab\(tab\.id\)/);
+  assert.match(reap, /useCenterTabs\.getState\(\)\.removeSessionFromHistory\(id\)/);
   assert.doesNotMatch(reap, /selectTabsReadyForHumanClose|requestCloseBrowserPage|onTabsClose/);
 });
