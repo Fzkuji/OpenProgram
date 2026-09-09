@@ -1,24 +1,36 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Attachment handling design</title>
-<style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Make chat attachments easier to use</title><style>
 :root{color-scheme:light dark;--bg:#f8f9fb;--panel:#fff;--fg:#202632;--muted:#5a6577;--line:#d9dfe9;--accent:#245eb8;--warm:#99531b;--soft:#eef3fc}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif}a{color:var(--accent);text-underline-offset:3px}main{max-width:1120px;margin:auto;padding:44px 28px 80px}header{max-width:850px}h1{font-size:clamp(28px,4vw,42px);line-height:1.25;margin:10px 0 20px;font-weight:650}h2{font-size:23px;margin:0 0 18px}h3{font-size:17px;margin:0 0 9px}p{margin:9px 0 16px}.eyebrow{font-size:12px;letter-spacing:.1em;color:var(--muted)}.status{display:inline-block;padding:4px 10px;border:1px solid var(--line);border-radius:5px;color:var(--warm);font-size:13px}.lead{font-size:18px;line-height:1.65}.muted,small{color:var(--muted)}nav{position:sticky;top:0;background:var(--bg);padding:13px 0;display:flex;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line);z-index:2}nav a{text-decoration:none;font-size:14px}section{padding-top:38px;scroll-margin-top:90px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.card,.simulation{padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:9px}.value{font-size:28px;line-height:1.3;color:var(--accent);font-variant-numeric:tabular-nums}.card p{font-size:14px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:13px 15px;border-bottom:1px solid var(--line)}th{background:var(--soft);font-weight:600}tr:last-child td{border-bottom:0}code{font:12px/1.6 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere;background:var(--soft);border-radius:3px;padding:2px 4px}.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;list-style:none;padding:0;counter-reset:step}.flow li{border-top:3px solid var(--accent);padding:15px;background:var(--panel);counter-increment:step}.flow li:before{content:counter(step);display:block;color:var(--accent);font-size:24px}.flow strong{display:block;margin:6px 0}.flow span{font-size:14px;color:var(--muted)}.control{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:18px 0}select{padding:8px;font:inherit;max-width:100%;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:4px}.result{padding:16px;border-left:3px solid var(--accent);background:var(--soft);margin:14px 0}.result p:last-child{margin-bottom:0}.state-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.state{padding:16px;border:1px solid var(--line);border-radius:7px}.state h3{color:var(--accent)}.state small{display:block}ul{padding-left:23px}li{margin:7px 0}details{border-top:1px solid var(--line);padding:15px 0}summary{cursor:pointer;font-weight:600}summary:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.note{border-left:3px solid var(--warm);padding:4px 0 4px 16px;margin:24px 0}footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}@media(prefers-color-scheme:dark){:root{--bg:#181b20;--panel:#20242b;--fg:#e3e8ef;--muted:#aeb8c7;--line:#3c4553;--accent:#8ab8ff;--warm:#e9b17c;--soft:#253248}}@media(max-width:720px){main{padding:25px 17px 50px}.grid,.state-grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}nav{gap:9px 18px}th,td{padding:10px;font-size:13px}section{scroll-margin-top:120px}.lead{font-size:16px}}@media(max-width:410px){.flow{grid-template-columns:1fr}nav{position:static}}@media print{nav,.simulation{display:none}main{max-width:none}.card,.state{break-inside:avoid}body{background:#fff;color:#111}a{color:inherit}}
 
 section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;background:var(--soft)}td p{margin:0}nav{gap:10px 18px}.status{margin:8px 0}.language{font-size:14px}.flow{margin:24px 0}caption{text-align:left;padding:10px 0}#reference-explorer{scroll-margin-top:110px}.toc-link{white-space:normal}section section{padding-top:0}h2,h3{overflow-wrap:anywhere}
+
+.usage-intro{max-width:800px}.example{padding:20px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}.example-label{font-size:12px;color:var(--muted);margin-bottom:10px}.file-example{font-weight:600;margin-bottom:7px}.technical{margin-top:48px}.technical>p{color:var(--muted)}.technical details{background:var(--panel);padding:16px;margin:10px 0;border:1px solid var(--line);border-radius:7px}.technical details[open] summary{margin-bottom:18px}.technical h3{font-size:16px}.technical p,.technical td{font-size:14px}.state p:last-child{margin-bottom:0}
 </style></head><body><main>
-<header><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>Attachment handling design</h1><span class="status">Reviewed design · Runtime changes are not implemented</span><p class="lead">Store originals reliably. Admit small references. Confirm submission before clearing drafts.</p><p>This HTML document is the complete attachment contract, framework comparison, implementation plan, and acceptance specification for Web, Desktop, and channel input. The English version is authoritative. Implementation status is recorded at the end.</p><p class="language"><a href="attachment-handling.zh.html" lang="zh-CN">Chinese</a></p></header>
-<nav aria-label="Contents"><a class="toc-link" href="#current">Current implementation</a><a class="toc-link" href="#frameworks">Frameworks</a><a class="toc-link" href="#choices">Selected design</a><a class="toc-link" href="#contract">Target contract</a><a class="toc-link" href="#budgets">Budgets and delivery</a><a class="toc-link" href="#submission">Submission and lifecycle</a><a class="toc-link" href="#plan">Plan and acceptance</a><a class="toc-link" href="#status">Implementation status</a></nav>
-<ol class="flow" aria-label="Attachment lifecycle"><li><strong>Validate upload</strong><span>Authenticate ownership and check decoded file limits.</span></li><li><strong>Store original</strong><span>Keep an immutable session-owned snapshot and digest.</span></li><li><strong>Admit references</strong><span>Persist ordered references with a stable submission ID.</span></li><li><strong>Build model input</strong><span>Read a permitted image representation or bounded preview.</span></li></ol>
-<section id="current">
-<h2>Verified current behavior</h2>
+<header class="usage-intro"><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>Make chat attachments easier to use</h1><span class="status">User experience design · Not yet implemented</span><p class="lead">After adding an attachment, people should know whether it was sent and what the model could see. If sending fails, keep the text and files in the composer so they can be changed or retried.</p><p class="language"><a href="attachment-handling.zh.html" lang="zh-CN">Chinese</a></p></header>
+<nav aria-label="Contents"><a href="#current">Current problems</a><a href="#choices">Planned experience</a><a href="#model-view">What the model sees</a><a href="#submission">When sending fails</a><a href="#history">Opening attachments later</a><a href="#technical">Implementation notes</a></nav>
+<section id="current"><h2>What goes wrong today</h2><p>Some screenshots can be added successfully but are rejected when sent. The composer has already cleared its text and attachments before the message is saved. Reopening the chat can then show only a title.</p><p>A file appearing in the chat also does not necessarily mean the model saw the image or read the entire document. The interface does not explain that distinction clearly enough.</p></section>
+<section id="choices"><h2>The planned experience</h2><div class="table-wrap"><table><thead><tr><th>When you</th><th>What should happen</th></tr></thead><tbody>
+<tr><td>Paste a screenshot, drop a file, or choose a file from your computer</td><td>See its name, preview, and preparation progress. If a file cannot be read or is too large, identify that file.</td></tr>
+<tr><td>Send a message</td><td>See progress. Clear the submitted content only after the message and attachments have been saved.</td></tr>
+<tr><td>Encounter a failed send or disconnected network</td><td>Keep the text and files. Distinguish a confirmed failure from an outcome that is not yet known.</td></tr>
+<tr><td>Read a reply or reopen the chat</td><td>Open the file attached at the time and understand whether the model received an image, some text, or a file that still needs to be read.</td></tr>
+</tbody></table></div></section>
+<section id="model-view"><h2>What the model can see</h2><p>Each attachment should have a clear explanation. Successfully uploading a file does not mean the model has read it.</p><div class="example"><div class="example-label">Proposed interface wording, not a live result</div><label for="scenario">Choose a situation</label> <select id="scenario"><option value="vision">Screenshot with an image-capable model</option><option value="text">Screenshot with a text-only model</option><option value="pdf">PDF document</option><option value="binary">Another file</option></select><div class="result" id="scenario-result" aria-live="polite"></div></div><h3>Image clarity</h3><p>Keep the original image. When an image is resized to meet the model's requirements, explain the change and retain a way to view the original. Do not make small screenshot text unreadable just to fit a request.</p><h3>Long documents</h3><p>Provide a short preview first and read more when needed. Clearly identify PDFs without extractable text instead of presenting them as fully read.</p></section>
+<section id="submission"><h2>Keep the content when sending fails</h2><div class="state-grid"><article class="state"><h3>Sending</h3><p>Show progress and retain the submitted content. Also preserve new text entered while waiting.</p></article><article class="state"><h3>Outcome not yet known</h3><p>After a disconnection, check whether the earlier send succeeded before repeating it. Do not turn the chat into an empty screen.</p></article><article class="state"><h3>Send failed</h3><p>Explain the specific reason and keep the text and attachments. Let the user remove a problematic file, replace it, or retry.</p></article></div><p>If the model cannot see images and no suitable image-reading tool is available, explain that before sending and prompt the user to choose an image-capable model. Never silently ignore an attached image and answer only the text.</p></section>
+<section id="history"><h2>Open the same attachment later</h2><p>Reopening a chat should show the file as it was attached. Later edits or deletion of the original computer file should not change or remove that attachment.</p><p>Archiving keeps attachments. Copying a conversation branch, moving a project, or exporting a chat should retain the files it needs. Explicit chat deletion follows the chat's normal deletion rules.</p><p>A project file referenced with <code>@</code> still refers to that file's current contents. Make this distinguishable from attaching a copy of a file as it was at the time.</p></section>
+<section id="status"><h2>What this improvement covers first</h2><ol><li>Send ordinary screenshots successfully and keep them available when reopening the chat.</li><li>Recover text and attachments after failed sends or disconnections.</li><li>Explain what the model received, image adjustments, and how past attachments are retained.</li></ol><p>This is a proposed design. These improvements have not yet been implemented in the App. Scanned-document recognition, audio, and video need separate designs and are outside this improvement.</p></section>
+<section id="technical" class="technical"><h2>Implementation notes</h2><p>For development and verification. The usage experience above is the main design; these expandable notes retain framework sources, interfaces, limits, storage rules, and test details.</p><details id="technical-current"><summary>Verified current behavior</summary>
+
+
 <p>The Web composer reads image bytes into base64, builds a separate 192-pixel thumbnail, and permits images up to 5 MiB. It does not resize the image sent to the model. Documents have a 32 MiB client limit. The backend saves uploads, including images, through <code>_persist_attachments</code>, adds path markers and bounded text/PDF previews, and filters documents out of <code>TurnRequest.attachments</code>. Image base64 remains in that request.</p>
 <p><code>normalize_agent_turn_payload</code> limits the complete serialized admission envelope to 256 KiB. Consequently a 200 KiB binary image, represented as base64 with a small text request, already fails this boundary. This was reproduced without a provider call; the probe tests envelope sizing, not image decoding. A live failed chat also records <code>input_too_large</code>. The log does not establish which original attachment or field supplied the excess bytes.</p>
 <p>Admission runs before <code>_append_msg</code>. The session and title may exist even when admission fails, leaving no user node. <code>sendChatMessage</code> reports WebSocket transmission success, and <code>useChatSubmit</code> immediately clears text and attachments. An uncorrelated command error produces a generic transient toast, not a recoverable submission record.</p>
 <p>The backend's 32 MiB per-file and 64 MiB aggregate checks run after base64 decoding. The aggregate counter increases only for newly written files; dedup hits do not consume it. A skipped oversized image is not explicitly removed from the separate dispatch list. These are source-confirmed gaps, not live exploit tests. The OpenAI Responses converter also removes image blocks for models without image input; the current frontend does not provide a matching delivery explanation. Existing marker parsing, source-path provenance, preview paths, dedup, and file access policies remain useful.</p>
 <p>Source locations: <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py">Web intake and persistence</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/production_driver.py">admission and activation</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts">composer submission</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/attach/image-attach.ts">image input</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/action-error.ts">error handling</a>, <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/_shared/openai_responses.py">provider conversion</a>.</p>
 
-</section>
-<section id="frameworks">
-<h2>Official reference corpus</h2>
+
+</details><details id="technical-frameworks"><summary>Official reference corpus</summary>
+
+
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -58,9 +70,10 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 <p>Sources: <a href="https://learn.chatgpt.com/docs/app-server">Codex app-server</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs">Codex input types</a>, <a href="https://github.com/openai/codex/blob/main/codex-rs/attachment-store/src/lib.rs">Codex attachment store</a>, <a href="https://opencode.ai/v2/docs/attachments">OpenCode V2 attachments</a>, <a href="https://github.com/anomalyco/opencode/blob/dev/packages/core/src/config/attachments.ts">OpenCode image configuration</a>, <a href="https://docs.openclaw.ai/nodes/media-understanding">OpenClaw media understanding</a>, <a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/managed-image-attachments.ts">OpenClaw managed images</a>, <a href="https://docs.openclaw.ai/gateway/cloud-sessions">OpenClaw cloud attachment placement</a>, <a href="https://code.claude.com/docs/en/common-workflows">Claude Code images and file references</a>.</p>
 <p>These sources describe different interfaces and versions. A transport accepting an image is not evidence of durable storage, and a file appearing in the UI is not evidence that the model received its contents.</p>
 
-</section>
-<section id="choices">
-<h2>Selected design</h2>
+
+</details><details id="technical-choices"><summary>Selected design</summary>
+
+
 <div class="table-wrap"><table>
 <thead><tr><th>Design</th><th>Implementation</th><th>Reason</th></tr></thead>
 <tbody>
@@ -86,9 +99,10 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 </tr>
 </tbody>
 </table></div>
-</section>
-<section id="contract">
-<h2>Target contract</h2>
+
+</details><details id="technical-contract"><summary>Target contract</summary>
+
+
 <p>Attachment bytes are materialized and validated before a turn is admitted. Admission and history carry small, ordered, session-owned references. Provider conversion reads only the selected representation. User-visible delivery state records what was actually included, not just whether the file uploaded.</p>
 <p>A reference contains a schema version, opaque attachment ID, owner session, digest, decoded byte length, detected MIME, filename, and optional original-path provenance. The client cannot choose a trusted storage path or mint ownership. Filenames and paths remain data, not instructions or capabilities.</p>
 <p>Use one local session attachment store, with immutable originals and optional derived image representations. Place the canonical bytes under the owning session directory, outside the agent-mutable workdir; retain the current readable workdir copy or materialize one when a file tool needs it. The existing absolute-path marker and preview-path syntax remain compatible display/tool projections, not the immutable identity. No cross-session dedup or remote object-storage service is required.</p>
@@ -133,9 +147,10 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 </table></div>
 <p>A query, reload, or repeated request never resolves <code>pending</code> by creating a second execution. Server reconciliation uses the stored execution/user-message identities to finish message persistence or record rejection; titles are not evidence of success.</p>
 
-</section>
-<section id="budgets">
-<h2>Budgets and delivery</h2>
+
+</details><details id="technical-budgets"><summary>Budgets and delivery</summary>
+
+
 <p>Proposed initial defaults retain the existing 32 MiB document and 64 MiB per-turn decoded budgets. Add an explicit 16-attachment limit. Keep the 256 KiB admission envelope limit after removing media bytes; it still bounds text, metadata, rules, and references. These are product defaults to verify, not borrowed provider guarantees.</p>
 <div class="table-wrap"><table>
 <thead>
@@ -219,13 +234,11 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 <p>If a tool is disabled, denied by policy, or unable to read the file, it is not a usable fallback. If approval is still required, retain input and complete the existing approval flow before accepting that delivery mode. The selected delivery plan is checked at admission and again at activation; a later revocation ends the accepted execution with a persistent specific error, rather than running a text-only answer. Model capability changes cannot silently drop an already attached image.</p>
 <p>The cost claim is bounded text preview cost, not constant total model cost. Vision tokens and native document tokens scale with representation. Earlier previews can remain in later context; they are not guaranteed to cost zero on subsequent turns. Ten 30 MiB files exceed the proposed aggregate budget and are rejected before admission.</p>
 
-<aside class="simulation" id="reference-explorer" aria-label="Inspect request size and delivery">
-<h3>Inspect request size and delivery</h3><p class="muted">Illustrative sizing only; no upload or provider request runs here. A reference is shown as 1 KiB; actual metadata and provider limits are checked separately.</p>
-<div class="control"><label for="size">Original image size</label><select id="size"><option value="102400">100 KiB</option><option value="204800" selected>200 KiB</option><option value="1048576">1 MiB</option><option value="5242880">5 MiB</option></select></div><div class="result" id="size-result" aria-live="polite"></div>
-<div class="control"><label for="delivery">Delivery</label><select id="delivery"><option value="vision">Image + vision model</option><option value="text">Image + text-only model</option><option value="pdf">PDF + paged-read tool</option><option value="error">Unreadable attachment</option></select></div><div class="result" id="delivery-result" aria-live="polite"></div></aside>
-</section>
-<section id="submission">
-<h2>Submission, recovery, and ownership</h2>
+
+
+</details><details id="technical-submission"><summary>Submission, recovery, and ownership</summary>
+
+
 <ol>
 <li>Persist the unsent draft, selected attachment IDs, original input, and a stable client submission ID in the existing per-chat draft/IndexedDB system. Upload progress and failures stay attached to the originating chat, including split views.</li>
 <li>Upload, validate, and prepare representations. Upload completion does not mean the turn was accepted.</li>
@@ -268,9 +281,10 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 <p>Untrusted extracted text uses a consistent external-content wrapper with escaped delimiters and a bounded size. Wrapping is provenance, not complete prompt-injection protection. Existing tool authorization and file-read checks remain authoritative.</p>
 <p>Originals remain available while referenced by server-side draft claims, history, queued work, checkpoints, or authorized branches. Unclaimed uploads can be reclaimed only after a grace period and a complete ownership check; grace duration is configured during implementation. Archive preserves attachments. Delete/export/import/relocate operate on owned data and manifests together. Never delete a project workdir to reclaim one session's media.</p>
 
-</section>
-<section id="plan">
-<h2>Implementation plan and acceptance</h2>
+
+</details><details id="technical-plan"><summary>Implementation plan and acceptance</summary>
+
+
 <p>Each phase updates this document's final status, product documentation, and focused evidence before the next phase begins. No phase is considered usable until its end-to-end acceptance passes.</p>
 <div class="table-wrap"><table>
 <thead>
@@ -306,16 +320,13 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 <p>Primary implementation boundaries: <code>chat.py</code>, <code>production_driver.py</code>, <code>dispatcher/types.py</code>, <code>dispatcher/loop_runner.py</code>, session location/serialization code, channel attachment normalization, composer attachment cache and submission code, command-error handling, and existing file-preview routes. Do not implement the size correction solely in the Web route: every canonical image caller shares the admission limit.</p>
 <p>Verification uses actual chat/intake boundaries plus a deterministic mocked provider, not only helper assertions. Existing starting suites are <code>tests/unit/attachments/</code>, <code>tests/unit/channels/test_channels_attachments.py</code>, and <code>tests/component/agent/test_production_driver.py</code>; Web checks include provisional-send and local-attachment-paths. Full Python/Web/Desktop gates follow the repository test policy. A final implementation requires independent specification and quality reviews, a clean commit, and default-App verification through <code>scripts/refresh-local-app.sh</code>. No remote write is implied.</p>
 
-</section>
-<section id="status">
-<h2>Implementation status</h2>
+
+</details><details id="technical-status"><summary>Implementation status</summary>
+
+
 <p>Existing and inspected: uploaded-file persistence, per-session dedup intent, markers with source/preview paths, bounded preview intent, image blocks, composer IndexedDB drafts, and file previews. Their limits and failure semantics do not yet satisfy the target contract.</p>
 <p>Reproduced: 100 KiB binary data encoded into a minimal image envelope passes admission; 200 KiB and 1 MiB fail the 256 KiB check. This is a local admission probe, not a provider or full upload test. The linked empty-chat incident independently records the same error category.</p>
 <p>Designed, not implemented: phases A, B, C, and the later modality extension. No runtime code, stored conversation, or installed App is changed by this design update. The <a href="chat-attachments.html">two-way attachment and preview document</a> covers the display/output scope; this document owns inbound storage, admission, delivery, and lifecycle.</p>
 
-</section>
-</main><script>const size=document.getElementById('size');const sizeResult=document.getElementById('size-result');
-function updateSize(){const encoded=4*Math.ceil(Number(size.value)/3);sizeResult.textContent='Current inline base64: '+(encoded/1024).toFixed(1)+' KiB. '+(encoded>262144?'Exceeds the 256 KiB admission cap.':'Text and other metadata still have to fit.')+' Proposed reference example: 1 KiB; file and provider budgets remain separate.';}
-const delivery=document.getElementById('delivery');const deliveryResult=document.getElementById('delivery-result');const descriptions={"vision": "Image included: the provider receives a verified original or derivative. Transformation details and the original remain available.", "text": "Accept a tool fallback only when an enabled, authorized image tool can read the file. Otherwise reject and preserve the draft; later revocation ends the execution explicitly.", "pdf": "A bounded preview is included; remaining pages are read on demand. Do not claim the whole PDF was read, or fabricate text when extraction is empty.", "error": "Reject the submission with a specific missing, corrupt, denied, or oversized attachment error. Retain text and selected attachments."};
-function updateDelivery(){deliveryResult.textContent=descriptions[delivery.value];}
-size.addEventListener('change',updateSize);delivery.addEventListener('change',updateDelivery);updateSize();updateDelivery();</script></body></html>
+
+</details></section></main><script>const descriptions={"vision": "Suggested wording: Image sent with the message. View the original image and, if it was resized, an explanation of the adjustment.", "text": "Suggested wording: This model cannot view images directly. Explain when an available, authorized tool will read the image; otherwise keep the draft and suggest changing the model or removing the image.", "pdf": "Suggested wording: Some text is included as a preview; other pages can be read as needed. Clearly state when text cannot be extracted, without claiming that the whole PDF was read.", "binary": "Suggested wording: File saved and available to suitable tools. Whether its contents have been read depends on the actual operations performed."};const scenario=document.getElementById('scenario');const result=document.getElementById('scenario-result');function updateScenario(){result.textContent=descriptions[scenario.value];}scenario.addEventListener('change',updateScenario);updateScenario();</script></body></html>

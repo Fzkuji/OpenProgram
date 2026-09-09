@@ -1,24 +1,36 @@
-<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>附件处理设计</title>
-<style>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>让聊天中的附件更好用</title><style>
 :root{color-scheme:light dark;--bg:#f8f9fb;--panel:#fff;--fg:#202632;--muted:#5a6577;--line:#d9dfe9;--accent:#245eb8;--warm:#99531b;--soft:#eef3fc}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif}a{color:var(--accent);text-underline-offset:3px}main{max-width:1120px;margin:auto;padding:44px 28px 80px}header{max-width:850px}h1{font-size:clamp(28px,4vw,42px);line-height:1.25;margin:10px 0 20px;font-weight:650}h2{font-size:23px;margin:0 0 18px}h3{font-size:17px;margin:0 0 9px}p{margin:9px 0 16px}.eyebrow{font-size:12px;letter-spacing:.1em;color:var(--muted)}.status{display:inline-block;padding:4px 10px;border:1px solid var(--line);border-radius:5px;color:var(--warm);font-size:13px}.lead{font-size:18px;line-height:1.65}.muted,small{color:var(--muted)}nav{position:sticky;top:0;background:var(--bg);padding:13px 0;display:flex;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line);z-index:2}nav a{text-decoration:none;font-size:14px}section{padding-top:38px;scroll-margin-top:90px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.card,.simulation{padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:9px}.value{font-size:28px;line-height:1.3;color:var(--accent);font-variant-numeric:tabular-nums}.card p{font-size:14px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:13px 15px;border-bottom:1px solid var(--line)}th{background:var(--soft);font-weight:600}tr:last-child td{border-bottom:0}code{font:12px/1.6 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere;background:var(--soft);border-radius:3px;padding:2px 4px}.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;list-style:none;padding:0;counter-reset:step}.flow li{border-top:3px solid var(--accent);padding:15px;background:var(--panel);counter-increment:step}.flow li:before{content:counter(step);display:block;color:var(--accent);font-size:24px}.flow strong{display:block;margin:6px 0}.flow span{font-size:14px;color:var(--muted)}.control{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:18px 0}select{padding:8px;font:inherit;max-width:100%;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:4px}.result{padding:16px;border-left:3px solid var(--accent);background:var(--soft);margin:14px 0}.result p:last-child{margin-bottom:0}.state-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.state{padding:16px;border:1px solid var(--line);border-radius:7px}.state h3{color:var(--accent)}.state small{display:block}ul{padding-left:23px}li{margin:7px 0}details{border-top:1px solid var(--line);padding:15px 0}summary{cursor:pointer;font-weight:600}summary:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.note{border-left:3px solid var(--warm);padding:4px 0 4px 16px;margin:24px 0}footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}@media(prefers-color-scheme:dark){:root{--bg:#181b20;--panel:#20242b;--fg:#e3e8ef;--muted:#aeb8c7;--line:#3c4553;--accent:#8ab8ff;--warm:#e9b17c;--soft:#253248}}@media(max-width:720px){main{padding:25px 17px 50px}.grid,.state-grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}nav{gap:9px 18px}th,td{padding:10px;font-size:13px}section{scroll-margin-top:120px}.lead{font-size:16px}}@media(max-width:410px){.flow{grid-template-columns:1fr}nav{position:static}}@media print{nav,.simulation{display:none}main{max-width:none}.card,.state{break-inside:avoid}body{background:#fff;color:#111}a{color:inherit}}
 
 section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;background:var(--soft)}td p{margin:0}nav{gap:10px 18px}.status{margin:8px 0}.language{font-size:14px}.flow{margin:24px 0}caption{text-align:left;padding:10px 0}#reference-explorer{scroll-margin-top:110px}.toc-link{white-space:normal}section section{padding-top:0}h2,h3{overflow-wrap:anywhere}
+
+.usage-intro{max-width:800px}.example{padding:20px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}.example-label{font-size:12px;color:var(--muted);margin-bottom:10px}.file-example{font-weight:600;margin-bottom:7px}.technical{margin-top:48px}.technical>p{color:var(--muted)}.technical details{background:var(--panel);padding:16px;margin:10px 0;border:1px solid var(--line);border-radius:7px}.technical details[open] summary{margin-bottom:18px}.technical h3{font-size:16px}.technical p,.technical td{font-size:14px}.state p:last-child{margin-bottom:0}
 </style></head><body><main>
-<header><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>附件处理设计</h1><span class="status">已审阅设计 · 运行修改尚未实现</span><p class="lead">可靠保存原件，以小型引用进入执行，确认提交后再清理草稿。</p><p>这份 HTML 包含 Web、Desktop 和 Channel 入站附件的完整契约、框架对比、实施计划及验收条件。英文版为准，中英文内容对应；实现状态集中列在文末。</p><p class="language"><a href="attachment-handling.html" lang="en">English</a></p></header>
-<nav aria-label="内容导航"><a class="toc-link" href="#current">当前实现</a><a class="toc-link" href="#frameworks">框架对比</a><a class="toc-link" href="#choices">采用的设计</a><a class="toc-link" href="#contract">目标契约</a><a class="toc-link" href="#budgets">预算与交付</a><a class="toc-link" href="#submission">提交与生命周期</a><a class="toc-link" href="#plan">实施与验收</a><a class="toc-link" href="#status">实现状态</a></nav>
-<ol class="flow" aria-label="附件生命周期"><li><strong>上传校验</strong><span>确认所属会话，检查实际解码字节与格式。</span></li><li><strong>保存原件</strong><span>保留会话所属的不可变快照和摘要。</span></li><li><strong>引用准入</strong><span>保存有序引用及稳定的提交 ID。</span></li><li><strong>模型交付</strong><span>读取允许的图片表示或有界预览。</span></li></ol>
-<section id="current">
-<h2>当前实现与已确认问题</h2>
+<header class="usage-intro"><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>让聊天中的附件更好用</h1><span class="status">使用体验设计 · 尚未实现</span><p class="lead">添加附件后，应该能看清它是否发送成功、模型看到了什么。发送失败时，文字和文件应留在输入框里，方便修改和重试。</p><p class="language"><a href="attachment-handling.html" lang="en">English</a></p></header>
+<nav aria-label="内容导航"><a href="#current">现在的问题</a><a href="#choices">准备怎样改</a><a href="#model-view">模型能看到什么</a><a href="#submission">发送失败时</a><a href="#history">以后再查看</a><a href="#technical">实现说明</a></nav>
+<section id="current"><h2>现在会遇到什么问题</h2><p>有些截图能正常添加，发送时却被拒绝。消息还没保存，输入框里的文字和附件已经被清空；重新打开聊天，就只剩一个标题。</p><p>附件出现在聊天里，也不一定代表模型已经看到了图片或读完了文件。现在的界面没有把这些区别说明白。</p></section>
+<section id="choices"><h2>准备怎样改</h2><div class="table-wrap"><table><thead><tr><th>使用时</th><th>希望看到的结果</th></tr></thead><tbody>
+<tr><td>粘贴截图、拖入文件或从电脑中选择文件</td><td>显示文件名、预览和准备进度。文件无法读取或太大时，指出是哪一个文件有问题。</td></tr>
+<tr><td>点击发送</td><td>显示发送进度。确认消息和附件已保存后，再清空这次发送的内容。</td></tr>
+<tr><td>发送失败或网络中断</td><td>保留文字和文件，并说明是已经失败，还是暂时无法确认结果。</td></tr>
+<tr><td>查看回复或重新打开聊天</td><td>能打开当时附上的文件，并知道模型收到的是图片、部分文字，还是一个需要继续读取的文件。</td></tr>
+</tbody></table></div></section>
+<section id="model-view"><h2>模型能看到什么</h2><p>每个附件都应该有清楚的说明。仅仅把文件上传成功，不等于模型已经读过它。</p><div class="example"><div class="example-label">拟议的界面说明，非当前运行结果</div><label for="scenario">选择一种情况</label> <select id="scenario"><option value="vision">截图，当前模型支持图片</option><option value="text">截图，当前模型不支持图片</option><option value="pdf">PDF 文档</option><option value="binary">其他文件</option></select><div class="result" id="scenario-result" aria-live="polite"></div></div><h3>图片清晰度</h3><p>保存原图。为了满足模型的图片要求而缩小尺寸时，说明做了什么调整，并保留查看原图的入口。不能为了让请求通过而把截图中的小字压得看不清。</p><h3>长文档</h3><p>先提供一小段预览，需要更多内容时再继续读取。没有可提取文字的 PDF 要明确说明，不能显示成“已读完”。</p></section>
+<section id="submission"><h2>发送失败时，内容应该还在</h2><div class="state-grid"><article class="state"><h3>正在发送</h3><p>显示进度，保留这次发送的内容。等待时新输入的文字也应保留。</p></article><article class="state"><h3>暂时无法确认</h3><p>连接中断后，先确认上一次是否成功，避免同一条消息重复发送。不能直接把聊天恢复为空白。</p></article><article class="state"><h3>发送失败</h3><p>说明具体原因，保留文字和附件。可以移除有问题的文件、换一个文件或重试。</p></article></div><p>如果当前模型看不了图片，也没有可用的图片读取工具，就在发送前提示选择支持图片的模型。不能悄悄忽略图片后只回答文字。</p></section>
+<section id="history"><h2>以后还能打开当时的附件</h2><p>重新打开聊天，应能查看当时附上的那份文件。电脑上的原文件后来被修改或删除，不应让聊天中的附件随之变化或消失。</p><p>归档聊天时保留附件；复制对话分支、移动项目或导出聊天时，把需要的附件一起保留。主动删除聊天时，再按该聊天的删除规则处理附件。</p><p>在输入框里通过 <code>@</code> 引用项目文件，仍表示查看该文件的当前内容。它与“附上一份当时的文件”应有可辨认的区别。</p></section>
+<section id="status"><h2>这次先完成什么</h2><ol><li>让正常截图可以发送，并在重新打开聊天后继续查看。</li><li>让发送失败和断线后的文字、附件能够恢复。</li><li>补充模型是否看到了附件的说明，以及图片调整和历史文件保留。</li></ol><p>这是一份待实现的设计，以上改进尚未在 App 中完成。扫描文档识别、音频、视频等能力另行设计，不包含在这次改进中。</p></section>
+<section id="technical" class="technical"><h2>实现说明</h2><p>以下内容供开发和验收时查阅。上面的使用体验是主要设计；这里保留框架来源、接口、大小限制、存储和测试细节。</p><details id="technical-current"><summary>当前实现与已确认问题</summary>
+
+
 <p>Web 输入框将图片读取为 base64，单独生成最长边 192 像素的缩略图，允许最多 5 MiB 的图片；发给模型的图片没有经过尺寸压缩。普通文件的前端上限为 32 MiB。后端 <code>_persist_attachments</code> 已经保存包括图片在内的上传文件，添加路径标记和文字／PDF 预览；文档不进入 <code>TurnRequest.attachments</code>，图片仍携带完整 base64。</p>
 <p><code>normalize_agent_turn_payload</code> 限制整个序列化执行输入为 256 KiB。最小图片请求中，200 KiB 的二进制内容经过 base64 编码后已经超过限制。本地复现没有调用模型，只验证执行输入大小，不验证图片解码。实际空白聊天日志也记录 <code>input_too_large</code>，但日志不足以确定原请求中哪个附件或字段导致超限。</p>
 <p>执行准入发生在 <code>_append_msg</code> 之前，失败时会话及标题可能已经存在，但没有用户消息。<code>sendChatMessage</code> 返回的是 WebSocket 发出成功，<code>useChatSubmit</code> 随即清空文字和附件；未关联的命令错误仅显示短暂的通用提示，没有可恢复的提交记录。</p>
 <p>后端单文件 32 MiB、每轮 64 MiB 的检查在 base64 解码之后；总量计数只增加新写入文件，去重命中未计入。保存阶段跳过的超限图片也没有明确从独立的模型附件列表移除。这些是源码确认的问题，未进行线上攻击测试。OpenAI Responses 转换在模型不支持图片时还会移除图片块，前端缺少对应的交付说明。现有标记解析、原始路径来源、预览路径、去重和文件访问策略继续保留。</p>
 <p>源码：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py">上传与保存</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/production_driver.py">执行准入与激活</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts">输入框提交</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/attach/image-attach.ts">图片读取</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/action-error.ts">错误处理</a>、<a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/_shared/openai_responses.py">Provider 转换</a>。</p>
 
-</section>
-<section id="frameworks">
-<h2>官方参考与采用范围</h2>
+
+</details><details id="technical-frameworks"><summary>官方参考与采用范围</summary>
+
+
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -58,9 +70,10 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 <p>来源：<a href="https://learn.chatgpt.com/docs/app-server">Codex app-server</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs">输入类型</a>、<a href="https://github.com/openai/codex/blob/main/codex-rs/attachment-store/src/lib.rs">附件存储</a>、<a href="https://opencode.ai/v2/docs/attachments">OpenCode V2 附件</a>、<a href="https://github.com/anomalyco/opencode/blob/dev/packages/core/src/config/attachments.ts">图片配置</a>、<a href="https://docs.openclaw.ai/nodes/media-understanding">OpenClaw 媒体理解</a>、<a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/managed-image-attachments.ts">受管理图片</a>、<a href="https://docs.openclaw.ai/gateway/cloud-sessions">云端附件部署</a>、<a href="https://code.claude.com/docs/en/common-workflows">Claude Code 工作流</a>。</p>
 <p>这些资料涉及不同版本和接口。接口接受图片不等于持久保存，UI 显示文件也不等于模型已收到文件内容。</p>
 
-</section>
-<section id="choices">
-<h2>采用的设计</h2>
+
+</details><details id="technical-choices"><summary>采用的设计</summary>
+
+
 <div class="table-wrap"><table>
 <thead><tr><th>设计</th><th>做法</th><th>理由</th></tr></thead>
 <tbody>
@@ -86,9 +99,10 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 </tr>
 </tbody>
 </table></div>
-</section>
-<section id="contract">
-<h2>目标契约</h2>
+
+</details><details id="technical-contract"><summary>目标契约</summary>
+
+
 <p>附件在执行准入前完成保存和校验。准入记录及历史只持有有序、属于指定会话的小型引用；Provider 转换时才读取选定表示。界面记录实际交付方式，而不是把上传完成当作模型已读取。</p>
 <p>引用包含 schema 版本、不透明附件 ID、所属会话、摘要、解码字节数、检测出的 MIME、文件名和可选的原始路径来源。客户端不能指定可信存储路径或创建所有权；文件名、路径属于数据，不是指令或访问凭证。</p>
 <p>采用一个本地会话附件存储。原件不可变，必要时生成图片派生版本；原件放在所属会话目录中、Agent 可修改的 workdir 之外。保留现有 workdir 副本，或在文件工具读取时生成副本。绝对路径及 preview-path 标记继续作为兼容的显示／工具表示，不再承担不可变身份。暂不引入跨会话去重或远程对象存储。</p>
@@ -133,9 +147,10 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 </table></div>
 <p>查询、重载、重复发送均不能通过创建第二条 execution 结束 pending。服务端使用既有 execution／消息身份补全消息持久化或记录拒绝，标题不作为成功证据。</p>
 
-</section>
-<section id="budgets">
-<h2>大小预算与交付</h2>
+
+</details><details id="technical-budgets"><summary>大小预算与交付</summary>
+
+
 <p>初始建议保持文档单文件 32 MiB、每轮解码后 64 MiB，并增加每轮最多 16 个附件。媒体内容移出后，执行输入仍限制 256 KiB，用于文字、元数据、权限规则及引用。这些是待验收的产品默认值，不是 Provider 的共同保证。</p>
 <div class="table-wrap"><table>
 <thead>
@@ -219,13 +234,11 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 <p>工具禁用、策略拒绝或无法读取时，不构成有效回退。仍需批准时，保留输入，先完成既有审批流程再接收该交付方式。交付方案在准入及激活时各检查一次；接收后授权被撤回，应以持续具体错误结束该 execution，不能继续只回答文字。模型能力变化也不能静默丢图。</p>
 <p>成本保证仅针对有界文字预览，不能声称全部模型成本 O(1)。视觉及原生文档 token 随内容表示变化，历史预览可能继续留在上下文中。十个 30 MiB 文件超过总量，应在准入前拒绝，不能作为成功上传示例。</p>
 
-<aside class="simulation" id="reference-explorer" aria-label="检查请求大小与交付方式">
-<h3>检查请求大小与交付方式</h3><p class="muted">这里只展示大小关系，不执行上传或模型请求。引用按 1 KiB 示例计算，实际元数据与 Provider 预算仍分别校验。</p>
-<div class="control"><label for="size">原始图片大小</label><select id="size"><option value="102400">100 KiB</option><option value="204800" selected>200 KiB</option><option value="1048576">1 MiB</option><option value="5242880">5 MiB</option></select></div><div class="result" id="size-result" aria-live="polite"></div>
-<div class="control"><label for="delivery">交付方式</label><select id="delivery"><option value="vision">图片＋视觉模型</option><option value="text">图片＋纯文字模型</option><option value="pdf">PDF＋分页工具</option><option value="error">附件无法读取</option></select></div><div class="result" id="delivery-result" aria-live="polite"></div></aside>
-</section>
-<section id="submission">
-<h2>提交、恢复与所有权</h2>
+
+
+</details><details id="technical-submission"><summary>提交、恢复与所有权</summary>
+
+
 <ol>
 <li>在现有按聊天隔离的草稿／IndexedDB 中保存未发送文字、附件 ID、原始输入和稳定的客户端提交 ID。进度和错误始终归属原聊天，分屏同样适用。</li>
 <li>上传、校验、准备表示。上传完成不表示执行已接收。</li>
@@ -268,9 +281,10 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 <p>提取的外部文字统一添加来源边界，转义分隔符并限制总字节。来源标记不等于完整的 prompt-injection 防护；工具授权和文件访问检查继续独立执行。</p>
 <p>只要服务端草稿 claim、历史、排队工作、checkpoint 或授权分支仍引用原件，就保留它。未认领上传仅在宽限期结束且完整核对引用后回收，宽限期在实现时配置。Archive 保留附件。删除、导入导出、迁移必须一并处理所属字节和 manifest；禁止通过删除项目 workdir 回收单个会话的附件。</p>
 
-</section>
-<section id="plan">
-<h2>实施计划与验收</h2>
+
+</details><details id="technical-plan"><summary>实施计划与验收</summary>
+
+
 <p>每个阶段更新本文状态、产品文档和验证记录，再进入下一阶段。未通过该阶段端到端验收，不能称为可用。</p>
 <div class="table-wrap"><table>
 <thead>
@@ -306,16 +320,13 @@ section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;backg
 <p>主要代码边界：<code>chat.py</code>、<code>production_driver.py</code>、<code>dispatcher/types.py</code>、<code>dispatcher/loop_runner.py</code>、会话位置和序列化、Channel 附件转换、输入框附件缓存／提交、命令错误处理及既有预览路由。不能只在 Web handler 修正大小，因为其他调用方共享执行准入限制。</p>
 <p>验证使用真实 chat／intake 边界和可确定的 mock Provider，不只测试辅助函数。现有起点为 <code>tests/unit/attachments/</code>、<code>tests/unit/channels/test_channels_attachments.py</code>、<code>tests/component/agent/test_production_driver.py</code>，Web 包括 provisional-send 和 local-attachment-paths 检查。完整 Python／Web／Desktop 验证遵循仓库测试约定。实际实现完成还需独立规格与质量审查、干净提交，以及 <code>scripts/refresh-local-app.sh</code> 后的默认 App 验收；本方案不包含远程写入授权。</p>
 
-</section>
-<section id="status">
-<h2>实现状态</h2>
+
+</details><details id="technical-status"><summary>实现状态</summary>
+
+
 <p>已检查的既有能力：上传保存、会话内去重意图、原始／预览路径标记、有界预览意图、图片块、输入框 IndexedDB 草稿和文件预览。其限制及错误处理尚不满足目标契约。</p>
 <p>已复现：最小图片执行输入中，100 KiB 二进制 base64 通过；200 KiB 与 1 MiB 被 256 KiB 限制拒绝。这不是完整上传或 Provider 测试。实际空白聊天日志独立记录了相同错误类别。</p>
 <p>已设计、未实现：A、B、C 及后续模态扩展。本次文档更新不修改运行代码、已存聊天或安装的 App。<a href="chat-attachments.html">双向附件与预览文档</a>负责显示及输出范围；本文负责入站存储、执行准入、内容交付和生命周期。</p>
 
-</section>
-</main><script>const size=document.getElementById('size');const sizeResult=document.getElementById('size-result');
-function updateSize(){const encoded=4*Math.ceil(Number(size.value)/3);sizeResult.textContent='当前内联 base64：'+(encoded/1024).toFixed(1)+' KiB。'+(encoded>262144?'已超过 256 KiB 准入限制。':'还需要加上文字和其他元数据。')+' 目标引用示例占 1 KiB；文件和 Provider 预算仍独立检查。';}
-const delivery=document.getElementById('delivery');const deliveryResult=document.getElementById('delivery-result');const descriptions={"vision": "图片已包含：Provider 读取经过校验的原件或派生表示，转换详情和原件仍可访问。", "text": "仅在已启用、有权限的图像工具能读取时接收回退；否则拒绝并保留草稿。接收后撤权也明确结束执行，不静默丢图。", "pdf": "模型收到有界预览，其余页面按需读取。不声称已读完整 PDF，也不在提取结果为空时伪造文字。", "error": "以缺失、损坏、无权限或超限的具体原因拒绝提交，保留文字和已选附件。"};
-function updateDelivery(){deliveryResult.textContent=descriptions[delivery.value];}
-size.addEventListener('change',updateSize);delivery.addEventListener('change',updateDelivery);updateSize();updateDelivery();</script></body></html>
+
+</details></section></main><script>const descriptions={"vision": "建议显示：图片已随消息发送。可以查看原图；如有缩小尺寸，可查看调整说明。", "text": "建议提示：当前模型不能直接查看图片。若有可用且已授权的图片读取工具，说明将通过工具读取；否则保留输入，提示切换模型或移除图片。", "pdf": "建议显示：已提供部分文字预览，其他页面可继续读取。没有可提取文字时明确说明，不声称模型读完了整份文档。", "binary": "建议显示：文件已保存，可由适合的工具打开。文件中的内容是否已被读取，需要根据实际操作说明。"};const scenario=document.getElementById('scenario');const result=document.getElementById('scenario-result');function updateScenario(){result.textContent=descriptions[scenario.value];}scenario.addEventListener('change',updateScenario);updateScenario();</script></body></html>
