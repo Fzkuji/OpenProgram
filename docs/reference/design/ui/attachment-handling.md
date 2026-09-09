@@ -1,124 +1,153 @@
-# Attachment Handling Design (Web Chat)
+# Attachment handling
 
-How a file the user attaches in the web chat reaches the model: where its bytes
-live, which content block carries it, and how the agent reads the rest.
+This is the canonical attachment contract and implementation plan for Web, Desktop, and channel input. The accompanying visualization in the documentation sidebar summarizes the decisions. [Chinese translation](attachment-handling.zh.md). Implementation status is recorded at the end; target behavior below is not a claim that the runtime already implements it.
 
-## One-Sentence Principle
+## Verified current behavior
 
-**materialize once to a path; deliver the best block the active model accepts plus a small head preview; let the agent page the rest with its bounded tools.**
+The Web composer reads image bytes into base64, builds a separate 192-pixel thumbnail, and permits images up to 5 MiB. It does not resize the image sent to the model. Documents have a 32 MiB client limit. The backend saves uploads, including images, through `_persist_attachments`, adds path markers and bounded text/PDF previews, and filters documents out of `TurnRequest.attachments`. Image base64 remains in that request.
 
-Attachment bytes hit disk at most once and are identified by **a single absolute path**; **how** their content reaches the model is recomputed every turn based on `(file kind × the input modalities the current model declares)`, degrading step by step through `native block → ≤4KB head preview → path + agent paged read`. **The prompt cost per file is O(1), independent of file size.** The same upload works on codex/gpt-5.5 today, and when you later switch to a PDF-native Claude/Gemini it just takes effect, with **zero frontend changes**.
+`normalize_agent_turn_payload` limits the complete serialized admission envelope to 256 KiB. Consequently a 200 KiB binary image, represented as base64 with a small text request, already fails this boundary. This was reproduced without a provider call; the probe tests envelope sizing, not image decoding. A live failed chat also records `input_too_large`. The log does not establish which original attachment or field supplied the excess bytes.
 
-Three layers of judgment:
-1. Is it an image? → vision block.
-2. Is there an existing local path? Upload/remote channel = no → write to disk; `@`-mention/typed path = yes → reference in place.
-3. Capability overlay: a PDF is upgraded to a native document block only when the model declares support for `document`.
+Admission runs before `_append_msg`. The session and title may exist even when admission fails, leaving no user node. `sendChatMessage` reports WebSocket transmission success, and `useChatSubmit` immediately clears text and attachments. An uncorrelated command error produces a generic transient toast, not a recoverable submission record.
 
-## Decision Matrix (authoritative; plain-text aligned columns, not a markdown table)
+The backend's 32 MiB per-file and 64 MiB aggregate checks run after base64 decoding. The aggregate counter increases only for newly written files; dedup hits do not consume it. A skipped oversized image is not explicitly removed from the separate dispatch list. These are source-confirmed gaps, not live exploit tests. The OpenAI Responses converter also removes image blocks for models without image input; the current frontend does not provide a matching delivery explanation. Existing marker parsing, source-path provenance, preview paths, dedup, and file access policies remain useful.
 
-`DELIVER (now)` is based on the default codex/gpt-5.5: `model.input=["text","image"]`, no `document`.
-A row's delivery method flips **only** when `model.input` declares the corresponding modality.
+Source locations: [Web intake and persistence](https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py), [admission and activation](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/production_driver.py), [composer submission](https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts), [image input](https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/attach/image-attach.ts), [error handling](https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/lib/net/action-error.ts), [provider conversion](https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/providers/_shared/openai_responses.py).
 
-```
-source        file kind     write to disk?            DELIVER(now, codex/gpt-5.5)                  READ path
-------------  ------------  ------------------------  -------------------------------------------  ----------------------------
-upload        image         no (in-memory→b64 direct) ImageContent block (pixels)                  model vision native
-upload        text/code     yes attachments/<safe>    [attachment:..@/abs] + ≤4KB head preview     read tool 2000 lines/200KB paging
-upload        pdf           yes attachments/<safe>    [attachment:..(P pages)@/abs] + page1 head+outline   pdf tool 80KB/page window
-upload        other binary  yes attachments/<safe>    [attachment:..@/abs] mention only (no preview)       bash file/strings/xxd
-@-mention     image         no (re-read+b64)          ImageContent block                           model vision native
-@-mention     text/code     no (already on disk)      [attachment:..@/abs] + ≤4KB head             read paging
-@-mention     pdf           no (already on disk)      [attachment:..(P pages)@/abs] + page1 head    pdf paging
-@-mention     other binary  no (already on disk)      [attachment:..@/abs] mention only            bash
-typed path    any           = @-mention               file-resolve treats a bare path identically by its kind
-remote channel image         yes attachments/<safe>    ImageContent (re-read from on-disk bytes)    model vision native
-remote channel text/pdf      yes attachments/<safe>    [attachment:..@/abs] + head preview (same as upload)  read/pdf paging
-remote channel other binary  yes attachments/<safe>    [attachment:..@/abs] mention only            bash
-```
+## Official reference corpus
 
-**Cells that flip on more capable models (single rule, any source):**
+| Framework / scope | Verified design | Decision for OpenProgram |
+|---|---|---|
+| Codex public app-server and Rust protocol | Typed text/image/local-image input; local image paths are converted during request serialization. | Separate attachment identity from provider encoding. Do not infer private desktop behavior from the public protocol. |
+| Codex `attachment-store` crate | Persistence returns `AttachmentRef` with URL and optional file ID. An `InlineAttachmentStore` also exists. | Adopt durable references; do not claim every Codex attachment is offloaded, and do not copy a storage-backend abstraction when one local store suffices. |
+| OpenCode V2 attachments | The server materializes supported file/data inputs before prompt admission; per-item decoded limit is 20 MiB. Image processing separately limits dimensions and encoded bytes. V2 documents text and PNG/JPEG/GIF/WebP visibility; PDF and other unsupported binaries are not model-visible through that prompt attachment path. | Adopt pre-admission validation and separate image budgets. Retain OpenProgram's PDF paging instead of reducing support to this V2 subset. |
+| OpenClaw Gateway / media understanding | Managed media can be offloaded; outcomes distinguish native vision, processing, skipped input, and failure. Extracted document content is explicitly untrusted. Tool-read fallback depends on runtime access to the file. | Adopt explicit delivery outcomes and runtime-readable references. Do not adopt channel-specific retention defaults for durable conversation history. |
+| Claude Code documented workflow | Supports pasted/dropped images, image paths, and file/directory mentions. | Preserve these input methods. This documentation does not establish a general attachment storage architecture. |
 
-```
-pdf, model.input contains "document", size ≤ NATIVE_DOC_INLINE_CAP(10MB and the provider's page-count cap)
-    → DELIVER becomes a native document content block (whole file base64, built by reading from the on-disk path);
-      the [attachment:..@/abs] mention is kept (drives the chip + lets the agent still read another slice);
-      the head preview is suppressed (the model already has the whole file).
-pdf, contains "document" but size > NATIVE_DOC_INLINE_CAP
-    → stays in the "now" column (path + head preview); no native block is built (avoid blowing up the context).
-image, model.input does not contain "image" (a degraded codex config)
-    → store the png + [attachment:..@/abs — view with image_analyze]
-      (fixes the bug at providers/_shared/openai_responses.py:120-121 where input_image is silently dropped when image is not in model.input).
-```
+Sources: [Codex app-server](https://learn.chatgpt.com/docs/app-server), [Codex input types](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs), [Codex attachment store](https://github.com/openai/codex/blob/main/codex-rs/attachment-store/src/lib.rs), [OpenCode V2 attachments](https://opencode.ai/v2/docs/attachments), [OpenCode image configuration](https://github.com/anomalyco/opencode/blob/dev/packages/core/src/config/attachments.ts), [OpenClaw media understanding](https://docs.openclaw.ai/nodes/media-understanding), [OpenClaw managed images](https://github.com/openclaw/openclaw/blob/main/src/gateway/managed-image-attachments.ts), [OpenClaw cloud attachment placement](https://docs.openclaw.ai/gateway/cloud-sessions), [Claude Code images and file references](https://code.claude.com/docs/en/common-workflows).
 
-**Axis discipline**: the `source` axis only decides **where the bytes land** (write to disk vs. reference in place); the `(file kind × capability)` pair is the **only** thing that decides DELIVER.
+These sources describe different interfaces and versions. A transport accepting an image is not evidence of durable storage, and a file appearing in the UI is not evidence that the model received its contents.
 
-## Relationship to Claude Code/opencode/openclaw
+## Choice of scope
 
-- **Images go through vision**: all three plus us agree.
-- **PDF native document block**: the preferred path for Claude Code/opencode/openclaw. OpenProgram's capability overlay makes this path take effect automatically when a doc-capable model is configured, without making it a requirement.
-- **Path + paged tool read**: everyone does this when the agent explores files **mid-task on its own**. OpenProgram routes **user attachments** through this path on codex too, because codex cannot accept a document block; the head preview closes the reliability gap.
-- **Write to a managed directory**: openclaw's claim-check (inbound has only bytes, no path). We use a per-session git workdir rather than a global one + TTL, which suits agentic better (it is the agent's cwd, committed to git every turn, replayable).
-- **Rejected approach**: injecting the file body at submit time by replaying the read (opencode's approach) is not used, because (a) mirroring the real read/pdf tool caps drifts, (b) once you switch to a native block it becomes dead weight, and (c) it adds sync latency at submit time. Instead we use a passive `<attachment-preview>` content snippet that gives the model a constant-cost first glance. (What opencode actually injects is **two plain-text parts flagged `synthetic`** — a sentence "Called the Read tool with the following input …" plus the real read result — which reach the model as `role: "user"` text, not `tool_use` / `tool_result` content blocks. The three reasons above are unaffected by the correction.)
+| Alternative | Assessment |
+|---|---|
+| Increase the admission limit to fit base64 | Rejected as the primary repair: retains repeated serialization and bloated execution/history inputs, and does not fix lost drafts or provider limits. |
+| Compress every image below approximately 192 KiB | Rejected: metadata reduces that budget further and fine-text screenshots can become unreadable. Compression serves provider/image budgets, not the admission envelope. |
+| Store only the original desktop path | Rejected for attached snapshots: later edits, temporary-file deletion, and remote placement change what can be read. Live project mentions keep their separate semantics. |
+| Session-owned immutable bytes with small references | Selected: fixes the shared admission boundary and gives replay, previews, and transport a consistent identity using one local store. |
 
-## Large-File Guarantee (no-context-blowup invariant)
+## Target contract
 
-What the backend can possibly stuff into the prompt is **only**: (a) one image block, (b) a one-time ≤4KB head preview (first turn only), (c) an ~90-byte path mention, or (d) a native doc block double-gated by "model capability + size≤10MB". Everything else enters the context page by page only through the agent's own **bounded paging tools**.
+Attachment bytes are materialized and validated before a turn is admitted. Admission and history carry small, ordered, session-owned references. Provider conversion reads only the selected representation. User-visible delivery state records what was actually included, not just whether the file uploaded.
 
-Measured caps: the `pdf` tool is 80KB of characters per call (offset/limit by page); the `read` tool is 2000 lines per call, with a 200KB result cap; `file_search.py`'s 256KB only feeds the preview, never the delivery.
+A reference contains a schema version, opaque attachment ID, owner session, digest, decoded byte length, detected MIME, filename, and optional original-path provenance. The client cannot choose a trusted storage path or mint ownership. Filenames and paths remain data, not instructions or capabilities.
 
-Drag in ten 30MB PDFs at once: that one turn is about `10×(90B mention + 4KB preview) ≈ 41KB`, and zero afterward — **independent of size**. A 500-page PDF on codex: written to disk once, the mention carries "500 pages", the preview = page-1 text + the first line of each page as an outline (truncated to about 50 entries, then "…(450 more pages)"); at attach time the prompt cost is ≤4KB+90B, the 8MB body never enters the context; the agent uses a `pdf(offset=N,limit=20)` window and **jumps directly** to the relevant page range via the outline, rather than scanning sequentially.
+Use one local session attachment store, with immutable originals and optional derived image representations. Place the canonical bytes under the owning session directory, outside the agent-mutable workdir; retain the current readable workdir copy or materialize one when a file tool needs it. The existing absolute-path marker and preview-path syntax remain compatible display/tool projections, not the immutable identity. No cross-session dedup or remote object-storage service is required.
 
-## Storage / Dedup / Security / Lifecycle
+The existing execution state-blob store requires an execution/attempt owner. Uploads exist before admission and can survive multiple attempts, so that API cannot directly own their lifecycle. Reuse its digest/verification conventions without weakening its ownership checks.
 
-- **Location**: per-session `<state_dir>/sessions/<id>/workdir/attachments/<safe-name>`. This is the agent's cwd, committed to git every turn — attachments become part of the session's replayable state. A global media store would break both of these invariants.
-- **Who writes to disk**: only path-less sources (browser upload, remote channel). `@`-mention/typed path is already on disk; reference in place, zero copy.
-- **Naming**: `_safe_attach_name()` — `os.path.basename` + replace non-`alnum._- space` with `_`, 120-char cap, never empty. Human-readable, so the agent's intuition about `./attachments/spec.pdf` holds. No sha-prefixed names.
-- **Dedup**: sha256 the decoded bytes before writing, and maintain `attachments/.opdedup.json {sha256: relative name}`. On a hit, re-stat+hash to confirm it's the same file, then **reuse** it instead of writing a duplicate. Idempotent: re-dragging the same paper, or retrying a turn, is a no-op. A plain `-N` no-clobber loop cannot do this — with no byte comparison, re-dragging an identical file yields a second copy. Dedup is within-session only (the workdir is an isolated git repo; no cross-session dedup). The index is best-effort: losing/corrupting it only writes one extra copy (harmless) and never mis-maps (it always verifies before reuse).
-- **Over-limit**: a hard cap of `MAX_ATTACH_BYTES=32MB`/file, checked **both** before `write_bytes` **and** at WS intake (before the base64 crosses the socket). Over the limit: skip saving, rewrite the mention to "— too large (>32MB), not stored", **tell the model**, never hand it a dead path. Images: 5MB/≤2000px (downsample first). Aggregate cap of 64MB per turn. Note that b64 inflates ~1.33×.
-- **Security/escape**: upload/remote carry no source path at all (sandbox) + basename sanitization → structurally impossible to escape; `@`/typed path goes through `/api/file-resolve`'s `(cwd/path).resolve()` + `is_relative_to(cwd)` → out-of-bounds 400. `.resolve()` fully resolves symlinks, so a symlink inside the root pointing outside the root is rejected as well.
-- **GC**: attachments are already committed to git, and deleting one would break replay — so GC is session-level lazy reclamation: delete the session → `rm -rf workdir` takes the attachments with it. No web-path TTL. On session load, clean up dedup-index entries whose target has gone missing. openclaw's 2-minute inbound TTL applies only to the staging area before a future remote channel writes to disk.
+For Web uploads, introduce an authenticated streaming upload boundary that returns a reference after complete validation. It binds provisional chat ownership through server state before accepting bytes. Desktop source paths remain provenance; the managed snapshot is what a queued/replayed turn reads. Channels, CLI, and legacy inline clients normalize through the same ingestion primitive. Compatibility decoding is bounded before allocation and never persists base64 in new admission envelopes.
 
-## Display Layer
+### Original, tool copy, and public read boundary
 
-- **Chip**: parse `[attachment: name (type, KB[, P pages|L lines]) @ /abs]` → file name + type badge + size + a scope badge ("500 pages"/"200K lines"); strip the `@ /abs` suffix on display but KEEP the captured path — it is what the chip opens, through `GET /api/file-raw` / `GET /api/file-read`. Images render the thumbnail in place of the file glyph. The `<attachment-preview>…</…>` snippet is stripped from the bubble like a mention — the user sees the chip, not the 4KB head.
-- **Delivery-mode sub-label** (UX honesty): derive "read on demand"/"sent inline"/"previewed first N lines" from `delivery_mode`, so the user knows exactly what the model actually got and doesn't have to guess "did it see my file".
-- **Optimistic-bubble timing**: the frontend cannot know the post-disk absolute path when it composes (`@/abs` is appended by `_persist_attachments` during WS message handling), so the `[attachment: name (type, KB)]` it sends is **intentionally path-less** and the chip parser renders **both forms: path-less (in flight) and path-bearing (after rewrite)** — a path-less chip is a label, a path-bearing one opens. The gap closes in the same turn rather than at the next reload: `chat_ack` echoes the STORED text and the local user turn is built from that, so the chip is clickable the moment the ack lands.
-- **Preview popup**: decode the full file locally, never send it. The HUMAN client scrolls the whole file, the MODEL only saw the 4KB head — that's the payoff.
-- **Sidebar title**: `_title_from_text` strips both mentions and `<attachment-preview>` before its 50-char truncation.
+The reference ID and digest identify the authoritative snapshot. A projection record maps `(owner_session, attachment_id, digest)` to any workdir copy. Before giving a reference-aware tool a path, verify the copy's bytes. Reuse a matching copy; otherwise create a new non-clobber copy from the original and update the projection. Preserve the Agent-edited file as an ordinary project file; never overwrite it or silently treat it as the original attachment. Ordinary path-based tools still read the explicit path's current contents.
 
-## Appendix: Implementation Status
+The proposed authenticated `GET /api/session/{sid}/attachments/{attachment_id}/content` serves the owned immutable original or an explicitly identified derivative for attachment previews and replay. Existing `/api/file-raw` remains for live files and legacy markers, not as the authority for new snapshot references. Serving an attachment does not grant arbitrary filesystem access; active file formats use download or an isolated preview, not execution in the application origin.
 
-Implemented: bytes written to disk under `workdir/attachments` with
-`_safe_attach_name` sanitization and no-clobber naming; the
-`[attachment: name (type, KB) @ /abs]` mention with the backend-appended path;
-first-turn workdir-race fallback; image → ImageContent **and** a saved path +
-mention, so the human sees what the model sees; `@`-mention and typed paths
-zero-copy with the file-resolve escape check; `_title_from_text` stripping
-mentions before truncation; the `user_msg["extra"]` attachment manifest; the
-size caps (32MB per file, 64MB per turn) at both `write_bytes` and WS intake
-with the "too large" mention rewrite; sha256 within-session dedup and
-`attachments/.opdedup.json`; page/line counts inside the mention's parenthesized
-group and the one-time `<attachment-preview>` head snippet.
+### Public upload and submission contract
 
-Also implemented since, and shared with
-[chat-attachments](chat-attachments.html): one marker formatter/parser in
-`openprogram/attachments.py` that inbound channel attachments and the agent's
-outbound `send_file` both go through, `GET /api/file-raw` as the byte exit for
-an absolute path, and the chat's clickable chip + preview overlay.
+These are proposed interfaces, not existing routes. `PUT /api/session/{sid}/attachments/{upload_id}` streams one file with declared filename, length, MIME, and digest, all verified against received bytes. For a provisional chat, it atomically registers upload ownership for the authenticated caller; an existing chat must pass its normal authorization. A completed identical upload returns the same attachment reference. Reusing an ID for different content conflicts; an unfinished upload can restart after its old active writer is released.
 
-Designed and not yet landed:
+Each completed upload also returns a durable `draft_claim_id`, scoped to the authenticated principal, session, and upload selection. Store that claim server-side with the attachment reference; provisional ownership is a GC retention root, not just a browser hint. Repeated identical uploads reuse the same claim; another selection of the same bytes has a distinct claim even if the stored original is deduplicated. An explicit authenticated `DELETE /api/session/{sid}/attachment-drafts/{claim_id}` releases only that selection when the user removes it or discards its draft. Browser close/disconnection does not release it. Acceptance transfers precisely the submitted claims to history/execution ownership; rejection leaves them retained. Other selections and draft edits remain claimed. A storage quota can reject new uploads but cannot silently evict these retained drafts.
 
-- the `"document"` modality in `providers/types.py` `Model.input` and in
-  `validate_modalities.py`, and the `choose_delivery()` switch in the dispatcher;
-- per-provider native document block builders, which need a doc-capable model
-  configured before they can be exercised;
-- page/line count and truncated head in the `/api/file-resolve` response;
-- the delivery-mode sub-label and per-chip status/error badges.
+The existing WebSocket `chat` action gains `submission_id`, ordered attachment references, and the exact draft claim IDs selected for that submission. Proposed `GET /api/session/{sid}/submissions/{submission_id}` returns the durable result only after authentication and normal session-read authorization. Identifiers alone grant no access; unauthorized and nonexistent sessions produce the same safe not-found response. Within an authorized session, a missing submission returns `not_found`. Add a `chat_submissions` record in the execution database keyed by `(session_id, submission_id)`, with authenticated owner, canonical input hash, ordered reference IDs, status, execution ID, deterministic user-message ID, and a safe error code. Claim the key before admission; concurrent requests with the same `(session_id, submission_id)` and canonical input share one result and execution. Different submission IDs represent independent user submissions, even when their content matches, and obey existing session concurrency/queue rules. There is no content-based deduplication of user intent. Reload and retry reuse the original ID rather than creating another one.
 
-## Tunable Constants
+| Submission result | Meaning and client behavior |
+|---|---|
+| `not_found` | No durable submission claim is known. Retain the draft and resend the same ID/content; do not allocate a new ID. |
+| `pending` | The request is claimed but user-message persistence is not confirmed. Keep the draft and reconcile; the server resumes or closes the recorded operation after a crash. |
+| `accepted` | Both execution and deterministic user node are persisted. `chat_ack` and the query return the same submission ID, user-message ID, and execution ID. Only this result clears the exact submitted draft. |
+| `rejected` | The operation definitively failed. Return a bounded code and retain input. A changed/repaired draft uses a new submission ID; repeating the old ID returns its recorded rejection. |
+| `conflict` | The same key was supplied with different content/ordered references. Do not change the stored original record or start another execution. |
 
-Two tunable constants, both with defensible defaults, both a single config knob rather than an architectural fork:
-1. `PREVIEW_CAP` (suggested 4KB / ~60 lines). Too low gives just-over-the-limit small documents an extra read round-trip; too high leaks a bit more body on every attach. Default 4KB.
-2. `MAX_ATTACH_BYTES` (suggested 32MB). Curbing git-workdir blob bloat (a blob committed to git is permanent in history — a real cost) vs. accommodating larger real PDFs. Default 32MB.
+A query, reload, or repeated request never resolves `pending` by creating a second execution. Server reconciliation uses the stored execution/user-message identities to finish message persistence or record rejection; titles are not evidence of success.
 
-One product-facing question stays open: whether the permanent accumulation of large binaries in per-session git history — the cost of the "workdir = self-contained committed state" invariant — is acceptable, or whether a content store outside git is eventually needed. Such a store would sacrifice replay reproducibility, so the design intentionally keeps the invariant.
+## Budgets and delivery
+
+Proposed initial defaults retain the existing 32 MiB document and 64 MiB per-turn decoded budgets. Add an explicit 16-attachment limit. Keep the 256 KiB admission envelope limit after removing media bytes; it still bounds text, metadata, rules, and references. These are product defaults to verify, not borrowed provider guarantees.
+
+| Budget | Enforcement and meaning |
+|---|---|
+| Upload bytes | Streamed decoded bytes; reserve and count every selected attachment even on a dedup hit. Validate file count and aggregate bytes before admission. |
+| Legacy base64 | Estimate decoded size before decoding, validate encoding, then verify actual size. Socket ingress needs an explicit transport cap; do not assume the file cap protects the WebSocket frame. |
+| Image representation | Preserve original; prepare a derivative with a proposed 2000-pixel longest side and at most 5 MiB encoded base64, further reduced by active provider limits. Detect MIME and decoding failures. Bound decoded pixel/frame counts, decoder memory, and processing time before accepting a derivative. Record transformations. |
+| Text/PDF preview | At most 4096 UTF-8 bytes per file and 32 KiB total, including wrappers and truncation notices; bound extraction time and page work separately. Existing PDF slicing is character-based and cannot prove a byte cap. |
+| Provider request | Apply model modality, image count, image dimensions, encoded bytes, and token/context limits at conversion. Metadata limits never replace this check. |
+
+Budget scope is explicit: upload reservations belong to `(authenticated owner, session, upload_id)` and charge temporary-storage quota while a writer is active. Abort, validation failure, cancellation, or expiration releases the reservation and removes its incomplete temporary file. A completed upload charges stored bytes until reclaimed; repeating it does not charge storage twice. The per-turn 64 MiB / 16-item budget is recomputed from every ordered selected reference under the submission claim, including repeated/deduplicated content, independently of upload storage accounting. Duplicate submissions do not reserve it twice. Concurrent tabs have separate upload IDs and submission claims, while existing session execution concurrency rules still apply. Reclaim completed but unclaimed uploads only after checking server-side draft claims, pending submissions, and durable history ownership; a disconnected client is not proof of abandonment.
+
+For animated images, unsupported formats, transparency, or fine text, conversion must not silently discard meaningful content. Preserve the original, state any derivative selection, and provide an original-resolution path when supported. Decoder failure is an attachment failure, not a successful thumbnail fallback.
+
+| Input | Model delivery | Visible result |
+|---|---|---|
+| Supported image + vision model | Native image from verified derivative/original | Image included; transformation details available |
+| Image + text-only model | Readable reference and explicit tool fallback only if an enabled, authorized image tool can read it | File available for tools; image not included in model input |
+| Text/code | Bounded untrusted preview and readable reference | Preview included; remainder available on demand |
+| PDF | Bounded text preview/page summary and PDF tool access | Preview included, or no extractable text with a usable file |
+| Other binary | Readable file reference; no fabricated extracted content | File available for tools |
+| Image + text-only model + no currently usable authorized image tool | Reject with `attachment_delivery_unavailable`; never remove the image silently | Preserve draft; select a vision model, enable an authorized tool, or remove the image |
+| Missing, denied, corrupt, or oversized file | Block that submission and retain the draft | Specific error; remove/replace/retry without losing other attachments |
+
+Native PDF blocks are a later extension: require explicit provider support, page/byte/token budgets, and integration tests. Scanned-PDF image rendering, OCR, audio, video, and remote URL fetching are not prerequisites for repairing image submission. Existing `@`/typed-path references retain live-file semantics; an explicit attached snapshot and a live project reference must be distinguishable.
+
+If a tool is disabled, denied by policy, or unable to read the file, it is not a usable fallback. If approval is still required, retain input and complete the existing approval flow before accepting that delivery mode. The selected delivery plan is checked at admission and again at activation; a later revocation ends the accepted execution with a persistent specific error, rather than running a text-only answer. Model capability changes cannot silently drop an already attached image.
+
+The cost claim is bounded text preview cost, not constant total model cost. Vision tokens and native document tokens scale with representation. Earlier previews can remain in later context; they are not guaranteed to cost zero on subsequent turns. Ten 30 MiB files exceed the proposed aggregate budget and are rejected before admission.
+
+## Submission, recovery, and ownership
+
+1. Persist the unsent draft, selected attachment IDs, original input, and a stable client submission ID in the existing per-chat draft/IndexedDB system. Upload progress and failures stay attached to the originating chat, including split views.
+2. Upload, validate, and prepare representations. Upload completion does not mean the turn was accepted.
+3. Send text and ordered references with the submission ID. The server checks ownership, bytes, capability, and metadata budgets, then records a submission-to-execution mapping and the user-message persistence outcome. A positive acknowledgement identifies the committed user node and execution.
+4. Clear only the acknowledged submission snapshot. Preserve text/attachments added while the request was pending. Do not revoke previews needed by pending or failed submissions.
+5. On a definitive rejection, keep the draft with a persistent, specific error. On timeout/disconnection, show that the result is unknown and reconcile using the same ID. Never create a new execution simply because an acknowledgement was lost. Same ID with changed content is a conflict.
+
+Crash cases between execution admission and user-node persistence need explicit reconciliation; the SQLite execution store and Git session store are not one atomic transaction. A failed persistence operation must not return success or leave an apparently running empty chat. Session title creation is presentation state, not acceptance evidence.
+
+Digest verification prevents a modified workdir file from changing queued input. References resolve only within authorized session ownership; guessed IDs, cross-session references, traversal, symlink escapes, and stale grants fail closed. Authorized fork/attach/export transfers retain or copy the required bytes and establish new ownership; string-copying a reference is insufficient. Project moves resolve ownership through the current session location index.
+
+| Lifetime operation | Ownership rule |
+|---|---|
+| Preview / replay | Resolve the immutable ID, verify digest and owner, and read the requested original/derivative; never substitute a mutable copy. |
+| Fork / attach / merge | After existing session authorization, materialize referenced bytes under the destination session and register destination-owned IDs; preserve provenance and order. Failure aborts the transfer rather than leaving dangling references. Source deletion cannot remove the destination's copy. |
+| Archive / delete | Archive keeps data. Delete removes only data owned by that session once its active work is settled under normal deletion policy; never remove a shared project directory. |
+| Export / import | Export includes reference manifests and verified originals; a missing required original is an explicit export error. Import validates hashes and creates destination-owned IDs before making imported history available. |
+| Project relocation | Move the complete owned session store and update its location atomically through the existing location mechanism, with recovery for interrupted moves; references remain location-independent. |
+
+Untrusted extracted text uses a consistent external-content wrapper with escaped delimiters and a bounded size. Wrapping is provenance, not complete prompt-injection protection. Existing tool authorization and file-read checks remain authoritative.
+
+Originals remain available while referenced by server-side draft claims, history, queued work, checkpoints, or authorized branches. Unclaimed uploads can be reclaimed only after a grace period and a complete ownership check; grace duration is configured during implementation. Archive preserves attachments. Delete/export/import/relocate operate on owned data and manifests together. Never delete a project workdir to reclaim one session's media.
+
+## Implementation plan and acceptance
+
+Each phase updates this document's final status, product documentation, and focused evidence before the next phase begins. No phase is considered usable until its end-to-end acceptance passes.
+
+| Phase | Changes | Required acceptance |
+|---|---|---|
+| A: durable references | Shared ingestion and session-owned originals; admission schema compatibility; activation/history conversion; Web and channel image callers | A valid 1 MiB image is saved and reaches a mocked provider once; new admission input has references and stays below 256 KiB. Restart, retry, missing/corrupt bytes, migration and unauthorized reference cases are covered. Existing small inline history still loads. |
+| B: reliable submission | Streaming upload, provisional ownership, correlated submission ID, persistent error and exact-snapshot acknowledgement handling | Real Web entry tests cover oversize, partial upload, lost ACK, reload, double submit, tab switch, edits during submission, upload reservation release, same-ID concurrent retries, independent different-ID submissions, and offline draft restoration beyond the unclaimed-upload grace period. No silent attachment loss or duplicate execution. Default Desktop accepts a real screenshot on the first send. |
+| C: delivery and lifecycle | Bounded image derivatives, truthful file state, model-switch behavior, retention/branch/export rules | Verify text-only versus vision requests, absent/denied fallback and later revocation, current/replayed image order, Unicode previews, total limits including dedup, transformed-image disclosure, branch/delete/move/export lifetime, and narrow-layout UI. |
+| Later: additional modalities | Native PDF adapters, scanned PDF extraction, audio/video | Separate provider-specific contracts, budgets and acceptance before advertising support. |
+
+Primary implementation boundaries: `chat.py`, `production_driver.py`, `dispatcher/types.py`, `dispatcher/loop_runner.py`, session location/serialization code, channel attachment normalization, composer attachment cache and submission code, command-error handling, and existing file-preview routes. Do not implement the size correction solely in the Web route: every canonical image caller shares the admission limit.
+
+Verification uses actual chat/intake boundaries plus a deterministic mocked provider, not only helper assertions. Existing starting suites are `tests/unit/attachments/`, `tests/unit/channels/test_channels_attachments.py`, and `tests/component/agent/test_production_driver.py`; Web checks include provisional-send and local-attachment-paths. Full Python/Web/Desktop gates follow the repository test policy. A final implementation requires independent specification and quality reviews, a clean commit, and default-App verification through `scripts/refresh-local-app.sh`. No remote write is implied.
+
+## Implementation status
+
+Existing and inspected: uploaded-file persistence, per-session dedup intent, markers with source/preview paths, bounded preview intent, image blocks, composer IndexedDB drafts, and file previews. Their limits and failure semantics do not yet satisfy the target contract.
+
+Reproduced: 100 KiB binary data encoded into a minimal image envelope passes admission; 200 KiB and 1 MiB fail the 256 KiB check. This is a local admission probe, not a provider or full upload test. The linked empty-chat incident independently records the same error category.
+
+Designed, not implemented: phases A, B, C, and the later modality extension. No runtime code, stored conversation, or installed App is changed by this design update. The [two-way attachment and preview document](chat-attachments.html) covers the display/output scope; this document owns inbound storage, admission, delivery, and lifecycle.

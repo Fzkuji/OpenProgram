@@ -1,178 +1,28 @@
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenProgram · 附件处理设计</title>
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>附件处理 · 设计审阅</title>
 <style>
-  :root{
-    --bg:#0f1117; --panel:#171a23; --panel2:#1d2130; --ink:#e7e9ee; --muted:#9aa3b2;
-    --line:#2a2f3d; --accent:#6ea8fe; --accent2:#8b9cf0;
-    --ok:#3ddc97; --okbg:#10241c; --warn:#ffce6b; --warnbg:#2a2310; --bad:#ff6b6b; --badbg:#2a1414;
-    --mono:'SF Mono',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-    font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
-    -webkit-font-smoothing:antialiased}
-  .wrap{max-width:1080px;margin:0 auto;padding:40px 28px 96px}
-  h1{font-size:30px;letter-spacing:.2px;margin:0 0 6px}
-  h2{font-size:21px;margin:46px 0 14px;padding-top:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
-  h2 .n{font:600 13px/1 var(--mono);color:#0f1117;background:var(--accent);border-radius:6px;padding:6px 8px}
-  h3{font-size:16px;margin:26px 0 10px;color:#cfd5e1}
-  p{margin:10px 0}
-  .sub{color:var(--muted);margin:0 0 4px}
-  code,.mono{font-family:var(--mono);font-size:.9em}
-  code{background:#0b0d13;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#d7def0}
-  .cite{color:var(--accent);font-family:var(--mono);font-size:.82em;white-space:nowrap}
-  a{color:var(--accent)}
-  .grid{display:grid;gap:14px}
-  .g3{grid-template-columns:repeat(3,1fr)}
-  .g2{grid-template-columns:repeat(2,1fr)}
-  @media(max-width:760px){.g3,.g2{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-  .card h4{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
-  .card .role{font-size:12.5px;color:var(--muted)}
-  .lead{background:linear-gradient(180deg,#191d2a,#141722);border:1px solid var(--line);
-    border-left:4px solid var(--accent);border-radius:12px;padding:18px 20px;margin:18px 0 4px}
-  .pill{display:inline-block;font:600 11px/1 var(--mono);padding:5px 8px;border-radius:999px;border:1px solid}
-  .p-ok{color:var(--ok);background:var(--okbg);border-color:#1f5c44}
-  .p-warn{color:var(--warn);background:var(--warnbg);border-color:#5c4a1f}
-  .p-bad{color:var(--bad);background:var(--badbg);border-color:#5c2424}
-  .p-mut{color:var(--muted);background:#141722;border-color:var(--line)}
-  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
-  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
-  th{background:var(--panel2);font-weight:600;color:#cfd5e1}
-  tr:nth-child(even) td{background:#13161f}
-  td.c,th.c{text-align:center;white-space:nowrap}
-  .stack{display:flex;flex-direction:column;gap:0;margin:14px 0}
-  .layer{position:relative;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 26px;background:var(--panel)}
-  .layer:last-child{margin-bottom:0}
-  .layer::after{content:"▼";position:absolute;left:50%;bottom:-23px;transform:translateX(-50%);color:#454c5e;font-size:14px}
-  .layer:last-child::after{content:""}
-  .layer .t{font:600 14px/1.3 var(--mono);color:#cfe0ff}
-  .layer .d{font-size:13px;color:var(--muted);margin-top:4px}
-  .layer.ok{border-color:#1f5c44}.layer.warn{border-color:#5c4a1f}.layer.bad{border-color:#5c2424}
-  pre{background:#0b0d13;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;
-    font-family:var(--mono);font-size:12.5px;line-height:1.55;color:#d7def0;margin:12px 0}
-  .banner{background:linear-gradient(180deg,#10241c,#0e1c17);border:1px solid #1f5c44;border-radius:12px;padding:16px 20px;margin:18px 0}
-  .banner .pill{margin-right:8px}
-  ul{margin:10px 0;padding-left:22px}li{margin:4px 0}
-  .tag{font:600 11px/1 var(--mono);padding:4px 7px;border-radius:6px;border:1px solid var(--line);background:#0b0d13;color:#9fb6e6}
-  .muted{color:var(--muted)}
-  .kbd{font-family:var(--mono);font-size:.85em;color:#cfe0ff}
-</style>
-</head>
-<body>
-<div class="wrap">
-
-  <h1>附件处理设计</h1>
-  <p class="sub">OpenProgram Web 聊天 · 综合 Claude Code / opencode / openclaw 三家做法 + 自身约束</p>
-
-  <div class="banner">
-    <div style="margin-bottom:8px">
-      <span class="pill p-ok">P0 已实现（本会话）</span>
-      <span class="pill p-warn">待浏览器验证 + 提交</span>
-      <span class="pill p-mut">基线 c29ef3dd</span>
-    </div>
-    <div class="muted" style="font-size:13.5px">
-      路径统一引用方案已提交于 <code>c29ef3dd</code>。本文是其演进：P0（首部预览 + 页/行数 + sha256 去重 + 32MB 超限保护）
-      已写完并通过后端单元测试；P1（provider 原生 document block）/ P2（远程渠道）为接缝/推迟项。
-    </div>
-  </div>
-
-  <div class="lead">
-    <strong>一句话原则</strong>：<em>materialize once to a path; deliver the best block the active model accepts plus a small head preview; let the agent page the rest with its bounded tools.</em><br>
-    <span class="muted" style="font-size:13.5px">附件字节最多落盘一次，用一个绝对路径标识；内容<strong>怎么</strong>到模型，每轮按 <code>(文件类型 × 模型声明的模态)</code> 重算，逐级降级。<strong>每个文件 prompt 成本 O(1)，与大小无关</strong>；同一次上传 codex 现在能用、换 Claude/Gemini 自动升级，前端零改动。</span>
-  </div>
-
-  <h2><span class="n">1</span> 三层判断</h2>
-  <div class="grid g3">
-    <div class="card"><h4>① 是不是图片？</h4><div class="role">是 → vision block（模型直接看像素）。图片永不落盘。</div></div>
-    <div class="card"><h4>② 有没有现成路径？</h4><div class="role">上传/远程＝没有 → 落盘到 workdir；<code>@</code>提及/打路径＝有 → 原地引用，零复制。</div></div>
-    <div class="card"><h4>③ 能力叠加层</h4><div class="role">只有模型声明支持 <code>document</code> 时，才把 PDF 升级成原生 document block（P1）。</div></div>
-  </div>
-
-  <h2><span class="n">2</span> 决策矩阵（权威）</h2>
-  <p class="sub">DELIVER 基于默认 <code>codex/gpt-5.5</code>（<code>model.input=["text","image"]</code>，无 document）。某行只有当模型声明对应模态时才翻转。</p>
-  <table>
-    <tr><th>来源</th><th>文件类型</th><th class="c">落盘</th><th>DELIVER（现在, codex/gpt-5.5）</th><th>READ 路径</th></tr>
-    <tr><td>upload</td><td>image</td><td class="c">否</td><td>ImageContent block（像素）</td><td>模型 vision 原生</td></tr>
-    <tr><td>upload</td><td>text/code</td><td class="c">是</td><td>[attachment:..@/abs] + ≤4KB 首部预览</td><td>read 2000行/200KB 分页</td></tr>
-    <tr><td>upload</td><td>pdf</td><td class="c">是</td><td>[attachment:..(P页)@/abs] + 第1页+大纲</td><td>pdf 80KB/页窗口</td></tr>
-    <tr><td>upload</td><td>其它二进制</td><td class="c">是</td><td>[attachment:..@/abs] 仅提及</td><td>bash file/strings/xxd</td></tr>
-    <tr><td>@-mention</td><td>image</td><td class="c">否</td><td>ImageContent block</td><td>模型 vision 原生</td></tr>
-    <tr><td>@-mention</td><td>text/pdf</td><td class="c">否</td><td>[attachment:..@/abs] + 首部（file-resolve）</td><td>read/pdf 分页</td></tr>
-    <tr><td>打路径</td><td>任意</td><td class="c">＝@</td><td colspan="2" class="muted">file-resolve 把裸路径按对应类型同等处理</td></tr>
-    <tr><td>远程渠道</td><td>image</td><td class="c">是</td><td>ImageContent（从落盘字节重读）</td><td>模型 vision 原生</td></tr>
-    <tr><td>远程渠道</td><td>text/pdf</td><td class="c">是</td><td>[attachment:..@/abs] + 首部预览</td><td>read/pdf 分页</td></tr>
-  </table>
-  <p class="sub"><strong>轴的纪律</strong>：<code>来源</code>轴只决定字节<strong>落在哪</strong>；<code>(文件类型 × 能力)</code> 是<strong>唯一</strong>决定 DELIVER 的东西。</p>
-
-  <h2><span class="n">3</span> 能力自适应：降级链</h2>
-  <p class="sub">一个纯函数 <code>choose_delivery(类型, 大小, 模型)</code> 就是全部决策；每一级降级都保持同一个稳定身份——落盘的绝对路径。</p>
-  <div class="stack">
-    <div class="layer ok"><div class="t">native_image / native_document</div><div class="d">模型声明支持 → 原生 content block（图片像素 / 整 PDF base64）。document 需 size ≤ 10MB 且 provider 页数上限。</div></div>
-    <div class="layer warn"><div class="t">path_preview</div><div class="d">不支持 document 或超 10MB → 落盘 + 路径提及 + ≤4KB 首部预览（首轮一次）。<strong>codex/gpt-5.5 的 PDF 走这级。</strong></div></div>
-    <div class="layer"><div class="t">path_only</div><div class="d">二进制无安全文本 → 仅路径提及，agent 用 bash 读。</div></div>
-  </div>
-  <p class="sub">误判永远是<strong>安全</strong>的：落到工具抽取，不会丢数据。<code>"document"</code> 暂当 “pdf-capable” 处理，docx/xlsx 一律 path_preview/path_only。</p>
-
-  <h2><span class="n">4</span> 大文件保证：O(1) prompt 成本</h2>
-  <div class="lead">后端塞进 prompt 的<strong>只可能</strong>是：(a) 一个 image block，(b) ≤4KB 首部预览（仅首轮），(c) 一条约 90 字节路径提及，或 (d) 受“模型能力 + size≤10MB”双门控的原生 doc block。其它一切只通过 agent 自己的<strong>有界分页工具</strong>逐页进上下文。</div>
-  <p>十个 30MB PDF 一起拖：那一轮约 <code>10×(90B + 4KB) ≈ 41KB</code>，之后为零——<strong>与大小无关</strong>。500 页 PDF 在 codex 上：落盘一次，提及带 “500 pages”，预览＝第1页 + 每页首行大纲（截到 ~50 条后 “…(450 more pages)”），8MB 本体永不进上下文；agent 靠大纲 <code>pdf(offset=N, limit=20)</code> 直接跳页。</p>
-  <p class="sub">实测上限（源码核验）：<code>pdf</code> 80KB 字符/次按页分页；<code>read</code> 2000 行/次、结果上限 200KB；<code>file_search</code> 的 256KB 只喂预览、永不喂交付。</p>
-
-  <h2><span class="n">5</span> 这轮挖出的 bug</h2>
-  <div class="grid g3">
-    <div class="card"><h4><span class="pill p-ok">已修</span> dedup 双拷</h4><div class="role">重拖同一文件 → 旧 <code>-N</code> 循环无字节比较 → 多存一份。修法：sha256 会话内去重（<code>.opdedup.json</code>，复用前校验）。</div></div>
-    <div class="card"><h4><span class="pill p-warn">归 P1</span> 图片静默丢弃</h4><div class="role">本以为是 bug；实查 <code>validate_input_modalities</code> 在 HTTP 前会 <em>raise</em>，不是静默。属优雅降级增强（存盘 + image_analyze 提示），不咬默认模型。</div></div>
-    <div class="card"><h4><span class="pill p-mut">伪问题</span> symlink 逃逸</h4><div class="role">两个 proposer 担心根内符号链接指向根外——<code>.resolve()</code> 已解析符号链接、<code>is_relative_to</code> 已拒。现有代码无此洞。</div></div>
-  </div>
-
-  <h2><span class="n">6</span> 存储 / 去重 / 安全</h2>
-  <div class="grid g2">
-    <div class="card"><h4>落盘位置</h4><div class="role">per-session <code>workdir/attachments/</code>——就是 agent 的 cwd、每轮 git 提交、可重放。比 openclaw 全局 + TTL 更适合 agentic。只有无路径来源（上传/远程）落盘；<code>@</code>/打路径原地引用零复制。</div></div>
-    <div class="card"><h4>命名 + 去重</h4><div class="role"><code>_safe_attach_name</code>：basename + 非安全字符替 <code>_</code> + 120 上限，人类可读。sha256 仅作会话内去重索引，不做文件名。不同字节同名 → <code>-N</code>。</div></div>
-    <div class="card"><h4>超限</h4><div class="role">硬上限 32MB/文件、64MB/轮，落盘前检查；超限不存、提及改 “too large — not stored”，<strong>告诉模型</strong>，不给死路径。前端 25→32MB 对齐，超限不再静默丢、显示错误 chip。</div></div>
-    <div class="card"><h4>逃逸 + GC</h4><div class="role">上传/远程无源路径（沙箱）+ basename 清洗 → 结构上无法逃逸；<code>@</code>/打路径走 file-resolve 的 <code>resolve()+is_relative_to</code> → 越界 400。GC 会话级懒回收（删会话 = rm -rf workdir）。</div></div>
-  </div>
-
-  <h2><span class="n">7</span> 显示层</h2>
-  <ul>
-    <li><strong>chip + scope 徽章</strong>：解析 <code>[attachment: name (type, KB[, P pages|L lines]) @ /abs]</code>，徽章显示 “500 pages” / “200K lines”；<code>@/abs</code> 显示时剥掉。</li>
-    <li><strong>剥首部预览</strong>：<code>&lt;attachment-preview&gt;</code> 片段是给模型的，气泡里整块剥掉——用户看到 chip，不是 4KB 首部。在扫提及<em>之前</em>剥，防止预览里的文件内容生成假 chip。</li>
-    <li><strong>乐观气泡时序</strong>：前端永远不知道落盘后的绝对路径（后端追加），所以乐观 chip 用客户端数据渲染、对账键 = 客户端 sha8；提及对“无路径（在途）/有路径（改写后）”两形式都渲染同一个 chip。</li>
-    <li><strong>预览弹窗</strong>：本地完整解码、永不发送——人滚完整文件，模型只看 4KB 首部。</li>
-    <li><strong>侧边栏标题</strong>：<code>_title_from_text</code> 在 50 字截断前剥提及 + 预览块，防止截断的长路径泄漏。</li>
-  </ul>
-
-  <h2><span class="n">8</span> 分阶段计划</h2>
-  <div class="grid g3">
-    <div class="card">
-      <h4><span class="pill p-ok">P0</span> 现在（codex 端到端）</h4>
-      <div class="role">
-        <code>_persist</code>：32MB 上限 + “too large”；sha256 去重；页/行数注入括号组；一次性 <code>&lt;attachment-preview&gt;</code>（≤4KB 首部，二进制无预览）。<br>
-        前端：scope 徽章 + 剥预览 + 超限诚实 chip + 25→32MB 对齐。<br>
-        <code>_title_from_text</code> 扩剥预览。
-        <div style="margin-top:8px"><span class="tag">价值</span> 中小文档免费首部预览；大文件 O(1)；超限被告知；去重修双拷。</div>
-      </div>
-    </div>
-    <div class="card">
-      <h4><span class="pill p-warn">P1</span> 推迟（需 doc-capable 模型）</h4>
-      <div class="role">各 provider 原生 document block 构建器（Anthropic document / Gemini inline_data）+ <code>NATIVE_DOC_INLINE_CAP</code> 守卫；<code>chat.py:307</code> 的“进 dispatcher 前剥文档”按能力条件化；<code>types.py</code> + <code>validate_modalities</code> 加 <code>"document"</code>。接缝在 P0 就位，到时零前端改动。</div>
-    </div>
-    <div class="card">
-      <h4><span class="pill p-mut">P2</span> 推迟（需远程渠道）</h4>
-      <div class="role">openclaw 式入站 staging + 2 分钟 TTL + claim-check + <code>media://</code> + discord/wechat 适配器，把入站字节接进同一 <code>_persist</code>。保存+提及+预览的表示已能容纳“只有字节”的来源。</div>
-    </div>
-  </div>
-
-  <h2><span class="n">9</span> 待定（不阻塞 P0）</h2>
-  <p>两个可调常量，都有默认、都是单一旋钮：<code>PREVIEW_CAP=4KB</code>、<code>MAX_ATTACH_BYTES=32MB</code>。唯一长期产品问题：大二进制永久累积在 per-session git 历史（“workdir = 自包含已提交状态”不变式的代价）是否可接受——现在有意保留这个不变式，不是 P0 待决项。</p>
-
-  <p class="sub" style="margin-top:40px">完整 markdown 版：<code>docs/design/attachment-handling.md</code> · 报错超时设计：<code>docs/design/error-and-timeout-mechanism.html</code></p>
-
-</div>
-</body>
-</html>
+:root{color-scheme:light dark;--bg:#f8f9fb;--panel:#fff;--fg:#202632;--muted:#5a6577;--line:#d9dfe9;--accent:#245eb8;--warm:#99531b;--soft:#eef3fc}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif}a{color:var(--accent);text-underline-offset:3px}main{max-width:1120px;margin:auto;padding:44px 28px 80px}header{max-width:850px}h1{font-size:clamp(28px,4vw,42px);line-height:1.25;margin:10px 0 20px;font-weight:650}h2{font-size:23px;margin:0 0 18px}h3{font-size:17px;margin:0 0 9px}p{margin:9px 0 16px}.eyebrow{font-size:12px;letter-spacing:.1em;color:var(--muted)}.status{display:inline-block;padding:4px 10px;border:1px solid var(--line);border-radius:5px;color:var(--warm);font-size:13px}.lead{font-size:18px;line-height:1.65}.muted,small{color:var(--muted)}nav{position:sticky;top:0;background:var(--bg);padding:13px 0;display:flex;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line);z-index:2}nav a{text-decoration:none;font-size:14px}section{padding-top:38px;scroll-margin-top:90px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.card,.simulation{padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:9px}.value{font-size:28px;line-height:1.3;color:var(--accent);font-variant-numeric:tabular-nums}.card p{font-size:14px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:13px 15px;border-bottom:1px solid var(--line)}th{background:var(--soft);font-weight:600}tr:last-child td{border-bottom:0}code{font:12px/1.6 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere;background:var(--soft);border-radius:3px;padding:2px 4px}.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;list-style:none;padding:0;counter-reset:step}.flow li{border-top:3px solid var(--accent);padding:15px;background:var(--panel);counter-increment:step}.flow li:before{content:counter(step);display:block;color:var(--accent);font-size:24px}.flow strong{display:block;margin:6px 0}.flow span{font-size:14px;color:var(--muted)}.control{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:18px 0}select{padding:8px;font:inherit;max-width:100%;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:4px}.result{padding:16px;border-left:3px solid var(--accent);background:var(--soft);margin:14px 0}.result p:last-child{margin-bottom:0}.state-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.state{padding:16px;border:1px solid var(--line);border-radius:7px}.state h3{color:var(--accent)}.state small{display:block}ul{padding-left:23px}li{margin:7px 0}details{border-top:1px solid var(--line);padding:15px 0}summary{cursor:pointer;font-weight:600}summary:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.note{border-left:3px solid var(--warm);padding:4px 0 4px 16px;margin:24px 0}footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}@media(prefers-color-scheme:dark){:root{--bg:#181b20;--panel:#20242b;--fg:#e3e8ef;--muted:#aeb8c7;--line:#3c4553;--accent:#8ab8ff;--warm:#e9b17c;--soft:#253248}}@media(max-width:720px){main{padding:25px 17px 50px}.grid,.state-grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}nav{gap:9px 18px}th,td{padding:10px;font-size:13px}section{scroll-margin-top:120px}.lead{font-size:16px}}@media(max-width:410px){.flow{grid-template-columns:1fr}nav{position:static}}@media print{nav,.simulation{display:none}main{max-width:none}.card,.state{break-inside:avoid}body{background:#fff;color:#111}a{color:inherit}}
+</style></head><body><main>
+<header><div class="eyebrow">OPENPROGRAM / ATTACHMENTS</div><h1>可靠地保存附件，<br>明确地交付给模型</h1><span class="status">设计完成后进入实施 · 当前未修改运行代码</span><p class="lead">图片已经保存到磁盘，却仍以完整 base64 进入 256 KiB 的执行输入。修复需要同时处理持久引用、大小预算和提交确认，保留现有文件预览与按需读取能力。</p><p class="muted">面向实现与评审。本文是现有设计的审阅视图；完整契约以 <a href="attachment-handling.md">英文正文</a>为准，并有 <a href="attachment-handling.zh.md">中文对照</a>。音视频、OCR 和原生 PDF 属于后续扩展。</p></header>
+<nav aria-label="内容导航"><a href="#evidence">当前问题</a><a href="#references">框架对比</a><a href="#design">目标流程</a><a href="#budgets">预算</a><a href="#recovery">失败恢复</a><a href="#plan">实施与验收</a></nav>
+<section id="evidence"><h2>当前问题有三个相互关联的部分</h2><div class="grid"><article class="card"><div class="value">5 MiB</div><h3>前端允许的图片大小</h3><p>192 像素缩略图只用于界面，发送的仍是完整图片 base64；界面允许添加不等于后端能接收。</p></article><article class="card"><div class="value">256 KiB</div><h3>整个执行输入的上限</h3><p>文字、规则、元数据和图片 base64 共同计量。执行准入失败发生在用户消息写入之前。</p></article><article class="card"><div class="value">WebSocket.send</div><h3>清空输入发生得过早</h3><p>发出即清空文字和附件，尚未等到持久保存确认。错误只有短暂提示，重新打开可能只剩标题。</p></article></div><p class="note">本地最小准入探针：100 KiB 二进制内容通过；200 KiB 和 1 MiB 被拒绝。该探针不验证图片格式，也不调用 Provider。实际空白会话另有同类错误日志，原请求各字段大小未保留。</p></section>
+<section id="references"><h2>采用各框架的具体机制，不合并不同接口的承诺</h2><div class="table-wrap"><table><thead><tr><th>官方范围</th><th>核实结果</th><th>采用／保留边界</th></tr></thead><tbody>
+<tr><td><a href="https://learn.chatgpt.com/docs/app-server">Codex app-server</a><br><a href="https://github.com/openai/codex/blob/main/codex-rs/attachment-store/src/lib.rs">attachment-store 源码</a></td><td>区分图片与本地图片输入；保存接口返回引用，也保留 inline 实现。</td><td>借鉴身份与编码分离。不能声称 Codex 全部不内联；不推断私有桌面实现。</td></tr>
+<tr><td><a href="https://opencode.ai/v2/docs/attachments">OpenCode V2</a></td><td>准入前校验；单项解码预算与图片尺寸／编码预算分离。</td><td>采用预算分层和图片派生；该 prompt 附件接口的 PDF 限制不用于削减 OpenProgram 的 PDF 工具支持。</td></tr>
+<tr><td><a href="https://docs.openclaw.ai/nodes/media-understanding">OpenClaw 媒体理解</a><br><a href="https://github.com/openclaw/openclaw/blob/main/src/gateway/managed-image-attachments.ts">受管理图片源码</a></td><td>受管理媒体引用；处理结果明确；外部文档内容有来源边界。</td><td>采用结果状态和可访问性检查。暂存期限不能用于已提交历史。</td></tr>
+<tr><td><a href="https://code.claude.com/docs/en/common-workflows">Claude Code 工作流</a></td><td>粘贴、拖入、图片路径与文件引用。</td><td>保留输入方式；此资料不是完整存储架构证据。</td></tr>
+</tbody></table></div><p class="muted">基于公开资料和当前源码核对。OpenCode V2、Codex app-server、OpenClaw Gateway 分别保留接口范围，不将“支持附件”当作相同能力。</p></section>
+<section id="design"><h2>一个会话附件存储，四个明确的阶段</h2><ol class="flow"><li><strong>上传和校验</strong><span>先检查归属、数量、编码和字节；不在聊天 WebSocket 中重复传完整文件。</span></li><li><strong>保存不可变原件</strong><span>会话目录保存原件与摘要；工具可读副本不承担历史身份。</span></li><li><strong>提交有序引用</strong><span>执行输入只含文字、引用和配置；仍受 256 KiB 限制。</span></li><li><strong>按模型构造内容</strong><span>读取图片表示或有界预览；记录模型实际收到什么。</span></li></ol><p>引用包含附件 ID、所属会话、摘要、实际字节数、检测 MIME 和文件名。原始 Desktop 路径保留为来源，客户端不能用路径字符串创建读取权限。旧路径标记与旧 inline 历史继续可读。</p><details><summary>为什么不直接增大上限或把图片压到 192 KiB？</summary><p>提高上限保留了重复序列化和庞大执行输入，也没有修复草稿恢复。压到约 192 KiB 仍需预留元数据空间，并可能使截图文字不可读。图片压缩服从 Provider 预算；执行输入通过引用控制大小。仅记录 Desktop 原始路径也不能保证文件被编辑或删除后的回放。</p></details><details><summary>为什么不直接使用现有 execution state-blob store？</summary><p>它要求已存在的 execution／attempt 所有权，而附件上传先于执行、又可能跨多次 attempt。复用摘要校验约定，不放宽它的所有权契约；不新增远程对象存储或多后端框架。</p></details><details><summary>重放、分支、迁移和回收的约束</summary><p>原件由引用 ID 和摘要标识；工具副本在按引用读取前校验，被修改则保留修改并从原件创建新副本。附件预览通过鉴权的附件 content 接口读原件，不依赖可变 file-raw 路径。历史、排队工作、checkpoint 和授权分支仍引用时保留；Archive 不删除。fork／attach／merge 复制字节并建立目标会话归属，导出／导入携带 manifest 和内容，项目迁移按会话位置索引解析。服务端持久草稿 claim 也属于保留依据；关闭浏览器不释放，明确移除或成功转为历史归属才释放对应 claim。只有无引用且经过宽限期的暂存数据能回收，不能删除共享项目目录来回收单会话附件。</p></details></section>
+<section id="budgets"><h2>文件大小、执行输入和模型成本分别计量</h2><div class="simulation"><h3>查看同一附件在两个方案中的请求大小</h3><p class="muted">仅说明编码与引用的大小关系；不运行上传或模型调用。引用大小按 1 KiB 示例计算。</p><div class="control"><label for="size">单图片原始大小</label><select id="size"><option value="102400">100 KiB</option><option value="204800" selected>200 KiB</option><option value="1048576">1 MiB</option><option value="5242880">5 MiB</option></select></div><div class="result" id="size-result" aria-live="polite"></div><small>base64 = 4 × ceil(原始字节 ÷ 3)。真实执行输入还包含文字、权限规则与其他元数据。引用方案仍需单独通过上传和 Provider 预算。</small></div><div class="table-wrap" style="margin-top:20px"><table><thead><tr><th>对象</th><th>建议默认值</th><th>关键约束</th></tr></thead><tbody><tr><td>文件与批次</td><td>32 MiB／文件，64 MiB／轮，16 项</td><td>解码字节计量；去重命中仍计入总量。</td></tr><tr><td>执行输入</td><td>256 KiB</td><td>仅文字、规则、元数据和引用；不直接放媒体内容。</td></tr><tr><td>图片派生表示</td><td>最长边 2000 px，base64 ≤5 MiB</td><td>遵从 Provider 限制，另限解码像素／帧数及资源；原件保留，转换可见。</td></tr><tr><td>文字预览</td><td>4096 UTF-8 字节／项，32 KiB／轮</td><td>计入包装与截断提示；另限提取页数和时间。</td></tr></tbody></table></div><p class="note">这些数值是待实现验收的产品方案。图片／PDF 的 token 成本不是 O(1)，历史预览也不保证后续成本为零。十个 30 MiB PDF 会超过总量，不应作为可成功上传的示例。</p></section>
+<section id="recovery"><h2>用户能看见结果，也能恢复输入</h2><div class="state-grid"><div class="state"><h3>上传中</h3><p>report.pdf · 60%</p><small>草稿保留；此状态不代表已创建执行。以下为状态示意，不是操作按钮。</small></div><div class="state"><h3>提交结果未知</h3><p>连接中断，正在核对提交结果。</p><small>同 ID 的重试只执行一次；不同 ID 是独立提交，不按文字内容自动合并。</small></div><div class="state"><h3>明确拒绝</h3><p>附件总量超过 64 MiB。</p><small>文字和其他附件保留；可移除、替换或重试。</small></div></div><p><code>PUT /api/session/{sid}/attachments/{upload_id}</code> 接收单个上传；<code>chat</code> 携带提交 ID；<code>GET /api/session/{sid}/submissions/{submission_id}</code> 返回 not_found、pending、accepted、rejected 或 conflict。查询必须鉴权并检查会话读取权限，ID 本身不授予访问。这些是拟新增／扩展的公共契约，不是现有 API。</p><p>上传预留按用户、会话和 upload_id 计量，中断／取消／校验失败释放；每轮大小独立按全部选中引用计量，含去重命中。详细并发规则见正文。</p><p>收到确认后，只清除对应提交快照；等待期间新增的文字和附件保留。SQLite 执行记录与 Git 用户消息不是同一事务，准入成功但消息保存失败也必须有可核对的结果。</p><div class="control"><label for="delivery">检查模型交付方式</label><select id="delivery"><option value="vision">图片＋视觉模型</option><option value="text">图片＋纯文字模型</option><option value="pdf">PDF＋分页读取工具</option><option value="error">附件不可读取</option></select></div><div class="result" id="delivery-result" aria-live="polite"></div></section>
+<section id="plan"><h2>实施顺序和完成条件</h2><div class="table-wrap"><table><thead><tr><th>阶段</th><th>修改边界</th><th>完成条件</th></tr></thead><tbody><tr><td>A · 持久引用</td><td>统一入站、不可变原件、准入 schema、激活及历史转换、Web／Channel 调用方。</td><td>真实有效的 1 MiB 图片到达 mock Provider；执行输入不含 base64；重启、旧历史、越权和损坏引用有覆盖。</td></tr><tr><td>B · 可靠提交</td><td>流式上传、临时聊天归属、提交 ID、持久错误、精确 ACK 清理。</td><td>上传中断、丢 ACK、重载、重复点击、切换聊天均不丢附件、不重复执行；默认 App 首次发送截图成功。</td></tr><tr><td>C · 交付与生命周期</td><td>图片派生、模态检查、真实状态、分支／保留／迁移／导出。</td><td>模型切换、图片顺序、Unicode 字节上限、去重总量和窄屏状态均符合契约。</td></tr><tr><td>后续模态</td><td>原生 PDF、扫描 PDF、OCR、音视频。</td><td>独立 Provider 契约与预算通过验收，才声明支持。</td></tr></tbody></table></div><details><summary>代码与验证定位</summary><p>共享边界为 <code>production_driver.py</code> 和 <code>TurnRequest</code>；Web 入站为 <code>ws_actions/chat.py</code>；模型图片转换为 <code>dispatcher/loop_runner.py</code>；输入保留涉及附件缓存、提交与命令错误处理。仅修改 Web handler 无法修复其他入口。</p><p>从 <code>tests/unit/attachments/</code>、Channel 附件测试、production-driver 组件测试及 Web provisional-send／local-attachment-paths 检查开始，增加真实入口与确定性 mock Provider 验收，再执行仓库完整检查。正式实现需独立规格／质量审查，提交后通过默认 App 刷新脚本验收。</p></details></section>
+<section id="status"><h2>实现状态</h2><p><strong>已检查：</strong>当前源码、附件相关设计、官方资料和准入大小复现。现有保存、标记、去重、预览和草稿缓存可复用。</p><p><strong>未实现：</strong>A、B、C 及后续模态扩展。本文不表示任何运行修复已发布，不修改已存聊天或安装的 App。</p><p><a href="chat-attachments.html">双向附件与预览</a>负责显示和输出范围；<a href="composer-local-attachment-paths.html">本地路径来源</a>继续保留。入站存储、执行准入和生命周期以本设计正文为准。</p></section>
+<footer>OpenProgram 工程设计 · 当前契约与待实现状态分离。原始文件与提取文字均按外部数据处理，文件工具权限不因附件路径而扩大。</footer>
+</main><script>
+const size=document.getElementById('size');const sizeResult=document.getElementById('size-result');
+function updateSize(){const bytes=Number(size.value);const encoded=4*Math.ceil(bytes/3);sizeResult.textContent='当前方案：仅 base64 已占 '+(encoded/1024).toFixed(1)+' KiB，'+(encoded>262144?'超过 256 KiB 限制。':'尚未超限，但还需加上文字与元数据。')+' 目标方案：此附件引用示例占 1 KiB；文件内容按独立预算检查。'}
+const delivery=document.getElementById('delivery');const deliveryResult=document.getElementById('delivery-result');
+const descriptions={vision:'图片已包含：Provider 获得校验后的原件或派生图片。界面可显示转换尺寸和原件入口。',text:'图片未包含在模型输入中。只有已启用且授权的图像工具可读时才接受回退；否则拒绝提交并保留草稿。接收后撤权则明确结束执行，不继续丢图回答。',pdf:'已包含有界预览，其余页面可按需读取。没有可提取文字时如实显示；不声称模型已阅读整份 PDF。',error:'提交未接受：保留文字和附件，显示缺失、损坏、无权限或超限的具体原因。'};
+function updateDelivery(){deliveryResult.textContent=descriptions[delivery.value]}
+size.addEventListener('change',updateSize);delivery.addEventListener('change',updateDelivery);updateSize();updateDelivery();
+</script></body></html>
