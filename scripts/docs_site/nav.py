@@ -329,7 +329,6 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ]),
         ("UI · Chat and composer", "界面 · 对话与编辑器", [
             "reference/design/ui/attachment-handling.html",
-            "reference/design/ui/attachment-handling.md",
             "reference/design/ui/chat-attachments.html",
             "reference/design/ui/chat-turn-visual-spec.html",
             "reference/design/ui/composer-interaction-modes.md",
@@ -493,8 +492,7 @@ PAGE_ORDER: dict[str, int] = {
     # Chat attachments: the delivery note first, its rendered companion
     # next, then the four-layer note on how attachments look and behave
     # inside the chat itself.
-    "reference/design/ui/attachment-handling.md": 1019,
-    "reference/design/ui/attachment-handling.html": 1020,
+    "reference/design/ui/attachment-handling.html": 1019,
     "reference/design/ui/chat-attachments.html": 1021,
     "reference/design/ui/file-type-icons.html": 1022,
     # The three whole-framework pages sit together at the end of the design

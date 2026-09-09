@@ -1,178 +1,209 @@
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OpenProgram · 附件处理设计</title>
-<style>
-  :root{
-    --bg:#0f1117; --panel:#171a23; --panel2:#1d2130; --ink:#e7e9ee; --muted:#9aa3b2;
-    --line:#2a2f3d; --accent:#6ea8fe; --accent2:#8b9cf0;
-    --ok:#3ddc97; --okbg:#10241c; --warn:#ffce6b; --warnbg:#2a2310; --bad:#ff6b6b; --badbg:#2a1414;
-    --mono:'SF Mono',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-    font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
-    -webkit-font-smoothing:antialiased}
-  .wrap{max-width:1080px;margin:0 auto;padding:40px 28px 96px}
-  h1{font-size:30px;letter-spacing:.2px;margin:0 0 6px}
-  h2{font-size:21px;margin:46px 0 14px;padding-top:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
-  h2 .n{font:600 13px/1 var(--mono);color:#0f1117;background:var(--accent);border-radius:6px;padding:6px 8px}
-  h3{font-size:16px;margin:26px 0 10px;color:#cfd5e1}
-  p{margin:10px 0}
-  .sub{color:var(--muted);margin:0 0 4px}
-  code,.mono{font-family:var(--mono);font-size:.9em}
-  code{background:#0b0d13;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#d7def0}
-  .cite{color:var(--accent);font-family:var(--mono);font-size:.82em;white-space:nowrap}
-  a{color:var(--accent)}
-  .grid{display:grid;gap:14px}
-  .g3{grid-template-columns:repeat(3,1fr)}
-  .g2{grid-template-columns:repeat(2,1fr)}
-  @media(max-width:760px){.g3,.g2{grid-template-columns:1fr}}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-  .card h4{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
-  .card .role{font-size:12.5px;color:var(--muted)}
-  .lead{background:linear-gradient(180deg,#191d2a,#141722);border:1px solid var(--line);
-    border-left:4px solid var(--accent);border-radius:12px;padding:18px 20px;margin:18px 0 4px}
-  .pill{display:inline-block;font:600 11px/1 var(--mono);padding:5px 8px;border-radius:999px;border:1px solid}
-  .p-ok{color:var(--ok);background:var(--okbg);border-color:#1f5c44}
-  .p-warn{color:var(--warn);background:var(--warnbg);border-color:#5c4a1f}
-  .p-bad{color:var(--bad);background:var(--badbg);border-color:#5c2424}
-  .p-mut{color:var(--muted);background:#141722;border-color:var(--line)}
-  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
-  th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
-  th{background:var(--panel2);font-weight:600;color:#cfd5e1}
-  tr:nth-child(even) td{background:#13161f}
-  td.c,th.c{text-align:center;white-space:nowrap}
-  .stack{display:flex;flex-direction:column;gap:0;margin:14px 0}
-  .layer{position:relative;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 26px;background:var(--panel)}
-  .layer:last-child{margin-bottom:0}
-  .layer::after{content:"▼";position:absolute;left:50%;bottom:-23px;transform:translateX(-50%);color:#454c5e;font-size:14px}
-  .layer:last-child::after{content:""}
-  .layer .t{font:600 14px/1.3 var(--mono);color:#cfe0ff}
-  .layer .d{font-size:13px;color:var(--muted);margin-top:4px}
-  .layer.ok{border-color:#1f5c44}.layer.warn{border-color:#5c4a1f}.layer.bad{border-color:#5c2424}
-  pre{background:#0b0d13;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;
-    font-family:var(--mono);font-size:12.5px;line-height:1.55;color:#d7def0;margin:12px 0}
-  .banner{background:linear-gradient(180deg,#10241c,#0e1c17);border:1px solid #1f5c44;border-radius:12px;padding:16px 20px;margin:18px 0}
-  .banner .pill{margin-right:8px}
-  ul{margin:10px 0;padding-left:22px}li{margin:4px 0}
-  .tag{font:600 11px/1 var(--mono);padding:4px 7px;border-radius:6px;border:1px solid var(--line);background:#0b0d13;color:#9fb6e6}
-  .muted{color:var(--muted)}
-  .kbd{font-family:var(--mono);font-size:.85em;color:#cfe0ff}
-</style>
-</head>
-<body>
-<div class="wrap">
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Five attachment features and selected options</title><style>
+:root{color-scheme:light dark;--bg:#f6f7f9;--panel:#fff;--text:#202531;--muted:#5c6472;--line:#dce0e8;--blue:#285bbb;--soft:#edf3ff;--green:#226b51;--warm:#8a5520;--ui:#202124;--uifg:#efeff3;--uimut:#b9bac4}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,-apple-system,'PingFang SC',sans-serif}main{max-width:1440px;margin:auto;padding:42px 28px 70px}h1{font-size:clamp(28px,3.8vw,43px);line-height:1.25;max-width:920px;margin:12px 0 18px}h2{font-size:26px;margin:0}h3{font-size:17px;line-height:1.5;margin:12px 0}p{margin:8px 0 14px}a{color:var(--blue);text-underline-offset:3px}button,textarea,input{font:inherit}button{cursor:pointer;background:var(--blue);color:white;border:0;border-radius:6px;padding:11px 18px}a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--blue);outline-offset:4px}.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}.intro{max-width:950px;font-size:17px}.notice{padding:14px 18px;background:var(--soft);border-radius:8px;max-width:1050px}.small,small{font-size:13px;color:var(--muted)}.nav{display:flex;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:5;padding:14px 0;background:var(--bg);border-bottom:1px solid var(--line);margin-top:24px}.nav a{text-decoration:none;padding:5px 10px;border:1px solid var(--line);border-radius:5px;background:var(--panel);font-size:13px}section{padding-top:38px;scroll-margin-top:120px}.case-head{display:flex;align-items:baseline;gap:14px}.number{color:var(--blue);font-size:25px;font-weight:650}.question{color:var(--muted);margin:8px 0 20px}.comparison{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:0;padding:0;border:0;min-width:0}.variant{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:18px;display:flex;flex-direction:column}.variant.selected{border-color:var(--blue);box-shadow:inset 0 3px var(--blue)}.variant.current{background:color-mix(in srgb,var(--panel) 85%,var(--bg))}.badges{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-height:28px}.badge{font-size:12px;padding:3px 8px;border-radius:4px;background:var(--soft);color:var(--blue)}.current .badge{background:var(--bg);color:var(--muted)}.recommended{color:var(--green);background:color-mix(in srgb,var(--green) 9%,var(--panel))}.mock{background:var(--ui);color:var(--uifg);border-radius:8px;overflow:hidden;margin:4px 0 14px}.mock-top{padding:9px 13px;background:#18191c;display:flex;justify-content:space-between;font-size:11px;color:var(--uimut)}.mock-body{padding:14px}.caption{font-size:11px;color:var(--uimut);margin-bottom:8px}.composer{background:#2c2d33;border:1px solid #45464e;border-radius:8px;padding:12px}.attachment{display:flex;align-items:center;gap:10px;min-height:49px;font-size:12px;overflow-wrap:anywhere}.file-icon{width:34px;height:42px;flex:none;border:1px solid #797d8d;border-radius:4px;display:grid;place-items:center;color:#c9d7fa;font-size:10px}.folder-icon{height:29px;width:36px;background:#535a6c;border-radius:3px;position:relative}.folder-icon:before{content:'';position:absolute;left:0;top:-6px;width:16px;height:8px;background:#535a6c;border-radius:3px}.screenshot{width:65px;height:48px;flex:none;background:#f3f4f7;border-radius:3px;padding:5px}.screenshot:before{content:'';display:block;height:5px;background:#7986a1;margin-bottom:5px}.screen-error{height:11px;background:#f0c9c9;margin-bottom:4px}.screen-line{height:3px;background:#bbc3d1;width:85%;margin:3px 0}.prompt{font-size:12px;margin:12px 0 4px}.send-row{text-align:right}.send-symbol{display:inline-grid;place-items:center;border-radius:50%;width:24px;height:24px;background:#626d84;color:#fff;font-size:15px}.after{padding:13px 0 2px}.outcome{font-size:12px;border-left:2px solid #8baeff;padding-left:10px;min-height:42px}.excerpt{font:11px/1.6 ui-monospace,monospace;white-space:pre-wrap;background:#17191e;padding:8px;border-radius:4px;color:#c4d6f9;margin:9px 0 0}.later{font-size:12px;color:var(--uimut);border-top:1px solid #444650;padding-top:9px;margin-top:12px}.difference{font-size:14px;flex-grow:1}.source{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:11px;min-height:65px}.choose{display:flex;align-items:flex-start;gap:9px;padding:12px 10px;background:var(--soft);border-radius:5px;cursor:pointer;font-size:13px;margin-top:12px}.choose input{accent-color:var(--blue);margin-top:5px}.current-note{font-size:12px;color:var(--muted);padding:12px 0;margin-top:12px}.recommendation{padding:12px 16px;border-left:3px solid var(--green);margin:14px 0 0;background:var(--panel);font-size:14px}.shared{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.shared article{padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:7px}.shared h3{margin:0 0 6px}.summary-box{padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:9px}textarea{width:100%;min-height:230px;padding:14px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;resize:vertical;margin-top:15px}details{padding:15px 0;border-top:1px solid var(--line)}summary{cursor:pointer;font-weight:600}details p{max-width:1000px}code{font:12px ui-monospace,monospace;overflow-wrap:anywhere}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px;margin-top:28px}[hidden]{display:none!important}@media(prefers-color-scheme:dark){:root{--bg:#181b21;--panel:#232730;--text:#e9ecf3;--muted:#b5bdca;--line:#414a5b;--blue:#a4c2ff;--soft:#2b374c;--green:#91d2b2;--warm:#e6b77f}button{background:#335da1}}@media(max-width:1050px){main{padding:24px 18px 50px}.comparison{gap:12px}.variant{padding:12px}.nav{position:static}}@media(max-width:780px){.comparison,.shared{grid-template-columns:1fr}.source{min-height:0}.mock-body{padding:16px}.case-head{align-items:flex-start}h2{font-size:23px}.variant{padding:18px}.question{margin-bottom:14px}section{scroll-margin-top:15px}}@media print{.nav,.choose,button,.summary-box{display:none}.comparison{grid-template-columns:repeat(3,1fr)}.variant{break-inside:avoid}body{background:#fff;color:#111}.mock{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 
-  <h1>附件处理设计</h1>
-  <p class="sub">OpenProgram Web 聊天 · 综合 Claude Code / opencode / openclaw 三家做法 + 自身约束</p>
+/* Proposed compact attachment composer. */
+.attachment-design{padding-bottom:24px}.attachment-design .design-intro{max-width:900px}.attachment-design .preview-label{display:flex;align-items:baseline;gap:12px;margin:24px 0 10px}.attachment-design .preview-label h3{margin:0}.attachment-design .preview-label span{font-size:13px;color:var(--muted)}.attachment-design .demo-shell{max-width:1000px;background:#1e1e20;padding:22px;border-radius:12px;color:#eeeef2}.attachment-design .context-row{display:flex;gap:8px;color:#c3c3cc;font-size:12px;margin-bottom:10px}.attachment-design .context-row span{padding:2px 8px;border:1px solid #45454d;border-radius:5px}.attachment-design .draft-box{padding:12px;background:#29292e;border-radius:12px}.attachment-design .attachment-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;max-height:196px;overflow-y:auto;scrollbar-gutter:stable}.attachment-design .attachment-item{width:248px;max-width:100%;height:60px;display:flex;align-items:center;gap:9px;padding:8px;background:#222227;border:1px solid #46464f;border-radius:8px;min-width:0}.attachment-design .compact-thumb,.attachment-design .format-icon{width:40px;height:40px;flex:0 0 40px;border-radius:5px;overflow:hidden;display:grid;place-items:center}.attachment-design .format-icon{background:#343843;color:#ced7ee;font-size:10px;font-weight:650;letter-spacing:.02em}.attachment-design .format-icon.pdf{background:#493236;color:#f4bfc5}.attachment-design .format-icon.xlsx{background:#293e35;color:#b8dfc8}.attachment-design .format-icon.folder{background:#433d2c;color:#e6d4a8}.attachment-design .compact-thumb{background:#eff1f5}.attachment-design .compact-thumb svg{display:block;width:40px;height:40px}.attachment-design .attachment-copy{min-width:0;flex:1}.attachment-design .attachment-name{font-size:13px;color:#ededf1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:20px}.attachment-design .attachment-meta{font-size:11px;color:#b4b5c0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:18px}.attachment-design .remove-mark{width:18px;flex:0 0 18px;color:#bfc0ca;font-size:17px;text-align:center;line-height:24px}.attachment-design .draft-prompt{font-size:14px;line-height:23px;margin:15px 4px 8px;color:#ededf1}.attachment-design .draft-bottom{display:flex;justify-content:space-between;align-items:center;color:#b4b5c0;font-size:12px;padding:0 4px}.attachment-design .send-demo{display:grid;place-items:center;width:27px;height:27px;background:#d4d5df;color:#26272e;border-radius:50%;font-size:18px}.attachment-design .send-demo.disabled{background:#45454e;color:#b8b8c4}.attachment-design .demo-toolbar{display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:#b4b5c0;gap:16px}.attachment-design .attachment-item.error{border-color:#b2767b}.attachment-design .attachment-item.error .attachment-meta{color:#f0b4bc}.attachment-design .attachment-item.pending .attachment-meta{color:#d4c597}.attachment-design .state-note{font-size:12px;color:#e4b6bc;margin:10px 4px}.attachment-design .spec-list{max-width:970px}.attachment-design .spec-list li{margin:9px 0}.attachment-design .mini-table{width:100%;max-width:1000px;border-collapse:collapse;font-size:14px}.attachment-design .mini-table td,.attachment-design .mini-table th{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}.attachment-design .mini-table th{color:var(--muted);font-weight:500}.attachment-design .density-note{max-width:1000px;font-size:13px;color:var(--muted);margin-top:10px}@media(max-width:600px){.attachment-design .demo-shell{padding:12px}.attachment-design .attachment-item{width:100%}.attachment-design .preview-label{display:block}.attachment-design .demo-toolbar{flex-wrap:wrap}.attachment-design .mini-table{font-size:13px}}@media print{.attachment-design .demo-shell{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><main>
+<header><div class="eyebrow">OPENPROGRAM / ATTACHMENT FEATURE DISCUSSION</div><h1>Five attachment features and selected options</h1><p class="intro">The five features reflect your recorded choices. Each comparison retains current OpenProgram behavior and alternatives, with the selected option marked. This document covers attachment use in the existing desktop and web interfaces.</p><p><a href="attachment-handling.zh.html">Chinese</a></p><div class="notice">All panels illustrate behavior; they are not product screenshots. Framework labels indicate verified similarities in processing, not identical UI or retention. “Selected” marks the feature design you confirmed, not an implemented app capability.</div></header>
+<nav class="nav" aria-label="Scenario navigation"><a href="#attachment-style">Attachment appearance</a>
+<a href="#case-1">1. Paste a screenshot</a>
+<a href="#case-2">2. Drag in an existing image</a>
+<a href="#case-3">3. Drag in text, code, or data</a>
+<a href="#case-4">4. Drag in PDF, Word, or Excel</a>
+<a href="#case-5">5. Drag in a folder</a>
 
-  <div class="banner">
-    <div style="margin-bottom:8px">
-      <span class="pill p-ok">P0 已实现（本会话）</span>
-      <span class="pill p-warn">待浏览器验证 + 提交</span>
-      <span class="pill p-mut">基线 c29ef3dd</span>
-    </div>
-    <div class="muted" style="font-size:13.5px">
-      路径统一引用方案已提交于 <code>c29ef3dd</code>。本文是其演进：P0（首部预览 + 页/行数 + sha256 去重 + 32MB 超限保护）
-      已写完并通过后端单元测试；P1（provider 原生 document block）/ P2（远程渠道）为接缝/推迟项。
-    </div>
-  </div>
-
-  <div class="lead">
-    <strong>一句话原则</strong>：<em>materialize once to a path; deliver the best block the active model accepts plus a small head preview; let the agent page the rest with its bounded tools.</em><br>
-    <span class="muted" style="font-size:13.5px">附件字节最多落盘一次，用一个绝对路径标识；内容<strong>怎么</strong>到模型，每轮按 <code>(文件类型 × 模型声明的模态)</code> 重算，逐级降级。<strong>每个文件 prompt 成本 O(1)，与大小无关</strong>；同一次上传 codex 现在能用、换 Claude/Gemini 自动升级，前端零改动。</span>
-  </div>
-
-  <h2><span class="n">1</span> 三层判断</h2>
-  <div class="grid g3">
-    <div class="card"><h4>① 是不是图片？</h4><div class="role">是 → vision block（模型直接看像素）。图片永不落盘。</div></div>
-    <div class="card"><h4>② 有没有现成路径？</h4><div class="role">上传/远程＝没有 → 落盘到 workdir；<code>@</code>提及/打路径＝有 → 原地引用，零复制。</div></div>
-    <div class="card"><h4>③ 能力叠加层</h4><div class="role">只有模型声明支持 <code>document</code> 时，才把 PDF 升级成原生 document block（P1）。</div></div>
-  </div>
-
-  <h2><span class="n">2</span> 决策矩阵（权威）</h2>
-  <p class="sub">DELIVER 基于默认 <code>codex/gpt-5.5</code>（<code>model.input=["text","image"]</code>，无 document）。某行只有当模型声明对应模态时才翻转。</p>
-  <table>
-    <tr><th>来源</th><th>文件类型</th><th class="c">落盘</th><th>DELIVER（现在, codex/gpt-5.5）</th><th>READ 路径</th></tr>
-    <tr><td>upload</td><td>image</td><td class="c">否</td><td>ImageContent block（像素）</td><td>模型 vision 原生</td></tr>
-    <tr><td>upload</td><td>text/code</td><td class="c">是</td><td>[attachment:..@/abs] + ≤4KB 首部预览</td><td>read 2000行/200KB 分页</td></tr>
-    <tr><td>upload</td><td>pdf</td><td class="c">是</td><td>[attachment:..(P页)@/abs] + 第1页+大纲</td><td>pdf 80KB/页窗口</td></tr>
-    <tr><td>upload</td><td>其它二进制</td><td class="c">是</td><td>[attachment:..@/abs] 仅提及</td><td>bash file/strings/xxd</td></tr>
-    <tr><td>@-mention</td><td>image</td><td class="c">否</td><td>ImageContent block</td><td>模型 vision 原生</td></tr>
-    <tr><td>@-mention</td><td>text/pdf</td><td class="c">否</td><td>[attachment:..@/abs] + 首部（file-resolve）</td><td>read/pdf 分页</td></tr>
-    <tr><td>打路径</td><td>任意</td><td class="c">＝@</td><td colspan="2" class="muted">file-resolve 把裸路径按对应类型同等处理</td></tr>
-    <tr><td>远程渠道</td><td>image</td><td class="c">是</td><td>ImageContent（从落盘字节重读）</td><td>模型 vision 原生</td></tr>
-    <tr><td>远程渠道</td><td>text/pdf</td><td class="c">是</td><td>[attachment:..@/abs] + 首部预览</td><td>read/pdf 分页</td></tr>
-  </table>
-  <p class="sub"><strong>轴的纪律</strong>：<code>来源</code>轴只决定字节<strong>落在哪</strong>；<code>(文件类型 × 能力)</code> 是<strong>唯一</strong>决定 DELIVER 的东西。</p>
-
-  <h2><span class="n">3</span> 能力自适应：降级链</h2>
-  <p class="sub">一个纯函数 <code>choose_delivery(类型, 大小, 模型)</code> 就是全部决策；每一级降级都保持同一个稳定身份——落盘的绝对路径。</p>
-  <div class="stack">
-    <div class="layer ok"><div class="t">native_image / native_document</div><div class="d">模型声明支持 → 原生 content block（图片像素 / 整 PDF base64）。document 需 size ≤ 10MB 且 provider 页数上限。</div></div>
-    <div class="layer warn"><div class="t">path_preview</div><div class="d">不支持 document 或超 10MB → 落盘 + 路径提及 + ≤4KB 首部预览（首轮一次）。<strong>codex/gpt-5.5 的 PDF 走这级。</strong></div></div>
-    <div class="layer"><div class="t">path_only</div><div class="d">二进制无安全文本 → 仅路径提及，agent 用 bash 读。</div></div>
-  </div>
-  <p class="sub">误判永远是<strong>安全</strong>的：落到工具抽取，不会丢数据。<code>"document"</code> 暂当 “pdf-capable” 处理，docx/xlsx 一律 path_preview/path_only。</p>
-
-  <h2><span class="n">4</span> 大文件保证：O(1) prompt 成本</h2>
-  <div class="lead">后端塞进 prompt 的<strong>只可能</strong>是：(a) 一个 image block，(b) ≤4KB 首部预览（仅首轮），(c) 一条约 90 字节路径提及，或 (d) 受“模型能力 + size≤10MB”双门控的原生 doc block。其它一切只通过 agent 自己的<strong>有界分页工具</strong>逐页进上下文。</div>
-  <p>十个 30MB PDF 一起拖：那一轮约 <code>10×(90B + 4KB) ≈ 41KB</code>，之后为零——<strong>与大小无关</strong>。500 页 PDF 在 codex 上：落盘一次，提及带 “500 pages”，预览＝第1页 + 每页首行大纲（截到 ~50 条后 “…(450 more pages)”），8MB 本体永不进上下文；agent 靠大纲 <code>pdf(offset=N, limit=20)</code> 直接跳页。</p>
-  <p class="sub">实测上限（源码核验）：<code>pdf</code> 80KB 字符/次按页分页；<code>read</code> 2000 行/次、结果上限 200KB；<code>file_search</code> 的 256KB 只喂预览、永不喂交付。</p>
-
-  <h2><span class="n">5</span> 这轮挖出的 bug</h2>
-  <div class="grid g3">
-    <div class="card"><h4><span class="pill p-ok">已修</span> dedup 双拷</h4><div class="role">重拖同一文件 → 旧 <code>-N</code> 循环无字节比较 → 多存一份。修法：sha256 会话内去重（<code>.opdedup.json</code>，复用前校验）。</div></div>
-    <div class="card"><h4><span class="pill p-warn">归 P1</span> 图片静默丢弃</h4><div class="role">本以为是 bug；实查 <code>validate_input_modalities</code> 在 HTTP 前会 <em>raise</em>，不是静默。属优雅降级增强（存盘 + image_analyze 提示），不咬默认模型。</div></div>
-    <div class="card"><h4><span class="pill p-mut">伪问题</span> symlink 逃逸</h4><div class="role">两个 proposer 担心根内符号链接指向根外——<code>.resolve()</code> 已解析符号链接、<code>is_relative_to</code> 已拒。现有代码无此洞。</div></div>
-  </div>
-
-  <h2><span class="n">6</span> 存储 / 去重 / 安全</h2>
-  <div class="grid g2">
-    <div class="card"><h4>落盘位置</h4><div class="role">per-session <code>workdir/attachments/</code>——就是 agent 的 cwd、每轮 git 提交、可重放。比 openclaw 全局 + TTL 更适合 agentic。只有无路径来源（上传/远程）落盘；<code>@</code>/打路径原地引用零复制。</div></div>
-    <div class="card"><h4>命名 + 去重</h4><div class="role"><code>_safe_attach_name</code>：basename + 非安全字符替 <code>_</code> + 120 上限，人类可读。sha256 仅作会话内去重索引，不做文件名。不同字节同名 → <code>-N</code>。</div></div>
-    <div class="card"><h4>超限</h4><div class="role">硬上限 32MB/文件、64MB/轮，落盘前检查；超限不存、提及改 “too large — not stored”，<strong>告诉模型</strong>，不给死路径。前端 25→32MB 对齐，超限不再静默丢、显示错误 chip。</div></div>
-    <div class="card"><h4>逃逸 + GC</h4><div class="role">上传/远程无源路径（沙箱）+ basename 清洗 → 结构上无法逃逸；<code>@</code>/打路径走 file-resolve 的 <code>resolve()+is_relative_to</code> → 越界 400。GC 会话级懒回收（删会话 = rm -rf workdir）。</div></div>
-  </div>
-
-  <h2><span class="n">7</span> 显示层</h2>
-  <ul>
-    <li><strong>chip + scope 徽章</strong>：解析 <code>[attachment: name (type, KB[, P pages|L lines]) @ /abs]</code>，徽章显示 “500 pages” / “200K lines”；<code>@/abs</code> 显示时剥掉。</li>
-    <li><strong>剥首部预览</strong>：<code>&lt;attachment-preview&gt;</code> 片段是给模型的，气泡里整块剥掉——用户看到 chip，不是 4KB 首部。在扫提及<em>之前</em>剥，防止预览里的文件内容生成假 chip。</li>
-    <li><strong>乐观气泡时序</strong>：前端永远不知道落盘后的绝对路径（后端追加），所以乐观 chip 用客户端数据渲染、对账键 = 客户端 sha8；提及对“无路径（在途）/有路径（改写后）”两形式都渲染同一个 chip。</li>
-    <li><strong>预览弹窗</strong>：本地完整解码、永不发送——人滚完整文件，模型只看 4KB 首部。</li>
-    <li><strong>侧边栏标题</strong>：<code>_title_from_text</code> 在 50 字截断前剥提及 + 预览块，防止截断的长路径泄漏。</li>
-  </ul>
-
-  <h2><span class="n">8</span> 分阶段计划</h2>
-  <div class="grid g3">
-    <div class="card">
-      <h4><span class="pill p-ok">P0</span> 现在（codex 端到端）</h4>
-      <div class="role">
-        <code>_persist</code>：32MB 上限 + “too large”；sha256 去重；页/行数注入括号组；一次性 <code>&lt;attachment-preview&gt;</code>（≤4KB 首部，二进制无预览）。<br>
-        前端：scope 徽章 + 剥预览 + 超限诚实 chip + 25→32MB 对齐。<br>
-        <code>_title_from_text</code> 扩剥预览。
-        <div style="margin-top:8px"><span class="tag">价值</span> 中小文档免费首部预览；大文件 O(1)；超限被告知；去重修双拷。</div>
-      </div>
-    </div>
-    <div class="card">
-      <h4><span class="pill p-warn">P1</span> 推迟（需 doc-capable 模型）</h4>
-      <div class="role">各 provider 原生 document block 构建器（Anthropic document / Gemini inline_data）+ <code>NATIVE_DOC_INLINE_CAP</code> 守卫；<code>chat.py:307</code> 的“进 dispatcher 前剥文档”按能力条件化；<code>types.py</code> + <code>validate_modalities</code> 加 <code>"document"</code>。接缝在 P0 就位，到时零前端改动。</div>
-    </div>
-    <div class="card">
-      <h4><span class="pill p-mut">P2</span> 推迟（需远程渠道）</h4>
-      <div class="role">openclaw 式入站 staging + 2 分钟 TTL + claim-check + <code>media://</code> + discord/wechat 适配器，把入站字节接进同一 <code>_persist</code>。保存+提及+预览的表示已能容纳“只有字节”的来源。</div>
-    </div>
-  </div>
-
-  <h2><span class="n">9</span> 待定（不阻塞 P0）</h2>
-  <p>两个可调常量，都有默认、都是单一旋钮：<code>PREVIEW_CAP=4KB</code>、<code>MAX_ATTACH_BYTES=32MB</code>。唯一长期产品问题：大二进制永久累积在 per-session git 历史（“workdir = 自包含已提交状态”不变式的代价）是否可接受——现在有意保留这个不变式，不是 P0 待决项。</p>
-
-  <p class="sub" style="margin-top:40px">完整 markdown 版：<code>docs/design/attachment-handling.md</code> · 报错超时设计：<code>docs/design/error-and-timeout-mechanism.html</code></p>
-
+<a href="#selection">Selection summary</a></nav><div id="choices"></div><section id="attachment-style" class="attachment-design"><h2>Composer attachments: images and files in one row</h2><p class="design-intro">Redesigning the composer shown in the supplied screenshots: images no longer occupy a separate row, and document tiles lose their empty space. All items share one height and follow insertion order, with a name, format, and size.</p><p class="small">New visual proposal, not implemented. These HTML illustrations use example filenames and sizes; controls are not live uploads. The five selected processing rules remain unchanged.</p><div class="preview-label"><h3>Image, PDF, and spreadsheet together</h3><span>Same height, insertion order, and information structure</span></div><div class="demo-shell" role="group" aria-label="Attachment composer illustration"><div class="context-row"><span>▣ Local</span><span>▱ fzkuji</span></div><div class="draft-box"><div class="attachment-row"><div class="attachment-item "><div class="compact-thumb" aria-hidden="true"><svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="7" fill="#69778e"/><rect x="4" y="11" width="32" height="5" rx="1" fill="#e6b9b9"/><path d="M4 21H34M4 25H29M4 29H33M4 33H22" stroke="#a5acb9" stroke-width="2"/></svg></div><div class="attachment-copy"><div class="attachment-name" title="Screenshot 2026-09-09 at 3.43.11 PM.png">Screenshot 2026-09-09 at 3.43.11 PM.png</div><div class="attachment-meta">PNG · 1.3 MB</div></div><span class="remove-mark" aria-hidden="true">×</span></div><div class="attachment-item "><div class="format-icon pdf" aria-hidden="true">PDF</div><div class="attachment-copy"><div class="attachment-name" title="Scholarships and Financial Aid Records.pdf">Scholarships and Financial Aid Records.pdf</div><div class="attachment-meta">PDF · 842 KB</div></div><span class="remove-mark" aria-hidden="true">×</span></div><div class="attachment-item "><div class="format-icon xlsx" aria-hidden="true">XLSX</div><div class="attachment-copy"><div class="attachment-name" title="Annual Report 2026.xlsx">Annual Report 2026.xlsx</div><div class="attachment-meta">XLSX · 126 KB</div></div><span class="remove-mark" aria-hidden="true">×</span></div></div><p class="draft-prompt">Use the screenshot and both files to list the application materials.</p><div class="draft-bottom"><span>＋</span><span class="send-demo " aria-hidden="true">↑</span></div></div><div class="demo-toolbar"><span>Ask permissions</span><span>Current model · Medium</span></div></div><p class="density-note">Images use a 40 × 40 thumbnail. Each item is about 248 × 60, allowing images and documents side by side. Format remains visible even when a filename is truncated.</p><div class="preview-label"><h3>More attachments wrap as one group</h3><span>Insertion order, without type grouping</span></div><div class="demo-shell" role="group" aria-label="Attachment composer illustration"><div class="context-row"><span>▣ Local</span><span>▱ fzkuji</span></div><div class="draft-box"><div class="attachment-row"><div class="attachment-item "><div class="compact-thumb" aria-hidden="true"><svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="7" fill="#69778e"/><rect x="4" y="11" width="32" height="5" rx="1" fill="#e6b9b9"/><path d="M4 21H34M4 25H29M4 29H33M4 33H22" stroke="#a5acb9" stroke-width="2"/></svg></div><div class="attachment-copy"><div class="attachment-name" title="Screenshot 2026-09-09 at 3.43.11 PM.png">Screenshot 2026-09-09 at 3.43.11 PM.png</div><div class="attachment-meta">PNG · 1.3 MB</div></div><span class="remove-mark" aria-hidden="true">×</span></div><div class="attachment-item "><div class="format-icon pdf" aria-hidden="true">PDF</div><div class="attachment-copy"><div class="attachment-name" title="Scholarships and Financial Aid Records.pdf">Scholarships and Financial Aid Records.pdf</div><div class="attachment-meta">PDF · 842 KB</div></div><span class="remove-mark" aria-hidden="true">×</span></div><div class="attachment-item "><div class="format-icon xlsx" aria-hidden="true">XLSX</div><div class="attachment-copy"><div class="attachment-name" title="Annual Report 2026.xlsx">Annual Report 2026.xlsx</div><div class="attachment-meta">XLSX · 126 KB</div></div><span class="remove-mark" aria-hidden="true">×</span></div><div class="attachment-item "><div class="format-icon " aria-hidden="true">CSV</div><div class="attachment-copy"><div class="attachment-name" title="sales.csv">sales.csv</div><div class="attachment-meta">CSV · 18 KB</div></div><span class="remove-mark" aria-hidden="true">×</span></div><div class="attachment-item "><div class="format-icon folder" aria-hidden="true">FOLDER</div><div class="attachment-copy"><div class="attachment-name" title="project/">project/</div><div class="attachment-meta">FOLDER · Folder</div></div><span class="remove-mark" aria-hidden="true">×</span></div></div><p class="draft-prompt">Check these materials for missing items.</p><div class="draft-bottom"><span>＋</span><span class="send-demo " aria-hidden="true">↑</span></div></div><div class="demo-toolbar"><span>Ask permissions</span><span>Current model · Medium</span></div></div><div class="preview-label"><h3>Reading and failure states stay on the affected item</h3><span>Item height stays unchanged</span></div><div class="demo-shell" role="group" aria-label="Attachment composer illustration"><div class="context-row"><span>▣ Local</span><span>▱ fzkuji</span></div><div class="draft-box"><div class="attachment-row"><div class="attachment-item "><div class="compact-thumb" aria-hidden="true"><svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="7" fill="#69778e"/><rect x="4" y="11" width="32" height="5" rx="1" fill="#e6b9b9"/><path d="M4 21H34M4 25H29M4 29H33M4 33H22" stroke="#a5acb9" stroke-width="2"/></svg></div><div class="attachment-copy"><div class="attachment-name" title="Screenshot 2026-09-09 at 3.43.11 PM.png">Screenshot 2026-09-09 at 3.43.11 PM.png</div><div class="attachment-meta">PNG · 1.3 MB</div></div><span class="remove-mark" aria-hidden="true">×</span></div><div class="attachment-item pending"><div class="format-icon xlsx" aria-hidden="true">XLSX</div><div class="attachment-copy"><div class="attachment-name" title="Annual Report 2026.xlsx">Annual Report 2026.xlsx</div><div class="attachment-meta">XLSX · 126 KB · Reading…</div></div><span class="remove-mark" aria-hidden="true">×</span></div><div class="attachment-item error"><div class="format-icon pdf" aria-hidden="true">PDF</div><div class="attachment-copy"><div class="attachment-name" title="report.pdf">report.pdf</div><div class="attachment-meta">PDF · 842 KB · Read failed</div></div><span class="remove-mark" aria-hidden="true">×</span></div></div><p class="draft-prompt">Summarize the key information in these files.</p><p class="state-note">Cannot read report.pdf. Add it again or remove it.</p><div class="draft-bottom"><span>＋</span><span class="send-demo disabled" aria-hidden="true">↑</span></div></div><div class="demo-toolbar"><span>Ask permissions</span><span>Current model · Medium</span></div></div><h3>Appearance and interaction</h3><ul class="spec-list"><li>The first line shows the filename with single-line truncation. The second always shows format and size, independently of the name: PNG · 1.3 MB or PDF · 842 KB.</li><li>Images use proportional thumbnails without heavily rounded cropping. Documents, spreadsheets, and code use small format-labelled icons; color is not the only distinction.</li><li>For extensionless files, show a confirmed format or “File” when unknown. Folders show “Folder” without an invented total size.</li><li>Click the item body for a preview or details with the full name, location, size, and copy status. Keep removal visible. Implement separate keyboard-accessible actions rather than filling the composer with paths.</li><li>Images and files share a single layout region. Wrap uniformly in narrow windows; for many items cap the region at three rows and scroll it, keeping the text area available.</li><li>Preserve text and attachments while reading or after a failure. Explain why sending is unavailable; re-add or remove the failed item without selecting the others again.</li></ul><table class="mini-table"><thead><tr><th>Issue in the screenshots</th><th>Proposed change</th></tr></thead><tbody><tr><td>Images and files occupy separate regions</td><td>One compact group in insertion order</td></tr><tr><td>Oversized images and mostly empty document tiles</td><td>40 px icons/thumbnails and 60 px item height</td></tr><tr><td>Wrapping filenames and inconsistent format labels</td><td>Single-line names, separate format and size</td></tr></tbody></table></section>
+<section id="case-1"><p class="notice">Image proposals assume a model that supports image input. Current OpenAI Responses handling may remove image content for a model without that capability, with no automatic tool fallback. The proposed behavior should prompt a model switch, or explicitly use a configured image tool and explain that processing.</p><div class="case-head"><span class="number">01</span><h2>Paste a screenshot</h2></div><p class="question">Should the model see the image immediately or ask a tool to open it?</p><fieldset class="comparison"><legend class="sr-only">Paste a screenshot — Selected option and reference</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram today</span>
+</div><h3>Today: send and save the image</h3><div class="mock" role="group" aria-label="Behavior illustration: Today: send and save the image"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>Image preview</span></div><p class="prompt">What does this error mean?</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Full image sent to vision-capable models; large input can be rejected</div>
+<div class="later">Reopening later: Image saved, but failed submission may leave no visible message</div></div></div></div><p class="difference">Outgoing images are not resized to model requirements; failure can clear input.</p>
+<div class="source">Based on current source; illustration labels are not existing UI copy.
+ <a href="#ref-op">Source</a>
 </div>
-</body>
-</html>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">Selected · Not implemented</span>
+
+</div><h3>A · See the image and save it with chat</h3><div class="mock" role="group" aria-label="Behavior illustration: A · See the image and save it with chat"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>Image · Saved with chat</span></div><p class="prompt">What does this error mean?</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Model receives image content; resize only when needed</div>
+<div class="later">Reopening later: Reopen the chat to view the same screenshot</div></div></div></div><p class="difference">Keep direct image input; add image processing and reliable send confirmation.</p>
+<div class="source">Codex / OpenCode share direct image input; retention is not established as identical.
+ <a href="#ref-codex">Source</a>
+</div>
+<p class="current-note">Your choice is recorded; request changes in chat.</p>
+</article>
+<article class="variant "><div class="badges"><span class="badge">Alternative for reference</span>
+</div><h3>B · Save it for on-demand tool reading</h3><div class="mock" role="group" aria-label="Behavior illustration: B · Save it for on-demand tool reading"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>Screenshot file · Not yet read</span></div><p class="prompt">What does this error mean?</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Assistant gets a path, then invokes an image tool</div>
+<div class="later">Reopening later: Keep a chat copy and open it when needed</div></div></div></div><p class="difference">Defers image reading but requires a tool step; unavailable tools prevent analysis.</p>
+<div class="source">Alternative proposed here; not verified as the default pasted-image flow in these tools.
+</div>
+
+</article>
+</fieldset><p class="recommendation">Selected: A · See the image and save it with chat. This is a design choice; the feature is not implemented.</p></section>
+<section id="case-2"><div class="case-head"><span class="number">02</span><h2>Drag in an existing image</h2></div><p class="question">With a vision-capable model, both options send image content; the choice is whether to copy the original.</p><fieldset class="comparison"><legend class="sr-only">Drag in an existing image — Selected option and reference</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram today</span>
+</div><h3>Today: retain a source path and a copy</h3><div class="mock" role="group" aria-label="Behavior illustration: Today: retain a source path and a copy"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>comparison.png · Image preview</span></div><p class="prompt">Compare the two versions in this image.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Image content goes directly to vision-capable models</div>
+<div class="later">Reopening later: Retain source path and automatically save an attachment copy for previews</div></div></div></div><p class="difference">There is currently no user choice about copying.</p>
+<div class="source">Based on current source; illustration labels are not existing UI copy.
+ <a href="#ref-op">Source</a>
+</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant "><div class="badges"><span class="badge">Alternative for reference</span>
+
+</div><h3>A · Reference the original; copy on request</h3><div class="mock" role="group" aria-label="Behavior illustration: A · Reference the original; copy on request"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>Reference original · comparison.png</span></div><p class="prompt">Compare the two versions in this image.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">See the image now; do not copy the original by default</div>
+<div class="later">Reopening later: Moving or deleting the original may prevent reopening</div></div></div></div><p class="difference">Offer “Save a copy to chat”; later reads reflect edits to the original.</p>
+<div class="source">Codex public terminal supports local image input; its complete retention policy is unverified.
+ <a href="#ref-codex">Source</a>
+</div>
+
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">Selected · Not implemented</span>
+</div><h3>B · Always save a chat copy</h3><div class="mock" role="group" aria-label="Behavior illustration: B · Always save a chat copy"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>Copy saved · comparison.png</span></div><p class="prompt">Compare the two versions in this image.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">See the image immediately</div>
+<div class="later">Reopening later: View the sent version even if the original changes or disappears</div></div></div></div><p class="difference">Keep automatic copying, but make the version used for viewing and analysis explicit; uses extra storage.</p>
+<div class="source">OpenProgram already saves automatically; this adds explicit version selection.
+ <a href="#ref-op">Source</a>
+</div>
+<p class="current-note">Your choice is recorded; request changes in chat.</p>
+</article>
+</fieldset><p class="recommendation">Selected: B · Always save a chat copy. This is a design choice; the feature is not implemented.</p></section>
+<section id="case-3"><div class="case-head"><span class="number">03</span><h2>Drag in text, code, or data</h2></div><p class="question">Pass a path by default, or include the text as soon as it is attached?</p><fieldset class="comparison"><legend class="sr-only">Drag in text, code, or data — Selected option and reference</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram today</span>
+</div><h3>Today: path, head preview, and a copy</h3><div class="mock" role="group" aria-label="Behavior illustration: Today: path, head preview, and a copy"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">CSV</div>
+<span>sales.csv · File attachment</span></div><p class="prompt">Calculate monthly sales totals.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Source path + head text; read the rest as needed</div>
+<div class="later">Reopening later: The uploaded file also gets a saved copy</div></div></div></div><p class="difference">Existing local files are uploaded and saved too; this is not a path-only reference.</p>
+<div class="source">Based on current source; illustration labels are not existing UI copy.
+ <a href="#ref-op">Source</a>
+</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">Selected · Not implemented</span>
+
+</div><h3>A · Reference it and read for the task</h3><div class="mock" role="group" aria-label="Behavior illustration: A · Reference it and read for the task"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">CSV</div>
+<span>Reference original · sales.csv</span></div><p class="prompt">Calculate monthly sales totals.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Read sales.csv → calculate from relevant data</div>
+<div class="later">Reopening later: Read current original contents by default; copying is optional</div></div></div></div><p class="difference">No automatic upload, copy, or text inclusion. Report missing files clearly.</p>
+<div class="source">Codex public terminal inserts a path for ordinary file selection; similar behavior.
+ <a href="#ref-codex">Source</a>
+</div>
+<p class="current-note">Your choice is recorded; request changes in chat.</p>
+</article>
+<article class="variant "><div class="badges"><span class="badge">Alternative for reference</span>
+</div><h3>B · Include the text directly</h3><div class="mock" role="group" aria-label="Behavior illustration: B · Include the text directly"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">CSV</div>
+<span>Include content · sales.csv</span></div><p class="prompt">Calculate monthly sales totals.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">The current request includes the file text</div>
+<div class="excerpt">month,sales
+Jan,1200
+Feb,1800</div>
+<div class="later">Reopening later: Record the supplied text; this is not a copy of the original file</div></div></div></div><p class="difference">Avoids an initial read; suits short files. Long input needs a limit or on-demand reading.</p>
+<div class="source">OpenCode V2 includes the contents of supported text attachments.
+ <a href="#ref-opencode">Source</a>
+</div>
+
+</article>
+</fieldset><p class="recommendation">Selected: A · Reference it and read for the task. This is a design choice; the feature is not implemented.</p></section>
+<section id="case-4"><div class="case-head"><span class="number">04</span><h2>Drag in PDF, Word, or Excel</h2></div><p class="question">Let the assistant choose a reading tool, or prepare a preview automatically?</p><fieldset class="comparison"><legend class="sr-only">Drag in PDF, Word, or Excel — Selected option and reference</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram today</span>
+</div><h3>Today: save files; preview some formats</h3><div class="mock" role="group" aria-label="Behavior illustration: Today: save files; preview some formats"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">PDF</div>
+<span>report.pdf · Document attachment</span></div><p class="prompt">Summarize the conclusions of this report.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">PDF may yield first-page text and an outline; tools read the rest</div>
+<div class="later">Reopening later: Retain source path and automatically save the upload</div></div></div></div><p class="difference">Binary Word / Excel files do not automatically become readable text; extraction may yield no preview.</p>
+<div class="source">Based on current source; illustration labels are not existing UI copy.
+ <a href="#ref-op">Source</a>
+</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">Selected · Not implemented</span>
+
+</div><h3>A · Reference it, then choose how to read</h3><div class="mock" role="group" aria-label="Behavior illustration: A · Reference it, then choose how to read"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">PDF</div>
+<span>Reference original · report.pdf</span></div><p class="prompt">Summarize the conclusions of this report.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Assistant chooses pages, paragraph extraction, or spreadsheet analysis</div>
+<div class="later">Reopening later: No default copy; save one to retain a fixed version</div></div></div></div><p class="difference">No automatic parsing on attach. Explain missing tools or unreadable scans.</p>
+<div class="source">Codex ordinary-file paths are the reference; this does not imply native support for every format.
+ <a href="#ref-codex">Source</a>
+</div>
+<p class="current-note">Your choice is recorded; request changes in chat.</p>
+</article>
+<article class="variant "><div class="badges"><span class="badge">Alternative for reference</span>
+</div><h3>B · Prepare a preview, then read further</h3><div class="mock" role="group" aria-label="Behavior illustration: B · Prepare a preview, then read further"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">PDF</div>
+<span>report.pdf · Partial text extracted</span></div><p class="prompt">Summarize the conclusions of this report.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Start with extracted text; scan handling can use page recognition</div>
+<div class="excerpt">Read: page 1
+Not read: remaining pages</div>
+<div class="later">Reopening later: Local files may remain references; uploads need storage</div></div></div></div><p class="difference">Convenient but adds processing time. Show partial reads and failures; not every format is supported.</p>
+<div class="source">OpenClaw has extraction and configured scan fallback; OpenProgram already provides some PDF previews.
+ <a href="#ref-openclaw">Source</a>
+</div>
+
+</article>
+</fieldset><p class="recommendation">Selected: A · Reference it, then choose how to read. This is a design choice; the feature is not implemented.</p></section>
+<section id="case-5"><div class="case-head"><span class="number">05</span><h2>Drag in a folder</h2></div><p class="question">Provide only the folder path, or include its immediate listing?</p><fieldset class="comparison"><legend class="sr-only">Drag in a folder — Selected option and reference</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram today</span>
+</div><h3>Today: folder drop is unverified</h3><div class="mock" role="group" aria-label="Behavior illustration: Today: folder drop is unverified"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="folder-icon" aria-hidden="true"></div>
+<span>project/ · Not interaction-tested</span></div><p class="prompt">Find the code responsible for sign-in.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Current drop handling operates on file lists</div>
+<div class="later">Reopening later: This does not establish a working folder attachment flow</div></div></div></div><p class="difference">No dedicated directory handling was found; this illustrates an evidence gap, not an actual error screenshot.</p>
+<div class="source">Based on current source; illustration labels are not existing UI copy.
+ <a href="#ref-op">Source</a>
+</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant "><div class="badges"><span class="badge">Alternative for reference</span>
+
+</div><h3>A · Add the folder path</h3><div class="mock" role="group" aria-label="Behavior illustration: A · Add the folder path"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="folder-icon" aria-hidden="true"></div>
+<span>Reference folder · project/</span></div><p class="prompt">Find the code responsible for sign-in.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">List directory → locate relevant files → read</div>
+<div class="later">Reopening later: Later reads use the folder’s current contents</div></div></div></div><p class="difference">No recursive copy or upload; the task determines what gets read.</p>
+<div class="source">Proposed option; no unverified folder-drop behavior is attributed to another tool.
+</div>
+
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">Selected · Not implemented</span>
+</div><h3>B · Include the immediate listing</h3><div class="mock" role="group" aria-label="Behavior illustration: B · Include the immediate listing"><div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div><div class="mock-body"><div class="caption">After adding · Composer</div><div class="composer"><div class="attachment">
+<div class="folder-icon" aria-hidden="true"></div>
+<span>project/ · Immediate listing</span></div><p class="prompt">Find the code responsible for sign-in.</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">After sending · How the model uses it</div><div class="outcome">Model sees immediate entries, then opens files as needed</div>
+<div class="excerpt">src/
+tests/
+README.md</div>
+<div class="later">Reopening later: The message retains listing text, not a copy of the folder</div></div></div></div><p class="difference">Avoids an initial listing call; deeper files still need inspection.</p>
+<div class="source">OpenCode V2 directory attachments include a non-recursive listing.
+ <a href="#ref-opencode">Source</a>
+</div>
+<p class="current-note">Your choice is recorded; request changes in chat.</p>
+</article>
+</fieldset><p class="recommendation">Selected: B · Include the immediate listing. This is a design choice; the feature is not implemented.</p></section>
+
+<section id="shared"><h2>Rules shared by all scenarios</h2><div class="shared">
+<article><h3>Does the image need processing?</h3><p>Process the sending version using known model requirements and preserve an available original. Use explicit rules for unknown limits; not every model exposes them.</p></article>
+<article><h3>Keep input after failure</h3><p>Keep text and attachments until confirmed. Explain upload, read, or send failures; check the previous result after a disconnect to avoid duplicates.</p></article>
+<article><h3>Will the sent version remain available?</h3><p>References are affected by edits, moves, and deletion. A saved copy preserves the version; listings and text excerpts are not original-file copies.</p></article>
+</div></section>
+<section id="selection"><h2>Recorded choices</h2><div class="summary-box"><p>The first five choices are saved in this document and persist on reload. This records design only and does not change the app.</p><label for="selection-text">Select the text to copy</label><textarea id="selection-text" readonly style="min-height:300px">Selected attachment features (not implemented)
+
+1. Paste a screenshot — A · See the image and save it with chat
+2. Drag in an existing image — B · Always save a chat copy
+3. Drag in text, code, or data — A · Reference it and read for the task
+4. Drag in PDF, Word, or Excel — A · Reference it, then choose how to read
+5. Drag in a folder — B · Include the immediate listing</textarea></div></section>
+<section id="sources"><h2>Framework evidence and current implementation</h2>
+<details id="ref-op"><summary>Current OpenProgram behavior</summary><p>When a file is added through the web interface, the backend receives and saves it for the assistant to read. The desktop interface currently saves uploaded copies too; the selected design changes ordinary files to references to their original paths. Users add a file and state their task; they do not choose between upload and path handling.</p><p><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/attach/use-composer-attachments.ts">Adding files</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py">Storage and previews</a></p></details>
+<details id="ref-codex"><summary>Codex: public terminal behavior, not desktop UI</summary><p>Verified: ordinary file selection inserts a path, decodable images become image input, and clipboard images are written to temporary PNG files. This does not establish the desktop app’s complete long-term copying policy. Copy controls and status labels in the panels are OpenProgram proposals.</p><p><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/bottom_pane/chat_composer.rs">File selection</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/clipboard_paste.rs">Clipboard images</a> · <a href="https://learn.chatgpt.com/docs/image-inputs">Official image guide</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/image_preparation.rs">Image preparation</a></p></details>
+<details id="ref-opencode"><summary>OpenCode V2</summary><p>Supported text attachments include their text; directories include an immediate listing; PNG/JPEG/GIF/WebP become image media. SVG is text; PDF, audio, video, and other binary attachments currently do not directly enter model requests. Server-accessible files can be referenced. Configurable resizing does not guarantee compliance with every model.</p><p><a href="https://opencode.ai/v2/docs/attachments">Official attachment guide</a></p></details>
+<details id="ref-openclaw"><summary>OpenClaw</summary><p>Channel media is downloaded to the runtime. Vision-capable primary models can receive images; other configurations can generate descriptions. Documents can yield text, with configured page-image fallback for scanned PDFs. Tool handoff requires an accessible saved path. Channel reception is not treated as equivalent to local desktop drag-and-drop.</p><p><a href="https://docs.openclaw.ai/nodes/images">Media reception</a> · <a href="https://docs.openclaw.ai/nodes/media-understanding">Document and media understanding</a></p></details>
+</section><section id="technical" class="technical"><h2>Evidence and development notes</h2><details><summary>How current OpenProgram behavior differs</summary><p>The current upload flow saves ordinary files too; path-only reference is not the current default. Image thumbnails do not resize outgoing images. Full image encoding counts toward the execution-input limit and can be rejected before the user message is saved. The composer clears before durable confirmation, which can leave a chat with only a title.</p><p>The target chat log records oversized input. The full original request is unavailable, so the responsible field is not established. A minimal local request reproduced image encoding exceeding the execution-input limit without a model call.</p><p>Handle chat persistence, image delivery, and file reading separately. Shrinking every image to fit the execution-input limit is insufficient; copying every local file should not become the default fix. Treat attachment text as supplied material, not automatically as new user instructions.</p><p><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py">Attachment storage and message submission</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/production_driver.py">Execution-input checks</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts">Composer submission</a></p></details>
+<details><summary>Limits of image-processing and retention evidence</summary><p>Public Codex code supports several image-processing modes selected by capabilities and configuration. A utility’s default dimension is not every model’s limit. OpenCode’s configurable resizing does not guarantee compliance with every model. OpenClaw channel reception limits are not universal model limits.</p><p>Temporary storage, upload to a runtime, and long-term chat retention are different promises. Retention periods not established by the sources are not inferred here. Image copies are selected for OpenProgram; implementation must specify copy handling for chat deletion, export, and migration in development notes.</p><p><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/image_preparation.rs">Codex image preparation</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs">Codex image input</a></p></details></section>
+<footer id="status">Implementation status: this is a feature comparison; the first five choices are selected but not implemented. Current behavior was checked against this checkout’s source, not established by installed-app interaction tests.</footer>
+</main></body></html>

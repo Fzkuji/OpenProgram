@@ -16,7 +16,7 @@ Web UI 界面 — 界面系统、指示点、附件处理、聊天轮次视觉�
 - [`composer-tool-profile-menu.html`](composer-tool-profile-menu.html) — Tools 操作与 profile 二级菜单行为
 - [`programs-source-categories.html`](programs-source-categories.html) — Programs 分组与来源分类行为
 - [`composer-interaction-modes.md`](composer-interaction-modes.md) — Composer 交互模式
-- [`attachment-handling.md`](attachment-handling.md) — 附件处理：附件怎么进模型上下文（[已渲染](attachment-handling.html)）
+- [`attachment-handling.zh.html`](attachment-handling.zh.html) — 完整附件设计：存储、执行准入、内容交付、恢复与验收
 - [`chat-attachments.html`](chat-attachments.html) — 聊天附件双向流转：聊天流里显示成什么、agent 怎么把文件交回来、可读文件怎么点开
 - [`gui-agent.html`](gui-agent.html) — GUI agent 入口、状态机、结果契约与实现状态
 - [`indicator-dots.md`](indicator-dots.md) — 指示点

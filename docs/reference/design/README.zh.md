@@ -153,7 +153,7 @@
 | [`ui/app-icon.html`](ui/app-icon.html) | macOS App 图标分层素材、Apple 系统外形、打包与旧系统回退边界 |
 | [`ui/settings-collapsible-columns.html`](ui/settings-collapsible-columns.html) | 应用主侧栏与 Settings 分类栏折叠；Provider 列表始终展开 |
 | [`ui/indicator-dots.md`](ui/indicator-dots.md) | 指示点 |
-| [`ui/attachment-handling.md`](ui/attachment-handling.md) | 附件处理（[已渲染](ui/attachment-handling.html)） |
+| [`ui/attachment-handling.zh.html`](ui/attachment-handling.zh.html) | 完整附件设计、框架对比与实施契约 |
 | [`ui/composer-interaction-modes.md`](ui/composer-interaction-modes.md) | Composer 交互模式 |
 | [`ui/gui-agent.html`](ui/gui-agent.html) | GUI agent 入口、状态机、结果契约与实现状态 |
 | [`ui/state-layer.md`](ui/state-layer.zh.md) | Web 状态层：会话级 vs 全局 store，会话作用域容器方案 |
