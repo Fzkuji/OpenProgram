@@ -1,3 +1,4 @@
+import { normalizeSessionHistory } from "./session-tab-history";
 /**
  * Center-tab persistence + payload normalization.
  *
@@ -115,7 +116,7 @@ export function normalizeCenterTabsPayload(
     .map((tab) => {
       if (tab.id === DRAFT_SESSION_TAB_ID) return draftTab();
       const next = clearDirty && tab.dirty ? { ...tab, dirty: false } : tab;
-      if (next.kind !== "web") return next;
+      if (next.kind !== "web") return normalizeSessionHistory(next);
       const urlNativeAt = Number(next.urlNativeAt);
       if (Number.isFinite(urlNativeAt) && urlNativeAt > 0) {
         return { ...next, urlNativeAt };

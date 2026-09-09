@@ -130,3 +130,7 @@ The background worker saves the waiting task and checks permission through a fre
 On local ad-hoc macOS builds, an update can invalidate a previously granted recording permission while the system switch remains enabled. OpenProgram remembers successful recording checks for its installed application. If a later application identity changes and recording is denied, the next local authorization action renews only OpenProgram’s obsolete recording registration before opening the native permission flow. This recovery runs at most once per changed identity; status checks and reconnects never reset permissions. Stable Developer ID releases use the normal system authorization flow.
 
 Repeated delivery of the same waiting task does not reopen native authorization when you switch conversations. You can still open System Settings explicitly.
+
+### Automation errors on macOS
+
+Some desktop commands send Apple Events to System Events or a target application. macOS controls Automation separately for each target; screen recording and Accessibility access do not imply Automation access. If an operation reports an Automation denial, open **System Settings → Privacy & Security → Automation** on the execution Mac and inspect the requesting application's access to the named target. The failed operation remains failed; changing the system setting does not approve or repeat it. Other native command failures retain their actual error instead of being reported as success.

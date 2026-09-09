@@ -4,7 +4,7 @@ import {
   groupCenterTabs,
   type CenterTabGroup,
 } from "./center-tab-groups.ts";
-import { reviewTabId, sessionTabId } from "./center-tab-ids.ts";
+import { reviewTabId } from "./center-tab-ids.ts";
 import type { CenterTab } from "./center-tabs-store.ts";
 
 type ReviewScope = "turn" | "branch" | "workspace";
@@ -16,6 +16,7 @@ export function openReviewTabLayout(
   assistantMsgId?: string,
   scope: ReviewScope = "turn",
   path?: string,
+  activeId?: string | null,
 ): { id: string; tabs: CenterTab[]; groups: CenterTabGroup[] } {
   const id = reviewTabId(sessionId, assistantMsgId);
   const context = {
@@ -31,7 +32,8 @@ export function openReviewTabLayout(
         ...context,
       }];
   let groups = [...groupsBefore];
-  const chatId = sessionTabId(sessionId);
+  const chatId = (tabs.find(tab => tab.id === activeId && tab.kind === "session" && tab.sessionId === sessionId)
+    ?? tabs.find(tab => tab.kind === "session" && tab.sessionId === sessionId))?.id ?? "";
   const reviewGroup = findCenterTabGroup(groups, id);
   const chatGroup = findCenterTabGroup(groups, chatId);
   if (!reviewGroup && !chatGroup && tabs.some((tab) => tab.id === chatId)) {

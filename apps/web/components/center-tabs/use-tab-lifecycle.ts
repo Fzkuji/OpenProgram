@@ -67,7 +67,9 @@ export function useTabLifecycle({
   const closeTab = useCenterTabs((s) => s.closeTab);
   const renameSessionTab = useCenterTabs((s) => s.renameSessionTab);
 
-  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const activeSession = tabs.find(tab => tab.id === activeId);
+  const activeSessionId = activeSession?.sessionId;
+  const activeSessionDraft = activeSession?.draft;
   const conversations = useSessionStore((s) => s.conversations);
   const [sessionActivationRequest, setSessionActivationRequest] = useState(0);
   // Tab id activated by the current pointerdown, consumed by the click
@@ -80,16 +82,11 @@ export function useTabLifecycle({
   // by a sidebar session click).
   useEffect(() => {
     if (!isChatRoute(pathname)) return;
+    const currentSessionId = useSessionStore.getState().currentSessionId;
     const centerTabs = useCenterTabs.getState();
     const activeTab = centerTabs.tabs.find((t) => t.id === centerTabs.activeId);
-    // newSession clears the session store before router.push('/chat'). During
-    // that render pathname can still be /s/<old>; the claimed draft is the
-    // intended destination, so do not resurrect the stale route's session.
-    if (
-      currentSessionId === null &&
-      activeTab?.draft &&
-      pathname.startsWith("/s/")
-    ) return;
+    // Only pathname changes enter this effect. Intermediate session-store
+    // updates and ACKs cannot reverse an active tab's navigation.
     // 会话 id 以路由为准：关 tab 后 activateSession 推新路由时，pathname
     // 和 currentSessionId 分两次渲染更新 —— 若用 currentSessionId，中间那
     // 帧会把刚关掉的会话 tab 重新插回来（"关一个弹回一个"）。路由是唯一
@@ -112,7 +109,7 @@ export function useTabLifecycle({
       const draftId = openDraftSessionTab();
       useSessionStore.getState().setCurrentDraft(draftId);
     }
-  }, [currentSessionId, pathname, openSessionTab, openDraftSessionTab]);
+  }, [pathname, openSessionTab, openDraftSessionTab]);
 
   // Title changes → rename tabs (covers renames + first-message titles).
   // Same pass reaps zombie tabs: a session tab whose conversation was
@@ -157,14 +154,11 @@ export function useTabLifecycle({
     const ids = new Set(Object.keys(conversations));
     const prev = prevConvIds.current;
     prevConvIds.current = ids;
-    for (const tab of useCenterTabs.getState().tabs) {
-      if (tab.kind !== "session" || !tab.sessionId) continue;
-      if (prev?.has(tab.sessionId) && !ids.has(tab.sessionId)) {
-        useCenterTabs.getState().closeTab(tab.id);
-        continue;
-      }
-      const title = conversations[tab.sessionId]?.title;
-      if (title && title !== tab.title) renameSessionTab(tab.sessionId, title);
+    for (const id of prev ?? []) {
+      if (!ids.has(id)) useCenterTabs.getState().removeSessionFromHistory(id);
+    }
+    for (const [id, conversation] of Object.entries(conversations)) {
+      if (conversation.title) renameSessionTab(id, conversation.title);
     }
   }, [conversations, renameSessionTab]);
 
@@ -175,9 +169,8 @@ export function useTabLifecycle({
       newSession(tab.sessionId);
       return;
     }
-    const sid = useSessionStore.getState().currentSessionId;
     if (tab.sessionId) {
-      if (tab.sessionId !== sid || !pathname.startsWith("/s/")) {
+      if (pathname !== "/s/" + tab.sessionId) {
         pushPath("/s/" + tab.sessionId);
       }
     } else if (pathname !== "/chat") {
@@ -206,7 +199,7 @@ export function useTabLifecycle({
     if (tab?.kind === "session") activateSession(tab);
     // Route changes are results of activation, not new activation requests.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, sessionActivationRequest]);
+  }, [activeId, activeSessionId, activeSessionDraft, sessionActivationRequest]);
 
   useEffect(() => {
     setFocusedTabId(activeId);

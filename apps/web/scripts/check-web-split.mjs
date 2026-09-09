@@ -648,7 +648,7 @@ assert.equal(
   undefined,
 );
 
-secondaryTabs.getState().openSessionTab("existing", "Effect write");
+secondaryTabs.getState().renameSessionTab("existing", "Effect write");
 secondarySession.getState().setCurrentDraft("local_one");
 channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "effect-channel",
@@ -694,6 +694,7 @@ assert.equal(stageTransferMutation(
 assert.equal(removed.ok, true);
 assert.equal(removed.empty, false);
 assert.deepEqual(secondaryTabs.getState().tabs.map((tab) => tab.id), ["s:existing"]);
+secondaryTabs.getState().openNewTabPage();
 secondaryTabs.getState().openSessionTab("user-source", "User source");
 const sourceProjectedCenter = JSON.parse(values.get("centerTabs:secondary"));
 assert.deepEqual(sourceProjectedCenter.tabs.map((tab) => tab.id), [
@@ -1050,6 +1051,7 @@ assert.equal(stageTransferMutation(
   () => { throw new Error("unexpected projection stage rejection"); },
   "secondary",
 ), true);
+secondaryTabs.getState().openNewTabPage();
 secondaryTabs.getState().openSessionTab("user", "User");
 secondarySession.getState().setCurrentDraft("user");
 secondarySession.getState().setComposerInput("user edit");
@@ -1173,6 +1175,7 @@ secondaryTabsModule.replaceCenterTabsPayload(concurrentBase, { persist: true });
 secondarySessionModule.applySessionTransfer(effectSessionSnapshot, { persist: true });
 const entryA = stageDestinationEntry("concurrent-a", "alpha", "alpha");
 const entryB = stageDestinationEntry("concurrent-b", "beta");
+secondaryTabs.getState().openNewTabPage();
 secondaryTabs.getState().openSessionTab("user-two", "User two");
 secondarySession.getState().setCurrentDraft("user-two");
 secondarySession.getState().setComposerInput("user two edit");
@@ -1244,6 +1247,7 @@ function simulateRendererCrash(token) {
   }, { persist: false });
 }
 const entryC = stageDestinationEntry("crash-commit", "gamma", "gamma");
+secondaryTabs.getState().openNewTabPage();
 secondaryTabs.getState().openSessionTab("user-three", "User three");
 simulateRendererCrash(entryC.token);
 assert.deepEqual(
@@ -1275,6 +1279,7 @@ assert.deepEqual(pendingProjection.pendingTransfers("secondary"), []);
 
 // Crash recovery of a rolled-back journal drops only its own delta.
 const entryD = stageDestinationEntry("crash-rollback", "delta", "delta");
+secondaryTabs.getState().openNewTabPage();
 secondaryTabs.getState().openSessionTab("user-four", "User four");
 simulateRendererCrash(entryD.token);
 const journaledD = readTransferJournal("secondary").entries[entryD.token];
@@ -1314,7 +1319,7 @@ assert.equal(recoverTransferJournalEntry(
   "destination-staged",
   actualRecoveryHandlers,
 ), true);
-secondaryTabs.getState().openSessionTab("existing", "Startup effect write");
+secondaryTabs.getState().renameSessionTab("existing", "Startup effect write");
 secondarySession.getState().setCurrentDraft("local_one");
 channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "startup-effect",
@@ -1366,7 +1371,7 @@ assert.equal(
   "committing",
 );
 globalThis.localStorage.setItem = originalSetItem;
-secondaryTabs.getState().openSessionTab("existing", "Failed commit effect");
+secondaryTabs.getState().renameSessionTab("existing", "Failed commit effect");
 secondarySession.getState().setCurrentDraft("local_one");
 channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "failed-commit-effect",
@@ -1421,7 +1426,7 @@ assert.equal(
   "rolling-back",
 );
 globalThis.localStorage.setItem = originalSetItem;
-secondaryTabs.getState().openSessionTab("existing", "Failed rollback effect");
+secondaryTabs.getState().renameSessionTab("existing", "Failed rollback effect");
 secondarySession.getState().setCurrentDraft("local_one");
 channelDrafts.setDraftChannelChoice(secondarySessionModule.draftChoiceHost(), "local_one", {
   channel: "failed-rollback-effect",
@@ -2257,7 +2262,7 @@ assert.match(
 );
 assert.match(activeFocusEffect, /useEffect\(\(\) =>/);
 assert.match(activeFocusEffect, /activateSession\(tab\);/);
-assert.match(activeFocusEffect, /\[activeId, sessionActivationRequest\]/);
+assert.match(activeFocusEffect, /\[activeId, activeSessionId, activeSessionDraft, sessionActivationRequest\]/);
 const onTabClickSource = tabStripSource.slice(
   tabStripSource.indexOf("function onTabClick"),
   tabStripSource.indexOf("function onOpenNewTab"),
@@ -3928,6 +3933,27 @@ const t5SourceBase = {
   );
 }
 
+// Session navigation invalidates a prepared transfer, including while main
+// acknowledges the source journal. Rollback must retain the newer history.
+for (const duringJournal of [false, true]) {
+  plainTabsModule.replaceCenterTabsPayload(t5SourceBase, { persist: true });
+  plainTabs.getState().setActive("s:local_move");
+  const token = `session-navigation-race-${duringJournal}`;
+  const navigate = () => plainTabs.getState().openSessionTab("new-destination", "New destination");
+  const { bridge, calls } = makeTransferBridge(t5SourcePayload, {
+    journalOpened: async () => { if (duringJournal) navigate(); return true; },
+  });
+  if (!duringJournal) navigate();
+  await bridgeModule.handleRemoveSource(bridge, { token, payload: t5SourcePayload });
+  const current = plainTabs.getState().tabs.find(tab => tab.id === "s:local_move");
+  assert.equal(current?.sessionId, "new-destination", "stale transfer cannot remove a navigated session");
+  assert.deepEqual(current.sessionHistory.entries.map(entry => entry.sessionId), ["local_move", "new-destination"]);
+  assert.ok(calls.some(([name, receipt, ok]) => name === "sourceRemoved" && receipt === token && ok === false));
+  await bridgeModule.handleTransferRolledBack(bridge, { token, sourceId: "main", destinationId: "other" });
+  assert.deepEqual(plainTabs.getState().tabs.find(tab => tab.id === current.id), current);
+  assert.deepEqual(JSON.parse(values.get("centerTabs:main")).tabs.find(tab => tab.id === current.id), current);
+}
+
 // Source removal with a stale main acknowledgement restores the tab and
 // keeps the journal for the rolled-back event to finalize.
 {
@@ -4129,6 +4155,13 @@ assert.doesNotMatch(
       draftChannelChoice: { channel: "web" },
     },
   ]);
+  useCenterTabs.getState().openSessionTab("chatB", "Chat B");
+  const historyPayload = bridgeModule.buildTransferPayload(
+    { kind: "tab", tabIds: ["s:chatA"] }, "win-src",
+  );
+  assert.deepEqual(historyPayload.tabs[0].sessionHistory.entries.map(entry => entry.sessionId), ["chatA", "chatB"]);
+  assert.equal(historyPayload.chats.find(chat => chat.chatKey === "chatA").composerDraft, "draft text");
+  assert.equal(historyPayload.chats.find(chat => chat.chatKey === "chatA").wasActive, false);
   const segmentPayload = bridgeModule.buildTransferPayload(
     {
       kind: "segment",

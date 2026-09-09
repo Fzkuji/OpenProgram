@@ -4,8 +4,9 @@
  * live chat surface), file tabs (📄, per project+path), and one
  * reusable new-tab page.
  *
- * Deterministic ids make focus-or-create trivial:
- *   session  →  "s:<sessionId>"   (drafts pre-allocate a local_* id)
+ * Session ids seed new tab identities; navigation keeps the tab id fixed.
+ * Other kinds retain their existing focus-or-create identities:
+ *   session  →  "s:<initialSessionId>" (unique suffix on collision)
  *   file     →  "f:<projectId>:<path>"
  *   web      →  "w:<url>"         (id is fixed at open; in-pane
  *                                  navigation updates url, not id; popup
@@ -19,6 +20,7 @@
  * session store's currentSessionId / titles into this store.
  */
 import { create } from "zustand";
+import { sessionHistory, withSessionHistory, type SessionTabHistory } from "./session-tab-history";
 import {
   MAX_CENTER_TAB_GROUP_MEMBERS,
   findCenterTabGroup,
@@ -99,6 +101,8 @@ export interface CenterTab {
   sessionId?: string;
   /** Session tabs only — true until the first server acknowledgement. */
   draft?: boolean;
+  /** Per-tab session navigation; identity and group references stay fixed. */
+  sessionHistory?: SessionTabHistory;
   /** File tabs only. */
   projectId?: string;
   /** File tabs only — project-relative, "/"-separated. */
@@ -193,11 +197,10 @@ export interface CenterTabsState {
   ) => boolean;
   ungroupTab: (id: string, beforeId?: string | null) => void;
   focusGroupMember: (groupId: string, memberId: string) => void;
-  /** Focus-or-create the tab for a live session. Browser semantics:
-   *  if the ACTIVE tab is the draft chat or the new-tab page, the
-   *  session "navigates" that tab (replaces it in place) instead of
-   *  opening a new one. */
+  /** Navigate the active session tab, otherwise create a session tab. */
   openSessionTab: (sessionId: string, title: string) => void;
+  navigateSessionHistory: (direction: -1 | 1) => void;
+  removeSessionFromHistory: (sessionId: string) => void;
   /** Create a distinct draft. An active NTP is replaced in place;
    *  otherwise the draft is appended. Returns its provisional id. */
   openDraftSessionTab: () => string;
@@ -502,21 +505,69 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     openSessionTab: (sessionId, title) =>
       set((s) => {
         closedSessionAckTombstones.delete(sessionId);
-        const id = sessionTabId(sessionId);
-        const existing = s.tabs.find((tab) => tab.id === id);
-        if (!existing) {
-          return focusOrCreate(
-            s,
-            id,
-            () => ({ id, kind: "session", title, sessionId }),
-            [],
-          );
+        const active = s.tabs.find(tab => tab.id === s.activeId);
+        if (active?.kind === "session") {
+          if (active.sessionId === sessionId) {
+            if (active.title === title) return {};
+            const history = sessionHistory(active);
+            const entries = history.entries.map((entry, index) => index === history.index
+              ? { ...entry, title } : entry);
+            return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id
+              ? { ...tab, title, sessionHistory: { ...history, entries } } : tab) });
+          }
+          if (active.sessionId) closedSessionAckTombstones.add(active.sessionId);
+          const history = sessionHistory(active);
+          const known = s.tabs.flatMap(tab => tab.kind === "session"
+            ? sessionHistory(tab).entries : []).find(entry => entry.sessionId === sessionId);
+          const next = withSessionHistory(active, {
+            entries: [...history.entries.slice(0, history.index + 1),
+              { sessionId, title, draft: !!known?.draft }],
+            index: history.index + 1,
+          });
+          return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) });
         }
-        const tabs = s.tabs.map((tab) =>
-          tab.id === id ? { ...tab, title, sessionId, draft: false } : tab,
-        );
-        return commitCenterTabsState(s, { tabs, activeId: id });
+        let id = sessionTabId(sessionId);
+        if (s.tabs.some(tab => tab.id === id)) id += `:${crypto.randomUUID()}`;
+        const tab: CenterTab = { id, kind: "session", title, sessionId };
+        const replace = active?.kind === "ntp";
+        return commitCenterTabsState(s, {
+          tabs: replace ? s.tabs.map(item => item.id === active.id ? tab : item) : [...s.tabs, tab],
+          activeId: id,
+          groups: replace ? replaceGroupTabId(s.groups, active.id, id) : s.groups,
+        });
       }),
+
+    navigateSessionHistory: (direction) => set(s => {
+      const active = s.tabs.find(tab => tab.id === s.activeId);
+      if (active?.kind !== "session" || (direction !== -1 && direction !== 1)) return {};
+      const history = sessionHistory(active);
+      const index = history.index + direction;
+      if (index < 0 || index >= history.entries.length) return {};
+      if (active.sessionId) closedSessionAckTombstones.add(active.sessionId);
+      const next = withSessionHistory(active, { ...history, index });
+      return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) });
+    }),
+
+    removeSessionFromHistory: (sessionId) => {
+      closedSessionAckTombstones.add(sessionId);
+      set(s => {
+        const tabs = s.tabs.map(tab => {
+          if (tab.kind !== "session") return tab;
+          const history = sessionHistory(tab);
+          const entries = history.entries.filter(entry => entry.sessionId !== sessionId);
+          if (!entries.length || entries.length === history.entries.length) return tab;
+          const index = Math.max(0, history.entries.slice(0, history.index + 1)
+            .filter(entry => entry.sessionId !== sessionId).length - 1);
+          return withSessionHistory(tab, { entries, index });
+        });
+        return commitCenterTabsState(s, { tabs });
+      });
+      // Use normal close fallback when no history survives.
+      for (const tab of useCenterTabs.getState().tabs) {
+        if (tab.kind === "session" && tab.sessionId === sessionId)
+          useCenterTabs.getState().closeTab(tab.id);
+      }
+    },
 
     openDraftSessionTab: () => {
       const tab = draftTab();
@@ -558,11 +609,15 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     markSessionReady: (sessionId) =>
       set((s) => {
-        const id = sessionTabId(sessionId);
-        if (!s.tabs.some((tab) => tab.id === id && tab.draft)) return {};
-        const tabs = s.tabs.map((tab) =>
-          tab.id === id ? { ...tab, draft: false } : tab,
-        );
+        const tabs = s.tabs.map(tab => {
+          if (tab.kind !== "session") return tab;
+          const history = sessionHistory(tab);
+          if (!history.entries.some(entry => entry.sessionId === sessionId && entry.draft)) return tab;
+          const entries = history.entries.map(entry => entry.sessionId === sessionId
+            ? { ...entry, draft: false } : entry);
+          return { ...tab, draft: tab.sessionId === sessionId ? false : tab.draft,
+            sessionHistory: { ...history, entries } };
+        });
         return commitCenterTabsState(s, { tabs });
       }),
 
@@ -618,7 +673,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     openReviewTab: (sessionId, assistantMsgId, scope = "turn", path) =>
       set((s) => {
         const next = openReviewTabLayout(
-          s.tabs, s.groups, sessionId, assistantMsgId, scope, path,
+          s.tabs, s.groups, sessionId, assistantMsgId, scope, path, s.activeId,
         );
         return commitCenterTabsState(s, {
           tabs: next.tabs, groups: next.groups, activeId: next.id,
@@ -954,12 +1009,9 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const idx = s.tabs.findIndex((t) => t.id === id);
         if (idx < 0) return {};
         const closingTab = s.tabs[idx];
-        if (
-          closingTab.kind === "session" &&
-          closingTab.sessionId &&
-          !closingTab.sessionId.startsWith("local_")
-        ) {
-          closedSessionAckTombstones.add(closingTab.sessionId);
+        if (closingTab.kind === "session") {
+          for (const entry of sessionHistory(closingTab).entries)
+            if (entry.sessionId) closedSessionAckTombstones.add(entry.sessionId);
         }
         let tabs = s.tabs.filter((t) => t.id !== id);
         let activeId = s.activeId;
@@ -986,9 +1038,15 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     renameSessionTab: (sessionId, title) =>
       set((s) => {
-        const id = sessionTabId(sessionId);
-        if (!s.tabs.some((t) => t.id === id && t.title !== title)) return {};
-        const tabs = s.tabs.map((t) => (t.id === id ? { ...t, title } : t));
+        const tabs = s.tabs.map(tab => {
+          if (tab.kind !== "session") return tab;
+          const history = sessionHistory(tab);
+          if (!history.entries.some(entry => entry.sessionId === sessionId && entry.title !== title)) return tab;
+          return { ...tab, title: tab.sessionId === sessionId ? title : tab.title,
+            sessionHistory: { ...history, entries: history.entries.map(entry =>
+              entry.sessionId === sessionId ? { ...entry, title } : entry) } };
+        });
+        if (tabs.every((tab, index) => tab === s.tabs[index])) return {};
         return commitCenterTabsState(s, { tabs });
       }),
   };
@@ -997,11 +1055,13 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 /** Whether an acknowledgement may activate its session. Missing tabs are
  *  legacy/non-tab callers; existing background tabs never take focus. */
 export function sessionAckIsActive(sessionId: string): boolean {
-  if (closedSessionAckTombstones.has(sessionId)) return false;
   const state = useCenterTabs.getState();
-  const hasTab = state.tabs.some((tab) => tab.sessionId === sessionId);
-  if (!hasTab && sessionId.startsWith("local_")) return false;
-  return !hasTab || state.activeId === sessionTabId(sessionId);
+  const active = state.tabs.find(tab => tab.id === state.activeId);
+  if (active?.kind === "session" && active.sessionId === sessionId) return true;
+  if (closedSessionAckTombstones.has(sessionId)) return false;
+  const hasTab = state.tabs.some(tab => tab.kind === "session"
+    && sessionHistory(tab).entries.some(entry => entry.sessionId === sessionId));
+  return !hasTab && !sessionId.startsWith("local_");
 }
 
 export function snapshotCenterTabsPayload(): CenterTabsPersistedPayload {
@@ -1234,7 +1294,7 @@ export function insertTransferredTabs(
 
 export function removeTransferredTabs(
   ids: string[],
-  _options: { persist: false },
+  _options: { persist: false; expectedTabs?: readonly CenterTab[] },
 ): {
   ok: boolean;
   empty: boolean;
@@ -1246,7 +1306,19 @@ export function removeTransferredTabs(
   const removed = new Set(ids);
   const valid = ids.length > 0
     && removed.size === ids.length
-    && ids.every((id) => before.tabs.some((tab) => tab.id === id));
+    && ids.every((id) => before.tabs.some((tab) => tab.id === id))
+    && (_options.expectedTabs ?? []).every(expected => {
+      if (expected.kind !== "session") return true;
+      const current = before.tabs.find(tab => tab.id === expected.id);
+      if (current?.kind !== "session") return false;
+      const navigation = (tab: CenterTab) => {
+        const history = sessionHistory(tab);
+        return { index: history.index, entries: history.entries.map(entry => ({
+          sessionId: entry.sessionId, title: entry.title, draft: !!entry.draft,
+        })) };
+      };
+      return JSON.stringify(navigation(current)) === JSON.stringify(navigation(expected));
+    });
   if (!valid) return { ok: false, empty: before.tabs.length === 0, before, after: before };
 
   const activeIndex = before.tabs.findIndex((tab) => tab.id === before.activeId);

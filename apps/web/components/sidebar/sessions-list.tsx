@@ -234,11 +234,8 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   function switchTo(id: string, title: string) {
-    // Focus-or-recreate the session's center tab BEFORE the navigation
-    // guard: when the clicked session IS the current one but its tab
-    // was closed (user parked on a file tab), the early return below
-    // would otherwise leave nothing re-opened. openSessionTab is
-    // focus-or-create, so this is a no-op when the tab already exists.
+    // Navigate the active session tab before the route guard. From a web
+    // or file tab this creates a session tab even if the route is unchanged.
     useCenterTabs.getState().openSessionTab(id, title);
     if (id === currentId && pathname === "/s/" + id) return;
     pushPath("/s/" + id);
