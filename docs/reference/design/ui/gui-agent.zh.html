@@ -205,7 +205,7 @@ browser_use(subtask)
 <p>macOS 窗口注册表只暴露 <code>window_press</code>、<code>window_set_text</code>、<code>window_scroll</code> 和终态标记；其他文件里的全局键鼠函数不能扩大这个入口。浏览器支持点击/输入/按键/悬停/滚动/选择，但未暴露拖拽与持续脚本入口。</p>
 <p>
 <code>Runtime.exec</code> 已使用 DAG 渲染历史并继承调用方权限限制内部工具，不需要再做 Context Engine。<code>execute_code</code> 每次新建 Python 子进程，无法跨调用保留 UI 对象或变量。</p>
-<p>稳定保留身份是 tab/资源关联：tab id、会话、分支分组，以及最后确认的 URL 与标题。活的 page key、CDP/BrowserView 句柄、frame 与动作租约只属于当前进程。桌面视图使用原生 <code>persist:webtabs</code> 分区；网页 UI 把中间栏 tab 描述持久化到 localStorage。今天新 worker incarnation 会把仍保留的 live 行标为不可用、把 control 设为 closed，前端可能把未知状态或 closed control 丢进通用 Unavailable 分组。重新打开时可能加载更早的 Google URL，而侧栏仍显示后来的 arXiv 标题。这是相对下文重启契约的已核实缺口，不是产品行为。</p> <a class="ref" href="#S1">[S1]</a> <a class="ref" href="#S2">[S2]</a> <a class="ref" href="#S3">[S3]</a> <a class="ref" href="#S4">[S4]</a> <a class="ref" href="#S5">[S5]</a>
+<p>稳定保留身份是 tab/资源关联：tab id、会话、分支分组，以及最后确认的 URL 与标题。活的 page key、CDP/BrowserView 句柄、frame 与动作租约只属于当前进程。桌面视图使用原生 <code>persist:webtabs</code> 分区；网页 UI 把中间栏 tab 描述持久化到 localStorage。重启恢复为每个保留 tab 描述重建新的原生 Page/绑定，加载最后确认 URL，并保持会话/分支分组。旧的活句柄可以标为不可用。没有保留 tab 描述的孤儿资源行不会凭空创建，失败时留在原分组。</p> <a class="ref" href="#S1">[S1]</a> <a class="ref" href="#S2">[S2]</a> <a class="ref" href="#S3">[S3]</a> <a class="ref" href="#S4">[S4]</a> <a class="ref" href="#S5">[S5]</a>
 </section>
 <section id="comparison">
 <h2 tabindex="-1">能力逐项比较</h2>
@@ -599,7 +599,7 @@ receipt = {
 <tr>
 <td>App 或 worker 进程重启且仍有保留网页</td>
 <td>保留 tab/资源关联。用新的能力身份重建已校验的原生 Page/绑定。加载最后确认的 URL 与标题。在后台恢复。不复制保留的 tab。不重开用户已关闭的网页。已隐藏的 PiP 保持隐藏。旧的活句柄保持无效。</td>
-<td>见下文重启恢复契约。默认 App 与 worker 重启验收仍待完成。</td>
+<td>已实现于保留 tab。默认 App 端口 18100：隐藏延迟导航、固定与隐藏预览偏好、恢复后首次人工点击、明确关闭的网页保持关闭。三轮合并测试、Web、contracts 与 Desktop/docs 门槛通过。整个 GUI Agent 项目仍未完成。</td>
 </tr>
 <tr>
 <td>拖拽中取消</td>
@@ -646,14 +646,14 @@ receipt = {
 <td>原分支。用户可打开或重试。不复制保留 tab。</td>
 </tr>
 <tr>
-<td>Reconnect page / 需要重新连接</td>
+<td>Reconnect / 需要重新连接</td>
 <td>新绑定缺失或已断开，保留 tab 仍列出。</td>
 <td>原分支。不是通用 Unavailable。不是已关闭的网页。</td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>恢复网页存在并不要求、也不意味着“让 Agent 继续”。空闲页面仍显示“可直接操作”。新任务动作仍须在新绑定存在后做普通的重新观察与授权。旧绑定、frame 与动作句柄保持无效。不绕过权限或应用安全；不自动恢复旧 Agent 动作、写栅栏或输入租约；不承诺跨进程死亡恢复 DOM、表单、滚动位置或页内 JavaScript 状态。<code>persist:webtabs</code> 中已有的 Cookie 与存储可在重新加载时生效。该契约的实现须待测试与默认 App 验收后才能标为完成。</p>
+<p>恢复网页存在并不要求、也不意味着“让 Agent 继续”。空闲页面仍显示“可直接操作”。新任务动作仍须在新绑定存在后做普通的重新观察与授权。旧绑定、frame 与动作句柄保持无效。不绕过权限或应用安全；不自动恢复旧 Agent 动作、写栅栏或输入租约。恢复会重新加载最后确认 URL，并使用 <code>persist:webtabs</code> 中已有的站点持久存储；不恢复未保存的 DOM 或表单。没有保留 tab 描述的旧孤儿资源记录不会自动重建，在原分组显示“网页恢复失败”。这一有界重启契约已经实现。默认 App 原生验收（含仅重启 App）已核实隐藏延迟导航（含查询与片段）、固定与隐藏预览偏好、站点 token 与计数器持久化、恢复后首次人工点击，以及明确关闭的网页保持关闭。三轮合并测试、Web、contracts 与 Desktop/docs 门槛通过。GUI Agent 的其他恢复、桌面与 VM 工作仍待完成。本段不把整个 GUI Agent 项目标为完成。</p>
 </section>
 <section id="experience">
 <span id="invocation"></span>
@@ -1257,8 +1257,8 @@ render();
 <tr><td>Resources 与统一预览</td><td>浏览器实现保留准确的 Page、会话分支与子 Agent 归属，提供自动预览和固定预览、小窗内的固定/取消固定开关、显式“在会话中预览”，并以等比例图片预览代替重复挂载 Page。现有纵向 Files、Activity、Resources 导航保持不变。单击资源条目选择只读聊天预览；“在会话中预览”保持同一 Page 身份，并在当前是网页时回到所属会话。显式“打开页面”把确切的现有 Page 显示为普通顶部标签并隐藏该预览。返回会话后，除非用户已隐藏，否则恢复预览。网页标签与其 PiP 不得同时显示；原生 Page 在普通网页工具栏下占满内容区。从未显示过的 Page 使用 1920×1080 CSS 像素创建视口；可见 Page 返回后台后保留最后一次原生 bounds。默认聊天 PiP 画面为 300×168.75 加单行标题栏，在较小聊天中被夹紧，并以未变形 contain 显示。Resources 不提供 pin 控件。真实页面保持可交互。浏览器接管使用现有执行暂停与恢复命令，并记录有界的操作标记和历史。聊天 PiP 控件是单行紧凑栏（标题、控制状态、打开页面、按状态显示暂停 Agent，我来操作 / 让 Agent 继续 / 重试暂停、固定预览 / 取消固定预览、展开/收起、更多、隐藏）；空闲和已关闭显示“可直接操作”，不提供暂停或继续按钮。资源行与 PiP 图标按钮共用 24px/14px Lucide 紧凑工具栏样式。Resources 没有搜索框。已隐藏的 PiP 由资源行“在会话中预览”恢复；单击行保持现有选择行为。隐藏保留 Page。没有单独的“显示预览”控件。</td><td>此项预览 UX 的浏览器源码（Web 与 Desktop 隐藏创建默认值）已实现；规格复核、质量复核、默认 App 原生互斥预览、多页面与接管验收尚未通过，完整三轮门槛仍待完成。原生软件与 VM 的预览和控制适配、子 Agent 审批缺口、以及示范录制与训练仍为分别实施的后续工作。本行不把整个 GUI Agent 项目标为完成。</td></tr>
 <tr>
 <td>P5 恢复与 UX</td>
-<td>定位共享执行控制和当前原生提示。保留浏览器 Page 的重启恢复已在“失败、取消与重启恢复”中规定。</td>
-<td>浏览器重启恢复尚未按目标契约实现。当前 incarnation 处理可能把保留关联丢进 Unavailable，并使 URL 与标题不一致。默认 App、worker 重启、新绑定、原分支分组、仅明确关闭进入已关闭的网页、隐藏 PiP 偏好、以及 URL/标题一致的验收仍待完成。在测试和这些门槛通过前，本行不得标为已实现。</td>
+<td>定位共享执行控制和当前原生提示。保留 tab 的有界浏览器重启恢复已实现：新原生绑定、最后确认 URL/标题、原分支分组、仅明确关闭进入已关闭的网页、隐藏与固定预览偏好保留、站点持久存储重新加载、不恢复未保存 DOM/表单、不自动继续 Agent。</td>
+<td>浏览器重启恢复已实现，并在默认 App 通过原生验收。三轮合并测试、Web、contracts 与 Desktop/docs 门槛通过。仅重启 App 会恢复带查询与片段的隐藏延迟导航；固定与隐藏偏好保留；恢复后首次人工点击推进已持久化计数器；明确关闭的网页保持关闭。没有保留 tab 描述的孤儿资源记录在原分组报告失败，不会自动重建。超出该浏览器 tab 契约的崩溃/部分副作用恢复、原生软件与 VM 适配，以及 GUI Agent 其余工作仍待完成。本行不把整个 GUI Agent 项目标为完成。</td>
 </tr>
 <tr>
 <td>P6 产品对比</td>
