@@ -1,34 +1,240 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>图片和文件：功能选择</title><style>
-:root{color-scheme:light dark;--bg:#f8f9fb;--panel:#fff;--fg:#202632;--muted:#5a6577;--line:#d9dfe9;--accent:#245eb8;--warm:#99531b;--soft:#eef3fc}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 system-ui,-apple-system,"PingFang SC",sans-serif}a{color:var(--accent);text-underline-offset:3px}main{max-width:1120px;margin:auto;padding:44px 28px 80px}header{max-width:850px}h1{font-size:clamp(28px,4vw,42px);line-height:1.25;margin:10px 0 20px;font-weight:650}h2{font-size:23px;margin:0 0 18px}h3{font-size:17px;margin:0 0 9px}p{margin:9px 0 16px}.eyebrow{font-size:12px;letter-spacing:.1em;color:var(--muted)}.status{display:inline-block;padding:4px 10px;border:1px solid var(--line);border-radius:5px;color:var(--warm);font-size:13px}.lead{font-size:18px;line-height:1.65}.muted,small{color:var(--muted)}nav{position:sticky;top:0;background:var(--bg);padding:13px 0;display:flex;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line);z-index:2}nav a{text-decoration:none;font-size:14px}section{padding-top:38px;scroll-margin-top:90px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.card,.simulation{padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:9px}.value{font-size:28px;line-height:1.3;color:var(--accent);font-variant-numeric:tabular-nums}.card p{font-size:14px}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:8px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:13px 15px;border-bottom:1px solid var(--line)}th{background:var(--soft);font-weight:600}tr:last-child td{border-bottom:0}code{font:12px/1.6 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere;background:var(--soft);border-radius:3px;padding:2px 4px}.flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;list-style:none;padding:0;counter-reset:step}.flow li{border-top:3px solid var(--accent);padding:15px;background:var(--panel);counter-increment:step}.flow li:before{content:counter(step);display:block;color:var(--accent);font-size:24px}.flow strong{display:block;margin:6px 0}.flow span{font-size:14px;color:var(--muted)}.control{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:18px 0}select{padding:8px;font:inherit;max-width:100%;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:4px}.result{padding:16px;border-left:3px solid var(--accent);background:var(--soft);margin:14px 0}.result p:last-child{margin-bottom:0}.state-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.state{padding:16px;border:1px solid var(--line);border-radius:7px}.state h3{color:var(--accent)}.state small{display:block}ul{padding-left:23px}li{margin:7px 0}details{border-top:1px solid var(--line);padding:15px 0}summary{cursor:pointer;font-weight:600}summary:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.note{border-left:3px solid var(--warm);padding:4px 0 4px 16px;margin:24px 0}footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}@media(prefers-color-scheme:dark){:root{--bg:#181b20;--panel:#20242b;--fg:#e3e8ef;--muted:#aeb8c7;--line:#3c4553;--accent:#8ab8ff;--warm:#e9b17c;--soft:#253248}}@media(max-width:720px){main{padding:25px 17px 50px}.grid,.state-grid{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}nav{gap:9px 18px}th,td{padding:10px;font-size:13px}section{scroll-margin-top:120px}.lead{font-size:16px}}@media(max-width:410px){.flow{grid-template-columns:1fr}nav{position:static}}@media print{nav,.simulation{display:none}main{max-width:none}.card,.state{break-inside:avoid}body{background:#fff;color:#111}a{color:inherit}}
-
-section p{max-width:94ch}h3{margin-top:26px}pre{overflow:auto;padding:14px;background:var(--soft)}td p{margin:0}nav{gap:10px 18px}.status{margin:8px 0}.language{font-size:14px}.flow{margin:24px 0}caption{text-align:left;padding:10px 0}#reference-explorer{scroll-margin-top:110px}.toc-link{white-space:normal}section section{padding-top:0}h2,h3{overflow-wrap:anywhere}
-
-.usage-intro{max-width:800px}.example{padding:20px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}.example-label{font-size:12px;color:var(--muted);margin-bottom:10px}.file-example{font-weight:600;margin-bottom:7px}.technical{margin-top:48px}.technical>p{color:var(--muted)}.technical details{background:var(--panel);padding:16px;margin:10px 0;border:1px solid var(--line);border-radius:7px}.technical details[open] summary{margin-bottom:18px}.technical h3{font-size:16px}.technical p,.technical td{font-size:14px}.state p:last-child{margin-bottom:0}
-
-.case{padding:20px 0;border-bottom:1px solid var(--line)}.case h3{margin-top:0}.frameworks{display:grid;gap:18px}.frameworks article{padding:20px;background:var(--panel);border:1px solid var(--line);border-radius:8px}.frameworks h3{margin-top:0}.choice{padding:18px 0;border-bottom:1px solid var(--line)}.choice h3{margin:0 0 8px}.choice p{margin-bottom:8px}main{max-width:1000px}.technical summary{line-height:1.6}
-</style></head><body><main><header><div class="eyebrow">OPENPROGRAM</div><h1>图片和文件：添加后应该怎样使用</h1><span class="status">功能讨论稿 · 候选功能尚未实现</span><p class="lead">这份文档用于选择附件功能：先看其他工具怎么用，再看 OpenProgram 可以提供哪些操作，以及每项操作会发生什么。</p><p>建议的默认方式是：图片直接交给支持看图的模型；电脑上已有的普通文件提供路径，由助手按任务读取。粘贴的图片保存到聊天中，已有文件是否另存副本由用户选择。</p><p><a href="attachment-handling.html" lang="en">English</a></p></header>
-<nav aria-label="内容导航"><a href="#usage">六种添加方式</a><a href="#frameworks">其他工具怎么用</a><a href="#choices">可选择的功能</a><a href="#technical">核实依据</a><a href="#status">实现状态</a></nav>
-<section id="usage"><h2>同样是“添加附件”，实际有六种情况</h2><p>下面描述的是 OpenProgram 的建议行为。文件是什么类型、从哪里添加、助手在哪台电脑运行，都会影响处理方式。</p>
-<article class="case"><h3>1. 粘贴一张截图</h3><p>例如截图后直接粘贴，问“这个报错是什么意思”。输入框显示图片预览，发送时模型直接收到图片内容，不需要先调用工具寻找截图。</p><p>剪贴板不保证以后还保留这张图，所以需要为聊天保存一份图片。保存的图片不必全部作为文字放进“记忆”，聊天只需记住关联关系；再次需要看图时，能够取出图片。</p></article>
-<article class="case"><h3>2. 拖入电脑上已有的图片</h3><p>例如拖入一张 PNG，问“比较这两张图”。仍然直接提供图片内容，不能因为图片来自文件就只给模型一个文件名。</p><p>原图已经在电脑上，默认引用原文件；可以选择“保存副本到聊天”。只引用时，原图被移动或删除后可能无法再次打开，修改后重新读取会看到新内容。若希望以后仍能查看发送时的版本，就需要保存副本。预览缩略图不能代替这份副本。</p></article>
-<article class="case"><h3>3. 拖入文字、代码或数据文件</h3><p>例如拖入 CSV，问“统计每个月的销售额”。默认添加文件路径，助手再读取、筛选或运行分析。添加时不自动把整个文件内容放进请求，也不复制原文件。</p><p>模型最初知道文件的位置；调用读取工具后才知道里面的内容。修改原文件后继续分析，会读到修改后的版本。需要固定版本时，选择“保存副本到聊天”。</p></article>
-<article class="case"><h3>4. 拖入 PDF、Word 或 Excel</h3><p>本地文件仍可先提供路径。助手根据任务选择读取方式：查 PDF 的某几页、提取 Word 的段落，或计算 Excel 的表格。路径本身不让模型自动具备读取这些格式的能力，运行环境还需要相应工具。</p><p>扫描版 PDF 可能需要识别页面图片。工具无法读取时，应说明具体文件和原因；不能把“已添加”显示成“已读完”。是否自动提取预览，是可以单独选择的功能。</p></article>
-<article class="case"><h3>5. 拖入一个文件夹</h3><p>添加文件夹路径，由助手根据任务查看目录和读取相关文件。拖入时不递归上传整个文件夹。文件夹内容发生变化后，助手下一次读取的是当前内容。</p></article>
-<article class="case"><h3>6. 从浏览器上传，或把文件交给远程助手</h3><p>上面的“只给路径”要求助手能访问该路径。普通网页通常拿不到可用的本机完整路径，远程电脑也不能直接读取你电脑上的文件。</p><p>这种情况下需要上传文件，或者使用已有的文件传输能力，让助手拿到可访问的文件。上传成功后再用于看图或工具读取；保留上传副本，避免聊天只记住你电脑上的无效路径。</p></article>
-<h3>图片太大时怎么处理</h3><p>先检查所选模型已知的格式、尺寸、文件大小和图片数量要求。符合要求就直接发送；超出要求时，按比例缩小或转换发送用的图片，保留可用的原图。界面说明“已缩小用于发送”，并允许查看原图。</p><p>不是所有模型都会提供可查询的最大图片大小，不能承诺自动查到每个模型的上限。没有明确限制时使用可配置的处理规则；仍无法发送就说明原因，并保留输入。若缩小后小字难以辨认，可以裁剪关注区域再发送。当前模型不支持看图时，提示切换模型；若另用图片识别工具，应明确说明。</p></section>
-<section id="frameworks"><h2>其他工具实际怎么用</h2><p>这些工具没有统一的“附件方式”。尤其要区分公开终端实现、桌面交互和聊天平台上传，不能把一个入口的行为推广到整个产品。</p><div class="frameworks">
-<article><h3>Codex：图片输入与普通文件引用分开</h3><p>官方使用说明提供图片粘贴、拖入及命令行图片输入。公开终端代码中，粘贴截图会先写成临时 PNG；选择可解码的图片会添加为图片输入，普通文件选择则插入路径。图片在发送时提供给模型，普通文件内容可以由助手随后通过工具读取。</p><p>因此，粘贴截图和引用代码文件不是同一种操作。图片处理还会按模型能力及所用模式调整尺寸，不能概括成所有图片都缩到同一个大小。</p><p>可借鉴的功能：图片直接看，普通文件按需读。公开代码能证明剪贴板图片会落盘，但不能证明 Codex 桌面版会永久保存每份附件；桌面版所有文件的复制规则未核实。</p><p><a href="https://learn.chatgpt.com/docs/image-inputs">官方图片使用说明</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/bottom_pane/chat_composer.rs">终端文件选择行为</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/clipboard_paste.rs">剪贴板图片保存</a></p></article>
-<article><h3>OpenCode V2：支持的文本附件会自动读入</h3><p>桌面和网页可选择、粘贴或拖入支持的附件。文本文件会把文件名和文字直接提供给模型；文件夹提供第一层目录；支持的图片作为图片输入，并可自动缩小。</p><p>它与“只提供路径，助手再读”不同。当前 V2 附件说明列出的图片是 PNG、JPEG、GIF、WebP；SVG 按文字处理。PDF、音频、视频等二进制附件目前不直接进入模型请求，需要先转换为支持的内容。</p><p>可借鉴的功能：短文本添加后立即可读。但大文件默认全文加入请求会占用上下文，不适合作为我们所有本地文件的默认方式。这里的公开说明没有证明所有本地文件都会保存聊天副本。</p><p><a href="https://opencode.ai/v2/docs/attachments">OpenCode V2 附件说明</a></p></article>
-<article><h3>OpenClaw：接收上传文件后，再按类型处理</h3><p>通过聊天渠道收到的媒体会下载到运行环境。支持视觉的主模型可直接看图；其他配置可使用媒体理解能力生成描述。文档可提取文字，扫描 PDF 可在配置允许时转换页面图片。</p><p>不支持直接提取的 Office 等文件，只有在运行环境确实能访问保存路径时，才能交给工具继续读取。它处理的是收到的文件，不能据此推断本地拖文件也应该一律复制。</p><p>可借鉴的功能：网页、消息渠道和远程使用时，先让文件在助手的运行环境中可访问，再按类型使用。</p><p><a href="https://docs.openclaw.ai/nodes/images">媒体接收与图片处理</a> · <a href="https://docs.openclaw.ai/nodes/media-understanding">文档与媒体理解</a></p></article>
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>六种附件场景，直接看方案</title><style>
+:root{color-scheme:light dark;--bg:#f6f7f9;--panel:#fff;--text:#202531;--muted:#5c6472;--line:#dce0e8;--blue:#285bbb;--soft:#edf3ff;--green:#226b51;--warm:#8a5520;--ui:#202124;--uifg:#efeff3;--uimut:#b9bac4}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,-apple-system,'PingFang SC',sans-serif}main{max-width:1440px;margin:auto;padding:42px 28px 70px}h1{font-size:clamp(28px,3.8vw,43px);line-height:1.25;max-width:920px;margin:12px 0 18px}h2{font-size:26px;margin:0}h3{font-size:17px;line-height:1.5;margin:12px 0}p{margin:8px 0 14px}a{color:var(--blue);text-underline-offset:3px}button,textarea,input{font:inherit}button{cursor:pointer;background:var(--blue);color:white;border:0;border-radius:6px;padding:11px 18px}a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--blue);outline-offset:4px}.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}.intro{max-width:950px;font-size:17px}.notice{padding:14px 18px;background:var(--soft);border-radius:8px;max-width:1050px}.small,small{font-size:13px;color:var(--muted)}.nav{display:flex;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:5;padding:14px 0;background:var(--bg);border-bottom:1px solid var(--line);margin-top:24px}.nav a{text-decoration:none;padding:5px 10px;border:1px solid var(--line);border-radius:5px;background:var(--panel);font-size:13px}section{padding-top:38px;scroll-margin-top:120px}.case-head{display:flex;align-items:baseline;gap:14px}.number{color:var(--blue);font-size:25px;font-weight:650}.question{color:var(--muted);margin:8px 0 20px}.comparison{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:0;padding:0;border:0;min-width:0}.variant{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:18px;display:flex;flex-direction:column}.variant.selected{border-color:var(--blue);box-shadow:inset 0 3px var(--blue)}.variant.current{background:color-mix(in srgb,var(--panel) 85%,var(--bg))}.badges{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-height:28px}.badge{font-size:12px;padding:3px 8px;border-radius:4px;background:var(--soft);color:var(--blue)}.current .badge{background:var(--bg);color:var(--muted)}.recommended{color:var(--green);background:color-mix(in srgb,var(--green) 9%,var(--panel))}.mock{background:var(--ui);color:var(--uifg);border-radius:8px;overflow:hidden;margin:4px 0 14px}.mock-top{padding:9px 13px;background:#18191c;display:flex;justify-content:space-between;font-size:11px;color:var(--uimut)}.mock-body{padding:14px}.caption{font-size:11px;color:var(--uimut);margin-bottom:8px}.composer{background:#2c2d33;border:1px solid #45464e;border-radius:8px;padding:12px}.attachment{display:flex;align-items:center;gap:10px;min-height:49px;font-size:12px;overflow-wrap:anywhere}.file-icon{width:34px;height:42px;flex:none;border:1px solid #797d8d;border-radius:4px;display:grid;place-items:center;color:#c9d7fa;font-size:10px}.folder-icon{height:29px;width:36px;background:#535a6c;border-radius:3px;position:relative}.folder-icon:before{content:'';position:absolute;left:0;top:-6px;width:16px;height:8px;background:#535a6c;border-radius:3px}.screenshot{width:65px;height:48px;flex:none;background:#f3f4f7;border-radius:3px;padding:5px}.screenshot:before{content:'';display:block;height:5px;background:#7986a1;margin-bottom:5px}.screen-error{height:11px;background:#f0c9c9;margin-bottom:4px}.screen-line{height:3px;background:#bbc3d1;width:85%;margin:3px 0}.prompt{font-size:12px;margin:12px 0 4px}.send-row{text-align:right}.send-symbol{display:inline-grid;place-items:center;border-radius:50%;width:24px;height:24px;background:#626d84;color:#fff;font-size:15px}.after{padding:13px 0 2px}.outcome{font-size:12px;border-left:2px solid #8baeff;padding-left:10px;min-height:42px}.excerpt{font:11px/1.6 ui-monospace,monospace;white-space:pre-wrap;background:#17191e;padding:8px;border-radius:4px;color:#c4d6f9;margin:9px 0 0}.later{font-size:12px;color:var(--uimut);border-top:1px solid #444650;padding-top:9px;margin-top:12px}.difference{font-size:14px;flex-grow:1}.source{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:11px;min-height:65px}.choose{display:flex;align-items:flex-start;gap:9px;padding:12px 10px;background:var(--soft);border-radius:5px;cursor:pointer;font-size:13px;margin-top:12px}.choose input{accent-color:var(--blue);margin-top:5px}.current-note{font-size:12px;color:var(--muted);padding:12px 0;margin-top:12px}.recommendation{padding:12px 16px;border-left:3px solid var(--green);margin:14px 0 0;background:var(--panel);font-size:14px}.shared{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.shared article{padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:7px}.shared h3{margin:0 0 6px}.summary-box{padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:9px}textarea{width:100%;min-height:230px;padding:14px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;resize:vertical;margin-top:15px}details{padding:15px 0;border-top:1px solid var(--line)}summary{cursor:pointer;font-weight:600}details p{max-width:1000px}code{font:12px ui-monospace,monospace;overflow-wrap:anywhere}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px;margin-top:28px}[hidden]{display:none!important}@media(prefers-color-scheme:dark){:root{--bg:#181b21;--panel:#232730;--text:#e9ecf3;--muted:#b5bdca;--line:#414a5b;--blue:#a4c2ff;--soft:#2b374c;--green:#91d2b2;--warm:#e6b77f}button{background:#335da1}}@media(max-width:1050px){main{padding:24px 18px 50px}.comparison{gap:12px}.variant{padding:12px}.nav{position:static}}@media(max-width:780px){.comparison,.shared{grid-template-columns:1fr}.source{min-height:0}.mock-body{padding:16px}.case-head{align-items:flex-start}h2{font-size:23px}.variant{padding:18px}.question{margin-bottom:14px}section{scroll-margin-top:15px}}@media print{.nav,.choose,button,.summary-box{display:none}.comparison{grid-template-columns:repeat(3,1fr)}.variant{break-inside:avoid}body{background:#fff;color:#111}.mock{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><main>
+<header><div class="eyebrow">OPENPROGRAM / 附件功能讨论</div><h1>六种附件场景，直接看方案</h1><p class="intro">每一行比较同一种操作：左边是当前 OpenProgram，中间和右边是可选方案。看输入框、发送后发生什么，以及以后还能打开哪一份文件。</p><p><a href="attachment-handling.html">English</a></p><div class="notice">所有界面均为行为示意，不是产品截图。框架标签表示已核实的处理方式相似，不表示它使用相同的界面或保存规则。绿色标签是建议，未代表已决定实施。</div></header>
+<nav class="nav" aria-label="场景导航">
+<a href="#case-1">1. 粘贴一张截图</a>
+<a href="#case-2">2. 拖入电脑上已有的图片</a>
+<a href="#case-3">3. 拖入文字、代码或数据文件</a>
+<a href="#case-4">4. 拖入 PDF、Word 或 Excel</a>
+<a href="#case-5">5. 拖入一个文件夹</a>
+<a href="#case-6">6. 网页上传或远程助手</a>
+<a href="#selection">查看选择清单</a></nav><div id="choices"></div>
+<section id="case-1"><p class="notice">图片方案以所选模型支持看图为前提。当前 OpenAI Responses 在模型不支持图片时可能直接移除图片内容，没有自动工具回退。建议实现时明确提示切换模型，或使用已配置的图片工具并说明处理方式。</p><div class="case-head"><span class="number">01</span><h2>粘贴一张截图</h2></div><p class="question">发送时直接看图，还是先保存、再让助手读取？</p><fieldset class="comparison"><legend class="sr-only">粘贴一张截图 — 选择方案</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram 当前</span>
+</div><h3>现在：发图片，也保存文件</h3><div class="mock" role="group" aria-label="行为示意：现在：发图片，也保存文件"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>图片预览</span></div><p class="prompt">这个报错是什么意思？</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">支持看图时发送完整图片；大图可能被拒绝</div>
+<div class="later">以后再打开：已经保存图片，但提交失败时可能没有消息可供查看</div></div></div></div><p class="difference">当前没有按模型要求调整发送图片；失败可能清空输入。</p>
+<div class="source">当前源码依据；示意文字并非现有界面原文。
+ <a href="#ref-op">依据</a>
+</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">可选方案</span>
+<span class="badge recommended">OpenProgram 建议默认</span>
+</div><h3>A · 直接看图，并保存到聊天</h3><div class="mock" role="group" aria-label="行为示意：A · 直接看图，并保存到聊天"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>图片 · 已保存到聊天</span></div><p class="prompt">这个报错是什么意思？</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">模型直接收到图片；必要时缩小发送版本</div>
+<div class="later">以后再打开：重新打开聊天，还能查看这张截图</div></div></div></div><p class="difference">保留现有直接看图方式，补充图片调整与可靠的发送确认。</p>
+<div class="source">Codex / OpenCode：直接图片输入相似；不据此声称保存期限相同。
+ <a href="#ref-codex">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-1" value="1" data-title="A · 直接看图，并保存到聊天" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant "><div class="badges"><span class="badge">可选方案</span>
+</div><h3>B · 保存图片，由助手按需打开</h3><div class="mock" role="group" aria-label="行为示意：B · 保存图片，由助手按需打开"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>截图文件 · 等待读取</span></div><p class="prompt">这个报错是什么意思？</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">助手先看到路径，再调用看图工具</div>
+<div class="later">以后再打开：保存聊天副本；有需要时再次打开</div></div></div></div><p class="difference">可以推迟看图，但本次多一步工具读取；工具不可用时无法分析。</p>
+<div class="source">本页提出的备选；未核实这三个框架以此作为粘贴截图的默认方式。
+</div>
+<label class="choose"><input type="radio" name="scenario-1" value="2" data-title="B · 保存图片，由助手按需打开" ><span>选择这个方案</span></label>
+</article>
+</fieldset><p class="recommendation">建议 A：截图通常就是本次问题的内容，直接看图；剪贴板图片保存一份。</p></section>
+<section id="case-2"><div class="case-head"><span class="number">02</span><h2>拖入电脑上已有的图片</h2></div><p class="question">所选模型支持看图时，两种方案都直接提供图片；区别是是否自动保存原图副本。</p><fieldset class="comparison"><legend class="sr-only">拖入电脑上已有的图片 — 选择方案</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram 当前</span>
+</div><h3>现在：原路径与副本同时保留</h3><div class="mock" role="group" aria-label="行为示意：现在：原路径与副本同时保留"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>comparison.png · 图片预览</span></div><p class="prompt">比较这张图里的两个版本。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">支持看图时，图片直接发送给模型</div>
+<div class="later">以后再打开：保留原路径；同时自动保存附件副本供预览</div></div></div></div><p class="difference">目前没有让用户选择是否复制。</p>
+<div class="source">当前源码依据；示意文字并非现有界面原文。
+ <a href="#ref-op">依据</a>
+</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">可选方案</span>
+<span class="badge recommended">OpenProgram 建议默认</span>
+</div><h3>A · 引用原图，需要时另存</h3><div class="mock" role="group" aria-label="行为示意：A · 引用原图，需要时另存"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>引用原图 · comparison.png</span></div><p class="prompt">比较这张图里的两个版本。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">本次直接看图；不默认另存原图副本</div>
+<div class="later">以后再打开：原图移动或删除后，可能无法再次打开</div></div></div></div><p class="difference">新增“保存副本到聊天”选项；修改原图后再读取会看到新内容。</p>
+<div class="source">Codex 公开终端支持本地图片输入；未核实其完整副本保留规则。
+ <a href="#ref-codex">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-2" value="1" data-title="A · 引用原图，需要时另存" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant "><div class="badges"><span class="badge">可选方案</span>
+</div><h3>B · 每次都保存一份到聊天</h3><div class="mock" role="group" aria-label="行为示意：B · 每次都保存一份到聊天"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="screenshot" aria-hidden="true"><div class="screen-error"></div><div class="screen-line"></div><div class="screen-line"></div></div>
+<span>已保存副本 · comparison.png</span></div><p class="prompt">比较这张图里的两个版本。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">本次直接看图</div>
+<div class="later">以后再打开：原图修改或删除后，仍可查看发送时的版本</div></div></div></div><p class="difference">保留自动复制，但明确以后查看和分析哪一份文件；额外占用空间。</p>
+<div class="source">OpenProgram 当前已有自动保存；这里补充明确的版本选择。
+ <a href="#ref-op">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-2" value="2" data-title="B · 每次都保存一份到聊天" ><span>选择这个方案</span></label>
+</article>
+</fieldset><p class="recommendation">建议 A：已有原图时不默认复制；需要保留当时版本再选择保存副本。</p></section>
+<section id="case-3"><div class="case-head"><span class="number">03</span><h2>拖入文字、代码或数据文件</h2></div><p class="question">默认只给路径，还是添加时就把文字提供给模型？</p><fieldset class="comparison"><legend class="sr-only">拖入文字、代码或数据文件 — 选择方案</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram 当前</span>
+</div><h3>现在：路径、开头预览和副本</h3><div class="mock" role="group" aria-label="行为示意：现在：路径、开头预览和副本"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">CSV</div>
+<span>sales.csv · 文件附件</span></div><p class="prompt">统计每个月的销售额。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">原路径 + 一段开头文字；其余按需读取</div>
+<div class="later">以后再打开：文件上传后还会保存一份副本</div></div></div></div><p class="difference">即使本地已有原文件，也会上传保存；并非纯路径引用。</p>
+<div class="source">当前源码依据；示意文字并非现有界面原文。
+ <a href="#ref-op">依据</a>
+</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">可选方案</span>
+<span class="badge recommended">OpenProgram 建议默认</span>
+</div><h3>A · 只引用，助手按任务读取</h3><div class="mock" role="group" aria-label="行为示意：A · 只引用，助手按任务读取"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">CSV</div>
+<span>引用原文件 · sales.csv</span></div><p class="prompt">统计每个月的销售额。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">读取 sales.csv → 统计需要的数据</div>
+<div class="later">以后再打开：默认读取原文件当前内容；可以另存副本</div></div></div></div><p class="difference">不自动上传、复制或加入正文。文件不存在时明确提示。</p>
+<div class="source">Codex 公开终端：普通文件选择插入路径，行为相似。
+ <a href="#ref-codex">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-3" value="1" data-title="A · 只引用，助手按任务读取" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant "><div class="badges"><span class="badge">可选方案</span>
+</div><h3>B · 把文字直接提供给模型</h3><div class="mock" role="group" aria-label="行为示意：B · 把文字直接提供给模型"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">CSV</div>
+<span>直接提供内容 · sales.csv</span></div><p class="prompt">统计每个月的销售额。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">模型本次请求就能读到文件文字</div>
+<div class="excerpt">月份,销售额
+一月,1200
+二月,1800</div>
+<div class="later">以后再打开：记录已提供的文字；这不等于保存原文件副本</div></div></div></div><p class="difference">少一步读取，适合短文件；太长时需要提示或改为按需读取。</p>
+<div class="source">OpenCode V2：支持的文本附件会自动提供文字。
+ <a href="#ref-opencode">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-3" value="2" data-title="B · 把文字直接提供给模型" ><span>选择这个方案</span></label>
+</article>
+</fieldset><p class="recommendation">建议 A 为默认，B 作为短文本可选项。</p></section>
+<section id="case-4"><div class="case-head"><span class="number">04</span><h2>拖入 PDF、Word 或 Excel</h2></div><p class="question">先让助手选工具读取，还是自动准备可读预览？</p><fieldset class="comparison"><legend class="sr-only">拖入 PDF、Word 或 Excel — 选择方案</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram 当前</span>
+</div><h3>现在：保存文件，部分格式有预览</h3><div class="mock" role="group" aria-label="行为示意：现在：保存文件，部分格式有预览"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">PDF</div>
+<span>report.pdf · 文档附件</span></div><p class="prompt">总结这份报告的结论。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">PDF 可提取首页文字及页概览；其余需要工具</div>
+<div class="later">以后再打开：保留原路径，并自动保存上传副本</div></div></div></div><p class="difference">Word / Excel 等二进制不自动变成可读正文；提取失败可没有预览。</p>
+<div class="source">当前源码依据；示意文字并非现有界面原文。
+ <a href="#ref-op">依据</a>
+</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">可选方案</span>
+<span class="badge recommended">OpenProgram 建议默认</span>
+</div><h3>A · 先引用，再选择读取方式</h3><div class="mock" role="group" aria-label="行为示意：A · 先引用，再选择读取方式"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">PDF</div>
+<span>引用原文件 · report.pdf</span></div><p class="prompt">总结这份报告的结论。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">助手选择读页、提取段落或分析表格</div>
+<div class="later">以后再打开：默认不复制；需要固定版本时保存副本</div></div></div></div><p class="difference">不在添加时自动解析。缺少工具或扫描件无法识别时说明原因。</p>
+<div class="source">Codex：参考普通文件路径输入；不表示所有文档格式都原生支持。
+ <a href="#ref-codex">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-4" value="1" data-title="A · 先引用，再选择读取方式" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant "><div class="badges"><span class="badge">可选方案</span>
+</div><h3>B · 自动准备预览，再继续读取</h3><div class="mock" role="group" aria-label="行为示意：B · 自动准备预览，再继续读取"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">PDF</div>
+<span>report.pdf · 已提取部分文字</span></div><p class="prompt">总结这份报告的结论。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">先看文字预览；扫描件可用页面识别</div>
+<div class="excerpt">已读：第 1 页
+尚未读取：其余页面</div>
+<div class="later">以后再打开：本地可引用原文件；上传的文件需保存</div></div></div></div><p class="difference">自动处理更方便，但要等待；必须标出部分读取和失败，不承诺所有格式可读。</p>
+<div class="source">OpenClaw：文档提取及可配置的扫描 PDF 回退相似；OpenProgram 已有部分 PDF 预览。
+ <a href="#ref-openclaw">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-4" value="2" data-title="B · 自动准备预览，再继续读取" ><span>选择这个方案</span></label>
+</article>
+</fieldset><p class="recommendation">建议 A 为默认；B 可以作为“自动预览”选项单独开启。</p></section>
+<section id="case-5"><div class="case-head"><span class="number">05</span><h2>拖入一个文件夹</h2></div><p class="question">只提供文件夹位置，还是先列出第一层目录？</p><fieldset class="comparison"><legend class="sr-only">拖入一个文件夹 — 选择方案</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram 当前</span>
+</div><h3>现在：文件夹拖入待核实</h3><div class="mock" role="group" aria-label="行为示意：现在：文件夹拖入待核实"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="folder-icon" aria-hidden="true"></div>
+<span>project/ · 行为未验收</span></div><p class="prompt">找到负责登录的代码。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">当前处理以文件列表为主</div>
+<div class="later">以后再打开：不能据此承诺文件夹会按预期加入聊天</div></div></div></div><p class="difference">源码未见专用目录处理；此图表示证据缺口，不是当前报错截图。</p>
+<div class="source">当前源码依据；示意文字并非现有界面原文。
+ <a href="#ref-op">依据</a>
+</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">可选方案</span>
+<span class="badge recommended">OpenProgram 建议默认</span>
+</div><h3>A · 只添加文件夹路径</h3><div class="mock" role="group" aria-label="行为示意：A · 只添加文件夹路径"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="folder-icon" aria-hidden="true"></div>
+<span>引用文件夹 · project/</span></div><p class="prompt">找到负责登录的代码。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">查看目录 → 找到相关文件 → 读取</div>
+<div class="later">以后再打开：以后读取的是文件夹的当前内容</div></div></div></div><p class="difference">不递归复制或上传；助手根据任务决定读哪些文件。</p>
+<div class="source">建议方案；没有把未核实的拖目录行为归给其他框架。
+</div>
+<label class="choose"><input type="radio" name="scenario-5" value="1" data-title="A · 只添加文件夹路径" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant "><div class="badges"><span class="badge">可选方案</span>
+</div><h3>B · 先提供第一层目录</h3><div class="mock" role="group" aria-label="行为示意：B · 先提供第一层目录"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="folder-icon" aria-hidden="true"></div>
+<span>project/ · 第一层目录</span></div><p class="prompt">找到负责登录的代码。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">模型先知道有哪些文件，再按需打开</div>
+<div class="excerpt">src/
+tests/
+README.md</div>
+<div class="later">以后再打开：当前消息保留目录文字；不是整个文件夹副本</div></div></div></div><p class="difference">减少一次列目录操作；深层文件仍需继续查看。</p>
+<div class="source">OpenCode V2：目录附件提供非递归的第一层列表。
+ <a href="#ref-opencode">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-5" value="2" data-title="B · 先提供第一层目录" ><span>选择这个方案</span></label>
+</article>
+</fieldset><p class="recommendation">建议 A 为默认；如果希望模型立即知道目录内容，可以选择 B。</p></section>
+<section id="case-6"><div class="case-head"><span class="number">06</span><h2>网页上传或远程助手</h2></div><p class="question">文件在你电脑上时上传；已经在远程环境时是否直接引用？</p><fieldset class="comparison"><legend class="sr-only">网页上传或远程助手 — 选择方案</legend>
+<article class="variant current"><div class="badges"><span class="badge">OpenProgram 当前</span>
+</div><h3>现在：已有文件上传与保存</h3><div class="mock" role="group" aria-label="行为示意：现在：已有文件上传与保存"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">XLSX</div>
+<span>sales.xlsx · 文件附件</span></div><p class="prompt">分析我电脑上的这份表格。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">网页上传后生成运行环境中的文件路径</div>
+<div class="later">以后再打开：保存上传文件；普通文档由工具继续读取</div></div></div></div><p class="difference">完整跨机器访问尚未验收，不能把上传成功等同于远程工具可读。</p>
+<div class="source">当前源码依据；示意文字并非现有界面原文。
+ <a href="#ref-op">依据</a>
+</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected"><div class="badges"><span class="badge">可选方案</span>
+<span class="badge recommended">OpenProgram 建议默认</span>
+</div><h3>A · 上传到助手可访问的位置</h3><div class="mock" role="group" aria-label="行为示意：A · 上传到助手可访问的位置"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">XLSX</div>
+<span>上传完成 · sales.xlsx</span></div><p class="prompt">分析我电脑上的这份表格。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">确认文件可访问 → 读取表格</div>
+<div class="later">以后再打开：保留上传副本，不依赖本机原路径</div></div></div></div><p class="difference">建议用于本机文件。显示进度与失败原因，确认成功后再清空输入。</p>
+<div class="source">OpenClaw 渠道接收相似；OpenProgram / OpenCode 网页也接收文件内容，界面并非照搬。
+ <a href="#ref-openclaw">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-6" value="1" data-title="A · 上传到助手可访问的位置" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant "><div class="badges"><span class="badge">可选方案</span>
+</div><h3>B · 引用远程环境已有的文件</h3><div class="mock" role="group" aria-label="行为示意：B · 引用远程环境已有的文件"><div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div><div class="mock-body"><div class="caption">添加后 · 输入框</div><div class="composer"><div class="attachment">
+<div class="file-icon" aria-hidden="true">XLSX</div>
+<span>远程文件 · /work/sales.xlsx</span></div><p class="prompt">分析我电脑上的这份表格。</p><div class="send-row" aria-hidden="true"><span class="send-symbol">↑</span></div></div><div class="after"><div class="caption">发送后 · 模型如何使用</div><div class="outcome">确认远程路径可访问 → 读取</div>
+<div class="later">以后再打开：不再上传；文件移动或删除后引用可能失效</div></div></div></div><p class="difference">仅当文件已在助手可访问的环境中适用，不能替代本机文件上传。</p>
+<div class="source">OpenCode V2 支持服务端可访问的文件引用；不是读取浏览器用户的本机路径。
+ <a href="#ref-opencode">依据</a>
+</div>
+<label class="choose"><input type="radio" name="scenario-6" value="2" data-title="B · 引用远程环境已有的文件" ><span>选择这个方案</span></label>
+</article>
+</fieldset><p class="recommendation">本机文件建议 A；文件已经在远程环境时用 B。两者适用条件不同，可以同时提供。</p></section>
+<section id="shared"><h2>无论选哪种，都要说明这三件事</h2><div class="shared">
+<article><h3>图片是否需要调整</h3><p>按所选模型已知要求调整发送版本，保留可用原图。没有可查询上限时使用明确的处理规则；不能承诺自动查到所有模型限制。</p></article>
+<article><h3>失败后输入还在</h3><p>确认成功前保留文字和附件。上传、读取或发送失败要指出原因；断线后先确认上次结果，避免重复发送。</p></article>
+<article><h3>是否保留当时版本</h3><p>引用原文件会受到修改、移动和删除的影响。保存副本才保留当时版本；目录列表和文字摘录都不等于原文件副本。</p></article>
 </div></section>
-<section id="choices"><h2>OpenProgram 可选择的功能</h2><p>以下是可以分别决定是否实现的功能，顺序表示建议优先程度，不表示已经确认实施。每项都可以用一次实际操作验收。</p>
-<div class="choice"><h3>A. 粘贴图片后直接提问</h3><p>粘贴截图，看到预览，发送后模型能看图；重新打开聊天仍可查看截图。超过已知限制时自动处理，无法处理时保留图片并说明原因。</p><p class="muted">建议优先实现。解决截图无法发送和粘贴图片丢失的问题。</p></div>
-<div class="choice"><h3>B. 本地文件与文件夹只添加引用</h3><p>拖入 CSV、PDF 或文件夹后显示名称和位置，助手按任务读取。添加时不自动复制或读入全部内容；路径不可访问时立即提示。</p><p class="muted">建议作为本地桌面的默认方式。图片仍按前面的图片输入处理。</p></div>
-<div class="choice"><h3>C. 需要时保存文件副本</h3><p>已有文件提供“保存副本到聊天”。选择后，即使修改或删除原文件，仍能查看当时保存的版本；未选择时，界面显示“引用原文件”。</p><p class="muted">可独立选择。适合需要保留分析依据、以后复查的文件。</p></div>
-<div class="choice"><h3>D. 短文本立即提供内容</h3><p>为文本附件增加“直接提供内容”选项。选择后模型在本次请求就能读到文字，无需先调用文件工具；内容太长时提示改为按需读取。</p><p class="muted">可独立选择。借鉴 OpenCode，适合短说明或小段代码。</p></div>
-<div class="choice"><h3>E. 网页和远程会话自动上传</h3><p>无法直接访问本地路径时，显示上传进度，并将文件保存到助手能读取的位置。用户不需要手动查找远程路径。</p><p class="muted">使用网页上传或远程会话时需要，与本地文件引用区分。</p></div>
-<div class="choice"><h3>F. 发送失败时保留输入</h3><p>无论添加哪种附件，确认发送成功前都保留文字和附件。失败时指出原因，允许修改后重试；断线后先确认上次是否成功，避免重复发送。</p><p class="muted">建议与 A 一起实现。验收时模拟超限和断线，确认输入不会消失。</p></div>
-</section>
-<section id="technical" class="technical"><h2>核实依据与开发备注</h2><details><summary>当前 OpenProgram 与建议行为有什么差别</summary><p>当前上传流程也会保存普通文件，尚不是 B 描述的路径引用默认行为。图片缩略图不会缩小实际发送的图片；完整图片编码计入执行输入大小，可能在用户消息保存前被拒绝。前端在收到持久保存确认前清空输入，因此可能留下只有标题的聊天。</p><p>本次目标聊天日志记录了输入过大的错误；原请求没有完整保留，不能断言是哪一个字段导致。已用本地最小请求复现图片编码超过执行输入限制，不涉及调用模型。</p><p>修改时要分别处理聊天保存、图片发送和文件读取。不能仅压小所有图片来适应执行输入限制，也不能把所有本地文件复制一份作为默认解决办法。附件中的文字作为用户提供的材料处理，不自动视为用户新指令。</p><p><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py">附件保存与消息提交</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/production_driver.py">执行输入检查</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts">输入框提交行为</a></p></details>
-<details><summary>图片调整与保存范围的证据限制</summary><p>Codex 公开图片处理代码包含多种调整方式，选择取决于能力和配置；默认工具中的尺寸常量不能当作每个模型的上限。OpenCode 的自动调整依据可配置限制，也不保证符合所有模型要求。OpenClaw 不同渠道的接收限制不能当作统一模型限制。</p><p>“保存为临时文件”“上传到运行环境”和“长期保留聊天副本”是不同的承诺。其他框架没有明确说明的保留期限，这里不作推断。OpenProgram 若选择 C，应另行明确聊天删除、导出和迁移时如何处理副本。</p><p><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/image_preparation.rs">Codex 图片准备</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs">Codex 图片输入</a></p></details></section>
-<section id="status"><h2>实现状态</h2><p>本文更新了功能说明与公开资料核实。A–F 均为待选择、待实现的功能描述，未修改 App 行为。具体接口、存储结构和参数在功能范围确定后补充到开发备注。</p></section></main></body></html>
+<section id="selection"><h2>把页面里的选择整理成清单</h2><div class="summary-box"><p>勾选只改变本页示意，不会修改 App，也不会提交决定。初始勾选是建议默认项；刷新页面会恢复默认。第 6 项只表示优先讨论哪种入口，两个入口可以同时提供。</p><button type="button" id="generate">生成选择清单</button><label for="selection-text" class="sr-only">可复制的方案清单</label><textarea id="selection-text" readonly hidden></textarea><p id="selection-notice" aria-live="polite" class="small"></p></div></section>
+<section id="sources"><h2>框架依据与当前实现</h2>
+<details id="ref-op"><summary>OpenProgram 当前行为</summary><p>普通文件会读取并上传内容，后端保存附件副本。桌面来源保留原路径，另存副本用于预览；文本附开头内容，PDF 尝试提取首页与页概览，二进制由工具读取。图片作为图片输入发送，但只有所选服务与模型支持时才对模型可见；不支持图片的 OpenAI Responses 配置可能移除图片内容，当前无自动工具回退。文件夹拖入及完整跨机器访问尚未完成交互验收。</p><p><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/attach/use-composer-attachments.ts">添加文件</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py">保存与预览</a></p></details>
+<details id="ref-codex"><summary>Codex：公开终端行为，非桌面原型</summary><p>已核实普通文件选择插入路径、可解码图片添加为图片输入、剪贴板图片写入临时 PNG。不能从这些代码推断桌面版所有附件的长期复制规则。图中的副本开关及状态文案是 OpenProgram 提案。</p><p><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/bottom_pane/chat_composer.rs">文件选择</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/clipboard_paste.rs">剪贴板图片</a> · <a href="https://learn.chatgpt.com/docs/image-inputs">官方图片使用说明</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/image_preparation.rs">图片调整</a></p></details>
+<details id="ref-opencode"><summary>OpenCode V2</summary><p>支持的文本附件加入文字，目录附件提供第一层列表，PNG/JPEG/GIF/WebP 作为图片。SVG 作为文字；PDF、音视频等二进制附件目前不直接进入模型请求。可引用服务端可访问的文件；图片调整使用可配置规则，不保证满足所有模型要求。</p><p><a href="https://opencode.ai/v2/docs/attachments">官方附件说明</a></p></details>
+<details id="ref-openclaw"><summary>OpenClaw</summary><p>渠道媒体会下载到运行环境；视觉主模型可接收图片，其他配置可生成描述。文档可提取文字，扫描 PDF 可按配置使用页面图片回退。部分文件交给工具时，必须确认运行环境能访问保存路径。未把渠道接收行为等同于本地桌面拖入行为。</p><p><a href="https://docs.openclaw.ai/nodes/images">媒体接收</a> · <a href="https://docs.openclaw.ai/nodes/media-understanding">文档与媒体理解</a></p></details>
+</section><section id="technical" class="technical"><h2>核实依据与开发备注</h2><details><summary>当前 OpenProgram 与建议行为有什么差别</summary><p>当前上传流程也会保存普通文件，尚不是“只引用原文件”的默认行为。图片缩略图不会缩小实际发送的图片；完整图片编码计入执行输入大小，可能在用户消息保存前被拒绝。前端在收到持久保存确认前清空输入，因此可能留下只有标题的聊天。</p><p>本次目标聊天日志记录了输入过大的错误；原请求没有完整保留，不能断言是哪一个字段导致。已用本地最小请求复现图片编码超过执行输入限制，不涉及调用模型。</p><p>修改时要分别处理聊天保存、图片发送和文件读取。不能仅压小所有图片来适应执行输入限制，也不能把所有本地文件复制一份作为默认解决办法。附件中的文字作为用户提供的材料处理，不自动视为用户新指令。</p><p><a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/server/openprogram_server/_webui/ws_actions/chat.py">附件保存与消息提交</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/openprogram/agent/production_driver.py">执行输入检查</a> · <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/chat/composer/submit/use-chat-submit.ts">输入框提交行为</a></p></details>
+<details><summary>图片调整与保存范围的证据限制</summary><p>Codex 公开图片处理代码包含多种调整方式，选择取决于能力和配置；默认工具中的尺寸常量不能当作每个模型的上限。OpenCode 的自动调整依据可配置限制，也不保证符合所有模型要求。OpenClaw 不同渠道的接收限制不能当作统一模型限制。</p><p>“保存为临时文件”“上传到运行环境”和“长期保留聊天副本”是不同的承诺。其他框架没有明确说明的保留期限，这里不作推断。OpenProgram 若选择保存副本功能，应另行明确聊天删除、导出和迁移时如何处理副本。</p><p><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/image_preparation.rs">Codex 图片准备</a> · <a href="https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs">Codex 图片输入</a></p></details></section>
+<footer id="status">实现状态：本页是功能方案比较，建议方案尚未实施。当前行为根据本次工作副本源码核实，未将示意图当作已安装 App 的交互验收结果。</footer>
+<script>
+const labels = {"titles": ["粘贴一张截图", "拖入电脑上已有的图片", "拖入文字、代码或数据文件", "拖入 PDF、Word 或 Excel", "拖入一个文件夹", "网页上传或远程助手"], "heading": "页面方案清单（含建议默认项，尚未确认实施）", "notice": "已更新清单。可选中文字复制；它不会自动提交或修改 App。"};
+const output = document.getElementById('selection-text');
+function summaryText(){return labels.heading+'\n\n'+labels.titles.map((title,index)=>{const selected=document.querySelector('input[name="scenario-'+(index+1)+'"]:checked');return (index+1)+'. '+title+' — '+selected.dataset.title;}).join('\n');}
+function update(){document.querySelectorAll('.variant:not(.current)').forEach(card=>card.classList.toggle('selected',card.querySelector('input').checked));if(!output.hidden)output.value=summaryText();}
+document.querySelectorAll('input[type="radio"]').forEach(input=>input.addEventListener('change',update));
+document.getElementById('generate').addEventListener('click',()=>{output.hidden=false;output.value=summaryText();document.getElementById('selection-notice').textContent=labels.notice;output.focus();});
+update();
+</script></main></body></html>
