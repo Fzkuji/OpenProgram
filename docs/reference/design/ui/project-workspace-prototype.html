@@ -19,17 +19,17 @@
   .left{width:240px;flex-shrink:0;border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column}
   .left .brand{height:44px;display:flex;align-items:center;padding:0 14px;font-weight:700;font-size:15px;flex-shrink:0}
   .left .brand i{color:var(--accent);font-style:normal}
-  .lsearch{margin:0 10px 10px;display:flex;gap:8px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text3);font-size:12.5px}
+  .lsearch{margin:0 10px 10px;display:flex;gap:8px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text2);font-size:12.5px}
   .lbody{flex:1;overflow-y:auto;padding:0 8px 8px}
   .pgroup{margin-bottom:4px}
   .phead{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:8px;cursor:pointer;color:var(--text)}
   .phead:hover{background:var(--bg3)}
-  .phead .pc{font-size:9px;color:var(--text3);width:10px;transition:transform .15s}
+  .phead .pc{font-size:9px;color:var(--text2);width:10px;transition:transform .15s}
   .pgroup.open .phead .pc{transform:rotate(90deg)}
   .phead .pname{font-size:13px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .phead .padd{color:var(--text3);font-size:14px;padding:0 3px;border-radius:5px}
+  .phead .padd{color:var(--text2);font-size:14px;padding:0 3px;border-radius:5px}
   .phead .padd:hover{color:var(--text);background:var(--bg)}
-  .ppath{padding:0 8px 4px 25px;font-size:10.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ppath{padding:0 8px 4px 25px;font-size:10.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .plist{display:none}
   .pgroup.open .plist{display:block}
   .sess{display:flex;align-items:center;gap:8px;padding:6px 8px 6px 25px;border-radius:8px;cursor:pointer;color:var(--text2);font-size:12.5px;white-space:nowrap;overflow:hidden}
@@ -38,7 +38,7 @@
   .sess .dot{width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0}
   .sess.running .dot{background:var(--green);animation:pulse 1.4s infinite}
   @keyframes pulse{50%{opacity:.3}}
-  .lfoot{border-top:1px solid var(--border);padding:8px 10px;display:flex;gap:12px;color:var(--text3);font-size:12px;flex-shrink:0}
+  .lfoot{border-top:1px solid var(--border);padding:8px 10px;display:flex;gap:12px;color:var(--text2);font-size:12px;flex-shrink:0}
   .lfoot span{cursor:pointer}
   .lfoot span:hover{color:var(--text)}
 
@@ -95,7 +95,7 @@
   .rhead{min-height:66px;display:flex;flex-direction:column;gap:4px;padding:6px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
   .rootpath{width:100%;height:20px;display:flex;align-items:center;gap:6px;color:var(--text2);font:11px/20px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .roottools{width:100%;display:flex;align-items:center;gap:6px}
-  .filter{flex:1;display:flex;gap:7px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:5px 9px;color:var(--text3);font-size:12px}
+  .filter{flex:1;display:flex;gap:7px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:5px 9px;color:var(--text2);font-size:12px}
   .rbody{flex:1;overflow-y:auto;padding:8px}
   .tnode{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:7px;cursor:pointer;color:var(--text2);font-size:12.5px}
   .tnode:hover{background:var(--bg3)}
@@ -117,7 +117,24 @@
   .dagbody svg circle.a{stroke:var(--accent);fill:#1f2940}
   .dagbody svg line{stroke:var(--text3)}
 
-  .hint{position:fixed;bottom:12px;right:262px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:11.5px;color:var(--text3);z-index:9}
+  .hint{position:fixed;bottom:12px;right:262px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:11.5px;color:var(--text2);z-index:9}
+  @media (max-width:760px){
+    body{height:auto;min-height:100vh;overflow:auto}
+    .app{flex-direction:column;min-height:0}
+    .left{width:100%;height:auto;border-right:0;border-bottom:1px solid var(--border);flex:none}
+    .lbody{flex:none}
+    .lfoot{flex-wrap:wrap}
+    .center{min-height:640px}
+    .tabbar{overflow-x:auto}
+    .toolbar{height:auto;min-height:40px;flex-wrap:wrap;padding:8px 12px}
+    .msgs{padding:18px 20px}
+    .m-user,.m-ai{max-width:100%}
+    .m-tool{max-width:100%}
+    .m-tool .fp{overflow-wrap:anywhere}
+    .composer{margin:10px 20px 14px}
+    .right{width:100%;min-height:320px;border-left:0;border-top:1px solid var(--border);flex:none}
+    .hint{position:static;max-width:calc(100% - 24px);margin:12px}
+  }
 </style>
 </head>
 <body>
@@ -259,7 +276,7 @@ function renderContent(){
         <div class="m-user">把 socksio 的问题修一下，顺便整理 proxy 设计</div>
         <div class="m-ai">根因是 ALL_PROXY=socks5 时 httpx 在构造客户端就要求 socksio。依赖收进 <span class="mono" style="color:var(--accent)">httpx[socks]</span>，代理解析统一到一个入口，1594 个测试全过。</div>
         <div class="m-tool" onclick="openFile('http_proxy.py')">✏️ Edit <span class="fp mono">providers/utils/http_proxy.py</span></div>
-        <div class="m-ai" style="color:var(--text3);font-size:12px">↑ 点文件路径 → 右边树高亮 + 新开一个文件 tab（就像浏览器点链接）</div>
+        <div class="m-ai" style="color:var(--text2);font-size:12px">↑ 点文件路径 → 右边树高亮 + 新开一个文件 tab（就像浏览器点链接）</div>
       </div>
       <div class="composer">Ask for follow-up changes…
         <div class="crow"><span>＋ 🖐</span><span class="send">↑</span></div>

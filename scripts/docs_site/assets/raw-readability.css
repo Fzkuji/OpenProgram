@@ -1,0 +1,15 @@
+/* Standalone documents keep their own palette and layout. These rules only
+   let long text reflow and keep wide reference material locally scrollable. */
+body { overflow-wrap: anywhere; }
+main, article, section, div, aside, nav { min-width: 0; }
+p, li, td, th, a { overflow-wrap: anywhere; }
+:not(pre) > code { overflow-wrap: anywhere; }
+pre { max-width: 100%; overflow: auto; }
+.op-read-scroll {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+}
+.op-read-scroll:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.op-read-scroll > table { margin-top: 0; margin-bottom: 0; }

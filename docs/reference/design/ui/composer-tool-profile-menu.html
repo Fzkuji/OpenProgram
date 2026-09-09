@@ -20,11 +20,13 @@
     border-left:4px solid var(--blue) } .grid { display:grid;
     grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px } .card { padding:14px 15px }
   h3 { margin:0 0 6px; font-size:15px } ul { margin:6px 0; padding-left:20px }
-  .table-wrap { overflow:auto } table { width:100%; border-collapse:collapse }
+  .table-wrap { max-width:100%; overflow:auto; overscroll-behavior-x:contain }
+  table { width:100%; border-collapse:collapse }
   th,td { padding:9px 11px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top }
   th { color:#cbd5e3 } tr:last-child td { border-bottom:0 }
+  .table-wrap:focus-visible { outline:2px solid var(--blue); outline-offset:3px }
   .ok { color:var(--green) } .pending { color:var(--amber) }
-  @media(max-width:760px) { .grid { grid-template-columns:1fr } }
+  @media(max-width:760px) { main { padding:28px 20px 60px } .grid { grid-template-columns:1fr } code { overflow-wrap:anywhere } }
 </style>
 </head>
 <body><main>
@@ -36,7 +38,7 @@
   <p>一级菜单通过 <code>Menu.Portal</code> 挂载到 document body，positioner 使用 <code>z-index: 200</code>。失败实现把二级菜单作为 composer 内的 <code>position: fixed</code> 节点，并增加透明 backdrop。composer 的 <code>.inputArea</code> 自身是 <code>z-index: 5</code> 的层叠上下文，因此二级节点即使设置 <code>z-index: 9999</code>，仍位于 body portal 的一级菜单之后。截图中的一级菜单覆盖二级菜单由此产生。</p>
 
   <h2>参考实现比较</h2>
-  <div class="table-wrap"><table><thead><tr><th>方案</th><th>能力</th><th>结论</th></tr></thead><tbody>
+  <div class="table-wrap" role="region" aria-label="参考实现比较表格横向滚动区域" data-scroll-region tabindex="0"><table><thead><tr><th>方案</th><th>能力</th><th>结论</th></tr></thead><tbody>
     <tr><td>Base UI submenu</td><td>受控 open、click trigger、outside press、Escape、focus、portal、floating position</td><td class="ok">采用；项目已安装且原代码已使用</td></tr>
     <tr><td>手写 fixed + backdrop</td><td>点击状态可实现；缺少 portal 层级、自动 flip、完整键盘与 focus 行为</td><td>拒绝；重复已有基础设施并产生当前缺陷</td></tr>
     <tr><td>原生 Popover API</td><td>top layer 与 light dismiss；不提供现有 Menu 的 roving focus、submenu 关系和定位合同</td><td>本次不采用；会同时维护两套菜单语义</td></tr>
@@ -62,7 +64,7 @@
   </ul>
 
   <h2>当前实现与验证证据</h2>
-  <div class="table-wrap"><table><thead><tr><th>项目</th><th>证据</th><th>状态</th></tr></thead><tbody>
+  <div class="table-wrap" role="region" aria-label="当前实现验证证据表格横向滚动区域" data-scroll-region tabindex="0"><table><thead><tr><th>项目</th><th>证据</th><th>状态</th></tr></thead><tbody>
     <tr><td>菜单行为</td><td><code>npm run check:composer-tool-profile</code> 覆盖受控二级菜单、父菜单关闭、层级、键盘和 store 归属</td><td class="ok">通过</td></tr>
     <tr><td>类型检查</td><td><code>npx tsc --noEmit</code></td><td class="ok">通过</td></tr>
     <tr><td>实现约束</td><td><code>sibling-open</code> 是唯一被忽略的父菜单关闭原因；outside press、Escape、item press 与父菜单关闭保持有效</td><td class="ok">符合</td></tr>
@@ -72,4 +74,13 @@
     <tr><td>文档</td><td><code>python -m scripts.docs_site.checklinks</code>：0 broken links</td><td class="ok">通过</td></tr>
     <tr><td>视觉约束</td><td>gear 位于 check 左侧，按钮为 22×22px、图标为 14px，并保留既有间距与整行 hover</td><td class="ok">符合</td></tr>
   </tbody></table></div>
+<script>
+document.querySelectorAll('[data-scroll-region]').forEach(region=>region.addEventListener('keydown',event=>{
+  const step=Math.max(80,Math.round(region.clientWidth*.75));
+  if(event.key==='ArrowRight'){event.preventDefault();region.scrollLeft+=step}
+  else if(event.key==='ArrowLeft'){event.preventDefault();region.scrollLeft-=step}
+  else if(event.key==='Home'){event.preventDefault();region.scrollLeft=0}
+  else if(event.key==='End'){event.preventDefault();region.scrollLeft=region.scrollWidth}
+}));
+</script>
 </main></body></html>

@@ -86,6 +86,7 @@ summary { cursor: pointer; font-weight: 600; }
 <p>HTML 片段使用现有的 <code>--bg</code>、<code>--bg-code</code>、<code>--tx</code>、<code>--tx-soft</code>、<code>--acc</code> 和 <code>--bd</code> 变量。站点采用与 Web 应用一致的暖中性色和橙色强调色，不在正文内另设固定的浅色配色。</p>
 <p>标题使用语义化层级和稳定的 <code>id</code>，让 HTML 章节进入本页导航。表格在窄屏无法容纳全部列时使用局部滚动容器。图示提供可访问的标题和说明。原生折叠控件用于区分详细证据与主要解释。键盘焦点、减少动态效果设置和手机阅读都属于文档验收范围。</p>
 <p>站点主题偏好保存为 <code>op-docs-theme</code>，切换时在站点窗口派发 <code>documentThemeChange</code>。iframe 有独立文档，不会自动接收该事件。独立页面需要明确维护自己的主题行为，或使用片段继承共享主题。</p>
+<p>共享阅读层为宽表格提供可通过键盘操作的局部横向滚动，并保留可读的列宽。独立 HTML 同样获得表格支持和图示滚动区域；源码未指定背景时，阅读层补充不透明底色，避免文字与外层主题冲突。这些处理保留正文和页面自身配色，不代表页面所述实现已经通过验收。</p>
 <h2 id="导航与双语源码">导航与双语源码<a class="header-anchor" href="#导航与双语源码">#</a></h2>
 <p>九个 Tab 为 <code>start</code>、<code>install</code>、<code>capabilities</code>、<code>interfaces</code>、<code>models</code>、<code>integrations</code>、<code>server</code>、<code>reference</code> 和虚拟的 <code>design</code>。设计源码位于 <code>docs/reference/design/</code>，不存在 <code>docs/design/</code> 源码目录。</p>
 <p><code>TAB_SECTIONS</code> 定义产品阅读顺序，<code>PAGE_ORDER</code> 定义显式页面顺序。其余页面按目录分组，目录标题使用配置名称或 README 标题。不能把侧栏理解为文件树的直接复制，也不能假定所有页面都按文件名排序。</p>

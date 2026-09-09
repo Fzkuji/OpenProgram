@@ -19,7 +19,7 @@
   --bg-card:   #ffffff;
   --tx:        #3d3d3a;   /* --text-primary */
   --tx-soft:   #73726c;   /* --text-secondary */
-  --tx-faint:  #9c9a91;
+  --tx-faint:  #76746b;
   --acc:       #b8651f;   /* --accent-orange (light) */
   --acc-soft:  #f3e6d6;
   --bd:        rgba(31, 30, 29, 0.12);   /* --border */
@@ -45,7 +45,7 @@ html[data-theme="dark"] {
   --bg-card:   #252524;
   --tx:        #c3c2b7;   /* --text-primary */
   --tx-soft:   #97958c;   /* --text-secondary */
-  --tx-faint:  #6f6e66;
+  --tx-faint:  #8c8a82;
   --acc:       #d19a66;   /* --accent-orange (dark) */
   --acc-soft:  #35291d;
   --bd:        rgba(226, 225, 218, 0.12);   /* --border */
@@ -149,7 +149,8 @@ nav.tabbar::-webkit-scrollbar { display: none; }
 .tablink.active { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── layout ── */
-.layout { display: flex; padding-top: 96px; }
+.layout { display: flex; padding-top: 96px; min-width: 0; }
+.layout > *, main.content, article, article > * { min-width: 0; }
 
 /* wide-screen sidebar collapse (toggled by the hamburger) */
 html[data-nav-collapsed="1"] nav.sidebar { transform: translateX(-100%); }
@@ -276,16 +277,19 @@ article p { margin: 12px 0; }
 article ul, article ol { margin: 12px 0; padding-left: 26px; }
 article li { margin: 5px 0; }
 article li::marker { color: var(--tx-faint); }
+article p, article li, article td, article th, article a { overflow-wrap: anywhere; }
 
 article code {
   font: 13px var(--mono); background: var(--bg-code); color: var(--acc);
-  padding: 2px 6px; border-radius: 5px; border: 1px solid var(--bd-soft);
+  padding: 2px 6px; border-radius: 5px; border: 1px solid var(--bd-soft); overflow-wrap: anywhere;
 }
 article pre {
   background: var(--bg-code); border: 1px solid var(--bd); border-radius: 10px;
-  padding: 16px 18px; overflow-x: auto; margin: 16px 0; line-height: 1.6;
+  padding: 16px 18px; max-width: 100%; overflow-x: auto; margin: 16px 0; line-height: 1.6;
 }
 article pre code { background: none; border: none; color: var(--tx); padding: 0; font-size: 13px; }
+article pre:focus-visible, article .doc-scroll:focus-visible, article .table-wrap:focus-visible,
+article .viz-frame:focus-visible { outline: 2px solid var(--acc); outline-offset: 3px; }
 
 /* code-block copy button */
 article pre { position: relative; }
@@ -316,6 +320,13 @@ article pre .copy-btn.copied { color: var(--acc); border-color: var(--acc); }
 .callout-warning   { --cl-accent: #d9920a; --cl-bg: color-mix(in srgb, #d9920a 10%, var(--bg)); }
 .callout-caution   { --cl-accent: #e0533d; --cl-bg: color-mix(in srgb, #e0533d 9%, var(--bg)); }
 
+/* Keep small callout labels legible on the light canvas. */
+html:not([data-theme="dark"]) .callout-note { --cl-accent: #2360a5; }
+html:not([data-theme="dark"]) .callout-tip { --cl-accent: #23744f; }
+html:not([data-theme="dark"]) .callout-important { --cl-accent: #6b43b0; }
+html:not([data-theme="dark"]) .callout-warning { --cl-accent: #8d5e00; }
+html:not([data-theme="dark"]) .callout-caution { --cl-accent: #a83626; }
+
 article blockquote {
   margin: 16px 0; padding: 10px 18px; color: var(--tx-soft);
   background: var(--bg-side); border-left: 3px solid var(--acc); border-radius: 0 8px 8px 0;
@@ -323,6 +334,9 @@ article blockquote {
 article blockquote p { margin: 4px 0; }
 
 article table { border-collapse: collapse; width: 100%; margin: 18px 0; font-size: 14px; }
+article .doc-scroll, article .table-wrap {
+  max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain;
+}
 article th, article td { border: 1px solid var(--bd); padding: 8px 12px; text-align: left; vertical-align: top; }
 article th { background: var(--bg-side); font-weight: 650; }
 article tr:nth-child(even) td { background: color-mix(in srgb, var(--bg-side) 50%, transparent); }
@@ -356,7 +370,7 @@ article:has(.home-grid) { max-width: none; }
 
 /* embedded visualization (hand-written html via isolated iframe) */
 .viz-frame {
-  width: 100%; height: calc(100vh - 56px - 76px); min-height: 600px;
+  width: 100%; height: calc(100vh - 56px - 76px); min-height: 600px; max-width: 100%; overflow: auto;
   border: 1px solid var(--bd); border-radius: 12px; background: var(--bg-card);
 }
 article:has(.viz-frame) { max-width: none; }

@@ -14,6 +14,7 @@ h1{font-size:23px;border-bottom:2px solid var(--acc);padding-bottom:10px}
 .bar button.on{background:var(--acc);color:#1a1a19;border-color:var(--acc);font-weight:600}
 .bar button:hover:not(.on){border-color:var(--acc)}
 .stage{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.stage>div:first-child{flex:1 1 480px;min-width:0;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .canvas{background:#141413;border:1px solid var(--bd);border-radius:10px;min-width:480px;min-height:360px}
 .side{flex:1;min-width:260px}
 .desc{background:var(--pan);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;font-size:13.5px;color:var(--tx);margin-bottom:14px}
@@ -37,6 +38,8 @@ text{font-family:-apple-system,sans-serif;pointer-events:none}
 .principles li{margin:4px 0;color:var(--tx)}
 .principles b{color:#f0eee6}
 .principles code{background:var(--cb);color:var(--acc);padding:1px 5px;border-radius:4px;font:12px Menlo,monospace}
+.stage>div:first-child:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+@media(max-width:760px){.w{padding:24px 20px 60px}.stage{gap:16px}.stage>div:first-child{flex-basis:480px}.side{min-width:0;width:100%}.principles{padding:20px}.canvas{display:block}}
 </style></head>
 <body><div class="w">
 <h1>DAG 实时布局（真算法）</h1>
@@ -46,7 +49,7 @@ text{font-family:-apple-system,sans-serif;pointer-events:none}
 
 <div class="bar" id="bar"></div>
 <div class="stage">
-  <div><svg id="svg" class="canvas"></svg></div>
+  <div data-scroll-region tabindex="0" role="region" aria-label="DAG 图横向滚动区域"><svg id="svg" class="canvas"></svg></div>
   <div class="side">
     <div class="desc" id="desc"></div>
     <div class="legend">
@@ -128,6 +131,14 @@ text{font-family:-apple-system,sans-serif;pointer-events:none}
 </div>
 
 <script>
+document.querySelectorAll('[data-scroll-region]').forEach(region=>region.addEventListener('keydown',event=>{
+  const step=Math.max(80,Math.round(region.clientWidth*.75));
+  if(event.key==='ArrowRight'){event.preventDefault();region.scrollLeft+=step}
+  else if(event.key==='ArrowLeft'){event.preventDefault();region.scrollLeft-=step}
+  else if(event.key==='Home'){event.preventDefault();region.scrollLeft=0}
+  else if(event.key==='End'){event.preventDefault();region.scrollLeft=region.scrollWidth}
+}));
+
 /* ============================================================
    真实布局算法 — 1:1 移植自后端 openprogram/webui/graph_layout/
    （lane.py / topology.py / tier.py / depth.py / __init__.py）

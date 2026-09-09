@@ -20,18 +20,21 @@
   .lead { margin-top:20px; padding:15px 17px; border-left:4px solid var(--blue) }
   .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px }
   .card { padding:14px 15px } ul,ol { margin:6px 0; padding-left:20px }
-  .table-wrap { overflow:auto } table { width:100%; border-collapse:collapse }
+  .table-wrap { max-width:100%; overflow:auto; overscroll-behavior-x:contain }
+  table { width:100%; border-collapse:collapse }
   th,td { padding:9px 11px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top }
   th { color:#cbd5e3 } tr:last-child td { border-bottom:0 }
-  .demo { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:12px; padding:14px }
+  .demo { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:12px; padding:14px; max-width:100%; overflow-x:auto; overscroll-behavior-x:contain }
   .cluster { display:flex; align-items:center; gap:8px; min-width:0 }
   .cluster:last-child { justify-content:flex-end; gap:12px }
   .control { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 6px;
     border-radius:5px; background:#232a35; white-space:nowrap }
   .icon { display:inline-grid; place-items:center; width:16px; height:16px; color:var(--blue) }
   .compact .label { display:none } .compact .control { width:24px; padding:0; justify-content:center }
+  .table-wrap:focus-visible,.demo:focus-visible { outline:2px solid var(--blue); outline-offset:3px }
   .ok { color:var(--green) } .pending { color:var(--amber) }
-  @media(max-width:760px) { .grid { grid-template-columns:1fr } .demo { grid-template-columns:1fr }
+  @media(max-width:760px) { main { padding:28px 20px 60px } .grid { grid-template-columns:1fr } .demo { grid-template-columns:1fr }
+    code { overflow-wrap:anywhere }
     .cluster:last-child { justify-content:flex-start } }
 </style>
 </head>
@@ -46,7 +49,7 @@
 
   <h2>组件边界</h2>
   <p>Composer 按交互职责组织目录：输入编辑归入 <code>input/</code>，提交链路归入 <code>submit/</code>，模式分发归入 <code>modes/</code>，会话设置归入 <code>state/</code>，附件、粘贴、slash 与 controls 沿用各自现有目录。环境栏内部再区分整体布局与单个 chip；ProjectBadge、WorkingDirChips 和 GoalChip 保留在其共享业务模块。DAG HUD 由 DAG 模块负责，通过 EnvironmentRow 的通用尾部内容插槽接入，EnvironmentRow 不包含 DAG 名称、DOM id 或控制逻辑。</p>
-  <div class="table-wrap"><table><thead><tr><th>目录或文件</th><th>唯一职责</th><th>不负责</th></tr></thead><tbody>
+  <div class="table-wrap" role="region" aria-label="组件边界表格横向滚动区域" data-scroll-region tabindex="0"><table><thead><tr><th>目录或文件</th><th>唯一职责</th><th>不负责</th></tr></thead><tbody>
     <tr><td><code>composer/environment-row/environment-row.tsx</code></td><td>组合环境栏子组件并渲染调用方提供的尾部内容。</td><td>不包含 DAG 名称、portal id、聊天提交或项目状态。</td></tr>
     <tr><td><code>composer/environment-row/use-compact-environment-row.ts</code></td><td>测量环境栏实际宽度并维护 compact 属性。</td><td>不渲染组件、不定义视觉样式。</td></tr>
     <tr><td><code>composer/environment-row/environment-row.module.css</code></td><td>环境栏布局、pill surface、两态动画和 DAG slot 样式。</td><td>不包含输入框、底部 controls 或其他 Composer 模式。</td></tr>
@@ -62,7 +65,7 @@
   </tbody></table></div>
 
   <h2>参考与选择</h2>
-  <div class="table-wrap"><table><thead><tr><th>参考</th><th>适用能力</th><th>采用方式</th></tr></thead><tbody>
+  <div class="table-wrap" role="region" aria-label="参考与选择表格横向滚动区域" data-scroll-region tabindex="0"><table><thead><tr><th>参考</th><th>适用能力</th><th>采用方式</th></tr></thead><tbody>
     <tr><td><a href="https://www.w3.org/TR/css-contain-3/">W3C CSS Containment Level 3</a></td><td><code>@container</code> 根据组件容器尺寸控制后代样式，不依赖 viewport。</td><td class="ok">采用现有 <code>.composer-bottom-row</code> 容器；split pane 与普通会话共用同一规则。</td></tr>
     <tr><td><a href="https://www.w3.org/WAI/ARIA/apg/practices/names-and-descriptions/">WAI accessible names</a></td><td>隐藏可见文字时，交互控件仍需保留可计算的名称。</td><td class="ok">沿用现有 tooltip、Popover trigger 和标签；视觉隐藏不删除 DOM 语义。</td></tr>
     <tr><td>横向滚动</td><td>保留任意长度的文字，但会让部分设置入口离开当前可见范围。</td><td>保留为极窄宽度的后备；不作为主要响应方式。</td></tr>
@@ -70,18 +73,18 @@
   </tbody></table></div>
 
   <h2>目标显示</h2>
-  <div class="demo" aria-label="正常宽度示意">
+  <div class="demo" role="region" aria-label="正常宽度示意横向滚动区域" data-scroll-region tabindex="0">
     <div class="cluster"><span class="control"><span class="icon">◇</span><span class="label">Ask permissions</span></span><span class="control">＋</span></div>
     <div class="cluster"><span class="control"><span class="icon">◯</span><span class="label">Chat model</span></span><span class="control"><span class="icon">〉_</span><span class="label">Execution model</span></span><span class="control"><span class="icon">⌁</span><span class="label">Medium</span></span><span class="control">◌</span></div>
   </div>
-  <div class="demo compact" aria-label="窄宽度示意">
+  <div class="demo compact" role="region" aria-label="窄宽度示意横向滚动区域" data-scroll-region tabindex="0">
     <div class="cluster"><span class="control"><span class="icon">◇</span><span class="label">Ask permissions</span></span><span class="control">＋</span></div>
     <div class="cluster"><span class="control"><span class="icon">◯</span><span class="label">Chat model</span></span><span class="control"><span class="icon">〉_</span><span class="label">Execution model</span></span><span class="control"><span class="icon">⌁</span><span class="label">Medium</span></span><span class="control">◌</span></div>
   </div>
 
   <h2>控制按钮 surface 层级</h2>
   <p>上方 environment chips 使用填充与边缘层级，底部 controls 则只有 20px 高。底部 permission、more、active tools、chat model、execution model、effort 与 context 只复用主题级 <code>--chip-bg</code>，形成始终可见的浅色填充；常态 surface 不新增 border、内描边或外部阴影，避免压缩小控件的内部视觉空间。既有 hover 前景色和键盘 <code>focus-visible</code> 指示保持不变。</p>
-  <div class="table-wrap"><table><thead><tr><th>状态</th><th>surface</th><th>保持不变</th></tr></thead><tbody>
+  <div class="table-wrap" role="region" aria-label="控制按钮 surface 表格横向滚动区域" data-scroll-region tabindex="0"><table><thead><tr><th>状态</th><th>surface</th><th>保持不变</th></tr></thead><tbody>
     <tr><td>常态</td><td><code>background:var(--chip-bg)</code>；computed border 为 0、shadow 为 none</td><td>20px 高度、5px 圆角、图标与文字颜色</td></tr>
     <tr><td>hover / open</td><td>在 <code>--chip-bg</code> 上混入 8% <code>--text-bright</code></td><td>原菜单、tooltip、动画、既有 hover 前景色与 effort 等级色</td></tr>
     <tr><td>窄态</td><td>与常态同一 surface，不因文字视觉隐藏而改变</td><td>四个核心触发器仍为 20px 图标按钮</td></tr>
@@ -89,7 +92,7 @@
 
   <h2>Context 统计弹层的数据时序</h2>
   <p><code>ContextBreakdownPanel</code> 在关闭时会卸载。若每次挂载都把已有结果清空并进入 <code>loading</code>，用户重复打开同一会话、同一 DAG 分支时会先看到一张只有“Loading…”的卡片，再看到统计内容。网络请求即使很短，这次整卡替换仍然可见。</p>
-  <div class="table-wrap"><table><thead><tr><th>场景</th><th>立即显示</th><th>后台行为</th></tr></thead><tbody>
+  <div class="table-wrap" role="region" aria-label="Context 统计时序表格横向滚动区域" data-scroll-region tabindex="0"><table><thead><tr><th>场景</th><th>立即显示</th><th>后台行为</th></tr></thead><tbody>
     <tr><td>同一会话、同一分支再次打开</td><td>上一次成功取得的完整统计</td><td>重新请求并原位更新，不进入整卡 loading</td></tr>
     <tr><td>首次打开或缓存不存在</td><td>既有 loading 空态</td><td>请求当前统计，成功后写入缓存</td></tr>
     <tr><td>切换会话或 DAG 分支</td><td>只读取新 <code>sessionId + headId</code> 对应的缓存</td><td>取消旧请求；旧响应不得覆盖当前面板</td></tr>
@@ -117,7 +120,7 @@
   </ol>
 
   <h2>实现状态</h2>
-  <div class="table-wrap"><table><thead><tr><th>项目</th><th>状态</th></tr></thead><tbody>
+  <div class="table-wrap" role="region" aria-label="实现状态表格横向滚动区域" data-scroll-region tabindex="0"><table><thead><tr><th>项目</th><th>状态</th></tr></thead><tbody>
     <tr><td>设计与任务边界</td><td class="ok">完成</td></tr>
     <tr><td>public-entry RED / GREEN</td><td class="ok">完成：静态入口先因缺少窄态 effort 图标失败，实施后通过；真实 App E2E 覆盖 700px 与 360px 两种容器宽度。</td></tr>
     <tr><td>specification review / quality review</td><td class="ok">完成：规格审查与修复后的独立质量审查均通过。</td></tr>
@@ -127,4 +130,13 @@
     <tr><td>Context 统计重复打开</td><td class="ok">已实现：缓存按会话与分支隔离；重复打开立即显示上次结果并后台刷新。<code>check:chat-ui</code> 可执行验证缓存隔离、迟到请求取消、同 key 反序响应、刷新失败保留、32 项容量淘汰，并约束面板按会话与分支 key 同步重建。</td></tr>
   </tbody></table></div>
   <p class="sub">可见验收使用实际 <code>/Applications/OpenProgram.app</code>、默认 <code>18100</code> 页面和 <code>9223</code> CDP。测试操作真实 permission、more、active tool、chat model、execution model、effort 与 context 触发器，确认常态无边框、hover/open 背景增强、窄态无重叠且菜单可打开，并在结束时关闭菜单、恢复焦点与原始页面样式。</p>
+<script>
+document.querySelectorAll('[data-scroll-region]').forEach(region=>region.addEventListener('keydown',event=>{
+  const step=Math.max(80,Math.round(region.clientWidth*.75));
+  if(event.key==='ArrowRight'){event.preventDefault();region.scrollLeft+=step}
+  else if(event.key==='ArrowLeft'){event.preventDefault();region.scrollLeft-=step}
+  else if(event.key==='Home'){event.preventDefault();region.scrollLeft=0}
+  else if(event.key==='End'){event.preventDefault();region.scrollLeft=region.scrollWidth}
+}));
+</script>
 </main></body></html>

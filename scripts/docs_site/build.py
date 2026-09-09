@@ -278,6 +278,18 @@ _ESC_FORWARD = (
 )
 
 
+def add_raw_readability(html_text: str) -> str:
+    """Load shared reading support without replacing standalone page styles."""
+    resources = (
+        f'<link rel="stylesheet" href="{DEPLOY_BASE}assets/raw-readability.css">\n'
+        f'<script defer src="{DEPLOY_BASE}assets/raw-readability.js"></script>\n'
+    )
+    if re.search(r"</head\s*>", html_text, flags=re.IGNORECASE):
+        return re.sub(r"</head\s*>", lambda match: resources + match.group(),
+                      html_text, count=1, flags=re.IGNORECASE)
+    return resources + html_text
+
+
 def embed_html(raw_url: str) -> str:
     """Embed a standalone hand-written page via an isolated iframe.
 
@@ -570,7 +582,7 @@ def _build_into_out_root() -> int:
                 raw_rel = p.out.with_suffix("").with_suffix(".raw.html")
                 raw_path = OUT_ROOT / raw_rel
                 raw_path.parent.mkdir(parents=True, exist_ok=True)
-                raw_path.write_text(relink_internal(html_text, p.out.parent) + _ESC_FORWARD, encoding="utf-8")
+                raw_path.write_text(add_raw_readability(relink_internal(html_text, p.out.parent)) + _ESC_FORWARD, encoding="utf-8")
                 body = embed_html(DEPLOY_BASE + str(raw_rel).replace("\\", "/"))
                 toc = ""
             else:
@@ -635,7 +647,7 @@ def _build_into_out_root() -> int:
                 zh_raw_rel = p.zh_out.with_suffix(".raw.html")
                 zh_raw_path = OUT_ROOT / zh_raw_rel
                 zh_raw_path.parent.mkdir(parents=True, exist_ok=True)
-                zh_raw_path.write_text(relink_internal(zh_text, p.zh_out.parent) + _ESC_FORWARD, encoding="utf-8")
+                zh_raw_path.write_text(add_raw_readability(relink_internal(zh_text, p.zh_out.parent)) + _ESC_FORWARD, encoding="utf-8")
                 zh_body = embed_html(
                     DEPLOY_BASE + str(zh_raw_rel).replace("\\", "/")
                 )

@@ -39,7 +39,7 @@
     .doc-root p { margin: 8px 0; }
     .lead { max-width: 940px; color: var(--doc-muted); font-size: 17px; }
     .meta, .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-    .tag, .status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--doc-line); border-radius: 999px; color: var(--doc-muted); font: 11px var(--mono); }
+    .tag, .status { min-width: 0; max-width: 100%; overflow-wrap: anywhere; display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--doc-line); border-radius: 999px; color: var(--doc-muted); font: 11px var(--mono); }
     .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
     .status.gap { color: var(--doc-danger); }
     .status.partial { color: var(--doc-warning); }

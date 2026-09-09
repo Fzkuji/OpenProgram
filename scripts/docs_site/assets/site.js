@@ -36,11 +36,13 @@
       search: "搜索文档", search_ph: "搜索标题或正文…", on_this_page: "本页内容",
       prev: "上一篇", next: "下一篇", updated: "最后更新", nav_filter: "过滤目录…",
       copy: "复制", copied: "已复制 ✓", copy_fail: "复制失败", search_empty: "无匹配结果",
+      table_scroll: "文档表格",
     },
     en: {
       search: "Search docs", search_ph: "Search titles or text…", on_this_page: "On this page",
       prev: "Previous", next: "Next", updated: "Last updated", nav_filter: "Filter docs…",
       copy: "Copy", copied: "Copied ✓", copy_fail: "Copy failed", search_empty: "No results",
+      table_scroll: "Documentation table",
     },
   };
   let curLang = "en";
@@ -198,6 +200,41 @@
   }
 
   function initArticle() {
+    const scrollableParent = (el) => {
+      if (!el) return false;
+      if (el.matches(".doc-scroll, .table-wrap")) return true;
+      return ["auto", "scroll"].includes(getComputedStyle(el).overflowX);
+    };
+    const makeKeyboardReachable = (el, label, region) => {
+      if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
+      if (region) {
+        if (!el.hasAttribute("role")) el.setAttribute("role", "region");
+        if (!el.hasAttribute("aria-label")) el.setAttribute("aria-label", label);
+      }
+    };
+
+    // Markdown tables are emitted without a wrapper. Keep authored scroll
+    // containers intact, and wrap each remaining table exactly once so a
+    // narrow article can scroll the table without scrolling the whole page.
+    document.querySelectorAll("article table").forEach((table) => {
+      const columns = Array.from(table.rows[0]?.cells || []).reduce((sum, cell) => sum + cell.colSpan, 0);
+      if (columns > 2) table.style.minWidth = Math.max(parseFloat(getComputedStyle(table).minWidth) || 0, columns * 128) + "px";
+      let scroller = table.parentElement;
+      if (!scrollableParent(scroller)) {
+        scroller = document.createElement("div");
+        scroller.className = "doc-scroll";
+        table.replaceWith(scroller);
+        scroller.appendChild(table);
+      }
+      makeKeyboardReachable(scroller, t("table_scroll"), true);
+    });
+
+    // Code blocks and embedded visualizations already own their horizontal
+    // overflow; make that overflow reachable with the keyboard as well.
+    document.querySelectorAll("article pre, article .viz-frame").forEach((el) => {
+      makeKeyboardReachable(el, "", false);
+    });
+
     // code-block copy buttons
     document.querySelectorAll("article pre").forEach((pre) => {
       if (pre.querySelector(".copy-btn")) return;
