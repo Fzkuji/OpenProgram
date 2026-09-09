@@ -1235,3 +1235,40 @@ def test_startup_recovery_scans_nonterminal_executions(tmp_path) -> None:
     ]
     assert recovered[0].execution.status is ExecutionStatus.INTERRUPTED
     assert executions.get_execution(queued.execution_id) == queued
+
+
+@pytest.mark.parametrize("outcome", ["applied", "rejected", "wrong_version"])
+def test_cancel_completion_races_terminal_reconciliation(tmp_path, outcome):
+    executions, attempts, execution, _ = _execution(tmp_path, active=False)
+    service = RuntimeControlService(executions, attempts, DriverRegistry())
+    persisted = []
+
+    def reconcile(terminal):
+        if outcome == "applied":
+            service.reconcile_terminal_cancel(terminal)
+        else:
+            executions.transition_command(
+                "cancel_race",
+                expected_status=CommandStatus.APPLYING,
+                target=(CommandStatus.REJECTED if outcome == "rejected"
+                        else CommandStatus.APPLIED),
+                result_version=terminal.status_version + (outcome == "wrong_version"),
+                receipt={"source": "concurrent_completion"},
+            )
+        persisted.append(executions.get_command("cancel_race"))
+
+    service.set_terminal_observer(reconcile)
+    cancel = service.request_cancel(
+        command_id="cancel_race", execution_id=execution.execution_id,
+        expected_version=execution.status_version,
+        actor={"surface": "test"}, reason_code="user_cancelled",
+    )
+    if outcome == "applied":
+        result = asyncio.run(cancel)
+        assert result.execution.status is ExecutionStatus.CANCELLED
+        assert result.command == persisted[0]
+        assert not result.delivered
+    else:
+        with pytest.raises(CommandConflict):
+            asyncio.run(cancel)
+    assert executions.get_command("cancel_race") == persisted[0]

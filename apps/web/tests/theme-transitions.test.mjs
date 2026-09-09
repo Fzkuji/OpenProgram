@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 import { buildSync } from 'esbuild';
 import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -9,7 +10,7 @@ import { join } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const chrome = require('../../desktop/theme-chrome.js');
-const compiled = buildSync({ entryPoints: [new URL('../lib/prefs/theme-bootstrap.ts', import.meta.url).pathname], bundle: true, platform: 'node', format: 'cjs', write: false });
+const compiled = buildSync({ entryPoints: [fileURLToPath(new URL('../lib/prefs/theme-bootstrap.ts', import.meta.url))], bundle: true, platform: 'node', format: 'cjs', write: false });
 const module = { exports: {} };
 vm.runInNewContext(compiled.outputFiles[0].text, { module, exports: module.exports });
 

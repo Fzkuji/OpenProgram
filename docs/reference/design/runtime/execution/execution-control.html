@@ -151,6 +151,7 @@
 <span id="driver"></span>
 
 <span id="cancel"></span>
+<p>Command completion is idempotent when terminal reconciliation wins the same completion race: after a compare-and-swap conflict, the service accepts only an already applied command for the same execution and result version. It preserves the stored receipt and propagates other conflicts. Acceptance interleaves reconciliation at the public cancellation observer and verifies that rejected or mismatched results remain errors.</p>
 
 <span id="owners"></span>
 
