@@ -103,7 +103,7 @@ function checkPrefsFileRoundTrip() {
   }
 }
 
-function checkChromiumLocalStorageWinsOverCache() {
+function checkSavedPreferencesWinOverRawChromiumHistory() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "op-theme-ls-"));
   try {
     themeChrome.writePrefsFile(path.join(dir, themeChrome.PREFS_FILE_NAME), {
@@ -115,19 +115,47 @@ function checkChromiumLocalStorageWinsOverCache() {
     fs.mkdirSync(levelDir, { recursive: true });
     fs.writeFileSync(
       path.join(levelDir, "000003.log"),
-      Buffer.from("agentic_theme_style\x00beige\nagentic_theme_mode\x00light\nagentic_theme_schema\x003\n"),
+      Buffer.from("agentic_theme_mode\x00dark\x00agentic_theme\x00light"),
     );
     const resolved = themeChrome.loadResolvedChrome({
       userDataPath: dir,
       systemDark: true,
     });
-    assert.equal(resolved.style, "beige");
-    assert.equal(resolved.mode, "light");
-    assert.equal(resolved.theme, "beige-light");
-    assert.equal(resolved.backgroundColor, "#faf9f5");
+    assert.equal(resolved.style, "neutral");
+    assert.equal(resolved.mode, "dark");
+    assert.equal(resolved.theme, "dark");
+    assert.equal(resolved.backgroundColor, "#1e1e20");
+    assert.equal(themeChrome.loadResolvedChrome({ userDataPath: dir, systemDark: false,
+      readChromium() { throw new Error("valid preferences must not scan raw history"); },
+    }).theme, "dark");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+function checkStartupAutoAndClearedAccent() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "op-theme-auto-"));
+  try {
+    themeChrome.writePrefsFile(path.join(dir, themeChrome.PREFS_FILE_NAME), {
+      style: "neutral", mode: "auto", theme: "dark", accent: null,
+    });
+    for (const systemDark of [true, false]) {
+      const resolved = themeChrome.loadResolvedChrome({ userDataPath: dir, systemDark,
+        readChromium: () => ({ style: "beige", mode: "light", accent: "#123456" }),
+      });
+      assert.equal(resolved.theme, systemDark ? "dark" : "light");
+      assert.equal(resolved.mode, "auto");
+      assert.equal(resolved.accentColor, null);
+    }
+    for (const content of [null, "{broken", JSON.stringify({ agentic_theme_style: "neutral", agentic_theme_mode: "invalid" })]) {
+      const file = path.join(dir, themeChrome.PREFS_FILE_NAME);
+      if (content === null) fs.rmSync(file); else fs.writeFileSync(file, content);
+      const resolved = themeChrome.loadResolvedChrome({ userDataPath: dir, systemDark: true,
+        readChromium: () => ({ schema: "3", style: "neutral", mode: "light" }),
+      });
+      assert.equal(resolved.theme, "light", "missing or invalid cache preserves migration");
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
 function checkLegacyKeyDoesNotEatStyleSuffix() {
@@ -198,7 +226,8 @@ checkStoredCustomMigratesToBeige();
 checkSchema3PrefsBeatLegacy();
 checkLegacyMigration();
 checkPrefsFileRoundTrip();
-checkChromiumLocalStorageWinsOverCache();
+checkSavedPreferencesWinOverRawChromiumHistory();
+checkStartupAutoAndClearedAccent();
 checkLegacyKeyDoesNotEatStyleSuffix();
 checkErrorPageAndListingUseThemeSurface();
 checkAccentOverrideChangesLinkNotBackground();

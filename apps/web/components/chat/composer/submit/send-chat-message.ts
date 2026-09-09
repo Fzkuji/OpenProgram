@@ -1,5 +1,6 @@
 "use client";
 
+import { traceThemeEvent } from "@/lib/prefs/theme-pref";
 import { surfaceOriginForChat } from "@/lib/desktop-bridge";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { setWelcomeVisible } from "@/lib/runtime-bridge/helpers";
@@ -256,6 +257,7 @@ export function sendChatMessage({
     console.error("[sendChatMessage] WebSocket send failed:", error);
     return false;
   }
+  traceThemeEvent("message-send");
   const acceptedAt = Date.now();
   if (sessionId) setPendingUserText(sessionId, text, acceptedAt);
   // Close the clear→ACK race for every session, not only provisional

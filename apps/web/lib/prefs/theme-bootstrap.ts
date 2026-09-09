@@ -106,7 +106,19 @@ function applyOverlayCss() {
   }
   el.textContent = rewriteCustomCssForOverlay(css);
 }
-function applyThemePreference() {
+function traceTheme(source, previousTheme) {
+  try {
+    window.openprogramDesktop?.theme?.trace?.({
+      source: source,
+      previousTheme: previousTheme,
+      theme: document.documentElement.getAttribute('data-theme'),
+      style: readStyle(), mode: readMode(), storedMode: themeStorageGet('agentic_theme_mode'),
+      systemDark: window.matchMedia('(prefers-color-scheme: dark)').matches
+    });
+  } catch (_) {}
+}
+function applyThemePreference(source) {
+  var previousTheme = document.documentElement.getAttribute('data-theme');
   var style = readStyle();
   var mode = readMode();
   var resolvedMode = mode === 'auto'
@@ -129,10 +141,19 @@ function applyThemePreference() {
       });
     }
   } catch (_) {}
+  traceTheme(source, previousTheme);
 }
-applyThemePreference();
+applyThemePreference('bootstrap');
+if (window.openprogramDesktop?.theme?.trace) {
+  new MutationObserver(function (records) {
+    var change = records.find(function (r) {
+      return r.oldValue !== document.documentElement.getAttribute(r.attributeName);
+    });
+    if (change) traceTheme('dom-change', change.attributeName === 'data-theme' ? change.oldValue : undefined);
+  }).observe(document.documentElement, { attributes: true, attributeOldValue: true, attributeFilter: ['data-theme', 'data-theme-mode'] });
+}
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
-  if (readMode() === 'auto') applyThemePreference();
+  if (readMode() === 'auto') applyThemePreference('system');
 });
 window.addEventListener('storage', function (event) {
   if (
@@ -142,7 +163,7 @@ window.addEventListener('storage', function (event) {
     || event.key === 'agentic_custom_css'
     || event.key === 'agentic_custom_css_enabled'
   ) {
-    applyThemePreference();
+    applyThemePreference('storage');
   }
 });
 `;

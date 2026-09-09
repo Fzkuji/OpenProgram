@@ -136,8 +136,9 @@ export function packageAccent(style?: ThemeStyle, mode?: ThemeMode): string {
 }
 
 /** 把偏好解析成实际要打在 <html> 上的主题 id。 */
-export function applyTheme(style: ThemeStyle, mode: ThemeMode): void {
+export function applyTheme(style: ThemeStyle, mode: ThemeMode, source = "apply"): void {
   if (typeof document === "undefined") return;
+  const previousTheme = document.documentElement.getAttribute("data-theme");
   const resolved = resolveThemePreference(style, mode, currentSystemDark());
   document.documentElement.setAttribute("data-theme", resolved.theme);
   document.documentElement.setAttribute("data-theme-style", style);
@@ -150,6 +151,18 @@ export function applyTheme(style: ThemeStyle, mode: ThemeMode): void {
   storageSet(LEGACY_THEME_STORAGE_KEY, resolved.theme);
   applyAccentColor(currentAccent);
   notifyDesktopChrome(resolved.theme, style, mode);
+  traceThemeEvent(source, previousTheme);
+}
+
+/** Diagnostic snapshot only; never writes an appearance preference. */
+export function traceThemeEvent(source: string, previousTheme?: string | null): void {
+  try {
+    window.openprogramDesktop?.theme?.trace?.({ source, previousTheme,
+      theme: document.documentElement.getAttribute("data-theme"),
+      style: coerceThemeStyle(storageGet(THEME_STYLE_STORAGE_KEY)),
+      mode: coerceThemeMode(storageGet(THEME_MODE_STORAGE_KEY)),
+      storedMode: storageGet(THEME_MODE_STORAGE_KEY), systemDark: currentSystemDark() });
+  } catch { /* Diagnostics must not affect appearance or message submission. */ }
 }
 
 function applyAccentColor(hex: string | null): void {
@@ -217,7 +230,7 @@ export function setThemeStyle(next: ThemeStyle): void {
   currentStyle = next;
   if (typeof window !== "undefined") {
     storageSet(THEME_STYLE_STORAGE_KEY, next);
-    applyTheme(currentStyle, currentMode);
+    applyTheme(currentStyle, currentMode, "settings-style");
   }
   notify();
 }
@@ -226,7 +239,7 @@ export function setThemeMode(next: ThemeMode): void {
   currentMode = next;
   if (typeof window !== "undefined") {
     storageSet(THEME_MODE_STORAGE_KEY, next);
-    applyTheme(currentStyle, currentMode);
+    applyTheme(currentStyle, currentMode, "settings-mode");
   }
   notify();
 }
@@ -235,7 +248,7 @@ export function setAccentColor(next: string | null): void {
   currentAccent = coerceAccentColor(next);
   if (typeof window !== "undefined") {
     storageSet(ACCENT_STORAGE_KEY, currentAccent ?? "");
-    applyTheme(currentStyle, currentMode);
+    applyTheme(currentStyle, currentMode, "settings-accent");
   }
   notify();
 }
@@ -282,7 +295,7 @@ export function setCustomCssEnabled(enabled: boolean): void {
   if (typeof window !== "undefined") {
     storageSet(CUSTOM_CSS_ENABLED_STORAGE_KEY, enabled ? "1" : "0");
     applyCustomCss(getCustomCss(), enabled);
-    applyTheme(currentStyle, currentMode);
+    applyTheme(currentStyle, currentMode, "settings-css");
   }
   notify();
 }
@@ -301,7 +314,7 @@ export function useThemePref() {
     currentMode = coerceThemeMode(storageGet(THEME_MODE_STORAGE_KEY));
     currentAccent = coerceAccentColor(storageGet(ACCENT_STORAGE_KEY));
     currentCssEnabled = storageGet(CUSTOM_CSS_ENABLED_STORAGE_KEY) === "1";
-    applyTheme(currentStyle, currentMode);
+    applyTheme(currentStyle, currentMode, "settings-mount");
     applyCustomCss(getCustomCss(), currentCssEnabled);
     setStyleState(currentStyle);
     setModeState(currentMode);
@@ -321,7 +334,7 @@ export function useThemePref() {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const onSystemChange = () => {
       if (currentMode === "auto") {
-        applyTheme(currentStyle, currentMode);
+        applyTheme(currentStyle, currentMode, "system");
         notify();
       }
     };
@@ -336,7 +349,7 @@ export function useThemePref() {
         currentStyle = coerceThemeStyle(storageGet(THEME_STYLE_STORAGE_KEY));
         currentMode = coerceThemeMode(storageGet(THEME_MODE_STORAGE_KEY));
         currentAccent = coerceAccentColor(storageGet(ACCENT_STORAGE_KEY));
-        applyTheme(currentStyle, currentMode);
+        applyTheme(currentStyle, currentMode, "storage");
         notify();
       } else if (
         event.key === CUSTOM_CSS_STORAGE_KEY
@@ -346,7 +359,7 @@ export function useThemePref() {
         setCustomCssState(getCustomCss());
         setCustomCssEnabledState(currentCssEnabled);
         applyCustomCss(getCustomCss(), currentCssEnabled);
-        applyTheme(currentStyle, currentMode);
+        applyTheme(currentStyle, currentMode, "storage");
       }
     };
     window.addEventListener("storage", onStorage);

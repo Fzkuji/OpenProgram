@@ -12,6 +12,9 @@ export interface DesktopThemeChrome {
 export interface DesktopThemeApi {
   /** Update BrowserWindow background so the next show/reload matches the web theme. */
   setChrome(payload: DesktopThemeChrome): void;
+  /** Bounded local diagnostic metadata; never includes messages or page URLs. */
+  trace?(payload: { source: string; theme?: string | null; previousTheme?: string | null;
+    style?: string; mode?: string; storedMode?: string | null; systemDark?: boolean }): void;
 }
 
 /** Public WebTab contracts exposed by the Electron preload bridge. */
