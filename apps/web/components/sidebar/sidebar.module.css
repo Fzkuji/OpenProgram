@@ -73,8 +73,8 @@
   box-shadow: var(--shadow);
 }
 
-/* Match the ordinary selected conversation row. */
-.projectGroup .projectHeader[data-selected="true"] {
+/* Retain hover feedback while either native or Web project menu is open. */
+.projectGroup .projectHeader:has([aria-haspopup="menu"][data-state="open"]) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }

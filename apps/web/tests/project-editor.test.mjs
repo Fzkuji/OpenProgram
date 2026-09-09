@@ -72,12 +72,12 @@ test('project menus open, pin, edit, create and rename sections without altering
   const values=new Map();window.localStorage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v)};
   const {ProjectMenu,ProjectSectionHeading}=await import('../components/sidebar/project-menu.tsx');
   const {getRecentsView}=await import('../lib/prefs/recents-view.ts');
-  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);let opened=0,newChats=0,activations=0;
+  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);let opened=0,newChats=0;
   const project={id:'p',name:'Project',path:'/main'};
-  await act(async()=>root.render(h(ProjectMenu,{project,onActivate:()=>activations++,onOpen:()=>opened++,onNewSession:()=>newChats++,onSaved:()=>{},children:trigger=>h('div',{'data-header':true},'Project',trigger)})));
+  await act(async()=>root.render(h(ProjectMenu,{project,onOpen:()=>opened++,onNewSession:()=>newChats++,onSaved:()=>{},children:trigger=>h('div',{'data-header':true},'Project',trigger)})));
   async function context(){await act(async()=>host.querySelector('[data-header]').dispatchEvent(new Event('contextmenu',{bubbles:true,cancelable:true})));}
   async function click(label){const el=[...host.querySelectorAll('button')].find(b=>b.textContent===label);assert.ok(el,label+host.textContent);await act(async()=>el.dispatchEvent(new Event('click',{bubbles:true})));}
-  await context();assert.equal(activations,1);assert.ok(host.querySelector('[role="menu"]'));await click('Open project');assert.equal(opened,1);
+  await context();assert.equal(host.querySelector('[aria-haspopup="menu"]').getAttribute("data-state"),"open");assert.ok(host.querySelector('[role="menu"]'));await click('Open project');assert.equal(opened,1);assert.equal(host.querySelector('[aria-haspopup="menu"]').getAttribute('data-state'),'closed');
   await context();await click('New chat');assert.equal(newChats,1);
   await context();await click('Pin');assert.deepEqual(getRecentsView().pinnedProjects,['p']);
   await context();await click('Unpin');assert.deepEqual(getRecentsView().pinnedProjects,[]);

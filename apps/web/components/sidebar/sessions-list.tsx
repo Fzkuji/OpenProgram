@@ -61,7 +61,6 @@ import styles from "./sidebar.module.css";
 
 import { ProjectMenu, ProjectSectionHeading } from "./project-menu";
 import type { EditableProject } from "./project-editor";
-import { useProjectSelection } from "./sessions-list/use-project-selection";
 import { useProjectDrag } from "./sessions-list/use-project-drag";
 import { ConfirmDialog } from "./sessions-list/confirm-dialog";
 import { pushPath } from "@/lib/shallow-nav";
@@ -116,8 +115,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   const removeConversation = useSessionStore((s) => s.removeConversation);
   const clearConversations = useSessionStore((s) => s.clearConversations);
   const currentId = useCurrentSessionId();
-  const activeChatKey = useSessionStore((s) => s.activeChatKey);
-  const pendingProjectId = useSessionStore((s) => activeChatKey ? s.pendingProjectsByChat[activeChatKey] : undefined);
   const runningTasks = useSessionStore((s) => s.runningTasks, runningIdSetEqual);
   const view = useRecentsView();
 
@@ -129,7 +126,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   const reducedMotion = useReducedMotion();
 
   const [projects, setProjects] = useState<SidebarProject[]>([]);
-  const { selectedProjectId, selectProject, clearProjectSelection } = useProjectSelection(projects, currentId, activeChatKey, pendingProjectId);
   const refreshProjects = useCallback(async (): Promise<boolean> => {
     const data = await wsRequest<{ projects: SidebarProject[] }>(
       "list_projects",
@@ -185,7 +181,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     }
   }
   function toggleProjectCollapse(id: string) {
-    selectProject(id);
     setCollapsedProjects((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -219,7 +214,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // ＋ on a group header creates a distinct provisional chat and records
   // this project against that chat key until its chat_ack arrives.
   function newSessionInProject(projectId: string) {
-    selectProject(projectId);
     const draftId = onNewChat();
     useSessionStore.getState().setPendingProject(draftId, projectId);
     // Same event the project picker fires — the topbar chip re-reads
@@ -240,7 +234,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   function switchTo(id: string, title: string) {
-    clearProjectSelection();
     // Focus-or-recreate the session's center tab BEFORE the navigation
     // guard: when the clicked session IS the current one but its tab
     // was closed (user parked on a file tab), the early return below
@@ -425,7 +418,6 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
     const ids = new Set(projects.map((p) => p.id));
     const order = [...new Set([...displayed, ...view.projectOrder.filter((id) => ids.has(id)), ...fallback.map((p) => p.id)])];
     if (source === target || !ids.has(source) || !ids.has(target)) return;
-    selectProject(source);
     try {
       setRecentsView({ projectSort: "manual", projectOrder: moveProject(order, source, target, side),
         pinnedProjects: view.pinnedProjects.includes(target) ? [...new Set([...view.pinnedProjects,source])] : view.pinnedProjects.filter(id=>id!==source),
@@ -530,12 +522,10 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
                     data-dragging={draggingProject?.id === g.key || undefined}
                   >
                     <ProjectMenu project={project}
-                      onActivate={()=>selectProject(g.key)}
                       onOpen={()=>{router.push(`/projects?project=${encodeURIComponent(g.key)}`);}}
                       onNewSession={()=>newSessionInProject(g.key)}
                       onSaved={updated=>setProjects(items=>items.map(item=>item.id===updated.id?{...item,...updated}:item))}>
                     {menuTrigger=><ProjectGroupHeader
-                      selected={selectedProjectId === g.key}
                       menuTrigger={menuTrigger}
                       icon={project.icon}
                       dragProps={headerProps(g.key)}
@@ -761,7 +751,7 @@ function ProjectGroupHeader({
   dragProps,
   onMove,
   reorderHint,
-  icon, menuTrigger, selected,
+  icon, menuTrigger,
 }: {
   name: string;
   path: string;
@@ -774,15 +764,12 @@ function ProjectGroupHeader({
   reorderHint: string;
   icon?: string;
   menuTrigger: React.ReactNode;
-  selected: boolean;
 }) {
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <div
       {...dragProps}
       className={sidebarNavItemClass + " " + styles.projectHeader + " select-none cursor-grab active:cursor-grabbing"}
-      data-selected={selected || undefined}
-      aria-current={selected ? "true" : undefined}
       role="button"
       tabIndex={0}
       aria-expanded={!collapsed}
