@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Search, Server, X } from "lucide-react";
+import { Box, ExternalLink, Globe, Monitor, PictureInPicture2, Server, X } from "lucide-react";
 import { SectionHeader } from "@/components/sidebar/section-header";
 import { useWebTabPip } from "@/lib/state/web-tab-pip-store";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -15,7 +15,6 @@ import {
   resourceSessionId,
   selectResourcePreview,
   sessionResourceRows,
-  showResourcePreview,
   useBrowserResourceStore,
   type SessionResource,
 } from "@/lib/state/session-resources";
@@ -64,14 +63,12 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   const backend = useSessionResources(sessionId);
   useBrowserResourceStore(s => s.ingestClock);
   const pendingClose = pendingCloseRequest();
-  const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<SessionResource | null>(null);
   const [, render] = useState(0);
-  const needle = query.trim().toLocaleLowerCase();
   const rows = sessionResourceRows(tabs, backend.rows, sessionId);
   const names: Record<string, string> = {
-    web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: "VM",
+    web: text("Webpage", "网页"), docker: text("Container", "容器"), vm: text("VM", "虚拟机"),
     remote: text("Remote environment", "远程环境"), desktop: text("Desktop", "桌面"),
   };
   const viewedBranch = backend.currentBranchId;
@@ -82,8 +79,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
       : group.key === "unassigned"
         ? text("Unassigned", "未归属")
         : group.title;
-    const filtered = group.rows.filter(row => `${title} ${row.title} ${row.target} ${names[row.kind] || row.kind} ${row.agentName || ""}`.toLocaleLowerCase().includes(needle));
-    return { ...group, title, rows: filtered };
+    return { ...group, title };
   }).filter(group => group.rows.length > 0);
   const icons = { web: Globe, docker: Box, vm: Monitor, remote: Server, desktop: Monitor };
   const statusName = (status: string) => ({
@@ -94,11 +90,6 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
   }[status] || status);
 
   return <section className={styles.panel} aria-label={text("Session resources", "会话资源")}>
-    <label className={styles.search}><Search size={15} aria-hidden="true" />
-      <input value={query} onChange={event => setQuery(event.target.value)}
-        placeholder={text("Search resources", "搜索资源")}
-        aria-label={text("Search resources", "搜索资源")} />
-    </label>
     {backend.unavailable && <p role="status" className={styles.notice}>{text("Some resource statuses could not be refreshed.", "部分资源状态未能刷新。")}</p>}
     {pendingClose && <p role="status" className={styles.notice}>
       {pendingClose.error
@@ -107,20 +98,13 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
           : text("Could not confirm the page status. Check the connection and try again.", "无法确认页面状态，请检查连接后重试。")
         : text("Waiting for Agent to pause before closing the page…", "正在暂停 Agent，完成后关闭页面…")}
     </p>}
-    {pref?.hidden && sessionId && <button type="button" className={styles.showPreview} onClick={() => {
-      const next = showResourcePreview(sessionId, viewedBranch);
-      bindPreview(sessionId, rows.find(row => row.id === next.targetId), false);
-      render(value => value + 1);
-    }}>{text("Show preview", "显示预览")}</button>}
     <div className={styles.list}>
-      {groups.length === 0 && <p className={styles.empty}>{needle ? text("No matching resources", "没有匹配的资源")
-        : !backend.loaded ? text("Loading resources…", "正在加载资源…")
+      {groups.length === 0 && <p className={styles.empty}>{!backend.loaded ? text("Loading resources…", "正在加载资源…")
           : sessionId ? text("This session has no resources in use.", "当前会话没有正在使用的资源。") : text("Select a session to view its resources.", "选择会话以查看其资源。")}</p>}
       {groups.map(group => {
-        const open = !!needle || (group.key === "unavailable" ? collapsed[group.key] === false : !collapsed[group.key]);
+        const open = group.key === "unavailable" ? collapsed[group.key] === false : !collapsed[group.key];
         const currentLabel = text("Current", "当前");
         const toggleGroup = () => {
-          if (needle) return;
           setCollapsed(value => {
             const closed = open;
             return value[group.key] === closed ? value : { ...value, [group.key]: closed };
@@ -147,7 +131,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
           const subtitle = [
             names[row.kind] || row.kind,
             operating ? text("Operating", "操作中") : statusName(row.status),
-            row.agentName,
+            row.agentName === "main" ? text("Main agent", "主 Agent") : row.agentName,
           ].filter(Boolean).join(" · ");
           return <div key={row.id} className={styles.row} data-resource-kind={row.kind}
             data-active={pref?.targetId === row.id && !pref.hidden}>

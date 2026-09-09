@@ -19,6 +19,7 @@ await build({
     export { topLevelTabs } from "./lib/state/web-page-management";
     export { resetBrowserResources, getPreviewPreference, hideResourcePreview } from "./lib/state/session-resources";
     export { useBrowserControlStore, resetBrowserControl } from "./lib/state/browser-control";
+    export { setLocale } from "./lib/i18n";
   `, resolveDir: webPath },
   bundle: true, format: "esm", jsx: "automatic", outfile: bundle,
   packages: "external", platform: "node", tsconfig: join(webPath, "tsconfig.json"),
@@ -48,7 +49,7 @@ const { createRoot } = await import("react-dom/client");
 const {
   SessionResourcesPanel, useCenterTabs, useWebTabPip, topLevelTabs,
   resetBrowserResources, getPreviewPreference, hideResourcePreview,
-  useBrowserControlStore, resetBrowserControl,
+  useBrowserControlStore, resetBrowserControl, setLocale,
 } = await import(pathToFileURL(bundle));
 
 function pageTab(id, sessionId, url, extra = {}) {
@@ -122,13 +123,12 @@ function keydown(key) {
   return event;
 }
 
-function setInput(input, value) {
-  input.type ||= "text";
-  const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set
-    || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-  if (setter) setter.call(input, value);
-  else input.value = value;
-  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+function hasSearchInput(host) {
+  return host.querySelector('input[aria-label="Search resources"]');
+}
+
+function hasStandaloneShowPreview(host) {
+  return [...host.querySelectorAll("button")].some(button => /show preview/i.test(button.textContent || ""));
 }
 
 test("five agent-opened session pages stay out of the top strip by default", () => {
@@ -310,6 +310,62 @@ test("Preview in conversation from an active webpage returns to the owning sessi
   }
 });
 
+test("hidden preview restores the same page from the row preview icon", async () => {
+  resetBrowserResources();
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  const page = pageTab("w:restore", "a", "https://restore.preview.test/", { title: "Restore preview" });
+  const documentIds = [session.id, page.id];
+  useCenterTabs.setState({ tabs: [session, page], activeId: session.id, groups: [], splitWebTabId: null });
+  useWebTabPip.getState().end();
+  globalThis.resourceBackend = {
+    rows: [{
+      id: "assoc-restore", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Restore preview",
+      target: page.url, status: "open", source: "browser", sourceId: page.id, resourceId: "page-restore",
+      tabId: page.id, branchId: "br-a", branchName: "Research",
+      controlState: "idle", generation: 1, sequence: 1,
+    }],
+    currentBranchId: "br-a", currentBranchName: "Research", unavailable: false, loaded: true,
+  };
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    assert.equal(hasSearchInput(host), null);
+    assert.equal(hasStandaloneShowPreview(host), false);
+    const button = previewInConversationButton(host, "Restore preview");
+    assert.ok(button);
+    await act(async () => button.click());
+    assert.equal(useWebTabPip.getState().tabId, page.id);
+    hideResourcePreview("a", "br-a");
+    useWebTabPip.getState().hide();
+    await act(async () => root.render(createElement(SessionResourcesPanel)));
+    assert.equal(useWebTabPip.getState().tabId, null);
+    assert.equal(useWebTabPip.getState().backgroundTabId, page.id);
+    assert.equal(useCenterTabs.getState().tabs.some(tab => tab.id === page.id), true);
+    assert.ok(previewInConversationButton(host, "Restore preview"));
+    assert.equal(hasStandaloneShowPreview(host), false);
+    assert.equal(hasSearchInput(host), null);
+    assert.equal(getPreviewPreference("a", "br-a").hidden, true);
+    await act(async () => previewInConversationButton(host, "Restore preview").click());
+    const state = useCenterTabs.getState();
+    assert.deepEqual(state.tabs.map(tab => tab.id), documentIds);
+    assert.equal(state.tabs.filter(tab => tab.id === page.id).length, 1);
+    assert.equal(state.tabs.find(tab => tab.id === page.id).url, page.url);
+    assert.equal(state.activeId, session.id);
+    assert.ok(!topLevelTabs(state.tabs, state.groups).some(tab => tab.id === page.id));
+    assert.equal(useWebTabPip.getState().tabId, page.id);
+    assert.equal(useWebTabPip.getState().ownerTabId, session.id);
+    assert.equal(getPreviewPreference("a", "br-a").hidden, false);
+    assert.equal(getPreviewPreference("a", "br-a").targetId, "assoc-restore");
+    assert.equal(getPreviewPreference("a", "br-a").mode, "manual");
+  } finally {
+    await act(async () => root.unmount()); host.remove();
+    useWebTabPip.getState().end();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
+    resetBrowserResources();
+  }
+});
+
 test("hide keeps the page and does not change the live tab identity", () => {
   resetBrowserResources();
   const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
@@ -379,12 +435,8 @@ test("current branch group uses a title-adjacent section chevron and keyboard-co
     assert.equal(host.querySelector('[title="https://example.org"]'), null);
     assert.equal(other.getAttribute("aria-expanded"), "true");
     assert.ok(host.querySelector('[title="https://other.test"]'));
-    const search = host.querySelector('input[aria-label="Search resources"]');
-    await act(async () => setInput(search, "Example"));
-    assert.equal(current.getAttribute("aria-expanded"), "true");
-    assert.ok(host.querySelector('[title="https://example.org"]'));
-    await act(async () => setInput(search, ""));
-    assert.equal(current.getAttribute("aria-expanded"), "false", "collapse persists after search clears");
+    assert.equal(hasSearchInput(host), null);
+    assert.equal(hasStandaloneShowPreview(host), false);
     await act(async () => {
       current.focus();
       current.dispatchEvent(keydown(" "));
@@ -438,6 +490,80 @@ test("pending close notices use plain pause failure labels without internal coun
     await act(async () => root.unmount()); host.remove();
     useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
     resetBrowserControl();
+    resetBrowserResources();
+  }
+});
+
+test("labels follow App language without remount; user titles stay verbatim", async () => {
+  resetBrowserResources();
+  const session = { id: "s:a", kind: "session", sessionId: "a", title: "Chat A" };
+  const page = pageTab("w:google", "a", "https://google.com/", { title: "Google" });
+  useCenterTabs.setState({ tabs: [session, page], activeId: session.id, groups: [], splitWebTabId: null });
+  globalThis.resourceBackend = {
+    rows: [{
+      id: "assoc-google", sessionId: "a", scopeSessionId: "a", kind: "web", title: "Google",
+      target: page.url, status: "open", source: "browser", sourceId: page.id, resourceId: "page-google",
+      tabId: page.id, branchId: "br-a", branchName: "研究分支", agentName: "main",
+      controlState: "idle", generation: 1, sequence: 1,
+    }, {
+      id: "assoc-vm", sessionId: "a", scopeSessionId: "a", kind: "vm", title: "Dev box",
+      target: "vm://dev", status: "running", source: "runtime", resourceId: "vm-1",
+      branchId: "br-a", branchName: "研究分支", agentName: "Research Agent",
+      controlState: "idle", generation: 1, sequence: 1,
+    }],
+    currentBranchId: "br-a", currentBranchName: "研究分支", unavailable: false, loaded: true,
+  };
+  const { host, root } = mountPanel();
+  const snapshot = () => host.textContent || "";
+  try {
+    await act(async () => { setLocale("en"); root.render(createElement(SessionResourcesPanel)); });
+    assert.match(snapshot(), /Current/);
+    assert.match(snapshot(), /Webpage/);
+    assert.match(snapshot(), /Open/);
+    assert.match(snapshot(), /Main agent/);
+    assert.equal(
+      host.querySelector('[data-resource-kind="vm"] small').textContent,
+      "VM · Running · Research Agent",
+    );
+    assert.ok(previewInConversationButton(host, "Google"));
+    assert.match(snapshot(), /Google/);
+    assert.match(snapshot(), /研究分支/);
+    assert.match(snapshot(), /Research Agent/);
+    assert.doesNotMatch(snapshot(), /当前|网页|已打开|主 Agent|虚拟机/);
+
+    await act(async () => { setLocale("zh"); });
+    assert.match(snapshot(), /当前/);
+    assert.match(snapshot(), /网页/);
+    assert.match(snapshot(), /已打开/);
+    assert.match(snapshot(), /主 Agent/);
+    assert.match(snapshot(), /虚拟机/);
+    assert.equal(
+      [...host.querySelectorAll("button")].some(b =>
+        b.getAttribute("aria-label") === "在会话中预览: Google"),
+      true,
+    );
+    assert.match(snapshot(), /Google/);
+    assert.match(snapshot(), /研究分支/);
+    assert.match(snapshot(), /Research Agent/);
+    assert.doesNotMatch(snapshot(), /Current|Webpage|\bOpen\b|Main agent/);
+
+    await act(async () => { setLocale("en"); });
+    assert.match(snapshot(), /Current/);
+    assert.match(snapshot(), /Webpage/);
+    assert.match(snapshot(), /Open/);
+    assert.match(snapshot(), /Main agent/);
+    assert.equal(
+      host.querySelector('[data-resource-kind="vm"] small').textContent,
+      "VM · Running · Research Agent",
+    );
+    assert.ok(previewInConversationButton(host, "Google"));
+    assert.match(snapshot(), /Google/);
+    assert.match(snapshot(), /研究分支/);
+    assert.match(snapshot(), /Research Agent/);
+  } finally {
+    setLocale("en");
+    await act(async () => root.unmount()); host.remove();
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [], splitWebTabId: null });
     resetBrowserResources();
   }
 });
