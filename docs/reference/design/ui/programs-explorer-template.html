@@ -247,6 +247,10 @@
       color: var(--text-bright);
       background: var(--bg-hover);
     }
+    .tree-row:focus-visible {
+      outline: 2px solid var(--accent-orange);
+      outline-offset: -2px;
+    }
     .tree-row.active {
       color: var(--text-bright);
       background: color-mix(in srgb, var(--accent-orange) 8%, var(--bg-tertiary));
@@ -522,6 +526,8 @@
         const childMatch = [...node.querySelectorAll(":scope > .tree-kids .tree-node[data-name]")].some((child) => ownMatches.get(child));
         node.hidden = searchMode === "filter" && Boolean(query) && !ownMatches.get(node) && !childMatch;
         renderNameHighlight(node, ownMatches.get(node));
+        const row = node.querySelector(':scope > .tree-row[role="button"]');
+        if (row) row.setAttribute('aria-expanded', String(Boolean(query) || !node.classList.contains('collapsed')));
       });
       treeBody.classList.toggle("searching", Boolean(query));
       treeBody.classList.toggle("empty", searchMode === "filter" && Boolean(query) && searchMatches.length === 0);
@@ -584,11 +590,26 @@
       });
     });
 
+    treeBody.querySelectorAll('.tree-row[tabindex]').forEach((row) => {
+      if (!row.parentElement.querySelector(':scope > .tree-kids')) {
+        row.removeAttribute('tabindex');
+        return;
+      }
+      row.setAttribute('role', 'button');
+      row.setAttribute('aria-expanded', String(!row.parentElement.classList.contains('collapsed')));
+    });
+    treeBody.addEventListener('keydown', (event) => {
+      const row = event.target.closest('.tree-row[role="button"]');
+      if (!row || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      row.click();
+    });
     treeBody.addEventListener("click", (event) => {
       const row = event.target.closest(".tree-row");
       const node = row?.parentElement;
       if (!node?.querySelector(":scope > .tree-kids")) return;
       node.classList.toggle("collapsed");
+      row.setAttribute('aria-expanded', String(treeBody.classList.contains('searching') || !node.classList.contains('collapsed')));
       const icon = row.querySelector("svg");
       icon.outerHTML = `<i data-lucide="${node.classList.contains("collapsed") ? "folder" : "folder-open"}" class="tree-icon folder" aria-hidden="true"></i>`;
       createIcons({ attrs: { "stroke-width": 1.7 } });
