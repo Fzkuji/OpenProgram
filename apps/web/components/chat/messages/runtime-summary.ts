@@ -121,6 +121,8 @@ export function runtimeAnswer(input: RuntimeSummaryInput): string | null {
     || RUNNING.has(resolvedStatus(input))
     || resolvedStatus(input) === "paused") return null;
   const output = input.tree?.output;
+  if (input.fnName === "gui_agent" && resolvedStatus(input) === "cancelled"
+    && typeof output === "string" && output.trim() === "null") return null;
   if (output === undefined || output === null || output === "") return input.tree?.error || null;
   const payload = workflowPayload(output);
   if (payload && typeof payload.summary === "string") {

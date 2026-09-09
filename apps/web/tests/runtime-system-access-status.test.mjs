@@ -93,3 +93,9 @@ test("failed and cancelled results stay visible while paused null stays hidden",
     tree: { ...tree, output: "cancelled after user request" },
   }), "cancelled after user request");
 });
+
+
+test("cancelled GUI wait omits serialized null while retaining actual output", () => {
+  assert.equal(runtimeAnswer({fnName: "gui_agent", status: "cancelled", tree: {output: "null"}}), null);
+  assert.equal(runtimeAnswer({fnName: "gui_agent", status: "cancelled", tree: {output: "partial output"}}), "partial output");
+});
