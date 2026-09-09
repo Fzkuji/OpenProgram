@@ -60,7 +60,7 @@ needs `curl`, `tar`, a SHA-256 utility, Git, and the standard shared libraries
 used by Chromium. The installer reports a failed browser/runtime probe before
 changing the active version. A system Python, Node.js, or npm is not required.
 
-On Windows, run the PowerShell bootstrap:
+On Windows, select a release that includes a Windows runtime ZIP and checksum, then run the PowerShell bootstrap. If no published release includes these assets, use the [source-development installation](#development-checkout) below. Source and CI support do not imply that Windows release artifacts have been published:
 
 ```powershell
 irm https://openprogram.io/install.ps1 | iex

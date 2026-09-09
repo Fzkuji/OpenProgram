@@ -52,6 +52,8 @@ jobs:
           $py = ".\.venv\Scripts\python.exe"
           & $py -c "import openprogram; print('openprogram OK:', openprogram.__file__)"
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $py -c "from openprogram.agent.dispatcher import process_user_turn; assert callable(process_user_turn)"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           if (-not (Test-Path .\apps\web\.next\BUILD_ID)) {
             Write-Error "web production build marker missing"; exit 1
           }

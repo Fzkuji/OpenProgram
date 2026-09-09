@@ -4,9 +4,11 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 import hashlib
-import fcntl
 import os
 from pathlib import Path
+import stat
+
+from openprogram import _compat
 
 _active_files: ContextVar[dict | None] = ContextVar("approval_files", default=None)
 
@@ -87,18 +89,31 @@ def write_checked(path: str, content: str) -> None:
         Path(path).write_text(content, encoding='utf-8')
         return
     validate({path: expected})
-    flags = os.O_RDWR | os.O_NOFOLLOW
+    if not expected.get('missing') and _compat.is_link_metadata(os.lstat(path)):
+        raise ValueError('Approved target is a link; operation was not applied')
+    flags = os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
     flags |= os.O_CREAT | os.O_EXCL if expected.get('missing') else 0
     fd = os.open(path, flags, 0o666)
     with os.fdopen(fd, 'r+b') as stream:
         # Serialize approved writers before checking the opened file again.
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        _compat.flock(stream.fileno(), _compat.LOCK_EX)
+        st = os.fstat(stream.fileno())
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError('Approved target is not a regular file')
         if not expected.get('missing'):
-            st = os.fstat(stream.fileno())
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
             if (digest, st.st_dev, st.st_ino) != (expected['sha256'], expected['device'], expected['inode']):
                 raise ValueError('File changed before writing; operation was not applied')
-            validate({path: expected})
+        elif st.st_size:
+            raise ValueError('File changed before writing; operation was not applied')
+        # Windows byte locks also deny reads through a second handle in this
+        # process. Hash through the locked handle above; recheck the path using
+        # metadata only. This also guards the fallback without O_NOFOLLOW.
+        current = os.lstat(path)
+        if (_compat.is_link_metadata(current)
+                or (current.st_dev, current.st_ino) != (st.st_dev, st.st_ino)
+                or os.path.realpath(path) != expected['resolved']):
+            raise ValueError('File changed before writing; operation was not applied')
         stream.seek(0)
         stream.write(content.encode('utf-8'))
         stream.truncate()
