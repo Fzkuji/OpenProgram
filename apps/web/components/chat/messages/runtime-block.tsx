@@ -297,7 +297,7 @@ export function RuntimeBlock({
             onClick={copyResult}
           />
         ) : null}
-        {!nested && !streaming && fnName ? (
+        {!nested && !streaming && !systemAccessPaused && fnName ? (
           <>
             <ActionButton
               icon={SVG.retry}

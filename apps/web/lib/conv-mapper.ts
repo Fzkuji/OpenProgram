@@ -82,7 +82,8 @@ interface LegacyMsg {
    *  is reachable) subscribe for live updates. Missing == ``done``
    *  for backward compat with pre-streaming-resume sessions. */
   status?: "pending" | "running" | "streaming" | "done"
-    | "completed" | "error" | "cancelled" | "cancelling" | "interrupted";
+    | "completed" | "error" | "cancelled" | "cancelling" | "interrupted"
+    | "paused";
   /** streaming-resume: when the placeholder reply was first written.
    *  Used by sweep to detect orphaned ``running`` rows. */
   started_at?: number;
@@ -265,6 +266,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
             // 落进 done 会把"正在取消"画成已完成。
             if (_s === "cancelled" || _s === "cancelling") return "cancelled";
             if (_s === "interrupted") return "interrupted";
+            if (_s === "paused") return "paused";
             if (_s === "error") return "error";
             if (_s === "streaming") return "streaming";
             return m.type === "error" ? "error" : "done";
@@ -354,6 +356,7 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
           // cancelling 在 reload 语义下就是 cancelled（见上）。
           if (_s === "cancelled" || _s === "cancelling") return "cancelled";
           if (_s === "interrupted") return "interrupted";
+          if (_s === "paused") return "paused";
           if (_s === "error") return "error";
           if (_s === "streaming") return "streaming";
           return m.type === "error" ? "error" : "done";
@@ -399,7 +402,9 @@ export function convToChatMsgs(messages: LegacyMsg[]): ChatMsg[] {
         content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
         function: m.function || undefined,
         display: "runtime",
-        status: m.status === "error" ? "error" : "done",
+        status: m.status === "error"
+          ? "error"
+          : m.status === "paused" ? "paused" : "done",
         rawType: m.type,
         timestamp: ts,
         contextTree: (m.context_tree as never) || undefined,

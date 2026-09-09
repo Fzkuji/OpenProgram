@@ -67,6 +67,7 @@ function preview(value: unknown, max = 48): string {
     try { raw = JSON.stringify(value); } catch { raw = String(value); }
   }
   const oneLine = raw.replace(/\s+/g, " ").trim();
+  if (oneLine === "null") return "";
   return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
 }
 
@@ -116,7 +117,9 @@ function counted(noun: string, count: number): string {
 
 /** Render the persisted backend handoff; this layer never starts a model call. */
 export function runtimeAnswer(input: RuntimeSummaryInput): string | null {
-  if (isWorkflowName(input.fnName) || RUNNING.has(resolvedStatus(input))) return null;
+  if (isWorkflowName(input.fnName)
+    || RUNNING.has(resolvedStatus(input))
+    || resolvedStatus(input) === "paused") return null;
   const output = input.tree?.output;
   if (output === undefined || output === null || output === "") return input.tree?.error || null;
   const payload = workflowPayload(output);
@@ -234,12 +237,13 @@ export function runtimeSummaryLabel(input: RuntimeSummaryInput): string {
   const running = RUNNING.has(rawStatus);
   const cancelled = rawStatus === "cancelled" || rawStatus === "canceled";
   const interrupted = rawStatus === "interrupted";
+  const paused = rawStatus === "paused";
   const capped = rawStatus === "capped";
   const guiFailed = input.fnName === "gui_agent" && rawStatus === "failed";
   const guiInfeasible = input.fnName === "gui_agent" && rawStatus === "infeasible";
   const guiSucceeded = input.fnName === "gui_agent" && rawStatus === "succeeded";
   const errored = rawStatus === "error"
-    || (Boolean(input.tree?.error) && !(running || cancelled || interrupted || capped))
+    || (Boolean(input.tree?.error) && !(running || cancelled || interrupted || paused || capped))
     || (rawStatus === "failed" && !guiFailed);
   const statusByResult: Record<string, string> = {
     cancelling: text("Cancelling…", "正在取消"),
@@ -286,6 +290,8 @@ export function runtimeSummaryLabel(input: RuntimeSummaryInput): string {
     result = preview(input.tree?.error) || preview(input.tree?.output) || stepCount;
   } else if (guiInfeasible || guiFailed || guiSucceeded) {
     result = guiPreview || stepCount;
+  } else if (paused) {
+    result = stepCount;
   } else if (!(cancelled || interrupted || capped)) {
     result = handoffPreview
       || (payload ? stepCount : preview(input.tree?.output))
