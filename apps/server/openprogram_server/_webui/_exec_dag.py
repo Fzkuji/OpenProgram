@@ -497,9 +497,13 @@ def _repair_canonical_node(node, execution, shim) -> bool:
             return False
         if meta.get("status") in {"completed", "error", "cancelled"}:
             return False
-    elif not synthetic_marker:
-        # Terminal projection is authoritative only when it is repairing the
-        # marker this reconciler itself wrote. Preserve real terminal output.
+    elif not synthetic_marker and not (
+        canonical == "cancelled" and meta.get("status") in {
+            "pending", "running", "paused", "cancelling",
+        }
+    ):
+        # Preserve real terminal results; a cancelled owner's unfinished
+        # node still needs its final status even without a restart marker.
         return False
     patch = {}
     if meta.get("status") != target:

@@ -352,3 +352,40 @@ def test_projection_leaves_real_canonical_interruption_unchanged():
         node, SimpleNamespace(status=ExecutionStatus.INTERRUPTED), _Shim(),
     ) is False
     assert updates == []
+
+
+def test_hydration_projects_cancelled_wait_without_erasing_output(tmp_path, monkeypatch):
+    from openprogram.context.nodes import Call, ROLE_CODE
+    from openprogram.execution import CapabilitySet, ExecutionStore
+    from openprogram.execution.model import ExecutionStatus
+    from openprogram.store import SessionNodeWriter
+    from openprogram.store.session.session_store import SessionStore
+    from openprogram.webui import _exec_dag
+
+    sessions = SessionStore(tmp_path / "sessions")
+    sessions.create_session("cancel-wait", "main")
+    SessionNodeWriter(sessions, "cancel-wait").append(Call(
+        id="cancel-anchor", role=ROLE_CODE, name="gui_agent",
+        output="recorded partial output", metadata={"status": "running"},
+    ))
+    executions = ExecutionStore(tmp_path / "executions.sqlite")
+    revision = executions.create_revision(manifest={"entrypoint": "agent"})
+    execution = executions.admit_execution(
+        execution_id="cancel-execution", run_id="cancel-run", session_id="cancel-wait",
+        revision_id=revision.revision_id, input_ref="input:cancel", input_hash="hash:cancel",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "owner"}, config_snapshot_ref="config:cancel",
+        assistant_message_id="cancel-anchor", capabilities=CapabilitySet(pause=True),
+    )
+    execution = executions.transition_execution(execution.execution_id,
+        expected_version=execution.status_version, target=ExecutionStatus.CANCELLING,
+        reason_code="cancel.user")
+    executions.transition_execution(execution.execution_id,
+        expected_version=execution.status_version, target=ExecutionStatus.CANCELLED,
+        reason_code="cancel.user")
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: sessions)
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: executions)
+    _exec_dag.reconcile_session_projection("cancel-wait")
+    node = sessions.get_nodes("cancel-wait")[0]
+    assert node.metadata["status"] == "cancelled"
+    assert node.output == "recorded partial output"

@@ -76,6 +76,8 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     from openprogram.webui.ws_actions import runtime
 
     released: list[str] = []
+    emitted: list[dict] = []
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", emitted.append)
     broadcasts: list[dict] = []
     monkeypatch.setattr(
         server, "_release_session_occupancy_for_execution",
@@ -107,6 +109,7 @@ def test_ws_execution_cancel_returns_canonical_status_and_releases_occupancy(
     command = next(frame for frame in ws.frames if frame["type"] == "execution.command.updated")
     assert command["command"]["status"] == "applied"
     assert released == [record.execution_id]
+    assert any(frame["type"] == "session_reload" and frame["data"]["session_id"] == record.session_id for frame in emitted)
     assert not any(frame["type"] == "error" for frame in ws.frames)
 
     # Repeating the exact cancel is idempotent after the terminal transition.
@@ -181,6 +184,7 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
     released: list[str] = []
     emitted: list[dict] = []
     monkeypatch.setattr(lifecycle, "emit_ws_frame", emitted.append)
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", emitted.append)
     monkeypatch.setattr(
         "openprogram.webui.server._release_session_occupancy_for_execution",
         lambda execution: released.append(execution["execution_id"]),
@@ -211,6 +215,7 @@ def test_http_execution_cancel_returns_canonical_status_and_body(
     assert update["data"]["execution"] == update["execution"]
     assert update["data"]["event_cursor"] == update["event_cursor"]
     assert released == [record.execution_id]
+    assert any(frame["type"] == "session_reload" and frame["data"]["session_id"] == record.session_id for frame in emitted)
     repeated = TestClient(app).post(
         "/api/execution/cancel", json={
             "type": "execution.command",

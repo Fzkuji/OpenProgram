@@ -607,6 +607,12 @@ async def submit_execution_control(
                 expected_version=expected_version, actor=actor,
                 reason_code="cancel.user",
             )
+            if dispatch.execution.status.value == "cancelled":
+                from openprogram.events import emit_ws_frame
+                emit_ws_frame({"type": "session_reload", "data": {
+                    "session_id": dispatch.execution.session_id,
+                    "reason": "execution.cancelled",
+                }})
         elif operation == "steer":
             dispatch = service.request_steer(
                 command_id=command_id, execution_id=execution_id,
