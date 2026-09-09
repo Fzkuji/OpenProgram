@@ -12,10 +12,11 @@ test('whole-row selection follows real and draft contexts without reviving stale
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);let selection;
  function Harness({current=null,chat=null,pending,registry=projects}){selection=useProjectSelection(registry,current,chat,pending);return h('div',null,selection.selectedProjectId);}
  const render=async props=>act(async()=>root.render(h(Harness,props)));
- await render({current:'chat-a',chat:'chat-a'});assert.equal(host.textContent,'a');
+ await render({current:'chat-a',chat:'chat-a'});assert.equal(host.textContent,'');
  await act(async()=>selection.selectProject('b'));assert.equal(host.textContent,'b');
- await render({current:'chat-b',chat:'chat-b'});assert.equal(host.textContent,'b');
- await render({current:'chat-a',chat:'chat-a'});assert.equal(host.textContent,'a');
+ await act(async()=>selection.clearProjectSelection());assert.equal(host.textContent,'');
+ await render({current:'chat-b',chat:'chat-b'});assert.equal(host.textContent,'');
+ await render({current:'chat-a',chat:'chat-a'});assert.equal(host.textContent,'');
  // setCurrentDraft leaves currentSessionId null: the distinct chat key owns pending choices.
  await render({chat:'local_draft-a',pending:'a'});assert.equal(host.textContent,'a');
  await act(async()=>selection.selectProject('home'));assert.equal(host.textContent,'home');
@@ -26,7 +27,7 @@ test('whole-row selection follows real and draft contexts without reviving stale
  await act(async()=>selection.clearProjectSelection());assert.equal(host.textContent,'b');
  await render({current:'chat-a',chat:'chat-a'});await act(async()=>selection.selectProject('a'));
  const moved=projects.map(p=>({...p,session_ids:p.id==='b'?['chat-a','chat-b']:[]}));
- await render({current:'chat-a',chat:'chat-a',registry:moved});assert.equal(host.textContent,'b');
- await render({current:'chat-a',chat:'chat-a'});assert.equal(host.textContent,'a');
+ await render({current:'chat-a',chat:'chat-a',registry:moved});assert.equal(host.textContent,'');
+ await render({current:'chat-a',chat:'chat-a'});assert.equal(host.textContent,'');
  await act(async()=>root.unmount());host.remove();
 });

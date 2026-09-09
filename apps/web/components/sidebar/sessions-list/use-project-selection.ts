@@ -10,7 +10,7 @@ export function useProjectSelection(projects: readonly ProjectGroupSource[], cur
   const [selection, setSelection] = useState<{ context: string; id: string } | null>(null);
   useEffect(() => setSelection(null), [context]);
   return {
-    selectedProjectId: selection?.context === context ? selection.id : contextualId,
+    selectedProjectId: selection?.context === context ? selection.id : currentId ? undefined : contextualId,
     selectProject: (id: string) => setSelection({ context, id }),
     clearProjectSelection: () => setSelection(null),
   };
