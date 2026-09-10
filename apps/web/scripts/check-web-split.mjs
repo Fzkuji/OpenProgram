@@ -2496,7 +2496,11 @@ assert.equal(useCenterTabs.getState().splitWebTabId, null);
 assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), true);
 useCenterTabs.getState().setSplitWebTab(pipOnlyId);
 assert.equal(useCenterTabs.getState().splitWebTabId, pipOnlyId);
-assert.equal(pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()), false);
+assert.equal(
+  pipCoversCenter(pipOnlyId, "s:chat", useCenterTabs.getState()),
+  true,
+  "owner chat keeps the preview when the same Page is also visible in split",
+);
 assert.equal(collapseWebTabToPip(pipOnlyId), true);
 assert.equal(useCenterTabs.getState().splitWebTabId, null);
 assert.equal(useCenterTabs.getState().activeId, "s:chat");

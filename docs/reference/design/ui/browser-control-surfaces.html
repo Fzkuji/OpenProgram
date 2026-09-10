@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ten browser-control scenarios, shown as choices</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f9;--panel:#fff;--text:#202531;--muted:#5c6472;--line:#dce0e8;--blue:#285bbb;--soft:#edf3ff;--green:#226b51;--warm:#8a5520;--ui:#202124;--uifg:#efeff3;--uimut:#b9bac4;--page:#f4f1ea;--glass:rgba(32,33,36,.55)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,-apple-system,sans-serif}
+main{max-width:1480px;margin:auto;padding:42px 28px 70px}
+h1{font-size:clamp(28px,3.8vw,43px);line-height:1.25;max-width:960px;margin:12px 0 18px}
+h2{font-size:26px;margin:0}h3{font-size:17px;line-height:1.5;margin:12px 0}
+p{margin:8px 0 14px}a{color:var(--blue);text-underline-offset:3px}
+button,textarea,input,select{font:inherit}
+button{cursor:pointer;background:var(--blue);color:#fff;border:0;border-radius:6px;padding:11px 18px}
+a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,label:focus-within{outline:3px solid var(--blue);outline-offset:4px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+.intro{max-width:980px;font-size:17px}
+.notice{padding:14px 18px;background:var(--soft);border-radius:8px;max-width:1080px}
+.small,small{font-size:13px;color:var(--muted)}
+.nav{display:flex;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:5;padding:14px 0;background:var(--bg);border-bottom:1px solid var(--line);margin-top:24px}
+.nav a{text-decoration:none;padding:5px 10px;border:1px solid var(--line);border-radius:5px;background:var(--panel);font-size:13px}
+section{padding-top:38px;scroll-margin-top:120px}
+.case-head{display:flex;align-items:baseline;gap:14px}
+.number{color:var(--blue);font-size:25px;font-weight:650}
+.question{color:var(--muted);margin:8px 0 20px}
+.comparison{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:0;padding:0;border:0;min-width:0}
+.variant{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:18px;display:flex;flex-direction:column}
+.variant.selected{border-color:var(--blue);box-shadow:inset 0 3px var(--blue)}
+.variant.current{background:color-mix(in srgb,var(--panel) 85%,var(--bg))}
+.badges{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-height:28px}
+.badge{font-size:12px;padding:3px 8px;border-radius:4px;background:var(--soft);color:var(--blue)}
+.current .badge{background:var(--bg);color:var(--muted)}
+.recommended{color:var(--green);background:color-mix(in srgb,var(--green) 9%,var(--panel))}
+.constraint{color:var(--warm);background:color-mix(in srgb,var(--warm) 12%,var(--panel))}
+.pending{color:#6a4a12;background:#f6ead4}
+.mock{background:var(--ui);color:var(--uifg);border-radius:8px;overflow:hidden;margin:4px 0 14px}
+.mock-top{padding:8px 12px;background:#18191c;display:flex;justify-content:space-between;font-size:11px;color:var(--uimut)}
+.chrome{background:#2a2b31;padding:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.navbtns{display:flex;gap:4px}
+.navbtns span{width:18px;height:18px;border-radius:4px;background:#3d3f48;display:inline-block}
+.addr{flex:1;min-width:120px;background:#1c1d22;border-radius:12px;padding:4px 10px;font-size:11px;color:#c9cbd4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agentbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 8px;background:#23242a;font-size:10px;color:#d7d8e0}
+.agentbar b{font-weight:600}
+.page{position:relative;background:var(--page);color:#2a2a32;min-height:168px;padding:14px 14px 42px;overflow:hidden}
+.page h4{margin:0 0 8px;font-size:16px}
+.page p,.page label{font-size:12px;margin:6px 0}
+.form{background:#fff;border:1px solid #d8d4c8;border-radius:6px;padding:10px;max-width:220px}
+.form input{width:100%;border:1px solid #bbb;border-radius:4px;padding:6px;margin-top:4px}
+.sidebar{position:absolute;right:0;top:0;bottom:0;width:72px;background:#eceaf3;border-left:1px solid #d3d0dc;padding:8px;font-size:10px;color:#555}
+.sidebar b{display:block;margin:6px 0 2px}
+.float{position:absolute;z-index:2;display:flex;flex-wrap:nowrap;gap:5px;align-items:center;max-width:92%;padding:8px 10px;border-radius:12px;background:var(--glass);color:#f4f5f8;backdrop-filter:blur(10px);font-size:11px;box-shadow:0 8px 22px #0005;white-space:nowrap}
+.float.se{right:10px;bottom:10px}.float.sw{left:10px;bottom:10px}.float.ne{right:10px;top:10px}.float.nw{left:10px;top:10px}
+.float.free{left:auto;right:auto;top:auto;bottom:auto;touch-action:none;user-select:none;cursor:grab}
+.float.free:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.stage .page{overflow:hidden}
+.float.collapsed{width:36px;min-width:36px;height:36px;padding:0;justify-content:center;max-width:36px;white-space:nowrap}
+.click-ico{width:20px;height:20px;pointer-events:none;display:block;overflow:visible}
+.click-cursor,.click-lines path{transform-box:fill-box;transform-origin:center}
+.float.collapsed:hover .click-cursor,.float.collapsed:focus-visible .click-cursor,.float.collapsed:focus-within .click-cursor{animation:click-cur 1s ease 1}
+.float.collapsed:hover .click-lines .l0,.float.collapsed:focus-visible .click-lines .l0,.float.collapsed:focus-within .click-lines .l0{animation:click-l0 .9s ease 1.3s 1}
+.float.collapsed:hover .click-lines .l1,.float.collapsed:focus-visible .click-lines .l1,.float.collapsed:focus-within .click-lines .l1{animation:click-l1 .9s ease 1.3s 1}
+.float.collapsed:hover .click-lines .l2,.float.collapsed:focus-visible .click-lines .l2,.float.collapsed:focus-within .click-lines .l2{animation:click-l2 .9s ease 1.3s 1}
+.float.collapsed:hover .click-lines .l3,.float.collapsed:focus-visible .click-lines .l3,.float.collapsed:focus-within .click-lines .l3{animation:click-l3 .9s ease 1.3s 1}
+.float.dragging .click-cursor,.float.dragging .click-lines path{animation:none!important}
+@keyframes click-cur{0%{transform:translate(0,0)}33%{transform:translate(0,-4px)}66%{transform:translate(-3px,0)}100%{transform:translate(0,0)}}
+@keyframes click-l0{0%{transform:translate(0,0);opacity:1}45%{transform:translate(1px,-1px);opacity:1}80%{transform:translate(0,0);opacity:.2}100%{transform:translate(0,0);opacity:1}}
+@keyframes click-l1{0%{transform:translate(0,0);opacity:1}45%{transform:translate(-1px,0);opacity:1}80%{transform:translate(0,0);opacity:.2}100%{transform:translate(0,0);opacity:1}}
+@keyframes click-l2{0%{transform:translate(0,0);opacity:1}45%{transform:translate(-1px,1px);opacity:1}80%{transform:translate(0,0);opacity:.2}100%{transform:translate(0,0);opacity:1}}
+@keyframes click-l3{0%{transform:translate(0,0);opacity:1}45%{transform:translate(0,-1px);opacity:1}80%{transform:translate(0,0);opacity:.2}100%{transform:translate(0,0);opacity:1}}
+@media(prefers-reduced-motion:reduce){.float.collapsed:hover .click-cursor,.float.collapsed:focus-visible .click-cursor,.float.collapsed:focus-within .click-cursor,.float.collapsed:hover .click-lines path,.float.collapsed:focus-visible .click-lines path,.float.collapsed:focus-within .click-lines path{animation:none}}
+.float .chip{min-width:0}
+.float .chip.status{overflow:hidden;text-overflow:ellipsis}
+.float button,.float .chip:not(.status){flex-shrink:0}
+.chip{background:#ffffff22;border:1px solid #ffffff44;border-radius:8px;padding:3px 7px}
+.mark{position:absolute;width:28px;height:28px;transform:translate(-50%,-50%);pointer-events:none;color:#e07a22;border:0;border-radius:0}
+.mark .click-ico{width:28px;height:28px;color:#e07a22}
+.mark:not([hidden]) .click-cursor{animation:click-cur 1s ease 1}
+.mark:not([hidden]) .click-lines .l0{animation:click-l0 .9s ease 1.3s 1}
+.mark:not([hidden]) .click-lines .l1{animation:click-l1 .9s ease 1.3s 1}
+.mark:not([hidden]) .click-lines .l2{animation:click-l2 .9s ease 1.3s 1}
+.mark:not([hidden]) .click-lines .l3{animation:click-l3 .9s ease 1.3s 1}
+@media(prefers-reduced-motion:reduce){.mark:not([hidden]) .click-cursor,.mark:not([hidden]) .click-lines path{animation:none}}
+.notice-float{background:rgba(48,30,18,.72)}
+.caption{font-size:11px;color:var(--uimut);margin-bottom:6px}
+.glass-note{font-size:10px;color:#c9cdd8;margin-top:6px}
+.difference{font-size:14px;flex-grow:1}
+.source{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:11px;min-height:58px}
+.choose{display:flex;align-items:flex-start;gap:9px;padding:12px 10px;background:var(--soft);border-radius:5px;cursor:pointer;font-size:13px;margin-top:12px}
+.choose input{accent-color:var(--blue);margin-top:5px}
+.current-note{font-size:12px;color:var(--muted);padding:12px 0;margin-top:12px}
+.recommendation{padding:12px 16px;border-left:3px solid var(--green);margin:14px 0 0;background:var(--panel);font-size:14px}
+.plain{max-width:980px}
+.playground{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:16px;margin:18px 0}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
+.controls label{font-size:13px;display:flex;flex-direction:column;gap:4px}
+.controls select,.controls button{padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+.stage{position:relative;min-height:320px;background:#1b1c21;border-radius:8px;overflow:hidden}
+.stage .page{min-height:260px}
+.summary-box{padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:9px}
+textarea{width:100%;min-height:230px;padding:14px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;resize:vertical;margin-top:15px}
+.rowbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+details{padding:15px 0;border-top:1px solid var(--line)}
+summary{cursor:pointer;font-weight:600}
+code{font:12px ui-monospace,monospace;overflow-wrap:anywhere}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px;margin-top:28px}
+[hidden]{display:none!important}
+.deco{pointer-events:none}
+@media(prefers-color-scheme:dark){:root{--bg:#181b21;--panel:#232730;--text:#e9ecf3;--muted:#b5bdca;--line:#414a5b;--blue:#a4c2ff;--soft:#2b374c;--green:#91d2b2;--warm:#e6b77f}button{background:#335da1}}
+@media(max-width:1100px){main{padding:24px 18px 50px}.comparison{gap:12px}.variant{padding:12px}.nav{position:static}}
+@media(max-width:780px){.comparison{grid-template-columns:1fr}.source{min-height:0}.case-head{align-items:flex-start}h2{font-size:23px}.variant{padding:18px}section{scroll-margin-top:15px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media print{.nav,.choose,button,.summary-box,.playground{display:none}.comparison{grid-template-columns:repeat(3,1fr)}.variant{break-inside:avoid}body{background:#fff;color:#111}.mock{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<a class="sr-only" href="#main">Skip to content</a>
+<main id="main">
+<header>
+<div class="eyebrow">OPENPROGRAM / BROWSER CONTROL SURFACES</div>
+<h1>Ten browser-control scenarios, shown as choices</h1>
+<p class="intro">Each row compares one situation: current OpenProgram on the left, two proposals beside it. The drawings show behavior; they are not product screenshots. How computer use works stays in <a href="gui-agent.html">GUI Agent</a>. This page only chooses where Agent pause, continue, click marks, and operation history appear. Confirmed: those buttons leave the ordinary top bar. They start as a small, see-through button you can drag anywhere on the webpage. Click expands the actions; click again folds them. How see-through they are, and whether they hide by themselves, are still waiting for your choice. The small chat preview and the large webpage may show at the same time and stay in sync. Hiding the preview does not close the webpage. The click cursor moves smoothly from the last rendered point to the next, then plays the click. The first point appears in place when there is no last position. Motion is brief. A resource, generation, geometry, or navigation change cancels travel and keeps the last rendered point instead of jumping to a future target. Reduced motion skips travel. Repeat clicks at the same point replay the click after arrival. This is a mark on the page, not a real OS pointer.</p>
+<p><a href="browser-control-surfaces.zh.html">Chinese</a></p>
+<div class="notice"><span class="badge constraint">Confirmed constraint</span> Ordinary browsing keeps address, back, refresh, and bookmarks. Agent buttons, status text, and errors leave the top bar. They appear as semi-transparent buttons on the webpage you are looking at. Files / Activity / Resources stays a vertical list on the right. Do not darken the whole page. Do not pull another app window to the front. The small chat preview and the large webpage may show at the same time; they share one Page. Hiding the preview does not close the webpage. <span class="badge pending">Suggested, pending user</span> How see-through, and whether the button hides by itself, are not approved. Drag anywhere inside the webpage is the confirmed direction. Semi-transparent buttons still cover whatever sits under them. Empty space around them still lets you click the webpage. Drag or fold the small button to reach what it covers. Clicking a button itself does not go through to the page.</div>
+</header>
+<nav class="nav" aria-label="Scenario navigation">
+<a href="#plain">Plain words</a>
+<a href="#wording">Wording rules</a>
+<a href="#case-1">1. Ordinary browsing</a>
+<a href="#case-2">2. Agent working</a>
+<a href="#case-3">3. Human input</a>
+<a href="#case-4">4. Timeout</a>
+<a href="#case-5">5. Disconnect</a>
+<a href="#case-6">6. Many pages</a>
+<a href="#case-7">7. Chat preview</a>
+<a href="#case-8">8. Finish</a>
+<a href="#case-9">9. Occlusion</a>
+<a href="#case-10">10. Native / VM</a>
+<a href="#playground">Playground</a>
+<a href="#selection">Selection</a>
+</nav>
+
+<section id="wording">
+<h2>Wording rules for this document</h2>
+<div class="plain">
+<p>Do not invent names or metaphors. Say what the control is, where it sits, and what happens when you click it.</p>
+<p>Use a technical word only when needed, and explain it in the same sentence. A reader should understand a button label without asking what it means.</p>
+<p>When this is pointed out, rewrite all similar copy in the same pass. Do not praise the request. Do not repeat a summary of the same point in several places.</p>
+</div>
+</section>
+<section id="plain">
+<h2>What the buttons do</h2>
+<div class="plain">
+<p><strong>I will operate</strong> asks the Agent to stop clicking and typing on this webpage. It does not reload the page. It is not the browser Stop for a document that is still loading. Until the program confirms the pause, do not say the Agent has stopped. After it confirms, you type and click; the Agent does not.</p>
+<p><strong>Continue Agent</strong> is you telling the Agent it may click and type again. A timeout, a reconnect, or opening a restored tab does not do that for you.</p>
+<p><strong>Show actions / click marks</strong> draws short marks on the last places the Agent clicked or typed. They do not change what the webpage receives.</p>
+<p><strong>Operation history</strong> lists recent Agent steps for this webpage. It is a log. It does not undo those steps.</p>
+<p>Semi-transparent buttons still hide whatever is under them. Empty space around them does not block clicks on the webpage. To reach covered content, drag the small button elsewhere or fold the actions.</p>
+</div>
+</section>
+
+<section id="case-1">
+<div class="case-head"><span class="number">01</span><h2>Ordinary browsing</h2></div>
+<p class="question">When no Agent is using the webpage you see, what sits in the top bar?</p>
+<fieldset class="comparison"><legend class="sr-only">Ordinary browsing</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: Agent row in the top bar, tied to the current resource</h3>
+<div class="mock" role="img" aria-labelledby="t1c">
+<span class="sr-only" id="t1c">Current top bar with status, eye, clock, and pause beside the address field</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/guide</div><span class="chip deco">Bookmarks</span></div>
+<div class="agentbar"><b>Ready to use</b><span class="chip deco">Eye</span><span class="chip deco">History</span></div>
+<div class="page"><h4>Product guide</h4><p>Idle still keeps eye and history in that row. Pause is absent while there is nothing to stop.</p></div>
+</div>
+<p class="difference">The current top bar can show Ready / Active / Paused and a resume error. Eye and history stay while idle. Pause is not shown when there is nothing to stop.</p>
+<div class="source">Current source: <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser-control-bar.tsx">browser-control-bar.tsx</a>. Labels are not a screenshot of the shipping top bar.</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span><span class="badge constraint">Constraint</span></div>
+<h3>A · No Agent buttons in the ordinary top bar</h3>
+<div class="mock" role="img" aria-labelledby="t1a">
+<span class="sr-only" id="t1a">Address, back, refresh, bookmarks only. Page is unobstructed.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/guide</div><span class="chip deco">Bookmarks</span></div>
+<div class="page"><h4>Product guide</h4><p>Full article. No Agent buttons on the webpage while idle.</p></div>
+</div>
+<p class="difference">Idle pages look like a normal browser. Agent buttons appear only when there is work, a wait, or an error to show.</p>
+<div class="source">OpenProgram proposed default. Not verified as Claude in Chrome or ChatGPT Work top bars. <a href="#ref-r1">R1</a></div>
+<label class="choose"><input type="radio" name="s1" value="A" data-title="A · No Agent buttons in the ordinary top bar" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Proposal</span><span class="badge pending">Suggested</span></div>
+<h3>B · Small button in a webpage corner</h3>
+<div class="mock" role="img" aria-labelledby="t1b">
+<span class="sr-only" id="t1b">Small A button in the lower right. Click it to expand the Agent buttons.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/guide</div><span class="chip deco">Bookmarks</span></div>
+<div class="page"><h4>Product guide</h4><p>Article remains readable.</p><div class="float se collapsed" title="Click to expand Agent buttons"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></div></div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">A small corner button opens history without a top Agent row. It still covers that corner until you move or fold it.</p>
+<div class="source">Suggested only. This idle corner button is not an approved product choice.</div>
+<label class="choose"><input type="radio" name="s1" value="B" data-title="B · Small button in a webpage corner. Click it to expand Agent buttons"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A. Idle browsing should not show Agent status in the top bar. The small corner button is optional and not approved.</p>
+</section>
+
+<section id="case-2">
+<div class="case-head"><span class="number">02</span><h2>Agent working</h2></div>
+<p class="question">While the Agent is driving the visible page, where do pause, marks, and history live?</p>
+<fieldset class="comparison"><legend class="sr-only">Agent working</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: top Agent row over the page</h3>
+<div class="mock" role="img" aria-labelledby="t2c">
+<span class="sr-only" id="t2c">Active status and pause in the top bar, click mark on the article</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://shop.example/checkout</div></div>
+<div class="agentbar"><b>Active</b><span class="chip deco">Eye</span><span class="chip deco">History</span><span class="chip deco">Pause Agent to use page</span></div>
+<div class="page"><h4>Checkout</h4><p>Pay button and summary.</p><span class="mark" style="left:70%;top:58%"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></span></div>
+</div>
+<p class="difference">The Agent row competes with address and navigation for the same strip.</p>
+<div class="source">Current <code>BrowserControlBar</code> in the page toolbar. <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser-control-bar.tsx">source</a></div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span><span class="badge pending">Corner pending</span></div>
+<h3>A · Semi-transparent buttons on the webpage you see</h3>
+<div class="mock" role="img" aria-labelledby="t2a">
+<span class="sr-only" id="t2a">Lower-right semi-transparent buttons: Active, I will operate, marks, history</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://shop.example/checkout</div><span class="chip deco">Bookmarks</span></div>
+<div class="page"><h4>Checkout</h4><p>Pay button and summary remain in the undimmed page.</p><span class="mark" style="left:62%;top:48%"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></span>
+<div class="float se"><span class="chip status" title="Active · checkout">Active · checkout</span><span class="chip">I will operate</span><span class="chip">Marks</span><span class="chip">History</span></div></div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">These buttons belong to the webpage you see. Suggested lower-right; not approved. Empty space around them does not block clicks on the webpage.</p>
+<div class="source">Keeps the buttons next to the webpage the Agent is using. ChatGPT Work uses a separate remote viewer, not buttons on your local page. <a href="#ref-r2">R2</a> Unverified for identical buttons.</div>
+<label class="choose"><input type="radio" name="s2" value="A" data-title="A · Semi-transparent buttons on the webpage you see" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Proposal</span></div>
+<h3>B · Activity panel only</h3>
+<div class="mock" role="img" aria-labelledby="t2b">
+<span class="sr-only" id="t2b">No buttons on the webpage. Pause sits in the vertical Activity list on the right.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://shop.example/checkout</div></div>
+<div class="page" style="padding-right:80px"><h4>Checkout</h4><p>No Agent buttons on the webpage.</p>
+<div class="sidebar"><b>Files</b><b>Activity</b>Pause<br>History<b>Resources</b></div></div>
+</div>
+<p class="difference">Keeps the vertical rail. Pause is farther from the page the Agent is touching.</p>
+<div class="source">Claude in Chrome can open a side panel from the toolbar icon; that is entry, not proof of Activity-only pause. <a href="#ref-r1">R1</a></div>
+<label class="choose"><input type="radio" name="s2" value="B" data-title="B · Activity panel only"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A: semi-transparent buttons on the webpage you see, not in the address row, and not a second copy on the small chat preview.</p>
+</section>
+
+<section id="case-3">
+<div class="case-head"><span class="number">03</span><h2>Human input or login</h2></div>
+<p class="question">When a form or login needs you, how do you ask the Agent to stop, and when may the screen say Paused?</p>
+<fieldset class="comparison"><legend class="sr-only">Human input</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: top Pause / Continue with status text</h3>
+<div class="mock" role="img" aria-labelledby="t3c">
+<span class="sr-only" id="t3c">Paused in the top Agent bar over a login form</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://id.example/login</div></div>
+<div class="agentbar"><b>Paused</b><span class="chip deco">Continue Agent</span></div>
+<div class="page"><div class="form"><label>Email<input value="" readonly tabindex="-1" autocomplete="off"></label><label>Password<input type="password" readonly tabindex="-1" autocomplete="off" value=""></label></div><p class="small">Fake login mock. No real credentials.</p></div>
+</div>
+<p class="difference">The bar can show Paused before acknowledgement is obvious. Pause is not a document reload.</p>
+<div class="source">Current pauseLabel and Continue Agent in the control bar.</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span></div>
+<h3>A · Semi-transparent “I will operate”, then “Continue Agent”</h3>
+<div class="mock" role="img" aria-labelledby="t3a">
+<span class="sr-only" id="t3a">Buttons on the webpage wait for pause confirmation, then show Continue Agent</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://id.example/login</div></div>
+<div class="page"><div class="form"><label>Email<input readonly tabindex="-1" autocomplete="off"></label><label>Password<input type="password" readonly tabindex="-1" autocomplete="off" value=""></label></div><p class="small">Fake login mock. No real credentials.</p>
+<div class="float se"><span class="chip status" title="Waiting to pause…">Waiting to pause…</span><span class="chip">I will operate</span></div></div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">Do not say Paused until the program confirms. After that, the same buttons show Continue Agent. You operate the page; the Agent does not. ChatGPT Work pauses for sign-in in a separate cloud browser; you open a task link there, not buttons on this local page. <a href="#ref-r2">R2</a></p>
+<div class="source">A separate viewer for you to type is similar in purpose. Buttons drawn on the local webpage are not verified there.</div>
+<label class="choose"><input type="radio" name="s3" value="A" data-title="A · Semi-transparent I will operate, then Continue Agent after pause is confirmed" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Proposal</span></div>
+<h3>B · Pause from the right Activity list</h3>
+<div class="mock" role="img" aria-labelledby="t3b">
+<span class="sr-only" id="t3b">Login page. Activity on the right has I will operate.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://id.example/login</div></div>
+<div class="page" style="padding-right:80px"><div class="form"><label>Email<input readonly tabindex="-1" autocomplete="off"></label></div><p class="small">Fake login mock. No real credentials.</p>
+<div class="sidebar"><b>Activity</b>I will operate<br>Continue Agent</div></div>
+</div>
+<p class="difference">The webpage stays clear. If the right list is folded, it is easy to miss I will operate.</p>
+<div class="source">Opening a side panel from a toolbar icon is similar to Claude in Chrome. Exact button wording there is unverified. <a href="#ref-r1">R1</a></div>
+<label class="choose"><input type="radio" name="s3" value="B" data-title="B · Pause from the right Activity list"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A. Waiting for confirmation is visible on the page you must type into. Continue Agent is a separate click after pause is confirmed.</p>
+</section>
+
+<section id="case-4">
+<div class="case-head"><span class="number">04</span><h2>Timeout or failure</h2></div>
+<p class="question">How should an unconfirmed pause differ from a hard failure?</p>
+<fieldset class="comparison"><legend class="sr-only">Timeout</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: persistent top “Could not pause. Try again”</h3>
+<div class="mock" role="img" aria-labelledby="t4c">
+<span class="sr-only" id="t4c">Top bar keeps Could not pause. Try again and Retry pause</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://app.example/settings</div></div>
+<div class="agentbar"><b>Could not pause. Try again</b><span class="chip deco">Retry pause</span></div>
+<div class="page"><h4>Settings</h4><p>The error stays in the top bar.</p></div>
+</div>
+<p class="difference">stop_unconfirmed already maps to that sentence. resumeError can sit beside it. Both stay in the top row.</p>
+<div class="source">statusLabel in <code>browser-control-bar.tsx</code>. Prior unmerged error-notice work is not current.</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span></div>
+<h3>A · Short notice on the webpage, Retry, and history</h3>
+<div class="mock" role="img" aria-labelledby="t4a">
+<span class="sr-only" id="t4a">Semi-transparent notice: pause not confirmed, retry, open history</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://app.example/settings</div></div>
+<div class="page"><h4>Settings</h4><p>Page stays undimmed.</p>
+<div class="float se notice-float"><span class="chip">Pause not confirmed</span><span class="chip">Retry</span><span class="chip">History</span></div></div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">Timeout still says pause was not confirmed; Retry asks the Agent to stop again. When the program reports a failure, history uses a different line. You can dismiss the notice; Retry stays with the buttons on the webpage.</p>
+<div class="source">Not verified in Browser Use live preview, which documents an iframe view and optional recording, not pause UI. <a href="#ref-r3">R3</a></div>
+<label class="choose"><input type="radio" name="s4" value="A" data-title="A · Short notice on the webpage, Retry, and history" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Proposal</span></div>
+<h3>B · Activity-only error</h3>
+<div class="mock" role="img" aria-labelledby="t4b">
+<span class="sr-only" id="t4b">Error only in Activity; top bar has no Agent error</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://app.example/settings</div></div>
+<div class="page" style="padding-right:80px"><h4>Settings</h4>
+<div class="sidebar"><b>Activity</b>Pause not confirmed</div></div>
+</div>
+<p class="difference">The page never shows the failure. Easy to miss while looking at the form.</p>
+<div class="source">Unverified as other products’ default timeout buttons.</div>
+<label class="choose"><input type="radio" name="s4" value="B" data-title="B · Activity-only error"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A. Keep unconfirmed pause distinct from hard failure. Do not pin a red top banner.</p>
+</section>
+
+<section id="case-5">
+<div class="case-head"><span class="number">05</span><h2>Disconnect</h2></div>
+<p class="question">When the browser connection drops, what retries, and what must not auto-resume the Agent?</p>
+<fieldset class="comparison"><legend class="sr-only">Disconnect</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: top “Connection lost” / unknown</h3>
+<div class="mock" role="img" aria-labelledby="t5c">
+<span class="sr-only" id="t5c">Connection lost in the Agent status strip</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://mail.example/inbox</div></div>
+<div class="agentbar"><b>Connection lost</b></div>
+<div class="page"><h4>Inbox</h4><p>Status lives in the Agent row.</p></div>
+</div>
+<p class="difference">unknown plus disconnected already maps to Connection lost.</p>
+<div class="source">statusLabel in current control bar.</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span></div>
+<h3>A · Compact notice on the webpage: connection lost and Retry connection</h3>
+<div class="mock" role="img" aria-labelledby="t5a">
+<span class="sr-only" id="t5a">Semi-transparent connection notice with Retry connection. Does not Continue Agent.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://mail.example/inbox</div></div>
+<div class="page"><h4>Inbox</h4>
+<div class="float se notice-float"><span class="chip">Connection lost</span><span class="chip">Retry connection</span></div></div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">One notice. Retry reconnects the session. It does not Continue Agent. No repeating toast stack.</p>
+<div class="source">Unverified as identical to other products. Do not label old ChatGPT agent or Atlas as current. <a href="#ref-r4">R4</a></div>
+<label class="choose"><input type="radio" name="s5" value="A" data-title="A · Compact notice on the webpage: connection lost and Retry connection" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Proposal</span></div>
+<h3>B · Side panel only</h3>
+<div class="mock" role="img" aria-labelledby="t5b">
+<span class="sr-only" id="t5b">Connection lost only in Activity</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://mail.example/inbox</div></div>
+<div class="page" style="padding-right:80px"><h4>Inbox</h4>
+<div class="sidebar"><b>Activity</b>Connection lost</div></div>
+</div>
+<p class="difference">Quiet, easy to miss while reading mail.</p>
+<div class="source">Unverified.</div>
+<label class="choose"><input type="radio" name="s5" value="B" data-title="B · Side panel only"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A. Explicit retry. Never auto-resume the Agent after reconnect.</p>
+</section>
+
+<section id="case-6">
+<div class="case-head"><span class="number">06</span><h2>Many pages and branches</h2></div>
+<p class="question">If several pages exist, which page do the semi-transparent buttons control?</p>
+<fieldset class="comparison"><legend class="sr-only">Many pages</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: Resources groups plus the tab’s control bar</h3>
+<div class="mock" role="img" aria-labelledby="t6c">
+<span class="sr-only" id="t6c">Resources groups on the right, Agent bar on the current tab</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/a</div></div>
+<div class="agentbar"><b>Active</b><span class="chip deco">Pause Agent</span></div>
+<div class="page" style="padding-right:80px"><h4>Doc A</h4>
+<div class="sidebar"><b>Resources</b>main · A<br>try-login · B</div></div>
+</div>
+<p class="difference">The bar follows the selected resource. Branch names already exist in Resources.</p>
+<div class="source">GUI Agent Resources grouping remains canonical. <a href="gui-agent.html">gui-agent.html</a></div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span><span class="badge constraint">No global control</span></div>
+<h3>A · Buttons only for the webpage you see</h3>
+<div class="mock" role="img" aria-labelledby="t6a">
+<span class="sr-only" id="t6a">Buttons name the visible branch and the address you see</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/a</div></div>
+<div class="page" style="padding-right:80px"><h4>Doc A</h4><p>Visible page only.</p>
+<div class="float se"><span class="chip status" title="main · docs.example/a">main · docs.example/a</span><span class="chip">I will operate</span></div>
+<div class="sidebar"><b>Resources</b>main · A<br>try-login · B</div></div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">The buttons name the visible branch and address. Common branch labels stay planned in Resources. A Pause all pages control is rejected so Pause cannot hit the wrong page.</p>
+<div class="source">How pages are grouped: <a href="gui-agent.html">GUI Agent</a>. Other products’ button labels on a webpage are unverified.</div>
+<label class="choose"><input type="radio" name="s6" value="A" data-title="A · Buttons only for the webpage you see" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Rejected as default</span></div>
+<h3>B · One control for every page</h3>
+<div class="mock" role="img" aria-labelledby="t6b">
+<span class="sr-only" id="t6b">A global Pause all pages control — rejected</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/a</div></div>
+<div class="page"><h4>Doc A</h4>
+<div class="float se"><span class="chip">Pause all pages</span></div></div>
+</div>
+<p class="difference">Wrong-target risk. Shown only to reject it.</p>
+<div class="source">Rejected here. Not claimed as another product’s UI.</div>
+<label class="choose"><input type="radio" name="s6" value="B" data-title="B · Global all-pages control (not recommended)"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A. The buttons control only the webpage you see. Reject Pause all pages.</p>
+</section>
+
+<section id="case-7">
+<div class="case-head"><span class="number">07</span><h2>Small chat preview and webpage tab</h2></div>
+<p class="question">The small chat preview and the large webpage may show at the same time. They share one Page. Where do Agent buttons sit? (Code may still name the small preview PiP.)</p>
+<fieldset class="comparison"><legend class="sr-only">Preview</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: one header on the small chat preview, or the top browser row</h3>
+<div class="mock" role="img" aria-labelledby="t7c">
+<span class="sr-only" id="t7c">Small chat preview header with title and More</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="page" style="background:#2a2b32;color:#eee;min-height:150px">
+<div class="agentbar"><b>docs.example</b><span class="chip deco">More</span><span class="chip deco">Open page</span><span class="chip deco">Hide</span></div>
+<div style="margin:10px;background:#f4f1ea;color:#222;padding:12px;min-height:90px"><h4>Preview capture</h4></div>
+</div>
+</div>
+<p class="difference">The small chat preview already has one header. The full tab has the browser bar. Pin only locks which resource is followed. It does not open a second live webpage.</p>
+<div class="source">Current GUI Agent text still described exclusive display. The new target is simultaneous display of the same Page. Runtime is unchanged.</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span><span class="badge constraint">Same Page, both visible</span></div>
+<h3>A · Webpage tab and small preview together; Agent buttons on the large page</h3>
+<div class="mock" role="img" aria-labelledby="t7a">
+<span class="sr-only" id="t7a">Large webpage and small chat preview both visible. Same page. Small draggable button on the large page.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/guide</div></div>
+<div class="page" style="display:grid;grid-template-columns:1fr 90px;gap:8px;min-height:170px">
+<div><h4>Webpage tab</h4><p>Same Page as the preview.</p><div class="float se collapsed" title="Small draggable button"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></div></div>
+<div style="background:#eceaf3;border:1px solid #d3d0dc;padding:6px;font-size:10px;color:#333"><b>Small preview</b><p>Synced. Hide does not close the webpage.</p></div>
+</div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">Both views stay open. They show the same Page. Hide preview keeps the webpage. Agent pause lives on the large page as a small draggable button. Do not put a second set of action buttons on the thumbnail.</p>
+<div class="source">Browser Use live preview is an embeddable iframe; it does not decide OpenProgram layout. <a href="#ref-r3">R3</a></div>
+<label class="choose"><input type="radio" name="s7" value="A" data-title="A · Webpage tab and small preview together; Agent buttons on the large page" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Proposal</span></div>
+<h3>B · Also draw buttons on the small chat preview</h3>
+<div class="mock" role="img" aria-labelledby="t7b">
+<span class="sr-only" id="t7b">Buttons drawn on the small chat preview</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="page" style="background:#2a2b32;color:#eee">
+<div style="position:relative;margin:10px;background:#f4f1ea;color:#222;padding:12px;min-height:110px"><h4>Preview</h4>
+<div class="float se"><span class="chip">Pause</span></div></div>
+</div>
+</div>
+<p class="difference">Covers an already small picture. Easy to confuse with the large page. Not recommended while both views are visible.</p>
+<div class="source">Unverified. Not claimed as another product’s layout.</div>
+<label class="choose"><input type="radio" name="s7" value="B" data-title="B · Also draw buttons on the small chat preview"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A. Show the small preview and the large webpage together. Put the small draggable Agent button on the large page. Hide preview does not close the webpage.</p>
+</section>
+
+<section id="case-8">
+<div class="case-head"><span class="number">08</span><h2>Finish or restart</h2></div>
+<p class="question">When the Agent stops, should any Agent buttons remain on the webpage? Restoring a tab must not Continue Agent.</p>
+<fieldset class="comparison"><legend class="sr-only">Finish</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: Ready to use / unknown in the top bar</h3>
+<div class="mock" role="img" aria-labelledby="t8c">
+<span class="sr-only" id="t8c">Ready to use remains in the Agent strip after the task ends</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://wiki.example/done</div></div>
+<div class="agentbar"><b>Ready to use</b></div>
+<div class="page"><h4>Article</h4><p>Idle status still occupies the top bar.</p></div>
+</div>
+<p class="difference">idle/closed already map to Ready to use.</p>
+<div class="source">statusLabel idle branch in the control bar.</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span></div>
+<h3>A · Hide Agent buttons when idle; restore pages without Continue Agent</h3>
+<div class="mock" role="img" aria-labelledby="t8a">
+<span class="sr-only" id="t8a">Clean webpage after finish. No Agent buttons.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://wiki.example/done</div><span class="chip deco">Bookmarks</span></div>
+<div class="page"><h4>Article</h4><p>Restored tab shows last URL. Agent does not continue. Closed pages stay closed. Retention does not keep unsaved form fields.</p></div>
+</div>
+<p class="difference">Matches ordinary browsing. Restart is a new explicit Continue or a new task.</p>
+<div class="source">Retention rules in <a href="gui-agent.html">GUI Agent</a>. ChatGPT Work can keep a cloud browser after leaving the chat; that is a remote session, not local tab restore. <a href="#ref-r2">R2</a></div>
+<label class="choose"><input type="radio" name="s8" value="A" data-title="A · Hide Agent buttons when idle; restore pages without Continue Agent" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Proposal</span><span class="badge pending">Suggested</span></div>
+<h3>B · Small finished button in a corner</h3>
+<div class="mock" role="img" aria-labelledby="t8b">
+<span class="sr-only" id="t8b">Small finished chip in the corner</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://wiki.example/done</div></div>
+<div class="page"><h4>Article</h4><div class="float se collapsed" title="Finished">✓</div></div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">History is one click away. The small button still covers a corner. Not approved.</p>
+<div class="source">Suggested only.</div>
+<label class="choose"><input type="radio" name="s8" value="B" data-title="B · Small finished button in a corner. Click it to expand history"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A. Hide Agent buttons when idle. Restored pages do not Continue Agent.</p>
+</section>
+
+<section id="case-9">
+<div class="case-head"><span class="number">09</span><h2>Buttons covering the webpage, and narrow windows</h2></div>
+<p class="question">How do you move a small see-through button so it does not cover what you need to click?</p>
+<fieldset class="comparison"><legend class="sr-only">Occlusion</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: fixed top row</h3>
+<div class="mock" role="img" aria-labelledby="t9c">
+<span class="sr-only" id="t9c">Fixed Agent row always at the top, covering toolbar space</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://map.example</div></div>
+<div class="agentbar"><b>Active</b><span class="chip deco">Pause Agent to use page</span></div>
+<div class="page"><h4>Map</h4><p>Top of the map is under the Agent row. Narrow windows wrap that row.</p></div>
+</div>
+<p class="difference">Position is not user-movable.</p>
+<div class="source">Current toolbar layout.</div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span><span class="badge constraint">Drag confirmed</span></div>
+<h3>A · Small draggable button anywhere on the webpage</h3>
+<div class="mock" role="img" aria-labelledby="t9a">
+<span class="sr-only" id="t9a">Small see-through button on the map. Drag anywhere. Click expands actions.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://map.example</div></div>
+<div class="page"><h4>Map</h4><p>Drag the small button anywhere inside this webpage. Click opens the actions in one row. Click again folds them. Dragging does not open the actions.</p>
+<div class="float se collapsed" title="Small draggable button"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></div></div>
+<p class="glass-note">OpenProgram proposed look. Phone system assistive buttons are a user reference, not a verified copy of Apple’s implementation.</p>
+</div>
+<p class="difference">Confirmed: drag anywhere inside the webpage or window content, not only four corners. Keyboard: arrow keys move; Enter expands or folds. Keep inside the page when the window resizes. How see-through, and auto-hide, are still adjustable.</p>
+<div class="source">Not verified as another product’s exact control. Phone assistive buttons are a reference only.</div>
+<label class="choose"><input type="radio" name="s9" value="A" data-title="A · Small draggable button anywhere on the webpage. Click expands actions" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Proposal</span></div>
+<h3>B · One fixed corner</h3>
+<div class="mock" role="img" aria-labelledby="t9b">
+<span class="sr-only" id="t9b">Buttons locked to the lower right</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://map.example</div></div>
+<div class="page"><h4>Map</h4><div class="float se"><span class="chip">Fixed here</span></div></div>
+</div>
+<p class="difference">Simpler. Covered map controls cannot be reached without scrolling the page, if scrolling even moves them.</p>
+<div class="source">Unverified.</div>
+<label class="choose"><input type="radio" name="s9" value="B" data-title="B · One fixed corner"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A. A small draggable button, like a phone assistive button, anywhere on the webpage. Click expands; click folds. Drag does not expand. Default is folded.</p>
+</section>
+
+<section id="case-10">
+<div class="case-head"><span class="number">10</span><h2>Native app and VM</h2></div>
+<p class="question">The in-app browser already has these buttons. Native app windows and virtual machines are not verified. Do not promise ordinary webpage CSS can sit on an Electron WebContentsView.</p>
+<fieldset class="comparison"><legend class="sr-only">Native</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram today</span></div>
+<h3>Today: browser implemented; native / VM not verified</h3>
+<div class="mock" role="img" aria-labelledby="t10c">
+<span class="sr-only" id="t10c">Browser tab has a control bar; native window drawing is unlabeled</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">browser tab</div></div>
+<div class="agentbar"><b>Active</b></div>
+<div class="page"><h4>Hosted page</h4><p>Foreign app menus are not ours to change. Host-always-on-top is deferred.</p></div>
+</div>
+<p class="difference">A drawing in this document is not proof that a native window will accept the same buttons.</p>
+<div class="source">GUI Agent: the App must own the drawing and click testing; unverified. <a href="gui-agent.html">gui-agent.html</a></div>
+<div class="current-note">Current behavior, for comparison</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">Proposal</span><span class="badge recommended">Recommended default</span></div>
+<h3>A · Buttons on OpenProgram’s own preview or guest console</h3>
+<div class="mock" role="img" aria-labelledby="t10a">
+<span class="sr-only" id="t10a">OpenProgram guest console with its own buttons, not the other app’s menu</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="page" style="background:#15283a;color:#d5e8f8"><h4>Guest console (OpenProgram-owned)</h4><p>Controls sit on our preview surface.</p>
+<div class="float se"><span class="chip">VM · buttons not verified</span><span class="chip">I will operate</span></div></div>
+<p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
+</div>
+<p class="difference">Draw only on surfaces OpenProgram owns. Do not change another app’s menu. Do not bring that window to the front. Drawing and click testing on native windows remain unverified.</p>
+<div class="source">Limits in GUI Agent. Not a CSS promise over WebContentsView.</div>
+<label class="choose"><input type="radio" name="s10" value="A" data-title="A · Buttons on OpenProgram’s own preview or guest console" checked><span>Choose this option</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">Deferred</span></div>
+<h3>B · Keep the OpenProgram window always above other windows (deferred)</h3>
+<div class="mock" role="img" aria-labelledby="t10b">
+<span class="sr-only" id="t10b">Always-on-top host bar over a foreign window — deferred</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="page" style="background:#35313c;color:#eddbfb"><h4>Foreign app</h4>
+<div class="float nw"><span class="chip">Always on top (deferred)</span></div></div>
+</div>
+<p class="difference">Would fight other apps for z-order. Deferred. Do not implement as CSS.</p>
+<div class="source">Deferred in this design. Unverified.</div>
+<label class="choose"><input type="radio" name="s10" value="B" data-title="B · Keep the OpenProgram window always above other windows (deferred)"><span>Choose this option</span></label>
+</article>
+</fieldset>
+<p class="recommendation">Recommend A for surfaces OpenProgram owns. Click testing on native windows is later work, not this page’s visual default.</p>
+</section>
+
+<section id="playground">
+<h2>Interactive playground</h2>
+<p>Local mock only. No network. This playground covers six states (ordinary browsing, Agent working, human input, timeout, disconnect, finished). Drag the small button anywhere on the mock webpage. Click expands or folds. Dragging does not expand. Arrow keys move it; Enter expands or folds. Decorative controls are not in the tab order. The click icon uses the mouse-click motion you supplied. This page demonstrates the animation with CSS; the App implementation should use your CursorClickIcon component. This document does not implement the App.</p>
+<div class="playground">
+<div class="controls">
+<label>Scenario
+<select id="pg-scene" aria-label="Playground scenario">
+<option value="idle">Ordinary browsing</option>
+<option value="work" selected>Agent working</option>
+<option value="login">Human input</option>
+<option value="fail">Timeout</option>
+<option value="drop">Disconnect</option>
+<option value="done">Finished</option>
+</select></label>
+<button type="button" id="pg-resetpos">Reset button position</button>
+<button type="button" id="pg-collapse">Fold / expand</button>
+<button type="button" id="pg-pause">I will operate</button>
+<button type="button" id="pg-ack">Mock pause acknowledgement</button>
+<button type="button" id="pg-continue">Continue Agent</button>
+<button type="button" id="pg-fail">Mock failure</button>
+<button type="button" id="pg-ok">Mock task finished</button>
+<button type="button" id="pg-drop">Mock disconnect</button>
+<button type="button" id="pg-reconnect">Reconnect</button>
+<button type="button" id="pg-marks">Toggle marks</button>
+<button type="button" id="pg-hist">Toggle history</button>
+</div>
+<div class="stage" id="pg-stage">
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr" id="pg-addr">https://shop.example/checkout</div><span class="chip deco" tabindex="-1">Bookmarks</span></div>
+<div class="page" id="pg-page">
+<h4 id="pg-title">Checkout</h4>
+<p id="pg-copy">The webpage is not darkened. Semi-transparent buttons cover only their own rectangle.</p>
+<div class="form" id="pg-form" hidden><label>Password<input id="pg-input" type="password" autocomplete="off" readonly tabindex="-1" value=""></label><p class="small">Fake login mock. No real credentials.</p></div>
+<span class="mark" id="pg-mark" hidden style="left:58%;top:46%"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></span>
+<div class="float free collapsed" id="pg-float" role="button" tabindex="0" aria-label="Small draggable Agent button"></div>
+<ol id="pg-history" hidden style="position:absolute;left:10px;bottom:10px;background:#ffffffd8;color:#222;padding:8px 18px;border-radius:8px;font-size:12px"><li>click Pay</li><li>type email</li></ol>
+</div>
+</div>
+<p class="small" id="pg-note">Drag anywhere on the webpage. Click expands actions; click folds them. How see-through and auto-hide are not approved. Reconnect restores an idle page and does not Continue Agent.</p>
+</div>
+</section>
+
+<section id="selection">
+<h2>Selection summary</h2>
+<div class="summary-box">
+<p class="small">Radios update this list. Export uses JSON or plain text. Reset restores recommended defaults. localStorage is used only if it is available; failures stay on this page. Clipboard write is reported only after success.</p>
+<ol id="summary-list"></ol>
+<textarea id="export-box" readonly aria-label="Export text"></textarea>
+<div class="rowbtns">
+<button type="button" id="btn-json">Export JSON</button>
+<button type="button" id="btn-text">Export text</button>
+<button type="button" id="btn-dl">Download</button>
+<button type="button" id="btn-copy">Copy</button>
+<button type="button" id="btn-reset">Reset</button>
+</div>
+<p class="small" id="copy-status" role="status"></p>
+</div>
+</section>
+
+<section id="sources">
+<h2>Source appendix</h2>
+<p id="ref-r1"><strong>R1</strong> <a href="https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome">Claude in Chrome</a> — Official extension can read, click, and navigate. Tasks start from the side panel or Cowork/Code. The toolbar icon opens the side panel. That supports a side-panel entry similar to option B in several rows. Exact floating corner and opacity are unverified.</p>
+<p id="ref-r2"><strong>R2</strong> <a href="https://help.openai.com/en/articles/20001280-using-cloud-browser-in-chatgpt">ChatGPT Work cloud browser</a> — A separate remote browser. Work can continue after leaving. It pauses for input, sign-in, or confirmation. You continue in that viewer through a task link. That is similar in purpose, not buttons on a local webpage. Positions unverified.</p>
+<p id="ref-r3"><strong>R3</strong> <a href="https://docs.browser-use.com/cloud/browser/live-preview">Browser Use live preview</a> — API v4 <code>browser.ready</code> exposes <code>live_view_url</code>. Docs show a 16:9 iframe. An active browser can be interactive. Optional MP4 recording exists on the dashboard after stop. This supports preview and recording only, not pause buttons on the webpage.</p>
+<p id="ref-r4"><strong>R4</strong> Older ChatGPT agent banners point to Work. This page does not treat that agent or Atlas as current.</p>
+<p>OpenProgram files: <a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser-control-bar.tsx">browser-control-bar.tsx</a>, <a href="gui-agent.html">gui-agent.html</a>. Framework badges mark similar behavior, not identical screenshots. In code, the small chat preview may still be named PiP.</p>
+</section>
+
+<section id="status">
+<h2>Implementation status</h2>
+<p>Chosen A options with the latest overrides are accepted. Implementation is in review and is not a passed gate. Visual App acceptance is pending. Small chat preview and large webpage may show together and stay in sync; hiding the preview does not close the webpage.</p>
+</section>
+<footer>Accepted product choices. Implementation pending independent review until tests pass.</footer>
+</main>
+<script>
+(function(){
+var KEY="op-browser-control-surfaces-v1";
+var titles={s1:"Ordinary browsing",s2:"Agent working",s3:"Human input",s4:"Timeout",s5:"Disconnect",s6:"Many pages",s7:"Chat preview",s8:"Finish",s9:"Covering the webpage",s10:"Native / VM"};
+function selected(){
+  var out={};
+  Object.keys(titles).forEach(function(name){
+    var el=document.querySelector('input[name="'+name+'"]:checked');
+    out[name]={scenario:titles[name],choice:el?el.value:null,title:el?el.getAttribute("data-title"):null};
+  });
+  return out;
+}
+function paint(){
+  var data=selected();
+  var lines=[];
+  Object.keys(data).forEach(function(k){
+    lines.push(data[k].scenario+": "+(data[k].title||"none"));
+  });
+  document.getElementById("summary-list").innerHTML=lines.map(function(t){return "<li>"+t+"</li>";}).join("");
+  document.getElementById("export-box").value=lines.join("\n");
+  document.querySelectorAll(".variant").forEach(function(v){
+    var r=v.querySelector("input[type=radio]");
+    if(!r) return;
+    v.classList.toggle("selected", r.checked);
+  });
+}
+function save(){
+  try{ if(window.localStorage) localStorage.setItem(KEY, JSON.stringify(selected())); }catch(e){}
+}
+function load(){
+  try{
+    if(!window.localStorage) return;
+    var raw=localStorage.getItem(KEY); if(!raw) return;
+    var data=JSON.parse(raw);
+    Object.keys(data).forEach(function(k){
+      var val=data[k]&&data[k].choice;
+      var el=document.querySelector('input[name="'+k+'"][value="'+val+'"]');
+      if(el) el.checked=true;
+    });
+  }catch(e){}
+}
+document.querySelectorAll("input[type=radio]").forEach(function(r){
+  r.addEventListener("change", function(){ paint(); save(); });
+});
+load(); paint();
+document.getElementById("btn-json").onclick=function(){
+  document.getElementById("export-box").value=JSON.stringify(selected(),null,2);
+};
+document.getElementById("btn-text").onclick=function(){ paint(); };
+document.getElementById("btn-dl").onclick=function(){
+  var blob=new Blob([document.getElementById("export-box").value],{type:"text/plain"});
+  var a=document.createElement("a");
+  var url=URL.createObjectURL(blob);
+  a.href=url; a.download="browser-control-choices.txt"; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 0);
+};
+document.getElementById("btn-copy").onclick=function(){
+  var box=document.getElementById("export-box");
+  var t=box.value;
+  var status=document.getElementById("copy-status");
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){
+      status.textContent="Copied to clipboard.";
+    }).catch(function(){
+      box.focus(); box.select();
+      status.textContent="Clipboard write failed. Copy the selected text with the keyboard.";
+    });
+  } else {
+    box.focus(); box.select();
+    status.textContent="Clipboard write failed. Copy the selected text with the keyboard.";
+  }
+};
+document.getElementById("btn-reset").onclick=function(){
+  ["s1","s2","s3","s4","s5","s6","s7","s8","s9","s10"].forEach(function(n){
+    var el=document.querySelector('input[name="'+n+'"][value="A"]');
+    if(el) el.checked=true;
+  });
+  try{ localStorage.removeItem(KEY); }catch(e){}
+  paint();
+};
+
+var floatEl=document.getElementById("pg-float");
+var pageEl=document.getElementById("pg-page");
+var collapsed=true, marks=false, hist=false, phase="active";
+var pos={left:null,top:null};
+var drag={on:false,id:null,startX:0,startY:0,origL:0,origT:0,moved:false};
+var THRESH=6;
+var CLICK_ICO='<svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg>';
+function applyPos(){
+  var pr=pageEl.getBoundingClientRect();
+  var fr=floatEl.getBoundingClientRect();
+  var w=fr.width||36, h=fr.height||36;
+  if(pos.left==null){ pos.left=Math.max(8, pr.width-w-12); pos.top=Math.max(8, pr.height-h-12); }
+  pos.left=Math.min(Math.max(4, pos.left), Math.max(4, pr.width-w-4));
+  pos.top=Math.min(Math.max(4, pos.top), Math.max(4, pr.height-h-4));
+  floatEl.style.left=pos.left+"px";
+  floatEl.style.top=pos.top+"px";
+  floatEl.style.right="auto";
+  floatEl.style.bottom="auto";
+}
+function renderFloat(){
+  document.getElementById("pg-continue").disabled=phase!=="paused";
+  var rec=document.getElementById("pg-reconnect");
+  if(rec) rec.disabled=phase!=="drop";
+  var hide=(phase==="idle"||phase==="done");
+  floatEl.hidden=hide;
+  floatEl.className="float free"+(collapsed?" collapsed":"");
+  if(hide) return;
+  if(collapsed){
+    floatEl.setAttribute("role","button");
+    floatEl.innerHTML=CLICK_ICO;
+    floatEl.setAttribute("aria-label","Small draggable Agent button. Click to expand. Drag to move. Arrow keys move. Enter expands.");
+    applyPos();
+    return;
+  }
+  var label={
+    active:"Active · checkout",
+    waiting:"Waiting to pause…",
+    paused:"Paused",
+    fail:"Pause not confirmed",
+    drop:"Connection lost"
+  }[phase]||phase;
+  var pauseDisabled=(phase==="drop"||phase==="fail")?" disabled":"";
+  var action=(phase==="paused")
+    ? '<button type="button" class="chip" id="pg-float-go" style="background:#ffffff22;color:inherit;padding:3px 7px">Continue Agent</button>'
+    : '<button type="button" class="chip" id="pg-float-pause" style="background:#ffffff22;color:inherit;padding:3px 7px"'+pauseDisabled+'>I will operate</button>';
+  floatEl.innerHTML='<span class="chip status" id="pg-status" title="'+label+'">'+label+'</span>'+action+'<button type="button" class="chip" id="pg-float-fold" style="background:#ffffff22;color:inherit;padding:3px 7px">Fold</button><button type="button" class="chip" id="pg-float-more" style="background:#ffffff22;color:inherit;padding:3px 7px">History</button>';
+  floatEl.setAttribute("role","group");
+  floatEl.setAttribute("aria-label","Agent actions. Drag to move. Click Fold or Enter to fold.");
+  var pauseBtn=document.getElementById("pg-float-pause");
+  if(pauseBtn) pauseBtn.onclick=function(e){ e.stopPropagation(); requestPause(); };
+  var go=document.getElementById("pg-float-go");
+  if(go) go.onclick=function(e){ e.stopPropagation(); doContinue(); };
+  document.getElementById("pg-float-more").onclick=function(e){ e.stopPropagation(); toggleHist(); };
+  document.getElementById("pg-float-fold").onclick=function(e){ e.stopPropagation(); collapsed=true; renderFloat(); };
+  applyPos();
+}
+function requestPause(){ if(phase==="drop") return; phase="waiting"; renderFloat(); }
+function doContinue(){ if(phase!=="paused") return; phase="active"; renderFloat(); }
+function toggleHist(){ hist=!hist; document.getElementById("pg-history").hidden=!hist; }
+function endDrag(ev, toggle){
+  if(!drag.on) return;
+  if(ev && drag.id!=null && ev.pointerId!==drag.id) return;
+  var wasMoved=drag.moved;
+  drag.on=false; drag.id=null;
+  floatEl.classList.remove("dragging");
+  try{ if(ev&&floatEl.releasePointerCapture) floatEl.releasePointerCapture(ev.pointerId); }catch(err){}
+  applyPos();
+  if(toggle && !wasMoved && phase!=="idle" && phase!=="done"){
+    collapsed=!collapsed; renderFloat();
+  }
+}
+floatEl.addEventListener("pointerdown", function(ev){
+  if(ev.button!=null && ev.button!==0) return;
+  if(ev.target.closest && ev.target.closest("button")) return;
+  drag.on=true; drag.id=ev.pointerId; drag.moved=false; drag.startX=ev.clientX; drag.startY=ev.clientY;
+  drag.origL=pos.left; drag.origT=pos.top;
+  floatEl.classList.add("dragging");
+  try{ floatEl.setPointerCapture(ev.pointerId); }catch(err){}
+});
+floatEl.addEventListener("pointermove", function(ev){
+  if(!drag.on || ev.pointerId!==drag.id) return;
+  var dx=ev.clientX-drag.startX, dy=ev.clientY-drag.startY;
+  if(Math.abs(dx)>THRESH || Math.abs(dy)>THRESH) drag.moved=true;
+  if(!drag.moved) return;
+  pos.left=drag.origL+dx; pos.top=drag.origT+dy; applyPos();
+});
+floatEl.addEventListener("pointerup", function(ev){
+  if(!drag.on) return;
+  endDrag(ev, true);
+});
+floatEl.addEventListener("pointercancel", function(ev){ endDrag(ev, false); });
+floatEl.addEventListener("lostpointercapture", function(){ if(drag.on){ drag.on=false; drag.id=null; floatEl.classList.remove("dragging"); applyPos(); } });
+floatEl.addEventListener("keydown", function(ev){
+  if(ev.target!==floatEl) return;
+  var step=8;
+  if(ev.key==="ArrowLeft"){ pos.left-=step; applyPos(); ev.preventDefault(); }
+  else if(ev.key==="ArrowRight"){ pos.left+=step; applyPos(); ev.preventDefault(); }
+  else if(ev.key==="ArrowUp"){ pos.top-=step; applyPos(); ev.preventDefault(); }
+  else if(ev.key==="ArrowDown"){ pos.top+=step; applyPos(); ev.preventDefault(); }
+  else if(ev.key==="Enter" || ev.key===" "){
+    if(phase==="idle"||phase==="done") return;
+    collapsed=!collapsed; renderFloat(); ev.preventDefault();
+  }
+});
+window.addEventListener("resize", applyPos);
+function scene(v){
+  hist=false; marks=false; collapsed=true;
+  document.getElementById("pg-history").hidden=true;
+  document.getElementById("pg-mark").hidden=true;
+  document.getElementById("pg-form").hidden=v!=="login";
+  var addr=document.getElementById("pg-addr");
+  var title=document.getElementById("pg-title");
+  var copy=document.getElementById("pg-copy");
+  if(v==="idle"){ phase="idle"; addr.textContent="https://docs.example/guide"; title.textContent="Product guide"; copy.textContent="Idle page. Agent buttons hidden."; }
+  else if(v==="work"){ phase="active"; addr.textContent="https://shop.example/checkout"; title.textContent="Checkout"; copy.textContent="Agent is using this page. Drag the small button. Click to expand."; }
+  else if(v==="login"){ phase="waiting"; addr.textContent="https://id.example/login"; title.textContent="Sign in"; copy.textContent="You must type. Not Paused until acknowledgement."; }
+  else if(v==="fail"){ phase="fail"; addr.textContent="https://app.example/settings"; title.textContent="Settings"; copy.textContent="Pause was not confirmed. This is not a reported failure."; }
+  else if(v==="drop"){ phase="drop"; addr.textContent="https://mail.example/inbox"; title.textContent="Inbox"; copy.textContent="Retry reconnects. It does not Continue Agent."; }
+  else { phase="done"; addr.textContent="https://wiki.example/done"; title.textContent="Article"; copy.textContent="Finished. Agent buttons hidden. Restore does not Continue Agent."; }
+  renderFloat();
+}
+document.getElementById("pg-resetpos").onclick=function(){ pos.left=null; pos.top=null; applyPos(); };
+document.getElementById("pg-collapse").onclick=function(){
+  if(phase==="idle"||phase==="done") return;
+  collapsed=!collapsed; renderFloat();
+};
+document.getElementById("pg-scene").onchange=function(){ scene(this.value); };
+document.getElementById("pg-pause").onclick=requestPause;
+document.getElementById("pg-ack").onclick=function(){ if(phase==="waiting"){ phase="paused"; renderFloat(); } };
+document.getElementById("pg-continue").onclick=doContinue;
+document.getElementById("pg-fail").onclick=function(){ phase="fail"; renderFloat(); };
+document.getElementById("pg-ok").onclick=function(){ phase="done"; renderFloat(); };
+document.getElementById("pg-drop").onclick=function(){ phase="drop"; renderFloat(); };
+document.getElementById("pg-reconnect").onclick=function(){
+  if(phase!=="drop") return;
+  phase="idle";
+  document.getElementById("pg-copy").textContent="Reconnected. Page is idle. Agent did not resume.";
+  renderFloat();
+};
+document.getElementById("pg-marks").onclick=function(){
+  marks=!marks;
+  var m=document.getElementById("pg-mark");
+  m.hidden=!marks;
+  if(marks){
+    var ico=m.querySelector(".click-ico");
+    if(ico){ var c=ico.cloneNode(true); ico.parentNode.replaceChild(c,ico); }
+  }
+};
+document.getElementById("pg-hist").onclick=toggleHist;
+scene("work");
+})();
+</script>
+</body></html>

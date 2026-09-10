@@ -1264,6 +1264,7 @@
 }
 
 .webStage {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -1405,6 +1406,67 @@
   background: var(--bg-secondary);
   overflow: hidden;
 }
+.browserFloatLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.browserFloatLayer .browserFloat {
+  pointer-events: auto;
+}
+.browserFloat {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  align-items: center;
+  max-width: 92%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-secondary) 55%, transparent);
+  color: var(--text);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+  box-shadow: 0 8px 22px color-mix(in srgb, #000 30%, transparent);
+  white-space: nowrap;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+.browserFloat[data-collapsed="true"] {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  justify-content: center;
+  max-width: 36px;
+}
+.browserFloat[data-collapsed="true"] .browserControlNotice {
+  position: absolute;
+  left: 40px;
+  max-width: 220px;
+  pointer-events: none;
+}
+.browserControlNotice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+.browserActionCue {
+  position: absolute;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  color: #e07a22;
+}
 .browserControl[data-compact="true"] {
   padding: 0 4px;
   border: 0;
@@ -1439,12 +1501,13 @@
 }
 .browserActionMark {
   position: absolute;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
-  border: 2px solid #5b8cff;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border: 0;
+  border-radius: 0;
   pointer-events: none;
+  color: #e07a22;
 }
 .browserMarkerNote { display: none; }
 .webPipResize {

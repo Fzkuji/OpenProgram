@@ -6,6 +6,12 @@ const windowIdArgument = process.argv.find((argument) =>
 const windowId = windowIdArgument
   ? windowIdArgument.slice("--openprogram-window-id=".length)
   : "main";
+const surfaceArgument = process.argv.find((argument) =>
+  argument.startsWith("--openprogram-surface="),
+);
+const overlaySurface = surfaceArgument
+  ? surfaceArgument.slice("--openprogram-surface=".length)
+  : "";
 
 contextBridge.exposeInMainWorld("openprogramDesktop", {
   isDesktop: true,
@@ -54,6 +60,12 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     print: (id) => ipcRenderer.invoke("webtab:print", id),
     capture: (id) => ipcRenderer.invoke("webtab:capture", id),
     showAction: (id, marker) => ipcRenderer.invoke("webtab:show-action", id, marker),
+    setControlOverlay: (id, payload) => ipcRenderer.send("webtab:control-overlay", id, payload),
+    onControlOverlayEvent: (cb) => {
+      const listener = (_event, payload) => cb(payload);
+      ipcRenderer.on("webtab:control-overlay-event", listener);
+      return () => ipcRenderer.removeListener("webtab:control-overlay-event", listener);
+    },
     setPipZoom: (id, width) => ipcRenderer.send("webtab:set-pip-zoom", id, width),
     onState: (cb) => {
       const listener = (_event, state) => cb(state);
@@ -115,6 +127,27 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
       return () => ipcRenderer.removeListener("main-menu:closed", listener);
     },
   },
+  ...(overlaySurface === "browser-control" ? {
+    browserControlOverlay: {
+      ready: () => ipcRenderer.send("webtab:control-overlay-ready"),
+      event: (payload) => ipcRenderer.send("webtab:control-overlay-event", payload),
+      onUpdate: (cb) => {
+        const listener = (_event, payload) => cb(payload);
+        ipcRenderer.on("webtab:control-overlay-update", listener);
+        return () => ipcRenderer.removeListener("webtab:control-overlay-update", listener);
+      },
+    },
+  } : {}),
+  ...(overlaySurface === "action-cue" ? {
+    actionCueOverlay: {
+      ready: () => ipcRenderer.send("webtab:action-cue-ready"),
+      onCue: (cb) => {
+        const listener = (_event, payload) => cb(payload);
+        ipcRenderer.on("webtab:action-cue", listener);
+        return () => ipcRenderer.removeListener("webtab:action-cue", listener);
+      },
+    },
+  } : {}),
   history: {
     list: (options) => ipcRenderer.invoke("history:list", options),
     remove: (url, visitedAt) =>

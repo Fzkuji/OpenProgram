@@ -52,7 +52,10 @@ await build({
     b.onResolve({ filter: /desktop-bridge/ }, () => ({ path: "desktop-bridge", namespace: "test-services" }));
     b.onResolve({ filter: /net\/fetch-client/ }, () => ({ path: "fetch-client", namespace: "test-services" }));
     b.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: "next-nav", namespace: "test-services" }));
-    b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents: a.path === "fetch-client"
+    b.onResolve({ filter: /(?:^|\/|\.)browser-controls$/ }, () => ({ path: "browser-controls", namespace: "test-services" }));
+    b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents: a.path === "browser-controls"
+      ? "export function BookmarkBar(){return null} export function BookmarksLibraryButton(){return null} export function BrowserMenu(){return null}"
+      : a.path === "fetch-client"
       ? `export async function jsonFetch(url, init) {
             const body = JSON.parse(init.body || "{}");
             globalThis.controlPosts = globalThis.controlPosts || [];
@@ -80,6 +83,11 @@ await build({
               onFindResult() { return () => {}; },
               onCommand() { return () => {}; },
               stopFind() {},
+              setControlOverlay(id, payload) {
+                globalThis.controlOverlays = globalThis.controlOverlays || [];
+                globalThis.controlOverlays.push({ id, payload });
+              },
+              onControlOverlayEvent() { return () => {}; },
               capture: async (id) => (
                 typeof globalThis.webTabCapture === "function"
                   ? globalThis.webTabCapture(id)
@@ -566,33 +574,44 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
     const pip = host.querySelector("[data-pip='true']");
     assert.ok(pip);
     assert.equal(pip.getAttribute("data-state"), "paused");
-    assert.equal(pip.textContent.includes("lease expired"), true);
-    const status = pip.querySelector("[data-resume-error='true']");
-    assert.ok(status);
-    assert.equal(status.getAttribute("role"), "status");
-    assert.equal(status.getAttribute("aria-live"), "polite");
-    assert.equal(status.getAttribute("title").includes("lease expired"), true);
-    const stillResume = chromeButton(host, "Continue Agent: lease expired") || chromeButton(host, "Continue Agent");
+    const notice = pip.querySelector("[data-resume-error='true']");
+    assert.ok(notice);
+    assert.equal(notice.getAttribute("role"), "status");
+    assert.equal(notice.textContent.includes("lease expired"), true);
+    const chromeText = pip.querySelector("[class*='webPipChrome']")?.textContent
+      || pip.querySelector(".webPipChrome")?.textContent
+      || "";
+    assert.equal(chromeText.includes("lease expired"), false);
+    assert.equal((host.querySelector("input[aria-label='Address']")?.parentElement?.textContent || "").includes("lease expired"), false);
+    const stillResume = chromeButton(host, "Continue Agent");
     assert.ok(stillResume);
     assert.equal(stillResume.disabled, false);
-    assert.equal(stillResume.getAttribute("aria-label"), "Continue Agent: lease expired");
-    assert.equal(host.querySelector("[data-pip='true'] span")?.title.includes("lease expired"), true);
+    assert.equal(stillResume.getAttribute("aria-label"), "Continue Agent");
     assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.kind === "web").length, 1);
 
+    globalThis.controlOverlays = [];
     await act(async () => { useCenterTabs.getState().setActive(page.id); });
     await act(async () => { flushObservers(); });
     assert.equal(host.querySelector("[data-pip='true']"), null);
-    assert.equal(host.textContent.includes("lease expired"), true);
+    const pageOverlay = (globalThis.controlOverlays || []).filter((item) => item.id === page.id).at(-1);
+    assert.ok(pageOverlay);
+    assert.ok(pageOverlay.payload);
+    assert.equal(pageOverlay.payload.resourceId, "page-1");
+    assert.equal(pageOverlay.payload.controlState, "paused");
+    assert.equal(pageOverlay.payload.generation, 1);
+    assert.equal(String(pageOverlay.payload.notice || "").includes("lease expired"), true);
+    assert.equal((host.querySelector("input[aria-label='Address']")?.parentElement?.textContent || "").includes("lease expired"), false);
     assert.equal(useCenterTabs.getState().activeId, page.id);
 
     await act(async () => { useCenterTabs.getState().setActive(session.id); });
     const chatPip = host.querySelector("[data-pip='true']");
     assert.ok(chatPip);
     assert.equal(chatPip.getAttribute("data-state"), "paused");
-    assert.equal(chatPip.textContent.includes("lease expired"), true);
+    assert.equal(chatPip.querySelector("[data-resume-error='true']")?.textContent.includes("lease expired"), true);
+    assert.ok(chromeButton(host, "Continue Agent"));
 
     globalThis.controlReply = () => ({ ...pausedRow, control_state: "active", sequence: 4 });
-    const retry = chromeButton(host, "Continue Agent: lease expired") || chromeButton(host, "Continue Agent");
+    const retry = chromeButton(host, "Continue Agent");
     await act(async () => {
       retry.click();
       await Promise.resolve();
@@ -604,6 +623,15 @@ test("failed Resume shows lease expired on chat PiP and the Page toolbar, then s
     assert.equal(recovered.textContent.includes("lease expired"), false);
     assert.equal(recovered.getAttribute("data-state"), "active");
     assert.ok(chromeButton(host, "Pause Agent to use page"));
+    globalThis.controlOverlays = [];
+    await act(async () => { useCenterTabs.getState().setActive(page.id); });
+    await act(async () => { flushObservers(); });
+    const cleared = (globalThis.controlOverlays || []).filter((item) => item.id === page.id).at(-1);
+    assert.ok(cleared?.payload);
+    assert.equal(cleared.payload.notice, undefined);
+    assert.equal(cleared.payload.controlState, "active");
+    assert.equal((host.querySelector("input[aria-label='Address']")?.parentElement?.textContent || "").includes("lease expired"), false);
+    await act(async () => { useCenterTabs.getState().setActive(session.id); });
     assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.kind === "web").length, 1);
     assert.equal(useCenterTabs.getState().activeId, session.id);
   });
@@ -633,8 +661,9 @@ test("activating the page hides the chat preview and gives the native Page the f
   });
 });
 
-test("split visibility of the same Page hides the chat preview", async () => {
+test("owner chat keeps the preview when the same Page is also visible in a split or group", async () => {
   await withShell(async ({ host, page, session }) => {
+    setSnapshot(page.id, "data:image/png,same-page");
     await act(async () => {
       useCenterTabs.setState({
         groups: [{
@@ -643,12 +672,20 @@ test("split visibility of the same Page hides the chat preview", async () => {
           visibleIds: [session.id, page.id],
           focusedId: session.id,
         }],
+        splitWebTabId: page.id,
         activeId: session.id,
       });
     });
-    assert.equal(pipCoversCenter(page.id, session.id, useCenterTabs.getState()), false);
-    assert.equal(host.querySelector("[data-pip='true']"), null);
+    assert.equal(pipCoversCenter(page.id, session.id, useCenterTabs.getState()), true);
+    const pip = host.querySelector("[data-pip='true']");
+    assert.ok(pip);
+    assert.equal(pip.getAttribute("data-pip-host"), "chat");
     assert.equal(useWebTabPip.getState().tabId, page.id);
+    assert.equal(useWebTabPip.getState().ownerTabId, session.id);
+    const shot = pip.querySelector("img");
+    assert.ok((shot?.getAttribute("src") || shot?.src || "").includes("same-page"));
+    assert.equal(useCenterTabs.getState().tabs.filter(tab => tab.id === page.id).length, 1);
+    assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === page.id)?.url, page.url);
   });
 });
 

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ExternalLink, Maximize2, Minimize2, MoreVertical, Pause, Pin, Play, X } from "lucide-react";
 
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { ActionCueTravel } from "./browser-control-bar";
 import { useTranslation } from "@/lib/i18n";
 import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
 import {
@@ -27,6 +28,7 @@ import {
   useBrowserControlStore,
 } from "@/lib/state/browser-control";
 import { fittedImageRect, mapOperationPoint } from "@/lib/state/browser-marker-geometry";
+import { cueCancelKey, prefersCueReducedMotion } from "@/lib/state/browser-action-cue";
 import {
   followCurrentBranch,
   getPreviewPreference,
@@ -133,17 +135,38 @@ function PipActionMark({
   point,
   body,
   image,
+  resourceId,
+  generation,
+  geometryRevision,
+  operationKey,
 }: {
   point: { x: number; y: number; width?: number; height?: number };
   body: HTMLElement | null;
   image: { width: number; height: number };
+  resourceId: string;
+  generation: number;
+  geometryRevision?: number;
+  operationKey?: string;
 }) {
   if (!body) return null;
   const box = body.getBoundingClientRect();
   const fitted = fittedImageRect({ width: box.width, height: box.height }, image);
   const pos = mapOperationPoint(point, fitted, image);
-  if (!pos) return null;
-  return <span className={styles.browserActionMark} style={{ left: pos.left, top: pos.top }} aria-hidden="true" />;
+  const mapped = pos ? { x: pos.left, y: pos.top } : null;
+  return (
+    <ActionCueTravel
+      point={mapped}
+      resourceKey={resourceId}
+      operationKey={operationKey}
+      cancelKey={cueCancelKey({
+        resourceId,
+        generation,
+        geometryRevision,
+        navKey: "pip",
+      })}
+      reducedMotion={prefersCueReducedMotion()}
+    />
+  );
 }
 
 function PipMoreMenu({
@@ -415,7 +438,7 @@ export function WebTabPip() {
   const controlState = control ? displayedControlState(control) : null;
   const stateText = controlState ? statusLabel(controlState, text, connected) : "";
   const resumeError = control ? resumeErrorFor(control.resourceId) : undefined;
-  const statusText = [resumeError || stateText, modeLabel].filter(Boolean).join(" · ");
+  const statusText = [stateText, modeLabel].filter(Boolean).join(" · ");
   const frameState = !connected && freshness === "live" ? "last-frame" : freshness;
   const freshLabel = frameState === "live"
     ? text("Read-only image mirror", "只读图像镜像")
@@ -641,16 +664,13 @@ export function WebTabPip() {
         onLostPointerCapture={onDragPointerCancel}
       >
         <span className={styles.webPipTitle} title={`${title}${statusText || modeLabel ? ` · ${statusText || modeLabel}` : ""}`}>{title}</span>
-        {statusText ? (
+        {stateText || modeLabel ? (
           <small
             className={styles.webPipMode}
-            data-resume-error={resumeError ? "true" : undefined}
-            title={resumeError ? `${stateText}: ${resumeError}` : stateText}
-            aria-label={resumeError ? `${stateText}: ${resumeError}` : stateText}
-            role={resumeError ? "status" : undefined}
-            aria-live={resumeError ? "polite" : undefined}
+            title={statusText || stateText}
+            aria-label={stateText || modeLabel}
           >
-            {statusText}
+            {[stateText, modeLabel].filter(Boolean).join(" · ")}
           </small>
         ) : null}
         <div className={styles.webPipActions} onPointerDown={(event) => event.stopPropagation()}>
@@ -668,8 +688,8 @@ export function WebTabPip() {
               type="button"
               className={styles.webToolbarBtn}
               disabled={takeoverDisabled}
-              title={resumeError || takeoverLabel}
-              aria-label={resumeError ? `${takeoverLabel}: ${resumeError}` : takeoverLabel}
+              title={takeoverLabel}
+              aria-label={takeoverLabel}
               onClick={() => {
                 void (takeoverKind === "resume" ? requestResumeAgent(control) : requestExplicitPause(control));
               }}
@@ -721,6 +741,16 @@ export function WebTabPip() {
           </button>
         </div>
       </div>
+      {resumeError ? (
+        <span
+          className={styles.browserControlNotice}
+          data-resume-error="true"
+          role="status"
+          aria-live="polite"
+        >
+          {resumeError}
+        </span>
+      ) : null}
       <div className={styles.webPipStage}>
         <div className={styles.webPipBody}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -728,7 +758,7 @@ export function WebTabPip() {
           {frameState !== "live" && (
             <div className={styles.webPipFallback}>{freshLabel}</div>
           )}
-          {marker?.point ? (
+          {marker?.point && resource?.resourceId ? (
             <PipActionMark
               point={marker.point}
               body={shotRef.current?.parentElement ?? null}
@@ -736,6 +766,10 @@ export function WebTabPip() {
                 width: shotRef.current?.naturalWidth || marker.point.width || 0,
                 height: shotRef.current?.naturalHeight || marker.point.height || 0,
               }}
+              resourceId={resource.resourceId}
+              generation={resource.generation || 0}
+              geometryRevision={marker.geometry_revision}
+              operationKey={marker.id}
             />
           ) : null}
         </div>

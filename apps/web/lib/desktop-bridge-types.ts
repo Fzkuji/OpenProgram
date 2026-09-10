@@ -45,6 +45,36 @@ export interface DesktopWebTabHumanInput {
   kind: DesktopWebTabHumanInputKind;
 }
 
+export interface DesktopBrowserControlOverlay {
+  resourceId: string;
+  generation: number;
+  conversationSessionId: string;
+  controlState: string;
+  showActions: boolean;
+  connected: boolean;
+  status: string;
+  pauseLabel: string;
+  showLabel: string;
+  historyLabel: string;
+  notice?: string;
+  pauseDisabled: boolean;
+  resumeDisabled: boolean;
+  showTakeover: boolean;
+  theme?: string;
+  expandLabel?: string;
+  foldLabel?: string;
+  dismissLabel?: string;
+  dragLabel?: string;
+  historyItems?: Array<{ id: string; label: string; disabled?: boolean }>;
+}
+
+export type DesktopBrowserControlOverlayEvent =
+  | { type: "pause" | "resume" | "toggle-show"; id: string; generation: number }
+  | { type: "ready" }
+  | { type: "layout"; collapsed: boolean; width: number; height: number }
+  | { type: "move"; id: string; generation: number; dx: number; dy: number }
+  | { type: "history"; id: string; generation: number };
+
 export interface DesktopWebTabActionMarker {
   x: number;
   y: number;
@@ -53,6 +83,8 @@ export interface DesktopWebTabActionMarker {
   sequence: number;
   /** Resource generation from the host receipt. Stale generation is rejected. */
   generation?: number;
+  /** Host-provided reduced-motion preference for this click replay. */
+  reducedMotion?: boolean;
   /**
    * Backend resource_id for this receipt (`page:<instance>:<revision>`).
    * A new id on the same native Page is a worker incarnation; generation
@@ -132,6 +164,14 @@ export interface DesktopWebTabApi {
     id: string,
     marker: DesktopWebTabActionMarker | null,
   ): Promise<boolean>;
+  /** App-owned floating Agent control over the native page. null hides. */
+  setControlOverlay?(
+    id: string,
+    payload: DesktopBrowserControlOverlay | null,
+  ): void;
+  onControlOverlayEvent?(
+    cb: (event: DesktopBrowserControlOverlayEvent) => void,
+  ): () => void;
   /** PiP-only layout scale. Pass the content width, or null to restore user zoom. */
   setPipZoom?(id: string, width: number | null): void;
   /** Navigation/title/loading events pushed from main; returns the

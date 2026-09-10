@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>十种浏览器控制场景，直接看方案</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f9;--panel:#fff;--text:#202531;--muted:#5c6472;--line:#dce0e8;--blue:#285bbb;--soft:#edf3ff;--green:#226b51;--warm:#8a5520;--ui:#202124;--uifg:#efeff3;--uimut:#b9bac4;--page:#f4f1ea;--glass:rgba(32,33,36,.55)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,-apple-system,'PingFang SC',sans-serif}
+main{max-width:1480px;margin:auto;padding:42px 28px 70px}
+h1{font-size:clamp(28px,3.8vw,43px);line-height:1.25;max-width:960px;margin:12px 0 18px}
+h2{font-size:26px;margin:0}h3{font-size:17px;line-height:1.5;margin:12px 0}
+p{margin:8px 0 14px}a{color:var(--blue);text-underline-offset:3px}
+button,textarea,input,select{font:inherit}
+button{cursor:pointer;background:var(--blue);color:#fff;border:0;border-radius:6px;padding:11px 18px}
+a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,label:focus-within{outline:3px solid var(--blue);outline-offset:4px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+.intro{max-width:980px;font-size:17px}
+.notice{padding:14px 18px;background:var(--soft);border-radius:8px;max-width:1080px}
+.small,small{font-size:13px;color:var(--muted)}
+.nav{display:flex;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:5;padding:14px 0;background:var(--bg);border-bottom:1px solid var(--line);margin-top:24px}
+.nav a{text-decoration:none;padding:5px 10px;border:1px solid var(--line);border-radius:5px;background:var(--panel);font-size:13px}
+section{padding-top:38px;scroll-margin-top:120px}
+.case-head{display:flex;align-items:baseline;gap:14px}
+.number{color:var(--blue);font-size:25px;font-weight:650}
+.question{color:var(--muted);margin:8px 0 20px}
+.comparison{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin:0;padding:0;border:0;min-width:0}
+.variant{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:18px;display:flex;flex-direction:column}
+.variant.selected{border-color:var(--blue);box-shadow:inset 0 3px var(--blue)}
+.variant.current{background:color-mix(in srgb,var(--panel) 85%,var(--bg))}
+.badges{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-height:28px}
+.badge{font-size:12px;padding:3px 8px;border-radius:4px;background:var(--soft);color:var(--blue)}
+.current .badge{background:var(--bg);color:var(--muted)}
+.recommended{color:var(--green);background:color-mix(in srgb,var(--green) 9%,var(--panel))}
+.constraint{color:var(--warm);background:color-mix(in srgb,var(--warm) 12%,var(--panel))}
+.pending{color:#6a4a12;background:#f6ead4}
+.mock{background:var(--ui);color:var(--uifg);border-radius:8px;overflow:hidden;margin:4px 0 14px}
+.mock-top{padding:8px 12px;background:#18191c;display:flex;justify-content:space-between;font-size:11px;color:var(--uimut)}
+.chrome{background:#2a2b31;padding:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.navbtns{display:flex;gap:4px}
+.navbtns span{width:18px;height:18px;border-radius:4px;background:#3d3f48;display:inline-block}
+.addr{flex:1;min-width:120px;background:#1c1d22;border-radius:12px;padding:4px 10px;font-size:11px;color:#c9cbd4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agentbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 8px;background:#23242a;font-size:10px;color:#d7d8e0}
+.page{position:relative;background:var(--page);color:#2a2a32;min-height:168px;padding:14px 14px 42px;overflow:hidden}
+.page h4{margin:0 0 8px;font-size:16px}
+.page p,.page label{font-size:12px;margin:6px 0}
+.form{background:#fff;border:1px solid #d8d4c8;border-radius:6px;padding:10px;max-width:220px}
+.form input{width:100%;border:1px solid #bbb;border-radius:4px;padding:6px;margin-top:4px}
+.sidebar{position:absolute;right:0;top:0;bottom:0;width:72px;background:#eceaf3;border-left:1px solid #d3d0dc;padding:8px;font-size:10px;color:#555}
+.sidebar b{display:block;margin:6px 0 2px}
+.float{position:absolute;z-index:2;display:flex;flex-wrap:nowrap;gap:5px;align-items:center;max-width:92%;padding:8px 10px;border-radius:12px;background:var(--glass);color:#f4f5f8;backdrop-filter:blur(10px);font-size:11px;box-shadow:0 8px 22px #0005;white-space:nowrap}
+.float.se{right:10px;bottom:10px}.float.sw{left:10px;bottom:10px}.float.ne{right:10px;top:10px}.float.nw{left:10px;top:10px}
+.float.free{left:auto;right:auto;top:auto;bottom:auto;touch-action:none;user-select:none;cursor:grab}
+.float.free:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.stage .page{overflow:hidden}
+.float.collapsed{width:36px;min-width:36px;height:36px;padding:0;justify-content:center;max-width:36px;white-space:nowrap}
+.click-ico{width:20px;height:20px;pointer-events:none;display:block;overflow:visible}
+.click-cursor,.click-lines path{transform-box:fill-box;transform-origin:center}
+.float.collapsed:hover .click-cursor,.float.collapsed:focus-visible .click-cursor,.float.collapsed:focus-within .click-cursor{animation:click-cur 1s ease 1}
+.float.collapsed:hover .click-lines .l0,.float.collapsed:focus-visible .click-lines .l0,.float.collapsed:focus-within .click-lines .l0{animation:click-l0 .9s ease 1.3s 1}
+.float.collapsed:hover .click-lines .l1,.float.collapsed:focus-visible .click-lines .l1,.float.collapsed:focus-within .click-lines .l1{animation:click-l1 .9s ease 1.3s 1}
+.float.collapsed:hover .click-lines .l2,.float.collapsed:focus-visible .click-lines .l2,.float.collapsed:focus-within .click-lines .l2{animation:click-l2 .9s ease 1.3s 1}
+.float.collapsed:hover .click-lines .l3,.float.collapsed:focus-visible .click-lines .l3,.float.collapsed:focus-within .click-lines .l3{animation:click-l3 .9s ease 1.3s 1}
+.float.dragging .click-cursor,.float.dragging .click-lines path{animation:none!important}
+@keyframes click-cur{0%{transform:translate(0,0)}33%{transform:translate(0,-4px)}66%{transform:translate(-3px,0)}100%{transform:translate(0,0)}}
+@keyframes click-l0{0%{transform:translate(0,0);opacity:1}45%{transform:translate(1px,-1px);opacity:1}80%{transform:translate(0,0);opacity:.2}100%{transform:translate(0,0);opacity:1}}
+@keyframes click-l1{0%{transform:translate(0,0);opacity:1}45%{transform:translate(-1px,0);opacity:1}80%{transform:translate(0,0);opacity:.2}100%{transform:translate(0,0);opacity:1}}
+@keyframes click-l2{0%{transform:translate(0,0);opacity:1}45%{transform:translate(-1px,1px);opacity:1}80%{transform:translate(0,0);opacity:.2}100%{transform:translate(0,0);opacity:1}}
+@keyframes click-l3{0%{transform:translate(0,0);opacity:1}45%{transform:translate(0,-1px);opacity:1}80%{transform:translate(0,0);opacity:.2}100%{transform:translate(0,0);opacity:1}}
+@media(prefers-reduced-motion:reduce){.float.collapsed:hover .click-cursor,.float.collapsed:focus-visible .click-cursor,.float.collapsed:focus-within .click-cursor,.float.collapsed:hover .click-lines path,.float.collapsed:focus-visible .click-lines path,.float.collapsed:focus-within .click-lines path{animation:none}}
+.float .chip{min-width:0}
+.float .chip.status{overflow:hidden;text-overflow:ellipsis}
+.float button,.float .chip:not(.status){flex-shrink:0}
+.chip{background:#ffffff22;border:1px solid #ffffff44;border-radius:8px;padding:3px 7px}
+.mark{position:absolute;width:28px;height:28px;transform:translate(-50%,-50%);pointer-events:none;color:#e07a22;border:0;border-radius:0}
+.mark .click-ico{width:28px;height:28px;color:#e07a22}
+.mark:not([hidden]) .click-cursor{animation:click-cur 1s ease 1}
+.mark:not([hidden]) .click-lines .l0{animation:click-l0 .9s ease 1.3s 1}
+.mark:not([hidden]) .click-lines .l1{animation:click-l1 .9s ease 1.3s 1}
+.mark:not([hidden]) .click-lines .l2{animation:click-l2 .9s ease 1.3s 1}
+.mark:not([hidden]) .click-lines .l3{animation:click-l3 .9s ease 1.3s 1}
+@media(prefers-reduced-motion:reduce){.mark:not([hidden]) .click-cursor,.mark:not([hidden]) .click-lines path{animation:none}}
+.notice-float{background:rgba(48,30,18,.72)}
+.caption{font-size:11px;color:var(--uimut);margin-bottom:6px}
+.glass-note{font-size:10px;color:#c9cdd8;margin-top:6px}
+.difference{font-size:14px;flex-grow:1}
+.source{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:11px;min-height:58px}
+.choose{display:flex;align-items:flex-start;gap:9px;padding:12px 10px;background:var(--soft);border-radius:5px;cursor:pointer;font-size:13px;margin-top:12px}
+.choose input{accent-color:var(--blue);margin-top:5px}
+.current-note{font-size:12px;color:var(--muted);padding:12px 0;margin-top:12px}
+.recommendation{padding:12px 16px;border-left:3px solid var(--green);margin:14px 0 0;background:var(--panel);font-size:14px}
+.plain{max-width:980px}
+.playground{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:16px;margin:18px 0}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
+.controls label{font-size:13px;display:flex;flex-direction:column;gap:4px}
+.controls select,.controls button{padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+.stage{position:relative;min-height:320px;background:#1b1c21;border-radius:8px;overflow:hidden}
+.stage .page{min-height:260px}
+.summary-box{padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:9px}
+textarea{width:100%;min-height:230px;padding:14px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;resize:vertical;margin-top:15px}
+.rowbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+details{padding:15px 0;border-top:1px solid var(--line)}
+code{font:12px ui-monospace,monospace;overflow-wrap:anywhere}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:18px;margin-top:28px}
+[hidden]{display:none!important}
+.deco{pointer-events:none}
+@media(prefers-color-scheme:dark){:root{--bg:#181b21;--panel:#232730;--text:#e9ecf3;--muted:#b5bdca;--line:#414a5b;--blue:#a4c2ff;--soft:#2b374c;--green:#91d2b2;--warm:#e6b77f}button{background:#335da1}}
+@media(max-width:1100px){main{padding:24px 18px 50px}.comparison{gap:12px}.variant{padding:12px}.nav{position:static}}
+@media(max-width:780px){.comparison{grid-template-columns:1fr}.source{min-height:0}.case-head{align-items:flex-start}h2{font-size:23px}.variant{padding:18px}section{scroll-margin-top:15px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media print{.nav,.choose,button,.summary-box,.playground{display:none}.comparison{grid-template-columns:repeat(3,1fr)}.variant{break-inside:avoid}body{background:#fff;color:#111}.mock{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<a class="sr-only" href="#main">跳到正文</a>
+<main id="main">
+<header>
+<div class="eyebrow">OPENPROGRAM / 浏览器控制界面</div>
+<h1>十种浏览器控制场景，直接看方案</h1>
+<p class="intro">每一行比较同一种情况：左边是当前 OpenProgram，中间和右边是可选方案。图是行为示意，不是产品截图。电脑如何操作仍以 <a href="gui-agent.zh.html">GUI Agent</a> 为准。本页只决定暂停、继续、点击标记和操作历史出现在哪里。已经确定：这些按钮离开普通浏览顶栏。先显示一个可拖动的小按钮，可在网页里任意挪动。点击展开操作，再点收起。有多透明、是否自动收起，仍待你确认。对话里的小窗预览和大网页可以同时显示，显示同一张网页。隐藏小窗预览不会关掉网页。点击光标从上次画出的位置平滑移到下一个点，到达后再播放点击。没有上次位置时，第一个点直接出现。动画很短。资源、generation、几何或导航变化会取消移动，并保留上次画出的位置，不会跳到尚未到达的目标。系统要求减少动效时不移动。同一点的重复点击在到达后再播一次点击。这是页面上的标记，不是操作系统指针。</p>
+<p><a href="browser-control-surfaces.html">English</a></p>
+<div class="notice"><span class="badge constraint">已经确定</span> 普通浏览保留地址栏、后退、刷新和书签。Agent 按钮、状态文字和错误离开顶栏，出现在你正在看的网页上，做成半透明按钮。Files / Activity / Resources 仍是右侧纵向列表。不要把整页变暗。不要把别的应用窗口拉到最前。对话里的小窗预览和大网页可以同时显示，显示同一张网页。隐藏小窗预览不会关掉网页。<span class="badge pending">建议，还没确定</span> 有多透明、是否自动收起还没确定。在网页里任意拖动已经确定。半透明按钮仍挡住底下的内容。按钮周围的空白不影响点击网页。要点击被挡住的内容，把可拖动的小按钮挪开或收起。点按钮本身不会点到网页。</div>
+</header>
+<nav class="nav" aria-label="场景导航">
+<a href="#plain">用语说明</a>
+<a href="#wording">文档用语要求</a>
+<a href="#case-1">1. 普通浏览</a>
+<a href="#case-2">2. Agent 工作中</a>
+<a href="#case-3">3. 需要人工</a>
+<a href="#case-4">4. 超时</a>
+<a href="#case-5">5. 断线</a>
+<a href="#case-6">6. 多页面</a>
+<a href="#case-7">7. 对话预览</a>
+<a href="#case-8">8. 结束</a>
+<a href="#case-9">9. 遮挡</a>
+<a href="#case-10">10. 原生 / 虚拟机</a>
+<a href="#playground">试一下按钮</a>
+<a href="#selection">选择清单</a>
+</nav>
+
+<section id="wording">
+<h2>文档用语要求</h2>
+<div class="plain">
+<p>不要自造名称或比喻。写清楚控件是什么、在哪里、点下去会发生什么。</p>
+<p>只有必要时才用术语，并在同一句里说明。读者应能看懂按钮文字，不必再问是什么意思。</p>
+<p>被指出问题后，同一轮改掉所有同类文字。不要称赞这条要求。不要把同一句话反复总结。</p>
+</div>
+</section>
+<section id="plain">
+<h2>这些按钮做什么</h2>
+<div class="plain">
+<p><strong>我来操作</strong> 是请 Agent 停止在这个网页上点击和输入。它不是重新加载页面，也不是浏览器对正在加载文档的停止。程序确认暂停之前，不要写成「已暂停」。确认之后由你点击和输入，Agent 不再操作。</p>
+<p><strong>让 Agent 继续</strong> 是你明确允许 Agent 再次点击和输入。超时、重连或打开恢复的标签都不会替你做这件事。</p>
+<p><strong>显示操作 / 点击标记</strong> 在 Agent 最近点击或输入的位置画短时标记。它们不改变网页收到的输入。</p>
+<p><strong>操作历史</strong> 列出这个网页上最近的 Agent 步骤。它是日志，不能撤销那些步骤。</p>
+<p>半透明按钮仍挡住底下的内容。按钮周围的空白不影响点击网页。要点击被挡住的内容，把可拖动的小按钮挪到别处，或把操作收起。</p>
+</div>
+</section>
+
+<section id="case-1">
+<div class="case-head"><span class="number">01</span><h2>普通浏览</h2></div>
+<p class="question">没有 Agent 驱动可见页时，顶栏放什么？</p>
+<fieldset class="comparison"><legend class="sr-only">普通浏览</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：资源关联的顶栏仍有眼睛和历史</h3>
+<div class="mock" role="img" aria-labelledby="t1c">
+<span class="sr-only" id="t1c">当前顶栏在空闲时显示可直接操作、眼睛和历史，没有暂停</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/guide</div><span class="chip deco">书签</span></div>
+<div class="agentbar"><b>可直接操作</b><span class="chip deco">眼睛</span><span class="chip deco">历史</span></div>
+<div class="page"><h4>产品说明</h4><p>空闲时仍占用一条 Agent 工具行，但没有暂停按钮。</p></div>
+</div>
+<p class="difference">空闲时顶栏可显示「可直接操作」。眼睛和历史仍在该行。没有需要停下的工作时，不出现暂停。</p>
+<div class="source">当前源码：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser-control-bar.tsx">browser-control-bar.tsx</a>。示意文字不是现有界面截图。</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span><span class="badge constraint">已经确定</span></div>
+<h3>A · 普通顶栏不含任何 Agent 控件</h3>
+<div class="mock" role="img" aria-labelledby="t1a">
+<span class="sr-only" id="t1a">只有地址栏、后退、刷新和书签，页面不被遮挡</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/guide</div><span class="chip deco">书签</span></div>
+<div class="page"><h4>产品说明</h4><p>Agent 空闲时，网页上没有这些按钮。</p></div>
+</div>
+<p class="difference">空闲页看起来像普通浏览器。只有在有工作、等待或失败时才出现 Agent 界面。</p>
+<div class="source">OpenProgram 建议默认。未核实 Claude in Chrome 或 ChatGPT Work 使用相同顶栏。<a href="#ref-r1">R1</a></div>
+<label class="choose"><input type="radio" name="s1" value="A" data-title="A · 普通顶栏不含任何 Agent 控件" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">可选方案</span><span class="badge pending">建议，还没确定</span></div>
+<h3>B · 网页角落的小按钮</h3>
+<div class="mock" role="img" aria-labelledby="t1b">
+<span class="sr-only" id="t1b">右下角小按钮 A。点击后展开操作按钮。</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/guide</div><span class="chip deco">书签</span></div>
+<div class="page"><h4>产品说明</h4><p>正文仍可读。</p><div class="float se collapsed" aria-label="可拖动的小按钮，点击展开"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></div></div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">角落小按钮可以打开历史，不必占用顶栏。它仍挡住那个角，直到你挪走或收起。</p>
+<div class="source">仅建议。这个空闲角落按钮不是已批准的产品选择。</div>
+<label class="choose"><input type="radio" name="s1" value="B" data-title="B · 网页角落的小按钮。点击后展开操作按钮"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A。空闲浏览不要在顶栏放 Agent 状态。角落小按钮可选且未批准。</p>
+</section>
+
+<section id="case-2">
+<div class="case-head"><span class="number">02</span><h2>Agent 工作中</h2></div>
+<p class="question">Agent 正在驱动可见页时，暂停、标记和历史放在哪里？</p>
+<fieldset class="comparison"><legend class="sr-only">Agent 工作中</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：顶栏 Agent 行</h3>
+<div class="mock" role="img" aria-labelledby="t2c">
+<span class="sr-only" id="t2c">顶栏显示活动中和暂停，文章上有点击标记</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://shop.example/checkout</div></div>
+<div class="agentbar"><b>活动中</b><span class="chip deco">眼睛</span><span class="chip deco">历史</span><span class="chip deco">暂停 Agent，我来操作</span></div>
+<div class="page"><h4>结账</h4><p>支付按钮和摘要。</p><span class="mark" style="left:70%;top:58%"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></span></div>
+</div>
+<p class="difference">Agent 行和地址栏争同一条空间。</p>
+<div class="source">当前页工具栏中的 <code>BrowserControlBar</code>。<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser-control-bar.tsx">源码</a></div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span><span class="badge pending">角落待确认</span></div>
+<h3>A · 你正在看的网页上的半透明按钮</h3>
+<div class="mock" role="img" aria-labelledby="t2a">
+<span class="sr-only" id="t2a">右下半透明按钮：活动中、我来操作、标记、历史</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://shop.example/checkout</div><span class="chip deco">书签</span></div>
+<div class="page"><h4>结账</h4><p>页面不变暗。</p><span class="mark" style="left:62%;top:48%"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></span>
+<div class="float se"><span class="chip status" title="活动中 · checkout">活动中 · checkout</span><span class="chip">我来操作</span><span class="chip">标记</span><span class="chip">历史</span></div></div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">这些按钮属于你正在看的网页。建议放在右下，还没确定。按钮周围的空白不影响点击网页。</p>
+<div class="source">按钮挨着 Agent 正在用的网页。ChatGPT Work 用的是远程独立查看器，不是本地网页上的按钮。<a href="#ref-r2">R2</a> 未核实相同外观。</div>
+<label class="choose"><input type="radio" name="s2" value="A" data-title="A · 你正在看的网页上的半透明按钮" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">可选方案</span></div>
+<h3>B · 只放在 Activity</h3>
+<div class="mock" role="img" aria-labelledby="t2b">
+<span class="sr-only" id="t2b">网页上没有这些按钮。暂停在右侧纵向 Activity 列表里。</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://shop.example/checkout</div></div>
+<div class="page" style="padding-right:80px"><h4>结账</h4><p>网页上没有 Agent 按钮。</p>
+<div class="sidebar"><b>Files</b><b>Activity</b>暂停<br>历史<b>Resources</b></div></div>
+</div>
+<p class="difference">保留纵向栏。暂停离 Agent 正在点的页面更远。</p>
+<div class="source">Claude in Chrome 可用工具栏图标打开侧栏，这是入口，不能证明只在 Activity 暂停。<a href="#ref-r1">R1</a></div>
+<label class="choose"><input type="radio" name="s2" value="B" data-title="B · 只放在 Activity"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A：半透明按钮放在你正在看的网页上，不要放进地址栏，也不要在对话小窗预览上再画一套。</p>
+</section>
+
+<section id="case-3">
+<div class="case-head"><span class="number">03</span><h2>需要人工或登录</h2></div>
+<p class="question">表单或登录需要你来输入时，怎样请 Agent 停下？屏幕何时才能写「已暂停」？</p>
+<fieldset class="comparison"><legend class="sr-only">需要人工</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：顶栏暂停 / 继续</h3>
+<div class="mock" role="img" aria-labelledby="t3c">
+<span class="sr-only" id="t3c">登录表单上方顶栏写已暂停</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://id.example/login</div></div>
+<div class="agentbar"><b>已暂停</b><span class="chip deco">让 Agent 继续</span></div>
+<div class="page"><div class="form"><label>邮箱<input value="" readonly tabindex="-1" autocomplete="off"></label><label>密码<input type="password" readonly tabindex="-1" autocomplete="off" value=""></label></div><p class="small">登录示意，无真实凭据。</p></div>
+</div>
+<p class="difference">确认之前就可能显示已暂停。暂停不是文档重新加载。</p>
+<div class="source">当前控制条的暂停文案和「让 Agent 继续」。</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span></div>
+<h3>A · 半透明「我来操作」，确认后再「让 Agent 继续」</h3>
+<div class="mock" role="img" aria-labelledby="t3a">
+<span class="sr-only" id="t3a">网页上的按钮先等待暂停确认，再显示让 Agent 继续</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://id.example/login</div></div>
+<div class="page"><div class="form"><label>邮箱<input readonly tabindex="-1" autocomplete="off"></label><label>密码<input type="password" readonly tabindex="-1" autocomplete="off" value=""></label></div><p class="small">登录示意，无真实凭据。</p>
+<div class="float se"><span class="chip status" title="正在等待暂停确认…">正在等待暂停确认…</span><span class="chip">我来操作</span></div></div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">程序确认之前不写已暂停。确认之后，同一排按钮显示「让 Agent 继续」。这时由你操作网页，Agent 不再点。ChatGPT Work 在独立云浏览器里为登录暂停；你打开任务链接去输入，不是在本地网页上放这些按钮。<a href="#ref-r2">R2</a></p>
+<div class="source">单独开一个窗口让你输入，目的相近。在本地网页上画这些按钮，那里没有核实。</div>
+<label class="choose"><input type="radio" name="s3" value="A" data-title="A · 半透明「我来操作」，程序确认暂停后再「让 Agent 继续」" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">可选方案</span></div>
+<h3>B · 在右侧 Activity 里点「我来操作」</h3>
+<div class="mock" role="img" aria-labelledby="t3b">
+<span class="sr-only" id="t3b">登录页。右侧 Activity 有「我来操作」。</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://id.example/login</div></div>
+<div class="page" style="padding-right:80px"><div class="form"><label>邮箱<input readonly tabindex="-1" autocomplete="off"></label></div><p class="small">登录示意，无真实凭据。</p>
+<div class="sidebar"><b>Activity</b>我来操作<br>让 Agent 继续</div></div>
+</div>
+<p class="difference">网页更干净。右侧列表收起时，容易看不到「我来操作」。</p>
+<div class="source">从工具栏打开侧栏，与 Claude in Chrome 相近。那里的按钮原文未核实。<a href="#ref-r1">R1</a></div>
+<label class="choose"><input type="radio" name="s3" value="B" data-title="B · 在右侧 Activity 里点「我来操作」"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A。你要输入的那张网页上能看到正在等待确认。「让 Agent 继续」要等暂停确认后再点。</p>
+</section>
+
+<section id="case-4">
+<div class="case-head"><span class="number">04</span><h2>超时或失败</h2></div>
+<p class="question">没有收到暂停确认，和程序明确报告失败，应怎样分开写、分开点？</p>
+<fieldset class="comparison"><legend class="sr-only">超时</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：顶栏持续「暂停失败，请重试」</h3>
+<div class="mock" role="img" aria-labelledby="t4c">
+<span class="sr-only" id="t4c">顶栏保持暂停失败请重试</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://app.example/settings</div></div>
+<div class="agentbar"><b>暂停失败，请重试</b><span class="chip deco">重试暂停</span></div>
+<div class="page"><h4>设置</h4><p>错误留在顶栏。</p></div>
+</div>
+<p class="difference">stop_unconfirmed 已映射该句。resumeError 可并列。都在顶行。</p>
+<div class="source">statusLabel 见 <code>browser-control-bar.tsx</code>。此前未合并的错误条不是当前方案。</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span></div>
+<h3>A · 网页上的短通知、重试和历史</h3>
+<div class="mock" role="img" aria-labelledby="t4a">
+<span class="sr-only" id="t4a">半透明通知：没有收到暂停确认、重试、打开历史</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://app.example/settings</div></div>
+<div class="page"><h4>设置</h4><p>页面不变暗。</p>
+<div class="float se notice-float"><span class="chip">暂停未确认</span><span class="chip">重试</span><span class="chip">历史</span></div></div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">超时仍写「没有收到暂停确认」，点「重试」再请 Agent 停下。程序明确报告失败时，用另一条历史说明原因。通知可以关掉；「重试」仍留在网页上的按钮里。</p>
+<div class="source">Browser Use live preview 记录的是 iframe 和可选录像，不是网页上的暂停按钮。<a href="#ref-r3">R3</a></div>
+<label class="choose"><input type="radio" name="s4" value="A" data-title="A · 网页上的短通知、重试和历史" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">可选方案</span></div>
+<h3>B · 只在 Activity 报错</h3>
+<div class="mock" role="img" aria-labelledby="t4b">
+<span class="sr-only" id="t4b">错误只在 Activity</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://app.example/settings</div></div>
+<div class="page" style="padding-right:80px"><h4>设置</h4>
+<div class="sidebar"><b>Activity</b>暂停未确认</div></div>
+</div>
+<p class="difference">看着表单时容易错过失败。</p>
+<div class="source">未核实为其他产品的默认超时界面。</div>
+<label class="choose"><input type="radio" name="s4" value="B" data-title="B · 只在 Activity 报错"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A。把「没有收到暂停确认」和程序明确报告的失败分开写。不要在顶栏一直留一条红色提示。</p>
+</section>
+
+<section id="case-5">
+<div class="case-head"><span class="number">05</span><h2>断线</h2></div>
+<p class="question">连接断开时重试什么？什么绝不能自动让 Agent 继续？</p>
+<fieldset class="comparison"><legend class="sr-only">断线</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：顶栏「连接已断开」</h3>
+<div class="mock" role="img" aria-labelledby="t5c">
+<span class="sr-only" id="t5c">Agent 状态条写连接已断开</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://mail.example/inbox</div></div>
+<div class="agentbar"><b>连接已断开</b></div>
+<div class="page"><h4>收件箱</h4><p>状态在 Agent 行。</p></div>
+</div>
+<p class="difference">unknown 且未连接时已映射为「连接已断开」。</p>
+<div class="source">当前控制条 statusLabel。</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span></div>
+<h3>A · 网页上的短通知：连接已断开，点「重试连接」</h3>
+<div class="mock" role="img" aria-labelledby="t5a">
+<span class="sr-only" id="t5a">半透明连接通知和「重试连接」。不会让 Agent 继续。</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://mail.example/inbox</div></div>
+<div class="page"><h4>收件箱</h4>
+<div class="float se notice-float"><span class="chip">连接已断开</span><span class="chip">重试连接</span></div></div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">一条通知。重试只重连会话，不会「让 Agent 继续」。不堆重复吐司。</p>
+<div class="source">未核实与其他产品相同。不把旧 ChatGPT agent 或 Atlas 标成当前。<a href="#ref-r4">R4</a></div>
+<label class="choose"><input type="radio" name="s5" value="A" data-title="A · 网页上的短通知：连接已断开，点「重试连接」" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">可选方案</span></div>
+<h3>B · 只在侧栏</h3>
+<div class="mock" role="img" aria-labelledby="t5b">
+<span class="sr-only" id="t5b">连接已断开只在 Activity</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://mail.example/inbox</div></div>
+<div class="page" style="padding-right:80px"><h4>收件箱</h4>
+<div class="sidebar"><b>Activity</b>连接已断开</div></div>
+</div>
+<p class="difference">安静，读邮件时容易错过。</p>
+<div class="source">未核实。</div>
+<label class="choose"><input type="radio" name="s5" value="B" data-title="B · 只在侧栏"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A。明确重试。重连后绝不自动继续 Agent。</p>
+</section>
+
+<section id="case-6">
+<div class="case-head"><span class="number">06</span><h2>多页面和分支</h2></div>
+<p class="question">同时有多张网页时，这些按钮控制哪一张？</p>
+<fieldset class="comparison"><legend class="sr-only">多页面</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：Resources 分组加上标签控制条</h3>
+<div class="mock" role="img" aria-labelledby="t6c">
+<span class="sr-only" id="t6c">右侧 Resources 分组，当前标签有 Agent 条</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/a</div></div>
+<div class="agentbar"><b>活动中</b><span class="chip deco">暂停 Agent</span></div>
+<div class="page" style="padding-right:80px"><h4>文档 A</h4>
+<div class="sidebar"><b>Resources</b>main · A<br>try-login · B</div></div>
+</div>
+<p class="difference">控制条跟随所选资源。分支名已在 Resources。</p>
+<div class="source">GUI Agent 的 Resources 分组仍是架构依据。<a href="gui-agent.zh.html">gui-agent.zh.html</a></div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span><span class="badge constraint">不要全局控件</span></div>
+<h3>A · 这些按钮只控制当前网页</h3>
+<div class="mock" role="img" aria-labelledby="t6a">
+<span class="sr-only" id="t6a">按钮写出当前分支和你看到的地址</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/a</div></div>
+<div class="page" style="padding-right:80px"><h4>文档 A</h4><p>只针对可见页。</p>
+<div class="float se"><span class="chip status" title="main · docs.example/a">main · docs.example/a</span><span class="chip">我来操作</span></div>
+<div class="sidebar"><b>Resources</b>main · A<br>try-login · B</div></div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">按钮写出当前分支和地址。通用分支名称仍计划放在 Resources。不要做「暂停所有页」，避免操作另一张网页。</p>
+<div class="source">网页如何分组见 <a href="gui-agent.zh.html">GUI Agent</a>。其他产品在网页上如何写这些按钮，未核实。</div>
+<label class="choose"><input type="radio" name="s6" value="A" data-title="A · 这些按钮只控制当前网页" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">默认拒绝</span></div>
+<h3>B · 一组按钮控制所有网页</h3>
+<div class="mock" role="img" aria-labelledby="t6b">
+<span class="sr-only" id="t6b">全局暂停所有页，已拒绝</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/a</div></div>
+<div class="page"><h4>文档 A</h4>
+<div class="float se"><span class="chip">暂停所有页面</span></div></div>
+</div>
+<p class="difference">打错目标。只用来否定。</p>
+<div class="source">本页拒绝。不声称其他产品如此。</div>
+<label class="choose"><input type="radio" name="s6" value="B" data-title="B · 全局所有页控件（不建议）"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A。这些按钮只控制当前网页。不要做「暂停所有页」。</p>
+</section>
+
+<section id="case-7">
+<div class="case-head"><span class="number">07</span><h2>小窗预览和网页标签</h2></div>
+<p class="question">对话里的小窗预览和大网页可以同时显示，显示同一张网页。Agent 按钮放在哪里？代码里小窗预览仍可能叫 PiP。</p>
+<fieldset class="comparison"><legend class="sr-only">预览</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：小窗预览上一行标题，或网页标签顶栏</h3>
+<div class="mock" role="img" aria-labelledby="t7c">
+<span class="sr-only" id="t7c">小窗预览标题行：标题和更多</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="page" style="background:#2a2b32;color:#eee;min-height:150px">
+<div class="agentbar"><b>docs.example</b><span class="chip deco">更多</span><span class="chip deco">打开页面</span><span class="chip deco">隐藏</span></div>
+<div style="margin:10px;background:#f4f1ea;color:#222;padding:12px;min-height:90px"><h4>预览截取</h4></div>
+</div>
+</div>
+<p class="difference">小窗预览已有一行标题。网页标签有浏览器顶栏。固定预览只记住跟哪份资源，不会再开一张正在操作的网页。</p>
+<div class="source">当前 GUI Agent 仍写过不同时显示。新目标是同时显示同一张网页。运行时代码未改。</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span><span class="badge constraint">同一张网页，两边都可见</span></div>
+<h3>A · 网页标签和小窗预览一起显示；大网页上放可拖动的小按钮</h3>
+<div class="mock" role="img" aria-labelledby="t7a">
+<span class="sr-only" id="t7a">大网页和小窗预览同时可见，同一张网页。大网页上有可拖动的小按钮。</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://docs.example/guide</div></div>
+<div class="page" style="display:grid;grid-template-columns:1fr 90px;gap:8px;min-height:170px">
+<div><h4>网页标签</h4><p>和小窗预览是同一张网页。</p><div class="float se collapsed" title="可拖动的小按钮"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></div></div>
+<div style="background:#eceaf3;border:1px solid #d3d0dc;padding:6px;font-size:10px;color:#333"><b>小窗预览</b><p>内容同步。隐藏预览不会关掉网页。</p></div>
+</div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">两边可以一起开。显示同一张网页。隐藏小窗预览不会关掉网页。暂停按钮放在大网页上，做成可拖动的小按钮。不要在缩略图上再画一套操作按钮。</p>
+<div class="source">Browser Use 的预览是可嵌入的 iframe，不决定 OpenProgram 怎么摆。<a href="#ref-r3">R3</a></div>
+<label class="choose"><input type="radio" name="s7" value="A" data-title="A · 网页标签和小窗预览一起显示；大网页上放可拖动的小按钮" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">可选方案</span></div>
+<h3>B · 在小窗预览里也放按钮</h3>
+<div class="mock" role="img" aria-labelledby="t7b">
+<span class="sr-only" id="t7b">小窗预览上也放了按钮</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="page" style="background:#2a2b32;color:#eee">
+<div style="position:relative;margin:10px;background:#f4f1ea;color:#222;padding:12px;min-height:110px"><h4>预览</h4>
+<div class="float se"><span class="chip">暂停</span></div></div>
+</div>
+</div>
+<p class="difference">挡住已经很小的画面。容易和大网页搞混。两边同时显示时不建议。</p>
+<div class="source">未核实。不声称其他产品这样摆。</div>
+<label class="choose"><input type="radio" name="s7" value="B" data-title="B · 在小窗预览里也放按钮"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A。小窗预览和大网页一起显示。可拖动的小按钮放在大网页上。隐藏预览不会关掉网页。</p>
+</section>
+
+<section id="case-8">
+<div class="case-head"><span class="number">08</span><h2>任务结束或重启 App</h2></div>
+<p class="question">任务完成后网页上还留不留这些按钮？重新打开网页不得自动继续任务。</p>
+<fieldset class="comparison"><legend class="sr-only">结束</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：顶栏「可直接操作」</h3>
+<div class="mock" role="img" aria-labelledby="t8c">
+<span class="sr-only" id="t8c">任务结束后顶栏仍写可直接操作</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://wiki.example/done</div></div>
+<div class="agentbar"><b>可直接操作</b></div>
+<div class="page"><h4>文章</h4><p>空闲状态仍占顶栏。</p></div>
+</div>
+<p class="difference">idle/closed 已映射为「可直接操作」。</p>
+<div class="source">控制条 statusLabel 的空闲分支。</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span></div>
+<h3>A · 任务完成后隐藏按钮；重新打开网页不自动继续任务</h3>
+<div class="mock" role="img" aria-labelledby="t8a">
+<span class="sr-only" id="t8a">任务结束后网页干净，没有 Agent 按钮</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://wiki.example/done</div><span class="chip deco">书签</span></div>
+<div class="page"><h4>文章</h4><p>恢复的标签显示上次网址。Agent 不会继续。已关闭的页保持关闭。保留记录不保证未保存表单还在。</p></div>
+</div>
+<p class="difference">与普通浏览一致。再开需要明确「让 Agent 继续」或新任务。</p>
+<div class="source">保留规则见 <a href="gui-agent.zh.html">GUI Agent</a>。ChatGPT Work 可在离开对话后保留云浏览器；那是远程会话，不是本地标签恢复。<a href="#ref-r2">R2</a></div>
+<label class="choose"><input type="radio" name="s8" value="A" data-title="A · 任务完成后隐藏按钮；重新打开网页不自动继续任务" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">可选方案</span><span class="badge pending">建议，还没确定</span></div>
+<h3>B · 保留一个显示“已完成”的小按钮</h3>
+<div class="mock" role="img" aria-labelledby="t8b">
+<span class="sr-only" id="t8b">角落一个完成小块</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://wiki.example/done</div></div>
+<div class="page"><h4>文章</h4><div class="float se collapsed" aria-label="已结束">✓</div></div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">历史一键可开。仍挡住一角。未批准。</p>
+<div class="source">仅建议。</div>
+<label class="choose"><input type="radio" name="s8" value="B" data-title="B · 保留一个显示“已完成”的小按钮。点击后展开历史"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A。任务完成后隐藏按钮。重新打开网页不自动继续任务。</p>
+</section>
+
+<section id="case-9">
+<div class="case-head"><span class="number">09</span><h2>按钮挡住网页，或者窗口太窄</h2></div>
+<p class="question">怎样挪开可拖动的小按钮，才点得到被挡住的内容？</p>
+<fieldset class="comparison"><legend class="sr-only">遮挡</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：固定顶行</h3>
+<div class="mock" role="img" aria-labelledby="t9c">
+<span class="sr-only" id="t9c">Agent 行固定在顶部</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://map.example</div></div>
+<div class="agentbar"><b>活动中</b><span class="chip deco">暂停 Agent，我来操作</span></div>
+<div class="page"><h4>地图</h4><p>地图顶部被 Agent 行挡住。窄窗口会把该行折行。</p></div>
+</div>
+<p class="difference">位置不能由用户移动。</p>
+<div class="source">当前工具栏布局。</div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span><span class="badge constraint">拖动已经确定</span></div>
+<h3>A · 网页上任意位置的可拖动的小按钮</h3>
+<div class="mock" role="img" aria-labelledby="t9a">
+<span class="sr-only" id="t9a">地图上的半透明小按钮。可拖到任意位置。点击展开操作。</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://map.example</div></div>
+<div class="page"><h4>地图</h4><p>把小按钮拖到这个网页里任意位置。点击展开一排操作，再点收起。拖动不会展开操作。</p>
+<div class="float se collapsed" title="可拖动的小按钮"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></div></div>
+<p class="glass-note">OpenProgram 拟选外观。手机系统里可拖动的辅助按钮只是参考，未核实与 Apple 实现相同。</p>
+</div>
+<p class="difference">已经确定：在网页或窗口内容里任意拖动，不只四个角。键盘：方向键移动，Enter 展开或收起。窗口变小时仍留在网页范围内。有多透明、是否自动收起仍可再调。</p>
+<div class="source">未核实为其他产品的同一控件。手机辅助按钮只是参考。</div>
+<label class="choose"><input type="radio" name="s9" value="A" data-title="A · 网页上任意位置的可拖动的小按钮。点击展开操作" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">可选方案</span></div>
+<h3>B · 固定一个角</h3>
+<div class="mock" role="img" aria-labelledby="t9b">
+<span class="sr-only" id="t9b">按钮固定在右下</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://map.example</div></div>
+<div class="page"><h4>地图</h4><div class="float se"><span class="chip">固定在此</span></div></div>
+</div>
+<p class="difference">更简单。被挡住的地图控件可能无法点到。</p>
+<div class="source">未核实。</div>
+<label class="choose"><input type="radio" name="s9" value="B" data-title="B · 固定一个角"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A。可拖动的小按钮，类似手机辅助按钮，可放在网页任意位置。点击展开，再点收起。拖动不会展开。默认是收起的。</p>
+</section>
+
+<section id="case-10">
+<div class="case-head"><span class="number">10</span><h2>电脑上的软件和虚拟机</h2></div>
+<p class="question">应用内浏览器已经有这些按钮。别的应用窗口和虚拟机还没核实。不要承诺用普通网页样式就能画在 Electron WebContentsView 上。</p>
+<fieldset class="comparison"><legend class="sr-only">原生</legend>
+<article class="variant current">
+<div class="badges"><span class="badge">OpenProgram 当前</span></div>
+<h3>现在：浏览器已实现；原生 / 虚拟机未核实</h3>
+<div class="mock" role="img" aria-labelledby="t10c">
+<span class="sr-only" id="t10c">浏览器标签有控制条；原生窗口绘制未验收</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">浏览器标签</div></div>
+<div class="agentbar"><b>活动中</b></div>
+<div class="page"><h4>托管页面</h4><p>不能改外部应用菜单。按钮一直显示在其他软件窗口上方已推迟。</p></div>
+</div>
+<p class="difference">本页的示意不能当成：别的应用窗口已经能画同一套按钮。</p>
+<div class="source">GUI Agent：要由 OpenProgram 自己画、自己判断点到哪里；还没核实。<a href="gui-agent.zh.html">gui-agent.zh.html</a></div>
+<div class="current-note">当前行为，仅用于比较</div>
+</article>
+<article class="variant selected">
+<div class="badges"><span class="badge">可选方案</span><span class="badge recommended">建议默认</span></div>
+<h3>A · 在 OpenProgram 显示的虚拟机画面上放按钮</h3>
+<div class="mock" role="img" aria-labelledby="t10a">
+<span class="sr-only" id="t10a">OpenProgram 显示的虚拟机画面上有按钮，不是别的应用的菜单</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="page" style="background:#15283a;color:#d5e8f8"><h4>OpenProgram 显示的虚拟机画面</h4><p>按钮画在 OpenProgram 自己的画面上。</p>
+<div class="float se"><span class="chip">虚拟机 · 按钮未核实</span><span class="chip">我来操作</span></div></div>
+<p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
+</div>
+<p class="difference">只画在 OpenProgram 自己的画面上。不改别的应用的菜单。不把那个窗口拉到最前。在别的应用窗口上画按钮、判断点到哪里，都还没核实。</p>
+<div class="source">限制见 GUI Agent。不是对 WebContentsView 的 CSS 承诺。</div>
+<label class="choose"><input type="radio" name="s10" value="A" data-title="A · 在 OpenProgram 显示的虚拟机画面上放按钮" checked><span>选择这个方案</span></label>
+</article>
+<article class="variant">
+<div class="badges"><span class="badge">已推迟</span></div>
+<h3>B · OpenProgram 窗口始终盖在别的窗口上面（已推迟）</h3>
+<div class="mock" role="img" aria-labelledby="t10b">
+<span class="sr-only" id="t10b">外部窗口上的始终置顶条，已推迟</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="page" style="background:#35313c;color:#eddbfb"><h4>外部应用</h4>
+<div class="float nw"><span class="chip">始终置顶（已推迟）</span></div></div>
+</div>
+<p class="difference">会和其他应用抢层级。已推迟。不要做成 CSS。</p>
+<div class="source">本设计推迟。未核实。</div>
+<label class="choose"><input type="radio" name="s10" value="B" data-title="B · OpenProgram 窗口始终盖在别的窗口上面（已推迟）"><span>选择这个方案</span></label>
+</article>
+</fieldset>
+<p class="recommendation">建议 A，且只画在 OpenProgram 自己的画面上。在别的窗口上判断点到哪里是以后的验收，不是本页默认外观。</p>
+</section>
+
+<section id="playground">
+<h2>试一下按钮</h2>
+<p>只在这张页上试，不上网。这里能试六种状态（普通浏览、Agent 工作中、需要人工、超时、断线、已结束）。可把小按钮拖到示意网页里任意位置。点击展开或收起。拖动不会展开。方向键移动，Enter 展开或收起。装饰用的控件不进入 Tab 顺序。点击图标采用你提供的鼠标点击动画。本页用 CSS 演示动画；App 实现时使用你提供的 CursorClickIcon 组件。本文不实现 App。</p>
+<div class="playground">
+<div class="controls">
+<label>场景
+<select id="pg-scene" aria-label="试哪一种情况">
+<option value="idle">普通浏览</option>
+<option value="work" selected>Agent 工作中</option>
+<option value="login">需要人工</option>
+<option value="fail">超时</option>
+<option value="drop">断线</option>
+<option value="done">已结束</option>
+</select></label>
+<button type="button" id="pg-resetpos">复位按钮位置</button>
+<button type="button" id="pg-collapse">收起 / 展开</button>
+<button type="button" id="pg-pause">我来操作</button>
+<button type="button" id="pg-ack">模拟暂停已确认</button>
+<button type="button" id="pg-continue">让 Agent 继续</button>
+<button type="button" id="pg-fail">模拟失败</button>
+<button type="button" id="pg-ok">模拟任务结束</button>
+<button type="button" id="pg-drop">模拟断线</button>
+<button type="button" id="pg-reconnect">重连</button>
+<button type="button" id="pg-marks">切换标记</button>
+<button type="button" id="pg-hist">切换历史</button>
+</div>
+<div class="stage" id="pg-stage">
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr" id="pg-addr">https://shop.example/checkout</div><span class="chip deco" tabindex="-1">书签</span></div>
+<div class="page" id="pg-page">
+<h4 id="pg-title">结账</h4>
+<p id="pg-copy">网页不变暗。半透明按钮只挡住它们自己占的那一块。</p>
+<div class="form" id="pg-form" hidden><label>密码<input id="pg-input" type="password" autocomplete="off" readonly tabindex="-1" value=""></label><p class="small">登录示意，无真实凭据。</p></div>
+<span class="mark" id="pg-mark" hidden style="left:58%;top:46%"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></span>
+<div class="float free collapsed" id="pg-float" role="button" tabindex="0" aria-label="可拖动的小按钮"></div>
+<ol id="pg-history" hidden style="position:absolute;left:10px;bottom:10px;background:#ffffffd8;color:#222;padding:8px 18px;border-radius:8px;font-size:12px"><li>点击支付</li><li>输入邮箱</li></ol>
+</div>
+</div>
+<p class="small" id="pg-note">可在网页里任意拖动。点击展开操作，再点收起。有多透明、是否自动收起还没确定。重连回到空闲网页，不会让 Agent 继续。</p>
+</div>
+</section>
+
+<section id="selection">
+<h2>选择清单</h2>
+<div class="summary-box">
+<p class="small">单选会更新此列表。可导出 JSON 或纯文本。重置回到建议默认。仅在可用时写 localStorage；失败留在本页。剪贴板只在成功后报告。</p>
+<ol id="summary-list"></ol>
+<textarea id="export-box" readonly aria-label="导出文本"></textarea>
+<div class="rowbtns">
+<button type="button" id="btn-json">导出 JSON</button>
+<button type="button" id="btn-text">导出文本</button>
+<button type="button" id="btn-dl">下载</button>
+<button type="button" id="btn-copy">复制</button>
+<button type="button" id="btn-reset">重置</button>
+</div>
+<p class="small" id="copy-status" role="status"></p>
+</div>
+</section>
+
+<section id="sources">
+<h2>来源附录</h2>
+<p id="ref-r1"><strong>R1</strong> <a href="https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome">Claude in Chrome</a> — 官方扩展可读取、点击、导航。任务从侧栏或 Cowork/Code 发起。工具栏图标打开侧栏。这支持若干行方案 B 从右侧列表开始。具体放哪个角、有多透明，未核实。</p>
+<p id="ref-r2"><strong>R2</strong> <a href="https://help.openai.com/en/articles/20001280-using-cloud-browser-in-chatgpt">ChatGPT Work 云浏览器</a> — 独立远程浏览器。离开后仍可在后台跑。输入、登录或确认时暂停。你通过任务链接到那个查看器里继续输入。目的相近，不是在本地网页上放按钮。位置未核实。</p>
+<p id="ref-r3"><strong>R3</strong> <a href="https://docs.browser-use.com/cloud/browser/live-preview">Browser Use live preview</a> — API v4 <code>browser.ready</code> 提供 <code>live_view_url</code>。文档示例是 16:9 iframe。活动浏览器可交互。停止后仪表盘可有可选 MP4。只支持预览和录像，不是网页上的暂停按钮。</p>
+<p id="ref-r4"><strong>R4</strong> 旧 ChatGPT agent 横幅指向 Work。本页不把该 agent 或 Atlas 当作当前产品。</p>
+<p>OpenProgram 文件：<a href="https://github.com/Fzkuji/OpenProgram/blob/main/apps/web/components/center-tabs/browser-control-bar.tsx">browser-control-bar.tsx</a>，<a href="gui-agent.zh.html">gui-agent.zh.html</a>。框架标签表示行为相近，不是相同截图。代码里小窗预览仍可能叫 PiP。</p>
+</section>
+
+<section id="status">
+<h2>实现状态</h2>
+<p>已接受选定的 A 方案及后续覆盖。实现仍在独立审查中，尚未作为已通过门禁。视觉验收未做。对话小窗预览与大网页可以同时显示并保持同一张网页；隐藏预览不会关闭网页。</p>
+</section>
+<footer>产品选择已接受。实现待独立审查通过测试之前，不算完成。</footer>
+</main>
+<script>
+(function(){
+var KEY="op-browser-control-surfaces-zh-v1";
+var titles={s1:"普通浏览",s2:"Agent 工作中",s3:"需要人工",s4:"超时",s5:"断线",s6:"多页面",s7:"对话预览",s8:"结束",s9:"遮挡",s10:"原生 / 虚拟机"};
+function selected(){
+  var out={};
+  Object.keys(titles).forEach(function(name){
+    var el=document.querySelector('input[name="'+name+'"]:checked');
+    out[name]={scenario:titles[name],choice:el?el.value:null,title:el?el.getAttribute("data-title"):null};
+  });
+  return out;
+}
+function paint(){
+  var data=selected();
+  var lines=[];
+  Object.keys(data).forEach(function(k){
+    lines.push(data[k].scenario+"："+(data[k].title||"未选"));
+  });
+  document.getElementById("summary-list").innerHTML=lines.map(function(t){return "<li>"+t+"</li>";}).join("");
+  document.getElementById("export-box").value=lines.join("\n");
+  document.querySelectorAll(".variant").forEach(function(v){
+    var r=v.querySelector("input[type=radio]");
+    if(!r) return;
+    v.classList.toggle("selected", r.checked);
+  });
+}
+function save(){
+  try{ if(window.localStorage) localStorage.setItem(KEY, JSON.stringify(selected())); }catch(e){}
+}
+function load(){
+  try{
+    if(!window.localStorage) return;
+    var raw=localStorage.getItem(KEY); if(!raw) return;
+    var data=JSON.parse(raw);
+    Object.keys(data).forEach(function(k){
+      var val=data[k]&&data[k].choice;
+      var el=document.querySelector('input[name="'+k+'"][value="'+val+'"]');
+      if(el) el.checked=true;
+    });
+  }catch(e){}
+}
+document.querySelectorAll("input[type=radio]").forEach(function(r){
+  r.addEventListener("change", function(){ paint(); save(); });
+});
+load(); paint();
+document.getElementById("btn-json").onclick=function(){
+  document.getElementById("export-box").value=JSON.stringify(selected(),null,2);
+};
+document.getElementById("btn-text").onclick=function(){ paint(); };
+document.getElementById("btn-dl").onclick=function(){
+  var blob=new Blob([document.getElementById("export-box").value],{type:"text/plain"});
+  var a=document.createElement("a");
+  var url=URL.createObjectURL(blob);
+  a.href=url; a.download="browser-control-choices.txt"; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 0);
+};
+document.getElementById("btn-copy").onclick=function(){
+  var box=document.getElementById("export-box");
+  var t=box.value;
+  var status=document.getElementById("copy-status");
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){
+      status.textContent="已复制到剪贴板。";
+    }).catch(function(){
+      box.focus(); box.select();
+      status.textContent="无法写入剪贴板。请用键盘复制所选文本。";
+    });
+  } else {
+    box.focus(); box.select();
+    status.textContent="无法写入剪贴板。请用键盘复制所选文本。";
+  }
+};
+document.getElementById("btn-reset").onclick=function(){
+  ["s1","s2","s3","s4","s5","s6","s7","s8","s9","s10"].forEach(function(n){
+    var el=document.querySelector('input[name="'+n+'"][value="A"]');
+    if(el) el.checked=true;
+  });
+  try{ localStorage.removeItem(KEY); }catch(e){}
+  paint();
+};
+
+var floatEl=document.getElementById("pg-float");
+var pageEl=document.getElementById("pg-page");
+var collapsed=true, marks=false, hist=false, phase="active";
+var pos={left:null,top:null};
+var drag={on:false,id:null,startX:0,startY:0,origL:0,origT:0,moved:false};
+var THRESH=6;
+var CLICK_ICO='<svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg>';
+function applyPos(){
+  var pr=pageEl.getBoundingClientRect();
+  var fr=floatEl.getBoundingClientRect();
+  var w=fr.width||36, h=fr.height||36;
+  if(pos.left==null){ pos.left=Math.max(8, pr.width-w-12); pos.top=Math.max(8, pr.height-h-12); }
+  pos.left=Math.min(Math.max(4, pos.left), Math.max(4, pr.width-w-4));
+  pos.top=Math.min(Math.max(4, pos.top), Math.max(4, pr.height-h-4));
+  floatEl.style.left=pos.left+"px";
+  floatEl.style.top=pos.top+"px";
+  floatEl.style.right="auto";
+  floatEl.style.bottom="auto";
+}
+function renderFloat(){
+  document.getElementById("pg-continue").disabled=phase!=="paused";
+  var rec=document.getElementById("pg-reconnect");
+  if(rec) rec.disabled=phase!=="drop";
+  var hide=(phase==="idle"||phase==="done");
+  floatEl.hidden=hide;
+  floatEl.className="float free"+(collapsed?" collapsed":"");
+  if(hide) return;
+  if(collapsed){
+    floatEl.setAttribute("role","button");
+    floatEl.innerHTML=CLICK_ICO;
+    floatEl.setAttribute("aria-label","可拖动的小按钮。点击展开。拖动可挪开。方向键移动。Enter 展开。");
+    applyPos();
+    return;
+  }
+  var label={
+    active:"活动中 · checkout",
+    waiting:"正在等待暂停确认…",
+    paused:"已暂停",
+    fail:"暂停未确认",
+    drop:"连接已断开"
+  }[phase]||phase;
+  var pauseDisabled=(phase==="drop"||phase==="fail")?" disabled":"";
+  var action=(phase==="paused")
+    ? '<button type="button" class="chip" id="pg-float-go" style="background:#ffffff22;color:inherit;padding:3px 7px">让 Agent 继续</button>'
+    : '<button type="button" class="chip" id="pg-float-pause" style="background:#ffffff22;color:inherit;padding:3px 7px"'+pauseDisabled+'>我来操作</button>';
+  floatEl.innerHTML='<span class="chip status" id="pg-status" title="'+label+'">'+label+'</span>'+action+'<button type="button" class="chip" id="pg-float-fold" style="background:#ffffff22;color:inherit;padding:3px 7px">收起</button><button type="button" class="chip" id="pg-float-more" style="background:#ffffff22;color:inherit;padding:3px 7px">历史</button>';
+  floatEl.setAttribute("role","group");
+  floatEl.setAttribute("aria-label","Agent 操作。拖动可挪开。点收起或在根上按 Enter 收起。");
+  var pauseBtn=document.getElementById("pg-float-pause");
+  if(pauseBtn) pauseBtn.onclick=function(e){ e.stopPropagation(); requestPause(); };
+  var go=document.getElementById("pg-float-go");
+  if(go) go.onclick=function(e){ e.stopPropagation(); doContinue(); };
+  document.getElementById("pg-float-more").onclick=function(e){ e.stopPropagation(); toggleHist(); };
+  document.getElementById("pg-float-fold").onclick=function(e){ e.stopPropagation(); collapsed=true; renderFloat(); };
+  applyPos();
+}
+function requestPause(){ if(phase==="drop") return; phase="waiting"; renderFloat(); }
+function doContinue(){ if(phase!=="paused") return; phase="active"; renderFloat(); }
+function toggleHist(){ hist=!hist; document.getElementById("pg-history").hidden=!hist; }
+function endDrag(ev, toggle){
+  if(!drag.on) return;
+  if(ev && drag.id!=null && ev.pointerId!==drag.id) return;
+  var wasMoved=drag.moved;
+  drag.on=false; drag.id=null;
+  floatEl.classList.remove("dragging");
+  try{ if(ev&&floatEl.releasePointerCapture) floatEl.releasePointerCapture(ev.pointerId); }catch(err){}
+  applyPos();
+  if(toggle && !wasMoved && phase!=="idle" && phase!=="done"){
+    collapsed=!collapsed; renderFloat();
+  }
+}
+floatEl.addEventListener("pointerdown", function(ev){
+  if(ev.button!=null && ev.button!==0) return;
+  if(ev.target.closest && ev.target.closest("button")) return;
+  drag.on=true; drag.id=ev.pointerId; drag.moved=false; drag.startX=ev.clientX; drag.startY=ev.clientY;
+  drag.origL=pos.left; drag.origT=pos.top;
+  floatEl.classList.add("dragging");
+  try{ floatEl.setPointerCapture(ev.pointerId); }catch(err){}
+});
+floatEl.addEventListener("pointermove", function(ev){
+  if(!drag.on || ev.pointerId!==drag.id) return;
+  var dx=ev.clientX-drag.startX, dy=ev.clientY-drag.startY;
+  if(Math.abs(dx)>THRESH || Math.abs(dy)>THRESH) drag.moved=true;
+  if(!drag.moved) return;
+  pos.left=drag.origL+dx; pos.top=drag.origT+dy; applyPos();
+});
+floatEl.addEventListener("pointerup", function(ev){
+  if(!drag.on) return;
+  endDrag(ev, true);
+});
+floatEl.addEventListener("pointercancel", function(ev){ endDrag(ev, false); });
+floatEl.addEventListener("lostpointercapture", function(){ if(drag.on){ drag.on=false; drag.id=null; floatEl.classList.remove("dragging"); applyPos(); } });
+floatEl.addEventListener("keydown", function(ev){
+  if(ev.target!==floatEl) return;
+  var step=8;
+  if(ev.key==="ArrowLeft"){ pos.left-=step; applyPos(); ev.preventDefault(); }
+  else if(ev.key==="ArrowRight"){ pos.left+=step; applyPos(); ev.preventDefault(); }
+  else if(ev.key==="ArrowUp"){ pos.top-=step; applyPos(); ev.preventDefault(); }
+  else if(ev.key==="ArrowDown"){ pos.top+=step; applyPos(); ev.preventDefault(); }
+  else if(ev.key==="Enter" || ev.key===" "){
+    if(phase==="idle"||phase==="done") return;
+    collapsed=!collapsed; renderFloat(); ev.preventDefault();
+  }
+});
+window.addEventListener("resize", applyPos);
+function scene(v){
+  hist=false; marks=false; collapsed=true;
+  document.getElementById("pg-history").hidden=true;
+  document.getElementById("pg-mark").hidden=true;
+  document.getElementById("pg-form").hidden=v!=="login";
+  var addr=document.getElementById("pg-addr");
+  var title=document.getElementById("pg-title");
+  var copy=document.getElementById("pg-copy");
+  if(v==="idle"){ phase="idle"; addr.textContent="https://docs.example/guide"; title.textContent="产品说明"; copy.textContent="空闲网页。Agent 按钮已隐藏。"; }
+  else if(v==="work"){ phase="active"; addr.textContent="https://shop.example/checkout"; title.textContent="结账"; copy.textContent="Agent 正在用这个网页。拖动小按钮。点击展开。"; }
+  else if(v==="login"){ phase="waiting"; addr.textContent="https://id.example/login"; title.textContent="登录"; copy.textContent="你必须输入。确认前不是已暂停。"; }
+  else if(v==="fail"){ phase="fail"; addr.textContent="https://app.example/settings"; title.textContent="设置"; copy.textContent="没有收到暂停确认。这不是程序明确报告的失败。"; }
+  else if(v==="drop"){ phase="drop"; addr.textContent="https://mail.example/inbox"; title.textContent="收件箱"; copy.textContent="重试只重连，不会让 Agent 继续。"; }
+  else { phase="done"; addr.textContent="https://wiki.example/done"; title.textContent="文章"; copy.textContent="任务已结束。按钮已隐藏。重新打开网页不会自动继续任务。"; }
+  renderFloat();
+}
+document.getElementById("pg-resetpos").onclick=function(){ pos.left=null; pos.top=null; applyPos(); };
+document.getElementById("pg-collapse").onclick=function(){
+  if(phase==="idle"||phase==="done") return;
+  collapsed=!collapsed; renderFloat();
+};
+document.getElementById("pg-scene").onchange=function(){ scene(this.value); };
+document.getElementById("pg-pause").onclick=requestPause;
+document.getElementById("pg-ack").onclick=function(){ if(phase==="waiting"){ phase="paused"; renderFloat(); } };
+document.getElementById("pg-continue").onclick=doContinue;
+document.getElementById("pg-fail").onclick=function(){ phase="fail"; renderFloat(); };
+document.getElementById("pg-ok").onclick=function(){ phase="done"; renderFloat(); };
+document.getElementById("pg-drop").onclick=function(){ phase="drop"; renderFloat(); };
+document.getElementById("pg-reconnect").onclick=function(){
+  if(phase!=="drop") return;
+  phase="idle";
+  document.getElementById("pg-copy").textContent="已重连。页面空闲。Agent 没有继续。";
+  renderFloat();
+};
+document.getElementById("pg-marks").onclick=function(){
+  marks=!marks;
+  var m=document.getElementById("pg-mark");
+  m.hidden=!marks;
+  if(marks){
+    var ico=m.querySelector(".click-ico");
+    if(ico){ var c=ico.cloneNode(true); ico.parentNode.replaceChild(c,ico); }
+  }
+};
+document.getElementById("pg-hist").onclick=toggleHist;
+scene("work");
+})();
+</script>
+</body></html>

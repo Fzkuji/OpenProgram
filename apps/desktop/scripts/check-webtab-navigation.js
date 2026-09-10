@@ -147,7 +147,12 @@ let deferReadyToShowNextWindow = false;
 class FakeBrowserWindow {
   constructor(options) {
     browserWindowOptions.push(options);
-    return fakeWindow(nextGeneratedWindowId++);
+    const win = fakeWindow(nextGeneratedWindowId++);
+    win.constructorOptions = options || {};
+    if (options && options.show === false) win.shown = false;
+    if (options && options.focusable === false) win.focusable = false;
+    win.parentWindow = options && options.parent;
+    return win;
   }
   static fromWebContents(sender) {
     return fakeWindows.find((win) => win.webContents === sender) || null;
@@ -359,6 +364,7 @@ const hooks = sandbox.__webtabTestHooks;
 
 function fakeWindow(id) {
   const listeners = new Map();
+  const wcListeners = new Map();
   const sent = [];
   const added = [];
   const removed = [];
@@ -384,13 +390,42 @@ function fakeWindow(id) {
     webContents: {
       send(...args) {
         sent.push(args);
+        win.webContentsSent = win.webContentsSent || [];
+        win.webContentsSent.push(args);
         const callback = win.onSend;
         if (callback) rendererQueue.push(() => callback(...args));
       },
       setWindowOpenHandler() {},
-      on() {},
+      getURL() { return win.loadedUrl || "http://127.0.0.1:18100/"; },
+      isDestroyed() { return win.destroyed; },
+      loadURL(url) { return win.loadURL(url); },
+      on(event, handler) {
+        wcListeners.set(event, [...(wcListeners.get(event) || []), handler]);
+      },
+      once(event, handler) {
+        const wrapper = (...args) => {
+          this.removeListener(event, wrapper);
+          handler(...args);
+        };
+        wrapper.original = handler;
+        this.on(event, wrapper);
+      },
+      removeListener(event, handler) {
+        wcListeners.set(
+          event,
+          (wcListeners.get(event) || []).filter(
+            (item) => item !== handler && item.original !== handler,
+          ),
+        );
+      },
+      emit(event, ...args) {
+        for (const handler of wcListeners.get(event) || []) handler(...args);
+      },
     },
     on(event, handler) { listeners.set(event, handler); },
+    removeListener(event, handler) {
+      if (listeners.get(event) === handler) listeners.delete(event);
+    },
     // Renderers are "already painted" by default so existing tests are
     // unaffected; a test sets `deferReadyToShow` before the boot to hold
     // ready-to-show and fires it manually via `emitReadyToShow()`.
@@ -407,7 +442,12 @@ function fakeWindow(id) {
     },
     isDestroyed() { return this.destroyed; },
     isFocused() { return focusedWindow === this; },
-    show() { this.shown = true; },
+    show() { this.shown = true; this.focusCalls = (this.focusCalls || 0) + 1; },
+    showInactive() { this.shown = true; this.showInactiveCalls = (this.showInactiveCalls || 0) + 1; },
+    hide() { this.shown = false; this.hideCalls = (this.hideCalls || 0) + 1; },
+    setIgnoreMouseEvents(...args) { this.ignoreMouseCalls = this.ignoreMouseCalls || []; this.ignoreMouseCalls.push(args); },
+    setMenuBarVisibility() {},
+    getContentBounds() { return { ...this.bounds }; },
     close() {
       this.closeCalls += 1;
       let prevented = false;
@@ -433,7 +473,12 @@ function fakeWindow(id) {
     },
     isVisible() { return this.shown && !this.destroyed; },
     setOpacity(value) { this.opacities.push(value); },
-    loadURL(url) { this.loadedUrl = url; return Promise.resolve(); },
+    loadURL(url) {
+      this.loadedUrl = url;
+      return Promise.resolve().then(() => {
+        this.webContents.emit("did-finish-load");
+      });
+    },
   };
   fakeWindows.push(win);
   return win;
@@ -629,6 +674,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   const view = {
     webContents,
     setVisible(value) { visibility.push(value); },
+    setBackgroundColor() {},
     setBounds(value) {
       bounds = { ...value };
       boundsCalls.push({ ...value });
@@ -1045,10 +1091,12 @@ function checkPreloadWindowIdentity() {
   };
   exposed.webTab.showAction("pane-a", marker);
   exposed.webTab.showAction("pane-a", null);
-  assert.deepEqual(sent.slice(-3), [
+  exposed.webTab.setControlOverlay("pane-a", { resourceId: "page-a", generation: 1 });
+  assert.deepEqual(sent.slice(-4), [
     ["webtab:find", "pane-a", "needle", { forward: false, findNext: true }],
     ["webtab:stop-find", "pane-a", "clearSelection"],
     ["webtab:set-pip-zoom", "pane-a", 640],
+    ["webtab:control-overlay", "pane-a", { resourceId: "page-a", generation: 1 }],
   ]);
   assert.deepEqual(invoked, [
     ["webtab:zoom", "pane-a", "in"],
@@ -3592,13 +3640,19 @@ async function checkRejectCancelExpiryDetachAndClaim() {
     hooks.tabTransfers.claimPending(detachedCtx, detachedWindowId),
     detachToken,
   );
+  detachedCtx.win.webContents.emit("did-finish-load");
+  assert.equal(
+    detachedCtx.win.sent.some((item) => String(item[0]).startsWith("tab-transfer:")),
+    false,
+    "did-finish-load on a detached window must not deliver a transfer token",
+  );
+  assert.equal(
+    hooks.tabTransfers.claimPending(detachedCtx, detachedWindowId),
+    detachToken,
+  );
   assert.equal(hooks.tabTransfers.cancel(sourceCtx, detachToken), true);
   assert.equal(detachedCtx.win.closeCalls, 1);
   assert.equal(hooks.tabTransfers.claimPending(detachedCtx, detachedWindowId), null);
-
-  // Main registers no did-finish-load transfer delivery; the renderer must
-  // pull its pending token with claim-pending after hydration.
-  assert.ok(!source.includes("did-finish-load"));
 
   // Committed detach path: the hidden window shows only inside the
   // source-success commit branch, and a committed token can no longer be
@@ -5211,8 +5265,8 @@ async function checkActionCueFreshness() {
     await ipcHandlers.get("webtab:show-action")({ sender: win.webContents }, "cue-page", marker),
     true,
   );
-  const highlights = () => controlled.debuggerCommands
-    .filter((item) => item.method === "Overlay.highlightRect").length;
+  const liveCue = ctx.views.get("cue-page");
+  const highlights = () => (liveCue.actionCueWindow ? 1 : 0);
   const firstHighlights = highlights();
   clock.advance(2000);
   await flushAsync();
@@ -5323,11 +5377,8 @@ async function checkActionCueWorkerIncarnation() {
     "null must not reset freshness for stale replay after human yield",
   );
 
-  controlled.delayDebuggerMethod("Overlay.enable");
   const first = show({ resourceId: "page:newer:1", generation: 1, sequence: 1 });
   const second = show({ resourceId: "page:newer:1", generation: 1, sequence: 2 });
-  await flushAsync();
-  controlled.completeDebuggerMethod("Overlay.enable");
   const overlapping = [await first, await second];
   assert.equal(overlapping[1], true, "overlapping higher sequence in the new incarnation must complete");
   const pendingNull = clear();
@@ -5358,36 +5409,26 @@ async function checkOverlappingActionCues() {
     { ...marker, sequence },
   );
 
-  controlled.delayDebuggerMethod("Overlay.enable");
   const first = show(1);
   const second = show(2);
-  await flushAsync();
-  assert.equal(controlled.debuggerCommands.filter((item) => item.method === "Overlay.enable").length >= 1, true);
-  controlled.completeDebuggerMethod("Overlay.enable");
   const overlapping = [await first, await second];
   assert.equal(
     overlapping[1],
     true,
-    "a later in-flight higher sequence must complete while Overlay.enable is pending",
+    "a later in-flight higher sequence must complete",
   );
-  assert.equal(controlled.isDebuggerAttached(), true);
-  const highlights = controlled.debuggerCommands.filter((item) => item.method === "Overlay.highlightRect");
-  assert.ok(highlights.length >= 1, "newer overlapping cue must paint Overlay.highlightRect");
+  assert.equal(controlled.isDebuggerAttached(), false);
+  assert.ok(ctx.views.get("overlap-page").actionCueWindow, "newer overlapping cue must paint a host overlay window");
 
-  controlled.delayDebuggerMethod("Overlay.enable");
-  controlled.delayDebuggerMethod("Overlay.hideHighlight");
   const replacement = show(3);
   const cleared = ipcHandlers.get("webtab:show-action")(event, "overlap-page", null);
-  await flushAsync();
-  controlled.completeDebuggerMethod("Overlay.enable");
-  controlled.completeDebuggerMethod("Overlay.hideHighlight");
-  assert.equal(await cleared, true, "explicit null must clear while hide/enable are pending");
+  assert.equal(await cleared, true, "explicit null must clear the host overlay");
   await replacement;
   await flushAsync();
   assert.equal(
     controlled.isDebuggerAttached(),
     false,
-    "later null must release the Overlay debugger hold",
+    "later null must not attach a page debugger",
   );
 
   hooks.destroyView(ctx, "overlap-page");
@@ -5582,13 +5623,47 @@ async function checkHumanInputYieldingAndActionCue() {
     await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", marker),
     true,
   );
-  const highlight = controlled.debuggerCommands.find((item) => item.method === "Overlay.highlightRect");
-  assert.ok(highlight, "owned annotation must use Overlay.highlightRect");
+  assert.ok(record.actionCueWindow, "owned annotation must use a host overlay window");
+  assert.deepEqual(
+    plain(record.actionCueWindow.ignoreMouseCalls.at(-1)),
+    [true, { forward: true }],
+    "cue window must use BrowserWindow setIgnoreMouseEvents click-through",
+  );
+  assert.equal(record.actionCueWindow.focusable, false);
+  assert.ok((record.actionCueWindow.showInactiveCalls || 0) >= 1, "cue must not steal focus");
+  const cueBounds = record.actionCueWindow.getBounds();
   assert.ok(
-    highlight.params.width <= 20 && highlight.params.height <= 20,
+    cueBounds.width <= 40 && cueBounds.height <= 40,
     "cue is a brief point mark, not the observed viewport rectangle",
   );
-  assert.equal(controlled.isDebuggerAttached(), true);
+  record.view.webContents.setZoomFactor(2);
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "live-page", {
+      x: 100,
+      y: 100,
+      width: 400,
+      height: 300,
+      sequence: 12,
+      reducedMotion: true,
+    }),
+    true,
+  );
+  const zoomedPage = record.view.getBounds();
+  const zoomedContent = winA.getContentBounds();
+  const zoomedCue = record.actionCueWindow.getBounds();
+  assert.equal(zoomedCue.width, 28);
+  assert.equal(zoomedCue.height, 28);
+  assert.equal(zoomedCue.x, zoomedContent.x + zoomedPage.x + 100 * 2 - 14);
+  assert.equal(zoomedCue.y, zoomedContent.y + zoomedPage.y + 100 * 2 - 14);
+  winA.setBounds({ x: 40, y: 50, width: 800, height: 600 });
+  winA.listeners.get("move")();
+  const movedCue = record.actionCueWindow.getBounds();
+  const movedContent = winA.getContentBounds();
+  assert.equal(movedCue.x, movedContent.x + zoomedPage.x + 100 * 2 - 14);
+  assert.equal(movedCue.y, movedContent.y + zoomedPage.y + 100 * 2 - 14);
+  record.view.webContents.setZoomFactor(1);
+  winA.setBounds({ x: 0, y: 0, width: 800, height: 600 });
+  assert.equal(controlled.isDebuggerAttached(), false);
   assert.equal(
     await ipcHandlers.get("webtab:show-action")({ sender: winB.webContents }, "live-page", {
       ...marker,
@@ -5611,7 +5686,7 @@ async function checkHumanInputYieldingAndActionCue() {
       y: 80,
       width: 800,
       height: 600,
-      sequence: 12,
+      sequence: 13,
     }),
     false,
     "out-of-bounds cue must be rejected",
@@ -5622,13 +5697,18 @@ async function checkHumanInputYieldingAndActionCue() {
       y: 80,
       width: 400,
       height: 300,
-      sequence: 12,
+      sequence: 13,
     }),
     false,
     "viewport-size mismatch is stale geometry",
   );
 
-  const hideCount = () => controlled.debuggerCommands.filter((item) => item.method === "Overlay.hideHighlight").length;
+  let trackedCue = null;
+  const hideCount = () => {
+    if (record.actionCueWindow) trackedCue = record.actionCueWindow;
+    if (!trackedCue) return 0;
+    return (trackedCue.hideCalls || 0) + (trackedCue.closeCalls || 0);
+  };
   const hidesBeforeGeometry = hideCount();
   ipcListeners.get("webtab:set-bounds")(
     { sender: winA.webContents },
@@ -5724,13 +5804,6 @@ async function checkHumanInputYieldingAndActionCue() {
     id: "no-overlay",
     bounds: { x: 0, y: 0, width: 800, height: 600 },
   }]);
-  unavailable.record.view.webContents.debugger.sendCommand = async (method, params) => {
-    unavailable.debuggerCommands.push({ method, params });
-    if (method === "Target.getTargetInfo") {
-      return { targetInfo: { targetId: "no-overlay-target" } };
-    }
-    throw new Error("Overlay unavailable");
-  };
   assert.equal(
     await ipcHandlers.get("webtab:show-action")({ sender: winA.webContents }, "no-overlay", {
       x: 10,
@@ -5739,14 +5812,14 @@ async function checkHumanInputYieldingAndActionCue() {
       height: 600,
       sequence: 1,
     }),
-    false,
+    true,
   );
   assert.equal(
     unavailable.isDebuggerAttached(),
     false,
-    "failed overlay must release a debugger session it attached",
+    "click cue must not attach a page debugger session",
   );
-  assert.equal(await hooks.resolveView(ctxA, "no-overlay"), "no-overlay-target");
+  assert.equal(await hooks.resolveView(ctxA, "no-overlay"), `${unavailable.record.id}-target`);
 
   hooks.ensureView(ctxA, "timed-cue", "https://example.com/timed");
   const timed = generatedNativeRecords.at(-1);
@@ -5765,24 +5838,115 @@ async function checkHumanInputYieldingAndActionCue() {
     }),
     true,
   );
-  assert.equal(timed.isDebuggerAttached(), true);
+  assert.equal(timed.isDebuggerAttached(), false);
   const targetBeforeTimeout = timed.targetCallCount();
   const resolveDuringCue = hooks.resolveView(ctxA, "timed-cue");
   assert.equal(await resolveDuringCue, `${timed.record.id}-target`);
-  assert.equal(timed.isDebuggerAttached(), true, "devToolsTargetId must not detach an in-use Overlay session");
+  assert.equal(timed.isDebuggerAttached(), false, "cue overlay must not hold a page debugger session");
   assert.equal(timed.targetCallCount(), targetBeforeTimeout + 1);
-  clock.advance(2000);
+  clock.advance(3000);
   await flushAsync();
-  assert.ok(timed.debuggerCommands.some((item) => item.method === "Overlay.hideHighlight"));
-  assert.equal(
-    timed.isDebuggerAttached(),
-    false,
-    "cue timeout must detach a debugger attached for Overlay",
-  );
+  const timedLive = ctxA.views.get("timed-cue");
+  assert.ok(timedLive.actionCueWindow);
+  assert.ok((timedLive.actionCueWindow.hideCalls || 0) >= 1, "cue timeout must hide the host overlay");
 
   hooks.windows.delete(ctxA.id);
   hooks.windows.delete(ctxB.id);
   hooks.windows.delete(dest.id);
+}
+
+async function checkNativeControlOverlayAndCueReplay() {
+  hooks.registerWebTabIpc();
+  const win = fakeWindow(901);
+  const ctx = registerContext("overlay-sec", win);
+  hooks.ensureView(ctx, "live-page", "https://example.com/live");
+  const pageHarness = generatedNativeRecords.at(-1);
+  pageHarness.controls[0].resolve();
+  const live = ctx.views.get("live-page");
+  hooks.syncVisibleViews(ctx, [{
+    id: "live-page",
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  }]);
+  const event = { sender: win.webContents };
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")(event, "live-page", {
+      x: 40, y: 80, width: 800, height: 600, sequence: 1, generation: 1, resourceId: "page-a",
+    }),
+    true,
+  );
+  const firstSeq = live.pendingCuePayload.playSeq;
+  assert.equal(
+    await ipcHandlers.get("webtab:show-action")(event, "live-page", {
+      x: 40, y: 80, width: 800, height: 600, sequence: 2, generation: 1, resourceId: "page-a",
+    }),
+    true,
+  );
+  assert.equal(live.pendingCuePayload.playSeq, 2);
+  assert.notEqual(live.pendingCuePayload.playSeq, firstSeq);
+
+  ipcListeners.get("webtab:control-overlay")(event, "live-page", {
+    resourceId: "page-a",
+    generation: 1,
+    conversationSessionId: "a",
+    controlState: "active",
+    showActions: true,
+    connected: true,
+    status: "Active",
+    pauseLabel: "I will operate",
+    showLabel: "Show actions",
+    historyLabel: "Operation history",
+    pauseDisabled: false,
+    resumeDisabled: true,
+    showTakeover: true,
+    historyItems: [{ id: "op-1", label: "click · acknowledged", disabled: true }],
+  });
+  const overlayView = live.controlOverlayView;
+  assert.ok(overlayView, "control overlay attaches to the registry record");
+  const overlayHarness = generatedNativeRecords.find((item) => item.record.view === overlayView);
+  overlayHarness.controls[0].resolve();
+  await flushAsync();
+  const overlaySender = overlayView.webContents;
+  ipcListeners.get("webtab:control-overlay-ready")({ sender: overlaySender });
+  ipcListeners.get("webtab:control-overlay-event")(
+    { sender: overlaySender },
+    { type: "layout", collapsed: false, width: 280, height: 44 },
+  );
+  assert.equal(live.controlCollapsed, false);
+  assert.ok(
+    overlayView.getBounds().width >= 200,
+    "expanded control overlay must grow beyond the collapsed 36px host view",
+  );
+  ipcListeners.get("webtab:control-overlay-event")(
+    { sender: overlaySender },
+    { type: "move", id: "page-a", generation: 1, dx: -20, dy: -10 },
+  );
+  assert.ok(live.controlLeft < 800);
+  const forwarded = win.sent.filter((item) => item[0] === "webtab:control-overlay-event").length;
+  ipcListeners.get("webtab:control-overlay-event")(
+    { sender: live.actionCueWindow.webContents },
+    { type: "pause", id: "page-a", generation: 1 },
+  );
+  assert.equal(
+    win.sent.filter((item) => item[0] === "webtab:control-overlay-event").length,
+    forwarded,
+    "cue window must not invoke privileged control actions",
+  );
+  ipcListeners.get("webtab:control-overlay-event")(
+    { sender: overlaySender },
+    { type: "pause", id: "page-a", generation: 1 },
+  );
+  assert.ok(win.sent.some((item) => item[0] === "webtab:control-overlay-event" && item[1].type === "pause"));
+  ipcListeners.get("webtab:control-overlay-event")(
+    { sender: overlaySender },
+    { type: "history", id: "page-a", generation: 1 },
+  );
+  assert.ok(menuPopupOptions.length >= 1, "history is handled natively on the host window");
+  hooks.hideView(ctx, "live-page");
+  assert.ok(overlayHarness.visibility.includes(false), "hiding the page must hide the control overlay");
+  hooks.destroyView(ctx, "live-page");
+  assert.equal(live.actionCueWindow, null);
+  assert.equal(live.controlOverlayView, null);
+  hooks.windows.delete(ctx.id);
 }
 
 Promise.all([
@@ -5802,6 +5966,7 @@ Promise.all([
     await checkActionCueFreshness();
     await checkActionCueWorkerIncarnation();
     await checkOverlappingActionCues();
+    await checkNativeControlOverlayAndCueReplay();
     await checkDownloadsLifecycle();
     await checkTerminalProcessIdentity();
     await checkFocusedRoutingAndCleanup();

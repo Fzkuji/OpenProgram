@@ -237,11 +237,6 @@ function pipCoverBase(tabId: string, state: PipCenterState): boolean {
   if (!state.tabs.some((tab) => tab.id === tabId && tab.kind === "web")) {
     return false;
   }
-  const group = state.activeId
-    ? state.groups.find((item) => item.memberIds.includes(state.activeId!))
-    : undefined;
-  if (group?.visibleIds.includes(tabId)) return false;
-  if (state.splitWebTabId === tabId) return false;
   if (state.activeId) {
     const active = state.tabs.find((tab) => tab.id === state.activeId);
     if (active && active.kind !== "session") return false;

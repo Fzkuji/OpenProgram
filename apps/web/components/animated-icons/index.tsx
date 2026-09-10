@@ -32,3 +32,4 @@ export * from "./icons-3";
 export * from "./icons-4";
 export * from "./icons-5";
 export * from "./icons-6";
+export { CursorClickIcon } from "./cursor-click-icon";

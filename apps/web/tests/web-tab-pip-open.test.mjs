@@ -26,7 +26,7 @@ await build({
     b.onResolve({ filter: /desktop-bridge/ }, () => ({ path: "desktop-bridge", namespace: "test-services" }));
     b.onResolve({ filter: /browser-control-bar/ }, () => ({ path: "control-bar", namespace: "test-services" }));
     b.onLoad({ filter: /.*/, namespace: "test-services" }, a => ({ contents: a.path === "control-bar"
-      ? "export function BrowserControlBar() { return null; }"
+      ? "export function BrowserControlBar() { return null; } export function ActionCueTravel() { return null; } export function BrowserPageCue() { return null; }"
       : "export function desktopBridge() { return null; }" }));
   }}],
 });

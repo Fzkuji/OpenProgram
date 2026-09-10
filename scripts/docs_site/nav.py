@@ -337,6 +337,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "reference/design/ui/composer-tool-profile-menu.html",
             "reference/design/ui/fn-form-compact-mock.html",
             "reference/design/ui/gui-agent.html",
+            "reference/design/ui/browser-control-surfaces.html",
             "reference/design/ui/head-bugs.html",
             "reference/design/ui/send-queue-reliability.html",
             "reference/design/ui/slash-and-compact.html",
@@ -495,6 +496,7 @@ PAGE_ORDER: dict[str, int] = {
     "reference/design/ui/attachment-handling.html": 1019,
     "reference/design/ui/chat-attachments.html": 1021,
     "reference/design/ui/file-type-icons.html": 1022,
+    "reference/design/ui/browser-control-surfaces.html": 1023,
     # The three whole-framework pages sit together at the end of the design
     # root: first how one conversation runs inside us, then how we compare to
     # the reference frameworks by design axis, then by feature list.

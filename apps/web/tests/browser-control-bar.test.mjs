@@ -52,6 +52,9 @@ await build({
 const { window } = parseHTML("<html><body></body></html>");
 globalThis.window = window;
 globalThis.document = window.document;
+globalThis.Element = window.Element;
+globalThis.HTMLElement = window.HTMLElement;
+globalThis.Node = window.Node;
 globalThis.Event = window.Event;
 globalThis.CustomEvent = window.CustomEvent;
 globalThis.PointerEvent = window.PointerEvent || window.MouseEvent;
@@ -94,7 +97,7 @@ const {
 const LONG_LABELS = [
   "Show actions",
   "Operation history",
-  "Pause Agent to use page",
+  "I will operate",
   "Continue Agent",
   "Pausing…",
   "Retry pause",
@@ -118,6 +121,15 @@ function controlResource() {
     generation: 1,
     controlState: "active",
   };
+}
+
+function tap(el) {
+  const down = new window.Event("pointerdown", { bubbles: true, cancelable: true });
+  Object.defineProperties(down, { pointerId: { value: 1 }, button: { value: 0 }, clientX: { value: 1 }, clientY: { value: 1 } });
+  const up = new window.Event("pointerup", { bubbles: true, cancelable: true });
+  Object.defineProperties(up, { pointerId: { value: 1 }, button: { value: 0 }, clientX: { value: 1 }, clientY: { value: 1 } });
+  el.dispatchEvent(down);
+  el.dispatchEvent(up);
 }
 
 function clickButton(button, { detail = 0, clientX = 0, clientY = 0 } = {}) {
@@ -192,6 +204,10 @@ async function mounted(check, { controlState = "active", connected = true } = {}
       resource: { ...controlResource(), controlState },
       compact: true,
     })));
+    const float = host.querySelector("[data-browser-control='float']");
+    if (float?.getAttribute("data-collapsed") === "true") {
+      await act(async () => tap(float));
+    }
     await check(host);
   } finally {
     await act(async () => root.unmount());
@@ -207,8 +223,8 @@ test("compact control buttons keep takeover labels on title and aria-label inste
     assert.equal(host.firstElementChild?.getAttribute("data-compact"), "true");
     assertIconButton(labeledButton(host, "Show actions"), "Show actions");
     assertIconButton(labeledButton(host, "Operation history"), "Operation history");
-    assertIconButton(labeledButton(host, "Pause Agent to use page"), "Pause Agent to use page");
-    const pause = labeledButton(host, "Pause Agent to use page");
+    assertIconButton(labeledButton(host, "I will operate"), "I will operate");
+    const pause = labeledButton(host, "I will operate");
     assert.equal(pause.disabled, false);
     assert.equal(labeledButton(host, "Show actions").getAttribute("aria-pressed"), "true");
   });
@@ -225,7 +241,7 @@ test("show actions click toggles pressed state without changing pause", async ()
     assert.equal(showActionsEnabled(), true);
     assert.equal(show.getAttribute("aria-pressed"), "true");
     assert.equal(globalThis.controlPosts.length, 0);
-    assert.equal(labeledButton(host, "Pause Agent to use page").disabled, false);
+    assert.equal(labeledButton(host, "I will operate").disabled, false);
   });
 });
 
@@ -236,7 +252,7 @@ test("pause click posts pause, then resume posts after acknowledgement", async (
       if (body.action === "pause") return new Promise(resolve => { settlePause = resolve; });
       return pageRow("active", 3);
     };
-    const pause = labeledButton(host, "Pause Agent to use page");
+    const pause = labeledButton(host, "I will operate");
     await act(async () => {
       pause.click();
       await Promise.resolve();
@@ -263,16 +279,14 @@ test("pause click posts pause, then resume posts after acknowledgement", async (
 
 test("idle and closed do not render an enabled Pause", async () => {
   await mounted(host => {
-    assert.equal(host.textContent.includes("Ready to use"), true);
-    assert.equal(labeledButton(host, "Pause Agent to use page"), undefined);
+    assert.equal(host.querySelector("[data-browser-control]"), null);
+    assert.equal(labeledButton(host, "I will operate"), undefined);
     assert.equal(labeledButton(host, "Continue Agent"), undefined);
     assert.equal(labeledButton(host, "Retry pause"), undefined);
-    assertIconButton(labeledButton(host, "Show actions"), "Show actions");
-    assertIconButton(labeledButton(host, "Operation history"), "Operation history");
   }, { controlState: "idle" });
 
   await mounted(host => {
-    assert.equal(labeledButton(host, "Pause Agent to use page"), undefined);
+    assert.equal(labeledButton(host, "I will operate"), undefined);
     assert.equal(labeledButton(host, "Continue Agent"), undefined);
   }, { controlState: "closed" });
 });
@@ -283,7 +297,7 @@ test("stop unconfirmed shows Retry pause enabled when connected", async () => {
     assertIconButton(retry, "Retry pause");
     assert.equal(retry.disabled, false);
     assert.equal(labeledButton(host, "Continue Agent"), undefined);
-    assert.equal(labeledButton(host, "Pause Agent to use page"), undefined);
+    assert.equal(labeledButton(host, "I will operate"), undefined);
     assert.equal(host.firstElementChild?.textContent.includes("Could not pause. Try again"), true);
     assert.equal(host.firstElementChild?.textContent.includes("Paused"), false);
     await act(async () => {
@@ -304,7 +318,7 @@ test("yielding unknown and disconnect disable pause without a false failure", as
   }, { controlState: "yielding" });
 
   await mounted(host => {
-    const pause = labeledButton(host, "Pause Agent to use page");
+    const pause = labeledButton(host, "I will operate");
     assert.equal(pause.disabled, true);
     assert.equal(host.textContent.includes("Could not confirm status"), true);
     assert.equal(host.textContent.includes("Could not pause"), false);
@@ -312,7 +326,7 @@ test("yielding unknown and disconnect disable pause without a false failure", as
   }, { controlState: "unknown" });
 
   await mounted(host => {
-    const pause = labeledButton(host, "Pause Agent to use page");
+    const pause = labeledButton(host, "I will operate");
     assert.equal(pause.disabled, true);
     assert.equal(host.textContent.includes("Connection lost"), true);
     assert.equal(host.textContent.includes("Could not pause"), false);
@@ -328,7 +342,7 @@ test("resume stays off after disconnect from a paused page", async () => {
       setBrowserConnection(false);
       ingestBrowserResource(pageRow("paused", 2), "a");
     });
-    const disconnected = labeledButton(host, "Pause Agent to use page") || labeledButton(host, "Continue Agent");
+    const disconnected = labeledButton(host, "I will operate") || labeledButton(host, "Continue Agent");
     assert.ok(disconnected);
     assert.equal(disconnected.disabled, true);
   }, { controlState: "paused" });
@@ -390,5 +404,42 @@ test("history keyboard activation opens the same native menu", async () => {
     assert.equal(menu.popups[0].items[0].label, "click · acknowledged");
     assert.equal(menu.popups[0].items[0].disabled, true);
     assert.equal(document.querySelector('[role="menu"]'), null);
+  });
+});
+
+test("child pointer and keyboard do not fold; cancel does not toggle; expanded role is group", async () => {
+  await mounted(async host => {
+    const float = host.querySelector("[data-browser-control='float']");
+    assert.ok(float);
+    assert.equal(float.getAttribute("data-collapsed"), "false");
+    assert.equal(float.getAttribute("role"), "group");
+    const pause = labeledButton(host, "I will operate");
+    assert.ok(pause);
+    await act(async () => {
+      const down = new window.Event("pointerdown", { bubbles: true, cancelable: true });
+      Object.defineProperties(down, { pointerId: { value: 2 }, button: { value: 0 }, clientX: { value: 4 }, clientY: { value: 4 } });
+      pause.dispatchEvent(down);
+      const up = new window.Event("pointerup", { bubbles: true, cancelable: true });
+      Object.defineProperties(up, { pointerId: { value: 2 }, button: { value: 0 }, clientX: { value: 4 }, clientY: { value: 4 } });
+      pause.dispatchEvent(up);
+    });
+    assert.equal(float.getAttribute("data-collapsed"), "false");
+    assert.ok(labeledButton(host, "I will operate"));
+    await act(async () => {
+      const key = new window.Event("keydown", { bubbles: true, cancelable: true });
+      Object.defineProperty(key, "key", { value: "Enter" });
+      pause.dispatchEvent(key);
+    });
+    assert.equal(float.getAttribute("data-collapsed"), "false");
+    await act(async () => {
+      const down = new window.Event("pointerdown", { bubbles: true, cancelable: true });
+      Object.defineProperties(down, { pointerId: { value: 3 }, button: { value: 0 }, clientX: { value: 2 }, clientY: { value: 2 } });
+      float.dispatchEvent(down);
+      const cancel = new window.Event("pointercancel", { bubbles: true, cancelable: true });
+      Object.defineProperties(cancel, { pointerId: { value: 3 }, button: { value: 0 } });
+      float.dispatchEvent(cancel);
+    });
+    assert.equal(float.getAttribute("data-collapsed"), "false");
+    assert.equal(labeledButton(host, "I will operate").disabled, false);
   });
 });

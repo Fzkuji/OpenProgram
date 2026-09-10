@@ -10,6 +10,7 @@ const {
   powerMonitor,
   session,
   shell,
+  nativeTheme,
 } = require("electron");
 const { execFileSync, spawn } = require("child_process");
 const crypto = require("crypto");
@@ -643,7 +644,9 @@ function reparentRecords(source, target, records) {
   snapshots.targetVisibleViewIds = [...target.visibleViewIds];
   try {
     for (const record of records) {
-      clearActionCue(record);
+      clearActionCue(record, true);
+      closeActionCueWindow(record);
+      closeControlOverlay(record);
       const snapshot = {
         record,
         sourceId: source.id,
@@ -1695,8 +1698,8 @@ const HUMAN_MODIFIER_KEYS = new Set([
   "Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "NumLock",
   "Fn", "FnLock", "Hyper", "Super",
 ]);
-const ACTION_CUE_MS = 1200;
-const ACTION_CUE_SIZE = 12;
+const ACTION_CUE_MS = 2800;
+const ACTION_CUE_SIZE = 28;
 
 function acquireDebugger(webContents) {
   const client = webContents?.debugger;
@@ -1869,42 +1872,144 @@ function actionCueStillCurrent(record, ctx, id, token) {
   return record.actionCueToken === token && recordFor(ctx, id) === record;
 }
 
+function overlayUiOrigin() {
+  let origin = "http://127.0.0.1:" + WEB_PORT;
+  try { origin = new URL(START_URL).origin; } catch { /* fallback */ }
+  return origin;
+}
+
+function stopCueMotion(record) {
+  if (record.actionCueMotionTimer != null) {
+    clearTimeout(record.actionCueMotionTimer);
+    record.actionCueMotionTimer = null;
+  }
+}
+
+function hideActionCueWindow(record) {
+  stopCueMotion(record);
+  const win = record.actionCueWindow;
+  if (!win || win.isDestroyed?.()) return;
+  try { win.hide(); } catch { /* already gone */ }
+}
+
+function closeActionCueWindow(record) {
+  hideActionCueWindow(record);
+  const win = record.actionCueWindow;
+  record.actionCueWindow = null;
+  record.actionCueReady = false;
+  record.actionCueLoaded = false;
+  record.pendingCuePayload = null;
+  if (!win || win.isDestroyed?.()) return;
+  try { win.close(); } catch { /* already closed */ }
+}
+
+function cueWindowContentOrigin(ctx, record, x, y) {
+  const content = ctx.win.getContentBounds ? ctx.win.getContentBounds() : ctx.win.getBounds();
+  const page = record.view.getBounds();
+  const zoom = viewZoomFactor(record);
+  const size = ACTION_CUE_SIZE;
+  return {
+    x: Math.round(content.x + page.x + x * zoom - size / 2),
+    y: Math.round(content.y + page.y + y * zoom - size / 2),
+    width: size,
+    height: size,
+  };
+}
+
+function sendPendingCue(record) {
+  const win = record.actionCueWindow;
+  const payload = record.pendingCuePayload;
+  if (!payload || !win || win.isDestroyed?.() || !record.actionCueReady) return;
+  try { win.webContents.send("webtab:action-cue", payload); } catch { /* overlay not ready */ }
+}
+
+function ensureActionCueWindow(ctx, record) {
+  if (record.actionCueWindow && !record.actionCueWindow.isDestroyed?.()) {
+    return record.actionCueWindow;
+  }
+  const win = new BrowserWindow({
+    parent: ctx.win,
+    frame: false,
+    transparent: true,
+    show: false,
+    focusable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    width: ACTION_CUE_SIZE,
+    height: ACTION_CUE_SIZE,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      additionalArguments: [
+        `--openprogram-window-id=${ctx.id}`,
+        "--openprogram-surface=action-cue",
+      ],
+    },
+  });
+  win.setIgnoreMouseEvents(true, { forward: true });
+  if (typeof win.setMenuBarVisibility === "function") win.setMenuBarVisibility(false);
+  record.actionCueWindow = win;
+  record.actionCueReady = false;
+  record.actionCueLoaded = false;
+  win.webContents.on("did-finish-load", () => {
+    record.actionCueLoaded = true;
+    sendPendingCue(record);
+  });
+  win.loadURL(`${overlayUiOrigin()}/menu-overlay/action-cue`).catch(() => {});
+  bindHostOverlayRelayout(ctx);
+  return win;
+}
+
+function bindHostOverlayRelayout(ctx) {
+  if (!ctx || ctx.hostOverlayMoveBound) return;
+  ctx.hostOverlayMoveBound = true;
+  const relayout = () => {
+    for (const record of ctx.views.values()) {
+      if (record.actionCueHold && record.lastCuePoint) {
+        placeActionCueWindow(record, record.lastCuePoint.x, record.lastCuePoint.y);
+      }
+      layoutControlOverlay(record);
+    }
+  };
+  ctx.win.on("move", relayout);
+  ctx.win.on("resize", relayout);
+}
+
+function placeActionCueWindow(record, x, y) {
+  const ctx = ownerOf(record);
+  const win = record.actionCueWindow;
+  if (!ctx || !win || win.isDestroyed?.()) return;
+  win.setBounds(cueWindowContentOrigin(ctx, record, x, y));
+  if (typeof win.showInactive === "function") win.showInactive();
+  else win.show();
+}
+
 async function cleanupCue(record, token) {
   if (token == null || !record) return false;
   const acquired = record.actionCueAcquiredTokens;
   if (!acquired || !acquired.has(token)) return false;
   acquired.delete(token);
-  const wc = record.view?.webContents;
   const ownsOverlay = record.actionCueHoldToken === token;
   if (ownsOverlay) {
     record.actionCueHold = false;
     record.actionCueHoldToken = null;
-  }
-  try {
-    const client = wc?.debugger;
-    if (ownsOverlay && client && !wc.isDestroyed?.()) {
-      if (record.actionCueHoldToken == null || record.actionCueHoldToken === token) {
-        try { await client.sendCommand("Overlay.hideHighlight"); } catch { /* overlay may be unavailable */ }
-      }
-      if (record.actionCueHoldToken == null || record.actionCueHoldToken === token) {
-        try { await client.sendCommand("Overlay.disable"); } catch { /* overlay may be unavailable */ }
-      }
-    }
-  } finally {
-    releaseDebugger(wc);
+    hideActionCueWindow(record);
   }
   return true;
 }
 
-function clearActionCue(record) {
+function clearActionCue(record, forgetLast) {
   if (!record) return false;
   if (record.actionCueTimer != null) {
     clearTimeout(record.actionCueTimer);
     record.actionCueTimer = null;
   }
+  stopCueMotion(record);
   const holdToken = record.actionCueHoldToken;
   record.actionCueToken = (record.actionCueToken || 0) + 1;
   void cleanupCue(record, holdToken);
+  if (forgetLast) record.lastCuePoint = null;
   return true;
 }
 
@@ -1951,46 +2056,61 @@ async function showActionView(ctx, id, marker) {
   await cleanupCue(record, previousHold);
   if (!actionCueStillCurrent(record, ctx, id, token)) return false;
 
-  const wc = record.view.webContents;
-  const client = acquireDebugger(wc);
-  if (!client) return false;
+  let win;
+  try {
+    win = ensureActionCueWindow(ctx, record);
+  } catch {
+    return false;
+  }
+  if (!win) return false;
   if (!record.actionCueAcquiredTokens) record.actionCueAcquiredTokens = new Set();
   record.actionCueAcquiredTokens.add(token);
   record.actionCueHold = true;
   record.actionCueHoldToken = token;
-  const size = Math.max(
-    1,
-    Math.min(ACTION_CUE_SIZE, Math.round(current.width), Math.round(current.height)),
-  );
-  const cueX = Math.max(0, Math.min(Math.round(x - size / 2), Math.round(current.width) - size));
-  const cueY = Math.max(0, Math.min(Math.round(y - size / 2), Math.round(current.height) - size));
-  try {
-    await client.sendCommand("Overlay.enable");
-    if (!actionCueStillCurrent(record, ctx, id, token)) {
-      await cleanupCue(record, token);
-      return false;
-    }
-    await client.sendCommand("Overlay.highlightRect", {
-      x: cueX,
-      y: cueY,
-      width: size,
-      height: size,
-      color: { r: 56, g: 189, b: 248, a: 0 },
-      outlineColor: { r: 56, g: 189, b: 248, a: 0.85 },
-    });
-    if (!actionCueStillCurrent(record, ctx, id, token)) {
-      await cleanupCue(record, token);
-      return false;
-    }
+  const reducedMotion = marker.reducedMotion === true
+    || !!(nativeTheme && nativeTheme.prefersReducedMotion);
+  const last = record.lastCuePoint || null;
+  const next = { x, y };
+  const animateMove = !!(last && !reducedMotion && (last.x !== next.x || last.y !== next.y));
+  const finish = () => {
+    if (!actionCueStillCurrent(record, ctx, id, token)) return;
+    placeActionCueWindow(record, next.x, next.y);
+    record.pendingCuePayload = {
+      play: reducedMotion ? "never" : "once",
+      playSeq: sequence,
+      reducedMotion,
+    };
+    sendPendingCue(record);
+    record.lastCuePoint = next;
     rememberActionCueIdentity(record, sequence, generation, hasGeneration, resourceId);
     record.actionCueTimer = setTimeout(() => {
       if (record.actionCueToken === token) clearActionCue(record);
     }, ACTION_CUE_MS);
+  };
+  if (!animateMove) {
+    placeActionCueWindow(record, next.x, next.y);
+    finish();
     return true;
-  } catch {
-    await cleanupCue(record, token);
-    return false;
   }
+  const dx = next.x - last.x;
+  const dy = next.y - last.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const duration = Math.min(280, Math.max(80, Math.round(dist * 0.4)));
+  const started = Date.now();
+  placeActionCueWindow(record, last.x, last.y);
+  const step = () => {
+    if (!actionCueStillCurrent(record, ctx, id, token)) return;
+    const t = Math.min(1, (Date.now() - started) / duration);
+    const ease = t * (2 - t);
+    placeActionCueWindow(record, last.x + dx * ease, last.y + dy * ease);
+    if (t < 1) {
+      record.actionCueMotionTimer = setTimeout(step, 16);
+      return;
+    }
+    finish();
+  };
+  record.actionCueMotionTimer = setTimeout(step, 16);
+  return true;
 }
 
 function sendState(record, extra) {
@@ -2221,11 +2341,19 @@ function ensureView(ctx, id, url) {
     view.setBounds = (bounds) => {
       const prev = view.getBounds();
       nativeSetBounds(bounds);
-      if (boundsDiffer(prev, view.getBounds())) clearActionCue(record);
+      if (boundsDiffer(prev, view.getBounds())) {
+        clearActionCue(record, true);
+        layoutControlOverlay(record);
+      }
     };
     view.setVisible = (visible) => {
       nativeSetVisible(visible);
-      if (!visible) clearActionCue(record);
+      if (!visible) {
+        clearActionCue(record, true);
+        hideControlOverlay(record);
+      } else {
+        layoutControlOverlay(record);
+      }
     };
     ctx.views.set(id, record);
     ctx.win.contentView.addChildView(view);
@@ -2284,9 +2412,9 @@ function ensureView(ctx, id, url) {
       sendState(record, { faviconUrl: "" });
     });
     wc.on("found-in-page", (_event, result) => forwardFindResult(record, result));
-    wc.on("did-navigate", () => clearActionCue(record));
+    wc.on("did-navigate", () => clearActionCue(record, true));
     wc.on("did-navigate-in-page", (_event, _url, isMainFrame) => {
-      if (isMainFrame) clearActionCue(record);
+      if (isMainFrame) clearActionCue(record, true);
     });
     wc.on("before-input-event", (event, input) => {
       if (handleWebTabShortcut(record, event, input)) return;
@@ -2788,7 +2916,9 @@ function runNativeNavigation(ctx, id, navigate, humanKind = null) {
 function destroyView(ctx, id) {
   const record = recordFor(ctx, id);
   if (!record) return false;
-  clearActionCue(record);
+  clearActionCue(record, true);
+  closeActionCueWindow(record);
+  closeControlOverlay(record);
   ctx.visibleViewIds.delete(id);
   record.navigation = null;
   ctx.views.delete(id);
@@ -3156,6 +3286,203 @@ function contextForMenuSender(event) {
   return null;
 }
 
+function controlOverlayOwner(event) {
+  const sender = event?.sender;
+  if (!sender) return null;
+  try {
+    if (new URL(sender.getURL()).origin !== UI_ORIGIN) return null;
+  } catch {
+    return null;
+  }
+  for (const ctx of windows.values()) {
+    if (ctx.win.isDestroyed()) continue;
+    for (const record of ctx.views.values()) {
+      if (record.ownerId !== ctx.id) continue;
+      if (record.controlOverlayView && record.controlOverlayView.webContents === sender) {
+        return { ctx, record };
+      }
+    }
+  }
+  return null;
+}
+
+function actionCueOwner(event) {
+  const sender = event?.sender;
+  if (!sender) return null;
+  for (const ctx of windows.values()) {
+    if (ctx.win.isDestroyed()) continue;
+    for (const record of ctx.views.values()) {
+      if (record.actionCueWindow && record.actionCueWindow.webContents === sender) {
+        return { ctx, record };
+      }
+    }
+  }
+  return null;
+}
+
+function hideControlOverlay(record) {
+  const view = record.controlOverlayView;
+  if (!view || view.webContents?.isDestroyed?.()) return;
+  try { view.setVisible(false); } catch { /* gone */ }
+}
+
+function closeControlOverlay(record) {
+  const ctx = ownerOf(record);
+  const view = record.controlOverlayView;
+  record.controlOverlayView = null;
+  record.controlReady = false;
+  record.controlPayload = null;
+  if (!view) return;
+  if (ctx && !ctx.win.isDestroyed()) {
+    try { ctx.win.contentView.removeChildView(view); } catch { /* detached */ }
+  }
+  try { view.webContents.close(); } catch { /* closed */ }
+}
+
+function clampControlLayout(record, width, height) {
+  const page = record.view.getBounds();
+  const collapsed = record.controlCollapsed !== false;
+  const sizeW = Math.max(1, Math.round(width || (collapsed ? 36 : 280)));
+  const sizeH = Math.max(1, Math.round(height || (collapsed ? 36 : 44)));
+  const maxLeft = Math.max(4, page.width - sizeW - 4);
+  const maxTop = Math.max(4, page.height - sizeH - 4);
+  let left = Number.isFinite(record.controlLeft) ? record.controlLeft : Math.max(8, page.width - sizeW - 12);
+  let top = Number.isFinite(record.controlTop) ? record.controlTop : Math.max(8, page.height - sizeH - 12);
+  left = Math.min(Math.max(4, left), maxLeft);
+  top = Math.min(Math.max(4, top), maxTop);
+  record.controlLeft = left;
+  record.controlTop = top;
+  record.controlWidth = sizeW;
+  record.controlHeight = sizeH;
+  return {
+    x: Math.round(page.x + left),
+    y: Math.round(page.y + top),
+    width: sizeW,
+    height: sizeH,
+  };
+}
+
+function sendControlOverlayUpdate(record) {
+  const view = record.controlOverlayView;
+  const payload = record.controlPayload;
+  if (!payload || !view || view.webContents.isDestroyed() || !record.controlReady) return;
+  try {
+    view.webContents.send("webtab:control-overlay-update", {
+      ...payload,
+      collapsed: record.controlCollapsed !== false,
+    });
+  } catch { /* overlay not ready */ }
+}
+
+function layoutControlOverlay(record) {
+  const view = record.controlOverlayView;
+  if (!view || view.webContents?.isDestroyed?.()) return;
+  if (!record.controlPayload) {
+    hideControlOverlay(record);
+    return;
+  }
+  const ctx = ownerOf(record);
+  if (!ctx || !ctx.visibleViewIds.has(record.id)) {
+    hideControlOverlay(record);
+    return;
+  }
+  view.setBounds(clampControlLayout(record, record.controlWidth, record.controlHeight));
+  view.setVisible(true);
+  sendControlOverlayUpdate(record);
+}
+
+function setControlOverlay(ctx, id, payload) {
+  const record = recordFor(ctx, id);
+  if (!record) return false;
+  if (payload == null) {
+    record.controlPayload = null;
+    hideControlOverlay(record);
+    return true;
+  }
+  if (typeof payload !== "object") return false;
+  if (typeof payload.resourceId !== "string" || !payload.resourceId) return false;
+  if (!finiteNumber(payload.generation) || payload.generation < 0) return false;
+  record.controlPayload = payload;
+  if (record.controlCollapsed === undefined) record.controlCollapsed = true;
+  let view = record.controlOverlayView;
+  if (!view || view.webContents.isDestroyed()) {
+    view = new WebContentsView({
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        transparent: true,
+        additionalArguments: [
+          `--openprogram-window-id=${ctx.id}`,
+          "--openprogram-surface=browser-control",
+        ],
+      },
+    });
+    view.setBackgroundColor("#00000000");
+    record.controlOverlayView = view;
+    record.controlReady = false;
+    ctx.win.contentView.addChildView(view);
+    view.webContents.on("did-finish-load", () => {
+      sendControlOverlayUpdate(record);
+    });
+    view.webContents.loadURL(`${overlayUiOrigin()}/menu-overlay/browser-control`).catch(() => {});
+  }
+  bindHostOverlayRelayout(ctx);
+  layoutControlOverlay(record);
+  return true;
+}
+
+function handleControlOverlayEvent(event, payload) {
+  const owner = controlOverlayOwner(event);
+  if (!owner || !payload || typeof payload !== "object") return;
+  const { ctx, record } = owner;
+  const type = payload.type;
+  if (type === "ready") {
+    record.controlReady = true;
+    sendControlOverlayUpdate(record);
+    return;
+  }
+  if (type === "layout") {
+    if (typeof payload.collapsed === "boolean") record.controlCollapsed = payload.collapsed;
+    if (finiteNumber(payload.width)) record.controlWidth = payload.width;
+    if (finiteNumber(payload.height)) record.controlHeight = payload.height;
+    layoutControlOverlay(record);
+    return;
+  }
+  if (type === "move") {
+    if (!finiteNumber(payload.dx) || !finiteNumber(payload.dy)) return;
+    if (payload.id !== record.controlPayload?.resourceId) return;
+    if (payload.generation !== record.controlPayload?.generation) return;
+    record.controlLeft = (record.controlLeft || 0) + payload.dx;
+    record.controlTop = (record.controlTop || 0) + payload.dy;
+    layoutControlOverlay(record);
+    return;
+  }
+  if (type === "history") {
+    if (payload.id !== record.controlPayload?.resourceId) return;
+    if (payload.generation !== record.controlPayload?.generation) return;
+    const items = Array.isArray(record.controlPayload.historyItems)
+      ? record.controlPayload.historyItems
+      : [{ id: "empty", label: record.controlPayload.historyLabel || "Operation history", disabled: true }];
+    const page = record.view.getBounds();
+    void nativeContextMenus.popup(ctx.win, ctx.win.webContents, {
+      requestId: `overlay-history:${record.id}:${Date.now()}`,
+      x: page.x + (record.controlLeft || 0),
+      y: page.y + (record.controlTop || 0) + (record.controlHeight || 36),
+      items,
+    }).catch(() => {});
+    return;
+  }
+  if (type !== "pause" && type !== "resume" && type !== "toggle-show") return;
+  if (payload.id !== record.controlPayload?.resourceId) return;
+  if (payload.generation !== record.controlPayload?.generation) return;
+  ctx.win.webContents.send("webtab:control-overlay-event", {
+    type,
+    id: payload.id,
+    generation: payload.generation,
+  });
+}
+
 const nativeContextMenus = require("./native-context-menu").createNativeContextMenus(Menu);
 function nativeMenuOwner(event) {
   const ctx = contextForSender(event);
@@ -3319,6 +3646,26 @@ function registerWebTabIpc() {
   ipcMain.handle("webtab:show-action", (event, id, marker) => {
     const ctx = contextForSender(event);
     return ctx && typeof id === "string" ? showActionView(ctx, id, marker) : false;
+  });
+  ipcMain.on("webtab:control-overlay", (event, id, payload) => {
+    const ctx = contextForSender(event);
+    if (!ctx || typeof id !== "string") return;
+    setControlOverlay(ctx, id, payload);
+  });
+  ipcMain.on("webtab:control-overlay-ready", (event) => {
+    const owner = controlOverlayOwner(event);
+    if (!owner) return;
+    owner.record.controlReady = true;
+    sendControlOverlayUpdate(owner.record);
+  });
+  ipcMain.on("webtab:control-overlay-event", (event, payload) => {
+    handleControlOverlayEvent(event, payload);
+  });
+  ipcMain.on("webtab:action-cue-ready", (event) => {
+    const owner = actionCueOwner(event);
+    if (!owner) return;
+    owner.record.actionCueReady = true;
+    sendPendingCue(owner.record);
   });
   ipcMain.handle("history:list", (_event, options) => {
     try {

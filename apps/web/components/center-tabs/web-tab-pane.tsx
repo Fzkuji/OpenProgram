@@ -54,6 +54,8 @@ import {
   isHumanYieldEvent,
   markScopeYielding,
   requestExplicitPause,
+  requestResumeAgent,
+  toggleShowActions,
 } from "@/lib/state/browser-control";
 import {
   listedBrowserResources,
@@ -63,7 +65,19 @@ import {
 import { isWebTabOccluded, measureWebTabBounds } from "@/lib/web-tab-bounds";
 import styles from "./center-tabs.module.css";
 import { BookmarkBar, BookmarksLibraryButton, BrowserMenu } from "./browser-controls";
-import { BrowserControlBar } from "./browser-control-bar";
+import { ActionCueTravel, BrowserControlBar } from "./browser-control-bar";
+import {
+  controlSurfaceVisible,
+  cueCancelKey,
+  prefersCueReducedMotion,
+} from "@/lib/state/browser-action-cue";
+import {
+  liveOperationMarker,
+  operationHistory,
+  resumeErrorFor,
+  showActionsEnabled,
+  useBrowserControlStore,
+} from "@/lib/state/browser-control";
 
 export function WebTabPane({ tabId, url }: { tabId: string; url: string }) {
   // Bridge presence is fixed for the lifetime of the page (preload
@@ -155,6 +169,41 @@ function WebPaneStage({
   return <div className={styles.webStage}>{children}</div>;
 }
 
+function IframeAgentLayer({
+  tabId,
+  resource,
+  navKey,
+}: {
+  tabId: string;
+  resource: ReturnType<typeof resourceForLiveTab>;
+  navKey: string;
+}) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  useBrowserControlStore(s => s.markers);
+  useBrowserControlStore(s => s.showActions);
+  const marker = resource ? liveOperationMarker(resource.resourceId, { generation: resource.generation }) : null;
+  const point = marker?.point ? { x: marker.point.x, y: marker.point.y } : null;
+  const state = resource ? displayedControlState(resource) : undefined;
+  if (!controlSurfaceVisible(state) && !point) return null;
+  return (
+    <div ref={stageRef} className={styles.browserFloatLayer} data-tab={tabId}>
+      <ActionCueTravel
+        point={point}
+        resourceKey={resource?.resourceId || tabId}
+        operationKey={marker?.id}
+        cancelKey={cueCancelKey({
+          resourceId: resource?.resourceId || tabId,
+          generation: resource?.generation || 0,
+          geometryRevision: marker?.geometry_revision,
+          navKey,
+        })}
+        reducedMotion={prefersCueReducedMotion()}
+      />
+      <BrowserControlBar resource={resource} compact surface="float" />
+    </div>
+  );
+}
+
 function HomeButton({ tabId }: { tabId: string }) {
   const { text } = useTranslation();
   const label = text("Home", "主页");
@@ -189,7 +238,82 @@ function DesktopWebTabPane({
   const updateWebTab = useCenterTabs((s) => s.updateWebTab);
   const title = useCenterTabs((s) => s.tabs.find((tab) => tab.id === tabId)?.title || url);
   useBrowserResourceStore(s => s.ingestClock);
+  useBrowserControlStore(s => s.showActions);
+  useBrowserControlStore(s => s.pending);
+  useBrowserControlStore(s => s.resumeError);
+  useBrowserControlStore(s => s.history);
+  const connected = useBrowserResourceStore(s => s.connected);
   const control = resourceForLiveTab(tabId);
+  useEffect(() => {
+    const setOverlay = bridge.webTab.setControlOverlay;
+    if (!setOverlay) return;
+    if (!control || !controlSurfaceVisible(displayedControlState(control))) {
+      setOverlay(tabId, null);
+      return;
+    }
+    const state = displayedControlState(control);
+    const pauseLabel = state === "paused"
+      ? text("Continue Agent", "让 Agent 继续")
+      : state === "yielding"
+        ? text("Pausing…", "正在暂停…")
+        : state === "stop_unconfirmed"
+          ? text("Retry pause", "重试暂停")
+          : text("I will operate", "我来操作");
+    const status = state === "yielding" ? text("Pausing…", "正在暂停…")
+      : state === "paused" ? text("Paused", "已暂停")
+      : state === "stop_unconfirmed" ? text("Could not pause. Try again", "暂停失败，请重试")
+      : state === "unknown" ? (connected
+        ? text("Could not confirm status", "无法确认状态")
+        : text("Connection lost", "连接已断开"))
+      : text("Active", "活动中");
+    const history = operationHistory(control.resourceId);
+    const historyItems = history.length === 0
+      ? [{ id: "empty", label: text("No operations yet.", "尚无操作。"), disabled: true }]
+      : history.map(item => ({
+        id: item.id,
+        label: `${item.action} · ${item.phase}${item.error ? ` · ${item.error}` : ""}`,
+        disabled: true,
+      }));
+    const payload = {
+      resourceId: control.resourceId,
+      generation: control.generation,
+      conversationSessionId: control.conversationSessionId,
+      controlState: state,
+      showActions: showActionsEnabled(),
+      connected: !!connected,
+      status,
+      pauseLabel,
+      showLabel: text("Show actions", "显示操作"),
+      historyLabel: text("Operation history", "操作历史"),
+      notice: resumeErrorFor(control.resourceId)
+        || (state === "stop_unconfirmed" || state === "unknown" ? status : undefined),
+      pauseDisabled: state === "yielding" || state === "unknown" || !connected,
+      resumeDisabled: !connected || state !== "paused",
+      showTakeover: true,
+      expandLabel: text("Small draggable Agent button. Click to expand. Drag to move.", "可拖动的 Agent 按钮。点击展开。拖动移动。"),
+      foldLabel: text("Agent controls. Click to fold. Drag to move.", "Agent 控制。点击收起。拖动移动。"),
+      dismissLabel: text("Dismiss", "关闭"),
+      dragLabel: text("Drag to move", "拖动移动"),
+      historyItems,
+    };
+    setOverlay(tabId, payload);
+  }, [bridge, tabId, control, connected, text]);
+  useEffect(() => {
+    const setOverlay = bridge.webTab.setControlOverlay;
+    if (!setOverlay) return;
+    return () => { setOverlay(tabId, null); };
+  }, [bridge, tabId]);
+  useEffect(() => {
+    return bridge.webTab.onControlOverlayEvent?.((event) => {
+      if (!control) return;
+      if (event.type !== "pause" && event.type !== "resume" && event.type !== "toggle-show") return;
+      if (event.id !== control.resourceId && event.id !== tabId) return;
+      if (event.generation !== control.generation) return;
+      if (event.type === "pause") void requestExplicitPause(control);
+      if (event.type === "resume") void requestResumeAgent(control);
+      if (event.type === "toggle-show") toggleShowActions();
+    }) ?? (() => {});
+  }, [bridge, tabId, control]);
   // 历史遗留的白屏竞态可能把 store 里的 url 冲成空串；tab id 本身带着
   // 原始 URL（"w:<url>"），空 url 时从 id 找回，老 tab 自愈。
   const effectiveUrl =
@@ -488,7 +612,6 @@ function DesktopWebTabPane({
           canGoForward={canGoForward}
         />
       </div>
-      <BrowserControlBar resource={control} compact />
       <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
       </div>
       {findOpen ? (
@@ -628,7 +751,6 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
           }}
         />
       </div>
-      <BrowserControlBar resource={control} compact />
       <BookmarkBar ownerId={menuOwnerId} onNavigate={navigateTo} />
       </div>
       {url.startsWith("file:") ? (
@@ -677,6 +799,7 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
             title={text("Web page", "网页")}
             onPointerDown={() => yieldFromLiveTab(tabId, { type: "pointerdown" })}
           />
+          <IframeAgentLayer tabId={tabId} resource={control} navKey={`${url}:${frameEpoch}`} />
           </WebPaneStage>
         </>
       )}
