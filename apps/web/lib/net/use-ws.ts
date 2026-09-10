@@ -537,6 +537,22 @@ export function useWS(): void {
           getQueryClient()?.invalidateQueries({ queryKey: ["models-enabled"] });
           return true;
         }
+        case "provider_models_changed": {
+          const provider = typeof d?.provider === "string" ? d.provider : "";
+          const queryClient = getQueryClient();
+          queryClient?.invalidateQueries({ queryKey: ["models-enabled"] });
+          queryClient?.invalidateQueries({ queryKey: ["providers"] });
+          if (provider) {
+            queryClient?.invalidateQueries({ queryKey: ["models", provider] });
+          }
+          // The current settings surface still owns its provider-model rows
+          // as local component state.  Give it the same invalidation signal;
+          // this can disappear once that surface is migrated to React Query.
+          window.dispatchEvent(new CustomEvent("op:provider-models-changed", {
+            detail: { provider },
+          }));
+          return true;
+        }
         case "chat_session_update":
           if (d?.session_id && runtimeState._agentSettings.chat) {
             runtimeState._agentSettings.chat.session_id = d.session_id;
@@ -887,6 +903,13 @@ export function useWS(): void {
         // app-shell route effect — send agent_settings + the initial
         // session load so badges + transcript reflect the right conv.
         loadAgentSettings();
+        // A catalogue change may have happened while this window was
+        // disconnected. Re-read active model queries on every reconnect.
+        getQueryClient()?.invalidateQueries({ queryKey: ["models-enabled"] });
+        getQueryClient()?.invalidateQueries({ queryKey: ["providers"] });
+        window.dispatchEvent(new CustomEvent("op:provider-models-changed", {
+          detail: { provider: "" },
+        }));
         const desktopWindowId = (
           window as unknown as { openprogramDesktop?: { windowId?: string } }
         ).openprogramDesktop?.windowId;

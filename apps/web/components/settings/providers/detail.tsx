@@ -88,6 +88,15 @@ export function Detail({
     reloadModels();
   }, [reloadModels]);
 
+  useEffect(() => {
+    const refreshChangedProvider = (event: Event) => {
+      const changed = (event as CustomEvent<{ provider?: string }>).detail?.provider;
+      if (!changed || changed === provider.id) void reloadModels();
+    };
+    window.addEventListener("op:provider-models-changed", refreshChangedProvider);
+    return () => window.removeEventListener("op:provider-models-changed", refreshChangedProvider);
+  }, [provider.id, reloadModels]);
+
   // After a NEW key is saved: auto-run the connectivity check (its
   // inline ✓/✗ result shows in the Connectivity row, exactly as if the
   // user clicked "Check") and, on success, fetch the model list and

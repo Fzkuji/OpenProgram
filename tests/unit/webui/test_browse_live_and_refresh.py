@@ -353,3 +353,25 @@ def test_subscription_refresh_auto_syncs_catalog_and_respects_disables(
     rows = mem_cfg["xai-subscription"]["models"]
     assert [row["id"] for row in rows] == ["grok-4.6"]
     assert rows[0]["source"] == "subscription-catalog"
+
+
+def test_subscription_refresh_broadcasts_only_when_catalogue_changes(
+    monkeypatch, mem_cfg,
+):
+    mem_cfg["xai-subscription"] = {"enabled": True, "models": []}
+    monkeypatch.setattr(
+        listing, "_browse_models_with_error",
+        lambda *_a, **_k: ([{"id": "grok-4.6", "name": "Grok 4.6"}], None),
+    )
+    import openprogram.providers.enabled_models as mg
+    monkeypatch.setattr(mg, "reload", lambda: None)
+    frames = []
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
+
+    F.fetch_models_remote("xai-subscription")
+    F.fetch_models_remote("xai-subscription")
+
+    assert frames == [{
+        "type": "provider_models_changed",
+        "data": {"provider": "xai-subscription"},
+    }]

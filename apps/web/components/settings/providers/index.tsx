@@ -83,6 +83,15 @@ export function ProvidersSection({ initialProviderId }: { initialProviderId?: st
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    const refreshProviders = () => {
+      invalidate("/api/providers/list");
+      void reload(true);
+    };
+    window.addEventListener("op:provider-models-changed", refreshProviders);
+    return () => window.removeEventListener("op:provider-models-changed", refreshProviders);
+  }, [reload]);
+
   // Keep selection aligned with the route param (changes on navigation).
   useEffect(() => {
     if (initialProviderId) setSelectedId(initialProviderId);

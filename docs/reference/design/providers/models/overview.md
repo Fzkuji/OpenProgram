@@ -139,6 +139,10 @@ enable_model(provider_id, row)
   official model table. New ids are enabled automatically, changed capability
   rows are refreshed, removed ids retire, and explicit disables stay disabled.
   Adding a future Codex or Grok model does not require a source-code list edit.
+  When the persisted enabled rows actually change, the worker broadcasts a
+  `provider_models_changed` invalidation hint. Connected web and desktop
+  clients then re-read the provider and enabled-model endpoints; reconnecting
+  clients invalidate the same queries to cover events missed while offline.
 
 ## 5. How the backend uses it
 

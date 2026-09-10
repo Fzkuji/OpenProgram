@@ -291,12 +291,14 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
 
     refreshed: list[str] = []
     added: list[str] = []
+    catalogue_changed = False
     with _cache_lock:
         changed = False
 
         def refresh(cfg: dict) -> None:
-            nonlocal changed
+            nonlocal changed, catalogue_changed
             pcfg = cfg.setdefault(provider_id, {})
+            before_models = list(pcfg.get("models") or [])
             from openprogram.providers.subscription_catalog import SUBSCRIPTION_PROVIDERS
 
             auto_catalog = provider_id in SUBSCRIPTION_PROVIDERS and not error
@@ -328,6 +330,7 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
                     or row.get("source") == "manual"
                     or pcfg.get("source") == "custom"
                 ]
+                catalogue_changed = before_models != pcfg.get("models", [])
                 return
             enabled_ids = [
                 row.get("id")
@@ -343,7 +346,23 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
                 refreshed.append(mid)
                 changed = True
 
+            catalogue_changed = before_models != pcfg.get("models", [])
+
         _update_providers_cfg(refresh)
+
+    if catalogue_changed:
+        # The worker may refresh while a browser or desktop window is already
+        # open.  Push only an invalidation hint; each client then re-reads the
+        # canonical HTTP endpoints instead of trusting event payload data.
+        try:
+            from openprogram.events import emit_ws_frame
+
+            emit_ws_frame({
+                "type": "provider_models_changed",
+                "data": {"provider": provider_id},
+            })
+        except Exception:
+            pass
 
     out = {
         "provider": provider_id,
