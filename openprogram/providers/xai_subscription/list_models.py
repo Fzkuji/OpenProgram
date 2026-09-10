@@ -19,6 +19,26 @@ from typing import Any
 from .headers import CLI_CHAT_PROXY_BASE_URL, grok_cli_headers
 
 
+_KNOWN_MODEL_METADATA: dict[str, dict[str, Any]] = {
+    "grok-4.6": {
+        "name": "Grok 4.6",
+        "input": ["text", "image"],
+        "context_window": 500_000,
+        "max_tokens": 500_000,
+        "reasoning": True,
+        "thinking_levels": ["low", "medium", "high", "xhigh"],
+        "default_thinking_level": "high",
+    },
+    "grok-4.5": {
+        "name": "Grok 4.5",
+        "input": ["text", "image"],
+        "context_window": 500_000,
+        "max_tokens": 500_000,
+        "reasoning": True,
+    },
+}
+
+
 def _token(provider_id: str) -> str:
     from openprogram.providers.env_api_keys import resolve_api_key_with_auth_store
 
@@ -71,7 +91,16 @@ def fetch(provider_id: str, timeout: float) -> Any:
             continue
         mid = (mid or "").strip()
         if mid:
-            out.append({"id": mid, "name": mid})
+            row = {"id": mid, "name": mid}
+            row.update(_KNOWN_MODEL_METADATA.get(mid, {}))
+            if isinstance(raw, dict):
+                context = raw.get("context_window") or raw.get("context_length")
+                maximum = raw.get("max_tokens") or raw.get("max_output_tokens")
+                if context:
+                    row["context_window"] = int(context)
+                if maximum:
+                    row["max_tokens"] = int(maximum)
+            out.append(row)
     if not out:
         return {"error": "Grok subscription returned an empty model list"}
     return out

@@ -16,9 +16,14 @@ from openprogram.events import (
     get_event_bus,
     make_event,
 )
+from openprogram.events.registry import EVENTS
 
 
 # Event / make_event
+
+
+def test_ws_frame_is_registered():
+    assert WS_FRAME_EVENT in EVENTS
 
 def test_make_event_fills_identity_and_defaults():
     ev = make_event("tool.before", "agent", payload={"tool": "bash"})

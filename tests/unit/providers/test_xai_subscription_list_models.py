@@ -44,6 +44,7 @@ def test_fetch_hits_cli_proxy_with_grok_headers(monkeypatch):
     )
     out = X.fetch("xai-subscription", 5.0)
     assert [m["id"] for m in out] == ["grok-4.5", "grok-4"]
+    assert out[0]["context_window"] == 500_000
     assert calls["url"] == "https://cli-chat-proxy.grok.com/v1/models"
     assert calls["headers"].get("X-XAI-Token-Auth") == "xai-grok-cli"
     assert calls["headers"].get("Authorization") == "Bearer tok_abc"

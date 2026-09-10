@@ -31,6 +31,9 @@ list), never blank — you can't dispatch a Codex model without a token anyway.
 """
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import Any
 
 # The framework's Codex thinking picker only knows these effort levels
@@ -86,6 +89,27 @@ def _normalise_codex_model(m: dict[str, Any]) -> dict[str, Any] | None:
     return row
 
 
+def _cached_codex_models() -> list[dict[str, Any]]:
+    """Read the official Codex CLI cache as an offline Fetch fallback."""
+    root = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    try:
+        payload = json.loads((root / "models_cache.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    raw_models = payload.get("models") if isinstance(payload, dict) else payload
+    if not isinstance(raw_models, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for raw in raw_models:
+        if not isinstance(raw, dict):
+            continue
+        row = _normalise_codex_model(raw)
+        if row:
+            row["source"] = "codex-cli-cache"
+            rows.append(row)
+    return rows
+
+
 def fetch(provider_id: str, timeout: float) -> Any:
     """Live Codex fetch via the account's models endpoint.
 
@@ -121,6 +145,9 @@ def fetch(provider_id: str, timeout: float) -> Any:
         resp.raise_for_status()
         payload = resp.json()
     except Exception as exc:
+        cached = _cached_codex_models()
+        if cached:
+            return cached
         return {"error": (
             f"could not reach the Codex models endpoint ({type(exc).__name__}) — your existing "
             "Codex model list was kept. Try Fetch again when online."
@@ -135,5 +162,8 @@ def fetch(provider_id: str, timeout: float) -> Any:
             out.append(row)
 
     if not out:
+        cached = _cached_codex_models()
+        if cached:
+            return cached
         return {"error": "Codex models endpoint returned no usable models"}
     return out

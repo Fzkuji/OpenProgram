@@ -39,11 +39,13 @@ from . import auth_adapter
 # some ids behind a minimum client version (``gpt-5.6-*`` needs ≥ 0.144.0), and
 # dispatch only serves a model to a recognised ``originator: codex_cli_rs`` at
 # or above that version — so this string must track a real released CLI.
-_CODEX_CLIENT_VERSION = "0.144.1"
+_CODEX_CLIENT_VERSION = "0.153.4"
 
 
 def _codex_supports_xhigh(model_id: str) -> bool:
-    return any(tag in model_id for tag in ("gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5"))
+    return any(tag in model_id for tag in (
+        "gpt-5.2", "gpt-5.3", "gpt-5.4", "gpt-5.5", "gpt-5.6", "gpt-6",
+    ))
 
 
 def _display_name_for_codex_model(model_id: str) -> str:

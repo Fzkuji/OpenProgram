@@ -52,12 +52,24 @@ def test_fresh_login_writes_claude_code_defaults(monkeypatch):
     assert "claude-code/claude-opus-4-8" in mg.ENABLED_MODELS
 
 
-def test_fresh_login_writes_small_codex_default(monkeypatch):
+def test_fresh_login_writes_current_codex_defaults(monkeypatch):
     _mem_config(monkeypatch, {})
     written = le.enable_default_models_on_login("openai-codex")
-    # SMALL set, not the whole seed list of 11.
-    assert 1 <= len(written) <= 3
-    assert "gpt-5.5" in written
+    assert set(written) == {
+        "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+        "gpt-5.5", "gpt-5.3-codex-spark",
+    }
+    rows = le._DEFAULTS["openai-codex"]
+    sol = next(row for row in rows if row["id"] == "gpt-5.6-sol")
+    assert "minimal" not in sol["thinking_levels"]
+
+
+def test_fresh_login_includes_grok_46_metadata(monkeypatch):
+    _mem_config(monkeypatch, {})
+    written = le.enable_default_models_on_login("xai-subscription")
+    assert written[0] == "grok-4.6"
+    row = le._DEFAULTS["xai-subscription"][0]
+    assert row["context_window"] == 500_000
 
 
 def test_login_enable_idempotent_and_respects_disable(monkeypatch):

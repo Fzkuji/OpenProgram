@@ -7,7 +7,7 @@ bypass 那样盲目放行。
 三级过滤（省 LLM 调用）：
   1. 明显安全（只读工具）→ 直接放行，不调 LLM
   2. 明显危险（bash/exec/shell 等代码执行）→ 直接拒，不调 LLM
-  3. 拿不准（write/edit 等）→ 调一次 haiku 判定
+  3. 拿不准（write/edit 等）→ 调一次已配置模型判定
 LLM 不可用/出错 → fail-safe 拒（auto 档下宁可拦错，不放过危险）。
 """
 from __future__ import annotations
@@ -45,8 +45,33 @@ async def auto_classify_tool(tool_name: str, args: dict) -> tuple[bool, str]:
             Context, UserMessage, SimpleStreamOptions,
         )
 
-        model = (get_model("anthropic", "claude-haiku-4-5-20251001")
-                 or get_model("anthropic", "claude-sonnet-4-6"))
+        # Prefer the connected lightweight Grok subscription, then reuse the
+        # owner's configured default or main agent model. Auto mode previously
+        # required Anthropic even when a working Codex or Grok subscription
+        # was already selected, so every write/edit failed closed on those
+        # installations.
+        model = get_model("xai-subscription", "grok-4.6")
+        try:
+            from openprogram.providers.default_llm import _read_default_model
+
+            pair = _read_default_model()
+            if pair:
+                model = get_model(pair[0], pair[1])
+        except Exception:
+            pass
+        if model is None:
+            try:
+                from openprogram.agent.internals._model_tools import (
+                    load_agent_profile,
+                    resolve_model,
+                )
+
+                model = resolve_model(load_agent_profile("main"), None)
+            except Exception:
+                pass
+        if model is None:
+            model = (get_model("anthropic", "claude-haiku-4-5-20251001")
+                     or get_model("anthropic", "claude-sonnet-4-6"))
         if model is None:
             return True, "分类器模型不可用"
 

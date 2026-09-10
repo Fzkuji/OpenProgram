@@ -15,7 +15,7 @@ The implementation keeps the following outbound paths distinct:
 | Path | Who uses it | Proxy semantics without a shared resolver |
 |---|---|---|
 | Managed client (`providers/utils/http_client.py`) | provider SDK and streaming paths | Uses `safe_http` with a consumer-specific URL policy. A policy proxy is explicit in `OutboundSecurityConfig.policy_proxy`; the client does not activate `get_proxy_mounts()` or unmanaged proxy environment state. |
-| SDK / ad-hoc raw httpx | OpenAI-compat chat (openai SDK inside `openai_completions` / `openai_responses`), OAuth flows, token refresh, model listing, "test provider" button | Full httpx env semantics: lowercase beats uppercase, `ALL_PROXY` honoured, `NO_PROXY` honoured. |
+| SDK / ad-hoc raw httpx | OpenAI-compat chat (openai SDK inside `openai_completions` / `openai_responses`), OAuth flows, token refresh, "test provider" button | Full httpx env semantics: lowercase beats uppercase, `ALL_PROXY` honoured, `NO_PROXY` honoured. |
 | CLI subprocess | claude_code, codex CLI, gemini CLI | Inherits the shell env; the external CLI does its own proxy handling. |
 
 The managed path deliberately has stronger URL and credential policy than a
@@ -89,11 +89,14 @@ lifecycle validation and SSRF gating, which this design does not need.
   `openprogram/security/safe_http.py` with an injected-transport disposition.
   Their shared-client lifecycle remains explicit; it is not implemented by
   passing `mounts=` from `http_proxy.py`.
-- One-shot raw httpx clients (OAuth flows, token refresh, marketplace,
-  model listing) are plain `httpx.AsyncClient()`s on purpose:
+- One-shot raw httpx clients (OAuth flows, token refresh, marketplace) are
+  plain `httpx.AsyncClient()`s on purpose:
   their env semantics are already identical by construction, and they
   don't need streaming hardening. `OPENPROGRAM_PROXY_URL` does not apply
   to them, which is an accepted limit rather than an oversight.
+- Subscription model listing uses `safe_client("provider.fixed_api")`. It
+  therefore follows `OutboundSecurityConfig.policy_proxy` and deliberately
+  ignores ambient environment and OS proxy settings.
 - A plain httpx caller that opts into SOCKS environment handling must provide
   the corresponding `httpx[socks]` dependency; managed clients do not infer
   that dependency from an ambient `ALL_PROXY`.
