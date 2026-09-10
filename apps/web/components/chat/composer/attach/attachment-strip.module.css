@@ -4,10 +4,10 @@
   gap: 8px;
   align-items: flex-start;
   box-sizing: border-box;
-  max-height: 220px;
+  max-height: 214px;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: 16px 16px 8px;
+  padding: 10px 10px 8px;
 }
 
 .attachmentItem {
