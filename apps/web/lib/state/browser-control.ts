@@ -346,7 +346,13 @@ export function revealPendingApproval(
     import("./center-tabs-store.ts"),
   ]).then(([{ useSessionStore }, { useCenterTabs }]) => {
     const title = useSessionStore.getState().conversations[sessionId]?.title || sessionId;
-    useCenterTabs.getState().openSessionTab(sessionId, title);
+    const tabs = useCenterTabs.getState();
+    const existing = tabs.tabs.find(tab => tab.kind === "session" && tab.sessionId === sessionId);
+    if (existing) {
+      if (tabs.activeId !== existing.id) tabs.setActive(existing.id);
+    } else {
+      tabs.openSessionTab(sessionId, title);
+    }
     useSessionStore.getState().setCurrentConv(sessionId);
     useSessionStore.getState().focusComposer();
     if (typeof document === "undefined") return;

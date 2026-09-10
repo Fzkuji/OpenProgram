@@ -287,6 +287,7 @@ test("pause click posts pause, then resume posts after acknowledgement", async (
 
 test("waiting shows confirmation copy and review request instead of continue", async () => {
   await mounted(async host => {
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [] });
     useSessionStore.setState({
       conversations: { a: { id: "a", title: "Owner" } },
       pendingDecisions: [{
@@ -316,6 +317,39 @@ test("waiting shows confirmation copy and review request instead of continue", a
     assert.equal(useSessionStore.getState().currentSessionId, "a");
     assert.ok(useSessionStore.getState().composerFocusTick > 0);
     assert.equal(useSessionStore.getState().pendingDecisions[0].id, "wait_approval");
+  }, { controlState: "waiting" });
+});
+
+test("review request reuses the existing owner session tab", async () => {
+  await mounted(async host => {
+    useCenterTabs.setState({ tabs: [], activeId: null, groups: [] });
+    useSessionStore.setState({
+      conversations: { a: { id: "a", title: "Owner" } },
+      pendingDecisions: [{
+        id: "wait_approval", sessionId: "a", executionId: "exec-a",
+        waitGeneration: 1, expectedVersion: 1, kind: "approval",
+        prompt: "Allow execute_code?", options: [], multi: false, allow_custom: false,
+        tool: "execute_code",
+      }],
+      composerFocusTick: 0,
+    });
+    useCenterTabs.getState().openSessionTab("a", "Owner");
+    useCenterTabs.getState().openWebTab("https://a.test");
+    const before = useCenterTabs.getState().tabs.length;
+    const ownerId = useCenterTabs.getState().tabs.find(tab => tab.kind === "session" && tab.sessionId === "a")?.id;
+    assert.ok(ownerId);
+    assert.notEqual(useCenterTabs.getState().activeId, ownerId);
+    const review = labeledButton(host, "Review request");
+    await act(async () => {
+      review.click();
+      await Promise.resolve();
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    const tabs = useCenterTabs.getState();
+    assert.equal(tabs.tabs.length, before);
+    assert.equal(tabs.tabs.filter(tab => tab.kind === "session" && tab.sessionId === "a").length, 1);
+    assert.equal(tabs.activeId, ownerId);
+    assert.equal(globalThis.controlPosts.length, 0);
   }, { controlState: "waiting" });
 });
 
