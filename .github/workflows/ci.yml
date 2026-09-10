@@ -206,6 +206,7 @@ jobs:
         run: uv run --locked --extra dev coverage report --show-missing --precision=6 --fail-under=40
 
   windows-core:
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -217,6 +218,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -260,7 +262,10 @@ jobs:
           tests/component/store/test_backup_command.py
           tests/component/store/test_backup_staged_restore.py
       - name: Complete Windows unit regression
-        run: uv run --locked --extra dev python -m pytest -n 4 -q tests/unit
+        timeout-minutes: 15
+        run: >-
+          uv run --locked --extra dev python -u -c
+          "import faulthandler, pytest; faulthandler.dump_traceback_later(600, exit=True); raise SystemExit(pytest.main(['-n', '4', '-vv', 'tests/unit']))"
 
   windows-desktop:
     strategy:
