@@ -13,6 +13,7 @@ export class MemoryDraft {
   listeners = new Set<() => void>();
   timer: ReturnType<typeof setTimeout> | undefined;
   loading: Promise<void> | undefined;
+  editVersion = 0;
   readonly url: string;
   readonly request: typeof fetch;
   readonly storage?: Storage;
@@ -35,11 +36,13 @@ export class MemoryDraft {
   async load() {
     if (this.loading) return this.loading;
     if (this.state.loaded && (this.state.saving || this.state.content !== this.state.base)) return;
+    const editVersion = this.editVersion;
     this.loading = (async () => {
       try {
         const response = await this.request(this.url);
         if (!response.ok) throw new Error("Could not load memory");
         const data = await response.json();
+        if (this.editVersion !== editVersion) return;
         let draft;
         try { draft = JSON.parse(this.storage?.getItem(this.key) || "null"); } catch { /* no recoverable draft */ }
         const valid = draft && typeof draft.content === "string" && typeof draft.base === "string";
@@ -55,6 +58,7 @@ export class MemoryDraft {
     return this.loading;
   }
   edit(content: string) {
+    this.editVersion += 1;
     this.publish({ content });
     this.persist();
     if (!this.state.error) this.schedule();
@@ -88,7 +92,11 @@ export class MemoryDraft {
       if (!this.state.error && this.state.content !== this.state.base) this.schedule();
     }
   }
-  retry() { this.publish({ error: "" }); void this.flush(); }
+  retry() {
+    this.publish({ error: "" });
+    if (!this.state.loaded) void this.load();
+    else void this.flush();
+  }
 }
 const drafts = new Map<string, MemoryDraft>();
 export function memoryDraft(url: string) {

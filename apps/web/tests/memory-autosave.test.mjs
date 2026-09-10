@@ -50,3 +50,31 @@ test("retains a rejected draft across reopening and exposes a Git warning", asyn
   warned.edit("after"); await warned.flush();
   assert.equal(warned.state.warning, "Git failed");
 });
+test("Retry reloads after a failed initial read", async () => {
+  let reads = 0;
+  const draft = new MemoryDraft("/note", async () => ++reads === 1
+    ? { ok: false } : reply("recovered"), storage());
+  await draft.load();
+  assert.equal(draft.state.loaded, false);
+  draft.retry();
+  await draft.loading;
+  assert.equal(reads, 2);
+  assert.equal(draft.state.content, "recovered");
+  assert.equal(draft.state.error, "");
+});
+test("a late read never replaces editing or a newer completed save", async () => {
+  let reads = 0, resolve;
+  const draft = new MemoryDraft("/note", async (_url, init) => {
+    if (init) return reply(JSON.parse(init.body).content);
+    if (++reads === 1) return reply("before");
+    return new Promise(r => { resolve = r; });
+  }, storage());
+  await draft.load();
+  const refresh = draft.load();
+  draft.edit("new edit");
+  await draft.flush();
+  resolve(reply("stale read"));
+  await refresh;
+  assert.equal(draft.state.content, "new edit");
+  assert.equal(draft.state.base, "new edit");
+});
