@@ -78,3 +78,13 @@ test("a late read never replaces editing or a newer completed save", async () =>
   assert.equal(draft.state.content, "new edit");
   assert.equal(draft.state.base, "new edit");
 });
+test("browser fetch is invoked with its global receiver", async () => {
+  const draft = new MemoryDraft("/note", async function (_url, init) {
+    assert.equal(this, globalThis);
+    return reply(init ? "after" : "before");
+  }, storage());
+  await draft.load();
+  assert.equal(draft.state.loaded, true);
+  draft.edit("after"); await draft.flush();
+  assert.equal(draft.state.base, "after");
+});

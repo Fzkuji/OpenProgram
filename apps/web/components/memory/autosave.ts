@@ -18,7 +18,7 @@ export class MemoryDraft {
   readonly request: typeof fetch;
   readonly storage?: Storage;
   constructor(url: string, request: typeof fetch = fetch, storage?: Storage) {
-    this.url = url; this.request = request; this.storage = storage;
+    this.url = url; this.request = request.bind(globalThis); this.storage = storage;
   }
   get key() { return "memory-draft:" + this.url; }
   publish(patch: Partial<DraftState>) {
