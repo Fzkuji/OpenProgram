@@ -428,7 +428,7 @@ def register(app):
         if target is None or target == topics.resolve():
             return JSONResponse(content={"error": "forbidden"}, status_code=403)
         relative = target.relative_to(topics.resolve())
-        return save_document(root, relative, await request.json())
+        return await asyncio.to_thread(save_document, root, relative, await request.json())
 
     @router.delete("/api/memory/topics/{path:path}")
     async def delete_topic(path: str):
@@ -600,6 +600,8 @@ def register(app):
     async def save_core(request: Request):
         from openprogram.memory import store
         root = store.ensure()
-        return save_document(root, Path("core.md"), await request.json(), fallback=store.core())
+        return await asyncio.to_thread(
+            save_document, root, Path("core.md"), await request.json(), fallback=store.core(),
+        )
 
     app.include_router(router)
