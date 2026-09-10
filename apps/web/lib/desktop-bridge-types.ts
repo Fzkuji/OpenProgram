@@ -69,7 +69,7 @@ export interface DesktopBrowserControlOverlay {
 }
 
 export type DesktopBrowserControlOverlayEvent =
-  | { type: "pause" | "resume" | "toggle-show"; id: string; generation: number }
+  | { type: "pause" | "resume" | "reveal" | "toggle-show" | "stale"; id: string; generation: number }
   | { type: "ready" }
   | { type: "layout"; collapsed: boolean; width: number; height: number }
   | { type: "move"; id: string; generation: number; dx: number; dy: number }

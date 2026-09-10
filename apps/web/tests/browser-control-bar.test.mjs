@@ -17,8 +17,11 @@ await build({
     export {
       resetBrowserControl,
       recordOperationCue,
+      revealPendingApproval,
       showActionsEnabled,
     } from "./lib/state/browser-control";
+    export { useCenterTabs } from "./lib/state/center-tabs-store";
+    export { useSessionStore } from "./lib/session-store";
     export {
       ingestBrowserResource,
       resetBrowserResources,
@@ -30,7 +33,10 @@ await build({
   loader: { ".css": "empty" },
   plugins: [{ name: "control-bar-services", setup(b) {
     b.onResolve({ filter: /net\/fetch-client/ }, () => ({ path: "fetch-client", namespace: "test-services" }));
-    b.onLoad({ filter: /.*/, namespace: "test-services" }, () => ({ contents: `
+    b.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: "next-nav", namespace: "test-services" }));
+    b.onLoad({ filter: /.*/, namespace: "test-services" }, (args) => ({ contents: args.path === "next-nav"
+      ? "export const useRouter = () => ({ push() {}, replace() {} }); export const usePathname = () => '/chat';"
+      : `
       export async function jsonFetch(url, init) {
         const body = JSON.parse(init.body || "{}");
         globalThis.controlPosts.push({ url: String(url), body });
@@ -90,8 +96,9 @@ window.HTMLElement.prototype.focus = function focus() {
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const {
-  BrowserControlBar, resetBrowserControl, recordOperationCue, showActionsEnabled,
-  ingestBrowserResource, resetBrowserResources, setBrowserConnection,
+  BrowserControlBar, resetBrowserControl, recordOperationCue, revealPendingApproval,
+  showActionsEnabled, ingestBrowserResource, resetBrowserResources, setBrowserConnection,
+  useCenterTabs, useSessionStore,
 } = await import(pathToFileURL(bundle));
 
 const LONG_LABELS = [
@@ -101,6 +108,7 @@ const LONG_LABELS = [
   "Continue Agent",
   "Pausing…",
   "Retry pause",
+  "Review request",
 ];
 
 function pageRow(control_state = "active", sequence = 1) {
@@ -275,6 +283,40 @@ test("pause click posts pause, then resume posts after acknowledgement", async (
     });
     assert.equal(globalThis.controlPosts.at(-1).body.action, "resume");
   });
+});
+
+test("waiting shows confirmation copy and review request instead of continue", async () => {
+  await mounted(async host => {
+    useSessionStore.setState({
+      conversations: { a: { id: "a", title: "Owner" } },
+      pendingDecisions: [{
+        id: "wait_approval", sessionId: "a", executionId: "exec-a",
+        waitGeneration: 1, expectedVersion: 1, kind: "approval",
+        prompt: "Allow execute_code?", options: [], multi: false, allow_custom: false,
+        tool: "execute_code",
+      }],
+      composerFocusTick: 0,
+    });
+    assert.equal(host.textContent.includes("Needs your confirmation"), true);
+    assert.equal(host.textContent.includes("Paused"), false);
+    assert.equal(labeledButton(host, "Continue Agent"), undefined);
+    const review = labeledButton(host, "Review request");
+    assertIconButton(review, "Review request");
+    assert.equal(review.disabled, false);
+    await act(async () => {
+      review.click();
+      await Promise.resolve();
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    assert.equal(globalThis.controlPosts.length, 0);
+    const tabs = useCenterTabs.getState();
+    const active = tabs.tabs.find(tab => tab.id === tabs.activeId);
+    assert.equal(active?.kind, "session");
+    assert.equal(active?.sessionId, "a");
+    assert.equal(useSessionStore.getState().currentSessionId, "a");
+    assert.ok(useSessionStore.getState().composerFocusTick > 0);
+    assert.equal(useSessionStore.getState().pendingDecisions[0].id, "wait_approval");
+  }, { controlState: "waiting" });
 });
 
 test("idle and closed do not render an enabled Pause", async () => {

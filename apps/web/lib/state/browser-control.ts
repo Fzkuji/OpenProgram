@@ -132,7 +132,7 @@ function acknowledgeIngestedControl(): void {
     }
   }
   for (const group of current.values()) {
-    if (![...group.states].every(state => state === "paused" || state === "closed" || state === "idle")) continue;
+    if (![...group.states].every(state => state === "paused" || state === "waiting" || state === "closed" || state === "idle")) continue;
     clearPendingLease(group.resourceId, group.generation);
   }
 }
@@ -148,7 +148,7 @@ export function displayedControlState(
 ): BrowserControlState {
   const backend = resource.controlState || "unknown";
   if (!browserConnectionOpen() && backend !== "closed") return "unknown";
-  if (backend === "paused" || backend === "closed" || backend === "idle") return backend;
+  if (backend === "paused" || backend === "waiting" || backend === "closed" || backend === "idle") return backend;
   const lease = useBrowserControlStore.getState().pending[pendingKey(resource.resourceId, resource.generation)];
   if (lease && !lease.failed) {
     const now = opts.now ?? Date.now();
@@ -319,13 +319,66 @@ export async function requestExplicitPause(
   return postPauseOnce(row, deps);
 }
 
+export function setControlNotice(resourceId: string, message: string): void {
+  if (!resourceId) return;
+  useBrowserControlStore.setState(state => ({
+    resumeError: { ...state.resumeError, [resourceId]: message },
+  }));
+  notify();
+}
+
+export function revealPendingApproval(
+  resource: BrowserControlResource | SessionResource,
+): BrowserControlState {
+  const row = toControlResource(resource);
+  const shown = displayedControlState(row);
+  if (shown !== "waiting") {
+    setControlNotice(row.resourceId, "Status changed. Try again");
+    return shown;
+  }
+  const sessionId = row.conversationSessionId;
+  if (!sessionId) {
+    setControlNotice(row.resourceId, "Status changed. Try again");
+    return shown;
+  }
+  void Promise.all([
+    import("../session-store/index.ts"),
+    import("./center-tabs-store.ts"),
+  ]).then(([{ useSessionStore }, { useCenterTabs }]) => {
+    const title = useSessionStore.getState().conversations[sessionId]?.title || sessionId;
+    useCenterTabs.getState().openSessionTab(sessionId, title);
+    useSessionStore.getState().setCurrentConv(sessionId);
+    useSessionStore.getState().focusComposer();
+    if (typeof document === "undefined") return;
+    const reveal = () => {
+      const card = document.querySelector("[data-pending-decision-id], [data-composer-input-area]");
+      if (card && "scrollIntoView" in card) {
+        (card as HTMLElement).scrollIntoView({ block: "nearest" });
+      }
+      const focusable = card?.querySelector?.("button, [tabindex]:not([tabindex='-1'])") as HTMLElement | null;
+      focusable?.focus?.();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(reveal);
+    else reveal();
+  });
+  return shown;
+}
+
 export async function requestResumeAgent(
   resource: BrowserControlResource | SessionResource,
   deps: { postControl?: typeof requestResourceControl; commandId?: string } = {},
 ): Promise<BrowserControlState | null> {
   const row = toControlResource(resource);
   if (!browserConnectionOpen()) return null;
-  if (displayedControlState(row) !== "paused") return null;
+  const shown = displayedControlState(row);
+  if (shown === "waiting") {
+    setControlNotice(row.resourceId, "Needs your confirmation");
+    return "waiting";
+  }
+  if (shown !== "paused") {
+    setControlNotice(row.resourceId, "Status changed. Try again");
+    return null;
+  }
   try {
     const posted = await (deps.postControl || requestResourceControl)({
       conversationSessionId: row.conversationSessionId,
@@ -385,6 +438,7 @@ function liveCueAllowed(input: {
   const blocked = !!state.pending[pendingKey(input.resourceId, input.generation)]
     || input.controlState === "yielding"
     || input.controlState === "paused"
+    || input.controlState === "waiting"
     || input.controlState === "stop_unconfirmed"
     || input.controlState === "unknown";
   const failed = input.operation.phase === "failed" || input.operation.phase === "unknown";
@@ -430,6 +484,7 @@ export function recordOperationCue(input: {
     };
   } else if (current && (
     input.controlState === "yielding" || input.controlState === "paused"
+    || input.controlState === "waiting"
     || input.controlState === "stop_unconfirmed" || input.operation.phase === "failed"
   )) {
     delete markers[input.resourceId];
@@ -485,6 +540,17 @@ export function controlResourceFromSession(row: SessionResource): BrowserControl
 
 export function resumeErrorFor(resourceId: string): string | undefined {
   return useBrowserControlStore.getState().resumeError[resourceId];
+}
+
+export function browserTakeoverKind(
+  state: BrowserControlState | null | undefined,
+): "reveal" | "resume" | "yielding" | "retry" | "pause" | null {
+  if (!state || state === "idle" || state === "closed") return null;
+  if (state === "waiting") return "reveal";
+  if (state === "paused") return "resume";
+  if (state === "yielding") return "yielding";
+  if (state === "stop_unconfirmed") return "retry";
+  return "pause";
 }
 
 export function pendingCloseRequest(): PendingClose | null {
@@ -614,7 +680,8 @@ export function settlePendingClose(
       continue;
     }
     const released = matching.every(row => (
-      row.controlState === "paused" || row.controlState === "idle" || row.controlState === "closed"
+      row.controlState === "paused" || row.controlState === "waiting"
+      || row.controlState === "idle" || row.controlState === "closed"
       || row.status === "closed" || row.status === "idle"
     ));
     if (!released) {

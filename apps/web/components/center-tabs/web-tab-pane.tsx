@@ -49,12 +49,15 @@ import {
   useWebTabPip,
 } from "@/lib/state/web-tab-pip-store";
 import {
+  browserTakeoverKind,
   controlResourceFromSession,
   displayedControlState,
   isHumanYieldEvent,
   markScopeYielding,
   requestExplicitPause,
   requestResumeAgent,
+  revealPendingApproval,
+  setControlNotice,
   toggleShowActions,
 } from "@/lib/state/browser-control";
 import {
@@ -252,14 +255,18 @@ function DesktopWebTabPane({
       return;
     }
     const state = displayedControlState(control);
-    const pauseLabel = state === "paused"
-      ? text("Continue Agent", "让 Agent 继续")
-      : state === "yielding"
-        ? text("Pausing…", "正在暂停…")
-        : state === "stop_unconfirmed"
-          ? text("Retry pause", "重试暂停")
-          : text("I will operate", "我来操作");
+    const takeoverKind = browserTakeoverKind(state);
+    const pauseLabel = takeoverKind === "reveal"
+      ? text("Review request", "查看请求")
+      : takeoverKind === "resume"
+        ? text("Continue Agent", "让 Agent 继续")
+        : takeoverKind === "yielding"
+          ? text("Pausing…", "正在暂停…")
+          : takeoverKind === "retry"
+            ? text("Retry pause", "重试暂停")
+            : text("I will operate", "我来操作");
     const status = state === "yielding" ? text("Pausing…", "正在暂停…")
+      : state === "waiting" ? text("Needs your confirmation", "需要你确认")
       : state === "paused" ? text("Paused", "已暂停")
       : state === "stop_unconfirmed" ? text("Could not pause. Try again", "暂停失败，请重试")
       : state === "unknown" ? (connected
@@ -288,7 +295,7 @@ function DesktopWebTabPane({
       notice: resumeErrorFor(control.resourceId)
         || (state === "stop_unconfirmed" || state === "unknown" ? status : undefined),
       pauseDisabled: state === "yielding" || state === "unknown" || !connected,
-      resumeDisabled: !connected || state !== "paused",
+      resumeDisabled: !connected || (state !== "paused" && state !== "waiting"),
       showTakeover: true,
       expandLabel: text("Show controls", "显示操作按钮"),
       foldLabel: text("Fold", "收起"),
@@ -306,11 +313,19 @@ function DesktopWebTabPane({
   useEffect(() => {
     return bridge.webTab.onControlOverlayEvent?.((event) => {
       if (!control) return;
-      if (event.type !== "pause" && event.type !== "resume" && event.type !== "toggle-show") return;
+      if (event.type === "stale") {
+        setControlNotice(control.resourceId, text("Status changed. Try again", "状态已更新，请重试"));
+        return;
+      }
+      if (event.type !== "pause" && event.type !== "resume" && event.type !== "toggle-show" && event.type !== "reveal") return;
       if (event.id !== control.resourceId && event.id !== tabId) return;
-      if (event.generation !== control.generation) return;
+      if (event.generation !== control.generation) {
+        setControlNotice(control.resourceId, text("Status changed. Try again", "状态已更新，请重试"));
+        return;
+      }
       if (event.type === "pause") void requestExplicitPause(control);
       if (event.type === "resume") void requestResumeAgent(control);
+      if (event.type === "reveal") revealPendingApproval(control);
       if (event.type === "toggle-show") toggleShowActions();
     }) ?? (() => {});
   }, [bridge, tabId, control]);

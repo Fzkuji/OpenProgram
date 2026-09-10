@@ -13,6 +13,7 @@ import {
   requestCloseBrowserPage,
   requestExplicitPause,
   requestResumeAgent,
+  resumeErrorFor,
   selectTabsReadyForHumanClose,
   pendingCloseRequest,
   settlePendingClose,
@@ -101,6 +102,24 @@ test("rejected resume stays paused and disconnect disables it", async () => {
   assert.equal(displayedControlState(resource({ controlState: "paused" })), "unknown");
   assert.equal(await requestResumeAgent(resource({ controlState: "paused" })), null);
   setBrowserConnection(true);
+});
+
+test("waiting is not paused and resume does not continue", async () => {
+  resetBrowserControl();
+  resetBrowserResources();
+  setBrowserConnection(true);
+  ingestPage({ control_state: "waiting", pending_wait: { id: "wait_approval", kind: "approval", tool: "execute_code" } });
+  const waiting = resource({ controlState: "waiting" });
+  assert.equal(displayedControlState(waiting), "waiting");
+  assert.notEqual(displayedControlState(waiting), "paused");
+  const posted = [];
+  const result = await requestResumeAgent(waiting, {
+    postControl: async (input) => { posted.push(input); return { control_state: "idle" }; },
+  });
+  assert.equal(result, "waiting");
+  assert.equal(posted.length, 0);
+  assert.equal(resumeErrorFor("page-a"), "Needs your confirmation");
+  assert.equal(listedBrowserResources()[0].pendingWait?.id, "wait_approval");
 });
 
 test("human input requests pause and stays yielding until backend pause", async () => {

@@ -526,6 +526,35 @@ test("idle chat PiP has no pause control; active shows Pause Agent to use page",
         target: page.url,
         status: "open",
         source: "browser",
+        control_state: "waiting",
+        generation: 1,
+        sequence: 3,
+        execution_id: "exec-a",
+        pending_wait: { id: "wait_approval", kind: "approval", tool: "execute_code" },
+      }, "a");
+    });
+    const review = chromeButton(host, "Review request");
+    assert.ok(review);
+    assert.equal(review.disabled, false);
+    assert.equal(chromeButton(host, "Continue Agent"), undefined);
+    assert.equal(host.querySelector("small")?.textContent.includes("Needs your confirmation"), true);
+    await act(async () => {
+      review.click();
+      await Promise.resolve();
+    });
+    assert.equal((globalThis.controlPosts || []).some(item => item.body?.action === "resume"), false);
+    await act(async () => {
+      ingestBrowserResource({
+        id: "assoc-1",
+        resource_id: "page-1",
+        session_id: "a",
+        conversation_session_id: "a",
+        tab_id: page.id,
+        kind: "web",
+        title: "Resource test 1",
+        target: page.url,
+        status: "open",
+        source: "browser",
         control_state: "stop_unconfirmed",
         generation: 1,
         sequence: 4,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ExternalLink, Maximize2, Minimize2, MoreVertical, Pause, Pin, Play, X } from "lucide-react";
+import { CircleHelp, ExternalLink, Maximize2, Minimize2, MoreVertical, Pause, Pin, Play, X } from "lucide-react";
 
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { ActionCueTravel } from "./browser-control-bar";
@@ -16,6 +16,7 @@ import {
 import { useSidebarMenu, type SidebarMenuItem } from "@/components/sidebar/use-sidebar-menu";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import {
+  browserTakeoverKind,
   controlResourceFromSession,
   displayedControlState,
   liveOperationMarker,
@@ -23,6 +24,7 @@ import {
   requestExplicitPause,
   requestResumeAgent,
   resumeErrorFor,
+  revealPendingApproval,
   showActionsEnabled,
   toggleShowActions,
   useBrowserControlStore,
@@ -120,6 +122,7 @@ function statusLabel(
   connected: boolean,
 ): string {
   if (state === "yielding") return text("Pausing…", "正在暂停…");
+  if (state === "waiting") return text("Needs your confirmation", "需要你确认");
   if (state === "paused") return text("Paused", "已暂停");
   if (state === "stop_unconfirmed") return text("Could not pause. Try again", "暂停失败，请重试");
   if (state === "unknown") {
@@ -445,16 +448,10 @@ export function WebTabPip() {
     : frameState === "last-frame"
       ? text("Last frame", "最后一帧")
       : text("Image preview unavailable", "无法预览图像");
-  const takeoverKind = !controlState || controlState === "idle" || controlState === "closed"
-    ? null
-    : controlState === "paused"
-      ? "resume"
-      : controlState === "yielding"
-        ? "yielding"
-        : controlState === "stop_unconfirmed"
-          ? "retry"
-          : "pause";
-  const takeoverLabel = takeoverKind === "resume"
+  const takeoverKind = browserTakeoverKind(controlState);
+  const takeoverLabel = takeoverKind === "reveal"
+    ? text("Review request", "查看请求")
+    : takeoverKind === "resume"
     ? text("Continue Agent", "让 Agent 继续")
     : takeoverKind === "yielding"
       ? text("Pausing…", "正在暂停…")
@@ -464,7 +461,7 @@ export function WebTabPip() {
   const takeoverDisabled = takeoverKind === "yielding"
     || controlState === "unknown"
     || !connected
-    || (takeoverKind === "resume" && controlState !== "paused");
+    || ((takeoverKind === "resume" || takeoverKind === "reveal") && !connected);
   const history = control ? operationHistory(control.resourceId) : [];
   const historyLabel = text("Operation history", "操作历史");
   const showLabel = text("Show actions", "显示操作");
@@ -691,10 +688,16 @@ export function WebTabPip() {
               title={takeoverLabel}
               aria-label={takeoverLabel}
               onClick={() => {
+                if (takeoverKind === "reveal") {
+                  revealPendingApproval(control);
+                  return;
+                }
                 void (takeoverKind === "resume" ? requestResumeAgent(control) : requestExplicitPause(control));
               }}
             >
-              {takeoverKind === "resume"
+              {takeoverKind === "reveal"
+                ? <CircleHelp size={14} aria-hidden="true" />
+                : takeoverKind === "resume"
                 ? <Play size={14} aria-hidden="true" />
                 : <Pause size={14} aria-hidden="true" />}
             </button>

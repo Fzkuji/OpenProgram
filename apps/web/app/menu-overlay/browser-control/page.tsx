@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, Clock3, Eye, Pause, Play, X } from "lucide-react";
+import { ChevronDown, CircleHelp, Clock3, Eye, Pause, Play, X } from "lucide-react";
 
 import { CursorClickIcon } from "@/components/animated-icons";
 import type { DesktopBrowserControlOverlay } from "@/lib/desktop-bridge-types";
@@ -235,14 +235,18 @@ function BrowserControlOverlayPage() {
         <button
           type="button"
           style={ICON_BTN}
-          disabled={payload.controlState === "paused" ? payload.resumeDisabled : payload.pauseDisabled}
+          disabled={payload.controlState === "paused" || payload.controlState === "waiting"
+            ? payload.resumeDisabled : payload.pauseDisabled}
           aria-label={payload.pauseLabel}
           title={payload.pauseLabel}
           onClick={() => send({
-            type: payload.controlState === "paused" ? "resume" : "pause",
+            type: payload.controlState === "waiting"
+              ? "reveal"
+              : payload.controlState === "paused" ? "resume" : "pause",
           })}
         >
-          {payload.controlState === "paused" ? <Play size={14} /> : <Pause size={14} />}
+          {payload.controlState === "waiting" ? <CircleHelp size={14} />
+            : payload.controlState === "paused" ? <Play size={14} /> : <Pause size={14} />}
         </button>
       ) : null}
       <button

@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 from openprogram.browser_resources import sanitize_operation
@@ -510,3 +511,201 @@ def test_terminal_unknown_effects_stay_stop_unconfirmed_and_keep_fence(
     assert row["control_state"] == "stop_unconfirmed"
     assert stored["control_state"] == "stop_unconfirmed"
     assert writes_fenced("page:fail") is True
+
+
+def _paused_wait_open(eid, session_id="parent"):
+    return SimpleNamespace(
+        execution_id=eid, session_id=session_id, parent_execution_id=None,
+        status=SimpleNamespace(value="paused"), status_version=4,
+        capabilities=SimpleNamespace(pause=True),
+        current_attempt_id=None,
+        reason_code="wait_open",
+    )
+
+
+def test_wait_open_projects_waiting_and_resume_does_not_continue(tmp_path, monkeypatch):
+    from openprogram.browser_resources import BrowserResourceStore
+    from openprogram.webui.routes import processes
+
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    db = _conversation(tmp_path)
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    store = BrowserResourceStore(tmp_path / "session-resources.db")
+    store.retain(
+        page_key="page:wait", window_id="win", tab_id="tab-a", title="Plans",
+        target="https://example.test/", connection_generation=1,
+        session_id="parent", execution_id="exec-wait",
+        user_message_id="u1", assistant_message_id="a1",
+        conversation_session_id="parent", live=True,
+    )
+    paused = _paused_wait_open("exec-wait")
+    continues = []
+
+    class _Store:
+        def get_execution(self, eid):
+            return paused if eid == "exec-wait" else None
+
+        def get_execution_input(self, eid):
+            return SimpleNamespace(user_message_id="u1", assistant_message_id="a1")
+
+        def get_command(self, command_id):
+            del command_id
+            return None
+
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: _Store())
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.conversation_executions",
+        lambda *args: [paused],
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        lambda *args: {"exec-wait": None},
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.authorize_conversation_execution",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.default_control_service",
+        lambda: SimpleNamespace(effects=SimpleNamespace(list_unresolved=lambda eid: [])),
+    )
+
+    async def _no_continue(**kwargs):
+        continues.append(kwargs)
+        raise AssertionError("continue must not run for wait_open")
+
+    monkeypatch.setattr("openprogram.browser_resources._submit_owner_command", _no_continue)
+    monkeypatch.setattr(processes, "_authorize", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        processes, "_actor_and_session",
+        lambda request: ({"authority_tier": "owner"}, None),
+    )
+    app = FastAPI()
+    processes.register(app)
+    with TestClient(app) as client:
+        listed = client.get("/api/session/parent/resources")
+        assert listed.status_code == 200
+        row = next(item for item in listed.json()["items"] if item["resource_id"] == "page:wait")
+        assert row["control_state"] == "waiting"
+        assert row["control_state"] != "paused"
+        stored = store.get_resource("page:wait")
+        assert stored["control_state"] == "waiting"
+        assert not stored.get("pause_command_id")
+        resume = client.post(
+            "/api/session/parent/resources/page:wait/control",
+            json={"action": "resume", "command_id": "resume-wait", "generation": 1},
+        )
+    assert resume.status_code == 409
+    assert resume.json().get("error") == "wait_open"
+    assert continues == []
+
+
+def test_human_input_while_wait_open_does_not_mint_pause_id(tmp_path, monkeypatch):
+    from openprogram.browser_resources import handle_human_page_input, BrowserResourceStore
+
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    db = _conversation(tmp_path)
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    store = BrowserResourceStore(tmp_path / "session-resources.db")
+    store.retain(
+        page_key="page:wait", window_id="win", tab_id="tab-a", title="Plans",
+        target="https://example.test/", connection_generation=1,
+        session_id="parent", execution_id="exec-wait",
+        user_message_id="u1", assistant_message_id="a1",
+        conversation_session_id="parent", live=True,
+    )
+    paused = _paused_wait_open("exec-wait")
+    pauses = []
+
+    class _Store:
+        def get_execution(self, eid):
+            return paused if eid == "exec-wait" else None
+
+        def get_execution_input(self, eid):
+            return SimpleNamespace(user_message_id="u1", assistant_message_id="a1")
+
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: _Store())
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.conversation_executions",
+        lambda *args: [paused],
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        lambda *args: {"exec-wait": None},
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.authorize_conversation_execution",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.default_control_service",
+        lambda: SimpleNamespace(effects=SimpleNamespace(list_unresolved=lambda eid: [])),
+    )
+
+    async def _no_pause(**kwargs):
+        pauses.append(kwargs)
+        return paused
+
+    monkeypatch.setattr("openprogram.browser_resources.request_page_pause", _no_pause)
+    monkeypatch.setattr(
+        "openprogram.browser_resources.page_keys_for_socket_tab",
+        lambda *args, **kwargs: ["page:wait"],
+    )
+    monkeypatch.setattr(
+        "openprogram.browser_resources.emit_browser_resource",
+        lambda *args, **kwargs: None,
+    )
+    asyncio.run(handle_human_page_input(
+        ws=SimpleNamespace(scope={}), window_id="win", tab_id="tab-a",
+        input_seq=3, kind="pointer",
+    ))
+    stored = store.get_resource("page:wait")
+    assert stored["control_state"] == "waiting"
+    assert not stored.get("pause_command_id")
+    assert pauses == []
+
+
+def test_ordinary_paused_execution_still_projects_paused(tmp_path, monkeypatch):
+    from openprogram.browser_resources import BrowserResourceStore, project_conversation_resources
+
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    db = _conversation(tmp_path)
+    monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: db)
+    store = BrowserResourceStore()
+    store.retain(
+        page_key="page:paused", window_id="win", tab_id="tab-a", title="Plans",
+        target="https://example.test/", connection_generation=1,
+        session_id="parent", execution_id="exec-paused",
+        user_message_id="u1", assistant_message_id="a1",
+        conversation_session_id="parent", live=True,
+    )
+    paused = SimpleNamespace(
+        execution_id="exec-paused", session_id="parent", parent_execution_id=None,
+        status=SimpleNamespace(value="paused"), status_version=3,
+        capabilities=SimpleNamespace(pause=True),
+        current_attempt_id=None,
+        reason_code=None,
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.conversation_executions",
+        lambda *args: [paused],
+    )
+    monkeypatch.setattr(
+        "openprogram.execution.conversation_scope.conversation_parent_ids",
+        lambda *args: {"exec-paused": None},
+    )
+    monkeypatch.setattr("openprogram.execution.default_store", lambda: SimpleNamespace(
+        get_execution_input=lambda eid: SimpleNamespace(
+            user_message_id="u1", assistant_message_id="a1",
+        ),
+        get_execution=lambda eid: paused if eid == "exec-paused" else None,
+    ))
+    monkeypatch.setattr(
+        "openprogram.execution.default_control_service",
+        lambda: SimpleNamespace(effects=SimpleNamespace(list_unresolved=lambda eid: [])),
+    )
+    rows, _, _ = project_conversation_resources("parent")
+    row = next(item for item in rows if item["resource_id"] == "page:paused")
+    stored = store.get_resource("page:paused")
+    assert row["control_state"] == "paused"
+    assert stored["control_state"] == "paused"

@@ -3483,9 +3483,23 @@ function handleControlOverlayEvent(event, payload) {
     }).catch(() => {});
     return;
   }
-  if (type !== "pause" && type !== "resume" && type !== "toggle-show") return;
-  if (payload.id !== record.controlPayload?.resourceId) return;
-  if (payload.generation !== record.controlPayload?.generation) return;
+  if (type !== "pause" && type !== "resume" && type !== "reveal" && type !== "toggle-show") return;
+  if (payload.id !== record.controlPayload?.resourceId) {
+    ctx.win.webContents.send("webtab:control-overlay-event", {
+      type: "stale",
+      id: payload.id,
+      generation: payload.generation,
+    });
+    return;
+  }
+  if (payload.generation !== record.controlPayload?.generation) {
+    ctx.win.webContents.send("webtab:control-overlay-event", {
+      type: "stale",
+      id: payload.id,
+      generation: payload.generation,
+    });
+    return;
+  }
   ctx.win.webContents.send("webtab:control-overlay-event", {
     type,
     id: payload.id,

@@ -121,7 +121,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <h1>Ten browser-control scenarios, shown as choices</h1>
 <p class="intro">Each row compares one situation: current OpenProgram on the left, two proposals beside it. The drawings show behavior; they are not product screenshots. How computer use works stays in <a href="gui-agent.html">GUI Agent</a>. This page only chooses where Agent pause, continue, click marks, and operation history appear. Confirmed: those buttons leave the ordinary top bar. They start as a small, see-through button you can drag anywhere on the webpage. Click expands the actions; click again folds them. How see-through they are, and whether they hide by themselves, are still waiting for your choice. The small chat preview and the large webpage may show at the same time and stay in sync. Hiding the preview does not close the webpage. The click cursor moves smoothly from the last rendered point to the next, then plays the click. The first point appears in place when there is no last position. Motion is brief. A resource, generation, geometry, or navigation change cancels travel and keeps the last rendered point instead of jumping to a future target. Reduced motion skips travel. Repeat clicks at the same point replay the click after arrival. This is a mark on the page, not a real OS pointer.</p>
 <p><a href="browser-control-surfaces.zh.html">Chinese</a></p>
-<div class="notice"><span class="badge constraint">Confirmed constraint</span> Ordinary browsing keeps address, back, refresh, and bookmarks. Agent buttons, status text, and errors leave the top bar. They appear as semi-transparent buttons on the webpage you are looking at. Files / Activity / Resources stays a vertical list on the right. Do not darken the whole page. Do not pull another app window to the front. The small chat preview and the large webpage may show at the same time; they share one Page. Hiding the preview does not close the webpage. <span class="badge pending">Suggested, pending user</span> How see-through, and whether the button hides by itself, are not approved. Drag anywhere inside the webpage is the confirmed direction. Semi-transparent buttons still cover whatever sits under them. Empty space around them still lets you click the webpage. Drag or fold the small button to reach what it covers. Clicking a button itself does not go through to the page.</div>
+<div class="notice"><span class="badge constraint">Confirmed constraint</span> Ordinary browsing keeps address, back, refresh, and bookmarks. Agent buttons, status text, and errors leave the top bar. They appear as semi-transparent buttons on the webpage you are looking at. Waiting for Allow or Deny must not look like ordinary pause: the floating control says Needs your confirmation and opens the owning conversation’s existing approval card. Files / Activity / Resources stays a vertical list on the right. Do not darken the whole page. Do not pull another app window to the front. The small chat preview and the large webpage may show at the same time; they share one Page. Hiding the preview does not close the webpage. <span class="badge pending">Suggested, pending user</span> How see-through, and whether the button hides by itself, are not approved. Drag anywhere inside the webpage is the confirmed direction. Semi-transparent buttons still cover whatever sits under them. Empty space around them still lets you click the webpage. Drag or fold the small button to reach what it covers. Clicking a button itself does not go through to the page.</div>
 </header>
 <nav class="nav" aria-label="Scenario navigation">
 <a href="#plain">Plain words</a>
@@ -152,7 +152,8 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <h2>What the buttons do</h2>
 <div class="plain">
 <p><strong>I will operate</strong> asks the Agent to stop clicking and typing on this webpage. It does not reload the page. It is not the browser Stop for a document that is still loading. Until the program confirms the pause, do not say the Agent has stopped. After it confirms, you type and click; the Agent does not.</p>
-<p><strong>Continue Agent</strong> is you telling the Agent it may click and type again. A timeout, a reconnect, or opening a restored tab does not do that for you.</p>
+<p><strong>Continue Agent</strong> is you telling the Agent it may click and type again. A timeout, a reconnect, or opening a restored tab does not do that for you. Ordinary pause uses this label after pause is confirmed.</p>
+<p><strong>Needs your confirmation</strong> is not ordinary pause. The Agent is waiting for Allow or Deny on the existing card in the owning conversation. The floating control must look different from Paused. Clicking it opens that conversation and brings the existing Allow / Deny card into view. It does not approve for you. It is not Continue Agent. Do not add a second Allow / Deny card on the webpage or in the browser top row.</p>
 <p><strong>Show actions / click marks</strong> draws short marks on the last places the Agent clicked or typed. They do not change what the webpage receives.</p>
 <p><strong>Operation history</strong> lists recent Agent steps for this webpage. It is a log. It does not undo those steps.</p>
 <p>Semi-transparent buttons still hide whatever is under them. Empty space around them does not block clicks on the webpage. To reach covered content, drag the small button elsewhere or fold the actions.</p>
@@ -261,7 +262,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 
 <section id="case-3">
 <div class="case-head"><span class="number">03</span><h2>Human input or login</h2></div>
-<p class="question">When a form or login needs you, how do you ask the Agent to stop, and when may the screen say Paused?</p>
+<p class="question">When a form or login needs you, how do you ask the Agent to stop, and when may the screen say Paused? When the conversation is waiting for Allow or Deny, how must that look different from ordinary pause?</p>
 <fieldset class="comparison"><legend class="sr-only">Human input</legend>
 <article class="variant current">
 <div class="badges"><span class="badge">OpenProgram today</span></div>
@@ -288,7 +289,15 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <div class="float se"><span class="chip status" title="Waiting to pause…">Waiting to pause…</span><span class="chip">I will operate</span></div></div>
 <p class="glass-note">OpenProgram proposed look. Other products are not verified to use the same semi-transparent buttons.</p>
 </div>
-<p class="difference">Do not say Paused until the program confirms. After that, the same buttons show Continue Agent. You operate the page; the Agent does not. ChatGPT Work pauses for sign-in in a separate cloud browser; you open a task link there, not buttons on this local page. <a href="#ref-r2">R2</a></p>
+<div class="mock" role="img" aria-labelledby="t3a2">
+<span class="sr-only" id="t3a2">Waiting for Allow or Deny. Floating control says Needs your confirmation. No Continue Agent. No second approval card on the page.</span>
+<div class="mock-top"><span>OpenProgram</span><span>Illustration</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://shop.example/checkout</div></div>
+<div class="page"><h4>Checkout</h4><p>The existing Allow / Deny card stays in the owning conversation, not duplicated here.</p>
+<div class="float se notice-float"><span class="chip status" title="Needs your confirmation">Needs your confirmation</span><span class="chip">Open confirmation</span></div></div>
+<p class="glass-note">OpenProgram proposed look. Distinct from ordinary pause. The action only opens the existing conversation card.</p>
+</div>
+<p class="difference">Do not say Paused until the program confirms. After that, the same buttons show Continue Agent. You operate the page; the Agent does not. Waiting for Allow or Deny is a different state: the floating control says Needs your confirmation, not Paused, and the action opens the owning conversation’s existing approval card so Allow / Deny come into view. It does not auto-approve. It does not substitute Continue Agent. No browser top row. No second approval card on the webpage. ChatGPT Work pauses for sign-in in a separate cloud browser; you open a task link there, not buttons on this local page. <a href="#ref-r2">R2</a></p>
 <div class="source">A separate viewer for you to type is similar in purpose. Buttons drawn on the local webpage are not verified there.</div>
 <label class="choose"><input type="radio" name="s3" value="A" data-title="A · Semi-transparent I will operate, then Continue Agent after pause is confirmed" checked><span>Choose this option</span></label>
 </article>
@@ -307,7 +316,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <label class="choose"><input type="radio" name="s3" value="B" data-title="B · Pause from the right Activity list"><span>Choose this option</span></label>
 </article>
 </fieldset>
-<p class="recommendation">Recommend A. Waiting for confirmation is visible on the page you must type into. Continue Agent is a separate click after pause is confirmed.</p>
+<p class="recommendation">Recommend A. Waiting for pause confirmation is visible on the page you must type into. Continue Agent is a separate click after pause is confirmed. Waiting for Allow or Deny must stay visibly distinct: Needs your confirmation, then open the existing conversation card. Do not treat that wait as ordinary pause.</p>
 </section>
 
 <section id="case-4">
@@ -670,7 +679,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 
 <section id="playground">
 <h2>Interactive playground</h2>
-<p>Local mock only. No network. This playground covers six states (ordinary browsing, Agent working, human input, timeout, disconnect, finished). Drag the small button anywhere on the mock webpage. Click expands or folds. Dragging does not expand. Arrow keys move it; Enter expands or folds. Decorative controls are not in the tab order. The click icon uses the mouse-click motion you supplied. This page demonstrates the animation with CSS; the App implementation should use your CursorClickIcon component. This document does not implement the App.</p>
+<p>Local mock only. No network. This playground covers seven states (ordinary browsing, Agent working, human input, waiting for your confirmation, timeout, disconnect, finished). Drag the small button anywhere on the mock webpage. Click expands or folds. Dragging does not expand. Arrow keys move it; Enter expands or folds. Decorative controls are not in the tab order. The click icon uses the mouse-click motion you supplied. This page demonstrates the animation with CSS; the App implementation should use your CursorClickIcon component. This document does not implement the App.</p>
 <div class="playground">
 <div class="controls">
 <label>Scenario
@@ -678,6 +687,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <option value="idle">Ordinary browsing</option>
 <option value="work" selected>Agent working</option>
 <option value="login">Human input</option>
+<option value="approve">Needs your confirmation</option>
 <option value="fail">Timeout</option>
 <option value="drop">Disconnect</option>
 <option value="done">Finished</option>
@@ -686,6 +696,8 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <button type="button" id="pg-collapse">Fold / expand</button>
 <button type="button" id="pg-pause">I will operate</button>
 <button type="button" id="pg-ack">Mock pause acknowledgement</button>
+<button type="button" id="pg-approve">Mock needs confirmation</button>
+<button type="button" id="pg-open-card">Open confirmation</button>
 <button type="button" id="pg-continue">Continue Agent</button>
 <button type="button" id="pg-fail">Mock failure</button>
 <button type="button" id="pg-ok">Mock task finished</button>
@@ -702,6 +714,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <div class="form" id="pg-form" hidden><label>Password<input id="pg-input" type="password" autocomplete="off" readonly tabindex="-1" value=""></label><p class="small">Fake login mock. No real credentials.</p></div>
 <span class="mark" id="pg-mark" hidden style="left:58%;top:46%"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></span>
 <div class="float free collapsed" id="pg-float" role="button" tabindex="0" aria-label="Small draggable Agent button"></div>
+<div id="pg-card" hidden style="position:absolute;left:10px;top:10px;background:#fff;color:#222;padding:10px;border-radius:8px;font-size:12px;max-width:200px;box-shadow:0 4px 16px #0003"><b>Existing confirmation</b><p class="small">Allow or Deny stay on this conversation card. The floating control only brought it into view.</p><span class="chip" style="color:#222;border:1px solid #ccc">Allow</span> <span class="chip" style="color:#222;border:1px solid #ccc">Deny</span></div>
 <ol id="pg-history" hidden style="position:absolute;left:10px;bottom:10px;background:#ffffffd8;color:#222;padding:8px 18px;border-radius:8px;font-size:12px"><li>click Pay</li><li>type email</li></ol>
 </div>
 </div>
@@ -737,7 +750,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 
 <section id="status">
 <h2>Implementation status</h2>
-<p>The in-app browser is implemented as the chosen design. Buttons can expand, fold, and be dragged, and they stay in one row when expanded; these interactions were checked in the installed App. Smooth mouse movement is covered by automated tests. Code review and tests passed. Other application windows and virtual machines on the computer are not yet implemented as on this page. The small chat window and the large webpage can show the same page at the same time; hiding the small window does not close the webpage.</p>
+<p>The in-app browser is implemented as the chosen design. Buttons can expand, fold, and be dragged, and they stay in one row when expanded; these interactions were checked in the installed App. Smooth mouse movement is covered by automated tests. Code review and tests passed. Other application windows and virtual machines on the computer are not yet implemented as on this page. The small chat window and the large webpage can show the same page at the same time; hiding the small window does not close the webpage. Making waiting for your confirmation look different from ordinary pause — Needs your confirmation, open the existing Allow / Deny card, no auto-approve, no extra card, no browser top row — is implementation in progress.</p>
 </section>
 <footer>The in-app browser is implemented; other application windows and virtual machines remain a design.</footer>
 </main>
@@ -847,7 +860,7 @@ function renderFloat(){
   if(rec) rec.disabled=phase!=="drop";
   var hide=(phase==="idle"||phase==="done");
   floatEl.hidden=hide;
-  floatEl.className="float free"+(collapsed?" collapsed":"");
+  floatEl.className="float free"+(collapsed?" collapsed":"")+(phase==="approve"?" notice-float":"");
   if(hide) return;
   if(collapsed){
     floatEl.setAttribute("role","button");
@@ -860,12 +873,15 @@ function renderFloat(){
     active:"Active · checkout",
     waiting:"Waiting to pause…",
     paused:"Paused",
+    approve:"Needs your confirmation",
     fail:"Pause not confirmed",
     drop:"Connection lost"
   }[phase]||phase;
-  var pauseDisabled=(phase==="drop"||phase==="fail")?" disabled":"";
+  var pauseDisabled=(phase==="drop"||phase==="fail"||phase==="approve")?" disabled":"";
   var action=(phase==="paused")
     ? '<button type="button" class="chip" id="pg-float-go" style="background:#ffffff22;color:inherit;padding:3px 7px">Continue Agent</button>'
+    : (phase==="approve")
+    ? '<button type="button" class="chip" id="pg-float-open" style="background:#ffffff22;color:inherit;padding:3px 7px">Open confirmation</button>'
     : '<button type="button" class="chip" id="pg-float-pause" style="background:#ffffff22;color:inherit;padding:3px 7px"'+pauseDisabled+'>I will operate</button>';
   floatEl.innerHTML='<span class="chip status" id="pg-status" title="'+label+'">'+label+'</span>'+action+'<button type="button" class="chip" id="pg-float-fold" style="background:#ffffff22;color:inherit;padding:3px 7px">Fold</button><button type="button" class="chip" id="pg-float-more" style="background:#ffffff22;color:inherit;padding:3px 7px">History</button>';
   floatEl.setAttribute("role","group");
@@ -874,12 +890,15 @@ function renderFloat(){
   if(pauseBtn) pauseBtn.onclick=function(e){ e.stopPropagation(); requestPause(); };
   var go=document.getElementById("pg-float-go");
   if(go) go.onclick=function(e){ e.stopPropagation(); doContinue(); };
+  var openCard=document.getElementById("pg-float-open");
+  if(openCard) openCard.onclick=function(e){ e.stopPropagation(); showCard(); };
   document.getElementById("pg-float-more").onclick=function(e){ e.stopPropagation(); toggleHist(); };
   document.getElementById("pg-float-fold").onclick=function(e){ e.stopPropagation(); collapsed=true; renderFloat(); };
   applyPos();
 }
 function requestPause(){ if(phase==="drop") return; phase="waiting"; renderFloat(); }
 function doContinue(){ if(phase!=="paused") return; phase="active"; renderFloat(); }
+function showCard(){ document.getElementById("pg-card").hidden=false; }
 function toggleHist(){ hist=!hist; document.getElementById("pg-history").hidden=!hist; }
 function endDrag(ev, toggle){
   if(!drag.on) return;
@@ -932,12 +951,14 @@ function scene(v){
   document.getElementById("pg-history").hidden=true;
   document.getElementById("pg-mark").hidden=true;
   document.getElementById("pg-form").hidden=v!=="login";
+  document.getElementById("pg-card").hidden=true;
   var addr=document.getElementById("pg-addr");
   var title=document.getElementById("pg-title");
   var copy=document.getElementById("pg-copy");
   if(v==="idle"){ phase="idle"; addr.textContent="https://docs.example/guide"; title.textContent="Product guide"; copy.textContent="Idle page. Agent buttons hidden."; }
   else if(v==="work"){ phase="active"; addr.textContent="https://shop.example/checkout"; title.textContent="Checkout"; copy.textContent="Agent is using this page. Drag the small button. Click to expand."; }
-  else if(v==="login"){ phase="waiting"; addr.textContent="https://id.example/login"; title.textContent="Sign in"; copy.textContent="You must type. Not Paused until acknowledgement."; }
+  else if(v==="login"){ phase="waiting"; addr.textContent="https://id.example/login"; title.textContent="Sign in"; copy.textContent="You must type. Not Paused until acknowledgement. Ordinary pause still uses Continue Agent after that."; }
+  else if(v==="approve"){ phase="approve"; addr.textContent="https://shop.example/checkout"; title.textContent="Checkout"; copy.textContent="Needs your confirmation. Open confirmation brings the existing Allow / Deny card into view. It does not approve. It is not Continue Agent."; }
   else if(v==="fail"){ phase="fail"; addr.textContent="https://app.example/settings"; title.textContent="Settings"; copy.textContent="Pause was not confirmed. This is not a reported failure."; }
   else if(v==="drop"){ phase="drop"; addr.textContent="https://mail.example/inbox"; title.textContent="Inbox"; copy.textContent="Retry reconnects. It does not Continue Agent."; }
   else { phase="done"; addr.textContent="https://wiki.example/done"; title.textContent="Article"; copy.textContent="Finished. Agent buttons hidden. Restore does not Continue Agent."; }
@@ -951,6 +972,8 @@ document.getElementById("pg-collapse").onclick=function(){
 document.getElementById("pg-scene").onchange=function(){ scene(this.value); };
 document.getElementById("pg-pause").onclick=requestPause;
 document.getElementById("pg-ack").onclick=function(){ if(phase==="waiting"){ phase="paused"; renderFloat(); } };
+document.getElementById("pg-approve").onclick=function(){ phase="approve"; document.getElementById("pg-card").hidden=true; renderFloat(); };
+document.getElementById("pg-open-card").onclick=function(){ if(phase==="approve") showCard(); };
 document.getElementById("pg-continue").onclick=doContinue;
 document.getElementById("pg-fail").onclick=function(){ phase="fail"; renderFloat(); };
 document.getElementById("pg-ok").onclick=function(){ phase="done"; renderFloat(); };

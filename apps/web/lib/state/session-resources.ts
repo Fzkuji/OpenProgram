@@ -5,6 +5,7 @@ export type BrowserControlState =
   | "active"
   | "yielding"
   | "paused"
+  | "waiting"
   | "unknown"
   | "stop_unconfirmed"
   | "idle"
@@ -43,6 +44,7 @@ export type SessionResource = {
   generation?: number;
   sequence?: number;
   lastOperation?: BrowserLastOperation;
+  pendingWait?: { id: string; kind?: string; tool?: string };
 };
 
 export type BackendResource = {
@@ -65,6 +67,7 @@ export type BackendResource = {
   generation?: number;
   sequence?: number;
   last_operation?: BrowserLastOperation;
+  pending_wait?: { id?: string; kind?: string; tool?: string };
 };
 
 export type PreviewPreference = {
@@ -179,10 +182,21 @@ export function resourceSessionId(tab: CenterTab | undefined): string | null {
 
 function asControlState(value: unknown): BrowserControlState | undefined {
   if (
-    value === "active" || value === "yielding" || value === "paused" || value === "unknown"
-    || value === "stop_unconfirmed" || value === "idle" || value === "closed"
+    value === "active" || value === "yielding" || value === "paused" || value === "waiting"
+    || value === "unknown" || value === "stop_unconfirmed" || value === "idle" || value === "closed"
   ) return value;
   return undefined;
+}
+
+function asPendingWait(value: unknown): SessionResource["pendingWait"] {
+  if (!value || typeof value !== "object") return undefined;
+  const item = value as { id?: unknown; kind?: unknown; tool?: unknown };
+  if (typeof item.id !== "string" || !item.id) return undefined;
+  return {
+    id: item.id,
+    kind: typeof item.kind === "string" ? item.kind : undefined,
+    tool: typeof item.tool === "string" ? item.tool : undefined,
+  };
 }
 
 function asLastOperation(value: unknown): BrowserLastOperation | undefined {
@@ -232,6 +246,7 @@ export function normalizeBackendResource(item: BackendResource, scopeSessionId: 
       generation: item.generation,
       sequence: item.sequence,
       lastOperation: asLastOperation(item.last_operation),
+      pendingWait: asPendingWait(item.pending_wait),
     };
   }
   if (item.source !== "usage") return null;

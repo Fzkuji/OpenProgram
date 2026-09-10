@@ -5951,6 +5951,20 @@ async function checkNativeControlOverlayAndCueReplay() {
     { type: "pause", id: "page-a", generation: 1 },
   );
   assert.ok(win.sent.some((item) => item[0] === "webtab:control-overlay-event" && item[1].type === "pause"));
+  const beforeStale = win.sent.filter((item) => item[0] === "webtab:control-overlay-event").length;
+  ipcListeners.get("webtab:control-overlay-event")(
+    { sender: overlaySender },
+    { type: "resume", id: "page-a", generation: 99 },
+  );
+  const afterStale = win.sent.filter((item) => item[0] === "webtab:control-overlay-event");
+  assert.equal(afterStale.length, beforeStale + 1);
+  assert.equal(afterStale.at(-1)[1].type, "stale");
+  assert.equal(afterStale.some((item) => item[1].type === "resume" && item[1].generation === 99), false);
+  ipcListeners.get("webtab:control-overlay-event")(
+    { sender: overlaySender },
+    { type: "reveal", id: "page-a", generation: 1 },
+  );
+  assert.ok(win.sent.some((item) => item[0] === "webtab:control-overlay-event" && item[1].type === "reveal"));
   ipcListeners.get("webtab:control-overlay-event")(
     { sender: overlaySender },
     { type: "history", id: "page-a", generation: 1 },

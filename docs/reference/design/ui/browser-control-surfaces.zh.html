@@ -119,7 +119,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <h1>十种浏览器控制场景，直接看方案</h1>
 <p class="intro">每一行比较同一种情况：左边是当前 OpenProgram，中间和右边是可选方案。图是行为示意，不是产品截图。电脑如何操作仍以 <a href="gui-agent.zh.html">GUI Agent</a> 为准。本页只决定暂停、继续、点击标记和操作历史出现在哪里。已经确定：这些按钮离开普通浏览顶栏。先显示一个可拖动的小按钮，可在网页里任意挪动。点击展开操作，再点收起。有多透明、是否自动收起，仍待你确认。对话里的小窗预览和大网页可以同时显示，显示同一张网页。隐藏小窗预览不会关掉网页。点击光标从上次画出的位置平滑移到下一个点，到达后再播放点击。没有上次位置时，第一个点直接出现。动画很短。资源、generation、几何或导航变化会取消移动，并保留上次画出的位置，不会跳到尚未到达的目标。系统要求减少动效时不移动。同一点的重复点击在到达后再播一次点击。这是页面上的标记，不是操作系统指针。</p>
 <p><a href="browser-control-surfaces.html">English</a></p>
-<div class="notice"><span class="badge constraint">已经确定</span> 普通浏览保留地址栏、后退、刷新和书签。Agent 按钮、状态文字和错误离开顶栏，出现在你正在看的网页上，做成半透明按钮。Files / Activity / Resources 仍是右侧纵向列表。不要把整页变暗。不要把别的应用窗口拉到最前。对话里的小窗预览和大网页可以同时显示，显示同一张网页。隐藏小窗预览不会关掉网页。<span class="badge pending">建议，还没确定</span> 有多透明、是否自动收起还没确定。在网页里任意拖动已经确定。半透明按钮仍挡住底下的内容。按钮周围的空白不影响点击网页。要点击被挡住的内容，把可拖动的小按钮挪开或收起。点按钮本身不会点到网页。</div>
+<div class="notice"><span class="badge constraint">已经确定</span> 普通浏览保留地址栏、后退、刷新和书签。Agent 按钮、状态文字和错误离开顶栏，出现在你正在看的网页上，做成半透明按钮。等待允许或拒绝时不能看起来像普通暂停：半透明按钮写「需要你确认」，并打开所属对话里已有的确认卡片。Files / Activity / Resources 仍是右侧纵向列表。不要把整页变暗。不要把别的应用窗口拉到最前。对话里的小窗预览和大网页可以同时显示，显示同一张网页。隐藏小窗预览不会关掉网页。<span class="badge pending">建议，还没确定</span> 有多透明、是否自动收起还没确定。在网页里任意拖动已经确定。半透明按钮仍挡住底下的内容。按钮周围的空白不影响点击网页。要点击被挡住的内容，把可拖动的小按钮挪开或收起。点按钮本身不会点到网页。</div>
 </header>
 <nav class="nav" aria-label="场景导航">
 <a href="#plain">用语说明</a>
@@ -150,7 +150,8 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <h2>这些按钮做什么</h2>
 <div class="plain">
 <p><strong>我来操作</strong> 是请 Agent 停止在这个网页上点击和输入。它不是重新加载页面，也不是浏览器对正在加载文档的停止。程序确认暂停之前，不要写成「已暂停」。确认之后由你点击和输入，Agent 不再操作。</p>
-<p><strong>让 Agent 继续</strong> 是你明确允许 Agent 再次点击和输入。超时、重连或打开恢复的标签都不会替你做这件事。</p>
+<p><strong>让 Agent 继续</strong> 是你明确允许 Agent 再次点击和输入。超时、重连或打开恢复的标签都不会替你做这件事。普通暂停在确认之后用这几个字。</p>
+<p><strong>需要你确认</strong> 不是普通暂停。Agent 正在等所属对话里已有卡片上的允许或拒绝。网页上的半透明按钮必须和「已暂停」看起来不一样。点它会打开那次对话，并把已有的允许 / 拒绝卡片滚进视野。它不会替你批准。它不是「让 Agent 继续」。不要在网页或浏览器顶栏再画一张允许 / 拒绝卡片。</p>
 <p><strong>显示操作 / 点击标记</strong> 在 Agent 最近点击或输入的位置画短时标记。它们不改变网页收到的输入。</p>
 <p><strong>操作历史</strong> 列出这个网页上最近的 Agent 步骤。它是日志，不能撤销那些步骤。</p>
 <p>半透明按钮仍挡住底下的内容。按钮周围的空白不影响点击网页。要点击被挡住的内容，把可拖动的小按钮挪到别处，或把操作收起。</p>
@@ -259,7 +260,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 
 <section id="case-3">
 <div class="case-head"><span class="number">03</span><h2>需要人工或登录</h2></div>
-<p class="question">表单或登录需要你来输入时，怎样请 Agent 停下？屏幕何时才能写「已暂停」？</p>
+<p class="question">表单或登录需要你来输入时，怎样请 Agent 停下？屏幕何时才能写「已暂停」？对话正在等允许或拒绝时，必须怎样和普通暂停区分开？</p>
 <fieldset class="comparison"><legend class="sr-only">需要人工</legend>
 <article class="variant current">
 <div class="badges"><span class="badge">OpenProgram 当前</span></div>
@@ -286,7 +287,15 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <div class="float se"><span class="chip status" title="正在等待暂停确认…">正在等待暂停确认…</span><span class="chip">我来操作</span></div></div>
 <p class="glass-note">OpenProgram 拟选外观。未核实其他产品使用相同的半透明按钮。</p>
 </div>
-<p class="difference">程序确认之前不写已暂停。确认之后，同一排按钮显示「让 Agent 继续」。这时由你操作网页，Agent 不再点。ChatGPT Work 在独立云浏览器里为登录暂停；你打开任务链接去输入，不是在本地网页上放这些按钮。<a href="#ref-r2">R2</a></p>
+<div class="mock" role="img" aria-labelledby="t3a2">
+<span class="sr-only" id="t3a2">正在等允许或拒绝。半透明按钮写需要你确认。没有让 Agent 继续。网页上没有第二张确认卡片。</span>
+<div class="mock-top"><span>OpenProgram</span><span>行为示意</span></div>
+<div class="chrome"><span class="navbtns" aria-hidden="true"><span></span><span></span><span></span></span><div class="addr">https://shop.example/checkout</div></div>
+<div class="page"><h4>结账</h4><p>已有的允许 / 拒绝卡片留在所属对话里，不在这里再画一张。</p>
+<div class="float se notice-float"><span class="chip status" title="需要你确认">需要你确认</span><span class="chip">打开确认</span></div></div>
+<p class="glass-note">OpenProgram 拟选外观。与普通暂停不同。这个操作只打开已有的对话卡片。</p>
+</div>
+<p class="difference">程序确认之前不写已暂停。确认之后，同一排按钮显示「让 Agent 继续」。这时由你操作网页，Agent 不再点。等待允许或拒绝是另一种状态：半透明按钮写「需要你确认」，不是「已暂停」；点下去打开所属对话里已有的确认卡片，让允许 / 拒绝进入视野。不会自动批准。不能用「让 Agent 继续」代替。不要浏览器顶栏。不要在网页上再画一张确认卡片。ChatGPT Work 在独立云浏览器里为登录暂停；你打开任务链接去输入，不是在本地网页上放这些按钮。<a href="#ref-r2">R2</a></p>
 <div class="source">单独开一个窗口让你输入，目的相近。在本地网页上画这些按钮，那里没有核实。</div>
 <label class="choose"><input type="radio" name="s3" value="A" data-title="A · 半透明「我来操作」，程序确认暂停后再「让 Agent 继续」" checked><span>选择这个方案</span></label>
 </article>
@@ -305,7 +314,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <label class="choose"><input type="radio" name="s3" value="B" data-title="B · 在右侧 Activity 里点「我来操作」"><span>选择这个方案</span></label>
 </article>
 </fieldset>
-<p class="recommendation">建议 A。你要输入的那张网页上能看到正在等待确认。「让 Agent 继续」要等暂停确认后再点。</p>
+<p class="recommendation">建议 A。你要输入的那张网页上能看到正在等待暂停确认。「让 Agent 继续」要等暂停确认后再点。等待允许或拒绝必须看起来不一样：写「需要你确认」，再打开已有的对话卡片。不要把那种等待当成普通暂停。</p>
 </section>
 
 <section id="case-4">
@@ -668,7 +677,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 
 <section id="playground">
 <h2>试一下按钮</h2>
-<p>只在这张页上试，不上网。这里能试六种状态（普通浏览、Agent 工作中、需要人工、超时、断线、已结束）。可把小按钮拖到示意网页里任意位置。点击展开或收起。拖动不会展开。方向键移动，Enter 展开或收起。装饰用的控件不进入 Tab 顺序。点击图标采用你提供的鼠标点击动画。本页用 CSS 演示动画；App 实现时使用你提供的 CursorClickIcon 组件。本文不实现 App。</p>
+<p>只在这张页上试，不上网。这里能试七种状态（普通浏览、Agent 工作中、需要人工、需要你确认、超时、断线、已结束）。可把小按钮拖到示意网页里任意位置。点击展开或收起。拖动不会展开。方向键移动，Enter 展开或收起。装饰用的控件不进入 Tab 顺序。点击图标采用你提供的鼠标点击动画。本页用 CSS 演示动画；App 实现时使用你提供的 CursorClickIcon 组件。本文不实现 App。</p>
 <div class="playground">
 <div class="controls">
 <label>场景
@@ -676,6 +685,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <option value="idle">普通浏览</option>
 <option value="work" selected>Agent 工作中</option>
 <option value="login">需要人工</option>
+<option value="approve">需要你确认</option>
 <option value="fail">超时</option>
 <option value="drop">断线</option>
 <option value="done">已结束</option>
@@ -684,6 +694,8 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <button type="button" id="pg-collapse">收起 / 展开</button>
 <button type="button" id="pg-pause">我来操作</button>
 <button type="button" id="pg-ack">模拟暂停已确认</button>
+<button type="button" id="pg-approve">模拟需要你确认</button>
+<button type="button" id="pg-open-card">打开确认</button>
 <button type="button" id="pg-continue">让 Agent 继续</button>
 <button type="button" id="pg-fail">模拟失败</button>
 <button type="button" id="pg-ok">模拟任务结束</button>
@@ -700,6 +712,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 <div class="form" id="pg-form" hidden><label>密码<input id="pg-input" type="password" autocomplete="off" readonly tabindex="-1" value=""></label><p class="small">登录示意，无真实凭据。</p></div>
 <span class="mark" id="pg-mark" hidden style="left:58%;top:46%"><svg class="click-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g class="click-cursor"><path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/></g><g class="click-lines"><path class="l0" d="M14 4.1 12 6"/><path class="l1" d="m5.1 8-2.9-.8"/><path class="l2" d="m6 12-1.9 2"/><path class="l3" d="M7.2 2.2 8 5.1"/></g></svg></span>
 <div class="float free collapsed" id="pg-float" role="button" tabindex="0" aria-label="可拖动的小按钮"></div>
+<div id="pg-card" hidden style="position:absolute;left:10px;top:10px;background:#fff;color:#222;padding:10px;border-radius:8px;font-size:12px;max-width:200px;box-shadow:0 4px 16px #0003"><b>已有的确认卡片</b><p class="small">允许或拒绝仍在这张对话卡片上。半透明按钮只是把它带到视野里。</p><span class="chip" style="color:#222;border:1px solid #ccc">允许</span> <span class="chip" style="color:#222;border:1px solid #ccc">拒绝</span></div>
 <ol id="pg-history" hidden style="position:absolute;left:10px;bottom:10px;background:#ffffffd8;color:#222;padding:8px 18px;border-radius:8px;font-size:12px"><li>点击支付</li><li>输入邮箱</li></ol>
 </div>
 </div>
@@ -735,7 +748,7 @@ footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);paddin
 
 <section id="status">
 <h2>实现状态</h2>
-<p>应用内浏览器已按选定方案实现。按钮可以展开、收起和拖动，展开后保持一排；这些交互已在安装的 App 中检查。鼠标平滑移动已通过自动化测试。代码审查和测试已通过。电脑上的其他应用窗口和虚拟机尚未实现本页方案。对话小窗和大网页可以同时显示同一张网页；隐藏小窗不会关闭网页。</p>
+<p>应用内浏览器已按选定方案实现。按钮可以展开、收起和拖动，展开后保持一排；这些交互已在安装的 App 中检查。鼠标平滑移动已通过自动化测试。代码审查和测试已通过。电脑上的其他应用窗口和虚拟机尚未实现本页方案。对话小窗和大网页可以同时显示同一张网页；隐藏小窗不会关闭网页。让「需要你确认」看起来不同于普通暂停——写「需要你确认」、打开已有的允许 / 拒绝卡片、不自动批准、不另画卡片、不要浏览器顶栏——正在实现。</p>
 </section>
 <footer>应用内浏览器已实现；其他应用窗口和虚拟机仍是设计方案。</footer>
 </main>
@@ -845,7 +858,7 @@ function renderFloat(){
   if(rec) rec.disabled=phase!=="drop";
   var hide=(phase==="idle"||phase==="done");
   floatEl.hidden=hide;
-  floatEl.className="float free"+(collapsed?" collapsed":"");
+  floatEl.className="float free"+(collapsed?" collapsed":"")+(phase==="approve"?" notice-float":"");
   if(hide) return;
   if(collapsed){
     floatEl.setAttribute("role","button");
@@ -858,12 +871,15 @@ function renderFloat(){
     active:"活动中 · checkout",
     waiting:"正在等待暂停确认…",
     paused:"已暂停",
+    approve:"需要你确认",
     fail:"暂停未确认",
     drop:"连接已断开"
   }[phase]||phase;
-  var pauseDisabled=(phase==="drop"||phase==="fail")?" disabled":"";
+  var pauseDisabled=(phase==="drop"||phase==="fail"||phase==="approve")?" disabled":"";
   var action=(phase==="paused")
     ? '<button type="button" class="chip" id="pg-float-go" style="background:#ffffff22;color:inherit;padding:3px 7px">让 Agent 继续</button>'
+    : (phase==="approve")
+    ? '<button type="button" class="chip" id="pg-float-open" style="background:#ffffff22;color:inherit;padding:3px 7px">打开确认</button>'
     : '<button type="button" class="chip" id="pg-float-pause" style="background:#ffffff22;color:inherit;padding:3px 7px"'+pauseDisabled+'>我来操作</button>';
   floatEl.innerHTML='<span class="chip status" id="pg-status" title="'+label+'">'+label+'</span>'+action+'<button type="button" class="chip" id="pg-float-fold" style="background:#ffffff22;color:inherit;padding:3px 7px">收起</button><button type="button" class="chip" id="pg-float-more" style="background:#ffffff22;color:inherit;padding:3px 7px">历史</button>';
   floatEl.setAttribute("role","group");
@@ -872,12 +888,15 @@ function renderFloat(){
   if(pauseBtn) pauseBtn.onclick=function(e){ e.stopPropagation(); requestPause(); };
   var go=document.getElementById("pg-float-go");
   if(go) go.onclick=function(e){ e.stopPropagation(); doContinue(); };
+  var openCard=document.getElementById("pg-float-open");
+  if(openCard) openCard.onclick=function(e){ e.stopPropagation(); showCard(); };
   document.getElementById("pg-float-more").onclick=function(e){ e.stopPropagation(); toggleHist(); };
   document.getElementById("pg-float-fold").onclick=function(e){ e.stopPropagation(); collapsed=true; renderFloat(); };
   applyPos();
 }
 function requestPause(){ if(phase==="drop") return; phase="waiting"; renderFloat(); }
 function doContinue(){ if(phase!=="paused") return; phase="active"; renderFloat(); }
+function showCard(){ document.getElementById("pg-card").hidden=false; }
 function toggleHist(){ hist=!hist; document.getElementById("pg-history").hidden=!hist; }
 function endDrag(ev, toggle){
   if(!drag.on) return;
@@ -930,12 +949,14 @@ function scene(v){
   document.getElementById("pg-history").hidden=true;
   document.getElementById("pg-mark").hidden=true;
   document.getElementById("pg-form").hidden=v!=="login";
+  document.getElementById("pg-card").hidden=true;
   var addr=document.getElementById("pg-addr");
   var title=document.getElementById("pg-title");
   var copy=document.getElementById("pg-copy");
   if(v==="idle"){ phase="idle"; addr.textContent="https://docs.example/guide"; title.textContent="产品说明"; copy.textContent="空闲网页。Agent 按钮已隐藏。"; }
   else if(v==="work"){ phase="active"; addr.textContent="https://shop.example/checkout"; title.textContent="结账"; copy.textContent="Agent 正在用这个网页。拖动小按钮。点击展开。"; }
-  else if(v==="login"){ phase="waiting"; addr.textContent="https://id.example/login"; title.textContent="登录"; copy.textContent="你必须输入。确认前不是已暂停。"; }
+  else if(v==="login"){ phase="waiting"; addr.textContent="https://id.example/login"; title.textContent="登录"; copy.textContent="你必须输入。确认前不是已暂停。普通暂停确认后仍用「让 Agent 继续」。"; }
+  else if(v==="approve"){ phase="approve"; addr.textContent="https://shop.example/checkout"; title.textContent="结账"; copy.textContent="需要你确认。打开确认会把已有的允许 / 拒绝卡片带到视野。不会替你批准。不是「让 Agent 继续」。"; }
   else if(v==="fail"){ phase="fail"; addr.textContent="https://app.example/settings"; title.textContent="设置"; copy.textContent="没有收到暂停确认。这不是程序明确报告的失败。"; }
   else if(v==="drop"){ phase="drop"; addr.textContent="https://mail.example/inbox"; title.textContent="收件箱"; copy.textContent="重试只重连，不会让 Agent 继续。"; }
   else { phase="done"; addr.textContent="https://wiki.example/done"; title.textContent="文章"; copy.textContent="任务已结束。按钮已隐藏。重新打开网页不会自动继续任务。"; }
@@ -949,6 +970,8 @@ document.getElementById("pg-collapse").onclick=function(){
 document.getElementById("pg-scene").onchange=function(){ scene(this.value); };
 document.getElementById("pg-pause").onclick=requestPause;
 document.getElementById("pg-ack").onclick=function(){ if(phase==="waiting"){ phase="paused"; renderFloat(); } };
+document.getElementById("pg-approve").onclick=function(){ phase="approve"; document.getElementById("pg-card").hidden=true; renderFloat(); };
+document.getElementById("pg-open-card").onclick=function(){ if(phase==="approve") showCard(); };
 document.getElementById("pg-continue").onclick=doContinue;
 document.getElementById("pg-fail").onclick=function(){ phase="fail"; renderFloat(); };
 document.getElementById("pg-ok").onclick=function(){ phase="done"; renderFloat(); };

@@ -794,6 +794,9 @@ def _public_row(resource, assoc, control, conversation_session_id, branch_id, br
     elif not live or lifecycle == "unavailable":
         control_state = "idle"
         status = "unknown"
+    elif stored_state == "waiting":
+        control_state = "waiting"
+        status = "open"
     elif stored_state == "paused":
         control_state = "paused"
         status = "open"
@@ -810,7 +813,7 @@ def _public_row(resource, assoc, control, conversation_session_id, branch_id, br
         control_state = "active"
         status = "in_use"
     else:
-        control_state = stored_state if stored_state in {"idle", "active", "paused"} else "idle"
+        control_state = stored_state if stored_state in {"idle", "active", "paused", "waiting"} else "idle"
         status = "open" if live else "unknown"
     operation = None
     raw = resource.get("last_operation")
@@ -1321,12 +1324,23 @@ def project_conversation_resources(conversation_session_id: str) -> tuple[list[d
     return rows, current_id, current_name
 
 
+def _wait_open_paused(execution) -> bool:
+    if execution is None:
+        return False
+    status = getattr(getattr(execution, "status", None), "value", None) or str(
+        getattr(execution, "status", "") or ""
+    )
+    return status == "paused" and getattr(execution, "reason_code", None) == "wait_open"
+
+
 def _control_state_for_execution(execution, unresolved: bool, fenced: bool) -> str:
     if execution is None:
         return "yielding" if fenced else "idle"
     status = getattr(getattr(execution, "status", None), "value", None) or str(
         getattr(execution, "status", "") or ""
     )
+    if _wait_open_paused(execution):
+        return "waiting"
     if status == "paused" and not unresolved:
         return "paused"
     if status == "paused" and unresolved:
@@ -1449,12 +1463,16 @@ def reconcile_resource_control(
         unresolved = unresolved or has_unresolved
         effects_unknown = effects_unknown or failed
     runtime_paused = any(_status_value(item) == "paused" for item in live_owners)
+    runtime_wait_open = any(_wait_open_paused(item) for item in live_owners)
     runtime_pausing = any(_status_value(item) == "pausing" for item in live_owners)
     runtime_running = any(_status_value(item) == "running" for item in live_owners)
     target = stored
     clear_fence = False
     clear_pause = False
-    if runtime_pausing or (fenced and runtime_running):
+    if runtime_wait_open:
+        target = "waiting"
+        clear_pause = True
+    elif runtime_pausing or (fenced and runtime_running):
         target = "yielding"
     elif runtime_paused and not unresolved and not effects_unknown:
         target = "paused"
@@ -1616,11 +1634,10 @@ async def request_page_resume(
     resource = store.get_resource(resource_id)
     if resource is None or not resource.get("live"):
         raise PermissionError("disconnected")
-    if (resource.get("control_state") or "") != "paused":
-        raise PermissionError("not_paused")
     executions = default_store()
     from openprogram.execution import default_control_service
     owners = []
+    wait_open = (resource.get("control_state") or "") == "waiting"
     owner_ids = _lease_execution_ids(resource_id) or [
         assoc.get("execution_id") for assoc in store.associations_for_page(resource_id)
         if assoc.get("execution_id")
@@ -1630,6 +1647,9 @@ async def request_page_resume(
             continue
         execution = executions.get_execution(execution_id)
         if execution is None or not _active_execution(execution):
+            continue
+        if _wait_open_paused(execution):
+            wait_open = True
             continue
         authorize_conversation_execution(
             actor or {}, "execution.continue", execution, store=executions,
@@ -1644,6 +1664,10 @@ async def request_page_resume(
         if unresolved:
             raise PermissionError("unresolved_effect")
         owners.append(execution)
+    if wait_open:
+        raise PermissionError("wait_open")
+    if (resource.get("control_state") or "") != "paused":
+        raise PermissionError("not_paused")
     from openprogram.programs.workflow.browser.web_use_runtime import get_registry
     get_registry().invalidate_page_frames(resource_id)
     last = None
@@ -1781,16 +1805,38 @@ async def handle_human_page_input(*, ws, window_id: str, tab_id: str, input_seq:
     store = BrowserResourceStore()
     for page_key in keys:
         opened = fence_page_writes(page_key, input_seq=input_seq)
+        wait_owner = None
+        try:
+            from openprogram.execution import default_store
+            executions = default_store()
+            for execution_id in _lease_execution_ids(page_key):
+                if not execution_id or executions is None:
+                    continue
+                candidate = executions.get_execution(execution_id)
+                if _wait_open_paused(candidate):
+                    wait_owner = candidate
+                    break
+        except Exception:
+            wait_owner = None
         try:
             current = store.get_resource(page_key) or {}
-            store.set_control_state(
-                page_key,
-                "yielding" if writes_fenced(page_key) else (current.get("control_state") or "idle"),
-                input_seq=input_seq,
-                bump=opened,
-            )
+            if wait_owner is not None:
+                store.set_control_state(
+                    page_key, "waiting",
+                    execution_id=getattr(wait_owner, "execution_id", None),
+                    input_seq=input_seq, bump=opened, clear_pause=True,
+                )
+            else:
+                store.set_control_state(
+                    page_key,
+                    "yielding" if writes_fenced(page_key) else (current.get("control_state") or "idle"),
+                    input_seq=input_seq,
+                    bump=opened,
+                )
         except Exception:
             _log.debug("browser page state update failed page_key=%s", page_key, exc_info=True)
+        if wait_owner is not None:
+            continue
         if not opened:
             continue
         resource = store.get_resource(page_key) or {}

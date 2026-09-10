@@ -1,13 +1,15 @@
 "use client";
 
-import { Clock3, Eye, Pause, Play, X } from "lucide-react";
+import { CircleHelp, Clock3, Eye, Pause, Play, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  browserTakeoverKind,
   displayedControlState,
   operationHistory,
   requestExplicitPause,
   requestResumeAgent,
   resumeErrorFor,
+  revealPendingApproval,
   showActionsEnabled,
   toggleShowActions,
   useBrowserControlStore,
@@ -44,6 +46,7 @@ function statusLabel(
   connected: boolean,
 ): string {
   if (state === "yielding") return text("Pausing…", "正在暂停…");
+  if (state === "waiting") return text("Needs your confirmation", "需要你确认");
   if (state === "paused") return text("Paused", "已暂停");
   if (state === "stop_unconfirmed") return text("Could not pause. Try again", "暂停失败，请重试");
   if (state === "unknown") {
@@ -104,11 +107,14 @@ export function BrowserControlBar({
   if (!controlSurfaceVisible(state) && surface === "float") return null;
   const connected = browserConnectionOpen();
   const shownStatus = statusLabel(state, text, connected);
-  const pauseLabel = state === "paused"
+  const takeoverKind = browserTakeoverKind(state);
+  const pauseLabel = takeoverKind === "reveal"
+    ? text("Review request", "查看请求")
+    : takeoverKind === "resume"
     ? text("Continue Agent", "让 Agent 继续")
-    : state === "yielding"
+    : takeoverKind === "yielding"
       ? text("Pausing…", "正在暂停…")
-      : state === "stop_unconfirmed"
+      : takeoverKind === "retry"
         ? text("Retry pause", "重试暂停")
         : text("I will operate", "我来操作");
   const showLabel = text("Show actions", "显示操作");
@@ -122,7 +128,7 @@ export function BrowserControlBar({
       disabled: true,
     }));
   const resumeError = resumeErrorFor(resource.resourceId);
-  const resumeDisabled = !connected || state !== "paused";
+  const resumeDisabled = !connected || (state !== "paused" && state !== "waiting");
   const pauseDisabled = state === "yielding" || state === "unknown" || !connected;
   const showTakeover = state !== "idle" && state !== "closed";
   const nativeHistory = typeof window !== "undefined" && !!window.openprogramDesktop?.contextMenu;
@@ -266,15 +272,21 @@ export function BrowserControlBar({
         <button
           type="button"
           className={styles.webToolbarBtn}
-          disabled={state === "paused" ? resumeDisabled : pauseDisabled}
+          disabled={takeoverKind === "resume" || takeoverKind === "reveal" ? resumeDisabled : pauseDisabled}
           title={pauseLabel}
           aria-label={pauseLabel}
           onClick={(event) => {
             event.stopPropagation();
-            void (state === "paused" ? requestResumeAgent(live) : requestExplicitPause(live));
+            if (takeoverKind === "reveal") {
+              revealPendingApproval(live);
+              return;
+            }
+            void (takeoverKind === "resume" ? requestResumeAgent(live) : requestExplicitPause(live));
           }}
         >
-          {state === "paused"
+          {takeoverKind === "reveal"
+            ? <CircleHelp size={14} aria-hidden="true" />
+            : takeoverKind === "resume"
             ? <Play size={14} aria-hidden="true" />
             : <Pause size={14} aria-hidden="true" />}
         </button>

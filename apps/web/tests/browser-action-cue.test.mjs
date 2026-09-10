@@ -15,6 +15,7 @@ test("idle and closed hide the floating control", () => {
   assert.equal(controlSurfaceVisible("closed"), false);
   assert.equal(controlSurfaceVisible("active"), true);
   assert.equal(controlSurfaceVisible("paused"), true);
+  assert.equal(controlSurfaceVisible("waiting"), true);
 });
 
 test("first cue appears at the target; later cues travel then click", () => {
