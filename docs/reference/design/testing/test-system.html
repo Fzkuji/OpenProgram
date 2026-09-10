@@ -150,6 +150,8 @@
     <li>npm 依赖风险按 workspace 单独审计；只采用兼容当前构建和测试的升级，不使用强制破坏性升级。</li>
   </ul>
 
+  <p>Merge-turn tests own their temporary SessionStore. The fixture registers close immediately after construction, so successful tests, assertion failures, and setup failures drain pending index writes and join store timers before the unit resource guard runs. The guard remains strict; cleanup does not depend on machine speed or a longer timeout.</p>
+
   <h2>9. 实现状态</h2>
   <div class="table"><table>
     <thead><tr><th>工作项</th><th>状态</th><th>完成证据</th></tr></thead>
