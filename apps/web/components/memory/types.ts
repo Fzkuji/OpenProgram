@@ -66,5 +66,5 @@ export interface EditorState {
   content: string;
   saving: boolean;
   saveStatus: "" | "saved" | "error";
-  viewMode: "edit" | "preview";
+  viewMode: "edit" | "preview" | "changes" | "history";
 }

@@ -84,14 +84,17 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
   );
 }
 
-export function EditorPanel({ title, badge, meta, state, onChange, onSave, onViewMode, onDelete, onPreviewClick }: {
+export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, onDelete, onPreviewClick, tools, notices, detail, loading }: {
   title: string;
   badge?: React.ReactNode;
   meta: string[];
   state: EditorState;
   onChange: (c: string) => void;
-  onSave: () => void | Promise<void>;
-  onViewMode: (m: "edit" | "preview") => void;
+  tools?: React.ReactNode;
+  notices?: React.ReactNode;
+  detail?: React.ReactNode;
+  loading?: boolean;
+  onViewMode: (m: EditorState["viewMode"]) => void;
   onDelete?: () => void | Promise<void>;
   onPreviewClick?: (e: React.MouseEvent) => void;
 }) {
@@ -124,9 +127,8 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
           </div>
           {state.saveStatus === "saved" && <span className={styles.saveOk}>✓ {text("Saved", "已保存")}</span>}
           {state.saveStatus === "error" && <span className={styles.saveErr}>✗ {text("Error", "错误")}</span>}
-          <button className={styles.saveBtn} onClick={onSave} disabled={state.saving}>
-            {state.saving ? text("Saving...", "保存中...") : text("Save", "保存")}
-          </button>
+          {state.saving && <span role="status">{text("Saving…", "保存中…")}</span>}
+          {tools}
           {onDelete && (
             <button
               className={styles.dangerBtn}
@@ -140,9 +142,11 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
           )}
         </div>
       </div>
-      {state.viewMode === "edit" ? (
+      {notices}
+      {loading ? <LoadingSkeleton /> : detail || (state.viewMode === "edit" ? (
         <textarea
           className={styles.textarea}
+          aria-label={text("Memory source", "Memory 源文本")}
           value={state.content}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
@@ -166,7 +170,7 @@ export function EditorPanel({ title, badge, meta, state, onChange, onSave, onVie
             <div className={styles.previewEmpty}>{text("Nothing to preview", "没有可预览内容")}</div>
           )}
         </div>
-      )}
+      ))}
       <div className={styles.editorFooter}>
         <span>{localeTextCount(lines, text("line", "行"), text("lines", "行"))}</span>
         <span>{localeTextCount(words, text("word", "词"), text("words", "词"))}</span>

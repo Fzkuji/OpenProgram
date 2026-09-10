@@ -1120,3 +1120,12 @@
   border-top: 1px solid var(--border);
   margin: 14px 0;
 }
+
+.editorNotice { padding: 12px 20px; font-size: 13px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.editorNotice button { text-decoration: underline; margin-left: 10px; }
+.historyPanel { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.revisionList { width: 270px; flex-shrink: 0; overflow: auto; border-right: 1px solid var(--border); padding: 12px; }
+.revisionRow { display: flex; flex-direction: column; text-align: left; gap: 5px; padding: 12px; width: 100%; border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.revisionRow[aria-pressed="true"] { background: var(--muted); }
+.historyDiff { flex: 1; min-width: 0; overflow: auto; padding: 16px; }
+@media (max-width: 700px) { .historyPanel { flex-direction: column; } .revisionList { width: 100%; max-height: 180px; border-right: 0; border-bottom: 1px solid var(--border); } }

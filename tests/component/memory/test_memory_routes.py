@@ -846,3 +846,31 @@ def test_backend_none_rejects_every_web_memory_route(
         }
     }
     assert not (tmp_path / "state" / "memory").exists()
+
+
+def test_editor_rejects_stale_base_and_returns_canonical_content(client, memory):
+    updated = NOTE.replace("A fact worth keeping.", "Updated fact.")
+    response = client.put("/api/memory/topics/note.md", json={
+        "content": updated, "base_content": "outdated",
+    })
+    assert response.status_code == 409
+    assert (memory / "topics/note.md").read_text() == NOTE
+    response = client.put("/api/memory/topics/note.md", json={
+        "content": updated, "base_content": NOTE,
+    })
+    assert response.status_code == 200
+    assert response.json()["content"] == (memory / "topics/note.md").read_text()
+
+
+def test_history_lists_commits_and_parent_diff(client, memory):
+    updated = NOTE.replace("A fact worth keeping.", "Updated fact.")
+    assert client.put("/api/memory/topics/note.md", json={"content": updated}).status_code == 200
+    result = client.get("/api/memory/history", params={"path": "note.md"})
+    assert result.status_code == 200
+    entry = result.json()["entries"][0]
+    assert entry["timestamp"]
+    result = client.get("/api/memory/history", params={"path": "note.md", "revision": entry["revision"]})
+    assert result.status_code == 200
+    assert "+Updated fact." in result.json()["diff"]
+    assert client.get("/api/memory/history", params={"path": "../sources/D1.md"}).status_code == 403
+    assert client.get("/api/memory/history", params={"path": "note.md", "revision": "--all"}).status_code == 400
