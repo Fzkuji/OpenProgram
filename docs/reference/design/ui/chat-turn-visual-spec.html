@@ -952,5 +952,10 @@ document.getElementById('replay-subagent').addEventListener('click',replaySubage
 document.getElementById('reset-subagent').addEventListener('click',resetSubagentDemo);
 </script>
 <section><h2>Assistant rendering across lifecycle states</h2><p>Streaming, completed, and restored assistant messages use the same ExecutionStrip, ThinkingStep, and FunctionStep components. When ordered blocks are absent, existing thinking and tool records are adapted for presentation in their stored order; this fallback does not reconstruct missing interleaving or invent tool records. Tool results, error state, identifiers, and full-output references remain intact. Completion never switches to the legacy boxed ToolsBlock table.</p><p>Implementation acceptance: complete a turn with tool calls, expand its execution summary, then reload the conversation. The same shared rows and detail interaction remain available.</p></section>
+<section>
+<h2>Chat math delimiters</h2>
+<p class="desc">Chat markdown already stashes complete <code>$$</code>/<code>$</code>/<code>\[</code>/<code>\(</code> blocks before <code>marked</code> and restores them as escaped text after sanitize. The React bubble still has to run KaTeX: <code>MarkdownText</code> typesets after paint, and the chat-area pin path calls <code>renderMathInChat</code>. Unclosed streaming math is not a complete stash pair; the next paint with a closer typesets. Sanitize, code, links, and ordinary escapes stay as they were. No new math library.</p>
+<p class="rule">Acceptance: the sample <code>\(d_t\)</code> / <code>\(v_t = (d_t - d_{t+1}) / d_t\)</code> produces KaTeX HTML on the assistant bubble; display <code>\[</code>/<code>$$</code> and inline <code>$</code> do too; prose without math and incomplete openers do not typeset; invalid math does not throw.</p>
+</section>
 </body>
 </html>

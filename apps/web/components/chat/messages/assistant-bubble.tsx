@@ -8,7 +8,7 @@
  * While the turn is still streaming with
  * nothing rendered yet, a typing indicator stands in.
  */
-import { memo } from "react";
+import { memo, useLayoutEffect, useRef } from "react";
 
 import {
   useSessionStore,
@@ -36,6 +36,7 @@ import {
 import type { TNode } from "./tree-types";
 import { MessageActions, MessageTimestamp } from "./message-actions";
 import { useAvatarAlign } from "./use-avatar-align";
+import { typesetMath } from "@/lib/runtime-bridge/markdown-render";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 import { RuntimeBlock } from "./runtime-block";
 import { TurnFilesChips } from "./turn-files-chips";
@@ -89,10 +90,16 @@ function errorHeadline(
 }
 
 const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const html = renderMarkdown(text);
+  useLayoutEffect(() => {
+    if (ref.current) typesetMath(ref.current);
+  }, [html]);
   return (
     <div
+      ref={ref}
       className="chat-text message-content"
-      dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
+      dangerouslySetInnerHTML={{ __html: html }}
     />
   );
 });

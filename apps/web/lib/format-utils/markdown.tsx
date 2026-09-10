@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import renderMathInElement from "katex/contrib/auto-render";
 import { marked as npmMarked, Marked } from "marked";
+import { typesetMath } from "@/lib/runtime-bridge/markdown-render";
 
 // Markdown + KaTeX rendering. Mirrors `renderMd()` and
 // `renderMathInChat()` from apps/web/public/js/shared/helpers.js.
@@ -35,13 +35,9 @@ function markdownToHtml(src: string, escapeRawHtml?: boolean): string {
     mathBlocks.push(m);
     return "%%MATH" + (mathBlocks.length - 1) + "%%";
   };
-  // $$...$$ (display)
   s = s.replace(/\$\$([\s\S]*?)\$\$/g, (m) => stash(m));
-  // \[...\] (display)
   s = s.replace(/\\\[([\s\S]*?)\\\]/g, (m) => stash(m));
-  // \(...\) (inline)
   s = s.replace(/\\\(([\s\S]*?)\\\)/g, (m) => stash(m));
-  // $...$ (inline, single line only)
   s = s.replace(/\$([^$\n]+?)\$/g, (m) => stash(m));
 
   let html: string;
@@ -60,20 +56,7 @@ function markdownToHtml(src: string, escapeRawHtml?: boolean): string {
  * `data-math-rendered` attribute so streaming updates don't re-render
  * already-typeset spans. */
 export function renderMathIn(el: HTMLElement): void {
-  if (typeof window === "undefined") return;
-  el.querySelectorAll<HTMLElement>(".md-rendered").forEach((node) => {
-    if (node.dataset.mathRendered) return;
-    renderMathInElement(node, {
-      delimiters: [
-        { left: "$$", right: "$$", display: true },
-        { left: "$", right: "$", display: false },
-        { left: "\\[", right: "\\]", display: true },
-        { left: "\\(", right: "\\)", display: false },
-      ],
-      throwOnError: false,
-    });
-    node.dataset.mathRendered = "1";
-  });
+  typesetMath(el);
 }
 
 /** Render a markdown + LaTeX string. Produces the same DOM shape

@@ -22,6 +22,7 @@ await build({
       a.path.includes('i18n') ? 'export const useTranslation=()=>({text:(en)=>en});' :
       a.path.includes('use-avatar-align') ? 'export const useAvatarAlign=()=>({containerRef:null,avatarTop:0});' :
       a.path.endsWith('/markdown') ? 'export const useMarkdownReady=()=>{}, renderMarkdown=t=>t;' :
+      a.path.includes('markdown-render') ? 'export const typesetMath=()=>{};' :
       a.path.includes('user-attachments') ? 'export const parseAttachments=text=>({attachments:[],text}), AttachmentChips=()=>null;' :
       a.path.includes('turn-files-presentation') ? 'export const shouldRenderTurnFiles=()=>false;' :
       'export const Avatar=()=>null, AttachCard=()=>null, ExecutionStrip=()=>null, execStripLabel=()=>"", FunctionStep=()=>null, SPAWNING_TOOL_NAMES=new Set(), SubAgentStep=()=>null, ThinkingStep=()=>null, MessageActions=()=>null, MessageTimestamp=()=>null, RuntimeBlock=()=>null, TurnFilesChips=()=>null;'

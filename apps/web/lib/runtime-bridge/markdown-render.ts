@@ -98,8 +98,9 @@ export function renderMd(s: unknown): string {
   return out;
 }
 
-export function renderMathInChat(): void {
-  document.querySelectorAll<HTMLElement>(".md-rendered").forEach((el) => {
+export function typesetMath(root: ParentNode): void {
+  if (typeof document === "undefined") return;
+  root.querySelectorAll<HTMLElement>(".md-rendered").forEach((el) => {
     if (el.dataset.mathRendered) return;
     renderMathInElement(el, {
       delimiters: [
@@ -112,4 +113,8 @@ export function renderMathInChat(): void {
     });
     el.dataset.mathRendered = "1";
   });
+}
+
+export function renderMathInChat(): void {
+  typesetMath(document);
 }

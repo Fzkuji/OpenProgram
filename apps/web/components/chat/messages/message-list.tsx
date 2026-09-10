@@ -57,6 +57,7 @@ import {
 } from "@/lib/state/message-window";
 import { Avatar } from "@/components/avatar";
 import { showToast } from "@/lib/format-utils/toast";
+import { renderMathInChat } from "@/lib/runtime-bridge/markdown-render";
 import { renderMarkdown, useMarkdownReady } from "./markdown";
 
 const JUMP_LATEST_FADE_MS = 280;
@@ -644,9 +645,7 @@ function useChatAreaStick(
       if (key && !area.hasAttribute("data-self-update-verification")) writeChatScroll(window.sessionStorage, key, area.scrollTop);
     };
     const pin = () => {
-      // `window.renderMathInChat` was defined by the legacy public/js
-      // bundle, which no longer exists — the read was permanently
-      // undefined. Math rendering now lives in the markdown pipeline.
+      renderMathInChat();
       // A Jump-to-latest click is already smoothing down; snapping
       // scrollTop here fights that and flashes the transcript.
       if (area.clientHeight <= 0) return;
