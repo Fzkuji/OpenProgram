@@ -174,6 +174,12 @@ def test_web_operation_history_menu_opens_and_dismisses_in_the_same_page() -> No
                     page.set_viewport_size({"width": 800, "height": 600})
                     page.goto(f"http://127.0.0.1:{server.server_port}/")
                     history = page.get_by_role("button", name="Operation history")
+                    expect(history).to_have_count(0)
+                    page.get_by_role(
+                        "button",
+                        name="Small draggable Agent button. Click to expand. Drag to move.",
+                        exact=True,
+                    ).click()
                     history.wait_for()
                     assert context.pages == [page]
                     button_box = history.bounding_box()
