@@ -13,11 +13,12 @@ import pytest
 
 
 @pytest.fixture
-def store(tmp_path, monkeypatch):
+def store(tmp_path, monkeypatch, request):
     from openprogram.store.session.session_store import SessionStore
     from openprogram.agent import session_db as sdb_mod
 
     s = SessionStore(tmp_path / "sessions-git")
+    request.addfinalizer(s.close)
     monkeypatch.setattr(sdb_mod, "default_store", lambda: s)
     monkeypatch.setattr(
         "openprogram.store.session.session_store.default_store", lambda: s,
