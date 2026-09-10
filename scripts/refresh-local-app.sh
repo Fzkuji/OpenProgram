@@ -224,9 +224,25 @@ PY
   # newer Desktop capability checks when refreshing an older installed App.
   runtime_assets_stage="$attempt_dir/runtime-assets"
   mkdir -p "$runtime_assets_stage"
-  cp "${OPENPROGRAM_NODE_BIN:-$(command -v node)}" "$runtime_assets_stage/node"
   cp "$repo_root/apps/cli/dist/index-standalone.cjs" "$runtime_assets_stage/index.cjs"
-  "$runtime_assets_stage/node" "$runtime_assets_stage/index.cjs" --probe || {
+  node_candidates=()
+  if test -n "${OPENPROGRAM_NODE_BIN:-}"; then
+    node_candidates+=("$OPENPROGRAM_NODE_BIN")
+  else
+    node_candidates+=("$runtime_root/bin/node")
+    path_node="$(command -v node || true)"
+    test -z "$path_node" || node_candidates+=("$path_node")
+  fi
+  relocated_node_ok=0
+  for node_candidate in "${node_candidates[@]}"; do
+    test -x "$node_candidate" || continue
+    cp "$node_candidate" "$runtime_assets_stage/node"
+    if "$runtime_assets_stage/node" "$runtime_assets_stage/index.cjs" --probe >/dev/null 2>&1; then
+      relocated_node_ok=1
+      break
+    fi
+  done
+  test "$relocated_node_ok" = 1 || {
     printf 'bundled Node cannot run after relocation; set OPENPROGRAM_NODE_BIN to a standalone Node executable\n' >&2
     exit 1
   }

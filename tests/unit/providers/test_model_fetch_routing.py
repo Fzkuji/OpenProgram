@@ -294,8 +294,23 @@ def test_codex_fetch_falls_back_to_cli_cache(monkeypatch, tmp_path):
 
     out = C.fetch("openai-codex", timeout=5.0)
 
-    assert [row["id"] for row in out] == ["gpt-6-astra"]
-    assert out[0]["source"] == "codex-cli-cache"
+    assert "error" in out
+    assert [row["id"] for row in out["models"]] == ["gpt-6-astra"]
+    assert out["models"][0]["source"] == "codex-cli-cache"
+
+
+def test_codex_client_version_prefers_official_cli_cache(monkeypatch, tmp_path):
+    from openprogram.providers.openai_codex import runtime
+
+    (tmp_path / "models_cache.json").write_text(json.dumps({
+        "client_version": "9.8.7", "models": [],
+    }))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    runtime.codex_client_version.cache_clear()
+    try:
+        assert runtime.codex_client_version() == "9.8.7"
+    finally:
+        runtime.codex_client_version.cache_clear()
 
 
 def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):

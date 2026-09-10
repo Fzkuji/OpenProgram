@@ -2013,6 +2013,15 @@ def test_local_app_refresh_hydrates_embedded_runtime_dependencies() -> None:
     assert '--force-reinstall "$wheel"' in refresh[reinstall:]
 
 
+def test_local_app_refresh_probes_node_after_relocation() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'node_candidates+=("$runtime_root/bin/node")' in refresh
+    assert 'node_candidates+=("$path_node")' in refresh
+    assert '"$runtime_assets_stage/node" "$runtime_assets_stage/index.cjs" --probe' in refresh
+
+
 def test_local_app_refresh_installs_committed_gui_harness_snapshot() -> None:
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"

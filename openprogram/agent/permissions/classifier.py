@@ -45,34 +45,36 @@ async def auto_classify_tool(tool_name: str, args: dict) -> tuple[bool, str]:
             Context, UserMessage, SimpleStreamOptions,
         )
 
-        # Prefer the connected lightweight Grok subscription, then reuse the
-        # owner's configured default or main agent model. Auto mode previously
-        # required Anthropic even when a working Codex or Grok subscription
-        # was already selected, so every write/edit failed closed on those
-        # installations.
-        model = get_model("xai-subscription", "grok-4.6")
+        # Try configured candidates in order. One expired/unavailable
+        # subscription must not prevent another connected model from making
+        # the decision.
+        models = []
+
+        def add(model):
+            if model is not None and all(existing is not model for existing in models):
+                models.append(model)
+
+        add(get_model("xai-subscription", "grok-4.6"))
         try:
             from openprogram.providers.default_llm import _read_default_model
 
             pair = _read_default_model()
             if pair:
-                model = get_model(pair[0], pair[1])
+                add(get_model(pair[0], pair[1]))
         except Exception:
             pass
-        if model is None:
-            try:
-                from openprogram.agent.internals._model_tools import (
-                    load_agent_profile,
-                    resolve_model,
-                )
+        try:
+            from openprogram.agent.internals._model_tools import (
+                load_agent_profile,
+                resolve_model,
+            )
 
-                model = resolve_model(load_agent_profile("main"), None)
-            except Exception:
-                pass
-        if model is None:
-            model = (get_model("anthropic", "claude-haiku-4-5-20251001")
-                     or get_model("anthropic", "claude-sonnet-4-6"))
-        if model is None:
+            add(resolve_model(load_agent_profile("main"), None))
+        except Exception:
+            pass
+        add(get_model("anthropic", "claude-haiku-4-5-20251001"))
+        add(get_model("anthropic", "claude-sonnet-4-6"))
+        if not models:
             return True, "分类器模型不可用"
 
         system_prompt = (
@@ -91,22 +93,31 @@ async def auto_classify_tool(tool_name: str, args: dict) -> tuple[bool, str]:
             messages=[UserMessage(content=user_text, timestamp=int(time.time() * 1000))],
             tools=[],
         )
-        result = await complete_simple(
-            model, ctx, SimpleStreamOptions(temperature=0.0, max_tokens=120),
-        )
-        text = ""
-        for block in (result.content or []):
-            if getattr(block, "text", None):
-                text += block.text
-        text = text.strip()
-        # 容错：从回复里抠出 JSON。
-        start, end = text.find("{"), text.rfind("}")
-        if start >= 0 and end > start:
-            obj = json.loads(text[start:end + 1])
-            safe = obj.get("safe") is True
-            reason = str(obj.get("reason", "")) or "分类器判定"
-            return (not safe), reason
-        return True, f"分类器回复无法解析：{text[:60]}"
+        last_error = ""
+        for model in models:
+            try:
+                result = await complete_simple(
+                    model, ctx,
+                    SimpleStreamOptions(temperature=0.0, max_tokens=120),
+                )
+                text = "".join(
+                    block.text for block in (result.content or [])
+                    if getattr(block, "text", None)
+                ).strip()
+                start, end = text.find("{"), text.rfind("}")
+                if start >= 0 and end > start:
+                    obj = json.loads(text[start:end + 1])
+                    safe = obj.get("safe") is True
+                    reason = str(obj.get("reason", "")) or "分类器判定"
+                    return (not safe), reason
+                last_error = f"回复无法解析：{text[:60]}"
+            except Exception as exc:  # noqa: BLE001
+                last_error = type(exc).__name__
+                logger.warning(
+                    "auto classifier candidate %s/%s failed: %s",
+                    getattr(model, "provider", ""), getattr(model, "id", ""), exc,
+                )
+        return True, f"分类器不可用：{last_error or '没有可用候选'}"
     except Exception as e:  # noqa: BLE001
         logger.warning("auto classifier error: %s", e)
         return True, f"分类器不可用：{type(e).__name__}"

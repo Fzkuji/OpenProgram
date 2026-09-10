@@ -1,19 +1,15 @@
 """Subscription-login → config enablement.
 
-Subscription providers used to inject "seed" model rows into the runtime
-registry at import time, bypassing config entirely. Per
+Providers without a usable account catalogue used to inject "seed" model
+rows into the runtime registry at import time, bypassing config entirely. Per
 docs/design/providers/models/overview.md
 §4.2 the correct behaviour is: on the user's behalf the program performs an
 *enable*, writing spec rows to the same ``providers.<p>.models`` config list
 the settings UI writes. This module is that enable.
 
-``enable_default_models_on_login`` is the single seam, called after a
-successful login from every surface (web login route, CLI ``providers login``)
-and, as a first-run convenience, at provider import when credentials already
-exist. It is idempotent and user-respecting: it writes the default set ONLY
-when the provider currently has ZERO spec rows. A user who later disables one
-of the defaults has a non-empty spec list, so a subsequent login/import never
-resurrects it.
+Codex and Grok now learn their model sets from the authenticated account API.
+This module remains only for providers whose account API cannot provide that
+catalogue. It is idempotent and user-respecting.
 """
 from __future__ import annotations
 
@@ -34,50 +30,6 @@ _DEFAULTS: dict[str, list[dict]] = {
          "api": "anthropic-messages", "base_url": "https://api.anthropic.com",
          "input": ["text", "image"], "context_window": 200_000,
          "max_tokens": 64_000, "reasoning": False},
-    ],
-    # Subscription models known to the bundled Codex CLI. Fetch replaces this
-    # offline set with the account's authoritative catalogue when reachable.
-    "openai-codex": [
-        {"id": "gpt-6-astra", "name": "GPT-6-Astra", "api": "openai-codex",
-         "context_window": 272_000, "max_tokens": 128_000, "reasoning": True,
-         "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
-         "default_thinking_level": "medium"},
-        {"id": "gpt-5.6-sol", "name": "GPT-5.6-Sol", "api": "openai-codex",
-         "context_window": 272_000, "max_tokens": 128_000, "reasoning": True,
-         "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
-         "default_thinking_level": "low"},
-        {"id": "gpt-5.6-terra", "name": "GPT-5.6-Terra", "api": "openai-codex",
-         "context_window": 272_000, "max_tokens": 128_000, "reasoning": True,
-         "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
-         "default_thinking_level": "medium"},
-        {"id": "gpt-5.6-luna", "name": "GPT-5.6-Luna", "api": "openai-codex",
-         "context_window": 272_000, "max_tokens": 128_000, "reasoning": True,
-         "thinking_levels": ["low", "medium", "high", "xhigh", "max"],
-         "default_thinking_level": "medium"},
-        {"id": "gpt-5.5", "name": "GPT-5.5", "api": "openai-codex",
-         "context_window": 272_000, "max_tokens": 128_000, "reasoning": True,
-         "thinking_levels": ["low", "medium", "high", "xhigh"],
-         "default_thinking_level": "medium"},
-        {"id": "gpt-5.3-codex-spark", "name": "GPT-5.3-Codex-Spark",
-         "api": "openai-codex", "context_window": 128_000,
-         "max_tokens": 32_000, "reasoning": True,
-         "thinking_levels": ["low", "medium", "high", "xhigh"],
-         "default_thinking_level": "high"},
-    ],
-    "xai-subscription": [
-        {"id": "grok-4.6", "name": "Grok 4.6",
-         "api": "openai-completions", "base_url": "https://cli-chat-proxy.grok.com/v1",
-         "input": ["text", "image"], "context_window": 500_000,
-         "max_tokens": 500_000, "reasoning": True,
-         "thinking_levels": ["low", "medium", "high", "xhigh"],
-         "default_thinking_level": "high"},
-        {"id": "grok-4.5", "name": "Grok 4.5",
-         "api": "openai-completions", "base_url": "https://cli-chat-proxy.grok.com/v1",
-         "input": ["text", "image"], "context_window": 500_000,
-         "max_tokens": 500_000, "reasoning": True},
-        {"id": "grok-4", "name": "Grok 4",
-         "api": "openai-completions", "base_url": "https://cli-chat-proxy.grok.com/v1",
-         "input": ["text", "image"], "reasoning": True},
     ],
 }
 

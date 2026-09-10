@@ -130,8 +130,21 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
         )}
 
     raw = fetcher(provider_id, timeout)
+    upstream_error: str | None = None
+    stale = False
     if isinstance(raw, dict) and "error" in raw:
-        return raw
+        upstream_error = str(raw["error"])
+        supplied = raw.get("models")
+        if isinstance(supplied, list) and supplied:
+            raw = supplied
+            stale = True
+        else:
+            from openprogram.providers.subscription_catalog import load_catalog
+
+            cached, _ = load_catalog(provider_id)
+            if cached:
+                return {"models": cached, "stale": True, "error": upstream_error}
+            return {"error": upstream_error}
     items = raw if isinstance(raw, list) else []
     if not items:
         return {"error": "No models returned"}
@@ -182,7 +195,11 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
         # gives the real fast/thinking picker per model; models.dev only has
         # the public-API-platform guess. ``setdefault`` in enrich already
         # respects anything present here.
-        for cap_key in ("fast", "thinking_levels", "default_thinking_level"):
+        for cap_key in (
+            "fast", "thinking_levels", "default_thinking_level",
+            "api_backend", "supports_backend_search", "description",
+            "auto_compact_threshold_percent",
+        ):
             if cap_key in it:
                 entry[cap_key] = it[cap_key]
         # Community enrichment: ask models.dev (and any other source
@@ -227,7 +244,14 @@ def fetch_and_normalize(provider_id: str, timeout: float = 15.0) -> dict[str, An
                     entry["thinking_variant"] = variant
         models.append(entry)
 
-    return {"models": models}
+    if models and not stale:
+        from openprogram.providers.subscription_catalog import save_catalog
+
+        save_catalog(provider_id, models)
+    result: dict[str, Any] = {"models": models}
+    if upstream_error:
+        result.update(error=upstream_error, stale=True)
+    return result
 
 
 def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, Any]:
@@ -266,12 +290,45 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
     by_id = {r.get("id"): r for r in live if r.get("id")}
 
     refreshed: list[str] = []
+    added: list[str] = []
     with _cache_lock:
         changed = False
 
         def refresh(cfg: dict) -> None:
             nonlocal changed
             pcfg = cfg.setdefault(provider_id, {})
+            from openprogram.providers.subscription_catalog import SUBSCRIPTION_PROVIDERS
+
+            auto_catalog = provider_id in SUBSCRIPTION_PROVIDERS and not error
+            disabled = set(pcfg.get("disabled_models") or [])
+            existing_rows = {
+                row.get("id"): row
+                for row in (pcfg.get("models") or [])
+                if isinstance(row, dict) and row.get("id")
+            }
+            if auto_catalog:
+                # The subscription endpoint is authoritative. New ids become
+                # usable automatically; explicit user disables remain tombstoned.
+                for mid, fresh in by_id.items():
+                    if mid in disabled:
+                        continue
+                    spec = {
+                        key: value for key, value in fresh.items()
+                        if key != "enabled"
+                    }
+                    spec["source"] = "subscription-catalog"
+                    _upsert_spec_row(pcfg, spec)
+                    (refreshed if mid in existing_rows else added).append(mid)
+                    changed = True
+                # Retire models removed from a successful official catalogue,
+                # while preserving manual/custom rows.
+                pcfg["models"] = [
+                    row for row in (pcfg.get("models") or [])
+                    if row.get("id") in by_id
+                    or row.get("source") == "manual"
+                    or pcfg.get("source") == "custom"
+                ]
+                return
             enabled_ids = [
                 row.get("id")
                 for row in (pcfg.get("models") or [])
@@ -292,6 +349,7 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
         "provider": provider_id,
         "fetched": len(live),
         "refreshed": refreshed,
+        "added": len(added),
     }
     if error:
         out["error"] = error

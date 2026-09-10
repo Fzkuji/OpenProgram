@@ -18,6 +18,7 @@ from openprogram.providers.thinking_spec import (
     get_model_variant,
     get_thinking_spec,
     invalidate_cache,
+    normalize_reasoning_level,
     translate_reasoning,
 )
 
@@ -82,6 +83,26 @@ def test_translate_openai_codex_direct_pass():
 def test_translate_openai_completions_clamp():
     assert translate_reasoning("openai-completions", "o3", "xhigh") == "high"
     assert translate_reasoning("openai-completions", "o3", "max") == "high"
+
+
+def test_xai_subscription_uses_its_own_model_specific_efforts():
+    assert derive_thinking_levels("xai-subscription", "grok-4.6", True) == [
+        "low", "medium", "high", "xhigh",
+    ]
+    assert translate_reasoning("xai-subscription", "grok-4.6", "xhigh") == "xhigh"
+    assert derive_thinking_levels("xai-subscription", "grok-4.5", True) == [
+        "low", "medium", "high",
+    ]
+    assert translate_reasoning("xai-subscription", "grok-4.5", "xhigh") == "high"
+
+
+def test_saved_effort_is_normalized_to_model_default():
+    model = type("M", (), {
+        "thinking_levels": ["low", "medium", "high"],
+        "default_thinking_level": "high",
+    })()
+    assert normalize_reasoning_level(model, "minimal") == "high"
+    assert normalize_reasoning_level(model, "low") == "low"
 
 
 def test_translate_no_thinking_provider():

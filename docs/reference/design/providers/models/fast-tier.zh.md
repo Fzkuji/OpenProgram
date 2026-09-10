@@ -49,19 +49,19 @@
 
 ## 3. 存储：先读官方 → 落 config → 之后读文件
 
-codex 的原则：**优先读取官方实时目录，其次读取官方 CLI 本地缓存，登录默认值只用于首次启动**。
+codex 的原则：**优先读取官方实时目录，其次读取 OpenProgram 的 last-known-good 目录，最后读取官方 CLI 本地缓存**。
 
 | 层 | 位置 | 持久化 |
 |---|---|---|
-| codex 官方端点与 CLI 缓存 | `openprogram/providers/openai_codex/list_models.py` | 优先实时端点；不可用时读取 `~/.codex/models_cache.json` |
-| config spec 行（含 `fast`/`thinking_levels`/`context`） | 用户启用某模型时，`fetch_and_normalize` 归一化后的整行写进 `~/.openprogram/config.json`；Fetch 按钮（`fetch_models_remote`）用新端点数据 heal 已启用行 | 配置文件（这就是"存文件"这一环） |
+| codex 官方端点与 CLI 缓存 | `openprogram/providers/openai_codex/list_models.py` | 优先实时端点；`~/.codex/models_cache.json` 仅作 stale 展示兜底 |
+| OpenProgram 订阅目录 | `providers/subscription_catalog.py` | 原子写入 last-known-good；登录后及后台周期刷新 |
+| config spec 行（含 `fast`/`thinking_levels`/`context`） | 官方刷新成功后自动新增、更新和淘汰账户模型，同时尊重用户关闭 tombstone | 配置文件 |
 | `Model.fast` 字段 | `_build_model_from_row` 读 config 行的 `fast`（行有值就用，codex 行总带值）；注册表构建时进 `ENABLED_MODELS` | 仅内存（进程内 dict，源头是 config） |
 | claude-code 手写表 | `providers/enabled_models.py::default_fast`（仅剩 Opus 部分在判定路径上） | 源码 |
 | models.dev 目录 | `openprogram/providers/sources/models_dev.py` | 远端；1h 内存缓存，无磁盘缓存 |
 
-数据流：**官方端点或 Codex CLI 缓存 → 归一化 → config.json → 注册表 →
-supports_fast / dispatch**。断网但订阅 token 有效时读取 CLI 缓存；没有 token
-时仍返回登录错误，并保留已经保存的 config 行。
+数据流：**官方端点 → 归一化 → last-known-good 缓存 + config.json → 注册表 →
+supports_fast / dispatch**。CLI 缓存可以让离线浏览继续显示，但它会同时携带错误标记，因此不会像新鲜目录一样增删已配置模型。
 
 ## 4. 事件流：任何切换自适应，无需刷新
 
