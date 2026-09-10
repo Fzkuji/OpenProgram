@@ -46,6 +46,8 @@ import type {
 } from "./types";
 import styles from "./memory-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
+import { sidebarToggleClass } from "@/components/sidebar/nav-classes";
+import { MemorySourcePreview } from "./source-preview";
 import { MemoryDocument } from "./document";
 
 export function MemoryPage({
@@ -268,9 +270,10 @@ export function MemoryPage({
                 />
                 )}
                 <button
-                  className={styles.iconBtn}
+                  className={sidebarToggleClass}
                   onClick={fetchTopics}
                   title={t("sidebar.refresh")}
+                  aria-label={t("sidebar.refresh")}
                   onMouseEnter={() => refreshIconRef.current?.startAnimation?.()}
                   onMouseLeave={() => refreshIconRef.current?.stopAnimation?.()}
                 >
@@ -557,10 +560,10 @@ export function MemoryPage({
     </div>
   );
 
-  if (embedded) return view;
+  if (embedded) return <MemorySourcePreview>{view}</MemorySourcePreview>;
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-      {view}
+      <MemorySourcePreview>{view}</MemorySourcePreview>
     </div>
   );
 }

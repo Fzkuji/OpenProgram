@@ -272,6 +272,8 @@ def staged_edit(
     deleting: str = "",
     timeout_s: float = 5.0,
     commit_message: str = "memory: edit topics",
+    record_history: bool = True,
+    allow_removed: bool = False,
 ) -> tuple[bool, str]:
     """Apply a hand edit through the workspace stage, or not at all.
 
@@ -312,9 +314,10 @@ def staged_edit(
                         if unit.topic_path == deleting
                     }
                 write(space.stage_dir)
-                install_state(space, units, block_ids)
+                install_state(space, units, block_ids, allow_removed=allow_removed)
                 try:
-                    git_commit_state(root, commit_message)
+                    if record_history:
+                        git_commit_state(root, commit_message)
                 except Exception as exc:  # noqa: BLE001
                     return True, (
                         "memory changed but Git commit failed: "

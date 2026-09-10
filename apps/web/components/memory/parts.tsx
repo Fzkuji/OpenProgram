@@ -6,6 +6,7 @@
  */
 import { cloneElement, isValidElement, useRef, type ReactElement } from "react";
 
+import { sidebarNavItemClass, sidebarNavItemActiveClass, sidebarNavIconClass, sidebarNavLabelClass } from "@/components/sidebar/nav-classes";
 import { parseFrontmatter, renderMarkdown } from "./markdown";
 import { formatDate } from "./format";
 import { DocIcon, TypeBadge } from "./icons";
@@ -20,15 +21,15 @@ export function TabButton({ active, onClick, icon, children }: { active: boolean
   const iconRef = useRef<AnimatedNavIconHandle>(null);
   return (
     <button
-      className={`${styles.tabBtn} ${active ? styles.tabBtnActive : ""}`}
+      className={`${sidebarNavItemClass} ${styles.tabBtn} ${active ? sidebarNavItemActiveClass : ""}`}
       onClick={onClick}
       onMouseEnter={() => iconRef.current?.startAnimation?.()}
       onMouseLeave={() => iconRef.current?.stopAnimation?.()}
     >
-      {isValidElement(icon)
-        ? cloneElement(icon as ReactElement, { ref: iconRef } as Record<string, unknown>)
-        : icon}
-      {children}
+      <span className={sidebarNavIconClass}>{isValidElement(icon)
+        ? cloneElement(icon as ReactElement, { ref: iconRef, size: 20 } as Record<string, unknown>)
+        : icon}</span>
+      <span className={sidebarNavLabelClass}>{children}</span>
     </button>
   );
 }
@@ -84,7 +85,7 @@ export function TreeGroup({ folder, pages, expanded, onToggle, selected, onSelec
   );
 }
 
-export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, onDelete, onPreviewClick, tools, notices, detail, loading }: {
+export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, onDelete, onPreviewClick, tools, notices, detail, loading, onKeyDown, readOnly }: {
   title: string;
   badge?: React.ReactNode;
   meta: string[];
@@ -94,6 +95,8 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
   notices?: React.ReactNode;
   detail?: React.ReactNode;
   loading?: boolean;
+  readOnly?: boolean;
+  onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>;
   onViewMode: (m: EditorState["viewMode"]) => void;
   onDelete?: () => void | Promise<void>;
   onPreviewClick?: (e: React.MouseEvent) => void;
@@ -125,9 +128,6 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
             <button className={`${styles.modeBtn} ${state.viewMode === "edit" ? styles.modeBtnActive : ""}`} onClick={() => onViewMode("edit")}>{text("Edit", "编辑")}</button>
             <button className={`${styles.modeBtn} ${state.viewMode === "preview" ? styles.modeBtnActive : ""}`} onClick={() => onViewMode("preview")}>{text("Preview", "预览")}</button>
           </div>
-          {state.saveStatus === "saved" && <span className={styles.saveOk}>✓ {text("Saved", "已保存")}</span>}
-          {state.saveStatus === "error" && <span className={styles.saveErr}>✗ {text("Error", "错误")}</span>}
-          {state.saving && <span role="status">{text("Saving…", "保存中…")}</span>}
           {tools}
           {onDelete && (
             <button
@@ -150,6 +150,8 @@ export function EditorPanel({ title, badge, meta, state, onChange, onViewMode, o
           value={state.content}
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
+          readOnly={readOnly}
+          onKeyDown={onKeyDown}
           placeholder={text("Empty...", "空内容...")}
         />
       ) : (

@@ -26,7 +26,7 @@ test("serializes saves and never marks newer typing saved by an earlier response
   assert.equal(draft.state.content, "second");
   assert.equal(draft.state.base, "first");
   const second = draft.flush();
-  assert.deepEqual(calls[1], { content: "second", base_content: "first" });
+  assert.deepEqual(calls[1], { content: "second", base_content: "first", autosave: true });
   resolve(reply("second"));
   await second;
   assert.equal(draft.state.content, draft.state.base);
@@ -87,4 +87,16 @@ test("browser fetch is invoked with its global receiver", async () => {
   assert.equal(draft.state.loaded, true);
   draft.edit("after"); await draft.flush();
   assert.equal(draft.state.base, "after");
+});
+test("undo and redo survive automatic file saves", async () => {
+  const draft = new MemoryDraft("/note", async (_url, init) => reply(init ? JSON.parse(init.body).content : "before"), storage());
+  await draft.load();
+  draft.edit("one"); await draft.flush();
+  draft.edit("two"); await draft.flush();
+  draft.undo(); await draft.flush();
+  assert.equal(draft.state.base, "one");
+  draft.undo(); await draft.flush();
+  assert.equal(draft.state.base, "before");
+  draft.redo(); await draft.flush();
+  assert.equal(draft.state.base, "one");
 });

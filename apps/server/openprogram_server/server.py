@@ -1900,9 +1900,16 @@ def create_app(*, owner_auth=None, port: int = 18100):
     async def _lifespan(_app):
         for hook in _STARTUP:
             await hook()
-        yield
-        for hook in reversed(_SHUTDOWN):
-            await hook()
+        from openprogram.memory.checkpoints import run_checkpoints
+        checkpoint_stop = asyncio.Event()
+        checkpoint_task = asyncio.create_task(run_checkpoints(checkpoint_stop))
+        try:
+            yield
+        finally:
+            checkpoint_stop.set()
+            await checkpoint_task
+            for hook in reversed(_SHUTDOWN):
+                await hook()
 
     app = FastAPI(
         title="Agentic Visualizer",

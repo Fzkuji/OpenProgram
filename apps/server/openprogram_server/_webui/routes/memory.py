@@ -77,6 +77,8 @@ def _staged_edit(
     *,
     deleting: str = "",
     commit_message: str = "memory: edit topics",
+    record_history: bool = True,
+    allow_removed: bool = False,
 ) -> tuple[bool, str]:
     """Bind this module's lock timeout to the shared staged edit.
 
@@ -91,6 +93,8 @@ def _staged_edit(
         deleting=deleting,
         timeout_s=WRITE_LOCK_TIMEOUT_S,
         commit_message=commit_message,
+        record_history=record_history,
+        allow_removed=allow_removed,
     )
 
 
@@ -288,7 +292,7 @@ def register(app):
         except (subprocess.SubprocessError, OSError) as exc:
             return JSONResponse(content={"error": f"Could not read Git history: {exc}"}, status_code=503)
 
-    def save_document(root, relative, payload, *, fallback=None):
+    def save_document(root, relative, payload, *, fallback=None, restoring=False):
         from openprogram.memory.management.transaction import workspace_write_lock, TransactionError
         if not isinstance(payload, dict) or not isinstance(payload.get("content"), str):
             return JSONResponse(content={"error": "content must be a string"}, status_code=400)
@@ -305,7 +309,18 @@ def register(app):
                     staged.parent.mkdir(parents=True, exist_ok=True)
                     staged.write_text(payload["content"], encoding="utf-8")
 
-                ok, message = _staged_edit(root, write, commit_message=f"memory: edit topics/{relative}")
+                autosave = payload.get("autosave") is True and not restoring
+                if autosave:
+                    from openprogram.memory.checkpoints import mark_pending
+                    mark_pending(root)
+                if restoring:
+                    from openprogram.memory.management.transaction import git_commit_state
+                    git_commit_state(root, "memory: before restore")
+                ok, message = _staged_edit(
+                    root, write,
+                    commit_message=f"memory: {'restore' if restoring else 'edit'} topics/{relative}",
+                    record_history=not autosave, allow_removed=autosave or restoring,
+                )
                 if not ok:
                     return JSONResponse(content={"error": message}, status_code=400)
                 result = {"ok": True, "content": target.read_text(encoding="utf-8")}
@@ -314,6 +329,56 @@ def register(app):
                 return JSONResponse(content=result)
         except TransactionError as exc:
             return JSONResponse(content={"error": exc.message}, status_code=400)
+
+    @router.post("/api/memory/restore")
+    def restore_memory(payload: dict):
+        import re
+        import subprocess
+        from openprogram.memory import store
+        from openprogram.memory.management.transaction import workspace_write_lock
+        path = payload.get("path", "")
+        revision = payload.get("revision", "")
+        if not isinstance(path, str) or not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40,64}", revision):
+            return JSONResponse(content={"error": "invalid revision"}, status_code=400)
+        root = store.ensure()
+        target = _within(store.topics_dir(), path)
+        if target is None or not path.endswith(".md") or ".." in Path(path).parts:
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        if not isinstance(payload.get("base_content"), str):
+            return JSONResponse(content={"error": "base_content is required"}, status_code=400)
+        relative = target.relative_to(root.resolve()).as_posix()
+        try:
+            content = subprocess.run(
+                ["git", "show", f"{revision}:{relative}"], cwd=root,
+                capture_output=True, text=True, check=True, timeout=15,
+            ).stdout
+        except (subprocess.SubprocessError, OSError):
+            return JSONResponse(content={"error": "This version has no readable document"}, status_code=404)
+        with workspace_write_lock(root, timeout_s=WRITE_LOCK_TIMEOUT_S):
+            return save_document(root, target.relative_to(store.topics_dir().resolve()), {
+                "content": content, "base_content": payload["base_content"],
+            }, restoring=True)
+
+    @router.get("/api/memory/source")
+    def memory_source(path: str):
+        from urllib.parse import unquote
+        from openprogram.memory import store
+        target = _within(store.root() / "sources", path)
+        if target is None or not path.endswith(".md"):
+            return JSONResponse(content={"error": "forbidden"}, status_code=403)
+        parts = target.relative_to((store.root() / "sources").resolve()).parts
+        session_id = ""
+        if parts and parts[0] == "openprogram":
+            from openprogram.agent.session_db import default_db
+            session_id = unquote(target.stem)
+            session = default_db().get_session(session_id)
+            if session is None:
+                return JSONResponse(content={"error": "Original session deleted", "deleted": True}, status_code=410)
+        if not target.is_file():
+            return JSONResponse(content={"error": "Source is unavailable"}, status_code=404)
+        return JSONResponse(content={
+            "content": target.read_text(encoding="utf-8"), "session_id": session_id,
+        })
 
     # -- topics ------------------------------------------------------------
 

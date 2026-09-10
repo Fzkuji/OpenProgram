@@ -1,26 +1,37 @@
 # Read and edit Memory
 
-Open **History → Memory**, then select a topic. The document opens in Preview,
-with Markdown formatting and source footnotes. Choose **Edit** to change its
-source text. Core source records use the same editor; the Core prompt preview
-shows the text currently available for injection.
+Open **History → Memory**, then select a topic. Documents and Core source
+records open in Preview. Choose **Edit** to change Markdown text. There are no
+Save, Saved, or Changes controls.
 
-Changes save automatically after an 800 ms typing pause. Leaving the document
-also starts a pending save. There is no Save button. Unsaved drafts are retained
-in this browser's local storage across navigation and reload. Keep the page open
-if local draft storage is unavailable and saving has not finished.
+Each edit is immediately retained in this browser's local draft storage and
+queued for automatic file persistence. Writes are serialized so an earlier
+response cannot overwrite newer typing. Use Cmd+Z or Ctrl+Z to undo, and
+Cmd+Shift+Z, Ctrl+Shift+Z, or Ctrl+Y to redo; automatic saving does not clear
+this document's undo history while the app stays open.
 
-**Changes** compares the current document with the text loaded at the start of
-this editing session, including edits already saved automatically. **History**
-lists Git revisions from newest to oldest with local date and time. Select one
-to see the lines added and removed in that revision. **Load older versions**
-retrieves more entries.
+File persistence and Git history are separate. Manual edits are grouped into
+five-minute checkpoints by the server, with a scheduling tolerance of 15 seconds.
+The deadline survives server restart and does not depend on keeping the editor
+open. Existing background Memory operations may also create their own commits.
+The state before a manual editing interval is retained.
 
-Saving validates source references and rebuilds derived Memory views before
-recording a Git commit. Invalid edits remain in the editor with the reason they
-were rejected. A Git failure is shown separately from a successful file save.
+**History** lists revisions from newest to oldest with local date and time.
+Select one to inspect the added and removed lines. **Restore this version**
+restores that document, first recording the current state, then recording the
+restoration as a new commit. Existing history is retained, so restoration can
+itself be reversed by selecting another version. Restoration preserves valid
+source references and refuses to break links from other Memory documents.
 
-If another writer changes the same file, automatic saving refuses to overwrite
-it. Choose **Review latest** to compare the latest saved version with your draft.
-**Replace latest with this draft** explicitly retries against the reviewed
-version; a further concurrent change is still rejected.
+Rejected or conflicting writes retain the draft and show the error. **Review
+latest** compares the latest saved text with the draft inside History;
+**Replace latest with this draft** explicitly retries against that reviewed
+version. A further concurrent change is still rejected.
+
+Source footnotes open a read-only source view. If the local original session
+was deleted, the view says **Original session deleted** and does not expose its
+old source text. No extra source copy is created when deleting a session.
+Already-extracted memory remains. This source-availability rule does not rewrite
+the existing Memory Git repository. Archiving hides a session, preserves its
+content and links, and does not automatically delete it after an age or capacity
+threshold.

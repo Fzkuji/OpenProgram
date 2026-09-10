@@ -5,15 +5,18 @@ export interface DraftState {
   original: string;
   loaded: boolean;
   saving: boolean;
+  restoring: boolean;
   error: string;
   warning: string;
 }
 export class MemoryDraft {
-  state: DraftState = { content: "", base: "", original: "", loaded: false, saving: false, error: "", warning: "" };
+  state: DraftState = { content: "", base: "", original: "", loaded: false, saving: false, restoring: false, error: "", warning: "" };
   listeners = new Set<() => void>();
   timer: ReturnType<typeof setTimeout> | undefined;
   loading: Promise<void> | undefined;
   editVersion = 0;
+  undoStack: string[] = [];
+  redoStack: string[] = [];
   readonly url: string;
   readonly request: typeof fetch;
   readonly storage?: Storage;
@@ -35,7 +38,7 @@ export class MemoryDraft {
   }
   async load() {
     if (this.loading) return this.loading;
-    if (this.state.loaded && (this.state.saving || this.state.content !== this.state.base)) return;
+    if (this.state.loaded && (this.state.saving || this.state.restoring || this.state.content !== this.state.base)) return;
     const editVersion = this.editVersion;
     this.loading = (async () => {
       try {
@@ -57,7 +60,12 @@ export class MemoryDraft {
     })().finally(() => { this.loading = undefined; });
     return this.loading;
   }
-  edit(content: string) {
+  edit(content: string, record = true) {
+    if (this.state.restoring || content === this.state.content) return;
+    if (record) {
+      this.undoStack.push(this.state.content);
+      this.redoStack = [];
+    }
     this.editVersion += 1;
     this.publish({ content });
     this.persist();
@@ -65,18 +73,18 @@ export class MemoryDraft {
   }
   schedule() {
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => { void this.flush(); }, 800);
+    this.timer = setTimeout(() => { void this.flush(); }, 0);
   }
   async flush() {
     clearTimeout(this.timer);
-    if (!this.state.loaded || this.state.saving || this.state.error || this.state.content === this.state.base) return;
+    if (!this.state.loaded || this.state.saving || this.state.restoring || this.state.error || this.state.content === this.state.base) return;
     const content = this.state.content;
     const base = this.state.base;
     this.publish({ saving: true });
     try {
       const response = await this.request(this.url, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, base_content: base }),
+        body: JSON.stringify({ content, base_content: base, autosave: true }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not save memory");
@@ -91,6 +99,20 @@ export class MemoryDraft {
       this.publish({ saving: false });
       if (!this.state.error && this.state.content !== this.state.base) this.schedule();
     }
+  }
+  undo() {
+    if (this.state.restoring) return;
+    const content = this.undoStack.pop();
+    if (content === undefined) return;
+    this.redoStack.push(this.state.content);
+    this.edit(content, false);
+  }
+  redo() {
+    if (this.state.restoring) return;
+    const content = this.redoStack.pop();
+    if (content === undefined) return;
+    this.undoStack.push(this.state.content);
+    this.edit(content, false);
   }
   retry() {
     this.publish({ error: "" });

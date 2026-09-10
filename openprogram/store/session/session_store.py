@@ -442,15 +442,12 @@ class SessionStore:
                 entry["status"] = "idle"
 
     _EMPTY_SHELL_AGE = 3600       # 1 hour
-    _ARCHIVE_EXPIRY = 90 * 86400  # 90 days
-    _CAPACITY_LIMIT = 1000
 
     def _startup_cleanup(self) -> None:
         now = time.time()
         to_delete: list[str] = []
         for sid, entry in list(self._index.items()):
             created = entry.get("created_at") or 0
-            updated = entry.get("updated_at") or created
             sdir = self._session_dir(sid)
             # A project-bound session whose recorded location is
             # unreachable (the project folder moved and is not yet
@@ -458,6 +455,9 @@ class SessionStore:
             # somewhere else on disk. Deleting it here would purge the
             # session the moment the worker restarts after a move.
             if sdir != self.root_path / sid and not sdir.exists():
+                continue
+            # Explicit archives remain available until the owner deletes them.
+            if entry.get("archived"):
                 continue
             # Empty shells: no history, older than 1 hour.
             if (now - created) > self._EMPTY_SHELL_AGE:
@@ -470,24 +470,11 @@ class SessionStore:
                 if not (sdir / "history").is_dir():
                     to_delete.append(sid)
                     continue
-            # Expired archives.
-            if entry.get("archived") and (now - updated) > self._ARCHIVE_EXPIRY:
-                to_delete.append(sid)
         for sid in to_delete:
             self._index.pop(sid, None)
             shutil.rmtree(self._session_dir(sid), ignore_errors=True)
             self._forget_stale_bindings(sid)
-        # Capacity: trim oldest archived sessions beyond the limit.
         dirty = bool(to_delete)
-        if len(self._index) > self._CAPACITY_LIMIT:
-            archived = [(s, e) for s, e in self._index.items() if e.get("archived")]
-            archived.sort(key=lambda x: x[1].get("updated_at") or 0)
-            excess = len(self._index) - self._CAPACITY_LIMIT
-            for sid, _ in archived[:excess]:
-                self._index.pop(sid, None)
-                shutil.rmtree(self._session_dir(sid), ignore_errors=True)
-                self._forget_stale_bindings(sid)
-                dirty = True
         if dirty:
             self._save_index()
 

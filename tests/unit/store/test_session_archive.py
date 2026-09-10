@@ -11,9 +11,8 @@ from pathlib import Path
 
 from openprogram.store.session.session_store import SessionStore
 
-# Wall-clock-relative: _startup_cleanup deletes archived sessions idle
-# for 90 days and empty shells older than an hour, so epoch-1970
-# fixtures would be swept away on the next open.
+# Wall-clock-relative for unarchived empty-shell cleanup. Explicit
+# archives are retained indefinitely.
 OLDER = time.time() - 60.0
 NEWER = time.time()
 
@@ -151,3 +150,13 @@ def test_reopen_still_removes_old_session_without_history(tmp_path: Path) -> Non
 
     assert reopened.get_session("missing-history") is None
     assert not (root / "missing-history").exists()
+
+
+def test_old_archives_are_never_deleted_on_startup(tmp_path):
+    store = _store(tmp_path)
+    store.set_archived("gone", True)
+    store.update_session("gone", created_at=1, updated_at=1)
+    store._flush_index()
+    reopened = SessionStore(tmp_path / "sessions")
+    assert reopened.get_session("gone") is not None
+    assert reopened.get_session("gone")["archived"] is True
