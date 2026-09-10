@@ -3443,9 +3443,19 @@ function handleControlOverlayEvent(event, payload) {
     return;
   }
   if (type === "layout") {
-    if (typeof payload.collapsed === "boolean") record.controlCollapsed = payload.collapsed;
-    if (finiteNumber(payload.width)) record.controlWidth = payload.width;
-    if (finiteNumber(payload.height)) record.controlHeight = payload.height;
+    const zoom = rendererZoomFactor(event);
+    const nextCollapsed = typeof payload.collapsed === "boolean"
+      ? payload.collapsed
+      : record.controlCollapsed !== false;
+    const nextWidth = finiteNumber(payload.width) ? payload.width * zoom : record.controlWidth;
+    const nextHeight = finiteNumber(payload.height) ? payload.height * zoom : record.controlHeight;
+    const same = nextCollapsed === (record.controlCollapsed !== false)
+      && Math.round(nextWidth || 0) === Math.round(record.controlWidth || 0)
+      && Math.round(nextHeight || 0) === Math.round(record.controlHeight || 0);
+    record.controlCollapsed = nextCollapsed;
+    if (finiteNumber(payload.width)) record.controlWidth = nextWidth;
+    if (finiteNumber(payload.height)) record.controlHeight = nextHeight;
+    if (same) return;
     layoutControlOverlay(record);
     return;
   }

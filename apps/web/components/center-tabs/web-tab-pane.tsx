@@ -290,10 +290,10 @@ function DesktopWebTabPane({
       pauseDisabled: state === "yielding" || state === "unknown" || !connected,
       resumeDisabled: !connected || state !== "paused",
       showTakeover: true,
-      expandLabel: text("Small draggable Agent button. Click to expand. Drag to move.", "可拖动的 Agent 按钮。点击展开。拖动移动。"),
-      foldLabel: text("Agent controls. Click to fold. Drag to move.", "Agent 控制。点击收起。拖动移动。"),
+      expandLabel: text("Show controls", "显示操作按钮"),
+      foldLabel: text("Fold", "收起"),
       dismissLabel: text("Dismiss", "关闭"),
-      dragLabel: text("Drag to move", "拖动移动"),
+      dragLabel: text("Small draggable Agent button. Click to expand. Drag to move.", "可拖动的 Agent 按钮。点击展开。拖动移动。"),
       historyItems,
     };
     setOverlay(tabId, payload);

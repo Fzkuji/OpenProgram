@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
-import { Clock3, Eye, Pause, Play, X } from "lucide-react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ChevronDown, Clock3, Eye, Pause, Play, X } from "lucide-react";
 
 import { CursorClickIcon } from "@/components/animated-icons";
 import type { DesktopBrowserControlOverlay } from "@/lib/desktop-bridge-types";
@@ -15,6 +15,19 @@ interface OverlayBridge {
 }
 
 const THRESH = 6;
+const ICON_BTN: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  padding: 0,
+  border: 0,
+  borderRadius: 8,
+  background: "transparent",
+  color: "inherit",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+};
 
 function overlayBridge(): OverlayBridge | null {
   const api = (
@@ -29,6 +42,7 @@ function BrowserControlOverlayPage() {
   const [payload, setPayload] = useState<OverlayUpdate | null>(null);
   const [noticeOpen, setNoticeOpen] = useState(true);
   const rootRef = useRef<HTMLDivElement>(null);
+  const lastLayout = useRef<string | null>(null);
   const drag = useRef<{
     id: number;
     startX: number;
@@ -51,15 +65,22 @@ function BrowserControlOverlayPage() {
     return stop;
   }, []);
 
-  useEffect(() => {
-    if (!payload || !rootRef.current) return;
-    const box = rootRef.current.getBoundingClientRect();
+  const sendLayout = (collapsed: boolean, width: number, height: number) => {
+    const key = `${collapsed}:${Math.round(width)}:${Math.round(height)}`;
+    if (lastLayout.current === key) return;
+    lastLayout.current = key;
     overlayBridge()?.event({
       type: "layout",
-      collapsed: payload.collapsed !== false,
-      width: Math.max(1, box.width),
-      height: Math.max(1, box.height),
+      collapsed,
+      width: Math.max(1, width),
+      height: Math.max(1, height),
     });
+  };
+
+  useLayoutEffect(() => {
+    if (!payload || !rootRef.current) return;
+    const box = rootRef.current.getBoundingClientRect();
+    sendLayout(payload.collapsed !== false, box.width, box.height);
   }, [payload]);
 
   if (!payload) return null;
@@ -106,6 +127,7 @@ function BrowserControlOverlayPage() {
     try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* jsdom */ }
     if (current.moved) return;
     if (event.type === "pointercancel") return;
+    lastLayout.current = null;
     send({ type: "layout", collapsed: !collapsed, width: collapsed ? 280 : 36, height: collapsed ? 44 : 36 });
   };
 
@@ -117,10 +139,12 @@ function BrowserControlOverlayPage() {
         data-collapsed="true"
         role="button"
         tabIndex={0}
-        aria-label={payload.dragLabel || payload.expandLabel}
+        aria-label={payload.expandLabel}
+        title={payload.dragLabel}
         style={{
           width: 36,
           height: 36,
+          boxSizing: "border-box",
           borderRadius: 12,
           background: "rgba(32,33,36,.55)",
           color: "#f4f5f8",
@@ -135,6 +159,7 @@ function BrowserControlOverlayPage() {
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
+            lastLayout.current = null;
             send({ type: "layout", collapsed: false, width: 280, height: 44 });
           }
         }}
@@ -150,9 +175,14 @@ function BrowserControlOverlayPage() {
       data-browser-control="float"
       data-collapsed="false"
       role="group"
-      aria-label={payload.dragLabel}
+      aria-label={payload.expandLabel}
+      title={payload.dragLabel}
       style={{
-        display: "flex",
+        display: "inline-flex",
+        flexWrap: "nowrap",
+        width: "max-content",
+        maxWidth: "100%",
+        boxSizing: "border-box",
         gap: 6,
         alignItems: "center",
         padding: "8px 10px",
@@ -173,15 +203,18 @@ function BrowserControlOverlayPage() {
           {payload.notice}
           <button
             type="button"
+            style={ICON_BTN}
             aria-label={payload.dismissLabel || "Dismiss"}
+            title={payload.dismissLabel}
             onClick={() => setNoticeOpen(false)}
           >
-            <X size={12} />
+            <X size={14} />
           </button>
         </span>
       ) : null}
       <button
         type="button"
+        style={ICON_BTN}
         aria-pressed={payload.showActions}
         aria-label={payload.showLabel}
         title={payload.showLabel}
@@ -191,6 +224,7 @@ function BrowserControlOverlayPage() {
       </button>
       <button
         type="button"
+        style={ICON_BTN}
         aria-label={payload.historyLabel}
         title={payload.historyLabel}
         onClick={() => send({ type: "history" })}
@@ -200,6 +234,7 @@ function BrowserControlOverlayPage() {
       {payload.showTakeover ? (
         <button
           type="button"
+          style={ICON_BTN}
           disabled={payload.controlState === "paused" ? payload.resumeDisabled : payload.pauseDisabled}
           aria-label={payload.pauseLabel}
           title={payload.pauseLabel}
@@ -212,10 +247,15 @@ function BrowserControlOverlayPage() {
       ) : null}
       <button
         type="button"
+        style={ICON_BTN}
         aria-label={payload.foldLabel || "Fold"}
-        onClick={() => send({ type: "layout", collapsed: true, width: 36, height: 36 })}
+        title={payload.foldLabel || "Fold"}
+        onClick={() => {
+          lastLayout.current = null;
+          send({ type: "layout", collapsed: true, width: 36, height: 36 });
+        }}
       >
-        {payload.foldLabel || "Fold"}
+        <ChevronDown size={14} />
       </button>
     </div>
   );

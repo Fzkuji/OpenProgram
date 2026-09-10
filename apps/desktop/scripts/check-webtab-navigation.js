@@ -5916,6 +5916,21 @@ async function checkNativeControlOverlayAndCueReplay() {
     overlayView.getBounds().width >= 200,
     "expanded control overlay must grow beyond the collapsed 36px host view",
   );
+  const expandedWidth = overlayView.getBounds().width;
+  assert.ok(expandedWidth <= 360, "expanded overlay stays a compact row");
+  const boundsBeforeRepeat = overlayHarness.boundsCalls.length;
+  for (let i = 0; i < 8; i++) {
+    ipcListeners.get("webtab:control-overlay-event")(
+      { sender: overlaySender },
+      { type: "layout", collapsed: false, width: 280, height: 44 },
+    );
+  }
+  assert.equal(overlayView.getBounds().width, expandedWidth);
+  assert.equal(
+    overlayHarness.boundsCalls.length,
+    boundsBeforeRepeat,
+    "identical layout acks must not resize the host view",
+  );
   ipcListeners.get("webtab:control-overlay-event")(
     { sender: overlaySender },
     { type: "move", id: "page-a", generation: 1, dx: -20, dy: -10 },
