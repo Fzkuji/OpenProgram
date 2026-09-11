@@ -721,9 +721,13 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
     # must be hidden in case the folder is / becomes a git repo).
     ensure_footprint_ignored(p)
     pid = _project_id_for_path(p)
-    existing = get_project(pid)
+    existing = next((project for project in list_projects()
+                     if not project.is_default and project.path
+                     and Path(project.path).resolve() == p.resolve()), None)
+    if existing is None:
+        existing = get_project(pid)
     if existing is not None:
-        return set_project_hidden(pid, False) if existing.hidden else existing
+        return set_project_hidden(existing.id, False) if existing.hidden else existing
 
     # Before minting a new id: this folder may be a registered project
     # that was MOVED on disk. Its session footprint is the deterministic
