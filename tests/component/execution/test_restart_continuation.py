@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from openprogram.execution.attempts import AttemptStore
+from openprogram.execution.attempts import AttemptConflict, AttemptStore
 from openprogram.execution.control import RuntimeControlService
 from openprogram.execution.driver import DriverRegistry
 from openprogram.execution.driver import DriverBinding
@@ -88,6 +88,42 @@ def test_execution_admission_is_rejected_while_migration_hold_is_active(
             )
     finally:
         migration._clear_hold(state / "sessions", "session")
+
+
+def test_attempt_lease_and_activation_honor_migration_hold(tmp_path, monkeypatch):
+    from openprogram.store.session import migration
+
+    store = ExecutionStore(tmp_path / "execution.sqlite3")
+    revision = store.create_revision(manifest={"entrypoint": "chat"})
+    execution = store.admit_execution(
+        session_id="session", revision_id=revision.revision_id,
+        input_ref="agent-turn:test", input_hash="test",
+        entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+        trusted_actor={"subject": "test"}, config_snapshot_ref="config:test",
+    )
+    attempts = AttemptStore(store)
+    state = tmp_path / "state"
+    (state / "sessions").mkdir(parents=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    leased, reserved = attempts.lease(
+        execution.execution_id, expected_version=execution.status_version,
+        owner_id="worker", ttl_seconds=30,
+    )
+    migration._set_hold(state / "sessions", "session")
+
+    with pytest.raises(AttemptConflict, match="session migration"):
+        attempts.activate(
+            leased.attempt_id, generation=leased.generation,
+            expected_execution_version=reserved.status_version,
+        )
+
+    migration._clear_hold(state / "sessions", "session")
+    active, running = attempts.activate(
+        leased.attempt_id, generation=leased.generation,
+        expected_execution_version=reserved.status_version,
+    )
+    assert active.status.value == "active"
+    assert running.status is ExecutionStatus.RUNNING
 
 
 def test_owner_loss_marks_ordinary_chat_restart_pending_and_resolves_provider_only_effect(tmp_path, monkeypatch):
