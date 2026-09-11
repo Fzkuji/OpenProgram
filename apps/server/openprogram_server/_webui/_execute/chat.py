@@ -278,7 +278,7 @@ def run_query(
     )
     surface_context = None
     try:
-        surface_context = _capture_surface(surface_ref, surface_ws)
+        surface_context = _capture_surface(surface_ref, surface_ws, session_id=session_id)
         req_obj = _TurnRequest(
             session_id=session_id,
             user_text=query,

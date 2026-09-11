@@ -250,3 +250,38 @@ test("legacy destroy retires local registration once without claiming native con
   assert.deepEqual(destroyed.filter(item => item === id), [id]);
   assert.deepEqual(sent.filter(message => message.tab_id === id), []);
 });
+
+test("private Page commands require their trusted conversation even when another chat is selected", async () => {
+  const page = { id: "w:private-scope", kind: "web", url: "https://private.test", title: "Private", agentOpened: true, agentSessionId: "owner" };
+  useCenterTabs.setState({ tabs: [{id:"s:other",kind:"session",sessionId:"other",title:"Other"},page], activeId:"s:other",groups:[],splitWebTabId:null });
+  const sent = [], native = [];
+  setSocket({readyState:1,send:payload=>sent.push(JSON.parse(payload))});
+  const api = window.openprogramDesktop.webTab;
+  api.resolve = async id => { native.push(id); return "target-private"; };
+  api.capture = async id => { native.push(id); return "secret-image"; };
+  api.preview = async id => { native.push(id); return {target_id:"target-private"}; };
+  for (const op of ["resolve","screenshot","preview","activate","close"]) {
+    for (const session_id of [undefined,"other"]) {
+      const req_id = `${op}:${session_id}`;
+      listeners.get("op:ws-message")({detail:{type:"webtab.command",data:{op,session_id,tab_id:page.id,window_id:"main",req_id}}});
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.equal(sent.find(message=>message.req_id===req_id)?.reason_code,"page_not_accessible");
+    }
+  }
+  assert.deepEqual(native,[]);
+  const command = (session_id,req_id) => listeners.get("op:ws-message")({detail:{type:"webtab.command",data:{op:"resolve",session_id,tab_id:page.id,window_id:"main",req_id}}});
+  command("owner","own"); await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sent.find(message=>message.req_id==="own")?.ok,true);
+  const {revealExistingWebTab} = await import("../lib/state/web-page-management.ts");
+  revealExistingWebTab(page.id,useCenterTabs.getState());
+  command("other","shared"); await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sent.find(message=>message.req_id==="shared")?.ok,true);
+  let finish;
+  api.resolve = () => new Promise(resolve=>{finish=resolve;});
+  command("other","pending");
+  useCenterTabs.getState().setWebTabPinned(page.id,false);
+  finish("target-private"); await new Promise(resolve=>setImmediate(resolve));
+  const result = sent.find(message=>message.req_id==="pending");
+  assert.equal(result?.reason_code,"page_not_accessible");
+  assert.equal(result?.target_id,undefined);
+});
