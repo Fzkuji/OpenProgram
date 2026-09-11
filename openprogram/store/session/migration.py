@@ -61,23 +61,21 @@ def _load_journal_unlocked(root: Path) -> dict[str, Any]:
 
 
 def save_journal(root: Path, journal: dict[str, Any]) -> None:
+    """Persist a complete journal for compatibility callers."""
     with registry_file_lock(root, "migration-journal"):
-        current = _load_journal_unlocked(root)
-        merged = dict(current)
-        merged_sessions = dict(current.get("sessions") or {})
-        for session_id, row in (journal.get("sessions") or {}).items():
-            previous = merged_sessions.get(session_id)
-            if previous is None or _stage_number(row) >= _stage_number(previous):
-                merged_sessions[session_id] = row
-        merged["sessions"] = merged_sessions
         path = journal_path(root)
         path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(path, json.dumps(merged, indent=2, ensure_ascii=False, default=str))
+        atomic_write_text(path, json.dumps(journal, indent=2, ensure_ascii=False, default=str))
 
 
-def _stage_number(row: Any) -> int:
-    stage = row.get("stage") if isinstance(row, dict) else None
-    return STAGES.index(stage) if stage in STAGES else -1
+def update_journal_row(root: Path, session_id: str, row: dict[str, Any]) -> None:
+    """Update one session row without writing a stale snapshot of others."""
+    with registry_file_lock(root, "migration-journal"):
+        journal = _load_journal_unlocked(root)
+        journal.setdefault("sessions", {})[session_id] = dict(row)
+        path = journal_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, json.dumps(journal, indent=2, ensure_ascii=False, default=str))
 
 
 def session_hold_active(root: Path, session_id: str) -> bool:
@@ -321,6 +319,13 @@ def collect_legacy_candidates(store, project_id: str | None = None) -> list[dict
 
 
 def migrate_session(store, entry: dict[str, Any], *, timeout: float = 15.0) -> str:
+    root = Path(store.root_path)
+    session_id = entry["session_id"]
+    with registry_file_lock(root, f"migration-{session_id}", timeout=timeout):
+        return _migrate_session_once(store, entry, timeout=timeout)
+
+
+def _migrate_session_once(store, entry: dict[str, Any], *, timeout: float = 15.0) -> str:
     """Migrate one legacy session. Returns done|pending|deferred|failed."""
     root = Path(store.root_path)
     session_id = entry["session_id"]
@@ -331,7 +336,7 @@ def migrate_session(store, entry: dict[str, Any], *, timeout: float = 15.0) -> s
     if is_deleted(root, session_id):
         row["stage"] = "deleted"
         journal.setdefault("sessions", {})[session_id] = row
-        save_journal(root, journal)
+        update_journal_row(root, session_id, row)
         return "deleted"
     dest = nested_session_dir(root, project_id, session_id)
     row["destination"] = str(dest)
@@ -339,7 +344,7 @@ def migrate_session(store, entry: dict[str, Any], *, timeout: float = 15.0) -> s
         row["stage"] = "pending"
         row["source_unavailable"] = True
         journal.setdefault("sessions", {})[session_id] = row
-        save_journal(root, journal)
+        update_journal_row(root, session_id, row)
         _mark_project(project_id, "pending")
         return "pending"
     source = Path(entry["source"])
@@ -347,19 +352,19 @@ def migrate_session(store, entry: dict[str, Any], *, timeout: float = 15.0) -> s
         row["stage"] = "pending"
         row["source_unavailable"] = True
         journal.setdefault("sessions", {})[session_id] = row
-        save_journal(root, journal)
+        update_journal_row(root, session_id, row)
         _mark_project(project_id, "pending")
         return "pending"
     if session_looks_present(dest) and row.get("stage") == "done":
         row["stage"] = "done"
         journal.setdefault("sessions", {})[session_id] = row
-        save_journal(root, journal)
+        update_journal_row(root, session_id, row)
         return "done"
     if not quiesce_session(root, session_id, timeout=timeout):
         row["stage"] = "deferred"
         row["error"] = "writers could not quiesce"
         journal.setdefault("sessions", {})[session_id] = row
-        save_journal(root, journal)
+        update_journal_row(root, session_id, row)
         _clear_hold(root, session_id)
         return "deferred"
     try:
@@ -369,7 +374,7 @@ def migrate_session(store, entry: dict[str, Any], *, timeout: float = 15.0) -> s
         row["stage"] = "failed"
         row["error"] = f"{type(exc).__name__}: {exc}"
         journal.setdefault("sessions", {})[session_id] = row
-        save_journal(root, journal)
+        update_journal_row(root, session_id, row)
         _mark_project(row.get("project_id"), "error", str(exc))
         return "failed"
     finally:
@@ -397,16 +402,16 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
     row["recovery_inventory"] = recovery_inventory
     row["recovery_source"] = str(recovery_source) if recovery_inventory else ""
     journal.setdefault("sessions", {})[session_id] = row
-    save_journal(root, journal)
+    update_journal_row(root, session_id, row)
 
     row["stage"] = "copy"
-    save_journal(root, journal)
+    update_journal_row(root, session_id, row)
     _copy_tree(source, staged / "session")
     if recovery_inventory:
         _copy_tree(Path(row["recovery_source"]), staged_recovery)
 
     row["stage"] = "verify"
-    save_journal(root, journal)
+    update_journal_row(root, session_id, row)
     _verify_inventory(staged / "session", inventory)
     source_after = _inventory_tree(source)
     if source_after != inventory:
@@ -427,7 +432,7 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
         dest.parent.mkdir(parents=True, exist_ok=True)
         os.rename(staged / "session", dest)
     row["stage"] = "publish"
-    save_journal(root, journal)
+    update_journal_row(root, session_id, row)
     _fsync_dir(dest.parent)
     if recovery_inventory:
         recovery_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -438,10 +443,12 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
         else:
             raise RuntimeError("external recovery publication is missing")
         _fsync_dir(recovery_dest.parent)
-    store._record_location(session_id, dest)
+    # Keep the same Python-lock -> registry-lock order as SessionStore deletes.
+    with store._session_lock(session_id):
+        store._record_location(session_id, dest)
     store._sessions.pop(session_id, None)
     row["stage"] = "cleanup"
-    save_journal(root, journal)
+    update_journal_row(root, session_id, row)
     try:
         shutil.rmtree(source)
     except OSError as exc:
@@ -457,7 +464,7 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
     row["error"] = ""
     row["source_unavailable"] = False
     journal["sessions"][session_id] = row
-    save_journal(root, journal)
+    update_journal_row(root, session_id, row)
     _mark_project(project_id, "available")
     try:
         shutil.rmtree(staged, ignore_errors=True)

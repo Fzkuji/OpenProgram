@@ -3,7 +3,7 @@ from __future__ import annotations
 import multiprocessing
 from pathlib import Path
 
-from openprogram.store.session.migration import load_journal, save_journal
+from openprogram.store.session.migration import load_journal, update_journal_row
 from openprogram.store.session.session_store import SessionStore
 
 
@@ -13,7 +13,7 @@ def _journal_worker(root: str, session_id: str, barrier) -> None:
     journal.setdefault("sessions", {})[session_id] = {
         "session_id": session_id, "stage": "copy", "source": session_id,
     }
-    save_journal(Path(root), journal)
+    update_journal_row(Path(root), session_id, journal["sessions"][session_id])
 
 
 def _location_worker(root: str, session_id: str, barrier) -> None:
