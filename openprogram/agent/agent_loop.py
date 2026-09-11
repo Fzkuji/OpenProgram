@@ -50,6 +50,21 @@ from .types import (
     StreamFn,
 )
 
+# Chat turns follow Codex / DeepSeek: loop until the model returns
+# text, the user cancels, or a caller-set ``max_iterations`` is hit.
+# Codex compacts context instead of capping tool rounds; DeepSeek's
+# ReactLoopAgent has no maxSteps and uses repeat-tool reminders.
+# Identical failed tools are already skipped after two repeats.
+# runtime.exec still defaults to 20.
+MAX_INNER_ITERATIONS = None
+
+
+def iteration_cap_for(max_iterations: int | None) -> int | None:
+    """Return a caller cap, or ``None`` for an unbounded chat turn."""
+    if max_iterations is None:
+        return None
+    return max(1, int(max_iterations))
+
 
 def _latest_user_text(messages: list) -> str:
     """Walk back from the end and return the last user-role text.
@@ -458,7 +473,7 @@ async def _run_loop(
             return False
         if structured_attempt > config.response_format.max_validation_retries:
             return False
-        if inner_iterations >= iteration_cap:
+        if iteration_cap is not None and inner_iterations >= iteration_cap:
             return False
         next_attempt = structured_attempt + 1
         ev_stream.push(AgentEventMessageUpdate(
@@ -481,15 +496,9 @@ async def _run_loop(
         has_more_tool_calls = True
         return True
 
-    # Hard cap on the inner tool-call loop so a model that keeps asking
-    # for "one more tool call" can't churn the runtime forever. 50 is
-    # plenty for a real task; anything beyond that is the model spinning.
-    # A caller-set ``config.max_iterations`` (exec's ``max_iterations=``)
-    # tightens the cap — it can never raise it past the hard limit.
-    MAX_INNER_ITERATIONS = 50
-    iteration_cap = MAX_INNER_ITERATIONS
-    if config.max_iterations is not None:
-        iteration_cap = max(1, min(MAX_INNER_ITERATIONS, config.max_iterations))
+    # ``runtime.exec`` passes max_iterations=20. Chat turns pass None
+    # and run until text, cancel, or error — same as Codex / DeepSeek.
+    iteration_cap = iteration_cap_for(config.max_iterations)
     inner_iterations = 0
 
     while True:
@@ -503,7 +512,7 @@ async def _run_loop(
 
         while has_more_tool_calls or len(pending_messages) > 0:
             inner_iterations += 1
-            if inner_iterations > iteration_cap:
+            if iteration_cap is not None and inner_iterations > iteration_cap:
                 if pending_validation_error is not None:
                     raise pending_validation_error
                 if structured_plan is not None and structured_plan.mode == "tool":
