@@ -870,3 +870,72 @@ def test_fdopen_failure_closes_download_descriptor_and_removes_temp(
 async def _empty_async():
     if False:
         yield b""
+
+
+@pytest.mark.parametrize('explicit_limit', [None, 1800.0])
+def test_provider_stream_has_no_default_total_duration_limit(monkeypatch, explicit_limit):
+    from openprogram.providers.utils import timeouts
+    from openprogram.providers.utils.http_client import build_async_client
+    if explicit_limit is not None:
+        monkeypatch.setattr(timeouts, 'STREAM_TOTAL_TIMEOUT_S', explicit_limit)
+    now = [0.0]
+    monkeypatch.setattr(safe_http, 'monotonic', lambda: now[0])
+
+    def chunks():
+        for _ in range(16):
+            now[0] += 600.0
+            yield b'data: progress\n\n'
+
+    response = httpcore.Response(200, headers=[(b'content-type', b'text/event-stream')],
+                                 content=_empty_async())
+    client = build_async_client(
+        consumer='provider.openai.sdk', configured_origin='https://public.test',
+        security=OutboundSecurityConfig(resolver=lambda _host, _port: ('93.184.216.34',)),
+    )
+    monkeypatch.setattr(client._transport, '_pool',
+                        lambda _decision: _AsyncScriptedPool(response, chunks()))
+
+    async def exercise():
+        async with client:
+            async with client.stream('GET', 'https://public.test/response') as result:
+                return b''.join([chunk async for chunk in result.aiter_raw()])
+
+    if explicit_limit is None:
+        assert asyncio.run(exercise()).count(b'progress') == 16
+        assert now[0] > 7200
+    else:
+        with pytest.raises(URLPolicyError) as exc:
+            asyncio.run(exercise())
+        assert exc.value.reason == 'OVERALL_TIMEOUT'
+
+
+@pytest.mark.parametrize('asynchronous', [False, True])
+def test_google_provider_uses_unbounded_stream_duration(monkeypatch, asynchronous):
+    from openprogram.providers.utils.http_client import build_google_http_options
+    options = build_google_http_options('https://public.test')
+    now = [0.0]
+    monkeypatch.setattr(safe_http, 'monotonic', lambda: now[0])
+    response = httpcore.Response(200, headers=[(b'content-type', b'text/event-stream')],
+                                 content=[b'data: done\n\n'])
+    client = options.httpx_async_client if asynchronous else options.httpx_client
+    monkeypatch.setattr(client._transport, '_security', OutboundSecurityConfig(
+        resolver=lambda _host, _port: ('93.184.216.34',)))
+    pool = (_AsyncScriptedPool(response, [b'data: done\n\n']) if asynchronous
+            else _ScriptedPool(response))
+    monkeypatch.setattr(client._transport, '_pool', lambda _decision: pool)
+
+    async def exercise():
+        async with client.stream('GET', 'https://public.test/response') as result:
+            now[0] = 8000.0
+            return b''.join([chunk async for chunk in result.aiter_raw()])
+
+    try:
+        if asynchronous:
+            assert asyncio.run(exercise()) == b'data: done\n\n'
+        else:
+            with client.stream('GET', 'https://public.test/response') as result:
+                now[0] = 8000.0
+                assert b''.join(result.iter_raw()) == b'data: done\n\n'
+    finally:
+        options.httpx_client.close()
+        asyncio.run(options.httpx_async_client.aclose())

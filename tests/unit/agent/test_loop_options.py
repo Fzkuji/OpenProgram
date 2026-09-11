@@ -283,3 +283,12 @@ def test_exec_defaults_publish_only_the_20_round_cap():
     rt = _ProbeRuntime(captured)
     rt.exec([{"type": "text", "text": "hi"}])
     assert captured["opts"] == {"max_iterations": 20}
+
+
+def test_default_chat_completes_after_more_than_two_hundred_tool_rounds():
+    stream_fn, state = _make_stream_fn(
+        [_tool_call_msg(i) for i in range(205)] + [_text_msg()]
+    )
+    session = _session(stream_fn)
+    asyncio.run(session.run('Complete the whole task'))
+    assert state['calls'] == 206

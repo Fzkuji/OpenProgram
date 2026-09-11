@@ -248,11 +248,15 @@ def build_google_http_options(
             "provider.google.sdk",
             configured_origin,
             owner_exception=owner_exception,
+            timeout=_timeouts.build_httpx_timeout(),
+            overall_timeout=_timeouts.STREAM_TOTAL_TIMEOUT_S,
         ),
         httpx_async_client=configured_safe_async_client(
             "provider.google.sdk",
             configured_origin,
             owner_exception=owner_exception,
+            timeout=_timeouts.build_httpx_timeout(),
+            overall_timeout=_timeouts.STREAM_TOTAL_TIMEOUT_S,
         ),
     )
 
