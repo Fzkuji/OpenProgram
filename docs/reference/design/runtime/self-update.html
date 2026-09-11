@@ -1068,7 +1068,10 @@
       </div>
     </section>
 
+  <section id="quiet-history"><h2>Background history reads</h2><p>Chat reads self-update history in the background. Until records are available, it renders no history section, loading placeholder, or empty update warning. Existing records remain visible during refresh; their stale warning remains meaningful when a refresh fails. Pagination, session isolation, and update actions retain their existing behavior.</p><p>Acceptance: a pending or failed initial request adds no chat content; successful replies render actual update cards; refresh failures preserve existing cards.</p></section>
+
     <footer class="footer"><span>Canonical design: runtime / conversational self-update</span><span>正式 Release 更新：distribution / automatic updates</span></footer>
+
   </main>
 </div>
 

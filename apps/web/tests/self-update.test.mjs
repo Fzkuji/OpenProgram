@@ -237,11 +237,12 @@ test("history and activity never overlap polls for the same resource and abort o
   }
 });
 
-test("initial failures are not displayed as empty history or Nothing running", async () => {
+test("initial failures add no phantom update history and preserve activity errors", async () => {
   respond = async () => response({ error: "denied" }, 403);
   for (const Component of [SelfUpdateHistory, RunningPanel]) {
     await mount(Component, { sessionId: update.session_id, active: true }, async (host) => {
-      assert.match(host.textContent, Component === RunningPanel ? /Could not load activity/ : /unavailable/);
+      if (Component === RunningPanel) assert.match(host.textContent, /Could not load activity/);
+      else assert.equal(host.innerHTML, "");
       assert.doesNotMatch(host.textContent, /Nothing is running|Loading/);
     });
   }
@@ -345,5 +346,16 @@ test("repair and child identities stay distinct from the failed original target"
     assert.ok(!host.textContent.includes(repaired));
     assert.ok(!host.textContent.includes(child));
     assert.doesNotMatch(host.textContent, /Repaired revision|Next update ID/);
+  });
+});
+
+test("history reads in the background without a placeholder, then renders records", async () => {
+  let finish;
+  respond = () => new Promise((resolve) => { finish = resolve; });
+  await mount(SelfUpdateHistory, { sessionId: update.session_id }, async (host) => {
+    assert.equal(host.innerHTML, "");
+    await act(async () => finish(response({ items: [update], next_cursor: null })));
+    assert.equal(host.querySelectorAll("article[data-update-id]").length, 1);
+    assert.doesNotMatch(host.textContent, /Loading/);
   });
 });

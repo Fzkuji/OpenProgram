@@ -157,9 +157,8 @@ export function SelfUpdateHistory({ sessionId }: { sessionId: string | null }) {
   const { text } = useTranslation();
   const history = useSelfUpdates(sessionId);
   if (!sessionId) return null;
-  if (history.loaded && !history.items.length && !history.stale) return null;
+  if (!history.items.length) return null;
   return <section aria-label={text("Self-update history", "自更新历史")} className={styles.history}>
-    {!history.loaded && !history.stale && <p>{text("Loading update history…", "加载更新历史中…")}</p>}
     {history.stale && <p role="status">
       {text("Update status unavailable. Displayed results may be stale; reconnecting automatically.", "更新状态不可用。显示的结果可能已过时；正在自动重连。")}
       {history.syncedAt !== null && <> {text("Last sync", "最近同步")}: {new Date(history.syncedAt).toLocaleString()}</>}
