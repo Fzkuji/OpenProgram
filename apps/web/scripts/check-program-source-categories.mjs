@@ -58,7 +58,7 @@ assert.match(page, /text\("Use",\s*"使用"\)/);
 assert.match(css, /grid-template-columns:\s*var\(--programs-explorer-width\)\s+minmax\(0,\s*1fr\)/);
 assert.match(css, /--programs-explorer-width:\s*calc\(var\(--sidebar-width\) - 1px\)/);
 assert.match(page, /entry\.program_kind === "workflow"/);
-assert.match(page, /if \(entry\.program_kind === "application"\)/);
+assert.match(page, /if \(entry\.entity_kind === "package"\)/);
 assert.match(page, /entry\.program_kind\?\.endsWith\("function"\)/);
 assert.match(page, /entry\.kind === "folder" && !entry\.program_kind/);
 assert.doesNotMatch(page, /Programs files|Programs 文件/);
