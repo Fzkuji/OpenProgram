@@ -93,3 +93,36 @@ def test_publish_document_preserves_existing_target_mode(tmp_path: Path) -> None
     assert result["status"] == "committed"
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert result["after"]["mode"] == "0600"
+
+
+def test_read_document_operation_rejects_malformed_receipts_and_operation_mismatch(
+    tmp_path: Path,
+) -> None:
+    history = tmp_path / "history"
+    operation = "cccccccccccccccccccccccccccccccc"
+    operation_dir = history / "operations" / operation
+    operation_dir.mkdir(parents=True)
+    (operation_dir / "intent.json").write_text(json.dumps({
+        "status": "committed", "operation_id": "different",
+        "transaction_id": "tx", "fingerprint": "fp", "before": {},
+        "after": "not-a-descriptor",
+    }), encoding="utf-8")
+    result = CheckpointStore(recovery_root=history).read_document_operation(operation)
+    assert result["status"] == "recovery_required"
+    assert result["error_code"] == "RECOVERY_REQUIRED"
+
+
+def test_read_document_operation_keeps_prepared_receipt_recovery_visible(tmp_path: Path) -> None:
+    history = tmp_path / "history"
+    operation = "dddddddddddddddddddddddddddddddd"
+    operation_dir = history / "operations" / operation
+    operation_dir.mkdir(parents=True)
+    (operation_dir / "intent.json").write_text(json.dumps({
+        "status": "prepared", "operation_id": operation,
+        "transaction_id": "tx", "fingerprint": "fp", "before": {"kind": "absent"},
+        "after": {"kind": "regular", "blob_ref": "candidate", "sha256": "a" * 64,
+                  "mode": "0644", "size": 1},
+    }), encoding="utf-8")
+    result = CheckpointStore(recovery_root=history).read_document_operation(operation)
+    assert result["status"] == "recovery_required"
+    assert result["before"]["kind"] == "absent"

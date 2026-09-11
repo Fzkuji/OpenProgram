@@ -1493,13 +1493,35 @@ class CheckpointStore:
         if not isinstance(value, dict):
             return {"status": "recovery_required", "operation_id": operation_id,
                     "error_code": "RECOVERY_REQUIRED", "error": "invalid document intent"}
-        if value.get("status") in {"prepared", "applying"}:
+        def valid_descriptor(descriptor: object) -> bool:
+            if not isinstance(descriptor, dict) or descriptor.get("kind") not in {"absent", "regular"}:
+                return False
+            if descriptor["kind"] == "absent":
+                return descriptor.get("size") == 0
+            return (
+                isinstance(descriptor.get("blob_ref"), str)
+                and Path(descriptor["blob_ref"]).name == descriptor["blob_ref"]
+                and isinstance(descriptor.get("sha256"), str)
+                and len(descriptor["sha256"]) == 64
+                and all(char in "0123456789abcdef" for char in descriptor["sha256"])
+                and isinstance(descriptor.get("mode"), str)
+                and isinstance(descriptor.get("size"), int)
+                and descriptor["size"] >= 0
+            )
+        invalid = (
+            value.get("operation_id") != operation_id
+            or not valid_descriptor(value.get("before"))
+            or not valid_descriptor(value.get("after"))
+        )
+        if invalid or value.get("status") in {"prepared", "applying"}:
             value = {**value, "status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
-                     "error": "incomplete document operation requires recovery"}
+                     "error": "invalid or incomplete document operation requires recovery"}
+        after = value.get("after")
+        revision = after.get("sha256") if isinstance(after, dict) else None
         return {"status": value.get("status", "error"), "transaction_id": value.get("transaction_id"),
                 "operation_id": value.get("operation_id", operation_id), "fingerprint": value.get("fingerprint"),
                 "before": value.get("before"), "after": value.get("after"),
-                "revision": (value.get("after") or {}).get("sha256"), "mtime": value.get("mtime"),
+                "revision": revision, "mtime": value.get("mtime"),
                 "error_code": value.get("error_code"), "error": value.get("error")}
 
     @staticmethod
