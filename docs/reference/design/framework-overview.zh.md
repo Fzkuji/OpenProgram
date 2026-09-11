@@ -100,7 +100,7 @@
 4. push `AgentEventTurnEnd`。
 5. 无更多工具且无 steering/follow-up → break。
 
-硬上限 `MAX_INNER_ITERATIONS = 200`，防无限「再调一个工具」。聊天编码轮次经常超过 50；`runtime.exec` 默认仍是 20。
+聊天轮次没有内层硬上限（与 Codex / DeepSeek 一致）。`runtime.exec` 仍默认 20。
 
 ### 工具执行：tool.before 拦截
 

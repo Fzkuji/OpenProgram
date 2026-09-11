@@ -50,22 +50,20 @@ from .types import (
     StreamFn,
 )
 
-# Hard cap on the inner tool-call loop so a model that keeps asking
-# for "one more tool call" cannot churn forever. Chat coding turns
-# commonly exceed 50 (read/grep/edit cycles). Other frameworks still
-# cap loops: OpenAI Agents SDK default max_turns=10, LangGraph
-# recursion_limit=25, CrewAI max_iter=20. Those are short-task
-# defaults. Interactive coding agents need a higher ceiling; 200
-# covers a long investigation without removing the runaway guard.
-# runtime.exec still defaults to 20 and can only tighten this cap.
-MAX_INNER_ITERATIONS = 200
+# Chat turns follow Codex / DeepSeek: loop until the model returns
+# text, the user cancels, or a caller-set ``max_iterations`` is hit.
+# Codex compacts context instead of capping tool rounds; DeepSeek's
+# ReactLoopAgent has no maxSteps and uses repeat-tool reminders.
+# Identical failed tools are already skipped after two repeats.
+# runtime.exec still defaults to 20.
+MAX_INNER_ITERATIONS = None
 
 
-def iteration_cap_for(max_iterations: int | None) -> int:
-    """Clamp a caller cap to ``[1, MAX_INNER_ITERATIONS]``. ``None`` uses the hard cap."""
+def iteration_cap_for(max_iterations: int | None) -> int | None:
+    """Return a caller cap, or ``None`` for an unbounded chat turn."""
     if max_iterations is None:
-        return MAX_INNER_ITERATIONS
-    return max(1, min(MAX_INNER_ITERATIONS, int(max_iterations)))
+        return None
+    return max(1, int(max_iterations))
 
 
 def _latest_user_text(messages: list) -> str:
@@ -475,7 +473,7 @@ async def _run_loop(
             return False
         if structured_attempt > config.response_format.max_validation_retries:
             return False
-        if inner_iterations >= iteration_cap:
+        if iteration_cap is not None and inner_iterations >= iteration_cap:
             return False
         next_attempt = structured_attempt + 1
         ev_stream.push(AgentEventMessageUpdate(
@@ -498,8 +496,8 @@ async def _run_loop(
         has_more_tool_calls = True
         return True
 
-    # A caller-set ``config.max_iterations`` (exec's ``max_iterations=``)
-    # tightens the cap — it can never raise it past the hard limit.
+    # ``runtime.exec`` passes max_iterations=20. Chat turns pass None
+    # and run until text, cancel, or error — same as Codex / DeepSeek.
     iteration_cap = iteration_cap_for(config.max_iterations)
     inner_iterations = 0
 
@@ -514,7 +512,7 @@ async def _run_loop(
 
         while has_more_tool_calls or len(pending_messages) > 0:
             inner_iterations += 1
-            if inner_iterations > iteration_cap:
+            if iteration_cap is not None and inner_iterations > iteration_cap:
                 if pending_validation_error is not None:
                     raise pending_validation_error
                 if structured_plan is not None and structured_plan.mode == "tool":
