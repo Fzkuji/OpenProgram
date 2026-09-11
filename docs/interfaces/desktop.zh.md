@@ -10,6 +10,8 @@ Terminal Pane 在 macOS 使用 login shell，在 Windows 通过 ConPTY 使用 Wi
 
 在 Linux 从源码运行 Desktop 时，终端优先使用已安装且为绝对路径的 `SHELL`，否则依次回退到 `/bin/bash`、`/bin/sh`，不要求安装 zsh。若没有可用 shell，终端会在启动进程前明确提示缺失项。
 
+同一窗口内，再次打开会话会切换到已有聊天标签。目标尚未打开时，复用当前聊天标签，或在网页旁打开聊天标签。前进、后退的目标若已在其他标签打开，也切换到已有标签。恢复窗口时清理同一会话的重复聊天标签，不删除消息或草稿；标题相同的不同会话仍分别保留。
+
 ## 打开 Browser
 
 新建 Pane 后选择 **Browser**，或从应用 tab 栏新建浏览器 tab。Browser home 与已加载网页使用同一套浏览器控件：

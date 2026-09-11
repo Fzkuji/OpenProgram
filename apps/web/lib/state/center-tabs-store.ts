@@ -501,6 +501,18 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       set((s) => {
         closedSessionAckTombstones.delete(sessionId);
         const active = s.tabs.find(tab => tab.id === s.activeId);
+        const existing = s.tabs.find(tab => tab.kind === "session" && tab.sessionId === sessionId);
+        if (existing && existing.id !== active?.id) {
+          const history = sessionHistory(existing);
+          const index = history.index;
+          const entries = history.entries.map((entry, entryIndex) => entryIndex === index
+            ? { ...entry, title } : entry);
+          const next = { ...existing, title, sessionHistory: { entries, index } };
+          return commitCenterTabsState(s, {
+            tabs: s.tabs.map(tab => tab.id === existing.id ? next : tab),
+            activeId: existing.id,
+          });
+        }
         if (active?.kind === "session") {
           if (active.sessionId === sessionId) {
             if (active.title === title) return {};
@@ -538,6 +550,19 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       const history = sessionHistory(active);
       const index = history.index + direction;
       if (index < 0 || index >= history.entries.length) return {};
+      const targetSessionId = history.entries[index].sessionId;
+      const existing = s.tabs.find(tab => tab.id !== active.id
+        && tab.kind === "session" && tab.sessionId === targetSessionId);
+      if (existing) {
+        const group = findCenterTabGroup(s.groups, existing.id);
+        const layout = group
+          ? focusCenterTabGroupMember({ tabIds: s.tabs.map(tab => tab.id), groups: s.groups }, group.id, existing.id)
+          : null;
+        return commitCenterTabsState(s, {
+          activeId: existing.id,
+          groups: layout?.groups ?? s.groups,
+        });
+      }
       if (active.sessionId) closedSessionAckTombstones.add(active.sessionId);
       const next = withSessionHistory(active, { ...history, index });
       return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) });

@@ -163,22 +163,28 @@ for (const [name, tabs, activeId] of [
 ]) test(`reopen restores origin once over persisted ${name} and ACKs only a loaded transcript`, async () => {
   await setup(tabs, activeId);
   await mounted(async (host, root, socket) => {
+    const expectedActiveId = tabs.some(tab => tab.kind === "session" && tab.sessionId === "origin")
+      ? tabs.find(tab => tab.kind === "session" && tab.sessionId === "origin").id
+      : activeId;
     assert.equal(window.location.pathname, "/s/origin");
     assert.deepEqual(ackRequests, []);
     // AppShell's route synchronization arrives after child effects on mount.
     await act(async () => useSessionStore.getState().setCurrentConv("origin"));
     await act(async () => socket.onopen());
     assert.ok(socket.sent.some((v) => v.action === "load_session" && v.session_id === "origin"));
-    assert.equal(useCenterTabs.getState().activeId, activeId);
-    assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === activeId).sessionId, "origin");
-    assert.equal(host.querySelectorAll(`[data-tab="${activeId}"]`).length, 1);
+    assert.equal(useCenterTabs.getState().activeId, expectedActiveId);
+    assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === expectedActiveId).sessionId, "origin");
+    if (expectedActiveId !== activeId) {
+      assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === activeId).sessionId, "other");
+    }
+    assert.equal(host.querySelectorAll(`[data-tab="${expectedActiveId}"]`).length, 1);
     assert.deepEqual(ackRequests, []);
     await act(async () => { transcript(socket); await Promise.all(ackTasks); });
     assert.equal(ackRequests.length, 1);
     assert.equal(recovery.state().status, "acknowledged");
     await act(async () => { transcript(socket); await Promise.all(ackTasks); });
     assert.equal(ackRequests.length, 1);
-    assert.equal(host.querySelectorAll(`[data-tab="${activeId}"]`).length, 1);
+    assert.equal(host.querySelectorAll(`[data-tab="${expectedActiveId}"]`).length, 1);
     assert.ok(!navigations.includes("/s/other") && !navigations.includes("/chat"));
   });
 });
