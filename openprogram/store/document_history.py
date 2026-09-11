@@ -184,6 +184,12 @@ class DocumentHistory:
         raw = self.content(project_id, relative, version_id, side)
         target, _ = resolve_document(project_id, relative)
         current, mode = self._read_bounded(target)
+        existing = self._load(self._dir(project_id, relative))["entries"]
+        for entry in existing:
+            if entry.get("idempotency_key") == idempotency_key:
+                if entry.get("after_revision") != _digest(raw):
+                    raise DocumentHistoryError("idempotency key payload conflict", "CONFLICT")
+                return {**entry, "replayed": True}
         if _digest(current) != baseline_revision:
             raise DocumentHistoryError("baseline revision does not match", "CONFLICT")
         tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
