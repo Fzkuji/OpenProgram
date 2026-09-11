@@ -157,14 +157,16 @@ test("a selected image mirror supplies exact Page context without native visibil
 });
 
 
-test("closing a retained native Page reports its exact lifecycle once", () => {
+test("closing a retained native Page reports its exact lifecycle once", async () => {
   const sent = [], destroyed = [];
   setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
   const bridge = { windowId: "main", webTab: {
     ensure() {}, syncVisible() {}, destroy(id) { destroyed.push(id); },
+    async destroyConfirmed(id) { destroyed.push(id); return true; },
   } };
   ensureWebView(bridge, "w:closing-retained", "https://close.test");
   destroyStaleWebViews(bridge, []);
+  await new Promise(resolve => setImmediate(resolve));
   assert.ok(destroyed.includes("w:closing-retained"));
   assert.deepEqual(sent.filter(message => message.tab_id === "w:closing-retained"), [
     { action: "webtab_closed", tab_id: "w:closing-retained", window_id: "main" },
@@ -172,6 +174,31 @@ test("closing a retained native Page reports its exact lifecycle once", () => {
   const count = sent.length;
   destroyStaleWebViews(bridge, []);
   assert.equal(sent.length, count);
+});
+
+test("confirmed native destroy reports close only after success", async () => {
+  const sent = [], attempts = [];
+  setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
+  const bridge = { windowId: "main", webTab: {
+    ensure() {}, syncVisible() {}, destroy() { throw new Error("legacy destroy should not run"); },
+    async destroyConfirmed(id) { attempts.push(id); return false; },
+  } };
+  ensureWebView(bridge, "w:destroy-failed", "https://close-failed.test");
+  destroyStaleWebViews(bridge, []);
+  destroyStaleWebViews(bridge, []);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(sent.filter(message => message.tab_id === "w:destroy-failed"), []);
+  assert.deepEqual(attempts, ["w:destroy-failed"]);
+  const successBridge = { windowId: "main", webTab: {
+    ensure() {}, syncVisible() {}, destroy() {},
+    async destroyConfirmed(id) { attempts.push(id); return true; },
+  } };
+  ensureWebView(successBridge, "w:destroy-success", "https://close-success.test");
+  destroyStaleWebViews(successBridge, []);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(sent.filter(message => message.tab_id === "w:destroy-success"), [
+    { action: "webtab_closed", tab_id: "w:destroy-success", window_id: "main" },
+  ]);
 });
 
 test("dispatch and receipt share one native cue and stale geometry cannot paint", async () => {
@@ -208,4 +235,18 @@ test("page interaction bridge does not subscribe or send pause messages", () => 
   const dispose = subscribeBrowserHumanInput({ webTab: { onHumanInput: () => { subscriptions++; } } });
   assert.equal(subscriptions, 0);
   dispose();
+});
+
+test("legacy destroy retires local registration once without claiming native confirmation", () => {
+  const sent = [], destroyed = [];
+  setSocket({ readyState: WebSocket.OPEN, send: payload => sent.push(JSON.parse(payload)) });
+  const bridge = { windowId: "main", webTab: {
+    ensure() {}, syncVisible() {}, destroy(id) { destroyed.push(id); },
+  } };
+  const id = "w:legacy-close";
+  ensureWebView(bridge, id, "https://legacy-close.test");
+  destroyStaleWebViews(bridge, []);
+  destroyStaleWebViews(bridge, []);
+  assert.deepEqual(destroyed.filter(item => item === id), [id]);
+  assert.deepEqual(sent.filter(message => message.tab_id === id), []);
 });

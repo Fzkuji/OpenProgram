@@ -1266,6 +1266,25 @@ def emit_browser_resource(row: Mapping[str, Any], *, page_key: str) -> None:
             _log.warning("browser.resource emit failed")
 
 
+def project_page_resource_rows(page_key: str) -> list[dict[str, Any]]:
+    """Project only the associations for one Page after native close."""
+    store = BrowserResourceStore()
+    resource = store.get_resource(page_key)
+    if resource is None:
+        return []
+    control = {key: resource.get(key) for key in (
+        "control_state", "pause_command_id", "pause_execution_id", "last_input_seq",
+    )}
+    rows = []
+    for assoc in store.associations_for_page(page_key):
+        conversation = assoc.get("conversation_session_id") or assoc.get("session_id")
+        if conversation:
+            rows.append(_public_row(
+                resource, assoc, control, conversation, None, None, execution=None,
+            ))
+    return rows
+
+
 def project_conversation_resources(conversation_session_id: str) -> tuple[list[dict[str, Any]], str | None, str | None]:
     from openprogram.execution import default_store
     from openprogram.execution.conversation_scope import (
@@ -1682,6 +1701,10 @@ def page_keys_for_socket_tab(ws, window_id: str, tab_id: str) -> list[str]:
             for entry in webtab._bindings.values()
             if entry[0] is ws and entry[1] == window_id and entry[2] == tab_id
         ]
+    # A live binding is authoritative. Retained rows may describe a Page
+    # that was already replaced under the same renderer tab.
+    if keys:
+        return list(dict.fromkeys(key for key in keys if key))
     try:
         store = BrowserResourceStore()
         for resource_id in store.page_keys_for_tab(window_id, tab_id):

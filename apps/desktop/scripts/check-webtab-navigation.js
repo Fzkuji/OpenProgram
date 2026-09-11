@@ -490,6 +490,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   const boundsCalls = [];
   let bounds = { x: 0, y: 0, width: 0, height: 0 };
   let closeCalls = 0;
+  let closeFailure = false;
   let targetCalls = 0;
   let debuggerAttached = false;
   let windowOpenHandler = null;
@@ -639,7 +640,10 @@ function controlledRecord(id, currentUrl = "", loading = false) {
       return Promise.resolve(result);
     },
     isDestroyed() { return webContentsDestroyed; },
-    close() { closeCalls += 1; },
+    close() {
+      closeCalls += 1;
+      if (closeFailure) throw new Error("injected close failure");
+    },
     setWindowOpenHandler(handler) {
       windowOpenHandler = handler;
       this.windowOpen = handler;
@@ -687,6 +691,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     visibility,
     boundsCalls,
     closeCallCount: () => closeCalls,
+    setCloseFailure(value) { closeFailure = value; },
     targetCallCount: () => targetCalls,
     debuggerCommands,
     isDebuggerAttached: () => debuggerAttached,
@@ -1524,6 +1529,29 @@ async function checkVisibleCollectionAndActivation() {
   moved.controls[0].resolve();
   assert.equal(await movingActivation, null);
   assert.equal(moved.targetCallCount(), 0);
+}
+
+async function checkConfirmedDestroyHandler() {
+  hooks.registerWebTabIpc();
+  const ownerWin = fakeWindow(7001);
+  const foreignWin = fakeWindow(7002);
+  const owner = registerContext("confirmed-owner", ownerWin);
+  const foreign = registerContext("confirmed-foreign", foreignWin);
+  const record = controlledRecord("confirmed-page");
+  record.record.ownerId = owner.id;
+  owner.views.set(record.record.id, record.record);
+  const event = { sender: ownerWin.webContents };
+  record.setCloseFailure(true);
+  assert.equal(await ipcHandlers.get("webtab:destroy-confirmed")(event, record.record.id), false);
+  assert.equal(owner.views.has(record.record.id), true, "failed close keeps the record");
+  record.setCloseFailure(false);
+  assert.equal(await ipcHandlers.get("webtab:destroy-confirmed")(event, record.record.id), true);
+  assert.equal(owner.views.has(record.record.id), false, "successful close removes the record");
+  const foreignRecord = controlledRecord("foreign-confirmed-page");
+  foreignRecord.record.ownerId = foreign.id;
+  foreign.views.set(foreignRecord.record.id, foreignRecord.record);
+  assert.equal(await ipcHandlers.get("webtab:destroy-confirmed")(event, foreignRecord.record.id), false);
+  assert.equal(foreign.views.has(foreignRecord.record.id), true, "other owner is rejected");
 }
 
 async function checkSenderOwnership() {
@@ -5980,6 +6008,7 @@ Promise.all([
     checkPreloadTabTransfer();
     checkContextMenuEndAlignment();
     await checkSenderOwnership();
+    await checkConfirmedDestroyHandler();
     await checkHumanInputYieldingAndActionCue();
     await checkBackgroundPreview();
     await checkActionCueFreshness();

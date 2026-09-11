@@ -55,6 +55,10 @@ const { useSessionStore } = await import("../lib/session-store/index.ts");
 const { applyChatWsMessage, clearSessionByMsgId } = await import(
   "../lib/net/chat-stream.ts"
 );
+const {
+  clearPendingUserText,
+  setPendingUserText,
+} = await import("../lib/pending-user-text.ts");
 const realUpdateMessage = useSessionStore.getState().updateMessage;
 
 const SID = "s_raf";
@@ -159,4 +163,118 @@ test("session_loaded discard does not stamp another session", () => {
   runFrame();
   assert.equal(useSessionStore.getState().messagesById[RID]?.content ?? "", "");
   assert.equal(useSessionStore.getState().messagesById.other, undefined);
+});
+
+test("ACK rekeys the immediately visible pending user row and adds one reply", () => {
+  const sid = "s_pending_ack";
+  const pendingId = "pending_local_ack";
+  clearSessionByMsgId();
+  clearPendingUserText(sid);
+  useSessionStore.setState({ messagesById: {}, messageOrder: {}, currentSessionId: sid });
+  setPendingUserText(sid, "hello", 123, { messageId: pendingId });
+  useSessionStore.getState().appendMessage(sid, {
+    id: pendingId,
+    role: "user",
+    content: "hello",
+    status: "pending",
+    timestamp: 123,
+  });
+
+  applyChatWsMessage({
+    type: "chat_ack",
+    data: { session_id: sid, msg_id: "server_ack_1", text: "hello" },
+  });
+  const state = useSessionStore.getState();
+  assert.deepEqual(state.messageOrder[sid], ["server_ack_1", "server_ack_1_reply"]);
+  assert.equal(state.messagesById.pending_local_ack, undefined);
+  assert.equal(state.messagesById.server_ack_1.content, "hello");
+  assert.equal(state.messagesById.server_ack_1.status, "done");
+  assert.equal(state.messagesById.server_ack_1_reply.status, "streaming");
+});
+
+test("run_active with attachments restores the captured draft and keeps a failed row", () => {
+  const sid = "s_pending_attachment_error";
+  let restored = 0;
+  clearSessionByMsgId();
+  clearPendingUserText(sid);
+  useSessionStore.setState({ messagesById: {}, messageOrder: {}, currentSessionId: sid });
+  setPendingUserText(sid, "attach this", 123, {
+    hasAttachments: true,
+    messageId: "pending_attachment_error",
+    onReject: () => { restored += 1; },
+  });
+  useSessionStore.getState().appendMessage(sid, {
+    id: "pending_attachment_error",
+    role: "user",
+    content: "attach this",
+    status: "pending",
+  });
+  applyChatWsMessage({
+    type: "chat_response",
+    data: { type: "error", code: "run_active", session_id: sid, msg_id: "rejected_attachment" },
+  });
+  assert.equal(restored, 1);
+  assert.equal(useSessionStore.getState().messagesById.pending_attachment_error.status, "error");
+});
+
+test("a rejected send keeps its old row when the composer has newer text", () => {
+  const sid = "s_pending_newer_draft";
+  clearSessionByMsgId();
+  clearPendingUserText(sid);
+  useSessionStore.setState({ messagesById: {}, messageOrder: {}, currentSessionId: sid });
+  setPendingUserText(sid, "old rejected text", 123, {
+    messageId: "pending_newer", onReject: () => {},
+  });
+  useSessionStore.getState().appendMessage(sid, {
+    id: "pending_newer", role: "user", content: "old rejected text", status: "pending",
+  });
+  applyChatWsMessage({
+    type: "chat_response",
+    data: { type: "error", session_id: sid, msg_id: "rejected_newer", reason: "provider" },
+  });
+  const row = useSessionStore.getState().messagesById.pending_newer;
+  assert.equal(row.content, "old rejected text");
+  assert.equal(row.status, "error");
+});
+
+test("ACK falls back to appending when hydration removed the pending row", () => {
+  const sid = "s_pending_hydrate";
+  clearSessionByMsgId();
+  clearPendingUserText(sid);
+  useSessionStore.setState({ messagesById: {}, messageOrder: {}, currentSessionId: sid });
+  setPendingUserText(sid, "hello after reload", 123, { messageId: "pending_hydrate" });
+  useSessionStore.getState().appendMessage(sid, {
+    id: "pending_hydrate",
+    role: "user",
+    content: "hello after reload",
+    status: "pending",
+  });
+  useSessionStore.getState().setMessages(sid, []);
+  applyChatWsMessage({
+    type: "chat_ack",
+    data: { session_id: sid, msg_id: "server_hydrate", text: "hello after reload" },
+  });
+  const state = useSessionStore.getState();
+  assert.deepEqual(state.messageOrder[sid], ["server_hydrate", "server_hydrate_reply"]);
+  assert.equal(state.messagesById.server_hydrate.content, "hello after reload");
+});
+
+test("ACK rekey deduplicates when hydration already contains the server user id", () => {
+  const sid = "s_pending_duplicate_hydrate";
+  clearSessionByMsgId();
+  clearPendingUserText(sid);
+  useSessionStore.setState({ messagesById: {}, messageOrder: {}, currentSessionId: sid });
+  setPendingUserText(sid, "hello", 123, { messageId: "pending_duplicate" });
+  useSessionStore.getState().appendMessage(sid, {
+    id: "pending_duplicate", role: "user", content: "hello", status: "pending",
+  });
+  useSessionStore.getState().appendMessage(sid, {
+    id: "server_duplicate", role: "user", content: "hello", status: "done",
+  });
+  applyChatWsMessage({
+    type: "chat_ack",
+    data: { session_id: sid, msg_id: "server_duplicate", text: "hello" },
+  });
+  const order = useSessionStore.getState().messageOrder[sid];
+  assert.deepEqual(order, ["server_duplicate", "server_duplicate_reply"]);
 });

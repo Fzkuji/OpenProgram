@@ -379,6 +379,34 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
     return new_text
 
 
+async def _persist_attachments_async(session_id: str, incoming: list,
+                                     text: str) -> str:
+    """Persist one attachment batch without blocking or cancelling its IO."""
+    task = asyncio.create_task(asyncio.to_thread(
+        _persist_attachments, session_id, incoming, text,
+    ))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # The worker may already have created the session copy.  Wait for the
+        # bounded operation before propagating cancellation so callers can
+        # safely release the turn reservation and retry the draft.
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                # A second cancellation must not release the caller's
+                # reservation while the worker still owns filesystem IO.
+                continue
+        # Observe the worker result (and any worker exception) before the
+        # original cancellation is propagated to the caller.
+        try:
+            task.result()
+        except BaseException:
+            pass
+        raise
+
+
 def _attachments_for_dispatch(incoming: list) -> list | None:
     """Keep image blocks and remove the web-only source_path metadata field.
 
@@ -887,7 +915,13 @@ async def handle_chat(ws, cmd: dict):
     # content blocks (providers have no document-block support here).
     if attachments:
         try:
-            text = _persist_attachments(session_id, attachments, text)
+            # Attachment decoding, hashing, and filesystem access are all
+            # synchronous.  Keep the operation one sequential unit so the
+            # durable admission/ACK order is unchanged, but do not block the
+            # WebSocket event loop while a browser upload is being copied.
+            text = await _persist_attachments_async(
+                session_id, attachments, text,
+            )
         except BaseException:
             _s._release_run_reservation(session_id, msg_id)
             raise

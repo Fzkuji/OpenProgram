@@ -189,6 +189,7 @@ export function desktopBridge(): DesktopBridge | null {
  *  a full renderer reload are main's cleanup problem — we can't
  *  enumerate them from here. */
 const liveViewIds = new Set<string>();
+const destroyInFlight = new Set<string>();
 const readyWebTabIds = new Set<string>();
 const webTabReadyWaiters = new Map<string, Set<(ready: boolean) => void>>();
 const visibleWebBounds = new Map<string, DesktopWebTabBounds>();
@@ -481,15 +482,35 @@ export function destroyStaleWebViews(
     // destroy anyway — the lock keeps local bookkeeping consistent too).
     if (transferLockedIds.has(id)) continue;
     if (!alive.has(id)) {
-      removeVisibleWebTabBounds(bridge, id);
-      bridge.webTab.destroy(id);
-      const ws = getSocket();
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: "webtab_closed", window_id: bridge.windowId, tab_id: id }));
+      if (destroyInFlight.has(id)) continue;
+      destroyInFlight.add(id);
+      const finish = (ok: boolean) => {
+        destroyInFlight.delete(id);
+        if (!ok || transferLockedIds.has(id) || webTabStillPresent(id)) return;
+        removeVisibleWebTabBounds(bridge, id);
+        const ws = getSocket();
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ action: "webtab_closed", window_id: bridge.windowId, tab_id: id }));
+        }
+        liveViewIds.delete(id);
+        webTabGeometryRevisions.delete(id);
+        nativeCueOperations.delete(id);
+      };
+      if (typeof bridge.webTab.destroyConfirmed === "function") {
+        void bridge.webTab.destroyConfirmed(id).then(finish).catch(() => finish(false));
+      } else {
+        try {
+          bridge.webTab.destroy(id);
+          // Older preloads cannot confirm native closure. Retire this local
+          // view registration once; resource snapshots remain authoritative.
+          removeVisibleWebTabBounds(bridge, id);
+          liveViewIds.delete(id);
+          webTabGeometryRevisions.delete(id);
+          nativeCueOperations.delete(id);
+        } finally {
+          destroyInFlight.delete(id);
+        }
       }
-      liveViewIds.delete(id);
-      webTabGeometryRevisions.delete(id);
-      nativeCueOperations.delete(id);
     }
   }
 }

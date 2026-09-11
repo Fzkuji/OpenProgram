@@ -13,6 +13,8 @@ from typing import Any, Optional
 def build_session_graph(
     session_id: str,
     head_id: Optional[str] = None,
+    *,
+    messages: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Build the annotated DAG graph for a session.
 
@@ -35,10 +37,16 @@ def build_session_graph(
 
     db = default_db()
 
-    try:
-        full_msgs = db.get_messages(session_id) or []
-    except Exception:
-        full_msgs = []
+    if messages is None:
+        try:
+            full_msgs = db.get_messages(session_id) or []
+        except Exception:
+            full_msgs = []
+    else:
+        # Session hydration already captured and filtered this message
+        # snapshot. Reusing it avoids a second database history read after an
+        # asyncio yield, which could otherwise mix graph and transcript data.
+        full_msgs = list(messages)
 
     # Named branches: {branch_anchor_id: human name}. meta.json's
     # `branches` dict is keyed by the branch anchor node id (the branch's

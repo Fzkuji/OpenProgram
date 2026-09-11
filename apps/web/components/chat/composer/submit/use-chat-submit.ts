@@ -230,15 +230,22 @@ export function useChatSubmit({
       // still belong to this attachment turn for run_active handling.
       hasAttachments: pendingImages.length + pendingDocs.length > 0,
       onAck: () => {
-        // ACK cleanup is owner-keyed and conditional: a session switch or
-        // edits made while the frame was in flight must keep the newer draft.
+        // Remove only the submitted attachments; keep newer draft edits.
+        clearAttachmentsAfterSubmit(submitOwnerKey, capturedAttachmentIds);
+      },
+      onSent: () => {
         const currentDraft = submitOwnerKey
           ? useSessionStore.getState().composerDrafts[submitOwnerKey] ?? ""
           : useSessionStore.getState().composerDrafts.__new__ ?? "";
         if (currentDraft === originalDraft) {
           setComposerInputFor(submitOwnerKey, "");
         }
-        clearAttachmentsAfterSubmit(submitOwnerKey, capturedAttachmentIds);
+      },
+      onReject: () => {
+        const currentDraft = submitOwnerKey
+          ? useSessionStore.getState().composerDrafts[submitOwnerKey] ?? ""
+          : useSessionStore.getState().composerDrafts.__new__ ?? "";
+        if (!currentDraft) setComposerInputFor(submitOwnerKey, originalDraft);
       },
     });
     // The bridge already writes this exact socket. A false result means the
