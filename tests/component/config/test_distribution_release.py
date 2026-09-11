@@ -2433,12 +2433,18 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         timeout=15,
     )
 
+    detached_log = Path(env["TMPDIR"]) / f"openprogram-refresh-{os.getuid()}.log"
+    refresh_output = result.stdout + result.stderr
+    if detached_log.exists():
+        refresh_output += detached_log.read_text(encoding="utf-8", errors="replace")
+
     assert result.returncode != 0
-    assert "source version 0.6.1 != installed App version 0.6.6" in result.stderr
+    assert "source version 0.6.1 != installed App version 0.6.6" in refresh_output
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
     assert not (app.parent / ".openprogram-app-install.lock").exists()
 
+    detached_log.unlink()
     (repo / "pyproject.toml").write_text(
         '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
         encoding="utf-8",
@@ -2456,11 +2462,15 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         env=env | {"NODE_PROBE_FAIL": "1"},
         capture_output=True, text=True, timeout=15,
     )
+    bad_node_output = bad_node.stdout + bad_node.stderr
+    if detached_log.exists():
+        bad_node_output += detached_log.read_text(encoding="utf-8", errors="replace")
     assert bad_node.returncode != 0
-    assert "bundled Node cannot run after relocation" in bad_node.stderr
+    assert "bundled Node cannot run after relocation" in bad_node_output
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
 
+    detached_log.unlink()
     lock_file = app.parent / ".openprogram-app-install.lock"
     lock_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
     try:
@@ -2475,8 +2485,11 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     finally:
         lock_file.unlink()
 
+    blocked_output = blocked.stdout + blocked.stderr
+    if detached_log.exists():
+        blocked_output += detached_log.read_text(encoding="utf-8", errors="replace")
     assert blocked.returncode != 0
-    assert "another OpenProgram App installation is running" in blocked.stderr
+    assert "another OpenProgram App installation is running" in blocked_output
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
 
@@ -2490,7 +2503,10 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         encoding="utf-8",
     )
     fake_pgrep.chmod(0o755)
-    signal_env = env | {"SIGNAL_READY": str(signal_ready)}
+    signal_env = env | {
+        "OPENPROGRAM_REFRESH_DETACHED": "1",
+        "SIGNAL_READY": str(signal_ready),
+    }
     interrupted = subprocess.Popen(
         ["bash", str(scripts / "refresh-local-app.sh")],
         env=signal_env,
@@ -2546,7 +2562,10 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         encoding="utf-8",
     )
     fake_rm.chmod(0o755)
-    cleanup_env = env | {"CLEANUP_READY": str(cleanup_ready)}
+    cleanup_env = env | {
+        "OPENPROGRAM_REFRESH_DETACHED": "1",
+        "CLEANUP_READY": str(cleanup_ready),
+    }
     cleanup_interrupted = subprocess.Popen(
         ["bash", str(scripts / "refresh-local-app.sh")],
         env=cleanup_env,
