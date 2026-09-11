@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 import uuid
 
@@ -16,7 +17,7 @@ from . import catalog, state
 class ApplicationService:
     def __init__(self):
         self.tasks: dict[str, asyncio.Task] = {}
-        self.processes: dict[str, asyncio.subprocess.Process] = {}
+        self.processes: dict[str, subprocess.Popen] = {}
         self.lock = asyncio.Lock()
         self.attempts = {}
         self.cancel_commands = {}
@@ -100,7 +101,10 @@ class ApplicationService:
             state.emit(run_id, {"type": "status", "status": target.value})
 
     async def _execute(self, run_id, instance, app, operation, value):
+        from openprogram._compat import ProcessTreeOwner
+        owner = ProcessTreeOwner()
         process = None
+        waiter = None
         async def heartbeat():
             while True:
                 await asyncio.sleep(10)
@@ -118,18 +122,22 @@ class ApplicationService:
             import openprogram
             env["PYTHONPATH"] = str(Path(openprogram.__file__).resolve().parent.parent)
             env["PYTHONDONTWRITEBYTECODE"] = "1"
-            process = await asyncio.create_subprocess_exec(
-                str(executable), "-m", "openprogram.programs._applications.runner",
-                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL, cwd=str(root), env=env,
-                start_new_session=os.name != "nt", limit=1024 * 1024 + 1,
+            # Retain the OS tree handle independently of the leader's lifetime.
+            # Spawn without an await so cancellation cannot lose the new owner.
+            process = owner.popen(
+                [str(executable), "-m", "openprogram.programs._applications.runner"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, cwd=str(root), env=env,
             )
+            waiter = asyncio.create_task(asyncio.to_thread(process.wait))
             self.processes[run_id] = process
             process.stdin.write((json.dumps({"run_id": run_id, "instance": instance, "definition": app,
                 "root": str(root), "operation": operation, "input": value, "model": app.get("model", "")}) + "\n").encode())
-            await process.stdin.drain()
+            await asyncio.to_thread(process.stdin.flush)
             outcome = None
-            while line := await process.stdout.readline():
+            while line := await asyncio.to_thread(process.stdout.readline, 1024 * 1024 + 1):
+                if len(line) > 1024 * 1024:
+                    raise ValueError("application event exceeds 1 MiB")
                 event = json.loads(line)
                 if event.get("type") not in {"progress", "question", "result", "error"}:
                     raise ValueError("invalid application event")
@@ -139,7 +147,8 @@ class ApplicationService:
                         db.execute("UPDATE operations SET question=? WHERE id=?", (json.dumps(event), run_id))
                 elif event["type"] in {"result", "error"}:
                     outcome = event
-            await process.wait()
+            await asyncio.shield(waiter)
+            await self._stop(process, owner)
             if process.returncode or not outcome:
                 raise RuntimeError(f"application process exited without a result (exit {process.returncode})")
             with state.connect() as db:
@@ -149,7 +158,7 @@ class ApplicationService:
             self.transition(run_id, Status.COMPLETED if outcome["type"] == "result" else Status.FAILED)
         except asyncio.CancelledError:
             if process:
-                await self._stop(process)
+                await self._stop(process, owner)
             record = default_store().get_execution(run_id)
             if record.status != Status.CANCELLING:
                 with state.connect() as db:
@@ -158,30 +167,40 @@ class ApplicationService:
             raise
         except Exception as exc:
             if process:
-                await self._stop(process)
+                await self._stop(process, owner)
             with state.connect() as db:
                 db.execute("UPDATE operations SET error=?,question=NULL WHERE id=?", (str(exc), run_id))
             self.transition(run_id, Status.FAILED)
         finally:
+            if waiter:
+                await asyncio.shield(waiter)
+            if process:
+                process.stdin.close()
+                process.stdout.close()
             self.processes.pop(run_id, None)
             lease.cancel()
             await asyncio.gather(lease, return_exceptions=True)
             with state.connect() as db:
                 db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
 
-    async def _stop(self, process):
-        if process.returncode is None:
-            from openprogram._compat import kill_process_tree
-            await asyncio.to_thread(kill_process_tree, process.pid)
-        await process.wait()
+    async def _stop(self, process, owner):
+        # The leader may have exited while descendants still own stdout.
+        await asyncio.to_thread(owner.terminate)
+        await asyncio.to_thread(process.wait)
+
+    async def _interrupt(self, task):
+        # Every caller shares one cancellation. Shield the wait from a client
+        # disconnect; neither repeated requests nor shutdown may cancel cleanup.
+        if not task.done() and not task.cancelling():
+            task.cancel()
+        await asyncio.shield(asyncio.gather(task, return_exceptions=True))
 
     async def cancel(self, run_id: str):
         self.describe(run_id)
         if run_id in self.tasks:
             self.transition(run_id, Status.CANCELLING)
             task = self.tasks[run_id]
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            await self._interrupt(task)
             self.transition(run_id, Status.CANCELLED)
             with state.connect() as db:
                 db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
@@ -195,7 +214,7 @@ class ApplicationService:
             if run["status"] != Status.RUNNING.value or not question or question["request_id"] != request_id or process is None:
                 raise ValueError("question is no longer waiting")
             process.stdin.write((json.dumps({"request_id": request_id, "answer": answer}) + "\n").encode())
-            await process.stdin.drain()
+            await asyncio.to_thread(process.stdin.flush)
             with state.connect() as db:
                 db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
             return self.describe(run_id)
@@ -209,9 +228,7 @@ class ApplicationService:
     async def close(self):
         run_ids = list(self.tasks)
         tasks = list(self.tasks.values())
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*(self._interrupt(task) for task in tasks))
         for run_id in run_ids:
             self.transition(run_id, Status.INTERRUPTED)
 

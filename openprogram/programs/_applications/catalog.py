@@ -132,6 +132,8 @@ def install(path: str, *, replace: bool = False, trust: bool = False) -> dict:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(src, dst)
         definition = manifest(staging)
+        if definition.get("backend") and not trust:
+            raise ValueError("Python backends run trusted local code; pass trust=true after reviewing the source")
         digest = package_digest(staging)
         target = home() / "versions" / digest
         target.parent.mkdir(parents=True, exist_ok=True)
