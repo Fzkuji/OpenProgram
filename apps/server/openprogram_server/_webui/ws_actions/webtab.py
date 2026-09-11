@@ -876,8 +876,8 @@ async def handle_webtab_closed(ws, cmd: dict):
     if trusted_runtime_actor(getattr(ws, "scope", None), surface="ws") is None:
         return
     from openprogram.browser_resources import (
-        BrowserResourceStore,
-        page_keys_for_socket_tab, project_conversation_resources, emit_browser_resource,
+        BrowserResourceStore, page_keys_for_socket_tab,
+        project_page_resource_rows, emit_browser_resource,
     )
     keys = page_keys_for_socket_tab(ws, window_id, tab_id)
     for page_key in keys:
@@ -886,18 +886,8 @@ async def handle_webtab_closed(ws, cmd: dict):
         except Exception:
             continue
         try:
-            associations = BrowserResourceStore().associations_for_page(page_key)
-            conversation = next(
-                (item.get("conversation_session_id") or item.get("session_id")
-                 for item in associations
-                 if item.get("conversation_session_id") or item.get("session_id")),
-                None,
-            )
-            if conversation:
-                rows, _, _ = project_conversation_resources(conversation)
-                row = next((item for item in rows if item["resource_id"] == page_key), None)
-                if row is not None:
-                    emit_browser_resource(row, page_key=page_key)
+            for row in project_page_resource_rows(page_key):
+                emit_browser_resource(row, page_key=page_key)
         except Exception:
             pass
     closed_revisions = {

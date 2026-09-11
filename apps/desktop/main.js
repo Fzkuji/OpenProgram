@@ -2868,9 +2868,16 @@ function runNativeNavigation(ctx, id, navigate) {
   return true;
 }
 
-function destroyView(ctx, id) {
+function destroyView(ctx, id, { strict = false } = {}) {
   const record = recordFor(ctx, id);
   if (!record) return false;
+  if (strict) {
+    try {
+      record.view.webContents.close();
+    } catch (_e) {
+      return false;
+    }
+  }
   clearActionCue(record, true);
   closeActionCueWindow(record);
   closeControlOverlay(record);
@@ -2882,10 +2889,12 @@ function destroyView(ctx, id) {
   } catch (_e) {
     /* already detached */
   }
-  try {
-    record.view.webContents.close();
-  } catch (_e) {
-    /* already closed */
+  if (!strict) {
+    try {
+      record.view.webContents.close();
+    } catch (_e) {
+      /* already closed */
+    }
   }
   return true;
 }
@@ -3580,6 +3589,10 @@ function registerWebTabIpc() {
   ipcMain.on("webtab:destroy", (event, id) => {
     const ctx = contextForSender(event);
     if (ctx) destroyView(ctx, id);
+  });
+  ipcMain.handle("webtab:destroy-confirmed", (event, id) => {
+    const ctx = contextForSender(event);
+    return ctx ? destroyView(ctx, id, { strict: true }) : false;
   });
   ipcMain.on("webtab:reload", (event, id) => {
     const ctx = contextForSender(event);

@@ -10,6 +10,7 @@ import {
   registerChatSender,
   rememberSendSettings,
 } from "@/lib/state/send-queue";
+import { appendLocalUserTurn } from "@/lib/net/chat-stream";
 import {
   draftChannelChoiceFor,
   draftChannelChoiceHost,
@@ -20,6 +21,8 @@ import {
   getPendingUserTimestamp,
   getPendingUserText,
   getPendingUserAck,
+  getPendingUserMessageId,
+  getPendingUserReject,
   hasPendingFirstAck,
   hasPendingUserText,
   pendingUserHasAttachments,
@@ -90,6 +93,10 @@ interface SendMessageBridgeArgs {
   background?: boolean;
   /** Cleanup runs only after the backend emits chat_ack for this turn. */
   onAck?: () => void;
+  /** Draft-only cleanup after the socket accepts the frame. */
+  onSent?: () => void;
+  /** Restore the captured draft after a pre-ACK backend rejection. */
+  onReject?: () => void;
   hasAttachments?: boolean;
 }
 
@@ -97,6 +104,7 @@ function reservePendingChatSend(
   sessionId: string | null,
   text: string,
   onAck?: () => void,
+  onReject?: () => void,
   hasAttachments = false,
 ): (() => void) | null {
   if (!sessionId) return () => {};
@@ -107,8 +115,11 @@ function reservePendingChatSend(
   const previousTimestamp = getPendingUserTimestamp(sessionId);
   const hadPreviousText = hasPendingUserText(sessionId);
   const previousAck = getPendingUserAck(sessionId);
+  const previousReject = getPendingUserReject(sessionId);
   const previousHasAttachments = pendingUserHasAttachments(sessionId);
-  setPendingUserText(sessionId, text, Date.now(), { onAck, hasAttachments });
+  const messageId = `pending_${crypto.randomUUID()}`;
+  const previousMessageId = getPendingUserMessageId(sessionId);
+  setPendingUserText(sessionId, text, Date.now(), { onAck, onReject, hasAttachments, messageId });
   if (sessionId.startsWith("local_")) {
     setPendingFirstAck(sessionId);
   }
@@ -118,6 +129,8 @@ function reservePendingChatSend(
         setPendingUserText(sessionId, previousText, previousTimestamp ?? Date.now(), {
           onAck: previousAck,
           hasAttachments: previousHasAttachments,
+          messageId: previousMessageId,
+          onReject: previousReject,
         });
       } else {
         clearPendingUserText(sessionId);
@@ -146,6 +159,8 @@ export function sendChatMessage({
   attachments,
   background = false,
   onAck,
+  onSent,
+  onReject,
   hasAttachments = Boolean(attachments?.length),
 }: SendMessageBridgeArgs): boolean {
   const ws = getSocket();
@@ -162,6 +177,7 @@ export function sendChatMessage({
     sessionId,
     text,
     onAck,
+    onReject,
     hasAttachments,
   );
   if (!rollbackPendingSend) {
@@ -285,8 +301,18 @@ export function sendChatMessage({
   }
   traceThemeEvent("message-send");
   const acceptedAt = Date.now();
+  const optimisticMessageId = getPendingUserMessageId(sessionId ?? "");
+  if (sessionId && optimisticMessageId) {
+    appendLocalUserTurn(sessionId, optimisticMessageId, text, undefined, acceptedAt, "pending");
+  }
+  onSent?.();
   if (sessionId) {
-    setPendingUserText(sessionId, text, acceptedAt, { onAck, hasAttachments });
+    setPendingUserText(sessionId, text, acceptedAt, {
+      onAck,
+      onReject,
+      hasAttachments,
+      messageId: optimisticMessageId,
+    });
   }
   // Close the clear→ACK race for every session, not only provisional
   // drafts. A queued send is already in flight once the socket accepted

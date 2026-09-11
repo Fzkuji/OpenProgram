@@ -150,6 +150,25 @@ def test_uncompacted_sessions_carry_no_covers_field(store):
     assert all("covers_ids" not in r for r in graph)
 
 
+def test_graph_builder_reuses_hydration_message_snapshot(store, monkeypatch):
+    """A load response must not reread history after its async yield."""
+    ids = _seed(store, "s1", 2)
+    captured = store.get_messages("s1")
+    reads = 0
+    original = store.get_messages
+
+    def counted(session_id, *, limit=None):
+        nonlocal reads
+        reads += 1
+        return original(session_id, limit=limit)
+
+    monkeypatch.setattr(store, "get_messages", counted)
+    graph = build_session_graph("s1", ids[-1], messages=captured)
+
+    assert _row(graph, ids[-1])["id"] == ids[-1]
+    assert reads == 0
+
+
 def test_structured_message_content_has_a_graph_preview(store):
     store.create_session("s1", "main", title="t")
     store.append_message("s1", {
