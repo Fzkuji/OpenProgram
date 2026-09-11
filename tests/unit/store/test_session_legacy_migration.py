@@ -111,7 +111,7 @@ def test_interrupted_copy_resumes_without_clobber(tmp_path, monkeypatch):
     result = migrate_session(store, {
         "session_id": sid, "project_id": proj.id, "source": str(source),
     })
-    assert result == "done"
+    assert result == "failed"
     assert json.loads((dest / "meta.json").read_text())["title"] == "other"
     assert source.exists()
 

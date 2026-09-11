@@ -331,14 +331,10 @@ class SessionStore:
             return {}
 
     def _save_locations(self, locations: dict[str, str]) -> None:
-        try:
-            atomic_write_text(
-                self._locations_path(),
-                json.dumps(locations, indent=2, ensure_ascii=False),
-            )
-        except OSError as e:
-            _log.warning("locations.json NOT saved (%s); session placement "
-                         "may be lost on restart", e)
+        atomic_write_text(
+            self._locations_path(),
+            json.dumps(locations, indent=2, ensure_ascii=False),
+        )
 
     def _record_location(self, session_id: str, repo_dir: Path) -> None:
         """Persist that ``session_id``'s repo lives at ``repo_dir`` (an
@@ -346,9 +342,11 @@ class SessionStore:
         with self._session_lock(session_id):
             with self._locations_write_lock:
                 with self._lock:
-                    self._locations[session_id] = str(repo_dir)
                     snapshot = dict(self._locations)
+                    snapshot[session_id] = str(repo_dir)
                 self._save_locations(snapshot)
+                with self._lock:
+                    self._locations[session_id] = str(repo_dir)
 
     def relocate_project_sessions(
         self, session_ids, new_project_path, project_id=None, old_path=None,
@@ -1240,7 +1238,12 @@ class SessionStore:
         # The complete read/modify/write sequence is protected by the
         # session-ID lock. Placement may change while a process is alive, so
         # acquire through _head_file_lock and use its revalidated path.
+        old_path = git.path
         with self._head_file_lock(git):
+            if git.path != old_path:
+                idx.reset()
+                idx.rebuild_from_paths(git.list_history(), git.read_meta(),
+                                       _node_conv_predecessor, _node_caller)
             # Idempotent — skip if id already known.
             if node.id in idx.nodes_by_id:
                 return
@@ -1320,7 +1323,12 @@ class SessionStore:
             old_predecessor=old_predecessor,
             old_caller=old_caller,
         )
+        old_path = git.path
         with self._head_file_lock(git):
+            if git.path != old_path:
+                idx.reset()
+                idx.rebuild_from_paths(git.list_history(), git.read_meta(),
+                                       _node_conv_predecessor, _node_caller)
             self._rewrite_history_node(git, node)
 
     def merge_node_metadata_batch(

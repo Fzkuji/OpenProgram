@@ -16,6 +16,12 @@ from .location import (
 )
 
 _log = logging.getLogger(__name__)
+_active_observer: LocationObserver | None = None
+
+
+def refresh_observer_paths() -> None:
+    if _active_observer is not None:
+        _active_observer.refresh()
 
 
 def discover_moved_projects(roots=None, *, max_directories=20000) -> list[str]:
@@ -32,6 +38,8 @@ def discover_moved_projects(roots=None, *, max_directories=20000) -> list[str]:
 async def run_discovery(stop: asyncio.Event, notify) -> None:
     """Native observer owned by the server. Stops without idle retries."""
     observer = LocationObserver(notify)
+    global _active_observer
+    _active_observer = observer
     try:
         await asyncio.to_thread(observer.start)
         await stop.wait()
@@ -40,4 +48,5 @@ async def run_discovery(stop: asyncio.Event, notify) -> None:
         if not stop.is_set():
             await stop.wait()
     finally:
+        _active_observer = None
         await asyncio.to_thread(observer.stop)

@@ -154,6 +154,15 @@ class LocationObserver:
             self._native.stop()
             self._native = None
 
+    def refresh(self) -> None:
+        """Rebuild native subscriptions after registry/path changes."""
+        old = self._native
+        if old is not None:
+            old.stop()
+        observer = native.NativePathObserver(self._on_native_paths)
+        self._native = observer
+        observer.start(watch_paths_for_projects())
+
     def _on_native_paths(self, changed: list[str]) -> None:
         # Ordinary file edits under a project do not start recovery:
         # native flags already exclude content-only watches. Coalesce

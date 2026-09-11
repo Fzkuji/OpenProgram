@@ -274,7 +274,7 @@ def migrate_session(store, entry: dict[str, Any], *, timeout: float = 15.0) -> s
         save_journal(root, journal)
         _mark_project(project_id, "pending")
         return "pending"
-    if session_looks_present(dest):
+    if session_looks_present(dest) and row.get("stage") == "done":
         row["stage"] = "done"
         journal.setdefault("sessions", {})[session_id] = row
         save_journal(root, journal)
@@ -343,18 +343,26 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
 
     if dest.exists() and not session_looks_present(dest):
         shutil.rmtree(dest)
+    # A previous run may have published the session and failed while
+    # publishing external recovery or locations.json. Verify the published
+    # session against the durable inventory and resume only the missing
+    # publication. A conflicting pre-existing destination is an error.
     if dest.exists():
-        raise RuntimeError("destination already exists")
-    dest.parent.mkdir(parents=True, exist_ok=True)
+        _verify_inventory(dest, inventory)
+    else:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        os.rename(staged / "session", dest)
     row["stage"] = "publish"
     save_journal(root, journal)
-    os.rename(staged / "session", dest)
     _fsync_tree(dest.parent)
     if recovery_inventory:
         recovery_dest.parent.mkdir(parents=True, exist_ok=True)
         if recovery_dest.exists():
-            shutil.rmtree(recovery_dest)
-        os.rename(staged_recovery, recovery_dest)
+            _verify_inventory(recovery_dest, recovery_inventory)
+        elif staged_recovery.exists():
+            os.rename(staged_recovery, recovery_dest)
+        else:
+            raise RuntimeError("external recovery publication is missing")
         _fsync_tree(recovery_dest.parent)
     store._record_location(session_id, dest)
     store._sessions.pop(session_id, None)
@@ -376,6 +384,7 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
     row["source_unavailable"] = False
     journal["sessions"][session_id] = row
     save_journal(root, journal)
+    _mark_project(project_id, "available")
     try:
         shutil.rmtree(staged, ignore_errors=True)
     except OSError:

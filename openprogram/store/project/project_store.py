@@ -822,7 +822,7 @@ def relocate_project(
         proj.source_folders = remapped
         proj.path = str(p.resolve())
         proj.location_revision = int(proj.location_revision or 0) + 1
-        proj.location_state = "available"
+        proj.location_state = "migrating"
         proj.migration_error = ""
         capture = replace_identity or matches or not require_identity
         moved = _upsert(proj, capture_identity=capture)
@@ -833,6 +833,9 @@ def relocate_project(
     except Exception as e:  # noqa: BLE001
         _log.warning("session locations NOT rewritten for %s: %s",
                      project_id, e)
+        set_location_state(project_id, "pending", error=str(e))
+        raise ProjectStoreError(f"project location repair pending: {e}") from e
+    set_location_state(project_id, "available")
     return moved
 
 

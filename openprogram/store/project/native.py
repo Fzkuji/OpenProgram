@@ -275,9 +275,12 @@ class NativePathObserver:
                     continue
                 text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
                 flag = int(flags[i]) if flags else 0
-                # ItemRenamed 0x00080000, ItemRemoved 0x00000200,
-                # RootChanged 0x00000020, Mount 0x00000001, Unmount 0x00000002
-                if flag & (0x00080000 | 0x00000200 | 0x00000020 | 0x00000001 | 0x00000002 | 0x00000100):
+                # FSEventStreamEventFlag values: RootChanged=0x20,
+                # Mount=0x40, Unmount=0x80, Created=0x100, Removed=0x200,
+                # Renamed=0x800, ItemIsDir=0x20000. Ignore ordinary file
+                # saves: location reconciliation is directory-only.
+                structural = 0x40 | 0x80 | 0x100 | 0x200 | 0x800
+                if flag & 0x20 or ((flag & structural) and flag & 0x20000):
                     changed.append(text)
             if changed:
                 self._emit(changed)

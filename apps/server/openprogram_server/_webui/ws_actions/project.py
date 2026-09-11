@@ -150,6 +150,8 @@ async def handle_create_project(ws, cmd: dict):
         try:
             from openprogram.store.project import project_store as _projects
             proj = _projects.resolve_project(path, name=name)
+            from openprogram.store.project.discovery import refresh_observer_paths
+            refresh_observer_paths()
             proj_dict = _project_dict(proj)
             ok = True
         except Exception as e:  # noqa: BLE001

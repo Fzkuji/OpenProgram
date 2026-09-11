@@ -135,6 +135,11 @@ def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
     proj = _projects.get_project(project_id)
     if proj is None or not proj.path:
         return None, f"unknown project {project_id!r}"
+    if not getattr(proj, "is_default", False):
+        from openprogram.store.project.location import bound_execution_state
+        state = bound_execution_state(proj)
+        if state != "available":
+            return None, f"project location unavailable: {state}"
     root = os.path.realpath(os.path.expanduser(proj.path))
     target = os.path.realpath(os.path.join(root, path))
     if target != root and not target.startswith(root + os.sep):
