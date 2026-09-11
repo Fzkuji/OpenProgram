@@ -7,6 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 import stat
+import tempfile
 
 from openprogram._compat import flock, LOCK_EX, is_link_metadata
 
@@ -31,6 +32,8 @@ def capture(tool: str, args: dict) -> dict[str, dict]:
     from openprogram.worktree.path_resolve import resolve_path
     if tool in {'edit', 'write'}:
         paths = [resolve_path(str(args['file_path']))[0]]
+        if tool == 'write' and args.get('source_path'):
+            paths.append(resolve_path(str(args['source_path']))[0])
     elif tool == 'apply_patch':
         from openprogram.programs.tools.files.apply_patch import _parse_sections
         paths = [path for _, path, _ in _parse_sections(str(args['patch']))]
@@ -114,4 +117,44 @@ def write_checked(path: str, content: str) -> None:
         stream.write(content.encode('utf-8'))
         stream.truncate()
         stream.flush()
+    files[os.path.abspath(path)] = fingerprint(path)
+
+def write_checked_atomic(path: str, content: bytes, *, expected_state: dict,
+                         source_state: dict[str, dict]) -> None:
+    """Publish a staged file without exposing a partially written target."""
+    files = current_files()
+    checks = {**files, **source_state}
+    # Never replace the approval's precondition with a later observation.
+    validate(files)
+    checks[os.path.abspath(path)] = expected_state
+    validate(checks)
+    mode = None
+    if not expected_state.get('missing'):
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or is_link_metadata(info) or info.st_nlink != 1:
+            raise ValueError('Target must be an ordinary non-linked file')
+        mode = stat.S_IMODE(info.st_mode)
+    fd, temporary = tempfile.mkstemp(prefix='.openprogram-write-', dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if mode is not None:
+            os.chmod(temporary, mode)
+        validate(files)
+        validate(checks)
+        if expected_state.get('missing'):
+            # Unlike replace, link cannot overwrite a concurrently created file.
+            os.link(temporary, path)
+            os.unlink(temporary)
+        else:
+            os.replace(temporary, path)
+        temporary = ''
+    finally:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
     files[os.path.abspath(path)] = fingerprint(path)

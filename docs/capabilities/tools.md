@@ -18,6 +18,14 @@ OpenProgram ships a set of functions registered as tools that the model calls di
 | `semble_search` / `semble_find_related` | Semantic + lexical code search returning ranked code blocks | Included in every supported release; source developers install the `search` extra through the locked project environment |
 | `lsp_diagnostics` / `lsp_references` / `lsp_definition` | Type-checker errors, real call sites, and true definition sites from a language server — see [Language server tools](lsp.md) | `pyright` for Python, `typescript-language-server` for TypeScript (the tools name the install command when one is missing) |
 
+### Document versions
+
+For Word, PowerPoint, PDF, images, and other binary files, the model can generate a separate temporary result and publish it with `write(file_path="/absolute/final.docx", source_path="/absolute/staged.docx")`. `source_path` and text `content` are mutually exclusive. The source must be a regular local file of at most 64 MiB. Existing targets must first be read; binary reads return metadata and establish the same freshness check as text reads.
+
+Publishing during a conversation records complete before/after bytes in that turn's file history. The record survives reopening the conversation and restarting the application. Undo and reapply use these saved versions and refuse to overwrite conflicting later changes. New files can also be undone. This does not require a Git repository in the project folder.
+
+Binary versions preserve formatting and embedded media, but the current Review pane does not compare document layout or show Word tracked changes. Ordinary shell commands that overwrite the final file directly are not recorded as exact turn mutations. Previously unrecorded versions cannot be reconstructed from a file card or command output; scripts should write a separate result and use `write` to publish it.
+
 ## Execution
 
 | Tool | What it does | Requires |

@@ -73,6 +73,22 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <div class="decision-line"><b>四种语义不是四个同级按钮。</b>Turn card 只显示当前适用的 Undo 或 Revert；user checkpoint 进入 Restore sheet；assistant message footer 才提供 Branch。成功 Undo 后，严格预检可用时在 UI 显示 Redo；历史 Revert 的反向操作显示 Reapply。两者都执行新的 reapply transaction，不维护独立线性 redo 栈。</div>
   </section>
 
+  <section id="document-history">
+    <h2>文档修改与版本恢复</h2>
+    <p class="intro">Word、PPT、PDF 与图片使用完整文件版本。打开这一轮的文件记录可确认修改的文档；撤销恢复修改前的文件，重新应用恢复修改后的文件。重启后仍读取同一份持久记录。</p>
+    <div class="scenario-grid">
+      <div class="scenario"><b>修改完成</b><p>Proposal.docx · 文件内容已更新</p><p class="result">查看文件记录 · 撤销本轮修改</p></div>
+      <div class="scenario"><b>重新打开会话</b><p>同一轮仍显示 Proposal.docx，历史版本不依赖脚本输出或内存缓存。</p><p class="result">查看记录 · 重新应用</p></div>
+      <div class="scenario"><b>文件后来又被修改</b><p>撤销前检查当前文件。内容与已保存版本不一致时阻止恢复，保留后续修改。</p><p class="result">文件已变化，未执行恢复</p></div>
+    </div>
+    <details><summary>实现方式与范围</summary>
+      <p>脚本将结果写到独立临时文件，再通过现有 <code>write(file_path, source_path=...)</code> 发布。content 与 source_path 必须且只能指定一个。source_path 是本地普通文件，受读取权限限制；目标继续执行写权限、读取基线与审批文件指纹检查。来源和目标均纳入审批等待时的文件指纹；发布前复核。工具在目标目录生成临时文件，完整写入后替换目标，失败清理临时文件，并保留原目标。工具按原始字节写入，记录 before/after，不将文档转成文本保存。源与目标相同、目录、链接、超限或不可读取的来源在修改目标前失败。来源读取有 64 MiB 上限。</p>
+      <p>参考 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex TurnDiffTracker</a> 的 exact delta 检查与 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/shell_snapshot.rs">shell snapshot</a> 的暂存、验证、替换流程；后者保存 shell 环境，不是文档版本。沿用 Codex 的明确修改操作归因：通用 Bash、后台进程与外部编辑器不自动成为本轮精确修改。脚本不能直接覆盖最终目标后再补写历史。保留既有文本 write 参数、失败语义、回退事务、分支归属及持久会话布局。文档格式、图片和排版均由完整字节版本恢复；当前不提供 Word 修订标记或 PPT 视觉差异。</p>
+      <p>读取基线必须先建立：模型先用 read 读取原文件，再生成暂存版本。二进制读取返回文件类型与字节数，不向模型输出乱码。新文件不要求先读。脚本工具说明明确这一流程，无额外保存按钮，无全盘扫描与轮询。</p>
+      <p>验收经注册 write 工具、会话重新打开及公开历史操作完成：创建和覆盖 DOCX/PPTX 后保存版本；撤销及重新应用逐字节一致；外部更改导致冲突；失败不替换目标；旧文本写入仍有效。</p>
+    </details>
+  </section>
+
   <section id="current">
     <h2>当前实现与必须修复的缺口</h2>
     <p class="intro">以下均由当前源码确认。它们解释了十几万行误统计、响应慢和多轮恢复可能产生部分成功的原因。</p>
@@ -415,6 +431,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
   </section>
   <section id="implementation-status">
     <h2>实现状态</h2>
+    <p>文档 source_path 发布与二进制读取：实现与审查中，尚未发布。</p>
     <div class="decision-line"><b>当前实现状态：</b>目录/搜索 snapshot、文件 request identity、durable mutation、有界 read cache、持久 dirty draft、Review 服务端分页、canonical entry-point cutover 与稳定模块边界均已完成独立审查。</div>
     <p class="intro" style="margin-top:12px">实现证据写入对应测试；本设计页只维护当前合同与总体状态。</p>
   </section>
