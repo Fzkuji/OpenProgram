@@ -2,7 +2,7 @@
 
 macOS 与 Windows Desktop App 将 OpenProgram 显示为多 Pane 工作区。每个 Pane 可以放 Files、聊天、内置 Browser 或 Terminal；Pane 可以分屏，也可以移到其他应用窗口，底层会话与浏览器 tab 不会因此改变。
 
-关闭最后一个标签后，窗口保持打开，并显示新标签页，其中提供文件、新建对话、浏览器和终端四个入口。点击入口即可打开对应页面。
+关闭最后一个标签后，标签栏和中间内容区域都保持为空，不会自动创建标签或显示默认入口。点击顶部加号可打开新标签。
 
 macOS 从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下载对应架构的 DMG，把 `OpenProgram.app` 复制到 `/Applications`；当前 macOS 渠道未签名，首次启动可能需要进入“系统设置 → 隐私与安全性 → 仍要打开”。Windows 只安装已发布 release 附带的带签名 `win-x64.exe` 或 `win-arm64.exe`；某个版本没有带签名 Windows EXE 时，使用该版本的 CLI/server 与浏览器 UI。完整步骤见[安装](../install/install.zh.md)。
 

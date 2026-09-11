@@ -645,9 +645,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 );
               })
             : null}
-          {showChat && panes.length === 0 ? (
-            <div className="center-single-pane"><NewTabPage /></div>
-          ) : null}
           {showChat ? <WebTabPip /> : null}
         </div>
       </div>

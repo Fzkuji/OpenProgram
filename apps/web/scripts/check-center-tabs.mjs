@@ -921,7 +921,7 @@ assert.doesNotMatch(
   /tabRef\.current\?\.parentElement/,
 );
 assert.match(ntp, /const draftId = useCenterTabs\.getState\(\)\.claimDraftSessionTab\(\);[\s\S]*newSession\(draftId\);/);
-assert.match(strip, /\}, \[pathname, openSessionTab, openDraftSessionTab\]\);/);
+assert.match(strip, /\}, \[pathname, openSessionTab\]\);/);
 assert.match(strip, /closingInstances = useRef<Map<string, CenterTab>>/);
 assert.match(strip, /const \[closingIds, setClosingIds\] = useState<Set<string>>/);
 assert.match(
@@ -931,7 +931,7 @@ assert.match(
 assert.match(strip, /if \(!currentTab\) return;/);
 assert.doesNotMatch(
   strip,
-  /\}, \[activeId, currentSessionId, pathname, openSessionTab, openDraftSessionTab\]\);/,
+  /\}, \[activeId, currentSessionId, pathname, openSessionTab\]\);/,
 );
 assert.match(
   strip,

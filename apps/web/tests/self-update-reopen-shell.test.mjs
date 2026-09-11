@@ -284,12 +284,12 @@ test("back restores the same unsent draft and its typed input", async () => {
   });
 });
 
-for (const route of ["/settings", "/s/other", "/chat"]) test(`final tab close opens launcher from ${route} without restoring closed session`, async () => {
+for (const hidden of [false, true]) for (const route of ["/settings", "/s/other", "/chat"]) test(`final tab close leaves no visible tabs from ${route}, hidden=${hidden}`, async () => {
   await setup([other], other.id, "detached");
   await mounted(async () => {
     await act(async () => useSessionStore.getState().setCurrentConv("other"));
     await act(async () => navigate(route));
-    await act(async () => {
+    if (hidden) await act(async () => {
       const store = useCenterTabs.getState();
       const pageId = store.ensureWebTab("https://retained.test");
       store.markAgentWebTab(pageId, "other");
@@ -299,9 +299,14 @@ for (const route of ["/settings", "/s/other", "/chat"]) test(`final tab close op
     await act(async () => lifecycle.finishClose(tab));
     assert.equal(window.location.pathname, "/chat");
     const state = useCenterTabs.getState();
-    assert.equal(state.tabs.length, 2);
-    assert.equal(state.tabs.find(t => t.id === state.activeId).kind, "ntp");
-    assert.equal(state.tabs.find(t => t.kind === "web").agentSessionId, "other");
+    assert.equal(state.tabs.length, hidden ? 1 : 0);
+    assert.equal(state.activeId, null);
+    if (hidden) assert.equal(state.tabs[0].agentSessionId, "other");
     assert.equal(useSessionStore.getState().currentSessionId, null);
+  });
+  sockets = [];
+  await mounted(async () => {
+    assert.equal(useCenterTabs.getState().activeId, null);
+    assert.equal(useCenterTabs.getState().tabs.length, hidden ? 1 : 0);
   });
 });
