@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -103,6 +104,10 @@ class ApplicationService:
     async def _execute(self, run_id, instance, app, operation, value):
         from openprogram._compat import ProcessTreeOwner
         owner = ProcessTreeOwner()
+        # Blocking pipe reads and waits must never occupy the shared executor
+        # needed by cancellation. Each process has two dedicated reader slots.
+        io_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="application-io")
+        loop = asyncio.get_running_loop()
         process = None
         waiter = None
         async def heartbeat():
@@ -129,13 +134,12 @@ class ApplicationService:
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL, cwd=str(root), env=env,
             )
-            waiter = asyncio.create_task(asyncio.to_thread(process.wait))
+            waiter = loop.run_in_executor(io_pool, process.wait)
             self.processes[run_id] = process
-            process.stdin.write((json.dumps({"run_id": run_id, "instance": instance, "definition": app,
-                "root": str(root), "operation": operation, "input": value, "model": app.get("model", "")}) + "\n").encode())
-            await asyncio.to_thread(process.stdin.flush)
+            await asyncio.to_thread(self._send, process, {"run_id": run_id, "instance": instance, "definition": app,
+                "root": str(root), "operation": operation, "input": value, "model": app.get("model", "")})
             outcome = None
-            while line := await asyncio.to_thread(process.stdout.readline, 1024 * 1024 + 1):
+            while line := await loop.run_in_executor(io_pool, process.stdout.readline, 1024 * 1024 + 1):
                 if len(line) > 1024 * 1024:
                     raise ValueError("application event exceeds 1 MiB")
                 event = json.loads(line)
@@ -175,13 +179,22 @@ class ApplicationService:
             if waiter:
                 await asyncio.shield(waiter)
             if process:
-                process.stdin.close()
-                process.stdout.close()
+                for stream in (process.stdin, process.stdout):
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+            io_pool.shutdown(wait=False, cancel_futures=True)
             self.processes.pop(run_id, None)
             lease.cancel()
             await asyncio.gather(lease, return_exceptions=True)
             with state.connect() as db:
                 db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
+
+    @staticmethod
+    def _send(process, value):
+        process.stdin.write((json.dumps(value) + "\n").encode())
+        process.stdin.flush()
 
     async def _stop(self, process, owner):
         # The leader may have exited while descendants still own stdout.
@@ -213,8 +226,7 @@ class ApplicationService:
             process = self.processes.get(run_id)
             if run["status"] != Status.RUNNING.value or not question or question["request_id"] != request_id or process is None:
                 raise ValueError("question is no longer waiting")
-            process.stdin.write((json.dumps({"request_id": request_id, "answer": answer}) + "\n").encode())
-            await asyncio.to_thread(process.stdin.flush)
+            await asyncio.to_thread(self._send, process, {"request_id": request_id, "answer": answer})
             with state.connect() as db:
                 db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
             return self.describe(run_id)

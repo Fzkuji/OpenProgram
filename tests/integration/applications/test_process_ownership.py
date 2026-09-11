@@ -127,3 +127,31 @@ def test_cancel_owns_descendants_after_leader_exit(tmp_path, monkeypatch):
         finally:
             # Release a surviving fixture child even on the pre-fix candidate.
             trigger.touch()
+
+
+def test_waiting_operations_do_not_exhaust_cancellation_executor(tmp_path, monkeypatch):
+    monkeypatch.setenv('HOME', str(tmp_path))
+    import asyncio
+    from openprogram._compat import kill_process_tree
+    source, _ = source_package(tmp_path, 'operations = {"run": lambda v,c: c.ask("Continue?")}\n')
+    app = application()
+    with TestClient(app) as client:
+        async def configure_executor():
+            # One waiting process fills this pool before the repair, equivalent
+            # to several processes filling the platform's default-sized pool.
+            asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=2))
+        client.portal.call(configure_executor)
+        run_id = start(client, source)
+        url = '/api/application-runs/' + run_id
+        assert wait_until(lambda: client.get(url).json()['question'], timeout=15)
+        process = app.state.applications.processes[run_id]
+        with ThreadPoolExecutor(1) as pool:
+            request = pool.submit(client.post, url + '/cancel')
+            try:
+                response = request.result(timeout=3)
+                assert response.status_code == 200, response.text
+                assert response.json()['status'] == 'cancelled'
+                assert process.returncode is not None
+            finally:
+                if process.returncode is None:
+                    kill_process_tree(process.pid)
