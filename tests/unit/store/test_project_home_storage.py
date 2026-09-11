@@ -17,7 +17,7 @@ from openprogram.store.session.session_store import SessionStore
 def _isolate(tmp_path: Path, monkeypatch) -> Path:
     state = tmp_path / "state"
     state.mkdir()
-    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: str(state))
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
     return state
 
 

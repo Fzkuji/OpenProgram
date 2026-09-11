@@ -36,6 +36,10 @@ from typing import Any, Callable, Optional
 
 _log = logging.getLogger(__name__)
 
+
+class SessionPlacementError(RuntimeError):
+    """The durable session placement registry could not be consulted."""
+
 # Rewind recovery re-enters SessionStore through ``get_session`` and the
 # durable HEAD CAS.  RLock makes that re-entry legal, but it does not prevent
 # ``_open -> recover_session_rewinds -> _open`` from recursing forever.  Keep
@@ -679,11 +683,21 @@ class SessionStore:
                 self._locations[key] = value
             loc_map = dict(self._locations)
         proj = None
+        lookup_failed = False
         try:
             from openprogram.store.project import project_store as _projects
             proj = _projects.project_for_session(session_id)
         except Exception:
-            proj = None
+            lookup_failed = True
+            if session_id not in loc_map:
+                raise SessionPlacementError(
+                    f"could not resolve project placement for session {session_id}"
+                ) from None
+            _log.warning(
+                "project lookup failed for %s; using durable location mapping",
+                session_id,
+                exc_info=True,
+            )
         existing = resolve_existing_dir(
             self.root_path, session_id,
             locations=loc_map,
@@ -696,6 +710,10 @@ class SessionStore:
         recorded = loc_map.get(session_id)
         if recorded:
             return Path(recorded)
+        if lookup_failed:
+            raise SessionPlacementError(
+                f"could not resolve project placement for session {session_id}"
+            )
         return target_dir_for_project(
             self.root_path, session_id,
             project_id=None if proj is None else proj.id,

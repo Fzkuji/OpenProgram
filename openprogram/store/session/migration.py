@@ -180,17 +180,19 @@ def _live_jobs(session_id: str) -> bool:
     # Ordinary WS chat turns are held in the server runtime registry rather
     # than jobs.json. Migration must wait for both representations.
     try:
-        from openprogram.paths import get_state_dir
-        if isinstance(get_state_dir(), str):
-            # Isolated legacy tests and embedders may provide the historical
-            # string path hook; execution DB resolution is unavailable there.
-            # The session/job and runtime registries remain authoritative.
-            pass
-        else:
-            from openprogram.execution.store import default_store as execution_default_store
-            execution_store = execution_default_store()
-            if execution_store.list_nonterminal(session_id=session_id):
-                return True
+        from openprogram.execution.store import default_store as execution_default_store
+        from openprogram.execution.model import ExecutionStatus
+        execution_store = execution_default_store()
+        active_statuses = {
+            ExecutionStatus.RUNNING,
+            ExecutionStatus.PAUSING,
+            ExecutionStatus.CANCELLING,
+        }
+        if any(
+            record.status in active_statuses
+            for record in execution_store.list_nonterminal(session_id=session_id)
+        ):
+            return True
         import sys
         servers = [m for name, m in sys.modules.items()
                    if name.endswith("openprogram_server.server")

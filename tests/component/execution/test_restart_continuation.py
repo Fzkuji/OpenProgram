@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from openprogram.execution.attempts import AttemptStore
 from openprogram.execution.control import RuntimeControlService
 from openprogram.execution.driver import DriverRegistry
@@ -44,6 +46,48 @@ def _running(tmp_path, *, kind: str = "chat", pause: bool = True):
         expected_execution_version=reserved.status_version,
     )
     return store, attempts, running, active
+
+
+def test_legacy_migration_waits_for_running_execution_with_string_state_hook(
+    tmp_path, monkeypatch,
+):
+    """The execution DB remains authoritative when a test/embedder returns a string path."""
+    from openprogram.store.session import migration
+
+    store, _attempts, running, _active = _running(tmp_path)
+    state = tmp_path / "state"
+    (state / "sessions").mkdir(parents=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: str(state))
+    monkeypatch.setattr("openprogram.execution.store.default_store", lambda: store)
+
+    assert migration._live_jobs("session") is True
+    assert migration.quiesce_session(state / "sessions", "session", timeout=0.05) is False
+    assert migration.hold_path(state / "sessions", "session").is_file()
+
+
+def test_execution_admission_is_rejected_while_migration_hold_is_active(
+    tmp_path, monkeypatch,
+):
+    from openprogram.execution.store import ExecutionConflict
+    from openprogram.store.session import migration
+
+    store = ExecutionStore(tmp_path / "execution.sqlite3")
+    revision = store.create_revision(manifest={"entrypoint": "chat"})
+    state = tmp_path / "state"
+    (state / "sessions").mkdir(parents=True)
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    migration._set_hold(state / "sessions", "session")
+
+    try:
+        with pytest.raises(ExecutionConflict, match="session migration"):
+            store.admit_execution(
+                session_id="session", revision_id=revision.revision_id,
+                input_ref="agent-turn:test", input_hash="test",
+                entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
+                trusted_actor={"subject": "test"}, config_snapshot_ref="config:test",
+            )
+    finally:
+        migration._clear_hold(state / "sessions", "session")
 
 
 def test_owner_loss_marks_ordinary_chat_restart_pending_and_resolves_provider_only_effect(tmp_path, monkeypatch):
