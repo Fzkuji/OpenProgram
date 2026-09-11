@@ -17,7 +17,11 @@ def _locked_checkpoint():
     if shim is None or not turn_id:
         yield None
         return
-    with session_interprocess_lock(shim.session_id):
+    with session_interprocess_lock(
+        shim.session_id,
+        root=shim.store.root_path if getattr(shim.store, "_explicit_root", False)
+        else None,
+    ):
         yield CheckpointStore(shim.store._session_dir(shim.session_id)), turn_id
 
 

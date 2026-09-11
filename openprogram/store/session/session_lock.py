@@ -91,10 +91,12 @@ def session_interprocess_lock(
         handle.close()
 
 
-def session_lock_available(session_id: str) -> bool:
+def session_lock_available(
+    session_id: str, *, root: str | Path | None = None,
+) -> bool:
     """True when no other process currently holds the exclusive lock."""
     try:
-        with session_interprocess_lock(session_id, blocking=False):
+        with session_interprocess_lock(session_id, blocking=False, root=root):
             return True
     except BlockingIOError:
         return False

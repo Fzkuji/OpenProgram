@@ -289,6 +289,7 @@ class SessionStore:
     ) -> None:
         self.root_path = Path(root_path).expanduser() if root_path else _default_root()
         self._explicit_root = root_path is not None
+        self._project_ids: dict[str, str] = {}
         self.root_path.mkdir(parents=True, exist_ok=True)
         # Cache: session_id → (GitSession, SessionMemoryIndex). Lazy,
         # LRU-ordered (OrderedDict: insertion/access order = recency), and
@@ -688,8 +689,26 @@ class SessionStore:
             loc_map = dict(self._locations)
         if self._explicit_root:
             recorded = loc_map.get(session_id)
+            project_id = self._project_ids.get(session_id)
+            existing = resolve_existing_dir(
+                self.root_path, session_id, locations=loc_map,
+                project_id=project_id, is_default=not bool(project_id),
+            )
+            if existing is not None:
+                return existing
             if recorded:
                 return Path(recorded)
+            if project_id:
+                return nested_session_dir(self.root_path, project_id, session_id)
+            # A fresh store can rebuild placement from the nested directory
+            # even if locations.json and the summary index are unavailable.
+            projects_root = self.root_path / "projects"
+            if projects_root.is_dir():
+                for project_dir in projects_root.iterdir():
+                    candidate = project_dir / session_id
+                    if candidate.is_dir() and session_looks_present(candidate):
+                        self._project_ids[session_id] = project_dir.name
+                        return candidate
             return default_session_dir(self.root_path, session_id)
         proj = None
         lookup_failed = False
@@ -751,11 +770,14 @@ class SessionStore:
                 return None
             verified_git: GitSession | None = None
             sdir = self._session_dir(session_id)
-            if create_if_missing and not sdir.exists() and not self._explicit_root:
+            if create_if_missing and not sdir.exists() and (
+                    not self._explicit_root or session_id in self._project_ids):
                 try:
                     from openprogram.store.project import project_store as _projects
                     from openprogram.store.project.location import bound_execution_state
-                    project = _projects.project_for_session(session_id)
+                    project = (_projects.get_project(self._project_ids[session_id])
+                               if self._explicit_root
+                               else _projects.project_for_session(session_id))
                     if project is not None and not getattr(project, "is_default", False):
                         if bound_execution_state(project) is not None:
                             return None
@@ -978,6 +1000,8 @@ class SessionStore:
                 if proj is not None and (not proj.is_default) and proj.path:
                     repo_dir = nested_session_dir(self.root_path, proj.id, session_id)
                     self._record_location(session_id, repo_dir)
+                if proj is not None and not proj.is_default:
+                    self._project_ids[session_id] = proj.id
             except Exception as e:  # noqa: BLE001 — placement is authoritative
                 _log.error("project resolution failed for %s: %s", session_id, e)
                 raise

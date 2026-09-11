@@ -65,7 +65,13 @@ def _legacy_session(tmp_path: Path, store: SessionStore, name: str = "paper"):
 def test_session_placement_lookup_failure_does_not_fallback_to_default(
     tmp_path, monkeypatch,
 ):
-    store = _isolate(tmp_path, monkeypatch)
+    # This assertion covers the managed/default placement contract. An
+    # explicitly rooted standalone store intentionally has no project
+    # registry to consult.
+    state = tmp_path / "state"
+    state.mkdir()
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    store = SessionStore()
 
     def fail_lookup(_session_id):
         raise RuntimeError("registry unavailable")

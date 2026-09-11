@@ -262,11 +262,11 @@ def quiesce_session(root: Path, session_id: str, *, timeout: float = 15.0) -> bo
         if _live_jobs(session_id):
             time.sleep(0.1)
             continue
-        if not session_lock_available(session_id):
+        if not session_lock_available(session_id, root=root):
             time.sleep(0.1)
             continue
         try:
-            with session_interprocess_lock(session_id, timeout=1.0):
+            with session_interprocess_lock(session_id, timeout=1.0, root=root):
                 return True
         except (TimeoutError, BlockingIOError):
             continue
@@ -390,7 +390,9 @@ def _migrate_session_once(store, entry: dict[str, Any], *, timeout: float = 15.0
         return "deferred"
     try:
         with store._session_lock(session_id):
-            with session_interprocess_lock(session_id, timeout=timeout):
+            with session_interprocess_lock(
+                session_id, timeout=timeout, root=root,
+            ):
                 return _migrate_locked(store, root, journal, row, source, dest)
     except Exception as exc:
         row["stage"] = "failed"
