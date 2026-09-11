@@ -106,6 +106,16 @@ def test_attachment_routes_keep_allowed_missing_file_404(client, project):
     assert client.get("/api/file-read", params={"path": str(missing)}).status_code == 404
 
 
+def test_existing_legacy_path_falls_back_without_canonical(project, monkeypatch):
+    legacy = project / ".openprogram" / "sessions" / "s1" / "workdir" / "attachments" / "old.txt"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("source", encoding="utf-8")
+    monkeypatch.setattr(attachments, "_session_repo_candidates", lambda _sid: [])
+    assert attachments.resolve_session_attachment(
+        legacy, "s1", [project], allow_missing=False,
+    ) == legacy.resolve()
+
+
 def test_raw_refuses_a_symlink_pointing_out_of_the_root(client, project, tmp_path):
     secret = tmp_path / "id_rsa"
     secret.write_text("PRIVATE KEY")

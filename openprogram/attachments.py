@@ -302,12 +302,13 @@ def resolve_session_attachment(
     try:
         raw = Path(os.path.expanduser(str(path)))
         parts = raw.parts
-        legacy_start = next(
-            (i for i in range(len(parts) - 4)
-             if parts[i:i + 2] == (".openprogram", "sessions")
-             and parts[i + 3:i + 5] == ("workdir", "attachments")),
-            None,
-        )
+        if raw.is_absolute() and not any(part in {".", ".."} for part in parts):
+            legacy_start = next(
+                (i for i in range(len(parts) - 4)
+                 if parts[i:i + 2] == (".openprogram", "sessions")
+                 and parts[i + 3:i + 5] == ("workdir", "attachments")),
+                None,
+            )
         if (legacy_start is not None and session_id
                 and parts[legacy_start + 2] != session_id):
             return None
@@ -323,6 +324,8 @@ def resolve_session_attachment(
         return target if allow_missing else None
     repos = _session_repo_candidates(session_id)
     if len(repos) != 1:
+        if target is not None and target.is_file():
+            return target
         return target if allow_missing else None
     repo_root = repos[0].resolve()
     attachment_root = (repo_root / "workdir" / "attachments").resolve()
@@ -339,7 +342,11 @@ def resolve_session_attachment(
         return None
     if resolve_within(candidate, roots) != candidate:
         return None
-    return candidate if candidate.is_file() else (target if allow_missing else None)
+    if candidate.is_file():
+        return candidate
+    if target is not None and target.is_file():
+        return target
+    return target if allow_missing else None
 
 
 def sendable_roots(session_id: str | None = None) -> list[Path]:
