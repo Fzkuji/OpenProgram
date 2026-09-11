@@ -20,6 +20,7 @@ from openprogram.store.session.placement import (
     session_looks_present,
 )
 from openprogram.store.session.session_lock import (
+    registry_file_lock,
     session_interprocess_lock,
     session_lock_available,
 )
@@ -42,6 +43,11 @@ def hold_path(root: Path, session_id: str) -> Path:
 
 
 def load_journal(root: Path) -> dict[str, Any]:
+    with registry_file_lock(root, "migration-journal"):
+        return _load_journal_unlocked(root)
+
+
+def _load_journal_unlocked(root: Path) -> dict[str, Any]:
     path = journal_path(root)
     if not path.is_file():
         return {"version": 1, "sessions": {}}
@@ -55,9 +61,23 @@ def load_journal(root: Path) -> dict[str, Any]:
 
 
 def save_journal(root: Path, journal: dict[str, Any]) -> None:
-    path = journal_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(path, json.dumps(journal, indent=2, ensure_ascii=False, default=str))
+    with registry_file_lock(root, "migration-journal"):
+        current = _load_journal_unlocked(root)
+        merged = dict(current)
+        merged_sessions = dict(current.get("sessions") or {})
+        for session_id, row in (journal.get("sessions") or {}).items():
+            previous = merged_sessions.get(session_id)
+            if previous is None or _stage_number(row) >= _stage_number(previous):
+                merged_sessions[session_id] = row
+        merged["sessions"] = merged_sessions
+        path = journal_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, json.dumps(merged, indent=2, ensure_ascii=False, default=str))
+
+
+def _stage_number(row: Any) -> int:
+    stage = row.get("stage") if isinstance(row, dict) else None
+    return STAGES.index(stage) if stage in STAGES else -1
 
 
 def session_hold_active(root: Path, session_id: str) -> bool:

@@ -77,3 +77,27 @@ def session_lock_available(session_id: str) -> bool:
             return True
     except BlockingIOError:
         return False
+
+
+@contextmanager
+def registry_file_lock(root: str | Path, name: str, *, timeout: float = 15.0) -> Iterator[None]:
+    """Lock a cross-session registry while it is read-modify-written."""
+    directory = Path(root) / ".locks"
+    directory.mkdir(parents=True, exist_ok=True)
+    handle = (directory / f".{name}.lock").open("a+")
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"registry lock busy: {name}")
+                time.sleep(0.05)
+        yield
+    finally:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()

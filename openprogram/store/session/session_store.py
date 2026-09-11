@@ -71,7 +71,7 @@ from .placement import (
     session_looks_present,
     target_dir_for_project,
 )
-from .session_lock import session_interprocess_lock
+from .session_lock import registry_file_lock, session_interprocess_lock
 
 
 # Paths
@@ -343,14 +343,12 @@ class SessionStore:
     def _record_location(self, session_id: str, repo_dir: Path) -> None:
         """Persist that ``session_id``'s repo lives at ``repo_dir`` (an
         absolute path outside the home root). Idempotent."""
-        with self._session_lock(session_id):
-            with self._locations_write_lock:
-                with self._lock:
-                    snapshot = dict(self._locations)
-                    snapshot[session_id] = str(repo_dir)
-                self._save_locations(snapshot)
-                with self._lock:
-                    self._locations[session_id] = str(repo_dir)
+        with self._session_lock(session_id), registry_file_lock(self.root_path, "locations"):
+            snapshot = self._load_locations()
+            snapshot[session_id] = str(repo_dir)
+            self._save_locations(snapshot)
+            with self._lock:
+                self._locations.update(snapshot)
 
     def relocate_project_sessions(
         self, session_ids, new_project_path, project_id=None, old_path=None,
@@ -399,13 +397,14 @@ class SessionStore:
 
     def _forget_location(self, session_id: str) -> None:
         """删会话时移除位置映射（配对 _record_location）。"""
-        with self._session_lock(session_id):
-            with self._locations_write_lock:
-                with self._lock:
-                    if self._locations.pop(session_id, None) is None:
-                        return
-                    snapshot = dict(self._locations)
-                self._save_locations(snapshot)
+        with self._session_lock(session_id), registry_file_lock(self.root_path, "locations"):
+            snapshot = self._load_locations()
+            if session_id not in snapshot:
+                return
+            snapshot.pop(session_id)
+            self._save_locations(snapshot)
+            with self._lock:
+                self._locations.pop(session_id, None)
 
     # Registry (index.json)
 
