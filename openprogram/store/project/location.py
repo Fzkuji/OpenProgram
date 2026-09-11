@@ -12,6 +12,7 @@ from . import project_store as projects
 
 _log = logging.getLogger(__name__)
 _migration_attempted: set[str] = set()
+_migration_deferred: set[str] = set()
 _migration_lock = threading.Lock()
 
 AVAILABLE = "available"
@@ -63,12 +64,21 @@ def refresh_project_location(project_id: str) -> str:
             return recorded
         with _migration_lock:
             if project_id in _migration_attempted:
-                return recorded
+                if project_id not in _migration_deferred:
+                    return recorded
+                if _project_has_live_writers(project):
+                    return recorded
+                _migration_attempted.discard(project_id)
+                _migration_deferred.discard(project_id)
             _migration_attempted.add(project_id)
         try:
             from openprogram.store.session.migration import run_project_migration
             from openprogram.store.session.session_store import default_store
-            run_project_migration(project_id, default_store(), timeout=2.0)
+            result = run_project_migration(project_id, default_store(), timeout=2.0)
+            if isinstance(result, dict) and any(
+                    value == "deferred" for value in result.values()):
+                with _migration_lock:
+                    _migration_deferred.add(project_id)
             refreshed = projects.get_project(project_id)
             if refreshed is not None:
                 project = refreshed
@@ -104,6 +114,16 @@ def refresh_project_location(project_id: str) -> str:
             return MISSING
     _set_state(project, MISSING)
     return MISSING
+
+
+def _project_has_live_writers(project) -> bool:
+    """Avoid repeating a bounded migration wait while its writers are live."""
+    try:
+        from openprogram.store.session.migration import _live_jobs
+        return any(_live_jobs(session_id) for session_id in
+                   (getattr(project, "session_ids", []) or []))
+    except Exception:
+        return True
 
 
 def reconcile_registered_projects() -> list[str]:
@@ -180,6 +200,7 @@ class LocationObserver:
         self._stopped.clear()
         with _migration_lock:
             _migration_attempted.clear()
+            _migration_deferred.clear()
         moved = reconcile_registered_projects()
         if moved:
             self._notify()
@@ -236,6 +257,7 @@ class LocationObserver:
         for project_id in dict.fromkeys(touched):
             with _migration_lock:
                 _migration_attempted.discard(project_id)
+                _migration_deferred.discard(project_id)
             before = projects.get_project(project_id)
             state = refresh_project_location(project_id)
             after = projects.get_project(project_id)
