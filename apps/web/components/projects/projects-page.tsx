@@ -199,7 +199,7 @@ export function ProjectsPage({
                 {p.hidden && <span className={styles.badge}>{text("Hidden", "已隐藏")}</span>}
                 {p.is_default && <span className={styles.badge}>{text("Default", "默认")}</span>}
                 {(p.path_missing || p.path_replaced ||
-                  ["missing", "replaced", "migrating", "pending", "error"].includes(p.location_state ?? "")) && (
+                  ["missing", "replaced", "migrating", "pending", "error"].includes(p.location_state ?? "")) ? (
                   <AlertTriangle
                     size={14}
                     strokeWidth={2}
