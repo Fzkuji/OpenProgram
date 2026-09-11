@@ -246,6 +246,7 @@ export function WebTabPip() {
   const { text } = useTranslation();
   const tabId = useWebTabPip((s) => s.tabId);
   const ownerTabId = useWebTabPip((s) => s.ownerTabId);
+  const ownerSessionId = useWebTabPip((s) => s.ownerSessionId);
   const hide = useWebTabPip((s) => s.hide);
   const rect = useWebTabPip((s) => s.rect);
   const expandedSize = useWebTabPip((s) => s.expandedSize);
@@ -257,8 +258,7 @@ export function WebTabPip() {
   const tab = tabId
     ? tabs.find((item) => item.id === tabId && item.kind === "web")
     : undefined;
-  const owner = ownerTabId ? tabs.find((item) => item.id === ownerTabId) : undefined;
-  const sessionId = owner?.kind === "session" ? owner.sessionId || null : null;
+  const sessionId = ownerSessionId;
   const branchId = sessionId ? viewedBranchFor(sessionId) : null;
   const pref = sessionId ? getPreviewPreference(sessionId, branchId) : null;
   const connected = useBrowserResourceStore(s => s.connected);
@@ -376,7 +376,8 @@ export function WebTabPip() {
       isCurrent: () => {
         if (captureGenRef.current !== gen) return null;
         const pip = useWebTabPip.getState();
-        if (pip.tabId !== tabId) return null;
+        if (pip.tabId !== tabId || pip.ownerSessionId !== ownerSessionId
+            || pipHostMode(tabId, pip.ownerTabId, useCenterTabs.getState()) !== "chat") return null;
         return { tabId, generation: gen };
       },
       capture,
@@ -398,7 +399,7 @@ export function WebTabPip() {
       endActiveDragRef.current(false);
       if (captureGenRef.current === gen) captureGenRef.current += 1;
     };
-  }, [bridge, tabId, live]);
+  }, [bridge, tabId, live, ownerSessionId]);
 
   const presented = live && chatBox
     ? pipChatRect(rect, expanded, chatBox, expandedSize)

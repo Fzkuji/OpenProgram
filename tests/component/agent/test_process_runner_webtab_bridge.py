@@ -1321,3 +1321,24 @@ def test_parent_owns_page_session_attribution(monkeypatch):
         "command": {"op": "open", "url": "https://example.com/", "session_id": "forged"},
     }, Queue(), session_id="actual-session")
     assert seen == [{"session_id": "actual-session"}]
+
+
+def test_parent_page_inventory_uses_trusted_session_context_and_restores_it(monkeypatch):
+    from openprogram.agent import process_runner, surface_context
+    from openprogram.agent.run_control import get_current_session_id, set_current_session_id, reset_current_session_id
+
+    seen = []
+    def capture(context):
+        seen.append(get_current_session_id())
+        return {"surfaces": [], "window_id": "main"}
+    monkeypatch.setattr(surface_context, "capture_pages", capture)
+    token = set_current_session_id("unrelated-parent-context")
+    try:
+        process_runner._bridge_webtab_to_parent(
+            {"req_id": "request", "command": {"op": "capture_pages", "window_id": "main", "session_id": "forged"}},
+            Queue(), allowed_window_id="main", session_id="trusted-conversation",
+        )
+        assert seen == ["trusted-conversation"]
+        assert get_current_session_id() == "unrelated-parent-context"
+    finally:
+        reset_current_session_id(token)

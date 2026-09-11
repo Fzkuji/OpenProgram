@@ -119,7 +119,7 @@ def window_context(
     }
 
 
-def capture(raw: Any, ws) -> dict | None:
+def capture(raw: Any, ws, *, session_id: str | None = None) -> dict | None:
     """Validate one renderer ref and capture its bounded DOM/ARIA preview."""
     if not isinstance(raw, dict):
         return None
@@ -174,6 +174,7 @@ def capture(raw: Any, ws) -> dict | None:
     background = raw.get("background") is True
     preview_command = {
         "op": "preview",
+        **({"session_id": session_id} if session_id else {}),
         "window_id": descriptor["window_id"],
         "tab_id": descriptor["tab_id"],
     }
