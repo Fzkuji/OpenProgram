@@ -1446,6 +1446,11 @@ class CheckpointStore:
                 raise MutationJournalError("document target must be an ordinary file of at most 64 MiB")
             before = self._capture_manual_blob(target, operation_dir / "before")
         candidate = self._capture_manual_blob(source, operation_dir / "candidate")
+        # A publication changes bytes while retaining the target's existing
+        # permissions.  Source permissions are relevant only when creating a
+        # previously absent target.
+        if before.get("kind") == "regular":
+            candidate["mode"] = before["mode"]
         current_revision = before.get("sha256") if before["kind"] == "regular" else "absent"
         if expected_revision is not None and expected_revision != current_revision:
             raise MutationJournalError("document baseline does not match")

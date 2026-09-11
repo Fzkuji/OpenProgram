@@ -1,6 +1,7 @@
 """Shared durable transaction boundary for project document publication."""
 
 import json
+import stat
 from pathlib import Path
 
 import pytest
@@ -76,3 +77,19 @@ def test_publish_document_uses_seconds_for_mtime_baseline_and_receipt(tmp_path: 
     assert result["status"] == "committed"
     assert isinstance(result["mtime"], float)
     assert result["mtime"] == target.stat().st_mtime
+
+
+def test_publish_document_preserves_existing_target_mode(tmp_path: Path) -> None:
+    target = tmp_path / "private.bin"
+    source = tmp_path / "source.bin"
+    target.write_bytes(b"old")
+    source.write_bytes(b"new")
+    target.chmod(0o600)
+    result = CheckpointStore(recovery_root=tmp_path / "history").publish_document(
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", target, source,
+        expected_revision="cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4",
+        fingerprint="mode-check",
+    )
+    assert result["status"] == "committed"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert result["after"]["mode"] == "0600"
