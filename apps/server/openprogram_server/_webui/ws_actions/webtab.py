@@ -72,7 +72,8 @@ def _payload(command: dict, req_id: str) -> str:
     from openprogram.agent.run_control import get_current_session_id
 
     session_id = get_current_session_id()
-    if session_id and "session_id" not in command:
+    if (session_id and "session_id" not in command
+            and command.get("op") in {"open", "active", "list", "resolve", "activate", "screenshot", "preview", "close"}):
         command = {**command, "session_id": session_id}
     return json.dumps({
         "type": "webtab.command",
