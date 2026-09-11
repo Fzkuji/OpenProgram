@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import base64
 import logging
+import math
 import os
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -50,7 +52,7 @@ def resolve_bookmark(blob: str, *, timeout: float = 2.0) -> str | None:
     if not blob:
         return None
     if _macos():
-        return _macos_resolve_bookmark(blob)
+        return _macos_resolve_bookmark_bounded(blob, timeout)
     return None
 
 
@@ -153,6 +155,36 @@ def _macos_resolve_bookmark(blob: str) -> str | None:
         return None
     text = buf.value.decode("utf-8", "replace")
     return text or None
+
+
+def _macos_resolve_bookmark_bounded(blob: str, timeout: float) -> str | None:
+    """Resolve one bookmark outside the server process, with hard cancellation."""
+    try:
+        timeout = float(timeout)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(timeout) or timeout <= 0:
+        return None
+    try:
+        process = subprocess.Popen(
+            [sys.executable, "-m", "openprogram.store.project.native", blob],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            close_fds=True,
+        )
+    except (OSError, ValueError):
+        return None
+    try:
+        stdout, _ = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        return None
+    if process.returncode != 0:
+        return None
+    result = stdout.strip()
+    return result or None
 
 
 def _windows_volume_id(path: Path) -> str:
@@ -399,3 +431,11 @@ class NativePathObserver:
                 self._emit(changed)
         finally:
             os.close(fd)
+
+
+if __name__ == "__main__":
+    bookmark = sys.argv[1] if len(sys.argv) == 2 else ""
+    resolved = _macos_resolve_bookmark(bookmark)
+    if resolved:
+        print(resolved)
+    raise SystemExit(0 if resolved else 1)

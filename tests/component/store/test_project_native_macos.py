@@ -1,6 +1,7 @@
 """macOS bookmark and directory-event probes against temporary folders."""
 from __future__ import annotations
 
+import subprocess
 import sys
 import threading
 import time
@@ -35,6 +36,31 @@ def test_bookmark_does_not_adopt_a_copy(tmp_path: Path):
     resolved = native.resolve_bookmark(blob)
     assert Path(resolved).resolve() == folder.resolve()
     assert Path(resolved).resolve() != copy.resolve()
+
+
+def test_bookmark_resolution_timeout_kills_child(monkeypatch):
+    class HangingProcess:
+        returncode = None
+
+        def __init__(self):
+            self.killed = False
+            self.communicate_calls = 0
+
+        def communicate(self, *, timeout=None):
+            self.communicate_calls += 1
+            if timeout is not None:
+                raise subprocess.TimeoutExpired("bookmark resolver", timeout)
+            return "", ""
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+
+    process = HangingProcess()
+    monkeypatch.setattr(native.subprocess, "Popen", lambda *args, **kwargs: process)
+    assert native.resolve_bookmark("bookmark", timeout=0.01) is None
+    assert process.killed
+    assert process.communicate_calls == 2
 
 
 def test_directory_observer_sees_rename_and_stops(tmp_path: Path):
