@@ -183,16 +183,18 @@ export function ProjectsPage({
               >
                 <span className={fx.profileIcon}>{p.icon || <FoldersIcon size={16} />}</span>
                 <span className={fx.profileName}>{p.name}</span>
-                {p.path_missing && (
-                  <AlertTriangle
-                    size={13}
-                    strokeWidth={2}
-                    style={{ color: "var(--accent-orange)", flexShrink: 0 }}
-                    aria-label={text("Folder missing", "目录缺失")}
-                  />
-                )}
                 {p.hidden && <span className={styles.badge}>{text("Hidden", "已隐藏")}</span>}
                 {p.is_default && <span className={styles.badge}>{text("Default", "默认")}</span>}
+                {p.path_missing ? (
+                  <AlertTriangle
+                    size={14}
+                    strokeWidth={2}
+                    className={styles.statusSlot}
+                    aria-label={text("Folder missing", "目录缺失")}
+                  />
+                ) : (
+                  <span className={styles.statusSlotPad} aria-hidden="true" />
+                )}
               </div>
             ))}
             <div className={fx.profileSep} />

@@ -141,3 +141,15 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+
+.statusSlot {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--accent-orange);
+}
+
+.statusSlotPad {
+  width: 14px;
+  flex-shrink: 0;
+}
