@@ -1342,3 +1342,37 @@ def test_parent_page_inventory_uses_trusted_session_context_and_restores_it(monk
         assert get_current_session_id() == "unrelated-parent-context"
     finally:
         reset_current_session_id(token)
+
+
+def test_private_page_cleanup_retains_trusted_session_after_executor_context_ends(monkeypatch):
+    import json
+    from openprogram.agent import process_runner
+    from openprogram.agent.run_control import get_current_session_id
+    from openprogram.webui.ws_actions import webtab
+
+    owner = object()
+    sent = []
+    monkeypatch.setattr(process_runner, "_open_bridged_webtab", lambda *args, **kwargs: {
+        "ok": True, "created": True, "reused": False,
+        "binding_id": "cleanup-binding", "window_id": "main", "tab_id": "private-page",
+    })
+    monkeypatch.setattr(webtab, "binding_connection", lambda binding: owner)
+    def request(ws, command, timeout):
+        payload = json.loads(webtab._payload(command, "cleanup"))["data"]
+        sent.append(payload)
+        return {"ok": payload.get("session_id") == "trusted-owner", "error": "private Page"}
+    monkeypatch.setattr(webtab, "request_on_ws", request)
+    def execute_and_cleanup():
+        assert not get_current_session_id()
+        tracked = {}
+        process_runner._bridge_webtab_to_parent({"command": {
+            "op": "open", "background": True, "window_id": "main",
+            "url": "https://private.test", "session_id": "forged-owner",
+        }}, Queue(), session_id="trusted-owner", tracked_pages=tracked)
+        assert not get_current_session_id()
+        return process_runner._cleanup_bridged_webtabs(tracked), tracked
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        failures, remaining = executor.submit(execute_and_cleanup).result(timeout=5)
+    assert sent and all(item.get("session_id") == "trusted-owner" for item in sent)
+    assert failures == []
+    assert remaining == {}

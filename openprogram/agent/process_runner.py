@@ -348,6 +348,7 @@ def _update_tracked_webtabs(
                 webtab.validated_open_ownership(result).get("created") is True
             )
             tracked_pages[binding_id] = {
+                **({"session_id": command["session_id"]} if command.get("session_id") else {}),
                 "window_id": str(result.get("window_id") or ""),
                 "tab_id": str(result.get("tab_id") or ""),
                 "agent_owned": agent_owned,
@@ -650,6 +651,7 @@ def _cleanup_bridged_webtabs(tracked_pages: dict[str, dict]) -> list[dict]:
                 owner_ws,
                 {
                     "op": "close",
+                    **({"session_id": page["session_id"]} if page.get("session_id") else {}),
                     "window_id": page.get("window_id"),
                     "tab_id": page.get("tab_id"),
                 },
