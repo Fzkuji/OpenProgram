@@ -645,12 +645,11 @@ or `runtime.ask` at a session that registered no turn token.
   the cap **queues**, running as slots free up, without overloading anything.
   This is a global pool, so it bounds what runs at once and not how much
   work one turn can create. That is the fan-out budget's job (§5.1).
-- Every turn, spawned ones included, stops after 200 inner tool-call
-  iterations (`agent_loop.MAX_INNER_ITERATIONS`). A caller-supplied
-  `max_iterations` can tighten it and never raise it. The stream ends
-  cleanly and the turn counts as finished, so a model that keeps asking
-  for one more tool call still returns. Short `runtime.exec` calls still
-  default to 20.
+- Chat turns, spawned ones included, have no inner tool-call hard cap
+  (Codex loops until an assistant message; DeepSeek's ReactLoopAgent has
+  no maxSteps). A caller-supplied `max_iterations` can still stop a nested
+  `runtime.exec` (default 20). Identical failed tools are skipped after two
+  repeats. The user can cancel the turn.
 
 ### 5.3 Cancellation propagation (cascading)
 

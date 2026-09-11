@@ -131,13 +131,13 @@ def test_default_cap_does_not_kick_in_early():
     assert state["calls"] == 4
 
 
-def test_hard_cap_is_high_enough_for_coding_turns():
+def test_chat_turns_have_no_hard_cap():
     from openprogram.agent.agent_loop import MAX_INNER_ITERATIONS, iteration_cap_for
 
-    assert MAX_INNER_ITERATIONS == 200
-    assert iteration_cap_for(None) == 200
+    assert MAX_INNER_ITERATIONS is None
+    assert iteration_cap_for(None) is None
     assert iteration_cap_for(20) == 20
-    assert iteration_cap_for(500) == 200
+    assert iteration_cap_for(500) == 500
     assert iteration_cap_for(0) == 1
 
 
