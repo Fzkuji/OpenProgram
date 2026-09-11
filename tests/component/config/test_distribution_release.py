@@ -1976,6 +1976,19 @@ def test_desktop_runtime_removes_absolute_python_aliases() -> None:
     assert 'unlink "$python_alias"' in staging
 
 
+def test_local_app_refresh_detaches_before_stopping_worker() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    detach_at = refresh.index('start_new_session=True')
+    lock_at = refresh.index('fcntl.flock(lock, fcntl.LOCK_EX)')
+    stop_at = refresh.index('"$local_python" -m openprogram worker stop')
+    assert "OPENPROGRAM_REFRESH_DETACHED" in refresh
+    assert '["bash", sys.argv[1], *sys.argv[2:]]' in refresh
+    assert "OPENPROGRAM_SESSION_ID" in refresh
+    assert detach_at < lock_at < stop_at
+
+
 def test_local_app_refresh_reopens_app_after_quit() -> None:
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
