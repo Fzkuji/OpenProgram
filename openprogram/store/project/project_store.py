@@ -859,6 +859,9 @@ def prune_sessions(alive_ids: set[str]) -> int:
         reg = _read_registry()
         changed = False
         for d in reg.values():
+            # Missing project storage is unavailable, not evidence of deleted sessions.
+            if not d.get("is_default") and d.get("path") and not Path(d["path"]).is_dir():
+                continue
             sids = list(d.get("session_ids", []) or [])
             kept = [s for s in sids if s in alive_ids]
             if len(kept) != len(sids):

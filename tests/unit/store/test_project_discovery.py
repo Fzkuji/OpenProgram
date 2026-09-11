@@ -36,3 +36,13 @@ def test_incomplete_search_and_existing_original_do_not_relocate(tmp_path, monke
     old.rename(tmp_path / 'new')
     assert discover_moved_projects([tmp_path], max_directories=1) == []
     assert projects.get_project(project.id).path == str(old)
+
+
+def test_missing_folder_keeps_session_evidence_during_list_refresh(tmp_path, monkeypatch):
+    monkeypatch.setattr('openprogram.paths.get_state_dir', lambda: str(tmp_path / 'state'))
+    old = tmp_path / 'old'; old.mkdir()
+    project = projects.resolve_project(old)
+    projects.bind_session('s1', project.id)
+    old.rename(tmp_path / 'new')
+    assert projects.prune_sessions(set()) == 0
+    assert projects.get_project(project.id).session_ids == ['s1']
