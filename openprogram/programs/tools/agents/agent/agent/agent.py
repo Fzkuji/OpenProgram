@@ -101,9 +101,9 @@ def max_spawn_depth() -> int:
 # bounds it sideways between existing agents, but neither counts
 # siblings: a spawn hands the child one more generation and leaves the
 # parent's own count untouched, so before this guard a single turn could
-# call ``agent`` until the turn's 50-iteration cap
-# (agent_loop.MAX_INNER_ITERATIONS) stopped it, i.e. up to 50 full agent
-# runs from one runaway turn.
+# call ``agent`` until the turn's iteration cap
+# (agent_loop.MAX_INNER_ITERATIONS) stopped it, i.e. up to that many full
+# agent runs from one runaway turn.
 #
 # 8 comes from the two reference implementations that guard the same
 # thing, read for what they actually count rather than for their number:

@@ -46,7 +46,7 @@ function. It is forwarded to the provider, which maps it onto its own
 protocol shape (OpenAI, Anthropic, Gemini, and Bedrock are covered).
 `parallel_tool_calls=False` forbids several picks in one round where the
 provider supports the knob. `max_iterations` caps the loop's rounds — the
-effective cap is `min(50, max_iterations)`, floored at 1 (see
+effective cap is `min(200, max_iterations)`, floored at 1 (see
 [Termination](#termination)). For a forced, structured decision *ending*
 (rather than per-round control), `exec(choices=...)` remains the richer
 tool — see [next-step decision](./next-step-decision.md).
@@ -109,7 +109,7 @@ The inner picking loop stops on any of:
 ```
 model picked no function (pure text)   normal finish; the text is the result
 stop_reason = error / aborted          error / cancel finish
-inner_iterations > 50                  hard cap MAX_INNER_ITERATIONS against idle spinning;
+inner_iterations > 200                 hard cap MAX_INNER_ITERATIONS against idle spinning;
                                        treated as a normal finish, returns what exists
 ```
 

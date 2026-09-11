@@ -645,12 +645,12 @@ or `runtime.ask` at a session that registered no turn token.
   the cap **queues**, running as slots free up, without overloading anything.
   This is a global pool, so it bounds what runs at once and not how much
   work one turn can create. That is the fan-out budget's job (§5.1).
-- Every turn, spawned ones included, stops after 50 inner tool-call
+- Every turn, spawned ones included, stops after 200 inner tool-call
   iterations (`agent_loop.MAX_INNER_ITERATIONS`). A caller-supplied
   `max_iterations` can tighten it and never raise it. The stream ends
   cleanly and the turn counts as finished, so a model that keeps asking
-  for one more tool call still returns. hermes-agent caps a delegated
-  subagent at the same 50.
+  for one more tool call still returns. Short `runtime.exec` calls still
+  default to 20.
 
 ### 5.3 Cancellation propagation (cascading)
 

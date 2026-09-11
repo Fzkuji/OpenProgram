@@ -62,7 +62,7 @@ class AgentLoopConfig(SimpleStreamOptions):
 
     # Caller-set cap on inner loop rounds (one round = one model call
     # plus its tool executions). ``None`` = only the framework's hard
-    # MAX_INNER_ITERATIONS applies; an explicit value is clamped to it.
+    # MAX_INNER_ITERATIONS (200) applies; an explicit value is clamped to it.
     # ``tool_choice`` / ``parallel_tool_calls`` ride in via the
     # SimpleStreamOptions base and are forwarded to the provider call.
     max_iterations: int | None = None

@@ -145,8 +145,8 @@ entering `agent_loop`:
 4. push `AgentEventTurnEnd`.
 5. break when there are no more tools and no steering / follow-up.
 
-`MAX_INNER_ITERATIONS = 50` (`:226`) is the hard cap against an endless "just one
-more tool".
+`MAX_INNER_ITERATIONS = 200` is the hard cap against an endless "just one
+more tool". Chat coding turns commonly exceed 50; `runtime.exec` still defaults to 20.
 
 ### Tool execution: the tool.before interception
 

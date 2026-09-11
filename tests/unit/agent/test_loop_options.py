@@ -131,6 +131,16 @@ def test_default_cap_does_not_kick_in_early():
     assert state["calls"] == 4
 
 
+def test_hard_cap_is_high_enough_for_coding_turns():
+    from openprogram.agent.agent_loop import MAX_INNER_ITERATIONS, iteration_cap_for
+
+    assert MAX_INNER_ITERATIONS == 200
+    assert iteration_cap_for(None) == 200
+    assert iteration_cap_for(20) == 20
+    assert iteration_cap_for(500) == 200
+    assert iteration_cap_for(0) == 1
+
+
 def test_tool_choice_and_parallel_reach_stream_opts():
     stream_fn, state = _make_stream_fn([_text_msg()])
     session = _session(

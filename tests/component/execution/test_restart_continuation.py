@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 
@@ -255,6 +256,90 @@ def test_owner_loss_does_not_replay_tool_without_continuation_record(tmp_path):
     unresolved = service.recover_owner_loss(running.execution_id)
     assert unresolved.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
     assert effects.get("write").status is EffectStatus.DISPATCHED
+
+
+def test_owner_loss_resumes_from_checkpoint_when_in_flight_tool_is_interrupted(tmp_path, monkeypatch):
+    from tests.component.agent.test_agent_durable_safe_point import _real_provider_safe_point
+
+    store, service, active, running, checkpoint, _ = _real_provider_safe_point(tmp_path, pause=False)
+    effects = EffectStore(store)
+    hook = None
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.agent.continuation import AgentContinuation
+
+    request = TurnRequest(
+        session_id=running.session_id, user_text="continue",
+        agent_id="main", source="component", user_msg_id="user-anchor",
+    )
+    continuation = AgentContinuation.from_checkpoint(
+        store=store, checkpoint=checkpoint, request=request,
+    )
+    hook = AgentProductionDriver(store, control_service=service)._safe_point_hook(
+        active, request, threading.Event(), continuation=continuation,
+    )
+    assert hook("tool.before", {
+        "tool_call_id": "tool-1", "tool_name": "echo", "arguments": {},
+    }) is False
+    monkeypatch.setattr(
+        "openprogram.execution.process_owner.process_owner_may_be_alive",
+        lambda *args, **kwargs: False,
+    )
+    recovered = service.recover_owner_loss(running.execution_id, only_if_abandoned=True)
+    assert recovered.execution.status is ExecutionStatus.PAUSED
+    assert recovered.execution.reason_code == "restart_pending"
+    assert recovered.execution.checkpoint_head_id == checkpoint.checkpoint_id
+    assert effects.list_unresolved(running.execution_id) == []
+    with store._connect() as connection:
+        rows = connection.execute(
+            "SELECT effect_id FROM effects WHERE execution_id = ?",
+            (running.execution_id,),
+        ).fetchall()
+    interrupted = [
+        item for item in (effects.get(row["effect_id"]) for row in rows)
+        if item is not None and str((item.metadata or {}).get("kind") or "").startswith("tool.")
+    ]
+    assert interrupted
+    assert all(item.status is EffectStatus.NOT_COMMITTED for item in interrupted)
+    assert all(
+        (item.receipt or {}).get("reason") == "tool_request_interrupted"
+        for item in interrupted
+    )
+
+
+def test_startup_resumes_chat_after_in_flight_tool_is_interrupted(tmp_path, monkeypatch):
+    from openprogram.execution.startup import recover_execution_startup
+    from tests.component.agent.test_agent_durable_safe_point import _real_provider_safe_point
+
+    store, service, active, running, checkpoint, _ = _real_provider_safe_point(tmp_path, pause=False)
+    from openprogram.agent.dispatcher.types import TurnRequest
+    from openprogram.agent.production_driver import AgentProductionDriver
+    from openprogram.agent.continuation import AgentContinuation
+
+    request = TurnRequest(
+        session_id=running.session_id, user_text="continue",
+        agent_id="main", source="component", user_msg_id="user-anchor",
+    )
+    continuation = AgentContinuation.from_checkpoint(
+        store=store, checkpoint=checkpoint, request=request,
+    )
+    hook = AgentProductionDriver(store, control_service=service)._safe_point_hook(
+        active, request, threading.Event(), continuation=continuation,
+    )
+    assert hook("tool.before", {
+        "tool_call_id": "tool-1", "tool_name": "echo", "arguments": {},
+    }) is False
+    monkeypatch.setattr(
+        "openprogram.execution.process_owner.process_owner_may_be_alive",
+        lambda *args, **kwargs: False,
+    )
+    _StartupDriver.activations = []
+    monkeypatch.setattr("openprogram.agent.production_driver.AgentProductionDriver", _StartupDriver)
+    recover_execution_startup(control_service=service, projection_dispatcher=_NoopProjection())
+    resumed = store.get_execution(running.execution_id)
+    assert resumed.status is ExecutionStatus.RUNNING
+    assert resumed.checkpoint_head_id == checkpoint.checkpoint_id
+    assert len(_StartupDriver.activations) == 1
 
 
 def test_legacy_completed_tool_without_checkpoint_is_not_replayed(tmp_path):
