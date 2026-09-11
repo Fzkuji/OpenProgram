@@ -47,15 +47,16 @@ def session_interprocess_lock(
     """
     if not session_id or session_id in {".", ".."}:
         raise ValueError("session_id is required")
-    held = getattr(_held_session_locks, "ids", set())
-    if reentrant and session_id in held:
+    path = session_lock_path(session_id)
+    held = getattr(_held_session_locks, "keys", set())
+    held_key = (os.getpid(), str(path.resolve()))
+    if reentrant and held_key in held:
         # flock is per open file description, so opening the same lock file
         # again from a writer-held thread would deadlock that thread.  Keep
         # the process-local nesting reentrant; other processes still wait on
         # the original descriptor.
         yield
         return
-    path = session_lock_path(session_id)
     handle = path.open("a+")
     mode = fcntl.LOCK_EX
     deadline = None if timeout is None else (time.monotonic() + timeout)
@@ -74,12 +75,12 @@ def session_interprocess_lock(
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"session lock busy: {session_id}")
                 time.sleep(0.05)
-        held.add(session_id)
-        _held_session_locks.ids = held
+        held.add(held_key)
+        _held_session_locks.keys = held
         try:
             yield
         finally:
-            held.discard(session_id)
+            held.discard(held_key)
     finally:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
