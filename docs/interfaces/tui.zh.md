@@ -62,7 +62,6 @@ Windows 推荐使用 Windows Terminal。运行在 MinTTY 中的 Git Bash 可能�
 | `/new`、`/resume`、`/sessions`、`/session` | 新会话、续聊、会话列表、当前会话信息 |
 | `/rewind` | 回退会话到某条消息 |
 | `/compact`、`/context`、`/clear` | 压缩上下文、查看上下文、清屏 |
-
 | `/permissions`、`/sandbox` | 权限档与沙箱 |
 | `/login <provider>`、`/logout` | provider 登录 / 登出（见[认证与凭据](../models/auth.md)） |
 | `/agents`、`/agent` | 管理 / 切换 agent |

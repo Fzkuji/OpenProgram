@@ -62,7 +62,6 @@ Type `/` to trigger completion. Common ones:
 | `/new`, `/resume`, `/sessions`, `/session` | New session, resume, session list, current session info |
 | `/rewind` | Roll the session back to a message |
 | `/compact`, `/context`, `/clear` | Compact context, view context, clear screen |
-
 | `/permissions`, `/sandbox` | Permission profiles and sandbox |
 | `/login <provider>`, `/logout` | Provider login / logout (see [auth and credentials](../models/auth.md)) |
 | `/agents`, `/agent` | Manage / switch agents |
