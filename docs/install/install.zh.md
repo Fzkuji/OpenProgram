@@ -58,7 +58,7 @@ curl -fsSL https://openprogram.io/install | OPENPROGRAM_VERSION=0.8.1 sh
 `curl`、`tar`、SHA-256 工具、Git，以及 Chromium 使用的标准共享库。若 Browser/runtime
 探测失败，installer 会在切换活动版本前明确报错。无需系统 Python、Node.js 或 npm。
 
-Windows 使用 PowerShell bootstrap：
+Windows 需要选择附带 Windows runtime ZIP 和 checksum 的 release，再运行 PowerShell bootstrap。如果尚无 release 提供这些产物，请使用下方的源码开发安装。源码和 CI 支持不表示 Windows release 产物已经发布：
 
 ```powershell
 irm https://openprogram.io/install.ps1 | iex

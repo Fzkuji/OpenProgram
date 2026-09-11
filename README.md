@@ -55,11 +55,13 @@
 curl -fsSL https://openprogram.io/install | sh
 ```
 
-Windows x86_64 or arm64 CLI/server:
+Windows x86_64 or arm64 CLI/server (requires a release with Windows runtime assets):
 
 ```powershell
 irm https://openprogram.io/install.ps1 | iex
 ```
+
+If the selected release has no Windows runtime ZIP and checksum, use the [Windows source-development installation](docs/install/install.md#development-checkout).
 
 Desktop: macOS releases use the unsigned DMG; Windows uses a signed `win-x64.exe` or `win-arm64.exe` when that artifact is attached to the [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases). Linux and Windows without that EXE use the complete CLI/server runtime and Web UI.
 

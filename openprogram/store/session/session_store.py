@@ -24,7 +24,6 @@ import atexit
 import json
 import logging
 import os
-import shutil
 import threading
 import time
 import uuid
@@ -47,6 +46,7 @@ _REWIND_RECOVERY_SESSIONS: ContextVar[frozenset[tuple[object, str]]] = ContextVa
 )
 
 from openprogram.context.nodes import Call, ROLE_CODE, ROLE_USER, ROLE_LLM
+from openprogram._compat import remove_tree
 # Adapter functions (msg-dict <-> Call) — reused unchanged so SQLite-era
 # tests covering edge cases (sub-call routing, extra_json roundtrip) still hold.
 from ._msg_adapter import (
@@ -475,7 +475,7 @@ class SessionStore:
                 to_delete.append(sid)
         for sid in to_delete:
             self._index.pop(sid, None)
-            shutil.rmtree(self._session_dir(sid), ignore_errors=True)
+            remove_tree(self._session_dir(sid), ignore_errors=True)
             self._forget_stale_bindings(sid)
         # Capacity: trim oldest archived sessions beyond the limit.
         dirty = bool(to_delete)
@@ -485,7 +485,7 @@ class SessionStore:
             excess = len(self._index) - self._CAPACITY_LIMIT
             for sid, _ in archived[:excess]:
                 self._index.pop(sid, None)
-                shutil.rmtree(self._session_dir(sid), ignore_errors=True)
+                remove_tree(self._session_dir(sid), ignore_errors=True)
                 self._forget_stale_bindings(sid)
                 dirty = True
         if dirty:

@@ -30,7 +30,20 @@ def test_fetch_hits_cli_proxy_with_grok_headers(monkeypatch):
             return None
 
         def json(self):
-            return {"data": [{"id": "grok-4.5"}, {"id": "grok-4"}]}
+            return {"data": [{
+                "id": "grok-4.6", "name": "Grok 4.6",
+                "context_window": 500_000,
+                "supports_reasoning_effort": True,
+                "reasoning_effort": "high",
+                "reasoning_efforts": [
+                    {"id": "xhigh", "default": False},
+                    {"id": "high", "default": True},
+                    {"id": "medium", "default": False},
+                    {"id": "low", "default": False},
+                ],
+                "api_backend": "responses",
+                "supports_backend_search": True,
+            }, {"id": "future-grok"}]}
 
     class _Client:
         def get(self, url, headers=None, timeout=None):
@@ -43,7 +56,13 @@ def test_fetch_hits_cli_proxy_with_grok_headers(monkeypatch):
         lambda *_a, **_k: _ClientContext(_Client()),
     )
     out = X.fetch("xai-subscription", 5.0)
-    assert [m["id"] for m in out] == ["grok-4.5", "grok-4"]
+    assert [m["id"] for m in out] == ["grok-4.6", "future-grok"]
+    assert out[0]["context_window"] == 500_000
+    assert out[0]["thinking_levels"] == ["xhigh", "high", "medium", "low"]
+    assert out[0]["default_thinking_level"] == "high"
+    assert out[0]["api_backend"] == "responses"
+    assert "max_tokens" not in out[0]
+    assert out[1] == {"id": "future-grok", "name": "future-grok"}
     assert calls["url"] == "https://cli-chat-proxy.grok.com/v1/models"
     assert calls["headers"].get("X-XAI-Token-Auth") == "xai-grok-cli"
     assert calls["headers"].get("Authorization") == "Bearer tok_abc"

@@ -9,13 +9,20 @@
   "thinking": {
     "wire_format": "effort_string",
     "effort_map": {
-      "minimal": "none",
       "low": "low",
       "medium": "medium",
       "high": "high",
-      "xhigh": "high",
-      "max": "high"
+      "xhigh": "xhigh"
     },
-    "default_effort": "medium"
+    "default_effort": "high",
+    "model_overrides": {
+      "grok-4.5": {
+        "effort_map": {
+          "low": "low",
+          "medium": "medium",
+          "high": "high"
+        }
+      }
+    }
   }
 }

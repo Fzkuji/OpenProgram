@@ -52,6 +52,9 @@ def toggle_model(provider_id: str, model_id: str, enabled: bool) -> dict[str, An
 
         def toggle(cfg: dict[str, Any]) -> None:
             pcfg = cfg.setdefault(provider_id, {})
+            from openprogram.providers.subscription_catalog import SUBSCRIPTION_PROVIDERS
+
+            disabled_models = set(pcfg.get("disabled_models") or [])
             existing = next(
                 (
                     row
@@ -61,11 +64,14 @@ def toggle_model(provider_id: str, model_id: str, enabled: bool) -> dict[str, An
                 None,
             )
             if enabled:
+                disabled_models.discard(model_id)
                 if existing is not None:
                     existing.pop("enabled", None)
                 elif spec is not None:
                     _upsert_spec_row(pcfg, spec)
             else:
+                if provider_id in SUBSCRIPTION_PROVIDERS:
+                    disabled_models.add(model_id)
                 keep = existing is not None and (
                     existing.get("source") == "manual"
                     or pcfg.get("source") == "custom"
@@ -74,6 +80,10 @@ def toggle_model(provider_id: str, model_id: str, enabled: bool) -> dict[str, An
                     existing["enabled"] = False
                 else:
                     _remove_spec_row(pcfg, model_id)
+            if disabled_models:
+                pcfg["disabled_models"] = sorted(disabled_models)
+            else:
+                pcfg.pop("disabled_models", None)
 
         _update_providers_cfg(toggle)
     return {"provider": provider_id, "model": model_id, "enabled": bool(enabled)}

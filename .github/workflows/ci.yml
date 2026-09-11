@@ -206,6 +206,7 @@ jobs:
         run: uv run --locked --extra dev coverage report --show-missing --precision=6 --fail-under=40
 
   windows-core:
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -217,6 +218,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -254,13 +256,28 @@ jobs:
           tests/component/config/test_formal_release_updates.py
           tests/unit/dag
           tests/unit/agent/test_finalize_shadow_git.py
+          tests/unit/permissions/test_approval_file_state.py
+          tests/integration/config/test_windows_entrypoints.py::test_dispatcher_import_does_not_require_unix_fcntl
           tests/component/webui/test_project_files.py
           tests/component/webui/test_turn_files_ws.py
           tests/component/config/test_upgrade_cmd.py
           tests/component/store/test_backup_command.py
           tests/component/store/test_backup_staged_restore.py
       - name: Complete Windows unit regression
-        run: uv run --locked --extra dev python -m pytest -n 4 -q tests/unit
+        timeout-minutes: 15
+        run: >-
+          uv run --locked --extra dev python -u -c
+          "import faulthandler, pytest; trace = open('windows-unit-traceback.txt', 'w'); faulthandler.dump_traceback_later(600, file=trace, exit=True); raise SystemExit(pytest.main(['-p', 'no:faulthandler', '-n', '4', '-vv', 'tests/unit']))"
+          > windows-unit.log 2>&1
+      - name: Upload Windows regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-regression-${{ matrix.arch }}
+          path: |
+            windows-unit.log
+            windows-unit-traceback.txt
+          if-no-files-found: ignore
 
   windows-desktop:
     strategy:

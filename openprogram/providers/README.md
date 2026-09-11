@@ -34,6 +34,8 @@ their provider packages (e.g. ``openprogram.providers.openai_codex``).
 - **`storage.py`** — Persistence layer for provider / model configuration
 - **`stream.py`** — Unified streaming functions
 - **`structured_output.py`** — Strict JSON Schema output normalization and local validation
+- **`subscription_catalog.py`** — Persistent last-known-good catalogues for subscription providers
+- **`subscription_refresh.py`** — Background refresh loop for account-scoped subscription model catalogues
 - **`thinking_spec.py`** — Load and query per-provider thinking.json specs
 - **`types.py`** — Core type definitions
 

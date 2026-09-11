@@ -59,22 +59,22 @@ id-prefix guess.
 
 ## 3. Storage: read official → write config → read the file thereafter
 
-Codex principle: **all info comes live from the vendor, no hand-kept model
-list.**
+Codex principle: **prefer the vendor's live catalogue, then OpenProgram's
+last-known-good catalogue, then the local official CLI cache.**
 
 | Layer | Location | Persistence |
 |---|---|---|
-| Codex official endpoint | `openprogram/providers/openai_codex/list_models.py` | remote; 10-min in-memory browse cache, **no disk cache** |
-| config spec row (with `fast`/`thinking_levels`/`context`) | on enable, `fetch_and_normalize`'s normalised row is written to `~/.openprogram/config.json`; the Fetch button (`fetch_models_remote`) heals enabled rows with fresh endpoint data | config file (this is the "write to a file" step) |
+| Codex official endpoint and CLI cache | `openprogram/providers/openai_codex/list_models.py` | live endpoint first; `~/.codex/models_cache.json` is a stale display fallback |
+| OpenProgram subscription catalogue | `providers/subscription_catalog.py` | atomic last-known-good copy; refreshed after login and periodically |
+| config spec row (with `fast`/`thinking_levels`/`context`) | successful official refreshes automatically add, update, and retire account models while honoring disable tombstones | config file |
 | `Model.fast` field | `_build_model_from_row` reads the config row's `fast` (row wins; codex rows always carry it); enters `ENABLED_MODELS` at registry build | memory only (in-process dict, sourced from config) |
 | claude-code hand table | `providers/enabled_models.py::default_fast` (only the Opus part is on the detection path now) | source code |
 | models.dev catalogue | `openprogram/providers/sources/models_dev.py` | remote; 1h in-memory cache, no disk cache |
 
-Flow: **official endpoint → normalise → config.json → registry →
-supports_fast / dispatch**. Offline / not signed in → the endpoint returns an
-error and the saved config rows are kept, not blanked — you can't dispatch
-these models without a token anyway, so a token-less browse losing the list
-isn't a regression.
+Flow: **official endpoint → normalise → last-known-good cache + config.json →
+registry → supports_fast / dispatch**. CLI cache rows can keep the browser
+useful offline, but their accompanying error prevents them from deleting or
+adding configured models as if they were fresh.
 
 ## 4. Event flow: adapts to any switch, no page reload
 

@@ -42,7 +42,7 @@ sessions. One workspace profile can hold many credential accounts.
 - **`enabled.py`** — Per-provider, per-account ENABLED state for rotation
 - **`interactive.py`** — Interactive auth wizard
 - **`login_driver.py`** — Surface-agnostic login driver
-- **`login_enable.py`** — Subscription-login → config enablement
+- **`login_enable.py`** — Compatibility import for subscription model enablement
 - **`login_method_registry.py`** — Single source of truth for which login methods each provider offers,
 - **`login_methods.py`** — Single source of truth for which login methods each provider offers,
 - **`login_seed_models.py`** — Subscription-login → config enablement

@@ -50,7 +50,6 @@ def _load_folded(dir_name: str, key: str, legacy_file: str) -> Optional[dict[str
 # Providers that share another provider's thinking config (same API).
 _THINKING_ALIASES: dict[str, str] = {
     "claude-code": "anthropic",
-    "xai-subscription": "xai",
 }
 
 _OPENAI_COMPAT_FALLBACK: dict[str, Any] = {
@@ -112,6 +111,15 @@ def translate_reasoning(
                 return None
             if level in emap:
                 return emap[level]
+            # Preserve provider-level aliases such as Anthropic's
+            # ``minimal -> low`` when a model override narrows the picker.
+            provider_value = spec.get("effort_map", {}).get(level)
+            if provider_value in emap.values():
+                return provider_value
+            default = override.get("default_effort", spec.get("default_effort"))
+            if default in emap:
+                return emap[default]
+            return next(iter(emap.values()))
 
     if wire == "effort_string":
         emap = spec.get("effort_map", {})
@@ -122,6 +130,19 @@ def translate_reasoning(
         return bmap.get(level, 8192)
 
     return None
+
+
+def normalize_reasoning_level(model: Any, level: str | None) -> str | None:
+    """Keep a saved effort inside the selected model's advertised contract."""
+    if not level:
+        return None
+    levels = list(getattr(model, "thinking_levels", None) or [])
+    if not levels:
+        return None
+    if level in levels:
+        return level
+    default = getattr(model, "default_thinking_level", None)
+    return default if default in levels else levels[0]
 
 
 def get_model_variant(provider_id: str, model_id: str) -> Optional[str]:

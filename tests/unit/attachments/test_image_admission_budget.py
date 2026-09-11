@@ -33,7 +33,10 @@ def test_image_does_not_exempt_large_instruction_or_metadata():
         normalize_agent_turn_payload(original)
 
 
-@pytest.mark.parametrize("data", ["not base64!", "a" * (8 * 1024 * 1024)])
+@pytest.mark.parametrize(
+    "data", ["not base64!", "a" * (8 * 1024 * 1024)],
+    ids=["invalid-base64", "oversized-image"],
+)
 def test_invalid_or_excessive_image_is_rejected(data):
     with pytest.raises(AgentDriverError):
         normalize_agent_turn_payload(payload(data))

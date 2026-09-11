@@ -106,6 +106,9 @@ def _browse_models_with_error(
             res = {"error": f"fetch failed: {type(exc).__name__}: {exc}"}
         if isinstance(res, dict) and isinstance(res.get("models"), list):
             official = res["models"]
+            if res.get("error"):
+                fetch_failed = True
+                error = str(res["error"])
         else:
             # Fetch errored (401 / unimplemented / raised). Distinguish this
             # from "provider genuinely has zero models" so we don't cache the
@@ -128,8 +131,15 @@ def _browse_models_with_error(
             row["id"] = mid
             rows.append(row)
     else:
-        # No key or official API failed → models.dev's full list (or []).
-        rows = [{**row, "id": mid} for mid, row in md.items()]
+        # No key or official API failed → last successful subscription
+        # catalogue, then models.dev. This keeps newly discovered subscription
+        # models visible across restarts and temporary auth/network failures.
+        from openprogram.providers.subscription_catalog import SUBSCRIPTION_PROVIDERS, load_catalog
+
+        if provider_id in SUBSCRIPTION_PROVIDERS and not error:
+            error = "No current subscription catalogue is available"
+        cached, _ = load_catalog(provider_id)
+        rows = cached or [{**row, "id": mid} for mid, row in md.items()]
 
     # Don't cache a failed fetch: an empty ``rows`` here is only trustworthy
     # when the official API actually answered (or models.dev filled in). When

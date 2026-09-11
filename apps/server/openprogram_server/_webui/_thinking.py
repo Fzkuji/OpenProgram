@@ -43,6 +43,15 @@ _LEVEL_DESC = {
     "max": "Maximum effort",
 }
 
+_LEVEL_ORDER = {
+    "minimal": 0,
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "xhigh": 4,
+    "max": 5,
+}
+
 
 def get_thinking_config(provider: str) -> dict:
     """Static config for a provider. Falls back to openai-codex."""
@@ -60,14 +69,22 @@ def get_thinking_config_for_model(provider: str, model_id: str | None) -> dict:
     label = get_thinking_config(provider).get("label", "thinking")
 
     def _build(levels: list[str], default: str | None, variant: str | None) -> dict:
-        values = ["off", *levels]
+        # Account APIs do not agree on ordering: Codex currently returns
+        # weakest-to-strongest while Grok returns strongest-to-weakest. The
+        # GUI slider is labelled Faster -> Smarter, so expose one stable
+        # ascending order regardless of the upstream response order.
+        ordered = sorted(
+            dict.fromkeys(levels),
+            key=lambda level: (_LEVEL_ORDER.get(level, len(_LEVEL_ORDER)), level),
+        )
+        values = ["off", *ordered]
         return {
             "label": label,
             "options": [
                 {"value": v, "desc": _LEVEL_DESC.get(v, "No reasoning" if v == "off" else v)}
                 for v in values
             ],
-            "default": default or (levels[len(levels) // 2] if levels else None),
+            "default": default or (ordered[len(ordered) // 2] if ordered else None),
             "variant": variant,
         }
 

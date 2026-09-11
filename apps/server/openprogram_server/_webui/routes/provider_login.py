@@ -204,9 +204,8 @@ def register(app):
                     label=requested_label,
                 )
                 persist(cred)
-                # Subscription providers have no list-models API; enable their
-                # default model set into config on first login (no-op if the
-                # provider already has spec rows) — see login_enable.
+                # Providers without an account catalogue may still keep a
+                # small first-login default set (currently Claude only).
                 try:
                     from openprogram.auth.login_seed_models import (
                         enable_default_models_on_login,
@@ -218,13 +217,28 @@ def register(app):
                 from openprogram.auth.account_labels import effective_account_label
                 sess.label = effective_account_label(cred, sess.name)
                 sess.ok = True
+                sess.done = True
+                sess.done_at = time.time()
+                # Subscription catalogues are account-specific and evolve.
+                # Report login success before this network request so a slow
+                # catalogue cannot leave the login UI spinning. The refresh
+                # path persists the
+                # last-known-good catalogue and auto-enables newly advertised
+                # models while respecting explicit user disables.
+                try:
+                    from openprogram.webui._model_listing import fetch_models_remote
+
+                    await asyncio.to_thread(fetch_models_remote, name)
+                except Exception:
+                    pass
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001
                 sess.error = f"{e.__class__.__name__}: {e}"
             finally:
-                sess.done = True
-                sess.done_at = time.time()
+                if not sess.done:
+                    sess.done = True
+                    sess.done_at = time.time()
 
         sess.task = asyncio.create_task(_drive())
         return JSONResponse(content={"session": sid, "method": method})

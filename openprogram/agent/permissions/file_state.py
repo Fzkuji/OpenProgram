@@ -99,17 +99,21 @@ def write_checked(path: str, content: str) -> None:
     with os.fdopen(fd, 'r+b') as stream:
         # Serialize approved writers before checking the opened file again.
         flock(stream.fileno(), LOCK_EX)
+        st = os.fstat(stream.fileno())
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError('Approved target must be a regular file')
         if not expected.get('missing'):
-            st = os.fstat(stream.fileno())
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
             if (digest, st.st_dev, st.st_ino) != (expected['sha256'], expected['device'], expected['inode']):
                 raise ValueError('File changed before writing; operation was not applied')
-            current = os.lstat(path)
-            if (not stat.S_ISREG(st.st_mode) or is_link_metadata(current)
-                    or (current.st_dev, current.st_ino) != (st.st_dev, st.st_ino)):
-                raise ValueError('Approved target must remain a regular file')
-            if os.path.realpath(path) != expected['resolved']:
-                raise ValueError('File path changed before writing; operation was not applied')
+        elif st.st_size:
+            raise ValueError('File changed before writing; operation was not applied')
+        current = os.lstat(path)
+        if (not stat.S_ISREG(st.st_mode) or is_link_metadata(current)
+                or (current.st_dev, current.st_ino) != (st.st_dev, st.st_ino)):
+            raise ValueError('Approved target must remain a regular file')
+        if os.path.realpath(path) != expected['resolved']:
+            raise ValueError('File path changed before writing; operation was not applied')
         stream.seek(0)
         stream.write(content.encode('utf-8'))
         stream.truncate()

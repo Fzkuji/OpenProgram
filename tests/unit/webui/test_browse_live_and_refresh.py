@@ -325,3 +325,71 @@ def test_refresh_keeps_enabled_model_absent_upstream(monkeypatch, mem_cfg):
     # Stored spec for the absent enabled model is preserved untouched.
     rows = {r["id"]: r for r in mem_cfg["acme"]["models"]}
     assert rows["ghost"]["context_window"] == 5
+
+
+def test_subscription_refresh_auto_syncs_catalog_and_respects_disables(
+    monkeypatch, mem_cfg,
+):
+    mem_cfg["xai-subscription"] = {
+        "enabled": True,
+        "disabled_models": ["future-grok"],
+        "models": [{
+            "id": "grok-old", "name": "Old", "source": "subscription-login",
+        }],
+    }
+    monkeypatch.setattr(
+        listing, "_browse_models_with_error",
+        lambda *_a, **_k: ([
+            {"id": "grok-4.6", "name": "Grok 4.6", "context_window": 500_000},
+            {"id": "future-grok", "name": "Future Grok"},
+        ], None),
+    )
+    import openprogram.providers.enabled_models as mg
+    monkeypatch.setattr(mg, "reload", lambda: None)
+
+    result = F.fetch_models_remote("xai-subscription")
+
+    assert result["added"] == 1
+    rows = mem_cfg["xai-subscription"]["models"]
+    assert [row["id"] for row in rows] == ["grok-4.6"]
+    assert rows[0]["source"] == "subscription-catalog"
+
+
+def test_subscription_refresh_broadcasts_only_when_catalogue_changes(
+    monkeypatch, mem_cfg,
+):
+    mem_cfg["xai-subscription"] = {"enabled": True, "models": []}
+    monkeypatch.setattr(
+        listing, "_browse_models_with_error",
+        lambda *_a, **_k: ([{"id": "grok-4.6", "name": "Grok 4.6"}], None),
+    )
+    import openprogram.providers.enabled_models as mg
+    monkeypatch.setattr(mg, "reload", lambda: None)
+    frames = []
+    monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
+
+    F.fetch_models_remote("xai-subscription")
+    F.fetch_models_remote("xai-subscription")
+
+    assert frames == [{
+        "type": "provider_models_changed",
+        "data": {"provider": "xai-subscription"},
+    }]
+
+
+def test_empty_subscription_refresh_preserves_saved_models(monkeypatch, mem_cfg):
+    saved = {"enabled": True, "models": [{"id": "grok-old", "name": "Old"}]}
+    mem_cfg["xai-subscription"] = copy.deepcopy(saved)
+    monkeypatch.setattr(listing, "_browse_models_with_error", lambda *a, **k: ([], None))
+    F.fetch_models_remote("xai-subscription")
+    assert mem_cfg["xai-subscription"] == saved
+
+
+def test_unconfigured_subscription_fallback_does_not_retire_models(monkeypatch, mem_cfg):
+    saved = {"enabled": True, "models": [{"id": "grok-old", "name": "Old"}]}
+    mem_cfg["xai-subscription"] = copy.deepcopy(saved)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
+    monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {"fallback": {"name": "Fallback"}})
+    monkeypatch.setattr("openprogram.providers.subscription_catalog.load_catalog", lambda pid: ([], None))
+    F.fetch_models_remote("xai-subscription")
+    assert mem_cfg["xai-subscription"] == saved

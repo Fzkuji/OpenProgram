@@ -26,6 +26,11 @@ class EventSpec:
 
 
 EVENTS: dict[str, EventSpec] = {
+    "ws.frame": EventSpec(
+        kind="notify",
+        payload_doc="{frame: dict} — an already-rendered WebSocket frame "
+                    "forwarded from a decoupled runtime producer",
+    ),
     "tool.before": EventSpec(
         kind="gate",
         payload_doc="{tool: str, tool_call_id: str, args: dict} — the tool "
