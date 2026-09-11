@@ -363,13 +363,12 @@ export function ProjectMenu({
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
             {unavailable ? (
               <AlertTriangle
-                size={13}
+                size={14}
                 strokeWidth={2}
-                className="shrink-0 text-[var(--accent-orange)]"
+                className={`${CHECK_SLOT} text-[var(--accent-orange)]`}
                 aria-label={text("Folder missing", "目录缺失")}
               />
-            ) : null}
-            {active ? (
+            ) : active ? (
               <Check size={14} className={CHECK_SLOT} />
             ) : (
               <span className={CHECK_SLOT_PAD} aria-hidden="true" />

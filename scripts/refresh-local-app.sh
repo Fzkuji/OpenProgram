@@ -488,10 +488,26 @@ if (
     raise SystemExit(f"refreshed worker {pid} does not use the embedded App interpreter")
 print(f"verified embedded App worker PID {pid}")
 PYTHON
+# Quit happens earlier so the asar/runtime can be replaced. Always reopen the
+# App afterwards and wait until Launch Services actually has a process —
+# `open` returning is not enough, and a cancelled refresh previously left the
+# App closed.
 if test "${OPENPROGRAM_REFRESH_BACKGROUND:-0}" = 1; then
   open -g -a "$app_path"
 else
   open -a "$app_path"
+fi
+app_running=0
+for _ in {1..50}; do
+  if pgrep -f "^${app_path}/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1; then
+    app_running=1
+    break
+  fi
+  sleep 0.2
+done
+if test "$app_running" != 1; then
+  printf 'OpenProgram did not reopen after the refresh\n' >&2
+  exit 1
 fi
 
 cleanup
