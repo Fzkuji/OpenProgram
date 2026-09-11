@@ -60,7 +60,10 @@ def path_is_replacement(project, path: str | Path | None = None) -> bool:
         return False
     stored = getattr(project, "directory_identity", "") or ""
     if not stored and not (getattr(project, "native_bookmark", "") or ""):
-        return False
+        # A legacy record has no evidence that the current directory is the
+        # one originally registered.  Treat it as unverified until explicit
+        # Locate captures a native identity.
+        return True
     return not captured_identity_matches(project, folder)
 
 

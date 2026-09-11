@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-import os
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -12,6 +12,7 @@ from . import project_store as projects
 
 _log = logging.getLogger(__name__)
 _migration_attempted: set[str] = set()
+_migration_lock = threading.Lock()
 
 AVAILABLE = "available"
 MISSING = "missing"
@@ -35,6 +36,9 @@ def evaluate_project_location(project) -> str:
             return ERROR
     path = Path(project.path).expanduser() if project.path else None
     if path is not None and path.is_dir():
+        if not getattr(project, "directory_identity", "") and not (
+                getattr(project, "native_bookmark", "") or ""):
+            return PENDING
         if identity.path_is_replacement(project, path):
             return REPLACED
         return AVAILABLE
@@ -51,13 +55,20 @@ def refresh_project_location(project_id: str) -> str:
         return AVAILABLE
     recorded = getattr(project, "location_state", "") or ""
     if recorded in {MIGRATING, PENDING, ERROR}:
-        if project_id in _migration_attempted:
+        # Legacy records cannot be migrated safely until explicit Locate has
+        # captured the directory identity.
+        if not getattr(project, "directory_identity", "") and not (
+                getattr(project, "native_bookmark", "") or ""):
+            _set_state(project, PENDING, "directory identity unavailable")
             return recorded
-        _migration_attempted.add(project_id)
+        with _migration_lock:
+            if project_id in _migration_attempted:
+                return recorded
+            _migration_attempted.add(project_id)
         try:
-            from openprogram.store.session.migration import run_startup_migration
+            from openprogram.store.session.migration import run_project_migration
             from openprogram.store.session.session_store import default_store
-            run_startup_migration(default_store(), timeout=2.0)
+            run_project_migration(project_id, default_store(), timeout=2.0)
             refreshed = projects.get_project(project_id)
             if refreshed is not None:
                 project = refreshed
@@ -70,6 +81,10 @@ def refresh_project_location(project_id: str) -> str:
         return recorded
     path = Path(project.path).expanduser() if project.path else None
     if path is not None and path.is_dir():
+        if not getattr(project, "directory_identity", "") and not (
+                getattr(project, "native_bookmark", "") or ""):
+            _set_state(project, PENDING, "directory identity unavailable")
+            return PENDING
         if identity.path_is_replacement(project, path):
             _set_state(project, REPLACED)
             return REPLACED
@@ -118,11 +133,11 @@ def bound_execution_state(project) -> str | None:
     return state
 
 
-def _set_state(project, state: str) -> None:
+def _set_state(project, state: str, error: str = "") -> None:
     if getattr(project, "location_state", "") == state:
         return
     try:
-        projects.set_location_state(project.id, state)
+        projects.set_location_state(project.id, state, error=error)
     except Exception:
         _log.debug("location state not persisted for %s", project.id, exc_info=True)
 
@@ -163,7 +178,8 @@ class LocationObserver:
 
     def start(self) -> None:
         self._stopped.clear()
-        _migration_attempted.clear()
+        with _migration_lock:
+            _migration_attempted.clear()
         moved = reconcile_registered_projects()
         if moved:
             self._notify()
@@ -174,12 +190,13 @@ class LocationObserver:
     def stop(self) -> None:
         self._stopped.set()
         with self._refresh_lock:
-            if self._native is not None:
-                self._native.stop()
-                self._native = None
+            observer = self._native
+            self._native = None
             threads = tuple(self._refresh_threads)
+        if observer is not None:
+            observer.stop()
         for thread in threads:
-            thread.join(2.0)
+            thread.join()
 
     def refresh(self) -> None:
         """Rebuild native subscriptions after registry/path changes."""
@@ -217,7 +234,8 @@ class LocationObserver:
                     continue
         moved = []
         for project_id in dict.fromkeys(touched):
-            _migration_attempted.discard(project_id)
+            with _migration_lock:
+                _migration_attempted.discard(project_id)
             before = projects.get_project(project_id)
             state = refresh_project_location(project_id)
             after = projects.get_project(project_id)
