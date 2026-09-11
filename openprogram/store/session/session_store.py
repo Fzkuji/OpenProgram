@@ -690,14 +690,21 @@ class SessionStore:
         if self._explicit_root:
             recorded = loc_map.get(session_id)
             project_id = self._project_ids.get(session_id)
+            recorded_path = Path(recorded) if recorded else None
+            # A durable recorded path wins while it is still readable. If it
+            # is stale, search application-owned nested storage before
+            # returning the stale migration candidate.
+            existing_locations = (
+                {session_id: str(recorded_path)}
+                if recorded_path is not None and recorded_path.is_dir()
+                else {}
+            )
             existing = resolve_existing_dir(
-                self.root_path, session_id, locations=loc_map,
+                self.root_path, session_id, locations=existing_locations,
                 project_id=project_id, is_default=not bool(project_id),
             )
             if existing is not None:
                 return existing
-            if recorded:
-                return Path(recorded)
             if project_id:
                 return nested_session_dir(self.root_path, project_id, session_id)
             # A fresh store can rebuild placement from the nested directory
@@ -709,6 +716,8 @@ class SessionStore:
                     if candidate.is_dir() and session_looks_present(candidate):
                         self._project_ids[session_id] = project_dir.name
                         return candidate
+            if recorded:
+                return Path(recorded)
             return default_session_dir(self.root_path, session_id)
         proj = None
         lookup_failed = False

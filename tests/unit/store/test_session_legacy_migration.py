@@ -81,6 +81,22 @@ def test_session_placement_lookup_failure_does_not_fallback_to_default(
         store._session_dir("unresolved")
 
 
+def test_fresh_explicit_store_prefers_nested_session_over_stale_location(
+    tmp_path, monkeypatch,
+):
+    store = _isolate(tmp_path, monkeypatch)
+    workdir = tmp_path / "project"
+    workdir.mkdir()
+    store.create_session("nested1", "main", project_path=str(workdir))
+    project = projects.project_for_session("nested1")
+    nested = nested_session_dir(store.root_path, project.id, "nested1")
+    stale = tmp_path / "gone" / "nested1"
+    store._record_location("nested1", stale)
+
+    fresh = SessionStore(store.root_path)
+    assert fresh._session_dir("nested1") == nested
+
+
 def test_repeating_legacy_candidate_preserves_completed_migration(tmp_path, monkeypatch):
     store = _isolate(tmp_path, monkeypatch)
     _project, sid, source, _recovery = _legacy_session(tmp_path, store)
