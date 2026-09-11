@@ -80,8 +80,10 @@ def register(app) -> None:
         the attachment roots (the chat's attachment viewer).
         """
         if os.path.isabs(os.path.expanduser(path)):
-            target = _attach.resolve_within(
-                path, _attach.readable_roots(session_id or None))
+            target = _attach.resolve_session_attachment(
+                path, session_id or None,
+                _attach.readable_roots(session_id or None),
+            )
             if target is None:
                 raise HTTPException(status_code=403, detail="path not allowed")
             rel = str(target)
@@ -137,8 +139,10 @@ def register(app) -> None:
         (a sandboxed response blocks the browser's built-in PDF viewer,
         and that viewer renders in its own process, not the page DOM).
         """
-        target = _attach.resolve_within(
-            path, _attach.readable_roots(session_id or None))
+        target = _attach.resolve_session_attachment(
+            path, session_id or None,
+            _attach.readable_roots(session_id or None),
+        )
         if target is None:
             raise HTTPException(status_code=403, detail="path not allowed")
         if not target.is_file():

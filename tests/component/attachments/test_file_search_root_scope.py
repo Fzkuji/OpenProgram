@@ -7,9 +7,16 @@ now rejects roots outside the allowed set.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from openprogram import attachments
+from openprogram.store.session.git_session import GitSession
+from openprogram.store.session.migration import migrate_session
+from openprogram.store.session.session_store import SessionStore
 
 
 @pytest.fixture
@@ -120,3 +127,76 @@ def test_read_reports_binary_so_the_viewer_shows_a_download_card(client, project
     blob.write_bytes(b"\x00\x01\x02binary")
     assert client.get("/api/file-read",
                       params={"path": str(blob)}).json()["binary"] is True
+
+
+def test_raw_rebases_legacy_session_attachment_after_real_migration(
+    tmp_path, monkeypatch,
+):
+    """Historical markers remain immutable while the raw boundary follows
+    the copied session attachment into its canonical repo.
+
+    This uses the production migration entry point. The source is removed by
+    migration, so a route that only checks its old absolute path returns 404.
+    """
+    project = tmp_path / "project"
+    state = tmp_path / "state"
+    source = project / ".openprogram" / "sessions" / "s1"
+    old_attachment = source / "workdir" / "attachments" / "report.pdf"
+    old_attachment.parent.mkdir(parents=True)
+    GitSession(source)._ensure_init()
+    (source / "meta.json").write_text('{"id":"s1"}', encoding="utf-8")
+    marker = attachments.format_marker(
+        "report.pdf", old_attachment, len(b"legacy"), mime="application/pdf",
+    )
+    (source / "history" / "0001-u-u1.json").write_text(
+        json.dumps({"id": "u1", "role": "user", "content": marker}),
+        encoding="utf-8",
+    )
+    old_attachment.write_bytes(b"legacy")
+
+    monkeypatch.setenv("OPENPROGRAM_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr(
+        "openprogram.store.session.migration._live_jobs", lambda _sid: False,
+    )
+    store = SessionStore(state / "sessions")
+    result = migrate_session(store, {
+        "session_id": "s1",
+        "project_id": "p1",
+        "source": str(source),
+        "source_unavailable": False,
+    })
+    assert result == "done"
+    assert not source.exists()
+    dest = state / "sessions" / "projects" / "p1" / "s1"
+    current_attachment = dest / "workdir" / "attachments" / "report.pdf"
+    assert current_attachment.read_bytes() == b"legacy"
+    assert str(old_attachment) in (dest / "history" / "0001-u-u1.json").read_text()
+
+    app = FastAPI()
+    from openprogram.webui.routes import file_search
+    file_search.register(app)
+    client = TestClient(app)
+    response = client.get("/api/file-raw", params={
+        "path": str(old_attachment), "session_id": "s1",
+    })
+    assert response.status_code == 200
+    assert response.content == b"legacy"
+
+    wrong_session = client.get("/api/file-raw", params={
+        "path": str(old_attachment), "session_id": "other",
+    })
+    assert wrong_session.status_code == 403
+
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"private")
+    link = current_attachment.parent / "link.pdf"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    escaped = client.get("/api/file-raw", params={
+        "path": str(source / "workdir" / "attachments" / "link.pdf"),
+        "session_id": "s1",
+    })
+    assert escaped.status_code == 403
