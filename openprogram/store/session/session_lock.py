@@ -7,12 +7,16 @@ because placement can change and subprocesses write independently.
 from __future__ import annotations
 
 import os
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
 from openprogram import _compat as fcntl
+
+
+_held_session_locks = threading.local()
 
 
 def _lock_dir() -> Path:
@@ -33,6 +37,7 @@ def session_interprocess_lock(
     *,
     timeout: float | None = None,
     blocking: bool = True,
+    reentrant: bool = False,
 ) -> Iterator[None]:
     """Exclusive flock for one session id.
 
@@ -42,6 +47,14 @@ def session_interprocess_lock(
     """
     if not session_id or session_id in {".", ".."}:
         raise ValueError("session_id is required")
+    held = getattr(_held_session_locks, "ids", set())
+    if reentrant and session_id in held:
+        # flock is per open file description, so opening the same lock file
+        # again from a writer-held thread would deadlock that thread.  Keep
+        # the process-local nesting reentrant; other processes still wait on
+        # the original descriptor.
+        yield
+        return
     path = session_lock_path(session_id)
     handle = path.open("a+")
     mode = fcntl.LOCK_EX
@@ -61,7 +74,12 @@ def session_interprocess_lock(
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"session lock busy: {session_id}")
                 time.sleep(0.05)
-        yield
+        held.add(session_id)
+        _held_session_locks.ids = held
+        try:
+            yield
+        finally:
+            held.discard(session_id)
     finally:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
