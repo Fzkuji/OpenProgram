@@ -153,3 +153,23 @@ def test_file_analysis_sample_displays_interruption_and_progress():
                 page.close()
         finally:
             browser.close()
+
+
+def test_calculator_sample_works_in_application_sandbox():
+    from html import escape
+    from playwright.sync_api import sync_playwright, expect
+    source = (ROOT / 'examples/applications/calculator/index.html').read_text()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content('<iframe sandbox="allow-scripts" srcdoc="' + escape(source, quote=True) + '"></iframe>')
+            frame = page.frame_locator('iframe')
+            frame.get_by_role('button', name='Calculate', exact=True).click()
+            expect(frame.locator('output')).to_have_text('15')
+            frame.get_by_label('Operation', exact=True).select_option('÷')
+            frame.get_by_label('Second number').fill('0')
+            frame.get_by_role('button', name='Calculate', exact=True).click()
+            expect(frame.locator('output')).to_have_text('Cannot divide by zero')
+        finally:
+            browser.close()
