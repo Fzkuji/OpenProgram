@@ -75,6 +75,9 @@
   scrollbar-width: none;
   overscroll-behavior-x: contain;
 }
+:global(html.is-desktop) .tabsFlow:empty {
+  display: none;
+}
 :global(html.is-desktop) .tabsFlow::-webkit-scrollbar {
   display: none;
 }
@@ -822,8 +825,7 @@
 /* ＋ 新建：紧跟最后一个标签、比标签矮的安静圆角钮，悬停才有底色。
    align-self:center 让它在 40px 栏里垂直居中（栏本身 align-items 是
    flex-end，标签贴底，＋ 钮居中不受影响）。 */
-/* ＋ 新建：当作一个"窄 tab"（Chrome 式）—— 与前面 tab 的间距就是 flex
-   gap（同 tab 间距，无额外 margin），左侧有同款竖分隔条。 */
+/* New tab uses the same button width and gap as session navigation. */
 .plusBtn {
   position: relative;
   display: flex;
@@ -844,33 +846,6 @@
 .plusBtn:hover {
   color: var(--text-bright);
   background: var(--bg-hover);
-}
-/* ＋ 左侧的竖分隔条：与 tab 间分隔条同款；前邻 tab 活动/悬停或 ＋ 自身
-   悬停时淡出（同 tab 规则）。 */
-.plusBtn::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 16px;
-  border-radius: 1px;
-  background: var(--plus-separator-background, var(--border));
-  pointer-events: none;
-}
-.tabActive + .plusBtn::before,
-.tab:hover + .plusBtn::before,
-/* tab 包进 .tabsFlow 后邻接选择器隔着容器失效，用 :has 恢复同一语义：
-   末位 tab 选中或 hover 时，＋号左侧的分隔条不画（Chrome 规矩）。 */
-.tabsFlow:has(> .tabActive:last-child) + .plusBtn::before,
-.tabsFlow:has(> .tab:last-child:hover) + .plusBtn::before,
-.plusBtn:hover::before {
-  background: transparent;
-}
-.tabsFlow:has(> .compoundTabActive:last-child) + .plusBtn::before,
-.tabsFlow:has(> .compoundTab:last-child:hover) + .plusBtn::before {
-  background: transparent;
 }
 /* 主菜单 ⋮ —— Chrome 右端那颗。占据 strip 最右预留列：margin-left:auto
    把它推到右缘（＋号因此回到紧跟末位 tab 的自然位置），几何与 ＋号同款
@@ -2462,11 +2437,13 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 2px;
-  padding: 0 4px;
+  gap: 8px;
+  padding: 0;
   -webkit-app-region: no-drag;
 }
 .sessionNavigation button {
+  padding: 0;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   width: 28px;
