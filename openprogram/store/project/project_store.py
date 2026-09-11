@@ -782,7 +782,7 @@ def _claim_moved_project(p: Path) -> Optional[Project]:
     return relocate_project(matches[0], p)
 
 
-def relocate_project(project_id: str, new_path: str | Path) -> Project:
+def relocate_project(project_id: str, new_path: str | Path, *, expected_path: str | None = None) -> Project:
     """Point an existing project at a new directory, keeping its id.
 
     The repair path for a project whose folder was moved or renamed on
@@ -795,17 +795,25 @@ def relocate_project(project_id: str, new_path: str | Path) -> Project:
     p = Path(new_path).expanduser()
     if not p.is_dir():
         raise ProjectStoreError(f"not a directory: {new_path}")
-    proj = get_project(project_id)
-    if proj is None:
-        raise ProjectStoreError(f"unknown project: {project_id}")
-    if proj.is_default:
-        # The default project's path is the home directory, restored on
-        # every ``get_default_project`` read — a relocation would not
-        # survive the next one.
-        raise ProjectStoreError("the default project cannot be relocated")
-    ensure_footprint_ignored(p)
-    proj.path = str(p.resolve())
-    moved = _upsert(proj)
+    with _reg_lock:
+        if expected_path is not None:
+            current = get_project(project_id)
+            if current is None or current.path != expected_path or Path(expected_path).exists():
+                raise ProjectStoreError("project changed during discovery")
+            if any(other.id != project_id and other.path and Path(other.path).resolve() == p.resolve()
+                   for other in list_projects()):
+                raise ProjectStoreError("destination belongs to another project")
+        proj = get_project(project_id)
+        if proj is None:
+            raise ProjectStoreError(f"unknown project: {project_id}")
+        if proj.is_default:
+            # The default project's path is the home directory, restored on
+            # every ``get_default_project`` read — a relocation would not
+            # survive the next one.
+            raise ProjectStoreError("the default project cannot be relocated")
+        ensure_footprint_ignored(p)
+        proj.path = str(p.resolve())
+        moved = _upsert(proj)
     # The location index (sessions/locations.json) snapshots each
     # session repo's absolute path at create time, so every session
     # bound to this project still points into the old directory.

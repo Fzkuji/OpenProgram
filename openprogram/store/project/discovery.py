@@ -78,20 +78,16 @@ def discover_moved_projects(roots=None, *, max_directories=20000) -> list[str]:
         if len(matches) != 1:
             continue
         candidate = next(iter(matches))
-        with projects._reg_lock:
-            current = projects.get_project(before.id)
-            if current is None or current.path != before.path or Path(current.path).exists():
+        current = projects.get_project(before.id)
+        if current is None or current.path != before.path:
+            continue
+        try:
+            if not candidate.is_dir() or not _matches(candidate, current):
                 continue
-            if any(p.id != before.id and p.path and Path(p.path).resolve() == candidate
-                   for p in projects.list_projects()):
-                continue
-            try:
-                if not candidate.is_dir() or not _matches(candidate, current):
-                    continue
-                projects.relocate_project(current.id, candidate)
-                relocated.append(current.id)
-            except OSError:
-                continue
+            projects.relocate_project(current.id, candidate, expected_path=before.path)
+            relocated.append(current.id)
+        except (OSError, projects.ProjectStoreError):
+            continue
     return relocated
 
 
