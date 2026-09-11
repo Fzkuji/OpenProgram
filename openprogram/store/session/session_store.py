@@ -733,7 +733,9 @@ class SessionStore:
                         if bound_execution_state(project) is not None:
                             return None
                 except Exception:
-                    pass
+                    _log.error("project location validation failed for %s",
+                               session_id, exc_info=True)
+                    return None
             with self._lock:
                 cached = self._sessions.get(session_id)
                 if cached and cached[0].path != sdir:
@@ -926,7 +928,9 @@ class SessionStore:
             if project_path:
                 proj = _projects.resolve_project(project_path)
             elif project_id and project_id != _projects.DEFAULT_PROJECT_ID:
-                proj = _projects.get_project(project_id) or _projects.get_default_project()
+                proj = _projects.get_project(project_id)
+                if proj is None:
+                    raise ValueError(f"unknown project: {project_id}")
             else:
                 proj = _projects.get_default_project()
             # Isolated callers may intentionally disable the registry's

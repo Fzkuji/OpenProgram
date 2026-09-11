@@ -221,6 +221,11 @@ def collect_legacy_candidates(store) -> list[dict[str, Any]]:
     for project in projects.list_projects():
         if project.is_default:
             continue
+        if not getattr(project, "directory_identity", "") and not getattr(project, "native_bookmark", ""):
+            # Legacy records cannot prove that the current path is the
+            # original directory. Require explicit locate before migration.
+            _mark_project(project.id, "pending", "directory identity unavailable")
+            continue
         for session_id in list(project.session_ids or []):
             if is_deleted(root, session_id):
                 continue

@@ -11,6 +11,7 @@ from . import native
 from . import project_store as projects
 
 _log = logging.getLogger(__name__)
+_migration_attempted: set[str] = set()
 
 AVAILABLE = "available"
 MISSING = "missing"
@@ -50,6 +51,9 @@ def refresh_project_location(project_id: str) -> str:
         return AVAILABLE
     recorded = getattr(project, "location_state", "") or ""
     if recorded in {MIGRATING, PENDING, ERROR}:
+        if project_id in _migration_attempted:
+            return recorded
+        _migration_attempted.add(project_id)
         try:
             from openprogram.store.session.migration import run_startup_migration
             from openprogram.store.session.session_store import default_store
@@ -155,9 +159,11 @@ class LocationObserver:
         self._lock = __import__("threading").Lock()
         self._refresh_lock = __import__("threading").RLock()
         self._stopped = __import__("threading").Event()
+        self._refresh_threads: set[object] = set()
 
     def start(self) -> None:
         self._stopped.clear()
+        _migration_attempted.clear()
         moved = reconcile_registered_projects()
         if moved:
             self._notify()
@@ -171,6 +177,9 @@ class LocationObserver:
             if self._native is not None:
                 self._native.stop()
                 self._native = None
+            threads = tuple(self._refresh_threads)
+        for thread in threads:
+            thread.join(2.0)
 
     def refresh(self) -> None:
         """Rebuild native subscriptions after registry/path changes."""
@@ -208,6 +217,7 @@ class LocationObserver:
                     continue
         moved = []
         for project_id in dict.fromkeys(touched):
+            _migration_attempted.discard(project_id)
             before = projects.get_project(project_id)
             state = refresh_project_location(project_id)
             after = projects.get_project(project_id)
@@ -219,5 +229,15 @@ class LocationObserver:
             # FSEvents callbacks run on the observer thread; rebuilding the
             # stream there would attempt to join itself. Refresh asynchronously.
             import threading
-            threading.Thread(target=self.refresh, name="project-fs-refresh",
-                             daemon=True).start()
+            def refresh_owned():
+                try:
+                    self.refresh()
+                finally:
+                    with self._refresh_lock:
+                        self._refresh_threads.discard(threading.current_thread())
+            thread = threading.Thread(target=refresh_owned,
+                                       name="project-fs-refresh", daemon=True)
+            with self._refresh_lock:
+                if not self._stopped.is_set():
+                    self._refresh_threads.add(thread)
+                    thread.start()
