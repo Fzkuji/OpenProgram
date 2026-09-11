@@ -18,6 +18,14 @@ OpenProgram 自带一批注册为工具的函数，模型在聊天里直接调�
 | `semble_search` / `semble_find_related` | 语义 + 词法代码搜索，返回排好序的代码块 | 每个受支持的 release 已包含；source developer 通过锁定的项目环境安装 `search` extra |
 | `lsp_diagnostics` / `lsp_references` / `lsp_definition` | 从 language server 拿类型检查错误、真实调用点、真实定义位置，见[Language server 工具](lsp.md) | Python 装 `pyright`，TypeScript 装 `typescript-language-server`（缺哪个工具就报哪条安装命令） |
 
+### 文档版本
+
+对于 Word、PowerPoint、PDF、图片等二进制文件，模型可以先生成独立的临时结果，再调用 `write(file_path="/absolute/final.docx", source_path="/absolute/staged.docx")` 写入最终文件。`source_path` 与文本 `content` 只能指定一个。来源必须是本地普通文件，最大 64 MiB。覆盖已有目标前须先读取；二进制读取返回文件信息，并建立与文本读取相同的内容变更检查。
+
+在会话中写入时，系统将修改前后的完整字节保存到这一轮的文件历史。重新打开会话或重启应用后，记录仍然存在。撤销和重新应用使用保存的版本；文件后来被修改且发生冲突时，不会覆盖后续内容。新建文件也能撤销，不要求项目文件夹是 Git 仓库。
+
+完整版本保留格式和嵌入媒体，但当前 Review 不比较文档排版，也不显示 Word 修订标记。直接覆盖最终文件的普通 shell 命令不会成为本轮精确修改记录。过去未记录的版本无法根据文件卡片或命令输出补建；脚本应生成独立结果，再通过 `write` 写入最终文件。
+
 ## 执行
 
 | 工具 | 做什么 | 需要什么 |

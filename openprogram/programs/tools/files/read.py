@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import mimetypes
 
 from openprogram.programs._runtime import function
 from openprogram.worktree.path_resolve import resolve_path
@@ -12,6 +13,7 @@ MAX_LINES_DEFAULT = 2000
 MAX_LINE_LENGTH = 2000
 PDF_PAGES_DEFAULT = 20
 PDF_MAX_CHARS = 100_000
+_BINARY_EXTENSIONS = {".docx", ".docm", ".pptx", ".pptm", ".xlsx", ".xlsm", ".zip", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico"}
 
 _DESCRIPTION = (
     "Read a file from disk and return its contents as text, with line numbers "
@@ -24,7 +26,7 @@ _DESCRIPTION = (
     "- PDF files are read as extracted text, one `[page N]` block per page. "
     "For PDFs `offset` and `limit` are PAGES (1-based; default: first "
     f"{PDF_PAGES_DEFAULT} pages).\n"
-    "- Other binary files are not supported — use bash if you need hex dumps."
+    "- Other binary files return type/size metadata and establish the read baseline. Use document tools to inspect their contents."
 )
 
 
@@ -35,6 +37,17 @@ def _is_pdf(file_path: str) -> bool:
     try:
         with open(file_path, "rb") as f:
             return f.read(5) == b"%PDF-"
+    except OSError:
+        return False
+
+
+def _is_binary(file_path: str) -> bool:
+    if os.path.splitext(file_path)[1].lower() in _BINARY_EXTENSIONS:
+        return True
+    try:
+        with open(file_path, "rb") as stream:
+            sample = stream.read(8192)
+        return b"\0" in sample
     except OSError:
         return False
 
@@ -164,6 +177,18 @@ def execute(file_path: str,
     if _is_pdf(file_path):
         _mark_read_baseline(file_path)
         out = _read_pdf(file_path, offset, limit)
+        if outside_warning:
+            out = f"{outside_warning}\n{out}"
+        return out
+
+    if _is_binary(file_path):
+        _mark_read_baseline(file_path)
+        try:
+            info = os.stat(file_path)
+            media_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        except OSError as exc:
+            return f"Error reading {file_path}: {type(exc).__name__}: {exc}"
+        out = f"# {file_path} (binary, {info.st_size} bytes, {media_type})"
         if outside_warning:
             out = f"{outside_warning}\n{out}"
         return out

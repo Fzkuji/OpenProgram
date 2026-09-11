@@ -52,17 +52,22 @@ def annotate_graph(
             lane_first[ln] = nid
 
     lane_offset: dict[int, int] = {}
+    lane_width = {ln: max((tier.get(n, 0) for n in nodes), default=0)
+                  for ln, nodes in lane_nodes.items()}
+    placed_right = -1
 
     def _rightmost_col(ln: int) -> int:
         """Rightmost occupied column of a lane (offset + max tier)."""
         base = _offset(ln)
-        return base + max((tier.get(n, 0) for n in lane_nodes.get(ln, [])), default=0)
+        return base + lane_width.get(ln, 0)
 
     def _offset(ln: int) -> int:
+        nonlocal placed_right
         if ln in lane_offset:
             return lane_offset[ln]
         if ln == 0:
             lane_offset[ln] = 0
+            placed_right = max(placed_right, lane_width.get(ln, 0))
             return 0
         first = lane_first.get(ln)
         # base lane = the lane this branch diverged from. A retry fork
@@ -91,16 +96,11 @@ def annotate_graph(
             # previous sibling's columns, not just past the base lane —
             # otherwise the 2nd and 3rd forks collide in the same column.
             base_right = _rightmost_col(base_lane)
-            placed_right = max(
-                (_rightmost_col(pl) for pl in lane_offset),
-                default=base_right,
-            )
             off = max(base_right, placed_right) + 2 - first_tier
         else:
-            off = max(
-                (_rightmost_col(pl) for pl in lane_offset), default=-1,
-            ) + 2
+            off = placed_right + 2
         lane_offset[ln] = off
+        placed_right = max(placed_right, off + lane_width.get(ln, 0))
         return off
 
     # Place lanes in lane-number order (= seq order of branch starts), so
