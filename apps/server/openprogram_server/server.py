@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import traceback
+from pathlib import Path
 from typing import Any, Optional
 
 from openprogram.programs.workflow.ask_user import set_ask_user, ask_user
@@ -870,7 +871,23 @@ def _is_run_active(session_id: str) -> bool:
 
 
 def _try_reserve_run(session_id: str, msg_id: str) -> bool:
+    from openprogram.store.session.session_lock import session_interprocess_lock
+    try:
+        with session_interprocess_lock(session_id, timeout=0.25):
+            return _try_reserve_run_locked(session_id, msg_id)
+    except (TimeoutError, BlockingIOError):
+        return False
+
+
+def _try_reserve_run_locked(session_id: str, msg_id: str) -> bool:
     """Atomically reserve one session for a chat turn before DAG mutation."""
+    try:
+        from openprogram.store.session.migration import session_hold_active
+        from openprogram.paths import get_state_dir
+        if session_hold_active(Path(get_state_dir()) / "sessions", session_id):
+            return False
+    except Exception:
+        return False
     if _is_run_active(session_id):
         return False
     now = time.time()

@@ -177,13 +177,22 @@ def _fsync_dir(path: Path) -> None:
 
 
 def _live_jobs(session_id: str) -> bool:
+    # Ordinary WS chat turns are held in the server runtime registry rather
+    # than jobs.json. Migration must wait for both representations.
     try:
+        import sys
+        server = sys.modules.get("openprogram.webui.server")
+        if server is not None:
+            with server._running_tasks_lock:
+                if session_id in server._running_tasks:
+                    return True
         from openprogram.agent.job.store import list_jobs
         from openprogram.agent.job.types import JobStatus
         active = {JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING}
         return bool(list_jobs(session_id, status_filter=active, limit=1))
     except Exception:
-        return False
+        # Unknown execution state is unsafe to migrate through; fail closed.
+        return True
 
 
 def quiesce_session(root: Path, session_id: str, *, timeout: float = 15.0) -> bool:

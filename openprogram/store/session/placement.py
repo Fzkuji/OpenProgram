@@ -141,11 +141,14 @@ def resolve_existing_dir(
     if is_deleted(root, session_id):
         return None
     candidates: list[Path] = []
+    # locations.json is the durable authority during migration. A published
+    # destination may exist before that record is durable; never expose it as
+    # writable until the authority points there.
+    if locations and session_id in locations:
+        candidates.append(Path(locations[session_id]))
     if project_id and not is_default:
         candidates.append(nested_session_dir(root, project_id, session_id))
     candidates.append(default_session_dir(root, session_id))
-    if locations and session_id in locations:
-        candidates.append(Path(locations[session_id]))
     if project_path and not is_default:
         candidates.append(legacy_project_session_dir(project_path, session_id))
     seen: set[Path] = set()
