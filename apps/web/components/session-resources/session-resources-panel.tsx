@@ -10,6 +10,7 @@ import {
   getPreviewPreference,
   groupSessionResources,
   hideResourcePreview,
+  optimisticallyCloseBrowserResource,
   previewTabId,
   resourceIsOperating,
   resourceSessionId,
@@ -186,6 +187,7 @@ function SessionResourceList({ sessionId }: { sessionId: string | null }) {
               title={text("Close webpage", "关闭网页")} onClick={() => {
                 const result = requestCloseBrowserPage(row, tabs);
                 if (result === "closed") {
+                  optimisticallyCloseBrowserResource(row.resourceId || row.sourceId, row.generation || 0);
                   useCenterTabs.getState().closeTab(tab.id);
                   if (pref?.targetId === row.id) {
                     hideResourcePreview(sessionId!, viewedBranch);

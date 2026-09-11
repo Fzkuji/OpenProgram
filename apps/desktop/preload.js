@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld("openprogramDesktop", {
     hide: (id) => ipcRenderer.send("webtab:hide", id),
     syncVisible: (items) => ipcRenderer.send("webtab:sync-visible", items),
     destroy: (id) => ipcRenderer.send("webtab:destroy", id),
+    destroyConfirmed: (id) => ipcRenderer.invoke("webtab:destroy-confirmed", id),
     reload: (id) => ipcRenderer.send("webtab:reload", id),
     stop: (id) => ipcRenderer.send("webtab:stop", id),
     goBack: (id) => ipcRenderer.send("webtab:go-back", id),

@@ -103,6 +103,51 @@ def test_webtab_closed_marks_descriptor_closed(monkeypatch, tmp_path):
     assert row["control_state"] == "closed"
 
 
+def test_page_close_projection_targets_every_association_without_conversation_scan(
+    monkeypatch, tmp_path,
+):
+    from openprogram.browser_resources import BrowserResourceStore, project_page_resource_rows
+
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    store = BrowserResourceStore()
+    store.retain(
+        page_key="page:shared", window_id="win", tab_id="tab-a", title="Plans",
+        target="https://example.test/", connection_generation=1,
+        session_id="parent", conversation_session_id="parent", execution_id="exec-a",
+        live=True,
+    )
+    store.retain(
+        page_key="page:shared", window_id="win", tab_id="tab-a", title="Plans",
+        target="https://example.test/", connection_generation=1,
+        session_id="parent", conversation_session_id="parent", execution_id="exec-b",
+        live=True,
+    )
+    rows = project_page_resource_rows("page:shared")
+    assert len(rows) == 2
+    assert {row["execution_id"] for row in rows} == {"exec-a", "exec-b"}
+
+    owner = _WS()
+    webtab.ensure_connection_revision(owner)
+    webtab._desktop_windows[owner] = "win"
+    webtab.register_binding(owner, "win", "tab-a", "target-1")
+    emitted = []
+    monkeypatch.setattr(
+        "openprogram.browser_resources.emit_browser_resource",
+        lambda row, **kwargs: emitted.append(row),
+    )
+    monkeypatch.setattr(
+        "openprogram.browser_resources.project_conversation_resources",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("conversation scan")),
+    )
+    monkeypatch.setattr(
+        "openprogram.browser_resources.page_keys_for_socket_tab",
+        lambda *_args: ["page:shared"],
+    )
+    asyncio.run(webtab.handle_webtab_closed(owner, {"window_id": "win", "tab_id": "tab-a"}))
+    assert len(emitted) == 2
+    assert {row["status"] for row in emitted} == {"closed"}
+
+
 def test_webtab_closed_rebind_mints_new_page_identity(monkeypatch, tmp_path):
     from openprogram.browser_resources import BrowserResourceStore
 
