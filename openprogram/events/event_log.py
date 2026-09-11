@@ -26,13 +26,19 @@ def _event_log_path(ev) -> Path:
     if sid:
         try:
             from openprogram.store.session.session_store import default_store
-            sess_dir = default_store()._session_dir(str(sid))
-            if sess_dir.is_dir():
-                return sess_dir / "events.jsonl"
+            store = default_store()
+            # A test or an embedding process can change the active home/profile
+            # after the process-wide store was constructed.  Do not consult a
+            # store rooted in another profile for the current event.
+            if Path(store.root_path) == base / "sessions":
+                sess_dir = store._session_dir(str(sid))
+                if sess_dir.is_dir():
+                    return sess_dir / "events.jsonl"
         except Exception:
-            sess_dir = base / "sessions" / str(sid)
-            if sess_dir.is_dir():
-                return sess_dir / "events.jsonl"
+            pass
+        sess_dir = base / "sessions" / str(sid)
+        if sess_dir.is_dir():
+            return sess_dir / "events.jsonl"
     return base / "logs" / "events.jsonl"
 
 
