@@ -4,13 +4,37 @@
 
 ```
 <state>/sessions/
-├── index.json                    # registry (summary cache for all sessions)
-├── <session_id_1>/
-│   ├── meta.json                 # metadata
-│   └── history/                  # message DAG (Git repository)
-├── <session_id_2>/
-│   └── ...
+├── index.json                         # registry (summary cache)
+├── locations.json                     # durable session-id → repository path map
+├── <session_id_1>/                    # default and pre-existing home-root layout
+│   ├── .git/                          # session repository metadata
+│   ├── meta.json                      # session metadata and active DAG head
+│   ├── history/                       # one JSON file per DAG node
+│   ├── context/                       # persisted context artifacts
+│   └── workdir/attachments/           # uploaded files for this session
+├── projects/<project_id>/              # new bound-project storage
+│   ├── <session_id>/                   # session Git repository
+│   └── .file-recovery/<session_id>/<turn>/ # per-turn file undo recovery
+├── .file-recovery/<session_id>/<turn>/ # default-root per-turn recovery
+├── .migration/                        # migration journal and staging state
+├── .deleted/                          # durable delete intents
+└── .locks/ / .session-locks/          # inter-process coordination
 ```
+
+The default root is `<state>/sessions`, where `<state>` is OpenProgram's state
+directory. A newly created session bound to a non-default project is placed
+under `projects/<project_id>/<session_id>`. The default project and sessions
+created before the centralized placement migration remain at the root-level
+`<session_id>` path. `locations.json` is the durable authority when a session
+is being migrated or relocated. A working folder is never used as the primary
+conversation repository; the old `<project>/.openprogram/sessions/<id>/`
+location is read only as a legacy migration source.
+
+The `history/` files are the conversation DAG. `meta.json` stores the active
+DAG `head_id`, while the repository's Git `HEAD` records the latest storage
+commit. Those are different pointers: changing the conversation branch does
+not mean checking out the Git branch, and `session_commits()` exposes Git's
+per-turn commits separately from DAG nodes.
 
 ## Persistent Fields (meta.json)
 
@@ -87,19 +111,33 @@ predecessor pointing at a branch the user already left; branch delete is
 worse still, since the tail being deleted may be the one the turn is
 writing into.
 
-## Non-Persistent Objects (`_sessions` dict)
+## In-Process Cache (`_sessions` dict)
 
-Non-serializable objects such as the agent runtime and WebSocket connection are stored in the in-process `_sessions` dict, keyed by session id:
+`SessionStore` holds lazy `(GitSession,
+SessionMemoryIndex)` pairs. `GitSession` owns file and Git operations; the
+memory index is rebuilt from `history/` and `meta.json` and tracks DAG nodes,
+edges, and the active head. It is evicted by the bounded LRU cache and can be
+invalidated when a subprocess writes the repository.
 
-| Key | Type | Description |
-|----|------|------|
-| `runtime` | AgentRuntime? | LLM connection, session state |
-| `ws` | WebSocket? | the currently connected WebSocket |
-| `agent` | Agent? | the agent instance |
+Uploaded browser attachments are copied into
+`<session repository>/workdir/attachments/` before dispatch. Their message
+markers retain the saved absolute path, and the copy is committed with the
+session repository at turn end. Inbound channel files use the channel
+attachment roots under `<state>/channels/*/accounts/*/attachments`; those
+roots are separately readable by the attachment path policy. The
+`.file-recovery/<session_id>/<turn>/` tree is ordinary per-turn file undo
+recovery and is kept outside the session Git repository. During legacy project
+migration, session data and any existing recovery tree are staged under
+`<state>/sessions/.migration/staging/`, verified, then published into the
+central destination's sibling `.file-recovery` tree; `locations.json` is
+updated only after publication.
 
-Goal: all persistent fields are read and written through SessionStore, with no redundancy in `_sessions`.
-
-> **Current state**: `_sessions` still redundantly holds persistent fields such as title, agent_id, created_at, and channel, because `_save_session` reads all fields from the dict to write meta.json. `run_active` has been removed (replaced by the status field). Fully slimming this down requires rewriting `_save_session` to read persistent fields from SessionStore — left for later.
+Historical attachment markers retain their original absolute path. The
+attachment UI, file reader, and `send_file` path resolution may rebase only the
+exact legacy shape `<project>/.openprogram/sessions/<session_id>/workdir/attachments/<relative>`
+to the unique current repository for that same session id. The rebased path
+must remain under an allowed attachment root and cannot escape through `..` or
+a symlink; arbitrary old paths are never remapped.
 
 ## Interface
 

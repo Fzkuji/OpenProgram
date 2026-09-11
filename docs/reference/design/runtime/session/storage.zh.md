@@ -4,13 +4,34 @@
 
 ```
 <state>/sessions/
-├── index.json                    # 注册表（所有 session 的摘要缓存）
-├── <session_id_1>/
-│   ├── meta.json                 # 元数据
-│   └── history/                  # 消息 DAG（Git 仓库）
-├── <session_id_2>/
-│   └── ...
+├── index.json                         # 注册表（摘要缓存）
+├── locations.json                     # session id → 仓库路径的持久映射
+├── <session_id_1>/                    # 默认项目和既有 home-root 布局
+│   ├── .git/                          # 会话仓库元数据
+│   ├── meta.json                      # 会话元数据和 DAG 当前 head
+│   ├── history/                       # 每个 DAG 节点一个 JSON 文件
+│   ├── context/                       # 持久化上下文产物
+│   └── workdir/attachments/           # 该会话上传的文件
+├── projects/<project_id>/              # 新建的项目绑定存储
+│   ├── <session_id>/                   # 会话 Git 仓库
+│   └── .file-recovery/<session_id>/<turn>/ # 该会话的每轮恢复文件
+├── .file-recovery/<session_id>/<turn>/ # 默认根目录的每轮恢复文件
+├── .migration/                        # 迁移日志和 staging 状态
+├── .deleted/                          # 持久化删除意图
+└── .locks/ / .session-locks/          # 进程间协调
 ```
+
+默认根目录是 `<state>/sessions`，其中 `<state>` 是 OpenProgram 状态目录。
+新建且绑定非默认项目的 session 放在 `projects/<project_id>/<session_id>`。
+默认项目和集中存储迁移前创建的 session 仍留在根目录下的
+`<session_id>`。迁移或重定位期间，`locations.json` 是持久路径权威来源。
+工作目录不会作为主要会话仓库；旧的 `<project>/.openprogram/sessions/<id>/`
+只作为 legacy 迁移源读取。
+
+`history/` 文件构成对话 DAG。`meta.json` 保存 DAG 的活动 `head_id`，而仓库
+的 Git `HEAD` 表示最近一次存储提交。这两个指针含义不同：切换对话分支不会
+执行 Git 分支 checkout，`session_commits()` 也单独暴露每轮 Git 提交，而不是
+DAG 节点列表。
 
 ## 持久字段（meta.json）
 
@@ -79,19 +100,27 @@ checkout、删分支、attach、rewind。
 predecessor 会指向用户已经离开的分支；删分支更糟——要删的那条尾巴可能正是当前
 turn 正在写入的。
 
-## 非持久对象（`_sessions` dict）
+## 进程内缓存（`_sessions` dict）
 
-agent runtime、WebSocket 连接等无法序列化的对象存在进程内存的 `_sessions` dict 中，按 session id 索引：
+`SessionStore` 缓存延迟加载的 `(GitSession,
+SessionMemoryIndex)` 对。`GitSession` 负责文件和 Git 操作；内存索引从
+`history/` 与 `meta.json` 重建，记录 DAG 节点、边和活动 head。索引采用有上限
+的 LRU 缓存，也可以在子进程写入仓库后主动失效并重建。
 
-| 键 | 类型 | 说明 |
-|----|------|------|
-| `runtime` | AgentRuntime? | LLM 连接、session state |
-| `ws` | WebSocket? | 当前连接的 WebSocket |
-| `agent` | Agent? | agent 实例 |
+浏览器上传的附件在 dispatch 前复制到
+`<session repository>/workdir/attachments/`。消息标记保留保存后的绝对路径，
+该副本在 turn 结束时与会话仓库一起提交。渠道入站文件使用
+`<state>/channels/*/accounts/*/attachments` 下的渠道附件根目录，由附件路径
+策略单独允许读取。`.file-recovery/<session_id>/<turn>/` 是普通的每轮文件撤销
+恢复目录，位于会话 Git 仓库之外。legacy 项目迁移时，会话数据和已有恢复目录
+先暂存到 `<state>/sessions/.migration/staging/` 并校验，再发布到中央目标路径的
+`.file-recovery` 兄弟目录；发布完成后才更新 `locations.json`。
 
-目标：持久字段全部通过 SessionStore 读写，不在 `_sessions` 中冗余。
-
-> **当前状态**：`_sessions` 仍冗余了 title、agent_id、created_at、channel 等持久字段，因为 `_save_session` 从 dict 读取所有字段写 meta.json。`run_active` 已删除（由 status 字段替代）。完全瘦身需要重写 `_save_session` 使其从 SessionStore 读持久字段——留作后续。
+历史附件标记会保留原始绝对路径。附件界面、文件读取和 `send_file` 的路径解析
+只允许把精确的旧路径形式
+`<project>/.openprogram/sessions/<session_id>/workdir/attachments/<relative>`
+按同一个 session id 重新定位到唯一的当前仓库。重新定位后的路径必须仍在允许的
+附件根目录内，不能通过 `..` 或符号链接越界；系统不会任意重映射旧路径。
 
 ## 接口
 
