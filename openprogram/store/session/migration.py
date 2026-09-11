@@ -358,8 +358,6 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
     if recovery_inventory:
         _fsync_tree(staged_recovery)
 
-    if dest.exists() and not session_looks_present(dest):
-        shutil.rmtree(dest)
     # A previous run may have published the session and failed while
     # publishing external recovery or locations.json. Verify the published
     # session against the durable inventory and resume only the missing

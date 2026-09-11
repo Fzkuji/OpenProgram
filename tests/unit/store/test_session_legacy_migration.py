@@ -122,3 +122,17 @@ def test_collect_skips_home_owned_sessions(tmp_path, monkeypatch):
     workdir.mkdir()
     store.create_session("s1", "main", project_path=str(workdir))
     assert collect_legacy_candidates(store) == []
+
+
+def test_unrelated_existing_destination_is_preserved_on_conflict(tmp_path, monkeypatch):
+    store = _isolate(tmp_path, monkeypatch)
+    proj, sid, source, _recovery = _legacy_session(tmp_path, store)
+    dest = nested_session_dir(store.root_path, proj.id, sid)
+    dest.mkdir(parents=True)
+    marker = dest / "unrelated.txt"
+    marker.write_text("keep", encoding="utf-8")
+    assert migrate_session(store, {
+        "session_id": sid, "project_id": proj.id, "source": str(source),
+    }) == "failed"
+    assert marker.read_text(encoding="utf-8") == "keep"
+    assert source.exists()
