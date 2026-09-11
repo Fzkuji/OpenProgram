@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -238,6 +239,25 @@ class QueuedWebSocket:
             )
 
     async def send_text(self, payload: str) -> None:
+        if (getattr(self, "_history_protocol", 0) == 1
+                and len(payload.encode("utf-8")) > 128 * 1024):
+            try:
+                kind = json.loads(payload).get("type")
+            except (ValueError, AttributeError):
+                kind = None
+            if kind in {"session_loaded", "session_history_page", "branches_list"}:
+                transfer = uuid.uuid4().hex
+                for index, start in enumerate(range(0, len(payload), 16 * 1024)):
+                    end = start + 16 * 1024
+                    fragment = json.dumps({"type": "history_fragment", "data": {
+                        "id": transfer, "index": index, "text": payload[start:end],
+                        "final": end >= len(payload),
+                    }})
+                    await self._send_frame(fragment)
+                return
+        await self._send_frame(payload)
+
+    async def _send_frame(self, payload: str) -> None:
         if self._closing:
             raise WebSocketDisconnect(1013)
         waiter = self._loop.create_future()

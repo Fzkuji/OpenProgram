@@ -10,6 +10,7 @@
  * and non-React modules can reach it.
  */
 import { useEffect } from "react";
+import { createHistoryFragmentDecoder } from "./history-fragments";
 import { executionMessageIds, pendingExecutionReplayRequests } from "./execution-message-recovery";
 import { useFunctions } from "@/lib/state/functions-store";
 
@@ -872,7 +873,9 @@ export function useWS(): void {
     function connect(): void {
       if (stopped) return;
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const historyFragments = createHistoryFragmentDecoder();
       socket = new WebSocket(proto + "//" + location.host + "/ws");
+      const connection = socket;
       setSocket(socket);
       pushStatusBadge();
 
@@ -895,7 +898,7 @@ export function useWS(): void {
             action: "webtab_register", window_id: desktopWindowId,
           }));
         }
-        socket?.send(JSON.stringify({ action: "list_sessions" }));
+        socket?.send(JSON.stringify({ action: "list_sessions", history_version: 1 }));
         for (const cursor of loadExecutionCursors()) {
           socket?.send(JSON.stringify({
             action: "execution.replay", execution_id: cursor.execution_id,
@@ -931,11 +934,17 @@ export function useWS(): void {
       };
 
       socket.onmessage = (e) => {
+        if (socket !== connection) return;
         try {
           const msg = JSON.parse(e.data) as {
             type?: string;
             data?: { session_id?: string };
           };
+          if (msg.type === "history_fragment") {
+            const complete = historyFragments.accept(msg.data as never);
+            if (complete !== null) connection.dispatchEvent(new MessageEvent("message", { data: complete }));
+            return;
+          }
           dispatch(msg);
         } catch (err) {
           console.error("[useWS] onmessage parse error:", err);
@@ -943,6 +952,7 @@ export function useWS(): void {
       };
 
       socket.onclose = () => {
+        historyFragments.clear();
         updateStatus("disconnected");
         window.dispatchEvent(new CustomEvent("op:browser-connection", { detail: { connected: false } }));
         if (!stopped) reconnectTimer = setTimeout(connect, 2000);

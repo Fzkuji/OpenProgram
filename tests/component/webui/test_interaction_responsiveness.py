@@ -196,3 +196,34 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
         assert '"head_id": "new"' not in ws.frames[0]
 
     asyncio.run(scenario())
+
+
+def test_negotiated_history_delivery_does_not_disconnect_on_large_snapshot():
+    import json
+    from openprogram.webui.ws_delivery import QueuedWebSocket
+
+    class Raw:
+        _history_protocol = 1
+        def __init__(self):
+            self.frames = []
+            self.closed = False
+        async def send_text(self, text):
+            self.frames.append(text)
+        async def close(self, **_kwargs):
+            self.closed = True
+
+    async def scenario():
+        raw = Raw()
+        ws = QueuedWebSocket(raw, asyncio.get_running_loop())
+        ws.start()
+        payload = json.dumps({'type': 'session_loaded', 'data': {'id': 's', 'messages': ['x' * (5 * 1024 * 1024)]}})
+        try:
+            await ws.send_text(payload)
+            assert not raw.closed
+            assert max(len(f.encode()) for f in raw.frames) < 256 * 1024
+            fragments = [json.loads(f)['data'] for f in raw.frames]
+            assert ''.join(f['text'] for f in fragments) == payload
+            assert fragments[-1]['final']
+        finally:
+            await ws.stop()
+    asyncio.run(scenario())

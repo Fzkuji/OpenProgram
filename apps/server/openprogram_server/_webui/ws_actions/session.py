@@ -706,7 +706,10 @@ async def handle_load_session(ws, cmd: dict):
     session_id = cmd.get("session_id")
     # Record which session this connection is now viewing, so a finishing
     # background run can tell whether to mark *other* sessions unread.
-    ws._focused_session_id = session_id
+    history_before = cmd.get("history_before")
+    is_history_page = history_before is not None
+    if not is_history_page:
+        ws._focused_session_id = session_id
     with _s._sessions_lock:
         conv = _s._sessions.get(session_id)
     # Cold load (fresh worker, new browser session, or a session created
@@ -741,9 +744,10 @@ async def handle_load_session(ws, cmd: dict):
         # before messages are serialized for the client.
         try:
             from openprogram.webui._exec_dag import reconcile_session_projection
-            await _session_io(
-                reconcile_session_projection, session_id
-            )
+            if not is_history_page:
+                await _session_io(
+                    reconcile_session_projection, session_id
+                )
         except Exception as exc:
             _s._log(f"[load_session] canonical projection repair {session_id}: {exc}")
         from openprogram.context.git import (
@@ -797,6 +801,13 @@ async def handle_load_session(ws, cmd: dict):
             all_msgs = conv_snapshot["messages"]
             raw_msgs = all_msgs
         head = _persisted_head or head_or_tip(conv_snapshot, all_msgs)
+        if is_history_page:
+            from openprogram.webui.ws_errors import OperationError
+            requested_head = cmd.get("history_head")
+            if (not isinstance(history_before, str) or not isinstance(requested_head, str)
+                    or requested_head not in {m.get("id") for m in all_msgs}):
+                raise OperationError("invalid_request", scope="session", retryable=True)
+            head = requested_head
         # If the persisted head points at a row that aggregation just
         # folded away (e.g. a role="tool" child of an assistant whose
         # turn never reached step 6's ``update_session(head_id=...)``
@@ -896,7 +907,7 @@ async def handle_load_session(ws, cmd: dict):
         chain = _rebuild_runtime_cards(chain, all_msgs, conv["id"])
         with _s._sessions_lock:
             current_conv = _s._sessions.get(session_id)
-            if current_conv is conv and conv.get("head_id") == load_started_head:
+            if not is_history_page and current_conv is conv and conv.get("head_id") == load_started_head:
                 conv["messages"] = chain
                 conv["head_id"] = head
         from openprogram.agent.session_db import default_db as _ddb
@@ -1066,6 +1077,24 @@ async def handle_load_session(ws, cmd: dict):
                 m["spawned_from"] = sf
         shown = splice_compaction_event_rows(shown, graph, all_msgs)
         shown = _truncate_tool_outputs_for_wire(shown)
+        history = None
+        if getattr(ws, "_history_protocol", 0) == 1:
+            from openprogram.webui.session_history import history_page
+            from openprogram.webui.ws_errors import OperationError
+            try:
+                shown, next_cursor = history_page(
+                    shown, {m.get("id") for m in chain}, history_before,
+                )
+            except ValueError as exc:
+                raise OperationError("invalid_request", scope="session", retryable=True) from exc
+            history = {"head_id": head, "before": next_cursor}
+            if is_history_page:
+                await ws.send_text(json.dumps({"type": "session_history_page", "data": {
+                    "id": session_id, "messages": shown, "history": history,
+                    "request_id": cmd.get("request_id"), "action": "load_session",
+                }}, ensure_ascii=False, default=str))
+                return
+
         from openprogram.agent.session_config import (
             load_session_run_config,
             permission_from_config,
@@ -1090,6 +1119,7 @@ async def handle_load_session(ws, cmd: dict):
                 "id": conv["id"],
                 "title": _db_sess.get("title", ""),
                 "messages": shown,
+                **({"history": history} if history is not None else {}),
                 "graph": graph,
                 "head_id": head,
                 "context_tree": tree_data,
