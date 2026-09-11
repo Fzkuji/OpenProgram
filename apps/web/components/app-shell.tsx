@@ -11,6 +11,7 @@ import { CenterTabStrip } from "./center-tabs/center-tab-strip";
 import { WebTabPip } from "./center-tabs/web-tab-pip";
 import { BrowserResourceProjection } from "@/lib/state/browser-resource-projection";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { topLevelTabs } from "@/lib/state/web-page-management";
 import {
   findCenterTabGroup,
   resolveCenterTabPanes,
@@ -446,7 +447,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // follow the pane rect (WebTabPane → registerVisibleWebTabBounds).
   // Below the two panes' combined minimum width there is no room to split,
   // so fall back to the focused tab alone.
-  const panes = activeGroup && splitAvailable ? compoundPanes : focusedPanes;
+  const panes = topLevelTabs(tabs, groups).length === 0
+    ? []
+    : activeGroup && splitAvailable ? compoundPanes : focusedPanes;
   const showDivider = panes.length === 2;
   const sessionPaneIndex = panes.findIndex((pane) => pane.kind === "session");
   const showChat = isChatRoute(pathname);

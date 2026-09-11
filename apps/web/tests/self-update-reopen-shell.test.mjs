@@ -289,12 +289,19 @@ for (const route of ["/settings", "/s/other", "/chat"]) test(`final tab close op
   await mounted(async () => {
     await act(async () => useSessionStore.getState().setCurrentConv("other"));
     await act(async () => navigate(route));
-    const tab = useCenterTabs.getState().tabs[0];
+    await act(async () => {
+      const store = useCenterTabs.getState();
+      const pageId = store.ensureWebTab("https://retained.test");
+      store.markAgentWebTab(pageId, "other");
+    });
+    const tab = useCenterTabs.getState().tabs.find(t => t.kind === "session");
     await act(async () => lifecycle.onTabClose({ stopPropagation() {} }, tab));
     await act(async () => lifecycle.finishClose(tab));
     assert.equal(window.location.pathname, "/chat");
-    assert.equal(useCenterTabs.getState().tabs.length, 1);
-    assert.equal(useCenterTabs.getState().tabs[0].kind, "ntp");
+    const state = useCenterTabs.getState();
+    assert.equal(state.tabs.length, 2);
+    assert.equal(state.tabs.find(t => t.id === state.activeId).kind, "ntp");
+    assert.equal(state.tabs.find(t => t.kind === "web").agentSessionId, "other");
     assert.equal(useSessionStore.getState().currentSessionId, null);
   });
 });
