@@ -364,6 +364,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("UI · Workspace and sidebar", "界面 · 工作区与侧栏", [
             "reference/design/ui/integrated-terminal.html",
             "reference/design/ui/project-order.html",
+            "reference/design/ui/project-location.html",
             "reference/design/ui/file-type-icons.html",
             "reference/design/ui/project-workspace-prototype.html",
             "reference/design/ui/project-workspace.md",
