@@ -1,6 +1,7 @@
 """Bounded data and local draft IO for report Workflows; no network operations."""
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -51,3 +52,8 @@ def save_report(week: str, output_dir: str, summary: str, reminder: str,
         if not isinstance(outcome, str) or not outcome.startswith('Wrote '):
             raise OSError(str(outcome))
     return target
+
+
+def material_digest(text: str) -> str:
+    """Stable source comparison without retaining full message bodies."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
