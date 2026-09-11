@@ -137,3 +137,17 @@ test("discarded forward history cannot receive an activating late ACK", () => {
   state().navigateSessionHistory(-1); state().openSessionTab("new-C", "C");
   assert.equal(sessionAckIsActive("old-B"), false);
 });
+
+test("closing the final desktop tab keeps the window open on New tab", () => {
+  reset();
+  let closes = 0;
+  window.openprogramDesktop = { isDesktop: true, windowId: "main", closeWindow() { closes++; } };
+  try {
+    for (const open of [() => state().openSessionTab("last", "Last"), () => state().openWebTab("https://example.test/last"), () => state().openNewTabPage()]) {
+      reset(); open(); state().closeTab(active().id);
+      assert.equal(closes, 0);
+      assert.equal(state().tabs.length, 1);
+      assert.equal(active().kind, "ntp");
+    }
+  } finally { delete window.openprogramDesktop; }
+});

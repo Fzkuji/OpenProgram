@@ -831,7 +831,8 @@
       <p>比较范围：保留本页现有网页、split 与 PiP 参考与边界；会话历史是应用内状态，不采用浏览器全局 History 作为每标签记录，不改变网页前进后退、服务端协议或权限。独立标签可显示同一会话，但输入仍共享同一会话键。</p>
       <h3>实现状态</h3><p data-session-navigation-status="complete">会话标签历史已实现。独立规格与质量审查通过；Web 测试、桌面检查、契约测试、TypeScript、生产构建和文档链接检查通过。默认安装 App 已验证原位切换、后退与前进、未发送草稿恢复，以及网页标签下新建会话标签。</p>
     </section>
-  </main>
+  <section id="last-tab"><h2>Closing the last tab</h2><p>Closing the last tab keeps its window open and selects a fresh New tab page with Files, New chat, Browser, and Terminal. The existing close action retains draft confirmation and native resource cleanup. An empty center layout also renders this launcher. Moving tabs between windows retains its existing window lifecycle.</p><p>Acceptance: close the final tab through the close button or keyboard command; the launcher appears and its actions open the selected page.</p></section>
+</main>
 </div>
 
 <script>

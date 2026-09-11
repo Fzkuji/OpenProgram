@@ -277,3 +277,18 @@ test("back restores the same unsent draft and its typed input", async () => {
     assert.equal(window.location.pathname, "/s/target");
   });
 });
+
+for (const route of ["/settings", "/s/other", "/chat"]) test(`final tab close opens launcher from ${route} without restoring closed session`, async () => {
+  await setup([other], other.id, "detached");
+  await mounted(async () => {
+    await act(async () => useSessionStore.getState().setCurrentConv("other"));
+    await act(async () => navigate(route));
+    const tab = useCenterTabs.getState().tabs[0];
+    await act(async () => lifecycle.onTabClose({ stopPropagation() {} }, tab));
+    await act(async () => lifecycle.finishClose(tab));
+    assert.equal(window.location.pathname, "/chat");
+    assert.equal(useCenterTabs.getState().tabs.length, 1);
+    assert.equal(useCenterTabs.getState().tabs[0].kind, "ntp");
+    assert.equal(useSessionStore.getState().currentSessionId, null);
+  });
+});

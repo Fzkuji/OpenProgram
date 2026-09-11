@@ -66,7 +66,6 @@ import type { BuiltinPage } from "@/lib/state/center-tab-ids";
 import { openReviewTabLayout } from "@/lib/state/review-tab-layout";
 import {
   clampSplitRatio,
-  desktopWindowId,
   draftTab,
   normalizeCenterTabsPayload,
   orderTabs,
@@ -166,13 +165,6 @@ export interface FileTabOptions {
 // explicitly closed this session. Tombstones live only for this page lifetime
 // and are cleared by an explicit reopen.
 const closedSessionAckTombstones = new Set<string>();
-
-/** Ask the desktop shell to close THIS window (last tab closed → close window,
- *  Chrome parity). No-op off desktop or if the bridge lacks the method. */
-function requestDesktopWindowClose(): void {
-  if (typeof window === "undefined") return;
-  window.openprogramDesktop?.closeWindow?.();
-}
 
 export interface CenterTabsState {
   tabs: CenterTab[];
@@ -1019,15 +1011,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           activeId = (tabs[idx] ?? tabs[idx - 1])?.id ?? null;
         }
         if (tabs.length === 0) {
-          if (desktopWindowId()) {
-            // Chrome parity: closing a desktop window's last tab closes the
-            // WINDOW (main handles "last window ⇒ stay open, don't quit").
-            // Ask the shell to close; keep the strip non-empty meanwhile so
-            // the brief render before the window goes away has a valid tab.
-            requestDesktopWindowClose();
-          }
-          // Browser mode (and the transient desktop frame above) can't show an
-          // empty strip — fall back to a fresh New-tab page.
+          // Keep the window usable after its final tab closes.
           const ntp: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
           tabs = [ntp];
           activeId = ntp.id;

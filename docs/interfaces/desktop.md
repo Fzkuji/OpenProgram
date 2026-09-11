@@ -2,6 +2,8 @@
 
 The macOS and Windows Desktop Apps present OpenProgram as a multi-pane workspace. Each pane can hold Files, a chat, the built-in Browser, or a Terminal, and panes can be split or moved between app windows without changing the underlying session or browser tab.
 
+Closing the last tab keeps the window open and shows a New tab page with Files, New chat, Browser, and Terminal. Select an entry to open it.
+
 On macOS, install the architecture-matched DMG and copy `OpenProgram.app` to `/Applications`; the current macOS channel is unsigned and may require **System Settings → Privacy & Security → Open Anyway**. On Windows, install only the signed `win-x64.exe` or `win-arm64.exe` attached to a published [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases). If a release has no signed Windows EXE, use the CLI/server and browser UI for that version. The complete steps are in [Installation](../install/install.md).
 
 Terminal panes use the login shell on macOS and Windows PowerShell through ConPTY on Windows. Packaged apps on both platforms start the worker from their embedded managed Python and do not depend on a system Python or Node.js.

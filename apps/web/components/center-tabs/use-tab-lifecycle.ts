@@ -338,7 +338,14 @@ export function useTabLifecycle({
     if (!closingInstance) return;
     const currentTab = useCenterTabs.getState().tabs.find((x) => x.id === tab.id);
     if (!currentTab) return;
+    const closesLastTab = useCenterTabs.getState().tabs.length === 1;
     closeTab(tab.id);
+    if (closesLastTab) {
+      // Clear the closed conversation before /chat route synchronization,
+      // otherwise its stale selection would replace the new-tab launcher.
+      useSessionStore.getState().setCurrentConv(null);
+      pushPath("/chat");
+    }
     if (tab.draft && tab.sessionId) {
       useSessionStore.getState().dropChatDraft(tab.sessionId);
       dropDraftChannelChoice(draftChannelChoiceHost, tab.sessionId);
