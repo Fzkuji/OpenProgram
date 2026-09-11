@@ -162,31 +162,39 @@ def _verify_inventory(dest: Path, inventory: list[dict[str, Any]]) -> None:
 
 
 def _fsync_tree(path: Path) -> None:
+    """Flush every copied file before it can be published.
+
+    File flush failures are part of the migration transaction: ignoring one
+    would allow an apparently verified copy to be published and the legacy
+    source to be removed without a durable destination.  Directory flushes
+    are handled separately because Windows does not expose directory file
+    descriptors.
+    """
     for current, _dirs, files in os.walk(path, followlinks=False):
         for name in files:
             file_path = Path(current) / name
-            try:
-                fd = os.open(file_path, os.O_RDONLY)
-            except OSError:
+            if file_path.is_symlink():
+                # The link itself has no file data to flush.  Opening it would
+                # follow an external target and could flush unrelated data.
                 continue
+            fd = os.open(file_path, os.O_RDONLY)
             try:
                 os.fsync(fd)
-            except OSError:
-                pass
             finally:
                 os.close(fd)
+    if os.name == "nt":
+        return
+    fd = os.open(path, os.O_RDONLY)
     try:
-        fd = os.open(path, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-    except OSError:
-        pass
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _fsync_dir(path: Path) -> None:
     """Durably publish one directory entry without scanning siblings."""
+    if os.name == "nt":
+        return
     fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)
