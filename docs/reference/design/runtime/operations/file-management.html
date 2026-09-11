@@ -91,7 +91,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <p>本地生成器统一调用 <code>write(file_path, source_path=...)</code> 发布完整文件。文本工具保留 write/edit/apply_patch 入口，共享 checkpoint 的 prepare/commit/abort 合同。不能只提交模型声称的“修改成功”，也不能执行任意 Bash 后扫描目录并归因。状态存储由 CheckpointStore 管理，Review 和会话摘要只作投影，不另建版本副本。未来 Office 语义差异只读取不可变版本，不承担撤销；远端存储需要条件写入和可验证版本标识，在具备这一能力前不宣称支持精确恢复。</p>
       <p>本次保留现有单轮聚合、会话分支和恢复事务；不新增全盘扫描、定时轮询、通用插件注册框架、Office 修订视图或远端存储实现。已丢失的历史不能补回。系统崩溃与不遵守文件锁的外部程序仍可能造成待人工处理状态；系统保留证据并拒绝不确定覆盖，不承诺所有外部修改都能自动恢复。</p>
     </details>
-    <details><summary>实现与验收计划</summary><p>先复现连续写入提交失败、失败后重试和损坏记录覆盖；再修复共享历史存储及未完成记录投影。通过注册工具、重新打开会话、Review 与恢复入口验证，最后进行独立规范审查、质量审查和全量检查。当前该节为待实现设计。</p></details>
+    <details><summary>实现与验收计划</summary><p>先复现连续写入提交失败、失败后重试和损坏记录覆盖；再修复共享历史存储及未完成记录投影。通过注册工具、重新打开会话、Review 与恢复入口验证，最后进行独立规范审查、质量审查和全量检查。该节对应共享历史存储、会话摘要与 Review 投影已实现；独立规范和质量审查、故障回归及全量测试均通过。</p></details>
   </section>
 
   <section id="document-history">
@@ -452,6 +452,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
   </section>
   <section id="implementation-status">
     <h2>实现状态</h2>
+    <p>文件历史持久性已验证：不可变版本、失败重试、损坏记录拒绝、未完成写入投影与旧版本兼容。新增本地生成器继续复用 source_path 发布入口；Office 语义差异和远端条件存储不属于当前实现。</p>
     <p>文档 source_path 发布与二进制读取已实现并通过独立审查和测试：完整文件版本随会话持久保存，支持撤回、重新应用及冲突检测；不提供 Office 内容差异视图。</p>
     <div class="decision-line"><b>当前实现状态：</b>目录/搜索 snapshot、文件 request identity、durable mutation、有界 read cache、持久 dirty draft、Review 服务端分页、canonical entry-point cutover 与稳定模块边界均已完成独立审查。</div>
     <p class="intro" style="margin-top:12px">实现证据写入对应测试；本设计页只维护当前合同与总体状态。</p>
