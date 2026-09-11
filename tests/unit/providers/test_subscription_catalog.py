@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 from openprogram.providers import subscription_catalog as catalog
 
@@ -15,7 +16,8 @@ def test_catalog_round_trip_is_atomic_and_profile_local(monkeypatch, tmp_path):
     assert rows == [{"id": "future-model", "name": "Future"}]
     assert fetched_at is not None
     assert json.loads(path.read_text())["schema_version"] == 1
-    assert path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_catalog_rejects_wrong_provider(monkeypatch, tmp_path):
