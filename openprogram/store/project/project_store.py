@@ -835,8 +835,8 @@ def relocate_project(
                      project_id, e)
         set_location_state(project_id, "pending", error=str(e))
         raise ProjectStoreError(f"project location repair pending: {e}") from e
-    set_location_state(project_id, "available")
-    return moved
+    current = set_location_state(project_id, "available")
+    return current or moved
 
 
 def bind_session(session_id: str, project_id: str) -> None:

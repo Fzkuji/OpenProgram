@@ -266,6 +266,8 @@ async def handle_relocate_project(ws, cmd: dict):
                 expected_revision=expected_revision,
                 replace_identity=replace_identity,
             )
+            from openprogram.store.project.discovery import refresh_observer_paths
+            refresh_observer_paths()
             ok = True
         except Exception as e:  # noqa: BLE001
             error = f"{type(e).__name__}: {e}"

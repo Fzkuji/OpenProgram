@@ -22,7 +22,7 @@ ERROR = "error"
 
 def evaluate_project_location(project) -> str:
     """Return location_state without rewriting identity."""
-    if project is None or project.is_default:
+    if project is None or getattr(project, "is_default", False):
         return AVAILABLE
     state = getattr(project, "location_state", "") or ""
     if state in {MIGRATING, PENDING, ERROR}:
@@ -46,10 +46,23 @@ def evaluate_project_location(project) -> str:
 def refresh_project_location(project_id: str) -> str:
     """Startup/access/event reconcile for one project. No recursive search."""
     project = projects.get_project(project_id)
-    if project is None or project.is_default:
+    if project is None or getattr(project, "is_default", False):
         return AVAILABLE
     recorded = getattr(project, "location_state", "") or ""
     if recorded in {MIGRATING, PENDING, ERROR}:
+        try:
+            from openprogram.store.session.migration import run_startup_migration
+            from openprogram.store.session.session_store import default_store
+            run_startup_migration(default_store(), timeout=2.0)
+            refreshed = projects.get_project(project_id)
+            if refreshed is not None:
+                project = refreshed
+                recorded = getattr(project, "location_state", "") or ""
+                if recorded == AVAILABLE:
+                    return AVAILABLE
+        except Exception:
+            _log.debug("location migration retry failed for %s", project_id,
+                       exc_info=True)
         return recorded
     path = Path(project.path).expanduser() if project.path else None
     if path is not None and path.is_dir():
@@ -78,7 +91,7 @@ def reconcile_registered_projects() -> list[str]:
     """Resolve bookmarks / identity for registered projects only."""
     moved = []
     for project in projects.list_projects():
-        if project.is_default or not project.path:
+        if getattr(project, "is_default", False) or not project.path:
             continue
         before = project.path
         state = refresh_project_location(project.id)
@@ -114,7 +127,7 @@ def watch_paths_for_projects() -> list[Path]:
     paths: list[Path] = []
     seen: set[Path] = set()
     for project in projects.list_projects():
-        if project.is_default or not project.path:
+        if getattr(project, "is_default", False) or not project.path:
             continue
         folder = Path(project.path).expanduser()
         for candidate in (folder, folder.parent):
@@ -140,6 +153,7 @@ class LocationObserver:
         self._native: native.NativePathObserver | None = None
         self._pending: set[str] = set()
         self._lock = __import__("threading").Lock()
+        self._refresh_lock = __import__("threading").RLock()
 
     def start(self) -> None:
         moved = reconcile_registered_projects()
@@ -156,12 +170,13 @@ class LocationObserver:
 
     def refresh(self) -> None:
         """Rebuild native subscriptions after registry/path changes."""
-        old = self._native
-        if old is not None:
-            old.stop()
-        observer = native.NativePathObserver(self._on_native_paths)
-        self._native = observer
-        observer.start(watch_paths_for_projects())
+        with self._refresh_lock:
+            old = self._native
+            if old is not None:
+                old.stop()
+            observer = native.NativePathObserver(self._on_native_paths)
+            self._native = observer
+            observer.start(watch_paths_for_projects())
 
     def _on_native_paths(self, changed: list[str]) -> None:
         # Ordinary file edits under a project do not start recovery:
@@ -170,7 +185,7 @@ class LocationObserver:
         touched = []
         changed_paths = [Path(item) for item in changed]
         for project in projects.list_projects():
-            if project.is_default or not project.path:
+            if getattr(project, "is_default", False) or not project.path:
                 continue
             folder = Path(project.path).expanduser()
             for event_path in changed_paths:
@@ -192,3 +207,9 @@ class LocationObserver:
                 moved.append(project_id)
         if moved or touched:
             self._notify()
+        if moved:
+            # FSEvents callbacks run on the observer thread; rebuilding the
+            # stream there would attempt to join itself. Refresh asynchronously.
+            import threading
+            threading.Thread(target=self.refresh, name="project-fs-refresh",
+                             daemon=True).start()

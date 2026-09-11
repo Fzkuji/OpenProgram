@@ -713,6 +713,8 @@ class SessionStore:
             or "\\" in session_id
         ):
             return None
+        if create_if_missing and is_deleted(self.root_path, session_id):
+            return None
         with self._session_lock(session_id):
             verified_git: GitSession | None = None
             sdir = self._session_dir(session_id)
@@ -913,10 +915,9 @@ class SessionStore:
             if (not proj.is_default) and proj.path:
                 repo_dir = nested_session_dir(self.root_path, proj.id, session_id)
                 self._record_location(session_id, repo_dir)
-        except Exception as e:  # noqa: BLE001 — never block session creation
-            _log.warning("project resolution failed for %s (%s); falling back "
-                         "to the default project", session_id, e)
-            project_id = project_id or _projects_default_id_safe()
+        except Exception as e:  # noqa: BLE001 — placement is authoritative
+            _log.error("project resolution failed for %s: %s", session_id, e)
+            raise
 
         pair = self._open(session_id, create_if_missing=True)
         if pair is None:
@@ -1083,7 +1084,10 @@ class SessionStore:
     def delete_session(self, session_id: str) -> None:
         with self._session_lock(session_id):
             with session_interprocess_lock(session_id):
-                sdir = self._session_dir(session_id)
+                self._delete_session_locked(session_id)
+
+    def _delete_session_locked(self, session_id: str) -> None:
+            sdir = self._session_dir(session_id)
             record_delete_intent(self.root_path, session_id, {
                 "session_id": session_id, "deleted_at": time.time(),
             })
