@@ -285,3 +285,34 @@ test("private Page commands require their trusted conversation even when another
   assert.equal(result?.reason_code,"page_not_accessible");
   assert.equal(result?.target_id,undefined);
 });
+
+test("restoration does not activate or reload a Page whose public access was revoked while waiting", async () => {
+  const {ingestBrowserResource,resetBrowserResources} = await import("../lib/state/session-resources.ts");
+  resetBrowserResources();
+  const page = {id:"w:restore-scope",kind:"web",url:"https://restore.test",title:"Restore",agentOpened:true,agentSessionId:"owner",webPinned:true};
+  useCenterTabs.setState({tabs:[page],activeId:page.id,groups:[],splitWebTabId:null});
+  const api = window.openprogramDesktop.webTab;
+  const sent = [], native = [];
+  setSocket({readyState:1,send:payload=>sent.push(JSON.parse(payload))});
+  api.activate = async id => {native.push(['activate',id]);return 'target';};
+  api.navigate = id => {native.push(['navigate',id]);};
+  api.inspect = async id => {native.push(['inspect',id]);return {url:page.url,target_id:'target'};};
+  ensureWebView(window.openprogramDesktop,page.id,page.url);
+  setWebTabReady(page.id,true);
+  registerVisibleWebTabBounds(window.openprogramDesktop,page.id,{x:0,y:0,width:900,height:600});
+  const row = {id:'restore-assoc',resource_id:'restore-page',tab_id:page.id,session_id:'owner',conversation_session_id:'owner',kind:'web',source:'browser',target:page.url,status:'restore_failed',generation:1,sequence:1};
+  ingestBrowserResource(row,'owner');
+  const originalFetch = globalThis.fetch;
+  let finish, began;
+  const started = new Promise(resolve=>{began=resolve;});
+  globalThis.fetch = () => new Promise(resolve=>{finish=resolve;began();});
+  try {
+    listeners.get('op:ws-message')({detail:{type:'webtab.command',data:{op:'activate',tab_id:page.id,session_id:'other',window_id:'main',req_id:'restore-scoped'}}});
+    await started;
+    useCenterTabs.getState().setWebTabPinned(page.id,false);
+    finish(new Response(JSON.stringify({items:[row]})));
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(native,[]);
+    assert.equal(sent.find(message=>message.req_id==='restore-scoped')?.reason_code,'page_not_accessible');
+  } finally { globalThis.fetch=originalFetch; resetBrowserResources(); }
+});
