@@ -540,7 +540,7 @@ def _cmd_run(name, arg_list, provider=None, model=None):
 def _cmd_applications(args):
     import json
     from urllib.parse import quote
-    from openprogram.programs import applications
+    from openprogram.programs import application_client as applications
     verb = args.apps_verb
     if verb == "list":
         result = applications.list_applications()

@@ -103,7 +103,7 @@ that require predeclared durable waits retain their existing requirements.
 Programs use the same operations:
 
 ```python
-from openprogram.programs.applications import run, status
+from openprogram.programs.application_client import run, status
 
 job = run("local.notes", "summarize", {"text": "..."}, request_key="summary-1")
 print(status(job["id"]))

@@ -43,7 +43,7 @@ Python 操作使用 `context.load()`、`context.save(value, expected_version=...
 Program 调用同一套操作：
 
 ```python
-from openprogram.programs.applications import run, status
+from openprogram.programs.application_client import run, status
 job = run("local.notes", "summarize", {"text": "..."}, request_key="summary-1")
 print(status(job["id"]))
 ```
