@@ -1359,7 +1359,11 @@ class CheckpointStore:
     def _manual_operation_path(self, operation_id: str) -> Path:
         if self.recovery_root is None:
             raise TypeError("recovery_root is required for manual document operations")
-        if not isinstance(operation_id, str) or not operation_id or Path(operation_id).name != operation_id:
+        if (
+            not isinstance(operation_id, str)
+            or len(operation_id) != 32
+            or any(char not in "0123456789abcdef" for char in operation_id)
+        ):
             raise ValueError("invalid operation_id")
         return self.recovery_root / "operations" / operation_id
 
@@ -1384,7 +1388,32 @@ class CheckpointStore:
             "sha256": state["sha256"], "mode": state["mode"], "size": state["size"],
         }
 
+    @contextmanager
+    def _manual_operation_lock(self, operation_id: str):
+        from openprogram import _compat as fcntl
+
+        operation_dir = self._manual_operation_path(operation_id)
+        operation_dir.mkdir(parents=True, exist_ok=True)
+        with (operation_dir / ".lock").open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
     def publish_document(
+        self, operation_id: str, target_path: str | Path, source_path: str | Path,
+        *, expected_revision: str | None = None, expected_mtime: int | float | None = None,
+        fingerprint: str, metadata: dict | None = None,
+    ) -> dict:
+        with self._manual_operation_lock(operation_id):
+            return self._publish_document_locked(
+                operation_id, target_path, source_path,
+                expected_revision=expected_revision, expected_mtime=expected_mtime,
+                fingerprint=fingerprint, metadata=metadata,
+            )
+
+    def _publish_document_locked(
         self, operation_id: str, target_path: str | Path, source_path: str | Path,
         *, expected_revision: str | None = None, expected_mtime: int | float | None = None,
         fingerprint: str, metadata: dict | None = None,
@@ -1420,7 +1449,7 @@ class CheckpointStore:
         current_revision = before.get("sha256") if before["kind"] == "regular" else "absent"
         if expected_revision is not None and expected_revision != current_revision:
             raise MutationJournalError("document baseline does not match")
-        if expected_mtime is not None and target_info is not None and target_info.st_mtime_ns != expected_mtime:
+        if expected_mtime is not None and target_info is not None and target_info.st_mtime != expected_mtime:
             raise MutationJournalError("document mtime does not match")
         parent_chain = self._capture_parent_chain(str(target))
         if before.get("kind") == "regular":
@@ -1441,7 +1470,7 @@ class CheckpointStore:
         manifest.save(intent_path, intent)
         result = self._execute_history_intent(intent, intent_path, operation_dir)
         if result.get("status") == "committed":
-            intent["mtime"] = target.stat().st_mtime_ns if target.exists() else None
+            intent["mtime"] = target.stat().st_mtime if target.exists() else None
             manifest.save(intent_path, intent)
         result.update({"fingerprint": fingerprint, "before": intent["before"], "after": intent["after"],
                        "revision": candidate["sha256"], "mtime": intent.get("mtime")})
