@@ -2,7 +2,7 @@
 <h1>Windows CI completion</h1>
 <p>The native x64 and ARM64 jobs execute platform contracts and the complete unit suite with four workers. A completed test count does not prove that error reporting and process shutdown finish.</p>
 <h2>Failure diagnostics</h2>
-<p>Windows Python output is unbuffered and unit results include test names. A process-wide traceback deadline covers reporting and shutdown as well as test execution. The test step and job also have finite execution limits. Failed tests retain their nonzero exit status; no tests are removed or accepted as passing.</p>
+<p>Windows Python output is unbuffered and unit results include test names. Complete output and a separate traceback file are uploaded after success or failure. The process-wide traceback deadline replaces the pytest faulthandler plugin so exception reporting cannot cancel that deadline; it covers reporting and shutdown as well as test execution. The test step and job also have finite execution limits. Failed tests retain their nonzero exit status; no tests are removed or accepted as passing.</p>
 <h2>Acceptance</h2>
 <p>Both native architectures must complete the full unit suite and platform contracts. An intentionally blocked diagnostic process must emit its Python stack and exit unsuccessfully. Ordinary failed tests must emit their details and exit unsuccessfully.</p>
 <h2>Implementation status</h2>

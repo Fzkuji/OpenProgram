@@ -267,7 +267,17 @@ jobs:
         timeout-minutes: 15
         run: >-
           uv run --locked --extra dev python -u -c
-          "import faulthandler, pytest; faulthandler.dump_traceback_later(600, exit=True); raise SystemExit(pytest.main(['-n', '4', '-vv', 'tests/unit']))"
+          "import faulthandler, pytest; trace = open('windows-unit-traceback.txt', 'w'); faulthandler.dump_traceback_later(600, file=trace, exit=True); raise SystemExit(pytest.main(['-p', 'no:faulthandler', '-n', '4', '-vv', 'tests/unit']))"
+          > windows-unit.log 2>&1
+      - name: Upload Windows regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-regression-${{ matrix.arch }}
+          path: |
+            windows-unit.log
+            windows-unit-traceback.txt
+          if-no-files-found: ignore
 
   windows-desktop:
     strategy:
