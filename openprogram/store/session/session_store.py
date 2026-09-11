@@ -361,7 +361,7 @@ class SessionStore:
         best-effort rewrite.
         """
         from .placement import legacy_project_session_dir
-        from .migration import load_journal, save_journal
+        from .migration import load_journal, update_journal_row
 
         base = Path(new_project_path).expanduser()
         moved = 0
@@ -389,7 +389,7 @@ class SessionStore:
                             "old_path": old_path or "",
                         })
                         journal.setdefault("sessions", {})[sid] = row
-                        save_journal(root, journal)
+                        update_journal_row(root, sid, row)
                         self._record_location(sid, new_legacy)
                         moved += 1
             moved += 0

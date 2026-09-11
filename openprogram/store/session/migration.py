@@ -368,8 +368,9 @@ def _migrate_session_once(store, entry: dict[str, Any], *, timeout: float = 15.0
         _clear_hold(root, session_id)
         return "deferred"
     try:
-        with session_interprocess_lock(session_id, timeout=timeout):
-            return _migrate_locked(store, root, journal, row, source, dest)
+        with store._session_lock(session_id):
+            with session_interprocess_lock(session_id, timeout=timeout):
+                return _migrate_locked(store, root, journal, row, source, dest)
     except Exception as exc:
         row["stage"] = "failed"
         row["error"] = f"{type(exc).__name__}: {exc}"
@@ -443,9 +444,7 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
         else:
             raise RuntimeError("external recovery publication is missing")
         _fsync_dir(recovery_dest.parent)
-    # Keep the same Python-lock -> registry-lock order as SessionStore deletes.
-    with store._session_lock(session_id):
-        store._record_location(session_id, dest)
+    store._record_location(session_id, dest)
     store._sessions.pop(session_id, None)
     row["stage"] = "cleanup"
     update_journal_row(root, session_id, row)
