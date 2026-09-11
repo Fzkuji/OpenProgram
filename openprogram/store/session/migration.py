@@ -181,10 +181,20 @@ def _live_jobs(session_id: str) -> bool:
     # than jobs.json. Migration must wait for both representations.
     try:
         import sys
-        server = sys.modules.get("openprogram.webui.server")
-        if server is not None:
-            with server._running_tasks_lock:
-                if session_id in server._running_tasks:
+        servers = [m for name, m in sys.modules.items()
+                   if name.endswith("openprogram_server.server")
+                   or name == "openprogram.webui.server"]
+        for server in servers:
+            lock = getattr(server, "_running_tasks_lock", None)
+            tasks = getattr(server, "_running_tasks", None)
+            if lock is not None and isinstance(tasks, dict):
+                with lock:
+                    if session_id in tasks:
+                        return True
+            sessions = getattr(server, "_sessions", None)
+            if isinstance(sessions, dict):
+                row = sessions.get(session_id) or {}
+                if row.get("status") in {"running", "busy", "executing"}:
                     return True
         from openprogram.agent.job.store import list_jobs
         from openprogram.agent.job.types import JobStatus
@@ -217,7 +227,7 @@ def quiesce_session(root: Path, session_id: str, *, timeout: float = 15.0) -> bo
     return False
 
 
-def collect_legacy_candidates(store) -> list[dict[str, Any]]:
+def collect_legacy_candidates(store, project_id: str | None = None) -> list[dict[str, Any]]:
     from openprogram.store.project import project_store as projects
 
     root = Path(store.root_path)
@@ -228,6 +238,8 @@ def collect_legacy_candidates(store) -> list[dict[str, Any]]:
         _log.debug("failed to load session locations", exc_info=True)
     found: dict[str, dict[str, Any]] = {}
     for project in projects.list_projects():
+        if project_id is not None and project.id != project_id:
+            continue
         if project.is_default:
             continue
         if not getattr(project, "directory_identity", "") and not getattr(project, "native_bookmark", ""):
@@ -451,4 +463,30 @@ def run_startup_migration(store=None, *, timeout: float = 15.0) -> dict[str, str
             results[entry["session_id"]] = "done"
             continue
         results[entry["session_id"]] = migrate_session(store, entry, timeout=timeout)
+    return results
+
+
+def run_project_migration(project_id: str, store=None, *, timeout: float = 15.0) -> dict[str, str]:
+    """Run the same recoverable migration boundary for one project."""
+    if store is None:
+        from openprogram.store.session.session_store import default_store
+        store = default_store()
+    root = Path(store.root_path)
+    journal = load_journal(root)
+    candidates = {
+        row["session_id"]: row
+        for row in (journal.get("sessions") or {}).values()
+        if row.get("session_id") and row.get("project_id") == project_id
+    }
+    for entry in collect_legacy_candidates(store, project_id=project_id):
+        previous = candidates.get(entry["session_id"], {})
+        merged = dict(previous)
+        merged.update(entry)
+        candidates[entry["session_id"]] = merged
+    results = {}
+    for entry in candidates.values():
+        results[entry["session_id"]] = (
+            "done" if entry.get("stage") == "done" else
+            migrate_session(store, entry, timeout=timeout)
+        )
     return results
