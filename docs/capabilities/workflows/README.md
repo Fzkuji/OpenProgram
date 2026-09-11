@@ -42,3 +42,11 @@ Any repository that follows the directory contract (`<package>/agentics/__init__
 That harness contract is different from a single self-programming Workflow package. For the package contract, a complete tested example, relative paths, and the `workflows validate/test/publish` commands, see [Write, test, and publish a Workflow](authoring.md). Generated `create_workflow` and `revise_workflow` packages use the same required behavior-test gate.
 
 Workflow forms ask for task information, not execution settings. Text polishing infers its style from the text in the same model request; it does not require a style selection. Browser backend and session handles remain internal. Document page ranges and output destinations are optional task requirements. Explicit Python callers retain supported overrides.
+
+## Weekly reports
+
+If `weekly_report` is installed in your Workflow catalog, call it with the report text or the change you want. For example, ask it to submit this week's report, update only next week's plan, inspect the existing record, or prepare a local draft at a named path.
+
+It reads the configured Feishu form and matches the name and year/week before writing. A missing record is submitted once; an existing editable record is opened from the submission history and saved. Partial updates preserve untouched fields. Explicit draft and read-only requests do not submit. Unknown inspection results, login failures and ambiguous records stop the operation. A submission cap does not by itself rule out editing an existing record.
+
+Success requires a fresh page confirmation and persisted values. If a write result is uncertain, the Workflow reports it without automatically retrying. Ordinary browser authorization remains required. It uses bounded browser steps rather than a `goal()` loop, and does not invent progress, metrics or paper titles.
