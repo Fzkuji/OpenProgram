@@ -497,8 +497,10 @@ class Program:
         """Absolute path this program is (or would be) cloned to."""
         if base is None:
             aliases = {self.install_dir, self.package, self.repo_dir_name}
-            matches = [row["path"] for row in owner_controlled_program_sources()
-                       if Path(row["path"]).name in aliases]
+            matches = list(dict.fromkeys(
+                row["path"] for row in owner_controlled_program_sources()
+                if Path(row["path"]).name in aliases
+            ))
             if len(matches) > 1:
                 raise ValueError("multiple installed locations for Program package")
             if matches:
