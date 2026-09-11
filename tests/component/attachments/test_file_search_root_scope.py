@@ -237,6 +237,11 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
         "path": str(old_attachment), "session_id": "other",
     })
     assert wrong_session.status_code == 403
+    wrong_session_traversal = client.get("/api/file-raw", params={
+        "path": str(old_attachment.parent / ".." / "attachments" / "report.pdf"),
+        "session_id": "other",
+    })
+    assert wrong_session_traversal.status_code == 403
 
     outside = tmp_path / "outside.pdf"
     outside.write_bytes(b"private")

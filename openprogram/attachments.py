@@ -298,17 +298,22 @@ def resolve_session_attachment(
     """
     roots = tuple(roots)
     raw: Path | None = None
+    marker_start: int | None = None
     legacy_start: int | None = None
     try:
         raw = Path(os.path.expanduser(str(path)))
         parts = raw.parts
+        marker_start = next(
+            (i for i in range(len(parts) - 4)
+             if parts[i:i + 2] == (".openprogram", "sessions")
+             and parts[i + 3:i + 5] == ("workdir", "attachments")),
+            None,
+        )
+        if (marker_start is not None and session_id
+                and parts[marker_start + 2] != session_id):
+            return None
         if raw.is_absolute() and not any(part in {".", ".."} for part in parts):
-            legacy_start = next(
-                (i for i in range(len(parts) - 4)
-                 if parts[i:i + 2] == (".openprogram", "sessions")
-                 and parts[i + 3:i + 5] == ("workdir", "attachments")),
-                None,
-            )
+            legacy_start = marker_start
         if (legacy_start is not None and session_id
                 and parts[legacy_start + 2] != session_id):
             return None
