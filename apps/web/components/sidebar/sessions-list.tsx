@@ -342,7 +342,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   const visible = (() => {
     let arr = convArr;
     // All sessions are shown — no filtering of empty/placeholder rows.
-    if (view.status === "active") arr = arr.filter((c) => !c.archived);
+    if (projectMode || view.status === "active") arr = arr.filter((c) => !c.archived);
     else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
     // Last-activity window — updated_at（后端随消息追加维护），老行
     // 无 updated_at 时退回 created_at。"all" = no window.
@@ -394,7 +394,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // around their matches. (status "all" widens, so it doesn't count;
   // "archived" narrows.) Empty and archived-only projects are always hidden.
   const filtering =
-    view.status === "archived" ||
+    (!projectMode && view.status === "archived") ||
     view.lastActivity !== "all" ||
     (view.project !== "" && view.project !== "all");
 
