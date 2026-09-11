@@ -65,6 +65,7 @@ from .memory_index import SessionMemoryIndex
 from .placement import (
     is_deleted,
     iter_session_dirs,
+    default_session_dir,
     nested_session_dir,
     record_delete_intent,
     resolve_existing_dir,
@@ -287,6 +288,7 @@ class SessionStore:
         cache_cap: Optional[int] = None,
     ) -> None:
         self.root_path = Path(root_path).expanduser() if root_path else _default_root()
+        self._explicit_root = root_path is not None
         self.root_path.mkdir(parents=True, exist_ok=True)
         # Cache: session_id → (GitSession, SessionMemoryIndex). Lazy,
         # LRU-ordered (OrderedDict: insertion/access order = recency), and
@@ -369,7 +371,10 @@ class SessionStore:
         journal = load_journal(root)
         for sid in session_ids or []:
             with self._session_lock(sid):
-                with session_interprocess_lock(sid, timeout=15.0):
+                with session_interprocess_lock(
+                    sid, timeout=15.0,
+                    root=self.root_path if self._explicit_root else None,
+                ):
                     with self._lock:
                         self._sessions.pop(sid, None)
                     if project_id:
@@ -681,6 +686,11 @@ class SessionStore:
             for key, value in locations.items():
                 self._locations[key] = value
             loc_map = dict(self._locations)
+        if self._explicit_root:
+            recorded = loc_map.get(session_id)
+            if recorded:
+                return Path(recorded)
+            return default_session_dir(self.root_path, session_id)
         proj = None
         lookup_failed = False
         try:
@@ -741,7 +751,7 @@ class SessionStore:
                 return None
             verified_git: GitSession | None = None
             sdir = self._session_dir(session_id)
-            if create_if_missing and not sdir.exists():
+            if create_if_missing and not sdir.exists() and not self._explicit_root:
                 try:
                     from openprogram.store.project import project_store as _projects
                     from openprogram.store.project.location import bound_execution_state
@@ -855,7 +865,9 @@ class SessionStore:
     def _head_file_lock(self, git: GitSession):
         """Serialize durable writers by session id, then re-read placement."""
         session_id = git.path.name
-        with session_interprocess_lock(session_id):
+        with session_interprocess_lock(
+            session_id, root=self.root_path if self._explicit_root else None,
+        ):
             if is_deleted(self.root_path, session_id):
                 raise RuntimeError(f"session deleted: {session_id}")
             current = self._session_dir(session_id)
@@ -940,30 +952,35 @@ class SessionStore:
 
         # Bound conversations live under the state root, grouped by
         # project id. Working folders are never the conversation store.
-        try:
-            from openprogram.store.project import project_store as _projects
-            if project_path:
-                proj = _projects.resolve_project(project_path)
-            elif project_id and project_id != _projects.DEFAULT_PROJECT_ID:
-                proj = _projects.get_project(project_id)
-                if proj is None:
-                    raise ValueError(f"unknown project: {project_id}")
-            else:
-                proj = _projects.get_default_project()
-            # Isolated callers may intentionally disable the registry's
-            # default project; those sessions retain the historical default
-            # placement. Explicit bound project resolution failures still
-            # propagate below and never fall back silently.
-            if proj is None and not project_path and not project_id:
-                project_id = _projects_default_id_safe()
-            else:
-                project_id = proj.id
-            if proj is not None and (not proj.is_default) and proj.path:
-                repo_dir = nested_session_dir(self.root_path, proj.id, session_id)
-                self._record_location(session_id, repo_dir)
-        except Exception as e:  # noqa: BLE001 — placement is authoritative
-            _log.error("project resolution failed for %s: %s", session_id, e)
-            raise
+        # An explicitly supplied root is a standalone embedding boundary;
+        # with no project hint it must not consult process-wide state.
+        if self._explicit_root and not project_path and not project_id:
+            project_id = None
+        else:
+            try:
+                from openprogram.store.project import project_store as _projects
+                if project_path:
+                    proj = _projects.resolve_project(project_path)
+                elif project_id and project_id != _projects.DEFAULT_PROJECT_ID:
+                    proj = _projects.get_project(project_id)
+                    if proj is None:
+                        raise ValueError(f"unknown project: {project_id}")
+                else:
+                    proj = _projects.get_default_project()
+                # Isolated callers may intentionally disable the registry's
+                # default project; those sessions retain the historical default
+                # placement. Explicit bound project resolution failures still
+                # propagate below and never fall back silently.
+                if proj is None and not project_path and not project_id:
+                    project_id = _projects_default_id_safe()
+                else:
+                    project_id = proj.id
+                if proj is not None and (not proj.is_default) and proj.path:
+                    repo_dir = nested_session_dir(self.root_path, proj.id, session_id)
+                    self._record_location(session_id, repo_dir)
+            except Exception as e:  # noqa: BLE001 — placement is authoritative
+                _log.error("project resolution failed for %s: %s", session_id, e)
+                raise
 
         pair = self._open(session_id, create_if_missing=True)
         if pair is None:
@@ -1129,7 +1146,9 @@ class SessionStore:
 
     def delete_session(self, session_id: str) -> None:
         with self._session_lock(session_id):
-            with session_interprocess_lock(session_id):
+            with session_interprocess_lock(
+                session_id, root=self.root_path if self._explicit_root else None,
+            ):
                 self._delete_session_locked(session_id)
 
     def _delete_session_locked(self, session_id: str) -> None:

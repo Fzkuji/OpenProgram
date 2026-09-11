@@ -19,16 +19,17 @@ from openprogram import _compat as fcntl
 _held_session_locks = threading.local()
 
 
-def _lock_dir() -> Path:
+def _lock_dir(root: str | Path | None = None) -> Path:
     from openprogram.paths import get_state_dir
-    path = Path(get_state_dir()) / "sessions" / ".locks"
+    base = Path(root) if root is not None else Path(get_state_dir()) / "sessions"
+    path = base / ".locks"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def session_lock_path(session_id: str) -> Path:
+def session_lock_path(session_id: str, root: str | Path | None = None) -> Path:
     safe = session_id.replace("/", "_").replace("\\", "_").replace("..", "_")
-    return _lock_dir() / f"{safe}.lock"
+    return _lock_dir(root) / f"{safe}.lock"
 
 
 @contextmanager
@@ -38,6 +39,7 @@ def session_interprocess_lock(
     timeout: float | None = None,
     blocking: bool = True,
     reentrant: bool = False,
+    root: str | Path | None = None,
 ) -> Iterator[None]:
     """Exclusive flock for one session id.
 
@@ -47,7 +49,7 @@ def session_interprocess_lock(
     """
     if not session_id or session_id in {".", ".."}:
         raise ValueError("session_id is required")
-    path = session_lock_path(session_id)
+    path = session_lock_path(session_id, root)
     held = getattr(_held_session_locks, "keys", set())
     held_key = (os.getpid(), str(path.resolve()))
     if reentrant and held_key in held:
