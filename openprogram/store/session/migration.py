@@ -170,7 +170,12 @@ def _fsync_tree(path: Path) -> None:
     are handled separately because Windows does not expose directory file
     descriptors.
     """
-    for current, _dirs, files in os.walk(path, followlinks=False):
+    directories: list[Path] = []
+    for current, dirs, files in os.walk(path, topdown=False, followlinks=False):
+        directories.extend(
+            Path(current) / name for name in dirs
+            if not (Path(current) / name).is_symlink()
+        )
         for name in files:
             file_path = Path(current) / name
             if file_path.is_symlink():
@@ -184,11 +189,13 @@ def _fsync_tree(path: Path) -> None:
                 os.close(fd)
     if os.name == "nt":
         return
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    directories.append(path)
+    for directory in directories:
+        fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 def _fsync_dir(path: Path) -> None:

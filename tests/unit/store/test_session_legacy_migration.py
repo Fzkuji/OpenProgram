@@ -177,9 +177,45 @@ def test_migration_flushes_nested_files_without_following_symlinks(
     assert migrate_session(store, collect_legacy_candidates(store)[0]) == "done"
     staged = str(staging_dir(store.root_path, sid))
     assert any(path.endswith("/session/history/0001-u-u1.json") for path in flushed_paths)
+    assert any(path.endswith("/session/history") for path in flushed_paths)
+    assert any(path.endswith("/session/file_backups/old") for path in flushed_paths)
+    assert any(path.endswith("/session/file_backups") for path in flushed_paths)
+    assert any(path.endswith(f"/{sid}.recovery/turn1") for path in flushed_paths)
     assert not any(path.endswith("/session/history/outside-link") for path in flushed_paths)
     assert staged not in flushed_paths
     assert outside.read_text(encoding="utf-8") == "do not open"
+
+
+def test_migration_keeps_source_when_nested_directory_fsync_fails(tmp_path, monkeypatch):
+    store = _isolate(tmp_path, monkeypatch)
+    project, sid, source, _recovery = _legacy_session(tmp_path, store)
+    real_open = os.open
+    real_close = os.close
+    real_fsync = os.fsync
+    staged_fds = {}
+
+    def track_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if str(staging_dir(store.root_path, sid)) in str(path):
+            staged_fds[fd] = str(path)
+        return fd
+
+    def fail_nested_directory_fsync(fd):
+        if staged_fds.get(fd, "").endswith("/session/history"):
+            raise OSError("injected nested directory fsync failure")
+        return real_fsync(fd)
+
+    def forget_closed_fd(fd):
+        staged_fds.pop(fd, None)
+        return real_close(fd)
+
+    monkeypatch.setattr(migration.os, "open", track_open)
+    monkeypatch.setattr(migration.os, "close", forget_closed_fd)
+    monkeypatch.setattr(migration.os, "fsync", fail_nested_directory_fsync)
+
+    assert migrate_session(store, collect_legacy_candidates(store)[0]) == "failed"
+    assert source.exists()
+    assert not nested_session_dir(store.root_path, project.id, sid).exists()
 
 
 def test_unavailable_source_stays_pending_not_empty(tmp_path, monkeypatch):
