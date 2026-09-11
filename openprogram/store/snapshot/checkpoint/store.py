@@ -1242,11 +1242,26 @@ class CheckpointStore:
         ).hexdigest()
 
     def _execute_history_intent(
-        self, intent: dict, intent_path: Path, backup_dir: Path,
+        self, intent: dict, intent_path: Path, backup_dir: Path, *, preflight=None,
     ) -> dict:
         """Apply a prepared file intent using the shared guarded transaction."""
         paths = [action["path"] for action in intent.get("actions", [])]
         with self._workspace_lock(paths):
+            if preflight is not None:
+                current_plan = preflight()
+                if current_plan.get("status") != "ready":
+                    intent.update({
+                        "status": "aborted",
+                        "conflicts": current_plan.get("conflicts", []),
+                        "unavailable": current_plan.get("unavailable", []),
+                        "error": current_plan.get("error"),
+                    })
+                    manifest.save(intent_path, intent)
+                    return self._intent_result(intent)
+                if self._plan_hash(current_plan["actions"]) != intent.get("plan_hash"):
+                    intent.update({"status": "aborted", "error": "stale_plan"})
+                    manifest.save(intent_path, intent)
+                    return self._intent_result(intent)
             conflicts = []
             unavailable = []
             for action in intent["actions"]:
@@ -1603,7 +1618,10 @@ class CheckpointStore:
             intent.update({"status": "aborted", "error": "stale_plan"})
             manifest.save(intent_path, intent)
             return self._intent_result(intent)
-        return self._execute_history_intent(intent, intent_path, backup_dir)
+        return self._execute_history_intent(
+            intent, intent_path, backup_dir,
+            preflight=lambda: self.plan_history_operation(turn_id, direction),
+        )
 
     def apply_rewind_operation(
         self,
