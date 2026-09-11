@@ -20,9 +20,11 @@
  * session store's currentSessionId / titles into this store.
  */
 import { create } from "zustand";
+import { topLevelTabs } from "./web-page-management";
 import { sessionHistory, withSessionHistory, type SessionTabHistory } from "./session-tab-history";
 import {
   MAX_CENTER_TAB_GROUP_MEMBERS,
+  normalizeCenterTabLayout,
   findCenterTabGroup,
   focusCenterTabGroupMember,
   groupCenterTabs,
@@ -1039,18 +1041,24 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
             if (entry.sessionId) closedSessionAckTombstones.add(entry.sessionId);
         }
         let tabs = s.tabs.filter((t) => t.id !== id);
+        const groups = normalizeCenterTabLayout({
+          tabIds: tabs.map((tab) => tab.id), groups: s.groups,
+        }).groups;
+        const visibleTabs = topLevelTabs(tabs, groups);
         let activeId = s.activeId;
-        if (s.activeId === id) {
-          activeId = (tabs[idx] ?? tabs[idx - 1])?.id ?? null;
+        if (!visibleTabs.some((tab) => tab.id === activeId)) {
+          const visibleIndex = topLevelTabs(s.tabs, s.groups).findIndex((tab) => tab.id === id);
+          activeId = (visibleTabs[Math.max(0, visibleIndex)] ?? visibleTabs.at(-1))?.id ?? null;
         }
-        if (tabs.length === 0) {
-          // Keep the window usable after its final tab closes.
+        if (visibleTabs.length === 0) {
+          // Session-owned pages remain available in Resources, but must not
+          // replace the launcher when the last visible tab closes.
           const ntp: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
-          tabs = [ntp];
+          tabs = [...tabs, ntp];
           activeId = ntp.id;
         }
         const splitWebTabId = s.splitWebTabId === id ? null : s.splitWebTabId;
-        return commitCenterTabsState(s, { tabs, activeId, splitWebTabId });
+        return commitCenterTabsState(s, { tabs, groups, activeId, splitWebTabId });
       }),
 
     renameSessionTab: (sessionId, title) =>

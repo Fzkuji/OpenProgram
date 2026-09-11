@@ -2177,7 +2177,7 @@ assert.match(
 assert.match(
   appShellSource,
   // No isDesktop gate: split is purely a measured-width decision now.
-  /const panes = activeGroup && splitAvailable \? compoundPanes : focusedPanes;/,
+  /const panes = topLevelTabs\(tabs, groups\)\.length === 0\s*\? \[\]\s*: activeGroup && splitAvailable \? compoundPanes : focusedPanes;/,
 );
 assert.match(
   appShellSource,

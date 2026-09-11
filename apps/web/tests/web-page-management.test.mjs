@@ -99,3 +99,37 @@ test("manually reopening a managed URL pins it without changing its owner", () =
   assert.equal(useCenterTabs.getState().tabs[0].webPinned, true);
   assert.equal(useCenterTabs.getState().tabs[0].agentSessionId, "owner");
 });
+
+test("closing the final visible tab keeps owned pages hidden and opens New tab", () => {
+  useCenterTabs.setState({ tabs: [], groups: [], activeId: null, splitWebTabId: null });
+  const store = useCenterTabs.getState();
+  const pageId = store.ensureWebTab("https://retained.test/");
+  store.markAgentWebTab(pageId, "owner");
+  store.openSessionTab("owner", "Chat");
+  const page = useCenterTabs.getState().tabs.find(t => t.id === pageId);
+  store.closeTab(useCenterTabs.getState().activeId);
+  const state = useCenterTabs.getState();
+  assert.equal(state.tabs.find(t => t.id === state.activeId)?.kind, "ntp");
+  assert.deepEqual(topLevelTabs(state.tabs, state.groups).map(t => t.kind), ["ntp"]);
+  assert.deepEqual(state.tabs.find(t => t.id === pageId), page);
+});
+
+test("close selects the next visible neighbor rather than an owned hidden page", () => {
+  const tabs = [{id:"s:a",kind:"session",sessionId:"a",title:"A"},
+    {id:"w:hidden",kind:"web",url:"https://hidden.test",title:"Hidden",agentOpened:true,agentSessionId:"a"},
+    {id:"s:b",kind:"session",sessionId:"b",title:"B"}];
+  useCenterTabs.setState({ tabs, groups: [], activeId: "s:a", splitWebTabId: null });
+  useCenterTabs.getState().closeTab("s:a");
+  assert.equal(useCenterTabs.getState().activeId, "s:b");
+});
+
+test("closing a session in a split does not activate its now hidden owned page", () => {
+  const tabs = [{id:"s:a",kind:"session",sessionId:"a",title:"A"},
+    {id:"w:hidden",kind:"web",url:"https://hidden.test",title:"Hidden",agentOpened:true,agentSessionId:"a"}];
+  useCenterTabs.setState({ tabs, groups: [{id:"g",memberIds:tabs.map(t=>t.id),visibleIds:tabs.map(t=>t.id),focusedId:"s:a"}], activeId:"s:a", splitWebTabId:null });
+  useCenterTabs.getState().closeTab("s:a");
+  const state = useCenterTabs.getState();
+  assert.equal(state.tabs.find(t => t.id === state.activeId)?.kind, "ntp");
+  assert.deepEqual(state.groups, []);
+  assert.ok(state.tabs.some(t=>t.id==="w:hidden"));
+});
