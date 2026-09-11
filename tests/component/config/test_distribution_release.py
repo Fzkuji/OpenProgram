@@ -3047,7 +3047,8 @@ def test_source_development_installer_adds_to_complete_product() -> None:
     assert '"$PY" -m playwright install chromium' in installer
     assert '"$PY" -m openprogram programs install all' in installer
     assert 'bash "$gui_installer" --no-host --python "$PY"' in installer
-    assert 'PIP install -e "$applications/research_harness[pdf]"' in installer
+    assert 'get_program("research").clone_dir()' in installer
+    assert 'PIP install -e "$research_source[pdf]"' in installer
     assert "prompt_programs_menu" not in installer
     assert "--minimal was removed" in installer
     assert "WITH_STEALTH" in installer
