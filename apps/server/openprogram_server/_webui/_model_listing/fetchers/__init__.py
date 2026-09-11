@@ -301,7 +301,7 @@ def fetch_models_remote(provider_id: str, timeout: float = 15.0) -> dict[str, An
             before_models = list(pcfg.get("models") or [])
             from openprogram.providers.subscription_catalog import SUBSCRIPTION_PROVIDERS
 
-            auto_catalog = provider_id in SUBSCRIPTION_PROVIDERS and not error
+            auto_catalog = provider_id in SUBSCRIPTION_PROVIDERS and bool(by_id) and not error
             disabled = set(pcfg.get("disabled_models") or [])
             existing_rows = {
                 row.get("id"): row

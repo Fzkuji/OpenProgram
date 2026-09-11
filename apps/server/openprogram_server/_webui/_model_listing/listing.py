@@ -134,8 +134,10 @@ def _browse_models_with_error(
         # No key or official API failed → last successful subscription
         # catalogue, then models.dev. This keeps newly discovered subscription
         # models visible across restarts and temporary auth/network failures.
-        from openprogram.providers.subscription_catalog import load_catalog
+        from openprogram.providers.subscription_catalog import SUBSCRIPTION_PROVIDERS, load_catalog
 
+        if provider_id in SUBSCRIPTION_PROVIDERS and not error:
+            error = "No current subscription catalogue is available"
         cached, _ = load_catalog(provider_id)
         rows = cached or [{**row, "id": mid} for mid, row in md.items()]
 

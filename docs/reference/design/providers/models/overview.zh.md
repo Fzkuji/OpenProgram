@@ -100,7 +100,7 @@ list_available_models(provider_id)
 
 无论哪种源，`fetch_and_normalize` 是**唯一的归一化收口**：它把 fetcher 千差万别的 key（`context_length`/`context_window`/`contextWindow` 等）统一成一份 entry dict，再叠 models.dev 补全。下游只看归一化后的统一行，看不到源的差异。
 
-普通 provider 的结果只进短 TTL 内存缓存。账户级订阅目录还会在 profile 状态目录保存一份原子写入的 last-known-good 缓存。联网失败时可以把上次成功结果标为 stale 后展示，但不会把它当成一次成功的权威刷新。
+普通 provider 的结果只进短 TTL 内存缓存。账户级订阅目录还会在 profile 状态目录保存一份原子写入的 last-known-good 缓存。联网失败时可以把上次成功结果标为 stale 后展示，但不会把它当成一次成功的权威刷新。返回空列表或供应商尚未配置凭据时，保留已有模型选择；只有当前官方接口返回非空目录时才移除目录中不再存在的订阅模型。
 
 ### 4.2 启用（复制规格进 config）
 

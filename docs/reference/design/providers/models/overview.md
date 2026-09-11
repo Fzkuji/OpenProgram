@@ -117,6 +117,8 @@ Ordinary provider results use the short in-memory browse cache. Account-scoped
 subscription catalogues also keep an atomic last-known-good copy under the
 profile state directory. A failed request can therefore show the last good
 rows as stale data without treating them as a successful authoritative refresh.
+An empty result or an unconfigured provider preserves saved model selections;
+only a non-empty current official catalogue can retire subscription models.
 
 ### 4.2 Enable (copy the spec into config)
 

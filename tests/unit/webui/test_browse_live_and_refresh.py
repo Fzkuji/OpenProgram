@@ -375,3 +375,21 @@ def test_subscription_refresh_broadcasts_only_when_catalogue_changes(
         "type": "provider_models_changed",
         "data": {"provider": "xai-subscription"},
     }]
+
+
+def test_empty_subscription_refresh_preserves_saved_models(monkeypatch, mem_cfg):
+    saved = {"enabled": True, "models": [{"id": "grok-old", "name": "Old"}]}
+    mem_cfg["xai-subscription"] = copy.deepcopy(saved)
+    monkeypatch.setattr(listing, "_browse_models_with_error", lambda *a, **k: ([], None))
+    F.fetch_models_remote("xai-subscription")
+    assert mem_cfg["xai-subscription"] == saved
+
+
+def test_unconfigured_subscription_fallback_does_not_retire_models(monkeypatch, mem_cfg):
+    saved = {"enabled": True, "models": [{"id": "grok-old", "name": "Old"}]}
+    mem_cfg["xai-subscription"] = copy.deepcopy(saved)
+    monkeypatch.setattr(cat, "is_configured", lambda pid: False)
+    monkeypatch.setattr(pm, "_models_dev_for", lambda pid: {"fallback": {"name": "Fallback"}})
+    monkeypatch.setattr("openprogram.providers.subscription_catalog.load_catalog", lambda pid: ([], None))
+    F.fetch_models_remote("xai-subscription")
+    assert mem_cfg["xai-subscription"] == saved
