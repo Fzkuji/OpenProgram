@@ -60,11 +60,15 @@ def test_upgrade_rejects_schema_changes_and_storage_conflicts(tmp_path, monkeypa
         assert client.post('/api/applications/test.versioned/open', json={}).status_code == 404
 
         assert client.delete('/api/applications/test.versioned').status_code == 200
-        assert client.post('/api/applications/install', json={'path': str(source)}).status_code == 400
+        rejected = client.post('/api/applications/install', json={'path': str(source), 'replace': True})
+        assert rejected.status_code == 400
+        assert 'migration' in rejected.json()['error']
         definition['dataSchema'] = 1
         definition['scope'] = 'project'
         (source / 'application.json').write_text(json.dumps(definition))
-        assert client.post('/api/applications/install', json={'path': str(source)}).status_code == 400
+        rejected = client.post('/api/applications/install', json={'path': str(source), 'replace': True})
+        assert rejected.status_code == 400
+        assert 'migration' in rejected.json()['error']
         definition['scope'] = 'global'
         (source / 'application.json').write_text(json.dumps(definition))
         assert client.post('/api/applications/install', json={'path': str(source), 'replace': True}).status_code == 200
