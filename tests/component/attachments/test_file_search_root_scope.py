@@ -106,6 +106,16 @@ def test_attachment_routes_keep_allowed_missing_file_404(client, project):
     assert client.get("/api/file-read", params={"path": str(missing)}).status_code == 404
 
 
+def test_existing_legacy_path_falls_back_without_canonical(project, monkeypatch):
+    legacy = project / ".openprogram" / "sessions" / "s1" / "workdir" / "attachments" / "old.txt"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("source", encoding="utf-8")
+    monkeypatch.setattr(attachments, "_session_repo_candidates", lambda _sid: [])
+    assert attachments.resolve_session_attachment(
+        legacy, "s1", [project], allow_missing=False,
+    ) == legacy.resolve()
+
+
 def test_raw_refuses_a_symlink_pointing_out_of_the_root(client, project, tmp_path):
     secret = tmp_path / "id_rsa"
     secret.write_text("PRIVATE KEY")
@@ -180,6 +190,11 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     assert current_attachment.read_bytes() == b"legacy"
     assert str(old_attachment) in (dest / "history" / "0001-u-u1.json").read_text()
 
+    # A stale source copy may still exist after migration. The public route
+    # must prefer the canonical session attachment rather than serving it.
+    old_attachment.parent.mkdir(parents=True, exist_ok=True)
+    old_attachment.write_bytes(b"stale-source")
+
     app = FastAPI()
     from openprogram.webui.routes import file_search
     file_search.register(app)
@@ -222,6 +237,11 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
         "path": str(old_attachment), "session_id": "other",
     })
     assert wrong_session.status_code == 403
+    wrong_session_traversal = client.get("/api/file-raw", params={
+        "path": str(old_attachment.parent / ".." / "attachments" / "report.pdf"),
+        "session_id": "other",
+    })
+    assert wrong_session_traversal.status_code == 403
 
     outside = tmp_path / "outside.pdf"
     outside.write_bytes(b"private")
