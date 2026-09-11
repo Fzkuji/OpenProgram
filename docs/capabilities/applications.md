@@ -1,5 +1,9 @@
 # Open applications from the new tab page
 
+Open **Applications** in the sidebar to install software from a local directory, inspect its source and version, open it, enable or disable it, hide its launcher button, update from its source, or uninstall it while retaining data. The install form requires explicit trust for Python backends. Update fills the install form; review the source before submitting. Tools, Workflows and harness packages remain in **Abilities**.
+
+The top-level `openprogram apps` commands manage software; existing `openprogram programs apps` commands remain compatible. Software registrations live in `~/.openprogram/applications/catalog.json`, separate from Program sources. Existing registrations migrate on first access, retaining versions, disabled/hidden settings, uninstall records and instance data. A conflicting registration stops migration rather than overwriting either copy.
+
 An installed application appears beside Files, New chat, Browser and Terminal.
 Click its name to open its own interface in a tab. Opening it again selects the
 same instance. Closing the tab does not cancel its operations.
@@ -17,15 +21,15 @@ application version's UI directory; it is not an owner credential.
 With the local OpenProgram worker running:
 
 ```bash
-openprogram programs apps install /absolute/path/to/application
-openprogram programs apps list
+openprogram apps install /absolute/path/to/application
+openprogram apps list
 ```
 
 Python backends execute trusted local code with your operating-system account.
 Review their source and dependencies, then pass `--trust` to authorize them:
 
 ```bash
-openprogram programs apps install /absolute/path/to/application --trust
+openprogram apps install /absolute/path/to/application --trust
 ```
 
 The new tab page refreshes its application list when focused and every ten
@@ -135,7 +139,7 @@ reviewing the interruption. A schema or scope change is rejected before
 activation; automatic data migrations are not supported in this version.
 
 ```bash
-openprogram programs apps uninstall local.notes
+openprogram apps uninstall local.notes
 ```
 
 Uninstall removes the menu entry and cancels active operations, retaining saved

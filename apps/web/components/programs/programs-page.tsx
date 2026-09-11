@@ -73,7 +73,7 @@ function catalogLabel(
 ) {
   if (entry.path === "tools") return text("Tools", "工具");
   if (entry.path === "workflow") return text("Workflow", "工作流");
-  if (entry.path === "applications") return text("Applications", "应用");
+  if (entry.path === "packages") return text("Packages", "程序包");
   return entry.name;
 }
 
@@ -90,7 +90,7 @@ function kindLabel(
   if (isUserManualWorkflowEntry(entry)) return text("Auto entry · user only", "自动入口 · 仅用户手动");
   if (isWorkflowCapability(entry)) return text("Workflow capability", "Workflow 管理能力");
   if (kind === "workflow") return text("Workflow", "工作流");
-  if (kind === "application") return text("Application", "应用");
+  if (entry?.entity_kind === "package") return text("Package", "程序包");
   if (kind === "agentic_function") return text("Workflow", "工作流");
   if (kind === "runtime_primitive") return text("Agentic Programming primitive", "Agentic Programming 原语");
   if (kind === "vanilla_function") return text("Tool", "工具");
@@ -104,7 +104,7 @@ function usesWorkflowIcon(entry: ProgramSourceEntry) {
 
 function EntryIcon({ entry, expanded }: { entry: ExplorerEntry; expanded: boolean }) {
   if (usesWorkflowIcon(entry)) return <Workflow size={15} className={fileStyles.treeIcon} />;
-  if (entry.program_kind === "application") return <Boxes size={15} className={fileStyles.treeIcon} />;
+  if (entry.entity_kind === "package") return <Boxes size={15} className={fileStyles.treeIcon} />;
   if (entry.program_kind?.endsWith("function")) return <Wrench size={15} className={fileStyles.treeIcon} />;
   if (entry.kind === "folder") {
     return expanded
@@ -447,7 +447,7 @@ export function ProgramsPage({
           </aside>
           <section className={styles.logicPane}>
             {error ? <div className={styles.empty} role="alert"><span className={styles.error}>{error}</span></div> : !selected ? (
-              <div className={styles.empty}><Network size={32} /><strong>{text("No Programs found", "没有找到 Program")}</strong><span>{text("Add a Tool, Workflow, or Application under openprogram/programs.", "请在 openprogram/programs 下添加 Tool、Workflow 或 Application。")}</span></div>
+              <div className={styles.empty}><Network size={32} /><strong>{text("No Programs found", "没有找到 Program")}</strong><span>{text("Install a Program package or add a Tool or Workflow.", "安装程序包，或添加 Tool、Workflow。")}</span></div>
             ) : loadingLogic ? (
               <div className={styles.empty}><RefreshCw className={styles.spin} size={25} /><span>{text("Loading call logic…", "正在加载调用逻辑…")}</span></div>
             ) : !logic || !selectedNode ? (
@@ -455,8 +455,13 @@ export function ProgramsPage({
             ) : (
               <div className={styles.logicContent}>
                 <div className={styles.breadcrumb}>{ROOT_LABEL}/{selectedNode.path}</div>
+                {selectedNode.entity_kind === "package" && <div>
+                  <p>{text("Source", "来源")}: {selectedNode.source_path}</p>
+                  <p>{text("Manage this package from the CLI environment that owns its dependencies. Packaged Desktop dependencies are read-only.", "在拥有此程序包依赖的 CLI 环境中管理。打包桌面版的依赖环境只读。")}</p>
+                  <pre>{selectedNode.management_commands?.join("\n")}</pre>
+                </div>}
                 <div className={styles.entityHeader}>
-                  <span className={styles.entityIcon}>{usesWorkflowIcon(selectedEntry || selectedNode) ? <Workflow size={20} /> : selectedNode.program_kind === "application" ? <Boxes size={20} /> : invocationName ? <Wrench size={20} /> : <FileCode size={20} />}</span>
+                  <span className={styles.entityIcon}>{usesWorkflowIcon(selectedEntry || selectedNode) ? <Workflow size={20} /> : selectedNode.entity_kind === "package" ? <Boxes size={20} /> : invocationName ? <Wrench size={20} /> : <FileCode size={20} />}</span>
                   <div><h2>{selectedNode.name}</h2><p>{kindLabel(selectedNode.program_kind, text, selectedEntry || selectedNode)}</p></div>
                   {invocationName ? (
                     <div className={styles.entityActions}>
@@ -489,7 +494,7 @@ export function ProgramsPage({
                         {ancestorContinuations.map((continues, index) => <i key={index} className={continues ? styles.callGuideActive : ""} />)}
                         <i className={isLast ? styles.callGuideLast : styles.callGuideBranch} />
                       </span> : null}
-                      <span className={styles.callIcon}>{expandable ? (isExpanded ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />) : usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{conditional ? text("conditional", "条件调用") : cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
+                      <span className={styles.callIcon}>{expandable ? (isExpanded ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />) : usesWorkflowIcon(node) ? <Workflow size={15} /> : node.entity_kind === "package" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span><span className={styles.callLabel}><strong>{node.name}</strong><small>{node.path}</small></span><em>{conditional ? text("conditional", "条件调用") : cycle ? "cycle" : reference ? "reference" : depth === 0 ? "root" : depth === 1 ? "direct" : "transitive"}</em>
                     </Row>;})}
                     {callTree.truncated ? <div className={styles.noCalls}>{text("Additional references are hidden.", "其余引用已隐藏。")}</div> : null}
                     {logic.nodes.length === 1 && logic.analysis_complete !== false ? <div className={styles.noCalls}>{text("This Program has no detected Program or Agentic Programming calls.", "未检测到这个 Program 对其他 Program 或 Agentic Programming 原语的调用。")}</div> : null}
@@ -514,7 +519,7 @@ export function ProgramsPage({
                         })}
                       </svg>
                       {graphLayout.nodes.map((node) => <div key={node.id} className={`${styles.graphNode} ${node.id === logic.root ? styles.graphRoot : ""}`} style={{ left: node.x, top: node.y }} data-graph-node={node.id}>
-                        <span className={styles.graphNodeIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.program_kind === "application" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span>
+                        <span className={styles.graphNodeIcon}>{usesWorkflowIcon(node) ? <Workflow size={15} /> : node.entity_kind === "package" ? <Boxes size={15} /> : node.program_kind ? <Wrench size={15} /> : <FileCode size={15} />}</span>
                         <span><strong>{node.name}</strong><small>{node.path}</small></span>
                       </div>)}
                     </div> : null}

@@ -1,6 +1,6 @@
 """Background watcher — auto-detect agentic programs installed at runtime.
 
-Polls ``programs/applications/`` for changes (a harness cloned in, or
+Polls ``programs/packages/ (including registered legacy applications/)`` for changes (a harness cloned in, or
 ``openprogram programs install``) and, when the directory's fingerprint
 shifts, re-runs discovery via ``_registry.rescan`` and broadcasts
 ``programs:changed`` so connected UIs refresh their function list — no
@@ -63,6 +63,21 @@ def _emit_changed(added: list[str]) -> None:
     emit_ws_frame({"type": "programs:changed", "added": added})
 
 
+def _catalog_fingerprint(base: str) -> tuple:
+    from openprogram.programs._programs import owner_controlled_program_sources
+    from openprogram.protected_paths import program_sources_path
+    roots = {base}
+    if os.path.basename(base) == "packages":
+        roots.add(os.path.join(os.path.dirname(base), "applications"))
+    roots.update(os.path.dirname(row["path"]) for row in owner_controlled_program_sources(base))
+    try:
+        stat = os.stat(program_sources_path())
+        source_stamp = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        source_stamp = None
+    return (source_stamp, tuple((root, _fingerprint(root)) for root in sorted(roots)))
+
+
 def start_in_worker(
     *, poll_interval: float = DEFAULT_POLL_INTERVAL
 ) -> "threading.Thread | None":
@@ -85,11 +100,11 @@ def start_in_worker(
         return None
 
     def _loop() -> None:
-        prev = _fingerprint(applications)
+        prev = _catalog_fingerprint(applications)
         while True:
             time.sleep(poll_interval)
             try:
-                cur = _fingerprint(applications)
+                cur = _catalog_fingerprint(applications)
                 if cur == prev:
                     continue
                 prev = cur

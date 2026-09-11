@@ -13,7 +13,7 @@ import tempfile
 import sys
 
 from openprogram.paths import get_state_dir
-from openprogram.programs import _programs
+from . import catalog_store
 
 ID = re.compile(r"[a-z][a-z0-9._-]{0,95}\Z")
 CAPABILITIES = {"model.invoke", "storage.app", "files.project.read"}
@@ -86,7 +86,7 @@ def manifest(root: Path) -> dict:
 
 
 def installed() -> list[dict]:
-    return [dict(r["application"]) for r in _programs._read_program_sources()
+    return [dict(r["application"]) for r in catalog_store.read()
             if r.get("kind") == "application" and not r.get("uninstalled") and isinstance(r.get("application"), dict)]
 
 
@@ -205,9 +205,9 @@ def install(path: str, *, replace: bool = False, trust: bool = False) -> dict:
                 raise ValueError("installed application content has changed")
             kept = [r for r in rows if not (r.get("kind") == "application" and r.get("application", {}).get("id") == definition["id"])]
             kept.append({"kind": "application", "path": str(target), "source": str(source), "application": result})
-            _programs._write_program_sources(kept)
+            catalog_store.write(kept)
 
-        _programs._update_program_sources(activate)
+        catalog_store.update(activate)
         return result
 
 
@@ -232,8 +232,8 @@ def remove(app_id: str) -> None:
                 # data. Reinstall is subject to the same migration check.
                 row["uninstalled"] = True
                 row["application"]["enabled"] = False
-        _programs._write_program_sources(rows)
-    _programs._update_program_sources(mutate)
+        catalog_store.write(rows)
+    catalog_store.update(mutate)
 
 
 def configure(app_id: str, **changes) -> dict:
@@ -253,6 +253,6 @@ def configure(app_id: str, **changes) -> dict:
                 result.update(row["application"])
         if not result:
             raise FileNotFoundError(app_id)
-        _programs._write_program_sources(rows)
-    _programs._update_program_sources(mutate)
+        catalog_store.write(rows)
+    catalog_store.update(mutate)
     return result

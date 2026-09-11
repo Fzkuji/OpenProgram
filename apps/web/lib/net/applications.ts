@@ -5,6 +5,9 @@ export interface ApplicationDefinition {
   title: string;
   display_title?: string;
   digest: string;
+  version: string;
+  source: string;
+  backend?: { kind: "python" };
   scope: "global" | "project";
   enabled: boolean;
   hidden?: boolean;

@@ -1,0 +1,15 @@
+.content { padding: 24px; overflow-y: auto; min-height: 0; }
+.content > p { color: var(--text-secondary); margin-bottom: 20px; }
+.install { display: grid; gap: 12px; max-width: 760px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.install > button { justify-self: start; }
+.directory { display: flex; gap: 8px; }
+.directory input { flex: 1; min-width: 0; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; color: var(--text-primary); }
+.install label, .actions label { display: flex; align-items: center; gap: 8px; }
+.list { margin-top: 24px; }
+.application { padding: 20px 0; border-bottom: 1px solid var(--border); }
+.application h2 { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+.application p { color: var(--text-secondary); margin-bottom: 8px; }
+.source { overflow-wrap: anywhere; font-size: 13px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.error { color: var(--text-error, #ef4444) !important; margin-top: 16px; }
+@media(max-width: 600px) { .content { padding: 16px; } .directory { flex-direction: column; } }

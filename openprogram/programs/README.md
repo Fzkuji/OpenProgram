@@ -46,6 +46,7 @@ relies on.
 - **`_applications/`** — Installed application packages, isolated views and business operations
 - **`agentic_functions/`** — Compatibility exports for harnesses from before the workflow move
 - **`applications/`** — Complete programs installed and loaded through their package entry points
+- **`packages/`** — Owner-installed Program packages; unregistered directories are not imported
 - **`tools/`** — Deterministic LLM-callable functions, grouped by source purpose
 - **`workflow/`** — All model-aware Programs and complete Workflows
 

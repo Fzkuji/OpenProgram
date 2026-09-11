@@ -131,7 +131,7 @@ def _cmd_list():
 
 def _print_programs_status() -> None:
     """Print the install status of every catalogued program, then any
-    third-party harnesses found in programs/applications/."""
+    third-party harnesses found in programs/packages/."""
     from openprogram.programs._programs import KNOWN_PROGRAMS
 
     print(f"\nPrograms ({len(KNOWN_PROGRAMS)}):\n")
@@ -156,8 +156,8 @@ def _print_programs_status() -> None:
 
 def _iter_third_party_harnesses():
     """Yield (dir_name, package_dir_or_None) for every non-first-party
-    harness directory (or dev symlink) under programs/applications/."""
-    from openprogram.programs._programs import KNOWN_PROGRAMS, applications_dir
+    harness directory (or dev symlink) under programs/packages/."""
+    from openprogram.programs._programs import KNOWN_PROGRAMS, applications_dir, owner_controlled_program_sources
     from openprogram.programs._registry import (
         _NOT_A_HARNESS, _find_python_package,
     )
@@ -165,11 +165,12 @@ def _iter_third_party_harnesses():
     base = applications_dir()
     if not base or not os.path.isdir(base):
         return
-    first_party = {p.repo_dir_name for p in KNOWN_PROGRAMS}
-    for name in sorted(os.listdir(base)):
+    first_party = {name for p in KNOWN_PROGRAMS for name in (p.repo_dir_name, p.package, p.install_dir)}
+    for row in sorted(owner_controlled_program_sources(base), key=lambda item: item["path"]):
+        name = os.path.basename(row["path"])
         if name.startswith(".") or name in _NOT_A_HARNESS or name in first_party:
             continue
-        path = os.path.join(base, name)
+        path = row["path"]
         target = os.path.realpath(path)
         if not os.path.isdir(target):
             continue
@@ -250,7 +251,7 @@ def _normalize_git_ref(ref: str) -> str:
 def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
     """Install ANY harness repo by URL — same flow as first-party programs.
 
-    Clone into ``programs/applications/<Repo-Name>/``, install the repo's
+    Clone into ``programs/packages/<Repo-Name>/``, install the repo's
     own declared deps (its pyproject/setup.py, else requirements.txt),
     then verify the harness contract (an importable package exposing
     ``<pkg>/agentics/__init__.py`` — see docs/installing-harnesses.md).
@@ -258,19 +259,22 @@ def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
     no catalogue edit is needed.
     """
     import subprocess
-    from openprogram.programs._programs import applications_dir, record_program_source
+    from openprogram.programs._programs import applications_dir, record_program_source, owner_controlled_program_sources
     from openprogram.programs._registry import _find_python_package
 
     base = applications_dir()
     if not base or not os.path.isdir(base):
-        print(f"Cannot locate programs/applications directory ({base!r}).")
+        print(f"Cannot locate programs/packages directory ({base!r}).")
         sys.exit(1)
 
     url = _normalize_git_ref(ref)
     repo_name = url.rstrip("/").split("/")[-1]
     if repo_name.endswith(".git"):
         repo_name = repo_name[:-4]
-    dest = os.path.join(base, repo_name)
+    matches = [row["path"] for row in owner_controlled_program_sources(base) if os.path.basename(row["path"]) == repo_name]
+    if len(matches) > 1:
+        raise ValueError("multiple installed locations for Program package")
+    dest = matches[0] if matches else os.path.join(base, repo_name)
 
     if os.path.islink(dest):
         pkg = _find_python_package(dest)
@@ -340,10 +344,10 @@ def _install_third_party(ref: str, *, upgrade: bool = False) -> None:
 
 
 def _cmd_install(name: str, *, upgrade: bool = False) -> None:
-    """Install one (or all) program(s) by cloning into programs/applications/.
+    """Install one (or all) program(s) by cloning into programs/packages/.
 
     Each program is ``git clone``-d into
-    ``openprogram/programs/applications/<Repo-Name>/`` as a real, editable
+    ``openprogram/programs/packages/<Repo-Name>/`` as a real, editable
     directory (no symlinks, no site-packages). Heavy programs (gui) also
     pull their native deps from the matching ``openprogram[<extra>]``
     group. The clone is git-ignored by the parent repo, so it stays an
@@ -361,7 +365,7 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
         sys.exit(1)
 
     import subprocess
-    from openprogram.programs._programs import applications_dir, record_program_source
+    from openprogram.programs._programs import applications_dir, record_program_source, owner_controlled_program_sources
 
     if _looks_like_git_ref(name):
         _install_third_party(name, upgrade=upgrade)
@@ -377,7 +381,7 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
 
     base = applications_dir()
     if not base or not os.path.isdir(base):
-        print(f"Cannot locate programs/applications directory ({base!r}).")
+        print(f"Cannot locate programs/packages directory ({base!r}).")
         sys.exit(1)
 
     for prog in progs:
@@ -386,7 +390,7 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
                   f"Skipping.")
             continue
 
-        dest = prog.clone_dir(base)
+        dest = prog.clone_dir()
         already = os.path.isdir(os.path.join(dest, ".git"))
 
         if already and not upgrade:
@@ -459,7 +463,7 @@ def _cmd_uninstall(name: str) -> None:
         sys.exit(1)
 
     import shutil
-    from openprogram.programs._programs import applications_dir, remove_program_source
+    from openprogram.programs._programs import applications_dir, remove_program_source, owner_controlled_program_sources
 
     progs = _resolve_programs(name)
     if not progs:
@@ -467,7 +471,10 @@ def _cmd_uninstall(name: str) -> None:
         third_party = dict(_iter_third_party_harnesses())
         if name in third_party:
             base = applications_dir()
-            dest = os.path.join(base, name)
+            matches = [row["path"] for row in owner_controlled_program_sources(base) if os.path.basename(row["path"]) == name]
+            if len(matches) != 1:
+                raise ValueError("ambiguous Program package location")
+            dest = matches[0]
             if os.path.islink(dest):
                 os.unlink(dest)
                 remove_program_source(dest)
@@ -485,14 +492,16 @@ def _cmd_uninstall(name: str) -> None:
               f"third-party harnesses by clone-dir name "
               f"(see `openprogram programs available`).")
         sys.exit(1)
-    base = applications_dir()
     for prog in progs:
-        dest = prog.clone_dir(base)
+        dest = prog.clone_dir()
         if not (dest and os.path.isdir(dest)):
             print(f"[skip] {prog.function}: not installed.")
             continue
         try:
-            shutil.rmtree(dest)
+            if os.path.islink(dest):
+                os.unlink(dest)
+            else:
+                shutil.rmtree(dest)
             remove_program_source(dest)
             print(f"[ok] {prog.function} removed ({dest}).")
         except OSError as e:
@@ -507,7 +516,7 @@ def _cmd_run(name, arg_list, provider=None, model=None):
         mod = resolve_function_module(name)
         loaded_func = getattr(mod, name)
     except (ImportError, AttributeError):
-        print(f"Error: function '{name}' not found in openprogram/programs/applications/")
+        print(f"Error: function '{name}' not found in openprogram/programs/packages/")
         sys.exit(1)
 
     unwrapped_func = loaded_func._fn if hasattr(loaded_func, "_fn") else loaded_func

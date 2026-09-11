@@ -152,6 +152,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       "/functions",
       "/agents",
       "/programs",
+      "/applications",
       "/skills",
       "/settings/providers",
       "/memory",
@@ -260,6 +261,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const items: Array<[string, string]> = [
       ["navAbility", "/programs"],
+      ["navApplications", "/applications"],
       ["navHistory", "/chats"],
       ["navScheduler", "/scheduler"],
     ];

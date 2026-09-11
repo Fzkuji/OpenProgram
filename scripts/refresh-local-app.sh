@@ -38,7 +38,11 @@ PYLOCK
 fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$repo_root/openprogram/programs/applications/gui_harness}"
+gui_harness_default="$repo_root/openprogram/programs/packages/gui_harness"
+if [[ ! -d "$gui_harness_default" ]]; then
+  gui_harness_default="$repo_root/openprogram/programs/applications/gui_harness"
+fi
+gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$gui_harness_default}"
 app_path="${OPENPROGRAM_APP_PATH:-/Applications/OpenProgram.app}"
 runtime_root="$app_path/Contents/Resources/runtime"
 manifest="$runtime_root/runtime-manifest.json"

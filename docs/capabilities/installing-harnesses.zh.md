@@ -1,5 +1,7 @@
 # Harness
 
+程序包显示在 **能力 → Programs → Packages**。Tools 和 Workflows 是可调用能力，软件 Applications 由独立页面管理。新克隆使用 `programs/packages/`；已经登记在 `programs/applications/` 的源码保留原位置和调用名，升级、卸载使用登记位置。分类改名不会重新下载或移动源码。
+
 **harness**（一个 *agentic program*）是一个自包含的、由 agentic
 function 组成的 git 仓库。每个受支持的 release 已经包含 GUI、Research、Wiki
 三项第一方 Program package 与受支持的 runtime 资产。GUI package 不包含
@@ -38,7 +40,7 @@ openprogram programs install <ref> --upgrade    # git pull + 重新解析依赖
 对于第三方 Program 或开发者 source overlay，该命令执行四个步骤：
 
 1. **浅克隆（shallow-clone）** 仓库到
-   `openprogram/programs/applications/<Repo-Name>/`——一个真实、可编辑的
+   `openprogram/programs/packages/<Repo-Name>/`——一个真实、可编辑的
    目录（不是 site-packages）。该克隆被 OpenProgram 加入 git-ignore，
    因此它始终是一份独立的检出（checkout），你可以 `git pull`
    或就地编辑。

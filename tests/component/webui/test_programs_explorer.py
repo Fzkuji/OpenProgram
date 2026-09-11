@@ -64,7 +64,7 @@ def test_programs_explorer_lists_program_catalog_lazily(tmp_path: Path, monkeypa
     assert [entry["path"] for entry in root["entries"]] == [
         "tools",
         "workflow",
-        "applications",
+        "packages",
     ]
     assert root["default_selection"] == "workflow/alpha"
 
@@ -132,8 +132,8 @@ def test_programs_explorer_lists_program_catalog_lazily(tmp_path: Path, monkeypa
         (entry["name"], entry["program_kind"], entry["callable_name"])
         for entry in applications["entries"]
     ] == [
-        ("gui_harness", "application", "gui_agent"),
-        ("research_app", "application", "research_app"),
+        ("gui_harness", None, "gui_agent"),
+        ("research_app", None, "research_app"),
     ]
 
 
@@ -449,3 +449,12 @@ def test_workflow_package_lists_supporting_source_files(
     logic = programs._program_logic("workflow/goal/command")
     assert logic["root"] == "workflow/goal/command"
     assert logic["nodes"][0]["program_kind"] is None
+
+
+def test_packages_replace_legacy_application_category(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    response = client.get('/api/programs/explorer')
+    assert response.status_code == 200
+    paths = [entry['path'] for entry in response.json()['entries']]
+    assert 'packages' in paths
+    assert 'applications' not in paths

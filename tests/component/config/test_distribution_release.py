@@ -3504,3 +3504,36 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
     assert manifest["files"][0]["sha256"] == (
         "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c"
     )
+
+
+@pytest.mark.parametrize("symlink", [False, True])
+def test_package_cli_preserves_legacy_location_for_upgrade_and_uninstall(tmp_path, monkeypatch, symlink):
+    import openprogram
+    import openprogram.paths as paths
+    from openprogram.programs import _programs
+    from openprogram.cli.commands.programs import _cmd_install, _cmd_uninstall
+
+    package = tmp_path / "openprogram"
+    root = package / "programs"
+    old = root / "applications" / "research_harness"
+    old.parent.mkdir(parents=True)
+    (root / "packages").mkdir()
+    target = tmp_path / "owned-checkout" if symlink else old
+    target.mkdir()
+    (target / ".git").mkdir()
+    if symlink:
+        old.symlink_to(target, target_is_directory=True)
+    monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
+    monkeypatch.setattr(openprogram, "__file__", str(package / "__init__.py"))
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    _programs.record_program_source(old, source="fixture", base=str(old.parent))
+    calls = []
+    monkeypatch.setattr(subprocess, "call", lambda args: calls.append(args) or 0)
+    _cmd_install("research", upgrade=True)
+    assert calls == [["git", "-C", str(old), "pull", "--ff-only"]]
+    assert not (root / "packages" / "research_harness").exists()
+    _cmd_uninstall("research")
+    assert not old.exists()
+    assert _programs.owner_controlled_program_sources() == []
+    if symlink:
+        assert (target / ".git").is_dir()

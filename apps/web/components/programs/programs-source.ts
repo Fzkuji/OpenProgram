@@ -13,6 +13,8 @@ export type ProgramSourceEntry = {
   name?: string | null;
   path?: string | null;
   callable_name?: string | null;
+  entity_kind?: "package";
+  source_path?: string;
   program_kind?: string | null;
 };
 

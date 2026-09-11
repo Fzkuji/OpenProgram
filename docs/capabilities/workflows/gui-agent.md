@@ -87,7 +87,7 @@ The Function card displays that task result directly: `Succeeded` for a verified
   and dependency support.
 - The runtime needs a working directory configured before running. Workflow records are stored under the OpenProgram state directory (`gui_harness/workflows/`), not in the source tree.
 
-Source and README: `openprogram/programs/applications/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).
+Source and README: `openprogram/programs/packages/gui_harness/`, upstream repository [Fzkuji/GUI-Agent-Harness](https://github.com/Fzkuji/GUI-Agent-Harness).
 
 Browser Workflow forms expose only the task and optional target URL. Action limits, timeout and backend remain internal settings with defaults; no Advanced section is shown. Explicit programmatic calls retain their supported overrides.
 

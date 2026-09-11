@@ -528,6 +528,11 @@ def main():
         return
 
     # -------- Subcommand dispatch --------
+    if args.command == "apps":
+        from .commands.programs import _cmd_applications
+        _cmd_applications(args)
+        return
+
     if args.command == "programs":
         verb = getattr(args, "programs_verb", None)
         if verb == "apps":

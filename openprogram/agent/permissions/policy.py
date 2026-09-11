@@ -86,10 +86,10 @@ def _hard_constraint_violation(
     """Return the non-configurable constraint violated by an external turn."""
     import os
     from openprogram.programs.permission_rule import parse_command
-    from openprogram.protected_paths import applications_root
+    from openprogram.protected_paths import applications_root, packages_root, application_catalog_path
     from openprogram.worktree.context import current_worktree_path
 
-    protected = applications_root()
+    protected = [applications_root(), packages_root(), application_catalog_path()]
 
     def _targets_agentics(path: str | None) -> bool:
         if not path or not protected:
@@ -97,8 +97,7 @@ def _hard_constraint_violation(
         if not os.path.isabs(path):
             path = os.path.join(current_worktree_path() or os.getcwd(), path)
         target = os.path.realpath(path)
-        root = os.path.realpath(protected)
-        return target == root or target.startswith(root + os.sep)
+        return any(target == os.path.realpath(root) or target.startswith(os.path.realpath(root) + os.sep) for root in protected)
 
     if tool_name in _WRITE_TOOLS:
         path = parse_command(tool_name, args)

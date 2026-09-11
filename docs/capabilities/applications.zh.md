@@ -1,5 +1,9 @@
 # 从新标签页打开应用
 
+侧栏 **Applications（应用）** 页面支持从本地目录安装软件、查看来源和版本、打开、启停、隐藏启动按钮、从原来源更新，以及保留数据卸载。安装 Python 后端需要明确勾选信任。更新会填写安装表单，请审查来源后再提交。Tools、Workflows 和 harness 程序包仍在 **能力** 页面管理。
+
+顶层 `openprogram apps` 命令管理软件；原 `openprogram programs apps` 命令继续兼容。软件注册保存到 `~/.openprogram/applications/catalog.json`，不再与 Program 来源混存。已有记录在首次访问时迁移，保留版本、启停与隐藏设置、卸载记录和实例数据；发生冲突时停止迁移，不覆盖任何一份记录。
+
 安装后的应用会与文件、新建对话、浏览器、终端一起出现在新标签页。点击名称打开应用自己的界面，再次打开会选中同一个实例。关闭标签页不会取消后台操作。
 
 应用界面使用标准 HTML、CSS 和 JavaScript，也可以提供 Python 业务操作。界面不必使用 OpenProgram 组件。前端依赖需要打包到本地，资源和 JavaScript 模块导入使用相对路径。应用运行在独立 opaque origin 的 sandbox iframe 中，不能读取宿主页面、直接调用宿主 API、加载远程脚本、嵌套其他页面或提交导航表单。资源 URL 只授权读取该应用版本的 UI 目录，不是宿主凭据。
@@ -9,14 +13,14 @@
 在本地 OpenProgram worker 运行时执行：
 
 ```bash
-openprogram programs apps install /absolute/path/to/application
-openprogram programs apps list
+openprogram apps install /absolute/path/to/application
+openprogram apps list
 ```
 
 Python 后端以当前操作系统用户执行受信代码。检查源码和依赖后，使用 `--trust` 授权运行：
 
 ```bash
-openprogram programs apps install /absolute/path/to/application --trust
+openprogram apps install /absolute/path/to/application --trust
 ```
 
 新标签页获得焦点时和每十秒刷新应用列表。项目级应用在打开时绑定当前选中的项目，之后切换对话项目不会改变已经打开的实例。没有当前项目时会复用唯一的已有绑定；首次使用或有多个绑定时提供项目选择，也可以选择新文件夹。全局应用使用当前 owner 的同一个实例；不同项目的实例独立保存业务数据。
@@ -58,7 +62,7 @@ CLI 对应 `programs apps run APP OPERATION --input JSON`，项目级应用增�
 
 worker 停止会中断未完成的 Python 函数，重启后显示中断状态，不会自动恢复任意 Python 调用栈。应用应逐步保存进度，用户查看中断情况后明确启动另一次操作。当前版本拒绝改变数据 schema 或 scope 的升级，不提供自动迁移。
 
-`openprogram programs apps uninstall APP` 移除菜单入口并取消活动操作，保留业务数据、旧代码及 schema/scope 兼容身份。重新安装兼容包可以恢复数据，不兼容的重新安装会在激活前被拒绝。owner API 的 `PATCH /api/applications/{id}` 支持 `enabled`、`hidden`、`display_title`；隐藏不取消任务，停用会取消。
+`openprogram apps uninstall APP` 移除菜单入口并取消活动操作，保留业务数据、旧代码及 schema/scope 兼容身份。重新安装兼容包可以恢复数据，不兼容的重新安装会在激活前被拒绝。owner API 的 `PATCH /api/applications/{id}` 支持 `enabled`、`hidden`、`display_title`；隐藏不取消任务，停用会取消。
 
 独立部署、非 Python 后端、MCP Apps 兼容以及原生操作系统 GUI 窗口嵌入尚未实现。
 

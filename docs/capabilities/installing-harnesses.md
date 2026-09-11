@@ -1,5 +1,7 @@
 # Harnesses
 
+Program packages appear under **Abilities → Programs → Packages**. Tools and Workflows are their callable capabilities; software Applications have a separate management page. New clones use `programs/packages/`. Previously registered `programs/applications/` checkouts retain their locations and call names; upgrading or removing them uses their recorded locations. No source is downloaded or moved just to rename its category.
+
 A **harness** (an *agentic program*) is a self-contained git repo of
 agentic functions. Every supported release already contains the GUI, Research,
 and Wiki first-party Program packages and their supported runtime assets.
@@ -40,7 +42,7 @@ openprogram programs install <ref> --upgrade    # git pull + re-resolve deps
 For a third-party Program or developer source overlay, the command performs four steps:
 
 1. **Shallow-clone** the repo into
-   `openprogram/programs/applications/<Repo-Name>/` — a real, editable
+   `openprogram/programs/packages/<Repo-Name>/` — a real, editable
    directory (not site-packages). The clone is git-ignored by
    OpenProgram, so it stays an independent checkout you can `git pull`
    or edit in place.

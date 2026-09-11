@@ -1,9 +1,12 @@
-export type ProgramKind = "vanilla_function" | "agentic_function" | "workflow" | "application" | "runtime_primitive";
+export type ProgramKind = "vanilla_function" | "agentic_function" | "workflow" | "runtime_primitive";
 
 export type LogicNode = {
   id: string;
   name: string;
   path: string;
+  entity_kind?: "package";
+  source_path?: string;
+  management_commands?: string[];
   program_kind: ProgramKind | null;
   depth: number;
 };
