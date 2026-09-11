@@ -28,6 +28,9 @@ A failed later history commit preserves the previously published version. If a w
 
 Binary versions preserve formatting and embedded media, but the current Review pane does not compare document layout or show Word tracked changes. Ordinary shell commands that overwrite the final file directly are not recorded as exact turn mutations. Previously unrecorded versions cannot be reconstructed from a file card or command output; scripts should write a separate result and use `write` to publish it.
 
+Manual changes made through the project file editor also retain before/after bytes, independently of conversation history. Each successful write is published immediately. Consecutive changes from the same editor are grouped for at most five minutes; closing a group or detecting an intervening external change starts another version. Restoring a retained version creates a new history entry and checks the current file revision before overwriting it. Project-owned history remains readable while a project's disk is disconnected; writing and restoring require an available project location. It follows the registered project when its location changes. The document API accepts bounded binary content up to 64 MiB; this does not by itself provide an editor for every binary format.
+
+
 ## Execution
 
 | Tool | What it does | Requires |

@@ -1,13 +1,20 @@
-"""Durable, project-owned history for manual document publications."""
+"""Project-owned document history; file transactions belong to CheckpointStore."""
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import re
+import sqlite3
 import stat
+import tempfile
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
+
+from openprogram.store.session.session_lock import registry_file_lock
+from openprogram.store.snapshot.checkpoint.store import CheckpointStore
 
 MAX_BYTES = 64 * 1024 * 1024
 GROUP_SECONDS = 300.0
@@ -23,216 +30,271 @@ def _digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _project_root(project_id: str) -> Path:
+def _owner(project_id: str):
     from openprogram.store.project import project_store
+    if not isinstance(project_id, str) or not project_id:
+        raise DocumentHistoryError("project_id is required", "INVALID_REQUEST")
     project = project_store.get_project(project_id)
     if project is None:
         raise DocumentHistoryError("unknown project", "NOT_FOUND")
-    if getattr(project, "location_state", "available") not in {"available", ""}:
-        raise DocumentHistoryError("project location unavailable", "NOT_FOUND")
-    root = Path(project.path).expanduser()
-    if not root.is_absolute() or not root.is_dir():
-        raise DocumentHistoryError("project location unavailable", "NOT_FOUND")
-    return root.resolve()
+    return project
+
+
+def _relative(path: str) -> str:
+    if not isinstance(path, str) or not path or "\x00" in path or "\\" in path:
+        raise DocumentHistoryError("path must be a project-relative file", "INVALID_REQUEST")
+    candidate = Path(path)
+    if candidate.is_absolute() or ".." in candidate.parts or not candidate.name:
+        raise DocumentHistoryError("path escapes project root", "INVALID_REQUEST")
+    return candidate.as_posix()
 
 
 def resolve_document(project_id: str, relative: str) -> tuple[Path, str]:
-    if not isinstance(relative, str) or not relative or "\\" in relative:
-        raise DocumentHistoryError("path must be a project-relative file", "INVALID_REQUEST")
-    candidate = Path(relative)
-    if candidate.is_absolute() or ".." in candidate.parts or "." in candidate.parts:
-        raise DocumentHistoryError("path must be a normalized relative file", "INVALID_REQUEST")
-    root = _project_root(project_id).resolve()
-    target = (root / candidate).resolve()
-    if target != root and not target.is_relative_to(root):
+    relative = _relative(relative)
+    project = _owner(project_id)
+    from openprogram.store.project.location import bound_execution_state, refresh_project_location
+    if not getattr(project, "is_default", False):
+        refresh_project_location(project_id)
+        project = _owner(project_id)
+        if bound_execution_state(project) is not None:
+            raise DocumentHistoryError("project location unavailable", "PROJECT_LOCATION_UNAVAILABLE")
+    root = Path(project.path).expanduser().resolve()
+    if not root.is_dir():
+        raise DocumentHistoryError("project location unavailable", "PROJECT_LOCATION_UNAVAILABLE")
+    target = root
+    for part in Path(relative).parts:
+        target = target / part
+        if target.is_symlink():
+            raise DocumentHistoryError("linked document paths are not writable", "INVALID_REQUEST")
+    if not target.resolve().is_relative_to(root):
         raise DocumentHistoryError("path escapes project root", "INVALID_REQUEST")
-    return target, candidate.as_posix()
+    if not target.parent.is_dir():
+        raise DocumentHistoryError("parent directory does not exist", "NOT_FOUND")
+    return target, relative
+
+
+def _revision(state: dict | None) -> str | None:
+    if not state:
+        return None
+    if state.get("kind") == "absent":
+        return "absent"
+    value = state.get("digest") or state.get("sha256")
+    return value.removeprefix("sha256:") if isinstance(value, str) else None
 
 
 class DocumentHistory:
-    """One bounded index per project/path, with immutable content blobs."""
+    """A durable, paginated metadata index referring to shared transaction blobs."""
 
     def __init__(self, root: Path | None = None):
         from openprogram.paths import get_state_dir
         self.root = Path(root) if root is not None else get_state_dir() / "project-file-history"
 
     def _dir(self, project_id: str, relative: str) -> Path:
-        key = hashlib.sha256(f"{project_id}\0{relative}".encode()).hexdigest()
-        return self.root / hashlib.sha256(project_id.encode()).hexdigest() / key
+        return self.root / hashlib.sha256(project_id.encode()).hexdigest() / hashlib.sha256(relative.encode()).hexdigest()
 
-    def _index(self, directory: Path) -> Path:
-        return directory / "index.json"
+    def _store(self, project_id: str, relative: str) -> CheckpointStore:
+        return CheckpointStore(recovery_root=self._dir(project_id, relative))
 
-    def _intent(self, directory: Path, key: str | None) -> Path:
-        return directory / "intents" / f"{hashlib.sha256((key or uuid.uuid4().hex).encode()).hexdigest()[:24]}.json"
-
-    def prepare(self, project_id: str, relative: str, before: bytes, after: bytes,
-                *, idempotency_key: str | None) -> Path:
-        directory = self._dir(project_id, relative)
-        path = self._intent(directory, idempotency_key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"status": "prepared", "project_id": project_id,
-                                    "path": relative, "before_revision": _digest(before),
-                                    "after_revision": _digest(after)}), encoding="utf-8")
-        return path
-
-    @staticmethod
-    def commit_intent(path: Path) -> None:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["status"] = "committed"
-        path.write_text(json.dumps(data), encoding="utf-8")
-
-    def _load(self, directory: Path) -> dict:
-        try:
-            data = json.loads(self._index(directory).read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return {"version": 1, "entries": [], "groups": {}}
-        except (OSError, ValueError) as exc:
-            raise DocumentHistoryError("document history is corrupt", "HISTORY_CORRUPT") from exc
-        if not isinstance(data, dict) or not isinstance(data.get("entries"), list):
-            raise DocumentHistoryError("document history is corrupt", "HISTORY_CORRUPT")
-        return data
-
-    def _save(self, directory: Path, data: dict) -> None:
-        directory.mkdir(parents=True, exist_ok=True)
-        tmp = directory / f".index.{uuid.uuid4().hex}.tmp"
-        with tmp.open("x", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=False, separators=(",", ":"))
-            handle.flush(); os.fsync(handle.fileno())
-        os.replace(tmp, self._index(directory))
+    @contextmanager
+    def _database(self):
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with registry_file_lock(self.root, "documents"):
+            db = sqlite3.connect(self.root / "history.sqlite3")
+            db.row_factory = sqlite3.Row
+            try:
+                db.execute("PRAGMA synchronous=FULL")
+                db.executescript("""
+                    CREATE TABLE IF NOT EXISTS operations (
+                        operation_id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+                        path TEXT NOT NULL, request_key TEXT NOT NULL,
+                        fingerprint TEXT NOT NULL, group_id TEXT NOT NULL,
+                        result_json TEXT, UNIQUE(project_id, path, request_key));
+                    CREATE TABLE IF NOT EXISTS groups (
+                        sequence INTEGER PRIMARY KEY AUTOINCREMENT, version_id TEXT UNIQUE NOT NULL,
+                        project_id TEXT NOT NULL, path TEXT NOT NULL, editor_id TEXT NOT NULL,
+                        started REAL NOT NULL, updated REAL NOT NULL, closed INTEGER NOT NULL,
+                        first_op TEXT NOT NULL, last_op TEXT NOT NULL);
+                    CREATE INDEX IF NOT EXISTS group_path ON groups(project_id,path,sequence DESC);
+                """)
+                os.chmod(self.root / "history.sqlite3", 0o600)
+                yield db
+            except sqlite3.Error as exc:
+                raise DocumentHistoryError("document history index is unavailable", "HISTORY_CORRUPT") from exc
+            finally:
+                db.close()
 
     @staticmethod
     def _read_bounded(path: Path) -> tuple[bytes, int]:
-        path = Path(path)
         try:
             info = os.lstat(path)
-        except FileNotFoundError:
-            return b"", 0
-        if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode) or info.st_nlink != 1:
-            raise DocumentHistoryError("target must be an ordinary file", "INVALID_REQUEST")
-        with path.open("rb") as handle:
-            raw = handle.read(MAX_BYTES + 1)
-        if len(raw) > MAX_BYTES:
-            raise DocumentHistoryError("content exceeds 64 MiB", "PAYLOAD_TOO_LARGE")
-        return raw, stat.S_IMODE(info.st_mode)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise DocumentHistoryError("target must be an ordinary file", "INVALID_REQUEST")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+            with os.fdopen(os.open(path, flags), "rb") as handle:
+                opened = os.fstat(handle.fileno())
+                if (info.st_dev, info.st_ino) != (opened.st_dev, opened.st_ino):
+                    raise DocumentHistoryError("document changed while opening", "CONFLICT")
+                raw = handle.read(MAX_BYTES + 1)
+                after = os.fstat(handle.fileno())
+            if len(raw) > MAX_BYTES:
+                raise DocumentHistoryError("content exceeds 64 MiB", "PAYLOAD_TOO_LARGE")
+            identity = lambda value: (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+            if identity(opened) != identity(after) or identity(after) != identity(os.lstat(path)):
+                raise DocumentHistoryError("document changed while reading", "CONFLICT")
+            return raw, stat.S_IMODE(after.st_mode)
+        except FileNotFoundError as exc:
+            raise DocumentHistoryError("document not found", "NOT_FOUND") from exc
+
+    def _receipt(self, project_id: str, relative: str, operation_id: str) -> dict:
+        try:
+            receipt = self._store(project_id, relative).read_document_operation(operation_id)
+        except (ValueError, OSError) as exc:
+            raise DocumentHistoryError("document transaction is corrupt", "HISTORY_CORRUPT") from exc
+        if not receipt or receipt.get("status") == "not_found":
+            return {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED"}
+        return receipt
+
+    def _entry(self, row) -> dict:
+        first = self._receipt(row["project_id"], row["path"], row["first_op"])
+        last = self._receipt(row["project_id"], row["path"], row["last_op"])
+        return {"version_id": row["version_id"], "project_id": row["project_id"], "path": row["path"],
+                "editor_id": row["editor_id"], "actor": "user", "group_started_at": row["started"],
+                "created_at": row["updated"], "status": last.get("status", "recovery_required"),
+                "before_revision": _revision(first.get("before")),
+                "after_revision": _revision(last.get("after")) if last.get("status") == "committed" else None}
 
     def publish(self, project_id: str, relative: str, content: bytes, *, editor_id: str = "manual",
                 baseline_revision: str | None = None, idempotency_key: str | None = None,
-                close: bool = False) -> dict:
-        target, relative = resolve_document(project_id, relative)
+                expected_mtime: float | None = None, close: bool = False,
+                restored_from: dict | None = None) -> dict:
+        _owner(project_id)
+        relative = _relative(relative)
         if not isinstance(content, bytes) or len(content) > MAX_BYTES:
             raise DocumentHistoryError("content exceeds 64 MiB", "PAYLOAD_TOO_LARGE")
-        from apps.server.openprogram_server._webui.ws_actions.files_shared import _workspace_mutation_lock
-        with _workspace_mutation_lock(project_id):
-            before, mode = self._read_bounded(target)
-            before_revision = _digest(before)
-            if baseline_revision and baseline_revision != before_revision:
-                raise DocumentHistoryError("baseline revision does not match", "CONFLICT")
-            self._write_target(target, content, mode)
-            return self._record(project_id, relative, before, content, mode,
-                                editor_id=editor_id, idempotency_key=idempotency_key, close=close)
-
-    @staticmethod
-    def _write_target(target: Path, content: bytes, mode: int) -> None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
-        try:
-            with tmp.open("xb") as handle:
-                handle.write(content); handle.flush(); os.fsync(handle.fileno())
-            os.chmod(tmp, mode or 0o644)
-            os.replace(tmp, target)
-        finally:
-            tmp.unlink(missing_ok=True)
-
-    def _record(self, project_id: str, relative: str, before: bytes, content: bytes, mode: int,
-                *, editor_id: str, idempotency_key: str | None, close: bool) -> dict:
-        """Record a change after a caller has performed its atomic write."""
-        before_revision = _digest(before)
-        after_revision = _digest(content)
-        directory = self._dir(project_id, relative)
-        intent = self.prepare(project_id, relative, before, content, idempotency_key=idempotency_key)
-        data = self._load(directory)
-        for entry in data["entries"]:
-            if idempotency_key and entry.get("idempotency_key") == idempotency_key:
-                if entry.get("after_revision") != after_revision:
+        if not isinstance(editor_id, str) or not editor_id or len(editor_id) > 128:
+            raise DocumentHistoryError("invalid editor id", "INVALID_REQUEST")
+        if idempotency_key is not None and (not isinstance(idempotency_key, str) or not idempotency_key or len(idempotency_key) > 128):
+            raise DocumentHistoryError("invalid idempotency key", "INVALID_REQUEST")
+        key = idempotency_key or str(uuid.uuid4())
+        fingerprint = _digest(json.dumps({"revision": baseline_revision, "mtime": expected_mtime,
+                            "digest": _digest(content), "editor": editor_id, "close": close, "restored_from": restored_from},
+                            sort_keys=True).encode())
+        with self._database() as db:
+            existing = db.execute("SELECT * FROM operations WHERE project_id=? AND path=? AND request_key=?",
+                                  (project_id, relative, key)).fetchone()
+            if existing:
+                if existing["fingerprint"] != fingerprint:
                     raise DocumentHistoryError("idempotency key payload conflict", "CONFLICT")
-                return {**entry, "replayed": True}
-        now = time.time()
-        previous = data["entries"][-1] if data["entries"] else None
-        same_group = (previous and previous.get("editor_id") == editor_id
-                      and now - float(previous.get("group_started_at", now)) < GROUP_SECONDS
-                      and previous.get("after_revision") == before_revision and not close)
-        version_id = uuid.uuid4().hex
-        blob = directory / f"{version_id}.bin"
-        before_blob = directory / f"{version_id}.before.bin"
-        tmp = directory / f".{version_id}.tmp"
-        directory.mkdir(parents=True, exist_ok=True)
-        with before_blob.open("xb") as handle:
-            handle.write(before); handle.flush(); os.fsync(handle.fileno())
-        with tmp.open("xb") as handle:
-            handle.write(content); handle.flush(); os.fsync(handle.fileno())
-        os.replace(tmp, blob)
-        if same_group:
-            previous.update({"after_revision": after_revision, "created_at": now,
-                             "idempotency_key": idempotency_key, "blob": blob.name})
-            self._save(directory, data)
-            self.commit_intent(intent)
-            return previous
-        entry = {
-            "version_id": version_id, "project_id": project_id, "path": relative,
-            "before_revision": before_revision, "after_revision": after_revision,
-            "mode": mode, "editor_id": editor_id,
-            "group_started_at": previous.get("group_started_at", now) if same_group else now,
-            "created_at": now, "idempotency_key": idempotency_key,
-            "blob": blob.name, "before_blob": before_blob.name,
-        }
-        data["entries"].append(entry)
-        self._save(directory, data)
-        self.commit_intent(intent)
-        return entry
+                if existing["result_json"]:
+                    return json.loads(existing["result_json"])
+                return self._operation_result(db, existing)
+            target, relative = resolve_document(project_id, relative)
+            # A fresh read is used only for grouping. CheckpointStore independently
+            # checks the expected revision and captures the actual immutable before.
+            try:
+                current, _ = self._read_bounded(target)
+                current_revision = _digest(current)
+            except DocumentHistoryError as exc:
+                if exc.code != "NOT_FOUND":
+                    raise
+                current_revision = "absent"
+            if baseline_revision is not None and baseline_revision != current_revision:
+                raise DocumentHistoryError("baseline revision does not match", "CONFLICT")
+            if expected_mtime is not None and (not target.exists() or target.stat().st_mtime != expected_mtime):
+                raise DocumentHistoryError("document changed on disk", "CONFLICT")
+            previous = db.execute("SELECT * FROM groups WHERE project_id=? AND path=? ORDER BY sequence DESC LIMIT 1",
+                                  (project_id, relative)).fetchone()
+            now = time.time()
+            same_group = False
+            if restored_from is None and previous and not previous["closed"] and previous["editor_id"] == editor_id and 0 <= now - previous["started"] < GROUP_SECONDS:
+                last = self._receipt(project_id, relative, previous["last_op"])
+                same_group = last.get("status") == "committed" and _revision(last.get("after")) == current_revision
+            operation_id = uuid.uuid4().hex
+            group_id = uuid.uuid4().hex
+            db.execute("INSERT INTO operations VALUES(?,?,?,?,?,?,NULL)",
+                       (operation_id, project_id, relative, key, fingerprint, group_id))
+            # Keep a pending publication separate until committed. An interrupted
+            # autosave must not hide the previous confirmed group's after version.
+            db.execute("INSERT INTO groups(version_id,project_id,path,editor_id,started,updated,closed,first_op,last_op) VALUES(?,?,?,?,?,?,?,?,?)",
+                       (group_id, project_id, relative, editor_id, now, now, int(close), operation_id, operation_id))
+            db.commit()  # Intent locator is durable before any target mutation.
+            with tempfile.TemporaryDirectory(prefix="document-", dir=self.root) as staging:
+                source = Path(staging) / "content"
+                with source.open("xb") as handle:
+                    handle.write(content)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                self._store(project_id, relative).publish_document(
+                    operation_id, str(target), str(source), expected_revision=current_revision,
+                    expected_mtime=expected_mtime, fingerprint=fingerprint,
+                    metadata={"project_id": project_id, "path": relative, "actor": "user", "restored_from": restored_from})
+            receipt = self._receipt(project_id, relative, operation_id)
+            if same_group and receipt.get("status") == "committed":
+                db.execute("UPDATE groups SET last_op=?, updated=?, closed=? WHERE version_id=?",
+                           (operation_id, now, int(close), previous["version_id"]))
+                db.execute("UPDATE operations SET group_id=? WHERE operation_id=?",
+                           (previous["version_id"], operation_id))
+                db.execute("DELETE FROM groups WHERE version_id=?", (group_id,))
+                db.commit()
+            row = db.execute("SELECT * FROM operations WHERE operation_id=?", (operation_id,)).fetchone()
+            return self._operation_result(db, row)
+
+    def _operation_result(self, db, operation) -> dict:
+        receipt = self._receipt(operation["project_id"], operation["path"], operation["operation_id"])
+        status = receipt.get("status", "recovery_required")
+        result = {"version_id": operation["group_id"], "operation_id": operation["operation_id"],
+                  "status": status, "ok": status == "committed", "revision": _revision(receipt.get("after")),
+                  "mtime": receipt.get("mtime")}
+        if receipt.get("error_code"):
+            result["error_code"] = receipt["error_code"]
+        if receipt.get("error"):
+            result["error"] = receipt["error"]
+        if status != "committed":
+            result["error_code"] = result.get("error_code") or ("CONFLICT" if status in {"blocked", "aborted"} else "RECOVERY_REQUIRED")
+            result["error"] = result.get("error") or "document publication did not complete"
+        if status in {"committed", "aborted", "rolled_back", "recovery_required"}:
+            db.execute("UPDATE operations SET result_json=? WHERE operation_id=?", (json.dumps(result), operation["operation_id"]))
+            db.commit()
+        return result
 
     def list(self, project_id: str, relative: str, *, limit: int = 50, cursor: int = 0) -> dict:
-        _, relative = resolve_document(project_id, relative)
-        data = self._load(self._dir(project_id, relative))
-        limit = max(1, min(int(limit), 100)); cursor = max(0, int(cursor))
-        rows = list(reversed(data["entries"]))
-        page = rows[cursor:cursor + limit]
-        return {"entries": page, "next_cursor": str(cursor + limit) if cursor + limit < len(rows) else None}
+        _owner(project_id)
+        relative = _relative(relative)
+        limit, cursor = max(1, min(int(limit), 100)), max(0, int(cursor))
+        with self._database() as db:
+            rows = db.execute("SELECT * FROM groups WHERE project_id=? AND path=? ORDER BY sequence DESC LIMIT ? OFFSET ?",
+                              (project_id, relative, limit + 1, cursor)).fetchall()
+            return {"entries": [self._entry(row) for row in rows[:limit]],
+                    "next_cursor": str(cursor + limit) if len(rows) > limit else None}
 
     def content(self, project_id: str, relative: str, version_id: str, side: str = "after") -> bytes:
-        _, relative = resolve_document(project_id, relative)
-        data = self._load(self._dir(project_id, relative))
-        entry = next((x for x in data["entries"] if x.get("version_id") == version_id), None)
-        if entry is None:
-            raise DocumentHistoryError("version not found", "NOT_FOUND")
-        if side == "after":
-            try: return (self._dir(project_id, relative) / entry["blob"]).read_bytes()
-            except OSError as exc: raise DocumentHistoryError("version unavailable", "HISTORY_CORRUPT") from exc
-        if side == "before":
-            try: return (self._dir(project_id, relative) / entry["before_blob"]).read_bytes()
-            except (KeyError, OSError) as exc: raise DocumentHistoryError("version unavailable", "HISTORY_CORRUPT") from exc
-        raise DocumentHistoryError("side must be before or after", "INVALID_REQUEST")
+        _owner(project_id)
+        relative = _relative(relative)
+        if side not in {"before", "after"} or not isinstance(version_id, str) or not re.fullmatch(r"[a-f0-9]{32}", version_id):
+            raise DocumentHistoryError("invalid history version or side", "INVALID_REQUEST")
+        with self._database() as db:
+            group = db.execute("SELECT * FROM groups WHERE project_id=? AND path=? AND version_id=?",
+                               (project_id, relative, version_id)).fetchone()
+            if group is None:
+                raise DocumentHistoryError("version not found", "NOT_FOUND")
+            operation = group["first_op"] if side == "before" else group["last_op"]
+            receipt = self._receipt(project_id, relative, operation)
+            state = receipt.get(side)
+            if not isinstance(state, dict) or (side == "after" and receipt.get("status") != "committed"):
+                raise DocumentHistoryError("version is not confirmed", "RECOVERY_REQUIRED")
+            if state.get("kind") == "absent":
+                raise DocumentHistoryError("file did not exist in this version", "NOT_FOUND")
+            ref = state.get("blob_ref")
+            if not isinstance(ref, str) or Path(ref).name != ref or ref in {".", ".."}:
+                raise DocumentHistoryError("invalid version reference", "HISTORY_CORRUPT")
+            raw, _ = self._read_bounded(self._dir(project_id, relative) / "operations" / operation / ref)
+            if _digest(raw) != _revision(state):
+                raise DocumentHistoryError("version content is corrupt", "HISTORY_CORRUPT")
+            return raw
 
     def restore(self, project_id: str, relative: str, version_id: str, *, side: str,
                 baseline_revision: str, idempotency_key: str, editor_id: str = "manual") -> dict:
         raw = self.content(project_id, relative, version_id, side)
-        target, _ = resolve_document(project_id, relative)
-        current, mode = self._read_bounded(target)
-        existing = self._load(self._dir(project_id, relative))["entries"]
-        for entry in existing:
-            if entry.get("idempotency_key") == idempotency_key:
-                if entry.get("after_revision") != _digest(raw):
-                    raise DocumentHistoryError("idempotency key payload conflict", "CONFLICT")
-                return {**entry, "replayed": True}
-        if _digest(current) != baseline_revision:
-            raise DocumentHistoryError("baseline revision does not match", "CONFLICT")
-        tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
-        with tmp.open("xb") as handle:
-            handle.write(raw); handle.flush(); os.fsync(handle.fileno())
-        os.replace(tmp, target)
-        try:
-            return self._record(project_id, relative, current, raw, mode,
-                                editor_id=editor_id, idempotency_key=idempotency_key, close=True)
-        except DocumentHistoryError as exc:
-            raise DocumentHistoryError(f"file restored but history recording failed: {exc}",
-                                       "RECOVERY_REQUIRED") from exc
+        return self.publish(project_id, relative, raw, baseline_revision=baseline_revision,
+                            idempotency_key=idempotency_key, editor_id=editor_id, close=True,
+                            restored_from={"version_id": version_id, "side": side})

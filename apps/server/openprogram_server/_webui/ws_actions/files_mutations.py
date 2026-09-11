@@ -56,58 +56,23 @@ def _write_file(project_id: str, path: str, content: str,
     raw = content.encode("utf-8")
     if len(raw) > _WRITE_MAX_BYTES:
         return {"error": "content exceeds 5 MB"}
-    if os.path.isdir(target):
-        return {"error": f"not a file: {path!r}"}
-    if not os.path.isdir(os.path.dirname(target)):
-        return {"error": f"parent directory does not exist for {path!r}"}
     from openprogram.store.document_history import DocumentHistory, DocumentHistoryError
     try:
-        before, mode = DocumentHistory._read_bounded(target)
+        result = DocumentHistory().publish(
+            project_id, path, raw, baseline_revision=expected_revision,
+            expected_mtime=expected_mtime, idempotency_key=idempotency_key,
+            editor_id=editor_id,
+        )
+        if result.get("status") == "committed":
+            return {**result, "ok": True, "status": "ready"}
+        return result
     except DocumentHistoryError as exc:
+        if exc.code == "CONFLICT":
+            return {"conflict": True, "error_code": "CONFLICT"}
         return {"error": str(exc), "error_code": exc.code}
-    if expected_mtime is not None:
-        # Optimistic-concurrency gate: the editor sends the mtime it
-        # read; any drift (or a vanished file) means someone else wrote
-        # meanwhile — never clobber, let the UI offer a reload.
-        try:
-            if os.stat(target).st_mtime != expected_mtime:
-                return {"conflict": True}
-        except OSError:
-            return {"conflict": True}
-    if expected_revision is not None:
-        # mtime can be restored by another writer or have insufficient
-        # resolution. The content digest is the durable baseline identity.
-        if _file_digest(target) != expected_revision:
-            return {"conflict": True}
-    history = DocumentHistory()
-    intent = history.prepare(project_id, path, before, raw, idempotency_key=idempotency_key)
-    try:
-        # 原子替换：先写同目录临时文件再 os.replace——中途崩溃/磁盘满
-        # 不会留下截断的目标文件。
-        tmp = f"{target}.tmp.{os.getpid()}"
-        with open(tmp, "wb") as f:
-            f.write(raw)
-        os.replace(tmp, target)
-        try:
-            history._record(
-                project_id, path, before, raw, mode, editor_id=editor_id,
-                idempotency_key=idempotency_key, close=False,
-            )
-            history.commit_intent(intent)
-        except DocumentHistoryError as exc:
-            return {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
-                    "error": f"file published but history recording failed: {exc}"}
-        return {
-            "ok": True,
-            "mtime": os.stat(target).st_mtime,
-            "revision": hashlib.sha256(raw).hexdigest(),
-        }
-    except OSError as e:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        return {"error": f"{type(e).__name__}: {e}"}
+    except (OSError, RuntimeError, ValueError):
+        return {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
+                "error": "document publication could not be confirmed"}
 
 
 def _create_entry(project_id: str, path: str, kind: str) -> dict:
