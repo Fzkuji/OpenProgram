@@ -230,3 +230,22 @@ def test_persisted_program_retry_becomes_a_real_fork(store):
     assert retry_row["retry_of"] == "run-1"
     assert retry_row["_lane"] != source_row["_lane"]
     assert retry_row["_depth"] == source_row["_depth"]
+
+
+def test_hydration_snapshot_keeps_its_summary_after_recompaction(store):
+    ids = _seed(store, "s1", 4)
+    _summarize(store, "s1", ids[:2])
+    captured = store.get_messages("s1")
+    before = build_session_graph("s1", ids[-1], messages=captured)
+    store.append_message("s1", {
+        "id": "sum2", "role": "llm", "token_model": SUMMARY_NODE_NAME,
+        "content": "[new recap]", "predecessor": None,
+        "extra": {"covers_ids": ids[:4]},
+    })
+    store.update_session("s1", extra_meta={"_last_summary_id": "sum2"})
+    after = build_session_graph("s1", ids[-1], messages=captured)
+
+    assert _row(after, "sum1") == _row(before, "sum1")
+    assert _row(after, "sum1")["covers_ids"] == ids[:2]
+    assert not any(row["id"] == "sum2" for row in after)
+    assert _row(build_session_graph("s1", ids[-1]), "sum2")["covers_ids"] == ids[:4]

@@ -59,6 +59,12 @@ def build_session_graph(
     nodes = []
     try:
         nodes = db.get_nodes(session_id) or []
+        # Only annotate nodes present in the transcript snapshot. In
+        # particular, a summary appended during hydration must not supersede
+        # the snapshot's summary when its replacement is absent from it.
+        snapshot_ids = {m.get("id") for m in full_msgs}
+        nodes = [n for n in nodes if n.id in snapshot_ids
+                 or (n.metadata or {}).get("display") == "root"]
         hidden_ids = {
             n.id for n in nodes
             if (n.metadata or {}).get("execution_control")
