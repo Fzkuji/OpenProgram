@@ -504,6 +504,7 @@ PAGE_ORDER: dict[str, int] = {
     # the reference frameworks by design axis, then by feature list.
     "reference/design/framework-overview.md": 1020,
     "reference/design/framework-comparison.html": 1021,
+    "reference/design/runtime/application-runtime.html": 1023,
     "reference/design/feature-matrix.html": 1022,
     # Distribution: authoritative conceptual design followed by its separate
     # implementation ledger.
