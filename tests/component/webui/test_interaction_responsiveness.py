@@ -106,8 +106,9 @@ def test_session_store_read_keeps_event_loop_heartbeat(tmp_path):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("phase", ["read", "aggregate", "runtime", "page"])
 def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, phase
 ):
     from openprogram.store.session.session_store import SessionStore
     from openprogram.webui import server
@@ -129,7 +130,24 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
         return list(old_rows)
 
     monkeypatch.setattr("openprogram.agent.session_db.default_db", lambda: store)
-    monkeypatch.setattr(store, "get_messages", slow_messages)
+    if phase == "read":
+        monkeypatch.setattr(store, "get_messages", slow_messages)
+    else:
+        from importlib import import_module
+        module_name, name = {
+            "aggregate": ("openprogram.webui.persistence", "aggregate_tool_messages"),
+            "runtime": ("openprogram.webui.ws_actions.session", "_rebuild_runtime_cards"),
+            "page": ("openprogram.webui.session_history", "history_page"),
+        }[phase]
+        module = import_module(module_name)
+        original_phase = getattr(module, name)
+
+        def slow_phase(*args, **kwargs):
+            started.set()
+            assert release.wait(2)
+            return original_phase(*args, **kwargs)
+
+        monkeypatch.setattr(module, name, slow_phase)
     monkeypatch.setattr(
         "openprogram.webui.ws_actions.session.reconcile_session_projection",
         lambda _sid: None,
@@ -167,6 +185,8 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
     )
 
     class WS:
+        _history_protocol = 1
+
         def __init__(self):
             self.frames = []
 
@@ -229,4 +249,39 @@ def test_negotiated_history_delivery_does_not_disconnect_on_large_snapshot(kind)
             assert fragments[-1]['final']
         finally:
             await ws.stop()
+    asyncio.run(scenario())
+
+
+def test_branch_graph_preparation_keeps_event_loop_responsive(monkeypatch):
+    from openprogram.webui.ws_actions import branch
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_payload(sid):
+        started.set()
+        assert release.wait(2)
+        return {'session_id': sid, 'graph': []}
+
+    monkeypatch.setattr(branch, 'build_branches_payload', slow_payload)
+
+    class WS:
+        frames = []
+
+        async def send_text(self, payload):
+            self.frames.append(payload)
+
+    async def scenario():
+        ws = WS()
+        task = asyncio.create_task(branch.handle_list_branches(ws, {'session_id': 's'}))
+        try:
+            while not started.is_set():
+                await asyncio.sleep(0)
+            assert not task.done()
+            assert not ws.frames
+        finally:
+            release.set()
+            await task
+        assert len(ws.frames) == 1
+
     asyncio.run(scenario())

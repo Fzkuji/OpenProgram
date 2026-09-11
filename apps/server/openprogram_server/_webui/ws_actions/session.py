@@ -799,7 +799,7 @@ async def handle_load_session(ws, cmd: dict):
             # Fold standalone role="tool" rows into their parent assistant's
             # tool_calls[] so the chat UI sees the same shape on refresh
             # as it does on live WS stream.
-            all_msgs = aggregate_tool_messages(raw_msgs)
+            all_msgs = await _session_io(aggregate_tool_messages, raw_msgs)
         except Exception:
             all_msgs = conv_snapshot["messages"]
             raw_msgs = all_msgs
@@ -907,7 +907,7 @@ async def handle_load_session(ws, cmd: dict):
         # manual call renders as a bare system-text blob instead of the
         # RuntimeBlock card the live runtime shows; its nested sub-nodes
         # are absorbed into the card's context_tree.
-        chain = _rebuild_runtime_cards(chain, all_msgs, conv["id"])
+        chain = await _session_io(_rebuild_runtime_cards, chain, all_msgs, conv["id"])
         with _s._sessions_lock:
             current_conv = _s._sessions.get(session_id)
             if not is_history_page and current_conv is conv and conv.get("head_id") == load_started_head:
@@ -1085,8 +1085,8 @@ async def handle_load_session(ws, cmd: dict):
             from openprogram.webui.session_history import history_page
             from openprogram.webui.ws_errors import OperationError
             try:
-                shown, next_cursor = history_page(
-                    shown, {m.get("id") for m in chain}, history_before,
+                shown, next_cursor = await _session_io(
+                    history_page, shown, {m.get("id") for m in chain}, history_before,
                 )
             except ValueError as exc:
                 raise OperationError("invalid_request", scope="session", retryable=True) from exc

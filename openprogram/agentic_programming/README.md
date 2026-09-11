@@ -30,6 +30,7 @@ agentic_programming, never the other way around.
 - **`function.py`** — agentic_function
 - **`llm.py`** — One model request using the ambient agentic-programming Runtime
 - **`runtime.py`** — runtime
+- **`runtime_scope.py`** — Lazily own a Runtime for standalone model operations
 - **`session.py`** — Session management
 - **`tool_format.py`** — Convert an ``@agentic_function`` spec into other frameworks' tool formats
 
