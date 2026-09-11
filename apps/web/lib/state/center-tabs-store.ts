@@ -21,6 +21,7 @@
  */
 import { create } from "zustand";
 import { topLevelTabs } from "./web-page-management";
+import { recordTabPage, tabPage, type TabPageHistory } from "./tab-page-history";
 import { sessionHistory, withSessionHistory, type SessionTabHistory } from "./session-tab-history";
 import {
   MAX_CENTER_TAB_GROUP_MEMBERS,
@@ -106,6 +107,7 @@ export interface CenterTab {
   draft?: boolean;
   /** Per-tab session navigation; identity and group references stay fixed. */
   sessionHistory?: SessionTabHistory;
+  pageHistory?: TabPageHistory;
   /** File tabs only. */
   projectId?: string;
   /** File tabs only — project-relative, "/"-separated. */
@@ -329,7 +331,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         (s.tabs[activeIdx].kind === "builtin" && s.tabs[activeIdx].page === "browser") ||
         replaceable.includes(s.tabs[activeIdx].id))
     ) {
-      tabs = s.tabs.map((t, i) => (i === activeIdx ? make() : t));
+      tabs = s.tabs.map((t, i) => (i === activeIdx ? recordTabPage(t, make()) : t));
     } else {
       tabs = [...s.tabs, make()];
     }
@@ -539,7 +541,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const tab: CenterTab = { id, kind: "session", title, sessionId };
         const replace = active?.kind === "ntp";
         return commitCenterTabsState(s, {
-          tabs: replace ? s.tabs.map(item => item.id === active.id ? tab : item) : [...s.tabs, tab],
+          tabs: replace ? s.tabs.map(item => item.id === active.id ? recordTabPage(item, tab) : item) : [...s.tabs, tab],
           activeId: id,
           groups: replace ? replaceGroupTabId(s.groups, active.id, id) : s.groups,
         });
@@ -547,10 +549,26 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     navigateSessionHistory: (direction) => set(s => {
       const active = s.tabs.find(tab => tab.id === s.activeId);
-      if (active?.kind !== "session" || (direction !== -1 && direction !== 1)) return {};
+      if (!active || (direction !== -1 && direction !== 1)) return {};
       const history = sessionHistory(active);
       const index = history.index + direction;
-      if (index < 0 || index >= history.entries.length) return {};
+      if (active.kind !== "session" || index < 0 || index >= history.entries.length) {
+        const pages = active.pageHistory;
+        const pageIndex = (pages?.index ?? 0) + direction;
+        if (!pages || pageIndex < 0 || pageIndex >= pages.entries.length) return {};
+        const entries = [...pages.entries];
+        entries[pages.index] = tabPage(active);
+        const target = entries[pageIndex];
+        const existing = s.tabs.find(tab => tab.id !== active.id && (tab.id === target.id
+          || (target.kind === "session" && tab.kind === "session" && tab.sessionId === target.sessionId)));
+        if (existing) return commitCenterTabsState(s, { activeId: existing.id });
+        if (active.kind === "session" && active.sessionId) closedSessionAckTombstones.add(active.sessionId);
+        const next = { ...target, pageHistory: { entries, index: pageIndex } };
+        return commitCenterTabsState(s, {
+          tabs: s.tabs.map(tab => tab.id === active.id ? next : tab), activeId: next.id,
+          groups: replaceGroupTabId(s.groups, active.id, next.id),
+        });
+      }
       const targetSessionId = history.entries[index].sessionId;
       const existing = s.tabs.find(tab => tab.id !== active.id
         && tab.kind === "session" && tab.sessionId === targetSessionId);
@@ -572,7 +590,22 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     removeSessionFromHistory: (sessionId) => {
       closedSessionAckTombstones.add(sessionId);
       set(s => {
-        const tabs = s.tabs.map(tab => {
+        const tabs = s.tabs.map(original => {
+          let tab = original;
+          if (tab.pageHistory) {
+            const pages = tab.pageHistory;
+            const entries = pages.entries.flatMap((page, index) => {
+              if (index === pages.index || page.kind !== "session") return [page];
+              const history = sessionHistory(page);
+              const remaining = history.entries.filter(entry => entry.sessionId !== sessionId);
+              if (!remaining.length) return [];
+              const cursor = Math.max(0, history.entries.slice(0, history.index + 1)
+                .filter(entry => entry.sessionId !== sessionId).length - 1);
+              return [tabPage(withSessionHistory(page, { entries: remaining, index: cursor }))];
+            });
+            const index = entries.findIndex(page => page.id === tab.id);
+            tab = { ...tab, pageHistory: { entries, index } };
+          }
           if (tab.kind !== "session") return tab;
           const history = sessionHistory(tab);
           const entries = history.entries.filter(entry => entry.sessionId !== sessionId);
@@ -596,7 +629,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
         const tabs =
           activeIdx >= 0 && s.tabs[activeIdx].kind === "ntp"
-            ? s.tabs.map((item, i) => (i === activeIdx ? tab : item))
+            ? s.tabs.map((item, i) => (i === activeIdx ? recordTabPage(item, tab) : item))
             : [...s.tabs, tab];
         const replacedId = activeIdx >= 0 && s.tabs[activeIdx].kind === "ntp"
           ? s.tabs[activeIdx].id
@@ -618,7 +651,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         const activeIdx = s.tabs.findIndex((t) => t.id === s.activeId);
         if (activeIdx < 0) return {};
         const replacedId = s.tabs[activeIdx].id;
-        const tabs = s.tabs.map((item, i) => (i === activeIdx ? tab : item));
+        const tabs = s.tabs.map((item, i) => (i === activeIdx ? recordTabPage(item, tab) : item));
         return commitCenterTabsState(s, {
           tabs,
           activeId: tab.id,

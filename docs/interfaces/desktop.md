@@ -4,6 +4,8 @@ The macOS and Windows Desktop Apps present OpenProgram as a multi-pane workspace
 
 Closing the last tab leaves both the tab bar and center content area empty. No tab or launcher is created automatically. Use the plus button to open a new tab.
 
+The Back and Forward buttons also include the initial New tab page. After opening an application or built-in page from it, use Back to return to the initial page and Forward to restore the destination in the same tab. Choosing another destination after going back replaces the forward history.
+
 On macOS, install the architecture-matched DMG and copy `OpenProgram.app` to `/Applications`; the current macOS channel is unsigned and may require **System Settings → Privacy & Security → Open Anyway**. On Windows, install only the signed `win-x64.exe` or `win-arm64.exe` attached to a published [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases). If a release has no signed Windows EXE, use the CLI/server and browser UI for that version. The complete steps are in [Installation](../install/install.md).
 
 Terminal panes use the login shell on macOS and Windows PowerShell through ConPTY on Windows. Packaged apps on both platforms start the worker from their embedded managed Python and do not depend on a system Python or Node.js.

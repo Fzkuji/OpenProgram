@@ -135,3 +135,53 @@ test("closing a session in a split does not activate its now hidden owned page",
   assert.deepEqual(state.groups, []);
   assert.ok(state.tabs.some(t=>t.id==="w:hidden"));
 });
+
+const { canNavigateTabPage } = await import("../lib/state/tab-page-history.ts");
+test("New tab is preserved behind application and built-in page navigation", () => {
+  for (const open of [s => s.openApplicationTab("calculator", "a".repeat(64), "Calculator"),
+    s => s.openBuiltinTab("files"), s => s.openBuiltinTab("browser"), s => s.openBuiltinTab("terminal")]) {
+    useCenterTabs.setState({ tabs: [], groups: [], activeId: null, splitWebTabId: null });
+    const s = useCenterTabs.getState();
+    s.openNewTabPage(); const homeId = useCenterTabs.getState().activeId;
+    open(s); const targetId = useCenterTabs.getState().activeId;
+    assert.equal(useCenterTabs.getState().tabs.length, 1);
+    assert.equal(canNavigateTabPage(useCenterTabs.getState().tabs[0], -1), true);
+    s.navigateSessionHistory(-1);
+    assert.equal(useCenterTabs.getState().activeId, homeId);
+    assert.equal(useCenterTabs.getState().tabs[0].kind, "ntp");
+    assert.equal(canNavigateTabPage(useCenterTabs.getState().tabs[0], 1), true);
+    useCenterTabs.setState(normalizeCenterTabsPayload(useCenterTabs.getState()));
+    s.navigateSessionHistory(1);
+    assert.equal(useCenterTabs.getState().activeId, targetId);
+    assert.equal(useCenterTabs.getState().tabs.length, 1);
+    s.navigateSessionHistory(-1);
+    s.openBuiltinTab("files");
+    assert.equal(canNavigateTabPage(useCenterTabs.getState().tabs[0], 1), false);
+    assert.equal(useCenterTabs.getState().tabs[0].pageHistory.entries.length, 2);
+  }
+});
+
+test("conversation history can return to New tab and forward to the same draft", () => {
+  useCenterTabs.setState({ tabs: [], groups: [], activeId: null, splitWebTabId: null });
+  const s = useCenterTabs.getState(); s.openNewTabPage();
+  const home = useCenterTabs.getState().activeId;
+  const draft = s.claimDraftSessionTab();
+  s.openSessionTab("next", "Next");
+  s.navigateSessionHistory(-1);
+  assert.equal(useCenterTabs.getState().tabs[0].sessionId, draft);
+  s.navigateSessionHistory(-1);
+  assert.equal(useCenterTabs.getState().activeId, home);
+  s.navigateSessionHistory(1);
+  assert.equal(useCenterTabs.getState().tabs[0].sessionId, draft);
+  s.navigateSessionHistory(1);
+  assert.equal(useCenterTabs.getState().tabs[0].sessionId, "next");
+});
+
+test("deleting a conversation removes its forward page after returning to New tab", () => {
+  useCenterTabs.setState({ tabs: [], groups: [], activeId: null, splitWebTabId: null });
+  const s = useCenterTabs.getState(); s.openNewTabPage(); s.openSessionTab("removed", "Removed");
+  s.navigateSessionHistory(-1); s.removeSessionFromHistory("removed");
+  assert.equal(canNavigateTabPage(useCenterTabs.getState().tabs[0], 1), false);
+  s.navigateSessionHistory(1);
+  assert.equal(useCenterTabs.getState().tabs[0].kind, "ntp");
+});
