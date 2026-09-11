@@ -18,6 +18,12 @@ class ApplicationService:
         self.tasks: dict[str, asyncio.Task] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
         self.lock = asyncio.Lock()
+        self.attempts = {}
+        self.cancel_commands = {}
+        from openprogram.execution.control import default_control_service
+        from .driver import ApplicationDriver
+        self.control = default_control_service()
+        self.driver = ApplicationDriver(self)
 
     def describe(self, run_id: str) -> dict:
         with state.connect() as db:
@@ -64,6 +70,15 @@ class ApplicationService:
             with state.connect() as db:
                 db.execute("INSERT INTO operations(id,instance_id,request_key,fingerprint,definition,operation,input) VALUES(?,?,?,?,?,?,?)",
                            (run_id, instance_id, request_key, fingerprint, json.dumps(app), operation, json.dumps(value)))
+            from openprogram.execution.driver import DriverBinding
+            record = store.get_execution(run_id)
+            attempt, leased = self.control.attempts.lease(run_id, expected_version=record.status_version,
+                                                        owner_id="application-worker", ttl_seconds=60)
+            attempt, _ = self.control.attempts.activate(attempt.attempt_id, generation=attempt.generation,
+                                                       expected_execution_version=leased.status_version)
+            self.control.attempts.set_process_owner(attempt.attempt_id, generation=attempt.generation, active=True)
+            self.attempts[run_id] = attempt
+            self.control.registry.bind(DriverBinding(run_id, attempt.attempt_id, attempt.generation, self.driver, attempt))
             state.emit(run_id, {"type": "accepted"})
             task = asyncio.create_task(self._execute(run_id, instance, app, operation, value))
             self.tasks[run_id] = task
@@ -73,14 +88,28 @@ class ApplicationService:
     def transition(self, run_id: str, target: Status):
         store = default_store()
         record = store.get_execution(run_id)
-        if record and record.status not in TERMINAL_EXECUTION_STATUSES:
-            store.transition_execution(run_id, expected_version=record.status_version, target=target)
+        if record and record.status not in TERMINAL_EXECUTION_STATUSES and record.status != target:
+            attempt = self.attempts.get(run_id)
+            if attempt and target in TERMINAL_EXECUTION_STATUSES:
+                self.control.finish_attempt(attempt_id=attempt.attempt_id, generation=attempt.generation,
+                    expected_execution_version=record.status_version, target=target, outcome=target.value,
+                    command_id=self.cancel_commands.pop(run_id, None))
+                self.attempts.pop(run_id, None)
+            else:
+                store.transition_execution(run_id, expected_version=record.status_version, target=target)
             state.emit(run_id, {"type": "status", "status": target.value})
 
     async def _execute(self, run_id, instance, app, operation, value):
         process = None
+        async def heartbeat():
+            while True:
+                await asyncio.sleep(10)
+                attempt = self.attempts.get(run_id)
+                if attempt is None:
+                    return
+                self.control.attempts.heartbeat(attempt.attempt_id, generation=attempt.generation, ttl_seconds=60)
+        lease = asyncio.create_task(heartbeat())
         try:
-            self.transition(run_id, Status.RUNNING)
             executable = catalog.python_path(app["digest"])
             root = catalog.home() / "versions" / app["digest"]
             env = dict(os.environ)
@@ -122,6 +151,9 @@ class ApplicationService:
             if process:
                 await self._stop(process)
             record = default_store().get_execution(run_id)
+            if record.status != Status.CANCELLING:
+                with state.connect() as db:
+                    db.execute("UPDATE operations SET error=? WHERE id=?", ("The worker stopped. Review saved progress before starting a new operation.", run_id))
             self.transition(run_id, Status.CANCELLED if record.status == Status.CANCELLING else Status.INTERRUPTED)
             raise
         except Exception as exc:
@@ -132,6 +164,10 @@ class ApplicationService:
             self.transition(run_id, Status.FAILED)
         finally:
             self.processes.pop(run_id, None)
+            lease.cancel()
+            await asyncio.gather(lease, return_exceptions=True)
+            with state.connect() as db:
+                db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
 
     async def _stop(self, process):
         if process.returncode is None:
@@ -156,7 +192,7 @@ class ApplicationService:
             run = self.describe(run_id)
             question = run["question"]
             process = self.processes.get(run_id)
-            if not question or question["request_id"] != request_id or process is None:
+            if run["status"] != Status.RUNNING.value or not question or question["request_id"] != request_id or process is None:
                 raise ValueError("question is no longer waiting")
             process.stdin.write((json.dumps({"request_id": request_id, "answer": answer}) + "\n").encode())
             await process.stdin.drain()
@@ -185,9 +221,9 @@ class ApplicationService:
         for run_id in ids:
             record = default_store().get_execution(run_id)
             if record and record.status not in TERMINAL_EXECUTION_STATUSES:
-                if record.status == Status.CANCELLING:
-                    self.transition(run_id, Status.CANCELLED)
+                if record.current_attempt_id:
+                    self.control.recover_owner_loss(run_id)
                 else:
-                    self.transition(run_id, Status.INTERRUPTED)
+                    self.transition(run_id, Status.CANCELLED if record.status == Status.CANCELLING else Status.INTERRUPTED)
                 with state.connect() as db:
                     db.execute("UPDATE operations SET question=NULL,error=? WHERE id=?", ("The worker stopped. Review saved progress before starting a new operation.", run_id))

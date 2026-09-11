@@ -87,7 +87,7 @@ def manifest(root: Path) -> dict:
 
 def installed() -> list[dict]:
     return [dict(r["application"]) for r in _programs._read_program_sources()
-            if r.get("kind") == "application" and isinstance(r.get("application"), dict)]
+            if r.get("kind") == "application" and not r.get("uninstalled") and isinstance(r.get("application"), dict)]
 
 
 def get(app_id: str, *, enabled: bool = True) -> dict:
@@ -212,7 +212,13 @@ def package_digest(root: Path) -> str:
 def remove(app_id: str) -> None:
     get(app_id, enabled=False)
     def mutate(rows):
-        _programs._write_program_sources([r for r in rows if not (r.get("kind") == "application" and r.get("application", {}).get("id") == app_id)])
+        for row in rows:
+            if row.get("kind") == "application" and row.get("application", {}).get("id") == app_id:
+                # Keep source/schema/scope identity beside retained business
+                # data. Reinstall is subject to the same migration check.
+                row["uninstalled"] = True
+                row["application"]["enabled"] = False
+        _programs._write_program_sources(rows)
     _programs._update_program_sources(mutate)
 
 
@@ -228,7 +234,7 @@ def configure(app_id: str, **changes) -> dict:
     result = {}
     def mutate(rows):
         for row in rows:
-            if row.get("kind") == "application" and row.get("application", {}).get("id") == app_id:
+            if row.get("kind") == "application" and not row.get("uninstalled") and row.get("application", {}).get("id") == app_id:
                 row["application"].update(changes)
                 result.update(row["application"])
         if not result:

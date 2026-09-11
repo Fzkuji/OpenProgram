@@ -31,6 +31,11 @@ operations = {'save': save, 'confirm': confirm}
     }))
     app = FastAPI()
     applications.register(app)
+    from openprogram.webui.routes import lifecycle
+    from openprogram.agent.authority import owner_authority, owner_principal_id
+    from types import SimpleNamespace
+    lifecycle.register(app)
+    app.state.owner_auth = SimpleNamespace(authority=owner_authority(owner_principal_id()))
     with TestClient(app) as client:
         install = client.post('/api/applications/install', json={"path": str(source), "trust": True})
         assert install.status_code == 200, install.text
@@ -73,6 +78,23 @@ operations = {'save': save, 'confirm': confirm}
         assert response.status_code == 200, response.text
         assert response.json()['status'] == 'cancelled'
 
+        generic = submit('confirm', 'generic-cancel')
+        pending = wait(generic['id'], lambda run: run['question'] is not None)
+        process = app.state.applications.processes[generic['id']]
+        from openprogram.execution import default_store
+        record = default_store().get_execution(generic['id'])
+        response = client.post('/api/execution/cancel', json={
+            'type': 'execution.command', 'action': 'execution.cancel', 'command_id': 'generic-cancel-command',
+            'execution_id': generic['id'], 'expected_version': record.status_version, 'payload': {},
+        })
+        assert response.status_code == 200, response.text
+        cancelled = wait(generic['id'], lambda run: run['status'] == 'cancelled')
+        assert process.returncode is not None
+        assert cancelled['question'] is None
+        assert client.post('/api/application-runs/' + generic['id'] + '/answer', json={
+            'request_id': pending['question']['request_id'], 'answer': 'too late',
+        }).status_code == 400
+        assert default_store().get_command('generic-cancel-command').status.value == 'applied'
         interrupted = submit('confirm', 'shutdown-1')
         wait(interrupted['id'], lambda run: run['question'] is not None)
     # The view/HTTP client is not the supervisor; worker shutdown is.

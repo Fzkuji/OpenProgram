@@ -78,6 +78,22 @@ def register(app):
     def ui_url(key, definition):
         return f"/application-assets/{key}/{definition['digest']}/{state.asset_token(key, definition['digest'])}/{quote(definition['ui']['entry'], safe='/')}"
 
+    @app.get("/api/applications/{app_id}/launch-context")
+    async def launch_context(app_id: str):
+        async def apply():
+            catalog.get(app_id)
+            from pathlib import Path
+            from openprogram.agent.authority import owner_principal_id
+            from openprogram.store.project import list_projects
+            projects = [{"id": p.id, "name": p.name, "path": p.path} for p in list_projects()
+                        if p.path and not p.hidden and Path(p.path).is_dir()]
+            valid = {p["id"] for p in projects}
+            with state.connect() as db:
+                bindings = [r[0] for r in db.execute("SELECT project_id FROM instances WHERE app_id=? AND owner=? ORDER BY rowid DESC",
+                                                    (app_id, owner_principal_id())) if r[0] in valid]
+            return {"projects": projects, "bindings": bindings}
+        return await guarded(apply)
+
     @app.post("/api/applications/{app_id}/open")
     async def open_application(app_id: str, body: dict):
         async def apply():

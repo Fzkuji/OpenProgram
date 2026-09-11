@@ -31,6 +31,8 @@ openprogram programs apps install /absolute/path/to/application --trust
 The new tab page refreshes its application list when focused and every ten
 seconds. Project-scoped applications use the current selected project when
 opened; changing the conversation project does not rebind an existing instance.
+With no current project, a single saved binding is reused. First use or multiple
+saved bindings opens a project chooser, which also accepts a new folder.
 Global applications share one instance for the current owner. Project instances
 have separate business data.
 
@@ -137,7 +139,9 @@ openprogram programs apps uninstall local.notes
 ```
 
 Uninstall removes the menu entry and cancels active operations, retaining saved
-data and previous code versions. The owner API also supports `enabled`, `hidden`
+data, previous code versions and their schema/scope compatibility identity.
+Reinstalling a compatible package restores that data; incompatible reinstallation
+is rejected before activation. The owner API also supports `enabled`, `hidden`
 and `display_title` through `PATCH /api/applications/{id}`. These are distinct:
 hiding an entry does not cancel a task; disabling it does.
 

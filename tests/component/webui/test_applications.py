@@ -58,3 +58,16 @@ def test_upgrade_rejects_schema_changes_and_storage_conflicts(tmp_path, monkeypa
         assert client.patch('/api/applications/test.versioned', json={'enabled': False}).status_code == 200
         assert client.get(opened['ui_url']).status_code == 404
         assert client.post('/api/applications/test.versioned/open', json={}).status_code == 404
+
+        assert client.delete('/api/applications/test.versioned').status_code == 200
+        assert client.post('/api/applications/install', json={'path': str(source)}).status_code == 400
+        definition['dataSchema'] = 1
+        definition['scope'] = 'project'
+        (source / 'application.json').write_text(json.dumps(definition))
+        assert client.post('/api/applications/install', json={'path': str(source)}).status_code == 400
+        definition['scope'] = 'global'
+        (source / 'application.json').write_text(json.dumps(definition))
+        assert client.post('/api/applications/install', json={'path': str(source), 'replace': True}).status_code == 200
+        restored = client.post('/api/applications/test.versioned/open', json={}).json()
+        assert restored['instance_id'] == opened['instance_id']
+        assert client.get(state_url).json()['value'] == {'note': 'preserved'}

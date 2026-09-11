@@ -39,16 +39,31 @@ document.getElementById('save').onclick=async()=>{const s=await openprogramApp.s
     (source / 'index.html').write_text(html.split('<script>', 1)[0] + '<script type="module" src="ui.js"></script>')
     definition = catalog.install(str(source))
     instance = state.instance(definition)
+    from openprogram.store.project import resolve_project
+    project_one = tmp_path / 'project-one'
+    project_two = tmp_path / 'project-two'
+    project_one.mkdir()
+    project_two.mkdir()
+    projects = [resolve_project(project_one), resolve_project(project_two)]
+    project_source = tmp_path / 'project-app'
+    project_source.mkdir()
+    for name in ('index.html', 'ui.js', 'chunk.js'):
+        (project_source / name).write_bytes((source / name).read_bytes())
+    (project_source / 'application.json').write_text('{"id":"test.project-browser","title":"Project notes","version":"1","scope":"project","capabilities":["storage.app"]}')
+    catalog.install(str(project_source))
     bundle = tmp_path / 'pane.js'
     subprocess.run(['node', '-e', '''
 const esbuild=require('esbuild');
-esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoot} from "react-dom/client"; import {ApplicationTabPane} from "./components/center-tabs/application-tab-pane"; createRoot(document.getElementById("root")).render(React.createElement(ApplicationTabPane,{instanceId:window.instanceId}));',resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});
+esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoot} from "react-dom/client"; import {ApplicationTabPane} from "./components/center-tabs/application-tab-pane"; import {NewTabPage} from "./components/center-tabs/new-tab-page"; import {useCenterTabs} from "./lib/state/center-tabs-store"; function App(){const tab=useCenterTabs(s=>s.tabs.find(t=>t.id===s.activeId));return window.launch?React.createElement(React.Fragment,null,React.createElement(NewTabPage),tab?.applicationInstanceId?React.createElement(ApplicationTabPane,{instanceId:tab.applicationInstanceId}):null):React.createElement(ApplicationTabPane,{instanceId:window.instanceId});} createRoot(document.getElementById("root")).render(React.createElement(App));',resolveDir:process.argv[1],loader:'tsx'},bundle:true,format:'iife',platform:'browser',jsx:'automatic',loader:{'.css':'empty'},outfile:process.argv[2],tsconfig:process.argv[1]+'/tsconfig.json'});
 ''', str(ROOT / 'apps/web'), str(bundle)], cwd=ROOT, check=True, capture_output=True)
     app = FastAPI()
     applications.register(app)
     @app.get('/')
     async def shell():
         return Response(f'<div id="root"></div><script>window.instanceId="{instance["id"]}";</script><script src="/pane.js"></script>', media_type='text/html')
+    @app.get('/launch')
+    async def launcher():
+        return Response('<div id="root"></div><script>window.launch=true;</script><script src="/pane.js"></script>', media_type='text/html')
     @app.get('/pane.js')
     async def script():
         return Response(bundle.read_bytes(), media_type='application/javascript')
@@ -77,6 +92,30 @@ esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoo
                 assert child.evaluate("async () => {try {await fetch('/api/applications'); return false;} catch {return true;}}")
                 page.reload()
                 expect(page.frame_locator('iframe').get_by_label('Note')).to_have_value('persistent annotation')
+                page.goto(f'http://127.0.0.1:{port}/launch')
+                page.get_by_role('button', name='Project notes', exact=True).click()
+                page.locator('#application-project').select_option(projects[0].id)
+                page.get_by_role('button', name='Open application', exact=True).click()
+                project_frame = page.frame_locator('iframe')
+                project_frame.get_by_label('Note').fill('first project')
+                project_frame.get_by_role('button', name='Save', exact=True).click()
+                expect(project_frame.locator('output')).to_have_text('Saved')
+                first_url = page.locator('iframe').get_attribute('src')
+                page.reload()
+                page.get_by_role('button', name='Project notes', exact=True).click()
+                expect(page.locator('#application-project')).to_have_count(0)
+                expect(page.frame_locator('iframe').get_by_label('Note')).to_have_value('first project')
+                assert page.locator('iframe').get_attribute('src') == first_url
+                # A second explicit binding makes the next no-context launch
+                # ask which project to use; it must keep a separate database.
+                page.evaluate("async id => {await fetch('/api/applications/test.project-browser/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:id})});}", projects[1].id)
+                page.reload()
+                page.get_by_role('button', name='Project notes', exact=True).click()
+                page.locator('#application-project').select_option(projects[1].id)
+                page.get_by_role('button', name='Open application', exact=True).click()
+                expect(page.frame_locator('iframe').get_by_label('Note')).to_have_value('')
+                assert page.locator('iframe').get_attribute('src') != first_url
+
             finally:
                 browser.close()
     finally:
@@ -85,3 +124,32 @@ esbuild.buildSync({stdin:{contents:'import React from "react"; import {createRoo
         listener.close()
         auth.close()
         assert not thread.is_alive()
+
+
+def test_file_analysis_sample_displays_interruption_and_progress():
+    from playwright.sync_api import sync_playwright, expect
+    html = (ROOT / 'examples/applications/file-analysis/index.html').read_text()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            for status in ('interrupted', 'running'):
+                page = browser.new_page()
+                page.evaluate('''status => {
+                  window.openprogramApp={
+                    load:async()=>({version:1,value:{results:[{path:'first.txt',lines:3}]}}),
+                    runs:async()=>[{id:'run',status}],
+                    status:async()=>({status,result:null,error:status==='interrupted'?'The worker stopped':null,
+                      events:[{sequence:1,type:'progress',value:{completed:1,total:4}}]}),
+                  };
+                }''', status)
+                page.set_content(html)
+                expect(page.locator('#status')).to_contain_text(status)
+                expect(page.locator('#result')).to_contain_text('first.txt')
+                if status == 'interrupted':
+                    expect(page.locator('#status')).to_contain_text('The worker stopped')
+                else:
+                    expect(page.locator('#status')).to_contain_text('"completed":1')
+                    expect(page.locator('#status')).to_contain_text('"total":4')
+                page.close()
+        finally:
+            browser.close()

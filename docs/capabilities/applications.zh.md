@@ -19,7 +19,7 @@ Python 后端以当前操作系统用户执行受信代码。检查源码和依�
 openprogram programs apps install /absolute/path/to/application --trust
 ```
 
-新标签页获得焦点时和每十秒刷新应用列表。项目级应用在打开时绑定当前选中的项目，之后切换对话项目不会改变已经打开的实例。全局应用使用当前 owner 的同一个实例；不同项目的实例独立保存业务数据。
+新标签页获得焦点时和每十秒刷新应用列表。项目级应用在打开时绑定当前选中的项目，之后切换对话项目不会改变已经打开的实例。没有当前项目时会复用唯一的已有绑定；首次使用或有多个绑定时提供项目选择，也可以选择新文件夹。全局应用使用当前 owner 的同一个实例；不同项目的实例独立保存业务数据。
 
 仓库包含[计算器](https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/calculator)、[论文阅读器](https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/reader)和[文件分析](https://github.com/Fzkuji/OpenProgram/tree/main/examples/applications/file-analysis)样例。阅读器只在点击生成摘要时调用配置的模型，保存笔记不需要模型。
 
@@ -58,6 +58,6 @@ CLI 对应 `programs apps run APP OPERATION --input JSON`，项目级应用增�
 
 worker 停止会中断未完成的 Python 函数，重启后显示中断状态，不会自动恢复任意 Python 调用栈。应用应逐步保存进度，用户查看中断情况后明确启动另一次操作。当前版本拒绝改变数据 schema 或 scope 的升级，不提供自动迁移。
 
-`openprogram programs apps uninstall APP` 移除菜单入口并取消活动操作，保留业务数据和旧代码。owner API 的 `PATCH /api/applications/{id}` 支持 `enabled`、`hidden`、`display_title`；隐藏不取消任务，停用会取消。
+`openprogram programs apps uninstall APP` 移除菜单入口并取消活动操作，保留业务数据、旧代码及 schema/scope 兼容身份。重新安装兼容包可以恢复数据，不兼容的重新安装会在激活前被拒绝。owner API 的 `PATCH /api/applications/{id}` 支持 `enabled`、`hidden`、`display_title`；隐藏不取消任务，停用会取消。
 
 独立部署、非 Python 后端、MCP Apps 兼容以及原生操作系统 GUI 窗口嵌入尚未实现。
