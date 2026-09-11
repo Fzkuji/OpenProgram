@@ -72,7 +72,7 @@ Runtime.exec(content, context=None, response_format=None, model=None,
 | `toolset` / `tools_source` / `tools_allow` / `tools_deny` | — | `None` | 工具集预设与策略过滤:`toolset` 指名预设(`"full"` 是隐式默认,`"none"` 表示退出),`tools_source` 按渠道来源过滤,`tools_allow` / `tools_deny` 是名单允许/拒绝列表 |
 | `tool_choice` | `str \| dict` | `"auto"` | `"auto"` / `"required"` / `"none"` / `{"type":"function","name":"X"}` 强制某工具。透传到 provider(OpenAI / Anthropic / Gemini / Bedrock 各自映射协议形态) |
 | `parallel_tool_calls` | `bool` | `True` | 允许一轮多个工具调用;`False` 透传到支持该开关的 provider |
-| `max_iterations` | `int` | `20` | 工具循环轮数上限(一轮 = 一次模型调用 + 其工具执行)。生效值为 `max(1, min(50, max_iterations))`,50 是 `agent_loop.py` 的硬上限 |
+| `max_iterations` | `int` | `20` | 工具循环轮数上限(一轮 = 一次模型调用 + 其工具执行)。生效值为 `max(1, min(200, max_iterations))`,200 是 `agent_loop.py` 的硬上限 |
 | `choices` | `dict \| list \| None` | `None` | 设了则约束 turn 的**收尾**:模型跑完整 turn 后,最终回复必须从 `choices` 里选一个;`exec` 解析并返回该选择的结果。详见 [next-step-decision](../../capabilities/agentic-programming/choosing-the-next-step/next-step-decision.md) |
 | `timeout_s` | `float \| None` | `None` | 整个 `exec()`(含全部重试休眠)的墙钟时间预算,超时抛 `LLMError`(`reason=TIMEOUT`, `retryable=False`)。`None` = 回落到环境变量 `OPENPROGRAM_EXEC_TIMEOUT_S`(没设或为 `0` = 不限时) |
 | `on_retry` | `Callable \| None` | `None` | 每次退避休眠前调用的观测回调(每个后面还排着重试的失败尝试触发一次),入参 `RetryInfo`;最终失败不触发。回调内抛出的异常被吞掉 |

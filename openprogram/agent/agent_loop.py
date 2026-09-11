@@ -50,6 +50,23 @@ from .types import (
     StreamFn,
 )
 
+# Hard cap on the inner tool-call loop so a model that keeps asking
+# for "one more tool call" cannot churn forever. Chat coding turns
+# commonly exceed 50 (read/grep/edit cycles). Other frameworks still
+# cap loops: OpenAI Agents SDK default max_turns=10, LangGraph
+# recursion_limit=25, CrewAI max_iter=20. Those are short-task
+# defaults. Interactive coding agents need a higher ceiling; 200
+# covers a long investigation without removing the runaway guard.
+# runtime.exec still defaults to 20 and can only tighten this cap.
+MAX_INNER_ITERATIONS = 200
+
+
+def iteration_cap_for(max_iterations: int | None) -> int:
+    """Clamp a caller cap to ``[1, MAX_INNER_ITERATIONS]``. ``None`` uses the hard cap."""
+    if max_iterations is None:
+        return MAX_INNER_ITERATIONS
+    return max(1, min(MAX_INNER_ITERATIONS, int(max_iterations)))
+
 
 def _latest_user_text(messages: list) -> str:
     """Walk back from the end and return the last user-role text.
@@ -481,15 +498,9 @@ async def _run_loop(
         has_more_tool_calls = True
         return True
 
-    # Hard cap on the inner tool-call loop so a model that keeps asking
-    # for "one more tool call" can't churn the runtime forever. 50 is
-    # plenty for a real task; anything beyond that is the model spinning.
     # A caller-set ``config.max_iterations`` (exec's ``max_iterations=``)
     # tightens the cap — it can never raise it past the hard limit.
-    MAX_INNER_ITERATIONS = 50
-    iteration_cap = MAX_INNER_ITERATIONS
-    if config.max_iterations is not None:
-        iteration_cap = max(1, min(MAX_INNER_ITERATIONS, config.max_iterations))
+    iteration_cap = iteration_cap_for(config.max_iterations)
     inner_iterations = 0
 
     while True:

@@ -34,7 +34,7 @@
 `"auto"`（默认：由模型决定）、`"required"`（必须挑选一个函数）、
 `"none"`（仅文本），或 `{"type": "function", "name": "X"}` 强制某个函数。它会被转发给 provider，由后者映射到自身的协议形态（已覆盖 OpenAI、Anthropic、Gemini 和 Bedrock）。
 在 provider 支持该开关的情况下，`parallel_tool_calls=False` 禁止在一轮内进行多次挑选。`max_iterations` 限制循环的轮数——实际上限是
-`min(50, max_iterations)`，下限为 1（见
+`min(200, max_iterations)`，下限为 1（见
 [终止](#termination)）。对于一次强制的、结构化的决策*结尾*（而非逐轮控制），`exec(choices=...)` 仍是更丰富的工具——见 [下一步决策](./next-step-decision.md)。
 
 ## 循环主体：`_run_loop`
@@ -86,7 +86,7 @@ success                               → result content wrapped in a ToolResult
 ```
 model picked no function (pure text)   normal finish; the text is the result
 stop_reason = error / aborted          error / cancel finish
-inner_iterations > 50                  hard cap MAX_INNER_ITERATIONS against idle spinning;
+inner_iterations > 200                 hard cap MAX_INNER_ITERATIONS against idle spinning;
                                        treated as a normal finish, returns what exists
 ```
 
