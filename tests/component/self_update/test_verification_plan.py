@@ -86,6 +86,20 @@ def test_public_prepare_requires_closed_complete_plan(tmp_path, monkeypatch, cas
     assert not store.root.exists()
 
 
+def test_public_prepare_rejects_removed_test_object_interaction(tmp_path, monkeypatch):
+    plan = _plan()
+    plan["checks"][0]["entry"] = "ui:main"
+    plan["checks"][0]["max_output_bytes"] = 262144
+    plan["checks"][0]["interaction"] = {
+        "kind": "test_object", "object_id": "rename-fixture", "action": "rename",
+        "initial_title": "Before verification", "title": "Approved rename",
+        "cleanup": "restore-and-remove",
+    }
+    result, store = _public_prepare(tmp_path, monkeypatch, plan)
+    assert result.is_error
+    assert not store.root.exists()
+
+
 def test_frozen_plan_edit_does_not_gain_authority(tmp_path, monkeypatch):
     from openprogram.self_update.verifier_config import load_verifier_config
     result, store = _public_prepare(tmp_path, monkeypatch, _plan())
