@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import stat
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -56,7 +55,6 @@ class DocumentHistory:
     def __init__(self, root: Path | None = None):
         from openprogram.paths import get_state_dir
         self.root = Path(root) if root is not None else get_state_dir() / "project-file-history"
-        self._guard = threading.RLock()
 
     def _dir(self, project_id: str, relative: str) -> Path:
         key = hashlib.sha256(f"{project_id}\0{relative}".encode()).hexdigest()
@@ -64,6 +62,25 @@ class DocumentHistory:
 
     def _index(self, directory: Path) -> Path:
         return directory / "index.json"
+
+    def _intent(self, directory: Path, key: str | None) -> Path:
+        return directory / "intents" / f"{hashlib.sha256((key or uuid.uuid4().hex).encode()).hexdigest()[:24]}.json"
+
+    def prepare(self, project_id: str, relative: str, before: bytes, after: bytes,
+                *, idempotency_key: str | None) -> Path:
+        directory = self._dir(project_id, relative)
+        path = self._intent(directory, idempotency_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"status": "prepared", "project_id": project_id,
+                                    "path": relative, "before_revision": _digest(before),
+                                    "after_revision": _digest(after)}), encoding="utf-8")
+        return path
+
+    @staticmethod
+    def commit_intent(path: Path) -> None:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["status"] = "committed"
+        path.write_text(json.dumps(data), encoding="utf-8")
 
     def _load(self, directory: Path) -> dict:
         try:
@@ -105,13 +122,27 @@ class DocumentHistory:
         target, relative = resolve_document(project_id, relative)
         if not isinstance(content, bytes) or len(content) > MAX_BYTES:
             raise DocumentHistoryError("content exceeds 64 MiB", "PAYLOAD_TOO_LARGE")
-        with self._guard:
+        from apps.server.openprogram_server._webui.ws_actions.files_shared import _workspace_mutation_lock
+        with _workspace_mutation_lock(project_id):
             before, mode = self._read_bounded(target)
             before_revision = _digest(before)
             if baseline_revision and baseline_revision != before_revision:
                 raise DocumentHistoryError("baseline revision does not match", "CONFLICT")
+            self._write_target(target, content, mode)
             return self._record(project_id, relative, before, content, mode,
                                 editor_id=editor_id, idempotency_key=idempotency_key, close=close)
+
+    @staticmethod
+    def _write_target(target: Path, content: bytes, mode: int) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with tmp.open("xb") as handle:
+                handle.write(content); handle.flush(); os.fsync(handle.fileno())
+            os.chmod(tmp, mode or 0o644)
+            os.replace(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def _record(self, project_id: str, relative: str, before: bytes, content: bytes, mode: int,
                 *, editor_id: str, idempotency_key: str | None, close: bool) -> dict:
@@ -119,6 +150,7 @@ class DocumentHistory:
         before_revision = _digest(before)
         after_revision = _digest(content)
         directory = self._dir(project_id, relative)
+        intent = self.prepare(project_id, relative, before, content, idempotency_key=idempotency_key)
         data = self._load(directory)
         for entry in data["entries"]:
             if idempotency_key and entry.get("idempotency_key") == idempotency_key:
@@ -144,6 +176,7 @@ class DocumentHistory:
             previous.update({"after_revision": after_revision, "created_at": now,
                              "idempotency_key": idempotency_key, "blob": blob.name})
             self._save(directory, data)
+            self.commit_intent(intent)
             return previous
         entry = {
             "version_id": version_id, "project_id": project_id, "path": relative,
@@ -155,6 +188,7 @@ class DocumentHistory:
         }
         data["entries"].append(entry)
         self._save(directory, data)
+        self.commit_intent(intent)
         return entry
 
     def list(self, project_id: str, relative: str, *, limit: int = 50, cursor: int = 0) -> dict:

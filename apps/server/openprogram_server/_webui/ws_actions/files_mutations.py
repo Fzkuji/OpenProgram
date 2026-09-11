@@ -79,6 +79,8 @@ def _write_file(project_id: str, path: str, content: str,
         # resolution. The content digest is the durable baseline identity.
         if _file_digest(target) != expected_revision:
             return {"conflict": True}
+    history = DocumentHistory()
+    intent = history.prepare(project_id, path, before, raw, idempotency_key=idempotency_key)
     try:
         # 原子替换：先写同目录临时文件再 os.replace——中途崩溃/磁盘满
         # 不会留下截断的目标文件。
@@ -87,10 +89,11 @@ def _write_file(project_id: str, path: str, content: str,
             f.write(raw)
         os.replace(tmp, target)
         try:
-            DocumentHistory()._record(
+            history._record(
                 project_id, path, before, raw, mode, editor_id=editor_id,
                 idempotency_key=idempotency_key, close=False,
             )
+            history.commit_intent(intent)
         except DocumentHistoryError as exc:
             return {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
                     "error": f"file published but history recording failed: {exc}"}

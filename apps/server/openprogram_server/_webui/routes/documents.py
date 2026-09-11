@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from urllib.parse import quote
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
@@ -40,8 +41,8 @@ def register(app):
             raw, mode = await asyncio.to_thread(DocumentHistory._read_bounded, target)
             import hashlib
             return Response(raw, media_type="application/octet-stream", headers={
-                "X-Document-Path": relative, "X-Document-Revision": hashlib.sha256(raw).hexdigest(),
-                "X-Document-Mode": str(mode), "Content-Disposition": f'inline; filename="{target.name}"',
+                "X-Document-Path": quote(relative, safe="/"), "X-Document-Revision": hashlib.sha256(raw).hexdigest(),
+                "X-Document-Mode": str(mode), "Content-Disposition": f"inline; filename*=UTF-8''{quote(target.name)}",
             })
         except DocumentHistoryError as exc: return _error(exc)
 
