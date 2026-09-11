@@ -55,7 +55,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <div class="meta"><span class="pill pending">目标设计 · 文件管理成熟化待实现</span><span class="pill">当前实现 · 历史恢复与基础 Review</span><span class="pill">范围 · App / Web / TUI / runtime</span></div>
   </header>
 
-  <nav class="nav" aria-label="文档目录"><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#file-query">文件查询</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a><a href="#implementation-status">实现状态</a></nav>
+  <nav class="nav" aria-label="文档目录"><a href="#durable-history">版本生命周期</a><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#file-query">文件查询</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a><a href="#implementation-status">实现状态</a></nav>
 
   <section id="model">
     <h2>一个模型，四种操作</h2>
@@ -71,6 +71,27 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <div class="op-detail" id="op-detail" aria-live="polite"></div>
     </div>
     <div class="decision-line"><b>四种语义不是四个同级按钮。</b>Turn card 只显示当前适用的 Undo 或 Revert；user checkpoint 进入 Restore sheet；assistant message footer 才提供 Branch。成功 Undo 后，严格预检可用时在 UI 显示 Redo；历史 Revert 的反向操作显示 Reapply。两者都执行新的 reapply transaction，不维护独立线性 redo 栈。</div>
+  </section>
+
+
+  <section id="durable-history">
+    <h2>文件版本的完整生命周期</h2>
+    <p class="intro">同一个历史入口处理文本、Word、PPT 和后续文档工具。完整文件负责恢复；文本或格式预览只是显示方式，不改变原始版本。以下展示使用状态，内部实现展开后查看。</p>
+    <div class="scenario-grid">
+      <div class="scenario"><b>连续修改同一份文件</b><p>Proposal.docx<br>第一轮：原文 → 修改后<br>同轮继续修改：更新最终版本</p><p class="result">历史仍保留原文；新版本提交成功才替换记录</p></div>
+      <div class="scenario"><b>保存途中中断</b><p>Proposal.docx<br>文件写入结果尚未确认</p><p class="result">重新打开可看到未完成状态，不显示为“没有修改”或允许不确定恢复</p></div>
+      <div class="scenario"><b>历史文件损坏</b><p>无法读取文件修改记录</p><p class="result">保留原记录并报告错误，不重建空历史，不继续覆盖目标文件</p></div>
+    </div>
+    <details><summary>正常保存、失败重试与旧版本保护</summary>
+      <p>每份 before/after 使用独立且完整写入的版本文件。持久化顺序是版本内容、校验、版本目录，再发布 manifest。更新 manifest 失败时，前一份成功记录引用的内容仍完整。失败尝试不覆盖已发布版本。只有尚未成功的尝试被明确取消后，重试才以重新读取的当前文件建立 before；已成功修改始终保留本轮最初 before。</p>
+      <p>准备记录与提交记录分开。未完成的写入保留待确认标记，历史投影显示不可精确恢复，不能推断脚本成功，也不能用当前磁盘内容补造 after。取消且确认没有成功提交的尝试不展示为已修改。损坏或不支持的 manifest 返回明确错误；仅真正缺失的 manifest 表示没有记录。旧版本 manifest 和旧 blob_ref 继续可读，无批量重写迁移。</p>
+    </details>
+    <details><summary>DeepSeek 与 Codex 的源码依据</summary><p>DeepSeek 的 <a href="https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/session/session-persistence-jsonl/src/index.ts">JSONL persistence</a> 使用同步临时文件、独占发布与目录同步，并明确区分损坏记录和缺失记录；<a href="https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/core/session/src/repair.ts">session repair</a> 把中断工具标为结果未知，而不自动补造成功。采用这两项原则保护版本内容与中断状态。其 <a href="https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/fs/fs-local/src/index.ts">fs-local</a> 提供目标锁、版本条件检查和文本写入结果，但未提供完整文件 undo/reapply 或 Office 版本管理；因此保留 OpenProgram 现有恢复事务，不把会话日志恢复等同于文件恢复。Codex 的 exact delta 归因继续保留，不把任意 Bash 操作视为精确修改。</p></details>
+    <details><summary>新工具如何接入，哪些能力不属于本次实现</summary>
+      <p>本地生成器统一调用 <code>write(file_path, source_path=...)</code> 发布完整文件。文本工具保留 write/edit/apply_patch 入口，共享 checkpoint 的 prepare/commit/abort 合同。不能只提交模型声称的“修改成功”，也不能执行任意 Bash 后扫描目录并归因。状态存储由 CheckpointStore 管理，Review 和会话摘要只作投影，不另建版本副本。未来 Office 语义差异只读取不可变版本，不承担撤销；远端存储需要条件写入和可验证版本标识，在具备这一能力前不宣称支持精确恢复。</p>
+      <p>本次保留现有单轮聚合、会话分支和恢复事务；不新增全盘扫描、定时轮询、通用插件注册框架、Office 修订视图或远端存储实现。已丢失的历史不能补回。系统崩溃与不遵守文件锁的外部程序仍可能造成待人工处理状态；系统保留证据并拒绝不确定覆盖，不承诺所有外部修改都能自动恢复。</p>
+    </details>
+    <details><summary>实现与验收计划</summary><p>先复现连续写入提交失败、失败后重试和损坏记录覆盖；再修复共享历史存储及未完成记录投影。通过注册工具、重新打开会话、Review 与恢复入口验证，最后进行独立规范审查、质量审查和全量检查。当前该节为待实现设计。</p></details>
   </section>
 
   <section id="document-history">

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from pathlib import Path
 
 
@@ -11,16 +12,24 @@ def _empty() -> dict:
     return {"version": 2, "backed_at": 0.0, "files": {}}
 
 
+class ManifestCorruptionError(ValueError):
+    """Existing history cannot be interpreted without discarding evidence."""
+
+
 def load(manifest_path: Path) -> dict:
-    """Read a manifest. Missing or corrupt data is treated as empty."""
-    if not manifest_path.exists():
+    """Only a missing manifest is empty; unreadable history is never replaced."""
+    try:
+        raw = manifest_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return _empty()
     try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return _empty()
-    if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
-        return _empty()
+        data = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        raise ManifestCorruptionError(f"Cannot read mutation history: {manifest_path}") from exc
+    if (not isinstance(data, dict) or not isinstance(data.get("files"), dict)
+            or data.get("version", 1) not in (1, 2)
+            or any(not isinstance(entry, dict) for entry in data["files"].values())):
+        raise ManifestCorruptionError(f"Invalid or unsupported mutation history: {manifest_path}")
     data.setdefault("version", 1)
     data.setdefault("backed_at", 0.0)
     return data
@@ -28,20 +37,21 @@ def load(manifest_path: Path) -> dict:
 
 def save(manifest_path: Path, value: dict) -> None:
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = manifest_path.with_suffix(".json.tmp")
-    with tmp.open("w", encoding="utf-8") as handle:
-        json.dump(value, handle, ensure_ascii=False, indent=2)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp, manifest_path)
+    tmp = manifest_path.with_name(f".{manifest_path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        directory = os.open(manifest_path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    except OSError:
-        pass
+        with tmp.open("x", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, manifest_path)
+        if os.name != "nt":
+            directory = os.open(manifest_path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def record_prepared(
@@ -60,11 +70,6 @@ def record_prepared(
     existing = files.get(backup_basename)
     if existing and existing.get("status") != "aborted":
         return
-    if existing and existing.get("before"):
-        before = existing["before"]
-        pre_existing = bool(existing.get("pre_existing"))
-        recoverability = existing.get("recoverability", recoverability)
-        unavailable_reason = existing.get("unavailable_reason")
     files[backup_basename] = {
         "path": original_path,
         "pre_existing": bool(pre_existing),
@@ -99,6 +104,7 @@ def commit(
     entry = value.get("files", {}).get(backup_basename)
     if not entry:
         raise KeyError(f"no prepared mutation for {backup_basename}")
+    entry.pop("pending", None)
     entry.update({
         "status": "committed",
         "operation": operation,
@@ -115,7 +121,11 @@ def commit(
 def abort(manifest_path: Path, backup_basename: str, error: str | None = None) -> None:
     value = load(manifest_path)
     entry = value.get("files", {}).get(backup_basename)
-    if not entry or entry.get("status") == "committed":
+    if not entry:
+        return
+    if entry.get("status") == "committed":
+        # A writer error may follow a partial write, or another interrupted
+        # attempt. Only a successful commit can resolve that uncertainty.
         return
     entry["status"] = "aborted"
     entry["error"] = error
@@ -145,3 +155,12 @@ def has(manifest_path: Path, backup_basename: str) -> bool:
 
 def entries(manifest_path: Path) -> list[tuple[str, dict]]:
     return list(load(manifest_path).get("files", {}).items())
+
+
+def mark_pending(manifest_path: Path, backup_basename: str) -> None:
+    """Retain the published receipt while a subsequent attempt is unfinished."""
+    value = load(manifest_path)
+    entry = value["files"][backup_basename]
+    if not entry.get("pending"):
+        entry["pending"] = True
+        save(manifest_path, value)

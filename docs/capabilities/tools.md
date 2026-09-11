@@ -24,6 +24,8 @@ For Word, PowerPoint, PDF, images, and other binary files, the model can generat
 
 Publishing during a conversation records complete before/after bytes in that turn's file history. The record survives reopening the conversation and restarting the application. Undo and reapply use these saved versions and refuse to overwrite conflicting later changes. New files can also be undone. This does not require a Git repository in the project folder.
 
+A failed later history commit preserves the previously published version. If a write is interrupted before its result is recorded, file history reports that the result is unconfirmed and blocks exact recovery; it does not assume the operation succeeded or that no file changed. Corrupt history blocks further recorded writes instead of replacing the history with an empty record. After a failed initial attempt, reread the current file before retrying. Versions are retained with the turn and follow its existing history retention policy. New local document generators use the same `source_path` publication interface; they do not need a separate version store.
+
 Binary versions preserve formatting and embedded media, but the current Review pane does not compare document layout or show Word tracked changes. Ordinary shell commands that overwrite the final file directly are not recorded as exact turn mutations. Previously unrecorded versions cannot be reconstructed from a file card or command output; scripts should write a separate result and use `write` to publish it.
 
 ## Execution

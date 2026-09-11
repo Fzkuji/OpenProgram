@@ -45,7 +45,7 @@ def persist_turn_file_summary(
         store = default_store()
         mutations = CheckpointStore(
             store._session_dir(session_id),
-        ).list_mutations(assistant_msg_id)
+        ).list_file_history(assistant_msg_id)
         if not mutations:
             return None
         files = []

@@ -100,18 +100,50 @@ class CheckpointStore:
         self.session_dir = Path(session_dir)
 
     def _capture_regular(self, source: Path, destination: Path) -> dict:
+        """Publish a durable, immutable version before any manifest references it."""
         destination.parent.mkdir(parents=True, exist_ok=True)
+        destination = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}")
         try:
-            shutil.copy2(source, destination, follow_symlinks=False)
-            info = destination.stat()
+            observed = os.lstat(source)
+            if (not stat.S_ISREG(observed.st_mode) or is_link_metadata(observed)
+                    or observed.st_nlink != 1):
+                raise OSError("snapshot source must be an ordinary non-linked file")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+            with os.fdopen(os.open(source, flags), "rb") as handle:
+                before = os.fstat(handle.fileno())
+                if (before.st_dev, before.st_ino) != (observed.st_dev, observed.st_ino):
+                    raise OSError("snapshot source changed before opening")
+                digest = hashlib.sha256()
+                size = 0
+                flags_out = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+                with os.fdopen(os.open(destination, flags_out, 0o600), "wb") as output:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        output.write(chunk)
+                        digest.update(chunk)
+                        size += len(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                after = os.fstat(handle.fileno())
+                current = os.lstat(source)
+                identity = lambda info: (info.st_dev, info.st_ino, info.st_size,
+                                         info.st_mtime_ns, info.st_ctime_ns, info.st_mode)
+                if identity(before) != identity(after) or identity(after) != identity(current):
+                    raise OSError("snapshot source changed while reading")
+                if size != after.st_size:
+                    raise OSError("snapshot size changed while reading")
+            if os.name != "nt":
+                directory = os.open(destination.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
             return {
-                "kind": "regular",
-                "digest": _digest(destination),
+                "kind": "regular", "digest": f"sha256:{digest.hexdigest()}",
                 "blob_ref": destination.name,
-                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
-                "size": info.st_size,
+                "mode": f"{stat.S_IMODE(after.st_mode):04o}", "size": size,
             }
         except OSError as exc:
+            destination.unlink(missing_ok=True)
             raise MutationJournalError(f"cannot snapshot {source}: {exc}") from exc
 
     def backup_before_edit(
@@ -141,7 +173,10 @@ class CheckpointStore:
             raise MutationJournalError(
                 f"hardlinked file has {target_stat.st_nlink} links",
             )
-        if manifest.has(manifest_path, backup_name):
+        existing = manifest.load(manifest_path).get("files", {}).get(backup_name)
+        if existing and existing.get("status") != "aborted":
+            if existing.get("status") == "committed":
+                manifest.mark_pending(manifest_path, backup_name)
             return
         backup_dir = turn_backup_dir(self.session_dir, turn_id)
         backup_dir.mkdir(parents=True, exist_ok=True)
@@ -200,6 +235,7 @@ class CheckpointStore:
         elif stat.S_ISREG(target_stat.st_mode):
             after_blob = backup_dir / f"{backup_name}.after"
             after = self._capture_regular(target, after_blob)
+            after_blob = backup_dir / after["blob_ref"]
         else:
             after = {"kind": _file_kind(target_stat.st_mode)}
 
@@ -281,7 +317,31 @@ class CheckpointStore:
             turn_manifest_path(self.session_dir, turn_id),
         ):
             if entry.get("status") == "committed":
-                rows.append(dict(entry))
+                row = dict(entry)
+                if row.get("pending"):
+                    row.update(recoverability="unavailable", unavailable_reason="mutation_incomplete",
+                               diff_state="unavailable")
+                rows.append(row)
+        return rows
+
+    def list_file_history(self, turn_id: str) -> list[dict]:
+        """Project incomplete intents as unknown, never as successful mutations."""
+        rows = []
+        for _, entry in manifest.entries(turn_manifest_path(self.session_dir, turn_id)):
+            status = entry.get("status")
+            if status == "aborted":
+                # Failure does not prove that the tool had no side effect.
+                if self._state_matches(self._inspect_state(entry["path"]), entry.get("before") or {}):
+                    continue
+            elif status not in {"prepared", "committed"}:
+                continue
+            row = dict(entry)
+            if status in {"prepared", "aborted"} or entry.get("pending"):
+                row.update(after={"kind": "unavailable"},
+                           stats={"added": None, "removed": None, "binary": False},
+                           diff_state="unavailable", recoverability="unavailable",
+                           unavailable_reason="mutation_incomplete")
+            rows.append(row)
         return rows
 
     def _inspect_state(self, path: str) -> dict:
@@ -1614,13 +1674,16 @@ class CheckpointStore:
                         Path(original).unlink()
                         restored.append(original)
                     continue
-                source = backup_dir / backup_name
+                source = backup_dir / str((entry.get("before") or {}).get("blob_ref") or backup_name)
                 if not source.exists():
                     continue
                 destination = Path(original)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 tmp = destination.with_suffix(destination.suffix + ".restore.tmp")
                 shutil.copy2(source, tmp)
+                mode = (entry.get("before") or {}).get("mode")
+                if mode is not None:
+                    os.chmod(tmp, int(mode, 8))
                 tmp.replace(destination)
                 restored.append(original)
             except OSError:
