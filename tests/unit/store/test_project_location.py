@@ -48,6 +48,38 @@ def test_pending_access_retries_only_that_project(monkeypatch):
     assert [call[0] for call in calls] == ["p1"]
 
 
+def test_deferred_migration_retries_after_writers_finish(monkeypatch):
+    project = _project(session_ids=["s1"])
+    calls = []
+    active = {"value": True}
+    monkeypatch.setattr(location.projects, "get_project", lambda _id: project)
+    monkeypatch.setattr(
+        "openprogram.store.session.migration._live_jobs",
+        lambda _session_id: active["value"],
+    )
+    monkeypatch.setattr(
+        "openprogram.store.session.session_store.default_store",
+        lambda: object(),
+    )
+    import openprogram.store.session.migration as migration
+
+    def migrate(_project_id, _store, *, timeout):
+        calls.append(timeout)
+        if len(calls) == 2:
+            project.location_state = location.AVAILABLE
+        return {"s1": "deferred" if len(calls) == 1 else "done"}
+
+    monkeypatch.setattr(migration, "run_project_migration", migrate)
+    location._migration_attempted.clear()
+    location._migration_deferred.clear()
+
+    assert location.refresh_project_location("p1") == location.PENDING
+    assert location.refresh_project_location("p1") == location.PENDING
+    active["value"] = False
+    assert location.refresh_project_location("p1") == location.AVAILABLE
+    assert calls == [2.0, 2.0]
+
+
 def test_native_event_clears_only_touched_project_retry(monkeypatch):
     p1 = _project(id="p1", path="/project-one")
     p2 = _project(id="p2", path="/project-two")
