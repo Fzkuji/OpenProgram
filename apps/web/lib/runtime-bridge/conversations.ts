@@ -561,7 +561,9 @@ export function newSession(draftId?: string): void {
 
 export function loadSessionData(data: LegacyConv): void {
   if (!data.messages) data.messages = [];
-  data.messages = spliceCompactionFromGraph(data.messages, data.graph);
+  // Paginated history already contains authoritative compaction rows.
+  // Graph previews for unloaded pages must not shadow those rows by ID.
+  if (!data.history) data.messages = spliceCompactionFromGraph(data.messages, data.graph);
   const id = data.id as string;
   registerSessionHistory(id, data.history as HistoryPage | undefined);
   const map = convs();

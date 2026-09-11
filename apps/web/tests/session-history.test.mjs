@@ -8,13 +8,13 @@ const root = dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
 const dir = await mkdtemp(join(root, '.history-test-'));
 after(() => rm(dir, { recursive: true, force: true }));
 await build({absWorkingDir:root,stdin:{contents:`
-export {loadOlderSessionHistory} from './lib/runtime-bridge/conversations';
+export {loadOlderSessionHistory,loadSessionData} from './lib/runtime-bridge/conversations';
 export {runtimeState,setSocket} from './lib/runtime-bridge/state';
 export {useSessionStore} from './lib/session-store';
 export {createHistoryFragmentDecoder} from './lib/net/history-fragments';
 export {registerSessionHistory,updateSessionHistory,useSessionHistory} from './lib/state/session-history';
 `,resolveDir:root},bundle:true,format:'esm',platform:'node',packages:'external',tsconfig:join(root,'tsconfig.json'),outfile:join(dir,'test.mjs')});
-const {loadOlderSessionHistory,runtimeState,setSocket,useSessionStore,createHistoryFragmentDecoder,registerSessionHistory,updateSessionHistory,useSessionHistory}=await import(pathToFileURL(join(dir,'test.mjs')));
+const {loadOlderSessionHistory,loadSessionData,runtimeState,setSocket,useSessionStore,createHistoryFragmentDecoder,registerSessionHistory,updateSessionHistory,useSessionHistory}=await import(pathToFileURL(join(dir,'test.mjs')));
 test('large Unicode response is dispatched only when all ordered fragments arrive',()=>{
  const decoder=createHistoryFragmentDecoder();
  const original=JSON.stringify({type:'session_loaded',data:{id:'s',messages:['中文😀'.repeat(500000)]}});
@@ -72,5 +72,17 @@ test('public older-page load preserves live rows and rejects a page after reload
  await stale;
  assert.equal(useSessionStore.getState().messagesById.stale,undefined);
  assert.equal(useSessionHistory.getState().pages.s.before,'new-before');
+ setSocket(null);
+});
+
+test('historical compaction loads full content without graph placeholders',async()=>{
+ class Socket extends EventTarget {static OPEN=1;readyState=1;sent=[];send(t){this.sent.push(JSON.parse(t));}}
+ globalThis.WebSocket=Socket; const ws=new Socket();setSocket(ws);
+ runtimeState.currentSessionId='other';
+ loadSessionData({id:'compacted',messages:[{id:'new',role:'user',content:'latest'}],history:{head_id:'new',before:'new'},graph:[{id:'sum',covers_ids:['old'],preview:'short preview',summarised_count:1}]});
+ const pending=loadOlderSessionHistory('compacted');const request=ws.sent.at(-1);
+ ws.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'session_history_page',data:{id:'compacted',action:'load_session',request_id:request.request_id,messages:[{id:'sum_card',role:'system',kind:'compaction',slot:'card',content:'FULL SUMMARY CONTENT',covers_ids:['old']}],history:{head_id:'new',before:null}}})}));
+ await pending;
+ assert.equal(runtimeState.conversations.compacted.messages.find(m=>m.id==='sum_card').content,'FULL SUMMARY CONTENT');
  setSocket(null);
 });
