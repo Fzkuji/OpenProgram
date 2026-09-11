@@ -47,13 +47,20 @@ def test_job_runner_recovers_foreground_agent_without_job_projection(
             ))
         return
 
-    runner = JobRunner(max_workers=1, governor=ResourceGovernor(
-        UsageLedger(tmp_path / "usage.sqlite3"),
-    ))
+    # Exercise startup activation without a provider thread racing the
+    # assertion about foreground ownership in this Job-specific test.
+    from tests.component.execution.test_restart_continuation import _StartupDriver
+    _StartupDriver.activations = []
+    with monkeypatch.context() as startup_patch:
+        startup_patch.setattr("openprogram.agent.production_driver.AgentProductionDriver", _StartupDriver)
+        runner = JobRunner(max_workers=1, governor=ResourceGovernor(
+            UsageLedger(tmp_path / "usage.sqlite3"),
+        ))
     try:
         recovered = store.get_execution(execution.execution_id)
-        assert recovered.status.value == "failed"
-        assert recovered.reason_code == "owner_lost_before_activation"
+        assert recovered.status.value == "running"
+        assert recovered.current_attempt_id is not None
+        assert _StartupDriver.activations == [(execution.execution_id, None)]
         assert runner.get_job(execution.execution_id) is None
         # Ordinary Job admission remains available after startup recovery.
         job_id = runner.spawn_job(

@@ -39,6 +39,10 @@ _TRANSITIONS: dict[ExecutionStatus, frozenset[ExecutionStatus]] = {
     ExecutionStatus.RUNNING: frozenset(
         {
             ExecutionStatus.PAUSING,
+            # Startup recovery uses this durable internal state for an
+            # abandoned ordinary Agent turn whose owner is gone.  It is
+            # resumed only by the startup continuation pass.
+            ExecutionStatus.PAUSED,
             ExecutionStatus.CANCELLING,
             ExecutionStatus.RECONCILIATION_REQUIRED,
             ExecutionStatus.COMPLETED,
@@ -124,7 +128,11 @@ _COMMAND_STATES: dict[CommandKind, frozenset[ExecutionStatus]] = {
 
 _COMMAND_CAPABILITY = {
     CommandKind.PAUSE: "pause",
-    CommandKind.CONTINUE: "pause",
+    # RuntimeControlService applies the pause capability to public continue
+    # requests.  The internal startup continuation is allowed for an
+    # execution explicitly marked restart_pending, even when its historical
+    # capability snapshot did not advertise manual pause.
+    CommandKind.CONTINUE: None,
     CommandKind.STEP: "step",
     CommandKind.STEER: "steer",
     CommandKind.FORK: "fork",

@@ -72,6 +72,10 @@ Docker and SSH commands stay in the execution/Activity flow; running a command d
 
 Integrations can report complete software/environment objects through `openprogram.session_resources.resource_use(kind, title, target)` inside a trusted runtime session. The context records the actual session automatically and releases the usage on exit. OpenProgram does not infer resources from arbitrary shell command text. URL resource identities omit credentials, query parameters, and fragments.
 
+## Running conversations after restart
+
+Running conversations continue automatically in the same conversation after the worker restarts, using the input and execution results recorded during normal operation. No separate save action or additional restart message is needed. Manually paused, cancelled, and completed tasks remain stopped. Confirmed tool results are reused; an operation whose external result is still unknown requires reconciliation before it can continue. Reconnecting the interface keeps the existing transcript.
+
 ## Restart and retained browser pages
 
 After the Desktop App or worker process restarts, pages you had not closed come back automatically in the background. The App keeps the same retained tab, session, and branch grouping, and the last confirmed address and title. It creates a new live page behind that retained tab; handles from the previous process are no longer valid. It does not open a second copy of the same retained tab, does not reopen a page you closed, and does not show a preview you had hidden. Compact picture-in-picture chrome, the vertical Files / Activity / Resources sidebar, and grouped resource rows stay as they were. Labels follow the App language setting.
