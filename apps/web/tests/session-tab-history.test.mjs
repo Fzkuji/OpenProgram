@@ -137,7 +137,7 @@ test("known deletion prunes every history and falls back without resurrecting se
   state().navigateSessionHistory(1); assert.equal(active().sessionId, "C");
   state().removeSessionFromHistory("A"); state().navigateSessionHistory(-1);
   assert.equal(active().sessionId, "C");
-  state().removeSessionFromHistory("C"); assert.equal(active().kind, "ntp");
+  state().removeSessionFromHistory("C"); assert.equal(state().activeId, null);
 });
 
 test("legacy and malformed persisted histories preserve the current session", () => {
@@ -173,7 +173,7 @@ test("discarded forward history cannot receive an activating late ACK", () => {
   assert.equal(sessionAckIsActive("old-B"), false);
 });
 
-test("closing the final desktop tab keeps the window open on New tab", () => {
+test("closing the final desktop tab leaves the window open with no tabs", () => {
   reset();
   let closes = 0;
   window.openprogramDesktop = { isDesktop: true, windowId: "main", closeWindow() { closes++; } };
@@ -181,8 +181,9 @@ test("closing the final desktop tab keeps the window open on New tab", () => {
     for (const open of [() => state().openSessionTab("last", "Last"), () => state().openWebTab("https://example.test/last"), () => state().openNewTabPage()]) {
       reset(); open(); state().closeTab(active().id);
       assert.equal(closes, 0);
-      assert.equal(state().tabs.length, 1);
-      assert.equal(active().kind, "ntp");
+      assert.equal(state().tabs.length, 0);
+      assert.equal(state().activeId, null);
+      assert.equal(readCenterTabsPayload().tabs.length, 0);
     }
   } finally { delete window.openprogramDesktop; }
 });

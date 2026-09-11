@@ -62,7 +62,6 @@ export function useTabLifecycle({
   const tabs = useCenterTabs((s) => s.tabs);
   const setActive = useCenterTabs((s) => s.setActive);
   const openSessionTab = useCenterTabs((s) => s.openSessionTab);
-  const openDraftSessionTab = useCenterTabs((s) => s.openDraftSessionTab);
   const openNewTabPage = useCenterTabs((s) => s.openNewTabPage);
   const closeTab = useCenterTabs((s) => s.closeTab);
   const renameSessionTab = useCenterTabs((s) => s.renameSessionTab);
@@ -102,14 +101,9 @@ export function useTabLifecycle({
       openSessionTab(currentSessionId, title);
     } else if (activeTab?.kind === "session" && activeTab.draft && activeTab.sessionId) {
       useSessionStore.getState().setCurrentDraft(activeTab.sessionId);
-    } else if (centerTabs.tabs.length > 0) {
-      // 桌面端每次启动都落在 /chat：已有恢复出来的标签时，这只是默认
-      // 启动 URL，不是用户要新建草稿——否则每次重启都会多出一枚标签。
-    } else {
-      const draftId = openDraftSessionTab();
-      useSessionStore.getState().setCurrentDraft(draftId);
     }
-  }, [pathname, openSessionTab, openDraftSessionTab]);
+    // An empty /chat route stays empty until the user opens a tab.
+  }, [pathname, openSessionTab]);
 
   // Title changes → rename tabs (covers renames + first-message titles).
   // Same pass reaps zombie tabs: a session tab whose conversation was
@@ -338,13 +332,9 @@ export function useTabLifecycle({
     if (!closingInstance) return;
     const currentTab = useCenterTabs.getState().tabs.find((x) => x.id === tab.id);
     if (!currentTab) return;
-    const beforeClose = useCenterTabs.getState();
     closeTab(tab.id);
-    const afterClose = useCenterTabs.getState();
-    const activeTab = afterClose.tabs.find((candidate) => candidate.id === afterClose.activeId);
-    if (activeTab?.kind === "ntp" && !beforeClose.tabs.some((candidate) => candidate.id === activeTab.id)) {
-      // Clear the closed conversation before /chat route synchronization,
-      // otherwise its stale selection would replace the new-tab launcher.
+    if (useCenterTabs.getState().activeId === null) {
+      // Clear the closed conversation before /chat route synchronization.
       useSessionStore.getState().setCurrentConv(null);
       pushPath("/chat");
     }

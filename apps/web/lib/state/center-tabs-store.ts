@@ -256,8 +256,7 @@ export interface CenterTabsState {
   /** Single-instance new-tab page — reused if already open. */
   openNewTabPage: () => void;
   /** Close a tab; closing the active one activates the right
-   *  neighbor, else the left. Never leaves zero tabs (falls back to
-   *  the new-tab page). */
+   *  visible neighbor, else the left. The final tab leaves an empty view. */
   closeTab: (id: string) => void;
   renameSessionTab: (sessionId: string, title: string) => void;
 }
@@ -1040,7 +1039,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           for (const entry of sessionHistory(closingTab).entries)
             if (entry.sessionId) closedSessionAckTombstones.add(entry.sessionId);
         }
-        let tabs = s.tabs.filter((t) => t.id !== id);
+        const tabs = s.tabs.filter((t) => t.id !== id);
         const groups = normalizeCenterTabLayout({
           tabIds: tabs.map((tab) => tab.id), groups: s.groups,
         }).groups;
@@ -1049,13 +1048,6 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
         if (!visibleTabs.some((tab) => tab.id === activeId)) {
           const visibleIndex = topLevelTabs(s.tabs, s.groups).findIndex((tab) => tab.id === id);
           activeId = (visibleTabs[Math.max(0, visibleIndex)] ?? visibleTabs.at(-1))?.id ?? null;
-        }
-        if (visibleTabs.length === 0) {
-          // Session-owned pages remain available in Resources, but must not
-          // replace the launcher when the last visible tab closes.
-          const ntp: CenterTab = { id: nextNtpId(), kind: "ntp", title: "" };
-          tabs = [...tabs, ntp];
-          activeId = ntp.id;
         }
         const splitWebTabId = s.splitWebTabId === id ? null : s.splitWebTabId;
         return commitCenterTabsState(s, { tabs, groups, activeId, splitWebTabId });

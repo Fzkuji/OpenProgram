@@ -1,3 +1,4 @@
+import { topLevelTabs } from "./web-page-management";
 import { normalizeSessionHistory } from "./session-tab-history";
 /**
  * Center-tab persistence + payload normalization.
@@ -147,7 +148,7 @@ export function normalizeCenterTabsPayload(
   });
   const activeId = layout.tabIds.includes(input.activeId ?? "")
     ? input.activeId ?? null
-    : layout.tabIds[0] ?? null;
+    : topLevelTabs(tabs, layout.groups)[0]?.id ?? null;
   let splitWebTabId = typeof input.splitWebTabId === "string" &&
       tabs.some((tab) => tab.id === input.splitWebTabId && tab.kind === "web")
     ? input.splitWebTabId
