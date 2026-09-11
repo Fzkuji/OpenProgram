@@ -291,8 +291,14 @@ def resolve_session_attachment(
     workdir/attachments/<relative>``. Only that exact shape, with the
     caller's session id, can be rebased. The canonical session repo must be
     unique, live, application-owned, and contain the same relative suffix.
+
+    A legacy path is rebased before the old path is considered. This matters
+    when migration left both copies reachable: the canonical session copy is
+    the durable attachment, while the old source may be stale or unavailable.
     """
     roots = tuple(roots)
+    raw: Path | None = None
+    legacy_start: int | None = None
     try:
         raw = Path(os.path.expanduser(str(path)))
         parts = raw.parts
@@ -308,24 +314,12 @@ def resolve_session_attachment(
     except (OSError, ValueError):
         raw = None
     target = resolve_within(path, roots)
-    if target is not None and target.is_file():
-        return target
-    if not session_id:
+    if legacy_start is None or not session_id:
+        if target is not None and target.is_file():
+            return target
         return target if allow_missing else None
-    try:
-        raw = Path(os.path.expanduser(str(path)))
-        if not raw.is_absolute() or any(part in {".", ".."} for part in raw.parts):
-            return target if allow_missing else None
-        parts = raw.parts
-        marker = (".openprogram", "sessions", session_id, "workdir", "attachments")
-        start = next((i for i in range(len(parts) - len(marker) + 1)
-                      if parts[i:i + len(marker)] == marker), None)
-        if start is None:
-            return target if allow_missing else None
-        relative = Path(*parts[start + len(marker):])
-        if not relative.parts or any(part in {".", ".."} for part in relative.parts):
-            return target if allow_missing else None
-    except (OSError, ValueError):
+    relative = Path(*parts[legacy_start + 5:])
+    if not relative.parts or any(part in {".", ".."} for part in relative.parts):
         return target if allow_missing else None
     repos = _session_repo_candidates(session_id)
     if len(repos) != 1:

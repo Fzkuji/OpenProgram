@@ -180,6 +180,11 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     assert current_attachment.read_bytes() == b"legacy"
     assert str(old_attachment) in (dest / "history" / "0001-u-u1.json").read_text()
 
+    # A stale source copy may still exist after migration. The public route
+    # must prefer the canonical session attachment rather than serving it.
+    old_attachment.parent.mkdir(parents=True, exist_ok=True)
+    old_attachment.write_bytes(b"stale-source")
+
     app = FastAPI()
     from openprogram.webui.routes import file_search
     file_search.register(app)
