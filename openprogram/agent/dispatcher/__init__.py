@@ -481,10 +481,20 @@ def _process_turn_once(
                 error_reason="SELF_UPDATE_MAINTENANCE",
                 error_retryable=True,
             )
-        session, history = prepare_turn(
-            db=db, req=req, writer=_writer,
-            user_msg_id=user_msg_id, on_event=on_event,
+        restart_existing = bool(
+            execution_context and execution_context.get("restart_initial")
+            and db.message_exists(req.session_id, user_msg_id)
         )
+        if restart_existing:
+            from openprogram.context.persistence import rendered_history
+            session = db.get_session(req.session_id)
+            history = rendered_history(db, req.session_id, head_id=user_msg_id) or []
+            req.user_already_persisted = True
+        else:
+            session, history = prepare_turn(
+                db=db, req=req, writer=_writer,
+                user_msg_id=user_msg_id, on_event=on_event,
+            )
         # The admission lock is released only after quiescence can observe us.
         db.update_session(req.session_id, status="running")
 
@@ -515,9 +525,9 @@ def _process_turn_once(
     #     webui/persistence._aggregate_tool_messages. We update this
     #     row's content + tool_calls/blocks at turn end (step 5) once
     #     the LLM's final text is known.
-    _placeholder_inserted = _writer.open_placeholder(
-        assistant_msg_id, user_msg_id,
-    )
+    _placeholder_inserted = (
+        restart_existing and db.message_exists(req.session_id, assistant_msg_id)
+    ) or _writer.open_placeholder(assistant_msg_id, user_msg_id)
 
     # 4. Run the agent loop. Errors below get caught and reported as
     #    a system message so the conversation isn't left in a stuck

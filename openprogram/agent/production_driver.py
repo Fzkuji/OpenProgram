@@ -890,6 +890,10 @@ class AgentProductionDriver:
                 self._recover_owner_loss(attempt)
             return None
         except Exception as exc:
+            from openprogram.agent.run_control import is_worker_stopping
+            if is_worker_stopping() and not cancel_event.is_set():
+                self._recover_owner_loss(attempt)
+                return None
             if cancel_event.is_set():
                 self._finish_attempt(attempt, None, cancel_event)
             else:
@@ -1120,6 +1124,7 @@ class AgentProductionDriver:
                                 steer_consumed_ids=steer_consumed_ids,
                             ),
                             "canonical_execution": True,
+                            "restart_initial": attempt.generation > 1,
                             "steer_inputs": steer_queue,
                             "steer_consumed_ids": steer_consumed_ids,
                             "persist_steer": persist_steer,
@@ -1634,6 +1639,7 @@ class AgentProductionDriver:
                     context_hash = str(payload.get("normalized_context_hash") or json_digest(payload.get("context") or {}))
                     action_id = digest(
                         str(execution.revision_id),
+                        str(attempt.generation),
                         str(execution.checkpoint_head_id or "root"),
                         context_hash,
                         json_digest(latest_snapshot),
@@ -1809,7 +1815,7 @@ class AgentProductionDriver:
                     decision_action_ids.add(action_id)
 
             command = None if kind == "provider.finished" else current_command(service, attempt.execution_id)
-            if command is None:
+            if kind == "provider.finished":
                 service.effects.resolve(
                     effect_id, expected_status=EffectStatus.DISPATCHED,
                     outcome=EffectStatus.COMMITTED, receipt=terminal_receipt,
@@ -1831,11 +1837,12 @@ class AgentProductionDriver:
                 effect_id=effect_id, terminal_receipt=terminal_receipt,
                 receipt_blob=canonical_json_bytes(terminal_receipt),
                 agent_checkpoint=checkpoint,
-                command_id=command.command_id, managed_action_id=action_id,
+                command_id=command.command_id if command is not None else None,
+                managed_action_id=action_id,
                 consumed_steer_command_ids=tuple(sorted(steer_consumed_ids or ())),
             )
             remember_completed_action()
-            if command.kind is CommandKind.STEER and steer_queue is not None:
+            if command is not None and command.kind is CommandKind.STEER and steer_queue is not None:
                 consumed = steer_consumed_ids or set()
                 for applied in completion.applied_commands:
                     if applied.kind is not CommandKind.STEER:
@@ -1850,7 +1857,7 @@ class AgentProductionDriver:
                             "command_id": applied.command_id,
                             "payload": {"message": message},
                         })
-            return command.kind in {CommandKind.PAUSE, CommandKind.STEP}
+            return command is not None and command.kind in {CommandKind.PAUSE, CommandKind.STEP}
 
         return hook
 

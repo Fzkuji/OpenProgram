@@ -278,7 +278,8 @@ PY
     }
     cp "$source_file" "$desktop_stage/$desktop_file"
   done <<<"$desktop_files"
-  rm -f "$desktop_stage/browser-extension-manager.js"
+  rm -f "$desktop_stage/browser-extension-manager.js" \
+    "$desktop_stage/self-update-ui-test-object.js"
   for obsolete_extension_module in \
     extract-zip debug ms get-stream pump end-of-stream once wrappy \
     yauzl fd-slicer pend buffer-crc32; do

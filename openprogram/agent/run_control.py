@@ -36,6 +36,16 @@ def begin_worker_shutdown() -> None:
     _worker_stopping.set()
 
 
+def is_worker_stopping() -> bool:
+    return _worker_stopping.is_set()
+
+
+def raise_if_worker_stopping() -> None:
+    if is_worker_stopping():
+        from openprogram.providers.utils.errors import ExecInterrupt
+        raise ExecInterrupt("worker_stopping")
+
+
 # ---------------------------------------------------------------------------
 # Turn cancellation tokens — one per turn, never per session.
 #

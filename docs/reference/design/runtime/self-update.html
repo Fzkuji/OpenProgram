@@ -587,49 +587,8 @@
     </section>
 
     <section id="experience" aria-labelledby="experience-title">
-      <div class="section-head"><div class="section-num">02</div><div><h2 id="experience-title">用户在同一对话中看到什么</h2><p>更新过程允许 App 暂时关闭，但所有状态写入 session 和 update record；重新打开后回到原会话并显示自动验收结果。</p></div></div>
-      <div class="experience">
-        <div class="experience-tabs" role="tablist" aria-label="自主更新界面状态">
-          <button class="experience-tab" id="tab-ready" role="tab" aria-selected="true" aria-controls="panel-ready" tabindex="0" data-target="ready">准备与授权</button>
-          <button class="experience-tab" id="tab-build" role="tab" aria-selected="false" aria-controls="panel-build" tabindex="-1" data-target="build">构建候选</button>
-          <button class="experience-tab" id="tab-restart" role="tab" aria-selected="false" aria-controls="panel-restart" tabindex="-1" data-target="restart">重启窗口</button>
-          <button class="experience-tab" id="tab-verify" role="tab" aria-selected="false" aria-controls="panel-verify" tabindex="-1" data-target="verify">自动验收</button>
-          <button class="experience-tab" id="tab-result" role="tab" aria-selected="false" aria-controls="panel-result" tabindex="-1" data-target="result">完成或恢复</button>
-        </div>
-        <div class="experience-stage">
-          <article class="experience-panel active" id="panel-ready" role="tabpanel" aria-labelledby="tab-ready" data-panel="ready">
-            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 当前会话</div><div class="mock-chat">
-              <div class="bubble user">修改 Session DAG 的筛选行为，验证后更新本机 OpenProgram。</div>
-              <div class="bubble agent">候选提交和受影响测试已准备。更新会短暂关闭 App，并在重启后自动检查原始目标。</div>
-              <div class="update-card"><div class="top"><span>自主更新授权</span><span class="phase">AWAITING APPROVAL</span></div><div class="steps"><span>candidate · local commit</span><span>changed paths · 4</span><span>required checks · 6</span><span>rollback · enabled</span></div></div>
-            </div></div>
-          </article>
-          <article class="experience-panel" id="panel-build" role="tabpanel" aria-labelledby="tab-build" data-panel="build">
-            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 更新状态</div><div class="mock-chat">
-              <div class="update-card"><div class="top"><span>正在构建完整候选 App</span><span class="phase">STAGING</span></div><div class="progress" style="--progress:62%"><span></span></div><div class="steps"><span class="done">✓ candidate commit 已固定</span><span class="done">✓ affected tests</span><span>… runtime + Electron bundle</span><span>○ isolated packaged smoke</span></div></div>
-              <p class="small">旧 worker 继续服务。构建或 probe 失败不会关闭 App。</p>
-            </div></div>
-          </article>
-          <article class="experience-panel" id="panel-restart" role="tabpanel" aria-labelledby="tab-restart" data-panel="restart">
-            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 即将重启</div><div class="mock-chat">
-              <div class="update-card"><div class="top"><span>候选已通过重启前检查</span><span class="phase">HANDOFF READY</span></div><div class="steps"><span class="done">✓ 当前回复已持久化</span><span class="done">✓ 其他运行任务已结束</span><span class="done">✓ previous App 保留</span><span>下一步 · 关闭 App 并激活候选</span></div></div>
-              <p class="small">此时 supervisor 已由 launchd 托管，不属于 worker 的进程树。</p>
-            </div></div>
-          </article>
-          <article class="experience-panel" id="panel-verify" role="tabpanel" aria-labelledby="tab-verify" data-panel="verify">
-            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 已重新打开</div><div class="mock-chat">
-              <div class="update-card"><div class="top"><span>更新后自动验收</span><span class="phase">VERIFYING</span></div><div class="progress" style="--progress:78%"><span></span></div><div class="steps"><span class="done">✓ worker identity = candidate</span><span class="done">✓ doctor + packaged runtime</span><span>… Agent 正在检查原始目标</span><span>○ 保存证据和 verdict</span></div></div>
-              <p class="small">这是一个新的、标记为 <code>self_update_verify</code> 的 Agent turn，不伪装成被重启前的 continuation。</p>
-            </div></div>
-          </article>
-          <article class="experience-panel" id="panel-result" role="tabpanel" aria-labelledby="tab-result" data-panel="result">
-            <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 当前会话</div><div class="mock-chat">
-              <div class="update-card"><div class="top"><span>自主更新完成</span><span class="phase">SUCCEEDED</span></div><div class="steps"><span class="done">✓ 新版本已激活</span><span class="done">✓ 原始目标通过</span><span class="done">✓ 验收证据已附到会话</span><span class="done">✓ previous App 已清理</span></div></div>
-              <p class="small">目标检查失败时，同一区域显示失败证据、恢复结果和保留的 candidate worktree。</p>
-            </div></div>
-          </article>
-        </div>
-      </div>
+      <div class="section-head"><div class="section-num">02</div><div><h2 id="experience-title">Conversation behavior</h2></div></div>
+      <p>The user requests work through a normal conversation. Messages and tool results describe that work. Installation state is maintained by the update subsystem, not by a separate conversation widget. Reopening the App restores the conversation without an update history panel, update recovery notice or temporary verification dialog.</p>
     </section>
 
     <section id="architecture" aria-labelledby="architecture-title">
@@ -856,7 +815,7 @@
       <div class="failure-table">
         <div class="table-row table-head"><div>验收入口</div><div>执行合同</div><div>不能替代的证据</div></div>
         <div class="table-row"><div>默认 App 界面</div><div>受限适配层连接 <code>/Applications/OpenProgram.app</code> 的实际主窗口。绑定 App 进程、window、owner、<code>update_id</code>、attempt 和本次 worker identity；操作前后复核身份。模型不能指定 CDP 地址、任意 target、JS 或文件路径。</div><div>保存实际截图、可访问性树、当前路由、窗口标识和时间。只收到 <code>/chat</code> HTML、DOM 文本或内置 Web tab 的截图，不能证明 App 主界面的视觉和交互要求。</div></div>
-        <div class="table-row"><div>界面交互</div><div>冻结原会话主窗口检查：截图与可访问性树、聊天区滚动、session/dag 切换、实际 RenameDialog 内的临时测试对象重命名。候选与回退包分别要求 UI protocol 1/2/3/4；旧协议不获得新权限。</div><div>成功须绑定原会话、worker、Job 和目标窗口，并完成自有位置/视图/对象清理；用户输入中断时不覆盖用户选择。临时对象不修改真实会话名称，不能证明真实数据持久化。任意点击、消息、设置、外部导航、文件传输、剪贴板及执行代码均不授权。</div></div>
+        <div class="table-row"><div>界面交互</div><div>冻结原会话主窗口检查：截图与可访问性树、聊天区滚动、session/dag 切换。新安装包按能力声明 UI protocol 1/2/3；旧 protocol 4 仅保留读取与回退兼容，不接受临时测试对象操作。</div><div>成功须绑定原会话、worker、Job 和目标窗口，并完成自有位置/视图清理；用户输入中断时不覆盖用户选择。任意点击、消息、设置、外部导航、文件传输、剪贴板及执行代码均不授权。</div></div>
         <div class="table-row"><div>本地 API</div><div>保留 owner-auth 和 loopback 限制；按冻结的 method、路径、参数和响应上限执行。禁止重定向、模型传入认证信息和任意 URL。调用前后核对同一 worker 与 candidate identity。</div><div>真实响应必须与 assertion 相关。健康检查通过不证明功能正确；HTTP 200、页面标题或模型自述均不能单独判定通过。</div></div>
         <div class="table-row"><div>受限测试与 CLI</div><div>固定 CLI version/help 调用已安装 App 的 runtime；冻结 test:python 在 candidate worktree 执行。不接收模型 shell。原生验收沙箱限制为单进程，禁止 fork、posix_spawn 及子进程；这不改变独立 build/repair-test 的执行策略。</div><div>源码测试不能替代安装后验收，CLI help 不能证明任意功能。最小环境与无网络隔离，拒绝默认数据和 App 写入；超时、取消、输出超限、身份变化或清理失败不判 pass。不启动第二套 profile/App。</div></div>
       </div>
@@ -955,8 +914,8 @@
     </section>
 
     <section id="surfaces" aria-labelledby="surfaces-title">
-      <div class="section-head"><div class="section-num">11A</div><div><h2 id="surfaces-title">状态投影、原会话结果与重启定位</h2><p>request、事务状态和 controller 验证记录是事实来源。聊天卡、Running 面板和工具读取同一份白名单投影，不各自猜测安装结果。</p></div></div>
-      <p>聊天和 Running 共用 ExecutionStrip 展示自更新摘要与详情，沿用执行过程的折叠按钮、动画和缩进，不维护独立卡片或折叠样式。聊天历史统一负责正文列缩进，内部运行容器不再叠加独立水平边距；Running 中保留运行容器自身的边距。操作使用消息 ActionButton，参数编辑复用输入区 fn-form；其提交动作可由调用方绑定为生成草稿，普通函数调用仍使用默认执行分发。自更新表单绑定原会话和更新 ID，校验新提交 SHA 后追加草稿，不提交网络操作或改变审批语义；切换会话或关闭表单清除绑定。字段与补充说明共用行高和行距；空证据状态属于同一个字段列表，不额外创建带内边距的列表。手动恢复警示始终可见。</p>
+      <div class="section-head"><div class="section-num">11A</div><div><h2 id="surfaces-title">Update records and normal conversation results</h2></div></div>
+      <p>Installation, verification and rollback retain their durable update records. Conversations display their normal messages and tool results only. The message list does not mount a software-update history component, issue update-history polling requests, or expose update management forms. Desktop recovery retains its routing and acknowledgement protocol without adding update recovery notices to the conversation.</p>
       <div class="mapping-table">
         <div class="table-row table-head"><div>投影字段</div><div>写入者与来源</div><div>读取含义</div><div>缺失或过期</div></div>
         <div class="table-row"><div><code>update_id</code>、root/parent、origin session、attempt</div><div>已校验 request 与迭代关系。</div><div>定位同一次更新、原会话及父子 attempt；身份只由服务端提供。</div><div>归属不一致时拒绝读取；不能通过 renderer 传值改绑。</div></div>
@@ -969,16 +928,16 @@
       <h3 id="projection-contract" style="margin-top:24px">共享读取合同</h3>
       <p><code>openprogram/self_update/projection.py</code> 提供专用工具、Web 与 Running 的共享只读投影。owner-auth 路由为 <code>GET /api/self-updates?session_id=…</code> 与 <code>GET /api/self-updates/{update_id}?session_id=…</code>，并校验 origin session；历史列表使用有上限的稳定游标分页，不依赖 active 指针。证据经同一更新的 <code>/evidence?session_id=…&amp;evidence_id=…</code> 路由再次验证，只返回签名结果引用的观察记录。</p>
       <p>投影只包含明确允许的字段、有限摘要和不透明 evidence ID，不返回配置、token、签名密钥、环境变量或任意日志路径。证据读取必须再次核验 owner、session、update 和 receipt 绑定；不支持任意文件读取。状态及关联结果在同一一致性边界内读取，无法形成一致快照时返回可重试错误。读操作不触发 claim、repair、Job 或 Scheduler。</p>
-      <p>首版复用 Running 的有界轮询，不新增事件总线。每个视图至多一个在途读取；会话切换取消旧请求，并用请求代次拒绝迟到响应。state revision 只排序状态变更，关联结果使用完整投影摘要判断变化。断线保留带“上次同步”时间的旧卡，明确显示离线；重连重新读取，不能因 WebSocket 断开、Job 消失或 App 打开就推断失败或成功。</p>
+      <p>Update projection APIs remain read-only and session-scoped for explicit tool reads. Chat does not poll these APIs. Stored update status does not infer success or failure from a disconnected window.</p>
       <div class="cards" style="margin-top:16px">
-        <article class="card accent-blue"><div class="label">Chat and Running</div><h3>一个更新，一份状态</h3><p>聊天以 root update 聚合各 attempt，显示当前阶段、目标/已验证版本、预算和证据。Running 使用同一投影显示非终态事务或仍待执行的迭代工作；所有 attempt 终止后从 Running 移除，原会话历史仍保留。操作按钮只把请求追加到原会话未发送草稿，保留已有文字；发送后仍须经过工具鉴权和强制审批，按钮本身不安装或取消。</p></article>
+        <article class="card accent-blue"><div class="label">Conversation</div><h3>Normal results</h3><p>Tool results and durable result delivery use the existing conversation message flow. No separate update history, pagination, evidence viewer or update request form is mounted in chat.</p></article>
         <article class="card accent-green"><div class="label">Durable result delivery</div><h3>结果不依赖窗口在线</h3><p>controller 先持久化终态，worker 通过已有 Job completion/follow-up 投递机制把有限结果写回原会话。以 update、attempt 和结果类型形成稳定投递键；重复启动或 ACK 丢失不产生重复消息。终态早于 verifier 创建、原会话未打开时也必须投递；会话删除则保留未投递状态，不改投其他会话或创建新的用户任务。</p></article>
         <article class="card accent-amber"><div class="label">No false completion</div><h3>分别显示执行与安装结论</h3><p>自动验收任务完成、目标通过、安装提交、回退完成和后续修正分别显示。通知由确定性代码生成，不另起 LLM 来编写状态，也不因此触发再次安装。DAG 保留 origin caller 与验证 Job 的关系，不改写用户主分支 HEAD。</p></article>
       </div>
       <h3 id="desktop-reopen" style="margin-top:24px">Desktop 重启定位原会话</h3>
       <p>复用 <code>apps/desktop/worker-start-url.js</code> 的 owner-auth 启动机制与现有 <code>/s/{session_id}</code> 路由。supervisor 在停止 App 前保存本次更新的受信任 reopen 意图，绑定 update、attempt、origin session、owner、期限和启动动作。Desktop 只接收不透明 update ID；由已认证服务解析经过核验的会话，再构造同源路由。候选、模型、CLI 参数和 renderer 不能指定任意 URL、文件路径或认证 fragment。</p>
-      <p>只在这次更新触发的重新打开中消费该意图，不改变普通启动、用户当前窗口、中心标签和稳定 Release updater。完成认证并确认原会话加载后才 ACK；ACK 前崩溃可重试定位，不能重新激活更新或重建 verifier Job。多窗口只由指定主窗口消费；重复消费是幂等定位，不重复建标签。用户主动离开原会话后不再强制跳回，保留可点击的结果提示。</p>
-      <p>owner 改变、session 不存在、意图过期、身份不匹配或恢复接口不可用时，保持普通启动并显示明确原因；不跳到其他会话，不自动创建会话，也不把定位失败判为安装成功。App 原本未打开时遵守保存的启动状态；若验收必须操作可见 App，应在 prepare 时显示并获得打开窗口的授权。更新与回退双方均须支持所需的最小读取/恢复协议，协议不兼容在激活前拒绝。</p>
+      <p>只在这次更新触发的重新打开中消费该意图，不改变普通启动、用户当前窗口、中心标签和稳定 Release updater。完成认证并确认原会话加载后才 ACK；ACK 前崩溃可重试定位，不能重新激活更新或重建 verifier Job。多窗口只由指定主窗口消费；重复消费是幂等定位，不重复建标签。用户主动离开原会话后不再强制跳回，也不插入专用恢复提示。</p>
+      <p>owner 改变、session 不存在、意图过期、身份不匹配或恢复接口不可用时，保持普通启动，在内部状态中保留原因；不跳到其他会话，不自动创建会话，也不把定位失败判为安装成功。App 原本未打开时遵守保存的启动状态；若验收必须操作可见 App，应在 prepare 时显示并获得打开窗口的授权。更新与回退双方均须支持所需的最小读取/恢复协议，协议不兼容在激活前拒绝。</p>
     </section>
 
     <section id="references" aria-labelledby="references-title">
@@ -1001,13 +960,13 @@
         <article class="task-card"><div class="task-id">TASK C · CHAT HANDOFF</div><h3>专用工具、审批与 turn-end release</h3><p>工具不执行停止动作，只提交持久化意图。</p><ul><li><code>programs/tools/system/self_update/</code>：prepare/status/cancel</li><li><code>agent/permissions/approval.py</code>：forced owner approval</li><li><code>agent/dispatcher/</code>：final durable 后 release</li><li>RED：拒绝 dirty SHA、非 owner source、并发 update、final 未落盘</li></ul></article>
         <article class="task-card"><div class="task-id">TASK D · EXTERNAL SUPERVISOR</div><h3>launchd one-shot 控制进程</h3><p>当前可信版本生成固定 controller，candidate 只能提供 commit 内容。</p><ul><li><code>self_update/supervisor.py</code> 与固定 shell handoff</li><li>build sandbox、maintenance gate、quiescence timeout</li><li>状态/日志/transaction 目录生命周期</li><li>RED：worker 被停止后 supervisor 仍完成；重复启动幂等</li></ul></article>
         <article class="task-card"><div class="task-id">TASK E · RESTART VERIFICATION</div><h3>startup claim、JobRunner 与受控迭代</h3><p>不恢复被中断的执行栈；重启后创建新 Job，普通 Scheduler 不参与控制。</p><ul><li><code>self_update/recovery.py</code>：system gate、lease、稳定 Job ID 和 exactly-once dispatch</li><li><code>worker/runner.py</code>：JobRunner ready 后、普通 Scheduler 前的启动 hook</li><li><code>agent/job/runner.py</code>：source/authority/tool/model snapshot</li><li><code>self_update/iteration.py</code>：attempt budget、scope diff 和停止条件</li><li>RED：重复启动、lease 过期、orphan verifier、provider 缺失、三轮耗尽和 scope 扩大</li></ul></article>
-        <article class="task-card"><div class="task-id">TASK F · UI AND FULL ACCEPTANCE</div><h3>状态卡、恢复结果与真实 App 验收</h3><p>按下述子任务实现；包含实际验收工具，不把任务缩减为状态卡。</p><ul><li>共享投影、持久化结果与 Web/Running</li><li>Desktop reopen 定位 origin session</li><li>受限真实 UI/API/CLI/test evidence</li><li>Python/Web/CLI/Desktop/full gate、文档与默认 App 三场景</li></ul></article>
+        <article class="task-card"><div class="task-id">TASK F · UI AND FULL ACCEPTANCE</div><h3>Result delivery and App verification</h3><p>Verification and recovery use application services; conversations retain ordinary messages and tool results.</p><ul><li>Read-only status tools and durable result delivery</li><li>Desktop reopen 定位 origin session</li><li>受限真实 UI/API/CLI/test evidence</li><li>Python/Web/CLI/Desktop/full gate、文档与默认 App 三场景</li></ul></article>
       </div>
       <h3 id="task-f" style="margin-top:24px">Task F 的依赖与验证范围</h3>
       <div class="failure-table">
         <div class="table-row table-head"><div>子任务与目标位置</div><div>交付内容</div><div>必须通过的验收</div></div>
         <div class="table-row"><div>F1 · <code>self_update/projection.py</code>、Web self-updates 路由、现有 status 工具和 Running 路由</div><div>先实现同源白名单投影、分页历史及权限合同；不引入新的控制入口。</div><div>公共 API/工具：跨 session 拒绝、无凭据泄漏、终态可读取、查询不写盘、损坏状态不伪装为空、候选/运行版本不同、旧恢复证据不能覆盖新状态。</div></div>
-        <div class="table-row"><div>F2 · 现有 Job result delivery、Web chat 与 Running 组件</div><div>依赖 F1；确定性持久化结果、root/attempt 聚合、断线/重连与证据展示。</div><div>结果先于订阅、窗口关闭、投递后崩溃、重复恢复、切换会话时迟到响应、待授权/回退/人工恢复、终态历史、键盘与窄屏。运行真实组件行为测试，不以源码字符串检查替代。</div></div>
+        <div class="table-row"><div>F2 · Existing Job result delivery</div><div>Normal durable message delivery; no dedicated chat update controls or history polling.</div><div>结果先于订阅、窗口关闭、投递后崩溃、重复恢复、切换会话时迟到响应、待授权/回退/人工恢复、终态历史、键盘与窄屏。运行真实组件行为测试，不以源码字符串检查替代。</div></div>
         <div class="table-row"><div>F3 · <code>apps/desktop/main.js</code>、<code>worker-start-url.js</code> 与 startup handoff</div><div>依赖 F1/F2；绑定更新的单次 reopen、原会话加载 ACK，普通启动保持原行为。</div><div>真实路由加载、错误 owner/session、过期意图、认证失败、ACK 丢失、多窗口、手动导航优先；不产生第二个 verifier 或自动修改会话。</div></div>
         <div class="table-row"><div>F4 · <code>self_update/verifier_config.py</code>、现有受限观察/签名协议与 App/测试适配层</div><div>依赖已评审的重启验证与 F3；冻结验收计划并提供真实 UI/API/CLI/test 证据。各 Workflow 阶段 prompt 使用同一目标、assertion 与预算，工具权限由执行层强制限制。</div><div>真实 App 主窗口定位与截图、批准的交互、实际 CLI 检查；拒绝任意 JS/CDP/URL/shell、越权写入、跨会话、身份切换、伪造 receipt 和重放；旧配置不获得新权限，缺证据/清理失败不判 pass。</div></div>
         <div class="table-row"><div>F5 · 主线集成、产品文档与发布验收</div><div>依赖 F1–F4；同步本页及英文/中文产品文档，保留并检查现有架构图；逐项核对整个目标与当前实现。</div><div>完整 Python、contracts、Web、CLI、Desktop、打包、docs/checklinks 和组合提交验证。随后仅用 <code>scripts/refresh-local-app.sh</code> 更新默认 App，实际验证成功、激活前失败、激活后回退；分别记录 local commit、main、remote 和 installed identity。</div></div>
@@ -1043,7 +1002,7 @@
         <article class="evidence target"><div class="label">Integrated candidate · release verification pending</div><h3>Durable self-update protocol</h3><p>组合候选包含状态机、单活动锁、durable release、maintenance、外部 supervisor、延迟提交与回退，以及 owner repair 和 App 外登录恢复入口。离线私有构建输入、固定 SHA 的 Electron 分发、单端口 packaged worker smoke、固定图标渲染和可信 runtime browser probe 已通过修复后的完整实际打包；browser probe 只执行候选无权写入且已重新校验的保存 controller runtime，构建用可写 runtime 不会由控制器执行。独立评审、最终组合门禁、主线发布和实际安装/恢复验收尚未完成。</p></article>
         <article class="evidence target"><div class="label">Integrated candidate · release pending</div><h3>自动验收与会话恢复</h3><p>startup claim、稳定 self_update_verify Job、签名结果、目标失败 rollback、持久化结果投递和 Desktop reopen 均已集成。旧 App 缺少打包协议时必须先显式完整刷新；不能以源码测试证明已安装 App 的重启、原会话 ACK 或自动验收。</p></article>
         <article class="evidence target"><div class="label">Integrated candidate · release pending</div><h3>诊断与自动修正</h3><p>回退后诊断、受限编辑提案、隔离 worktree/commit、冻结测试、再次审批与 bounded_auto 已集成。重启不重置次数和期限；完整组合检查与真实更新序列仍待验收，不覆盖原失败结论。</p></article>
-        <article class="evidence target"><div class="label">Integrated candidate · release pending</div><h3>状态界面与受限观察</h3><p>共享投影、聊天/Running、原会话定位，以及有签名的 HTTP、CLI/test、截图、滚动、视图与临时测试对象操作已集成。能力严格限于冻结检查；任意 UI 交互和真实数据修改不在授权内。默认 App 三场景及实际目标证据完成前，整体保持未完成。</p></article>
+        <article class="evidence target"><div class="label">Integrated candidate · release pending</div><h3>结果投递与受限观察</h3><p>普通结果投递、原会话定位，以及有签名的 HTTP、CLI/test、截图、滚动和视图检查已集成。聊天不挂载更新管理界面；不支持临时测试对象操作。能力严格限于冻结检查；任意 UI 交互和真实数据修改不在授权内。默认 App 三场景及实际目标证据完成前，整体保持未完成。</p></article>
       </div>
 
       <div class="source-list" aria-label="当前实现入口">
@@ -1068,41 +1027,15 @@
       </div>
     </section>
 
+  <section id="quiet-history"><h2>Conversation boundary</h2><p>Opening, switching or reconnecting a conversation does not query software-update history. Normal tool output and existing result delivery remain available. Software-update loading, status, retry forms and recovery notices are absent from the chat UI. The production App does not mount a temporary verification rename dialog. Verification rejects test_object interactions before any UI request; screenshot, bounded scroll and perspective checks remain supported.</p><p>Acceptance: normal chat and App shell mount without software-update UI or history requests; desktop session acknowledgement still works; install and rollback behavior remains unchanged.</p></section>
+
     <footer class="footer"><span>Canonical design: runtime / conversational self-update</span><span>正式 Release 更新：distribution / automatic updates</span></footer>
+
   </main>
 </div>
 
 <script>
   (function () {
-    var tabs = Array.from(document.querySelectorAll('.experience-tab'));
-    var panels = Array.from(document.querySelectorAll('.experience-panel'));
-
-    function activate(tab, moveFocus) {
-      tabs.forEach(function (item) {
-        var selected = item === tab;
-        item.setAttribute('aria-selected', String(selected));
-        item.tabIndex = selected ? 0 : -1;
-      });
-      panels.forEach(function (panel) {
-        panel.classList.toggle('active', panel.dataset.panel === tab.dataset.target);
-      });
-      if (moveFocus) tab.focus();
-    }
-
-    tabs.forEach(function (tab, index) {
-      tab.addEventListener('click', function () { activate(tab, false); });
-      tab.addEventListener('keydown', function (event) {
-        var next = index;
-        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % tabs.length;
-        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + tabs.length) % tabs.length;
-        else if (event.key === 'Home') next = 0;
-        else if (event.key === 'End') next = tabs.length - 1;
-        else return;
-        event.preventDefault();
-        activate(tabs[next], true);
-      });
-    });
-
     var links = Array.from(document.querySelectorAll('.rail nav a'));
     var sections = links.map(function (link) { return document.querySelector(link.getAttribute('href')); }).filter(Boolean);
     if ('IntersectionObserver' in window) {

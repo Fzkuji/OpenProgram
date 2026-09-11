@@ -182,6 +182,11 @@ def _finish_interrupted_stream(stream, exc, messages, cancel_event) -> None:
         cancel_event is not None and cancel_event.is_set()
     )
     if isinstance(exc, ExecInterrupt) and not cancelled:
+        from openprogram.agent.run_control import is_worker_stopping
+        if is_worker_stopping():
+            if not stream._result_event.is_set():
+                stream.fail(exc)
+            return
         # A synchronous callback can observe the owner's cancellation before
         # this event loop has delivered its asynchronously bridged signal.
         try:

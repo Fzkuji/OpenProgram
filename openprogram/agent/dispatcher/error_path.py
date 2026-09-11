@@ -47,6 +47,8 @@ def handle_turn_error(
     started_at: float,
 ) -> TurnResult:
     """Fold/record the error, finalize the failed turn, build the result."""
+    from openprogram.agent.run_control import raise_if_worker_stopping
+    raise_if_worker_stopping()
     e = exc
     from openprogram.providers.structured_output import (
         StructuredOutputError,

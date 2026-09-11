@@ -123,13 +123,14 @@
 <span id="foreground-reconnect"></span>
 
 <h2>5. What survives a restart?</h2>
+<section id="automatic-restart-continuation"><h3>Automatic continuation of running conversations</h3><p>Conversation execution records are persisted during normal operation. Each completed provider decision and tool result records the next action in the existing checkpoint and receipt transaction, without a pause command. Restart does not require a special save step or a graceful exit.</p><p>Startup claims abandoned running Agent executions once and activates the original execution, revision, turn and assistant reply from their durable input and latest continuation record. Manually paused, cancelling, cancelled and completed executions are not automatically continued. An interrupted model request can be regenerated from committed context; completed tools are skipped. An unresolved external operation is not blindly repeated and remains subject to result reconciliation. A missing first model response can restart from the existing admission input.</p><p>Closing or reconnecting the interface preserves the transcript. Worker interruption is not an assistant failure, does not append an error reply and does not introduce restart or recovery loading messages. Real provider and tool failures retain their existing presentation.</p><p>Acceptance uses isolated stores and controlled production entry points: resume with the same identities after owner loss, repeat startup without duplicate dispatch, recover before the first response, skip committed tools, preserve uncertain tool operations and user stop intent, and retain transcript content on reconnect. No live restart reproduction is required. Implementation status: implemented. Specification and quality reviews pass. Controlled verification covers repeated startup, original reply identity, complete provider context, committed tool coverage, and independent conversation controls. The full non-browser, non-live Python suite and Web, Desktop, documentation, and static checks pass.</p></section>
 <div class="doc-table">
 <table>
 <thead>
 <tr><th scope="col">Record</th><th scope="col">Plain meaning</th><th scope="col">Why it matters</th></tr>
 </thead>
 <tbody>
-<tr><td>Checkpoint</td><td>Saved progress at a declared stopping point.</td><td>Continue starts here; it does not restore a frozen thread.</td></tr>
+<tr><td>Checkpoint</td><td>The next action recorded after a model decision or tool result.</td><td>Continue starts here; it does not restore a frozen thread.</td></tr>
 
 <tr><td>Effect receipt</td><td>Whether a model or tool request finished and what was confirmed.</td><td>Confirmed work is not blindly repeated. An uncertain external action must be checked first.</td></tr>
 

@@ -588,6 +588,7 @@ def test_after_tool_continue_runs_only_the_unfinished_tool(real_agent_chat):
             "execution": real_agent_chat.store.get_execution(execution.execution_id).to_dict(),
         },
     )
+    execution = real_agent_chat.store.get_execution(execution.execution_id)
     pause = _command(real_agent_chat, "execution.pause", execution, "pause-first")
     assert pause["status"] in {"accepted", "applying", "applied"}, pause
     real_agent_chat.tools.release["first"].set()
@@ -1129,7 +1130,12 @@ def test_decline_preserves_checkpoint_trace_and_notifies_chat(real_agent_chat, m
     monkeypatch.setattr("openprogram.events.emit_ws_frame", frames.append)
     _question_action(h, "question_reject", question.id)
     _wait(lambda: h.store.get_execution(execution.execution_id).status is ExecutionStatus.FAILED)
-    ProjectionDispatcher(h.store, projection_handlers(h.store)).dispatch_once(owner_id="test-trace")
+    dispatcher = ProjectionDispatcher(h.store, projection_handlers(h.store))
+    while True:
+        delivered = dispatcher.dispatch_once(owner_id="test-trace")
+        assert delivered.failed == 0
+        if delivered.claimed == 0:
+            break
     source = h.store.get_execution_input(execution.execution_id)
     from openprogram.store import SessionNodeWriter
     node = SessionNodeWriter(h.sessions, h.session_id, advance_head=False).load().nodes[source.assistant_message_id]

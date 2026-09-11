@@ -67,7 +67,7 @@ def _running_execution(tmp_path):
     return executions, attempts, running, active
 
 
-def test_human_pause_stays_yielding_until_safe_point_then_get_shows_paused(tmp_path, monkeypatch):
+def test_page_pause_is_rejected_without_pausing_canonical_execution(tmp_path, monkeypatch):
     from openprogram.browser_resources import BrowserResourceStore
     from openprogram.webui.routes import processes
 
@@ -107,34 +107,32 @@ def test_human_pause_stays_yielding_until_safe_point_then_get_shows_paused(tmp_p
             "/api/session/parent/resources/page:live/control",
             json={"action": "pause", "command_id": "pause-live", "generation": 1},
         )
-        assert pause.status_code == 200
-        body = pause.json()
-        assert "item" not in body
-        assert body["control_state"] == "yielding"
-        assert body["sequence"] >= 1
-        assert executions.get_execution(running.execution_id).status is ExecutionStatus.PAUSING
-        assert driver.pauses == [("pause-live", ExecutionStatus.PAUSING)]
-        listed = client.get("/api/session/parent/resources").json()
-        row = next(item for item in listed["items"] if item.get("resource_id") == "page:live")
-        assert row["control_state"] == "yielding"
-        RuntimeControlService(executions, attempts, registry).arrive_safe_point(
-            attempt_id=active.attempt_id, generation=active.generation,
-            command_id="pause-live",
-            expected_execution_version=executions.get_execution(running.execution_id).status_version,
-            fragment=CheckpointFragment(
-                safe_point_kind="action.after",
-                frontier=({"step_id": "start", "phase": "after"},),
-                state_refs={"program": {"cursor": 0}},
-            ),
-        )
-        assert executions.get_execution(running.execution_id).status is ExecutionStatus.PAUSED
-        listed = client.get("/api/session/parent/resources").json()
-        row = next(item for item in listed["items"] if item.get("resource_id") == "page:live")
-        assert row["control_state"] == "paused"
-        assert row["sequence"] >= body["sequence"]
+        assert pause.status_code == 400
+        assert executions.get_execution(running.execution_id).status is ExecutionStatus.RUNNING
+        assert driver.pauses == []
         stored = store.get_resource("page:live")
-        assert stored["control_state"] == "paused"
-        assert int(stored["sequence"] or 0) == int(row["sequence"] or 0)
+        assert stored["control_state"] == "idle"
+        assert not stored.get("pause_command_id")
+
+        # The canonical conversation control plane remains independent from
+        # page resource controls.
+        paused = asyncio.run(service.request_pause(
+            command_id="conversation-pause",
+            execution_id=running.execution_id,
+            expected_version=running.status_version,
+            actor={"surface": "conversation"},
+        )).execution
+        assert paused.status is ExecutionStatus.PAUSING
+        _safe_point(service, executions, running, active, "conversation-pause")
+        resumed = asyncio.run(service.request_continue(
+            command_id="conversation-continue",
+            execution_id=running.execution_id,
+            expected_version=executions.get_execution(running.execution_id).status_version,
+            actor={"surface": "conversation"},
+            activator=driver.activate,
+        )).execution
+        assert resumed.status is ExecutionStatus.RUNNING
+        assert store.get_resource("page:live")["control_state"] == "idle"
 
 
 def _safe_point(service, executions, running, attempt, command_id):
@@ -150,7 +148,7 @@ def _safe_point(service, executions, running, attempt, command_id):
     )
 
 
-def test_pause_resume_pause_uses_production_control_and_new_command_ids(
+def test_page_resume_is_rejected_without_resuming_canonical_execution(
     tmp_path, monkeypatch,
 ):
     from openprogram.browser_resources import BrowserResourceStore, writes_fenced
@@ -190,70 +188,17 @@ def test_pause_resume_pause_uses_production_control_and_new_command_ids(
     app = FastAPI()
     processes.register(app)
     with TestClient(app) as client:
-        pause = client.post(
-            "/api/session/parent/resources/page:live/control",
-            json={"action": "pause", "command_id": "pause-1", "generation": 1},
-        )
-        assert pause.status_code == 200
-        assert pause.json()["control_state"] == "yielding"
-        duplicate = client.post(
-            "/api/session/parent/resources/page:live/control",
-            json={"action": "pause", "command_id": "pause-stale", "generation": 1},
-        )
-        assert duplicate.status_code == 200
-        assert [item[0] for item in driver.pauses] == ["pause-1"]
-        _safe_point(service, executions, running, active, "pause-1")
-        listed = client.get("/api/session/parent/resources").json()
-        row = next(item for item in listed["items"] if item.get("resource_id") == "page:live")
-        stored = store.get_resource("page:live")
-        assert row["control_state"] == "paused"
-        assert stored["control_state"] == "paused"
-        paused_seq = int(row["sequence"] or 0)
-        assert paused_seq > int(pause.json()["sequence"] or 0)
-        listed_again = client.get("/api/session/parent/resources").json()
-        again = next(item for item in listed_again["items"] if item.get("resource_id") == "page:live")
-        assert again["control_state"] == "paused"
-        assert int(again["sequence"] or 0) == paused_seq
         resume = client.post(
             "/api/session/parent/resources/page:live/control",
             json={"action": "resume", "command_id": "resume-1", "generation": 1},
         )
-        assert resume.status_code == 200, resume.text
-        assert resume.json()["control_state"] == "idle"
+        assert resume.status_code == 400, resume.text
         stored = store.get_resource("page:live")
         assert stored["control_state"] == "idle"
         assert not stored.get("pause_command_id")
         assert writes_fenced("page:live") is False
         current = executions.get_execution(running.execution_id)
         assert current.status is ExecutionStatus.RUNNING
-        second = client.post(
-            "/api/session/parent/resources/page:live/control",
-            json={"action": "pause", "command_id": "pause-2", "generation": 1},
-        )
-        assert second.status_code == 200, second.text
-        assert [item[0] for item in driver.pauses] == ["pause-1", "pause-2"]
-        stored = store.get_resource("page:live")
-        assert stored["pause_command_id"] == "pause-2"
-        assert stored["control_state"] == "yielding"
-        attempt2 = attempts.get(current.current_attempt_id)
-        _safe_point(service, executions, running, attempt2, "pause-2")
-        listed = client.get("/api/session/parent/resources").json()
-        row = next(item for item in listed["items"] if item.get("resource_id") == "page:live")
-        assert row["control_state"] == "paused"
-        assert store.get_resource("page:live")["control_state"] == "paused"
-        resume2 = client.post(
-            "/api/session/parent/resources/page:live/control",
-            json={"action": "resume", "command_id": "resume-2", "generation": 1},
-        )
-        assert resume2.status_code == 200, resume2.text
-        assert resume2.json()["control_state"] == "idle"
-        assert writes_fenced("page:live") is False
-        stale = client.post(
-            "/api/session/parent/resources/page:live/control",
-            json={"action": "pause", "command_id": "pause-3", "generation": 0},
-        )
-        assert stale.status_code == 409
-        assert stale.json().get("error") == "stale_generation"
 
 
 def test_retain_does_not_erase_title_when_binding_has_no_url(tmp_path, monkeypatch):

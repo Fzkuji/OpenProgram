@@ -44,6 +44,7 @@ from openprogram.agent.internals._model_tools import (
 from openprogram.agent.dispatcher.runtime_attach import _wrap_agentic_runtime_block
 from openprogram.agent.continuation import runtime_contract_snapshot
 from openprogram.agent.continuation import validate_runtime_contract
+from openprogram.agent.continuation import provider_context_from_effect
 
 if TYPE_CHECKING:
     from openprogram.agent.dispatcher.types import EventCallback, TurnRequest
@@ -411,10 +412,20 @@ def run_loop_blocking(
         anchor = getattr(req, "_steering_tail_id", None) or continuation.state.payload["turn"]["user_message_id"]
         if anchor not in graph.nodes:
             raise ValueError("Agent checkpoint user anchor is not in the session graph")
-        context_messages = render_dag_messages(
-            graph,
-            render_context(graph, head_id=anchor, frame_entry_seq=-1),
+        # provider.before persists the exact provider message list in its
+        # committed effect. Reuse it on restart so tool results from earlier
+        # decisions in the same turn are retained. Runtime steering is then
+        # appended by agent_loop's existing queue handling.
+        from openprogram.execution.store import default_store as default_execution_store
+
+        context_messages = provider_context_from_effect(
+            continuation, continuation.execution_store or default_execution_store()
         )
+        if context_messages is None:
+            context_messages = render_dag_messages(
+                graph,
+                render_context(graph, head_id=anchor, frame_entry_seq=-1),
+            )
         context = AgentContext(
             system_prompt=durable_prompt,
             messages=context_messages,
