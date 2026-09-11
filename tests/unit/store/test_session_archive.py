@@ -151,3 +151,52 @@ def test_reopen_still_removes_old_session_without_history(tmp_path: Path) -> Non
 
     assert reopened.get_session("missing-history") is None
     assert not (root / "missing-history").exists()
+
+
+def test_session_removal_handles_windows_readonly_git_objects(tmp_path, monkeypatch):
+    """Both public removal paths must delete read-only Windows Git objects."""
+    import errno
+    import os
+    import stat
+    from types import SimpleNamespace
+
+    original_unlink = os.unlink
+    original_lstat = os.lstat
+    name = 'readonly-git-object'
+
+    def windows_unlink(path, *, dir_fd=None):
+        if os.path.basename(path) == name:
+            info = os.stat(path, dir_fd=dir_fd, follow_symlinks=False)
+            if not info.st_mode & stat.S_IWRITE:
+                raise PermissionError(errno.EACCES, 'read-only Git object', path)
+        return original_unlink(path, dir_fd=dir_fd)
+
+    def windows_lstat(path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        if os.path.basename(path) != name:
+            return info
+        return SimpleNamespace(
+            st_mode=info.st_mode, st_dev=info.st_dev, st_ino=info.st_ino,
+            st_file_attributes=1 if not info.st_mode & stat.S_IWRITE else 0,
+        )
+
+    monkeypatch.setattr(os, 'unlink', windows_unlink)
+    monkeypatch.setattr(os, 'lstat', windows_lstat)
+    for action in ('startup', 'delete'):
+        root = tmp_path / action
+        store = SessionStore(root)
+        store.create_session('old', 'main', created_at=time.time() - 7200.0,
+                             updated_at=time.time() - 7200.0)
+        store.close()
+        directory = root / 'old'
+        git_object = directory / '.git' / name
+        git_object.write_bytes(b'object')
+        git_object.chmod(0o444)
+        if action == 'startup':
+            shutil.rmtree(directory / 'history')
+            reopened = SessionStore(root)
+            reopened.close()
+            assert reopened.get_session('old') is None
+        else:
+            store.delete_session('old')
+        assert not directory.exists(), action

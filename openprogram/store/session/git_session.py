@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import threading
 import time
@@ -34,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from openprogram._compat import filesystem_path
+from openprogram._compat import filesystem_path, remove_tree
 
 
 # Errors
@@ -419,5 +418,5 @@ class GitSession:
         """Delete the entire repo. Used by ``delete_session``."""
         with self._lock:
             if self.path.exists():
-                shutil.rmtree(self.path, ignore_errors=True)
+                remove_tree(self.path, ignore_errors=True)
             self._initialized = None

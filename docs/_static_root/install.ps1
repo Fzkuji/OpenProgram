@@ -30,7 +30,7 @@ try {
         --connect-timeout 15 --speed-limit 1024 --speed-time 120 `
         --output $Temporary $Url
     if ($LASTEXITCODE -ne 0) {
-        throw "OpenProgram $Version has no complete Windows release installer"
+        throw "OpenProgram $Version has no complete Windows release installer. Select a release with Windows runtime assets, or use the source-development installation at https://openprogram.io/docs/install/install.html."
     }
     $FirstLine = Get-Content -LiteralPath $Temporary -TotalCount 1 -Encoding UTF8
     if ($FirstLine -ne '$ErrorActionPreference = "Stop"') {

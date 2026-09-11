@@ -1860,6 +1860,33 @@ def is_link_metadata(info) -> bool:
     return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & 0x400)
 
 
+def remove_tree(path, *, ignore_errors: bool = False) -> None:
+    """Remove owned directories, retrying read-only Windows Git objects."""
+    import shutil
+    import stat
+
+    def onerror(operation, filename, exc_info):
+        error = exc_info[1]
+        try:
+            if isinstance(error, PermissionError) and operation in (_os.unlink, _os.remove):
+                info = _os.lstat(filename)
+                if (stat.S_ISREG(info.st_mode) and not is_link_metadata(info)
+                        and getattr(info, "st_file_attributes", 0) & 1):
+                    _os.chmod(filename, info.st_mode | stat.S_IWRITE)
+                    operation(filename)
+                    return
+        except OSError:
+            if not ignore_errors:
+                raise
+            return
+        if not ignore_errors:
+            raise error
+
+    # onerror supports the project's Python 3.11 minimum. Passing
+    # ignore_errors to shutil would bypass the read-only recovery callback.
+    shutil.rmtree(path, onerror=onerror)
+
+
 def user_private_metadata(info, *, exact_mode: int | None = None) -> bool:
     """POSIX ownership policy; Windows uses inherited profile ACLs unchanged."""
     import stat
@@ -2062,6 +2089,7 @@ def directory_read_file(handle, name):
 
 
 __all__ = [
+    "remove_tree",
     "restrict_descriptor_to_user",
     "directory_handle",
     "directory_child",

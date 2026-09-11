@@ -3720,13 +3720,25 @@ class RuntimeControlService:
                     command.execution_id, command.command_id,
                 )
             return command
-        applied = self.executions.transition_command(
-            command.command_id,
-            expected_status=CommandStatus.APPLYING,
-            target=CommandStatus.APPLIED,
-            result_version=execution.status_version,
-            receipt=receipt,
-        )
+        try:
+            applied = self.executions.transition_command(
+                command.command_id,
+                expected_status=CommandStatus.APPLYING,
+                target=CommandStatus.APPLIED,
+                result_version=execution.status_version,
+                receipt=receipt,
+            )
+        except CommandConflict:
+            # Terminal reconciliation may have completed this same command
+            # after the caller read its APPLYING snapshot.
+            applied = self.executions.get_command(command.command_id)
+            if (
+                applied is None
+                or applied.execution_id != execution.execution_id
+                or applied.status is not CommandStatus.APPLIED
+                or applied.result_version != execution.status_version
+            ):
+                raise
         if command.kind is CommandKind.CANCEL:
             self._forget_cancel_delivery(
                 command.execution_id, command.command_id,
