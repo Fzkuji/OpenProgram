@@ -392,7 +392,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
 
   // Any narrowing filter active → matched-only view: groups auto-expand
   // around their matches. (status "all" widens, so it doesn't count;
-  // "archived" narrows.) Empty projects are hidden only while filtering.
+  // "archived" narrows.) Empty and archived-only projects are always hidden.
   const filtering =
     view.status === "archived" ||
     view.lastActivity !== "all" ||
@@ -406,7 +406,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // membership or the session order from `visible`.
   const projectSection = (id: string) => view.pinnedProjects.includes(id) ? "__pinned__" : (view.projectSectionNames.includes(view.projectSections[id]) ? view.projectSections[id] : "");
   const sectionOrder = ["__pinned__", ...view.projectSectionNames, ""];
-  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, activityItems: convArr, includeEmpty: !filtering })
+  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, activityItems: convArr })
     .sort((a,b) => sectionOrder.indexOf(projectSection(a.key)) - sectionOrder.indexOf(projectSection(b.key))) : [];
   function reorderProject(source: string, target: string, side: "before" | "after") {
     // Include hidden/empty projects so filtering cannot discard their position.

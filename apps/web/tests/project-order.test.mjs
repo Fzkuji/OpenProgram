@@ -51,3 +51,11 @@ test('removing and restoring a project preserves its manual position through oth
   assert.deepEqual(moved,['a','c','b']);
   assert.deepEqual(projectGroups(projects.map(p=>({...p,hidden:false})),[],moved,{sort:'manual',includeEmpty:true}).map(p=>p.key),['a','c','b']);
 });
+
+ test("sidebar omits empty and archived-only projects, including pins, without mutating registry", () => {
+ const registry=[{id:"p",name:"P",path:"/p",is_default:false,session_ids:["s"]},{id:"empty",name:"Empty",path:"/empty",is_default:false}];
+ assert.deepEqual(projectGroups(registry,[{id:"s",archived:true}],[],{pinned:["p","empty"]}),[]);
+ assert.deepEqual(projectGroups(registry,[{id:"s",archived:false}]).map(g=>g.key),["p"]);
+ assert.equal(registry.length,2);
+ assert.deepEqual(projectGroups(registry,[],[],{includeEmpty:true}).map(g=>g.key).sort(),["empty","p"]);
+ });

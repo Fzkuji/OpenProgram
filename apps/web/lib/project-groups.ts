@@ -10,6 +10,7 @@ export interface ProjectGroupSource {
 export type ProjectSort = "recency" | "oldest" | "name" | "manual";
 
 export interface ProjectGroupItem {
+  archived?: boolean;
   id: string;
   updated_at?: number;
   created_at?: number;
@@ -39,6 +40,7 @@ export function projectGroups<T extends ProjectGroupItem>(
   const defaultId = projects.find((project) => project.is_default)?.id ?? null;
   const byProject = new Map<string, T[]>();
   for (const item of items) {
+    if (item.archived && !options.includeEmpty) continue;
     const projectId = owner.get(item.id) ?? defaultId;
     if (!projectId) continue;
     const groupItems = byProject.get(projectId);
