@@ -16,6 +16,38 @@ class ManifestCorruptionError(ValueError):
     """Existing history cannot be interpreted without discarding evidence."""
 
 
+def _valid_entry(entry: object, version: int) -> bool:
+    if (not isinstance(entry, dict) or not isinstance(entry.get("path"), str)
+            or not entry["path"] or not isinstance(entry.get("pre_existing"), bool)):
+        return False
+    if version == 1 and "status" not in entry:
+        return True  # Legacy before-only records have no commit state.
+    if entry.get("status") not in {"prepared", "committed", "aborted"}:
+        return False
+    if "pending" in entry and not isinstance(entry["pending"], bool):
+        return False
+    before, after = entry.get("before"), entry.get("after")
+    if not _valid_state(before):
+        return False
+    if after is None:
+        return entry["status"] != "committed"
+    return _valid_state(after)
+
+
+def _valid_state(state: object) -> bool:
+    if not isinstance(state, dict) or state.get("kind") not in {
+        "regular", "absent", "unavailable", "symlink", "directory", "special",
+    }:
+        return False
+    # Older before-only snapshots can lack a digest or explicit blob_ref.
+    # Such records remain readable; restore preflight determines exactness.
+    ref = state.get("blob_ref")
+    if ref is not None and (not isinstance(ref, str) or not ref
+                            or Path(ref).name != ref or ref in {".", ".."}):
+        return False
+    return "digest" not in state or isinstance(state["digest"], str)
+
+
 def load(manifest_path: Path) -> dict:
     """Only a missing manifest is empty; unreadable history is never replaced."""
     try:
@@ -28,7 +60,8 @@ def load(manifest_path: Path) -> dict:
         raise ManifestCorruptionError(f"Cannot read mutation history: {manifest_path}") from exc
     if (not isinstance(data, dict) or not isinstance(data.get("files"), dict)
             or data.get("version", 1) not in (1, 2)
-            or any(not isinstance(entry, dict) for entry in data["files"].values())):
+            or any(not _valid_entry(entry, data.get("version", 1))
+                   for entry in data["files"].values())):
         raise ManifestCorruptionError(f"Invalid or unsupported mutation history: {manifest_path}")
     data.setdefault("version", 1)
     data.setdefault("backed_at", 0.0)

@@ -77,7 +77,7 @@ def test_aborted_attempt_retry_uses_fresh_before_version(history):
     assert target.read_bytes() == b'external revision\0'
 
 
-@pytest.mark.parametrize('raw', ['{broken', '{"version": 99, "files": {}}', '{"files": {"bad": 2}}'])
+@pytest.mark.parametrize('raw', ['{broken', '{"version": 99, "files": {}}', '{"files": {"bad": 2}}', '{"version": 2, "files": {"bad": {}}}'])
 def test_corrupt_manifest_blocks_public_write_without_erasing_history(history, raw):
     store, sid, tid, target = history
     path = turn_manifest_path(store._session_dir(sid), tid)
@@ -86,6 +86,15 @@ def test_corrupt_manifest_blocks_public_write_without_erasing_history(history, r
     result = publish(target, b'new\0')
     assert 'preparation failed' in result
     assert target.read_bytes() == b'original\0'
+    assert path.read_text() == raw
+    class WS:
+        sent = []
+        async def send_text(self, text):
+            self.sent.append(json.loads(text))
+    from openprogram.webui.ws_actions.turn_files import handle_review_scope
+    ws = WS()
+    asyncio.run(handle_review_scope(ws, {'session_id': sid, 'assistant_msg_id': tid, 'scope': 'turn'}))
+    assert ws.sent[0]['data']['status'] == 'error'
     assert path.read_text() == raw
 
 
@@ -141,3 +150,15 @@ def test_failed_writer_with_partial_side_effect_is_not_hidden(history):
     journal.abort_edit(tid, str(target), 'writer failed after touching target')
     assert journal.list_mutations(tid) == []
     assert journal.list_file_history(tid)[0]['unavailable_reason'] == 'mutation_incomplete'
+
+
+def test_legacy_before_only_snapshot_remains_readable(history):
+    store, sid, tid, target = history
+    path = turn_manifest_path(store._session_dir(sid), tid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    (path.parent / 'legacy').write_bytes(b'legacy before\0')
+    path.write_text(json.dumps({'version': 1, 'files': {'legacy': {
+        'path': str(target), 'pre_existing': True,
+    }}}))
+    assert CheckpointStore(store._session_dir(sid)).restore_turn(tid) == [str(target)]
+    assert target.read_bytes() == b'legacy before\0'
