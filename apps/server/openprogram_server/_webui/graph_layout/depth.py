@@ -59,13 +59,19 @@ def compute_depth(
 
     # 防御性防环：父指针成环时（正常 DAG 不会）把环上的节点当孤儿根，
     # 否则下面的遍历会无限递归。
-    parent: dict[str, str | None] = {}
+    original_parent = {nid: _parent(nid) for nid in by_id}
+    cyclic: dict[str, bool] = {}
     for nid in by_id:
-        p, seen = _parent(nid), {nid}
-        while p is not None and p not in seen:
-            seen.add(p)
-            p = _parent(p)
-        parent[nid] = None if p is not None else _parent(nid)
+        path: set[str] = set()
+        cur = nid
+        while cur is not None and cur not in cyclic and cur not in path:
+            path.add(cur)
+            cur = original_parent[cur]
+        enters_cycle = cur is not None and (cur in path or cyclic[cur])
+        for visited in path:
+            cyclic[visited] = enters_cycle
+    parent = {nid: None if cyclic[nid] else p
+              for nid, p in original_parent.items()}
 
     children: dict[str, list[str]] = {}
     for nid, p in parent.items():
@@ -78,40 +84,38 @@ def compute_depth(
     roots = sorted((n for n, p in parent.items() if p is None),
                    key=lambda x: ts(by_id, x))
 
-    def _walk(nid: str, row: float) -> float:
-        """给 nid 发行号 row，返回这棵子树用掉的最后一行 +1（下一空行）。"""
-        depth[nid] = row
-        nxt = row + 1.0
-        kids = children.get(nid, [])
-        # 同一个 predecessor 下的第 2 个及以后的对话层兄弟 = fork（retry/
-        # 改写）。它们不排在前一个兄弟的子树下面，而是回到分叉行横着长
-        # 出去（场景 3/6/7）。第一个兄弟正常继续本行往下。
-        # fork 的"分叉行" = 被改写的那个兄弟（第一个对话层孩子）所在的
-        # 行，不是共同 predecessor 的行：场景 3 里 ROOT 在行 0、`你好`
-        # 在行 1，改写出来的 fork user 和 `你好` 平齐，也在行 1。
-        fork_row: float | None = None
-        for kid in kids:
+    # Each frame stores a suspended preorder visit. Returning from a child
+    # advances its parent's next free row, exactly as the recursive walk did.
+    row = 0.0
+    for root in roots:
+        depth[root] = row
+        stack = [[root, row, row + 1.0, None, iter(children.get(root, []))]]
+        while stack:
+            nid, current_row, nxt, fork_row, kids = stack[-1]
+            kid = next(kids, None)
+            if kid is None:
+                stack.pop()
+                if stack:
+                    stack[-1][2] = max(stack[-1][2], nxt)
+                else:
+                    row = nxt
+                continue
             km = by_id[kid]
             is_conv_kid = predecessor_of(by_id, km) == nid
             source = retry_source(km)
             root_program = is_root(by_id[nid]) and is_top_program_run(km)
-            # spawn 根与发起它的那轮同一行；但挂在 ROOT 下的（跨会话
-            # spawn 落到目标会话）是本会话的头一条对话，照常往下一行走。
             if root_program:
                 start = depth[source] if source and source in depth else nxt
             elif _is_spawn_root(km) and not is_root(by_id[nid]):
-                start = row              # 与发起 spawn 的那轮同一行
+                start = current_row
             elif is_conv_kid and fork_row is not None:
-                start = fork_row         # 与被改写的兄弟同一行
+                start = fork_row
             else:
                 start = nxt
             if is_conv_kid and fork_row is None and not root_program:
-                fork_row = start
-            nxt = max(nxt, _walk(kid, start))
-        return nxt
-
-    row = 0.0
-    for r in roots:
-        row = _walk(r, row)
+                stack[-1][3] = start
+            depth[kid] = start
+            stack.append([kid, start, start + 1.0, None,
+                          iter(children.get(kid, []))])
 
     return depth

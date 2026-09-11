@@ -254,3 +254,42 @@ def test_deleted_session_history_request_does_not_rehydrate_empty_session(sessio
         }))
     assert ws.frames == []
     assert ws._focused_session_id == 'another-session'
+
+
+def test_ten_thousand_node_session_loads_recent_page_without_recursion(
+    session_with_tool_outputs,
+):
+    from openprogram.context.nodes import Call, ROLE_USER, ROLE_LLM
+
+    store, _ = session_with_tool_outputs
+    sid = 'long-session'
+    store.create_session(sid, 'main')
+    _, index = store._open(sid)
+    count = 10_000
+    # Exercise the production store's warm index without 10,000 unrelated
+    # filesystem writes; storage persistence has separate component coverage.
+    for i in range(count):
+        pred = str(i - 1) if i else None
+        node = Call(id=str(i), role=ROLE_LLM if i % 2 else ROLE_USER,
+                    output=f'message {i}', predecessor=pred, created_at=float(i + 1))
+        index.append(node, predecessor=pred, caller=None)
+    store.set_head(sid, str(count - 1))
+    from openprogram.webui import server
+    server._sessions[sid] = {'id': sid, 'messages': [], 'head_id': str(count - 1)}
+    try:
+        ws = FakeWS()
+        ws._history_protocol = 1
+        asyncio.run(ws_session.handle_load_session(ws, {'session_id': sid}))
+        data = next(f['data'] for f in ws.frames if f['type'] == 'session_loaded')
+        assert [m['id'] for m in data['messages']] == [str(i) for i in range(count - 50, count)]
+        assert data['history']['before'] == str(count - 50)
+        assert len(data['graph']) == count
+        assert data['graph'][-1]['_depth'] == count - 1
+        asyncio.run(ws_session.handle_load_session(ws, {
+            'session_id': sid, 'history_before': data['history']['before'],
+            'history_head': data['history']['head_id'],
+        }))
+        older = next(f['data'] for f in ws.frames if f['type'] == 'session_history_page')
+        assert [m['id'] for m in older['messages']] == [str(i) for i in range(count - 100, count - 50)]
+    finally:
+        server._sessions.pop(sid, None)
