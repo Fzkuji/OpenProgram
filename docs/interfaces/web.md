@@ -125,3 +125,5 @@ Get Info is available in the toolbar and file context menu. It shows paths, file
 The path uses larger text, and its right-hand copy button copies the full absolute path. Refresh keeps the selected path, expanded folders, and loaded page range. File rows show readable sizes, including empty files; hover over a size for its exact byte count.
 
 The sidebar shows only projects with non-archived conversations. Empty projects remain available in the project selector and project management.
+
+When a registered project folder moves, OpenProgram searches nearby and common project folders in the background. A unique identity match updates the path while preserving the project and conversations. Ambiguous or undiscovered folders retain **Locate folder**. Search is bounded; folders moved outside the searched locations require manual location.

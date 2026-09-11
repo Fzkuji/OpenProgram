@@ -95,6 +95,7 @@ class Project:
     custom_name: bool = False
     description: str = ""
     source_folders: list[str] = field(default_factory=list)
+    directory_identity: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -114,6 +115,7 @@ class Project:
             custom_name=bool(d.get("custom_name", False)),
             description=d.get("description", ""),
             source_folders=list(d.get("source_folders", []) or []),
+            directory_identity=d.get("directory_identity", ""),
         )
 
 
@@ -488,7 +490,7 @@ class ProjectGit:
 
 # Registry (projects.json)
 
-_reg_lock = threading.Lock()
+_reg_lock = threading.RLock()
 _worktree_lock = threading.Lock()
 
 
@@ -558,6 +560,12 @@ def get_project(project_id: str) -> Optional[Project]:
 
 
 def _upsert(project: Project) -> Project:
+    if not project.is_default:
+        try:
+            stat = Path(project.path).stat()
+            project.directory_identity = f"{stat.st_dev}:{stat.st_ino}"
+        except OSError:
+            pass
     with _reg_lock:
         reg = _read_registry()
         reg[project.id] = project.to_dict()

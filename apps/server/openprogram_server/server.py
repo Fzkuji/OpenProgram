@@ -1903,11 +1903,15 @@ def create_app(*, owner_auth=None, port: int = 18100):
         from openprogram.memory.checkpoints import run_checkpoints
         checkpoint_stop = asyncio.Event()
         checkpoint_task = asyncio.create_task(run_checkpoints(checkpoint_stop))
+        from openprogram.store.project.discovery import run_discovery
+        discovery_task = asyncio.create_task(run_discovery(
+            checkpoint_stop, lambda: _broadcast(json.dumps({"type": "projects_changed", "data": {}}))))
         try:
             yield
         finally:
             checkpoint_stop.set()
             await checkpoint_task
+            await discovery_task
             for hook in reversed(_SHUTDOWN):
                 await hook()
 
