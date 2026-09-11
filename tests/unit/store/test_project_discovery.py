@@ -14,6 +14,11 @@ def test_discovers_renamed_folder_preserving_project(tmp_path, monkeypatch):
     assert discover_moved_projects([tmp_path]) == [project.id]
     assert projects.get_project(project.id).path == str(new)
     assert projects.resolve_project(new).id == project.id
+    old.mkdir()
+    replacement = projects.resolve_project(old)
+    assert replacement.id != project.id
+    assert replacement.path == str(old)
+    assert projects.resolve_project(old).id == replacement.id
 
 
 def test_ambiguous_session_copies_are_not_claimed(tmp_path, monkeypatch):

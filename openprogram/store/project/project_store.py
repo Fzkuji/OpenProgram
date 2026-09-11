@@ -724,8 +724,6 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
     existing = next((project for project in list_projects()
                      if not project.is_default and project.path
                      and Path(project.path).resolve() == p.resolve()), None)
-    if existing is None:
-        existing = get_project(pid)
     if existing is not None:
         return set_project_hidden(existing.id, False) if existing.hidden else existing
 
@@ -736,6 +734,11 @@ def resolve_project(path: str | Path | None = None, *, name: str | None = None) 
     if claimed is not None:
         return claimed
 
+    base_pid = pid
+    suffix = 2
+    while get_project(pid) is not None:
+        pid = f"{base_pid}_{suffix}"
+        suffix += 1
     proj = Project(
         id=pid,
         name=name or p.name or pid,
