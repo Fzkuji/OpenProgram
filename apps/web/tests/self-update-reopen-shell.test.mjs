@@ -310,3 +310,47 @@ for (const hidden of [false, true]) for (const route of ["/settings", "/s/other"
     assert.equal(useCenterTabs.getState().tabs.length, hidden ? 1 : 0);
   });
 });
+
+test("Back to New tab clears the session route and Forward restores the draft", async () => {
+  await setup([], null, "detached");
+  await mounted(async () => {
+    await act(async () => useCenterTabs.getState().openNewTabPage());
+    const home = useCenterTabs.getState().activeId;
+    let draft;
+    await act(async () => { draft = useCenterTabs.getState().claimDraftSessionTab(); });
+    await act(async () => useCenterTabs.getState().openSessionTab("next", "Next"));
+    await act(async () => useSessionStore.getState().setCurrentConv("next"));
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    assert.equal(useCenterTabs.getState().activeId, home);
+    assert.equal(useCenterTabs.getState().tabs.length, 1);
+    assert.equal(window.location.pathname, "/chat");
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(1));
+    assert.equal(useCenterTabs.getState().tabs[0].sessionId, draft);
+    assert.equal(useSessionStore.getState().activeChatKey, draft);
+  });
+});
+
+test("Back on /chat clears an acknowledged session and survives remount", async () => {
+  await setup([], null, "detached");
+  let home;
+  await mounted(async () => {
+    await act(async () => useCenterTabs.getState().openNewTabPage());
+    home = useCenterTabs.getState().activeId;
+    await act(async () => useCenterTabs.getState().openSessionTab("acknowledged", "Acknowledged"));
+    await act(async () => {
+      useSessionStore.getState().setCurrentConv("acknowledged");
+      navigate("/chat");
+    });
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    assert.equal(useSessionStore.getState().currentSessionId, null);
+    assert.equal(useCenterTabs.getState().activeId, home);
+  });
+  sockets = [];
+  await mounted(async () => {
+    assert.equal(useCenterTabs.getState().activeId, home);
+    assert.equal(useCenterTabs.getState().tabs[0].kind, "ntp");
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(1));
+    assert.equal(useCenterTabs.getState().tabs[0].sessionId, "acknowledged");
+  });
+});

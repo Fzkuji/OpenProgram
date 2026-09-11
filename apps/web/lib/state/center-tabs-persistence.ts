@@ -1,3 +1,4 @@
+import { normalizeTabPageHistory } from "./tab-page-history";
 import { topLevelTabs } from "./web-page-management";
 import { normalizeSessionHistory } from "./session-tab-history";
 /**
@@ -110,7 +111,7 @@ export function normalizeCenterTabsPayload(
   clearDirty = false,
 ): CenterTabsPersistedPayload {
   const sourceTabs = Array.isArray(input.tabs) ? input.tabs : [];
-  let tabs = sourceTabs
+  let tabs = sourceTabs.map(normalizeTabPageHistory)
     // 0.7.0 removed the unfinished browser-extension surface. Discard its
     // persisted tab without touching the separate legacy extension directory.
     .filter((tab) => tab.kind !== "builtin" || String(tab.page) !== "extensions")

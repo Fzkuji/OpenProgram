@@ -4,6 +4,8 @@ macOS 与 Windows Desktop App 将 OpenProgram 显示为多 Pane 工作区。每�
 
 关闭最后一个标签后，标签栏和中间内容区域都保持为空，不会自动创建标签或显示默认入口。点击顶部加号可打开新标签。
 
+后退和前进按钮也包含初始新标签页。从初始页打开应用或内置页面后，可以后退回到初始页，再前进回到原页面，始终使用同一个标签。后退后选择其他页面会替换原来的前进记录。
+
 macOS 从 [GitHub Releases](https://github.com/Fzkuji/OpenProgram/releases) 下载对应架构的 DMG，把 `OpenProgram.app` 复制到 `/Applications`；当前 macOS 渠道未签名，首次启动可能需要进入“系统设置 → 隐私与安全性 → 仍要打开”。Windows 只安装已发布 release 附带的带签名 `win-x64.exe` 或 `win-arm64.exe`；某个版本没有带签名 Windows EXE 时，使用该版本的 CLI/server 与浏览器 UI。完整步骤见[安装](../install/install.zh.md)。
 
 Terminal Pane 在 macOS 使用 login shell，在 Windows 通过 ConPTY 使用 Windows PowerShell。两个平台的封装 App 都从内置 managed Python 启动 worker，不依赖系统 Python 或 Node.js。

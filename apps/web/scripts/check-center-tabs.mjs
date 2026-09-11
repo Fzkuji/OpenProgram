@@ -985,16 +985,9 @@ assert.match(
 );
 assert.match(strip, /stripRef/);
 assert.match(strip, /tabsFlowRef/);
-assert.match(
-  css,
-  /\.plusBtn::before \{[^}]*width: 2px;[^}]*border-radius: 1px;[^}]*background: var\(--plus-separator-background, var\(--border\)\);/s,
-  "short desktop tab lists must retain the normal 2px rounded divider",
-);
-assert.match(
-  css,
-  /\.tabsFlow:has\(> \.tabActive:last-child\) \+ \.plusBtn::before,\s*\.tabsFlow:has\(> \.tab:last-child:hover\) \+ \.plusBtn::before,\s*\.plusBtn:hover::before \{\s*background: transparent;/,
-  "active and hovered tabs must still hide the normal + divider",
-);
+assert.doesNotMatch(css, /\.plusBtn::before/, "New tab has no left divider");
+assert.match(css, /\.sessionNavigation \{[^}]*gap: 8px;[^}]*padding: 0;/s);
+assert.match(css, /:global\(html\.is-desktop\) \.tabsFlow:empty \{\s*display: none;/);
 assert.doesNotMatch(
   css,
   /data-plus-rail-aligned/,

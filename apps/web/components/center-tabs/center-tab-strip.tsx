@@ -25,6 +25,7 @@ import { ArrowLeft, ArrowRight, CirclePlus, Plus, SquareArrowOutUpRight } from "
 
 import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { topLevelTabs } from "@/lib/state/web-page-management";
+import { canNavigateTabPage } from "@/lib/state/tab-page-history";
 import { centerTabStripEntries } from "@/lib/state/center-tab-groups";
 import { dragCoordinator } from "@/lib/tab-drag-coordinator";
 import { desktopBridge } from "@/lib/desktop-bridge";
@@ -60,9 +61,8 @@ export function CenterTabStrip() {
 
   const activeSessionTab = useCenterTabs(s => s.tabs.find(tab => tab.id === s.activeId));
   const navigateSessionHistory = useCenterTabs(s => s.navigateSessionHistory);
-  const history = activeSessionTab?.kind === "session" ? activeSessionTab.sessionHistory : undefined;
-  const canGoBack = !!history && history.index > 0;
-  const canGoForward = !!history && history.index < history.entries.length - 1;
+  const canGoBack = canNavigateTabPage(activeSessionTab, -1);
+  const canGoForward = canNavigateTabPage(activeSessionTab, 1);
   const groups = useCenterTabs((s) => s.groups);
   const activeId = useCenterTabs((s) => s.activeId);
 

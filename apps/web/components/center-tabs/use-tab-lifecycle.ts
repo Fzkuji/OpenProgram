@@ -191,6 +191,10 @@ export function useTabLifecycle({
       (candidate) => candidate.id === activeId,
     );
     if (tab?.kind === "session") activateSession(tab);
+    else if (tab?.kind === "ntp") {
+      useSessionStore.getState().setCurrentConv(null);
+      pushPath("/chat");
+    }
     // Route changes are results of activation, not new activation requests.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, activeSessionId, activeSessionDraft, sessionActivationRequest]);
