@@ -484,10 +484,10 @@ def test_agent_child_launch_fails_if_trash_cannot_be_resolved(agent_run, monkeyp
     def fail():
         raise OSError("state unavailable")
 
-    monkeypatch.setattr("openprogram.paths.get_state_dir", fail)
-
-    with pytest.raises(OSError, match="state unavailable"):
-        prepare_child_env()
+    with monkeypatch.context() as scoped:
+        scoped.setattr("openprogram.paths.get_state_dir", fail)
+        with pytest.raises(OSError, match="state unavailable"):
+            prepare_child_env()
 
 
 def test_session_context_without_active_turn_does_not_inject():
