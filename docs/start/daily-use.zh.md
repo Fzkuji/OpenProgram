@@ -7,7 +7,7 @@
 - `openprogram` — 终端聊天界面（TUI）。
 - `openprogram web` — 浏览器界面，http://localhost:18100。
 
-会话数据统一存在 `~/.openprogram/sessions/`，终端和 web 看到的是同一份历史：在终端开的会话可以在 web 侧栏找到，反过来也一样。
+会话数据统一存在 `~/.openprogram/sessions/`（绑定项目的对话在 `sessions/projects/<project-id>/<session-id>/`）。终端和 web 看到的是同一份历史：在终端开的会话可以在 web 侧栏找到，反过来也一样。工作文件夹保存项目文件，不是对话仓库。
 
 一次性提问不必进入界面：
 

@@ -58,6 +58,16 @@ from ._msg_adapter import (
 
 from .git_session import GitSession, atomic_write_text, read_text_with_retry
 from .memory_index import SessionMemoryIndex
+from .placement import (
+    is_deleted,
+    iter_session_dirs,
+    nested_session_dir,
+    record_delete_intent,
+    resolve_existing_dir,
+    session_looks_present,
+    target_dir_for_project,
+)
+from .session_lock import session_interprocess_lock
 
 
 # Paths
@@ -340,26 +350,49 @@ class SessionStore:
                     snapshot = dict(self._locations)
                 self._save_locations(snapshot)
 
-    def relocate_project_sessions(self, session_ids, new_project_path) -> int:
-        """Rewrite the location index after a project moved on disk.
+    def relocate_project_sessions(
+        self, session_ids, new_project_path, project_id=None, old_path=None,
+    ) -> int:
+        """Keep conversation placement under application storage.
 
-        Called by ``project_store.relocate_project`` for every session
-        bound to the moved project. Only sessions that already have a
-        location entry are rewritten — ad-hoc sessions living in the
-        home root stay put. Cached repo objects are dropped so the next
-        open reloads from the new path. Returns the rewrite count.
+        Nested home-owned sessions do not move. Unmigrated workdir
+        copies are recorded in the migration journal and the location
+        index is updated only after that durable repair, never as a
+        best-effort rewrite.
         """
+        from .placement import legacy_project_session_dir
+        from .migration import load_journal, save_journal
+
         base = Path(new_project_path).expanduser()
         moved = 0
+        root = self.root_path
+        journal = load_journal(root)
         for sid in session_ids or []:
             with self._session_lock(sid):
-                with self._lock:
-                    if sid not in self._locations:
-                        continue
-                    self._sessions.pop(sid, None)
-                self._record_location(
-                    sid, base / ".openprogram" / "sessions" / sid)
-            moved += 1
+                with session_interprocess_lock(sid, timeout=15.0):
+                    with self._lock:
+                        self._sessions.pop(sid, None)
+                    if project_id:
+                        nested = nested_session_dir(root, project_id, sid)
+                        if session_looks_present(nested):
+                            self._record_location(sid, nested)
+                            moved += 1
+                            continue
+                    new_legacy = legacy_project_session_dir(base, sid)
+                    if session_looks_present(new_legacy):
+                        row = dict((journal.get("sessions") or {}).get(sid) or {})
+                        row.update({
+                            "session_id": sid,
+                            "project_id": project_id or "",
+                            "source": str(new_legacy),
+                            "stage": "location-repair",
+                            "old_path": old_path or "",
+                        })
+                        journal.setdefault("sessions", {})[sid] = row
+                        save_journal(root, journal)
+                        self._record_location(sid, new_legacy)
+                        moved += 1
+            moved += 0
         return moved
 
     def _forget_location(self, session_id: str) -> None:
@@ -402,16 +435,18 @@ class SessionStore:
         self._index = {}
         seen: set[str] = set()
         dirs_to_scan: list[Path] = []
-        if self.root_path.exists():
-            for sdir in self.root_path.iterdir():
-                if sdir.is_dir() and (sdir / "meta.json").exists():
-                    dirs_to_scan.append(sdir)
-                    seen.add(sdir.name)
+        for sid, sdir in iter_session_dirs(self.root_path):
+            if is_deleted(self.root_path, sid):
+                continue
+            dirs_to_scan.append(sdir)
+            seen.add(sid)
         for sid, loc in self._locations.items():
-            if sid not in seen:
-                p = Path(loc)
-                if p.is_dir() and (p / "meta.json").exists():
-                    dirs_to_scan.append(p)
+            if sid in seen or is_deleted(self.root_path, sid):
+                continue
+            p = Path(loc)
+            if session_looks_present(p):
+                dirs_to_scan.append(p)
+                seen.add(sid)
         for sdir in dirs_to_scan:
             try:
                 meta = json.loads(read_text_with_retry(sdir / "meta.json"))
@@ -449,13 +484,19 @@ class SessionStore:
         for sid, entry in list(self._index.items()):
             created = entry.get("created_at") or 0
             sdir = self._session_dir(sid)
-            # A project-bound session whose recorded location is
-            # unreachable (the project folder moved and is not yet
-            # relocated) is NOT an empty shell — the repo exists
-            # somewhere else on disk. Deleting it here would purge the
-            # session the moment the worker restarts after a move.
+            if is_deleted(self.root_path, sid):
+                continue
+            # Unreachable or still-migrating sessions are not empty shells.
             if sdir != self.root_path / sid and not sdir.exists():
                 continue
+            try:
+                from .migration import load_journal
+                row = (load_journal(self.root_path).get("sessions") or {}).get(sid)
+                if row and row.get("stage") in {"pending", "deferred", "failed", "inventory", "copy", "verify", "publish"}:
+                    continue
+            except Exception:
+                _log.debug("failed to inspect migration journal for %s", sid,
+                           exc_info=True)
             # Explicit archives remain available until the owner deletes them.
             if entry.get("archived"):
                 continue
@@ -628,43 +669,40 @@ class SessionStore:
         recover_session_rewinds(session_id, store=self)
 
     def _session_dir(self, session_id: str) -> Path:
-        """Where ``session_id``'s git repo lives.
+        """Current readable or create placement for ``session_id``.
 
-        Project-bound sessions live inside their project at
-        ``<project>/.openprogram/sessions/<id>/`` (recorded in the
-        location index). Everything else — ad-hoc chats, all
-        pre-existing sessions — resolves to the home root
-        ``<state>/sessions/<id>/``.
-
-        The location index is a snapshot taken at create time, so it
-        goes stale when the project folder moves on disk. When the
-        recorded path no longer holds a repo, follow the project
-        registry (which relocate / auto-claim keeps current), and heal
-        the index if the repo is found at the project's current path.
+        Prefers application-owned nested/default layouts. Stale workdir
+        caches are not rewritten into a replacement folder. Deleted
+        sessions are not resurrected.
         """
-        # Placement can be created or relocated by another worker/process.
-        # The persisted index is atomic; an in-memory startup snapshot must
-        # not keep an existing conversation invisible until the next restart.
         locations = self._load_locations()
         with self._lock:
-            loc = locations.get(session_id) or self._locations.get(session_id)
-        if not loc:
-            return self.root_path / session_id
-        p = Path(loc)
-        if (p / "history").is_dir():
-            return p
+            for key, value in locations.items():
+                self._locations[key] = value
+            loc_map = dict(self._locations)
+        proj = None
         try:
             from openprogram.store.project import project_store as _projects
             proj = _projects.project_for_session(session_id)
-            if proj and not proj.is_default and proj.path:
-                cand = (Path(proj.path).expanduser()
-                        / ".openprogram" / "sessions" / session_id)
-                if cand != p and (cand / "history").is_dir():
-                    self._record_location(session_id, cand)
-                    return cand
-        except Exception as e:  # noqa: BLE001 — healing is best-effort
-            _log.warning("stale location for %s not healed: %s", session_id, e)
-        return p
+        except Exception:
+            proj = None
+        existing = resolve_existing_dir(
+            self.root_path, session_id,
+            locations=loc_map,
+            project_id=None if proj is None else proj.id,
+            is_default=True if proj is None else bool(proj.is_default),
+            project_path=None if proj is None else proj.path,
+        )
+        if existing is not None:
+            return existing
+        recorded = loc_map.get(session_id)
+        if recorded:
+            return Path(recorded)
+        return target_dir_for_project(
+            self.root_path, session_id,
+            project_id=None if proj is None else proj.id,
+            is_default=True if proj is None else bool(proj.is_default),
+        )
 
     def _open(self, session_id: str, *, create_if_missing: bool = False) -> Optional[tuple[GitSession, SessionMemoryIndex]]:
         """Return (git, idx). Loads from disk on first access. None if
@@ -780,19 +818,13 @@ class SessionStore:
 
     @contextmanager
     def _head_file_lock(self, git: GitSession):
-        """Serialize every durable meta/HEAD writer across processes."""
-        from openprogram import _compat as fcntl
-        import hashlib
-
-        lock_root = git.path.parent / ".session-locks"
-        lock_root.mkdir(parents=True, exist_ok=True)
-        lock_name = hashlib.sha256(str(git.path).encode()).hexdigest()[:24]
-        with (lock_root / f"{lock_name}.head.lock").open("a+") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        """Serialize durable writers by session id, then re-read placement."""
+        session_id = git.path.name
+        with session_interprocess_lock(session_id):
+            current = self._session_dir(session_id)
+            if current != git.path:
+                git.path = current
+            yield
 
     def _persist_meta(self, git: GitSession, idx: SessionMemoryIndex) -> None:
         """Sync the in-memory meta back to ``meta.json``. Called whenever
@@ -832,8 +864,13 @@ class SessionStore:
         if not pair:
             return None
         git, idx = pair
-        self._persist_meta(git, idx)
-        return git.commit_all(message)
+        with self._head_file_lock(git):
+            with idx._persist_lock:
+                with idx._lock:
+                    meta = dict(idx.meta)
+                    meta["head_id"] = idx.head_id
+                git.write_meta(meta)
+            return git.commit_all(message)
 
     # Session CRUD
 
@@ -864,20 +901,8 @@ class SessionStore:
             if isinstance(_wd, str) and _wd.strip():
                 project_path = _wd.strip()
 
-        # Resolve the project + decide the session's home on disk
-        # Every session belongs to a project (entity layer, half 2 —
-        # docs/design/memory/overview.md §2):
-        #   * caller passed ``project_path`` (a real dir) → that dir is
-        #     the project; the session repo lives INSIDE it at
-        #     ``<dir>/.openprogram/sessions/<id>/`` and we record the
-        #     location so later reads find it.
-        #   * caller passed ``project_id`` of a real (non-default)
-        #     project → same, using that project's stored path.
-        #   * neither, or the default project → ad-hoc: the session
-        #     stays in the home root and just carries
-        #     ``project_id="default"`` as a grouping label.
-        # All guarded — a project/git failure must never block session
-        # creation; we degrade to the home root.
+        # Bound conversations live under the state root, grouped by
+        # project id. Working folders are never the conversation store.
         try:
             from openprogram.store.project import project_store as _projects
             if project_path:
@@ -887,10 +912,8 @@ class SessionStore:
             else:
                 proj = _projects.get_default_project()
             project_id = proj.id
-            # Non-default project with a real path → relocate the
-            # session repo inside the project dir.
             if (not proj.is_default) and proj.path:
-                repo_dir = Path(proj.path).expanduser() / ".openprogram" / "sessions" / session_id
+                repo_dir = nested_session_dir(self.root_path, proj.id, session_id)
                 self._record_location(session_id, repo_dir)
         except Exception as e:  # noqa: BLE001 — never block session creation
             _log.warning("project resolution failed for %s (%s); falling back "
@@ -969,15 +992,20 @@ class SessionStore:
         if pair is None:
             return
         git, idx = pair
-        # head_id needs special routing because it's also the index's
-        # ``head_id`` field.
-        if "head_id" in fields and fields["head_id"] is not None:
-            idx.set_head(fields.pop("head_id"))
-        # Drop Nones so we don't clobber existing fields with NULL.
-        clean = {k: v for k, v in fields.items() if v is not None}
-        if clean:
-            idx.set_meta(**clean)
-        self._persist_meta(git, idx)
+        with self._head_file_lock(git):
+            # head_id needs special routing because it's also the index's
+            # ``head_id`` field.
+            if "head_id" in fields and fields["head_id"] is not None:
+                idx.set_head(fields.pop("head_id"))
+            # Drop Nones so we don't clobber existing fields with NULL.
+            clean = {k: v for k, v in fields.items() if v is not None}
+            if clean:
+                idx.set_meta(**clean)
+            with idx._persist_lock:
+                with idx._lock:
+                    meta = dict(idx.meta)
+                    meta["head_id"] = idx.head_id
+                git.write_meta(meta)
         # Sync registry.
         index_fields = {k: v for k, v in clean.items()
                         if k in self._INDEX_FIELDS}
@@ -1056,13 +1084,24 @@ class SessionStore:
 
     def delete_session(self, session_id: str) -> None:
         with self._session_lock(session_id):
+            with session_interprocess_lock(session_id):
+                sdir = self._session_dir(session_id)
+            record_delete_intent(self.root_path, session_id, {
+                "session_id": session_id, "deleted_at": time.time(),
+            })
             with self._lock:
                 pair = self._sessions.pop(session_id, None)
                 loc = self._locations.get(session_id)
             if pair:
                 pair[0].destroy()
-            else:
-                GitSession(Path(loc) if loc else self.root_path / session_id).destroy()
+            GitSession(sdir).destroy()
+            if loc:
+                extra = Path(loc)
+                if extra != sdir:
+                    GitSession(extra).destroy()
+            recovery = sdir.parent / ".file-recovery" / session_id
+            if recovery.is_dir():
+                shutil.rmtree(recovery, ignore_errors=True)
             with self._index_lock:
                 if self._index.pop(session_id, None) is not None:
                     self._index_generation += 1
@@ -1198,30 +1237,37 @@ class SessionStore:
             return
         git, idx = pair
         node = _msg_to_node(msg)
-        # Idempotent — skip if id already known.
-        if node.id in idx.nodes_by_id:
-            return
-        predecessor = _node_conv_predecessor(node)
-        caller = _node_caller(node)
-        _check_append_invariant(session_id, idx, node, predecessor, caller)
-        seq = idx.append(node, predecessor=predecessor, caller=caller)
-        self.spill_large_node(session_id, node)
-        # Write the raw node file. Commit deferred to turn end.
-        git.write_history(seq, node.role, node.id, node.to_dict())
-        # Advance head only when the conversation actually grew: a
+        # The complete read/modify/write sequence is protected by the
+        # session-ID lock. Placement may change while a process is alive, so
+        # acquire through _head_file_lock and use its revalidated path.
+        with self._head_file_lock(git):
+            # Idempotent — skip if id already known.
+            if node.id in idx.nodes_by_id:
+                return
+            predecessor = _node_conv_predecessor(node)
+            caller = _node_caller(node)
+            _check_append_invariant(session_id, idx, node, predecessor, caller)
+            seq = idx.append(node, predecessor=predecessor, caller=caller)
+            self.spill_large_node(session_id, node)
+            # Write the raw node file. Commit deferred to turn end.
+            git.write_history(seq, node.role, node.id, node.to_dict())
+            # Advance head only when the conversation actually grew: a
         # caller-less node chained onto the current tip (or the session's
         # first node). Any other insert — a compaction summary splicing
         # mid-chain, a side-branch write — leaves head alone; explicit
         # moves go through set_head (context/compaction.md §5).
-        advanced = (not caller
-                    and (idx.head_id is None or predecessor == idx.head_id))
-        if advanced:
-            idx.set_head(node.id)
-        activity_at = time.time()
-        idx.set_meta(updated_at=activity_at)
-        # Persist activity time for every content append. When HEAD moved,
-        # this also exposes the new active branch to the parent process.
-        self._persist_meta(git, idx)
+            advanced = (not caller
+                        and (idx.head_id is None or predecessor == idx.head_id))
+            if advanced:
+                idx.set_head(node.id)
+            activity_at = time.time()
+            idx.set_meta(updated_at=activity_at)
+            # Persist activity time while the same session lock is held.
+            with idx._persist_lock:
+                with idx._lock:
+                    meta = dict(idx.meta)
+                    meta["head_id"] = idx.head_id
+                git.write_meta(meta)
         # Registry: every appended message bumps updated_at（最新一次聊天
         # 时间，侧栏排序键）；user 消息顺带刷新 preview（debounced to disk）。
         fields: dict[str, Any] = {"updated_at": activity_at}
@@ -1274,7 +1320,8 @@ class SessionStore:
             old_predecessor=old_predecessor,
             old_caller=old_caller,
         )
-        self._rewrite_history_node(git, node)
+        with self._head_file_lock(git):
+            self._rewrite_history_node(git, node)
 
     def merge_node_metadata_batch(
         self,
@@ -1292,7 +1339,8 @@ class SessionStore:
                 continue
             current = node.metadata if isinstance(node.metadata, dict) else {}
             node.metadata = {**current, **patch}
-            self._rewrite_history_node(git, node)
+            with self._head_file_lock(git):
+                self._rewrite_history_node(git, node)
 
     def merge_node_metadata(
         self, session_id: str, node_id: str, patch: dict[str, Any],

@@ -89,11 +89,11 @@ It changes the **project's path**, never the session→project binding, which is
 
 ### Following a move automatically
 
-The project's identity is its stable id; the path is a mutable attribute. (Claude Code and Codex CLI both key sessions on the absolute path itself and therefore lose history on a folder move; OpenProgram's model is deliberately the opposite.) Three mechanisms make a moved folder reconnect without the user knowing the word "relocate":
+The project's identity is its stable id; the path is a mutable attribute. Codex matches recorded cwd against recent turn context; DeepSeek validates workspace paths against an immutable session header cwd. Those mechanisms do not track arbitrary folder moves, and they do not mean that moving a folder deletes history. OpenProgram stores conversations under the application state directory and treats the working folder as a location. Three mechanisms reconnect a moved folder:
 
-1. **Relocation rewrites the location index.** `sessions/locations.json` snapshots each session repo's absolute path at create time. `relocate_project` rewrites the entry of every session bound to the project to `<new>/.openprogram/sessions/<id>` (`SessionStore.relocate_project_sessions`) and drops cached repo objects. Ad-hoc sessions in the home root have no entry and stay put.
-2. **Lookup heals itself.** When `_session_dir` finds no repo at the recorded location, it falls back to the bound project's **current** registry path and rewrites the index on a hit. This covers any ordering of move → relocate → restart across processes.
-3. **Opening the new location claims the moved project.** Before `resolve_project` mints a path-derived id for an unknown directory, it checks the directory's `.openprogram/sessions/<id>` footprint against every registered project whose own path is gone. Session ids matching exactly one such project are deterministic evidence of a move: the old project is relocated (id kept) instead of a duplicate being created. A folder whose registered path still exists is a copy, never claimed. No folder-name or background-scan guessing.
+1. **Native identity, not a HOME scan.** On startup, access, volume reconnect, or a directory/ancestor event, OpenProgram resolves a stored bookmark or inode. A match updates the project path. There is no minute-by-minute walk of HOME.
+2. **Application-owned session placement.** Bound conversations live at `sessions/projects/<project-id>/<session-id>/`. Relocating a project does not move chat files. Legacy workdir copies migrate through a journaled operation.
+3. **Opening a folder never auto-adopts copies.** Names, Git remotes, Git contents and leftover `.openprogram/sessions` markers do not prove continuity. Manual **Locate folder** may replace identity after showing the expected old path and revision, and it refuses a destination already owned by another project.
 
 Startup cleanup respects the same reality: a project-bound session whose recorded location is unreachable is **not** an empty shell — the repo exists elsewhere on disk — so it is never purged for missing history while the project is un-relocated.
 

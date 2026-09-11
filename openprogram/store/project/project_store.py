@@ -31,12 +31,12 @@ subprocess (no cwd dependence), same as ``git_session._run``.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import subprocess
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
@@ -96,6 +96,11 @@ class Project:
     description: str = ""
     source_folders: list[str] = field(default_factory=list)
     directory_identity: str = ""
+    native_bookmark: str = ""
+    volume_id: str = ""
+    location_revision: int = 0
+    location_state: str = "available"
+    migration_error: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -116,6 +121,11 @@ class Project:
             description=d.get("description", ""),
             source_folders=list(d.get("source_folders", []) or []),
             directory_identity=d.get("directory_identity", ""),
+            native_bookmark=d.get("native_bookmark", ""),
+            volume_id=d.get("volume_id", ""),
+            location_revision=int(d.get("location_revision") or 0),
+            location_state=d.get("location_state", "available") or "available",
+            migration_error=d.get("migration_error", "") or "",
         )
 
 
@@ -513,15 +523,10 @@ def _write_registry(reg: dict[str, dict]) -> None:
     tmp.replace(p)
 
 
-def _project_id_for_path(path: Path) -> str:
-    """Deterministic project id from an absolute path.
-
-    ``proj_<8 hex>`` of the normalized path, so the same directory
-    always maps to the same project across runs.
-    """
-    norm = str(path.resolve()).lower()
-    h = hashlib.sha1(norm.encode("utf-8")).hexdigest()[:8]
-    return f"proj_{h}"
+def _new_project_id() -> str:
+    """Opaque id for a newly registered project. Existing path-derived
+    ids stay on disk; this is never used to rewrite them."""
+    return str(uuid.uuid4())
 
 
 def ensure_footprint_ignored(project_path: str | Path) -> None:
@@ -559,18 +564,37 @@ def get_project(project_id: str) -> Optional[Project]:
         return Project.from_dict(d) if d else None
 
 
-def _upsert(project: Project) -> Project:
-    if not project.is_default:
-        try:
-            stat = Path(project.path).stat()
-            project.directory_identity = f"{stat.st_dev}:{stat.st_ino}"
-        except OSError:
-            pass
+def _upsert(project: Project, *, capture_identity: bool = False) -> Project:
+    """Write a project record. Identity is captured only when asked.
+
+    Metadata edits and ordinary registry maintenance must not restamp
+    native identity onto a replacement folder at the same path.
+    """
+    if capture_identity and not project.is_default and project.path:
+        from .identity import capture_directory_identity
+        captured = capture_directory_identity(project.path)
+        project.directory_identity = captured["directory_identity"]
+        project.native_bookmark = captured["native_bookmark"]
+        project.volume_id = captured["volume_id"]
     with _reg_lock:
         reg = _read_registry()
         reg[project.id] = project.to_dict()
         _write_registry(reg)
     return project
+
+
+def set_location_state(project_id: str, state: str, error: str = "") -> Optional[Project]:
+    with _reg_lock:
+        reg = _read_registry()
+        row = reg.get(project_id)
+        if row is None:
+            return None
+        row["location_state"] = state
+        if error or state != "error":
+            row["migration_error"] = error
+        reg[project_id] = row
+        _write_registry(reg)
+        return Project.from_dict(row)
 
 
 def update_project(project_id: str, patch: dict) -> Project:
@@ -622,9 +646,16 @@ def update_project(project_id: str, patch: dict) -> Project:
 # <state>/projects/default-settings.json，绝不往家目录塞配置。
 
 def _settings_path_for(project: Project) -> Path:
-    if project.is_default or not project.path:
+    if project.is_default:
         return projects_dir() / "default-settings.json"
-    return Path(project.path).expanduser() / ".openprogram" / "settings.json"
+    owned = projects_dir() / project.id / "settings.json"
+    if owned.exists():
+        return owned
+    if project.path:
+        legacy = Path(project.path).expanduser() / ".openprogram" / "settings.json"
+        if legacy.exists() and not owned.exists():
+            return legacy
+    return owned
 
 
 def load_project_settings(project_id: str) -> dict:
@@ -647,7 +678,7 @@ def save_project_settings(project_id: str, settings: dict) -> None:
     proj = get_project(project_id)
     if proj is None:
         return
-    p = _settings_path_for(proj)
+    p = projects_dir() / "default-settings.json" if proj.is_default else projects_dir() / proj.id / "settings.json"
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(
@@ -698,130 +729,108 @@ def get_default_project() -> Project:
 def resolve_project(path: str | Path | None = None, *, name: str | None = None) -> Project:
     """Resolve (and register) the project for a working directory.
 
-    * ``path=None`` → the default project (logical label, no repo).
-    * ``path=<dir>`` → the project bound to that directory. Registered
-      in ``projects.json`` keyed by a path-derived id, so the same
-      directory always resolves to the same project.
-
-    **Binding a folder does not touch its git.** We don't ``git init``
-    here, and don't require the folder to be a git repo. Git work is
-    deferred to turn end: if auto-commit is on (default) and the agent
-    edits files, ``project_commit`` will auto-init a non-git folder then
-    (safely — baseline commit first, refuse on dep/build dirs). So the
-    mere act of opening a folder has zero git side-effects; a repo only
-    appears once the agent actually changes something. (The session's
-    OWN entity memory lives at ``<dir>/.openprogram/sessions/<id>/``
-    regardless — a separate git repo we manage, not the user's.)
+    New registrations use opaque UUIDs. Existing path-derived ids are
+    never recomputed. Copies, Git remotes and leftover session markers
+    do not authorize adoption — only continuous native directory
+    identity does.
     """
     if path is None:
         return get_default_project()
 
     p = Path(path).expanduser()
-    # Drop our .gitignore in NOW (rule A: no git-init, but the footprint
-    # must be hidden in case the folder is / becomes a git repo).
-    ensure_footprint_ignored(p)
-    pid = _project_id_for_path(p)
     existing = next((project for project in list_projects()
                      if not project.is_default and project.path
-                     and Path(project.path).resolve() == p.resolve()), None)
+                     and Path(project.path).expanduser().resolve() == p.resolve()), None)
     if existing is not None:
         return set_project_hidden(existing.id, False) if existing.hidden else existing
 
-    # Before minting a new id: this folder may be a registered project
-    # that was MOVED on disk. Its session footprint is the deterministic
-    # evidence — claim the old project instead of duplicating it.
-    claimed = _claim_moved_project(p)
+    claimed = _claim_by_native_identity(p)
     if claimed is not None:
         return claimed
 
-    base_pid = pid
-    suffix = 2
+    pid = _new_project_id()
     while get_project(pid) is not None:
-        pid = f"{base_pid}_{suffix}"
-        suffix += 1
+        pid = _new_project_id()
     proj = Project(
         id=pid,
         name=name or p.name or pid,
         path=str(p.resolve()),
         is_default=False,
+        location_state="available",
     )
-    return _upsert(proj)
+    return _upsert(proj, capture_identity=True)
 
 
-def _claim_moved_project(p: Path) -> Optional[Project]:
-    """Recognize a moved project folder by its session footprint.
-
-    A directory opened at a new path that carries
-    ``.openprogram/sessions/<id>/`` entries belonging to exactly one
-    registered project whose own path is gone was moved, not created —
-    relocate that project (keeping its id) instead of minting a
-    duplicate. A folder whose registered path still exists is a copy
-    and is never claimed. Session ids are exact-match evidence; nothing
-    is guessed from folder names.
-    """
-    footprint = p / ".openprogram" / "sessions"
-    try:
-        local_sids = {c.name for c in footprint.iterdir() if c.is_dir()}
-    except OSError:
-        return None
-    if not local_sids:
-        return None
-    with _reg_lock:
-        rows = list(_read_registry().values())
+def _claim_by_native_identity(p: Path) -> Optional[Project]:
+    """Adopt a folder only when native identity matches a registered project."""
+    from .identity import captured_identity_matches
     matches = [
-        d["id"] for d in rows
-        if d.get("id")
-        and not d.get("is_default")
-        and d.get("path")
-        and not Path(d["path"]).expanduser().is_dir()
-        and local_sids & set(d.get("session_ids") or [])
+        project for project in list_projects()
+        if not project.is_default and captured_identity_matches(project, p)
     ]
     if len(matches) != 1:
         return None
-    _log.info("claiming moved project %s at %s", matches[0], p)
-    return relocate_project(matches[0], p)
+    project = matches[0]
+    if Path(project.path).expanduser().resolve() == p.resolve():
+        return project
+    _log.info("native identity matched project %s at %s", project.id, p)
+    return relocate_project(project.id, p, require_identity=True)
 
 
-def relocate_project(project_id: str, new_path: str | Path, *, expected_path: str | None = None) -> Project:
-    """Point an existing project at a new directory, keeping its id.
+def relocate_project(
+    project_id: str,
+    new_path: str | Path,
+    *,
+    expected_path: str | None = None,
+    expected_revision: int | None = None,
+    require_identity: bool = False,
+    replace_identity: bool = False,
+) -> Project:
+    """Point an existing project at a new directory, keeping its id."""
+    from .identity import captured_identity_matches
 
-    The repair path for a project whose folder was moved or renamed on
-    disk. The **id is deliberately preserved** even though ids are
-    normally path-derived: every session's reverse index, settings file
-    and frozen main-directory binding hang off that id, and minting a
-    fresh one would orphan all of them. ``new_path`` must be an existing
-    directory.
-    """
     p = Path(new_path).expanduser()
     if not p.is_dir():
         raise ProjectStoreError(f"not a directory: {new_path}")
     with _reg_lock:
-        if expected_path is not None:
-            current = get_project(project_id)
-            if current is None or current.path != expected_path or Path(expected_path).exists():
-                raise ProjectStoreError("project changed during discovery")
-            if any(other.id != project_id and other.path and Path(other.path).resolve() == p.resolve()
-                   for other in list_projects()):
-                raise ProjectStoreError("destination belongs to another project")
         proj = get_project(project_id)
         if proj is None:
             raise ProjectStoreError(f"unknown project: {project_id}")
+        if expected_path is not None and proj.path != expected_path:
+            raise ProjectStoreError("project changed during location update")
+        if expected_revision is not None and int(proj.location_revision) != int(expected_revision):
+            raise ProjectStoreError("project changed during location update")
+        if any(other.id != project_id and other.path
+               and Path(other.path).expanduser().resolve() == p.resolve()
+               for other in list_projects()):
+            raise ProjectStoreError("destination belongs to another project")
         if proj.is_default:
-            # The default project's path is the home directory, restored on
-            # every ``get_default_project`` read — a relocation would not
-            # survive the next one.
             raise ProjectStoreError("the default project cannot be relocated")
-        ensure_footprint_ignored(p)
+        matches = captured_identity_matches(proj, p)
+        if require_identity and not matches:
+            raise ProjectStoreError("directory identity does not match")
+        old_path = proj.path
+        remapped = []
+        old_root = Path(old_path).expanduser()
+        for folder in list(proj.source_folders or []):
+            try:
+                rel = Path(folder).expanduser().resolve().relative_to(old_root.resolve())
+                candidate = p / rel
+                remapped.append(str(candidate) if candidate.is_dir() else folder)
+            except (ValueError, OSError):
+                remapped.append(folder)
+        proj.source_folders = remapped
         proj.path = str(p.resolve())
-        moved = _upsert(proj)
-    # The location index (sessions/locations.json) snapshots each
-    # session repo's absolute path at create time, so every session
-    # bound to this project still points into the old directory.
-    # Rewrite those entries so history keeps opening after the move.
+        proj.location_revision = int(proj.location_revision or 0) + 1
+        proj.location_state = "available"
+        proj.migration_error = ""
+        capture = replace_identity or matches or not require_identity
+        moved = _upsert(proj, capture_identity=capture)
     try:
         from openprogram.store.session.session_store import default_store
-        default_store().relocate_project_sessions(moved.session_ids, p)
-    except Exception as e:  # noqa: BLE001 — healing is best-effort
+        default_store().relocate_project_sessions(
+            moved.session_ids, p, project_id=moved.id, old_path=old_path)
+    except Exception as e:  # noqa: BLE001
         _log.warning("session locations NOT rewritten for %s: %s",
                      project_id, e)
     return moved
@@ -905,6 +914,7 @@ __all__ = [
     "resolve_project",
     "bind_session",
     "relocate_project",
+    "set_location_state",
     "unbind_session",
     "prune_sessions",
     "project_for_session",

@@ -20,12 +20,19 @@ _log_write_lock = threading.Lock()
 
 
 def _event_log_path(ev) -> Path:
-    base = Path.home() / ".openprogram"
+    from openprogram.paths import get_state_dir
+    base = Path(get_state_dir())
     sid = ev.metadata.get("session") if isinstance(ev.metadata, dict) else None
     if sid:
-        sess_dir = base / "sessions" / str(sid)
-        if sess_dir.is_dir():
-            return sess_dir / "events.jsonl"
+        try:
+            from openprogram.store.session.session_store import default_store
+            sess_dir = default_store()._session_dir(str(sid))
+            if sess_dir.is_dir():
+                return sess_dir / "events.jsonl"
+        except Exception:
+            sess_dir = base / "sessions" / str(sid)
+            if sess_dir.is_dir():
+                return sess_dir / "events.jsonl"
     return base / "logs" / "events.jsonl"
 
 

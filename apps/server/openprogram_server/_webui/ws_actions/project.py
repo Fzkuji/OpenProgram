@@ -37,12 +37,17 @@ import json
 import os
 
 
-def _project_dict(p, alive: set[str] | None = None) -> dict:
+def _project_dict(p, alive: set[str] | None = None, unarchived: set[str] | None = None) -> dict:
     # session_ids/session_count 只含**存活**会话，不裸信可能含孤立引用的
     # p.session_ids。count 与 ids 同源；count 保留是老前端兼容。
     sids = list(p.session_ids or [])
     if alive is not None:
         sids = [s for s in sids if s in alive]
+    visible = [sid for sid in sids if unarchived is None or sid in unarchived]
+    from openprogram.store.project.location import evaluate_project_location
+    location_state = evaluate_project_location(p)
+    path_missing = location_state in {"missing", "replaced"} or (
+        bool(p.path) and not os.path.isdir(os.path.expanduser(p.path)))
     return {
         "id": p.id,
         "name": p.name,
@@ -51,9 +56,13 @@ def _project_dict(p, alive: set[str] | None = None) -> dict:
         # The composer chip warns on a project whose folder is gone and
         # offers the relocate repair. Computed here (one stat per
         # project) so the frontend never guesses from the path string.
-        "path_missing": bool(p.path) and not os.path.isdir(
-            os.path.expanduser(p.path)),
+        "path_missing": path_missing,
+        "path_replaced": location_state == "replaced",
+        "location_state": location_state,
+        "location_revision": int(getattr(p, "location_revision", 0) or 0),
+        "migration_error": getattr(p, "migration_error", "") or "",
         "session_count": len(sids),
+        "unarchived_session_count": len(visible),
         "session_ids": sids,
         "status": p.status,
         "hidden": getattr(p, "hidden", False),
@@ -94,8 +103,18 @@ async def handle_list_projects(ws, cmd: dict):
         from openprogram.store.project import project_store as _projects
         _projects.get_default_project()  # ensure the default label exists
         alive = _alive_session_ids()
+        unarchived = set()
+        try:
+            from openprogram.agent.session_db import default_db
+            unarchived = {r.get("id") for r in default_db().list_sessions(limit=100_000) if r.get("id")}
+        except Exception:
+            unarchived = alive
         _projects.prune_sessions(alive)   # 清孤立引用（修 882-bug），只增不减的历史遗留
-        projects = [_project_dict(p, alive) for p in _projects.list_projects()]
+        from openprogram.store.project.location import refresh_project_location
+        for project in _projects.list_projects():
+            if not project.is_default:
+                refresh_project_location(project.id)
+        projects = [_project_dict(p, alive, unarchived) for p in _projects.list_projects()]
         if session_id:
             cur = _projects.project_for_session(session_id)
             current_project_id = cur.id if cur else None
@@ -222,6 +241,9 @@ async def handle_relocate_project(ws, cmd: dict):
     session_id = (cmd.get("session_id") or "").strip()
     project_id = (cmd.get("project_id") or "").strip()
     path = (cmd.get("path") or "").strip()
+    expected_path = cmd.get("expected_path")
+    expected_revision = cmd.get("expected_revision")
+    replace_identity = bool(cmd.get("replace_identity"))
     ok, error, old_path, node_id = False, None, None, None
     if not project_id or not path:
         error = "project_id and path are required"
@@ -232,7 +254,16 @@ async def handle_relocate_project(ws, cmd: dict):
             from openprogram.store.project import project_store as _projects
             before = _projects.get_project(project_id)
             old_path = before.path if before else None
-            _projects.relocate_project(project_id, path)
+            if expected_path is None and before is not None:
+                expected_path = before.path
+            if expected_revision is None and before is not None:
+                expected_revision = getattr(before, "location_revision", 0)
+            _projects.relocate_project(
+                project_id, path,
+                expected_path=expected_path,
+                expected_revision=expected_revision,
+                replace_identity=replace_identity,
+            )
             ok = True
         except Exception as e:  # noqa: BLE001
             error = f"{type(e).__name__}: {e}"

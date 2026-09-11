@@ -126,4 +126,4 @@ The path uses larger text, and its right-hand copy button copies the full absolu
 
 The sidebar shows only projects with non-archived conversations. Empty projects remain available in the project selector and project management.
 
-When a registered project folder moves, OpenProgram searches nearby and common project folders in the background. A unique identity match updates the path while preserving the project and conversations. Ambiguous or undiscovered folders retain **Locate folder**. Search is bounded; folders moved outside the searched locations require manual location.
+Conversation history is stored under the OpenProgram state directory, grouped by a stable project id, not inside the working folder. When a folder is renamed or a volume reconnects, OpenProgram updates the location from native directory identity where the platform supports it. Copies and a different folder at the same path do not inherit the original conversations. If the working folder is missing, history stays readable and **Locate folder** remains available; new tasks in that project wait until the folder is valid again.

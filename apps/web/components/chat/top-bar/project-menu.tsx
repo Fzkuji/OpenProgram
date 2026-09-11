@@ -57,7 +57,12 @@ interface Project {
   hidden?: boolean;
   /** Backend-computed: the folder no longer exists on disk. */
   path_missing?: boolean;
+  path_replaced?: boolean;
+  location_state?: string;
+  location_revision?: number;
+  migration_error?: string;
   session_count: number;
+  unarchived_session_count?: number;
   source_folders?: string[];
 }
 
@@ -132,9 +137,17 @@ export function ProjectMenu({
         projects?.find((project) => project.id === projectId)?.path,
       );
       if (path) {
+        const current = projects?.find((project) => project.id === projectId);
         const reply = await wsRequest<{ ok: boolean; error?: string | null }>(
           "relocate_project",
-          { session_id: sessionId ?? "", project_id: projectId, path },
+          {
+            session_id: sessionId ?? "",
+            project_id: projectId,
+            path,
+            expected_path: current?.path,
+            expected_revision: current?.location_revision,
+            replace_identity: true,
+          },
           "project_relocated",
         );
         if (reply && !reply.ok) {
@@ -224,7 +237,8 @@ export function ProjectMenu({
   // the backend rejects a rebind anyway (FROZEN_ERROR).
   const frozen = sessionId !== null;
   const activeProject = list.find((p) => p.id === activeId) ?? null;
-  const missing = activeProject?.path_missing === true;
+  const missing = activeProject?.path_missing === true || activeProject?.location_state === "missing" || activeProject?.path_replaced === true;
+  const locationState = activeProject?.location_state;
 
   const errorLine = err ? (
     <div className="px-[8px] pb-[3px] pt-[1px] text-[11px] text-[var(--accent-orange)]">
@@ -254,10 +268,30 @@ export function ProjectMenu({
             <div className="project-menu-missing">
               <AlertTriangle size={13} strokeWidth={2} aria-hidden="true" />
               <span>
-                {text(
-                  "This folder no longer exists. Point the project at its new location.",
-                  "该目录已不存在。请把项目指向它的新位置。",
-                )}
+                {locationState === "replaced" || activeProject?.path_replaced
+                  ? text(
+                      "The folder at this location has changed. Locate the original folder.",
+                      "该位置上的文件夹已更换。请定位原来的目录。",
+                    )
+                  : locationState === "migrating"
+                    ? text(
+                        "Migrating conversations. Tasks start after completion.",
+                        "正在迁移对话。完成前不能启动任务。",
+                      )
+                    : locationState === "pending"
+                      ? text(
+                          "This legacy conversation has not migrated. Reconnect the original drive to finish.",
+                          "这条旧对话尚未迁移。请接回原来的磁盘后再完成。",
+                        )
+                      : locationState === "error"
+                        ? text(
+                            activeProject?.migration_error || "Conversation migration failed.",
+                            activeProject?.migration_error || "对话迁移失败。",
+                          )
+                        : text(
+                            "This folder no longer exists. Point the project at its new location.",
+                            "该目录已不存在。请把项目指向它的新位置。",
+                          )}
               </span>
             </div>
             <div
