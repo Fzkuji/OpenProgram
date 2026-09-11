@@ -376,6 +376,9 @@ def owner_controlled_program_sources(base: str | None = None) -> list[dict]:
     """Return valid owner-recorded roots, optionally limited to one directory."""
     out = []
     for row in _read_program_sources():
+        if row.get("kind") == "application":
+            # Application packages execute only through their isolated runner.
+            continue
         root = _recorded_root(row)
         if root is None:
             continue

@@ -87,9 +87,11 @@ export type {
   CenterTabsPersistedPayload,
 } from "@/lib/state/center-tabs-persistence";
 
-export type CenterTabKind = "session" | "file" | "web" | "ntp" | "builtin";
+export type CenterTabKind = "session" | "file" | "web" | "ntp" | "builtin" | "application";
 
 export interface CenterTab {
+  applicationId?: string;
+  applicationInstanceId?: string;
   id: string;
   kind: CenterTabKind;
   /** Session tabs: conversation title (may lag; synced from the
@@ -242,6 +244,7 @@ export interface CenterTabsState {
   retargetFileTab: (oldId: string, newProjectId: string, newPath: string) => void;
   /** Focus-or-create the singleton tab for a built-in page. */
   openBuiltinTab: (page: BuiltinPage) => void;
+  openApplicationTab: (appId: string, instanceId: string, title: string) => void;
   openReviewTab: (
     sessionId: string,
     assistantMsgId?: string,
@@ -661,6 +664,11 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
           [],
         );
       }),
+
+    openApplicationTab: (appId, instanceId, title) => set((s) => focusOrCreate(
+      s, `app:${instanceId}`,
+      () => ({id: `app:${instanceId}`, kind: "application", title, applicationId: appId, applicationInstanceId: instanceId}), [],
+    )),
 
     openReviewTab: (sessionId, assistantMsgId, scope = "turn", path) =>
       set((s) => {

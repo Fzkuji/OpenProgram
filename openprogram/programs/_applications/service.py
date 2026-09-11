@@ -1,0 +1,193 @@
+"""Application operations owned by the server, not by an open browser view."""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import os
+from pathlib import Path
+import uuid
+
+from openprogram.execution.model import ExecutionStatus as Status, TERMINAL_EXECUTION_STATUSES
+from openprogram.execution.store import default_store
+from . import catalog, state
+
+
+class ApplicationService:
+    def __init__(self):
+        self.tasks: dict[str, asyncio.Task] = {}
+        self.processes: dict[str, asyncio.subprocess.Process] = {}
+        self.lock = asyncio.Lock()
+
+    def describe(self, run_id: str) -> dict:
+        with state.connect() as db:
+            row = db.execute("SELECT * FROM operations WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise FileNotFoundError("application operation not found")
+            value = dict(row)
+        instance = state.get_instance(value["instance_id"])
+        catalog.get(instance["app_id"])
+        record = default_store().get_execution(run_id)
+        return {"id": run_id, "instance_id": instance["id"], "operation": value["operation"],
+                "status": record.status.value if record else "interrupted",
+                "result": json.loads(value["result"]) if value["result"] else None,
+                "error": value["error"], "question": json.loads(value["question"]) if value["question"] else None}
+
+    async def submit(self, instance_id: str, operation: str, value: dict, request_key: str, *, agent: bool = False) -> dict:
+        if not isinstance(request_key, str) or not 1 <= len(request_key) <= 128:
+            raise ValueError("request_key is required (1–128 characters)")
+        instance = state.get_instance(instance_id)
+        app = catalog.get(instance["app_id"])
+        spec = app["operations"].get(operation)
+        if spec is None or (agent and not spec.get("agent", False)):
+            raise ValueError("operation is not available")
+        from jsonschema import validate
+        validate(value, spec.get("input", {}))
+        fingerprint = hashlib.sha256(json.dumps([operation, value], sort_keys=True, allow_nan=False).encode()).hexdigest()
+        async with self.lock:
+            current = catalog.get(instance["app_id"])
+            if current["digest"] != app["digest"]:
+                raise ValueError("application changed during submission; reopen it")
+            with state.connect() as db:
+                old = db.execute("SELECT id,fingerprint FROM operations WHERE instance_id=? AND request_key=?", (instance_id, request_key)).fetchone()
+                if old:
+                    if old["fingerprint"] != fingerprint:
+                        raise ValueError("request_key already used with different input")
+                    return self.describe(old["id"])
+            root = catalog.home() / "versions" / app["digest"]
+            if await asyncio.to_thread(catalog.package_digest, root) != app["digest"]:
+                raise ValueError("installed application content changed; reinstall from its source")
+            store = default_store()
+            revision = store.create_revision(manifest={"application": app["id"], "digest": app["digest"], "operation": operation})
+            run_id = "app_" + uuid.uuid4().hex
+            store.create_execution(session_id="app:" + instance_id, revision_id=revision.revision_id, execution_id=run_id)
+            with state.connect() as db:
+                db.execute("INSERT INTO operations(id,instance_id,request_key,fingerprint,definition,operation,input) VALUES(?,?,?,?,?,?,?)",
+                           (run_id, instance_id, request_key, fingerprint, json.dumps(app), operation, json.dumps(value)))
+            state.emit(run_id, {"type": "accepted"})
+            task = asyncio.create_task(self._execute(run_id, instance, app, operation, value))
+            self.tasks[run_id] = task
+            task.add_done_callback(lambda _: self.tasks.pop(run_id, None))
+            return self.describe(run_id)
+
+    def transition(self, run_id: str, target: Status):
+        store = default_store()
+        record = store.get_execution(run_id)
+        if record and record.status not in TERMINAL_EXECUTION_STATUSES:
+            store.transition_execution(run_id, expected_version=record.status_version, target=target)
+            state.emit(run_id, {"type": "status", "status": target.value})
+
+    async def _execute(self, run_id, instance, app, operation, value):
+        process = None
+        try:
+            self.transition(run_id, Status.RUNNING)
+            executable = catalog.python_path(app["digest"])
+            root = catalog.home() / "versions" / app["digest"]
+            env = dict(os.environ)
+            # Load only the installed framework package, not arbitrary project
+            # directories inherited through PYTHONPATH.
+            import openprogram
+            env["PYTHONPATH"] = str(Path(openprogram.__file__).resolve().parent.parent)
+            env["PYTHONDONTWRITEBYTECODE"] = "1"
+            process = await asyncio.create_subprocess_exec(
+                str(executable), "-m", "openprogram.programs._applications.runner",
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL, cwd=str(root), env=env,
+                start_new_session=os.name != "nt", limit=1024 * 1024 + 1,
+            )
+            self.processes[run_id] = process
+            process.stdin.write((json.dumps({"run_id": run_id, "instance": instance, "definition": app,
+                "root": str(root), "operation": operation, "input": value, "model": app.get("model", "")}) + "\n").encode())
+            await process.stdin.drain()
+            outcome = None
+            while line := await process.stdout.readline():
+                event = json.loads(line)
+                if event.get("type") not in {"progress", "question", "result", "error"}:
+                    raise ValueError("invalid application event")
+                state.emit(run_id, event)
+                if event["type"] == "question":
+                    with state.connect() as db:
+                        db.execute("UPDATE operations SET question=? WHERE id=?", (json.dumps(event), run_id))
+                elif event["type"] in {"result", "error"}:
+                    outcome = event
+            await process.wait()
+            if process.returncode or not outcome:
+                raise RuntimeError(f"application process exited without a result (exit {process.returncode})")
+            with state.connect() as db:
+                db.execute("UPDATE operations SET result=?,error=?,question=NULL WHERE id=?",
+                           (json.dumps(outcome.get("value")) if outcome["type"] == "result" else None,
+                            outcome.get("message"), run_id))
+            self.transition(run_id, Status.COMPLETED if outcome["type"] == "result" else Status.FAILED)
+        except asyncio.CancelledError:
+            if process:
+                await self._stop(process)
+            record = default_store().get_execution(run_id)
+            self.transition(run_id, Status.CANCELLED if record.status == Status.CANCELLING else Status.INTERRUPTED)
+            raise
+        except Exception as exc:
+            if process:
+                await self._stop(process)
+            with state.connect() as db:
+                db.execute("UPDATE operations SET error=?,question=NULL WHERE id=?", (str(exc), run_id))
+            self.transition(run_id, Status.FAILED)
+        finally:
+            self.processes.pop(run_id, None)
+
+    async def _stop(self, process):
+        if process.returncode is None:
+            from openprogram._compat import kill_process_tree
+            await asyncio.to_thread(kill_process_tree, process.pid)
+        await process.wait()
+
+    async def cancel(self, run_id: str):
+        self.describe(run_id)
+        if run_id in self.tasks:
+            self.transition(run_id, Status.CANCELLING)
+            task = self.tasks[run_id]
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            self.transition(run_id, Status.CANCELLED)
+            with state.connect() as db:
+                db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
+        return self.describe(run_id)
+
+    async def answer(self, run_id: str, request_id: str, answer):
+        async with self.lock:
+            run = self.describe(run_id)
+            question = run["question"]
+            process = self.processes.get(run_id)
+            if not question or question["request_id"] != request_id or process is None:
+                raise ValueError("question is no longer waiting")
+            process.stdin.write((json.dumps({"request_id": request_id, "answer": answer}) + "\n").encode())
+            await process.stdin.drain()
+            with state.connect() as db:
+                db.execute("UPDATE operations SET question=NULL WHERE id=?", (run_id,))
+            return self.describe(run_id)
+
+    async def revoke(self, app_id: str):
+        for run_id in list(self.tasks):
+            run = self.describe(run_id)
+            if state.get_instance(run["instance_id"])["app_id"] == app_id:
+                await self.cancel(run_id)
+
+    async def close(self):
+        run_ids = list(self.tasks)
+        tasks = list(self.tasks.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for run_id in run_ids:
+            self.transition(run_id, Status.INTERRUPTED)
+
+    def recover(self):
+        with state.connect() as db:
+            ids = [r[0] for r in db.execute("SELECT id FROM operations")]
+        for run_id in ids:
+            record = default_store().get_execution(run_id)
+            if record and record.status not in TERMINAL_EXECUTION_STATUSES:
+                if record.status == Status.CANCELLING:
+                    self.transition(run_id, Status.CANCELLED)
+                else:
+                    self.transition(run_id, Status.INTERRUPTED)
+                with state.connect() as db:
+                    db.execute("UPDATE operations SET question=NULL,error=? WHERE id=?", ("The worker stopped. Review saved progress before starting a new operation.", run_id))

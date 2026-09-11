@@ -60,6 +60,10 @@ const BrowserHomePage = dynamic(
   () => import("./center-tabs/browser-home-page").then((module) => module.BrowserHomePage),
   { ssr: false, loading: DeferredPaneLoading },
 );
+const ApplicationTabPane = dynamic(
+  () => import("./center-tabs/application-tab-pane").then((module) => module.ApplicationTabPane),
+  { ssr: false, loading: DeferredPaneLoading },
+);
 const FileTabPane = dynamic(
   () => import("./center-tabs/file-tab-pane").then((module) => module.FileTabPane),
   { ssr: false, loading: DeferredPaneLoading },
@@ -494,6 +498,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     if (tab.kind === "web") {
       return <WebTabPane tabId={tab.id} url={tab.url ?? ""} />;
+    }
+    if (tab.kind === "application" && tab.applicationInstanceId) {
+      return <ApplicationTabPane instanceId={tab.applicationInstanceId} />;
     }
     if (tab.kind === "ntp") return <NewTabPage />;
     if (tab.kind === "builtin" && tab.page) {

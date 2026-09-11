@@ -78,7 +78,7 @@ assert.doesNotMatch(browserHome, /browserHomeToolbar|text\("Open", "打开"\)/);
 assert.match(browserGlyph, /BrowserGlyph/);
 assert.match(browserHome, /<BrowserGlyph/);
 assert.equal(
-  launcher.match(/className=\{styles\.ntpGlyph\}/g)?.length,
+  launcher.split("{applications.filter", 1)[0].match(/className=\{styles\.ntpGlyph\}/g)?.length,
   3,
   "the three non-browser launchers must use the same icon container as Browser",
 );

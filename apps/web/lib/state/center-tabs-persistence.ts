@@ -113,6 +113,10 @@ export function normalizeCenterTabsPayload(
     // 0.7.0 removed the unfinished browser-extension surface. Discard its
     // persisted tab without touching the separate legacy extension directory.
     .filter((tab) => tab.kind !== "builtin" || String(tab.page) !== "extensions")
+    .filter((tab) => tab.kind !== "application" || (
+      /^[a-z][a-z0-9._-]{0,95}$/.test(tab.applicationId ?? "") &&
+      /^[a-f0-9]{64}$/.test(tab.applicationInstanceId ?? "") && tab.id === `app:${tab.applicationInstanceId}`
+    ))
     .map((tab) => {
       if (tab.id === DRAFT_SESSION_TAB_ID) return draftTab();
       const next = clearDirty && tab.dirty ? { ...tab, dirty: false } : tab;

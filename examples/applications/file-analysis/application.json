@@ -1,0 +1,42 @@
+{
+  "id": "example.file-analysis",
+  "title": "File analysis",
+  "version": "1.0.0",
+  "ui": {
+    "root": ".",
+    "entry": "index.html"
+  },
+  "scope": "project",
+  "capabilities": [
+    "storage.app",
+    "files.project.read"
+  ],
+  "operations": {
+    "analyze": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "array"
+      }
+    }
+  },
+  "backend": {
+    "kind": "python",
+    "entry": "backend:operations"
+  }
+}

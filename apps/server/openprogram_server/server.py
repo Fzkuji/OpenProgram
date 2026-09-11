@@ -2118,6 +2118,8 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # /api/plugins/* — Plugins management
     from openprogram.webui.routes import plugins as _routes_plugins
     _routes_plugins.register(app)
+    from openprogram.webui.routes import applications as _routes_applications
+    _routes_applications.register(app)
 
     # /api/commands/* — Unified slash-command registry (Phase 1)
     from openprogram.webui.routes import commands as _routes_commands

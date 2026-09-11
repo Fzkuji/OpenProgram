@@ -537,6 +537,23 @@ class OwnerAuthMiddleware:
             await self.app(scope, receive, send)
             return
         headers = _headers(scope)
+        # Sandboxed application module imports have Origin: null and no owner
+        # credential. Their URL grants only reads of one immutable UI tree.
+        asset_path = str(scope.get("path") or "")
+        if scope["type"] == "http" and scope.get("method") == "GET" and asset_path.startswith("/application-assets/"):
+            parts = asset_path.split("/", 5)
+            if len(parts) == 6 and "x-openprogram-ui-check" not in headers:
+                from openprogram.programs._applications.state import asset_definition
+                try:
+                    asset_definition(parts[2], parts[3], parts[4])
+                    # Still validate the destination Host against the active
+                    # listener. Only the opaque source Origin is exempt here.
+                    _request_origin(scope, {k: v for k, v in headers.items() if k not in {"origin", "sec-fetch-site"}}, self.auth_state)
+                except (OwnerAuthError, FileNotFoundError, ValueError):
+                    await _http_response(send, 403, "application_resource_rejected")
+                    return
+                await self.app(scope, receive, send)
+                return
         try:
             request_origin, origin = _request_origin(scope, headers, self.auth_state)
         except OwnerAuthError:

@@ -34,6 +34,7 @@ relies on.
 - **`_providers.py`** — Shared provider-registry scaffolding for tools with pluggable backends
 - **`_registry.py`** — Explicit + auto-discovered registry of @agentic_function modules
 - **`_runtime.py`** — @function decorator + runtime layer
+- **`applications.py`** — Use installed application operations from Programs and local CLI clients
 - **`gui_browser_agent.py`** — Browser GUI tasks through the standard Agent and isolated Python tool
 - **`gui_harness_bridge.py`** — Optional adapter from the installed GUI Agent Harness to web_use
 - **`meta_storage.py`** — Profile-scoped persistence for tool profiles and Functions UI metadata
@@ -42,6 +43,7 @@ relies on.
 
 ## Sub-packages
 
+- **`_applications/`** — Installed application packages, isolated views and business operations
 - **`agentic_functions/`** — Compatibility exports for harnesses from before the workflow move
 - **`applications/`** — Complete programs installed and loaded through their package entry points
 - **`tools/`** — Deterministic LLM-callable functions, grouped by source purpose

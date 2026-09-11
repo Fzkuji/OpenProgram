@@ -535,3 +535,27 @@ def _cmd_run(name, arg_list, provider=None, model=None):
 
     result = loaded_func(**kwargs)
     print(result)
+
+
+def _cmd_applications(args):
+    import json
+    from urllib.parse import quote
+    from openprogram.programs import applications
+    verb = args.apps_verb
+    if verb == "list":
+        result = applications.list_applications()
+    elif verb == "install":
+        result = applications.request("/api/applications/install", method="POST", body={
+            "path": os.path.abspath(os.path.expanduser(args.directory)), "replace": args.replace, "trust": args.trust,
+        })
+    elif verb == "uninstall":
+        result = applications.request("/api/applications/" + quote(args.id, safe=""), method="DELETE")
+    elif verb == "run":
+        result = applications.run(args.id, args.operation, json.loads(args.input), project_id=args.project, request_key=args.request_key)
+    elif verb == "status":
+        result = applications.status(args.run_id)
+    elif verb == "cancel":
+        result = applications.cancel(args.run_id)
+    else:
+        raise SystemExit("Choose an applications command: list, install, uninstall, run, status, cancel")
+    print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -1,0 +1,5 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Calculator</title>
+<style>body{font:16px system-ui;margin:3rem;max-width:40rem}input,select,button{font:inherit;padding:.6rem;margin:.3rem}output{display:block;font-size:2rem;margin-top:1rem}</style>
+<h1>Calculator</h1><p>Calculate locally without a model.</p>
+<form id="form"><input id="a" type="number" step="any" value="12" aria-label="First number"><select id="op" aria-label="Operation"><option>+</option><option>−</option><option>×</option><option>÷</option></select><input id="b" type="number" step="any" value="3" aria-label="Second number"><button>Calculate</button></form><output id="result" aria-live="polite"></output>
+<script>document.getElementById('form').onsubmit=e=>{e.preventDefault();const a=Number(document.getElementById('a').value),b=Number(document.getElementById('b').value),op=document.getElementById('op').value;document.getElementById('result').textContent=op==='+'?a+b:op==='−'?a-b:op==='×'?a*b:b===0?'Cannot divide by zero':a/b;};</script></html>
