@@ -236,3 +236,21 @@ def test_paged_load_preserves_all_rows_and_does_not_move_head_or_focus(
         assert ws._focused_session_id == 'another-session'
         assert server._sessions['session-1']['head_id'] == 'new-live-head'
     asyncio.run(scenario())
+
+
+def test_deleted_session_history_request_does_not_rehydrate_empty_session(session_with_tool_outputs):
+    from openprogram.webui import server
+    from openprogram.webui.ws_errors import OperationError
+    store, _ = session_with_tool_outputs
+    store.delete_session('session-1')
+    server._sessions.pop('session-1', None)
+    ws = FakeWS()
+    ws._history_protocol = 1
+    ws._focused_session_id = 'another-session'
+    with pytest.raises(OperationError, match='invalid_request'):
+        asyncio.run(ws_session.handle_load_session(ws, {
+            'session_id': 'session-1', 'history_before': 'assistant-1',
+            'history_head': 'assistant-1', 'request_id': 'stale-page',
+        }))
+    assert ws.frames == []
+    assert ws._focused_session_id == 'another-session'

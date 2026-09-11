@@ -890,6 +890,7 @@ export function useWS(): void {
       if (stopped) return;
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       const historyFragments = createHistoryFragmentDecoder();
+      let replayingHistory = false;
       socket = new WebSocket(proto + "//" + location.host + "/ws");
       const connection = socket;
       setSocket(socket);
@@ -963,12 +964,16 @@ export function useWS(): void {
             type?: string;
             data?: { session_id?: string };
           };
-          if (msg.type === "history_fragment") {
-            const complete = historyFragments.accept(msg.data as never);
-            if (complete !== null) connection.dispatchEvent(new MessageEvent("message", { data: complete }));
+          if (replayingHistory) { dispatch(msg); return; }
+          const ready = historyFragments.receive(e.data);
+          if (ready.length === 1 && ready[0] === e.data && msg.type !== "history_fragment") {
+            dispatch(msg);
             return;
           }
-          dispatch(msg);
+          replayingHistory = true;
+          try {
+            for (const complete of ready) connection.dispatchEvent(new MessageEvent("message", { data: complete }));
+          } finally { replayingHistory = false; }
         } catch (err) {
           console.error("[useWS] onmessage parse error:", err);
         }

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import threading
 
+import pytest
+
 from openprogram.webui.graph_builder import build_session_graph
 from openprogram.webui.ws_actions.session import _session_io
 from openprogram.webui.ws_actions.session import handle_load_session
@@ -155,7 +157,8 @@ def test_handle_load_session_offloads_slow_history_and_keeps_new_head(
     asyncio.run(scenario())
 
 
-def test_negotiated_history_delivery_does_not_disconnect_on_large_snapshot():
+@pytest.mark.parametrize("kind", ["session_loaded", "full_tool_output"])
+def test_negotiated_history_delivery_does_not_disconnect_on_large_snapshot(kind):
     import json
     from openprogram.webui.ws_delivery import QueuedWebSocket
 
@@ -173,7 +176,7 @@ def test_negotiated_history_delivery_does_not_disconnect_on_large_snapshot():
         raw = Raw()
         ws = QueuedWebSocket(raw, asyncio.get_running_loop())
         ws.start()
-        payload = json.dumps({'type': 'session_loaded', 'data': {'id': 's', 'messages': ['x' * (5 * 1024 * 1024)]}})
+        payload = json.dumps({'type': kind, 'data': {'id': 's', 'messages': ['x' * (5 * 1024 * 1024)]}})
         try:
             await ws.send_text(payload)
             assert not raw.closed
