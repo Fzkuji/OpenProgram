@@ -319,3 +319,19 @@ def test_failed_autosave_keeps_previous_confirmed_version_visible(documents, mon
         "project_id": "p1", "path": "a.txt", "version": confirmed, "side": "after"})
     assert response.status_code == 200
     assert response.content == b"confirmed"
+
+
+def test_malformed_receipt_remains_visible_as_unconfirmed_history(documents):
+    import json
+    client, root, state, _ = documents
+    (root / "a.txt").write_bytes(b"old")
+    assert put(client, "a.txt", b"old", b"new", close=True).status_code == 200
+    intents = list((state / "project-file-history").rglob("intent.json"))
+    assert len(intents) == 1
+    value = json.loads(intents[0].read_text())
+    value["before"] = "corrupt descriptor"
+    intents[0].write_text(json.dumps(value))
+    response = client.get("/api/documents/history", params={"project_id": "p1", "path": "a.txt"})
+    assert response.status_code == 200, response.text
+    assert response.json()["entries"][0]["status"] == "recovery_required"
+    assert response.json()["entries"][0]["before_revision"] is None

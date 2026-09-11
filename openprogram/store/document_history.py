@@ -74,7 +74,7 @@ def resolve_document(project_id: str, relative: str) -> tuple[Path, str]:
 
 
 def _revision(state: dict | None) -> str | None:
-    if not state:
+    if not isinstance(state, dict):
         return None
     if state.get("kind") == "absent":
         return "absent"
