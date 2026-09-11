@@ -16,10 +16,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { _applyShapeSize } from "./shapes";
+import { isXyflowCanvas, patchProjectionCoverage } from "../xyflow";
 import {
   _chatMutationObserver,
   _chatScrollWired,
   _contextSet,
+  _coverageSet,
   _highlightMode,
   _visibleIds,
   setChatMutationObserver,
@@ -55,6 +57,14 @@ export function _applyVisibility(nodeEl: Element, visible: boolean): void {
 }
 
 export function _setVisibleSet(newSet: Record<string, boolean>): void {
+  if (isXyflowCanvas()) {
+    // RF nodes read coverage from the projection store (context mode).
+    if (_highlightMode === "context") {
+      patchProjectionCoverage(_contextSet, _coverageSet);
+    }
+    setVisibleIds(newSet);
+    return;
+  }
   const panel = document.getElementById("historyPanel");
   if (!panel) return;
   const body = panel.querySelector(".history-body") as HTMLElement | null;

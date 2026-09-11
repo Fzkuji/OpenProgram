@@ -40,6 +40,8 @@ import { Maximize2, Minus, Plus, Shapes } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
 import { enterExclusiveCoverageMode } from "@/lib/runtime-bridge/dag";
+import { isXyflowCanvas } from "@/lib/runtime-bridge/dag/xyflow";
+import { DagXyflowCanvas } from "@/components/chat/dag-xyflow/canvas";
 import { fitCanvas, resetZoom, zoomStep } from "@/lib/runtime-bridge/dag/interaction/canvas";
 import { MENU_PANEL } from "@/components/chat/top-bar/menu-styles";
 
@@ -235,7 +237,9 @@ export function DagView({ visible }: { visible: boolean }) {
       {/* 分支切换直接在图内：每条 lane 尾部的分支名标签就是按钮
           （render/badges.ts），点非活动分支即 checkout。页面顶部不再
           放分支条——那条横线会横穿右上角的悬浮视角按钮。 */}
-      <div className="history-body"></div>
+      <div className="history-body">
+        {isXyflowCanvas() ? <DagXyflowCanvas /> : null}
+      </div>
       <DagHud active={visible} />
     </div>
   );

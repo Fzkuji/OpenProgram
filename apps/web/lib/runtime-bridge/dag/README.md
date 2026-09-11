@@ -15,6 +15,17 @@ This module replaced and removed the pre-split monolithic
 `apps/web/lib/runtime-bridge/history-graph.ts` (~1700 lines). Current code
 imports from `./dag` directly.
 
+## xyflow canvas (Phase 1→2)
+
+When `xyflow/flag.ts` has `USE_XYFLOW_CANVAS=true` (default), the pipeline
+still runs the pass stack + geometry, then publishes a
+`CanvasProjection` to `xyflow/store.ts` instead of emitting SVG.
+`components/chat/dag-xyflow/canvas.tsx` renders a controlled
+`@xyflow/react` host inside `#historyPanel .history-body`. Checkout /
+fold intents go through `xyflow/port.ts` → existing WS/API helpers.
+Flip the flag to restore the imperative SVG emitter.
+
+
 ## Module layout
 
 ```
