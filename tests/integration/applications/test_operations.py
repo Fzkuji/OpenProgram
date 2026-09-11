@@ -159,3 +159,47 @@ operations = {'summarize': summarize}
                 assert list(history.glob('*.json')), 'model calls must retain their framework trace'
             else:
                 assert 'fixture model failure' in current['error']
+
+
+def test_install_from_named_desktop_runtime(tmp_path, monkeypatch):
+    """A native worker executable is not the interpreter for app environments."""
+    import os
+    import sys
+    import shlex
+    import pytest
+    from openprogram.webui.routes import applications
+
+    monkeypatch.setenv('HOME', str(tmp_path))
+    runtime = tmp_path / 'runtime'
+    if os.name == 'nt':
+        pytest.skip('macOS named runtime uses a POSIX executable')
+    runtime.mkdir()
+    interpreter = runtime / 'python'
+    interpreter.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' "$@"\n')
+    interpreter.chmod(0o755)
+    wrapper = runtime / 'OpenProgram'
+    wrapper.write_text('not a Python interpreter')
+    wrapper.chmod(0o755)
+    (runtime / 'bin').mkdir()
+    (runtime / 'bin/verify-product-runtime.py').write_text('# verifier')
+    (runtime / 'product-runtime.json').write_text('{}')
+    (runtime / 'runtime-manifest.json').write_text(json.dumps({
+        'schema': 2, 'python': str(interpreter.relative_to(runtime)),
+        'worker_python': 'OpenProgram',
+    }))
+    source = tmp_path / 'source'
+    source.mkdir()
+    (source / 'index.html').write_text('<!doctype html><title>Native runtime</title>')
+    (source / 'backend.py').write_text('operations = {}')
+    (source / 'application.json').write_text(json.dumps({
+        'id': 'test.native', 'title': 'Native runtime', 'version': '1',
+        'backend': {'kind': 'python', 'entry': 'backend:operations'},
+    }))
+    monkeypatch.setattr(sys, 'executable', str(wrapper))
+    monkeypatch.setattr(sys, '_base_executable', str(wrapper))
+    app = FastAPI()
+    applications.register(app)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post('/api/applications/install', json={'path': str(source), 'trust': True})
+        assert response.status_code == 200, response.text
+        assert response.json()['id'] == 'test.native'

@@ -10,7 +10,7 @@ import shutil
 import site
 import subprocess
 import tempfile
-import venv
+import sys
 
 from openprogram.paths import get_state_dir
 from openprogram.programs import _programs
@@ -146,7 +146,19 @@ def install(path: str, *, replace: bool = False, trust: bool = False) -> dict:
                     shutil.rmtree(executable.parent.parent)
                 # The base environment is read-only; application dependencies
                 # install only into this version's own environment.
-                venv.EnvBuilder(system_site_packages=True, with_pip=True, symlinks=os.name != "nt").create(executable.parent.parent)
+                from openprogram.updater.detect import managed_runtime_root
+                runtime = managed_runtime_root()
+                interpreter = sys.executable
+                if runtime is not None:
+                    runtime_manifest = json.loads((runtime / "runtime-manifest.json").read_text())
+                    interpreter = str((runtime / runtime_manifest["python"]).resolve())
+                try:
+                    subprocess.run(
+                        [interpreter, "-m", "venv", "--system-site-packages", str(executable.parent.parent)],
+                        check=True, capture_output=True, timeout=300,
+                    )
+                except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    raise ValueError("application Python environment creation failed") from exc
                 # Inherit the host framework's dependency locations after this
                 # application's own site-packages, including a host virtualenv.
                 environment = executable.parent.parent
