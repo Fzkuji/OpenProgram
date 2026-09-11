@@ -62,3 +62,16 @@ test('collapse returns to the recorded conversation after its tab has navigated 
  assert.equal(collapseWebTabToPip(page.id),true);
  assert.equal(c.getState().tabs.find(t=>t.id===c.getState().activeId).sessionId,'A'); assert.equal(visible(),'chat');
 });
+
+test('inventory filters completed Pages again when other native inspections finish later',async()=>{
+ reset(); revealExistingWebTab(page.id,c.getState());
+ c.setState({tabs:[...c.getState().tabs,{id:'w:slow',kind:'web',title:'Slow',url:'https://slow.example'}]});
+ let finish;
+ const pending=browserPageInventory({windowId:'main',webTab:{inspect:id=>id===page.id
+   ? Promise.resolve({target_id:'target-a',url:page.url,title:page.title})
+   : new Promise(resolve=>{finish=resolve;})}},'B');
+ await Promise.resolve();
+ c.getState().setWebTabPinned(page.id,false);
+ finish({target_id:'target-slow',url:'https://slow.example',title:'Slow'});
+ assert.deepEqual((await pending).pages.map(item=>item.tab_id),['w:slow']);
+});

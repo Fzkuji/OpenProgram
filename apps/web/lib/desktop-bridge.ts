@@ -360,7 +360,7 @@ function webTabStillPresent(tabId: string) {
 
 export async function restoreRetainedWebViews(
   bridge: DesktopBridge,
-  opts: { tabIds?: readonly string[]; retryFailed?: boolean } = {},
+  opts: { tabIds?: readonly string[]; retryFailed?: boolean; canAccess?: (tabId: string) => boolean } = {},
 ): Promise<void> {
   const current = useCenterTabs.getState().tabs.filter((tab) => tab.kind === "web");
   const candidateIds = (opts.tabIds ?? current.map((tab) => tab.id)).filter((id, index, all) => (
@@ -375,6 +375,7 @@ export async function restoreRetainedWebViews(
     )));
   }
   for (const tabId of candidateIds) {
+    if (opts.canAccess && !opts.canAccess(tabId)) continue;
     if (!webTabStillPresent(tabId)) continue;
     if (tabIsExplicitlyClosed(tabId)) continue;
     let nativeUrl = "";
@@ -387,6 +388,7 @@ export async function restoreRetainedWebViews(
       nativeUrl = "";
     }
     if (!webTabStillPresent(tabId)) continue;
+    if (opts.canAccess && !opts.canAccess(tabId)) continue;
     if (tabIsExplicitlyClosed(tabId)) continue;
     const tab = useCenterTabs.getState().tabs.find((item) => item.id === tabId && item.kind === "web");
     if (!tab) continue;
@@ -445,9 +447,10 @@ function persistNativeWebTabState(state: {
 export async function retryRestoreWebTab(
   bridge: DesktopBridge,
   tabId: string,
+  canAccess?: (tabId: string) => boolean,
 ): Promise<void> {
   const tab = useCenterTabs.getState().tabs.find((item) => item.id === tabId && item.kind === "web");
-  if (!tab) return;
+  if (!tab || (canAccess && !canAccess(tabId))) return;
   const listed = listedBrowserResources().filter((row) => row.tabId === tabId && row.kind === "web");
   if (listed.length > 0 && listed.every((row) => row.status === "closed")) return;
   const resource = listed.find((row) => row.status !== "closed");
@@ -455,8 +458,8 @@ export async function retryRestoreWebTab(
   if (sessionId) {
     await recoverSessionResources(sessionId).catch(() => undefined);
   }
-  if (!webTabStillPresent(tabId) || tabIsExplicitlyClosed(tabId)) return;
-  await restoreRetainedWebViews(bridge, { tabIds: [tabId], retryFailed: true });
+  if (!webTabStillPresent(tabId) || tabIsExplicitlyClosed(tabId) || (canAccess && !canAccess(tabId))) return;
+  await restoreRetainedWebViews(bridge, { tabIds: [tabId], retryFailed: true, canAccess });
   reregisterDesktopWindow(bridge);
 }
 
@@ -900,7 +903,8 @@ export async function browserPageInventory(
       };
     }));
   const validPages = pages.filter(
-    (page): page is BrowserPageInventoryItem => page !== null,
+    (page): page is BrowserPageInventoryItem => page !== null
+      && agentCanAccessWebTab(page.tab_id, sessionId, useCenterTabs.getState()),
   );
   const validTabIds = new Set(validPages.map((page) => page.tab_id));
   const tabEntries = centerTabStripEntries({
@@ -1325,6 +1329,10 @@ export function installDesktopMenuHandlers(): void {
         return;
       }
       const runOp = (tab: { id: string; kind: string } | null) => {
+      if (tab && !canAccess(tab.id)) {
+        guardedSocket.send(JSON.stringify({ action: "webtab_result", req_id: d.req_id, ...denied }));
+        return;
+      }
       if (!tab || tab.kind !== "web") {
         guardedSocket.send(JSON.stringify({
           action: "webtab_result",
@@ -1399,7 +1407,7 @@ export function installDesktopMenuHandlers(): void {
         && resource.status !== "closed"
         && resource.status !== "open"
       ) {
-        void retryRestoreWebTab(bridge, tab.id).finally(() => runOp(tab));
+        void retryRestoreWebTab(bridge, tab.id, canAccess).finally(() => runOp(tab));
       } else {
         runOp(tab);
       }
