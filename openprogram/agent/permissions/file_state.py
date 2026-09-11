@@ -110,7 +110,7 @@ def write_checked(path: str, content: str) -> None:
             raise ValueError('File changed before writing; operation was not applied')
         current = os.lstat(path)
         if (not stat.S_ISREG(st.st_mode) or is_link_metadata(current)
-                    or (current.st_dev, current.st_ino) != (st.st_dev, st.st_ino)):
+                or (current.st_dev, current.st_ino) != (st.st_dev, st.st_ino)):
             raise ValueError('Approved target must remain a regular file')
         if os.path.realpath(path) != expected['resolved']:
             raise ValueError('File path changed before writing; operation was not applied')
