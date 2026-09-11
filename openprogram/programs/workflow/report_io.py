@@ -41,7 +41,7 @@ def save_report(week: str, output_dir: str, summary: str, reminder: str,
     if not re.fullmatch(r'\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])', week):
         raise ValueError('Expected week YYYY-Www')
     resolved, _ = resolve_path(output_dir or 'reports/group-weekly')
-    target = Path(resolved) / week / uuid.uuid4().hex
+    target = Path(resolved).absolute() / week / uuid.uuid4().hex
     # Do not mkdir before the public file tool has checked write permission.
     payloads = {'summary.md': summary, 'sources.json': encode(sources)}
     if reminder:
@@ -49,7 +49,7 @@ def save_report(week: str, output_dir: str, summary: str, reminder: str,
     payloads['coverage.json'] = encode(coverage)
     for name, content in payloads.items():
         outcome = write_file(str(target / name), content)
-        if not isinstance(outcome, str) or not outcome.startswith('Wrote '):
+        if not isinstance(outcome, str) or not outcome.splitlines()[-1].startswith('Wrote '):
             raise OSError(str(outcome))
     return target
 

@@ -33,3 +33,16 @@ def test_write_failure_does_not_claim_success(tmp_path, monkeypatch):
     monkeypatch.setattr('openprogram.programs.workflow.report_io.write_file', lambda *args: 'Error: denied')
     with pytest.raises(OSError, match='denied'):
         save_report('2026-W37', str(tmp_path), 'report', '', {}, [])
+
+
+def test_default_directory_uses_real_file_tool(tmp_path, monkeypatch):
+    from openprogram.worktree.context import reset_worktree, set_worktree
+    monkeypatch.chdir(tmp_path)
+    token = set_worktree(None)
+    try:
+        result = save_report('2026-W37', '', 'actual draft', '', {}, [])
+        assert result.is_absolute()
+        assert result.is_relative_to(tmp_path / 'reports/group-weekly/2026-W37')
+        assert (result / 'summary.md').read_text() == 'actual draft'
+    finally:
+        reset_worktree(token)

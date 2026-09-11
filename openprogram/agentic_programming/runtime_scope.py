@@ -5,7 +5,7 @@ from contextlib import contextmanager
 @contextmanager
 def runtime_scope():
     """Reuse the caller Runtime, or close a newly owned Runtime on every exit."""
-    from openprogram.agentic_programming.function import _current_runtime
+    from openprogram.agentic_programming.function import _close_owned_runtime, _current_runtime
     from openprogram.providers.registry import create_runtime
 
     current = _current_runtime.get(None)
@@ -18,4 +18,4 @@ def runtime_scope():
         yield owned
     finally:
         _current_runtime.reset(token)
-        owned.close()
+        _close_owned_runtime(owned)
