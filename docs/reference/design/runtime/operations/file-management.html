@@ -82,7 +82,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <div class="scenario"><b>文件后来又被修改</b><p>撤销前检查当前文件。内容与已保存版本不一致时阻止恢复，保留后续修改。</p><p class="result">文件已变化，未执行恢复</p></div>
     </div>
     <details><summary>实现方式与范围</summary>
-      <p>脚本将结果写到独立临时文件，再通过现有 <code>write(file_path, source_path=...)</code> 发布。content 与 source_path 必须且只能指定一个。source_path 是本地普通文件，受读取权限限制；目标继续执行写权限、读取基线与审批文件指纹检查。来源和目标均纳入审批等待时的文件指纹；发布前复核。工具在目标目录生成临时文件，完整写入后替换目标，失败清理临时文件，并保留原目标。工具按原始字节写入，记录 before/after，不将文档转成文本保存。源与目标相同、目录、链接、超限或不可读取的来源在修改目标前失败。来源读取有 64 MiB 上限。</p>
+      <p>脚本将结果写到独立临时文件，再通过现有 <code>write(file_path, source_path=...)</code> 发布。content 与 source_path 必须且只能指定一个。source_path 是本地普通文件，受读取权限限制；目标继续执行写权限、读取基线与审批文件指纹检查。来源和目标均纳入审批等待时的文件指纹；发布前复核。工具在目标目录生成临时文件，完整写入后替换目标，失败清理临时文件，并保留原目标。工具按原始字节写入，记录 before/after，不将文档转成文本保存。源与目标相同、目录、链接、超限或不可读取的来源在修改目标前失败。来源读取有 64 MiB 上限。已有目标在 advisory lock 下复核打开的文件句柄、内容和路径；这只能串行化遵守该锁的写入，不能阻止外部程序在最终校验与替换之间写入。Windows 在替换前关闭不共享删除权限的句柄并再次校验，因此不承诺操作系统级条件替换。</p>
       <p>参考 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex TurnDiffTracker</a> 的 exact delta 检查与 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/shell_snapshot.rs">shell snapshot</a> 的暂存、验证、替换流程；后者保存 shell 环境，不是文档版本。沿用 Codex 的明确修改操作归因：通用 Bash、后台进程与外部编辑器不自动成为本轮精确修改。脚本不能直接覆盖最终目标后再补写历史。保留既有文本 write 参数、失败语义、回退事务、分支归属及持久会话布局。文档格式、图片和排版均由完整字节版本恢复；当前不提供 Word 修订标记或 PPT 视觉差异。</p>
       <p>读取基线必须先建立：模型先用 read 读取原文件，再生成暂存版本。二进制读取返回文件类型与字节数，不向模型输出乱码。新文件不要求先读。脚本工具说明明确这一流程，无额外保存按钮，无全盘扫描与轮询。</p>
       <p>验收经注册 write 工具、会话重新打开及公开历史操作完成：创建和覆盖 DOCX/PPTX 后保存版本；撤销及重新应用逐字节一致；外部更改导致冲突；失败不替换目标；旧文本写入仍有效。</p>

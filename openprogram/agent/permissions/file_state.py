@@ -1,7 +1,7 @@
 """Persist file preconditions with an approval, and check before mutation."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 import hashlib
 import os
@@ -142,15 +142,38 @@ def write_checked_atomic(path: str, content: bytes, *, expected_state: dict,
             os.fsync(stream.fileno())
         if mode is not None:
             os.chmod(temporary, mode)
-        validate(files)
-        validate(checks)
-        if expected_state.get('missing'):
-            # Unlike replace, link cannot overwrite a concurrently created file.
-            os.link(temporary, path)
-            os.unlink(temporary)
-        else:
-            os.replace(temporary, path)
-        temporary = ''
+        with ExitStack() as locks:
+            if not expected_state.get('missing'):
+                flags = os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
+                descriptor = os.open(path, flags)
+                target = locks.enter_context(os.fdopen(descriptor, 'r+b'))
+                flock(target.fileno(), LOCK_EX)
+                info = os.fstat(target.fileno())
+                digest = hashlib.file_digest(target, 'sha256').hexdigest()
+                current = os.lstat(path)
+                if (digest, info.st_dev, info.st_ino) != (
+                    expected_state['sha256'], expected_state['device'], expected_state['inode'],
+                ) or (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino) \
+                        or is_link_metadata(current) or info.st_nlink != 1 \
+                        or os.path.realpath(path) != expected_state['resolved']:
+                    raise ValueError('File state changed before publication')
+                # Avoid reopening a file whose advisory lock denies another
+                # handle on Windows. The descriptor above verifies the target.
+                target_key = os.path.abspath(path)
+                validate({key: value for key, value in checks.items() if key != target_key})
+                if os.name == 'nt':
+                    # Windows CRT handles do not share delete access. Release
+                    # before rename; this is not an OS-level compare-and-swap.
+                    locks.close()
+                    validate({path: expected_state})
+                os.replace(temporary, path)
+            else:
+                validate(files)
+                validate(checks)
+                # Unlike replace, link cannot overwrite a concurrently created file.
+                os.link(temporary, path)
+                os.unlink(temporary)
+            temporary = ''
     finally:
         if temporary:
             try:

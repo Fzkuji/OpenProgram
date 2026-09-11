@@ -150,3 +150,39 @@ def test_registered_write_rejects_ambiguous_content_and_source(tmp_path: Path, m
     assert "exactly one" in _text(result)
     assert not target.exists()
 
+
+
+def test_registered_binary_publish_rejects_change_when_acquiring_writer_lock(tmp_path, monkeypatch):
+    from openprogram.agent.permissions import file_state
+    from openprogram.store.snapshot.read_tracking import forget_session
+
+    sandbox.install_policy_snapshot({"enabled": False, "policy": None})
+    session_id, turn_id = "binary-lock", "assistant-lock"
+    store = SessionStore(root_path=tmp_path / 'sessions')
+    store._open(session_id, create_if_missing=True)
+    store_token = _store.set(SessionNodeWriter(store, session_id))
+    turn_token = _current_turn_id.set(turn_id)
+    target, source = tmp_path / 'target.docx', tmp_path / 'source.docx'
+    target.write_bytes(b'before\0')
+    source.write_bytes(b'after\0')
+    original_lock = file_state.flock
+
+    def changed_before_lock(fd, mode):
+        target.write_bytes(b'concurrent writer\0')
+        original_lock(fd, mode)
+
+    monkeypatch.setattr(file_state, 'flock', changed_before_lock)
+    try:
+        asyncio.run(read.execute('baseline', {'file_path': str(target)}, None, None))
+        result = asyncio.run(write.execute('publish', {
+            'file_path': str(target), 'source_path': str(source),
+        }, None, None))
+        assert 'File state changed' in _text(result)
+        assert target.read_bytes() == b'concurrent writer\0'
+        assert not list(tmp_path.glob('.openprogram-write-*'))
+        assert CheckpointStore(store._session_dir(session_id)).list_mutations(turn_id) == []
+    finally:
+        store.close()
+        forget_session(session_id)
+        _current_turn_id.reset(turn_token)
+        _store.reset(store_token)
