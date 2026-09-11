@@ -989,7 +989,9 @@ async def _stream_assistant_response(
     # A stale session/agent preference can outlive a model switch, so never
     # forward it to a model whose list is empty: OpenAI-compatible upstreams
     # commonly reject an unsupported ``reasoning_effort`` with HTTP 400.
-    reasoning = config.reasoning if config.model.thinking_levels else None
+    from openprogram.providers.thinking_spec import normalize_reasoning_level
+
+    reasoning = normalize_reasoning_level(config.model, config.reasoning)
     stream_opts = SimpleStreamOptions(
         reasoning=reasoning,
         thinking_budgets=config.thinking_budgets,

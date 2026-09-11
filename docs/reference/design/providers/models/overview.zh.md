@@ -100,7 +100,7 @@ list_available_models(provider_id)
 
 无论哪种源，`fetch_and_normalize` 是**唯一的归一化收口**：它把 fetcher 千差万别的 key（`context_length`/`context_window`/`contextWindow` 等）统一成一份 entry dict，再叠 models.dev 补全。下游只看归一化后的统一行，看不到源的差异。
 
-结果只进内存（可带一个短 TTL 缓存避免反复请求），关掉页面就没了。断网时浏览不可用——**发现新模型本来就需要网络**，这不是缺陷是事实。
+普通 provider 的结果只进短 TTL 内存缓存。账户级订阅目录还会在 profile 状态目录保存一份原子写入的 last-known-good 缓存。联网失败时可以把上次成功结果标为 stale 后展示，但不会把它当成一次成功的权威刷新。
 
 ### 4.2 启用（复制规格进 config）
 
@@ -114,10 +114,11 @@ enable_model(provider_id, row)
   → ENABLED_MODELS 重载
 ```
 
-- **取消启用** = 从 config 删除该行。
+- **取消启用** = 从 config 删除该行；订阅 provider 还记录 id tombstone，自动刷新不会把它重新启用。
 - **Refresh** = 对已启用模型重新执行浏览 + 覆写规格（治「规格随时间变旧」，且只刷新用户在用的）。
 - **手工添加模型**（provider 没列出的）= 用户在同一张表单里手填一行——和「启用」写的是同一个列表，原 `custom_models` 概念消失。
-- **订阅 provider 的动态注册**（如 claude-code 登录后自动出现 3 个模型）= 程序代替用户执行一次 enable，写的还是同一个列表。
+- **订阅目录自动同步** = 登录后、worker 启动时目录过期、每六小时后台周期以及手动 Refresh 都读取账户官方模型表。新 id 自动启用，能力变化自动更新，官方删除的 id 退出，用户明确关闭的 id 保持关闭。以后 Codex 或 Grok 增加模型无需再改源码名单。
+  只有持久化的启用行确实发生变化时，worker 才广播 `provider_models_changed` 失效通知。已连接的网页和桌面客户端收到后重新读取 provider 与启用模型接口；客户端重连时也会使相同查询失效，以补偿离线期间漏掉的通知。
 
 ## 5. 后端怎么用
 

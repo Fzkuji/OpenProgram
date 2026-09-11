@@ -52,12 +52,12 @@ def test_fresh_login_writes_claude_code_defaults(monkeypatch):
     assert "claude-code/claude-opus-4-8" in mg.ENABLED_MODELS
 
 
-def test_fresh_login_writes_small_codex_default(monkeypatch):
+def test_dynamic_subscription_providers_have_no_handwritten_defaults(monkeypatch):
     _mem_config(monkeypatch, {})
-    written = le.enable_default_models_on_login("openai-codex")
-    # SMALL set, not the whole seed list of 11.
-    assert 1 <= len(written) <= 3
-    assert "gpt-5.5" in written
+    assert le.enable_default_models_on_login("openai-codex") == []
+    assert le.enable_default_models_on_login("xai-subscription") == []
+    assert "openai-codex" not in le._DEFAULTS
+    assert "xai-subscription" not in le._DEFAULTS
 
 
 def test_login_enable_idempotent_and_respects_disable(monkeypatch):

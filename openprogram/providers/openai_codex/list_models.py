@@ -26,11 +26,15 @@ the subscription's 372k), and a fast flag guessed from an id-prefix table that
 misfired on tiers like ``gpt-5.4-mini``. The official endpoint is authoritative.
 
 Contract: success → ``list[dict]`` (each row has at least id/name), failure →
-``{"error": ...}``. Offline / no token → error (the dispatcher keeps the saved
-list), never blank — you can't dispatch a Codex model without a token anyway.
+``{"error": ...}``. An available official CLI cache is returned under
+``models`` alongside the error, marking it as display-only stale data rather
+than an authoritative refresh.
 """
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import Any
 
 # The framework's Codex thinking picker only knows these effort levels
@@ -86,6 +90,27 @@ def _normalise_codex_model(m: dict[str, Any]) -> dict[str, Any] | None:
     return row
 
 
+def _cached_codex_models() -> list[dict[str, Any]]:
+    """Read the official Codex CLI cache as an offline Fetch fallback."""
+    root = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    try:
+        payload = json.loads((root / "models_cache.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    raw_models = payload.get("models") if isinstance(payload, dict) else payload
+    if not isinstance(raw_models, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for raw in raw_models:
+        if not isinstance(raw, dict):
+            continue
+        row = _normalise_codex_model(raw)
+        if row:
+            row["source"] = "codex-cli-cache"
+            rows.append(row)
+    return rows
+
+
 def fetch(provider_id: str, timeout: float) -> Any:
     """Live Codex fetch via the account's models endpoint.
 
@@ -93,10 +118,13 @@ def fetch(provider_id: str, timeout: float) -> Any:
     dispatcher leaves the saved model list untouched."""
     from .oauth import _get_account_id_from_jwt
     from .openai_codex import _resolve_codex_bearer_token
-    from .runtime import _CODEX_CLIENT_VERSION
+    from .runtime import codex_client_version
 
     token = _resolve_codex_bearer_token(None)
     if not token:
+        cached = _cached_codex_models()
+        if cached:
+            return {"models": cached, "error": "Codex is not signed in; showing the Codex CLI cache."}
         return {"error": (
             "not signed in to ChatGPT/Codex — run `codex login` or the "
             "OpenProgram OAuth wizard, then Fetch again."
@@ -106,14 +134,15 @@ def fetch(provider_id: str, timeout: float) -> Any:
     try:
         from openprogram.security.safe_http import safe_client
 
+        client_version = codex_client_version()
         with safe_client("provider.fixed_api") as client:
             resp = client.get(
-                _codex_list_url(_CODEX_CLIENT_VERSION),
+                _codex_list_url(client_version),
                 headers={
                     "Authorization": f"Bearer {token}",
                     "chatgpt-account-id": account_id,
                     "originator": "codex_cli_rs",
-                    "version": _CODEX_CLIENT_VERSION,
+                    "version": client_version,
                     "Content-Type": "application/json",
                 },
                 timeout=timeout,
@@ -121,6 +150,12 @@ def fetch(provider_id: str, timeout: float) -> Any:
         resp.raise_for_status()
         payload = resp.json()
     except Exception as exc:
+        cached = _cached_codex_models()
+        if cached:
+            return {
+                "models": cached,
+                "error": f"could not reach the Codex models endpoint ({type(exc).__name__}); showing the Codex CLI cache.",
+            }
         return {"error": (
             f"could not reach the Codex models endpoint ({type(exc).__name__}) — your existing "
             "Codex model list was kept. Try Fetch again when online."
@@ -135,5 +170,8 @@ def fetch(provider_id: str, timeout: float) -> Any:
             out.append(row)
 
     if not out:
+        cached = _cached_codex_models()
+        if cached:
+            return {"models": cached, "error": "Codex returned no usable models; showing the Codex CLI cache."}
         return {"error": "Codex models endpoint returned no usable models"}
     return out

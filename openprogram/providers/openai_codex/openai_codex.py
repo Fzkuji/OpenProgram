@@ -274,9 +274,9 @@ def stream_openai_codex_responses(
             # which Model object routed here.
             if "originator" not in headers:
                 from .oauth import _get_account_id_from_jwt
-                from .runtime import _CODEX_CLIENT_VERSION
+                from .runtime import codex_client_version
                 headers["originator"] = "codex_cli_rs"
-                headers["version"] = _CODEX_CLIENT_VERSION
+                headers["version"] = codex_client_version()
                 headers.setdefault("OpenAI-Beta", "responses=experimental")
                 if "chatgpt-account-id" not in headers:
                     acct = _get_account_id_from_jwt(api_key) or ""

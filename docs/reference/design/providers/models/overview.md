@@ -113,7 +113,10 @@ point**: it collapses each fetcher's disparate keys (`context_length` /
 models.dev on top. Downstream only ever sees the normalised row — never the
 source differences.
 
-Results live in memory only (a short-TTL cache is fine); closing the page discards them. Browsing is unavailable offline — **discovering new models requires the network by definition**; that is a fact, not a defect.
+Ordinary provider results use the short in-memory browse cache. Account-scoped
+subscription catalogues also keep an atomic last-known-good copy under the
+profile state directory. A failed request can therefore show the last good
+rows as stale data without treating them as a successful authoritative refresh.
 
 ### 4.2 Enable (copy the spec into config)
 
@@ -127,10 +130,19 @@ enable_model(provider_id, row)
   → ENABLED_MODELS reloads
 ```
 
-- **Disable** = delete the row from config.
+- **Disable** = delete the row from config. Subscription providers also record
+  an id tombstone so an automatic refresh does not re-enable it.
 - **Refresh** = re-run browse for enabled models and overwrite their specs (handles spec drift over time; touches only what the user actually uses).
 - **Manually adding a model** (one the provider doesn't list) = the user fills in a row in the same form — it writes to the same list; the old `custom_models` concept dissolves.
-- **Dynamic registration for subscription providers** (e.g. claude-code auto-adds 3 models after login) = the program performs an enable on the user's behalf, writing to the same list.
+- **Subscription catalogues** = after login, at worker startup when stale, on
+  the six-hour background cadence, and on manual Refresh, read the account's
+  official model table. New ids are enabled automatically, changed capability
+  rows are refreshed, removed ids retire, and explicit disables stay disabled.
+  Adding a future Codex or Grok model does not require a source-code list edit.
+  When the persisted enabled rows actually change, the worker broadcasts a
+  `provider_models_changed` invalidation hint. Connected web and desktop
+  clients then re-read the provider and enabled-model endpoints; reconnecting
+  clients invalidate the same queries to cover events missed while offline.
 
 ## 5. How the backend uses it
 

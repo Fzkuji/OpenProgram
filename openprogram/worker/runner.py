@@ -227,6 +227,20 @@ def run_foreground() -> int:
 
     threading.Thread(target=_warm_providers, daemon=True, name="provider-warmup").start()
 
+    subscription_refresh_stop = None
+    subscription_refresh_thread = None
+    try:
+        from openprogram.providers.subscription_refresh import (
+            start_subscription_catalog_refresher,
+        )
+
+        subscription_refresh_stop, subscription_refresh_thread = (
+            start_subscription_catalog_refresher()
+        )
+        print("[worker] subscription catalog refresh running")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] subscription catalog refresh failed to start: {exc}")
+
     # Frontend build gate — the static export (apps/web/out/) is served by
     # this same process; just make sure it's fresh. Synchronous: the UI
     # isn't usable before it exists anyway. Failure is non-fatal (the
@@ -335,6 +349,8 @@ def run_foreground() -> int:
             stop_event.set()
         if scheduler_stop is not None:
             scheduler_stop.set()
+        if subscription_refresh_stop is not None:
+            subscription_refresh_stop.set()
         # Shared join budget, not 3s per thread: `openprogram stop` waits
         # 5s after SIGTERM before force-killing, and two channel bots at
         # 3s each already blew that window — every stop ended in SIGKILL.
@@ -346,6 +362,10 @@ def run_foreground() -> int:
                 print(f"[{label}] still running; drops on process exit")
         if scheduler_thread is not None:
             scheduler_thread.join(timeout=max(0.1, _join_deadline - time.time()))
+        if subscription_refresh_thread is not None:
+            subscription_refresh_thread.join(
+                timeout=max(0.1, _join_deadline - time.time())
+            )
     finally:
         shutdown_job_runner()
         lock.release()

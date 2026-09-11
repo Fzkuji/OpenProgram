@@ -71,7 +71,47 @@ def fetch(provider_id: str, timeout: float) -> Any:
             continue
         mid = (mid or "").strip()
         if mid:
-            out.append({"id": mid, "name": mid})
+            row = {"id": mid, "name": mid}
+            if isinstance(raw, dict):
+                row["name"] = raw.get("name") or raw.get("system_prompt_label") or mid
+                context = raw.get("context_window") or raw.get("context_length")
+                maximum = raw.get("max_tokens") or raw.get("max_output_tokens")
+                if context:
+                    row["context_window"] = int(context)
+                if maximum:
+                    row["max_tokens"] = int(maximum)
+                efforts = []
+                default_effort = raw.get("reasoning_effort")
+                for effort in raw.get("reasoning_efforts") or []:
+                    if isinstance(effort, str):
+                        effort_id = effort
+                        is_default = False
+                    elif isinstance(effort, dict):
+                        effort_id = effort.get("id") or effort.get("value")
+                        is_default = effort.get("default") is True
+                    else:
+                        continue
+                    if effort_id in {"minimal", "low", "medium", "high", "xhigh", "max"}:
+                        efforts.append(effort_id)
+                        if is_default:
+                            default_effort = effort_id
+                if efforts:
+                    row["reasoning"] = True
+                    row["thinking_levels"] = efforts
+                    row["default_thinking_level"] = (
+                        default_effort if default_effort in efforts else efforts[0]
+                    )
+                elif raw.get("supports_reasoning_effort"):
+                    row["reasoning"] = True
+                for source, target in (
+                    ("api_backend", "api_backend"),
+                    ("supports_backend_search", "supports_backend_search"),
+                    ("description", "description"),
+                    ("auto_compact_threshold_percent", "auto_compact_threshold_percent"),
+                ):
+                    if source in raw:
+                        row[target] = raw[source]
+            out.append(row)
     if not out:
         return {"error": "Grok subscription returned an empty model list"}
     return out

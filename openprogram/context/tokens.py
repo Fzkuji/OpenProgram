@@ -173,6 +173,17 @@ def estimate_history_tokens(messages: list[Any]) -> int:
     return sum(estimate_message_tokens(m) for m in messages)
 
 
+def count_tokens(messages: list[Any], model: Any = None) -> int:
+    """Compatibility entry point used by conversation snipping.
+
+    Token estimation is model-agnostic today, but callers pass the resolved
+    model so a provider-specific counter can be added later without changing
+    the snip contract again.
+    """
+    del model
+    return estimate_history_tokens(messages)
+
+
 # ---------------------------------------------------------------------------
 # Context-window resolution — the right field, not ``max_tokens``
 # ---------------------------------------------------------------------------

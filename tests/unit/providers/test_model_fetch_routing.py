@@ -16,6 +16,8 @@ No network: httpx + storage resolvers are stubbed.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from openprogram.webui._model_listing import fetchers as F
@@ -278,6 +280,37 @@ def test_codex_fetch_drops_ultra_and_needs_token(monkeypatch):
     monkeypatch.setattr(_oc, "_resolve_codex_bearer_token", lambda *_: "")
     err = C.fetch("openai-codex", timeout=5.0)
     assert isinstance(err, dict) and "error" in err
+
+
+def test_codex_fetch_falls_back_to_cli_cache(monkeypatch, tmp_path):
+    C, _ = _stub_codex_endpoint(monkeypatch, {"models": []})
+    cache = {"models": [{
+        "slug": "gpt-6-astra", "display_name": "GPT-6-Astra",
+        "visibility": "list", "context_window": 272000,
+        "supported_reasoning_levels": [{"effort": "low"}, {"effort": "max"}],
+    }]}
+    (tmp_path / "models_cache.json").write_text(json.dumps(cache))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    out = C.fetch("openai-codex", timeout=5.0)
+
+    assert "error" in out
+    assert [row["id"] for row in out["models"]] == ["gpt-6-astra"]
+    assert out["models"][0]["source"] == "codex-cli-cache"
+
+
+def test_codex_client_version_prefers_official_cli_cache(monkeypatch, tmp_path):
+    from openprogram.providers.openai_codex import runtime
+
+    (tmp_path / "models_cache.json").write_text(json.dumps({
+        "client_version": "9.8.7", "models": [],
+    }))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    runtime.codex_client_version.cache_clear()
+    try:
+        assert runtime.codex_client_version() == "9.8.7"
+    finally:
+        runtime.codex_client_version.cache_clear()
 
 
 def test_anthropic_fetcher_native_still_uses_anthropic_host(monkeypatch):
