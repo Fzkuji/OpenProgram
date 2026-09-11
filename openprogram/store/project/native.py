@@ -167,7 +167,7 @@ def _macos_resolve_bookmark_bounded(blob: str, timeout: float) -> str | None:
         return None
     try:
         process = subprocess.Popen(
-            [sys.executable, "-m", "openprogram.store.project.native", blob],
+            [sys.executable, "-I", str(Path(__file__).resolve()), blob],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
