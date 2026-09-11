@@ -8,6 +8,7 @@ now rejects roots outside the allowed set.
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 from fastapi import FastAPI
@@ -183,6 +184,34 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
     assert response.status_code == 200
     assert response.content == b"legacy"
 
+    import asyncio
+    from openprogram.agent.run_control import (
+        reset_current_session_id, set_current_session_id,
+    )
+    from openprogram.programs.tools.files.read import read
+    from openprogram import sandbox
+    token = set_current_session_id("s1")
+    try:
+        read_result = asyncio.run(read.execute(
+            "migration-read", {"file_path": str(old_attachment)}, None, None,
+        ))
+        read_text = "\n".join(
+            block.text for block in (read_result.content or [])
+            if getattr(block, "text", None) is not None
+        )
+        assert "legacy" in read_text
+        monkeypatch.setattr(sandbox, "validate_read_path", lambda _path: "blocked")
+        denied_result = asyncio.run(read.execute(
+            "migration-read-denied", {"file_path": str(old_attachment)}, None, None,
+        ))
+        denied_text = "\n".join(
+            block.text for block in (denied_result.content or [])
+            if getattr(block, "text", None) is not None
+        )
+        assert denied_text.startswith("Error: sandbox policy: blocked")
+    finally:
+        reset_current_session_id(token)
+
     wrong_session = client.get("/api/file-raw", params={
         "path": str(old_attachment), "session_id": "other",
     })
@@ -200,3 +229,16 @@ def test_raw_rebases_legacy_session_attachment_after_real_migration(
         "session_id": "s1",
     })
     assert escaped.status_code == 403
+
+    root_outside = tmp_path / "outside-attachments"
+    root_outside.mkdir()
+    (root_outside / "report.pdf").write_bytes(b"private-root")
+    shutil.rmtree(current_attachment.parent)
+    try:
+        current_attachment.parent.symlink_to(root_outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks unavailable: {exc}")
+    escaped_root = client.get("/api/file-raw", params={
+        "path": str(old_attachment), "session_id": "s1",
+    })
+    assert escaped_root.status_code == 403

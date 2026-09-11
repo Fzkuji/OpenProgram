@@ -292,6 +292,7 @@ def resolve_session_attachment(
     caller's session id, can be rebased. The canonical session repo must be
     unique, live, application-owned, and contain the same relative suffix.
     """
+    roots = tuple(roots)
     target = resolve_within(path, roots)
     if target is not None and target.is_file():
         return target
@@ -315,12 +316,20 @@ def resolve_session_attachment(
     repos = _session_repo_candidates(session_id)
     if len(repos) != 1:
         return target if allow_missing else None
-    attachment_root = (repos[0] / "workdir" / "attachments").resolve()
+    repo_root = repos[0].resolve()
+    attachment_root = (repo_root / "workdir" / "attachments").resolve()
+    try:
+        if not attachment_root.is_relative_to(repo_root):
+            return target if allow_missing else None
+    except ValueError:
+        return target if allow_missing else None
     candidate = (attachment_root / relative).resolve()
     try:
         if not candidate.is_relative_to(attachment_root):
             return target if allow_missing else None
     except ValueError:
+        return target if allow_missing else None
+    if resolve_within(candidate, roots) != candidate:
         return target if allow_missing else None
     return candidate if candidate.is_file() else (target if allow_missing else None)
 
