@@ -94,10 +94,10 @@ with their contract status; `openprogram programs uninstall
 <details>
 <summary>Manual equivalent (mirror / no GitHub access)</summary>
 
-`<APPLICATIONS>` is OpenProgram's owner-recorded external Program folder:
+`<PACKAGES>` is the destination for newly installed Program packages. Run this with the Python environment that owns the mutable CLI:
 
 ```bash
-python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.__file__),'programs','applications'))"
+python -c "from openprogram.programs._programs import packages_dir; print(packages_dir())"
 ```
 
 ```bash
@@ -106,7 +106,7 @@ openprogram programs install file:///path/to/Harness-Name
 # restart OpenProgram
 ```
 
-Auto-discovery picks up any recorded directory in `<APPLICATIONS>` that satisfies the
+Auto-discovery picks up any recorded directory in `<PACKAGES>` that satisfies the
 contract — that's all the install command automates.
 
 </details>
@@ -116,7 +116,8 @@ contract — that's all the install command automates.
 Symlink your working checkout instead of cloning a copy:
 
 ```bash
-ln -s /path/to/your/Harness-Checkout "<APPLICATIONS>/Harness-Checkout"
+ln -s /path/to/your/Harness-Checkout "<PACKAGES>/Harness-Checkout"
+openprogram programs install file:///path/to/your/Harness-Checkout
 ```
 
 Edits take effect on the next restart; `programs install` will refuse to
@@ -152,7 +153,7 @@ Then use it — the harness's functions are callable like any built-in
   refuse the mutation commands until Programs have isolated external
   environments.
 - **No symlinks are required** in a supported mutable environment: the
-  installer records a real checkout under `<APPLICATIONS>` by default.
+  installer records a real checkout under `<PACKAGES>` by default.
 - **A harness can still be platform-specific in its own code** (e.g. a
   desktop-GUI harness may only implement macOS / Linux backends).
   Whether installation and every function run on a supported host depends on

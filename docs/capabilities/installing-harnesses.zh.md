@@ -90,10 +90,10 @@ openprogram programs install file:///path/to/checkout # 本地 git 来源
 <details>
 <summary>手动等价方式（镜像 / 无法访问 GitHub）</summary>
 
-`<APPLICATIONS>` 是 OpenProgram 登记的外部 Program 文件夹：
+`<PACKAGES>` 是新程序包的安装目录。请使用管理可修改 CLI 的 Python 环境运行：
 
 ```bash
-python -c "import openprogram,os;print(os.path.join(os.path.dirname(openprogram.__file__),'programs','applications'))"
+python -c "from openprogram.programs._programs import packages_dir; print(packages_dir())"
 ```
 
 ```bash
@@ -102,7 +102,7 @@ openprogram programs install file:///path/to/Harness-Name
 # 重启 OpenProgram
 ```
 
-自动发现会拾取 `<APPLICATIONS>` 中任何已登记且满足契约的目录——这就是安装命令
+自动发现会拾取 `<PACKAGES>` 中任何已登记且满足契约的目录——这就是安装命令
 所自动化的全部内容。
 
 </details>
@@ -112,7 +112,8 @@ openprogram programs install file:///path/to/Harness-Name
 把你的工作检出做成 symlink，而不是克隆一份副本：
 
 ```bash
-ln -s /path/to/your/Harness-Checkout "<APPLICATIONS>/Harness-Checkout"
+ln -s /path/to/your/Harness-Checkout "<PACKAGES>/Harness-Checkout"
+openprogram programs install file:///path/to/your/Harness-Checkout
 ```
 
 编辑会在下次重启时生效；`programs install` 会拒绝覆盖该链接，
@@ -143,7 +144,7 @@ OPENPROGRAM_DEBUG_REGISTRY=1 openprogram programs list
 - **这些 Program 命令需要可变环境。** source-development checkout 可以使用；
   CLI release 仅在对应 release notes 明确支持 Program mutation 时使用。
   packaged desktop 在 Program 拥有隔离的外部环境前会拒绝这些修改命令。
-- **受支持的可变环境无需 symlink**——安装器默认会把真实 checkout 登记到 `<APPLICATIONS>`。
+- **受支持的可变环境无需 symlink**——安装器默认会把真实 checkout 登记到 `<PACKAGES>`。
 - **harness 在自身代码中仍可以是平台相关的**（例如，桌面 GUI
   harness 可能只实现 macOS / Linux 后端）。
   在受支持主机上能否安装、每个函数能否运行，取决于 harness 声明的依赖和

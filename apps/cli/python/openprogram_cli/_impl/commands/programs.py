@@ -391,6 +391,14 @@ def _cmd_install(name: str, *, upgrade: bool = False) -> None:
             continue
 
         dest = prog.clone_dir()
+        if os.path.islink(dest):
+            from openprogram.programs._registry import _find_python_package
+            if not _find_python_package(dest):
+                print(f"[x] {prog.function}: dev symlink does not satisfy the package contract; not registered.")
+                continue
+            record_program_source(dest, source=prog.repo, kind="git-symlink")
+            print(f"[ok] {prog.function}: owner-recorded dev symlink at {dest}; target unchanged.")
+            continue
         already = os.path.isdir(os.path.join(dest, ".git"))
 
         if already and not upgrade:

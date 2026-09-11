@@ -3521,6 +3521,10 @@ def test_package_cli_preserves_legacy_location_for_upgrade_and_uninstall(tmp_pat
     target = tmp_path / "owned-checkout" if symlink else old
     target.mkdir()
     (target / ".git").mkdir()
+    agentics = target / "research_harness" / "agentics"
+    agentics.mkdir(parents=True)
+    (agentics.parent / "__init__.py").write_text("")
+    (agentics / "__init__.py").write_text("")
     if symlink:
         old.symlink_to(target, target_is_directory=True)
     monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
@@ -3530,7 +3534,7 @@ def test_package_cli_preserves_legacy_location_for_upgrade_and_uninstall(tmp_pat
     calls = []
     monkeypatch.setattr(subprocess, "call", lambda args: calls.append(args) or 0)
     _cmd_install("research", upgrade=True)
-    assert calls == [["git", "-C", str(old), "pull", "--ff-only"]]
+    assert calls == ([] if symlink else [["git", "-C", str(old), "pull", "--ff-only"]])
     assert not (root / "packages" / "research_harness").exists()
     _cmd_uninstall("research")
     assert not old.exists()
