@@ -14,9 +14,6 @@ from typing import Any, Mapping
 from openprogram.session_resources import display_target
 
 _log = logging.getLogger(__name__)
-_fence_lock = threading.Lock()
-_fences: dict[str, dict[str, Any]] = {}
-_input_seqs: dict[str, int] = {}
 _PROCESS_INCARNATION = uuid.uuid4().hex[:12]
 UNASSIGNED = "unassigned"
 _FROZEN_LIFECYCLES = frozenset({
@@ -36,46 +33,21 @@ def resource_db_path() -> Path:
 
 
 def writes_fenced(page_key: str) -> bool:
-    with _fence_lock:
-        return bool(page_key) and page_key in _fences
+    """Compatibility for older callers: pages have no independent write restriction."""
+    return False
 
 
 def last_input_seq(page_key: str) -> int:
-    with _fence_lock:
-        return int(_input_seqs.get(page_key) or 0)
+    return 0
 
 
 def fence_page_writes(page_key: str, *, input_seq: int | None = None) -> bool:
-    """Close later Agent writes for one Page. Must not wait on operation locks.
-
-    Returns True only when this call newly opens the fence. Sequence is kept
-    after the fence is cleared so a replay cannot pause a later attempt.
-    """
-    if not page_key:
-        return False
-    if page_key not in _input_seqs:
-        persisted = 0
-        try:
-            resource = BrowserResourceStore().get_resource(page_key)
-            persisted = int((resource or {}).get("last_input_seq") or 0)
-        except Exception:
-            persisted = 0
-        with _fence_lock:
-            _input_seqs.setdefault(page_key, persisted)
-    with _fence_lock:
-        last = int(_input_seqs.get(page_key) or 0)
-        if input_seq is not None:
-            if input_seq <= last:
-                return False
-            _input_seqs[page_key] = int(input_seq)
-        already = page_key in _fences
-        _fences[page_key] = {"seq": int(_input_seqs.get(page_key) or 0), "at": time.time()}
-        return not already
+    """Legacy no-op. Execution dispatch guards own pause and cancellation."""
+    return False
 
 
 def clear_page_write_fence(page_key: str) -> None:
-    with _fence_lock:
-        _fences.pop(page_key, None)
+    return None
 
 
 class BrowserResourceStore:
@@ -1688,73 +1660,7 @@ async def apply_resource_control(
     *, conversation_session_id: str, resource_id: str, action: str,
     command_id: str, generation: int, actor: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    from openprogram.execution.authorization import ExecutionAuthorizationError
-
-    store = BrowserResourceStore()
-    resource = store.get_resource(resource_id)
-    if resource is None:
-        raise KeyError(resource_id)
-    visible, _, _ = project_conversation_resources(conversation_session_id)
-    if not any(row["resource_id"] == resource_id for row in visible):
-        raise KeyError(resource_id)
-    if int(resource.get("generation") or 0) != int(generation):
-        raise ValueError("stale_generation")
-    if action == "pause":
-        from openprogram.execution import default_store
-        from openprogram.execution.conversation_scope import authorize_conversation_execution
-        executions = default_store()
-        owner_ids = _lease_execution_ids(resource_id) or [
-            assoc.get("execution_id") for assoc in store.associations_for_page(resource_id)
-            if assoc.get("execution_id")
-        ]
-        pending = _inflight_pause_command(resource)
-        if pending:
-            command_id = pending
-        for execution_id in owner_ids:
-            if not execution_id or executions is None:
-                continue
-            execution = executions.get_execution(execution_id)
-            if execution is None or not _active_execution(execution):
-                continue
-            authorize_conversation_execution(
-                actor or {}, "execution.pause", execution, store=executions,
-                session_id=conversation_session_id, bound_session=None,
-            )
-        fence_page_writes(resource_id)
-        try:
-            execution = await request_page_pause(
-                resource_id=resource_id, command_id=command_id, actor=actor,
-                conversation_session_id=conversation_session_id,
-            )
-            unresolved = False
-            try:
-                from openprogram.execution import default_control_service
-                if execution is not None:
-                    unresolved = bool(
-                        default_control_service().effects.list_unresolved(
-                            getattr(execution, "execution_id", "") or resource_id
-                        )
-                    )
-            except Exception:
-                unresolved = True
-            state = _control_state_for_execution(execution, unresolved, True)
-            store.set_control_state(
-                resource_id, state, command_id=command_id,
-                execution_id=getattr(execution, "execution_id", None),
-            )
-        except ExecutionAuthorizationError:
-            raise
-        except Exception:
-            store.set_control_state(resource_id, "stop_unconfirmed", command_id=command_id)
-    elif action == "resume":
-        await request_page_resume(
-            resource_id=resource_id, command_id=command_id, actor=actor,
-            conversation_session_id=conversation_session_id,
-        )
-    else:
-        raise ValueError("unsupported_action")
-    rows, _, _ = project_conversation_resources(conversation_session_id)
-    return next((row for row in rows if row["resource_id"] == resource_id), rows[0] if rows else {})
+    raise ValueError("Use the conversation pause or continue control.")
 
 
 def page_keys_for_socket_tab(ws, window_id: str, tab_id: str) -> list[str]:
@@ -1800,84 +1706,5 @@ def page_keys_for_socket_tab(ws, window_id: str, tab_id: str) -> list[str]:
 
 
 async def handle_human_page_input(*, ws, window_id: str, tab_id: str, input_seq: int, kind: str = "pointer") -> None:
-    del kind
-    keys = page_keys_for_socket_tab(ws, window_id, tab_id)
-    store = BrowserResourceStore()
-    for page_key in keys:
-        opened = fence_page_writes(page_key, input_seq=input_seq)
-        wait_owner = None
-        try:
-            from openprogram.execution import default_store
-            executions = default_store()
-            for execution_id in _lease_execution_ids(page_key):
-                if not execution_id or executions is None:
-                    continue
-                candidate = executions.get_execution(execution_id)
-                if _wait_open_paused(candidate):
-                    wait_owner = candidate
-                    break
-        except Exception:
-            wait_owner = None
-        try:
-            current = store.get_resource(page_key) or {}
-            if wait_owner is not None:
-                store.set_control_state(
-                    page_key, "waiting",
-                    execution_id=getattr(wait_owner, "execution_id", None),
-                    input_seq=input_seq, bump=opened, clear_pause=True,
-                )
-            else:
-                store.set_control_state(
-                    page_key,
-                    "yielding" if writes_fenced(page_key) else (current.get("control_state") or "idle"),
-                    input_seq=input_seq,
-                    bump=opened,
-                )
-        except Exception:
-            _log.debug("browser page state update failed page_key=%s", page_key, exc_info=True)
-        if wait_owner is not None:
-            continue
-        if not opened:
-            continue
-        resource = store.get_resource(page_key) or {}
-        command_id = _inflight_pause_command(resource) or f"human-pause-{uuid.uuid4().hex[:12]}"
-        associations = store.associations_for_page(page_key)
-        conversation = next(
-            (item.get("conversation_session_id") or item.get("session_id")
-             for item in associations if item.get("conversation_session_id") or item.get("session_id")),
-            resource.get("conversation_session_id") or resource.get("session_id") or "",
-        )
-        from openprogram.webui.ws_actions.runtime import trusted_runtime_actor
-        actor = trusted_runtime_actor(getattr(ws, "scope", None), surface="ws")
-        try:
-            execution = await request_page_pause(
-                resource_id=page_key, command_id=command_id, actor=actor,
-                conversation_session_id=conversation,
-            )
-            unresolved = False
-            try:
-                from openprogram.execution import default_control_service
-                execution_id = getattr(execution, "execution_id", None)
-                if execution_id:
-                    unresolved = bool(default_control_service().effects.list_unresolved(execution_id))
-            except Exception:
-                unresolved = True
-            state = _control_state_for_execution(execution, unresolved, True)
-            store.set_control_state(
-                page_key, state, command_id=command_id,
-                execution_id=getattr(execution, "execution_id", None),
-                input_seq=input_seq,
-            )
-            rows, _, _ = project_conversation_resources(conversation)
-            row = next((item for item in rows if item["resource_id"] == page_key), None)
-            if row is not None:
-                emit_browser_resource(row, page_key=page_key)
-        except Exception:
-            try:
-                store.set_control_state(page_key, "stop_unconfirmed", command_id=command_id)
-                rows, _, _ = project_conversation_resources(conversation)
-                row = next((item for item in rows if item["resource_id"] == page_key), None)
-                if row is not None:
-                    emit_browser_resource(row, page_key=page_key)
-            except Exception:
-                _log.debug("browser failure-state publication failed page_key=%s", page_key, exc_info=True)
+    """Ignore legacy desktop page-input messages; only task controls pause execution."""
+    return None

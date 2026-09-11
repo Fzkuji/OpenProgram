@@ -125,16 +125,16 @@ def test_fresh_successor_accepts_first_human_input(tmp_path, monkeypatch):
     asyncio.run(webtab.handle_webtab_human_input(owner, {
         "window_id": "win", "tab_id": "tab-a", "sequence": 1, "kind": "pointer",
     }))
-    assert fenced_during_pause == [True]
-    assert len(pauses) == 1
-    assert int((store.get_resource(new_key) or {}).get("last_input_seq") or 0) == 1
+    assert fenced_during_pause == []
+    assert pauses == []
+    assert int((store.get_resource(new_key) or {}).get("last_input_seq") or 0) == 0
     stale = _WS(trusted=True)
     webtab.ensure_connection_revision(stale)
     webtab._desktop_windows[stale] = "other"
     asyncio.run(webtab.handle_webtab_human_input(stale, {
         "window_id": "win", "tab_id": "tab-a", "sequence": 1, "kind": "pointer",
     }))
-    assert len(pauses) == 1
+    assert pauses == []
     webtab.release_binding(rebound)
 
 

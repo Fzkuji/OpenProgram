@@ -549,26 +549,9 @@ export function subscribeWebTabPopups(
   }) ?? (() => {});
 }
 
-/** Native human input is an exact Page signal, independent of the selected conversation. */
-export function subscribeBrowserHumanInput(bridge: DesktopBridge): () => void {
-  const sequences = new Map<string, number>();
-  return bridge.webTab.onHumanInput?.((event) => {
-    if (event.windowId !== bridge.windowId || !Number.isSafeInteger(event.sequence)
-        || event.sequence <= (sequences.get(event.id) ?? 0)
-        || !["pointer", "key", "scroll", "navigate"].includes(event.kind)
-        || !useCenterTabs.getState().tabs.some(tab => tab.id === event.id && tab.kind === "web")) return;
-    sequences.set(event.id, event.sequence);
-    void bridge.webTab.showAction?.(event.id, null).catch(() => {});
-    const ws = getSocket();
-    const connected = ws?.readyState === WebSocket.OPEN;
-    window.dispatchEvent(new CustomEvent("op:browser-human-input", {
-      detail: { ...event, connected },
-    }));
-    if (connected) ws.send(JSON.stringify({
-      action: "webtab_human_input", window_id: event.windowId,
-      tab_id: event.id, sequence: event.sequence, kind: event.kind,
-    }));
-  }) ?? (() => {});
+/** Kept for older bridge consumers; page interaction never controls execution. */
+export function subscribeBrowserHumanInput(_bridge: DesktopBridge): () => void {
+  return () => {};
 }
 
 function receiveBrowserResource(bridge: DesktopBridge, data: Record<string, unknown> | undefined) {

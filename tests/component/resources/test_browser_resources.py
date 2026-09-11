@@ -298,13 +298,10 @@ def test_control_rejects_stale_generation_and_does_not_label_paused_from_request
             "/api/session/parent/resources/page:1/control",
             json={"action": "resume", "command_id": "resume-1", "generation": 4},
         )
-    assert stale.status_code == 409
-    assert pause.status_code == 200
-    body = pause.json()
-    assert "item" not in body
-    assert body["control_state"] != "paused"
-    assert body["control_state"] in {"yielding", "stop_unconfirmed"}
-    assert resume.status_code == 409
+    assert stale.status_code == 400
+    assert pause.status_code == 400
+    assert resume.status_code == 400
+    assert store.get_resource("page:1")["control_state"] != "paused"
 
 
 def test_click_receipt_uses_viewport_dimensions_and_target_center():
@@ -510,7 +507,7 @@ def test_terminal_unknown_effects_stay_stop_unconfirmed_and_keep_fence(
     stored = store.get_resource("page:fail")
     assert row["control_state"] == "stop_unconfirmed"
     assert stored["control_state"] == "stop_unconfirmed"
-    assert writes_fenced("page:fail") is True
+    assert writes_fenced("page:fail") is False
 
 
 def _paused_wait_open(eid, session_id="parent"):
@@ -595,8 +592,7 @@ def test_wait_open_projects_waiting_and_resume_does_not_continue(tmp_path, monke
             "/api/session/parent/resources/page:wait/control",
             json={"action": "resume", "command_id": "resume-wait", "generation": 1},
         )
-    assert resume.status_code == 409
-    assert resume.json().get("error") == "wait_open"
+    assert resume.status_code == 400
     assert continues == []
 
 
@@ -660,7 +656,7 @@ def test_human_input_while_wait_open_does_not_mint_pause_id(tmp_path, monkeypatc
         input_seq=3, kind="pointer",
     ))
     stored = store.get_resource("page:wait")
-    assert stored["control_state"] == "waiting"
+    assert stored["control_state"] == "idle"
     assert not stored.get("pause_command_id")
     assert pauses == []
 

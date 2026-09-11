@@ -2909,7 +2909,7 @@ assert.doesNotMatch(pipSource, /<iframe/);
 assert.doesNotMatch(pipSource, /ensureWebView|registerVisibleWebTabBounds|setPipZoom/);
 assert.doesNotMatch(pipSource, /webPipParked|parkedShot|Controlled by/);
 assert.doesNotMatch(webTabPaneSource, /PipBoundMask|Controlled by|webBoundMask|pipBoundTabId/);
-assert.match(webTabPaneSource, /signalHumanBrowserInput|isHumanYieldEvent/);
+assert.doesNotMatch(webTabPaneSource, /signalHumanBrowserInput|isHumanYieldEvent/);
 assert.match(
   webTabPaneSource,
   /ensureWebView\(bridge, tabId, viewUrlRef\.current\);[\s\S]*?bridge\.webTab\.setPipZoom\?\.\(tabId, null\);/,

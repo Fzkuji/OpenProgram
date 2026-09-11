@@ -876,12 +876,11 @@ async def handle_webtab_closed(ws, cmd: dict):
     if trusted_runtime_actor(getattr(ws, "scope", None), surface="ws") is None:
         return
     from openprogram.browser_resources import (
-        BrowserResourceStore, fence_page_writes,
+        BrowserResourceStore,
         page_keys_for_socket_tab, project_conversation_resources, emit_browser_resource,
     )
     keys = page_keys_for_socket_tab(ws, window_id, tab_id)
     for page_key in keys:
-        fence_page_writes(page_key)
         try:
             BrowserResourceStore().mark_closed(page_key)
         except Exception:

@@ -1677,6 +1677,11 @@ def _validate_file_request(cmd: dict, action: str) -> None:
 
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
+    if _server_stopping.is_set():
+        await ws.send_text(json.dumps({"type": "action_error", "data": {
+            "code": "worker_stopping", "message": "OpenProgram is restarting. Reconnect before continuing.",
+        }}))
+        return
     from openprogram.self_update.ui_checks import permits_ws_command
     if not permits_ws_command(ws, cmd):
         await ws.send_text(json.dumps({
@@ -2137,6 +2142,8 @@ def create_app(*, owner_auth=None, port: int = 18100):
 # ---------------------------------------------------------------------------
 
 _server_thread: Optional[threading.Thread] = None
+_uvicorn_server = None
+_server_stopping = threading.Event()
 _owner_auth_state = None
 
 
@@ -2152,6 +2159,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
         print(f"Visualizer already running")
         return _server_thread
 
+    _server_stopping.clear()
     from openprogram.providers.initialization import initialize_provider_runtime
 
     initialize_provider_runtime()
@@ -2181,7 +2189,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
     ).start()
 
     def _run():
-        global _loop
+        global _loop, _uvicorn_server
         try:
             import uvicorn
         except ImportError:
@@ -2202,8 +2210,12 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
                 # the decoded per-file and per-turn budgets.
                 ws_max_size=128 * 1024 * 1024,
                 proxy_headers=False,
+                timeout_graceful_shutdown=1.0,
             )
             server = uvicorn.Server(config)
+            _uvicorn_server = server
+            if _server_stopping.is_set():
+                server.should_exit = True
             _loop = asyncio.new_event_loop()
             from openprogram._compat import install_asyncio_exception_handler
 
@@ -2211,6 +2223,15 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
             asyncio.set_event_loop(_loop)
             _loop.run_until_complete(server.serve())
         finally:
+            if _loop is not None and not _loop.is_closed():
+                pending = asyncio.all_tasks(_loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    _loop.run_until_complete(asyncio.wait(pending, timeout=0.5))
+                _loop.run_until_complete(_loop.shutdown_asyncgens())
+                _loop.close()
+            _uvicorn_server = None
             if _owner_auth_state is not None:
                 _owner_auth_state.close()
 
@@ -2279,6 +2300,12 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
     return _server_thread
 
 
-def stop_server():
-    """Reserved for future shutdown hooks (no-op for now)."""
-    pass
+def stop_server(timeout: float = 2.0) -> bool:
+    """Stop admitting work and drain the server before the worker exits."""
+    _server_stopping.set()
+    server, loop, thread = _uvicorn_server, _loop, _server_thread
+    if server is not None and loop is not None and not loop.is_closed():
+        loop.call_soon_threadsafe(setattr, server, "should_exit", True)
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(timeout=max(0.0, timeout))
+    return thread is None or not thread.is_alive()

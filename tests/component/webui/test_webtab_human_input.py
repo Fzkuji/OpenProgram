@@ -80,11 +80,11 @@ def test_human_input_uses_originating_socket_and_tab_not_client_owner(monkeypatc
         "window_id": "win", "tab_id": "tab-a", "sequence": 1, "kind": kind,
         "execution_id": "forged", "resource_id": "forged",
     }))
-    assert writes_fenced(page_key) is True
+    assert writes_fenced(page_key) is False
     asyncio.run(webtab.handle_webtab_human_input(owner, {
         "window_id": "win", "tab_id": "tab-a", "sequence": 2, "kind": kind,
     }))
-    assert len(pauses) == 1
+    assert pauses == []
 
 
 def test_webtab_closed_marks_descriptor_closed(monkeypatch, tmp_path):
@@ -189,8 +189,8 @@ def test_human_input_fences_retained_page_after_release_binding(
     asyncio.run(webtab.handle_webtab_human_input(owner, {
         "window_id": "win", "tab_id": "tab-a", "sequence": 1, "kind": kind,
     }))
-    assert writes_fenced(page_key) is True
-    assert len(pauses) == 1
+    assert writes_fenced(page_key) is False
+    assert pauses == []
     assert int(store.get_resource(page_key)["live"] or 0) == 1
 
 

@@ -1693,11 +1693,6 @@ function recordFor(ctx, id) {
 }
 
 const debuggerHolds = new Map();
-const HUMAN_INPUT_KINDS = new Set(["pointer", "key", "scroll", "navigate"]);
-const HUMAN_MODIFIER_KEYS = new Set([
-  "Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "NumLock",
-  "Fn", "FnLock", "Hyper", "Super",
-]);
 const ACTION_CUE_MS = 2800;
 const ACTION_CUE_SIZE = 28;
 
@@ -1748,37 +1743,6 @@ async function withDebugger(webContents, fn) {
   } finally {
     releaseDebugger(webContents);
   }
-}
-
-function emitHumanInput(record, kind) {
-  if (!record || !HUMAN_INPUT_KINDS.has(kind)) return false;
-  if (tabTransfers.isLocked(record.id)) return false;
-  const owner = ownerOf(record);
-  if (!owner) return false;
-  record.humanSequence = (Number(record.humanSequence) || 0) + 1;
-  owner.win.webContents.send("webtab:human-input", {
-    id: record.id,
-    windowId: owner.id,
-    sequence: record.humanSequence,
-    kind,
-  });
-  return true;
-}
-
-function noteHumanKey(record, input) {
-  if (input?.type !== "keyDown") return false;
-  const key = String(input.key || "");
-  if (!key || key === "Tab" || HUMAN_MODIFIER_KEYS.has(key)) return false;
-  return emitHumanInput(record, "key");
-}
-
-function noteHumanMouse(record, mouse) {
-  const type = mouse?.type;
-  if (type === "mouseDown" || type === "contextMenu") {
-    return emitHumanInput(record, "pointer");
-  }
-  if (type === "mouseWheel") return emitHumanInput(record, "scroll");
-  return false;
 }
 
 function viewZoomFactor(record) {
@@ -2215,7 +2179,7 @@ function showWebTabContextMenu(record, params = {}) {
   if (!owner || tabTransfers.isLocked(record.id)) return false;
   const ownerId = owner.id;
   const wc = record.view.webContents;
-  const exact = (action, humanKind = null) => () => {
+  const exact = (action) => () => {
     const current = ownerOf(record);
     if (
       !current
@@ -2223,7 +2187,6 @@ function showWebTabContextMenu(record, params = {}) {
       || tabTransfers.isLocked(record.id)
       || wc.isDestroyed()
     ) return;
-    if (humanKind) emitHumanInput(record, humanKind);
     action();
   };
   const template = [];
@@ -2245,12 +2208,12 @@ function showWebTabContextMenu(record, params = {}) {
   if (params.isEditable) {
     if (template.length) template.push({ type: "separator" });
     template.push(
-      { label: "Undo", enabled: !!editFlags.canUndo, click: exact(() => wc.undo(), "key") },
-      { label: "Redo", enabled: !!editFlags.canRedo, click: exact(() => wc.redo(), "key") },
+      { label: "Undo", enabled: !!editFlags.canUndo, click: exact(() => wc.undo()) },
+      { label: "Redo", enabled: !!editFlags.canRedo, click: exact(() => wc.redo()) },
       { type: "separator" },
-      { label: "Cut", enabled: !!editFlags.canCut, click: exact(() => wc.cut(), "key") },
+      { label: "Cut", enabled: !!editFlags.canCut, click: exact(() => wc.cut()) },
       { label: "Copy", enabled: !!editFlags.canCopy, click: exact(() => wc.copy()) },
-      { label: "Paste", enabled: !!editFlags.canPaste, click: exact(() => wc.paste(), "key") },
+      { label: "Paste", enabled: !!editFlags.canPaste, click: exact(() => wc.paste()) },
       { label: "Select All", enabled: !!editFlags.canSelectAll, click: exact(() => wc.selectAll()) },
     );
   } else {
@@ -2269,7 +2232,6 @@ function showWebTabContextMenu(record, params = {}) {
         enabled: wc.navigationHistory.canGoBack(),
         click: exact(() => {
           wc.navigationHistory.goBack();
-          emitHumanInput(record, "navigate");
         }),
       },
       {
@@ -2277,14 +2239,12 @@ function showWebTabContextMenu(record, params = {}) {
         enabled: wc.navigationHistory.canGoForward(),
         click: exact(() => {
           wc.navigationHistory.goForward();
-          emitHumanInput(record, "navigate");
         }),
       },
       {
         label: "Reload",
         click: exact(() => {
           wc.reload();
-          emitHumanInput(record, "navigate");
         }),
       },
     );
@@ -2418,10 +2378,6 @@ function ensureView(ctx, id, url) {
     });
     wc.on("before-input-event", (event, input) => {
       if (handleWebTabShortcut(record, event, input)) return;
-      noteHumanKey(record, input);
-    });
-    wc.on("before-mouse-event", (_event, mouse) => {
-      noteHumanMouse(record, mouse);
     });
     if (url && isTabUrl(url)) void loadView(record, url).catch(() => {});
   }
@@ -2904,12 +2860,11 @@ function withView(ctx, id, fn) {
 // without going through loadView. Remove that stale registry entry before
 // invoking the native operation, so a following activation cannot reuse a
 // Promise Electron is about to reject with ERR_ABORTED.
-function runNativeNavigation(ctx, id, navigate, humanKind = null) {
+function runNativeNavigation(ctx, id, navigate) {
   const record = recordFor(ctx, id);
   if (!record) return false;
   record.navigation = null;
   navigate(record.view.webContents);
-  if (humanKind) emitHumanInput(record, humanKind);
   return true;
 }
 
@@ -3566,7 +3521,6 @@ function registerWebTabIpc() {
     const pending = navigateView(ctx, id, url);
     if (pending) {
       const owned = recordFor(ctx, id);
-      if (owned) emitHumanInput(owned, "navigate");
       void pending.catch(() => {});
     }
   });
@@ -3629,7 +3583,7 @@ function registerWebTabIpc() {
   });
   ipcMain.on("webtab:reload", (event, id) => {
     const ctx = contextForSender(event);
-    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.reload(), "navigate");
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.reload());
   });
   ipcMain.on("webtab:stop", (event, id) => {
     const ctx = contextForSender(event);
@@ -3637,11 +3591,11 @@ function registerWebTabIpc() {
   });
   ipcMain.on("webtab:go-back", (event, id) => {
     const ctx = contextForSender(event);
-    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goBack(), "navigate");
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goBack());
   });
   ipcMain.on("webtab:go-forward", (event, id) => {
     const ctx = contextForSender(event);
-    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goForward(), "navigate");
+    if (ctx) runNativeNavigation(ctx, id, (wc) => wc.navigationHistory.goForward());
   });
   ipcMain.on("webtab:find", (event, id, query, options) => {
     const ctx = contextForSender(event);

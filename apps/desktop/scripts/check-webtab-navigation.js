@@ -341,7 +341,6 @@ vm.runInContext(
     ensureView,
     destroyView,
     showActionView,
-    emitHumanInput,
     validateTransferPayload:
       typeof validateTransferPayload === "function" ? validateTransferPayload : undefined,
     reparentRecords:
@@ -889,7 +888,7 @@ async function checkPopupCreatesIndependentRendererTab() {
   });
   assert.deepEqual(
     plain(humanInputMessages(win).slice(humanBeforeEdit).map((item) => item.kind)),
-    ["key", "key", "key", "key"],
+    [],
     "Undo/Redo/Cut/Paste emit sanitized human input; Copy and Select All are passive",
   );
 
@@ -4948,7 +4947,7 @@ assert.doesNotMatch(source, /\bvisibleViewId\b/);
 assert.match(source, /ipcMain\.on\("webtab:sync-visible"/);
 assert.match(source, /ipcMain\.on\("webtab:set-pip-zoom"/);
 assert.match(source, /ipcMain\.handle\("webtab:show-action"/);
-assert.match(source, /webtab:human-input/);
+assert.doesNotMatch(source, /webtab:human-input/);
 assert.match(source, /const HIDDEN_WEBTAB_BOUNDS = \{ x: 0, y: 0, width: 1920, height: 1080 \}/);
 assert.match(source, /const PIP_VIRTUAL_WIDTH = 1920/);
 assert.match(source, /if \(!record\.pipLayoutZoom\) wc\.setZoomFactor\(factor\)/);
@@ -5459,16 +5458,7 @@ async function checkHumanInputYieldingAndActionCue() {
     button: "left",
   });
   assert.equal(prevented, false, "yielding must not preventDefault native pointer input");
-  assert.deepEqual(plain(humanInputMessages(winA).at(-1)), {
-    id: "live-page",
-    windowId: "human-a",
-    sequence: 1,
-    kind: "pointer",
-  });
-  assert.equal(
-    Object.keys(humanInputMessages(winA).at(-1)).sort().join(","),
-    "id,kind,sequence,windowId",
-  );
+  assert.equal(humanInputMessages(winA).length, 0);
   assert.equal(humanInputMessages(winB).length, 0, "human input follows the exact owner window");
 
   prevented = false;
@@ -5490,9 +5480,9 @@ async function checkHumanInputYieldingAndActionCue() {
   assert.equal(prevented, false, "yielding must not steal page-operating keys");
   assert.deepEqual(
     plain(humanInputMessages(winA).slice(-2).map((item) => item.kind)),
-    ["scroll", "key"],
+    [],
   );
-  assert.equal(humanInputMessages(winA).at(-1).sequence, 3);
+  assert.equal(humanInputMessages(winA).length, 0);
 
   const ignoredBefore = humanInputMessages(winA).length;
   for (const mouse of [
@@ -5558,7 +5548,7 @@ async function checkHumanInputYieldingAndActionCue() {
   );
   assert.deepEqual(
     plain(humanInputMessages(winA).slice(navigateBefore).map((item) => item.kind)),
-    ["navigate", "navigate", "navigate", "navigate"],
+    [],
   );
   const afterUserNav = humanInputMessages(winA).length;
   ipcListeners.get("webtab:ensure")(
@@ -5581,7 +5571,7 @@ async function checkHumanInputYieldingAndActionCue() {
     editFlags: {},
   });
   menuTemplate.find((item) => item.label === "Back").click();
-  assert.equal(humanInputMessages(winA).at(-1).kind, "navigate");
+  assert.equal(humanInputMessages(winA).length, 0);
 
   const hiddenId = "hidden-page";
   hooks.ensureView(ctxA, hiddenId, "https://example.com/hidden");
