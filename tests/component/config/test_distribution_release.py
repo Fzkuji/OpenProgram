@@ -1976,6 +1976,21 @@ def test_desktop_runtime_removes_absolute_python_aliases() -> None:
     assert 'unlink "$python_alias"' in staging
 
 
+def test_local_app_refresh_reopens_app_after_quit() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    quit_at = refresh.index(
+        'osascript -e \'tell application id "ai.openprogram.desktop" to quit\''
+    )
+    open_at = refresh.index('open -a "$app_path"')
+    wait_at = refresh.index(
+        'pgrep -f "^${app_path}/Contents/MacOS/OpenProgram( |$)"', open_at
+    )
+    fail_at = refresh.index("OpenProgram did not reopen after the refresh")
+    assert quit_at < open_at < wait_at < fail_at
+
+
 def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
