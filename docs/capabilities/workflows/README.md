@@ -50,3 +50,9 @@ If `weekly_report` is installed in your Workflow catalog, call it with the repor
 It reads the configured Feishu form and matches the name and year/week before writing. A missing record is submitted once; an existing editable record is opened from the submission history and saved. Partial updates preserve untouched fields. Explicit draft and read-only requests do not submit. Unknown inspection results, login failures and ambiguous records stop the operation. A submission cap does not by itself rule out editing an existing record.
 
 Success requires a fresh page confirmation and persisted values. If a write result is uncertain, the Workflow reports it without automatically retrying. Ordinary browser authorization remains required. It uses bounded browser steps rather than a `goal()` loop, and does not invent progress, metrics or paper titles.
+
+### Group weekly report drafts
+
+`group_weekly_report(task)` prepares local drafts from material you provide. It does not read or send WeChat messages. Use a JSON request with `mode` (`inspect`, `summary`, or `reminder`), `week` (`YYYY-Www`), `group`, ordered `members`, and `materials`. Each material has `id`, `member`, `week`, and `text`; optional `kind: "claim"` distinguishes a member's statement from supplied report content. Natural-language input is parsed by the model; missing scope is returned for clarification.
+
+Inspection uses code without model calls for structured inputs. Summaries use bounded per-member model contexts, checked source references and explicit uncertainty. Local files are saved under `reports/group-weekly/<week>/<unique-run>/` (or `output_dir`). Missing material is not proof of non-submission. Review the draft and send it yourself.
