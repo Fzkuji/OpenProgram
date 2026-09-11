@@ -72,6 +72,19 @@ def test_session_placement_lookup_failure_does_not_fallback_to_default(
         store._session_dir("unresolved")
 
 
+def test_repeating_legacy_candidate_preserves_completed_migration(tmp_path, monkeypatch):
+    store = _isolate(tmp_path, monkeypatch)
+    _project, sid, source, _recovery = _legacy_session(tmp_path, store)
+    entry = collect_legacy_candidates(store)[0]
+
+    assert run_startup_migration(store)[sid] == "done"
+    stale = dict(entry)
+    stale["source_unavailable"] = True
+    assert migrate_session(store, stale) == "done"
+    assert not source.exists()
+    assert load_journal(store.root_path)["sessions"][sid]["stage"] == "done"
+
+
 def test_migration_publishes_session_and_external_recovery(tmp_path, monkeypatch):
     store = _isolate(tmp_path, monkeypatch)
     proj, sid, source, recovery = _legacy_session(tmp_path, store)

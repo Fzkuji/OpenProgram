@@ -331,8 +331,14 @@ def _migrate_session_once(store, entry: dict[str, Any], *, timeout: float = 15.0
     session_id = entry["session_id"]
     project_id = entry["project_id"]
     journal = load_journal(root)
-    row = dict(journal.get("sessions", {}).get(session_id) or entry)
-    row.update(entry)
+    durable = dict(journal.get("sessions", {}).get(session_id) or {})
+    durable_destination = durable.get("destination")
+    if durable.get("stage") == "done" and durable_destination and session_looks_present(Path(durable_destination)):
+        return "done"
+    row = dict(durable or entry)
+    protected = {"stage", "error", "source_unavailable", "destination", "inventory",
+                 "recovery_inventory", "recovery_source"}
+    row.update({key: value for key, value in entry.items() if key not in protected})
     if is_deleted(root, session_id):
         row["stage"] = "deleted"
         journal.setdefault("sessions", {})[session_id] = row
