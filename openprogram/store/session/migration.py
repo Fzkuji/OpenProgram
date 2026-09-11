@@ -93,7 +93,15 @@ def _inventory_tree(root: Path) -> list[dict[str, Any]]:
     if not root.exists():
         return rows
     for current, dirs, files in os.walk(root, followlinks=False):
-        dirs[:] = [name for name in dirs if name not in {".", ".."}]
+        kept_dirs = []
+        for name in dirs:
+            path = Path(current) / name
+            if path.is_symlink():
+                rows.append({"rel": str(path.relative_to(root)), "kind": "symlink",
+                             "target": os.readlink(path)})
+            else:
+                kept_dirs.append(name)
+        dirs[:] = [name for name in kept_dirs if name not in {".", ".."}]
         base = Path(current)
         for name in files:
             path = base / name
@@ -157,6 +165,15 @@ def _fsync_tree(path: Path) -> None:
             os.close(fd)
     except OSError:
         pass
+
+
+def _fsync_dir(path: Path) -> None:
+    """Durably publish one directory entry without scanning siblings."""
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _live_jobs(session_id: str) -> bool:
@@ -354,7 +371,7 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
         os.rename(staged / "session", dest)
     row["stage"] = "publish"
     save_journal(root, journal)
-    _fsync_tree(dest.parent)
+    _fsync_dir(dest.parent)
     if recovery_inventory:
         recovery_dest.parent.mkdir(parents=True, exist_ok=True)
         if recovery_dest.exists():
@@ -363,7 +380,7 @@ def _migrate_locked(store, root, journal, row, source: Path, dest: Path) -> str:
             os.rename(staged_recovery, recovery_dest)
         else:
             raise RuntimeError("external recovery publication is missing")
-        _fsync_tree(recovery_dest.parent)
+        _fsync_dir(recovery_dest.parent)
     store._record_location(session_id, dest)
     store._sessions.pop(session_id, None)
     row["stage"] = "cleanup"

@@ -154,8 +154,10 @@ class LocationObserver:
         self._pending: set[str] = set()
         self._lock = __import__("threading").Lock()
         self._refresh_lock = __import__("threading").RLock()
+        self._stopped = __import__("threading").Event()
 
     def start(self) -> None:
+        self._stopped.clear()
         moved = reconcile_registered_projects()
         if moved:
             self._notify()
@@ -164,13 +166,19 @@ class LocationObserver:
         self._native.start(paths)
 
     def stop(self) -> None:
-        if self._native is not None:
-            self._native.stop()
-            self._native = None
+        self._stopped.set()
+        with self._refresh_lock:
+            if self._native is not None:
+                self._native.stop()
+                self._native = None
 
     def refresh(self) -> None:
         """Rebuild native subscriptions after registry/path changes."""
+        if self._stopped.is_set():
+            return
         with self._refresh_lock:
+            if self._stopped.is_set():
+                return
             old = self._native
             if old is not None:
                 old.stop()

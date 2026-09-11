@@ -716,8 +716,24 @@ class SessionStore:
         if create_if_missing and is_deleted(self.root_path, session_id):
             return None
         with self._session_lock(session_id):
+            # Recheck the durable tombstone after acquiring the same
+            # per-session lock used by delete_session. This closes the race
+            # where a stale writer passed the early check while deletion was
+            # publishing its intent.
+            if create_if_missing and is_deleted(self.root_path, session_id):
+                return None
             verified_git: GitSession | None = None
             sdir = self._session_dir(session_id)
+            if create_if_missing and not sdir.exists():
+                try:
+                    from openprogram.store.project import project_store as _projects
+                    from openprogram.store.project.location import bound_execution_state
+                    project = _projects.project_for_session(session_id)
+                    if project is not None and not getattr(project, "is_default", False):
+                        if bound_execution_state(project) is not None:
+                            return None
+                except Exception:
+                    pass
             with self._lock:
                 cached = self._sessions.get(session_id)
                 if cached and cached[0].path != sdir:
@@ -821,6 +837,8 @@ class SessionStore:
         """Serialize durable writers by session id, then re-read placement."""
         session_id = git.path.name
         with session_interprocess_lock(session_id):
+            if is_deleted(self.root_path, session_id):
+                raise RuntimeError(f"session deleted: {session_id}")
             current = self._session_dir(session_id)
             if current != git.path:
                 git.path = current
@@ -911,8 +929,15 @@ class SessionStore:
                 proj = _projects.get_project(project_id) or _projects.get_default_project()
             else:
                 proj = _projects.get_default_project()
-            project_id = proj.id
-            if (not proj.is_default) and proj.path:
+            # Isolated callers may intentionally disable the registry's
+            # default project; those sessions retain the historical default
+            # placement. Explicit bound project resolution failures still
+            # propagate below and never fall back silently.
+            if proj is None and not project_path and not project_id:
+                project_id = _projects_default_id_safe()
+            else:
+                project_id = proj.id
+            if proj is not None and (not proj.is_default) and proj.path:
                 repo_dir = nested_session_dir(self.root_path, proj.id, session_id)
                 self._record_location(session_id, repo_dir)
         except Exception as e:  # noqa: BLE001 — placement is authoritative
