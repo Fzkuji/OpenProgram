@@ -183,7 +183,12 @@ class Summarizer:
         tokens = [_message_tokens(m) for m in messages]
         if sum(tokens) <= effective_keep:
             return 0
-        boundaries = [i for i in range(1, n)
+        user_indices = [i for i, msg in enumerate(messages)
+                        if msg.get("role") == "user"]
+        if len(user_indices) < 3:
+            return 0
+        latest_allowed = user_indices[-2]
+        boundaries = [i for i in range(1, latest_allowed + 1)
                       if messages[i].get("role") == "user"
                       and i >= self.protect_first_n
                       and n - i >= self.protect_last_n

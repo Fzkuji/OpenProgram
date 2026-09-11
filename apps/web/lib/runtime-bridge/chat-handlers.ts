@@ -850,8 +850,8 @@ export function handleChatResponse(data: ChatResponseData): void {
           role: "system",
           kind: "compaction",
           content: translateText(
-            "Context is already compacted; no older messages to fold.",
-            "当前上下文已是压缩后状态，没有可压缩的旧消息",
+            "Context unchanged; no smaller summary was applied.",
+            "上下文保持不变，本次没有应用更小的摘要",
           ),
           status: "done",
         });

@@ -84,9 +84,12 @@ def test_rejected_candidate_leaves_history_unchanged(conversation, monkeypatch, 
         return 'enlarged summary ' * 300000 if mode == 'long' else 'recap'
 
     monkeypatch.setattr(eng.summarizer, '_llm_summary', summarize)
+    events = []
     result = asyncio.run(eng.compact(agent=None, session_id='compact', model=None,
-                                    cancel_event=cancel))
+                                    cancel_event=cancel, on_event=events.append))
     assert called
+    assert events[-1]["data"]["type"] == "compaction_failed"
+    assert events[-1]["data"]["error"]
     assert result.no_op
     assert {m['id'] for m in conversation.get_messages('compact')} == before_ids
     assert conversation.get_session('compact')['head_id'] == 'a7'
@@ -159,3 +162,34 @@ def test_recompaction_absorbs_summary_and_counts_real_coverage(conversation, mon
     assert second.summarised_count == len(coverage)
     assert 'summary round 1' in inputs[-1]['prefix'][0]['content']
     assert inputs[-1]['previous_summary'] is None
+
+
+def test_multiple_assistant_messages_keep_two_user_turns(tmp_path, monkeypatch):
+    store = SessionStore(tmp_path / 'sessions')
+    monkeypatch.setattr('openprogram.agent.session_db.default_db', lambda: store)
+    store.create_session('multi', 'main')
+    prev = None
+    try:
+        for i in range(3):
+            store.append_message('multi', {'id': f'u{i}', 'role': 'user',
+                'content': f'Requirement {i}', 'predecessor': prev})
+            prev = f'u{i}'
+            for j in range(3):
+                nid = f'a{i}_{j}'
+                store.append_message('multi', {'id': nid, 'role': 'assistant',
+                    'content': 'Long response details ' * 1500, 'predecessor': prev})
+                prev = nid
+        eng = DefaultContextEngine()
+
+        async def summarize(**kwargs):
+            return 'Complete first-turn summary.'
+
+        monkeypatch.setattr(eng.summarizer, '_llm_summary', summarize)
+        result = asyncio.run(eng.compact(agent=None, session_id='multi', model=None))
+        assert result.summary_id
+        graph = SessionNodeWriter(store, 'multi').load()
+        ids = render_context(graph, head_id=prev, frame_entry_seq=-1)
+        assert 'u1' in ids and 'u2' in ids
+        assert all(f'a{i}_{j}' in ids for i in (1, 2) for j in range(3))
+    finally:
+        store.close()

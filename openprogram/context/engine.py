@@ -646,7 +646,8 @@ class DefaultContextEngine(ContextEngine):
         if not on_event:
             return
         on_event({"type": "chat_response", "data": {
-            "type": "compaction_finished",
+            "type": "compaction_failed" if result.error else "compaction_finished",
+            "error": result.error,
             "session_id": session_id,
             "user_initiated": user_initiated,
             "no_op": result.no_op,
