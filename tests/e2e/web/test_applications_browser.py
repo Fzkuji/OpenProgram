@@ -26,10 +26,10 @@ def test_application_ui_isolated_and_state_survives_reopening(tmp_path, monkeypa
     source.mkdir()
     (source / 'application.json').write_text('{"id":"test.browser","title":"Browser app","version":"1","capabilities":["storage.app"]}')
     (source / 'index.html').write_text('''<!doctype html><title>Browser app</title>
-<label for="note">Note</label><input id="note"><button id="save">Save</button><output id="status"></output>
+<label for="note">Note</label><input id="note" disabled><button id="save" disabled>Save</button><output id="status"></output>
 <script>
 let version;
-openprogramApp.load().then(s=>{version=s.version;document.getElementById('note').value=s.value.note||'';});
+openprogramApp.load().then(s=>{version=s.version;document.getElementById('note').value=s.value.note||'';document.getElementById('note').disabled=false;document.getElementById('save').disabled=false;});
 document.getElementById('save').onclick=async()=>{const s=await openprogramApp.save({note:document.getElementById('note').value},version);version=s.version;document.getElementById('status').textContent='Saved';};
 </script>''')
     html = (source / 'index.html').read_text()
@@ -171,5 +171,37 @@ def test_calculator_sample_works_in_application_sandbox():
             frame.get_by_label('Second number').fill('0')
             frame.get_by_role('button', name='Calculate', exact=True).click()
             expect(frame.locator('output')).to_have_text('Cannot divide by zero')
+        finally:
+            browser.close()
+
+
+def test_reader_waits_for_saved_state_before_editing():
+    from playwright.sync_api import sync_playwright, expect
+    source = (ROOT / 'examples/applications/reader/index.html').read_text()
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.evaluate("""() => {
+                window.openprogramApp={
+                    load:()=>new Promise(resolve=>window.finishLoad=resolve),
+                    runs:async()=>[],
+                    save:async(value,version)=>{
+                        window.saved={value,version};return {value,version:version+1};
+                    }
+                };
+            }""")
+            page.set_content(source)
+            field = page.get_by_label('Paper text and annotations')
+            expect(field).to_be_disabled()
+            expect(page.get_by_role('button', name='Save notes')).to_be_disabled()
+            expect(page.get_by_role('button', name='Summarize')).to_be_disabled()
+            page.evaluate("finishLoad({version:4,value:{text:'existing annotation'}})")
+            expect(field).to_be_enabled()
+            expect(field).to_have_value('existing annotation')
+            field.fill('new annotation')
+            page.get_by_role('button', name='Save notes').click()
+            expect(page.locator('#status')).to_have_text('Saved')
+            assert page.evaluate('window.saved') == {'value': {'text': 'new annotation'}, 'version': 4}
         finally:
             browser.close()
