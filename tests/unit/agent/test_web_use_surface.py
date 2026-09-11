@@ -2066,3 +2066,18 @@ def test_renderer_command_payload_carries_runtime_session_for_private_page_acces
             assert payload["data"]["session_id"] == "conversation-a"
     finally:
         reset_current_session_id(token)
+
+
+def test_self_update_capture_payload_preserves_its_exact_protocol_fields():
+    import json
+    from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
+    from openprogram.webui.ws_actions import webtab
+
+    token = set_current_session_id("conversation-a")
+    try:
+        command = {"op": "self_update_capture", "window_id": "main", "nonce": "a" * 64}
+        assert json.loads(webtab._payload(command, "request"))["data"] == {
+            **command, "req_id": "request",
+        }
+    finally:
+        reset_current_session_id(token)
