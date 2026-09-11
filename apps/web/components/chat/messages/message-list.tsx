@@ -23,6 +23,8 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useSessionHistory } from "@/lib/state/session-history";
+import { loadOlderSessionHistory } from "@/lib/runtime-bridge/conversations";
 import { ArrowDown } from "lucide-react";
 
 import {
@@ -32,7 +34,7 @@ import {
   type ChatMsg,
 } from "@/lib/session-store";
 
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateText } from "@/lib/i18n";
 import { getSocket, runtimeState } from "@/lib/runtime-bridge/state";
 import { useAgentProfile } from "@/lib/format-utils/agent-style";
 import {
@@ -1131,6 +1133,7 @@ export const MessageList = memo(function MessageList({
 
   return (
     <>
+      <OlderHistory sessionId={sessionId} />
       <AgentBranchBanner />
       <WorkspaceAlignmentBanner sessionId={sessionId} />
       {paintRows ? (
@@ -1225,3 +1228,14 @@ export const MessageList = memo(function MessageList({
     </>
   );
 });
+
+
+function OlderHistory({ sessionId }: { sessionId: string | null }) {
+  const history = useSessionHistory(s => sessionId ? s.pages[sessionId] : undefined);
+  useTranslation();
+  if (!sessionId || !history?.before) return null;
+  return <button type="button" className="text-sm text-muted-foreground py-2" disabled={history.loading}
+    onClick={() => void loadOlderSessionHistory(sessionId)}>
+    {history.loading ? translateText("Loading…", "加载中…") : history.error ? translateText("Retry loading earlier messages", "重试加载更早消息") : translateText("Load earlier messages", "加载更早消息")}
+  </button>;
+}

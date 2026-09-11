@@ -191,3 +191,48 @@ def test_get_full_tool_output_returns_original_content(
             "result": large,
         },
     }]
+
+
+def test_paged_load_preserves_all_rows_and_does_not_move_head_or_focus(
+    session_with_tool_outputs,
+):
+    store, _ = session_with_tool_outputs
+    from openprogram.webui import server
+    prev = 'assistant-1'
+    for i in range(65):
+        mid = f'history-{i}'
+        store.append_message('session-1', {
+            'id': mid, 'role': 'user', 'content': '中' * 9000, 'predecessor': prev,
+        })
+        prev = mid
+    store.update_session('session-1', head_id=prev)
+    ws = FakeWS()
+    ws._history_protocol = 1
+    async def scenario():
+        await ws_session.handle_load_session(ws, {'session_id': 'session-1'})
+        first = next(f['data'] for f in ws.frames if f['type'] == 'session_loaded')
+        assert len(first['messages']) < 50
+        assert first['history']['before']
+        ids = [m['id'] for m in first['messages']]
+        cursor = first['history']['before']
+        ws._focused_session_id = 'another-session'
+        server._sessions['session-1']['head_id'] = 'new-live-head'
+        while cursor:
+            ws.frames.clear()
+            await ws_session.handle_load_session(ws, {
+                'session_id': 'session-1', 'history_before': cursor,
+                'history_head': first['history']['head_id'], 'request_id': 'request',
+            })
+            assert [f['type'] for f in ws.frames] == ['session_history_page']
+            page = ws.frames[0]['data']
+            assert page['action'] == 'load_session'
+            assert page['request_id'] == 'request'
+            ids += [m['id'] for m in page['messages']]
+            assert page['history']['before'] != cursor
+            cursor = page['history']['before']
+        assert len(ids) == len(set(ids))
+        assert all(f'history-{i}' in ids for i in range(65))
+        assert 'assistant-1' in ids and 'user-1' in ids
+        assert ws._focused_session_id == 'another-session'
+        assert server._sessions['session-1']['head_id'] == 'new-live-head'
+    asyncio.run(scenario())

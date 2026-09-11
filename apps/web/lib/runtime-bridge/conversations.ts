@@ -1,3 +1,5 @@
+import { registerSessionHistory, updateSessionHistory, useSessionHistory, type HistoryPage } from "@/lib/state/session-history";
+import { wsRequest } from "@/lib/net/ws-request";
 /**
  * Conversation / branch / channel data layer.
  *
@@ -561,6 +563,7 @@ export function loadSessionData(data: LegacyConv): void {
   if (!data.messages) data.messages = [];
   data.messages = spliceCompactionFromGraph(data.messages, data.graph);
   const id = data.id as string;
+  registerSessionHistory(id, data.history as HistoryPage | undefined);
   const map = convs();
   // Merge data into existing conv. data 里没有的字段 (例如 created_at)
   // 不该被覆盖为 undefined; 显式 filter 一下 data 里的 undefined 值.
@@ -757,3 +760,38 @@ export function renderSessionMessages(conv: LegacyConv): void {
 
 // Still read through `window` by components/page-shell.tsx, which paints a
 // cached transcript before this module's importers have run.
+
+
+/** Append historical pages without replacing any newer streamed message. */
+export async function loadOlderSessionHistory(id: string): Promise<void> {
+  const expected = useSessionHistory.getState().pages[id];
+  if (!expected?.before || expected.loading) return;
+  const socket = getSocket();
+  updateSessionHistory(id, expected.generation, { loading: true, error: false });
+  const page = await wsRequest<{ id: string; messages: LegacyMessage[]; history: HistoryPage }>(
+    "load_session", { session_id: id, history_before: expected.before, history_head: expected.head_id },
+    "session_history_page", { requestId: true }, 15000,
+  );
+  if (getSocket() !== socket || !updateSessionHistory(id, expected.generation, { loading: false, error: !page })) return;
+  if (!page || page.id !== id || !page.history || !Array.isArray(page.messages)
+      || page.history.head_id !== expected.head_id) {
+    updateSessionHistory(id, expected.generation, { error: true });
+    return;
+  }
+  const conv = convs()[id];
+  if (!conv) return;
+  const area = runtimeState.currentSessionId === id ? document.getElementById("chatArea") : null;
+  const oldHeight = area?.scrollHeight ?? 0;
+  const oldTop = area?.scrollTop ?? 0;
+  const currentIds = new Set((conv.messages ?? []).map(m => m.id));
+  conv.messages = [...page.messages.filter(m => !currentIds.has(m.id)), ...(conv.messages ?? [])];
+  const store = useSessionStore.getState();
+  const current = (store.messageOrder[id] ?? []).map(mid => store.messagesById[mid]).filter(Boolean);
+  const ids = new Set(current.map(m => m.id));
+  const older = convToChatMsgs(page.messages as never[]).filter(m => !ids.has(m.id));
+  store.setMessages(id, [...older, ...current]);
+  updateSessionHistory(id, expected.generation, { before: page.history.before });
+  if (area) requestAnimationFrame(() => {
+    if (runtimeState.currentSessionId === id) area.scrollTop = oldTop + area.scrollHeight - oldHeight;
+  });
+}

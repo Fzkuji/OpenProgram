@@ -695,13 +695,21 @@ async def handle_clear_sessions(ws, cmd: dict):
     await handle_list_sessions(ws, {})
 
 
+async def _session_io(func, *args, **kwargs):
+    """Run one bounded session-store read without blocking the WS loop."""
+    return await asyncio.to_thread(func, *args, **kwargs)
+
+
 async def handle_load_session(ws, cmd: dict):
     """Hydrate a session: linear chain under HEAD + full DAG dump + running-task probe."""
     from openprogram.webui import server as _s
     session_id = cmd.get("session_id")
     # Record which session this connection is now viewing, so a finishing
     # background run can tell whether to mark *other* sessions unread.
-    ws._focused_session_id = session_id
+    history_before = cmd.get("history_before")
+    is_history_page = history_before is not None
+    if not is_history_page:
+        ws._focused_session_id = session_id
     with _s._sessions_lock:
         conv = _s._sessions.get(session_id)
     # Cold load (fresh worker, new browser session, or a session created
@@ -714,19 +722,32 @@ async def handle_load_session(ws, cmd: dict):
     if conv is None and session_id:
         from openprogram.agent.session_db import default_db as _db_probe
         try:
-            _exists = _db_probe().get_session(session_id) is not None
+            _exists = await _session_io(
+                lambda: _db_probe().get_session(session_id) is not None
+            )
         except Exception:
             _exists = False
         if _exists:
-            conv = _s._get_or_create_session(session_id)
+            conv = await _session_io(
+                _s._get_or_create_session, session_id
+            )
     if conv:
+        # A chat turn can advance this mirror while the bounded hydration
+        # reads run in worker threads. Keep the load payload tied to the
+        # captured request, but never let an older load overwrite a newer
+        # in-memory head when it returns.
+        load_started_head = conv.get("head_id")
+        conv_snapshot = {**conv, "messages": list(conv.get("messages") or [])}
         # Hydration is also a recovery boundary.  A worker restart marker can
         # be written during the handoff from a resolved wait to its next
         # continuation; canonical execution state must repair that projection
         # before messages are serialized for the client.
         try:
             from openprogram.webui._exec_dag import reconcile_session_projection
-            reconcile_session_projection(session_id)
+            if not is_history_page:
+                await _session_io(
+                    reconcile_session_projection, session_id
+                )
         except Exception as exc:
             _s._log(f"[load_session] canonical projection repair {session_id}: {exc}")
         from openprogram.context.git import (
@@ -739,7 +760,24 @@ async def handle_load_session(ws, cmd: dict):
         from openprogram.webui.persistence import aggregate_tool_messages
         _db_load = _db_for_load()
         try:
-            raw_msgs = _db_load.get_messages(conv["id"]) or []
+            # Capture the persisted head before history I/O. A concurrent
+            # chat may advance the store while get_messages is in progress;
+            # using a later head would point this response outside its
+            # captured message snapshot.
+            _sess_for_load = await _session_io(
+                _db_load.get_session, conv["id"]
+            ) or {}
+            _persisted_head = _sess_for_load.get("head_id")
+        except Exception:
+            _persisted_head = None
+        try:
+            # Session hydration is a bounded snapshot.  Capture the database
+            # handle and session id before yielding; all later aggregation is
+            # performed against this snapshot, so a concurrent turn cannot
+            # change the frame's message set halfway through construction.
+            raw_msgs = await _session_io(
+                _db_load.get_messages, conv["id"]
+            ) or []
             hidden_ids = {
                 m.get("id") for m in raw_msgs
                 if m.get("execution_control") and m.get("id")
@@ -760,14 +798,16 @@ async def handle_load_session(ws, cmd: dict):
             # as it does on live WS stream.
             all_msgs = aggregate_tool_messages(raw_msgs)
         except Exception:
-            all_msgs = conv.get("messages", []) or []
+            all_msgs = conv_snapshot["messages"]
             raw_msgs = all_msgs
-        try:
-            _sess_for_load = _db_load.get_session(conv["id"]) or {}
-            _persisted_head = _sess_for_load.get("head_id")
-        except Exception:
-            _persisted_head = None
-        head = _persisted_head or head_or_tip(conv, all_msgs)
+        head = _persisted_head or head_or_tip(conv_snapshot, all_msgs)
+        if is_history_page:
+            from openprogram.webui.ws_errors import OperationError
+            requested_head = cmd.get("history_head")
+            if (not isinstance(history_before, str) or not isinstance(requested_head, str)
+                    or requested_head not in {m.get("id") for m in all_msgs}):
+                raise OperationError("invalid_request", scope="session", retryable=True)
+            head = requested_head
         # If the persisted head points at a row that aggregation just
         # folded away (e.g. a role="tool" child of an assistant whose
         # turn never reached step 6's ``update_session(head_id=...)``
@@ -800,9 +840,10 @@ async def handle_load_session(ws, cmd: dict):
         # and sibling turns from OTHER branches never leak in. Falls back
         # to a predecessor walk (or all_msgs) if the head is stale/None.
         try:
-            branch_ids = {
-                m.get("id") for m in (_db_load.get_branch(session_id, head) or [])
-            }
+            branch_rows = await _session_io(
+                _db_load.get_branch, session_id, head
+            ) or []
+            branch_ids = {m.get("id") for m in branch_rows}
         except Exception:
             branch_ids = set()
         chain = active_branch_chain(all_msgs, branch_ids, head)
@@ -864,8 +905,11 @@ async def handle_load_session(ws, cmd: dict):
         # RuntimeBlock card the live runtime shows; its nested sub-nodes
         # are absorbed into the card's context_tree.
         chain = _rebuild_runtime_cards(chain, all_msgs, conv["id"])
-        conv["messages"] = chain
-        conv["head_id"] = head
+        with _s._sessions_lock:
+            current_conv = _s._sessions.get(session_id)
+            if not is_history_page and current_conv is conv and conv.get("head_id") == load_started_head:
+                conv["messages"] = chain
+                conv["head_id"] = head
         from openprogram.agent.session_db import default_db as _ddb
         from openprogram.webui.ws_actions.branch import (
             _attach_info as _ainfo, _attach_embed_stats as _astats,
@@ -1009,7 +1053,12 @@ async def handle_load_session(ws, cmd: dict):
 
         tree_data = {}  # tree Context retired — execution trace lives in SessionDB DAG nodes
         from openprogram.webui.graph_builder import build_session_graph
-        graph = build_session_graph(conv["id"], head)
+        # Graph construction repeatedly reads and parses persisted node
+        # records.  Keep it on the same captured HEAD as the message snapshot,
+        # but run the bounded builder off the asyncio loop.
+        graph = await asyncio.to_thread(
+            build_session_graph, conv["id"], head, messages=raw_msgs
+        )
 
         # Reverse-link each spawned sub-branch's root user msg back
         # to the main-lane turn that produced it, so the frontend
@@ -1028,6 +1077,24 @@ async def handle_load_session(ws, cmd: dict):
                 m["spawned_from"] = sf
         shown = splice_compaction_event_rows(shown, graph, all_msgs)
         shown = _truncate_tool_outputs_for_wire(shown)
+        history = None
+        if getattr(ws, "_history_protocol", 0) == 1:
+            from openprogram.webui.session_history import history_page
+            from openprogram.webui.ws_errors import OperationError
+            try:
+                shown, next_cursor = history_page(
+                    shown, {m.get("id") for m in chain}, history_before,
+                )
+            except ValueError as exc:
+                raise OperationError("invalid_request", scope="session", retryable=True) from exc
+            history = {"head_id": head, "before": next_cursor}
+            if is_history_page:
+                await ws.send_text(json.dumps({"type": "session_history_page", "data": {
+                    "id": session_id, "messages": shown, "history": history,
+                    "request_id": cmd.get("request_id"), "action": "load_session",
+                }}, ensure_ascii=False, default=str))
+                return
+
         from openprogram.agent.session_config import (
             load_session_run_config,
             permission_from_config,
@@ -1052,6 +1119,7 @@ async def handle_load_session(ws, cmd: dict):
                 "id": conv["id"],
                 "title": _db_sess.get("title", ""),
                 "messages": shown,
+                **({"history": history} if history is not None else {}),
                 "graph": graph,
                 "head_id": head,
                 "context_tree": tree_data,
