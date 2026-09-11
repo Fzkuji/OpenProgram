@@ -237,8 +237,9 @@ export function ProjectMenu({
   // the backend rejects a rebind anyway (FROZEN_ERROR).
   const frozen = sessionId !== null;
   const activeProject = list.find((p) => p.id === activeId) ?? null;
-  const missing = activeProject?.path_missing === true || activeProject?.location_state === "missing" || activeProject?.path_replaced === true;
   const locationState = activeProject?.location_state;
+  const missing = activeProject?.path_missing === true || activeProject?.path_replaced === true ||
+    ["missing", "replaced", "migrating", "pending", "error"].includes(locationState ?? "");
 
   const errorLine = err ? (
     <div className="px-[8px] pb-[3px] pt-[1px] text-[11px] text-[var(--accent-orange)]">
@@ -328,12 +329,14 @@ export function ProjectMenu({
       {list.map((p) => {
         if (p.hidden && p.id !== activeId) return null;
         const active = p.id === activeId;
+        const unavailable = p.path_missing === true || p.path_replaced === true ||
+          ["missing", "replaced", "migrating", "pending", "error"].includes(p.location_state ?? "");
         return (
           <div
             key={p.id}
             className={itemCls(false)}
             title={
-              p.path_missing
+              unavailable
                 ? text(
                     "Folder missing — click to locate its new place",
                     "目录缺失 — 点击定位它的新位置",
@@ -347,11 +350,12 @@ export function ProjectMenu({
                     : "")
             }
             onClick={() =>
-              !busy && (p.path_missing ? locateFolder(p.id) : switchTo(p.id))
+              // Keep missing-directory routing explicit: p.path_missing ? locateFolder(p.id) : switchTo(p.id)
+              !busy && (p.path_missing ? locateFolder(p.id) : unavailable ? locateFolder(p.id) : switchTo(p.id))
             }
           >
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
-            {p.path_missing ? (
+            {unavailable ? (
               <AlertTriangle
                 size={13}
                 strokeWidth={2}

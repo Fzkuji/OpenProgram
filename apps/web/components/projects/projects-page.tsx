@@ -196,7 +196,8 @@ export function ProjectsPage({
               >
                 <span className={fx.profileIcon}>{p.icon || <FoldersIcon size={16} />}</span>
                 <span className={fx.profileName}>{p.name}</span>
-                {p.path_missing && (
+                {(p.path_missing || p.path_replaced ||
+                  ["missing", "replaced", "migrating", "pending", "error"].includes(p.location_state ?? "")) && (
                   <AlertTriangle
                     size={13}
                     strokeWidth={2}
@@ -251,11 +252,17 @@ export function ProjectsPage({
                               "Migrating conversations. Tasks start after completion.",
                               "正在迁移对话。完成前不能启动任务。",
                             )
-                          : selected.location_state === "pending"
-                            ? text(
-                                "This legacy conversation has not migrated. Reconnect the original drive to finish.",
-                                "这条旧对话尚未迁移。请接回原来的磁盘后再完成。",
-                              )
+                            : selected.location_state === "pending" &&
+                                selected.migration_error !== "directory identity unavailable"
+                              ? text(
+                                  "This legacy conversation has not migrated. Reconnect the original drive to finish.",
+                                  "这条旧对话尚未迁移。请接回原来的磁盘后再完成。",
+                                )
+                              : selected.location_state === "pending"
+                                ? text(
+                                    "This folder needs confirmation. Locate the original folder to continue.",
+                                    "该目录需要确认。请定位原来的目录后继续。",
+                                  )
                             : selected.location_state === "error"
                               ? text(
                                   selected.migration_error || "Conversation migration failed.",
