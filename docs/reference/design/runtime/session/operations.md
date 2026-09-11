@@ -8,16 +8,27 @@ Each operation is written out end to end, from trigger to disk to frontend.
 
 When the process starts, SessionStore runs a one-time initialization:
 
-1. Read `index.json` and load it into the in-memory `_index` dict
-2. If the file does not exist or JSON parsing fails → scan the meta.json of every session directory to rebuild `_index`, then write `index.json`
-3. Iterate over `_index` and reset every `status=running` to `idle` (crash recovery)
-4. Clean up empty shells: a session with 0 messages and created more than 1 hour ago → delete the directory + delete the registry entry
-5. Clean up expired archives: `archived=True` and `updated_at` older than 90 days → delete
-6. Capacity check: if the registry exceeds 1000 entries → delete the oldest archived sessions in ascending `updated_at` order
+1. Read `index.json` and load it into the in-memory `_index` dict.
+2. If the file does not exist or JSON parsing fails, scan both the default and
+   nested project layouts plus durable locations and rebuild `_index` from
+   `meta.json`, then write `index.json`.
+3. Reset every `status=running` entry to `idle`; this repairs the session-list
+   status left by a dead worker. Execution recovery is separate: the
+   execution subsystem may resume durable checkpoint-backed operations through
+   its own recovery path.
+4. Remove stale unarchived empty shells: a session older than one hour with
+   no `history/` directory is deleted. Archived sessions and sessions whose
+   location is unreachable or covered by a migration journal are retained.
+
+Startup does not expire archived sessions and does not enforce a session-count
+capacity limit. Explicitly archived sessions remain until the owner deletes
+them.
 
 Handling of half-broken sessions:
-- Has meta.json but no history/ → treated as an empty shell, deleted in step 4
-- Has history/ but no meta.json → the scan in step 2 cannot read meta.json, so it is not registered and is treated as nonexistent
+- Has `meta.json` but no `history/` → an old unarchived shell is eligible for
+  deletion; a recent, archived, unreachable, or migrating session is retained.
+- Has `history/` but no `meta.json` → it cannot be rebuilt into the registry
+  and is not exposed as a session.
 
 ---
 
@@ -37,7 +48,8 @@ No other place creates a session.
 
 ```
 Caller calls create_session(session_id, agent_id, source=..., ...)
-  → Create the <state>/sessions/<session_id>/ directory
+  → Resolve placement: <state>/sessions/<session_id>/ for the default project,
+    or <state>/sessions/projects/<project_id>/<session_id>/ for a bound project
   → Write meta.json (id, agent_id, title, created_at, updated_at, source, status="idle", ...)
   → Write the registry: _index[session_id] = summary entry
   → Atomically write the registry to disk (temp file → os.rename)
@@ -54,7 +66,7 @@ For the dispatcher and the channel handler, creation and writing the first messa
 
 ## Main project binding
 
-A session's **main working directory** is the path of the project it is bound to. The binding is chosen freely while the chat is still a draft, and **freezes when the first real message commits** — from that turn onwards the conversation's cwd, its permission fence baseline, and the location of its session repo (`<project>/.openprogram/sessions/<id>/`) all stay put. That is the whole point of freezing: those three follow the main directory, and only `create_session` can place the repo, so a later switch would leave the repo stranded in the old project while the model worked in the new one.
+A session's **main working directory** is the path of the project it is bound to. The binding is chosen freely while the chat is still a draft, and **freezes when the first real message commits**. After that turn, a different project cannot be bound to the session. The session repository is already under the application state root, grouped by the stable project id; changing the project's path does not change the session-to-project binding or the repository id.
 
 Additional working directories are the opposite and are meant to be: they are added and removed at any point in the session's life. See [additional-working-directories.md](../additional-working-directories.md).
 
@@ -64,7 +76,8 @@ Additional working directories are the opposite and are meant to be: they are ad
 draft chat, project picked in the composer chip
   → pendingProjectsByChat[chatKey]  (frontend store, nothing sent yet)
   → first chat frame carries project_id
-  → handle_chat creates the session WITH that project → repo lands inside it
+  → handle_chat creates the session WITH that project → repo lands under
+    application state/projects/<project_id>/<session_id>
   → chat_ack sends the idempotent set_session_project (label + reverse index)
 ```
 
@@ -72,7 +85,7 @@ draft chat, project picked in the composer chip
 
 ### Repairing a missing directory
 
-A frozen main directory can still be **relocated**, and only for repair: the folder was moved or renamed on disk and the project now points at nothing. `project_workdir_for` returns `None` in that state — it never silently substitutes the default project's home directory — so the turn's tool cwd falls back to the session's own `workdir/`, and `project_path_missing` names the vanished path. `list_projects` ships that as `path_missing` per project, which is what turns the composer chip orange and puts "Locate folder…" in its menu.
+A frozen main directory can still be **relocated**, and only for repair: the folder was moved or renamed on disk and the project now points at nothing. `project_workdir_for` returns `None` in that state — it never silently substitutes the default project's home directory. New bound-project work is blocked while the project is missing, replaced, pending, migrating, or otherwise unavailable; the UI receives the location state and missing path so it can offer repair. The session repository remains readable while repair is pending.
 
 The repair is the `relocate_project` ws action:
 
@@ -85,19 +98,51 @@ relocate_project {session_id, project_id, path}
   → project_relocated {ok, old_path, path, node_id} + a fresh projects_list
 ```
 
-It changes the **project's path**, never the session→project binding, which is why it stays legal after the freeze. Every session bound to that project follows the move. The default project refuses to relocate: its path is the home directory, restored on every `get_default_project` read.
+It changes the **project's path**, never the session→project binding, which is why it stays legal after the freeze. Every session bound to that project keeps the same stable project id and application-owned session repository. Legacy workdir copies are migrated through the journal and durable location index. The default project refuses to relocate: its display path is the home directory and is restored on every `get_default_project` read; it has no project Git repository of its own.
 
 ### Following a move automatically
 
 The project's identity is its stable id; the path is a mutable attribute. Codex matches recorded cwd against recent turn context; DeepSeek validates workspace paths against an immutable session header cwd. Those mechanisms do not track arbitrary folder moves, and they do not mean that moving a folder deletes history. OpenProgram stores conversations under the application state directory and treats the working folder as a location. Three mechanisms reconnect a moved folder:
 
 1. **Native identity, not a HOME scan.** On startup, access, volume reconnect, or a directory/ancestor event, OpenProgram resolves a stored bookmark or inode. A match updates the project path. There is no minute-by-minute walk of HOME.
-2. **Application-owned session placement.** Bound conversations live at `sessions/projects/<project-id>/<session-id>/`. Relocating a project does not move chat files. Legacy workdir copies migrate through a journaled operation.
+2. **Application-owned session placement.** Bound conversations live at
+   `sessions/projects/<project-id>/<session-id>/`. Relocating a project does
+   not move already-centralized chat files. Legacy workdir copies migrate
+   through a journaled operation. Per-turn file undo recovery remains in the
+   destination's sibling `.file-recovery/<session_id>/<turn>/` tree, outside
+   the session Git repository.
 3. **Opening a folder never auto-adopts copies.** Names, Git remotes, Git contents and leftover `.openprogram/sessions` markers do not prove continuity. Manual **Locate folder** may replace identity after showing the expected old path and revision, and it refuses a destination already owned by another project.
 
-Startup cleanup respects the same reality: a project-bound session whose recorded location is unreachable is **not** an empty shell — the repo exists elsewhere on disk — so it is never purged for missing history while the project is un-relocated.
+Startup cleanup respects the same reality: a project-bound session whose
+recorded location is unreachable, or whose migration journal is active, is
+**not** treated as an empty shell. It is retained until location repair or
+migration resolves it.
 
 The composer's draft picker lists `path_missing` projects (clicking one opens the locate flow instead of selecting it), and the `/projects` page shows the warning with a "Locate folder…" action; neither surface silently hides a project whose folder moved.
+
+### Attachments and recovery
+
+Browser uploads are decoded and saved before dispatch under
+`<session repository>/workdir/attachments/`. The saved path is written into
+the user message marker, and the files are included in the session repository
+commit at turn end. The browser's IndexedDB cache is for unsent composer
+drafts; it is cleared after publication, so it is not the durable session
+attachment store. Channel attachments remain in their channel roots under
+`<state>/channels/*/accounts/*/attachments`.
+
+During legacy project migration, the migration journal inventories any
+external recovery tree, copies both the session and recovery data under
+`<state>/sessions/.migration/staging/`, verifies them, then publishes the
+session under `projects/<project_id>/<session_id>/` and recovery data under its
+sibling `.file-recovery/<session_id>/<turn>/` tree before the location
+authority is updated. A missing or failed publication keeps the project in a
+non-available state and prevents new bound-project work.
+
+Historical marker compatibility follows the storage rule in
+[storage.md](storage.md): only the exact legacy session attachment shape may
+be resolved by the same session id to its unique current repository, with
+attachment-root containment and symlink/traversal checks. No arbitrary old
+absolute path is remapped.
 
 ### The relocate record node
 
@@ -120,14 +165,21 @@ The shape follows `context/system_prompt` (dag/overview.md §3, §7): the write 
 
 ```
 Caller calls append_message(session_id, msg)
-  → Write the message to the DAG (Git history/)
+  → Append a JSON node to the conversation DAG in history/
+  → Persist meta.json, including the DAG head when the conversational chain advances
   → If msg.role == "user":
       → preview = take the first 80 characters of msg.content
       → _index[session_id]["preview"] = preview
       → _index[session_id]["updated_at"] = time.time()
       → Mark the registry dirty (write to disk with a 5-second debounce)
-  → No broadcast (message content is pushed through a separate streaming channel)
+  → No session-list broadcast (message content is pushed through a separate streaming channel)
 ```
+
+The raw node write and the `meta.json` update happen before the turn-end Git
+commit. A successful turn then commits the session repository with
+`GitSession.commit_all`; `session_commits()` reads those Git commits as a
+separate per-turn timeline. Git `HEAD` is therefore not the conversation DAG
+head.
 
 ### preview truncation
 
@@ -331,7 +383,8 @@ jumping to the top. Messages, branches, and history files are untouched;
 All three write the same flag through `set_archived` and broadcast
 `session_updated`, so every open tab agrees.
 
-Archived sessions are subject to the startup-time data maintenance constraints: 90-day expiration + the 1000 capacity cap. Active sessions are not affected.
+Archived sessions are retained by startup maintenance. They are hidden from
+the default listing and remain available until explicitly deleted.
 
 ---
 

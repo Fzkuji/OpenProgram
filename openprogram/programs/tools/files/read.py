@@ -137,6 +137,21 @@ def execute(file_path: str,
     file_path = resolved_path
     if not os.path.isabs(file_path):
         return f"Error: file_path must be absolute, got {file_path!r}"
+    if not os.path.exists(file_path):
+        try:
+            from openprogram import attachments as _attachments
+            from openprogram.agent.run_control import get_current_session_id
+
+            session_id = get_current_session_id()
+            alias = _attachments.resolve_session_attachment(
+                file_path,
+                session_id,
+                _attachments.readable_roots(session_id),
+            )
+            if alias is not None:
+                file_path = str(alias)
+        except Exception:
+            pass
     from openprogram.sandbox import validate_read_path
     violation = validate_read_path(file_path)
     if violation:

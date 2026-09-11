@@ -8,16 +8,22 @@
 
 进程启动时 SessionStore 做一次初始化：
 
-1. 读 `index.json` 加载到内存 `_index` dict
-2. 如果文件不存在或 JSON parse 失败 → 扫描所有 session 目录的 meta.json 重建 `_index`，写入 `index.json`
-3. 遍历 `_index`，把所有 `status=running` 重置为 `idle`（崩溃恢复）
-4. 清理空壳：0 条消息 + 创建超过 1 小时的 session → 删除目录 + 删注册表条目
-5. 清理过期归档：`archived=True` 且 `updated_at` 超过 90 天 → 删除
-6. 容量检查：注册表超过 1000 条 → 按 `updated_at` 升序删最旧的已归档 session
+1. 读取 `index.json` 到内存 `_index`。
+2. 文件不存在或 JSON parse 失败时，扫描默认布局、嵌套项目布局和持久
+   location，依据 `meta.json` 重建 `_index`，再写回 `index.json`。
+3. 把所有 `status=running` 重置为 `idle`；这是修复死亡 worker 留下的
+   session 列表状态。执行恢复是另一条路径：执行子系统可以通过自己的恢复流程
+   继续持久化的 checkpoint 操作。
+4. 清理未归档的旧空壳：session 超过 1 小时且没有 `history/` 目录时删除。
+   已归档、路径暂时不可达或被迁移日志覆盖的 session 保留。
+
+启动时不会按时间删除归档 session，也没有 session 数量容量上限。显式归档的
+session 会一直保留，直到所有者删除。
 
 半残 session 的处理：
-- 有 meta.json 没 history/ → 等同空壳，步骤 4 删除
-- 有 history/ 没 meta.json → 步骤 2 扫描时读不到 meta.json，不注册，等同不存在
+- 有 `meta.json` 没 `history/` → 旧的未归档空壳可删除；最近创建、已归档、
+  不可达或迁移中的 session 保留。
+- 有 `history/` 没 `meta.json` → 无法重建注册表，不对外暴露为 session。
 
 ---
 
@@ -37,7 +43,8 @@
 
 ```
 调用方调 create_session(session_id, agent_id, source=..., ...)
-  → 创建 <state>/sessions/<session_id>/ 目录
+  → 解析位置：默认项目使用 <state>/sessions/<session_id>，绑定项目使用
+    <state>/sessions/projects/<project_id>/<session_id>
   → 写 meta.json（id, agent_id, title, created_at, updated_at, source, status="idle", ...）
   → 写注册表：_index[session_id] = 摘要条目
   → 注册表原子写磁盘（临时文件 → os.rename）
@@ -54,7 +61,7 @@ dispatcher 和 channel handler 的创建与写入第一条消息是原子的—�
 
 ## 主项目绑定
 
-会话的**主工作目录**就是它所绑定项目的路径。草稿阶段可以自由选择，**第一条真实消息提交时定格**——从那一轮起，会话的 cwd、权限围栏基线、会话仓库位置（`<project>/.openprogram/sessions/<id>/`）都不再变动。定格的理由正在于此：这三样都跟着主目录走，而只有 `create_session` 能放置仓库，事后换项目会让仓库滞留在旧项目里，模型却在新目录里干活。
+会话的**主工作目录**就是它所绑定项目的路径。草稿阶段可以自由选择，**第一条真实消息提交时定格**。此后不能把 session 绑定到另一个项目。会话仓库已经位于应用状态目录下，并按稳定 project id 分组；项目路径变化不会改变 session→project 绑定或仓库 id。
 
 追加工作目录是相反的设计，也应该如此：会话生命周期内随时增删。见 [additional-working-directories.zh.md](../additional-working-directories.zh.md)。
 
@@ -64,15 +71,34 @@ dispatcher 和 channel handler 的创建与写入第一条消息是原子的—�
 草稿会话，在 composer chip 里选了项目
   → pendingProjectsByChat[chatKey]（前端 store，尚未发送）
   → 第一条 chat 帧带上 project_id
-  → handle_chat 用该项目建会话 → 仓库落在项目内部
+  → handle_chat 用该项目建会话 → 仓库落在应用状态目录的
+    projects/<project_id>/<session_id>
   → chat_ack 再补一次幂等的 set_session_project（标签 + 反向索引）
 ```
 
 `set_session_project` 在任何时候都接受"绑到会话已有的那个项目"——上面那条 ack 后的幂等 bind 走的就是这条路，它到达时第一轮已经提交。而在已有轮次的会话上绑**另一个**项目会被拒，理由为 `project is frozen after the first turn`（`ws_actions/project.py:FROZEN_ERROR`）。composer chip 与之对齐：已有 session id 的会话只读展示已绑项目，不再给选择器。
 
+### 附件与恢复
+
+浏览器上传的文件在 dispatch 前解码并保存到
+`<session repository>/workdir/attachments/`。保存后的路径写入 user message
+标记，并在 turn 结束时随会话仓库提交。浏览器 IndexedDB 只保存尚未发送的
+composer 草稿；发布后会清理，因此不是持久的 session 附件存储。渠道附件仍
+位于 `<state>/channels/*/accounts/*/attachments` 的渠道根目录。
+
+旧项目迁移时，迁移日志会清点外部恢复目录，将会话和恢复数据一起复制到
+`<state>/sessions/.migration/staging/` 并校验，再把会话发布到
+`projects/<project_id>/<session_id>/`，把恢复数据发布到旁边的
+`.file-recovery/<session_id>/<turn>/`，随后才更新 location 权威记录。发布缺失或
+失败时，项目保持不可用状态，新的项目绑定任务会被阻止。
+
+历史标记兼容性遵循 [storage.zh.md](storage.zh.md) 的存储规则：只有精确的旧
+session 附件路径形式，才能按同一个 session id 解析到唯一的当前仓库，并执行
+附件根目录包含检查以及符号链接和路径穿越检查。系统不会任意重映射旧绝对路径。
+
 ### 修复缺失的目录
 
-定格后的主目录仍可**重定位**，且只为修复：目录在磁盘上被移动或改名，项目指向了不存在的位置。这种状态下 `project_workdir_for` 返回 `None`——绝不悄悄换成默认项目的家目录——于是该轮工具 cwd 回落到会话自己的 `workdir/`，而 `project_path_missing` 报出消失的那个路径。`list_projects` 把它作为每个项目的 `path_missing` 下发，chip 因此转为警示态，菜单里出现"定位文件夹…"。
+定格后的主目录仍可**重定位**，且只为修复：目录在磁盘上被移动或改名，项目指向了不存在的位置。这种状态下 `project_workdir_for` 返回 `None`，绝不悄悄替换成默认项目家目录。项目缺失、被替换、pending、迁移中或其他不可用状态时，新的项目绑定任务会被阻止；界面收到 location state 和缺失路径后提供修复入口。修复期间会话仓库仍可读取。
 
 修复动作是 `relocate_project` ws action：
 
@@ -84,7 +110,7 @@ relocate_project {session_id, project_id, path}
   → project_relocated {ok, old_path, path, node_id} + 一份新的 projects_list
 ```
 
-它改的是**项目的路径**，而非会话→项目的绑定，所以定格之后依然合法。绑定到该项目的每个会话都跟着移动。默认项目拒绝重定位：它的路径是家目录，每次 `get_default_project` 读取都会被恢复。
+它改的是**项目的路径**，而非会话→项目的绑定，所以定格之后依然合法。绑定到该项目的 session 保持同一个稳定 project id 和应用状态目录下的会话仓库。旧工作目录副本通过迁移日志和持久 location index 处理。默认项目拒绝重定位：它的显示路径是家目录，每次 `get_default_project` 读取都会恢复；它没有独立的项目 Git 仓库。每轮文件撤销恢复仍位于目标仓库旁的 `.file-recovery/<session_id>/<turn>/`，在会话 Git 仓库之外。
 
 ### relocate 记录节点
 
@@ -107,14 +133,19 @@ relocate_project {session_id, project_id, path}
 
 ```
 调用方调 append_message(session_id, msg)
-  → 写消息到 DAG（Git history/）
+  → 把 JSON 节点追加到 history/ 中的对话 DAG
+  → 写入 meta.json；对话链增长时同时写入 DAG head
   → 如果 msg.role == "user"：
       → preview = 截取 msg.content 前 80 字符
       → _index[session_id]["preview"] = preview
       → _index[session_id]["updated_at"] = time.time()
       → 标记注册表脏（5 秒 debounce 写磁盘）
-  → 不广播（消息内容通过独立的 streaming 通道推送）
+  → 不广播 session 列表（消息内容通过独立的 streaming 通道推送）
 ```
+
+原始节点和 `meta.json` 会在 turn 结束的 Git 提交之前写入。turn 成功后，
+`GitSession.commit_all` 提交会话仓库；`session_commits()` 读取这些 Git 提交，
+形成独立的每轮时间轴。因此 Git `HEAD` 与对话 DAG 的 head 不是同一个指针。
 
 ### preview 截取
 
@@ -313,7 +344,7 @@ LLM 标题生成的细节（prompt、参数、后处理）见 [name.md](name.md)
 三个入口都经 `set_archived` 写同一个标志并广播 `session_updated`，所以每个
 打开的标签页看到的状态一致。
 
-已归档的 session 受启动时数据维护约束：90 天过期 + 1000 容量上限。活跃 session 不受影响。
+已归档的 session 会被启动维护保留。它们默认不出现在列表中，直到显式删除前仍可访问。
 
 ---
 

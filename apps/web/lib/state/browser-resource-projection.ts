@@ -38,10 +38,17 @@ export function applyFollowPreview(
   const binding = followPreviewBinding(sessionId, branchId, tabs);
   const pip = useWebTabPip.getState();
   if (!binding) {
-    if (getPreviewPreference(sessionId, branchId).hidden && pip.tabId) pip.hide();
+    const pref = getPreviewPreference(sessionId, branchId);
+    const savedTabId = !branchId && !pref.hidden && !pref.targetId ? pip.previews[sessionId] : null;
+    const owner = tabs.find(tab => tab.kind === "session" && tab.sessionId === sessionId);
+    if (savedTabId && owner && tabs.some(tab => tab.id === savedTabId)) {
+      pip.show(savedTabId, owner.id);
+      return { tabId: savedTabId, ownerTabId: owner.id };
+    }
+    if (pip.tabId) pip.hide();
     return null;
   }
-  if (pip.tabId !== binding.tabId || pip.ownerTabId !== binding.ownerTabId) {
+  if (pip.tabId !== binding.tabId || pip.ownerTabId !== binding.ownerTabId || pip.ownerSessionId !== sessionId) {
     pip.show(binding.tabId, binding.ownerTabId);
   }
   return binding;

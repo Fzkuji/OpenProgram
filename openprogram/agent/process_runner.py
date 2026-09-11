@@ -348,6 +348,7 @@ def _update_tracked_webtabs(
                 webtab.validated_open_ownership(result).get("created") is True
             )
             tracked_pages[binding_id] = {
+                **({"session_id": command["session_id"]} if command.get("session_id") else {}),
                 "window_id": str(result.get("window_id") or ""),
                 "tab_id": str(result.get("tab_id") or ""),
                 "agent_owned": agent_owned,
@@ -494,111 +495,117 @@ def _bridge_webtab_to_parent(
     allowed_bindings: set[str] | None = None,
     session_id: str = "",
 ) -> dict:
-    command = data.get("command") if isinstance(data, dict) else None
-    # Attribution comes from the parent execution, never from child-supplied data.
-    if isinstance(command, dict):
-        command = {key: value for key, value in command.items() if key != "session_id"}
-        if session_id:
-            command["session_id"] = session_id
-    op = command.get("op") if isinstance(command, dict) else ""
-    valid = op in {"open", "active", "capture_pages"} or (
-        op in {"activate", "screenshot"}
-        and isinstance(command.get("binding_id"), str)
-    ) or (
-        op == "close" and any(
-            isinstance(command.get(key), str)
-            for key in ("binding_id", "tab_id")
-        )
-    )
-    if not valid:
-        result = {"ok": False, "error": "unsupported webtab bridge operation"}
-    else:
-        try:
-            timeout = max(0.1, min(
-                float(data.get("timeout", 15)),
-                _WEBTAB_BRIDGE_MAX_TIMEOUT_SECONDS,
-            ))
-            from openprogram.webui.ws_actions import webtab
+    from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
 
-            binding_id = str(command.get("binding_id") or "")
-            binding_authorized = (
-                allowed_bindings is None or binding_id in allowed_bindings
+    token = set_current_session_id(session_id)
+    try:
+        command = data.get("command") if isinstance(data, dict) else None
+        # Attribution comes from the parent execution, never from child-supplied data.
+        if isinstance(command, dict):
+            command = {key: value for key, value in command.items() if key != "session_id"}
+            if session_id:
+                command["session_id"] = session_id
+        op = command.get("op") if isinstance(command, dict) else ""
+        valid = op in {"open", "active", "capture_pages"} or (
+            op in {"activate", "screenshot"}
+            and isinstance(command.get("binding_id"), str)
+        ) or (
+            op == "close" and any(
+                isinstance(command.get(key), str)
+                for key in ("binding_id", "tab_id")
             )
-            if (
-                op in {"activate", "screenshot", "close"}
-                and binding_id
-                and not binding_authorized
-            ):
-                result = {
-                    "ok": False,
-                    "reason_code": "page_context_stale",
-                    "error": "Page binding is outside this agent run",
-                }
-            elif op == "activate":
-                result = webtab.request_bound_tab(
-                    command["binding_id"],
-                    url=command.get("url") or "",
-                    timeout=timeout,
-                    expected_page_revision=int(
-                        command.get("expected_page_revision") or 0
-                    ),
-                    expected_access_revision=int(
-                        command.get("expected_access_revision") or 0
-                    ),
-                    expected_geometry_revision=int(
-                        command.get("expected_geometry_revision") or 0
-                    ),
+        )
+        if not valid:
+            result = {"ok": False, "error": "unsupported webtab bridge operation"}
+        else:
+            try:
+                timeout = max(0.1, min(
+                    float(data.get("timeout", 15)),
+                    _WEBTAB_BRIDGE_MAX_TIMEOUT_SECONDS,
+                ))
+                from openprogram.webui.ws_actions import webtab
+
+                binding_id = str(command.get("binding_id") or "")
+                binding_authorized = (
+                    allowed_bindings is None or binding_id in allowed_bindings
                 )
-            elif op == "screenshot":
-                result = webtab.request_bound_screenshot(
-                    command["binding_id"],
-                    timeout=timeout,
-                    expected_page_revision=int(
-                        command.get("expected_page_revision") or 0
-                    ),
-                    expected_access_revision=int(
-                        command.get("expected_access_revision") or 0
-                    ),
-                    expected_geometry_revision=int(
-                        command.get("expected_geometry_revision") or 0
-                    ),
-                )
-            elif op == "close":
-                result = _close_bridged_webtab(
-                    webtab, command, timeout, tracked_pages,
-                )
-            elif op == "open":
-                result = _open_bridged_webtab(
+                if (
+                    op in {"activate", "screenshot", "close"}
+                    and binding_id
+                    and not binding_authorized
+                ):
+                    result = {
+                        "ok": False,
+                        "reason_code": "page_context_stale",
+                        "error": "Page binding is outside this agent run",
+                    }
+                elif op == "activate":
+                    result = webtab.request_bound_tab(
+                        command["binding_id"],
+                        url=command.get("url") or "",
+                        timeout=timeout,
+                        expected_page_revision=int(
+                            command.get("expected_page_revision") or 0
+                        ),
+                        expected_access_revision=int(
+                            command.get("expected_access_revision") or 0
+                        ),
+                        expected_geometry_revision=int(
+                            command.get("expected_geometry_revision") or 0
+                        ),
+                    )
+                elif op == "screenshot":
+                    result = webtab.request_bound_screenshot(
+                        command["binding_id"],
+                        timeout=timeout,
+                        expected_page_revision=int(
+                            command.get("expected_page_revision") or 0
+                        ),
+                        expected_access_revision=int(
+                            command.get("expected_access_revision") or 0
+                        ),
+                        expected_geometry_revision=int(
+                            command.get("expected_geometry_revision") or 0
+                        ),
+                    )
+                elif op == "close":
+                    result = _close_bridged_webtab(
+                        webtab, command, timeout, tracked_pages,
+                    )
+                elif op == "open":
+                    result = _open_bridged_webtab(
+                        webtab,
+                        command,
+                        timeout,
+                        allowed_window_id=allowed_window_id,
+                        tracked_pages=tracked_pages,
+                    )
+                elif op == "capture_pages":
+                    result = _capture_bridged_pages(
+                        command,
+                        tracked_pages,
+                        allowed_window_id=allowed_window_id,
+                        allowed_bindings=allowed_bindings,
+                    )
+                else:
+                    result = webtab._request(command, timeout)
+                _update_tracked_webtabs(
                     webtab,
                     command,
-                    timeout,
-                    allowed_window_id=allowed_window_id,
-                    tracked_pages=tracked_pages,
-                )
-            elif op == "capture_pages":
-                result = _capture_bridged_pages(
-                    command,
+                    result,
                     tracked_pages,
-                    allowed_window_id=allowed_window_id,
-                    allowed_bindings=allowed_bindings,
+                    allowed_bindings,
                 )
-            else:
-                result = webtab._request(command, timeout)
-            _update_tracked_webtabs(
-                webtab,
-                command,
-                result,
-                tracked_pages,
-                allowed_bindings,
-            )
-        except Exception as exc:
-            result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-    answer_queue.put({
-        "__op_webtab_result__": True,
-        "req_id": data.get("req_id") if isinstance(data, dict) else None,
-        "result": result,
-    })
-    return result
+            except Exception as exc:
+                result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        answer_queue.put({
+            "__op_webtab_result__": True,
+            "req_id": data.get("req_id") if isinstance(data, dict) else None,
+            "result": result,
+        })
+        return result
+    finally:
+        reset_current_session_id(token)
 
 
 def _cleanup_bridged_webtabs(tracked_pages: dict[str, dict]) -> list[dict]:
@@ -644,6 +651,7 @@ def _cleanup_bridged_webtabs(tracked_pages: dict[str, dict]) -> list[dict]:
                 owner_ws,
                 {
                     "op": "close",
+                    **({"session_id": page["session_id"]} if page.get("session_id") else {}),
                     "window_id": page.get("window_id"),
                     "tab_id": page.get("tab_id"),
                 },

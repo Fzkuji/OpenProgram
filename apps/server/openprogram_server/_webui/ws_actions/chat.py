@@ -971,7 +971,7 @@ async def handle_chat(ws, cmd: dict):
         release_bindings as _release_surface_bindings,
     )
     try:
-        surface_context = _capture_surface(surface_ref, ws)
+        surface_context = _capture_surface(surface_ref, ws, session_id=session_id)
     except BaseException:
         _s._release_run_reservation(session_id, msg_id)
         raise

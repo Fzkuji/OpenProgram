@@ -39,3 +39,15 @@ export function groupWebPages(tabs: readonly CenterTab[]) {
   }
   return [...groups.values()];
 }
+
+/** Private retained Pages are accessible only to their recorded conversation.
+ * Explicit top-level tabs are shared; exclusive operation admission stays server-owned. */
+export function agentCanAccessWebTab(
+  tabId: string,
+  sessionId: string | null | undefined,
+  state: { tabs: readonly CenterTab[]; groups: readonly CenterTabGroup[] },
+): boolean {
+  const tab = state.tabs.find(item => item.id === tabId && item.kind === "web");
+  return !!tab && (topLevelTabs(state.tabs, state.groups).some(item => item.id === tabId)
+    || (!!sessionId && tab.agentSessionId === sessionId));
+}
