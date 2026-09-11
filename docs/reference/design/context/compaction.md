@@ -102,24 +102,31 @@ One fact, two projections.
 turn) and reactive compact (provider overflow error) all run the same
 `engine.compact` pipeline:
 
-1. **Input is the rendered view, not the raw chain.** The history handed to
-   the cut finder is exactly what the model currently reads: active summary
-   first (if any), then the kept turns. Feeding the raw predecessor walk here
-   re-summarises turns the previous summary already ate and produces a second
-   summary with identical coverage.
-2. **Cut.** `find_cut_index` picks the split so the kept tail fits
-   `keep_recent_tokens` (default from budget policy), snapping forward to a
-   user-turn boundary; the first element(s) of the rendered view — the
-   previous summary, if present — always land on the covered side.
-3. **Summarise.** The summariser writes the new summary from the covered
-   slice, chaining `previous_summary` so nothing already summarised is lost.
-4. **Persist.** One node, as specified in §2. The new `covers_ids` = previous
-   segment (if a summary was covered) extended with the newly covered turns'
-   ids. `_last_summary_id` / `_last_summary_text` move to the new node.
-5. **Events.** `compaction_started` / `compaction_finished` (or
-   `compaction_failed`) broadcast over the session channel; the finished event
-   carries `summary_id`, counts and token deltas. Fewer than 4 history
-   messages short-circuits with a user-visible `local_command` notice.
+1. **Freeze the rendered input.** `compaction_view.load_compaction_view` uses
+   `render_context` and `render_dag_messages`, including tool results, expose,
+   spill references and the current aging boundary. Top-level turns define
+   coverage; their visible child calls contribute to input and token budgets.
+2. **Select whole turns.** The retained-token target is 10% of the model
+   window, bounded to 8,000–40,000 tokens (an explicit override takes priority).
+   The default retains at least four conversational messages at a user boundary.
+   A history already below the target is a no-op. When recent turns exceed the
+   target, retain them intact and summarize the older complete turns.
+3. **Summarize the entire covered prefix.** Every replaced turn, including the
+   initial user request and any applicable previous summary, enters the model
+   input together with its rendered child calls. Session-global summary caches
+   are not injected into another branch. Non-text media is represented by a
+   reference notice; compaction does not ask the summary model to interpret it.
+4. **Validate before writing.** Reject empty, failed, cancelled, oversized or
+   nonreducing summaries. Render a candidate summary in an in-memory copy with
+   the same aging boundary and require a strictly smaller local token estimate.
+   Recheck the source graph and head after the asynchronous model call; a changed
+   source is a no-op and can be retried. Provider failure preserves the original
+   history instead of replacing it with a lossy structural fallback.
+5. **Persist and report.** Write one summary node; `covers_ids` expands any
+   previous summary to the underlying real turn IDs. Report that same coverage
+   count, with local before/after estimates using the provider-message renderer
+   shared by the context panel. No-op paths write no node and do not increment
+   compaction usage. Original history and HEAD remain unchanged.
 
 ## 5. HEAD integrity
 
@@ -235,7 +242,8 @@ side-effect bug involved here does not show up in unit tests of the parts.
 
 ## Implementation status
 
-Every section above is implemented:
+The storage and rendering contracts are implemented. The revised selection and
+validation policy is under verification:
 
 - §2 node shape and §4 pipeline — `context/persistence.py`
   (`insert_summary_node`, `covered_chain_ids`, `rendered_history`); the

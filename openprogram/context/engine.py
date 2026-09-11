@@ -305,12 +305,14 @@ class DefaultContextEngine(ContextEngine):
         from openprogram.context.persistence import rendered_history
 
         db = default_db()
-        sess = db.get_session(session_id) or {}
         # §4 step 1: compaction consumes the RENDERED view — active
         # summary first, then the kept turns — so a re-compaction eats
         # "previous summary + more turns" instead of re-summarising raw
         # turns the previous summary already covers.
-        history = rendered_history(db, session_id)
+        from openprogram.context.compaction_view import load_compaction_view
+        from openprogram.context.tokens import estimate_history_tokens
+        view = load_compaction_view(db, session_id)
+        history = view.history
         tokens_before = self._occupancy_tokens(session_id, history)
         reason = "auto" if not user_initiated else "manual"
 
@@ -325,7 +327,8 @@ class DefaultContextEngine(ContextEngine):
                 error=extra,
             )
 
-        if len(history) < 4:
+        if (len(history) < 4
+                or (cancel_event is not None and cancel_event.is_set())):
             result = _no_op()
             self._emit_compaction_finished(
                 on_event, session_id=session_id,
@@ -347,10 +350,9 @@ class DefaultContextEngine(ContextEngine):
             )
             return result
 
-        # Chain on previous summary if not supplied.
-        if previous_summary is None:
-            extra_meta = sess.get("extra_meta") or {}
-            previous_summary = extra_meta.get("_last_summary_text")
+        # The active branch's previous summary is already in the covered
+        # input. Never inject the session-global cache from another branch.
+        previous_summary = None
 
         if on_event:
             on_event({"type": "chat_response", "data": {
@@ -378,6 +380,28 @@ class DefaultContextEngine(ContextEngine):
             )
             return result
 
+        from openprogram.context.tokens import _text_tokens
+        from openprogram.context.spill import NODE_RENDER_CAP
+        if (len(summary.summary_text) + len("[Previous conversation summary]\n") > NODE_RENDER_CAP
+                or _text_tokens(summary.summary_text) > self.summarizer.max_summary_tokens):
+            result = _no_op("Summary exceeds the render budget; history unchanged")
+        elif cancel_event is not None and cancel_event.is_set():
+            result = _no_op("Compaction cancelled; history unchanged")
+        elif not view.unchanged(db, session_id):
+            result = _no_op("Context changed during compaction; retry with current history")
+        elif not 0 < summary.cut_idx < len(history):
+            result = _no_op("Invalid compaction range")
+        else:
+            candidate = view.candidate_messages(summary.summary_text, summary.cut_idx)
+            saved = estimate_history_tokens(view.messages) - estimate_history_tokens(candidate)
+            result = _no_op("Summary does not reduce context; history unchanged") if saved <= 0 else None
+        if result is not None:
+            self._emit_compaction_finished(
+                on_event, session_id=session_id,
+                user_initiated=user_initiated, result=result,
+            )
+            return result
+
         summary_id = self.persister.insert_summary_node(
             session_id,
             summary_text=summary.summary_text,
@@ -392,6 +416,8 @@ class DefaultContextEngine(ContextEngine):
             )
             return result
 
+        from openprogram.context.persistence import covered_chain_ids
+        covered_count = len(covered_chain_ids(history[:summary.cut_idx]))
         try:
             db.update_session(
                 session_id,
@@ -414,7 +440,7 @@ class DefaultContextEngine(ContextEngine):
             db.merge_node_metadata(session_id, summary_id, {
                 "tokens_before": tokens_before,
                 "tokens_after": tokens_after,
-                "summarised_count": summary.summarised_count,
+                "summarised_count": covered_count,
                 "compacted_at": time.time(),
             })
         except Exception:
@@ -427,12 +453,12 @@ class DefaultContextEngine(ContextEngine):
             ok=True,
             summary_text=summary.summary_text,
             summary_id=summary_id,
-            summarised_count=summary.summarised_count,
+            summarised_count=covered_count,
             summarised_tokens=summary.summarised_tokens,
             tokens_before=tokens_before,
             tokens_after=tokens_after,
             duration_ms=int((time.time() - started) * 1000),
-            used_previous_summary=summary.previous_summary_used,
+            used_previous_summary=any(m.get("covers_ids") for m in history[:summary.cut_idx]),
             reason=("manual" if user_initiated
                     else ("recovered" if summary.fell_back_to_structural
                           else "auto")),

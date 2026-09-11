@@ -62,6 +62,7 @@ Windows 推荐使用 Windows Terminal。运行在 MinTTY 中的 Git Bash 可能�
 | `/new`、`/resume`、`/sessions`、`/session` | 新会话、续聊、会话列表、当前会话信息 |
 | `/rewind` | 回退会话到某条消息 |
 | `/compact`、`/context`、`/clear` | 压缩上下文、查看上下文、清屏 |
+
 | `/permissions`、`/sandbox` | 权限档与沙箱 |
 | `/login <provider>`、`/logout` | provider 登录 / 登出（见[认证与凭据](../models/auth.md)） |
 | `/agents`、`/agent` | 管理 / 切换 agent |
@@ -72,6 +73,10 @@ Windows 推荐使用 Windows Terminal。运行在 MinTTY 中的 Git Bash 可能�
 | `/doctor` | 健康检查 |
 | `/channel`、`/attach`、`/detach`、`/connections` | 聊天渠道接入与会话路由 |
 | `/quit` | 退出 |
+
+`/compact` 总结较早的完整轮次及其可见工具结果，保留最近轮次。它改变下一次模型请求的上下文，
+原始消息仍保存在会话中。前后 token 数为本地估算；历史过短、摘要失败或没有节省空间时，
+上下文保持不变。
 
 另有 `/search`、`/review`、`/diff`、`/init`、`/browser`、`/welcome`。完整清单以 `/help` 输出为准。
 

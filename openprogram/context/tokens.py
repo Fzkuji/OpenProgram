@@ -119,9 +119,9 @@ def estimate_message_tokens(msg: dict[str, Any] | Any) -> int:
                 if getattr(blk, "type", None) == "image":
                     total += _PER_IMAGE_TOKENS
                 # ToolUseContent — name + JSON args
-                if getattr(blk, "type", None) == "tool_use":
+                if getattr(blk, "type", None) in ("tool_use", "toolCall"):
                     name = getattr(blk, "name", "") or ""
-                    input_data = getattr(blk, "input", None)
+                    input_data = getattr(blk, "arguments", getattr(blk, "input", None))
                     if input_data is not None:
                         total += _text_tokens(name) + _text_tokens(str(input_data))
                 # ToolResultContent

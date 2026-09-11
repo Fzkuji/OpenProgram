@@ -62,6 +62,7 @@ Type `/` to trigger completion. Common ones:
 | `/new`, `/resume`, `/sessions`, `/session` | New session, resume, session list, current session info |
 | `/rewind` | Roll the session back to a message |
 | `/compact`, `/context`, `/clear` | Compact context, view context, clear screen |
+
 | `/permissions`, `/sandbox` | Permission profiles and sandbox |
 | `/login <provider>`, `/logout` | Provider login / logout (see [auth and credentials](../models/auth.md)) |
 | `/agents`, `/agent` | Manage / switch agents |
@@ -72,6 +73,12 @@ Type `/` to trigger completion. Common ones:
 | `/doctor` | Health check |
 | `/channel`, `/attach`, `/detach`, `/connections` | Chat-channel hookup and session routing |
 | `/quit` | Exit |
+
+`/compact` summarizes older complete turns, including their visible tool results,
+while retaining recent turns. It changes the next model context; original
+messages remain available in the session. The before/after token counts are local
+estimates. A short history, a failed summary or a summary that saves no space
+leaves the context unchanged.
 
 Also available: `/search`, `/review`, `/diff`, `/init`, `/browser`, `/welcome`. The `/help` output is the authoritative full list.
 
