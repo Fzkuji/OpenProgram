@@ -35,8 +35,13 @@ def main():
 
     class Context:
         instance_id = request["instance"]["id"]
-        project_path = request["instance"]["project_path"]
         run_id = request["run_id"]
+
+        @property
+        def project_path(self):
+            from .state import current_project_path
+            project_id = request["instance"]["project_id"]
+            return current_project_path(project_id) if project_id else ""
 
         def progress(self, value):
             send({"type": "progress", "value": value})
@@ -53,10 +58,11 @@ def main():
 
         def read_file(self, relative):
             self._require("files.project.read")
-            if not self.project_path:
+            project_path = self.project_path
+            if not project_path:
                 raise ValueError("no project bound")
             from .catalog import contained
-            return contained(Path(self.project_path), relative).read_text()
+            return contained(Path(project_path), relative).read_text()
 
         def ask(self, question):
             request_id = uuid.uuid4().hex

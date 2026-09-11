@@ -40,8 +40,13 @@ def captured_identity_matches(project, path: str | Path) -> bool:
         return False
     stored = getattr(project, "directory_identity", "") or ""
     current = inode_token(folder)
-    if stored and current and stored == current:
-        return True
+    if stored and current:
+        if stored == current:
+            return True
+        if stored.partition(":")[0] == current.partition(":")[0]:
+            # A bookmark may fall back to the old pathname after replacement.
+            # It cannot override a different inode on the same device.
+            return False
     bookmark = getattr(project, "native_bookmark", "") or ""
     if bookmark:
         resolved = native.resolve_bookmark(bookmark)

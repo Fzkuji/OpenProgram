@@ -63,6 +63,30 @@ def get_instance(key: str) -> dict:
     return dict(row)
 
 
+
+def current_project_path(project_id: str) -> str:
+    from pathlib import Path
+    from openprogram.store.project import get_project
+    from openprogram.store.project.location import bound_execution_state, refresh_project_location
+    refresh_project_location(project_id)
+    project = get_project(project_id)
+    if project is None:
+        raise ValueError("bound project no longer exists")
+    reason = bound_execution_state(project)
+    if reason or not Path(project.path).is_dir():
+        raise ValueError(f"project location is unavailable ({reason or 'missing'}); locate the project before running")
+    return project.path
+
+
+def refresh_instance_location(key: str) -> dict:
+    value = get_instance(key)
+    if value["project_id"]:
+        value["project_path"] = current_project_path(value["project_id"])
+        with connect() as db:
+            db.execute("UPDATE instances SET project_path=? WHERE id=?", (value["project_path"], key))
+    return value
+
+
 def emit(run_id: str, payload: dict):
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
     if len(encoded.encode()) > 1024 * 1024:

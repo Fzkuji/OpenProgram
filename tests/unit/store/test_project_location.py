@@ -100,3 +100,22 @@ def test_native_event_clears_only_touched_project_retry(monkeypatch):
     assert calls == ["p1"]
     assert "p1" not in location._migration_attempted
     assert "p2" in location._migration_attempted
+
+
+def test_bookmark_path_cannot_override_same_device_inode_mismatch(tmp_path, monkeypatch):
+    folder = tmp_path / 'project'
+    folder.mkdir()
+    project = _project(path=str(folder), location_state=location.AVAILABLE,
+                       directory_identity=identity.inode_token(folder), native_bookmark='bookmark')
+    folder.rename(tmp_path / 'original')
+    folder.mkdir()
+    monkeypatch.setattr(identity.native, 'resolve_bookmark', lambda _blob: str(folder))
+    assert location.bound_execution_state(project) == location.REPLACED
+
+
+def test_bookmark_remains_available_when_device_identity_changes(tmp_path, monkeypatch):
+    device, inode = identity.inode_token(tmp_path).split(':')
+    project = _project(path=str(tmp_path), location_state=location.AVAILABLE,
+                       directory_identity=f'{int(device) + 1}:{inode}', native_bookmark='bookmark')
+    monkeypatch.setattr(identity.native, 'resolve_bookmark', lambda _blob: str(tmp_path))
+    assert location.bound_execution_state(project) is None

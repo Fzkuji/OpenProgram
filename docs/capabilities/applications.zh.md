@@ -61,3 +61,5 @@ worker 停止会中断未完成的 Python 函数，重启后显示中断状态�
 `openprogram programs apps uninstall APP` 移除菜单入口并取消活动操作，保留业务数据、旧代码及 schema/scope 兼容身份。重新安装兼容包可以恢复数据，不兼容的重新安装会在激活前被拒绝。owner API 的 `PATCH /api/applications/{id}` 支持 `enabled`、`hidden`、`display_title`；隐藏不取消任务，停用会取消。
 
 独立部署、非 Python 后端、MCP Apps 兼容以及原生操作系统 GUI 窗口嵌入尚未实现。
+
+项目应用在启动操作和读取项目文件前，根据绑定的项目 ID 重新确认当前位置。移动项目不改变应用实例和已保存数据；位置缺失、被其他目录替代或尚未确认时，拒绝启动新操作，已保存的应用数据仍可读取。

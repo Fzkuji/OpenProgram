@@ -147,3 +147,8 @@ hiding an entry does not cancel a task; disabling it does.
 
 Standalone deployment, non-Python backend adapters, MCP Apps compatibility and
 embedding native operating-system GUI windows are not implemented.
+
+Project-scoped operations resolve the bound project ID before starting and before
+reading a project file. Moving the project keeps the same application instance
+and saved data. A missing, replaced, or unverified location blocks new operations;
+saved application data remains readable.

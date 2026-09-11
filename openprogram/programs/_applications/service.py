@@ -65,6 +65,7 @@ class ApplicationService:
             root = catalog.home() / "versions" / app["digest"]
             if await asyncio.to_thread(catalog.package_digest, root) != app["digest"]:
                 raise ValueError("installed application content changed; reinstall from its source")
+            instance = await asyncio.to_thread(state.refresh_instance_location, instance_id)
             store = default_store()
             revision = store.create_revision(manifest={"application": app["id"], "digest": app["digest"], "operation": operation})
             run_id = "app_" + uuid.uuid4().hex
