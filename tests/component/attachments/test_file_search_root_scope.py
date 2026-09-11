@@ -100,6 +100,12 @@ def test_raw_refuses_a_path_outside_every_root(client, tmp_path):
                       params={"path": str(outside)}).status_code == 403
 
 
+def test_attachment_routes_keep_allowed_missing_file_404(client, project):
+    missing = project / "sub" / "missing.png"
+    assert client.get("/api/file-raw", params={"path": str(missing)}).status_code == 404
+    assert client.get("/api/file-read", params={"path": str(missing)}).status_code == 404
+
+
 def test_raw_refuses_a_symlink_pointing_out_of_the_root(client, project, tmp_path):
     secret = tmp_path / "id_rsa"
     secret.write_text("PRIVATE KEY")

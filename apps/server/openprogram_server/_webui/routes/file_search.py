@@ -83,6 +83,7 @@ def register(app) -> None:
             target = _attach.resolve_session_attachment(
                 path, session_id or None,
                 _attach.readable_roots(session_id or None),
+                allow_missing=True,
             )
             if target is None:
                 raise HTTPException(status_code=403, detail="path not allowed")
@@ -142,6 +143,7 @@ def register(app) -> None:
         target = _attach.resolve_session_attachment(
             path, session_id or None,
             _attach.readable_roots(session_id or None),
+            allow_missing=True,
         )
         if target is None:
             raise HTTPException(status_code=403, detail="path not allowed")

@@ -293,6 +293,20 @@ def resolve_session_attachment(
     unique, live, application-owned, and contain the same relative suffix.
     """
     roots = tuple(roots)
+    try:
+        raw = Path(os.path.expanduser(str(path)))
+        parts = raw.parts
+        legacy_start = next(
+            (i for i in range(len(parts) - 4)
+             if parts[i:i + 2] == (".openprogram", "sessions")
+             and parts[i + 3:i + 5] == ("workdir", "attachments")),
+            None,
+        )
+        if (legacy_start is not None and session_id
+                and parts[legacy_start + 2] != session_id):
+            return None
+    except (OSError, ValueError):
+        raw = None
     target = resolve_within(path, roots)
     if target is not None and target.is_file():
         return target
@@ -320,17 +334,17 @@ def resolve_session_attachment(
     attachment_root = (repo_root / "workdir" / "attachments").resolve()
     try:
         if not attachment_root.is_relative_to(repo_root):
-            return target if allow_missing else None
+            return None
     except ValueError:
-        return target if allow_missing else None
+        return None
     candidate = (attachment_root / relative).resolve()
     try:
         if not candidate.is_relative_to(attachment_root):
-            return target if allow_missing else None
+            return None
     except ValueError:
-        return target if allow_missing else None
+        return None
     if resolve_within(candidate, roots) != candidate:
-        return target if allow_missing else None
+        return None
     return candidate if candidate.is_file() else (target if allow_missing else None)
 
 
