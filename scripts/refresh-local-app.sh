@@ -15,17 +15,19 @@ if os.environ.get("OPENPROGRAM_REFRESH_DETACHED") != "1":
     log_path = os.path.join(tempfile.gettempdir(), f"openprogram-refresh-{os.getuid()}.log")
     log = open(log_path, "ab", buffering=0)
     child = subprocess.Popen(
-        [sys.executable, "-", sys.argv[1], *sys.argv[2:]],
-        stdin=subprocess.PIPE,
+        ["bash", sys.argv[1], *sys.argv[2:]],
+        stdin=subprocess.DEVNULL,
         stdout=log,
         stderr=subprocess.STDOUT,
         start_new_session=True,
         env=env,
         close_fds=True,
     )
-    child.stdin.write(sys.stdin.buffer.read())
-    child.stdin.close()
     print(f"detached refresh pid {child.pid}; log {log_path}", flush=True)
+    # A chat-path refresh stops this worker. Waiting here would just
+    # get SIGTERM with the session. Return once the child owns the work.
+    if os.environ.get("OPENPROGRAM_SESSION_ID"):
+        raise SystemExit(0)
     raise SystemExit(child.wait())
 with open(lock_path, "a") as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)

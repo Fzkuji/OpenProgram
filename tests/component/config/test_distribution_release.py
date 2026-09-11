@@ -1984,6 +1984,8 @@ def test_local_app_refresh_detaches_before_stopping_worker() -> None:
     lock_at = refresh.index('fcntl.flock(lock, fcntl.LOCK_EX)')
     stop_at = refresh.index('"$local_python" -m openprogram worker stop')
     assert "OPENPROGRAM_REFRESH_DETACHED" in refresh
+    assert '["bash", sys.argv[1], *sys.argv[2:]]' in refresh
+    assert "OPENPROGRAM_SESSION_ID" in refresh
     assert detach_at < lock_at < stop_at
 
 
