@@ -1500,6 +1500,8 @@ class CheckpointStore:
                 return descriptor.get("size") == 0
             return (
                 isinstance(descriptor.get("blob_ref"), str)
+                and bool(descriptor["blob_ref"])
+                and descriptor["blob_ref"] not in {".", ".."}
                 and Path(descriptor["blob_ref"]).name == descriptor["blob_ref"]
                 and isinstance(descriptor.get("sha256"), str)
                 and len(descriptor["sha256"]) == 64

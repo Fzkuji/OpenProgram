@@ -285,7 +285,7 @@ class DocumentHistory:
             if state.get("kind") == "absent":
                 raise DocumentHistoryError("file did not exist in this version", "NOT_FOUND")
             ref = state.get("blob_ref")
-            if not isinstance(ref, str) or Path(ref).name != ref or ref in {".", ".."}:
+            if not isinstance(ref, str) or not ref or Path(ref).name != ref or ref in {".", ".."}:
                 raise DocumentHistoryError("invalid version reference", "HISTORY_CORRUPT")
             raw, _ = self._read_bounded(self._dir(project_id, relative) / "operations" / operation / ref)
             if _digest(raw) != _revision(state):

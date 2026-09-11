@@ -335,3 +335,22 @@ def test_malformed_receipt_remains_visible_as_unconfirmed_history(documents):
     assert response.status_code == 200, response.text
     assert response.json()["entries"][0]["status"] == "recovery_required"
     assert response.json()["entries"][0]["before_revision"] is None
+
+
+def test_empty_history_blob_reference_reports_corruption(documents):
+    import json
+    client, root, state, _ = documents
+    (root / "a.txt").write_bytes(b"old")
+    assert put(client, "a.txt", b"old", b"new", close=True).status_code == 200
+    version = history(client, "a.txt")[0]["version_id"]
+    intent = next((state / "project-file-history").rglob("intent.json"))
+    value = json.loads(intent.read_text())
+    for side in ("before", "after"):
+        value[side]["blob_ref"] = ""
+    intent.write_text(json.dumps(value))
+    for side in ("before", "after"):
+        response = client.get("/api/documents/history/content", params={
+            "project_id": "p1", "path": "a.txt", "version": version, "side": side})
+        assert response.status_code == 503, response.text
+        assert response.json()["error"] in ("HISTORY_CORRUPT", "RECOVERY_REQUIRED")
+    assert history(client, "a.txt")[0]["status"] == "recovery_required"
