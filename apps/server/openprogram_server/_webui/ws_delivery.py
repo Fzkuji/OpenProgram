@@ -245,7 +245,7 @@ class QueuedWebSocket:
                 kind = json.loads(payload).get("type")
             except (ValueError, AttributeError):
                 kind = None
-            if kind in {"session_loaded", "session_history_page", "branches_list"}:
+            if kind in {"session_loaded", "session_history_page", "branches_list", "full_tool_output"}:
                 transfer = uuid.uuid4().hex
                 for index, start in enumerate(range(0, len(payload), 16 * 1024)):
                     end = start + 16 * 1024

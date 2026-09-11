@@ -14,21 +14,22 @@ export {useSessionStore} from './lib/session-store';
 export {createHistoryFragmentDecoder} from './lib/net/history-fragments';
 export {registerSessionHistory,updateSessionHistory,useSessionHistory} from './lib/state/session-history';
 `,resolveDir:root},bundle:true,format:'esm',platform:'node',packages:'external',tsconfig:join(root,'tsconfig.json'),outfile:join(dir,'test.mjs')});
+const fragment=(decoder,data)=>decoder.receive(JSON.stringify({type:'history_fragment',data}));
 const {loadOlderSessionHistory,loadSessionData,runtimeState,setSocket,useSessionStore,createHistoryFragmentDecoder,registerSessionHistory,updateSessionHistory,useSessionHistory}=await import(pathToFileURL(join(dir,'test.mjs')));
 test('large Unicode response is dispatched only when all ordered fragments arrive',()=>{
  const decoder=createHistoryFragmentDecoder();
  const original=JSON.stringify({type:'session_loaded',data:{id:'s',messages:['中文😀'.repeat(500000)]}});
  const parts=[];for(let i=0;i<original.length;i+=16384)parts.push(original.slice(i,i+16384));
  for(let i=0;i<parts.length;i++) {
-  const result=decoder.accept({id:'x',index:i,text:parts[i],final:i===parts.length-1});
-  assert.equal(result,i===parts.length-1?original:null);
+  const result=fragment(decoder,{id:'x',index:i,text:parts[i],final:i===parts.length-1});
+  assert.deepEqual(result,i===parts.length-1?[original]:[]);
  }
 });
 test('socket replacement discards partial history and rejects out-of-order continuation',()=>{
  const decoder=createHistoryFragmentDecoder();
- decoder.accept({id:'x',index:0,text:'old',final:false});decoder.clear();
- assert.throws(()=>decoder.accept({id:'x',index:1,text:'tail',final:true}));
- assert.equal(decoder.accept({id:'fresh',index:0,text:'new',final:true}),'new');
+ fragment(decoder,{id:'x',index:0,text:'old',final:false});decoder.clear();
+ assert.throws(()=>fragment(decoder,{id:'x',index:1,text:'tail',final:true}));
+ assert.deepEqual(fragment(decoder,{id:'fresh',index:0,text:'new',final:true}),['new']);
 });
 test('old history response cannot change a reloaded or different conversation',()=>{
  registerSessionHistory('a',{head_id:'head-a',before:'old-a'});
@@ -85,4 +86,30 @@ test('historical compaction loads full content without graph placeholders',async
  await pending;
  assert.equal(runtimeState.conversations.compacted.messages.find(m=>m.id==='sum_card').content,'FULL SUMMARY CONTENT');
  setSocket(null);
+});
+
+test('snapshot completes before interleaved terminal updates are applied',()=>{
+ runtimeState.currentSessionId='other';
+ const id='fragment-live';
+ loadSessionData({id,messages:[{id:'running-row',role:'assistant',content:'initial',status:'running'}]});
+ const decoder=createHistoryFragmentDecoder();
+ const snapshot=JSON.stringify({type:'session_loaded',data:{id,messages:[{id:'running-row',role:'assistant',content:'snapshot-old',status:'running'}],history:{head_id:'running-row',before:null}}});
+ const cut=Math.floor(snapshot.length/2);
+ assert.deepEqual(fragment(decoder,{id:'snapshot',index:0,text:snapshot.slice(0,cut),final:false}),[]);
+ assert.deepEqual(decoder.receive(JSON.stringify({type:'terminal',data:'terminal-result'})),[]);
+ for(const wire of fragment(decoder,{id:'snapshot',index:1,text:snapshot.slice(cut),final:true})) {
+  const message=JSON.parse(wire);
+  if(message.type==='session_loaded')loadSessionData(message.data);
+  else useSessionStore.getState().setMessages(id,[{id:'running-row',role:'assistant',content:message.data,status:'completed'}]);
+ }
+ assert.equal(useSessionStore.getState().messagesById['running-row'].content,'terminal-result');
+});
+test('interleaved snapshots retain first-fragment order and clear deferred notifications on disconnect',()=>{
+ const decoder=createHistoryFragmentDecoder();
+ assert.deepEqual(fragment(decoder,{id:'a',index:0,text:'A',final:false}),[]);
+ assert.deepEqual(fragment(decoder,{id:'b',index:0,text:'B',final:true}),[]);
+ assert.deepEqual(decoder.receive('"notification"'),[]);
+ assert.deepEqual(fragment(decoder,{id:'a',index:1,text:'!',final:true}),['A!','B','"notification"']);
+ fragment(decoder,{id:'c',index:0,text:'old',final:false});decoder.receive('"old-live"');decoder.clear();
+ assert.deepEqual(decoder.receive('"fresh"'),['"fresh"']);
 });

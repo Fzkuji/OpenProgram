@@ -731,6 +731,9 @@ async def handle_load_session(ws, cmd: dict):
             conv = await _session_io(
                 _s._get_or_create_session, session_id
             )
+    if conv is None and is_history_page:
+        from openprogram.webui.ws_errors import OperationError
+        raise OperationError("invalid_request", scope="session", retryable=True)
     if conv:
         # A chat turn can advance this mirror while the bounded hydration
         # reads run in worker threads. Keep the load payload tied to the
