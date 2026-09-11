@@ -47,7 +47,9 @@ def _read_file(project_id: str, path: str) -> dict:
 
 def _write_file(project_id: str, path: str, content: str,
                 expected_mtime: float | None,
-                expected_revision: str | None = None) -> dict:
+                expected_revision: str | None = None,
+                idempotency_key: str | None = None,
+                editor_id: str = "manual") -> dict:
     target, error = _resolve(project_id, path)
     if error:
         return {"error": error}
@@ -58,6 +60,11 @@ def _write_file(project_id: str, path: str, content: str,
         return {"error": f"not a file: {path!r}"}
     if not os.path.isdir(os.path.dirname(target)):
         return {"error": f"parent directory does not exist for {path!r}"}
+    from openprogram.store.document_history import DocumentHistory, DocumentHistoryError
+    try:
+        before, mode = DocumentHistory._read_bounded(target)
+    except DocumentHistoryError as exc:
+        return {"error": str(exc), "error_code": exc.code}
     if expected_mtime is not None:
         # Optimistic-concurrency gate: the editor sends the mtime it
         # read; any drift (or a vanished file) means someone else wrote
@@ -79,6 +86,14 @@ def _write_file(project_id: str, path: str, content: str,
         with open(tmp, "wb") as f:
             f.write(raw)
         os.replace(tmp, target)
+        try:
+            DocumentHistory()._record(
+                project_id, path, before, raw, mode, editor_id=editor_id,
+                idempotency_key=idempotency_key, close=False,
+            )
+        except DocumentHistoryError as exc:
+            return {"status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
+                    "error": f"file published but history recording failed: {exc}"}
         return {
             "ok": True,
             "mtime": os.stat(target).st_mtime,

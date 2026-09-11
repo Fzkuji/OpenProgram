@@ -421,7 +421,8 @@ def _durable_file_action(project_id: str, action: str, key: object,
                          payload: dict, fn):
     """Claim, execute, and persist one retry-safe file mutation."""
     if not isinstance(key, str) or not key:
-        return fn()
+        with _workspace_mutation_lock(project_id):
+            return fn()
     from openprogram.store.file_operations import (
         FileOperationConflict, default_file_operation_store, fingerprint,
     )
