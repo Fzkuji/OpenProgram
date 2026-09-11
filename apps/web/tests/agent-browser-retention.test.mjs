@@ -250,3 +250,69 @@ test("legacy destroy retires local registration once without claiming native con
   assert.deepEqual(destroyed.filter(item => item === id), [id]);
   assert.deepEqual(sent.filter(message => message.tab_id === id), []);
 });
+
+test("private Page commands require their trusted conversation even when another chat is selected", async () => {
+  const page = { id: "w:private-scope", kind: "web", url: "https://private.test", title: "Private", agentOpened: true, agentSessionId: "owner" };
+  useCenterTabs.setState({ tabs: [{id:"s:other",kind:"session",sessionId:"other",title:"Other"},page], activeId:"s:other",groups:[],splitWebTabId:null });
+  const sent = [], native = [];
+  setSocket({readyState:1,send:payload=>sent.push(JSON.parse(payload))});
+  const api = window.openprogramDesktop.webTab;
+  api.resolve = async id => { native.push(id); return "target-private"; };
+  api.capture = async id => { native.push(id); return "secret-image"; };
+  api.preview = async id => { native.push(id); return {target_id:"target-private"}; };
+  for (const op of ["resolve","screenshot","preview","activate","close"]) {
+    for (const session_id of [undefined,"other"]) {
+      const req_id = `${op}:${session_id}`;
+      listeners.get("op:ws-message")({detail:{type:"webtab.command",data:{op,session_id,tab_id:page.id,window_id:"main",req_id}}});
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.equal(sent.find(message=>message.req_id===req_id)?.reason_code,"page_not_accessible");
+    }
+  }
+  assert.deepEqual(native,[]);
+  const command = (session_id,req_id) => listeners.get("op:ws-message")({detail:{type:"webtab.command",data:{op:"resolve",session_id,tab_id:page.id,window_id:"main",req_id}}});
+  command("owner","own"); await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sent.find(message=>message.req_id==="own")?.ok,true);
+  const {revealExistingWebTab} = await import("../lib/state/web-page-management.ts");
+  revealExistingWebTab(page.id,useCenterTabs.getState());
+  command("other","shared"); await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sent.find(message=>message.req_id==="shared")?.ok,true);
+  let finish;
+  api.resolve = () => new Promise(resolve=>{finish=resolve;});
+  command("other","pending");
+  useCenterTabs.getState().setWebTabPinned(page.id,false);
+  finish("target-private"); await new Promise(resolve=>setImmediate(resolve));
+  const result = sent.find(message=>message.req_id==="pending");
+  assert.equal(result?.reason_code,"page_not_accessible");
+  assert.equal(result?.target_id,undefined);
+});
+
+test("restoration does not activate or reload a Page whose public access was revoked while waiting", async () => {
+  const {ingestBrowserResource,resetBrowserResources} = await import("../lib/state/session-resources.ts");
+  resetBrowserResources();
+  const page = {id:"w:restore-scope",kind:"web",url:"https://restore.test",title:"Restore",agentOpened:true,agentSessionId:"owner",webPinned:true};
+  useCenterTabs.setState({tabs:[page],activeId:page.id,groups:[],splitWebTabId:null});
+  const api = window.openprogramDesktop.webTab;
+  const sent = [], native = [];
+  setSocket({readyState:1,send:payload=>sent.push(JSON.parse(payload))});
+  api.activate = async id => {native.push(['activate',id]);return 'target';};
+  api.navigate = id => {native.push(['navigate',id]);};
+  api.inspect = async id => {native.push(['inspect',id]);return {url:page.url,target_id:'target'};};
+  ensureWebView(window.openprogramDesktop,page.id,page.url);
+  setWebTabReady(page.id,true);
+  registerVisibleWebTabBounds(window.openprogramDesktop,page.id,{x:0,y:0,width:900,height:600});
+  const row = {id:'restore-assoc',resource_id:'restore-page',tab_id:page.id,session_id:'owner',conversation_session_id:'owner',kind:'web',source:'browser',target:page.url,status:'restore_failed',generation:1,sequence:1};
+  ingestBrowserResource(row,'owner');
+  const originalFetch = globalThis.fetch;
+  let finish, began;
+  const started = new Promise(resolve=>{began=resolve;});
+  globalThis.fetch = () => new Promise(resolve=>{finish=resolve;began();});
+  try {
+    listeners.get('op:ws-message')({detail:{type:'webtab.command',data:{op:'activate',tab_id:page.id,session_id:'other',window_id:'main',req_id:'restore-scoped'}}});
+    await started;
+    useCenterTabs.getState().setWebTabPinned(page.id,false);
+    finish(new Response(JSON.stringify({items:[row]})));
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(native,[]);
+    assert.equal(sent.find(message=>message.req_id==='restore-scoped')?.reason_code,'page_not_accessible');
+  } finally { globalThis.fetch=originalFetch; resetBrowserResources(); }
+});

@@ -2052,3 +2052,32 @@ def test_electron_bound_surface_activation_requires_existing_visibility():
     activate_source = main[start:end]
     assert "requireVisible" in activate_source
     assert "!ctx.visibleViewIds.has(id)" in activate_source
+
+
+def test_renderer_command_payload_carries_runtime_session_for_private_page_access():
+    import json
+    from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
+    from openprogram.webui.ws_actions import webtab
+
+    token = set_current_session_id("conversation-a")
+    try:
+        for op in ("list", "resolve", "activate", "screenshot", "preview", "close", "active"):
+            payload = json.loads(webtab._payload({"op": op, "tab_id": "page-a"}, "request"))
+            assert payload["data"]["session_id"] == "conversation-a"
+    finally:
+        reset_current_session_id(token)
+
+
+def test_self_update_capture_payload_preserves_its_exact_protocol_fields():
+    import json
+    from openprogram.agent.run_control import set_current_session_id, reset_current_session_id
+    from openprogram.webui.ws_actions import webtab
+
+    token = set_current_session_id("conversation-a")
+    try:
+        command = {"op": "self_update_capture", "window_id": "main", "nonce": "a" * 64}
+        assert json.loads(webtab._payload(command, "request"))["data"] == {
+            **command, "req_id": "request",
+        }
+    finally:
+        reset_current_session_id(token)

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { sessionHistory } from "./session-tab-history";
 import { webTabId } from "@/lib/state/center-tab-ids";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
@@ -36,7 +37,7 @@ export type WebTabPipRect = {
 export type PipHostMode = "chat";
 
 type PipCenterState = {
-  tabs: readonly { id: string; kind: string }[];
+  tabs: readonly { id: string; kind: string; sessionId?: string }[];
   activeId: string | null;
   groups: readonly { memberIds: string[]; visibleIds: string[] }[];
   splitWebTabId?: string | null;
@@ -47,6 +48,7 @@ type PipCenterState = {
  *  what lets a session keep several agent-opened pages while the single
  *  floating slot shows only the current working page. */
 const pairedOwnerByTabId = new Map<string, string>();
+const pairedSessionByTabId = new Map<string, string | null>();
 
 export function pipPairedOwnerFor(tabId: string): string | null {
   return pairedOwnerByTabId.get(tabId) ?? null;
@@ -56,11 +58,14 @@ export function pipPairedOwnerFor(tabId: string): string | null {
  *  Split-open uses this; PiP `show()` goes through it too. */
 export function registerPipPair(tabId: string, ownerTabId: string): void {
   pairedOwnerByTabId.set(tabId, ownerTabId);
+  pairedSessionByTabId.set(tabId, useCenterTabs.getState().tabs.find(tab => tab.id === ownerTabId)?.sessionId ?? null);
 }
 
 export const useWebTabPip = create<{
   tabId: string | null;
   ownerTabId: string | null;
+  ownerSessionId: string | null;
+  previews: Record<string, string>;
   backgroundTabId: string | null;
   backgroundOwnerTabId: string | null;
   rect: WebTabPipRect | null;
@@ -73,18 +78,23 @@ export const useWebTabPip = create<{
 }>((set) => ({
   tabId: null,
   ownerTabId: null,
+  ownerSessionId: null,
+  previews: {},
   backgroundTabId: null,
   backgroundOwnerTabId: null,
   rect: null,
   expandedSize: null,
   show: (tabId, ownerTabId) => {
     registerPipPair(tabId, ownerTabId);
-    set({
+    const ownerSessionId = pairedSessionByTabId.get(tabId) ?? null;
+    set(state => ({
       tabId,
       ownerTabId,
+      ownerSessionId,
+      previews: ownerSessionId ? { ...state.previews, [ownerSessionId]: tabId } : state.previews,
       backgroundTabId: null,
       backgroundOwnerTabId: null,
-    });
+    }));
   },
   hide: () => set((s) => ({
     tabId: null,
@@ -93,6 +103,8 @@ export const useWebTabPip = create<{
     backgroundOwnerTabId: s.ownerTabId ?? s.backgroundOwnerTabId,
   })),
   end: () => set({
+    ownerSessionId: null,
+    previews: {},
     tabId: null,
     ownerTabId: null,
     backgroundTabId: null,
@@ -168,7 +180,7 @@ export function setSnapshot(tabId: string, dataUrl: string): void {
 export function pipCollapseTargetFor(
   tabId: string,
   store: {
-    tabs: readonly { id: string; kind: string }[];
+    tabs: readonly { id: string; kind: string; sessionId?: string }[];
     groups: readonly { memberIds: string[] }[];
   } = useCenterTabs.getState(),
 ): string | null {
@@ -229,7 +241,16 @@ export function collapseWebTabToPip(tabId: string): boolean {
     store.ungroupTab(tabId);
   }
   store.setActive(ownerTabId);
-  useWebTabPip.getState().show(tabId, ownerTabId);
+  const ownerSessionId = pairedSessionByTabId.get(tabId);
+  const owner = store.tabs.find(tab => tab.id === ownerTabId);
+  if (ownerSessionId && owner?.sessionId !== ownerSessionId) {
+    const entry = owner?.kind === "session"
+      ? sessionHistory(owner).entries.find(item => item.sessionId === ownerSessionId) : undefined;
+    store.openSessionTab(ownerSessionId, entry?.title ?? ownerSessionId);
+  }
+  const currentOwner = useCenterTabs.getState().activeId;
+  if (!currentOwner) return false;
+  useWebTabPip.getState().show(tabId, currentOwner);
   return true;
 }
 
@@ -249,7 +270,12 @@ export function pipCoversCenter(
   ownerTabId: string | null,
   state: PipCenterState = useCenterTabs.getState(),
 ): boolean {
-  return pipCoverBase(tabId, state) && !!ownerTabId && state.activeId === ownerTabId;
+  const pip = useWebTabPip.getState();
+  const owner = state.tabs.find(tab => tab.id === ownerTabId);
+  const sessionId = pip.tabId === tabId && pip.ownerTabId === ownerTabId
+    ? pip.ownerSessionId : pairedSessionByTabId.get(tabId);
+  return pipCoverBase(tabId, state) && !!ownerTabId && state.activeId === ownerTabId
+    && (owner?.sessionId ?? null) === (sessionId ?? null);
 }
 
 /** Chat PiP is a floating overlay on the owner conversation only. */
@@ -306,13 +332,20 @@ useCenterTabs.subscribe((state) => {
   const pip = useWebTabPip.getState();
   const ids = new Set(state.tabs.map((tab) => tab.id));
   for (const [tabId, ownerId] of pairedOwnerByTabId) {
-    if (!ids.has(tabId) || !ids.has(ownerId)) pairedOwnerByTabId.delete(tabId);
+    if (!ids.has(tabId) || !ids.has(ownerId)) {
+      pairedOwnerByTabId.delete(tabId);
+      pairedSessionByTabId.delete(tabId);
+    }
   }
   if (
     (pip.ownerTabId && !ids.has(pip.ownerTabId))
     || (pip.tabId && !ids.has(pip.tabId))
   ) {
-    pip.end();
+    useWebTabPip.setState({
+      tabId: null, ownerTabId: null, ownerSessionId: null,
+      backgroundTabId: null, backgroundOwnerTabId: null,
+      previews: Object.fromEntries(Object.entries(pip.previews).filter(([, id]) => ids.has(id))),
+    });
     return;
   }
   if (
