@@ -49,7 +49,7 @@ def save_report(week: str, output_dir: str, summary: str, reminder: str,
     payloads['coverage.json'] = encode(coverage)
     for name, content in payloads.items():
         outcome = write_file(str(target / name), content)
-        if not isinstance(outcome, str) or not outcome.splitlines()[-1].startswith('Wrote '):
+        if not isinstance(outcome, str) or not outcome or not outcome.splitlines()[-1].startswith('Wrote '):
             raise OSError(str(outcome))
     return target
 
