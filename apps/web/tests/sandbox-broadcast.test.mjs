@@ -20,6 +20,7 @@ globalThis.probeValues={
  useEffect:fn=>{cleanup=fn()},
  useSessionStore:{getState:()=>({setComposerSettings:(patch,id)=>{Object.assign(state,patch);void id}})},
  recordExecutionCursor:()=>({}),consumeCommandErrorFrame:()=>false,
+ createHistoryFragmentDecoder:()=>({receive:wire=>[wire],clear(){}}),
  runtimeState:{},setSocket:s=>{socket=s},waitForOwnerAuthBootstrap:async()=>{},
 };
 globalThis.location={protocol:'http:',host:'unused'};
