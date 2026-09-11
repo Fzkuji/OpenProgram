@@ -102,10 +102,12 @@ def runtime_location_for(
             bound_worktree = worktree.worktree_path
         elif project is not None and project.path and Path(project.path).is_dir():
             bound_worktree = project.path
+        elif project is not None and not getattr(project, "is_default", False):
+            bound_worktree = None
         else:
             bound_worktree = str(get_default_workdir())
     return {
-        "workdir": str(bound_worktree),
+        "workdir": None if bound_worktree is None else str(bound_worktree),
         "project": None if project is None else {
             "id": project.id,
             "path": project.path,
@@ -122,23 +124,39 @@ def runtime_location_for(
     }
 
 
+def bound_project_execution_blocked(session_id: str) -> Optional[str]:
+    """Reason a new bound-project task must not start, else None."""
+    if not session_id:
+        return None
+    try:
+        from openprogram.store.project.location import bound_execution_state
+        from openprogram.store.session.migration import session_hold_active
+        from openprogram.paths import get_state_dir
+        proj = _main_project(session_id)
+        if proj is not None and not getattr(proj, "is_default", False):
+            if session_hold_active(Path(get_state_dir()) / "sessions", session_id):
+                return "migrating"
+        return bound_execution_state(proj)
+    except Exception:
+        return None
+
+
 def apply_default_workdir(runtime, session_id: str) -> Optional[Path]:
-    """Point ``runtime`` at this session's default cwd.
+    """Point ``runtime`` at this session's project cwd.
 
-    Resolution order: the session's main project path, falling back to
-    the session repo's ``workdir/`` — which is also what a project whose
-    directory has gone missing falls back to. A no-op when:
-      * runtime is None,
-      * the session has no resolvable workdir,
-      * the runtime lacks ``set_workdir``.
-
-    Returns the path that was applied (or ``None`` when no-op). The
-    caller may want to surface the path in a debug log; we don't log
-    here to keep the helper coupling-free.
+    Bound projects whose folder is missing or replaced do not fall back
+    to HOME, the server cwd, or the session ``workdir/``.
     """
     if runtime is None or not session_id:
         return None
-    wd = project_workdir_for(session_id) or session_workdir_for(session_id)
+    if bound_project_execution_blocked(session_id):
+        return None
+    wd = project_workdir_for(session_id)
+    proj = _main_project(session_id)
+    if wd is None and proj is not None and not getattr(proj, "is_default", False):
+        return None
+    if wd is None:
+        wd = session_workdir_for(session_id)
     if wd is None:
         return None
     set_workdir = getattr(runtime, "set_workdir", None)

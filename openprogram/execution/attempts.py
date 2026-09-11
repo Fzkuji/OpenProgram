@@ -5,10 +5,11 @@ from __future__ import annotations
 import sqlite3
 import time
 import uuid
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable
+from pathlib import Path
+from typing import Callable, Iterator
 
 from .model import ExecutionRecord, ExecutionStatus
 from .store import ExecutionStore, _json
@@ -69,6 +70,34 @@ class AttemptStore:
         self.executions = executions
         self._clock = clock
 
+    @contextmanager
+    def _admission_transaction(self, session_id: str) -> Iterator[sqlite3.Connection]:
+        from openprogram.paths import get_state_dir
+        from openprogram.store.session.migration import session_hold_active
+        from openprogram.store.session.session_lock import session_interprocess_lock
+
+        with session_interprocess_lock(session_id, timeout=5.0):
+            if session_hold_active(Path(get_state_dir()) / "sessions", session_id):
+                raise AttemptConflict(
+                    "session_migration",
+                    "attempt admission is paused while session migration runs",
+                )
+            with self.executions._transaction() as connection:
+                yield connection
+
+    def _attempt_session_id(self, attempt_id: str) -> str:
+        with closing(self.executions._connect()) as connection:
+            row = connection.execute(
+                "SELECT execution_id FROM attempts WHERE attempt_id = ?",
+                (attempt_id,),
+            ).fetchone()
+        if row is None:
+            raise AttemptConflict("attempt_not_found", f"attempt does not exist: {attempt_id}")
+        execution = self.executions.get_execution(str(row["execution_id"]))
+        if execution is None:
+            raise AttemptConflict("execution_not_found", "attempt execution does not exist")
+        return execution.session_id
+
     def lease(
         self,
         execution_id: str,
@@ -83,7 +112,10 @@ class AttemptStore:
                 "invalid_lease", "owner_id and a positive ttl_seconds are required"
             )
         attempt_id = attempt_id or f"attempt_{uuid.uuid4().hex}"
-        with self.executions._transaction() as connection:
+        execution = self.executions.get_execution(execution_id)
+        if execution is None:
+            raise AttemptConflict("execution_not_found", "execution does not exist")
+        with self._admission_transaction(execution.session_id) as connection:
             execution = self.executions._require_execution(connection, execution_id)
             if execution.status_version != expected_version:
                 raise AttemptConflict(
@@ -193,7 +225,7 @@ class AttemptStore:
         generation: int,
         expected_execution_version: int,
     ) -> tuple[AttemptRecord, ExecutionRecord]:
-        with self.executions._transaction() as connection:
+        with self._admission_transaction(self._attempt_session_id(attempt_id)) as connection:
             attempt = self._require(connection, attempt_id)
             self._validate_generation(attempt, generation)
             if attempt.status is not AttemptStatus.LEASED:

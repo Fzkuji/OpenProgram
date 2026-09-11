@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from openprogram.store.project import project_store
+from openprogram.store.project.identity import capture_directory_identity
 from openprogram.webui import server
 from openprogram.webui.ws_actions import files
 from openprogram.webui.ws_actions import turn_files
@@ -38,9 +39,11 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     root = tmp_path / "project"
     root.mkdir()
     (root / "source.txt").write_text("before", encoding="utf-8")
+    captured = capture_directory_identity(root)
     monkeypatch.setattr(
         project_store, "get_project",
-        lambda project_id: types.SimpleNamespace(id="p1", path=str(root))
+        lambda project_id: types.SimpleNamespace(id="p1", path=str(root),
+                                                  **captured)
         if project_id == "p1" else None,
     )
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path / "state")

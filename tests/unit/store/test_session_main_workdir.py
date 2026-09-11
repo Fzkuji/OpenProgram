@@ -270,14 +270,16 @@ def test_relocate_rewrites_session_locations(env, tmp_path: Path, monkeypatch):
     old.mkdir()
     store.create_session("s1", "main", project_path=str(old))
     proj = P.project_for_session("s1")
-    assert Path(store._locations["s1"]) == old / ".openprogram" / "sessions" / "s1"
+    nested = store.root_path / "projects" / proj.id / "s1"
+    assert Path(store._locations["s1"]) == nested
 
     new = tmp_path / "new"
     shutil.move(str(old), str(new))
     P.relocate_project(proj.id, new)
 
-    assert Path(store._locations["s1"]) == new / ".openprogram" / "sessions" / "s1"
+    assert Path(store._locations["s1"]) == nested
     assert (store._session_dir("s1") / "history").is_dir()
+    assert not (new / ".openprogram" / "sessions" / "s1").exists()
 
 
 def test_stale_location_heals_from_project_registry(env, tmp_path: Path,
@@ -293,12 +295,12 @@ def test_stale_location_heals_from_project_registry(env, tmp_path: Path,
     new = tmp_path / "new"
     shutil.move(str(old), str(new))
     P.relocate_project(proj.id, new)
-    # 人为把索引改回死路径，模拟另一个进程里未随迁的快照。
+    nested = store.root_path / "projects" / proj.id / "s1"
     store._record_location("s1", old / ".openprogram" / "sessions" / "s1")
 
     healed = store._session_dir("s1")
-    assert healed == new / ".openprogram" / "sessions" / "s1"
-    assert Path(store._locations["s1"]) == healed
+    assert healed == nested
+    assert (healed / "history").is_dir()
 
 
 def test_resolve_project_claims_moved_folder(env, tmp_path: Path, monkeypatch):
@@ -316,8 +318,9 @@ def test_resolve_project_claims_moved_folder(env, tmp_path: Path, monkeypatch):
 
     assert claimed.id == proj.id
     assert Path(claimed.path) == new.resolve()
-    # 位置索引也随认领更新（claim 内部走 relocate_project）。
-    assert Path(store._locations["s1"]) == new / ".openprogram" / "sessions" / "s1"
+    nested = store.root_path / "projects" / proj.id / "s1"
+    assert Path(store._locations["s1"]) == nested
+    assert (nested / "history").is_dir()
 
 
 def test_resolve_project_does_not_claim_a_copy(env, tmp_path: Path, monkeypatch):

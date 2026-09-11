@@ -287,8 +287,10 @@ def _persist_attachments(session_id: str, incoming: list, text: str) -> str:
         # set as the agent's cwd, so the saved file is still reachable.
         try:
             from pathlib import Path
-            from openprogram.paths import get_state_dir
-            wd = Path(get_state_dir()) / "sessions" / session_id / "workdir"
+            from openprogram.agent.session_db import default_db
+            store = default_db()
+            sdir = store._session_dir(session_id)
+            wd = Path(sdir) / "workdir"
         except Exception:
             return text
     adir = wd / "attachments"

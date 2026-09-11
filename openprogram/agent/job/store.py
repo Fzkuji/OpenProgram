@@ -76,7 +76,7 @@ def _jobs_path(session_id: str) -> Optional[Path]:
     doesn't exist (e.g. the session was deleted)."""
     from openprogram.store import default_store
     store = default_store()
-    sdir = store._session_dir(session_id)  # noqa: SLF001 — intentional
+    sdir = store._session_dir(session_id)  # noqa: SLF001 — re-read after session lock
     if not sdir.exists():
         return None
     path = sdir / "jobs.json"
@@ -184,14 +184,16 @@ def save_job(
     _mirror: bool = True,
 ) -> None:
     """Idempotent write — overwrites the entry for ``job.id``."""
-    path = _ensure_session(session_id)
-    if path is None:
-        return
-    with _session_lock(session_id):
-        with _session_file_lock(path):
-            jobs = _load_raw(path)
-            jobs[job.id] = job.to_dict()
-            _write_raw(path, jobs)
+    from openprogram.store.session.session_lock import session_interprocess_lock
+    with session_interprocess_lock(session_id):
+        path = _ensure_session(session_id)
+        if path is None:
+            return
+        with _session_lock(session_id):
+            with _session_file_lock(path):
+                jobs = _load_raw(path)
+                jobs[job.id] = job.to_dict()
+                _write_raw(path, jobs)
     msg = commit_message or f"job: {job.id} {job.status.value}"
     _commit(session_id, msg)
     if _mirror:
@@ -219,12 +221,14 @@ def mirror_linked_job_to_caller(job: Job) -> None:
 
 
 def load_job(session_id: str, job_id: str) -> Optional[Job]:
-    path = _jobs_path(session_id)
-    if path is None or not path.exists():
-        return None
-    with _session_lock(session_id):
-        with _session_file_lock(path):
-            jobs = _load_raw(path)
+    from openprogram.store.session.session_lock import session_interprocess_lock
+    with session_interprocess_lock(session_id):
+        path = _jobs_path(session_id)
+        if path is None or not path.exists():
+            return None
+        with _session_lock(session_id):
+            with _session_file_lock(path):
+                jobs = _load_raw(path)
     row = jobs.get(job_id)
     if not row:
         return None
@@ -241,12 +245,14 @@ def list_jobs(
     limit: Optional[int] = None,
 ) -> list[Job]:
     """Return jobs in this session, newest first (by created_at desc)."""
-    path = _jobs_path(session_id)
-    if path is None or not path.exists():
-        return []
-    with _session_lock(session_id):
-        with _session_file_lock(path):
-            rows = _load_raw(path)
+    from openprogram.store.session.session_lock import session_interprocess_lock
+    with session_interprocess_lock(session_id):
+        path = _jobs_path(session_id)
+        if path is None or not path.exists():
+            return []
+        with _session_lock(session_id):
+            with _session_file_lock(path):
+                rows = _load_raw(path)
     out: list[Job] = []
     for row in rows.values():
         try:
@@ -284,22 +290,39 @@ def update_job_status(
     changing any fields. The comparison shares the write lock so a progress
     stamp cannot race a terminal transition and try to resurrect the job.
     """
-    path = _ensure_session(session_id)
-    if path is None:
+    from openprogram.store.session.session_lock import session_interprocess_lock
+    with session_interprocess_lock(session_id):
+        path = _ensure_session(session_id)
+        if path is None:
+            return None
+        result, old_status = _update_job_status_locked(
+            session_id, path, job_id, new_status,
+            expected_status=expected_status, fields=fields)
+    if result is None:
         return None
+    if old_status is not None:
+        _commit(session_id, f"job: {job_id} {old_status.value}→{new_status.value}")
+    mirror_linked_job_to_caller(result)
+    return result
+
+
+def _update_job_status_locked(
+    session_id: str, path: Path, job_id: str, new_status: JobStatus,
+    *, expected_status: Optional[JobStatus], fields: dict[str, Any],
+) -> tuple[Optional[Job], JobStatus | None]:
     old_status: JobStatus | None = None
     with _session_lock(session_id):
         with _session_file_lock(path):
             jobs = _load_raw(path)
             row = jobs.get(job_id)
             if not row:
-                return None
+                return None, None
             try:
                 t = Job.from_dict(row)
             except Exception:
-                return None
+                return None, None
             if expected_status is not None and t.status != expected_status:
-                return t
+                return t, None
             if t.status == new_status:
                 # Non-terminal no-op transitions may refresh progress fields.
                 # A terminal row is an immutable outcome: a retry or racing
@@ -333,10 +356,7 @@ def update_job_status(
                         setattr(t, k, v)
                 jobs[job_id] = t.to_dict()
                 _write_raw(path, jobs)
-    if old_status is not None:
-        _commit(session_id, f"job: {job_id} {old_status.value}→{new_status.value}")
-    mirror_linked_job_to_caller(t)
-    return t
+    return t, old_status
 
 
 def reconcile_orphans(

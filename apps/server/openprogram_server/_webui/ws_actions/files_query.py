@@ -270,6 +270,15 @@ def _project_info(project_id: str) -> tuple[str | None, str | None, str | None]:
     project = _projects.get_project(project_id)
     if project is None or not getattr(project, "path", None):
         return None, None, f"unknown project {project_id!r}"
+    if not getattr(project, "is_default", False):
+        from openprogram.store.project.location import (
+            bound_execution_state, refresh_project_location,
+        )
+        refresh_project_location(project_id)
+        project = _projects.get_project(project_id) or project
+        state = bound_execution_state(project)
+        if state is not None:
+            return None, None, f"project location unavailable: {state}"
     root = os.path.realpath(os.path.expanduser(project.path))
     return root, getattr(project, "name", None) or project_id, None
 

@@ -6,7 +6,7 @@ OpenProgram 有四种用户界面：macOS Desktop App、外部浏览器中的 We
 
 四种界面共用同一个本地后台服务（代码里叫 worker）：一个常驻进程，在单个端口（默认 18100）上承载 FastAPI + WebSocket 后端和 web UI 本身，外加可选的聊天渠道适配器。Desktop 内嵌同一个 Web UI，并增加内置 Browser 与 Terminal 原生 Pane；Web UI 和终端 TUI 直接连接 worker。没有 worker 时，Desktop 或 TUI 会自动启动一个。
 
-会话统一存放在 `~/.openprogram/sessions/`（每个会话是一个 git 仓库），四种界面读写同一个存储。因此：
+会话统一存放在 `~/.openprogram/sessions/`（每个会话是一个 git 仓库；绑定项目的对话按稳定项目 ID 分组），四种界面读写同一个存储。因此：
 
 - 终端里开的聊天会出现在 Web UI 的侧栏里，点开即接着聊。
 - Web 里的会话可以在 TUI 内用 `/resume` 选中续聊，或用 `openprogram --resume <session-id> --print "..."` 非交互地续接。（`--resume` 参数目前在启动交互式 TUI 时不生效——交互续聊请用 TUI 内的 `/resume`。）
