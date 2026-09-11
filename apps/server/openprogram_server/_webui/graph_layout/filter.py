@@ -42,6 +42,10 @@ def normalize_followup(graph_entries: list[dict]) -> list[dict]:
     pipeline's "annotate the graph_entries it was given" contract).
     """
     by_id = {m["id"]: m for m in graph_entries if m.get("id")}
+    replies: dict[str, list[dict]] = {}
+    for node in by_id.values():
+        if node.get("source") == "job_followup" and node.get("role") == "assistant":
+            replies.setdefault(node.get("predecessor"), []).append(node)
     for nid, node in by_id.items():
         if not _is_job_followup_user(node):
             continue
@@ -50,13 +54,9 @@ def normalize_followup(graph_entries: list[dict]) -> list[dict]:
             continue
         # Reply's schema predecessor == followup user msg id; rewrite
         # to skip the about-to-be-filtered synthetic user.
-        for other in by_id.values():
-            if (
-                other.get("source") == "job_followup"
-                and other.get("role") == "assistant"
-                and other.get("predecessor") == nid
-            ):
-                other["predecessor"] = followup_user_parent
+        for other in replies.pop(nid, []):
+            other["predecessor"] = followup_user_parent
+            replies.setdefault(followup_user_parent, []).append(other)
     return graph_entries
 
 

@@ -276,7 +276,7 @@ def build_branches_payload(session_id: str | None) -> dict:
 
 
 async def handle_list_branches(ws, cmd: dict):
-    payload = build_branches_payload(cmd.get("session_id"))
+    payload = await asyncio.to_thread(build_branches_payload, cmd.get("session_id"))
     await ws.send_text(json.dumps(
         {"type": "branches_list", "data": payload}, default=str))
 
