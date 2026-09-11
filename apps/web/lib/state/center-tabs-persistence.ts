@@ -109,7 +109,7 @@ export function normalizeCenterTabsPayload(
   clearDirty = false,
 ): CenterTabsPersistedPayload {
   const sourceTabs = Array.isArray(input.tabs) ? input.tabs : [];
-  const tabs = sourceTabs
+  let tabs = sourceTabs
     // 0.7.0 removed the unfinished browser-extension surface. Discard its
     // persisted tab without touching the separate legacy extension directory.
     .filter((tab) => tab.kind !== "builtin" || String(tab.page) !== "extensions")
@@ -128,6 +128,19 @@ export function normalizeCenterTabsPayload(
       const { urlNativeAt: _drop, ...rest } = next;
       return rest;
     });
+  // A session has one center tab per window. Prefer the persisted active tab
+  // when malformed state contains duplicates; otherwise preserve first order.
+  const activeSessionTab = tabs.find(tab => tab.id === input.activeId && tab.kind === "session");
+  const keptSessionIds = new Set<string>();
+  if (activeSessionTab?.kind === "session" && activeSessionTab.sessionId) {
+    keptSessionIds.add(activeSessionTab.sessionId);
+  }
+  tabs = tabs.filter(tab => {
+    if (tab.kind !== "session" || !tab.sessionId) return true;
+    if (keptSessionIds.has(tab.sessionId)) return tab.id === activeSessionTab?.id;
+    keptSessionIds.add(tab.sessionId);
+    return true;
+  });
   let layout = normalizeCenterTabLayout({
     tabIds: tabs.map((tab) => tab.id),
     groups: Array.isArray(input.groups) ? input.groups : [],

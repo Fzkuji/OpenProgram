@@ -56,17 +56,52 @@ test("back, forward, same target and branching are local to the active tab", () 
   assert.deepEqual(active().sessionHistory.entries.map(e => e.sessionId), ["A", "C"]);
 });
 
-test("already open target retains both independent tabs and webpage creates another", () => {
+test("already open target activates its existing tab while unopened sessions keep navigation rules", () => {
   reset(); state().openSessionTab("A", "Alpha"); const first = active().id;
   state().openWebTab("https://example.test"); const web = active().id;
   state().openSessionTab("A", "Alpha"); const second = active().id;
-  assert.notEqual(first, second); assert.equal(state().tabs.length, 3);
-  state().openSessionTab("B", "Beta"); state().openSessionTab("A", "Alpha");
-  assert.equal(active().id, second); assert.equal(state().tabs.length, 3);
-  state().navigateSessionHistory(-1); assert.equal(active().sessionId, "B");
-  assert.equal(state().tabs.find(t => t.id === first).sessionId, "A");
+  assert.equal(first, second); assert.equal(state().tabs.length, 2);
+  state().setActive(web); state().openSessionTab("B", "Beta");
+  assert.equal(state().tabs.length, 3);
+  state().openSessionTab("A", "Alpha"); assert.equal(active().id, first);
   state().setActive(web); const before = state().tabs;
   state().navigateSessionHistory(-1); assert.equal(state().tabs, before);
+});
+
+test("history navigation activates a tab already showing the target session", () => {
+  reset(); state().openSessionTab("A", "Alpha"); const first = active().id;
+  state().openSessionTab("B", "Beta");
+  state().openWebTab("https://example.test");
+  state().openSessionTab("C", "Gamma"); const second = active().id;
+  const source = { id: "s:source", kind: "session", sessionId: "A", title: "Alpha",
+    sessionHistory: { entries: [{sessionId:"A",title:"Alpha",draft:false},{sessionId:"C",title:"Gamma",draft:false}], index: 0 } };
+  useCenterTabs.setState({ tabs: [source, ...state().tabs.filter(t => t.id !== first)], activeId: source.id });
+  state().navigateSessionHistory(1);
+  assert.equal(active().id, second);
+  assert.equal(state().tabs.find(t => t.id === source.id).sessionId, "A");
+});
+
+test("restore removes duplicate session tabs and repairs groups and active references", () => {
+  const payload = normalizeCenterTabsPayload({
+    tabs: [
+      { id: "s:A", kind: "session", sessionId: "A", title: "Alpha" },
+      { id: "s:A:duplicate", kind: "session", sessionId: "A", title: "Alpha" },
+      { id: "w:1", kind: "web", title: "Web", url: "https://example.test" },
+    ],
+    activeId: "s:A:duplicate",
+    groups: [{ id: "g", memberIds: ["s:A:duplicate", "w:1"], visibleIds: ["s:A:duplicate", "w:1"], focusedId: "s:A:duplicate" }],
+  });
+  assert.deepEqual(payload.tabs.map(tab => tab.id), ["s:A:duplicate", "w:1"]);
+  assert.equal(payload.activeId, "s:A:duplicate");
+  assert.deepEqual(payload.groups, [{ id: "g", memberIds: ["s:A:duplicate", "w:1"], visibleIds: ["s:A:duplicate", "w:1"], focusedId: "s:A:duplicate" }]);
+});
+
+test("same-title sessions remain distinct", () => {
+  reset(); state().openSessionTab("A", "Same"); const first = active().id;
+  state().openWebTab("https://example.test");
+  state().openSessionTab("B", "Same");
+  assert.equal(state().tabs.filter(tab => tab.kind === "session").length, 2);
+  assert.notEqual(active().id, first);
 });
 
 test("draft history survives a background ACK, rename and reload", () => {
@@ -150,4 +185,13 @@ test("closing the final desktop tab keeps the window open on New tab", () => {
       assert.equal(active().kind, "ntp");
     }
   } finally { delete window.openprogramDesktop; }
+});
+
+test("reopening an existing session preserves its graph view", () => {
+  reset(); state().openSessionTab("A", "Alpha"); const first = active().id;
+  state().setTabDagView(first, true);
+  state().openWebTab("https://example.test");
+  state().openSessionTab("A", "Alpha");
+  assert.equal(active().id, first);
+  assert.equal(active().dagView, true);
 });

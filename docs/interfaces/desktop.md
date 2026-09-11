@@ -10,6 +10,8 @@ Terminal panes use the login shell on macOS and Windows PowerShell through ConPT
 
 When running Desktop from source on Linux, terminal panes use an installed absolute `SHELL` path, then fall back to `/bin/bash` or `/bin/sh`. They do not require zsh. If no shell is available, the terminal reports the missing prerequisite before starting a process.
 
+Within one window, reopening a session activates its existing chat tab. If it is not open, navigation reuses the current chat tab or opens a chat tab beside a webpage. Back and Forward also activate an existing tab when their destination is already open. Restoring a window removes duplicate chat tabs for the same session without deleting messages or drafts; sessions with identical titles remain separate.
+
 ## Opening the Browser
 
 Create a pane and select **Browser**, or open a new browser tab from the app tab bar. The Browser home shows the same browser chrome used by loaded webpages:
