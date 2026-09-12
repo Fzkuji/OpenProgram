@@ -139,3 +139,33 @@ def test_unverified_source_or_package_closes_assets_and_availability(boundary_ap
     assert availability.status_code == 200
     assert availability.json()["available"] is False
     assert asset.status_code == 503
+
+
+@pytest.mark.parametrize("kind", ("host_build_id", "asset_count", "license_count", "manifest_bytes"))
+def test_manifest_bounds_close_assets_and_availability(boundary_app, kind):
+    app, pack = boundary_app
+    manifest_path = pack.root / "openprogram-office-assets.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if kind == "host_build_id":
+        manifest["hostBuildId"] = "x" * 129
+    elif kind == "asset_count":
+        manifest["assets"] = manifest["assets"] * 1200
+    elif kind == "license_count":
+        manifest["licenses"] = ["LICENSE"] * 257
+    else:
+        manifest["padding"] = "x" * (4 * 1024 * 1024)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    invalid = __import__("openprogram.webui.office_assets", fromlist=["OfficeAssetPack"]).OfficeAssetPack.from_root(pack.root)
+    app.office_assets = invalid
+    app.app.state.office_assets = invalid
+    auth = {
+        "origin": "http://127.0.0.1:18100",
+        "host": "127.0.0.1:18100",
+        "authorization": "Bearer " + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("="),
+    }
+    with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 50000)) as client:
+        availability = client.get("/api/documents/office-host", headers=auth)
+        asset = client.get("/office-host.html", headers={"host": "host-abc.office.localhost:18100"})
+    assert invalid.available is False
+    assert availability.json()["available"] is False
+    assert asset.status_code == 503

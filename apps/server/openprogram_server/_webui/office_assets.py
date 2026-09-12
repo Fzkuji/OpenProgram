@@ -18,6 +18,11 @@ from openprogram.updater.detect import managed_runtime_root
 _MANIFEST = "openprogram-office-assets.json"
 OFFICE_SOURCE = "d15d12b6945be4d8b0f3aa1806120e740d2950ee"
 OFFICE_PACKAGE_VERSION = "0.3.34"
+MAX_MANIFEST_BYTES = 4 * 1024 * 1024
+MAX_ASSETS = 8192
+MAX_LICENSES = 256
+MAX_PATH_CHARS = 1024
+MAX_HOST_BUILD_ID_CHARS = 128
 _HOST_RE = re.compile(r"^host-([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\.office\.localhost$")
 _BOOTSTRAP = frozenset({
     "office-host.html", "reset.html", "document_editor_service_worker.js", "sw.js",
@@ -46,29 +51,36 @@ class OfficeAssetPack:
             manifest_path = root / _MANIFEST
             raw = manifest_path.read_bytes()
             runtime_raw = (root / "onlyoffice-runtime-assets.json").read_bytes()
+            if len(raw) > MAX_MANIFEST_BYTES or len(runtime_raw) > MAX_MANIFEST_BYTES:
+                raise ValueError("Office asset manifest too large")
             manifest = json.loads(raw)
-            if not isinstance(manifest, dict) or manifest.get("version") != 1:
+            if not isinstance(manifest, dict) or type(manifest.get("version")) is not int or manifest["version"] != 1:
                 raise ValueError("invalid Office asset manifest version")
             if manifest.get("source") != OFFICE_SOURCE or manifest.get("packageVersion") != OFFICE_PACKAGE_VERSION:
                 raise ValueError("unverified Office asset identity")
+            if type(manifest.get("hostBuildId")) is not str or not manifest["hostBuildId"] or len(manifest["hostBuildId"]) > MAX_HOST_BUILD_ID_CHARS:
+                raise ValueError("invalid Office host build identity")
             for key in ("packageVersion", "hostBuildId", "source", "assets", "licenses"):
                 if not manifest.get(key):
                     raise ValueError("invalid Office asset manifest")
-            if not isinstance(manifest["assets"], list) or not isinstance(manifest["licenses"], list):
+            if not isinstance(manifest["assets"], list) or len(manifest["assets"]) > MAX_ASSETS or not isinstance(manifest["licenses"], list) or len(manifest["licenses"]) > MAX_LICENSES:
                 raise ValueError("invalid Office asset manifest collections")
             assets: dict[str, tuple[int, str, int, int]] = {}
             for item in manifest["assets"]:
                 if not isinstance(item, dict) or not isinstance(item.get("path"), str):
                     raise ValueError("invalid Office asset entry")
                 rel = item["path"]
+                if len(rel) > MAX_PATH_CHARS:
+                    raise ValueError("Office asset path too long")
                 path = _safe_relative(rel)
-                if path in assets or int(item.get("bytes", -1)) < 0 or not re.fullmatch(r"[a-f0-9]{64}", str(item.get("sha256", ""))):
+                size = item.get("bytes")
+                if path in assets or type(size) is not int or size < 0 or not isinstance(item.get("sha256"), str) or not re.fullmatch(r"[a-f0-9]{64}", item["sha256"]):
                     raise ValueError("invalid or duplicate Office asset entry")
                 target = _contained_file(root, path)
                 if target is None:
                     raise ValueError("Office asset unavailable")
                 content_size = target.stat().st_size
-                if content_size != int(item["bytes"]):
+                if content_size != size:
                     raise ValueError("Office asset size mismatch")
                 digest = hashlib.sha256(target.read_bytes()).hexdigest()
                 if digest != item["sha256"]:
