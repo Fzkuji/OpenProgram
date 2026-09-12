@@ -55,13 +55,16 @@ test "$actual_uv_version" = "$UV_VERSION" || {
   exit 1
 }
 
+"$repo_root/scripts/release/stage-release-assets.sh"
+
 previous_runtime="${runtime_root}.previous.$$"
 if test -e "$runtime_root"; then
   test ! -e "$previous_runtime" || { printf 'runtime backup path already exists\n' >&2; exit 1; }
   mv "$runtime_root" "$previous_runtime"
 fi
 restore_previous_runtime() {
-  if test -e "$previous_runtime" && ! test -e "$runtime_root"; then
+  if test -e "$previous_runtime"; then
+    rm -rf "$runtime_root"
     mv "$previous_runtime" "$runtime_root"
   fi
 }
@@ -75,10 +78,9 @@ mkdir -p \
   "$runtime_root/python" \
   "$runtime_root/wheel"
 
-"$repo_root/scripts/release/stage-release-assets.sh"
 if test -d "$repo_root/apps/desktop/build/office"; then
-  cp -R "$repo_root/apps/desktop/build/office" "$runtime_root/assets/office"
-elif test "${OPENPROGRAM_REQUIRE_OFFICE:-0}" = 1; then
+  "$json_python" "$repo_root/scripts/release/office/stage.py" --source "$repo_root/apps/desktop/build/office" --output "$runtime_root/assets/office"
+else
   printf 'prepared Office asset pack is required but missing\n' >&2
   exit 1
 fi
@@ -108,7 +110,7 @@ test -n "$wheel" || {
 # pulls it, so the harness is installed without those extras; it still
 # registers. Research PDF and Wiki do not need torch.
 program_staging="$(mktemp -d "${TMPDIR:-/tmp}/openprogram-programs.XXXXXX")"
-cleanup() { rm -rf "$program_staging"; }
+cleanup() { rm -rf "$program_staging"; restore_previous_runtime; }
 trap cleanup EXIT HUP INT TERM
 
 for program_name in gui research wiki; do

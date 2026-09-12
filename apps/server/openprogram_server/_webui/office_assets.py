@@ -7,7 +7,6 @@ import json
 import mimetypes
 import os
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -16,123 +15,25 @@ from fastapi.responses import Response, StreamingResponse
 from openprogram.backend_endpoint import OwnerAuthError, canonicalize_origin, is_loopback_host
 from openprogram.updater.detect import managed_runtime_root
 
-_MANIFEST = "openprogram-office-assets.json"
-OFFICE_SOURCE = "d15d12b6945be4d8b0f3aa1806120e740d2950ee"
-OFFICE_PACKAGE_VERSION = "0.3.34"
-MAX_MANIFEST_BYTES = 4 * 1024 * 1024
-MAX_ASSETS = 8192
-MAX_LICENSES = 256
-MAX_PATH_CHARS = 1024
-MAX_HOST_BUILD_ID_CHARS = 128
+from openprogram.office_assets import (
+    OfficeAssetPack, _MANIFEST,
+    _safe_relative, _contained_file, prepared_office_cache,
+    validate_prepared_office_pack,
+)
+
+
 _HOST_RE = re.compile(r"^host-([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\.office\.localhost$")
 _INLINE_SCRIPT_RE = re.compile(r"<script(?:\s[^>]*)?>(.*?)</script>", re.IGNORECASE | re.DOTALL)
 _INLINE_HANDLER_RE = re.compile(r"\son[a-z]+\s*=\s*([\"'])(.*?)\1", re.IGNORECASE | re.DOTALL)
-_BOOTSTRAP = frozenset({
-    "office-host.html", "reset.html", "document_editor_service_worker.js", "sw.js",
-    "plugins.json", "themes.json", "onlyoffice-runtime-assets.json",
-})
-
-
-@dataclass
-class OfficeAssetPack:
-    root: Path
-    manifest: dict
-    manifest_bytes: bytes
-    runtime_manifest_bytes: bytes
-    assets: dict[str, tuple[int, str, int, int]]
-    available: bool = True
-    unavailable_reason: str | None = None
-
-    @classmethod
-    def unavailable_pack(cls, root: Path, reason: str) -> "OfficeAssetPack":
-        return cls(root, {}, b"", b"", {}, False, reason)
-
-    @classmethod
-    def from_root(cls, root: Path) -> "OfficeAssetPack":
-        root = Path(root).absolute()
-        try:
-            manifest_path = root / _MANIFEST
-            raw = manifest_path.read_bytes()
-            runtime_raw = (root / "onlyoffice-runtime-assets.json").read_bytes()
-            if len(raw) > MAX_MANIFEST_BYTES or len(runtime_raw) > MAX_MANIFEST_BYTES:
-                raise ValueError("Office asset manifest too large")
-            manifest = json.loads(raw)
-            if not isinstance(manifest, dict) or type(manifest.get("version")) is not int or manifest["version"] != 1:
-                raise ValueError("invalid Office asset manifest version")
-            if manifest.get("source") != OFFICE_SOURCE or manifest.get("packageVersion") != OFFICE_PACKAGE_VERSION:
-                raise ValueError("unverified Office asset identity")
-            declared_identity = manifest.get("expectedHostIdentity")
-            if declared_identity is not None and declared_identity != hashlib.sha256(runtime_raw).hexdigest():
-                raise ValueError("Office native host identity mismatch")
-            if type(manifest.get("hostBuildId")) is not str or not manifest["hostBuildId"] or len(manifest["hostBuildId"]) > MAX_HOST_BUILD_ID_CHARS:
-                raise ValueError("invalid Office host build identity")
-            for key in ("packageVersion", "hostBuildId", "source", "assets", "licenses"):
-                if not manifest.get(key):
-                    raise ValueError("invalid Office asset manifest")
-            if not isinstance(manifest["assets"], list) or len(manifest["assets"]) > MAX_ASSETS or not isinstance(manifest["licenses"], list) or len(manifest["licenses"]) > MAX_LICENSES:
-                raise ValueError("invalid Office asset manifest collections")
-            assets: dict[str, tuple[int, str, int, int]] = {}
-            for item in manifest["assets"]:
-                if not isinstance(item, dict) or not isinstance(item.get("path"), str):
-                    raise ValueError("invalid Office asset entry")
-                rel = item["path"]
-                if len(rel) > MAX_PATH_CHARS:
-                    raise ValueError("Office asset path too long")
-                path = _safe_relative(rel)
-                size = item.get("bytes")
-                if path in assets or type(size) is not int or size < 0 or not isinstance(item.get("sha256"), str) or not re.fullmatch(r"[a-f0-9]{64}", item["sha256"]):
-                    raise ValueError("invalid or duplicate Office asset entry")
-                target = _contained_file(root, path)
-                if target is None:
-                    raise ValueError("Office asset unavailable")
-                content_size = target.stat().st_size
-                if content_size != size:
-                    raise ValueError("Office asset size mismatch")
-                digest = hashlib.sha256(target.read_bytes()).hexdigest()
-                if digest != item["sha256"]:
-                    raise ValueError("Office asset digest mismatch")
-                stat = target.stat()
-                assets[path] = (content_size, digest, stat.st_mtime_ns, stat.st_ino)
-            if not _BOOTSTRAP.issubset(assets):
-                raise ValueError("Office asset manifest omits bootstrap resource")
-            for license_path in manifest["licenses"]:
-                if not isinstance(license_path, str) or _contained_file(root, _safe_relative(license_path)) is None:
-                    raise ValueError("invalid Office asset license")
-            return cls(root, manifest, raw, runtime_raw, assets)
-        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-            return cls.unavailable_pack(root, "invalid Office asset pack")
-
-
-def _safe_relative(value: str) -> str:
-    if not value or "\\" in value or "\x00" in value:
-        raise ValueError("invalid Office asset path")
-    path = Path(value)
-    if path.is_absolute() or any(part in {"", ".", ".."} for part in value.split("/")):
-        raise ValueError("invalid Office asset path")
-    return value
-
-
-def _contained_file(root: Path, relative: str) -> Path | None:
-    try:
-        target = (root / relative).resolve(strict=True)
-        if not target.is_file() or target.is_symlink() or not target.is_relative_to(root.resolve()):
-            return None
-        current = root
-        for part in relative.split("/"):
-            current = current / part
-            if current.is_symlink():
-                return None
-        return target
-    except (OSError, ValueError):
-        return None
 
 
 def load_installed_office_pack() -> OfficeAssetPack:
-    explicit_runtime = os.environ.get("OPENPROGRAM_RUNTIME_ROOT", "").strip()
-    runtime = Path(explicit_runtime).resolve() if explicit_runtime else managed_runtime_root()
-    if runtime is None:
-        return OfficeAssetPack.unavailable_pack(Path(""), "managed runtime unavailable")
-    return OfficeAssetPack.from_root(runtime / "assets" / "office")
+    runtime = managed_runtime_root()
+    root = runtime / "assets" / "office" if runtime else prepared_office_cache()
+    try:
+        return validate_prepared_office_pack(root)
+    except (OSError, ValueError):
+        return OfficeAssetPack.unavailable_pack(root, "verified Office resources unavailable")
 
 
 def _host_session(scope, port: int) -> str | None:
@@ -246,9 +147,12 @@ def _asset_csp(path: Path, frame_ancestors: str) -> str:
             unsafe_hashes = True
     hash_suffix = (" " + " ".join(dict.fromkeys(script_hashes))) if script_hashes else ""
     handler_suffix = " 'unsafe-hashes'" if unsafe_hashes else ""
+    # The pinned native editor uses runtime-compiled templates. This applies
+    # only to its static entry documents on the isolated Office origin.
+    eval_suffix = " 'unsafe-eval'" if path.name == "index.html" and path.parent.name == "main" else ""
     return (
         "default-src 'none'; base-uri 'none'; object-src 'none'; "
-        f"script-src 'self' 'wasm-unsafe-eval'{handler_suffix}{hash_suffix}; "
+        f"script-src 'self' 'wasm-unsafe-eval'{eval_suffix}{handler_suffix}{hash_suffix}; "
         "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
         "font-src 'self' blob:; worker-src 'self' blob:; frame-src 'self'; "
         "connect-src 'self' blob:; "

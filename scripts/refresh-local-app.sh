@@ -262,8 +262,8 @@ PY
   cp "$repo_root/scripts/release/mac-runtime-main.c" "$runtime_assets_stage/mac-runtime-main.c"
   cp "$repo_root/apps/desktop/build/icon.icns" "$runtime_assets_stage/icon.icns"
   if test -d "$repo_root/apps/desktop/build/office"; then
-    cp -R "$repo_root/apps/desktop/build/office" "$runtime_assets_stage/office"
-  elif test "${OPENPROGRAM_REQUIRE_OFFICE:-0}" = 1; then
+    "$local_python" "$repo_root/scripts/release/office/stage.py" --source "$repo_root/apps/desktop/build/office" --output "$runtime_assets_stage/office"
+  else
     printf 'prepared Office asset pack is required but missing\n' >&2
     exit 1
   fi
@@ -411,8 +411,8 @@ else
 fi
 mkdir -p "$runtime_root/bin" "$runtime_root/assets/tui"
 if test -d "$runtime_assets_stage/office"; then
-  rm -rf "$runtime_root/assets/office"
-  cp -R "$runtime_assets_stage/office" "$runtime_root/assets/office"
+  "$app_python" -I -m openprogram.office_assets install --source "$runtime_assets_stage/office" --target "$runtime_root/assets/office"
+  "$local_python" -m openprogram.office_assets install --source "$runtime_assets_stage/office"
 fi
 install -m 755 "$runtime_assets_stage/node" "$runtime_root/bin/node"
 cp "$runtime_assets_stage/index.cjs" "$runtime_root/assets/tui/index.cjs"

@@ -85,7 +85,11 @@ try {
     [Environment]::SetEnvironmentVariable("OPENPROGRAM_BUILD_PYTHON", $PreviousBuildPython, "Process")
 }
 
-Remove-Item -LiteralPath $RuntimeRoot -Recurse -Force -ErrorAction SilentlyContinue
+$PreviousRuntime = "$RuntimeRoot.previous.$([guid]::NewGuid().ToString('N'))"
+$HadPreviousRuntime = Test-Path -LiteralPath $RuntimeRoot
+if ($HadPreviousRuntime) { Move-Item -LiteralPath $RuntimeRoot -Destination $PreviousRuntime }
+$BuildSucceeded = $false
+try {
 Remove-Item -LiteralPath (Join-Path $RepoRoot "build") -Recurse -Force -ErrorAction SilentlyContinue
 foreach ($Directory in @(
     "assets\playwright",
@@ -98,9 +102,9 @@ foreach ($Directory in @(
     New-Item -ItemType Directory -Path (Join-Path $RuntimeRoot $Directory) -Force | Out-Null
 }
 if (Test-Path -LiteralPath (Join-Path $RepoRoot "apps\desktop\build\office") -PathType Container) {
-    Copy-Item -LiteralPath (Join-Path $RepoRoot "apps\desktop\build\office") `
-        -Destination (Join-Path $RuntimeRoot "assets\office") -Recurse -Force
-} elseif ($env:OPENPROGRAM_REQUIRE_OFFICE -eq "1") {
+    Invoke-Native $BuildPython (Join-Path $RepoRoot "scripts/release/office/stage.py") `
+        --source (Join-Path $RepoRoot "apps/desktop/build/office") --output (Join-Path $RuntimeRoot "assets/office")
+} else {
     throw "prepared Office asset pack is required but missing"
 }
 
@@ -249,3 +253,13 @@ Invoke-Native $PythonBin -I -B $Verifier $RuntimeRoot --write `
     --python-relative $PythonRelative --openprogram-version $PackageVersion --uv-version $UvVersion
 
 Write-Host "Prepared complete OpenProgram runtime $PackageVersion at $RuntimeRoot"
+
+$BuildSucceeded = $true
+} finally {
+    if (-not $BuildSucceeded -and $HadPreviousRuntime) {
+        Remove-Item -LiteralPath $RuntimeRoot -Recurse -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $PreviousRuntime -Destination $RuntimeRoot
+    } elseif ($BuildSucceeded -and $HadPreviousRuntime) {
+        Remove-Item -LiteralPath $PreviousRuntime -Recurse -Force
+    }
+}

@@ -16,6 +16,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Source-tree build tools use the same stdlib-only validator as installed workers.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 SOURCE = "d15d12b6945be4d8b0f3aa1806120e740d2950ee"
 PACKAGE_VERSION = "0.3.34"
 HOST_BUILD_ID = "office-host-0.3.34-r1"
@@ -155,15 +158,8 @@ def prepare(args: argparse.Namespace) -> Path:
         raise RuntimeError("reviewed npm lock digest mismatch")
     if args.font_pack is None or args.font_input is None:
         raise RuntimeError("--font-pack and --font-input are required for the reproducible Office pack")
-    source_map = args.font_pack / "onlyoffice-browser-font-source-map.json"
-    if not source_map.is_file():
-        raise RuntimeError("font pack source map is missing")
-    source_map_text = source_map.read_text(encoding="utf-8")
-    if "/tmp/" in source_map_text or "\\\\" in source_map_text:
-        raise RuntimeError("font pack source map contains a non-portable path")
-    input_names = {Path(p).name for p in files(args.font_input) if Path(p).suffix.lower() in {".ttf", ".ttc", ".otf"}}
-    if not input_names:
-        raise RuntimeError("font input contains no font sources")
+    from font_assets import validate_font_assets
+    font_provenance = validate_font_assets(args.font_pack, args.font_input)
     output.parent.mkdir(parents=True, exist_ok=True)
     stage_parent = Path(tempfile.mkdtemp(prefix=f".{output.name}.stage-", dir=output.parent))
     build_source = stage_parent / "source"
@@ -185,27 +181,22 @@ def prepare(args: argparse.Namespace) -> Path:
         _prune(pack_stage)
         _overlay_fonts(pack_stage, args.font_pack.resolve(), args.font_input.resolve())
         runtime_manifest = json.loads((pack_stage / "onlyoffice-runtime-assets.json").read_text(encoding="utf-8"))
+        materials = pack_stage / "source"
+        materials.mkdir()
+        run(["git", "-C", str(source), "archive", "--format=tar.gz",
+             f"--output={materials / 'onlyoffice-browser.tar.gz'}", SOURCE], source)
+        shutil.copy2(patch, materials / "adoption.patch")
+        shutil.copy2(lock, materials / "package-lock.json")
+        for name in ("README.md", "prepare.py", "font_assets.py", "font-generation.mjs", "font-verification.mjs"):
+            shutil.copy2(Path(__file__).with_name(name), materials / name)
+        # Keep portable source names and digests, not the build machine's paths.
+        (materials / "font-provenance.json").write_text(json.dumps(font_provenance, indent=2) + "\n")
         manifest = _manifest(pack_stage, source, patch, lock, runtime_manifest)
+        manifest["assembly"]["fonts"] = font_provenance
+
         (pack_stage / "openprogram-office-assets.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        previous = output.with_name(output.name + ".previous")
-        if previous.exists():
-            shutil.rmtree(previous)
-        had_previous = output.exists()
-        if had_previous:
-            os.replace(output, previous)
-        try:
-            os.replace(pack_stage, output)
-        except Exception:
-            if had_previous and previous.exists():
-                os.replace(previous, output)
-            raise
-        fd = os.open(output.parent, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        if previous.exists():
-            shutil.rmtree(previous)
+        from openprogram.office_assets import install_office_pack
+        install_office_pack(pack_stage, output)
         return output
     except Exception:
         raise

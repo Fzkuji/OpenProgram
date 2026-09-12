@@ -17,16 +17,6 @@ command -v npm >/dev/null 2>&1 || {
   exit 1
 }
 
-(
-  cd "$repo_root"
-  unset npm_config_workspace npm_config_workspaces
-  npm ci --ignore-scripts
-  rm -rf "$source_dir" "$next_build_dir"
-  NEXT_IGNORE_INCORRECT_LOCKFILE=1 npm run build --workspace apps/web
-  npm run build:standalone --workspace apps/cli
-  npm run build:release --workspace apps/cli
-)
-
 if test -n "$office_source"; then
   test -d "$office_source" || {
     printf 'Office source checkout was not found: %s\n' "$office_source" >&2
@@ -37,6 +27,20 @@ if test -n "$office_source"; then
   test -n "${OPENPROGRAM_OFFICE_FONT_INPUT:-}" && office_args+=(--font-input "$OPENPROGRAM_OFFICE_FONT_INPUT")
   python3 "$repo_root/scripts/release/office/prepare.py" "${office_args[@]}"
 fi
+office_stage_args=(--output "$office_output" --web-root "$web_dir/public")
+test -n "${OPENPROGRAM_OFFICE_PACK:-}" && office_stage_args+=(--source "$OPENPROGRAM_OFFICE_PACK")
+python3 "$repo_root/scripts/release/office/stage.py" "${office_stage_args[@]}"
+
+(
+  cd "$repo_root"
+  unset npm_config_workspace npm_config_workspaces
+  npm ci --ignore-scripts
+  rm -rf "$source_dir" "$next_build_dir"
+  NEXT_IGNORE_INCORRECT_LOCKFILE=1 npm run build --workspace apps/web
+  npm run build:standalone --workspace apps/cli
+  npm run build:release --workspace apps/cli
+)
+
 test -f "$source_dir/index.html" || {
   printf 'Next.js export did not produce %s/index.html\n' "$source_dir" >&2
   exit 1

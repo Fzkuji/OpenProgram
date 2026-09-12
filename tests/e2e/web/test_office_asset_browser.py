@@ -23,7 +23,8 @@ def _free_socket():
 
 def _make_pack(root: Path) -> None:
     assets = {
-        "office-host.html": b'<iframe src="/child.html"></iframe>',
+        "office-host.html": b'<iframe src="/child.html"></iframe><iframe src="/web-apps/apps/documenteditor/main/index.html"></iframe>',
+        "web-apps/apps/documenteditor/main/index.html": b"""<h1 id="result"></h1><script>document.getElementById('result').textContent = new Function("return 'Native ready'")();</script><button onclick="document.getElementById('result').textContent='Clicked'">Native action</button>""",
         "child.html": b"<h1>Nested document ready</h1>",
         "reset.html": b"",
         "sw.js": b"self.addEventListener('fetch', () => {});",
@@ -34,6 +35,7 @@ def _make_pack(root: Path) -> None:
     }
     for relative, content in assets.items():
         path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
     (root / "LICENSE").write_text("license", encoding="utf-8")
@@ -112,4 +114,14 @@ def test_office_host_allows_nested_same_origin_frame(office_browser):
     assert page.frame(url=f"{host}/office-host.html") is not None
     child = next(frame for frame in page.frames if frame.url == f"{host}/child.html")
     assert child.locator("h1").inner_text() == "Nested document ready"
+    assert errors == []
+
+
+def test_verified_native_entry_runs_inline_templates_and_handlers(office_browser):
+    page, host, errors = office_browser
+    from playwright.sync_api import expect
+    native = page.frame_locator(f'iframe[src="{host}/office-host.html"]').frame_locator('iframe[src*="documenteditor"]')
+    expect(native.locator("h1")).to_have_text("Native ready")
+    native.get_by_role("button", name="Native action").click()
+    expect(native.locator("h1")).to_have_text("Clicked")
     assert errors == []

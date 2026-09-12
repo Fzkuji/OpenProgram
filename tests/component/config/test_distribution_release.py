@@ -2305,6 +2305,11 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         (release_scripts / name).write_bytes((ROOT / "scripts/release" / name).read_bytes())
     (desktop / "build").mkdir(exist_ok=True)
     (desktop / "build/icon.icns").write_bytes(b"icns")
+    (desktop / "build/office").mkdir(exist_ok=True)  # Staged artifact; this fixture stops before installation.
+    (release_scripts / "office").mkdir()
+    (release_scripts / "office/stage.py").write_text(
+        "import pathlib, sys; pathlib.Path(sys.argv[sys.argv.index('--output') + 1]).mkdir(parents=True, exist_ok=True)\n"
+    )
     (release_scripts / "install-release.sh").write_text(
         'OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-0.6.6}"\n',
         encoding="utf-8",
@@ -2658,6 +2663,12 @@ def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
         encoding="utf-8",
     )
     script.chmod(0o755)
+
+    # Office preparation has separate public install tests. This test isolates
+    # the docs builder invocation while staging still calls its dependency.
+    office = release_scripts / "office"
+    office.mkdir()
+    (office / "stage.py").write_text("print('fixture Office resources staged')\n")
 
     fake_npm = fake_bin / "npm"
     fake_npm.write_text(

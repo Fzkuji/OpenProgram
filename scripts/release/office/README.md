@@ -1,29 +1,47 @@
-# Reproducible Office asset preparation
+# Local Office resources
 
-`prepare.py` builds the pinned OnlyOffice browser source at preparation time,
-applies `adoption.patch`, prunes the public demo and split packs, overlays the
-reviewed generated font output, and publishes a validated directory atomically.
-The server reads that directory from a prepared runtime; it never downloads or
-builds Office assets while opening a file.
+The build uses `agentbridges-ai/onlyoffice-browser` commit
+`d15d12b6945be4d8b0f3aa1806120e740d2950ee`, package `0.3.34`, and the
+`adoption.patch` and npm lock shipped in this directory. Preparation checks
+both digests. The patch serializes export acknowledgements and preserves native
+undo when switching between viewing and editing. It does not enable macros.
 
-The required source checkout must resolve to `d15d12b6945be4d8b0f3aa1806120e740d2950ee`
-and package version `0.3.34`. `adoption.patch` has SHA-256
-`0abfb281c7f523d5d0b9dc2f0dc60f6af4751920754d0a54cb14755b9478b088` and the
-reviewed `package-lock.json` has SHA-256
-`7b71a099e703545a80d06454ae2af6f52e52f0c3f1fbe5ead31dfdf11faf2590`.
-
-Example preparation (all paths are explicit inputs):
+Prepare fonts with `font-generation.mjs` and the official Document Server 9.3.0
+font generator. Supply only font families accompanied by their original
+licenses. System fonts and user-installed fonts are excluded. The Python
+validator checks the generated files against the input bytes, generated layout
+pins and licenses; an incomplete pack cannot be published.
 
 ```sh
 python scripts/release/office/prepare.py \
-  --source /path/to/onlyoffice-browser \
-  --output /path/to/runtime/assets/office \
-  --font-pack /path/to/output-open-fontpack \
-  --font-input /path/to/font-input
+  --source /path/to/pinned-onlyoffice-browser \
+  --font-pack /path/to/generated-font-pack \
+  --font-input /path/to/licensed-font-input \
+  --output /path/to/prepared-office
 ```
 
-The output contains `openprogram-office-assets.json` and the native
-`onlyoffice-runtime-assets.json`. Every served path and license is recorded
-with byte count and SHA-256. The manifest's `expectedHostIdentity` is the
-SHA-256 of the native runtime manifest. Failed validation or build leaves the
-previous output untouched.
+Preparation runs the pinned build and library build, removes demo pages and
+fixtures, and includes upstream source, the applied patch, build inputs and
+licenses. `onlyoffice-runtime-assets.json` is the editor's native manifest;
+`openprogram-office-assets.json` inventories every installed file with size and
+SHA-256. Its host identity must match the actual editor handshake.
+
+Release staging accepts `OPENPROGRAM_OFFICE_PACK` pointing to this prepared
+installation. Alternatively, set `OPENPROGRAM_OFFICE_SOURCE`,
+`OPENPROGRAM_OFFICE_FONT_PACK` and `OPENPROGRAM_OFFICE_FONT_INPUT` to build it
+at staging time. With no explicit inputs it uses an already verified build
+output or the matching profile cache. A missing pack stops release staging.
+There are no downloads when opening a document.
+
+The runtime stores resources under `assets/office`. Source and PATH workers
+read the matching version under the profile's `cache/office` directory. Local
+App refresh installs the same frozen pack into both locations. An arbitrary
+`OPENPROGRAM_RUNTIME_ROOT` environment value cannot override server assets.
+
+Installations contain immutable `versions/<manifest-sha256>` directories.
+All copied bytes are validated and flushed before `current.json` atomically
+selects a version. Repeated installation reuses that version. Earlier versions
+remain available to existing readers and for rollback; failed copies never
+replace the selected version. The parent module is staged separately under
+`public/document-assets/office/<patch-sha256>/public-api.js` and loads lazily.
+The large runtime does not enter the Python wheel or initial chat bundle.

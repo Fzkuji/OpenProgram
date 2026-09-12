@@ -157,9 +157,9 @@ def _probe_macos_window_control() -> None:
 
 
 def _probe_office(root: Path) -> str:
-    from openprogram.webui.office_assets import OfficeAssetPack
+    from openprogram.office_assets import validate_prepared_office_pack
 
-    pack = OfficeAssetPack.from_root(root / "assets" / "office")
+    pack = validate_prepared_office_pack(root / "assets" / "office")
     if not pack.available:
         raise RuntimeError(f"prepared Office asset pack is unavailable: {pack.unavailable_reason}")
     return "assets/office"
@@ -218,7 +218,7 @@ def _probe(
 
     _probe_macos_window_control()
 
-    if (root / "assets" / "office").is_dir():
+    if product.get("office") or (root / "assets" / "office").is_dir():
         _probe_office(root)
 
     if browser:
