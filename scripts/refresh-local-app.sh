@@ -261,6 +261,12 @@ PY
   cp "$repo_root/scripts/release/build-macos-runtime-app.py" "$runtime_assets_stage/build-macos-runtime-app.py"
   cp "$repo_root/scripts/release/mac-runtime-main.c" "$runtime_assets_stage/mac-runtime-main.c"
   cp "$repo_root/apps/desktop/build/icon.icns" "$runtime_assets_stage/icon.icns"
+  if test -d "$repo_root/apps/desktop/build/office"; then
+    cp -R "$repo_root/apps/desktop/build/office" "$runtime_assets_stage/office"
+  elif test "${OPENPROGRAM_REQUIRE_OFFICE:-0}" = 1; then
+    printf 'prepared Office asset pack is required but missing\n' >&2
+    exit 1
+  fi
   cp "$product_runtime_config" "$runtime_assets_stage/product-runtime.json"
   rm -rf "$repo_root/build"
   "$uv_bin" build --wheel --out-dir "$attempt_dir" "$repo_root"
@@ -404,6 +410,10 @@ else
   cp "$runtime_assets_stage/product-runtime.json" "$installed_product_runtime"
 fi
 mkdir -p "$runtime_root/bin" "$runtime_root/assets/tui"
+if test -d "$runtime_assets_stage/office"; then
+  rm -rf "$runtime_root/assets/office"
+  cp -R "$runtime_assets_stage/office" "$runtime_root/assets/office"
+fi
 install -m 755 "$runtime_assets_stage/node" "$runtime_root/bin/node"
 cp "$runtime_assets_stage/index.cjs" "$runtime_root/assets/tui/index.cjs"
 cp "$runtime_assets_stage/product-uv.lock" "$runtime_root/product-uv.lock"

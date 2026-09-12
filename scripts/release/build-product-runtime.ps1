@@ -97,6 +97,12 @@ foreach ($Directory in @(
 )) {
     New-Item -ItemType Directory -Path (Join-Path $RuntimeRoot $Directory) -Force | Out-Null
 }
+if (Test-Path -LiteralPath (Join-Path $RepoRoot "apps\desktop\build\office") -PathType Container) {
+    Copy-Item -LiteralPath (Join-Path $RepoRoot "apps\desktop\build\office") `
+        -Destination (Join-Path $RuntimeRoot "assets\office") -Recurse -Force
+} elseif ($env:OPENPROGRAM_REQUIRE_OFFICE -eq "1") {
+    throw "prepared Office asset pack is required but missing"
+}
 
 Invoke-Native $Uv build --wheel --out-dir (Join-Path $RuntimeRoot "wheel") $RepoRoot
 $ManagedPythonRoot = Join-Path $RuntimeRoot ".python-build"

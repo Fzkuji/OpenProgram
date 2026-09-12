@@ -9,6 +9,8 @@ target_dir="$repo_root/apps/server/openprogram_server/_webui/_frontend"
 legacy_target_dir="$repo_root/openprogram/webui/_frontend"
 docs_source_dir="$repo_root/docs/_site"
 docs_target_dir="$target_dir/docs"
+office_source="${OPENPROGRAM_OFFICE_SOURCE:-}"
+office_output="$repo_root/apps/desktop/build/office"
 
 command -v npm >/dev/null 2>&1 || {
   printf 'npm is required to stage release Web assets\n' >&2
@@ -24,6 +26,17 @@ command -v npm >/dev/null 2>&1 || {
   npm run build:standalone --workspace apps/cli
   npm run build:release --workspace apps/cli
 )
+
+if test -n "$office_source"; then
+  test -d "$office_source" || {
+    printf 'Office source checkout was not found: %s\n' "$office_source" >&2
+    exit 1
+  }
+  office_args=(--source "$office_source" --output "$office_output")
+  test -n "${OPENPROGRAM_OFFICE_FONT_PACK:-}" && office_args+=(--font-pack "$OPENPROGRAM_OFFICE_FONT_PACK")
+  test -n "${OPENPROGRAM_OFFICE_FONT_INPUT:-}" && office_args+=(--font-input "$OPENPROGRAM_OFFICE_FONT_INPUT")
+  python3 "$repo_root/scripts/release/office/prepare.py" "${office_args[@]}"
+fi
 test -f "$source_dir/index.html" || {
   printf 'Next.js export did not produce %s/index.html\n' "$source_dir" >&2
   exit 1

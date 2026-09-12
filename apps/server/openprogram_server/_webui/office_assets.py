@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import mimetypes
 import os
@@ -24,6 +25,8 @@ MAX_LICENSES = 256
 MAX_PATH_CHARS = 1024
 MAX_HOST_BUILD_ID_CHARS = 128
 _HOST_RE = re.compile(r"^host-([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\.office\.localhost$")
+_INLINE_SCRIPT_RE = re.compile(r"<script(?:\s[^>]*)?>(.*?)</script>", re.IGNORECASE | re.DOTALL)
+_INLINE_HANDLER_RE = re.compile(r"\son[a-z]+\s*=\s*([\"'])(.*?)\1", re.IGNORECASE | re.DOTALL)
 _BOOTSTRAP = frozenset({
     "office-host.html", "reset.html", "document_editor_service_worker.js", "sw.js",
     "plugins.json", "themes.json", "onlyoffice-runtime-assets.json",
@@ -58,6 +61,9 @@ class OfficeAssetPack:
                 raise ValueError("invalid Office asset manifest version")
             if manifest.get("source") != OFFICE_SOURCE or manifest.get("packageVersion") != OFFICE_PACKAGE_VERSION:
                 raise ValueError("unverified Office asset identity")
+            declared_identity = manifest.get("expectedHostIdentity")
+            if declared_identity is not None and declared_identity != hashlib.sha256(runtime_raw).hexdigest():
+                raise ValueError("Office native host identity mismatch")
             if type(manifest.get("hostBuildId")) is not str or not manifest["hostBuildId"] or len(manifest["hostBuildId"]) > MAX_HOST_BUILD_ID_CHARS:
                 raise ValueError("invalid Office host build identity")
             for key in ("packageVersion", "hostBuildId", "source", "assets", "licenses"):
@@ -122,7 +128,8 @@ def _contained_file(root: Path, relative: str) -> Path | None:
 
 
 def load_installed_office_pack() -> OfficeAssetPack:
-    runtime = managed_runtime_root()
+    explicit_runtime = os.environ.get("OPENPROGRAM_RUNTIME_ROOT", "").strip()
+    runtime = Path(explicit_runtime).resolve() if explicit_runtime else managed_runtime_root()
     if runtime is None:
         return OfficeAssetPack.unavailable_pack(Path(""), "managed runtime unavailable")
     return OfficeAssetPack.from_root(runtime / "assets" / "office")
@@ -186,7 +193,7 @@ async def serve_asset(scope, receive, send, pack: OfficeAssetPack, port: int, fr
         "Cache-Control": "public, max-age=31536000, immutable",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
-        "Content-Security-Policy": f"default-src 'none'; base-uri 'none'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' blob:; worker-src 'self' blob:; frame-src 'self'; connect-src 'self' blob:; frame-ancestors {frame_ancestors}",
+        "Content-Security-Policy": _asset_csp(target, frame_ancestors),
     }
     try:
         fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
@@ -219,6 +226,34 @@ def _media_type(path: Path) -> str:
     if path.suffix.lower() == ".wasm":
         return "application/wasm"
     return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+
+def _asset_csp(path: Path, frame_ancestors: str) -> str:
+    script_hashes: list[str] = []
+    unsafe_hashes = False
+    if path.suffix.lower() in {".html", ".htm"}:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        for body in _INLINE_SCRIPT_RE.findall(text):
+            if body.strip():
+                value = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+                script_hashes.append(f"'sha256-{value}'")
+        for _, body in _INLINE_HANDLER_RE.findall(text):
+            value = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+            script_hashes.append(f"'sha256-{value}'")
+            unsafe_hashes = True
+    hash_suffix = (" " + " ".join(dict.fromkeys(script_hashes))) if script_hashes else ""
+    handler_suffix = " 'unsafe-hashes'" if unsafe_hashes else ""
+    return (
+        "default-src 'none'; base-uri 'none'; object-src 'none'; "
+        f"script-src 'self' 'wasm-unsafe-eval'{handler_suffix}{hash_suffix}; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+        "font-src 'self' blob:; worker-src 'self' blob:; frame-src 'self'; "
+        "connect-src 'self' blob:; "
+        f"frame-ancestors {frame_ancestors}"
+    )
 
 
 async def _send_error(send, status: int, error: str) -> None:

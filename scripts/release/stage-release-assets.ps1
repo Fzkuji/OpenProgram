@@ -19,6 +19,8 @@ $TargetDir = Join-Path $RepoRoot "apps\server\openprogram_server\_webui\_fronten
 $LegacyTargetDir = Join-Path $RepoRoot "openprogram\webui\_frontend"
 $DocsSourceDir = Join-Path $RepoRoot "docs\_site"
 $DocsTargetDir = Join-Path $TargetDir "docs"
+$OfficeSource = $env:OPENPROGRAM_OFFICE_SOURCE
+$OfficeOutput = Join-Path $RepoRoot "apps\desktop\build\office"
 
 $Npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
 if (-not $Npm) {
@@ -85,6 +87,17 @@ try {
     foreach ($Name in $SavedBuildEnvironment.Keys) {
         [Environment]::SetEnvironmentVariable($Name, $SavedBuildEnvironment[$Name], "Process")
     }
+}
+
+if ($OfficeSource) {
+    if (-not (Test-Path -LiteralPath $OfficeSource -PathType Container)) {
+        throw "Office source checkout was not found: $OfficeSource"
+    }
+    $OfficePrepare = Join-Path $RepoRoot "scripts\release\office\prepare.py"
+    $OfficeArgs = @($OfficePrepare, "--source", $OfficeSource, "--output", $OfficeOutput, "--npm", $Npm, "--node", (Get-Command node.exe).Source)
+    if ($env:OPENPROGRAM_OFFICE_FONT_PACK) { $OfficeArgs += @("--font-pack", $env:OPENPROGRAM_OFFICE_FONT_PACK) }
+    if ($env:OPENPROGRAM_OFFICE_FONT_INPUT) { $OfficeArgs += @("--font-input", $env:OPENPROGRAM_OFFICE_FONT_INPUT) }
+    Invoke-Native $Python @OfficeArgs
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $SourceDir "index.html") -PathType Leaf)) {

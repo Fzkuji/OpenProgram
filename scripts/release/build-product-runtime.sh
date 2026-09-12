@@ -55,8 +55,17 @@ test "$actual_uv_version" = "$UV_VERSION" || {
   exit 1
 }
 
-"$repo_root/scripts/release/stage-release-assets.sh"
-rm -rf "$runtime_root"
+previous_runtime="${runtime_root}.previous.$$"
+if test -e "$runtime_root"; then
+  test ! -e "$previous_runtime" || { printf 'runtime backup path already exists\n' >&2; exit 1; }
+  mv "$runtime_root" "$previous_runtime"
+fi
+restore_previous_runtime() {
+  if test -e "$previous_runtime" && ! test -e "$runtime_root"; then
+    mv "$previous_runtime" "$runtime_root"
+  fi
+}
+trap restore_previous_runtime EXIT HUP INT TERM
 rm -rf "$repo_root/build"
 mkdir -p \
   "$runtime_root/assets/playwright" \
@@ -65,6 +74,14 @@ mkdir -p \
   "$runtime_root/bin" \
   "$runtime_root/python" \
   "$runtime_root/wheel"
+
+"$repo_root/scripts/release/stage-release-assets.sh"
+if test -d "$repo_root/apps/desktop/build/office"; then
+  cp -R "$repo_root/apps/desktop/build/office" "$runtime_root/assets/office"
+elif test "${OPENPROGRAM_REQUIRE_OFFICE:-0}" = 1; then
+  printf 'prepared Office asset pack is required but missing\n' >&2
+  exit 1
+fi
 
 "$uv_bin" build --wheel --out-dir "$runtime_root/wheel" "$repo_root"
 UV_PYTHON_INSTALL_DIR="$runtime_root/python" \
@@ -183,6 +200,7 @@ package_version="$("$python_bin" -I -c \
   --uv-version "$UV_VERSION"
 
 trap - EXIT HUP INT TERM
+rm -rf "$previous_runtime"
 cleanup
 printf 'prepared complete OpenProgram runtime %s at %s\n' \
   "$package_version" "$runtime_root"
