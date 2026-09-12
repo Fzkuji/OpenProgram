@@ -110,3 +110,21 @@ def test_copied_derived_sources_without_summary_are_not_originals(tmp_path, monk
     (tmp_path/'copied.json').write_text(json.dumps([{'id':'derived','week':'2026-W37',
         'audience':'tencent','text':'旧进度','source':'/reports/checkpoints/old.json#reference'}]))
     assert sources.collect('2026-W37', [str(tmp_path)])['materials'] == []
+
+
+def test_direct_checkpoint_root_and_copied_checkpoint_are_not_originals(tmp_path, monkeypatch):
+    monkeypatch.setattr(sources, 'memory_candidates', lambda *a: [])
+    checkpoints=tmp_path/'checkpoints'
+    checkpoints.mkdir()
+    state={'kind':'tencent_model','request':{'materials':[{'id':'r','week':'2026-W37','text':'旧进展'}]}}
+    (checkpoints/'run.json').write_text(json.dumps(state))
+    (tmp_path/'copied-state.json').write_text(json.dumps(state))
+    assert sources.collect('2026-W37', [str(checkpoints)])['materials'] == []
+    assert sources.collect('2026-W37', [str(tmp_path)])['materials'] == []
+
+
+def test_exported_originals_without_reference_are_not_reimported(tmp_path, monkeypatch):
+    monkeypatch.setattr(sources, 'memory_candidates', lambda *a: [])
+    (tmp_path/'sources.json').write_text(json.dumps([{'id':'r','week':'2026-W37','audience':'tencent','text':'旧进展'}]))
+    (tmp_path/'summary.md').write_text('派生稿件')
+    assert sources.collect('2026-W37', [str(tmp_path)])['materials'] == []

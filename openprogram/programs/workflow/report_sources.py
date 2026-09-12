@@ -109,6 +109,12 @@ def collect(week, report_roots=None, query="腾讯工作 周报 本周进展"):
                     data = json.loads(raw_data)
                 except (OSError, ValueError, UnicodeError):
                     continue
+                if isinstance(data, dict) and data.get("kind") in (
+                    "tencent_model", "tencent_sources", "tencent_delivery", "report"
+                ):
+                    continue
+                if path.name == "sources.json" and (path.parent / "summary.md").is_file():
+                    continue
                 request = data.get("request", data) if isinstance(data, dict) else {}
                 if not isinstance(request, dict):
                     continue
