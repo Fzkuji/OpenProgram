@@ -125,6 +125,25 @@ test("rich close freezes input before final export and reopens it on failure",as
   assert.deepEqual(frozen,[false,true]); assert.equal(await value.currentDraft().text(),"draft");
 });
 
+test("discard revokes the old rich editor callback before clearing durable draft",async()=>{
+  const records=new Records();const value=controller(async()=>committed(b),records,"discard-office.docx");
+  await value.hydrate({bytes:"old",revision:a});let generation;
+  const editor={getState:()=>({dirty:false,readonly:false}),setReadonly(){},flushPendingSaves:async()=>{},destroy:async()=>{},save:async()=>{}};
+  value.attachRichEditor(editor);generation=value.getState().editorRevision;
+  await value.stageRichExport("draft",generation);await value.discard();
+  await assert.rejects(value.stageRichExport("STALE",generation),/generation/);
+  assert.equal(value.currentDraft(),null);assert.equal(records.values.size,0);
+});
+
+test("discard retains a failed native destroy for an explicit retry",async()=>{
+  const records=new Records();const value=controller(async()=>committed(b),records,"discard-retry.docx");
+  await value.hydrate({bytes:"old",revision:a});let failed=true;let destroys=0;
+  const editor={getState:()=>({dirty:false,readonly:true}),setReadonly(){},flushPendingSaves:async()=>{},destroy:async()=>{destroys++;if(failed)throw new Error("destroy failed");}};
+  value.attachRichEditor(editor);await value.stageRichExport("draft");
+  await assert.rejects(value.discard(),/destroy failed/);assert.equal(await value.currentDraft().text(),"draft");
+  failed=false;await value.discard();assert.equal(destroys,2);assert.equal(value.currentDraft(),null);assert.equal(records.values.size,0);
+});
+
 test("close exports pending native input even before a dirty notification",async()=>{
   const value=controller(async()=>committed(b),new Records(),"pending-cell.xlsx");
   await value.hydrate({bytes:"old",revision:a});let exports=0;

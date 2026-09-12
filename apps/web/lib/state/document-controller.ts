@@ -67,6 +67,7 @@ export class DocumentController {
   private richEditor: RichDocumentEditor | null = null;
   private richGeneration = 0;
   private richDirty = false;
+  private richLeaseRevoked = false;
   private finalization: Promise<void> | null = null;
   private richExport: Promise<void> | null = null;
   private richExportTimer: ReturnType<typeof setTimeout> | null = null;
@@ -245,6 +246,7 @@ export class DocumentController {
       throw new Error("This document editor is no longer active.");
     this.richEditor = editor;
     this.richGeneration = generation;
+    this.richLeaseRevoked = false;
     this.richDirty = Boolean(editor.getState?.().dirty);
     return () => {
       if (this.richEditor !== editor) return;
@@ -286,18 +288,27 @@ export class DocumentController {
   }
   async resetRichEditor(): Promise<void> {
     const editor = this.richEditor;
-    this.richEditor = null;
+    const nextRevision = this.state.editorRevision + 1;
+    this.richGeneration = nextRevision;
+    this.richLeaseRevoked = true;
     this.richDirty = false;
     if (this.richExportTimer) clearTimeout(this.richExportTimer);
     if (this.richExportMaxTimer) clearTimeout(this.richExportMaxTimer);
     this.richExportTimer = this.richExportMaxTimer = null;
-    if (editor) await editor.destroy();
-    this.setState({ editorRevision: this.state.editorRevision + 1 });
+    this.setState({ editorRevision: nextRevision });
+    if (!editor) return;
+    try {
+      await editor.destroy();
+      if (this.richEditor === editor) this.richEditor = null;
+    } catch (error) {
+      if (this.richEditor !== editor) this.richEditor = editor;
+      throw error;
+    }
   }
   /** Called by the native onSave callback. It acknowledges only after the
    * bytes have reached the existing durable draft store. */
   async stageRichExport(bytes: Blob | Uint8Array | string, generation = this.richGeneration): Promise<void> {
-    if (!this.richEditor || generation !== this.richGeneration || this.state.status === "closed")
+    if (!this.richEditor || this.richLeaseRevoked || generation !== this.richGeneration || this.state.status === "closed")
       throw new Error("The Office editor generation is no longer active.");
     const draft = blobOf(bytes);
     this.setState({ draft, generation: this.state.generation + 1, status: "dirty", error: null });
@@ -405,7 +416,7 @@ export class DocumentController {
   private async flushRichEditor(): Promise<void> {
     this.clearTimers();
     if (this.richExport) await this.richExport.catch(() => undefined);
-    if (this.richEditor && (this.richDirty || this.richEditor.getState?.().readonly === false)) {
+    if (this.richEditor && !this.richLeaseRevoked && this.richGeneration === this.state.editorRevision && (this.richDirty || this.richEditor.getState?.().readonly === false)) {
       if (!this.richEditor.save) throw new Error("The Office editor cannot export the dirty document.");
       await this.richEditor.save();
       await this.richEditor.flushPendingSaves();
@@ -413,6 +424,7 @@ export class DocumentController {
     }
   }
   async discard(): Promise<void> {
+    if (this.richEditor) await this.resetRichEditor();
     this.clearTimers();
     if (this.restoreTask) await this.restoreTask.catch(() => undefined);
     if (this.request) await this.request.catch(() => undefined);
