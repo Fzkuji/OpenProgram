@@ -18,7 +18,8 @@ const controllers = new Map<string, DocumentController>();
 const binaryStore = new IndexedDbDocumentDraftStore();
 const blobOf = (value: Blob | Uint8Array | string): Blob => value instanceof Blob
   ? value.slice(0, value.size, value.type)
-  : new Blob([typeof value === "string" ? value : new Uint8Array(value)]);
+  : new Blob([typeof value === "string" ? value : new Uint8Array(value)],
+    typeof value === "string" ? { type: "text/plain;charset=utf-8" } : undefined);
 const revisionValid = (value: unknown): value is string => typeof value === "string" && /^(?:[a-f0-9]{64}|absent)$/.test(value);
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -81,7 +82,11 @@ export class DocumentController {
   release(listener?: DocumentListener): void {
     if (listener) this.listeners.delete(listener);
     if (!this.listeners.size && !this.state.draft && !this.pending && !this.request && !this.restoreTask && this.initialized)
-      controllers.delete(documentIdentityKey(this.identity));
+      this.evict();
+  }
+  private evict(): void {
+    const key = documentIdentityKey(this.identity);
+    if (controllers.get(key) === this) controllers.delete(key);
   }
   private setState(patch: Partial<DocumentControllerState>): void {
     this.state = { ...this.state, ...patch };
@@ -146,7 +151,7 @@ export class DocumentController {
         this.baselineRevision = legacy.baselineRevision ?? Array.from(new Uint8Array(digest!),
           (byte) => byte.toString(16).padStart(2, "0")).join("");
         this.legacyDraft = true;
-        this.setState({ draft: new Blob([legacy.draft]), generation: 1, status: "dirty" });
+        this.setState({ draft: blobOf(legacy.draft), generation: 1, status: "dirty" });
       }
     }
     this.localLoaded = true;
@@ -175,7 +180,15 @@ export class DocumentController {
     }
     const revision = response.headers.get("x-document-revision");
     if (!revisionValid(revision)) throw new Error("The document revision is missing or invalid.");
-    return { bytes: await response.blob(), revision };
+    const bytes = await response.blob();
+    // A text suffix does not make arbitrary bytes safely editable. Decode
+    // strictly before allowing an editor to rewrite their encoding.
+    let binary = false;
+    try {
+      const decoded = new TextDecoder("utf-8", { fatal: true }).decode(await bytes.arrayBuffer());
+      binary = decoded.includes("\0");
+    } catch { binary = true; }
+    return { bytes, revision, binary };
   }
 
   load(): Promise<DocumentSnapshot> {
@@ -240,7 +253,7 @@ export class DocumentController {
       if (this.state.status !== "conflict") this.fail(error);
       throw error;
     });
-    this.request = task.finally(() => { this.request = null; });
+    this.request = task.finally(() => { this.request = null; this.release(); });
     return this.request;
   }
 
@@ -281,7 +294,12 @@ export class DocumentController {
 
   async flush(): Promise<void> {
     this.clearTimers();
-    if (this.loading) await this.loading;
+    if (this.loading) {
+      try { await this.loading; }
+      catch (error) {
+        if (!this.localLoaded || this.state.draft || this.pending) throw error;
+      }
+    }
     if (this.restoreTask) await this.restoreTask;
     if (this.identity.kind === "attachment") return;
     await this.drain(true);
@@ -304,10 +322,16 @@ export class DocumentController {
   }
   async discardDraft(): Promise<void> { await this.reloadDisk(); }
   async reloadDisk(): Promise<void> {
-    const disk = await this.readDisk();
-    await this.discard();
-    this.baselineRevision = disk.revision;
-    this.setState({ snapshot: disk, draft: null, status: "idle", error: null });
+    if (this.restoreTask) await this.restoreTask.catch(() => undefined);
+    this.setState({ restoring: true });
+    this.clearTimers();
+    try {
+      if (this.request) await this.request.catch(() => undefined);
+      const disk = await this.readDisk();
+      await this.discard();
+      this.baselineRevision = disk.revision;
+      this.setState({ snapshot: disk, draft: null, status: "idle", error: null });
+    } finally { this.setState({ restoring: false }); }
   }
   async listHistory(limit = 25, cursor?: string): Promise<{ entries: DocumentHistoryEntry[]; next_cursor?: string | null }> {
     if (this.identity.kind !== "project") return { entries: [] };
@@ -344,7 +368,7 @@ export class DocumentController {
     try { await this.flush(); }
     catch (error) { this.closeRequested = false; throw error; }
     this.setState({ status: "closed" });
-    controllers.delete(documentIdentityKey(this.identity));
+    this.evict();
     this.listeners.clear();
   }
 }

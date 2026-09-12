@@ -22,22 +22,12 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 // fileURLToPath, not .pathname — a repo path containing a space arrives
 // percent-encoded otherwise and every readdir misses.
 const root = fileURLToPath(new URL("../", import.meta.url));
 const SKIP_DIRS = new Set(["node_modules", ".next", "out", "dist", "build"]);
-
-/** Blank out comments so prose ABOUT a dead global never reads as one.
- *  The old line-prefix test only caught lines STARTING with `*` or `//`,
- *  which let block-comment continuation lines (`* mirrors window._foo`)
- *  through. Replacing comment bodies with spaces preserves line numbers
- *  and column offsets, so reported positions stay accurate. */
-function stripComments(source) {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
-    .replace(/\/\/[^\n]*/g, (m) => " ".repeat(m.length));
-}
 
 /** Every .ts/.tsx under web/, minus build output. */
 function* sources(dir) {
@@ -95,93 +85,134 @@ const files = [...sources(root)];
  *  exactly that cast and no writer behind it. */
 const assigned = new Set();
 
-/** Names bound to `window` by a cast in this file — `const w = window as …`,
- *  `const win = window as unknown as {…}`. Only these are followed as window
- *  aliases; without the check, any local named `w` matched, and
- *  `use-fn-form-wrapper.ts` binds `w` to a DOM element whose `.offsetHeight`
- *  is not a global read. */
-function windowAliases(source) {
+const reads = []; // { name, path, line, text }
+
+/** Return the expression after removing the casts used by window aliases. */
+function unwrapWindowCast(node) {
+  while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) {
+    node = node.expression;
+  }
+  return node;
+}
+
+/** Names bound to `window` by a cast in this file. Property access is collected
+ * from the AST so strings, import paths, comments, and unrelated local names
+ * cannot become globals accidentally. */
+function windowAliases(sourceFile) {
   const names = new Set();
-  // The right-hand side must be `window` ITSELF — bare, or wrapped in `as`
-  // casts — and nothing may follow it. Accepting a trailing `.` or `(` made
-  // `const req = window.indexedDB.open(…)` and `const bridge =
-  // window.openprogramDesktop` register as aliases, after which every
-  // `req.result` / `bridge.windowId` was misreported as a global read.
-  const re =
-    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+?)?=\s*window(?:\s+as\s+[^;\n]+)?\s*;/g;
-  let m;
-  while ((m = re.exec(source))) names.add(m[1]);
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.initializer
+      && ts.isIdentifier(node.name)
+      && ts.isIdentifier(unwrapWindowCast(node.initializer))
+      && unwrapWindowCast(node.initializer).text === "window") {
+      names.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
   return names;
 }
 
-/** Property accesses reached through an INLINE cast — `(window as unknown as
- *  {…}).foo` — never touch a named alias, so they need their own pattern.
- *  This is the shape the `window.ws` bug shipped in. */
-const INLINE_CAST_ACCESS =
-  /\(\s*window\s+as\b[^)]*\)\s*\.\s*([A-Za-z_$][\w$]*)/g;
-
-function escapeName(n) {
-  return n.replace(/\$/g, "\\$");
+function isWindowBase(node, aliases) {
+  const base = unwrapWindowCast(node);
+  return ts.isIdentifier(base) && (base.text === "window" || aliases.has(base.text));
 }
 
-function writePatterns(aliases) {
-  const pats = [
-    /\bwindow\s*\.\s*([A-Za-z_$][\w$]*)\s*(?:=[^=]|\+\+|--|\?\?=|\|\|=)/g,
-    /\bdelete\s+window\s*\.\s*([A-Za-z_$][\w$]*)/g,
-  ];
-  for (const a of aliases) {
-    const n = escapeName(a);
-    pats.push(
-      new RegExp(`\\b${n}\\s*\\.\\s*([A-Za-z_$][\\w$]*)\\s*(?:=[^=]|\\+\\+|--|\\?\\?=|\\|\\|=)`, "g"),
-      new RegExp(`\\bdelete\\s+${n}\\s*\\.\\s*([A-Za-z_$][\\w$]*)`, "g"),
-    );
+function isWindowWrite(node) {
+  const parent = node.parent;
+  if (ts.isBinaryExpression(parent) && parent.left === node) {
+    return ts.isAssignmentOperator(parent.operatorToken.kind);
   }
-  return pats;
-}
-
-function readPatterns(aliases) {
-  const pats = [
-    /\bwindow\s*\.\s*([A-Za-z_$][\w$]*)/g,
-    new RegExp(INLINE_CAST_ACCESS.source, "g"),
-  ];
-  for (const a of aliases) {
-    pats.push(new RegExp(`\\b${escapeName(a)}\\s*\\.\\s*([A-Za-z_$][\\w$]*)`, "g"));
+  if (ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent)) {
+    return parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken;
   }
-  return pats;
+  return ts.isDeleteExpression(parent);
 }
 
-const reads = []; // { name, path, line, text }
+function collectAccesses(sourceFile, path, target = reads) {
+  const aliases = windowAliases(sourceFile);
+  const lines = sourceFile.text.split("\n");
+  function visit(node) {
+    if (ts.isPropertyAccessExpression(node) && isWindowBase(node.expression, aliases)) {
+      const line = sourceFile.getLineAndCharacterOfPosition(node.name.getStart(sourceFile)).line + 1;
+      target.push({
+        name: node.name.text,
+        path: path.slice(root.length),
+        line,
+        text: lines[line - 1].trim(),
+      });
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+}
+
+/** Keep the parser boundary covered by the checker itself. These cases are
+ * deliberately source-shaped so a future scanner change cannot regress into
+ * matching text inside strings/import paths or following unrelated objects. */
+function runScannerSelfChecks() {
+  const parse = (source) => ts.createSourceFile(
+    "socket-access-self-check.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const accesses = (source) => {
+    const found = [];
+    collectAccesses(parse(source), "socket-access-self-check.ts", found);
+    return found.map(({ name }) => name);
+  };
+
+  assert.deepEqual(
+    accesses('import styles from "./document-window.module.css";\nconst message = "window. Close";'),
+    [],
+    "scanner self-check: import paths and strings must not become window reads",
+  );
+
+  const missing = accesses([
+    "window.missingPlain;",
+    "const alias = window as unknown as { missingAlias?: string };",
+    "alias.missingAlias;",
+    "(window as unknown as { missingInline?: string }).missingInline;",
+  ].join("\n"));
+  assert.deepEqual(
+    missing.filter((name) => !PLATFORM_GLOBALS.has(name)),
+    ["missingPlain", "missingAlias", "missingInline"],
+    "scanner self-check: plain, alias, and inline-cast missing globals must be found",
+  );
+
+  assert.deepEqual(
+    accesses("const bridge = window.openprogramDesktop;\nbridge.windowId;"),
+    ["openprogramDesktop"],
+    "scanner self-check: a property read must not become a window alias",
+  );
+}
+
+runScannerSelfChecks();
 
 // Pass 1 collects writes from EVERY file before pass 2 judges any read —
 // a global is legitimately written in one module and read in another.
 for (const path of files) {
-  const source = stripComments(readFileSync(path, "utf8"));
-  const alias = windowAliases(source);
-  for (const line of source.split("\n")) {
-    for (const re of writePatterns(alias)) {
-      let m;
-      while ((m = re.exec(line))) assigned.add(m[1]);
+  const source = readFileSync(path, "utf8");
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true,
+    path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const aliases = windowAliases(sourceFile);
+  function visit(node) {
+    if (ts.isPropertyAccessExpression(node) && isWindowBase(node.expression, aliases) && isWindowWrite(node)) {
+      assigned.add(node.name.text);
     }
+    ts.forEachChild(node, visit);
   }
+  visit(sourceFile);
 }
 
 // Pass 2 records the reads.
 for (const path of files) {
-  const source = stripComments(readFileSync(path, "utf8"));
-  const alias = windowAliases(source);
-  source.split("\n").forEach((line, i) => {
-    for (const re of readPatterns(alias)) {
-      let m;
-      while ((m = re.exec(line))) {
-        reads.push({
-          name: m[1],
-          path: path.slice(root.length),
-          line: i + 1,
-          text: line.trim(),
-        });
-      }
-    }
-  });
+  const source = readFileSync(path, "utf8");
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true,
+    path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  collectAccesses(sourceFile, path);
 }
 
 // A read is dead when nothing in the tree writes the name and the platform

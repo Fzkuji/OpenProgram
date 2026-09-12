@@ -158,3 +158,47 @@ def test_document_concurrent_flush_and_invalid_response_preserve_draft(browser_p
     }""")
     assert result == {"calls": 1, "status": "error", "draft": "new"}
     assert errors == []
+
+
+def test_document_blob_store_keeps_binary_bytes_and_enforces_text_limit(browser_page):
+    page, _state, errors = browser_page
+    page.goto("https://document.test/controller")
+    result = page.evaluate("""async () => {
+      const store=new IndexedDbDocumentDraftStore();
+      const record={key:'project:quota:a.bin',projectId:'quota',path:'a.bin',
+        latestDraft:new Blob([new Uint8Array([0,255,128,1])]),baselineRevision:'a'.repeat(64),
+        generation:1,editorId:'editor',updatedAt:Date.now(),storageVersion:0};
+      const version=await store.put(record);
+      const bytes=Array.from(new Uint8Array(await (await store.get(record.key)).latestDraft.arrayBuffer()));
+      let rejected=false;
+      try {await store.put({...record,storageVersion:version,
+        latestDraft:new Blob([new Uint8Array(8*1024*1024+1)],{type:'text/plain'})});}
+      catch(error){rejected=error.name==='QuotaExceededError';}
+      const retained=Array.from(new Uint8Array(await (await store.get(record.key)).latestDraft.arrayBuffer()));
+      await store.delete(record.key,version);
+      return {bytes,rejected,retained,remaining:await store.list('quota')};
+    }""")
+    assert result == {"bytes": [0, 255, 128, 1], "rejected": True,
+                      "retained": [0, 255, 128, 1], "remaining": []}
+    assert errors == []
+
+
+def test_unmounted_blob_draft_blocks_rename_and_flushes_before_close(browser_page):
+    page, state, errors = browser_page
+    page.goto("https://document.test/controller")
+    result = page.evaluate("""async () => {
+      const store=new IndexedDbDocumentDraftStore();
+      const record={key:'project:inactive:a.bin',projectId:'inactive',path:'a.bin',
+        latestDraft:new Blob([new Uint8Array([0,255,128,1])]),baselineRevision:'a'.repeat(64),
+        generation:1,editorId:'editor',updatedAt:Date.now(),storageVersion:0};
+      await store.put(record);
+      const dirty=await documentDraftLifecycle.hasDirtyDraftsForPath('inactive','a.bin');
+      let calls=0;
+      const renamed=await documentDraftLifecycle.runServerRenameWithDrafts('inactive','a.bin','b.bin',
+        async()=>{calls++;return {status:'ready'}},async()=>({status:'ready'}));
+      const closed=await documentDraftLifecycle.flushFileDocumentsBeforeClose([{projectId:'inactive',path:'a.bin'}]);
+      return {dirty,calls,renamed:renamed.ok,closed,remaining:await store.list('inactive')};
+    }""")
+    assert result == {"dirty": True, "calls": 0, "renamed": False, "closed": True, "remaining": []}
+    assert state["writes"] == [bytes([0, 255, 128, 1])]
+    assert errors == []

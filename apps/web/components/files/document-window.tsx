@@ -92,7 +92,12 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
     content: isText ? content : undefined, binary: !isText,
     size: currentBytes?.size ?? 0, mtime: state.snapshot.mtime ?? 0, revision: state.snapshot.revision } : null;
 
-  return <div className={styles.window} data-document-window="true">
+  return <div className={styles.window} data-document-window="true" onKeyDown={(event) => {
+    if (!readOnly && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      void perform(() => controller.flush());
+    }
+  }}>
     <div className={styles.toolbar} role="toolbar" aria-label={text("Document", "文档")}>
       <span className={styles.title}>{path.split("/").pop()}</span><span className={styles.spacer} />
       <button className={`${styles.button} ${mode === "preview" && !selected ? styles.active : ""}`}

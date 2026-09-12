@@ -84,3 +84,20 @@ test("an uncertain restore survives reconstruction and retries POST with its ori
   assert.deepEqual(JSON.parse(calls[0].init.body),original);
   assert.equal(store.values.size,0);assert.equal(await second.getState().snapshot.bytes.text(),"historic");await second.close();
 });
+
+test("raw binary content is not exposed as editable UTF-8 text",async()=>{
+  const value=controller(async()=>new Response(new Uint8Array([0xff,0x00,0xfe]),{headers:{"x-document-revision":a}}),new Records(),"binary.txt");
+  const snapshot=await value.load();assert.equal(snapshot.binary,true);await value.close();
+});
+
+test("discard waits for an in-flight write before reading the disk version",async()=>{
+  let release,started;const hold=new Promise(r=>release=r),start=new Promise(r=>started=r);
+  let disk="old";
+  const value=controller(async(_url,init)=>{
+    if(init?.method==="PUT"){started();await hold;disk="new";return committed(b);}
+    return new Response(disk,{headers:{"x-document-revision":disk==="old"?a:b}});
+  },new Records(),"discard.txt");
+  await value.hydrate({bytes:"old",revision:a});value.update("new");const saving=value.flush();await start;
+  const discarding=value.discardDraft();release();await Promise.all([saving,discarding]);
+  assert.equal(await value.getState().snapshot.bytes.text(),"new");await value.close();
+});

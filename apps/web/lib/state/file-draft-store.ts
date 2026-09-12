@@ -1,3 +1,5 @@
+import { DRAFT_MAX_BYTES } from "./file-state-shared.ts";
+
 export interface DraftStoreRecord {
   key: string;
   projectId: string;
@@ -73,12 +75,18 @@ export interface DocumentDraftRecord {
   updatedAt: number;
   storageVersion?: number;
 }
+function textDraftBytes(record: DocumentDraftRecord): number {
+  return [record.latestDraft, record.pending?.bytes].reduce((total, blob) =>
+    total + (blob?.type.startsWith("text/") ? blob.size : 0), 0);
+}
+
 export interface DocumentDraftMetadata {
   key: string;
   projectId: string;
   path: string;
   bytes: number;
   storageVersion: number;
+  textBytes?: number;
 }
 
 function completeTransaction(tx: IDBTransaction): Promise<void> {
@@ -143,6 +151,7 @@ export class IndexedDbDocumentDraftStore {
   static readonly maxBytes = 64 * 1024 * 1024;
   static readonly maxTotalBytes = 256 * 1024 * 1024;
   static readonly maxEntries = 32;
+  static readonly maxTextBytes = DRAFT_MAX_BYTES;
 
   async get(key: string): Promise<DocumentDraftRecord | null> {
     const db = await openFileDraftDatabase();
@@ -182,14 +191,17 @@ export class IndexedDbDocumentDraftStore {
           tx.abort(); return;
         }
         const bytes = record.latestDraft.size + (record.pending?.bytes.size ?? 0);
+        const textBytes = textDraftBytes(record);
+        const totalText = entries.reduce((sum, entry) => sum + (entry.key === record.key ? 0 : entry.textBytes ?? 0), textBytes);
         const total = entries.reduce((sum, entry) => sum + (entry.key === record.key ? 0 : entry.bytes), bytes);
         if ((!previous && entries.length >= IndexedDbDocumentDraftStore.maxEntries) ||
-            total > IndexedDbDocumentDraftStore.maxTotalBytes) {
+            total > IndexedDbDocumentDraftStore.maxTotalBytes ||
+            totalText > IndexedDbDocumentDraftStore.maxTextBytes) {
           failure = new DraftStoreQuotaError(); tx.abort(); return;
         }
         version = (previous?.storageVersion ?? 0) + 1;
         tx.objectStore("document_drafts").put({ ...record, storageVersion: version });
-        metadata.put({ key: record.key, projectId: record.projectId, path: record.path, bytes, storageVersion: version });
+        metadata.put({ key: record.key, projectId: record.projectId, path: record.path, bytes, textBytes, storageVersion: version });
       };
       tx.oncomplete = () => resolve(version);
       tx.onerror = tx.onabort = () => reject(failure ?? tx.error ?? new Error("Unable to persist document draft"));

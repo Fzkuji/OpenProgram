@@ -17,10 +17,7 @@ import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/conversations";
-import {
-  collectDirtyFileTabs,
-  discardFileDraftsBeforeClose,
-} from "@/lib/state/files-shared";
+import { flushFileDocumentsBeforeClose } from "@/lib/state/file-drafts";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   draftChannelChoiceHost,
@@ -258,11 +255,19 @@ export function useTabLifecycle({
     e.stopPropagation();
     cancelDrag();
     const fileTabs = tabsToClose.filter((tab) => tab.kind === "file");
-    const dirtyFileTabs = await collectDirtyFileTabs(fileTabs);
-    for (const tab of fileTabs) {
-      const controller = tab.projectId && tab.path ? documentControllers.get(`project:${tab.projectId}:${tab.path}`) : undefined;
-      if (!controller) continue;
-      try { await controller.flush(); } catch { window.alert(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。")); return; }
+    if (!(await flushFileDocumentsBeforeClose(fileTabs))) {
+      window.alert(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。"));
+      return;
+    }
+    try {
+      for (const tab of fileTabs) {
+        const controller = tab.projectId && tab.path
+          ? documentControllers.get(`project:${tab.projectId}:${tab.path}`) : undefined;
+        await controller?.close();
+      }
+    } catch {
+      window.alert(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。"));
+      return;
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next
     // tab's × stays under the cursor; every other close path reflows now.

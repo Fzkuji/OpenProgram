@@ -125,6 +125,7 @@ export function FileViewer({
       onDraftChange={onDraftChange}
       onLoaded={onLoaded}
       snapshot={snapshot}
+      downloadUrl={blobUrl ?? rawUrl}
     />
   );
 }
@@ -140,7 +141,9 @@ function TextViewer({
   onDraftChange,
   onLoaded,
   snapshot,
+  downloadUrl,
 }: {
+  downloadUrl?: string;
   projectId: string;
   path: string;
   abs?: boolean;
@@ -255,7 +258,7 @@ function TextViewer({
           </div>
           <a
             className={styles.downloadLink}
-            href={abs ? absRawFileUrl(path, sessionId) : rawFileUrl(projectId, path)}
+            href={downloadUrl ?? (abs ? absRawFileUrl(path, sessionId) : rawFileUrl(projectId, path))}
             download={path.split("/").pop()}
           >
             <Download size={13} />
