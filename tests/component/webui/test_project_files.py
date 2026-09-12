@@ -1130,3 +1130,28 @@ def test_deleted_file_can_be_restored(project_root):
     assert data.get('trash_entry_id'), data
     restore_deleted_anywhere(data['trash_entry_id'])
     assert (project_root / 'apple.txt').read_text() == 'aaa'
+
+
+def test_rename_distinct_links_to_same_target_does_not_overwrite(project_root):
+    (project_root / 'one').mkdir()
+    (project_root / 'two').mkdir()
+    src = project_root / 'one' / 'alias'
+    dst = project_root / 'two' / 'ALIAS'
+    src.symlink_to(project_root / 'apple.txt')
+    dst.symlink_to(project_root / 'apple.txt')
+    before = os.lstat(dst).st_ino
+    data = _run(ws_files.handle_project_file_rename,
+                {'project_id': 'p1', 'path': 'one/alias', 'new_path': 'two/ALIAS'})['data']
+    assert data['status'] == 'conflict'
+    assert src.is_symlink() and os.lstat(dst).st_ino == before
+
+
+def test_case_only_rename_dangling_link(project_root):
+    src = project_root / 'alias'
+    src.symlink_to(project_root / 'missing')
+    data = _run(ws_files.handle_project_file_rename,
+                {'project_id': 'p1', 'path': 'alias', 'new_path': 'ALIAS'})['data']
+    assert data.get('ok'), data
+    assert 'ALIAS' in os.listdir(project_root)
+    assert 'alias' not in os.listdir(project_root)
+    assert (project_root / 'ALIAS').is_symlink()

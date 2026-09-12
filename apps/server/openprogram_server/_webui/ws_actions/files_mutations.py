@@ -112,12 +112,16 @@ def _rename_entry(project_id: str, path: str, new_path: str) -> dict:
     # no-op on some such filesystems.
     src_base = os.path.basename(src)
     requested_base = os.path.basename(new_path.replace("/", os.sep))
-    case_only = (
-        src_base != requested_base
-        and src_base.lower() == requested_base.lower()
-        and os.path.lexists(dst)
-        and os.path.samefile(src, dst)
-    )
+    try:
+        case_only = (
+            src_base != requested_base
+            and src_base.lower() == requested_base.lower()
+            and os.path.lexists(dst)
+            and os.path.samefile(os.path.dirname(src), os.path.dirname(dst))
+            and os.path.samestat(os.lstat(src), os.lstat(dst))
+        )
+    except OSError as error:
+        return {"error": f"{type(error).__name__}: {error}"}
     if os.path.lexists(dst) and not case_only:
         return {"error": f"destination already exists: {new_path!r}"}
     try:
