@@ -128,3 +128,18 @@ def test_exported_originals_without_reference_are_not_reimported(tmp_path, monke
     (tmp_path/'sources.json').write_text(json.dumps([{'id':'r','week':'2026-W37','audience':'tencent','text':'旧进展'}]))
     (tmp_path/'summary.md').write_text('派生稿件')
     assert sources.collect('2026-W37', [str(tmp_path)])['materials'] == []
+
+
+def test_memory_prioritizes_latest_owner_correction_over_generated_notes(tmp_path, monkeypatch):
+    from openprogram import memory
+    from openprogram.memory import store
+    from openprogram.memory.retrieval import inspect
+    monkeypatch.setattr(memory, 'is_enabled', lambda: True)
+    monkeypatch.setattr(store, 'root', lambda: tmp_path)
+    monkeypatch.setattr(inspect, 'search', lambda *a, **k: {'results':[
+        {'path':'sources/old.md','speaker_kind':'owner','speaker_trusted':True,'date':'2026-09-11','content':'早先计划'},
+        {'path':'topics/note.md','date':'2026-09-13','content':'模型汇总'},
+        {'path':'sources/new.md','speaker_kind':'owner','speaker_trusted':True,'date':'2026-09-12','content':'修订计划'}]})
+    rows = sources.memory_candidates('2026-W37', '腾讯')
+    assert [r['text'] for r in rows] == ['修订计划','早先计划','模型汇总']
+    assert rows[0]['trusted_owner'] is True and rows[0]['source_date'] == '2026-09-12'

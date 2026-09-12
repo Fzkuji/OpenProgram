@@ -56,8 +56,11 @@ def memory_candidates(week, query):
         if not precise:
             continue
         source = "memory:" + str(hit.get("path", "")) + "#" + str(hit.get("event_id", ""))
-        result.append({**_record(content, week, source), "source_dates": [d for d in dates if isinstance(d, str)]})
-    return result
+        result.append({**_record(content, week, source),
+                       "source_dates": [d for d in dates if isinstance(d, str)],
+                       "source_date": max(precise),
+                       "trusted_owner": hit.get("speaker_kind") == "owner" and hit.get("speaker_trusted") is True})
+    return sorted(result, key=lambda item: (item["trusted_owner"], item["source_date"]), reverse=True)
 
 
 def collect(week, report_roots=None, query="腾讯工作 周报 本周进展"):
