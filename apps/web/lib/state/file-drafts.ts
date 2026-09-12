@@ -6,14 +6,14 @@ import {
   DRAFT_MAX_BYTES,
   reportDraftPersistenceError,
   notifyDraftErrorListeners,
-} from "./file-state-shared";
+} from "./file-state-shared.ts";
 import {
   IndexedDbDraftStore,
   DraftStoreQuotaError,
   type DraftStoreAdapter,
   type DraftStoreSnapshot,
   rebuildDraftIndexes,
-} from "./file-draft-store";
+} from "./file-draft-store.ts";
 
 const utf8 = new TextEncoder();
 export interface FileDraft {
