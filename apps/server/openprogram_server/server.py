@@ -1945,6 +1945,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
     )
 
     from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.webui.office_assets import load_installed_office_pack
     if owner_auth is None:
         import secrets
         from openprogram.agent.authority import owner_principal_id
@@ -1958,9 +1959,11 @@ def create_app(*, owner_auth=None, port: int = 18100):
             allowed_origins=_web_cfg["allowed_origins"],
         )
     app.state.owner_auth = owner_auth
+    app.state.office_assets = load_installed_office_pack()
     app.add_middleware(
         OwnerAuthMiddleware,
         auth_state=owner_auth,
+        office_assets=app.state.office_assets,
     )
 
     # Auth v2 REST + SSE routes. Kept in a dedicated module so server.py
@@ -2142,6 +2145,8 @@ def create_app(*, owner_auth=None, port: int = 18100):
     _routes_plugins.register(app)
     from openprogram.webui.routes import applications as _routes_applications
     _routes_applications.register(app)
+    from openprogram.webui.routes import office_assets as _routes_office_assets
+    _routes_office_assets.register(app)
 
     # /api/commands/* — Unified slash-command registry (Phase 1)
     from openprogram.webui.routes import commands as _routes_commands
