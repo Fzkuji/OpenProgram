@@ -89,3 +89,24 @@ def test_coarse_memory_dates_cannot_be_relabelled_as_current_week(tmp_path, monk
     rows = sources.memory_candidates('2026-W37', '腾讯')
     assert [x['text'] for x in rows] == ['本周结果']
     assert '2026-09-10' in rows[0]['source_dates']
+
+
+def test_execution_checkpoint_and_derived_export_are_not_new_week_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(sources, 'memory_candidates', lambda *a: [])
+    row = {'id':'reference','week':'2026-W37','audience':'tencent','text':'用户粘贴的上周进展'}
+    checkpoints = tmp_path/'checkpoints'
+    checkpoints.mkdir()
+    (checkpoints/'run.json').write_text(json.dumps({'kind':'tencent_model','request':{'materials':[row]}}))
+    exported = tmp_path/'2026-W37'/'run'
+    exported.mkdir(parents=True)
+    (exported/'sources.json').write_text(json.dumps([{**row,'source':str(checkpoints/'run.json')+'#reference'}]))
+    (exported/'summary.md').write_text('旧周报')
+    found = sources.collect('2026-W37', [str(tmp_path)])
+    assert found['materials'] == [] and found['candidates'] == []
+
+
+def test_copied_derived_sources_without_summary_are_not_originals(tmp_path, monkeypatch):
+    monkeypatch.setattr(sources, 'memory_candidates', lambda *a: [])
+    (tmp_path/'copied.json').write_text(json.dumps([{'id':'derived','week':'2026-W37',
+        'audience':'tencent','text':'旧进度','source':'/reports/checkpoints/old.json#reference'}]))
+    assert sources.collect('2026-W37', [str(tmp_path)])['materials'] == []

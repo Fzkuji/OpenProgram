@@ -46,3 +46,16 @@ def test_default_directory_uses_real_file_tool(tmp_path, monkeypatch):
         assert (result / 'summary.md').read_text() == 'actual draft'
     finally:
         reset_worktree(token)
+
+
+def test_invalidated_checkpoint_cannot_resume_saved_progress(tmp_path):
+    from openprogram.programs.workflow.report_io import load_checkpoint
+    import json
+    import pytest
+    path = tmp_path/'run.json'
+    original = json.dumps({'kind':'tencent_delivery','summary':'last week'})
+    path.write_text(original)
+    path.with_name(path.name+'.invalidated.json').write_text(json.dumps({'reason':'User identified last-week evidence'}))
+    with pytest.raises(ValueError, match='Checkpoint invalidated'):
+        load_checkpoint(str(path))
+    assert path.read_text() == original
