@@ -39,6 +39,7 @@ export interface OfficeEditorOptions {
   exportOnly?: boolean;
   generation?: number;
   onError?: (error: Error) => void;
+  onReadonlyChange?: (readonly: boolean) => void;
 }
 
 export async function createBoundOfficeEditor(options: OfficeEditorOptions): Promise<OfficeEditorInstance> {
@@ -71,6 +72,7 @@ export async function createBoundOfficeEditor(options: OfficeEditorOptions): Pro
       if (!options.exportOnly) options.controller.markRichEditorDirty(dirty, instance);
     },
     onReady: () => readyResolve(),
+    onStateChange: (state: { readonly: boolean }) => options.onReadonlyChange?.(state.readonly),
     onError: (error: Error) => { readyReject(error); options.onError?.(error); },
   });
   const timeout = setTimeout(() => readyReject(new Error("The Office document did not finish loading.")), 45000);

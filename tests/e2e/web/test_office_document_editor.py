@@ -6,6 +6,7 @@ An omitted external pack is reported as a skip, never Office acceptance.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -119,6 +120,7 @@ def test_real_office_window_preview_and_edit(office_window, extension):
     expect(save_slot).not_to_be_visible()
     original = page.locator('[data-office-editor] > iframe').element_handle()
     page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-office-editor]:visible')).to_have_attribute("aria-busy", "false")
     expect(page.get_by_role("button", name="Edit", exact=True)).to_have_attribute("aria-pressed", "true")
     assert page.locator('[data-office-editor] > iframe').evaluate('(node,original) => node === original', original)
     page.get_by_role("button", name="Close file", exact=True).click()
@@ -133,6 +135,7 @@ def test_sheet_close_persists_pending_cell_input(office_window):
     page.goto(origin + "/?file=baseline.xlsx")
     expect(page.locator('[data-office-editor]')).to_be_visible(timeout=45000)
     page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-office-editor]:visible')).to_have_attribute("aria-busy", "false")
     bounds = page.locator('[data-office-editor] > iframe').bounding_box()
     assert bounds
     page.mouse.click(bounds["x"] + 140, bounds["y"] + 135)
@@ -156,6 +159,7 @@ def test_sheet_history_and_preview_preserve_native_undo(office_window):
     expect(host).to_be_visible(timeout=45000)
     original = host.locator(":scope > iframe").element_handle()
     page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-office-editor]:visible')).to_have_attribute("aria-busy", "false")
     bounds = host.bounding_box()
     page.mouse.click(bounds["x"] + 140, bounds["y"] + 135)
     page.keyboard.press("F2")
@@ -206,9 +210,11 @@ def test_sheet_history_and_preview_preserve_native_undo(office_window):
     assert writes == []
     assert (project / "baseline.xlsx").read_bytes() == before_history_input
     page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-office-editor]:visible')).to_have_attribute("aria-busy", "false")
     bounds = host.bounding_box()
     page.mouse.click(bounds["x"] + 140, bounds["y"] + 135)
-    page.keyboard.press("ControlOrMeta+z")
+    native = next(frame for frame in page.frames if "/spreadsheeteditor/main/index.html" in frame.url)
+    native.get_by_role("button", name=re.compile(r"^Undo ")).click()
     page.get_by_role("button", name="Preview", exact=True).click()
     expect(page.get_by_role("button", name="Preview", exact=True)).to_have_attribute("aria-pressed", "true")
     with ZipFile(project / "baseline.xlsx") as archive:
@@ -272,6 +278,7 @@ def test_word_edits_autosave_without_preview_or_close(office_window):
     host = page.locator('[data-office-editor]')
     expect(host).to_be_visible(timeout=45000)
     page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-office-editor]:visible')).to_have_attribute("aria-busy", "false")
     bounds = host.bounding_box()
     page.mouse.click(bounds["x"] + 300, bounds["y"] + 215)
     page.keyboard.press("ControlOrMeta+End")

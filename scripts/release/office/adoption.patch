@@ -261,7 +261,7 @@ index aefbb5d..37aec6a 100644
      this.status = 'destroyed';
      this.clearNativeDownloadAsInterceptorRetry();
 diff --git a/src/lib/office-editor.ts b/src/lib/office-editor.ts
-index 18d638d..de03643 100644
+index 18d638d..69528de 100644
 --- a/src/lib/office-editor.ts
 +++ b/src/lib/office-editor.ts
 @@ -115,7 +115,8 @@ export interface OfficeEditorState {
@@ -378,7 +378,20 @@ index 18d638d..de03643 100644
    }
  
    invokePlugin(pluginGuid: string, payload: unknown): Promise<unknown> {
-@@ -1281,6 +1343,10 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
+@@ -1220,11 +1282,7 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
+   }
+ 
+   setReadonly(readonly: boolean): void {
+-    this.state = {
+-      ...this.state,
+-      readonly,
+-      mode: this.returnsToPreview && readonly ? 'preview' : readonly ? 'readonly' : 'edit',
+-    };
++    // The host confirms the native mode with STATE after applying the change.
+     if (!this.destroyed && this.port) {
+       this.postToHost({
+         protocol: OFFICE_HOST_PROTOCOL,
+@@ -1281,6 +1339,10 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
        request.reject(new Error('Editor was destroyed before save completed'));
      }
      this.pendingRequests.clear();
