@@ -63,7 +63,7 @@ def memory_candidates(week, query):
 def collect(week, report_roots=None, query="腾讯工作 周报 本周进展"):
     """Prefer dated original Tencent evidence; otherwise return review candidates.
 
-    Reads source/checkpoint JSON, never generated summary.md as original evidence.
+    Reads original source JSON; execution checkpoints and derived exports are not evidence.
     Directory and byte limits bound discovery; symlinks are never traversed.
     """
     roots = ["reports"] if report_roots is None else report_roots
@@ -95,6 +95,8 @@ def collect(week, report_roots=None, query="腾讯工作 周报 本周进展"):
                 if path.is_symlink() or validate_read_path(str(path)):
                     continue
                 if path.is_dir() and depth < 4:
+                    if path.name == "checkpoints":
+                        continue
                     pending.append((path, depth + 1))
                     continue
                 if path.suffix != ".json" or not path.is_file():
@@ -106,6 +108,12 @@ def collect(week, report_roots=None, query="腾讯工作 周报 本周进展"):
                         continue
                     data = json.loads(raw_data)
                 except (OSError, ValueError, UnicodeError):
+                    continue
+                if isinstance(data, dict) and data.get("kind") in (
+                    "tencent_model", "tencent_sources", "tencent_delivery", "report"
+                ):
+                    continue
+                if path.name == "sources.json" and (path.parent / "summary.md").is_file():
                     continue
                 request = data.get("request", data) if isinstance(data, dict) else {}
                 if not isinstance(request, dict):
@@ -119,6 +127,13 @@ def collect(week, report_roots=None, query="腾讯工作 周报 本周进展"):
                         continue
                     text = row.get("text")
                     if not isinstance(text, str) or not text.strip() or len(text.encode()) > 18000:
+                        continue
+                    provenance = row.get("source", "")
+                    if isinstance(provenance, str) and (
+                        ".json#" in provenance or provenance.startswith("memory:")
+                    ):
+                        # These are our exported evidence references. Query the
+                        # original source instead of inheriting its assigned week.
                         continue
                     audience = row.get("audience")
                     category = "tencent" if audience == "tencent" or (tencent and audience is None) else "candidate"

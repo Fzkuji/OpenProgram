@@ -105,6 +105,14 @@ def load_checkpoint(path: str) -> dict:
     violation = validate_read_path(path)
     if violation:
         raise OSError("sandbox policy: " + violation)
+    invalidation = str(path) + ".invalidated.json"
+    if Path(invalidation).exists():
+        violation = validate_read_path(invalidation)
+        if violation:
+            raise OSError("sandbox policy: " + violation)
+        with open(invalidation, "rb") as stream:
+            notice = decode_object(stream.read(4097).decode("utf-8"), max_bytes=4096)
+        raise ValueError("Checkpoint invalidated; start a fresh report: " + str(notice.get("reason", "Source correction"))[:500])
     with open(path, "rb") as stream:
         raw = stream.read(2_000_001)
     return decode_object(raw.decode("utf-8"), max_bytes=2_000_000)
