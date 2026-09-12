@@ -8,6 +8,7 @@ type TuiEditor = {
   addIcon(type: string, options?: Record<string, unknown>): Promise<unknown>; addObject?(_object: unknown): Promise<unknown>;
   undo(): Promise<unknown>; redo(): Promise<unknown>; toDataURL(options?: { format?: string; quality?: number }): string; destroy(): void;
   loadImageFromURL(url: string, name: string): Promise<unknown>; getCanvasSize?: () => { width: number; height: number };
+  startDrawingMode?(mode: string, options?: Record<string, unknown>): unknown;
   on(event: string, handler: () => void): void; off?(event: string, handler: () => void): void;
 };
 export interface RasterEditorInstance {
@@ -15,7 +16,7 @@ export interface RasterEditorInstance {
   flushPendingSaves(): Promise<void>; setReadonly(readonly: boolean): void; setInputEnabled(enabled: boolean): void;
   destroy(): Promise<void>; getState(): { dirty: boolean; readonly: boolean; destroyed: boolean; status?: string };
   rotate(): Promise<void>; crop(options: { left: number; top: number; width: number; height: number }): Promise<void>; cropCenter(): Promise<void>;
-  addText(text: string): Promise<unknown>; addShape(type: string): Promise<unknown>; undo(): Promise<void>; redo(): Promise<void>;
+  addText(text: string): Promise<unknown>; addShape(type: string): Promise<unknown>; draw(): Promise<void>; undo(): Promise<void>; redo(): Promise<void>;
 }
 interface TuiModule { default?: new (element: HTMLElement, options: Record<string, unknown>) => TuiEditor; ImageEditor?: new (element: HTMLElement, options: Record<string, unknown>) => TuiEditor; }
 let modulePromise: Promise<TuiModule> | null = null;
@@ -31,6 +32,9 @@ export async function createBoundRasterEditor(options: {
 }): Promise<RasterEditorInstance> {
   const checked = await validateRasterDecoded(options.bytes);
   if (!checked.width || !checked.height) throw new Error("UNSUPPORTED_IMAGE: browser image decoding is unavailable.");
+  const extension = options.fileName.toLowerCase().split(".").pop() ?? "";
+  const expectedFormat = extension === "jpg" || extension === "jpeg" ? "jpeg" : extension;
+  if (expectedFormat !== checked.format) throw new Error("UNSUPPORTED_IMAGE: file extension and raster encoding differ.");
   const module = await loadTui();
   const Editor = module.default ?? module.ImageEditor;
   if (!Editor) throw new Error("Raster editor resources are unavailable.");
@@ -67,7 +71,7 @@ export async function createBoundRasterEditor(options: {
     async destroy() { if (destroyed) return; destroyed = true; if (raf) cancelAnimationFrame(raf); editor.off?.("undoStackChanged", onUndo); editor.off?.("redoStackChanged", onUndo); editor.destroy(); detach?.(); detach = undefined; },
     getState() { return { dirty, readonly, destroyed, status: destroyed ? "destroyed" : "ready" }; },
     rotate: () => run(async () => { await editor.rotate(90); }), crop: (value) => run(async () => { await editor.crop(value); }), cropCenter: () => run(async () => { const size = editor.getCanvasSize?.() ?? { width: checked.width, height: checked.height }; await editor.crop({ left: size.width * .1, top: size.height * .1, width: size.width * .8, height: size.height * .8 }); }),
-    addText: (value) => run(() => editor.addText(value)), addShape: (value) => run(() => editor.addShape(value)),
+    addText: (value) => run(() => editor.addText(value)), addShape: (value) => run(() => editor.addShape(value)), draw: () => run(async () => { editor.startDrawingMode?.("FREE_DRAWING", { width: 4, color: "#e04f5f" }); }),
     undo: () => run(async () => { await editor.undo(); }), redo: () => run(async () => { await editor.redo(); }),
   };
   let detach: (() => void) | undefined;
