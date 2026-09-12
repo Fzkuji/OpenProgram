@@ -3319,38 +3319,6 @@ class RuntimeControlService:
                         effect = self.effects._require(connection, str(row["effect_id"]))
                         self.effects._append_event(connection, execution.status_version, effect, now)
                     unresolved_rows = []
-                # An in-flight tool whose result never returned is the same
-                # class of process-local uncertainty: the next attempt must
-                # not replay it, and it must not block restart from the last
-                # published Agent checkpoint.
-                unresolved_tool_rows = [
-                    row for row in unresolved_rows
-                    if kinds[rows.index(row)].startswith("tool.")
-                ]
-                if (
-                    unresolved_tool_rows
-                    and execution.checkpoint_head_id is not None
-                    and cursor_covers_tools
-                    and all(
-                        kinds[rows.index(row)].startswith(("provider.", "tool."))
-                        for row in unresolved_rows
-                    )
-                ):
-                    now = time.time()
-                    for row in unresolved_tool_rows:
-                        receipt = {
-                            "outcome": "not_committed",
-                            "reason": "tool_request_interrupted",
-                        }
-                        connection.execute(
-                            "UPDATE effects SET status = ?, receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?",
-                            (EffectStatus.NOT_COMMITTED.value, _json(receipt), now, now, row["effect_id"]),
-                        )
-                        effect = self.effects._require(connection, str(row["effect_id"]))
-                        self.effects._append_event(connection, execution.status_version, effect, now)
-                    unresolved_rows = [
-                        row for row in unresolved_rows if row not in unresolved_tool_rows
-                    ]
                 control_pending = connection.execute(
                     "SELECT 1 FROM commands WHERE execution_id = ? AND kind IN (?, ?) "
                     "AND status IN (?, ?) LIMIT 1",
@@ -3451,6 +3419,12 @@ class RuntimeControlService:
                 from .restart import record_intent
                 record_intent(self.executions, connection, recovered,
                               interrupted_at=restart_checkpoint[0], seconds=restart_checkpoint[1])
+            elif restart_pending and recovered.status is ExecutionStatus.PAUSED:
+                from .restart import record_intent, window_seconds
+                prior = self.attempts._require(connection, execution.current_attempt_id)
+                record_intent(self.executions, connection, recovered,
+                              interrupted_at=max(prior.updated_at, execution.updated_at),
+                              seconds=window_seconds())
             attempt = None
             if execution.current_attempt_id is not None:
                 attempt = self.attempts._require(
@@ -3617,6 +3591,10 @@ class RuntimeControlService:
                             target=ExecutionStatus.PAUSED if restart else ExecutionStatus.FAILED,
                             reason_code="restart_pending" if restart else "owner_lost_before_activation",
                         )
+                        if restart:
+                            from .restart import record_intent, window_seconds
+                            record_intent(self.executions, connection, recovered,
+                                          interrupted_at=current.updated_at, seconds=window_seconds())
                 except (AttemptConflict, ExecutionConflict):
                     recovered = self.executions.get_execution(execution.execution_id)
                     if recovered is None:

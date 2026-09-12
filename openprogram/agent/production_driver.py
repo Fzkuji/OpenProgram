@@ -1819,7 +1819,7 @@ class AgentProductionDriver:
             command = None if kind == "provider.finished" else current_command(service, attempt.execution_id)
             from openprogram.execution.restart import window_seconds
             # Direct non-durable hook callers do not carry a revision contract.
-            restart_window = window_seconds() if getattr(request, "_execution_revision_id", None) else 0
+            restart_window = window_seconds() if getattr(request, "_execution_revision_id", None) or continuation is not None else 0
             if command is None and (kind == "provider.finished" or restart_window == 0):
                 service.effects.resolve(
                     effect_id, expected_status=EffectStatus.DISPATCHED,

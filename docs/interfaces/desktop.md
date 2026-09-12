@@ -80,7 +80,7 @@ Integrations can report complete software/environment objects through `openprogr
 
 ## Running conversations after restart
 
-Running conversations continue automatically in the same conversation after the worker restarts, using the input and execution results recorded during normal operation. No separate save action or additional restart message is needed. Manually paused, cancelled, and completed tasks remain stopped. Confirmed tool results are reused; an operation whose external result is still unknown requires reconciliation before it can continue. Reconnecting the interface keeps the existing transcript.
+Running conversations continue automatically in the same conversation when the worker restarts within the configured recovery window (two hours by default), using the input and execution results recorded during normal operation. No separate save action or additional restart message is needed. Manually paused, cancelled, and completed tasks remain stopped. Confirmed tool results are reused; an operation whose external result is still unknown requires reconciliation before it can continue. Reconnecting the interface keeps the existing transcript.
 
 
 Conversations show normal messages and tool results, including results of an update you requested. They do not contain a separate software-update history, update controls, or update recovery notices. Opening a conversation does not start software-update history polling.

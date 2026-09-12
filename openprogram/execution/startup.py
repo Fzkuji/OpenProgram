@@ -12,7 +12,6 @@ from .outbox import ProjectionDispatchResult, ProjectionDispatcher
 
 _log = logging.getLogger(__name__)
 _PENDING_WAIT_RECOVERY_TASKS: set[asyncio.Task] = set()
-_PENDING_AGENT_RESUME_TASKS: set[asyncio.Task] = set()
 
 
 def _recover_wait_outcomes(control_service) -> tuple[object, ...] | None:
@@ -36,62 +35,6 @@ def _recover_wait_outcomes(control_service) -> tuple[object, ...] | None:
 
     task.add_done_callback(_completed)
     return None
-
-
-async def _resume_abandoned_agents(control_service, recoveries) -> None:
-    """Resume only the internal restart_pending state produced by recovery."""
-    candidates = []
-    for recovery in recoveries:
-        execution = getattr(recovery, "execution", recovery)
-        if (
-            getattr(getattr(execution, "status", None), "value", None) == "paused"
-            and getattr(execution, "reason_code", None) == "restart_pending"
-        ):
-            candidates.append(execution)
-    if not candidates:
-        return
-    from openprogram.agent.production_driver import AgentProductionDriver
-    from openprogram.events import emit_ws_frame
-
-    driver = AgentProductionDriver(
-        control_service.executions, control_service=control_service,
-        event_sink=emit_ws_frame,
-    )
-    for execution in candidates:
-        latest = control_service.executions.get_execution(execution.execution_id)
-        if latest is None or latest.status.value != "paused" or latest.reason_code != "restart_pending":
-            continue
-        try:
-            await control_service.request_continue(
-                command_id=f"auto-resume:{latest.execution_id}:{latest.status_version}",
-                execution_id=latest.execution_id,
-                expected_version=latest.status_version,
-                actor={"surface": "startup", "reason": "restart_pending"},
-                driver=driver,
-            )
-        except Exception:
-            _log.exception("failed to resume abandoned Agent execution %s", latest.execution_id)
-
-
-def _schedule_agent_resumes(control_service, recoveries) -> None:
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.run(_resume_abandoned_agents(control_service, recoveries))
-        return
-    task = loop.create_task(_resume_abandoned_agents(control_service, recoveries))
-    _PENDING_AGENT_RESUME_TASKS.add(task)
-
-    def _completed(done: asyncio.Task) -> None:
-        _PENDING_AGENT_RESUME_TASKS.discard(done)
-        try:
-            done.result()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            _log.exception("failed to resume abandoned Agent executions")
-
-    task.add_done_callback(_completed)
 
 
 @dataclass(frozen=True)
@@ -125,12 +68,6 @@ def recover_execution_startup(
 
     waits = DurableWaitStore(control_service.executions)
     canonical = tuple(control_service.recover_startup())
-    pending = tuple(
-        execution for execution in control_service.executions.list_nonterminal()
-        if getattr(getattr(execution, "status", None), "value", None) == "paused"
-        and getattr(execution, "reason_code", None) == "restart_pending"
-    )
-    _schedule_agent_resumes(control_service, canonical + pending)
     waits_reclaimed = (
         waits.reclaim_expired_claims()
         + waits.reclaim_orphaned_claims()
