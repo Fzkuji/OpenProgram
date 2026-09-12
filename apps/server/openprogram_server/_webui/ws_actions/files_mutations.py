@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 from .files_shared import (
-    _BINARY_SNIFF_BYTES, _READ_MAX_BYTES, _WRITE_MAX_BYTES, _file_digest, _open,
+    _BINARY_SNIFF_BYTES, _READ_MAX_BYTES, _WRITE_MAX_BYTES, _file_digest, _open, _resolve_entry,
 )
 from .files_query import _resolve
 
@@ -78,7 +78,7 @@ def _write_file(project_id: str, path: str, content: str,
 def _create_entry(project_id: str, path: str, kind: str) -> dict:
     if kind not in ("file", "dir"):
         return {"error": "kind must be 'file' or 'dir'"}
-    target, error = _resolve(project_id, path)
+    target, error = _resolve_entry(project_id, path)
     if error:
         return {"error": error}
     if not os.path.isdir(os.path.dirname(target)):
@@ -97,13 +97,13 @@ def _create_entry(project_id: str, path: str, kind: str) -> dict:
 
 
 def _rename_entry(project_id: str, path: str, new_path: str) -> dict:
-    src, error = _resolve(project_id, path)
+    src, error = _resolve_entry(project_id, path)
     if error:
         return {"error": error}
-    dst, error = _resolve(project_id, new_path)
+    dst, error = _resolve_entry(project_id, new_path)
     if error:
         return {"error": error}
-    if not os.path.exists(src):
+    if not os.path.lexists(src):
         return {"error": f"source does not exist: {path!r}"}
     # Case-only rename (apple.txt → Apple.txt) on a case-insensitive
     # filesystem (macOS default): the destination "exists" because it
@@ -115,10 +115,10 @@ def _rename_entry(project_id: str, path: str, new_path: str) -> dict:
     case_only = (
         src_base != requested_base
         and src_base.lower() == requested_base.lower()
-        and os.path.exists(dst)
+        and os.path.lexists(dst)
         and os.path.samefile(src, dst)
     )
-    if os.path.exists(dst) and not case_only:
+    if os.path.lexists(dst) and not case_only:
         return {"error": f"destination already exists: {new_path!r}"}
     try:
         if case_only:
@@ -138,19 +138,21 @@ def _rename_entry(project_id: str, path: str, new_path: str) -> dict:
 
 
 def _copy_entry(project_id: str, path: str, new_path: str) -> dict:
-    src, error = _resolve(project_id, path)
+    src, error = _resolve_entry(project_id, path)
     if error:
         return {"error": error}
-    dst, error = _resolve(project_id, new_path)
+    dst, error = _resolve_entry(project_id, new_path)
     if error:
         return {"error": error}
-    if not os.path.exists(src):
+    if not os.path.lexists(src):
         return {"error": f"source does not exist: {path!r}"}
-    if os.path.exists(dst):
+    if os.path.lexists(dst):
         return {"error": f"destination already exists: {new_path!r}"}
     try:
-        if os.path.isdir(src):
-            shutil.copytree(src, dst)
+        if os.path.islink(src):
+            os.symlink(os.readlink(src), dst, target_is_directory=os.path.isdir(src))
+        elif os.path.isdir(src):
+            shutil.copytree(src, dst, symlinks=True)
         else:
             shutil.copy2(src, dst)
     except OSError as e:
@@ -159,24 +161,24 @@ def _copy_entry(project_id: str, path: str, new_path: str) -> dict:
 
 
 def _delete_entry(project_id: str, path: str) -> dict:
-    target, error = _resolve(project_id, path)
+    target, error = _resolve_entry(project_id, path)
     if error:
         return {"error": error}
     # ``""``, ``"."``, ``"src/.."`` all resolve to the root — compare
     # resolved paths, not the raw string.
-    root, _ = _resolve(project_id, "")
+    root, _ = _resolve_entry(project_id, "")
     if target == root:
         return {"error": "refusing to delete project root"}
-    if not os.path.exists(target):
+    if not os.path.lexists(target):
         return {"error": f"does not exist: {path!r}"}
     try:
-        if os.path.isdir(target):
-            shutil.rmtree(target)
-        else:
-            os.unlink(target)
+        from openprogram.paths import get_state_dir
+        from openprogram.sandbox.recoverable_delete import move_to_trash
+        project_key = hashlib.sha256(project_id.encode("utf-8")).hexdigest()[:24]
+        entry = move_to_trash(target, trash_root=get_state_dir() / "trash" / "files" / project_key)
     except OSError as e:
         return {"error": f"{type(e).__name__}: {e}"}
-    return {"ok": True}
+    return {"ok": True, "trash_entry_id": entry["id"]}
 
 
 def _reveal_entry(project_id: str, path: str) -> dict:

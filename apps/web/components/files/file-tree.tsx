@@ -190,6 +190,7 @@ export function FileTree({
   const treeStateRef = useRef({ dirs, expanded });
   treeStateRef.current = { dirs, expanded };
   const [filter, setFilter] = useState("");
+  const [searchRefresh, setSearchRefresh] = useState(0);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
@@ -490,6 +491,7 @@ export function FileTree({
   }
 
   function refetchRoot() {
+    setSearchRefresh(value => value + 1);
     invalidateFolderSizes(projectId);
     abortSearchQueries();
     for (const controller of queryControllers.current) controller.abort();
@@ -796,7 +798,7 @@ export function FileTree({
    *  dir of a right-clicked file — always `<target>/<basename(src)>`. */
   async function pasteInto(targetDir: string) {
     const clip = treeClipboard.current;
-    if (!clip) return;
+    if (!clip || clip.projectId !== projectId) return;
     const dest = joinPath(targetDir, baseOf(clip.path));
     if (dest === clip.path) return;
     if (clip.op === "cut") {
@@ -832,6 +834,7 @@ export function FileTree({
     }
     const drafts = await loadFileDraftsForPath(projectId, path);
     const hasDraft = drafts.length > 0;
+    let retainDrafts = false;
     if (hasDraft) {
       const choice = window.prompt(text(
         "Unsaved changes: type save, export, or discard to continue deleting.",
@@ -848,6 +851,8 @@ export function FileTree({
           if (saved.status !== "ready") return;
         }
       } else if (choice === "export") {
+        // Browsers do not confirm download completion. Keep the durable copy.
+        retainDrafts = true;
         try {
           for (const entry of drafts) {
             const blob = new Blob([entry.draft.draft], { type: "text/plain;charset=utf-8" });
@@ -870,7 +875,7 @@ export function FileTree({
     if (deleted.status !== "ready") return;
     setSelected(current => current && (current.path === path || current.path.startsWith(path + "/")) ? { path: parentOf(path), type: "dir" } : current);
     setDetailsPath(current => current && (current === path || current.startsWith(path + "/")) ? null : current);
-    if (hasDraft) {
+    if (hasDraft && !retainDrafts) {
       const cleared = await clearFileDraftsForPath(projectId, path);
       if (!cleared.ok) {
         window.alert(cleared.message ?? text("Unable to discard the local draft; tabs remain open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
@@ -913,8 +918,8 @@ export function FileTree({
       newFolder: () => startCreate("dir", targetDir),
       copyPath: () => void copyPathTo(path, true),
       copyRelativePath: () => void copyPathTo(path, false),
-      cut: () => { treeClipboard.current = { op: "cut", path }; },
-      copy: () => { treeClipboard.current = { op: "copy", path }; },
+      cut: () => { treeClipboard.current = { op: "cut", projectId, path }; },
+      copy: () => { treeClipboard.current = { op: "copy", projectId, path }; },
       paste: () => void pasteInto(targetDir),
       rename: () => {
         setFilter("");
@@ -937,7 +942,7 @@ export function FileTree({
       { id: "copy-relative-path", label: text("Copy Relative Path", "复制相对路径"), onSelect: actions.copyRelativePath },
       { id: "cut", label: text("Cut", "剪切"), separatorBefore: true, onSelect: actions.cut },
       { id: "copy", label: text("Copy", "复制"), onSelect: actions.copy },
-      { id: "paste", label: text("Paste", "粘贴"), disabled: !treeClipboard.current, onSelect: actions.paste },
+      { id: "paste", label: text("Paste", "粘贴"), disabled: treeClipboard.current?.projectId !== projectId, onSelect: actions.paste },
       { id: "rename", label: text("Rename", "重命名"), separatorBefore: true, onSelect: actions.rename },
       { id: "delete", label: text("Delete", "删除"), onSelect: actions.delete },
     ];
@@ -1063,7 +1068,7 @@ export function FileTree({
       searchControllers.current.clear();
       searchGeneration.current += 1;
     };
-  }, [fetchSearchPage, filter, fuzzySearch, projectId]);
+  }, [fetchSearchPage, filter, fuzzySearch, projectId, searchRefresh]);
 
   const searchMatches = useMemo(() => {
     if (filter.trim()) return searchResults.map((entry) => ({ path: entry.path, entry }));
@@ -1291,7 +1296,7 @@ export function FileTree({
             className="w-auto border-0 bg-transparent p-0 text-[var(--text-primary)] shadow-none"
           >
             <TreeContextMenu
-              canPaste={!!treeClipboard.current}
+              canPaste={treeClipboard.current?.projectId === projectId}
               revealLabel={revealLabel()}
               onInfo={webMenuActions.info}
               onReveal={webMenuActions.reveal}
@@ -1319,8 +1324,8 @@ export function FileTree({
             `删除“${baseOf(confirmDelete)}”？`,
           )}
           message={text(
-            "It will be permanently removed from disk.",
-            "将从磁盘中永久删除。",
+            "It will be moved to recoverable storage. Use openprogram trash list and openprogram trash restore to recover it.",
+            "文件将移入可恢复存储。可通过 openprogram trash list 和 openprogram trash restore 恢复。",
           )}
           onConfirm={() => {
             const path = confirmDelete;

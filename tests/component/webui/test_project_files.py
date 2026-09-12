@@ -1096,3 +1096,37 @@ def test_raw_missing_404(client, project_root):
 def test_raw_unknown_project_404(client, project_root):
     r = client.get("/files/raw", params={"project_id": "ghost", "path": "apple.txt"})
     assert r.status_code == 404
+
+@pytest.mark.parametrize('action', ['delete', 'rename', 'copy'])
+@pytest.mark.parametrize('target_kind', ['file', 'directory', 'missing'])
+def test_mutation_operates_on_symlink_entry(project_root, action, target_kind):
+    target = project_root / {'file': 'apple.txt', 'directory': 'src', 'missing': 'absent'}[target_kind]
+    link = project_root / 'alias'
+    try:
+        link.symlink_to(target, target_is_directory=target_kind == 'directory')
+    except OSError:
+        pytest.skip('symlinks unavailable')
+    before = target.exists()
+    handler = getattr(ws_files, f'handle_project_file_{action}')
+    data = _run(handler, {'project_id': 'p1', 'path': 'alias', 'new_path': 'other',
+                         'idempotency_key': f'link-{action}-{target_kind}'})['data']
+    assert data.get('ok'), data
+    assert target.exists() == before
+    if target_kind == 'file':
+        assert target.read_text() == 'aaa'
+    if action == 'copy':
+        assert link.is_symlink()
+    else:
+        assert not link.is_symlink()
+    if action != 'delete':
+        assert (project_root / 'other').is_symlink()
+        assert os.readlink(project_root / 'other') == str(target)
+
+
+def test_deleted_file_can_be_restored(project_root):
+    from openprogram.sandbox.recoverable_delete import restore_deleted_anywhere
+    data = _run(ws_files.handle_project_file_delete,
+                {'project_id': 'p1', 'path': 'apple.txt'})['data']
+    assert data.get('trash_entry_id'), data
+    restore_deleted_anywhere(data['trash_entry_id'])
+    assert (project_root / 'apple.txt').read_text() == 'aaa'

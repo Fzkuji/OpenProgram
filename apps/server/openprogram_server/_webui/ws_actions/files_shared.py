@@ -149,6 +149,22 @@ def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
     if target != root and not target.startswith(root + os.sep):
         return None, "path escapes project root"
     return target, None
+def _resolve_entry(project_id: str, path: str) -> tuple[str | None, str | None]:
+    """Resolve the parent while retaining the selected final directory entry."""
+    if not isinstance(path, str) or os.path.isabs(path) or "\x00" in path:
+        return None, "path escapes project root"
+    root, error = _resolve(project_id, "")
+    if error or root is None:
+        return None, error
+    lexical = os.path.abspath(os.path.join(root, path))
+    if lexical == root:
+        return root, None
+    parent = os.path.realpath(os.path.dirname(lexical))
+    if parent != root and not parent.startswith(root + os.sep):
+        return None, "path escapes project root"
+    return os.path.join(parent, os.path.basename(lexical)), None
+
+
 _MUTATION_LOCKS: dict[str, threading.RLock] = {}
 _MUTATION_LOCKS_GUARD = threading.Lock()
 _ACTIVE_OPERATION_IDS: set[str] = set()
@@ -215,19 +231,21 @@ def _file_digest(target: str) -> str | None:
 
 
 def _identity(project_id: str, path: str) -> dict:
-    target, error = _resolve(project_id, path)
+    target, error = _resolve_entry(project_id, path)
     if error or target is None:
         return {"exists": False, "error": error}
     try:
         info = os.stat(target, follow_symlinks=False)
     except OSError:
         return {"exists": False}
-    kind = "dir" if stat.S_ISDIR(info.st_mode) else "file"
+    kind = "symlink" if stat.S_ISLNK(info.st_mode) else "dir" if stat.S_ISDIR(info.st_mode) else "file"
     identity = {
         "exists": True, "kind": kind, "dev": info.st_dev, "ino": info.st_ino,
         "mtime_ns": info.st_mtime_ns,
         "size": info.st_size,
     }
+    if kind == "symlink":
+        identity["digest"] = hashlib.sha256(os.fsencode(os.readlink(target))).hexdigest()
     if kind == "file" and info.st_size <= _IDENTITY_DIGEST_MAX_BYTES:
         identity["digest"] = _file_digest(target)
     return identity
