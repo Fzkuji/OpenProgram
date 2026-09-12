@@ -2,6 +2,7 @@
 import hashlib
 import json
 import subprocess
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
@@ -249,4 +250,19 @@ def test_rename_temporarily_disables_editor_and_failure_reenables_it(browser_pag
     expect(editor).to_be_enabled()
     expect(editor).to_have_value("old")
     assert state["writes"] == []
+    assert errors == []
+
+def test_real_raster_edit_loads_rotates_and_persists_pixels(browser_page):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    state["body"] = (Path(__file__).parent / "fixtures" / "raster" / "quadrants.png").read_bytes()
+    page.goto("https://document.test/?file=quadrants.png")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-raster-editor="true"]')).to_be_visible(timeout=15000)
+    with page.expect_response(lambda response: response.request.method == "PUT", timeout=15000):
+        page.get_by_role("button", name="Rotate", exact=True).click()
+    assert state["writes"]
+    pixels = page.evaluate("""async bytes => { const blob = new Blob([new Uint8Array(bytes)], {type:'image/png'}); const image = await createImageBitmap(blob); const c=document.createElement('canvas'); c.width=image.width;c.height=image.height; const x=c.getContext('2d');x.drawImage(image,0,0); const p=x.getImageData(0,0,image.width,image.height).data; return {width:image.width,height:image.height,tl:[p[0],p[1],p[2]]}; }""", list(state["writes"][-1]))
+    assert pixels["width"] == 240 and pixels["height"] == 320
+    assert pixels["tl"][2] > pixels["tl"][0]
     assert errors == []

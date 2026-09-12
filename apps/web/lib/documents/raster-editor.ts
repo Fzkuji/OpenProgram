@@ -7,6 +7,7 @@ type TuiEditor = {
   addText(text: string, options?: Record<string, unknown>): Promise<unknown>; addShape(type: string, options?: Record<string, unknown>): Promise<unknown>;
   addIcon(type: string, options?: Record<string, unknown>): Promise<unknown>; addObject?(_object: unknown): Promise<unknown>;
   undo(): Promise<unknown>; redo(): Promise<unknown>; toDataURL(options?: { format?: string; quality?: number }): string; destroy(): void;
+  loadImageFromURL(url: string, name: string): Promise<unknown>; getCanvasSize?: () => { width: number; height: number };
   on(event: string, handler: () => void): void; off?(event: string, handler: () => void): void;
 };
 export interface RasterEditorInstance {
@@ -38,16 +39,25 @@ export async function createBoundRasterEditor(options: {
     cssMaxWidth: 1600, cssMaxHeight: 1200, selectionStyle: { cornerSize: 12 },
     theme: { common: { bi: { image: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" } } },
   });
+  const sourceUrl = URL.createObjectURL(options.bytes);
+  try { await editor.loadImageFromURL(sourceUrl, options.fileName); }
+  catch (error) { editor.destroy(); throw new Error("UNSUPPORTED_IMAGE: raster image could not be loaded."); }
+  finally { URL.revokeObjectURL(sourceUrl); }
   let dirty = false; let readonly = Boolean(options.readonly); let destroyed = false; let queued: Promise<unknown> = Promise.resolve(); let raf = 0;
   const markDirty = () => { dirty = true; options.controller.markRichEditorDirty(true, instance); if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { raf = 0; }); };
   const onUndo = () => markDirty();
   editor.on("undoStackChanged", onUndo); editor.on("redoStackChanged", onUndo);
-  const run = async <T>(operation: () => Promise<T>): Promise<T> => { if (readonly || destroyed) throw new Error("Raster editor is read-only."); queued = queued.then(operation); return queued as Promise<T>; };
+  const run = async <T>(operation: () => Promise<T>): Promise<T> => {
+    if (readonly || destroyed) throw new Error("Raster editor is read-only.");
+    const task = queued.catch(() => undefined).then(operation);
+    queued = task.catch(() => undefined);
+    return task;
+  };
   const exportFile = async (): Promise<File> => {
     await queued; if (raf) await nextFrame(); await nextFrame();
     const url = editor.toDataURL({ format: checked.format === "jpeg" ? "jpeg" : checked.format });
     const blob = await (await fetch(url)).blob();
-    assertEncodedRaster(blob, checked.format);
+    await assertEncodedRaster(blob, checked.format);
     return new File([blob], options.fileName, { type: checked.mime });
   };
   const instance: RasterEditorInstance = {
@@ -56,7 +66,7 @@ export async function createBoundRasterEditor(options: {
     setInputEnabled(enabled) { options.container.toggleAttribute("inert", !enabled); options.container.setAttribute("aria-disabled", String(!enabled)); },
     async destroy() { if (destroyed) return; destroyed = true; if (raf) cancelAnimationFrame(raf); editor.off?.("undoStackChanged", onUndo); editor.off?.("redoStackChanged", onUndo); editor.destroy(); detach?.(); detach = undefined; },
     getState() { return { dirty, readonly, destroyed, status: destroyed ? "destroyed" : "ready" }; },
-    rotate: () => run(async () => { await editor.rotate(90); }), crop: (value) => run(async () => { await editor.crop(value); }), cropCenter: () => run(async () => { await editor.crop({ left: checked.width * .1, top: checked.height * .1, width: checked.width * .8, height: checked.height * .8 }); }),
+    rotate: () => run(async () => { await editor.rotate(90); }), crop: (value) => run(async () => { await editor.crop(value); }), cropCenter: () => run(async () => { const size = editor.getCanvasSize?.() ?? { width: checked.width, height: checked.height }; await editor.crop({ left: size.width * .1, top: size.height * .1, width: size.width * .8, height: size.height * .8 }); }),
     addText: (value) => run(() => editor.addText(value)), addShape: (value) => run(() => editor.addShape(value)),
     undo: () => run(async () => { await editor.undo(); }), redo: () => run(async () => { await editor.redo(); }),
   };
