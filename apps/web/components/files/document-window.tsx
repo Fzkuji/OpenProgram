@@ -2,18 +2,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { FileViewer } from "./file-viewer";
-import { DocumentController } from "@/lib/state/document-controller";
+import { DocumentController, documentControllers } from "@/lib/state/document-controller";
 import type { DocumentHistoryEntry, DocumentSnapshot } from "@/lib/state/document-types";
 import styles from "./document-window.module.css";
 
-function textSnapshot(snapshot: DocumentSnapshot | null, path: string) {
-  if (!snapshot) return null;
-  return { project_id: "", path, content: undefined, size: snapshot.bytes.size, mtime: snapshot.mtime ?? 0, revision: snapshot.revision };
-}
+const TEXT_EXTENSIONS = new Set(["txt", "md", "mdx", "markdown", "json", "yaml", "yml", "toml", "ini", "cfg", "conf", "csv", "tsv", "js", "jsx", "mjs", "cjs", "ts", "tsx", "py", "rb", "go", "rs", "java", "kt", "swift", "c", "h", "cpp", "hpp", "sh", "bash", "zsh", "fish", "css", "scss", "html", "xml", "sql", "log"]);
+function extension(path: string) { const name = path.split("/").pop() ?? ""; const dot = name.lastIndexOf("."); return dot > 0 ? name.slice(dot + 1).toLowerCase() : ""; }
 
 export function DocumentWindow({ projectId, path, sessionId, readOnly = false }: { projectId: string; path: string; sessionId?: string; readOnly?: boolean }) {
   const { text } = useTranslation();
-  const controller = useMemo(() => new DocumentController({ projectId, path, sessionId, readOnly }), [projectId, path, sessionId, readOnly]);
+  const controller = useMemo(() => { const key = readOnly ? `attachment:${sessionId ?? ""}:${path}` : `project:${projectId}:${path}`; const current = documentControllers.get(key); return current ?? new DocumentController({ projectId, path, sessionId, readOnly }); }, [projectId, path, sessionId, readOnly]);
   const [state, setState] = useState(controller.getState());
   const [mode, setMode] = useState<"preview" | "edit">("preview");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -23,17 +21,18 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const [selectedContent, setSelectedContent] = useState<string | null>(null);
   const [content, setContent] = useState<string | undefined>(undefined);
   const [draftText, setDraftText] = useState<string | undefined>(undefined);
-  const isText = !/\.(png|jpe?g|gif|webp|svg|ico|pdf)$/i.test(path);
+  const isText = TEXT_EXTENSIONS.has(extension(path));
   useEffect(() => { const unsubscribe = controller.subscribe(setState); return () => { unsubscribe(); }; }, [controller]);
-  useEffect(() => { void controller.load().catch((error) => setHistoryError(error instanceof Error ? error.message : text("Unable to read document.", "无法读取文件。"))); return () => { void controller.close(); }; }, [controller, text]);
+  useEffect(() => { void controller.load().catch((error) => setHistoryError(error instanceof Error ? error.message : text("Unable to read document.", "无法读取文件。"))); return () => undefined; }, [controller, text]);
   useEffect(() => { if (state.snapshot && isText) void state.snapshot.bytes.text().then(setContent); }, [state.snapshot]);
   useEffect(() => { if (state.draft && isText) void state.draft.text().then(setDraftText); else setDraftText(undefined); }, [state.draft, isText]);
   const snapshot = state.snapshot ? { project_id: projectId, path, content, size: state.snapshot.bytes.size, mtime: state.snapshot.mtime ?? 0, revision: state.snapshot.revision } : null;
   const onLoaded = (data: { content?: string; revision?: string; mtime?: number; size: number; project_id: string; path: string } | null) => {
     if (data?.content !== undefined && !state.snapshot) controller.hydrate({ bytes: data.content, revision: data.revision ?? "", mtime: data.mtime });
   };
-  async function openHistory() { setHistoryOpen((open) => !open); if (!history.length) try { setHistory((await controller.listHistory()).entries); } catch (error) { setHistoryError(error instanceof Error ? error.message : text("Unable to load history.", "无法加载历史记录。")); } }
-  async function previewVersion(entry: DocumentHistoryEntry) { try { const blob = await controller.historyContent(entry.version_id); setSelected(blob); setSelectedContent(await blob.text()); setHistoryError(null); } catch (error) { setHistoryError(error instanceof Error ? error.message : text("Unable to read history.", "无法读取历史版本。")); } }
+  const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  async function openHistory(cursor?: string) { setHistoryOpen(true); try { const page = await controller.listHistory(25, cursor ?? undefined); setHistory((old) => cursor ? [...old, ...page.entries] : page.entries); setHistoryCursor(page.next_cursor ?? null); } catch (error) { setHistoryError(error instanceof Error ? error.message : text("Unable to load history.", "无法加载历史记录。")); } }
+  async function previewVersion(entry: DocumentHistoryEntry, side: "before" | "after" = "after") { try { const blob = await controller.historyContent(entry.version_id, side); setSelected(blob); setSelectedContent(await blob.text()); setHistoryError(null); } catch (error) { setHistoryError(error instanceof Error ? error.message : text("Unable to read history.", "无法读取历史版本。")); } }
   async function restoreVersion(entry: DocumentHistoryEntry) { if (!window.confirm(text("Restore this version?", "恢复此版本？"))) return; try { await controller.restore(entry.version_id); setSelected(null); setSelectedContent(null); setMode("preview"); } catch (error) { setHistoryError(error instanceof Error ? error.message : text("Unable to restore history.", "无法恢复历史版本。")); } }
   return <div className={styles.window} data-document-window="true">
     <div className={styles.toolbar} role="toolbar" aria-label={text("Document", "文档")}>
@@ -44,8 +43,8 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
     </div>
     {historyError || state.error ? <div className={styles.error} role="alert">{historyError || state.error}</div> : null}
     <div className={styles.body}>
-      {selected ? <FileViewer projectId={projectId} path={path} snapshot={{ project_id: projectId, path, content: selectedContent ?? "", size: selected.size, mtime: 0 }} /> : <FileViewer projectId={projectId} path={path} abs={readOnly} sessionId={sessionId} snapshot={snapshot} draft={mode === "edit" ? draftText : undefined} onDraftChange={mode === "edit" ? (value) => controller.update(value) : undefined} onLoaded={onLoaded} />}
+      {selected ? <FileViewer projectId={projectId} path={path} snapshot={{ project_id: projectId, path, content: selectedContent ?? "", size: selected.size, mtime: 0 }} /> : mode === "edit" && isText ? <textarea aria-label={text("Document editor", "文档编辑器")} value={draftText ?? content ?? ""} onChange={(event) => controller.update(event.target.value)} style={{ width: "100%", height: "100%", resize: "none" }} /> : <FileViewer projectId={projectId} path={path} abs={readOnly} sessionId={sessionId} snapshot={snapshot} onLoaded={onLoaded} />}
     </div>
-    {historyOpen ? <aside className={styles.history} aria-label={text("Document history", "文档历史")}><div className={styles.historyTitle}>{text("Manual versions", "手动版本")}</div>{history.map((entry) => <div className={styles.entry} key={entry.version_id}><span>{entry.actor === "user" ? text("You", "你") : entry.actor || text("Version", "版本")}</span><button className={styles.button} onClick={() => void previewVersion(entry)}>{text("Preview", "预览")}</button><button className={styles.button} onClick={() => void restoreVersion(entry)}>{text("Restore", "恢复")}</button></div>)}</aside> : null}
+    {historyOpen ? <aside className={styles.history} aria-label={text("Document history", "文档历史")}><div className={styles.historyTitle}>{text("Manual versions", "手动版本")}</div>{history.map((entry) => <div className={styles.entry} key={entry.version_id}><span>{entry.actor === "user" ? text("You", "你") : entry.actor || text("Version", "版本")}</span><button className={styles.button} onClick={() => void previewVersion(entry, "before")}>{text("Before", "之前")}</button><button className={styles.button} onClick={() => void previewVersion(entry, "after")}>{text("After", "之后")}</button><button className={styles.button} onClick={() => void restoreVersion(entry)}>{text("Restore", "恢复")}</button></div>)}{historyCursor ? <button className={styles.button} onClick={() => void openHistory(historyCursor)}>{text("Load more", "加载更多")}</button> : null}</aside> : null}
   </div>;
 }

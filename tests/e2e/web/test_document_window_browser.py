@@ -10,11 +10,13 @@ def test_document_window_preview_edit_autosave_history(tmp_path):
     playwright = pytest.importorskip("playwright.sync_api")
     bundle = tmp_path / "document-window.js"
     subprocess.run(["node", "--no-warnings", "apps/web/tests/build-document-window-browser.mjs", str(bundle)], check=True)
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
 
     with sync_playwright() as runtime:
         browser = runtime.chromium.launch(headless=True)
         page = browser.new_page()
+        page.set_default_timeout(10000)
+        page.on("pageerror", lambda error: pytest.fail(f"document window page error: {error}"))
         class Handler(SimpleHTTPRequestHandler):
             def __init__(self, *args, **kwargs):
                 super().__init__(*args, directory=str(tmp_path), **kwargs)
@@ -30,8 +32,8 @@ def test_document_window_preview_edit_autosave_history(tmp_path):
                 route.fulfill(status=200, headers={"content-type": "application/octet-stream", "x-document-revision": "a" * 64}, body=b"old")
             else:
                 writes.append(route.request.post_data)
-                page.evaluate("window.__writesReady = true")
                 route.fulfill(status=200, content_type="application/json", body='{"ok":true,"status":"committed","revision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}')
+                page.evaluate("window.__writesReady = true")
         page.route("**/api/documents/content?*", content)
         page.route("**/api/documents/history?*", lambda route: route.fulfill(status=200, content_type="application/json", body='{"entries":[{"version_id":"a"}]}'))
         page.route("**/api/documents/history/content?*", lambda route: route.fulfill(status=200, body=b"history"))
