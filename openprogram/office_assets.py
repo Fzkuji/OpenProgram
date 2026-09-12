@@ -209,7 +209,9 @@ def install_office_pack(source: Path, target: Path) -> Path:
             except OSError:
                 if not destination.is_dir():
                     raise
-                validate_prepared_office_pack(destination)
+                existing = validate_prepared_office_pack(destination)
+                if hashlib.sha256(existing.manifest_bytes).hexdigest() != version:
+                    raise ValueError("Office version directory identity mismatch")
             _sync_dir(versions)
         finally:
             if stage.exists():
