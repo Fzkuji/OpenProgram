@@ -198,7 +198,7 @@ duplicated in this historical distribution ledger.
 - Release acceptance used CI package/runtime smoke and read-only release metadata checks. It did not install, replace, activate, or restart the user's current `/Applications/OpenProgram.app`, so foreground updater UI, long-running scheduling, and sleep/resume behavior remain explicitly unverified.
 - The browser release scope includes the built-in Browser, profile import, bookmarks/history, and Agent-bound WebTab control. Chrome/Edge extension installation is intentionally excluded and documented in the authoritative built-in browser design and product FAQ.
 
-### Current v0.8.2 release acceptance
+### Current v0.8.3 release acceptance
 
 - The release candidate integrates conversation-bound browser previews, bounded history paging and stack-safe long-session graph layout.
 - Source, lockfile, Desktop and installer versions agree. Independent specification and quality reviews, the full combined verification, packaged-runtime smoke, and default-App long-history replay pass.
