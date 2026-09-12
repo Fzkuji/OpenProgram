@@ -60,6 +60,10 @@ def office_window(tmp_path, monkeypatch, office_window_bundle):
     app = FastAPI()
     app.state.owner_auth = state
     app.state.office_assets = pack
+    # Reuse the real download route without entering the worker lifespan.
+    from openprogram.webui.server import create_app
+    raw_app = create_app(owner_auth=state, port=port)
+    app.router.routes.extend(route for route in raw_app.routes if getattr(route, "path", None) == "/files/raw")
     register_documents(app)
     register_office(app)
     register_files(app)
@@ -173,13 +177,34 @@ def test_sheet_history_and_preview_preserve_native_undo(office_window):
     page.get_by_role("button", name="Return to file", exact=True).click()
     expect(host).to_be_visible()
     assert host.locator(":scope > iframe").evaluate("(node,original)=>node===original", original)
+    page.get_by_role("button", name="Open settings route", exact=True).click()
+    assert "/settings?" in page.url
+    expect(host).not_to_be_visible()
+    page.get_by_role("button", name="Back to file route", exact=True).click()
+    expect(host).to_be_visible()
+    assert host.locator(":scope > iframe").evaluate("(node,original)=>node===original", original)
     page.get_by_role("button", name="History", exact=True).click()
     with page.expect_response(lambda response: "/api/documents/history/content?" in response.url) as response_info:
         page.get_by_role("button", name="Before", exact=True).first.click()
     assert response_info.value.status == 200
     expect(page.locator('[data-file-pane-id="file"] [data-office-editor]').nth(1)).to_be_visible(timeout=45000)
     assert host.locator(":scope > iframe").evaluate("(node,original)=>node===original", original)
+    before_history_input = (project / "baseline.xlsx").read_bytes()
+    writes = []
+    def capture_write(request):
+        if request.method in {"PUT", "PATCH", "DELETE"}:
+            writes.append(request.url)
+    page.on("request", capture_write)
+    history_host = page.locator('[data-file-pane-id="file"] [data-office-editor]').nth(1)
+    bounds = history_host.bounding_box()
+    page.mouse.click(bounds["x"] + 140, bounds["y"] + 135)
+    page.keyboard.press("F2")
+    page.keyboard.type("NO_HISTORY_WRITE")
+    page.keyboard.press("Enter")
     page.get_by_role("button", name="Back to current file", exact=True).click()
+    page.remove_listener("request", capture_write)
+    assert writes == []
+    assert (project / "baseline.xlsx").read_bytes() == before_history_input
     page.get_by_role("button", name="Edit", exact=True).click()
     bounds = host.bounding_box()
     page.mouse.click(bounds["x"] + 140, bounds["y"] + 135)
@@ -276,3 +301,24 @@ def test_office_attachment_is_readonly_and_reads_original_bytes(office_window):
     page.get_by_role("button", name="Preview", exact=True).click()
     assert source.read_bytes() == before
     assert writes == [] and errors == []
+
+
+@pytest.mark.parametrize("oversize", [False, True], ids=["corrupt", "oversize"])
+def test_invalid_office_retains_original_download(office_window, oversize):
+    import hashlib
+    from playwright.sync_api import expect
+    page, origin, project, _ = office_window
+    source = project / "invalid.docx"
+    with source.open("wb") as stream:
+        stream.write(b"not an Office document")
+        if oversize:
+            stream.truncate(64 * 1024 * 1024 + 1)
+    page.goto(origin + "/?file=invalid.docx")
+    expect(page.get_by_role("alert").first).to_be_visible(timeout=45000)
+    expect(page.locator('[data-office-editor] iframe')).to_have_count(0, timeout=15000)
+    with page.expect_download() as downloaded:
+        page.get_by_role("link", name="Download disk file", exact=True).click()
+    actual = downloaded.value.path()
+    assert actual is not None
+    with open(actual, "rb") as stream, source.open("rb") as original:
+        assert hashlib.file_digest(stream, "sha256").digest() == hashlib.file_digest(original, "sha256").digest()
