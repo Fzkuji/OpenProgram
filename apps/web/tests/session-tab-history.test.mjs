@@ -56,6 +56,33 @@ test("back, forward, same target and branching are local to the active tab", () 
   assert.deepEqual(active().sessionHistory.entries.map(e => e.sessionId), ["A", "C"]);
 });
 
+test("file navigation records folder and file steps and branches after back", () => {
+  reset();
+  const s = state();
+  s.openFileTab("p", "src/a.ts");
+  const aId = active().id;
+  s.recordFileNavigation({ projectId: "p", path: "", selectedType: "dir", expanded: [], scroll: null });
+  s.recordFileNavigation({ projectId: "p", path: "src", selectedType: "dir", expanded: ["src"], scroll: { path: "src", offset: 18 } });
+  s.recordFileNavigation({ projectId: "p", path: "src/a.ts", selectedType: "file", expanded: ["src"], scroll: { path: "src/a.ts", offset: 31 } });
+  s.openFileTab("p", "src/b.ts");
+  const bId = active().id;
+  s.recordFileNavigation({ projectId: "p", path: "src/b.ts", selectedType: "file", expanded: ["src"], scroll: { path: "src/b.ts", offset: 42 } });
+  assert.equal(s.canNavigateFile(-1), true);
+  s.navigateFileHistory(-1);
+  assert.equal(state().activeId, aId);
+  assert.equal(state().fileNavigationHistory.entries[state().fileNavigationHistory.index].path, "src/a.ts");
+  s.navigateFileHistory(-1);
+  assert.equal(active().kind, "builtin");
+  assert.equal(active().page, "files");
+  assert.equal(state().fileNavigationHistory.entries[state().fileNavigationHistory.index].path, "src");
+  s.navigateFileHistory(1);
+  assert.equal(state().activeId, aId);
+  s.navigateFileHistory(1);
+  assert.equal(state().activeId, bId);
+  s.recordFileNavigation({ projectId: "p", path: "docs", selectedType: "dir", expanded: ["docs"], scroll: null });
+  assert.equal(state().canNavigateFile(1), false);
+});
+
 test("already open target activates its existing tab while unopened sessions keep navigation rules", () => {
   reset(); state().openSessionTab("A", "Alpha"); const first = active().id;
   state().openWebTab("https://example.test"); const web = active().id;

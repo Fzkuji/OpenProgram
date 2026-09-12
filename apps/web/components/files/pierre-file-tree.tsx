@@ -6,7 +6,13 @@ import { pierreTreeIcons as icons, pierreTreeCSS as css } from "./pierre-tree-th
 import { formatFileBytes, useFolderSize } from "./file-management";
 
 export interface PierreTreeEntry { path: string; type: "file" | "dir"; size: number }
-export interface PierreTreeHandle { reveal(path: string): boolean; scrollToTop(): void }
+export interface PierreScrollState { path: string; offset: number }
+export interface PierreTreeHandle {
+  reveal(path: string): boolean;
+  scrollToTop(): void;
+  getScrollState(): PierreScrollState | null;
+  restoreScrollState(state: PierreScrollState): boolean;
+}
 interface Props {
   projectId: string;
   entries: PierreTreeEntry[];
@@ -58,7 +64,35 @@ export const PierreFileTree = forwardRef<PierreTreeHandle, Props>(function Pierr
       return { text, parts: latest.current.matches?.has(entry.path) ? [{ text: "• ", color: "var(--trees-accent)" }, part] : [part] };
     },
   });
+  // Pierre exposes row indices but keeps its native scroll element in shadow DOM.
+  const scrollElement = () => host.current?.querySelector("file-tree-container")?.shadowRoot
+    ?.querySelector<HTMLElement>("[data-file-tree-virtualized-scroll]");
   useImperativeHandle(ref, () => ({
+    getScrollState() {
+      const element = scrollElement();
+      if (!element) return null;
+      const index = Math.floor(element.scrollTop / model.getItemHeight());
+      const row = model.getVisibleRows(index, index)[0];
+      return row ? { path: normalize(row.path), offset: element.scrollTop - index * model.getItemHeight() } : null;
+    },
+    restoreScrollState(state) {
+      const element = scrollElement();
+      if (!element || !Number.isFinite(state.offset)) return false;
+      const count = model.getVisibleCount();
+      for (let start = 0; start < count; start += 128) {
+        const row = model.getVisibleRows(start, Math.min(start + 127, count - 1))
+          .find(row => normalize(row.path) === state.path);
+        if (!row) continue;
+        const desired = Math.min(row.index * model.getItemHeight() + Math.max(0, Math.min(state.offset, model.getItemHeight() - 1)),
+          Math.max(0, count * model.getItemHeight() - element.clientHeight));
+        // The model can advance before its virtual list has committed its height.
+        if (element.scrollHeight < desired + element.clientHeight) return false;
+        element.scrollTop = desired;
+        element.dispatchEvent(new Event("scroll"));
+        return Math.abs(element.scrollTop - desired) < 1;
+      }
+      return false;
+    },
     reveal(path) {
       const entry = metadata.current.get(path);
       if (!entry) return false;

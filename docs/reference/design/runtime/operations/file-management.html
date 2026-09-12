@@ -62,6 +62,12 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
 
   <nav class="nav" aria-label="文档目录"><a href="#file-window">文件窗口</a><a href="#durable-history">版本生命周期</a><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#file-query">文件查询</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a><a href="#implementation-status">实现状态</a></nav>
 
+<section id="file-navigation">
+<h2>返回刚才浏览的位置</h2>
+<p>文件夹 A → 子文件夹 B → 文件 1 → 文件 2。后退逐步返回此前的位置，前进恢复后续的位置；后退后打开其他位置会替换原来的前进记录。文件夹恢复路径、展开状态与滚动位置，文件保持既有自动保存行为。</p>
+<p>列表加载下一页、后台刷新与文件大小更新保留当前视口。只有用户主动定位、搜索跳转或导航恢复可以改变浏览位置。</p>
+<details><summary>实现状态与边界</summary><p>导航与滚动稳定性已通过功能复核、质量复核及完整验证。当前项目保留最近 100 个浏览位置，导航记录仅保留在当前窗口内。复用现有标签和导航入口；不修改磁盘文件，不新增轮询，不将导航历史混入文件版本 History。</p></details>
+</section>
 <section id="file-window">
 <h2>在同一个窗口查看、编辑和找回文件版本</h2>
 <p class="intro">打开文件先预览，进入编辑后自动写入。History 显示人工与模型修改，恢复前检查当前版本。下方是交互设计演示，格式引擎与保存流程仍在实现验收中。</p>
