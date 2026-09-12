@@ -20,7 +20,6 @@ const {build}=require("esbuild");
 const mocks={
   "@/lib/state/file-drafts":'export const hasDocumentDraftsForPath=()=>false;',
   "@/lib/i18n":'export const useTranslation=()=>({text:(en)=>en,t:(key)=>key});',
-  "@/lib/navigate":'export const navigate=()=>{};',
   "@/lib/net/ws-request":`export const wsRequest=(action,payload)=>globalThis.__fileRequest(action,payload);
     export const wsMutationRequest=()=>Promise.resolve(null); export const reconcileWsMutation=()=>{};
     export const idempotencyKeyFor=()=>"test"; export class MutationRegistryCapacityError extends Error {}`,
@@ -38,6 +37,8 @@ const mocks={
   "@/components/ui/tooltip":'export const HoverTip=({children})=>children;',
 };
 build({stdin:{contents:`
+import {setNavigate} from "./lib/navigate";
+setNavigate(path=>window.history.pushState(null,"",path));
 import React,{useEffect} from "react";import{createRoot}from"react-dom/client";
 import{FileTree}from"./components/files/file-tree";import{useCenterTabs}from"./lib/state/center-tabs-store";
 function App(){
@@ -74,6 +75,7 @@ createRoot(document.getElementById("root")).render(<App/>);`,resolveDir:process.
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(f"http://127.0.0.1:{server.server_port}/")
             page.set_content('<style>main[data-page=files]{height:360px;width:600px}main[data-page=files]>div{height:100%;display:flex;flex-direction:column}</style><div id="root"></div>')
+            page.evaluate('history.replaceState(null,"","/s/file-navigation-origin")')
             page.add_style_tag(path=str(bundle.with_suffix(".css")))
             page.add_script_tag(path=str(bundle))
             assert not errors, errors
@@ -94,6 +96,7 @@ createRoot(document.getElementById("root")).render(<App/>);`,resolveDir:process.
             page.mouse.click(bounds["x"] + 100, bounds["y"] + 15)
             expect(page.locator('[data-page="file"]')).to_be_visible()
             expect(page.locator('[data-file-path="active"]')).to_have_text("folder/A.txt")
+            assert page.url.endswith("/s/file-navigation-origin"), "opening a file must retain its conversation route"
 
             page.get_by_role("button", name="Back", exact=True).click()
             expect(files).to_be_visible()
@@ -102,6 +105,7 @@ createRoot(document.getElementById("root")).render(<App/>);`,resolveDir:process.
             page.get_by_role("button", name="Forward", exact=True).click()
             expect(page.locator('[data-page="file"]')).to_be_visible()
             expect(page.locator('[data-file-path="active"]')).to_have_text("folder/A.txt")
+            assert page.url.endswith("/s/file-navigation-origin"), "opening a file must retain its conversation route"
 
             page.get_by_role("button", name="Back", exact=True).click()
             page.get_by_role("button", name="Back", exact=True).click()

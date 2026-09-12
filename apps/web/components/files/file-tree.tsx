@@ -174,7 +174,9 @@ export function FileTree({
   const openFile = (path: string) => {
     recordNavigation(path, "file");
     openFileTab(projectId, path);
-    navigate("/chat");
+    // Preserve the conversation route: changing it reactivates its session tab.
+    const pathname = typeof window === "undefined" ? "" : window.location?.pathname ?? "";
+    if (pathname !== "/chat" && !pathname.startsWith("/s/")) navigate("/chat");
   };
   const [sort, setSort] = useFileSort(projectId);
   const sortRef = useRef(sort);
