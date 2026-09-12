@@ -213,6 +213,7 @@ export interface CenterTabsState {
   /** Navigate the active session tab, otherwise create a session tab. */
   openSessionTab: (sessionId: string, title: string) => void;
   navigateSessionHistory: (direction: -1 | 1) => void;
+  navigateFileHistory: (direction: -1 | 1) => void;
   canNavigateFile: (direction: -1 | 1) => boolean;
   recordFileNavigation: (snapshot: FileNavigationSnapshot) => void;
   removeSessionFromHistory: (sessionId: string) => void;
@@ -568,24 +569,13 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     navigateSessionHistory: (direction) => set(s => {
       const active = s.tabs.find(tab => tab.id === s.activeId);
       if (direction !== -1 && direction !== 1) return {};
-      if (!active) {
-        const history = s.fileNavigationHistory;
-        const index = history.index + direction;
-        return index >= 0 && index < history.entries.length
-          ? { fileNavigationHistory: { ...history, index } } : {};
-      }
+      if (!active) return {};
       const history = sessionHistory(active);
       const index = history.index + direction;
       if (active.kind !== "session" || index < 0 || index >= history.entries.length) {
         const pages = active.pageHistory;
         const pageIndex = (pages?.index ?? 0) + direction;
-        if (!pages || pageIndex < 0 || pageIndex >= pages.entries.length) {
-          if (active.kind !== "file") return {};
-          const fileHistory = s.fileNavigationHistory;
-          const fileIndex = fileHistory.index + direction;
-          return fileIndex >= 0 && fileIndex < fileHistory.entries.length
-            ? { fileNavigationHistory: { ...fileHistory, index: fileIndex } } : {};
-        }
+        if (!pages || pageIndex < 0 || pageIndex >= pages.entries.length) return {};
         const entries = [...pages.entries];
         entries[pages.index] = tabPage(active);
         const target = entries[pageIndex];
@@ -615,6 +605,21 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       if (active.sessionId) closedSessionAckTombstones.add(active.sessionId);
       const next = withSessionHistory(active, { ...history, index });
       return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) });
+    }),
+
+    navigateFileHistory: (direction) => set((s) => {
+      if (direction !== -1 && direction !== 1) return {};
+      const history = s.fileNavigationHistory;
+      const index = history.index + direction;
+      if (index < 0 || index >= history.entries.length) return {};
+      const target = history.entries[index];
+      const targetTab = target.selectedType === "file"
+        ? s.tabs.find(tab => tab.kind === "file" && tab.projectId === target.projectId && tab.path === target.path)
+        : undefined;
+      return {
+        fileNavigationHistory: { ...history, index },
+        activeId: targetTab?.id ?? null,
+      };
     }),
 
     canNavigateFile: (direction) => {
