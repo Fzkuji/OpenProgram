@@ -12,6 +12,8 @@ import { officeCapability } from "@/lib/documents/file-formats";
 import { convertOfficeDocument } from "@/lib/documents/office-editor";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { OfficeSurface } from "./office-surface";
+import { RasterSurface } from "./raster-surface";
+import type { RasterEditorInstance } from "@/lib/documents/raster-editor";
 
 interface VersionPreview { blob: Blob; content?: string; version?: string; side?: "before" | "after"; disk?: boolean; }
 
@@ -36,9 +38,11 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const [selected, setSelected] = useState<VersionPreview | null>(null);
   const selectionRequest = useRef(0);
   const editedBytes = useRef<Blob | null>(null);
+  const rasterEditor = useRef<RasterEditorInstance | null>(null);
   const isText = fileCapabilities(path).textEditable && !state.snapshot?.binary;
   const office = officeCapability(path);
   const isOffice = fileCapabilities(path).preview === "office";
+  const isRaster = ["png", "jpg", "jpeg", "webp"].includes(fileCapabilities(path).preview === "image" ? path.split(".").pop()?.toLowerCase() ?? "" : "");
   const currentBytes = state.draft ?? state.snapshot?.bytes;
 
   useEffect(() => controller.subscribe(setState), [controller]);
@@ -139,7 +143,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       <span className={styles.title}>{path.split("/").pop()}</span><span className={styles.spacer} />
       <button className={`${styles.button} ${mode === "preview" && !selected ? styles.active : ""}`}
         aria-pressed={mode === "preview" && !selected} onClick={() => void showCurrent()}>{text("Preview", "预览")}</button>
-      {!readOnly && (isText || (isOffice && office?.editable)) && <button className={`${styles.button} ${mode === "edit" && !selected ? styles.active : ""}`}
+      {!readOnly && (isText || (isOffice && office?.editable) || isRaster) && <button className={`${styles.button} ${mode === "edit" && !selected ? styles.active : ""}`}
         disabled={!state.snapshot || state.restoring || state.renaming} aria-pressed={mode === "edit" && !selected}
         onClick={() => { setSelected(null); setEditorOpened(true); setMode("edit"); }}>{text("Edit", "编辑")}</button>}
       {!readOnly && office?.conversionRequired && !selected && <button className={styles.button}
@@ -165,10 +169,21 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       {selected.version && <button className={styles.button} disabled={state.restoring || state.renaming}
         onClick={() => void restore(selected.version!, selected.side)}>{text("Restore this version", "恢复此版本")}</button>}
     </div>}
+    {isRaster && editorOpened && mode === "edit" && !selected && <div className={styles.toolbar} role="toolbar" aria-label={text("Image tools", "图片工具")}>
+      <button className={styles.button} onClick={() => void rasterEditor.current?.rotate()}>{text("Rotate", "旋转")}</button>
+      <button className={styles.button} onClick={() => void rasterEditor.current?.cropCenter()}>{text("Crop", "裁剪")}</button>
+      <button className={styles.button} onClick={() => void rasterEditor.current?.addText("Text")}>{text("Text", "文字")}</button>
+      <button className={styles.button} onClick={() => void rasterEditor.current?.addShape("rect")}>{text("Shape", "形状")}</button>
+      <button className={styles.button} onClick={() => void rasterEditor.current?.undo()}>{text("Undo", "撤销")}</button>
+      <button className={styles.button} onClick={() => void rasterEditor.current?.redo()}>{text("Redo", "重做")}</button>
+    </div>}
     <div className={styles.body}>
       {isOffice && currentBytes ? <><div hidden={Boolean(selected)} style={{ height: "100%" }}><OfficeSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly || !office?.editable} mode={mode} /></div>{selected && <OfficeSurface key={`${selected.version ?? "disk"}:${selected.side ?? "after"}`} controller={controller} bytes={selected.blob} path={path} readOnly={true} mode="preview" />}</> : selected ? <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
         snapshot={{ project_id: projectId, path, content: selected.content, binary: !isText, size: selected.blob.size, mtime: 0 }} /> : <>
-      {editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
+      {isRaster && currentBytes && editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
+        <RasterSurface controller={controller} bytes={currentBytes} path={path} readOnly={readOnly} mode={mode} onReady={(value) => { rasterEditor.current = value; }} />
+      </div>}
+      {!isRaster && editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
         <fieldset disabled={state.restoring || state.renaming} style={{ border: 0, margin: 0, padding: 0, height: "100%" }}>
           <EditorArea value={content} onChange={(value) => {
             setContent(value);
@@ -179,7 +194,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
           }} />
         </fieldset>
       </div>}
-      <div hidden={mode === "edit" || Boolean(selected)} style={{ height: "100%" }}>
+      <div hidden={(mode === "edit" && (isRaster || editorOpened)) || Boolean(selected)} style={{ height: "100%" }}>
         {snapshot ? <FileViewer projectId={projectId} path={path} abs={readOnly} sessionId={sessionId}
           snapshot={snapshot} sourceBlob={readOnly ? undefined : currentBytes} /> : <span>{text("Loading…", "加载中…")}</span>}
       </div>
