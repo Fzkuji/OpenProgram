@@ -352,6 +352,12 @@ def run_foreground() -> int:
             time.sleep(1.0)
     except KeyboardInterrupt:
         print("\n[worker] stopping...")
+        from openprogram.execution.restart import prepare_shutdown
+        try:
+            prepare_shutdown(get_job_runner())
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("could not prepare restart checkpoints")
         if stop_event is not None:
             stop_event.set()
         if scheduler_stop is not None:

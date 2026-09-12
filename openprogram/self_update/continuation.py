@@ -142,6 +142,9 @@ def reconcile(runner):
                 or config["authority"].get("interaction") != "background"
             ):
                 raise ValueError("self-update continuation owner or contract changed")
+            from .restart import continuation_allowed
+            if not continuation_allowed(store, record):
+                continue
             job_id = f"self-update:{record.request.update_id}:continue:{record.state.attempt}"
             if runner.get_job(job_id) is not None:
                 continue
