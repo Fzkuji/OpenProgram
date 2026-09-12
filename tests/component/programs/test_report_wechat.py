@@ -115,6 +115,8 @@ def native_processes(monkeypatch, pids, owners):
         NS(
             bundleIdentifier=lambda: "com.tencent.xinWeChat",
             processIdentifier=lambda p=p: p,
+            launchDate=lambda: "launch",
+            isTerminated=lambda: False,
         )
         for p in pids
     ]
@@ -124,10 +126,13 @@ def native_processes(monkeypatch, pids, owners):
         AXUIElementCreateApplication=lambda pid: selected.append(pid) or pid,
         AXUIElementSetMessagingTimeout=lambda *a: None,
         AXUIElementCopyAttributeValue=lambda *a: (0, None),
+        AXUIElementCopyActionNames=lambda *a: (0, []),
+        AXUIElementIsAttributeSettable=lambda *a: (0, False),
     )
     windows = [
         dict(
             kCGWindowOwnerPID=pid,
+            kCGWindowNumber=pid,
             kCGWindowLayer=0,
             kCGWindowName="微信",
             kCGWindowBounds=dict(Width=924, Height=625),
@@ -139,15 +144,40 @@ def native_processes(monkeypatch, pids, owners):
         sys.modules,
         "AppKit",
         NS(
-            NSWorkspace=NS(sharedWorkspace=lambda: NS(runningApplications=lambda: apps))
+            NSApplication=NS(sharedApplication=lambda: None),
+            NSWorkspace=NS(
+                sharedWorkspace=lambda: NS(runningApplications=lambda: apps)
+            ),
         ),
     )
     monkeypatch.setitem(
         sys.modules,
         "Quartz",
-        NS(kCGWindowListOptionAll=0, CGWindowListCopyWindowInfo=lambda *a: windows),
+        NS(
+            CGPreflightScreenCaptureAccess=lambda: True,
+            kCGWindowListOptionAll=0,
+            CGWindowListCopyWindowInfo=lambda *a: windows,
+        ),
     )
     monkeypatch.setattr(report_wechat.sys, "platform", "darwin")
+    monkeypatch.setitem(sys.modules, "ScreenCaptureKit", NS())
+    monkeypatch.setitem(
+        sys.modules,
+        "gui_harness.adapters.mac_window",
+        NS(WindowUnavailable=RuntimeError),
+    )
+    from openprogram.programs.workflow.report_wechat_visual import WeChatWindow
+
+    def native_window(window):
+        selected.append(window.pid)
+        return NS(
+            ax=ax,
+            ax_window="exact-main-window",
+            validate=lambda: None,
+            attr=lambda *a: None,
+        )
+
+    monkeypatch.setattr(WeChatWindow, "native_window", native_window)
     return selected
 
 

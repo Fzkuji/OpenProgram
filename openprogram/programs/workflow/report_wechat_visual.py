@@ -273,9 +273,7 @@ class WeChatWindow:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.communicate()
 
-    def observe(self):
-        self.check()
-        path = Path(self.scratch.name) / (uuid.uuid4().hex + ".png")
+    def native_window(self):
         try:
             from gui_harness.adapters.mac_window import (
                 window_session,
@@ -293,7 +291,18 @@ class WeChatWindow:
                     or native.identity["launch_time"] != self.launch
                 ):
                     raise VisualUnavailable("WINDOW_CHANGED")
-            observation = self.native.observe()
+            return self.native
+        except WindowUnavailable as exc:
+            raise VisualUnavailable("BACKGROUND_WINDOW_UNAVAILABLE") from exc
+
+    def observe(self):
+        self.check()
+        path = Path(self.scratch.name) / (uuid.uuid4().hex + ".png")
+        native = self.native_window()
+        from gui_harness.adapters.mac_window import WindowUnavailable
+
+        try:
+            observation = native.observe()
         except WindowUnavailable as exc:
             raise VisualUnavailable("BACKGROUND_WINDOW_UNAVAILABLE") from exc
         # The shared adapter owns capture and window locking. Move its temporary

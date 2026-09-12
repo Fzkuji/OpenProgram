@@ -40,28 +40,43 @@ class MacAccessibility:
     """Reuse the optional native dependencies used by system-access diagnostics."""
 
     def __init__(self):
-        if sys.platform != "darwin":
-            raise AccessibilityUnavailable("UNSUPPORTED_PLATFORM")
+        from .report_wechat_visual import WeChatWindow, VisualUnavailable
+
+        self.window = None
         try:
-            self.ax = importlib.import_module("ApplicationServices")
-            workspace = importlib.import_module("AppKit").NSWorkspace.sharedWorkspace()
-        except ImportError as exc:
-            raise AccessibilityUnavailable("NATIVE_DEPENDENCIES_UNAVAILABLE") from exc
-        if not self.ax.AXIsProcessTrusted():
-            raise AccessibilityUnavailable("ACCESS_REQUIRED")
-        app = select_application(workspace.runningApplications())
-        self.root = self.ax.AXUIElementCreateApplication(app.processIdentifier())
-        self.ax.AXUIElementSetMessagingTimeout(self.root, 0.2)
+            self.window = WeChatWindow()
+            self.native = self.window.native_window()
+        except VisualUnavailable as exc:
+            if self.window is not None:
+                self.window.close()
+            raise AccessibilityUnavailable(str(exc)) from exc
+        self.ax = self.native.ax
+        self.root = self.native.ax_window
 
     def attr(self, node, name):
-        error, value = self.ax.AXUIElementCopyAttributeValue(node, name, None)
-        return None if error else value
+        return self.native.attr(node, name)
 
     def text(self, node, name):
         value = self.attr(node, name)
         return value if isinstance(value, str) else ""
 
+    def check(self):
+        from .report_wechat_visual import VisualUnavailable
+
+        try:
+            self.window.check()
+        except VisualUnavailable as exc:
+            raise AccessibilityUnavailable(str(exc)) from exc
+
     def nodes(self):
+        from gui_harness.adapters.mac_window import WindowUnavailable
+
+        self.check()
+        try:
+            self.native.validate()
+        except WindowUnavailable as exc:
+            raise AccessibilityUnavailable("BACKGROUND_WINDOW_UNAVAILABLE") from exc
+        self.native.elements = {}
         pending, result = [(self.root, None)], []
         deadline = time.monotonic() + 8
         while pending and len(result) < 1200:
@@ -69,9 +84,19 @@ class MacAccessibility:
                 raise AccessibilityUnavailable("READ_TIMEOUT")
             node, parent = pending.pop()
             number = len(result)
+            token = str(number)
+            _, actions = self.ax.AXUIElementCopyActionNames(node, None)
+            code, writable = self.ax.AXUIElementIsAttributeSettable(
+                node, "AXValue", None
+            )
+            self.native.elements[token] = (
+                node,
+                list(actions or []),
+                code == 0 and bool(writable),
+            )
             result.append(
                 {
-                    "handle": node,
+                    "handle": token,
                     "parent": parent,
                     "index": number,
                     "role": self.text(node, "AXRole"),
@@ -89,25 +114,49 @@ class MacAccessibility:
             )
         return result
 
+    def _element(self, token):
+        if token not in self.native.elements:
+            raise AccessibilityUnavailable("CONTROL_NOT_VERIFIED")
+        return self.native.elements[token][0]
+
+    def _dispatch(self, call, token, **args):
+        from gui_harness.adapters.mac_window import WindowUnavailable
+
+        self.check()
+        try:
+            self.native.dispatch({"call": call, "args": {"target": token, **args}})
+        except WindowUnavailable as exc:
+            raise AccessibilityUnavailable("BACKGROUND_ACTION_UNAVAILABLE") from exc
+        self.native.elements = {}
+
     def search(self, node, group):
-        if self.text(node, "AXSubrole") != "AXSearchField":
+        element = self._element(node)
+        if self.text(element, "AXSubrole") != "AXSearchField":
             raise AccessibilityUnavailable("SEARCH_CONTROL_CHANGED")
-        if self.ax.AXUIElementSetAttributeValue(node, "AXValue", group):
-            raise AccessibilityUnavailable("SEARCH_UNAVAILABLE")
+        self._dispatch("window_set_text", node, text=group)
 
     def select(self, node, group):
-        if self.text(node, "AXRole") != "AXRow" or self.text(node, "AXTitle") != group:
+        element = self._element(node)
+        if (
+            self.text(element, "AXRole") != "AXRow"
+            or self.text(element, "AXTitle") != group
+        ):
             raise AccessibilityUnavailable("GROUP_RESULT_CHANGED")
-        if self.ax.AXUIElementPerformAction(node, "AXPress"):
-            raise AccessibilityUnavailable("GROUP_SELECTION_UNAVAILABLE")
+        self._dispatch("window_press", node)
 
     def close(self):
         self.root = None
+        self.window.close()
 
 
 def read_group(group: str) -> dict:
     """Search an exact group, returning only scoped accessible rows or a blocker."""
-    if not isinstance(group, str) or not group.strip() or len(group) > 200:
+    if (
+        not isinstance(group, str)
+        or not group.strip()
+        or len(group) > 200
+        or any(ord(c) < 32 for c in group)
+    ):
         return {"status": "SCOPE_REQUIRED"}
     bridge = None
     try:
