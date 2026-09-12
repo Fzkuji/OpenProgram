@@ -99,3 +99,9 @@ You may click, scroll, type, navigate, or close built-in pages while an Agent wo
 When a task page disappears, the Agent reacquires the page or reopens its last known address if it has closed, then reads its current state. Previous clicks and submissions are not replayed automatically. Lost authentication or unsaved content is reported when it cannot be restored.
 
 Conversation history loads the latest page first. Use **Load earlier messages** above the transcript to retrieve older pages without losing new streamed output. Pages follow the same conversation branch. Reconnecting reloads the recent page; stored history and model context are unchanged.
+
+## Continuing after a restart
+
+Closing a conversation tab or the App window leaves worker-owned tasks running. If the worker itself stops, resumable Agent tasks save checkpoints at completed provider and tool boundaries. On restart, tasks paused by shutdown or recovered from a safe abandoned checkpoint automatically continue within two hours. The deadline is persisted; another restart does not extend it. After expiry, the task stays paused and can be continued manually.
+
+The setting `execution.auto_resume_window_seconds` defaults to `7200`; `0` disables automatic restart continuation. Explicit Stop/Cancel, manual pauses, and unanswered approvals do not automatically continue. An operation whose external result is unknown requires reconciliation. Continuation preserves the original task identity, permissions, and resource admission, and requires a compatible runtime contract. This restores durable checkpoints, not arbitrary process memory or unsaved external application state.

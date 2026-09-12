@@ -1140,7 +1140,7 @@ def test_decline_preserves_checkpoint_trace_and_notifies_chat(real_agent_chat, m
     from openprogram.store import SessionNodeWriter
     node = SessionNodeWriter(h.sessions, h.session_id, advance_head=False).load().nodes[source.assistant_message_id]
     blocks = json.loads(node.metadata.get("extra", "{}" )).get("blocks", [])
-    assert any(b.get("type") == "thinking" for b in blocks)
+    assert any(b.get("type") == "thinking" for b in blocks), (blocks, frames)
     assert any(b.get("text") == "Please approve this operation." for b in blocks)
     assert any(b.get("tool_call_id") == "call-denied" and b.get("result") for b in blocks)
     assert "declined" in node.output.lower()

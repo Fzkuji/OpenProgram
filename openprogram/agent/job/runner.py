@@ -559,7 +559,8 @@ class JobRunner:
             entrypoint="openprogram.agent.production_driver:AgentProductionDriver",
             trusted_actor=actor,
             config_snapshot_ref=f"job-config:{job.id}",
-            user_message_id=job.caller_msg_id or job.parent_msg_id,
+            user_message_id=f"{job.id}_user",
+            assistant_message_id=f"{job.id}_user_reply",
             run_id=run_id,
             capabilities=AgentProductionDriver.capabilities_for_payload(input_payload),
             job_agent_payload=input_payload,
@@ -1977,7 +1978,11 @@ class JobRunner:
             store=self._execution_store,
         )
 
-    def release_paused_job_resource(self, execution_id: str, *, reason_code: str) -> None:
+    def release_paused_job_resource(
+        self, execution_id: str, *, reason_code: str,
+        attempt_id: str | None = None, generation: int | None = None,
+        resource_lease_generation: int | None = None,
+    ) -> None:
         """Persist and consume the exact release intent after a queued pause."""
         job = self._canonical_job(execution_id)
         if job is None or not job.admission_id:
@@ -1989,9 +1994,9 @@ class JobRunner:
             execution_id,
             admission_id=job.admission_id,
             reason_code=reason_code,
-            attempt_id=execution.current_attempt_id,
-            generation=execution.owner_lease.get("generation"),
-            resource_lease_generation=execution.owner_lease.get("generation"),
+            attempt_id=attempt_id or execution.current_attempt_id,
+            generation=generation if generation is not None else execution.owner_lease.get("generation"),
+            resource_lease_generation=resource_lease_generation,
         )
         self._resource_saga.reconcile()
 
@@ -3026,6 +3031,8 @@ class JobRunner:
                 elif execution is not None and execution.status.value == "paused":
                     self.release_paused_job_resource(
                         job_id, reason_code="pause.safe_point",
+                        attempt_id=attempt_id, generation=attempt_generation,
+                        resource_lease_generation=lease_generation,
                     )
             except Exception:
                 _log.exception("failed to project canonical Job completion for %s", job_id)
@@ -3121,6 +3128,8 @@ class JobRunner:
             # but before RuntimeControlService created an attempt.  The
             # accepted canonical command still owns recovery; do not write a
             # contradictory errored Job projection.
+            return
+        if execution is not None and (execution.current_attempt_id is not None or execution.status.value == "paused"):
             return
         job = _store_load(session_id, job_id)
         if job is None or is_terminal(job.status):
@@ -3450,6 +3459,8 @@ class JobRunner:
                 reconcile(self)
                 from openprogram.self_update.continuation import reconcile as continue_updates
                 continue_updates(self)
+                from openprogram.execution.restart import reconcile as resume_interrupted
+                resume_interrupted(self)
             except Exception:
                 _log.exception("self-update restart reconciliation failed")
 

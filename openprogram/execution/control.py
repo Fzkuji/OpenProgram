@@ -3374,6 +3374,7 @@ class RuntimeControlService:
             apply_command = False
             reject_command = False
             running_commands = False
+            restart_checkpoint = None
             if execution.status in {ExecutionStatus.QUEUED, ExecutionStatus.PAUSED}:
                 target = execution.status
                 reason_code = "owner_lost_before_activation"
@@ -3382,6 +3383,8 @@ class RuntimeControlService:
                     command_kind = CommandKind.PAUSE
                     apply_command = True
             elif execution.status is ExecutionStatus.RUNNING:
+                from .restart import crash_checkpoint
+                restart_checkpoint = None if unresolved else crash_checkpoint(self, connection, execution)
                 running_commands = True
                 target = (
                     ExecutionStatus.PAUSED
@@ -3399,6 +3402,9 @@ class RuntimeControlService:
                     "restart_pending" if restart_pending
                     else "reconciliation_required" if unresolved else "owner_lost"
                 )
+                if restart_checkpoint is not None:
+                    target = ExecutionStatus.PAUSED
+                    reason_code = outcome = "restart_recoverable"
             elif execution.status is ExecutionStatus.PAUSING:
                 command_kind = CommandKind.PAUSE
                 if unresolved:
@@ -3427,6 +3433,11 @@ class RuntimeControlService:
                     outcome = "owner_lost_during_cancel"
                     apply_command = True
 
+            if restart_checkpoint is not None:
+                execution = self.executions._transition_execution(
+                    connection, execution_id, expected_version=execution.status_version,
+                    target=ExecutionStatus.PAUSING, reason_code="restart_recoverable",
+                )
             recovered = self.executions._transition_execution(
                 connection,
                 execution_id,
@@ -3435,6 +3446,10 @@ class RuntimeControlService:
                 reason_code=reason_code,
                 clear_owner=True,
             )
+            if restart_checkpoint is not None:
+                from .restart import record_intent
+                record_intent(self.executions, connection, recovered,
+                              interrupted_at=restart_checkpoint[0], seconds=restart_checkpoint[1])
             attempt = None
             if execution.current_attempt_id is not None:
                 attempt = self.attempts._require(

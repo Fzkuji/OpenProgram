@@ -496,6 +496,15 @@ def _validate_outbound_url_settings(value: Any) -> Optional[str]:
 
 SETTINGS: list[SettingSpec] = [
     SettingSpec(
+        key="execution.auto_resume_window_seconds", path=("execution", "auto_resume_window_seconds"),
+        group="Execution", label="Automatic restart window (seconds)", widget="number",
+        apply=APPLY_LIVE, default=7200, minimum=0,
+        validate=lambda v: None if type(v) is int and v >= 0 else "must be a nonnegative whole number",
+        help="Automatically continue restart-owned checkpoints within this interval after interruption. "
+             "Default: two hours. Zero disables automatic restart. Existing deadlines never extend; "
+             "user pauses, cancellation and unconfirmed external operations require explicit recovery.",
+    ),
+    SettingSpec(
         key="ui.web_port", path=("ui", "web_port"), group="Ports",
         minimum=1,
         label="Frontend port", widget="number",

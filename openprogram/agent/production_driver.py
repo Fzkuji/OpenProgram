@@ -391,6 +391,8 @@ class AgentProductionDriver:
             raise AgentDriverError("invalid_input", "Agent admission input must resolve to an object")
         if payload.get("kind") == "job_agent":
             resolved = self.activation.build_job_activation(record)
+            if record.assistant_message_id == f"{record.user_message_id}_reply":
+                resolved.request.user_msg_id = record.user_message_id
             if self.job_resume_resolver is not None:
                 resume_parent = self.job_resume_resolver(record.execution_id)
                 if resume_parent is not None:
@@ -1815,7 +1817,10 @@ class AgentProductionDriver:
                     decision_action_ids.add(action_id)
 
             command = None if kind == "provider.finished" else current_command(service, attempt.execution_id)
-            if kind == "provider.finished":
+            from openprogram.execution.restart import window_seconds
+            # Direct non-durable hook callers do not carry a revision contract.
+            restart_window = window_seconds() if getattr(request, "_execution_revision_id", None) else 0
+            if command is None and (kind == "provider.finished" or restart_window == 0):
                 service.effects.resolve(
                     effect_id, expected_status=EffectStatus.DISPATCHED,
                     outcome=EffectStatus.COMMITTED, receipt=terminal_receipt,
@@ -1833,12 +1838,12 @@ class AgentProductionDriver:
                 execution_id=attempt.execution_id, attempt_id=attempt.attempt_id,
                 generation=attempt.generation, expected_version=current.status_version,
                 safe_point_kind=str(checkpoint.payload["safe_point"]["kind"]),
-                frontier=tuple(checkpoint.payload["frontier"]), state_refs={},
+                frontier=tuple(checkpoint.payload["frontier"]),
+                state_refs={"restart_window_seconds": restart_window},
                 effect_id=effect_id, terminal_receipt=terminal_receipt,
                 receipt_blob=canonical_json_bytes(terminal_receipt),
                 agent_checkpoint=checkpoint,
-                command_id=command.command_id if command is not None else None,
-                managed_action_id=action_id,
+                command_id=command.command_id if command is not None else None, managed_action_id=action_id,
                 consumed_steer_command_ids=tuple(sorted(steer_consumed_ids or ())),
             )
             remember_completed_action()
