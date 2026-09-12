@@ -13,6 +13,7 @@ from pathlib import Path
 _MANIFEST = "openprogram-office-assets.json"
 OFFICE_SOURCE = "d15d12b6945be4d8b0f3aa1806120e740d2950ee"
 OFFICE_PACKAGE_VERSION = "0.3.34"
+OFFICE_FONT_MANIFEST_DIGEST = "e06827b3e04245fe2c636659511290667a93b1ba76d420ddd1a8781b0cf14524"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_ASSETS = 8192
 MAX_LICENSES = 256
@@ -161,6 +162,9 @@ def validate_prepared_office_pack(root: Path) -> OfficeAssetPack:
             or pack.manifest.get("expectedHostIdentity") != hashlib.sha256(pack.runtime_manifest_bytes).hexdigest()
             or not set(pack.manifest["licenses"]).issubset(pack.assets)):
         raise ValueError("Office resource build identity mismatch")
+    fonts = assembly.get("fonts", {})
+    if fonts.get("manifestDigest") != OFFICE_FONT_MANIFEST_DIGEST:
+        raise ValueError("Office font build identity mismatch")
     return pack
 
 

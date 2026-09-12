@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 FONT_EXTENSIONS = {".ttf", ".tte", ".otf", ".otc", ".ttc", ".woff", ".woff2"}
-EXPECTED_FONT_FILES = 188
+EXPECTED_FONT_FILES = 126
 EXPECTED_THUMBNAILS = 10
-EXPECTED_ALLFONTS_SHA256 = "7aa225f01572d323b54e9c4a9a877e7c6711e391bc76558cc2e9d2395819420c"
-EXPECTED_SELECTION_SHA256 = "003115c205975a50b0a02e24a35eefb329b3d4c632c641faf5074aff45d5793a"
+EXPECTED_ALLFONTS_SHA256 = "4727768a8d3bbaa411d53344b13fea658c3f2dac71c13fae2261411fa8c5f67b"
+EXPECTED_SELECTION_SHA256 = "508bf86f3f59358dd82f9d8aac79c2fa1276e6444a49cecb91ec9bca6bd6552b"
 _ARRAY = re.compile(r'window\["(?P<name>[^"\n]+)"\]\s*=\s*(?P<value>\[[\s\S]*?\]);')
 
 
@@ -127,12 +127,12 @@ def validate_font_assets(pack: Path, input: Path) -> dict[str, Any]:
     _array(paths[manifest["allFonts"]].read_text(encoding="utf-8"), "__fonts_infos")
     _array(paths[manifest["allFonts"]].read_text(encoding="utf-8"), "__fonts_ranges")
     if len(all_fonts) != EXPECTED_FONT_FILES or sorted(f"fonts/{x.lstrip('/')}" for x in all_fonts) != sorted(fonts):
-        raise ValueError("AllFonts.js does not enumerate the manifest's 188 font files")
+        raise ValueError("AllFonts.js does not enumerate the manifest's font files")
 
     source_map = _read_json(paths[manifest["fontSourceMap"]])
     entries = source_map.get("fonts")
     if not isinstance(entries, list) or len(entries) != EXPECTED_FONT_FILES:
-        raise ValueError("source map must contain exactly 188 font entries")
+        raise ValueError("source map must contain one entry per packed font")
     by_name_hash = {(_p.name.casefold(), _sha256(_p)): _p for _p in _input_fonts(input_root)}
     provenance = []
     seen = set()

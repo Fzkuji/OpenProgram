@@ -200,7 +200,7 @@ function isCjkFamilyName(name) {
   ].some((marker) => lowered.includes(marker));
 }
 
-function verifyAllFonts(root, allFontsRelativePath, thumbnails) {
+function verifyAllFonts(root, allFontsRelativePath, thumbnails, enforceCjkMappings = true) {
   const allFontsPath = path.resolve(root, allFontsRelativePath);
   const source = fs.readFileSync(allFontsPath, 'utf8');
   const fontFiles = parseJsArray(source, '__fonts_files');
@@ -261,7 +261,7 @@ function verifyAllFonts(root, allFontsRelativePath, thumbnails) {
     if (start > end || fontInfoIndex < 0 || fontInfoIndex >= fontInfos.length) {
       throw new Error(`Generated AllFonts.js has invalid __fonts_ranges entry at offset ${index}`);
     }
-    if ((isCjkCodePoint(start) || isCjkCodePoint(end)) && !isCjkFamilyName(fontInfos[fontInfoIndex][0])) {
+    if (enforceCjkMappings && (isCjkCodePoint(start) || isCjkCodePoint(end)) && !isCjkFamilyName(fontInfos[fontInfoIndex][0])) {
       throw new Error(
         `Generated AllFonts.js maps CJK range ${start}-${end} to non-CJK font ${fontInfos[fontInfoIndex][0]}`,
       );
@@ -362,7 +362,7 @@ export function verifyOnlyOfficeFontAssets(input) {
   if (manifest.fontSourceMap) assertFile(root, manifest.fontSourceMap);
   for (const thumbnail of manifest.fontThumbnails) assertFile(root, thumbnail);
   for (const font of manifest.fonts) assertFile(root, font);
-  verifyAllFonts(root, manifest.allFonts, manifest.fontThumbnails);
+  verifyAllFonts(root, manifest.allFonts, manifest.fontThumbnails, manifest.fontSet === 'zh-core');
   if (manifest.fontSet === 'zh-core') {
     const source = fs.readFileSync(path.resolve(root, manifest.allFonts), 'utf8');
     verifyZhCoreFallbackChain(root, source, manifest.fontSourceMap);

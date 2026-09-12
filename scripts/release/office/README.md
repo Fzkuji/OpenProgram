@@ -7,7 +7,9 @@ both digests. The patch serializes export acknowledgements and preserves native
 undo when switching between viewing and editing. It does not enable macros.
 
 Prepare fonts with `font-generation.mjs` and the official Document Server 9.3.0
-font generator. Supply only font families accompanied by their original
+font generator. The pinned full pack contains 126 generated font files and
+10 thumbnails, generated from 127 input font files with 29 accompanying
+license files. Supply only font families accompanied by their original
 licenses. System fonts and user-installed fonts are excluded. The Python
 validator checks the generated files against the input bytes, generated layout
 pins and licenses; an incomplete pack cannot be published.
@@ -45,3 +47,11 @@ remain available to existing readers and for rollback; failed copies never
 replace the selected version. The parent module is staged separately under
 `public/document-assets/office/<patch-sha256>/public-api.js` and loads lazily.
 The large runtime does not enter the Python wheel or initial chat bundle.
+
+The bundled upstream archive and adoption patch are the corresponding editor
+source. Run the copied preparation scripts from the matching OpenProgram
+checkout: they import its standard-library-only `openprogram.office_assets`
+validator and installer. The source archive does not constitute a standalone
+OpenProgram checkout. Font inputs and their original licenses are explicit
+build inputs, and their relative names and hashes are recorded in
+`source/font-provenance.json`.

@@ -49,7 +49,7 @@ def test_product_manifest_declares_reviewed_office_inputs():
 
 def make_office_pack(root: Path, marker: bytes = b"first") -> Path:
     from openprogram.office_assets import (
-        OFFICE_HOST_BUILD_ID, OFFICE_LOCK_SHA256, OFFICE_PATCH_SHA256, OFFICE_SOURCE,
+        OFFICE_FONT_MANIFEST_DIGEST, OFFICE_HOST_BUILD_ID, OFFICE_LOCK_SHA256, OFFICE_PATCH_SHA256, OFFICE_SOURCE,
     )
     root.mkdir(parents=True)
     resources = {path: marker for path in (
@@ -64,7 +64,8 @@ def make_office_pack(root: Path, marker: bytes = b"first") -> Path:
         "version": 1, "source": OFFICE_SOURCE, "packageVersion": "0.3.34",
         "hostBuildId": OFFICE_HOST_BUILD_ID,
         "expectedHostIdentity": hashlib.sha256(marker).hexdigest(),
-        "assembly": {"adoptionPatchSha256": OFFICE_PATCH_SHA256, "reviewedNpmLockSha256": OFFICE_LOCK_SHA256},
+        "assembly": {"adoptionPatchSha256": OFFICE_PATCH_SHA256, "reviewedNpmLockSha256": OFFICE_LOCK_SHA256,
+                     "fonts": {"manifestDigest": OFFICE_FONT_MANIFEST_DIGEST}},
         "licenses": ["LICENSE"],
         "assets": [{"path": name, "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}
                    for name, content in resources.items()],
@@ -150,3 +151,16 @@ def test_release_stager_verifies_and_copies_lazy_parent_module(tmp_path: Path):
                              "--source", str(source), "--output", str(target)], capture_output=True)
     assert result.returncode != 0
     assert (validate_prepared_office_pack(target).root / "npm/public-api.js").read_bytes() == b"parent module"
+
+
+def test_install_rejects_unreviewed_font_generation(tmp_path: Path):
+    import pytest
+    from openprogram.office_assets import install_office_pack
+    source = make_office_pack(tmp_path / 'source')
+    manifest_path = source / 'openprogram-office-assets.json'
+    manifest = json.loads(manifest_path.read_text())
+    manifest['assembly']['fonts'] = {'manifestDigest': '0' * 64, 'fonts': 188}
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match='font'):
+        install_office_pack(source, tmp_path / 'target')
+    assert not (tmp_path / 'target/current.json').exists()
