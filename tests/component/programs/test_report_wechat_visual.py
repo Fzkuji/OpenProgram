@@ -214,3 +214,37 @@ def test_failed_search_focus_never_sends_keyboard_input():
     # No cg object exists: accessing keyboard APIs would fail this test.
     with pytest.raises(visual.VisualUnavailable, match="SEARCH_FOCUS_UNVERIFIABLE"):
         window.search(_frame([_row("搜索", 100, 20)]), "Target group")
+
+
+def test_public_reader_preserves_roster_names_inside_message(
+    monkeypatch, tmp_path, working_dir
+):
+    image = tmp_path / "source.png"
+    image.write_bytes(b"test fixture")
+    frame = _frame(
+        [
+            _row("星期四 15:00", 600, 90),
+            _row("A", 350, 130),
+            _row("本周协助以下同学：", 370, 170),
+            _row("B", 370, 210),
+            _row("尚未完成验证。", 390, 250),
+            _row("C", 350, 300),
+        ]
+    )
+    frame["image"] = str(image)
+
+    class Window:
+        def observe(self):
+            return dict(frame)
+
+        def older(self, *args):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(visual, "WeChatWindow", Window)
+    result = visual.read_visual_group("Target group", ["A", "B", "C"], str(tmp_path))
+    assert [(b["author"], b["text"]) for b in result["blocks"]] == [
+        ("A", "本周协助以下同学：\nB\n尚未完成验证。")
+    ]

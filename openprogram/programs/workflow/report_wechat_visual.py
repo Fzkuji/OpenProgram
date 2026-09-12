@@ -136,7 +136,11 @@ def extract_messages(frame, group, members):
         if stamp and width * 0.5 < row["x"] < width * 0.8:
             finish(True)
             date, date_row, author, body = stamp, row, None, []
-        elif row["label"] in members and row["x"] < width * 0.46:
+        elif (
+            row["label"] in members
+            and row["x"] < width * 0.46
+            and (author_row is None or abs(row["x"] - author_row["x"]) < 8)
+        ):
             finish(True)
             author, author_row, body = row["label"], row, []
         elif (
