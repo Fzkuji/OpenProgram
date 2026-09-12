@@ -137,6 +137,36 @@ def _pause(store, record, runner):
         store._write_json(path, manifest)
 
 
+def continuation_allowed(store, record):
+    """Bound unattended work after completion; caller holds the update lock."""
+    from openprogram.execution import restart as policy
+
+    path = store.root / record.request.update_id / "restart-window.json"
+    window = _optional(path)
+    original = dict(window) if window is not None else None
+    if window is None:
+        interrupted_at = record.state.updated_at
+        window = dict(
+            interrupted_at=interrupted_at,
+            resume_before=interrupted_at + policy.window_seconds(),
+            expired=False,
+        )
+    import math
+    if (set(window) != {"interrupted_at", "resume_before", "expired"}
+            or type(window["expired"]) is not bool
+            or any(type(window[key]) not in {int, float} or not math.isfinite(window[key])
+                   for key in ("interrupted_at", "resume_before"))
+            or window["resume_before"] < window["interrupted_at"]):
+        raise ValueError("invalid self-update restart window")
+    if (window["expired"] or policy.window_seconds() == 0
+            or not window["interrupted_at"] <= policy.time() <= window["resume_before"]):
+        window["expired"] = True
+    # Write before dispatch. A later restart/config change cannot renew it.
+    if window != original:
+        store._write_json(path, window)
+    return not window["expired"]
+
+
 def _resume(store, record, runner):
     from openprogram.execution.model import CommandStatus, ExecutionStatus
 
@@ -144,6 +174,8 @@ def _resume(store, record, runner):
     with store._locked():
         path, manifest = _load(store, record)
         if not path.exists() or load_maintenance(store) is not None:
+            return
+        if not continuation_allowed(store, record):
             return
     for execution_id, item in manifest["executions"].items():
         if item["status"] not in {"pending", "resuming", "failed"}:

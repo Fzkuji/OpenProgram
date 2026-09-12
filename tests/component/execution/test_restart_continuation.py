@@ -14,7 +14,7 @@ from openprogram.execution.model import CapabilitySet, ExecutionStatus
 from openprogram.execution.store import ExecutionStore
 
 
-def _running(tmp_path, *, kind: str = "chat", pause: bool = True):
+def _running(tmp_path, *, kind: str = "chat", pause: bool = True, activate: bool = True):
     store = ExecutionStore(tmp_path / "execution.sqlite3")
     revision = store.create_revision(manifest={"entrypoint": "chat"})
     payload = (
@@ -38,6 +38,8 @@ def _running(tmp_path, *, kind: str = "chat", pause: bool = True):
         agent_turn_payload=payload,
     )
     attempts = AttemptStore(store)
+    if not activate:
+        return store, attempts, execution, None
     leased, reserved = attempts.lease(
         execution.execution_id, expected_version=execution.status_version,
         owner_id="worker", ttl_seconds=30, attempt_id="attempt",
@@ -181,6 +183,16 @@ class _NoopProjection:
         return type("Result", (), {"claimed": 0, "delivered": 0, "failed": 0})()
 
 
+def _restart_after_startup(service, monkeypatch):
+    """Use the same bounded reconciler that the initialized JobRunner invokes."""
+    from types import SimpleNamespace
+    from openprogram.execution.restart import reconcile
+
+    service.activator = _StartupDriver().activate
+    monkeypatch.setattr("openprogram.execution.default_control_service", lambda: service)
+    reconcile(SimpleNamespace(_execution_store=service.executions, _execution_control=service))
+
+
 def test_startup_reactivates_same_admission_after_two_owner_losses(tmp_path, monkeypatch):
     from openprogram.execution.startup import recover_execution_startup
 
@@ -193,6 +205,8 @@ def test_startup_reactivates_same_admission_after_two_owner_losses(tmp_path, mon
     first = service.recover_owner_loss(running.execution_id, only_if_abandoned=True)
     assert first.execution.reason_code == "restart_pending"
     recover_execution_startup(control_service=service, projection_dispatcher=_NoopProjection())
+    assert store.get_execution(running.execution_id).status is ExecutionStatus.PAUSED
+    _restart_after_startup(service, monkeypatch)
     resumed = store.get_execution(running.execution_id)
     assert resumed.status is ExecutionStatus.RUNNING
     first_attempt = resumed.current_attempt_id
@@ -200,6 +214,7 @@ def test_startup_reactivates_same_admission_after_two_owner_losses(tmp_path, mon
     second = service.recover_owner_loss(running.execution_id, only_if_abandoned=True)
     assert second.execution.reason_code == "restart_pending"
     recover_execution_startup(control_service=service, projection_dispatcher=_NoopProjection())
+    _restart_after_startup(service, monkeypatch)
     resumed_again = store.get_execution(running.execution_id)
     assert resumed_again.status is ExecutionStatus.RUNNING
     assert resumed_again.current_attempt_id != first_attempt
@@ -238,6 +253,8 @@ def test_startup_internal_resume_does_not_require_pause_capability(tmp_path, mon
 
     recover_execution_startup(control_service=service, projection_dispatcher=_NoopProjection())
 
+    assert store.get_execution(running.execution_id).status is ExecutionStatus.PAUSED
+    _restart_after_startup(service, monkeypatch)
     assert store.get_execution(running.execution_id).status is ExecutionStatus.RUNNING
     assert len(_StartupDriver.activations) == 1
 
@@ -258,7 +275,7 @@ def test_owner_loss_does_not_replay_tool_without_continuation_record(tmp_path):
     assert effects.get("write").status is EffectStatus.DISPATCHED
 
 
-def test_owner_loss_resumes_from_checkpoint_when_in_flight_tool_is_interrupted(tmp_path, monkeypatch):
+def test_owner_loss_preserves_unknown_tool_result_despite_checkpoint(tmp_path, monkeypatch):
     from tests.component.agent.test_agent_durable_safe_point import _real_provider_safe_point
 
     store, service, active, running, checkpoint, _ = _real_provider_safe_point(tmp_path, pause=False)
@@ -286,10 +303,9 @@ def test_owner_loss_resumes_from_checkpoint_when_in_flight_tool_is_interrupted(t
         lambda *args, **kwargs: False,
     )
     recovered = service.recover_owner_loss(running.execution_id, only_if_abandoned=True)
-    assert recovered.execution.status is ExecutionStatus.PAUSED
-    assert recovered.execution.reason_code == "restart_pending"
+    assert recovered.execution.status is ExecutionStatus.RECONCILIATION_REQUIRED
     assert recovered.execution.checkpoint_head_id == checkpoint.checkpoint_id
-    assert effects.list_unresolved(running.execution_id) == []
+    assert effects.list_unresolved(running.execution_id)
     with store._connect() as connection:
         rows = connection.execute(
             "SELECT effect_id FROM effects WHERE execution_id = ?",
@@ -300,14 +316,11 @@ def test_owner_loss_resumes_from_checkpoint_when_in_flight_tool_is_interrupted(t
         if item is not None and str((item.metadata or {}).get("kind") or "").startswith("tool.")
     ]
     assert interrupted
-    assert all(item.status is EffectStatus.NOT_COMMITTED for item in interrupted)
-    assert all(
-        (item.receipt or {}).get("reason") == "tool_request_interrupted"
-        for item in interrupted
-    )
+    assert all(item.status is EffectStatus.DISPATCHED for item in interrupted)
+    assert all(not item.receipt for item in interrupted)
 
 
-def test_startup_resumes_chat_after_in_flight_tool_is_interrupted(tmp_path, monkeypatch):
+def test_startup_does_not_replay_unknown_tool_result(tmp_path, monkeypatch):
     from openprogram.execution.startup import recover_execution_startup
     from tests.component.agent.test_agent_durable_safe_point import _real_provider_safe_point
 
@@ -336,10 +349,11 @@ def test_startup_resumes_chat_after_in_flight_tool_is_interrupted(tmp_path, monk
     _StartupDriver.activations = []
     monkeypatch.setattr("openprogram.agent.production_driver.AgentProductionDriver", _StartupDriver)
     recover_execution_startup(control_service=service, projection_dispatcher=_NoopProjection())
+    _restart_after_startup(service, monkeypatch)
     resumed = store.get_execution(running.execution_id)
-    assert resumed.status is ExecutionStatus.RUNNING
+    assert resumed.status is ExecutionStatus.RECONCILIATION_REQUIRED
     assert resumed.checkpoint_head_id == checkpoint.checkpoint_id
-    assert len(_StartupDriver.activations) == 1
+    assert len(_StartupDriver.activations) == 0
 
 
 def test_legacy_completed_tool_without_checkpoint_is_not_replayed(tmp_path):
@@ -404,6 +418,44 @@ def test_completed_tool_cursor_resumes_when_next_provider_is_interrupted(tmp_pat
     assert current.checkpoint_head_id != checkpoint.checkpoint_id
     assert hook("provider.before", {"resolved_snapshot": continuation.resolved_snapshot, "context": {"messages": []}}) is False
     recovered = service.recover_owner_loss(running.execution_id)
-    assert recovered.execution.reason_code == "restart_pending"
+    assert recovered.execution.reason_code == "restart_recoverable"
     assert recovered.execution.checkpoint_head_id == current.checkpoint_head_id
     assert service.effects.list_unresolved(running.execution_id) == []
+
+
+@pytest.mark.parametrize("queued", [False, True])
+@pytest.mark.parametrize("elapsed,resumes", [(7200, True), (7201, False)])
+def test_initial_admission_recovery_obeys_fixed_deadline(tmp_path, monkeypatch, queued, elapsed, resumes):
+    from openprogram.execution import restart
+    from openprogram.execution.startup import recover_execution_startup
+
+    store, attempts, running, active = _running(tmp_path, activate=not queued)
+    # A fresh admission has not run a tool and needs no continuation cursor.
+    if not queued:
+        effects = EffectStore(store)
+        effects.register(
+            effect_id="provider-only", execution_id=running.execution_id,
+            attempt_id=active.attempt_id, action_id="provider-only",
+            classification=EffectClassification.NONREPEATABLE, idempotency_key=None,
+            metadata={"kind": "provider.before"},
+        )
+        effects.mark_dispatched("provider-only", expected_status=EffectStatus.PLANNED)
+    interrupted_at = store.get_execution(running.execution_id).updated_at
+    if not queued:
+        interrupted_at = max(interrupted_at, active.updated_at)
+    monkeypatch.setattr("openprogram.execution.process_owner.process_owner_may_be_alive", lambda *args, **kwargs: False)
+    monkeypatch.setattr(restart, "time", lambda: interrupted_at + elapsed)
+    service = RuntimeControlService(store, attempts, DriverRegistry())
+    _StartupDriver.activations = []
+    recover_execution_startup(control_service=service, projection_dispatcher=_NoopProjection())
+    intent = next(e for e in store.list_events(running.execution_id) if e.kind == restart._REQUEST)
+    assert intent.payload["resume_before"] == interrupted_at + 7200
+    _restart_after_startup(service, monkeypatch)
+    expected = ExecutionStatus.RUNNING if resumes else ExecutionStatus.PAUSED
+    assert store.get_execution(running.execution_id).status is expected
+    assert len(_StartupDriver.activations) == int(resumes)
+    if not resumes:
+        recover_execution_startup(control_service=service, projection_dispatcher=_NoopProjection())
+        _restart_after_startup(service, monkeypatch)
+        assert len(_StartupDriver.activations) == 0
+        assert len([e for e in store.list_events(running.execution_id) if e.kind == restart._REQUEST]) == 1

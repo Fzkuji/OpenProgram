@@ -1356,7 +1356,7 @@ def test_returned_provider_failure_finishes_without_attention(tmp_path, stop_rea
     store, attempts, active, execution = _admitted_agent_execution(tmp_path)
     control = RuntimeControlService(store, attempts, DriverRegistry())
     hook = AgentProductionDriver(store, control_service=control)._safe_point_hook(
-        active, SimpleNamespace(user_msg_id="user-anchor"), threading.Event(),
+        active, SimpleNamespace(user_msg_id="user-anchor", _execution_revision_id=execution.revision_id), threading.Event(),
     )
 
     async def safe_point(kind, payload):

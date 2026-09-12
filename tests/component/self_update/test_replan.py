@@ -7,7 +7,11 @@ from tests.component.agent.test_agent_continuation_real import (
 )  # noqa: F401
 
 
-def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch):
+import pytest
+
+
+@pytest.mark.parametrize("elapsed,enabled", [(60, True), (7201, True), (60, False)])
+def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch, elapsed, enabled):
     from tests.component.providers.scripted_provider import ScriptedText
     from openprogram.self_update import SelfUpdateStore, UpdatePhase, restart
     from openprogram.self_update.maintenance import enter_maintenance, leave_maintenance
@@ -49,10 +53,20 @@ def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch):
         _wait(lambda: h.store.get_execution(ex.execution_id).status.value == "paused")
         h.tools.implementation_variant = "changed"
         updates.transition("su_test", UpdatePhase.ABORTED)
+        from openprogram.execution import restart as policy
+        stopped = updates.load("su_test").state.updated_at
+        monkeypatch.setattr(policy, "time", lambda: stopped + elapsed)
+        if not enabled:
+            monkeypatch.setattr(policy, "window_seconds", lambda: 0)
         leave_maintenance("su_test")
         restart.reconcile(runner)
         restart.reconcile(runner)
         jid = restart._command_id("su_test", ex.execution_id, "replan")
+        if elapsed > 7200 or not enabled:
+            assert runner.get_job(jid) is None
+            assert h.store.get_execution(ex.execution_id).status.value == "paused"
+            assert h.provider.call_count == 1
+            return
         assert runner.get_job(jid) is not None
         _wait(
             lambda: h.store.get_execution(jid).status.value in {"completed", "failed"},
@@ -96,6 +110,8 @@ def test_exact_update_replans(real_agent_chat, tmp_path, monkeypatch):
             agent_id=config["agent_id"],
             pre_update_evidence=(config_evidence(config),),
         )
+        import time
+        monkeypatch.setattr(policy, "time", time.time)
         updates.create(req, continuation_config=config)
         updates.transition("su_second", UpdatePhase.ABORTED)
         followup(runner)

@@ -89,3 +89,27 @@ def test_continuation_rejects_changed_owner(
     finally:
         fake_worker[1].set()
         runner.shutdown()
+
+
+@pytest.mark.parametrize("elapsed,enabled", [(7201, True), (60, False)])
+def test_origin_followup_obeys_restart_window(tmp_path, monkeypatch, store_fixture, fake_worker, elapsed, enabled):
+    from openprogram.execution import restart as policy
+    from openprogram.self_update.continuation import reconcile
+    from openprogram.agent.job.runner import JobRunner
+
+    updates = _prepared(tmp_path, monkeypatch)
+    stopped = updates.load("su_test").state.updated_at
+    monkeypatch.setattr(policy, "time", lambda: stopped + elapsed)
+    if not enabled:
+        monkeypatch.setattr(policy, "window_seconds", lambda: 0)
+    runner = JobRunner(max_workers=1)
+    try:
+        reconcile(runner)
+        assert runner.list_jobs("p1") == []
+        monkeypatch.setattr(policy, "window_seconds", lambda: 14400)
+        reconcile(runner)
+        assert runner.list_jobs("p1") == []
+        assert fake_worker[0] == []
+    finally:
+        fake_worker[1].set()
+        runner.shutdown()
