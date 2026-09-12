@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from tests.component.agent.async_job_support import store_fixture, fake_worker  # noqa: F401
 
 
@@ -77,7 +79,8 @@ def _environment(tmp_path, monkeypatch):
     return updates, runner, service, attempt
 
 
-def test_update_pause_survives_restart_and_continues_once(tmp_path, monkeypatch):
+@pytest.mark.parametrize("elapsed,enabled,update_duration", [(60, True, 0), (7200, True, 0), (7201, True, 0), (60, False, 0), (60, True, 10800)])
+def test_update_pause_survives_restart_and_continues_once(tmp_path, monkeypatch, elapsed, enabled, update_duration):
     from openprogram.self_update import restart, UpdatePhase
     from openprogram.self_update.maintenance import enter_maintenance, leave_maintenance
     from openprogram.execution.checkpoints import CheckpointFragment
@@ -104,10 +107,19 @@ def test_update_pause_survives_restart_and_continues_once(tmp_path, monkeypatch)
     assert paused.checkpoint_head_id
     restart.reconcile(runner)
     assert runner._execution_store.get_execution("active").status.value == "paused"
-    updates.transition("su_test", UpdatePhase.ABORTED)
+    import time
+    completed_at = time.time() + update_duration
+    with monkeypatch.context() as clock:
+        clock.setattr(time, "time", lambda: completed_at)
+        updates.transition("su_test", UpdatePhase.ABORTED)
     # Terminal state alone does not authorize task activation.
     restart.reconcile(runner)
     assert runner._execution_store.get_execution("active").status.value == "paused"
+    from openprogram.execution import restart as policy
+    deadline_start = updates.load("su_test").state.updated_at
+    monkeypatch.setattr(policy, "time", lambda: deadline_start + elapsed)
+    if not enabled:
+        monkeypatch.setattr(policy, "window_seconds", lambda: 0)
     leave_maintenance("su_test")
     fresh = RuntimeControlService(
         runner._execution_store, AttemptStore(runner._execution_store), DriverRegistry()
@@ -117,6 +129,14 @@ def test_update_pause_survives_restart_and_continues_once(tmp_path, monkeypatch)
     )
     restart.reconcile(runner)
     resumed = runner._execution_store.get_execution("active")
+    if elapsed > 7200 or not enabled:
+        assert resumed.status.value == "paused"
+        assert resumed.checkpoint_head_id == paused.checkpoint_head_id
+        monkeypatch.setattr(policy, "window_seconds", lambda: 14400)
+        restart.reconcile(runner)
+        assert runner._execution_store.get_execution("active").status.value == "paused"
+        assert len(runner._execution_store.list_commands("active")) == 1
+        return
     assert resumed.status.value == "running"
     assert resumed.checkpoint_head_id == paused.checkpoint_head_id
     restart.reconcile(runner)
