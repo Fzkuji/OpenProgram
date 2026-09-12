@@ -8,6 +8,22 @@ permissions:
   contents: write
 
 jobs:
+  platforms:
+    runs-on: ubuntu-24.04
+    outputs:
+      runtime: ${{ steps.select.outputs.runtime }}
+      desktop: ${{ steps.select.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Select release platforms
+        id: select
+        env:
+          WINDOWS_ENABLED: ${{ vars.OPENPROGRAM_RELEASE_WINDOWS }}
+        run: |
+          flags=()
+          if [ "$WINDOWS_ENABLED" = true ]; then flags+=(--windows); fi
+          python3 scripts/release/release-matrix.py "${flags[@]}" >> "$GITHUB_OUTPUT"
+
   python:
     runs-on: ubuntu-24.04
     steps:
@@ -48,28 +64,10 @@ jobs:
           path: dist/*
 
   product-runtime:
+    needs: platforms
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-26
-            platform: macos
-            arch: arm64
-          - runner: macos-15-intel
-            platform: macos
-            arch: x86_64
-          - runner: ubuntu-24.04
-            platform: linux
-            arch: x86_64
-          - runner: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-          - runner: windows-2025
-            platform: windows
-            arch: x86_64
-          - runner: windows-11-vs2026-arm
-            platform: windows
-            arch: arm64
+      matrix: ${{ fromJSON(needs.platforms.outputs.runtime) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -144,31 +142,10 @@ jobs:
           path: ${{ runner.temp }}/runtime-artifacts/*
 
   desktop:
-    needs: product-runtime
+    needs: [platforms, product-runtime]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            platform: mac
-            runtime_platform: macos
-            arch: arm64
-            builder_arch: arm64
-          - runner: macos-15-intel
-            platform: mac
-            runtime_platform: macos
-            arch: x86_64
-            builder_arch: x64
-          - runner: windows-2025
-            platform: win
-            runtime_platform: windows
-            arch: x86_64
-            builder_arch: x64
-          - runner: windows-11-vs2026-arm
-            platform: win
-            runtime_platform: windows
-            arch: arm64
-            builder_arch: arm64
+      matrix: ${{ fromJSON(needs.platforms.outputs.desktop) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -303,29 +280,10 @@ jobs:
             apps/desktop/dist/SHA256SUMS-*
 
   cli-installer:
-    needs: product-runtime
+    needs: [platforms, product-runtime]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            platform: macos
-            arch: arm64
-          - runner: macos-15-intel
-            platform: macos
-            arch: x86_64
-          - runner: ubuntu-24.04
-            platform: linux
-            arch: x86_64
-          - runner: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-          - runner: windows-2025
-            platform: windows
-            arch: x86_64
-          - runner: windows-11-vs2026-arm
-            platform: windows
-            arch: arm64
+      matrix: ${{ fromJSON(needs.platforms.outputs.runtime) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7

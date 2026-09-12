@@ -198,11 +198,11 @@ duplicated in this historical distribution ledger.
 - Release acceptance used CI package/runtime smoke and read-only release metadata checks. It did not install, replace, activate, or restart the user's current `/Applications/OpenProgram.app`, so foreground updater UI, long-running scheduling, and sleep/resume behavior remain explicitly unverified.
 - The browser release scope includes the built-in Browser, profile import, bookmarks/history, and Agent-bound WebTab control. Chrome/Edge extension installation is intentionally excluded and documented in the authoritative built-in browser design and product FAQ.
 
-### Current v0.8.1 release acceptance
+### Current v0.8.2 release acceptance
 
-- Tag `v0.8.1` resolves to `3288758691a568b2975efb0abb60c28145907fbc`; release run `32684756787` completed successfully.
-- The stable [OpenProgram 0.8.1 Release](https://github.com/Fzkuji/OpenProgram/releases/tag/v0.8.1) is non-draft and non-prerelease, GitHub `latest` resolves to `v0.8.1`, and the release contains 17 uploaded assets.
-- The v0.8.1 product manifest defines the current 11-capability boundary, and GUI installs with `--no-deps`. The immutable v0.8.1 verifier rejects PyTorch, torchvision, sentence-transformers, triton, and NVIDIA/CUDA distributions while verifying Playwright Chromium, the GPA detector, Research PDF support, and all three first-party Program registrations; it does not explicitly reject OpenCV or EasyOCR. The current-source verifier adds those explicit exclusions and distribution-name normalization.
+- The release candidate integrates conversation-bound browser previews, bounded history paging and stack-safe long-session graph layout.
+- Source, lockfile, Desktop and installer versions agree. Independent reviews cover the combined candidate; final validation and publication evidence remain pending.
+- Runtime capability verification and checksum requirements remain unchanged. Windows Desktop publication requires configured signing credentials.
 
 ## Short public installer batch
 

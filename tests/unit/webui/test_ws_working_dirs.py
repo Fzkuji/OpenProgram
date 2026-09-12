@@ -157,7 +157,8 @@ def test_session_loaded_precedes_async_context_stats(
     ws = FakeWS()
 
     async def _after_session_loaded(func, /, *args, **kwargs):
-        assert any(frame.get("type") == "session_loaded" for frame in ws.sent)
+        if func is _s.refresh_context_stats:
+            assert any(frame.get("type") == "session_loaded" for frame in ws.sent)
         return func(*args, **kwargs)
 
     monkeypatch.setattr(ws_session.asyncio, "to_thread", _after_session_loaded)

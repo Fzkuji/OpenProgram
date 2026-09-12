@@ -3020,16 +3020,17 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
-    assert "macos-" in workflow
-    assert "macos-26-intel" not in workflow
-    assert "macos-15-intel" in workflow
+    matrix = (ROOT / "scripts/release/release-matrix.py").read_text()
+    assert "macos-" in matrix
+    assert "macos-26-intel" not in matrix
+    assert "macos-15-intel" in matrix
     icon_check = (ROOT / "apps" / "desktop" / "scripts" / "check-icon.sh").read_text(
         encoding="utf-8"
     )
-    assert "runner: macos-15-intel$" in icon_check
+    assert '\"macos-15-intel\"' in icon_check
     assert "macos-26-intel" not in icon_check
-    assert "ubuntu-" in workflow
-    assert "ubuntu-24.04-arm" in workflow
+    assert "ubuntu-" in matrix
+    assert "ubuntu-24.04-arm" in matrix
     assert "product-runtime:" in workflow
     assert "cli-installer:" in workflow
     assert "product-runtime-${{ matrix.platform }}-${{ matrix.arch }}" in workflow
@@ -3042,7 +3043,10 @@ def test_native_release_workflow_has_platform_jobs() -> None:
     assert "sha256" in workflow.lower()
     assert "electron-builder --mac dmg zip" in workflow
     assert "electron-builder --win nsis --${{ matrix.builder_arch }} --publish never" in workflow
-    assert "runner: windows-11-vs2026-arm" in workflow
+    assert "windows-11-vs2026-arm" in matrix
+    assert "vars.OPENPROGRAM_RELEASE_WINDOWS" in workflow
+    assert "fromJSON(needs.platforms.outputs.runtime)" in workflow
+    assert "fromJSON(needs.platforms.outputs.desktop)" in workflow
     assert workflow.count("--publish never") == 2
     assert "AppImage" not in workflow
 
@@ -3466,3 +3470,20 @@ def test_release_manifest_records_hashes(tmp_path: Path) -> None:
     assert manifest["files"][0]["sha256"] == (
         "c7c5c1d70c5dec4416ab6158afd0b223ef40c29b1dc1f97ed9428b94d4cadb1c"
     )
+
+
+def test_release_matrix_requires_explicit_windows_selection():
+    select = runpy.run_path(str(ROOT / "scripts/release/release-matrix.py"))["release_matrices"]
+    default = select()
+    assert {(row["platform"], row["arch"]) for row in default["runtime"]} == {
+        ("macos", "arm64"), ("macos", "x86_64"),
+        ("linux", "arm64"), ("linux", "x86_64"),
+    }
+    assert {row["platform"] for row in default["desktop"]} == {"mac"}
+    enabled = select(True)
+    assert len(enabled["runtime"]) == 6
+    assert {(row["platform"], row["builder_arch"]) for row in enabled["desktop"]} == {
+        ("mac", "arm64"), ("mac", "x64"), ("win", "arm64"), ("win", "x64"),
+    }
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    assert 'throw "Windows Desktop publication requires WINDOWS_CSC_LINK and WINDOWS_CSC_KEY_PASSWORD"' in workflow

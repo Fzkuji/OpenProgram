@@ -15,7 +15,7 @@ modern_symbol_svgs=(
   "$modern_assets_dir/04-node-indigo.svg"
 )
 package_json="$desktop_dir/package.json"
-release_workflow="$repository_dir/.github/workflows/release.yml"
+release_workflow="$repository_dir/scripts/release/release-matrix.py"
 
 fail() {
   printf 'icon check failed: %s\n' "$*" >&2
@@ -124,9 +124,9 @@ if (icon["supported-platforms"]?.squares !== "shared") {
 }
 NODE
 
-grep -q 'runner: macos-26$' "$release_workflow" \
+grep -q '"macos-26"' "$release_workflow" \
   || fail "arm64 desktop releases must use the macos-26 runner"
-grep -q 'runner: macos-15-intel$' "$release_workflow" \
+grep -q '"macos-15-intel"' "$release_workflow" \
   || fail "x86_64 desktop releases must use the macos-15-intel runner"
 
 if [[ "${OPENPROGRAM_SELF_UPDATE_DEFER_ICON_RENDER:-}" != 1 ]]; then
