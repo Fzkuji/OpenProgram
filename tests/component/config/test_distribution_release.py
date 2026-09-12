@@ -617,6 +617,7 @@ def test_packager_build_only_writes_artifact_without_installing(
     fake_npm.write_text(
         "#!/bin/sh\n"
         "set -eu\n"
+        'case " $* " in *" electron-builder "*) case " $* " in *" --config.mac.identity=- "*) ;; *) exit 49 ;; esac ;; esac\n'
         "for arg in \"$@\"; do\n"
         "  case \"$arg\" in\n"
         "    --config.directories.output=*)\n"

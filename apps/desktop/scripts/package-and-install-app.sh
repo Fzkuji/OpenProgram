@@ -120,11 +120,11 @@ if [[ -n "${OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST:-}" ]]; then
     exit 1
   }
   npm exec --workspace apps/desktop -- electron-builder \
-    --dir --mac --publish never --config.directories.output="$package_dir" \
+    --dir --mac --publish never --config.mac.identity=- --config.directories.output="$package_dir" \
     "--config.electronDist=$OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST"
 else
   npm exec --workspace apps/desktop -- electron-builder \
-    --dir --mac --publish never --config.directories.output="$package_dir"
+    --dir --mac --publish never --config.mac.identity=- --config.directories.output="$package_dir"
 fi
 
 app_list="$work_dir/apps.txt"
