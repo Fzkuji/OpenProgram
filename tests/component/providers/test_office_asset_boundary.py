@@ -85,7 +85,7 @@ def test_valid_office_host_assets_are_public_and_manifest_bound(boundary_app):
     assert response.headers["content-type"].startswith("text/html")
     assert response.headers["x-content-type-options"] == "nosniff"
     assert "connect-src 'self'" in response.headers["content-security-policy"]
-    assert "frame-ancestors http://127.0.0.1:18100" in response.headers["content-security-policy"]
+    assert "frame-ancestors 'self' http://127.0.0.1:18100" in response.headers["content-security-policy"]
     assert "set-cookie" not in response.headers
 
 

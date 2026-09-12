@@ -544,7 +544,7 @@ class OwnerAuthMiddleware:
                 if scope["type"] == "websocket":
                     await _websocket_response(send, 403, "office_asset_method_rejected", scope)
                     return
-                frame_ancestors = " ".join(sorted(self.auth_state.effective_origins)) or "'none'"
+                frame_ancestors = "'self' " + " ".join(sorted(self.auth_state.effective_origins))
                 await serve_asset(scope, receive, send, self.office_assets, self.auth_state.port, frame_ancestors)
                 return
         headers = _headers(scope)
