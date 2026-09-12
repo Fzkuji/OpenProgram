@@ -5,7 +5,6 @@ import subprocess
 from urllib.parse import urlsplit
 
 import pytest
-from playwright.sync_api import expect, sync_playwright
 
 pytestmark = pytest.mark.browser
 
@@ -24,6 +23,8 @@ def bundles(tmp_path_factory):
 
 @pytest.fixture
 def browser_page(bundles):
+    from playwright.sync_api import sync_playwright
+
     with sync_playwright() as runtime:
         browser = runtime.chromium.launch(headless=True)
         page = browser.new_page()
@@ -64,6 +65,8 @@ def browser_page(bundles):
 
 
 def test_document_window_preview_edit_autosave_history(browser_page):
+    from playwright.sync_api import expect
+
     page, state, errors = browser_page
     page.goto("https://document.test/")
     expect(page.get_by_role("button", name="Preview", exact=True)).to_have_attribute("aria-pressed", "true")
@@ -205,6 +208,8 @@ def test_unmounted_blob_draft_blocks_rename_and_flushes_before_close(browser_pag
 
 
 def test_typing_does_not_redecode_the_entire_text_blob(browser_page):
+    from playwright.sync_api import expect
+
     page, state, errors = browser_page
     state["body"] = b"a" * (256 * 1024)
     page.goto("https://document.test/")
