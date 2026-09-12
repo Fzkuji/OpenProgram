@@ -99,7 +99,7 @@ def extract_messages(frame, group, members):
     rows = sorted(
         [
             line
-            for line in _lines(frame)
+            for line in frame["lines"]
             if width * 0.33 < line["x"] < width * 0.93
             and height * 0.09 < line["y"] < height * 0.73
         ],
@@ -125,6 +125,11 @@ def extract_messages(frame, group, members):
             )
 
     for row in rows:
+        if row.get("confidence", 0) < 0.8:
+            # An unreadable sender/date is a boundary, not a line to omit.
+            # Do not transfer attribution across an uncertain fragment.
+            date, date_row, author, author_row, body = None, None, None, None, []
+            continue
         stamp = _date_label(row["label"], frame["captured_at"])
         # Date separators are central; sender labels are left-aligned. A date
         # quoted inside a report cannot relabel another member's message.
@@ -180,7 +185,12 @@ class WeChatWindow:
             import ScreenCaptureKit
         except ImportError as exc:
             raise VisualUnavailable("NATIVE_DEPENDENCIES_UNAVAILABLE") from exc
-        self.appkit, self.cg, self.sc = AppKit, Quartz, ScreenCaptureKit
+        self.appkit, self.cg, self.sc, self.ax = (
+            AppKit,
+            Quartz,
+            ScreenCaptureKit,
+            ApplicationServices,
+        )
         AppKit.NSApplication.sharedApplication()
         if (
             not Quartz.CGPreflightScreenCaptureAccess()
@@ -406,6 +416,8 @@ class WeChatWindow:
             raise VisualUnavailable("SEARCH_UNAVAILABLE")
         self._click_line(frame, targets[0])
         self.check()
+        if not self._search_has_focus():
+            raise VisualUnavailable("SEARCH_FOCUS_UNVERIFIABLE")
         # Unicode insertion is fixed to a validated single-line group name.
         # No Return, clipboard paste, hotkey or arbitrary text action exists.
         event = self.cg.CGEventCreateKeyboardEvent(None, 0, True)
@@ -414,6 +426,26 @@ class WeChatWindow:
         )
         self.cg.CGEventPostToPid(self.pid, event)
         time.sleep(0.25)
+
+    def _search_has_focus(self):
+        # OCR identifies where to click; it cannot prove keyboard focus. A
+        # custom-rendered app without this native focus contract must wait for
+        # the user to open the exact group, never type into an unknown field.
+        root = self.ax.AXUIElementCreateApplication(self.pid)
+        error, element = self.ax.AXUIElementCopyAttributeValue(
+            root, "AXFocusedUIElement", None
+        )
+        if error or element is None:
+            return False
+        error, subrole = self.ax.AXUIElementCopyAttributeValue(
+            element, "AXSubrole", None
+        )
+        if error or subrole != "AXSearchField":
+            return False
+        error, focused = self.ax.AXUIElementCopyAttributeValue(
+            element, "AXFocused", None
+        )
+        return not error and bool(focused)
 
     def select_group(self, frame, group):
         targets = [

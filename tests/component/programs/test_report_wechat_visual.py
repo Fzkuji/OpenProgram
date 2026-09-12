@@ -188,3 +188,29 @@ def test_unlisted_sender_content_does_not_enter_prior_members_report():
     )
     (block,) = visual.extract_messages(frame, "Target group", ["A", "B"])
     assert block["text"] == "A progress"
+
+
+def test_low_confidence_sender_invalidates_attribution():
+    unknown = _row("Unknown sender", 350, 210)
+    unknown["confidence"] = 0.7
+    frame = _frame(
+        [
+            _row("星期四 15:00", 600, 90),
+            _row("A", 350, 130),
+            _row("A progress", 370, 170),
+            unknown,
+            _row("Private unrelated message", 370, 250),
+            _row("B", 350, 300),
+        ]
+    )
+    assert visual.extract_messages(frame, "Target group", ["A", "B"]) == []
+
+
+def test_failed_search_focus_never_sends_keyboard_input():
+    window = object.__new__(visual.WeChatWindow)
+    window.check = lambda: None
+    window._click_line = lambda *args: None
+    window._search_has_focus = lambda: False
+    # No cg object exists: accessing keyboard APIs would fail this test.
+    with pytest.raises(visual.VisualUnavailable, match="SEARCH_FOCUS_UNVERIFIABLE"):
+        window.search(_frame([_row("搜索", 100, 20)]), "Target group")
