@@ -250,6 +250,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("Agentic Workflows", "Agentic Workflows", [
             "capabilities/workflows/README.md",
             "capabilities/workflows/authoring.md",
+            "capabilities/workflows/reports.md",
             "capabilities/workflows/gui-agent.md",
             "capabilities/workflows/research-agent.md",
             "capabilities/workflows/wiki-agent.md"]),
@@ -406,6 +407,7 @@ PAGE_ORDER: dict[str, int] = {
     "capabilities/agentic-programming/embedding-in-your-own-stack.md": 2,
     "capabilities/agentic-programming/writing-functions": 3,
     "capabilities/agentic-programming/choosing-the-next-step": 4,
+    "capabilities/workflows/reports.md": 0,
     "capabilities/workflows/gui-agent.md": 1,
     "capabilities/workflows/research-agent.md": 2,
     "capabilities/workflows/wiki-agent.md": 3,
