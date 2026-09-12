@@ -201,7 +201,8 @@ duplicated in this historical distribution ledger.
 ### Current v0.8.2 release acceptance
 
 - The release candidate integrates conversation-bound browser previews, bounded history paging and stack-safe long-session graph layout.
-- Source, lockfile, Desktop and installer versions agree. Independent reviews cover the combined candidate; final validation and publication evidence remain pending.
+- Source, lockfile, Desktop and installer versions agree. Independent specification and quality reviews, the full combined verification, packaged-runtime smoke, and default-App long-history replay pass.
+- Publication requires successful native runtime, Desktop and CLI installer jobs, followed by release manifest and asset verification.
 - Runtime capability verification and checksum requirements remain unchanged. Windows Desktop publication requires configured signing credentials.
 
 ## Short public installer batch
