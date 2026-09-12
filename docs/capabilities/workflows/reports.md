@@ -13,6 +13,27 @@ unavailable controls return a recoverable state instead of a completed report.
 | `tencent_weekly_report(task)` | Approximately 100 Chinese characters of Tencent progress for a leader, intended for Friday afternoon | Local draft only |
 | `report(task)` | Route one or several report requests and retain separate results | Prepares drafts; does not inherit permission to submit a personal report |
 
+## Prepare a Tencent report from existing records
+
+Select `tencent_weekly_report` in Abilities and enter `Prepare this week's Tencent
+report`. The Workflow uses the current ISO week in Asia/Shanghai. It first reuses
+original current-week Tencent evidence in the workspace's `reports` directory,
+then considers other report sources and dated OpenProgram memory. Explicit
+materials take precedence. Records from other weeks, uncertain month/year-only
+dates, untrusted memory and explicit test records are excluded. Other audiences
+require source selection with exact quotes; they are not automatically treated
+as Tencent work. Discovery is bounded, so unavailable or insufficient sources
+still require clarification. Optional `report_roots` selects up to five source
+directories.
+
+Successful Tencent and `report` calls return the report body directly. Sources,
+character count and model-call information remain in local draft files. For
+programmatic composition, pass `"result_format": "structured"` in the JSON task;
+this returns the status, artifact paths and recovery object. The coordinator
+uses this mode internally. Generation and verification use low reasoning effort,
+a 180-second per-call limit and preserved retry budgets. Model failures do not
+produce a success draft.
+
 ## Prepare several reports
 
 Select `report` in Abilities and supply a JSON string as `task`:
@@ -55,7 +76,7 @@ with verbatim source validation. Ambiguous requests ask for the intended audienc
 
 ## Continue incomplete work
 
-The coordinator returns a status for every child and a `resume_task` object. Pass
+In structured mode, the coordinator returns a status for every child and a `resume_task` object. Pass
 that object back as the next `task`, optionally adding audience-specific updates:
 
 ```json
