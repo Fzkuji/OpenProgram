@@ -109,6 +109,14 @@ and <a href="testing/test-system.html">test-system design</a> to select the requ
 <pre><code class="language-sh">python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.build
 python<span class="w"> </span>-m<span class="w"> </span>scripts.docs_site.checklinks
 </code></pre>
+<h2 id="module-organization">Module organization and file-operation safety</h2>
+<p>Feature modules own their types, state and private helpers together. Directory size is a review signal, not a reason to create arbitrary layers. Web browser, tab, desktop, execution and file responsibilities have explicit modules. Server file actions and turn-file history use separate packages. Authentication groups account and login orchestration; self-update groups verification, repair and delivery. Tests retain their execution layer and add feature directories; discovery includes nested tests.</p>
+<p>Large source files are decomposed at independently testable responsibility boundaries. Public entry points remain stable. No wildcard forwarding, duplicated implementations or dynamic source execution is introduced to satisfy line-count limits. Native terminal rendering and cohesive route collections are reviewed separately from mixed-purpose utility directories.</p>
+<h3>File-operation contract</h3>
+<ul><li>Clipboard entries identify their source project. Cross-project paste is unavailable until an explicit cross-project transfer operation exists.</li><li>Mutations operate on the selected directory entry. Symbolic-link targets are never implicitly renamed or deleted; unsafe paths fail without changing either entry.</li><li>Deletion offers recoverable handling where supported. Exporting an unsaved draft does not authorize erasing the only confirmed retained copy; an unconfirmed browser download retains the local draft.</li><li>Refreshing files repeats the active search with its unchanged query and preserves request-generation isolation.</li></ul>
+<h3>Acceptance</h3>
+<p>Public WebSocket regression tests cover symbolic links. Mounted Web tests cover project clipboard ownership, active-search refresh and draft preservation. Module relocation preserves collected test identities and installed imports. Source and test inventories record directory counts and large-file responsibilities. All contributor Python layers, Web tests/typecheck/check/build, affected CLI and Desktop checks, documentation links and wheel import acceptance run before release. Specification and quality review are independent.</p>
+<p>These changes are planned; the status table is updated only after implementation and verification.</p>
 <h2 id="implementation-status">Implementation status<a class="header-anchor" href="#implementation-status">#</a></h2>
 <div class="doc-scroll" role="region" tabindex="0" aria-label="Implementation table"><table>
 <thead>
