@@ -40,7 +40,13 @@ can detect unsupported claims but are not a guarantee of factual correctness.
 For a group request, provide `source` (`wechat` or explicitly `supplied`), `group`,
 `week`, and the ordered `members` array. Supplied material additionally identifies
 its `member`. WeChat collection requires an accessible, verified group interface;
-if search or message metadata is unavailable, the Workflow returns a waiting state.
+versions without accessible message rows can use bounded window OCR. Captured
+pages and their original OCR rows are saved as local source evidence. Unknown
+authors, uncertain dates, clipped messages, and low-confidence boundaries remain
+unverified. If native search focus cannot be proved, open the requested group
+and resume; the Workflow still performs collection and summarization. A window
+that does not permit capture returns `WINDOW_CAPTURE_UNAVAILABLE`. No screen or
+WeChat settings are changed.
 The coordinator requests noninteractive waiting, allowing other reports to finish.
 
 Natural language can select a report type. Clearly identified single-audience
