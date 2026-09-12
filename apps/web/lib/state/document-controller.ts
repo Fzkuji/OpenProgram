@@ -60,13 +60,18 @@ export class DocumentController {
   }
   async flush() { if (this.timer) clearTimeout(this.timer); this.timer = null; if (this.maxTimer) clearTimeout(this.maxTimer); this.maxTimer = null; do { await this.publish(); } while (this.request || (this.state.status === "dirty" && !this.closed)); if (this.state.status === "error" || this.state.status === "conflict") throw new Error(this.state.error ?? "Document save failed."); }
   private async publish() {
-    if (this.closed || this.identity.kind !== "project" || !this.state.draft || !this.baseline) return;
     if (this.request) { await this.request; return; }
+    const run = this.publishInternal();
+    this.request = run.finally(() => { this.request = null; });
+    await this.request;
+  }
+  private async publishInternal() {
+    if (this.closed || this.identity.kind !== "project" || !this.state.draft || !this.baseline) return;
     const submitted = this.state.draft; const generation = this.generation; const baseline = this.baseline;
     const identity = this.identity;
     let key: string; try { key = idempotencyKeyFor("document_content_put", { project_id: this.identity.projectId, path: this.identity.path, revision: baseline.revision, generation, bytes_digest: await bytesDigest(submitted) }); } catch { this.setState({ status: "error", error: "Unable to create a document operation." }); return; }
     await this.draftPersist; if (this.state.status === "error") return; this.setState({ status: "saving", error: null });
-    this.request = (async () => {
+    const operation = (async () => {
       const url = `/api/documents/content?project_id=${encodeURIComponent(identity.projectId)}&path=${encodeURIComponent(identity.path)}`;
       const init: RequestInit = { method: "PUT", body: submitted, headers: { "content-type": submitted.type || "application/octet-stream", "x-baseline-revision": baseline.revision, "idempotency-key": key, "x-editor-id": this.editorId } };
       let response: Response | null = null; let error: unknown;
@@ -77,8 +82,8 @@ export class DocumentController {
       const result = await response.json() as { revision?: string; mtime?: number };
       const next = { bytes: submitted, revision: result.revision ?? baseline.revision, mtime: result.mtime }; this.baseline = next;
       if (generation === this.generation) { binaryDrafts.delete(identityKey(this.identity)); void removeBinary(identityKey(this.identity)); this.setState({ snapshot: next, draft: null, status: "idle", error: null }); } else this.setState({ status: "dirty" });
-    })().catch((e) => { if (this.state.status !== "conflict") this.setState({ status: "error", error: e instanceof Error ? e.message : "Document save failed." }); }).finally(() => { this.request = null; });
-    await this.request;
+    })().catch((e) => { if (this.state.status !== "conflict") this.setState({ status: "error", error: e instanceof Error ? e.message : "Document save failed." }); });
+    await operation;
   }
   async listHistory(limit = 25, cursor?: string): Promise<{ entries: DocumentHistoryEntry[]; next_cursor?: string | null }> { if (this.identity.kind !== "project") return { entries: [] }; const p = new URLSearchParams({ project_id: this.identity.projectId, path: this.identity.path, limit: String(limit) }); if (cursor) p.set("cursor", cursor); const r = await this.fetcher(`/api/documents/history?${p}`); if (!r.ok) throw new Error("Unable to load document history."); return r.json(); }
   async historyContent(version: string, side: "before" | "after" = "after") { if (this.identity.kind !== "project") throw new Error("History is unavailable for attachments."); const p = new URLSearchParams({ project_id: this.identity.projectId, path: this.identity.path, version, side }); const r = await this.fetcher(`/api/documents/history/content?${p}`); if (!r.ok) throw new Error("Unable to read document history."); return r.blob(); }
