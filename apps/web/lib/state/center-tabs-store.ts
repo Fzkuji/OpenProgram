@@ -155,6 +155,19 @@ export interface CenterTab {
   dagView?: boolean;
 }
 
+export interface FileNavigationSnapshot {
+  projectId: string;
+  path: string;
+  selectedType: "file" | "dir";
+  expanded: string[];
+  scroll: { path: string; offset: number } | null;
+}
+
+export interface FileNavigationHistory {
+  entries: FileNavigationSnapshot[];
+  index: number;
+}
+
 /** Extra context a file-tab opener may carry: which turn's diff to
  *  show, and where to jump. All optional — the plain 2-arg
  *  `openFileTab(projectId, path)` stays the raw-editor open. */
@@ -178,6 +191,8 @@ export interface CenterTabsState {
   groups: CenterTabGroup[];
   splitWebTabId: string | null;
   splitRatio: number;
+  /** Renderer-only file-tree navigation; intentionally separate from tab persistence. */
+  fileNavigationHistory: FileNavigationHistory;
   setActive: (id: string) => void;
   moveTab: (id: string, beforeId: string | null) => void;
   moveGroup: (groupId: string, beforeId: string | null) => void;
@@ -198,6 +213,8 @@ export interface CenterTabsState {
   /** Navigate the active session tab, otherwise create a session tab. */
   openSessionTab: (sessionId: string, title: string) => void;
   navigateSessionHistory: (direction: -1 | 1) => void;
+  canNavigateFile: (direction: -1 | 1) => boolean;
+  recordFileNavigation: (snapshot: FileNavigationSnapshot) => void;
   removeSessionFromHistory: (sessionId: string) => void;
   /** Create a distinct draft. An active NTP is replaced in place;
    *  otherwise the draft is appended. Returns its provisional id. */
@@ -353,6 +370,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     groups: initial.groups,
     splitWebTabId: initial.splitWebTabId,
     splitRatio: initial.splitRatio,
+    fileNavigationHistory: { entries: [], index: -1 },
 
     setActive: (id) =>
       set((s) => {
@@ -549,13 +567,25 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
 
     navigateSessionHistory: (direction) => set(s => {
       const active = s.tabs.find(tab => tab.id === s.activeId);
-      if (!active || (direction !== -1 && direction !== 1)) return {};
+      if (direction !== -1 && direction !== 1) return {};
+      if (!active) {
+        const history = s.fileNavigationHistory;
+        const index = history.index + direction;
+        return index >= 0 && index < history.entries.length
+          ? { fileNavigationHistory: { ...history, index } } : {};
+      }
       const history = sessionHistory(active);
       const index = history.index + direction;
       if (active.kind !== "session" || index < 0 || index >= history.entries.length) {
         const pages = active.pageHistory;
         const pageIndex = (pages?.index ?? 0) + direction;
-        if (!pages || pageIndex < 0 || pageIndex >= pages.entries.length) return {};
+        if (!pages || pageIndex < 0 || pageIndex >= pages.entries.length) {
+          if (active.kind !== "file") return {};
+          const fileHistory = s.fileNavigationHistory;
+          const fileIndex = fileHistory.index + direction;
+          return fileIndex >= 0 && fileIndex < fileHistory.entries.length
+            ? { fileNavigationHistory: { ...fileHistory, index: fileIndex } } : {};
+        }
         const entries = [...pages.entries];
         entries[pages.index] = tabPage(active);
         const target = entries[pageIndex];
@@ -585,6 +615,21 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       if (active.sessionId) closedSessionAckTombstones.add(active.sessionId);
       const next = withSessionHistory(active, { ...history, index });
       return commitCenterTabsState(s, { tabs: s.tabs.map(tab => tab.id === active.id ? next : tab) });
+    }),
+
+    canNavigateFile: (direction) => {
+      const history = useCenterTabs.getState().fileNavigationHistory;
+      return (direction === -1 || direction === 1)
+        && history.index + direction >= 0
+        && history.index + direction < history.entries.length;
+    },
+
+    recordFileNavigation: (snapshot) => set((s) => {
+      const history = s.fileNavigationHistory ?? { entries: [], index: -1 };
+      const current = history.entries[history.index];
+      if (current && JSON.stringify(current) === JSON.stringify(snapshot)) return {};
+      const entries = history.entries.slice(0, history.index + 1);
+      return { fileNavigationHistory: { entries: [...entries, snapshot], index: entries.length } };
     }),
 
     removeSessionFromHistory: (sessionId) => {

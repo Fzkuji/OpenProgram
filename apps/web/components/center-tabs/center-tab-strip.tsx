@@ -61,8 +61,10 @@ export function CenterTabStrip() {
 
   const activeSessionTab = useCenterTabs(s => s.tabs.find(tab => tab.id === s.activeId));
   const navigateSessionHistory = useCenterTabs(s => s.navigateSessionHistory);
-  const canGoBack = canNavigateTabPage(activeSessionTab, -1);
-  const canGoForward = canNavigateTabPage(activeSessionTab, 1);
+  const canNavigateFile = useCenterTabs(s => s.canNavigateFile);
+  const fileNavigationActive = activeSessionTab?.kind === "file";
+  const canGoBack = canNavigateTabPage(activeSessionTab, -1) || (fileNavigationActive && canNavigateFile(-1));
+  const canGoForward = canNavigateTabPage(activeSessionTab, 1) || (fileNavigationActive && canNavigateFile(1));
   const groups = useCenterTabs((s) => s.groups);
   const activeId = useCenterTabs((s) => s.activeId);
 

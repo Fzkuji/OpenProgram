@@ -145,6 +145,11 @@ export function FileTree({
 }) {
   const { text } = useTranslation();
   const openFileTab = useCenterTabs((s) => s.openFileTab);
+  const recordFileNavigation = useCenterTabs((s) => s.recordFileNavigation);
+  const fileNavigationEntry = useCenterTabs((s) => {
+    const history = s.fileNavigationHistory;
+    return history && history.index >= 0 ? history.entries[history.index] : null;
+  });
   // Highlight the file whose center tab is active (primitive selector,
   // so recomputing per store change is re-render-safe).
   const activePath = useCenterTabs((s) => {
@@ -153,7 +158,21 @@ export function FileTree({
       ? (t.path ?? null)
       : null;
   });
+  const recordNavigation = (path: string, type: "file" | "dir", expandedPaths = expanded) => {
+    if (!recordFileNavigation) return;
+    const getScrollState = (pierreRef.current as (PierreTreeHandle & {
+      getScrollState?: () => { path: string; offset: number } | null;
+    }) | null)?.getScrollState;
+    recordFileNavigation({
+      projectId,
+      path,
+      selectedType: type,
+      expanded: [...expandedPaths].sort(),
+      scroll: getScrollState?.() ?? null,
+    });
+  };
   const openFile = (path: string) => {
+    recordNavigation(path, "file");
     openFileTab(projectId, path);
     navigate("/chat");
   };
@@ -190,6 +209,7 @@ export function FileTree({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const pierreRef = useRef<PierreTreeHandle>(null);
+  const pendingScrollRestore = useRef<{ path: string; offset: number } | null>(null);
   const [detailsInline, setDetailsInline] = useState(false);
   useEffect(() => {
     if (!central) return;
@@ -215,6 +235,22 @@ export function FileTree({
   const searchControllers = useRef(new Set<AbortController>());
   const revealTarget = useRef<string | null>(null);
   const revealScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!fileNavigationEntry || fileNavigationEntry.projectId !== projectId) return;
+    setExpanded(new Set(fileNavigationEntry.expanded));
+    setSelected({ path: fileNavigationEntry.path, type: fileNavigationEntry.selectedType });
+    pendingScrollRestore.current = fileNavigationEntry.scroll;
+  }, [fileNavigationEntry, projectId]);
+
+  useEffect(() => {
+    const pending = pendingScrollRestore.current;
+    if (!pending) return;
+    const restore = (pierreRef.current as PierreTreeHandle & {
+      restoreScrollState?: (state: { path: string; offset: number }) => boolean;
+    } | null)?.restoreScrollState;
+    if (restore?.(pending)) pendingScrollRestore.current = null;
+  }, [dirs, expanded, fileNavigationEntry]);
 
   function abortSearchQueries(): void {
     for (const controller of searchControllers.current) controller.abort();
@@ -1121,7 +1157,7 @@ export function FileTree({
             }
           }}
           onExpandedChange={next => { setExpanded(next); for (const path of next) if (dirs[path] === undefined) void load(path); }}
-          onSelect={(path, type) => setSelected({ path, type })} onOpen={openFile} onContextMenu={onRowContextMenu} />
+          onSelect={(path, type) => { setSelected({ path, type }); recordNavigation(path, type); }} onOpen={openFile} onContextMenu={onRowContextMenu} />
       </div>
       {visibleDirectories.map(dir => <div key={dir}>
         {dir && dirs[dir] === "loading" ? <div className={styles.treeHint}>{dir} · {text("Loading…", "加载中…")}</div> : null}
@@ -1136,9 +1172,9 @@ export function FileTree({
         leading={headerExtra}
         pathNavigation={<FileBreadcrumb absolutePath={projectRoot ? `${projectRoot.replace(/\/$/, "")}/${selected?.path ?? activePath ?? ""}`.replace(/\/$/, "") || "/" : undefined} root={projectRoot ? baseOf(projectRoot) : text("Project", "项目")} path={selected?.path ?? activePath ?? ""} onLocate={path => {
           setFilter("");
-          if (!path) { setSelected({ path: "", type: "dir" }); pierreRef.current?.scrollToTop(); return; }
+          if (!path) { setSelected({ path: "", type: "dir" }); recordNavigation("", "dir", expanded); pierreRef.current?.scrollToTop(); return; }
           const type = path === selected?.path ? selected.type : path === activePath ? "file" : "dir";
-          void locateTreePath(path, type).then(found => { if (found) { setSelected({ path, type }); revealTarget.current = path; } });
+          void locateTreePath(path, type).then(found => { if (found) { setSelected({ path, type }); recordNavigation(path, type); revealTarget.current = path; } });
         }} />}
         rootName={projectRoot ? baseOf(projectRoot) : text("Resolving project…", "正在读取项目…")}
         rootPath={projectRoot}
