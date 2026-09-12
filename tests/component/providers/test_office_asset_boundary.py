@@ -56,7 +56,7 @@ def boundary_app(tmp_path: Path):
 
     @app.get("/api/documents/office-host")
     async def availability(request: Request):
-        return office_assets.office_host_availability(request, pack)
+        return office_assets.office_host_availability(request, request.app.state.office_assets)
 
     @app.get("/api/x")
     async def api():
@@ -70,6 +70,7 @@ def boundary_app(tmp_path: Path):
         allowed_origins=(),
     )
     app.state.owner_auth = state
+    app.state.office_assets = pack
     return OwnerAuthMiddleware(app, auth_state=state, office_assets=pack), pack
 
 
@@ -114,3 +115,27 @@ def test_office_host_rejects_unknown_paths_methods_and_main_api(boundary_app):
         assert client.post("/office-host.html", headers=headers).status_code == 405
         assert client.get("/api/x", headers={**headers, "authorization": "Bearer invalid"}).status_code == 404
         assert client.get("/office-host.html", headers={"host": "evil.office.localhost:18100"}).status_code == 403
+
+
+@pytest.mark.parametrize(("field", "value"), (("source", "wrong-source"), ("packageVersion", "9.9.9")))
+def test_unverified_source_or_package_closes_assets_and_availability(boundary_app, field, value):
+    app, pack = boundary_app
+    manifest_path = pack.root / "openprogram-office-assets.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest[field] = value
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    invalid = __import__("openprogram.webui.office_assets", fromlist=["OfficeAssetPack"]).OfficeAssetPack.from_root(pack.root)
+    app.office_assets = invalid
+    app.app.state.office_assets = invalid
+    auth = {
+        "origin": "http://127.0.0.1:18100",
+        "host": "127.0.0.1:18100",
+        "authorization": "Bearer " + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("="),
+    }
+    with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 50000)) as client:
+        availability = client.get("/api/documents/office-host", headers=auth)
+        asset = client.get("/office-host.html", headers={"host": "host-abc.office.localhost:18100"})
+    assert invalid.available is False
+    assert availability.status_code == 200
+    assert availability.json()["available"] is False
+    assert asset.status_code == 503

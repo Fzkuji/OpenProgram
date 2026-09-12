@@ -16,6 +16,8 @@ from openprogram.backend_endpoint import is_loopback_host
 from openprogram.updater.detect import managed_runtime_root
 
 _MANIFEST = "openprogram-office-assets.json"
+OFFICE_SOURCE = "d15d12b6945be4d8b0f3aa1806120e740d2950ee"
+OFFICE_PACKAGE_VERSION = "0.3.34"
 _HOST_RE = re.compile(r"^host-([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\.office\.localhost$")
 _BOOTSTRAP = frozenset({
     "office-host.html", "reset.html", "document_editor_service_worker.js", "sw.js",
@@ -47,6 +49,8 @@ class OfficeAssetPack:
             manifest = json.loads(raw)
             if not isinstance(manifest, dict) or manifest.get("version") != 1:
                 raise ValueError("invalid Office asset manifest version")
+            if manifest.get("source") != OFFICE_SOURCE or manifest.get("packageVersion") != OFFICE_PACKAGE_VERSION:
+                raise ValueError("unverified Office asset identity")
             for key in ("packageVersion", "hostBuildId", "source", "assets", "licenses"):
                 if not manifest.get(key):
                     raise ValueError("invalid Office asset manifest")
