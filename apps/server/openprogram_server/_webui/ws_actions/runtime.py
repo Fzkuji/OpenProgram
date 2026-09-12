@@ -269,7 +269,9 @@ def validate_execution_command_request(cmd: dict, operation: str) -> str | None:
         or not isinstance(payload, dict)
     ):
         return "invalid_command"
-    if operation in {"pause", "continue", "step", "cancel"}:
+    if operation == "continue":
+        return None if not payload or (set(payload) == {"code_change_policy"} and payload["code_change_policy"] in ("keep_original", "use_latest")) else "invalid_payload"
+    if operation in {"pause", "step", "cancel"}:
         return None if not payload else "invalid_payload"
     if operation == "steer":
         message = payload.get("message")
@@ -640,9 +642,10 @@ async def submit_execution_control(
                 service.request_continue if operation == "continue"
                 else service.request_step
             )
+            extra = {"code_change_policy": cmd.get("payload", {}).get("code_change_policy")} if operation == "continue" and cmd.get("payload") else {}
             dispatch = await request(
                 command_id=command_id, execution_id=execution_id,
-                expected_version=expected_version, actor=actor,
+                expected_version=expected_version, actor=actor, **extra,
             )
         return dispatch.command, dispatch.execution
     except (ExecutionConflict, CommandConflict, AttemptConflict, InvalidCommand) as exc:

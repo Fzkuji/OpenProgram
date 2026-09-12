@@ -26,6 +26,7 @@ You can use bare `@agentic_function` or the parameterized form `@agentic_functio
 
 | Parameter | Type | Default | Description |
 |------|------|------|------|
+| `resumable` | `bool` | `False` | Opt in to explicit durable steps, JSON state, and function code selection after restart. See below. |
 | `expose` | `str` | `"io"` | **Outward-facing**: what others can see about me when they render the DAG. `"io"` = only the function's name and return value are visible externally, while its internals (LLM exchanges, sub-calls) are hidden; `"llm"` = the reverse, exposing only the internal LLM exchanges and hiding the function's own name/return value and nested code sub-calls; `"full"` = everything visible (docstring + params + output + LLM replies + internals); `"hidden"` = no DAG nodes are written at all. Any other value raises `ValueError` at decoration time |
 | `render_range` | `dict` | `None` | **Inward-facing**: how many history nodes to read from the DAG when this function's internal `llm()` call assembles its prompt. Shape `{"callers": N, "subcalls": M}`, where both numbers are **node counts (sliced by `seq`)**:<br>• `callers` — nodes written **before** this function's frame started; take the most recent N (`None` default = unlimited, `0` = a full wall)<br>• `subcalls` — nodes already written **after** this function's frame started; take the most recent N (`-1` default = unlimited, so the frame naturally sees its own progress; `N>=0` = set explicitly when you want to truncate the prompt; `0` = wall off in-frame entirely)<br>`{"callers":0,"subcalls":0}` = cut off from both the outside world and your own frame |
 | `input` | `dict` | `None` | Per-parameter UI metadata; the WebUI renders the input form from it. Supported fields per parameter: `description` (label next to the name), `placeholder` (example text), `multiline` (`True` = textarea), `options` (list of allowed values, rendered as a dropdown and emitted as a JSON-schema `enum`), `hidden` (`True` = exclude from the form and from the LLM tool schema) |
@@ -77,3 +78,27 @@ Parameters named `runtime`, `exec_runtime`, or `review_runtime` are auto-injecte
 - **Exiting the function**: backfill the same `code` node's `output` / `status`.
 
 When `expose="hidden"`, no nodes are written. In standalone runs (with no DAG store installed), all recording is a no-op and the function executes as usual.
+
+## Durable steps and code selection
+
+Use `@agentic_function(resumable=True)` for synchronous orchestration whose external work is inside explicit steps:
+
+```python
+from openprogram import agentic_function
+from openprogram.agentic_programming.continuation import step
+
+@agentic_function(resumable=True)
+def report(topic: str):
+    research = step("research", collect_research, topic)
+    return step("write", write_report, research)
+```
+
+Define `collect_research` and `write_report` as ordinary source-defined functions. Step inputs and results must be JSON-compatible. A completed step returns its saved result on continuation, without calling its action again. Repeated step names are distinguished by occurrence; keep their order and completed inputs stable. Put nested orchestration in `workflow("name", function, *args, **kwargs)`. `parallel({"branch": (function, args, kwargs)})` runs named workflows concurrently and waits for every branch before releasing ownership. Each branch has independent durable progress.
+
+In Settings, `execution.code_change_policy` selects `keep_original` (default) or `use_latest`. The task's Continue control can override that policy. Python function and helper source is retained with the execution. After adopting B, a later restart with `keep_original` retains B, even if the installed code is now C. A candidate that fails compatibility before adopting any remaining step does not replace the retained active version. Imported module identities are checked; an unavailable or changed pinned dependency pauses recovery. With `use_latest`, completed results remain saved and the current function executes the remaining compatible steps. Deleted or reordered recorded steps and changed completed inputs pause the task instead of repeating an action. Changes to permissions or tool parameter contracts still require compatibility checks. If B needs a different local state shape, write that conversion as pure orchestration over saved JSON before its remaining steps.
+
+Manual calls resume the same execution and function record. Chat calls return their eventual result to the original pending tool call. The existing two-hour automatic restart window applies to restart-owned interruptions. Explicit pauses, cancellation, unanswered approvals, and uncertain external results do not become automatic retries.
+
+This contract restores execution at explicit steps, not arbitrary Python stack frames. Calls and external mutations outside steps, asynchronous orchestration, generators, live handles, and non-JSON results are not supported. If a process dies after an external action starts but before its result is committed, recovery requires reconciliation; it cannot assume that action failed. The function run dialog distinguishes functions that declare this contract from ordinary functions that require a new run after interruption.
+
+Do not share mutable Python globals, closures or defaults between steps. Pass persistent state through JSON step inputs and results; process-local mutations are not a recovery protocol.

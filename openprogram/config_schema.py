@@ -496,6 +496,14 @@ def _validate_outbound_url_settings(value: Any) -> Optional[str]:
 
 SETTINGS: list[SettingSpec] = [
     SettingSpec(
+        key="execution.code_change_policy", path=("execution", "code_change_policy"),
+        group="Execution", label="Function code after restart", widget="enum",
+        apply=APPLY_LIVE, default="keep_original", choices=lambda: ["keep_original", "use_latest"],
+        help="Durable functions keep their original code by default. use_latest resumes with current code "
+             "and saved step results. Incompatible progress requires explicit recovery. "
+             "An individual Continue command can override this choice.",
+    ),
+    SettingSpec(
         key="execution.auto_resume_window_seconds", path=("execution", "auto_resume_window_seconds"),
         group="Execution", label="Automatic restart window (seconds)", widget="number",
         apply=APPLY_LIVE, default=7200, minimum=0,

@@ -772,6 +772,7 @@ class agentic_function:
         # decorator adds DAG recording + inner agent loop spawning on
         # top of the shared registration machinery.
         as_tool: bool = True,
+        resumable: bool = False,
         name: Optional[str] = None,
         description: Optional[str] = None,
         parameters: Optional[dict] = None,
@@ -811,6 +812,7 @@ class agentic_function:
         self.input_meta = input or {}
         self.system = system
         self.as_tool = as_tool
+        self.resumable = resumable
         self.tool_name = name
         self.tool_description = description
         self.tool_parameters = parameters
@@ -885,6 +887,8 @@ class agentic_function:
                     return fn
             except Exception:
                 return fn
+        if self.resumable and inspect.iscoroutinefunction(fn):
+            raise ValueError("resumable functions currently require synchronous explicit steps")
         self._fn = fn
         self._wrapper = self._make_wrapper(fn)
         functools.update_wrapper(self, fn)
@@ -1078,6 +1082,7 @@ class agentic_function:
         # collapsed tool-call card.
         try:
             setattr(self._agent_tool, "_is_agentic", True)
+            setattr(self._agent_tool, "_resumable", self.resumable)
             setattr(self._agent_tool, "_source_module", self._fn.__module__)
         except Exception:
             pass
@@ -1090,6 +1095,7 @@ class agentic_function:
         return self._make_sync_wrapper(fn, sig)
 
     def _make_async_wrapper(self, fn: Callable, sig: inspect.Signature) -> Callable:
+        from .continuation import FunctionSuspended
         self_ref = self
         expose = self.expose
         render_range = self.render_range
@@ -1184,6 +1190,9 @@ class agentic_function:
             try:
                 output = await fn(*new_args, **new_kwargs)
                 return output
+            except FunctionSuspended:
+                status = "paused"
+                raise
             except CancelledError:
                 error = "Cancelled by user"
                 status = "cancelled"
@@ -1217,6 +1226,7 @@ class agentic_function:
         return wrapper
 
     def _make_sync_wrapper(self, fn: Callable, sig: inspect.Signature) -> Callable:
+        from .continuation import FunctionSuspended
         self_ref = self
         expose = self.expose
         render_range = self.render_range
@@ -1238,7 +1248,8 @@ class agentic_function:
             if _forced_nid and not (_call_id.get() or ""):
                 _pending_call_id = _forced_nid
             else:
-                _pending_call_id = _uuid.uuid4().hex[:12]
+                from .continuation import current_function_node_id
+                _pending_call_id = current_function_node_id() or _uuid.uuid4().hex[:12]
             _started_at = time.time()
 
             bound = sig.bind(*new_args, **new_kwargs)
@@ -1310,8 +1321,15 @@ class agentic_function:
                 _self_name: _cur_depth + 1,
             })
             try:
-                output = fn(*new_args, **new_kwargs)
+                if self.resumable:
+                    from .continuation import invoke
+                    output = invoke(fn, self.tool_name or fn.__name__, new_args, new_kwargs)
+                else:
+                    output = fn(*new_args, **new_kwargs)
                 return output
+            except FunctionSuspended:
+                status = "paused"
+                raise
             except CancelledError:
                 error = "Cancelled by user"
                 status = "cancelled"

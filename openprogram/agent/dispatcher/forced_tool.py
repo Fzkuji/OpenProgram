@@ -196,6 +196,8 @@ def dispatch_forced_tool_call(
     # Canonical AgentDriver is the only owner allowed to finish the durable
     # execution. This leaf reports subprocess facts only; it never writes a
     # terminal state or patches lifecycle rows itself.
+    if out.get("function_suspended"):
+        return out
     if out.get("page_cleanup_failed"):
         return {
             "runtime_msg_id": resolved_execution_id or out.get("runtime_msg_id"),

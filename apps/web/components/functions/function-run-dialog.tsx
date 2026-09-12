@@ -126,6 +126,12 @@ export function FunctionRunDialog({ fn, onClose }: Props) {
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+          <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+            {fn.continuation?.supported
+              ? text("Declares durable steps. State and dependencies are checked before execution.", "已声明可恢复步骤，执行前会检查状态和依赖是否兼容。")
+              : text("No durable steps declared. Interrupted calls require a new run.", "未声明可恢复步骤，中断后需要重新运行。")}
+            {fn.continuation?.reason && <span> {fn.continuation.reason}</span>}
+          </p>
           {visible.length === 0 ? (
             <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>
               {text("No parameters. Click Run to execute.", "没有参数。点击运行即可执行。")}

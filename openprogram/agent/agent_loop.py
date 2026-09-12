@@ -1209,6 +1209,8 @@ async def _execute_tool_calls(
     Execute tool calls from an assistant message.
     Mirrors executeToolCalls() in TypeScript.
     """
+    from openprogram.agentic_programming.continuation import FunctionSuspended
+
     tool_calls = [c for c in assistant_message.content if isinstance(c, ToolCall)]
     results: list[ToolResultMessage] = []
     steering_messages: list[AgentMessage] | None = None
@@ -1345,6 +1347,17 @@ async def _execute_tool_calls(
                     if timeout is None
                     else await asyncio.wait_for(operation, timeout=timeout)
                 )
+        except FunctionSuspended:
+            if safe_point_hook is None:
+                raise
+            stop_at_safe_point = bool(await safe_point_hook("tool.suspended", {
+                "tool_call_id": str(tool_call.id), "tool_name": tool_call.name,
+                "next_tool_index": index, "repeat_failures": dict(repeat_failures),
+                "tool_call_ids": [str(call.id) for call in tool_calls],
+            }))
+            if not stop_at_safe_point:
+                raise
+            break
         except _SkipExecute:
             pass
         except Exception as e:

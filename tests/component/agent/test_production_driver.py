@@ -2946,3 +2946,44 @@ def test_iteration_exhaustion_finishes_canonical_execution_as_failed(tmp_path):
     assert result.failed
     assert "iteration limit" in result.error
     assert store.get_execution(execution.execution_id).status is ExecutionStatus.FAILED
+
+
+def test_function_suspension_retains_pending_agent_tool_slot(tmp_path, monkeypatch):
+    import importlib
+    function_module = importlib.import_module("openprogram.agentic_programming.function")
+    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
+    from openprogram.agent.continuation import AgentContinuation
+    from openprogram.execution.checkpoints import ExecutionCheckpointStore
+
+    store, attempts, control, driver, request, snapshot, execution, active, hook = _prepare_long_turn(tmp_path, "function-slot")
+    hook("provider.before", {"resolved_snapshot": snapshot, "context": {"messages": []}})
+    hook("provider.after", {
+        "message": {"role": "assistant", "content": [{"type": "toolCall", "id": "function-call", "name": "web_use", "arguments": {}}], "api": "fake", "provider": "fake", "model": "fake", "timestamp": 1},
+        "tool_call_ids": ["function-call"], "next_tool_index": 0,
+    })
+    hook("tool.before", {"tool_call_id": "function-call", "tool_name": "web_use", "arguments": {}})
+    from openprogram.agentic_programming.function import agentic_function
+    from openprogram.agentic_programming.continuation import function_execution
+
+    def completed_function():
+        return "saved result"
+
+    durable = agentic_function(completed_function, name="web_use", as_tool=False, resumable=True)
+    with function_execution(store, attempt_id=active.attempt_id, generation=active.generation, call_key="function-call", checkpoint_root=False):
+        durable()
+    asyncio.run(control.request_pause(command_id="pause-function", execution_id=execution.execution_id, expected_version=store.get_execution(execution.execution_id).status_version, actor={"surface": "test"}))
+    assert hook("tool.suspended", {"tool_call_id": "function-call", "tool_name": "web_use", "next_tool_index": 0, "tool_call_ids": ["function-call"]}) is True
+    paused = store.get_execution(execution.execution_id)
+    assert paused.status is ExecutionStatus.PAUSED
+    checkpoint = ExecutionCheckpointStore(store).get(paused.checkpoint_head_id)
+    continuation = AgentContinuation.from_checkpoint(store=store, checkpoint=checkpoint, request=request)
+    assert continuation.tool_results == ()
+    assert continuation.next_tool_index == 0
+    captured = {}
+
+    async def activate(attempt, activation):
+        captured["attempt"] = attempt
+
+    asyncio.run(control.request_continue(command_id="resume-function", execution_id=execution.execution_id, expected_version=paused.status_version, actor={"surface": "test"}, activator=activate))
+    resumed_hook = driver._safe_point_hook(captured["attempt"], request, threading.Event(), continuation=continuation)
+    assert resumed_hook("tool.before", {"tool_call_id": "function-call", "tool_name": "web_use", "arguments": {}}) is False

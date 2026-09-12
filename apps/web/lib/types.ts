@@ -55,6 +55,7 @@ export interface FunctionParamDetail {
 }
 
 export interface AgenticFunction {
+  continuation?: { supported: boolean; reason?: string; boundary?: string; state?: string };
   name: string;
   category: string;
   description: string;

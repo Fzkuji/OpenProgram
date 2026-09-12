@@ -783,6 +783,11 @@ class RuntimeControlService:
                 effect = self.effects._require(connection, effect_id)
                 if effect.execution_id != execution_id or effect.attempt_id != attempt_id or effect.status is not EffectStatus.DISPATCHED:
                     raise AgentSafePointConflict("effect_state_invalid", "Agent effect is not dispatched by this owner")
+                if terminal_receipt.get("function_suspended") is True:
+                    from openprogram.agentic_programming.continuation import suspension_evidence
+                    call_key = terminal_receipt.get("tool_call_id")
+                    if not isinstance(call_key, str) or not suspension_evidence(self.executions, connection, execution_id, call_key):
+                        raise AgentSafePointConflict("function_state_invalid", "Function suspension has no settled durable continuation")
                 try:
                     receipt_json = _json(dict(terminal_receipt))
                 except (TypeError, ValueError) as exc:
@@ -1307,8 +1312,11 @@ class RuntimeControlService:
         ttl_seconds: float | None = None,
         activator: Activator | None = None,
         driver: Any | None = None,
+        code_change_policy: str | None = None,
     ) -> ControlDispatch:
         """Resume a paused execution without changing its revision or identity."""
+        if code_change_policy is not None and (not isinstance(code_change_policy, str) or code_change_policy not in {"keep_original", "use_latest"}):
+            raise InvalidCommand("invalid_payload", "invalid function code policy")
         current = self.executions.get_execution(execution_id)
         input_record = self.executions.get_execution_input(execution_id) if current is not None else None
         if (
@@ -1330,6 +1338,7 @@ class RuntimeControlService:
             expected_version=expected_version,
             actor=actor,
             kind=CommandKind.CONTINUE,
+            payload={"code_change_policy": code_change_policy} if code_change_policy is not None else {},
             owner_id=owner_id or self.owner_id,
             ttl_seconds=ttl_seconds or self.lease_ttl_seconds,
         )
@@ -1693,6 +1702,7 @@ class RuntimeControlService:
         ttl_seconds: float,
         activate_existing_accepted: bool = False,
         allow_queued_initial_step: bool = False,
+        payload: Mapping[str, Any] | None = None,
     ) -> tuple[
         ControlCommand,
         ExecutionRecord,
@@ -1710,7 +1720,7 @@ class RuntimeControlService:
                 execution_id=execution_id,
                 expected_version=expected_version,
                 kind=kind,
-                payload={},
+                payload=dict(payload or {}),
                 actor=actor,
             )
             execution = self.executions._require_execution(connection, execution_id)
@@ -3248,6 +3258,19 @@ class RuntimeControlService:
             ):
                 return RecoveryCompletion(execution=execution)
 
+            from openprogram.agentic_programming.continuation import suspension_evidence
+            aggregate_rows = connection.execute(
+                "SELECT * FROM effects WHERE execution_id = ? AND status IN ('dispatched', 'uncertain') "
+                "AND json_extract(metadata_json, '$.kind') = 'tool.before'", (execution_id,),
+            ).fetchall()
+            for aggregate in aggregate_rows:
+                metadata = json.loads(aggregate["metadata_json"])
+                call_key = metadata.get("payload", {}).get("tool_call_id")
+                if isinstance(call_key, str) and suspension_evidence(self.executions, connection, execution_id, call_key):
+                    now = time.time()
+                    receipt = {"function_suspended": True, "tool_call_id": call_key, "reason": "owner_lost_at_durable_boundary"}
+                    connection.execute("UPDATE effects SET status = 'committed', receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?", (_json(receipt), now, now, aggregate["effect_id"]))
+                    self.effects._append_event(connection, execution.status_version, self.effects._require(connection, aggregate["effect_id"]), now)
             restart_pending = False
             agent_input = self.executions.get_agent_turn_input(execution_id)
             if (

@@ -207,9 +207,20 @@ def runtime_contract_snapshot(
 
 
 def validate_runtime_contract(
-    expected: Mapping[str, Any], actual: Mapping[str, Any]
+    expected: Mapping[str, Any], actual: Mapping[str, Any], *, durable_function_names=(),
 ) -> None:
-    """Reject any runtime drift before a continuation can dispatch work."""
+    """Reject runtime drift except implementations with durable function state."""
+    if durable_function_names and isinstance(expected, Mapping) and isinstance(actual, Mapping):
+        before = expected.get("tools")
+        after = actual.get("tools")
+        if isinstance(before, list) and isinstance(after, list):
+            retained = {tool.get("name"): tool for tool in before if isinstance(tool, Mapping)}
+            actual = dict(actual)
+            actual["tools"] = [
+                {**tool, "implementation": retained[tool["name"]].get("implementation")}
+                if isinstance(tool, Mapping) and tool.get("name") in durable_function_names and tool.get("name") in retained
+                else tool for tool in after
+            ]
     required = {
         "contract_version", "model", "system_prompt", "tools",
         "structured_output", "toolset", "request_semantics",

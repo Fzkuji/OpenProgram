@@ -408,7 +408,7 @@ class AgentProductionDriver:
                 "forced-tool activations do not support steering",
             )
         if activation is not None and activation.checkpoint is not None:
-            marker = activation.checkpoint.state_refs.get("forced_tool")
+            marker = activation.checkpoint.state_refs.get("forced_tool") or activation.checkpoint.state_refs.get("function")
             if not isinstance(marker, Mapping) or marker.get("version") != 1:
                 raise AgentDriverError(
                     "unsupported_activation_state",
@@ -476,6 +476,10 @@ class AgentProductionDriver:
                 and not (not surface and tool_input.get("backend"))
             )
             if not desktop_wait:
+                from openprogram.programs._runtime import get
+                tool = get(tool_name)
+                if tool is not None and getattr(tool, "_resumable", False):
+                    return CapabilitySet(pause=True, safe_point_kinds=("function.step.after",), state_schema_version=1)
                 return CapabilitySet()
             return CapabilitySet(
                 pause=True,
@@ -620,7 +624,8 @@ class AgentProductionDriver:
                     )
                 finally:
                     reset_worktree(_workdir_token)
-                validate_runtime_contract(continuation.resolved_snapshot, _contract)
+                from openprogram.agentic_programming.continuation import retained_function_names
+                validate_runtime_contract(continuation.resolved_snapshot, _contract, durable_function_names=retained_function_names(self.executions, execution.execution_id))
             except AgentCheckpointError as exc:
                 _log.warning("Agent continuation %s rejected: %s", execution.execution_id, exc)
                 raise AgentDriverError(exc.code, str(exc)) from exc
@@ -1109,6 +1114,25 @@ class AgentProductionDriver:
                         if request.surface_context_snapshot is not None else None
                     ),
                 )
+                if isinstance(result, Mapping) and result.get("function_suspended"):
+                    from openprogram.execution.checkpoints import CheckpointFragment
+                    from openprogram.agentic_programming.continuation import default_policy
+                    from openprogram.execution.restart import window_seconds
+                    service = self._control_service()
+                    current = self.executions.get_execution(attempt.execution_id)
+                    commands = self.executions.list_commands(attempt.execution_id, kinds=(CommandKind.PAUSE,), statuses=(CommandStatus.APPLYING,))
+                    if not commands:
+                        raise AgentDriverError("pause_command_missing", "Function suspension has no pending pause")
+                    service.arrive_safe_point(
+                        attempt_id=attempt.attempt_id, generation=attempt.generation,
+                        command_id=commands[0].command_id, expected_execution_version=current.status_version,
+                        fragment=CheckpointFragment(
+                            safe_point_kind="function.step.after",
+                            frontier=({"kind": "function.step.after", "call_key": result["call_key"]},),
+                            state_refs={"function": {"version": 1, "call_key": result["call_key"], "policy": default_policy(self.executions, attempt.execution_id)}, "restart_window_seconds": window_seconds()},
+                        ),
+                    )
+                    return _SafePointHandoff()
             else:
                 runner_kwargs = {
                     "request": request,
@@ -1351,7 +1375,7 @@ class AgentProductionDriver:
             input_hash: str | None = None,
             terminal_receipt: Mapping[str, Any] | None = None,
         ) -> AgentCheckpointV1:
-            phase = "after_provider" if kind in {"provider.after", "wait.before_tool"} else "after_tool"
+            phase = "after_provider" if kind in {"provider.after", "wait.before_tool", "tool.suspended"} else "after_tool"
             point_kind = (
                 "agent.wait.before_tool" if kind == "wait.before_tool" else
                 "agent.provider.decision.after" if phase == "after_provider"
@@ -1661,6 +1685,10 @@ class AgentProductionDriver:
                 else:
                     raise AgentDriverError("invalid_safe_point", "unsupported Agent effect boundary")
                 effect_id = f"effect_{action_id[:32]}"
+                previous = service.effects.get(effect_id)
+                if kind == "tool.before" and previous is not None and previous.receipt.get("function_suspended") is True:
+                    action_id = digest(action_id, str(attempt.generation))
+                    effect_id = f"effect_{action_id[:32]}"
                 supports_idempotency_key = (
                     kind == "provider.before"
                     and payload.get("supports_idempotency_key") is True
@@ -1768,6 +1796,8 @@ class AgentProductionDriver:
                             "tool_call_id": item.get("id"),
                             "input": json.dumps(item.get("arguments") or {}, default=str),
                         })
+            elif kind == "tool.suspended":
+                terminal_receipt = {"function_suspended": True, "tool_call_id": payload.get("tool_call_id")}
             elif kind == "tool.after":
                 result = payload.get("result")
                 if not isinstance(result, Mapping):
@@ -1846,7 +1876,8 @@ class AgentProductionDriver:
                 command_id=command.command_id if command is not None else None, managed_action_id=action_id,
                 consumed_steer_command_ids=tuple(sorted(steer_consumed_ids or ())),
             )
-            remember_completed_action()
+            if kind != "tool.suspended":
+                remember_completed_action()
             if command is not None and command.kind is CommandKind.STEER and steer_queue is not None:
                 consumed = steer_consumed_ids or set()
                 for applied in completion.applied_commands:
