@@ -48,7 +48,10 @@ class OfficeAssetPack:
             if pointer.is_file():
                 if pointer.is_symlink() or pointer.stat().st_size > 1024:
                     raise ValueError("invalid Office pack pointer")
-                version = json.loads(pointer.read_bytes()).get("version")
+                selection = json.loads(pointer.read_bytes())
+                if not isinstance(selection, dict):
+                    raise ValueError("invalid Office pack pointer")
+                version = selection.get("version")
                 if not isinstance(version, str) or not re.fullmatch(r"[a-f0-9]{64}", version):
                     raise ValueError("invalid Office pack version")
                 selected = root / "versions" / version

@@ -164,3 +164,13 @@ def test_install_rejects_unreviewed_font_generation(tmp_path: Path):
     with pytest.raises(ValueError, match='font'):
         install_office_pack(source, tmp_path / 'target')
     assert not (tmp_path / 'target/current.json').exists()
+
+
+def test_malformed_install_pointer_returns_unavailable(tmp_path: Path):
+    from openprogram.office_assets import OfficeAssetPack
+    target = tmp_path / 'installed'
+    target.mkdir()
+    (target / 'current.json').write_text('[]')
+    pack = OfficeAssetPack.from_root(target)
+    assert not pack.available
+    assert pack.unavailable_reason
