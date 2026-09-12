@@ -1,12 +1,10 @@
 "use client";
-import dynamic from "next/dynamic";
+import { lazy, Suspense, type ComponentProps } from "react";
 import { useTranslation } from "@/lib/i18n";
-function Loading() {
+const Window = lazy(() => import("./document-window").then((module) => ({ default: module.DocumentWindow })));
+
+/** Opening a file loads its window; ordinary chat startup does not. */
+export function DocumentWindow(props: ComponentProps<typeof Window>) {
   const { text } = useTranslation();
-  return <div role="status">{text("Loading…", "加载中…")}</div>;
+  return <Suspense fallback={<div role="status">{text("Loading…", "加载中…")}</div>}><Window {...props} /></Suspense>;
 }
-/** A file window needs browser storage and loads only after a file is opened. */
-export const DocumentWindow = dynamic(() => import("./document-window").then((module) => module.DocumentWindow), {
-  ssr: false,
-  loading: Loading,
-});
