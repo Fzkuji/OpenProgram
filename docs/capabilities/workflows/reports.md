@@ -2,8 +2,9 @@
 
 The report suite consists of three independently versioned Workflow packages and
 one coordinating `report` package. They must be installed in the Programs catalog;
-this source checkout alone does not install them. The current suite is undergoing
-release verification.
+this source checkout alone does not install them. The suite supports independent execution and composition through the `report` entry.
+Native WeChat collection depends on accessible search and conversation controls;
+unavailable controls return a recoverable state instead of a completed report.
 
 | Entry | Purpose | External writes |
 | --- | --- | --- |
