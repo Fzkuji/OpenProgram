@@ -193,9 +193,11 @@ def test_windows_release_contract_has_public_bootstrap_and_ci_gate() -> None:
         marker not in installer
         for marker in ("icacls", "Set-Acl", "Add-MpPreference", "Set-MpPreference")
     )
-    assert "runner: windows-2025" in workflow
-    assert "runner: windows-11-vs2026-arm" in workflow
-    assert "arch: arm64" in workflow
+    matrix = runpy.run_path(str(ROOT / "scripts/release/release-matrix.py"))["release_matrices"](True)
+    windows = [row for row in matrix["runtime"] if row["platform"] == "windows"]
+    assert {(row["runner"], row["arch"]) for row in windows} == {
+        ("windows-2025", "x86_64"), ("windows-11-vs2026-arm", "arm64"),
+    }
     assert "scripts/release/build-product-runtime.ps1" in workflow
     assert "scripts/release/archive-product-runtime.ps1" in workflow
     assert "scripts/install-release.ps1" in workflow

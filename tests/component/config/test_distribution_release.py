@@ -3111,8 +3111,10 @@ def test_macos_desktop_matrix_maps_runtime_arch_to_electron_builder_arch() -> No
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
-    assert "arch: x86_64\n            builder_arch: x64" in workflow
-    assert "arch: arm64\n            builder_arch: arm64" in workflow
+    matrix = runpy.run_path(str(ROOT / "scripts/release/release-matrix.py"))["release_matrices"]()
+    assert {(row["arch"], row["builder_arch"]) for row in matrix["desktop"]} == {
+        ("x86_64", "x64"), ("arm64", "arm64"),
+    }
     assert "--${{ matrix.builder_arch }} --publish never" in workflow
 
 
