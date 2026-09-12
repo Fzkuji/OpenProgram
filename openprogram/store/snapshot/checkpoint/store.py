@@ -96,22 +96,59 @@ def _line_stats(before: Path | None, after: Path | None) -> tuple[dict, str]:
 
 
 class CheckpointStore:
-    def __init__(self, session_dir: Path):
-        self.session_dir = Path(session_dir)
+    def __init__(
+        self, session_dir: Path | None = None, *, recovery_root: Path | None = None,
+    ):
+        if session_dir is None and recovery_root is None:
+            raise TypeError("session_dir or recovery_root is required")
+        self.session_dir = Path(session_dir) if session_dir is not None else None
+        self.recovery_root = Path(recovery_root) if recovery_root is not None else None
 
     def _capture_regular(self, source: Path, destination: Path) -> dict:
+        """Publish a durable, immutable version before any manifest references it."""
         destination.parent.mkdir(parents=True, exist_ok=True)
+        destination = destination.with_name(f"{destination.name}.{uuid.uuid4().hex}")
         try:
-            shutil.copy2(source, destination, follow_symlinks=False)
-            info = destination.stat()
+            observed = os.lstat(source)
+            if (not stat.S_ISREG(observed.st_mode) or is_link_metadata(observed)
+                    or observed.st_nlink != 1):
+                raise OSError("snapshot source must be an ordinary non-linked file")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+            with os.fdopen(os.open(source, flags), "rb") as handle:
+                before = os.fstat(handle.fileno())
+                if (before.st_dev, before.st_ino) != (observed.st_dev, observed.st_ino):
+                    raise OSError("snapshot source changed before opening")
+                digest = hashlib.sha256()
+                size = 0
+                flags_out = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+                with os.fdopen(os.open(destination, flags_out, 0o600), "wb") as output:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        output.write(chunk)
+                        digest.update(chunk)
+                        size += len(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                after = os.fstat(handle.fileno())
+                current = os.lstat(source)
+                identity = lambda info: (info.st_dev, info.st_ino, info.st_size,
+                                         info.st_mtime_ns, info.st_ctime_ns, info.st_mode)
+                if identity(before) != identity(after) or identity(after) != identity(current):
+                    raise OSError("snapshot source changed while reading")
+                if size != after.st_size:
+                    raise OSError("snapshot size changed while reading")
+            if os.name != "nt":
+                directory = os.open(destination.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
             return {
-                "kind": "regular",
-                "digest": _digest(destination),
+                "kind": "regular", "digest": f"sha256:{digest.hexdigest()}",
                 "blob_ref": destination.name,
-                "mode": f"{stat.S_IMODE(info.st_mode):04o}",
-                "size": info.st_size,
+                "mode": f"{stat.S_IMODE(after.st_mode):04o}", "size": size,
             }
         except OSError as exc:
+            destination.unlink(missing_ok=True)
             raise MutationJournalError(f"cannot snapshot {source}: {exc}") from exc
 
     def backup_before_edit(
@@ -120,6 +157,7 @@ class CheckpointStore:
         abs_path: str,
         *,
         content_src: str | Path | None = None,
+        project_locator: dict | None = None,
     ) -> None:
         if not turn_id or not abs_path:
             return
@@ -141,7 +179,10 @@ class CheckpointStore:
             raise MutationJournalError(
                 f"hardlinked file has {target_stat.st_nlink} links",
             )
-        if manifest.has(manifest_path, backup_name):
+        existing = manifest.load(manifest_path).get("files", {}).get(backup_name)
+        if existing and existing.get("status") != "aborted":
+            if existing.get("status") == "committed":
+                manifest.mark_pending(manifest_path, backup_name)
             return
         backup_dir = turn_backup_dir(self.session_dir, turn_id)
         backup_dir.mkdir(parents=True, exist_ok=True)
@@ -172,6 +213,7 @@ class CheckpointStore:
             before=before,
             recoverability=recoverability,
             unavailable_reason=unavailable_reason,
+            project_locator=project_locator,
         )
 
     def commit_after_edit(
@@ -200,6 +242,7 @@ class CheckpointStore:
         elif stat.S_ISREG(target_stat.st_mode):
             after_blob = backup_dir / f"{backup_name}.after"
             after = self._capture_regular(target, after_blob)
+            after_blob = backup_dir / after["blob_ref"]
         else:
             after = {"kind": _file_kind(target_stat.st_mode)}
 
@@ -281,7 +324,31 @@ class CheckpointStore:
             turn_manifest_path(self.session_dir, turn_id),
         ):
             if entry.get("status") == "committed":
-                rows.append(dict(entry))
+                row = dict(entry)
+                if row.get("pending"):
+                    row.update(recoverability="unavailable", unavailable_reason="mutation_incomplete",
+                               diff_state="unavailable")
+                rows.append(row)
+        return rows
+
+    def list_file_history(self, turn_id: str) -> list[dict]:
+        """Project incomplete intents as unknown, never as successful mutations."""
+        rows = []
+        for _, entry in manifest.entries(turn_manifest_path(self.session_dir, turn_id)):
+            status = entry.get("status")
+            if status == "aborted":
+                # Failure does not prove that the tool had no side effect.
+                if self._state_matches(self._inspect_state(entry["path"]), entry.get("before") or {}):
+                    continue
+            elif status not in {"prepared", "committed"}:
+                continue
+            row = dict(entry)
+            if status in {"prepared", "aborted"} or entry.get("pending"):
+                row.update(after={"kind": "unavailable"},
+                           stats={"added": None, "removed": None, "binary": False},
+                           diff_state="unavailable", recoverability="unavailable",
+                           unavailable_reason="mutation_incomplete")
+            rows.append(row)
         return rows
 
     def _inspect_state(self, path: str) -> dict:
@@ -1176,6 +1243,306 @@ class CheckpointStore:
             json.dumps(actions, sort_keys=True).encode(),
         ).hexdigest()
 
+    def _execute_history_intent(
+        self, intent: dict, intent_path: Path, backup_dir: Path, *, preflight=None,
+    ) -> dict:
+        """Apply a prepared file intent using the shared guarded transaction."""
+        paths = [action["path"] for action in intent.get("actions", [])]
+        with self._workspace_lock(paths):
+            if preflight is not None:
+                current_plan = preflight()
+                if current_plan.get("status") != "ready":
+                    intent.update({
+                        "status": "aborted",
+                        "conflicts": current_plan.get("conflicts", []),
+                        "unavailable": current_plan.get("unavailable", []),
+                        "error": current_plan.get("error"),
+                    })
+                    manifest.save(intent_path, intent)
+                    return self._intent_result(intent)
+                if self._plan_hash(current_plan["actions"]) != intent.get("plan_hash"):
+                    intent.update({"status": "aborted", "error": "stale_plan"})
+                    manifest.save(intent_path, intent)
+                    return self._intent_result(intent)
+            conflicts = []
+            unavailable = []
+            for action in intent["actions"]:
+                if not self._state_matches(
+                    self._inspect_state(action["path"]),
+                    action.get("expected_current") or {},
+                ):
+                    conflicts.append(action["path"])
+                for state in (action.get("target") or {}, action.get("rollback") or {}):
+                    if state.get("kind") != "regular":
+                        continue
+                    blob = Path(str(state.get("blob_path") or backup_dir / str(state.get("blob_ref") or "")))
+                    if not blob.is_file() or (state.get("digest") and _digest(blob) != state.get("digest")):
+                        unavailable.append(action["path"])
+            current = {
+                "status": "unavailable" if unavailable else "blocked" if conflicts else "ready",
+                "conflicts": sorted(set(conflicts)), "unavailable": sorted(set(unavailable)),
+                "error": "custom history target is unavailable" if unavailable else "current file state does not match the recorded source",
+            }
+            if current.get("status") != "ready":
+                intent.update({
+                    "status": "aborted",
+                    "conflicts": current.get("conflicts", []),
+                    "unavailable": current.get("unavailable", []),
+                    "error": current.get("error"),
+                })
+                manifest.save(intent_path, intent)
+                return self._intent_result(intent)
+            intent["status"] = "applying"
+            manifest.save(intent_path, intent)
+            touched: list[dict] = []
+            try:
+                for action in intent["actions"]:
+                    touched.append(action)
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]),
+                        action["expected_current"],
+                    ):
+                        raise OSError(f"stale current state for {action['path']}")
+                    guard_path = self._apply_state(
+                        action["path"], action["target"], backup_dir,
+                        intent["transaction_id"], action["expected_current"],
+                    )
+                    if guard_path:
+                        action["guard_path"] = guard_path
+                    if not self._state_matches(
+                        self._inspect_state(action["path"]), action["target"],
+                    ):
+                        raise OSError(f"verification failed for {action['path']}")
+                    if guard_path and not self._state_matches(
+                        self._inspect_state(guard_path), action["rollback"],
+                    ):
+                        self._restore_changed_guard(
+                            action, guard_path, intent["transaction_id"],
+                        )
+                        raise OSError(
+                            f"external writer changed moved inode for {action['path']}",
+                        )
+                    action["state"] = "verified"
+                    manifest.save(intent_path, intent)
+            except Exception as exc:
+                recovery_required = False
+                for action in reversed(touched):
+                    try:
+                        actual = self._inspect_state(action["path"])
+                        if self._state_matches(actual, action["rollback"]):
+                            action["state"] = "rolled_back"
+                            continue
+                        if not self._state_matches(actual, action["target"]):
+                            recovery_required = True
+                            action["error"] = "external change prevents rollback"
+                            continue
+                        rollback_guard = self._apply_state(
+                            action["path"], action["rollback"], backup_dir,
+                            intent["transaction_id"] + "_rollback", action["target"],
+                        )
+                        if rollback_guard:
+                            action["rollback_guard_path"] = rollback_guard
+                        if not self._state_matches(
+                            self._inspect_state(action["path"]), action["rollback"],
+                        ):
+                            raise OSError("rollback verification failed")
+                        action["state"] = "rolled_back"
+                    except Exception as rollback_error:
+                        recovery_required = True
+                        action["error"] = str(rollback_error)
+                intent["status"] = (
+                    "recovery_required" if recovery_required else "rolled_back"
+                )
+                if recovery_required:
+                    intent["error_code"] = "RECOVERY_REQUIRED"
+                intent["error"] = str(exc)
+                manifest.save(intent_path, intent)
+                return self._intent_result(intent)
+            try:
+                intent["status"] = "committed"
+                manifest.save(intent_path, intent)
+            except Exception as exc:
+                # The target was changed, but durable completion was not recorded.
+                intent["status"] = "recovery_required"
+                intent["error_code"] = "RECOVERY_REQUIRED"
+                intent["error"] = f"history commit failed: {exc}"
+                try:
+                    manifest.save(intent_path, intent)
+                except Exception as save_error:
+                    intent["error"] = f"history commit failed: {exc}; state save failed: {save_error}"
+                return self._intent_result(intent)
+        return self._intent_result(intent)
+
+    def _manual_operation_path(self, operation_id: str) -> Path:
+        if self.recovery_root is None:
+            raise TypeError("recovery_root is required for manual document operations")
+        if (
+            not isinstance(operation_id, str)
+            or len(operation_id) != 32
+            or any(char not in "0123456789abcdef" for char in operation_id)
+        ):
+            raise ValueError("invalid operation_id")
+        return self.recovery_root / "operations" / operation_id
+
+    def _capture_manual_blob(self, source: Path, destination: Path) -> dict:
+        try:
+            info = os.lstat(source)
+        except FileNotFoundError as exc:
+            raise MutationJournalError(f"snapshot source is missing: {source}") from exc
+        if (not stat.S_ISREG(info.st_mode) or is_link_metadata(info)
+                or info.st_nlink != 1 or info.st_size > 64 * 1024 * 1024):
+            raise MutationJournalError("document source must be an ordinary file of at most 64 MiB")
+        state = self._capture_regular(source, destination)
+        state["sha256"] = state["digest"].removeprefix("sha256:")
+        return state
+
+    @staticmethod
+    def _manual_descriptor(state: dict) -> dict:
+        if state.get("kind") == "absent":
+            return {"kind": "absent", "sha256": None, "mode": None, "size": 0, "blob_ref": None}
+        return {
+            "kind": "regular", "blob_ref": state["blob_ref"],
+            "sha256": state["sha256"], "mode": state["mode"], "size": state["size"],
+        }
+
+    @contextmanager
+    def _manual_operation_lock(self, operation_id: str):
+        from openprogram import _compat as fcntl
+
+        operation_dir = self._manual_operation_path(operation_id)
+        operation_dir.mkdir(parents=True, exist_ok=True)
+        with (operation_dir / ".lock").open("a+") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def publish_document(
+        self, operation_id: str, target_path: str | Path, source_path: str | Path,
+        *, expected_revision: str | None = None, expected_mtime: int | float | None = None,
+        fingerprint: str, metadata: dict | None = None,
+    ) -> dict:
+        with self._manual_operation_lock(operation_id):
+            return self._publish_document_locked(
+                operation_id, target_path, source_path,
+                expected_revision=expected_revision, expected_mtime=expected_mtime,
+                fingerprint=fingerprint, metadata=metadata,
+            )
+
+    def _publish_document_locked(
+        self, operation_id: str, target_path: str | Path, source_path: str | Path,
+        *, expected_revision: str | None = None, expected_mtime: int | float | None = None,
+        fingerprint: str, metadata: dict | None = None,
+    ) -> dict:
+        """Durably publish one bounded ordinary file and return its receipt."""
+        operation_dir = self._manual_operation_path(operation_id)
+        intent_path = operation_dir / "intent.json"
+        if not isinstance(fingerprint, str) or not fingerprint:
+            raise ValueError("fingerprint is required")
+        if intent_path.exists():
+            existing = self.read_document_operation(operation_id)
+            if existing.get("fingerprint") != fingerprint:
+                raise ValueError("operation fingerprint conflict")
+            if existing.get("status") != "prepared":
+                return existing
+            return existing
+        target = Path(target_path)
+        source = Path(source_path)
+        if not target.is_absolute() or not source.is_absolute():
+            raise ValueError("document paths must be absolute")
+        operation_dir.mkdir(parents=True, exist_ok=True)
+        before = {"kind": "absent"}
+        try:
+            target_info = os.lstat(target)
+        except FileNotFoundError:
+            target_info = None
+        if target_info is not None:
+            if (not stat.S_ISREG(target_info.st_mode) or is_link_metadata(target_info)
+                    or target_info.st_nlink != 1 or target_info.st_size > 64 * 1024 * 1024):
+                raise MutationJournalError("document target must be an ordinary file of at most 64 MiB")
+            before = self._capture_manual_blob(target, operation_dir / "before")
+        candidate = self._capture_manual_blob(source, operation_dir / "candidate")
+        # A publication changes bytes while retaining the target's existing
+        # permissions.  Source permissions are relevant only when creating a
+        # previously absent target.
+        if before.get("kind") == "regular":
+            candidate["mode"] = before["mode"]
+        current_revision = before.get("sha256") if before["kind"] == "regular" else "absent"
+        if expected_revision is not None and expected_revision != current_revision:
+            raise MutationJournalError("document baseline does not match")
+        if expected_mtime is not None and target_info is not None and target_info.st_mtime != expected_mtime:
+            raise MutationJournalError("document mtime does not match")
+        parent_chain = self._capture_parent_chain(str(target))
+        if before.get("kind") == "regular":
+            before["blob_path"] = str(operation_dir / before["blob_ref"])
+        before_state = {**before, "parent_chain": parent_chain}
+        target_state = {**candidate, "parent_chain": parent_chain, "blob_path": str(operation_dir / candidate["blob_ref"])}
+        if before["kind"] == "absent":
+            before_state["parent_chain"] = parent_chain
+        intent = {
+            "version": 1, "status": "prepared", "operation_id": operation_id,
+            "transaction_id": f"document_{uuid.uuid4().hex}", "fingerprint": fingerprint,
+            "metadata": metadata or {}, "expected_revision": expected_revision,
+            "expected_mtime": expected_mtime, "target_path": str(target),
+            "actions": [{"path": str(target), "expected_current": before_state,
+                          "target": target_state, "rollback": before_state, "state": "pending", "error": None}],
+            "before": self._manual_descriptor(before), "after": self._manual_descriptor(candidate),
+        }
+        manifest.save(intent_path, intent)
+        result = self._execute_history_intent(intent, intent_path, operation_dir)
+        if result.get("status") == "committed":
+            intent["mtime"] = target.stat().st_mtime if target.exists() else None
+            manifest.save(intent_path, intent)
+        result.update({"fingerprint": fingerprint, "before": intent["before"], "after": intent["after"],
+                       "revision": candidate["sha256"], "mtime": intent.get("mtime")})
+        return result
+
+    def read_document_operation(self, operation_id: str) -> dict:
+        path = self._manual_operation_path(operation_id) / "intent.json"
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
+            if isinstance(exc, FileNotFoundError):
+                return {"status": "not_found", "operation_id": operation_id}
+            return {"status": "recovery_required", "operation_id": operation_id,
+                    "error_code": "RECOVERY_REQUIRED", "error": "invalid document intent"}
+        if not isinstance(value, dict):
+            return {"status": "recovery_required", "operation_id": operation_id,
+                    "error_code": "RECOVERY_REQUIRED", "error": "invalid document intent"}
+        def valid_descriptor(descriptor: object) -> bool:
+            if not isinstance(descriptor, dict) or descriptor.get("kind") not in {"absent", "regular"}:
+                return False
+            if descriptor["kind"] == "absent":
+                return descriptor.get("size") == 0
+            return (
+                isinstance(descriptor.get("blob_ref"), str)
+                and bool(descriptor["blob_ref"])
+                and descriptor["blob_ref"] not in {".", ".."}
+                and Path(descriptor["blob_ref"]).name == descriptor["blob_ref"]
+                and isinstance(descriptor.get("sha256"), str)
+                and len(descriptor["sha256"]) == 64
+                and all(char in "0123456789abcdef" for char in descriptor["sha256"])
+                and isinstance(descriptor.get("mode"), str)
+                and isinstance(descriptor.get("size"), int)
+                and descriptor["size"] >= 0
+            )
+        invalid = (
+            value.get("operation_id") != operation_id
+            or not valid_descriptor(value.get("before"))
+            or not valid_descriptor(value.get("after"))
+        )
+        if invalid or value.get("status") in {"prepared", "applying"}:
+            value = {**value, "status": "recovery_required", "error_code": "RECOVERY_REQUIRED",
+                     "error": "invalid or incomplete document operation requires recovery"}
+        after = value.get("after")
+        revision = after.get("sha256") if isinstance(after, dict) else None
+        return {"status": value.get("status", "error"), "transaction_id": value.get("transaction_id"),
+                "operation_id": value.get("operation_id", operation_id), "fingerprint": value.get("fingerprint"),
+                "before": value.get("before"), "after": value.get("after"),
+                "revision": revision, "mtime": value.get("mtime"),
+                "error_code": value.get("error_code"), "error": value.get("error")}
+
     @staticmethod
     def rewind_plan_hash(
         turn_ids: list[str],
@@ -1239,90 +1606,24 @@ class CheckpointStore:
         }
         manifest.save(intent_path, intent)
         backup_dir = turn_backup_dir(self.session_dir, turn_id)
-        paths = [action["path"] for action in intent["actions"]]
-        with self._workspace_lock(paths):
-            current_plan = self.plan_history_operation(turn_id, direction)
-            if current_plan.get("status") != "ready":
-                intent.update({
-                    "status": "aborted",
-                    "conflicts": current_plan.get("conflicts", []),
-                    "unavailable": current_plan.get("unavailable", []),
-                    "error": current_plan.get("error"),
-                })
-                manifest.save(intent_path, intent)
-                return self._intent_result(intent)
-            if self._plan_hash(current_plan["actions"]) != intent["plan_hash"]:
-                intent.update({"status": "aborted", "error": "stale_plan"})
-                manifest.save(intent_path, intent)
-                return self._intent_result(intent)
-            intent["status"] = "applying"
+        current_plan = self.plan_history_operation(turn_id, direction)
+        if current_plan.get("status") != "ready":
+            intent.update({
+                "status": "aborted",
+                "conflicts": current_plan.get("conflicts", []),
+                "unavailable": current_plan.get("unavailable", []),
+                "error": current_plan.get("error"),
+            })
             manifest.save(intent_path, intent)
-            touched: list[dict] = []
-            try:
-                for action in intent["actions"]:
-                    touched.append(action)
-                    if not self._state_matches(
-                        self._inspect_state(action["path"]),
-                        action["expected_current"],
-                    ):
-                        raise OSError(f"stale current state for {action['path']}")
-                    guard_path = self._apply_state(
-                        action["path"], action["target"], backup_dir, transaction_id,
-                        action["expected_current"],
-                    )
-                    if guard_path:
-                        action["guard_path"] = guard_path
-                    actual = self._inspect_state(action["path"])
-                    if not self._state_matches(actual, action["target"]):
-                        raise OSError(f"verification failed for {action['path']}")
-                    if guard_path and not self._state_matches(
-                        self._inspect_state(guard_path), action["rollback"],
-                    ):
-                        self._restore_changed_guard(
-                            action, guard_path, transaction_id,
-                        )
-                        raise OSError(
-                            f"external writer changed moved inode for {action['path']}",
-                        )
-                    action["state"] = "verified"
-                    manifest.save(intent_path, intent)
-            except Exception as exc:
-                recovery_required = False
-                for action in reversed(touched):
-                    try:
-                        actual = self._inspect_state(action["path"])
-                        if self._state_matches(actual, action["rollback"]):
-                            action["state"] = "rolled_back"
-                            continue
-                        if not self._state_matches(actual, action["target"]):
-                            recovery_required = True
-                            action["error"] = "external change prevents rollback"
-                            continue
-                        rollback_guard = self._apply_state(
-                            action["path"], action["rollback"], backup_dir,
-                            transaction_id + "_rollback", action["target"],
-                        )
-                        if rollback_guard:
-                            action["rollback_guard_path"] = rollback_guard
-                        if not self._state_matches(
-                            self._inspect_state(action["path"]), action["rollback"],
-                        ):
-                            raise OSError("rollback verification failed")
-                        action["state"] = "rolled_back"
-                    except Exception as rollback_error:
-                        recovery_required = True
-                        action["error"] = str(rollback_error)
-                intent["status"] = (
-                    "recovery_required" if recovery_required else "rolled_back"
-                )
-                if recovery_required:
-                    intent["error_code"] = "RECOVERY_REQUIRED"
-                intent["error"] = str(exc)
-                manifest.save(intent_path, intent)
-                return self._intent_result(intent)
-            intent["status"] = "committed"
+            return self._intent_result(intent)
+        if self._plan_hash(current_plan["actions"]) != intent["plan_hash"]:
+            intent.update({"status": "aborted", "error": "stale_plan"})
             manifest.save(intent_path, intent)
-        return self._intent_result(intent)
+            return self._intent_result(intent)
+        return self._execute_history_intent(
+            intent, intent_path, backup_dir,
+            preflight=lambda: self.plan_history_operation(turn_id, direction),
+        )
 
     def apply_rewind_operation(
         self,
@@ -1614,13 +1915,16 @@ class CheckpointStore:
                         Path(original).unlink()
                         restored.append(original)
                     continue
-                source = backup_dir / backup_name
+                source = backup_dir / str((entry.get("before") or {}).get("blob_ref") or backup_name)
                 if not source.exists():
                     continue
                 destination = Path(original)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 tmp = destination.with_suffix(destination.suffix + ".restore.tmp")
                 shutil.copy2(source, tmp)
+                mode = (entry.get("before") or {}).get("mode")
+                if mode is not None:
+                    os.chmod(tmp, int(mode, 8))
                 tmp.replace(destination)
                 restored.append(original)
             except OSError:

@@ -1,4 +1,5 @@
 "use client";
+import { hasDocumentDraftsForPath } from "@/lib/state/file-drafts";
 
 /**
  * FileTree — the right sidebar's resident content: a lazy directory
@@ -745,6 +746,13 @@ export function FileTree({
   }
 
   async function doDelete(path: string) {
+    if (await hasDocumentDraftsForPath(projectId, path)) {
+      window.alert(text(
+        "This file or folder has pending document changes. Resolve them in the document window before deleting.",
+        "此文件或文件夹中存在尚未保存的修改，请先在文件窗口处理后再删除。",
+      ));
+      return;
+    }
     const drafts = await loadFileDraftsForPath(projectId, path);
     const hasDraft = drafts.length > 0;
     if (hasDraft) {

@@ -34,6 +34,18 @@ def engine(monkeypatch):
         })(),
     )
     monkeypatch.setattr(eng, "_occupancy_tokens", lambda sid, hist: 40_737)
+    from types import SimpleNamespace
+    from openprogram.context import persistence
+
+    def view(_db, sid):
+        history = persistence.rendered_history(_db, sid)
+        return SimpleNamespace(
+            history=history, messages=history,
+            unchanged=lambda *_a: True,
+            candidate_messages=lambda *_a: [{"role": "assistant", "content": "recap"}],
+        )
+
+    monkeypatch.setattr("openprogram.context.compaction_view.load_compaction_view", view)
     eng._stamped = stamped
     return eng
 

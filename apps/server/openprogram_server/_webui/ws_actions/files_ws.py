@@ -161,6 +161,7 @@ async def handle_project_file_write(ws, cmd: dict) -> None:
                 mutation_payload,
                 lambda: _write_file(
                     project_id, path, content, expected_mtime, expected_revision,
+                    cmd.get("idempotency_key"), cmd.get("editor_id", "manual"),
                 ),
             ),
         )

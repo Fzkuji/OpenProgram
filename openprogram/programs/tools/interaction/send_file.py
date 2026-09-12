@@ -119,7 +119,9 @@ def _send_file_impl(path: str) -> str:
         return ("Error: no allowed directory is configured for outgoing "
                 "files (no session workdir and no bound project), so "
                 "send_file cannot deliver anything right now.")
-    target = _att.resolve_within(raw, roots)
+    target = _att.resolve_session_attachment(
+        raw, session_id, roots, allow_missing=True,
+    )
     if target is None:
         listed = ", ".join(str(r) for r in roots)
         return (f"Error: {raw!r} is outside the directories this session "

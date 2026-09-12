@@ -11,6 +11,7 @@ import { CenterTabStrip } from "./center-tabs/center-tab-strip";
 import { WebTabPip } from "./center-tabs/web-tab-pip";
 import { BrowserResourceProjection } from "@/lib/state/browser-resource-projection";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
+import { topLevelTabs } from "@/lib/state/web-page-management";
 import {
   findCenterTabGroup,
   resolveCenterTabPanes,
@@ -21,8 +22,6 @@ import {
   setDesktopSplitLayoutAvailable,
 } from "@/lib/desktop-bridge";
 import { ToastHost } from "./ui/toast-host";
-import { SelfUpdateReopenNotice } from "./self-update-reopen-notice";
-import { SelfUpdateTestObject } from "./self-update-test-object";
 import { Composer } from "./chat/composer";
 import { LegacyTopbarBridge } from "./chat/top-bar";
 import { WelcomeScreen } from "./chat/welcome-screen";
@@ -62,6 +61,10 @@ const BrowserHomePage = dynamic(
   () => import("./center-tabs/browser-home-page").then((module) => module.BrowserHomePage),
   { ssr: false, loading: DeferredPaneLoading },
 );
+const ApplicationTabPane = dynamic(
+  () => import("./center-tabs/application-tab-pane").then((module) => module.ApplicationTabPane),
+  { ssr: false, loading: DeferredPaneLoading },
+);
 const FileTabPane = dynamic(
   () => import("./center-tabs/file-tab-pane").then((module) => module.FileTabPane),
   { ssr: false, loading: DeferredPaneLoading },
@@ -86,6 +89,8 @@ const WebTabPane = dynamic(
   () => import("./center-tabs/web-tab-pane").then((module) => module.WebTabPane),
   { ssr: false, loading: DeferredPaneLoading },
 );
+
+import { PersistentFilePanes } from "./center-tabs/persistent-file-panes";
 
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
@@ -150,6 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       "/functions",
       "/agents",
       "/programs",
+      "/applications",
       "/skills",
       "/settings/providers",
       "/memory",
@@ -258,6 +264,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const items: Array<[string, string]> = [
       ["navAbility", "/programs"],
+      ["navApplications", "/applications"],
       ["navHistory", "/chats"],
       ["navScheduler", "/scheduler"],
     ];
@@ -442,7 +449,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // follow the pane rect (WebTabPane → registerVisibleWebTabBounds).
   // Below the two panes' combined minimum width there is no room to split,
   // so fall back to the focused tab alone.
-  const panes = activeGroup && splitAvailable ? compoundPanes : focusedPanes;
+  const panes = topLevelTabs(tabs, groups).length === 0
+    ? []
+    : activeGroup && splitAvailable ? compoundPanes : focusedPanes;
   const showDivider = panes.length === 2;
   const sessionPaneIndex = panes.findIndex((pane) => pane.kind === "session");
   const showChat = isChatRoute(pathname);
@@ -497,6 +506,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (tab.kind === "web") {
       return <WebTabPane tabId={tab.id} url={tab.url ?? ""} />;
     }
+    if (tab.kind === "application" && tab.applicationInstanceId) {
+      return <ApplicationTabPane instanceId={tab.applicationInstanceId} />;
+    }
     if (tab.kind === "ntp") return <NewTabPage />;
     if (tab.kind === "builtin" && tab.page) {
       if (tab.page === "review") {
@@ -540,8 +552,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <CenterTabStrip />
         </div>
       ) : null}
-      {isDesktop ? <SelfUpdateReopenNotice /> : null}
-      {isDesktop ? <SelfUpdateTestObject /> : null}
       <div className="app">
       <Sidebar />
       {/* Center column: browser-style tab strip over the active tab's
@@ -626,6 +636,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {showChat
             ? panes.map((pane, index) => {
                 if (pane.kind === "session") return null;
+                const paneTab = tabs.find((tab) => tab.id === pane.tabId);
+                if (paneTab?.kind === "file") return null;
                 const content = renderTabPane(pane.tabId, pane.kind);
                 if (!content) return null;
                 return (
@@ -639,6 +651,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 );
               })
             : null}
+          <PersistentFilePanes tabs={tabs} layouts={new Map(panes.flatMap((pane, index) => pane.kind === "session" ? [] : [[pane.tabId, { className: centerPaneClassName(index), style: centerPaneStyle(index) }]]))} activeFileIds={new Set(panes.flatMap((pane) => pane.kind === "session" ? [] : tabs.find((tab) => tab.id === pane.tabId)?.kind === "file" ? [pane.tabId] : []))} />
           {showChat ? <WebTabPip /> : null}
         </div>
       </div>

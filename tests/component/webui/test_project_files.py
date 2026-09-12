@@ -21,6 +21,7 @@ import asyncio
 import errno
 import json
 import os
+import shutil
 import types
 from pathlib import Path
 
@@ -28,6 +29,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from openprogram.store.project import project_store
+from openprogram.store.project.identity import capture_directory_identity
 from openprogram.webui.ws_actions import files as ws_files
 
 
@@ -60,9 +62,12 @@ def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         if os.name != "nt" or getattr(exc, "winerror", None) != 1314:
             raise
 
+    captured = capture_directory_identity(root)
+
     def fake_get_project(project_id: str):
         if project_id == "p1":
-            return types.SimpleNamespace(id="p1", path=str(root))
+            return types.SimpleNamespace(id="p1", path=str(root),
+                                         **captured)
         return None
 
     monkeypatch.setattr(project_store, "get_project", fake_get_project)
@@ -112,6 +117,20 @@ def test_tree_unknown_project(project_root):
                 {"project_id": "nope", "path": ""})["data"]
     assert data["entries"] == []
     assert "unknown project" in data["error"]
+
+
+def test_tree_and_search_refuse_missing_project_root(project_root):
+    shutil.rmtree(project_root)
+    tree = _run(ws_files.handle_project_file_tree, {
+        "project_id": "p1", "path": "",
+    })["data"]
+    search = _run(ws_files.handle_project_file_search, {
+        "project_id": "p1", "path": "", "query": "needle",
+    })["data"]
+    assert tree["entries"] == []
+    assert tree["error"]
+    assert search["results"] == []
+    assert search["error"]
 
 
 def test_tree_pages_use_opaque_stable_cursor(project_root):

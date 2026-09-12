@@ -111,6 +111,7 @@ type BrowserResourceState = {
   followEpoch: number;
   snapshotComplete: Record<string, true>;
   snapshotFailed: Record<string, true>;
+  optimisticClosed: Record<string, { generation: number; expiresAt: number; rows: SessionResource[] }>;
 };
 
 function readStoredPreferences(): Record<string, PreviewPreference> {
@@ -137,6 +138,7 @@ export const useBrowserResourceStore = create<BrowserResourceState>(() => ({
   followEpoch: 0,
   snapshotComplete: {},
   snapshotFailed: {},
+  optimisticClosed: {},
 }));
 
 function prefKey(sessionId: string, branchId: string | null): string {
@@ -374,7 +376,69 @@ export function ingestBrowserResource(
   if (scopeSessionId && row.conversationSessionId && row.conversationSessionId !== scopeSessionId && row.sessionId !== scopeSessionId) {
     return null;
   }
-  const state = useBrowserResourceStore.getState();
+  let state = useBrowserResourceStore.getState();
+  const resourceId = row.resourceId || row.sourceId;
+  const pending = resourceId ? state.optimisticClosed[resourceId] : undefined;
+  const origin = opts.origin || "event";
+  const generation = row.generation ?? 0;
+  const live = row.status !== "closed" && row.controlState !== "closed";
+  if (pending) {
+    const expired = Date.now() >= pending.expiresAt;
+    const staleClosed = !live && (
+      generation < pending.generation
+      || (generation === pending.generation && pending.rows.some(item => (
+        (item.generation ?? 0) === generation && (item.sequence ?? 0) >= (row.sequence ?? 0)
+      )))
+    );
+    if (staleClosed) return null;
+    if (!live || origin === "snapshot" || generation > pending.generation || expired) {
+      const restoreRows = (!live || (origin === "snapshot" && generation <= pending.generation) || expired)
+        ? pending.rows : [];
+      if (restoreRows.length > 0) {
+        const rows = { ...state.rows };
+        const rowClock = { ...state.rowClock };
+        let clock = state.ingestClock;
+        for (const item of restoreRows) {
+          if (rows[item.id]) continue;
+          clock += 1;
+          rows[item.id] = item;
+          rowClock[item.id] = clock;
+        }
+        state = { ...state, rows, rowClock, ingestClock: clock };
+        useBrowserResourceStore.setState({ rows, rowClock, ingestClock: clock });
+      }
+      clearOptimisticClose(resourceId);
+      const optimisticClosed = { ...state.optimisticClosed };
+      delete optimisticClosed[resourceId];
+      useBrowserResourceStore.setState({ optimisticClosed });
+      state = useBrowserResourceStore.getState();
+    } else if (generation <= pending.generation) {
+      return null;
+    }
+  }
+  if (!live && resourceId) {
+    const rows = { ...state.rows };
+    let changed = false;
+    let matched = false;
+    for (const [id, existing] of Object.entries(rows)) {
+      if (existing.resourceId !== resourceId) continue;
+      matched = true;
+      const existingGeneration = existing.generation ?? 0;
+      const existingSequence = existing.sequence ?? 0;
+      if (existingGeneration > generation
+        || (existingGeneration === generation && existingSequence >= (row.sequence ?? 0))) continue;
+      rows[id] = { ...existing, status: row.status, controlState: row.controlState,
+        sequence: Math.max(existing.sequence ?? 0, row.sequence ?? 0) };
+      changed = true;
+    }
+    if (changed) {
+      useBrowserResourceStore.setState({ rows });
+      return row;
+    }
+    if (matched) {
+      return Object.values(state.rows).find(item => item.resourceId === resourceId) || null;
+    }
+  }
   const existing = state.rows[row.id];
   if (existing) {
     const nextGen = row.generation ?? 0;
@@ -397,6 +461,7 @@ export function ingestBrowserResource(
 
 export function resetBrowserResources(sessionId?: string): void {
   if (sessionId === undefined) {
+    for (const resourceId of optimisticCloseTimers.keys()) clearOptimisticClose(resourceId);
     useBrowserResourceStore.setState({
       rows: {},
       ingestClock: 0,
@@ -409,10 +474,62 @@ export function resetBrowserResources(sessionId?: string): void {
       followEpoch: 0,
       snapshotComplete: {},
       snapshotFailed: {},
+      optimisticClosed: {},
     });
     return;
   }
   // Switching the viewed conversation must not drop retained rows.
+}
+
+const OPTIMISTIC_CLOSE_TIMEOUT_MS = 5000;
+const optimisticCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearOptimisticClose(resourceId: string): void {
+  const timer = optimisticCloseTimers.get(resourceId);
+  if (timer !== undefined) clearTimeout(timer);
+  optimisticCloseTimers.delete(resourceId);
+}
+
+function restoreOptimisticClose(resourceId: string): void {
+  const state = useBrowserResourceStore.getState();
+  const pending = state.optimisticClosed[resourceId];
+  if (!pending) return;
+  const rows = { ...state.rows };
+  const rowClock = { ...state.rowClock };
+  let clock = state.ingestClock;
+  for (const row of pending.rows) {
+    if (rows[row.id]) continue;
+    clock += 1;
+    rows[row.id] = row;
+    rowClock[row.id] = clock;
+  }
+  const optimisticClosed = { ...state.optimisticClosed };
+  delete optimisticClosed[resourceId];
+  clearOptimisticClose(resourceId);
+  useBrowserResourceStore.setState({ rows, rowClock, ingestClock: clock, optimisticClosed });
+}
+
+/** Hide one Page until a close event, authoritative snapshot, or timeout. */
+export function optimisticallyCloseBrowserResource(resourceId: string, generation = 0): void {
+  if (!resourceId) return;
+  const state = useBrowserResourceStore.getState();
+  const rows = Object.fromEntries(Object.entries(state.rows).filter(([, row]) => row.resourceId !== resourceId));
+  const prior = state.optimisticClosed[resourceId];
+  clearOptimisticClose(resourceId);
+  const hiddenRows = Object.values(state.rows).filter(row => row.resourceId === resourceId);
+  const pending = {
+    generation: Math.max(generation, prior?.generation ?? 0),
+    expiresAt: Date.now() + OPTIMISTIC_CLOSE_TIMEOUT_MS,
+    rows: prior?.rows?.length ? prior.rows : hiddenRows,
+  };
+  useBrowserResourceStore.setState({
+    rows,
+    optimisticClosed: {
+      ...state.optimisticClosed,
+      [resourceId]: pending,
+    },
+  });
+  optimisticCloseTimers.set(resourceId, setTimeout(() => restoreOptimisticClose(resourceId), OPTIMISTIC_CLOSE_TIMEOUT_MS));
 }
 
 export function completeResourceSnapshot(sessionId: string, result: { ok: boolean }): void {

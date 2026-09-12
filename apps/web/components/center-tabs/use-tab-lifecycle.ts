@@ -17,10 +17,7 @@ import { useCenterTabs, type CenterTab } from "@/lib/state/center-tabs-store";
 import { findCenterTabGroup } from "@/lib/state/center-tab-groups";
 import { useSessionStore } from "@/lib/session-store";
 import { newSession } from "@/lib/runtime-bridge/conversations";
-import {
-  collectDirtyFileTabs,
-  discardFileDraftsBeforeClose,
-} from "@/lib/state/files-shared";
+import { flushFileDocumentsBeforeClose } from "@/lib/state/file-drafts";
 import { deleteAttachments } from "@/components/chat/composer/attach/attach-idb";
 import {
   draftChannelChoiceHost,
@@ -29,6 +26,7 @@ import {
 import { pushPath } from "@/lib/shallow-nav";
 import { useTranslation } from "@/lib/i18n";
 import { selectTabsReadyForHumanClose } from "@/lib/state/browser-control";
+import { documentControllers } from "@/lib/state/document-controller";
 
 export function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
@@ -62,7 +60,6 @@ export function useTabLifecycle({
   const tabs = useCenterTabs((s) => s.tabs);
   const setActive = useCenterTabs((s) => s.setActive);
   const openSessionTab = useCenterTabs((s) => s.openSessionTab);
-  const openDraftSessionTab = useCenterTabs((s) => s.openDraftSessionTab);
   const openNewTabPage = useCenterTabs((s) => s.openNewTabPage);
   const closeTab = useCenterTabs((s) => s.closeTab);
   const renameSessionTab = useCenterTabs((s) => s.renameSessionTab);
@@ -102,14 +99,9 @@ export function useTabLifecycle({
       openSessionTab(currentSessionId, title);
     } else if (activeTab?.kind === "session" && activeTab.draft && activeTab.sessionId) {
       useSessionStore.getState().setCurrentDraft(activeTab.sessionId);
-    } else if (centerTabs.tabs.length > 0) {
-      // 桌面端每次启动都落在 /chat：已有恢复出来的标签时，这只是默认
-      // 启动 URL，不是用户要新建草稿——否则每次重启都会多出一枚标签。
-    } else {
-      const draftId = openDraftSessionTab();
-      useSessionStore.getState().setCurrentDraft(draftId);
     }
-  }, [pathname, openSessionTab, openDraftSessionTab]);
+    // An empty /chat route stays empty until the user opens a tab.
+  }, [pathname, openSessionTab]);
 
   // Title changes → rename tabs (covers renames + first-message titles).
   // Same pass reaps zombie tabs: a session tab whose conversation was
@@ -197,6 +189,10 @@ export function useTabLifecycle({
       (candidate) => candidate.id === activeId,
     );
     if (tab?.kind === "session") activateSession(tab);
+    else if (tab?.kind === "ntp") {
+      useSessionStore.getState().setCurrentConv(null);
+      pushPath("/chat");
+    }
     // Route changes are results of activation, not new activation requests.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, activeSessionId, activeSessionDraft, sessionActivationRequest]);
@@ -259,23 +255,19 @@ export function useTabLifecycle({
     e.stopPropagation();
     cancelDrag();
     const fileTabs = tabsToClose.filter((tab) => tab.kind === "file");
-    const dirtyFileTabs = await collectDirtyFileTabs(fileTabs);
-    const dirtyTabs = tabsToClose.some((tab) => tab.dirty) || dirtyFileTabs.length > 0;
-    if (dirtyTabs) {
-      if (!window.confirm(text("Discard unsaved changes?", "放弃未保存的修改？")))
-        return;
-      // Discard confirmed — drop the surviving draft buffer too, so
-      // reopening the file starts from disk, not the "discarded" edit.
-      const dirtyFileTabIds = new Set(dirtyFileTabs.map((tab) => tab.id));
-      const discarded = await discardFileDraftsBeforeClose(
-        tabsToClose.filter((tab) => dirtyFileTabIds.has(tab.id)),
-        undefined,
-        async () => true,
-      );
-      if (!discarded) {
-        window.alert(text("Unable to discard the local draft; the tab remains open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
-        return;
+    if (!(await flushFileDocumentsBeforeClose(fileTabs))) {
+      window.alert(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。"));
+      return;
+    }
+    try {
+      for (const tab of fileTabs) {
+        const controller = tab.projectId && tab.path
+          ? documentControllers.get(`project:${tab.projectId}:${tab.path}`) : undefined;
+        await controller?.close();
       }
+    } catch {
+      window.alert(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。"));
+      return;
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next
     // tab's × stays under the cursor; every other close path reflows now.
@@ -339,6 +331,11 @@ export function useTabLifecycle({
     const currentTab = useCenterTabs.getState().tabs.find((x) => x.id === tab.id);
     if (!currentTab) return;
     closeTab(tab.id);
+    if (useCenterTabs.getState().activeId === null) {
+      // Clear the closed conversation before /chat route synchronization.
+      useSessionStore.getState().setCurrentConv(null);
+      pushPath("/chat");
+    }
     if (tab.draft && tab.sessionId) {
       useSessionStore.getState().dropChatDraft(tab.sessionId);
       dropDraftChannelChoice(draftChannelChoiceHost, tab.sessionId);

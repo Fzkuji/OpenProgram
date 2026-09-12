@@ -1,20 +1,7 @@
-"""Summarizer — LLM-driven prefix-summary pipeline with recovery.
+"""Whole-turn context summarization with token budgeting and safe failure.
 
-Three improvements over the old ``compact_context``:
-
-1. **Cancellable**: takes a ``cancel_event`` so a user ctrl-C aborts
-   the LLM call cleanly instead of hanging.
-
-2. **Recoverable**: when the summariser LLM throws / times out, the
-   Summarizer falls back to a deterministic *structural* summary
-   ("dropped N messages totalling M tokens") so the calling
-   ``compact()`` can still cut history. Way better than leaving the
-   agent stuck with full history during an outage.
-
-3. **Cut-point picker is pluggable**: default picks at user-turn
-   boundaries by walking from the newest end with a token budget
-   (Hermes-style ``protect_last_n``). Subclasses can override
-   ``find_cut_index`` for different strategies.
+The caller supplies rendered DAG turn groups. Only a complete prefix is
+summarized; an unavailable summarizer leaves the original history intact.
 """
 from __future__ import annotations
 
@@ -41,9 +28,9 @@ DEFAULT_KEEP_RECENT_TOKENS = 20_000     # legacy override; new path uses range
 DEFAULT_KEEP_MIN_TOKENS = 8_000         # tail floor: enough for ~5-6 turns
 DEFAULT_KEEP_MAX_TOKENS = 40_000        # tail ceiling: more is wasteful
 DEFAULT_KEEP_RATIO = 0.10               # tail = window × ratio, clamped
-DEFAULT_KEEP_MIN_MESSAGES = 5           # ≥ N messages with text content in tail
-DEFAULT_PROTECT_FIRST_N = 3             # initial task description always kept
-DEFAULT_PROTECT_LAST_N = 20             # final N messages always kept
+DEFAULT_KEEP_MIN_MESSAGES = 4           # minimum recent messages with text
+DEFAULT_PROTECT_FIRST_N = 0             # minimum prefix size; all covered input is summarized
+DEFAULT_PROTECT_LAST_N = 4             # keep the latest two complete user turns
 DEFAULT_MIN_PROMPT_BUDGET = 8_000       # head must have ≥ this many tokens free
 DEFAULT_MIN_PROMPT_RATIO = 0.25         # OR ≥ 25% of window — whichever smaller
 
@@ -126,8 +113,8 @@ class Summarizer:
                 duration_ms=int((time.time() - started) * 1000),
             )
 
-        prefix = messages[self.protect_first_n:cut]
-        prefix_tokens = estimate_history_tokens(prefix)
+        prefix = messages[:cut]
+        prefix_tokens = sum(_message_tokens(m) for m in prefix)
 
         try:
             text = await self._llm_summary(
@@ -139,14 +126,14 @@ class Summarizer:
             fell_back = False
             err: Optional[str] = None
         except Exception as e:  # noqa: BLE001
-            text = self._structural_summary(prefix)
+            text = ""
             fell_back = True
             err = f"{type(e).__name__}: {e}"
 
         return Summary(
             summary_text=text,
             cut_idx=cut,
-            summarised_count=cut - self.protect_first_n,
+            summarised_count=cut,
             summarised_tokens=prefix_tokens,
             previous_summary_used=bool(previous_summary),
             duration_ms=int((time.time() - started) * 1000),
@@ -161,29 +148,11 @@ class Summarizer:
                        keep_recent_tokens: int | None = None,
                        context_window: int = 0,
                        ) -> int:
-        """Pick the cut point — everything before goes into the summary,
-        everything at or after is preserved verbatim as the kept tail.
+        """Select a prefix using rendered tokens and complete user turns.
 
-        Algorithm (synthesised from Claude Code, Hermes, OpenClaw — see
-        openprogram/context/README.md §4):
-
-          1. Compute the *desired* tail size:
-                desired = clamp(window × keep_ratio, keep_min_tokens, keep_max_tokens)
-             ``keep_recent_tokens`` overrides this when the caller forces
-             a specific budget (legacy /compact path).
-          2. Apply small-window cap so the head still has room to breathe:
-                min_prompt = min(min_prompt_budget, window × min_prompt_ratio)
-                effective = min(desired, window - min_prompt)
-          3. Walk from newest backward. Accept the cut when BOTH
-             tail_tokens ≥ effective AND tail_text_block_messages ≥
-             keep_min_messages. The double gate prevents a tail full of
-             one giant tool_result with no real conversation.
-          4. Apply protect_last_n: cut must not eat into the last N msgs.
-          5. Apply protect_first_n: cut must not be inside the protected
-             head.
-          6. Snap forward to the next user-message boundary so the kept
-             tail starts with a user turn (otherwise the model sees an
-             orphan assistant reply).
+        The bounded token target controls the retained suffix, with a minimum
+        recent-message count. If that suffix alone exceeds the target, retain
+        it intact. A history already under the target needs no summary.
         """
         n = len(messages)
         if n < 4:
@@ -208,36 +177,29 @@ class Summarizer:
             max_safe_keep = max(0, context_window - min_prompt)
             effective_keep = min(effective_keep, max_safe_keep)
 
-        # 3. Walk backward accumulating tokens + text-block messages
-        tail_tokens = 0
-        tail_text_msgs = 0
-        cut = n
-        lower = self.protect_first_n
-        for i in range(n - 1, lower - 1, -1):
-            tail_tokens += estimate_message_tokens(messages[i])
-            if _has_text_block(messages[i]):
-                tail_text_msgs += 1
-            if (tail_tokens >= effective_keep
-                    and tail_text_msgs >= self.keep_min_messages):
-                cut = i
-                break
-            cut = i
-
-        # 4. protect_last_n — never fold the most recent N messages.
-        last_n_floor = max(0, n - self.protect_last_n)
-        cut = min(cut, last_n_floor)
-
-        # 5. protect_first_n — cut sits at or after the protected head.
-        cut = max(cut, self.protect_first_n)
-
-        # 6. Snap forward to a user-message boundary.
-        while cut < n and messages[cut].get("role") != "user":
-            cut += 1
-        if cut >= n:
-            # Couldn't find a user boundary in the kept tail. Fall back
-            # to the latest sensible cut so the call still makes progress.
-            cut = max(self.protect_first_n + 1, n - 2)
-        return cut
+        # Select only complete user-turn boundaries. The latest two user
+        # turns are the default minimum; a giant recent turn may exceed the
+        # target, but must never be split from its calls/results.
+        tokens = [_message_tokens(m) for m in messages]
+        if sum(tokens) <= effective_keep:
+            return 0
+        user_indices = [i for i, msg in enumerate(messages)
+                        if msg.get("role") == "user"]
+        if len(user_indices) < 3:
+            return 0
+        latest_allowed = user_indices[-2]
+        boundaries = [i for i in range(1, latest_allowed + 1)
+                      if messages[i].get("role") == "user"
+                      and i >= self.protect_first_n
+                      and n - i >= self.protect_last_n
+                      and sum(_has_text_block(m) for m in messages[i:])
+                      >= self.keep_min_messages]
+        if not boundaries:
+            return 0
+        for cut in boundaries:
+            if sum(tokens[cut:]) <= effective_keep:
+                return cut
+        return boundaries[-1]
 
     # ---- LLM call ------------------------------------------------------
 
@@ -304,32 +266,6 @@ class Summarizer:
                 out.append(f"{role}: {text}")
         return "\n\n".join(out)
 
-    @staticmethod
-    def _structural_summary(prefix: list[dict]) -> str:
-        """Deterministic fallback when the LLM call fails.
-
-        Lists per-message role + first 60 chars so the model has SOME
-        idea what got dropped, even if the LLM couldn't summarise it
-        properly. Better than ``[N messages elided]`` which the prior
-        impl produced.
-        """
-        n = len(prefix)
-        tokens = estimate_history_tokens(prefix)
-        lines = [
-            f"[Context summary unavailable — LLM summariser failed. "
-            f"The following {n} message(s) were dropped to free "
-            f"≈{tokens} tokens. Each line shows role + opening of the "
-            f"original content; the agent can ask the user for missing "
-            f"details if a particular item turns out to be relevant.]",
-        ]
-        for m in prefix:
-            role = (m.get("role") or "?").capitalize()
-            head = (m.get("content") or "").strip().replace("\n", " ")
-            if len(head) > 60:
-                head = head[:57] + "…"
-            lines.append(f"  · {role}: {head or '(empty)'}")
-        return "\n".join(lines)
-
 
 def _has_text_block(msg: dict) -> bool:
     """A 'text-block message' is one whose content carries some real
@@ -348,3 +284,10 @@ def _has_text_block(msg: dict) -> bool:
 
 
 default_summarizer = Summarizer()
+
+
+def _message_tokens(msg: dict) -> int:
+    """DAG groups are priced from provider messages, including tool results."""
+    if "_context_tokens" in msg:
+        return int(msg["_context_tokens"])
+    return estimate_message_tokens(msg)

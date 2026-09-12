@@ -163,22 +163,28 @@ for (const [name, tabs, activeId] of [
 ]) test(`reopen restores origin once over persisted ${name} and ACKs only a loaded transcript`, async () => {
   await setup(tabs, activeId);
   await mounted(async (host, root, socket) => {
+    const expectedActiveId = tabs.some(tab => tab.kind === "session" && tab.sessionId === "origin")
+      ? tabs.find(tab => tab.kind === "session" && tab.sessionId === "origin").id
+      : activeId;
     assert.equal(window.location.pathname, "/s/origin");
     assert.deepEqual(ackRequests, []);
     // AppShell's route synchronization arrives after child effects on mount.
     await act(async () => useSessionStore.getState().setCurrentConv("origin"));
     await act(async () => socket.onopen());
     assert.ok(socket.sent.some((v) => v.action === "load_session" && v.session_id === "origin"));
-    assert.equal(useCenterTabs.getState().activeId, activeId);
-    assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === activeId).sessionId, "origin");
-    assert.equal(host.querySelectorAll(`[data-tab="${activeId}"]`).length, 1);
+    assert.equal(useCenterTabs.getState().activeId, expectedActiveId);
+    assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === expectedActiveId).sessionId, "origin");
+    if (expectedActiveId !== activeId) {
+      assert.equal(useCenterTabs.getState().tabs.find(tab => tab.id === activeId).sessionId, "other");
+    }
+    assert.equal(host.querySelectorAll(`[data-tab="${expectedActiveId}"]`).length, 1);
     assert.deepEqual(ackRequests, []);
     await act(async () => { transcript(socket); await Promise.all(ackTasks); });
     assert.equal(ackRequests.length, 1);
     assert.equal(recovery.state().status, "acknowledged");
     await act(async () => { transcript(socket); await Promise.all(ackTasks); });
     assert.equal(ackRequests.length, 1);
-    assert.equal(host.querySelectorAll(`[data-tab="${activeId}"]`).length, 1);
+    assert.equal(host.querySelectorAll(`[data-tab="${expectedActiveId}"]`).length, 1);
     assert.ok(!navigations.includes("/s/other") && !navigations.includes("/chat"));
   });
 });
@@ -275,5 +281,76 @@ test("back restores the same unsent draft and its typed input", async () => {
     assert.equal(useCenterTabs.getState().activeId, id);
     await act(async () => useCenterTabs.getState().navigateSessionHistory(1));
     assert.equal(window.location.pathname, "/s/target");
+  });
+});
+
+for (const hidden of [false, true]) for (const route of ["/settings", "/s/other", "/chat"]) test(`final tab close leaves no visible tabs from ${route}, hidden=${hidden}`, async () => {
+  await setup([other], other.id, "detached");
+  await mounted(async () => {
+    await act(async () => useSessionStore.getState().setCurrentConv("other"));
+    await act(async () => navigate(route));
+    if (hidden) await act(async () => {
+      const store = useCenterTabs.getState();
+      const pageId = store.ensureWebTab("https://retained.test");
+      store.markAgentWebTab(pageId, "other");
+    });
+    const tab = useCenterTabs.getState().tabs.find(t => t.kind === "session");
+    await act(async () => lifecycle.onTabClose({ stopPropagation() {} }, tab));
+    await act(async () => lifecycle.finishClose(tab));
+    assert.equal(window.location.pathname, "/chat");
+    const state = useCenterTabs.getState();
+    assert.equal(state.tabs.length, hidden ? 1 : 0);
+    assert.equal(state.activeId, null);
+    if (hidden) assert.equal(state.tabs[0].agentSessionId, "other");
+    assert.equal(useSessionStore.getState().currentSessionId, null);
+  });
+  sockets = [];
+  await mounted(async () => {
+    assert.equal(useCenterTabs.getState().activeId, null);
+    assert.equal(useCenterTabs.getState().tabs.length, hidden ? 1 : 0);
+  });
+});
+
+test("Back to New tab clears the session route and Forward restores the draft", async () => {
+  await setup([], null, "detached");
+  await mounted(async () => {
+    await act(async () => useCenterTabs.getState().openNewTabPage());
+    const home = useCenterTabs.getState().activeId;
+    let draft;
+    await act(async () => { draft = useCenterTabs.getState().claimDraftSessionTab(); });
+    await act(async () => useCenterTabs.getState().openSessionTab("next", "Next"));
+    await act(async () => useSessionStore.getState().setCurrentConv("next"));
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    assert.equal(useCenterTabs.getState().activeId, home);
+    assert.equal(useCenterTabs.getState().tabs.length, 1);
+    assert.equal(window.location.pathname, "/chat");
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(1));
+    assert.equal(useCenterTabs.getState().tabs[0].sessionId, draft);
+    assert.equal(useSessionStore.getState().activeChatKey, draft);
+  });
+});
+
+test("Back on /chat clears an acknowledged session and survives remount", async () => {
+  await setup([], null, "detached");
+  let home;
+  await mounted(async () => {
+    await act(async () => useCenterTabs.getState().openNewTabPage());
+    home = useCenterTabs.getState().activeId;
+    await act(async () => useCenterTabs.getState().openSessionTab("acknowledged", "Acknowledged"));
+    await act(async () => {
+      useSessionStore.getState().setCurrentConv("acknowledged");
+      navigate("/chat");
+    });
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(-1));
+    assert.equal(useSessionStore.getState().currentSessionId, null);
+    assert.equal(useCenterTabs.getState().activeId, home);
+  });
+  sockets = [];
+  await mounted(async () => {
+    assert.equal(useCenterTabs.getState().activeId, home);
+    assert.equal(useCenterTabs.getState().tabs[0].kind, "ntp");
+    await act(async () => useCenterTabs.getState().navigateSessionHistory(1));
+    assert.equal(useCenterTabs.getState().tabs[0].sessionId, "acknowledged");
   });
 });

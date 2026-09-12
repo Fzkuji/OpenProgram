@@ -24,6 +24,7 @@ import {
   recoverSessionResources,
   sessionResourceView,
   setBrowserConnection,
+  optimisticallyCloseBrowserResource,
 } from "../lib/state/session-resources.ts";
 
 const tabs = [
@@ -120,6 +121,60 @@ test("browser associations keep exact page identity and group by branch not sess
   assert.equal(groups[2].title, "Unassigned");
   assert.ok(groups[2].rows.some(row => row.id === "assoc-c"));
   assert.ok(groups[2].rows.some(row => row.kind === "vm"));
+});
+
+test("optimistic close suppresses a late old event but authoritative snapshot restores on failure", () => {
+  resetBrowserResources();
+  ingestBrowserResource(browserItem({ generation: 4, sequence: 8 }), "a");
+  optimisticallyCloseBrowserResource("page-a", 4);
+  assert.equal(listedBrowserResources().length, 0);
+  ingestBrowserResource(browserItem({ generation: 4, sequence: 9 }), "a");
+  assert.equal(listedBrowserResources().length, 0);
+  ingestBrowserResource(browserItem({ generation: 4, sequence: 10 }), "a", { origin: "snapshot" });
+  assert.equal(listedBrowserResources().length, 1);
+});
+
+test("optimistic close timeout accepts live authority when no close receipt arrives", () => {
+  resetBrowserResources();
+  const now = Date.now;
+  let clock = 1000;
+  Date.now = () => clock;
+  try {
+    ingestBrowserResource(browserItem({ generation: 2 }), "a");
+    optimisticallyCloseBrowserResource("page-a", 2);
+    ingestBrowserResource(browserItem({ id: "stale-close", generation: 2, sequence: 0,
+      status: "closed", control_state: "closed" }), "a");
+    assert.equal(listedBrowserResources().length, 0);
+    clock += 5001;
+    ingestBrowserResource(browserItem({ generation: 2, sequence: 2 }), "a");
+    assert.equal(listedBrowserResources().length, 1);
+  } finally {
+    Date.now = now;
+  }
+});
+
+test("one targeted closed event updates every association for the Page", () => {
+  resetBrowserResources();
+  ingestBrowserResource(browserItem({ id: "assoc-a", branch_id: "br-a" }), "a");
+  ingestBrowserResource(browserItem({ id: "assoc-b", branch_id: "br-b", sequence: 2 }), "a");
+  ingestBrowserResource(browserItem({ id: "stale-close", status: "closed", control_state: "closed", sequence: 1 }), "a");
+  assert.ok(listedBrowserResources().every(row => row.status === "open"));
+  ingestBrowserResource(browserItem({ id: "close", status: "closed", control_state: "closed", sequence: 3 }), "a");
+  assert.equal(listedBrowserResources().length, 2);
+  assert.ok(listedBrowserResources().every(row => row.status === "closed" && row.controlState === "closed"));
+  ingestBrowserResource(browserItem({ id: "successor", generation: 5, sequence: 1 }), "a");
+  assert.equal(listedBrowserResources().find(row => row.id === "successor")?.status, "open");
+});
+
+test("confirmed close restores hidden associations before marking them closed", () => {
+  resetBrowserResources();
+  ingestBrowserResource(browserItem({ id: "assoc-a", branch_id: "br-a", sequence: 4 }), "a");
+  ingestBrowserResource(browserItem({ id: "assoc-b", branch_id: "br-b", sequence: 5 }), "a");
+  optimisticallyCloseBrowserResource("page-a", 4);
+  ingestBrowserResource(browserItem({ id: "close", generation: 4, sequence: 6,
+    status: "closed", control_state: "closed" }), "a");
+  assert.equal(listedBrowserResources().length, 2);
+  assert.ok(listedBrowserResources().every(row => row.status === "closed"));
 });
 
 test("parent Resources keep authorized child-owned browser Pages", () => {

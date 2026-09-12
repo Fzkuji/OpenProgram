@@ -10,12 +10,14 @@ Layout::
     ~/.openprogram/sessions/.file-recovery/<session_id>/
     └── <turn_id>/
         ├── manifest.json     # { backup_basename → original_abs_path }
-        ├── <hash>            # before image
-        └── <hash>.after      # committed after image
+        ├── <hash>.<version>   # immutable before image
+        └── <hash>.after.<version>  # immutable after image
 
 ``<hash>`` is a short content-addressed-ish basename derived from the
 original path (we want backups to be readable when humans poke around,
-not collision-free across paths). The manifest is the source of truth
+not collision-free across paths). Legacy unsuffixed blobs remain readable. Referenced versions are retained
+until their turn is pruned; files are never overwritten in place.
+The manifest is the source of truth
 for "which backup belongs to which path".
 """
 from __future__ import annotations

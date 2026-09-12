@@ -169,6 +169,22 @@ class ExecutionStore:
                 ) from exc
 
     @contextmanager
+    def _admission_transaction(self, session_id: str) -> Iterator[sqlite3.Connection]:
+        """Serialize new execution admission with session migration holds."""
+        from openprogram.paths import get_state_dir
+        from openprogram.store.session.migration import session_hold_active
+        from openprogram.store.session.session_lock import session_interprocess_lock
+
+        with session_interprocess_lock(session_id, timeout=5.0):
+            if session_hold_active(Path(get_state_dir()) / "sessions", session_id):
+                raise ExecutionConflict(
+                    "session_migration",
+                    "execution admission is paused while session migration runs",
+                )
+            with self._transaction() as connection:
+                yield connection
+
+    @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
         connection = self._connect()
         event_token = _projection_event_written.set(False)
@@ -203,7 +219,7 @@ class ExecutionStore:
         source_checkpoint_id: str | None = None,
         capabilities: CapabilitySet = CapabilitySet(),
     ) -> ExecutionRecord:
-        with self._transaction() as connection:
+        with self._admission_transaction(session_id) as connection:
             return self._create_execution_in_transaction(
                 connection,
                 session_id=session_id,
@@ -357,7 +373,7 @@ class ExecutionStore:
         durable_payload_json = agent_payload_json or job_payload_json
         if job_payload_json is not None and hashlib.sha256(job_payload_json.encode("utf-8")).hexdigest() != input_hash:
             raise ExecutionConflict("input_hash_mismatch", "durable Job Agent input does not match input_hash")
-        with self._transaction() as connection:
+        with self._admission_transaction(session_id) as connection:
             if durable_payload_json is not None:
                 connection.execute(
                     "DELETE FROM execution_finish_repair_slots "

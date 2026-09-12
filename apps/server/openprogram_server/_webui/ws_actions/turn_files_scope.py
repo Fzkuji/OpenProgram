@@ -74,7 +74,7 @@ def _manifest_mutations(session_dir: Path, turn_id: str) -> list[dict]:
 
     if not _valid_turn_id(turn_id):
         return []
-    return CheckpointStore(session_dir).list_mutations(turn_id)
+    return CheckpointStore(session_dir).list_file_history(turn_id)
 
 
 def _normalise_file(row: dict, root: Path | None) -> dict:

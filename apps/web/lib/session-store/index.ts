@@ -214,6 +214,8 @@ interface ConvState {
     messageIds?: Iterable<unknown>,
   ) => boolean;
   appendMessage: (sessionId: string, msg: ChatMsg) => void;
+  rekeyMessage: (sessionId: string, oldId: string, newId: string) => void;
+  removeMessage: (sessionId: string, msgId: string) => void;
   updateMessage: (sessionId: string, msgId: string, patch: Partial<ChatMsg>) => void;
   /** Truncate messages at and after msgId. Used by retry to drop the
    *  stale reply before the new one streams in. */
@@ -794,6 +796,46 @@ export const useSessionStore = createWithEqualityFn<ConvState>((set) => ({
         messageOrder: {
           ...s.messageOrder,
           [sessionId]: [...(s.messageOrder[sessionId] ?? []), msg.id],
+        },
+      };
+    }),
+
+  rekeyMessage: (sessionId, oldId, newId) =>
+    set((s) => {
+      const current = s.messagesById[oldId];
+      if (!current || oldId === newId) return {};
+      const byId = { ...s.messagesById };
+      delete byId[oldId];
+      if (!byId[newId]) byId[newId] = { ...current, id: newId };
+      const order = s.messageOrder[sessionId] ?? [];
+      const nextOrder: string[] = [];
+      const seen = new Set<string>();
+      for (const id of order) {
+        const nextId = id === oldId ? newId : id;
+        if (!seen.has(nextId)) {
+          seen.add(nextId);
+          nextOrder.push(nextId);
+        }
+      }
+      return {
+        messagesById: byId,
+        messageOrder: {
+          ...s.messageOrder,
+          [sessionId]: nextOrder,
+        },
+      };
+    }),
+
+  removeMessage: (sessionId, msgId) =>
+    set((s) => {
+      if (!s.messagesById[msgId]) return {};
+      const byId = { ...s.messagesById };
+      delete byId[msgId];
+      return {
+        messagesById: byId,
+        messageOrder: {
+          ...s.messageOrder,
+          [sessionId]: (s.messageOrder[sessionId] ?? []).filter((id) => id !== msgId),
         },
       };
     }),

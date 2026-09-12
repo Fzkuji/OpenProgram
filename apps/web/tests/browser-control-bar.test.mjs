@@ -231,9 +231,7 @@ test("compact control buttons keep takeover labels on title and aria-label inste
     assert.equal(host.firstElementChild?.getAttribute("data-compact"), "true");
     assertIconButton(labeledButton(host, "Show actions"), "Show actions");
     assertIconButton(labeledButton(host, "Operation history"), "Operation history");
-    assertIconButton(labeledButton(host, "I will operate"), "I will operate");
-    const pause = labeledButton(host, "I will operate");
-    assert.equal(pause.disabled, false);
+    assert.equal(labeledButton(host, "I will operate"), undefined);
     assert.equal(labeledButton(host, "Show actions").getAttribute("aria-pressed"), "true");
   });
 });
@@ -249,39 +247,7 @@ test("show actions click toggles pressed state without changing pause", async ()
     assert.equal(showActionsEnabled(), true);
     assert.equal(show.getAttribute("aria-pressed"), "true");
     assert.equal(globalThis.controlPosts.length, 0);
-    assert.equal(labeledButton(host, "I will operate").disabled, false);
-  });
-});
-
-test("pause click posts pause, then resume posts after acknowledgement", async () => {
-  await mounted(async host => {
-    let settlePause;
-    globalThis.controlReply = ({ body }) => {
-      if (body.action === "pause") return new Promise(resolve => { settlePause = resolve; });
-      return pageRow("active", 3);
-    };
-    const pause = labeledButton(host, "I will operate");
-    await act(async () => {
-      pause.click();
-      await Promise.resolve();
-    });
-    assert.equal(globalThis.controlPosts.length, 1);
-    assert.equal(globalThis.controlPosts[0].body.action, "pause");
-    assert.match(globalThis.controlPosts[0].url, /\/api\/session\/a\/resources\/page-a\/control$/);
-    const yielding = labeledButton(host, "Pausing…");
-    assertIconButton(yielding, "Pausing…");
-    assert.equal(yielding.disabled, true);
-    assert.equal(labeledButton(host, "Continue Agent"), undefined);
-    await act(async () => { settlePause(pageRow("paused", 2)); });
-    const resume = labeledButton(host, "Continue Agent");
-    assertIconButton(resume, "Continue Agent");
-    assert.equal(resume.disabled, false);
-    await act(async () => {
-      resume.click();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    assert.equal(globalThis.controlPosts.at(-1).body.action, "resume");
+    assert.equal(labeledButton(host, "I will operate"), undefined);
   });
 });
 
@@ -367,63 +333,6 @@ test("idle and closed do not render an enabled Pause", async () => {
   }, { controlState: "closed" });
 });
 
-test("stop unconfirmed shows Retry pause enabled when connected", async () => {
-  await mounted(async host => {
-    const retry = labeledButton(host, "Retry pause");
-    assertIconButton(retry, "Retry pause");
-    assert.equal(retry.disabled, false);
-    assert.equal(labeledButton(host, "Continue Agent"), undefined);
-    assert.equal(labeledButton(host, "I will operate"), undefined);
-    assert.equal(host.firstElementChild?.textContent.includes("Could not pause. Try again"), true);
-    assert.equal(host.firstElementChild?.textContent.includes("Paused"), false);
-    await act(async () => {
-      retry.click();
-      await Promise.resolve();
-    });
-    assert.equal(globalThis.controlPosts.length, 1);
-    assert.equal(globalThis.controlPosts[0].body.action, "pause");
-  }, { controlState: "stop_unconfirmed" });
-});
-
-test("yielding unknown and disconnect disable pause without a false failure", async () => {
-  await mounted(host => {
-    const pause = labeledButton(host, "Pausing…");
-    assertIconButton(pause, "Pausing…");
-    assert.equal(pause.disabled, true);
-    assert.equal(host.textContent.includes("Pausing…"), true);
-  }, { controlState: "yielding" });
-
-  await mounted(host => {
-    const pause = labeledButton(host, "I will operate");
-    assert.equal(pause.disabled, true);
-    assert.equal(host.textContent.includes("Could not confirm status"), true);
-    assert.equal(host.textContent.includes("Could not pause"), false);
-    assert.equal(labeledButton(host, "Retry pause"), undefined);
-  }, { controlState: "unknown" });
-
-  await mounted(host => {
-    const pause = labeledButton(host, "I will operate");
-    assert.equal(pause.disabled, true);
-    assert.equal(host.textContent.includes("Connection lost"), true);
-    assert.equal(host.textContent.includes("Could not pause"), false);
-  }, { connected: false });
-});
-
-test("resume stays off after disconnect from a paused page", async () => {
-  await mounted(async host => {
-    const resume = labeledButton(host, "Continue Agent");
-    assertIconButton(resume, "Continue Agent");
-    assert.equal(resume.disabled, false);
-    await act(async () => {
-      setBrowserConnection(false);
-      ingestBrowserResource(pageRow("paused", 2), "a");
-    });
-    const disconnected = labeledButton(host, "I will operate") || labeledButton(host, "Continue Agent");
-    assert.ok(disconnected);
-    assert.equal(disconnected.disabled, true);
-  }, { controlState: "paused" });
-});
-
 test("native history uses context menu popup and does not occlude the page", async () => {
   const menu = installNativeMenu();
   await mounted(async host => {
@@ -489,7 +398,7 @@ test("child pointer and keyboard do not fold; cancel does not toggle; expanded r
     assert.ok(float);
     assert.equal(float.getAttribute("data-collapsed"), "false");
     assert.equal(float.getAttribute("role"), "group");
-    const pause = labeledButton(host, "I will operate");
+    const pause = labeledButton(host, "Show actions");
     assert.ok(pause);
     await act(async () => {
       const down = new window.Event("pointerdown", { bubbles: true, cancelable: true });
@@ -500,7 +409,7 @@ test("child pointer and keyboard do not fold; cancel does not toggle; expanded r
       pause.dispatchEvent(up);
     });
     assert.equal(float.getAttribute("data-collapsed"), "false");
-    assert.ok(labeledButton(host, "I will operate"));
+    assert.equal(labeledButton(host, "I will operate"), undefined);
     await act(async () => {
       const key = new window.Event("keydown", { bubbles: true, cancelable: true });
       Object.defineProperty(key, "key", { value: "Enter" });
@@ -516,6 +425,6 @@ test("child pointer and keyboard do not fold; cancel does not toggle; expanded r
       float.dispatchEvent(cancel);
     });
     assert.equal(float.getAttribute("data-collapsed"), "false");
-    assert.equal(labeledButton(host, "I will operate").disabled, false);
+    assert.equal(labeledButton(host, "I will operate"), undefined);
   });
 });

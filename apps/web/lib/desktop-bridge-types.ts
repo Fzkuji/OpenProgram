@@ -145,6 +145,8 @@ export interface DesktopWebTabApi {
   /** Atomically replace the native views visible in this renderer window. */
   syncVisible(items: DesktopVisibleWebView[]): void;
   destroy(id: string): void;
+  /** Destroy and report whether the native view was actually closed. */
+  destroyConfirmed?(id: string): Promise<boolean>;
   reload(id: string): void;
   stop(id: string): void;
   goBack(id: string): void;

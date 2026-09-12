@@ -31,7 +31,12 @@ interface Project extends EditableProject {
   is_default: boolean;
   /** Backend-computed: the folder no longer exists on disk. */
   path_missing?: boolean;
+  path_replaced?: boolean;
+  location_state?: string;
+  location_revision?: number;
+  migration_error?: string;
   session_count: number;
+  unarchived_session_count?: number;
   status: string;
 }
 
@@ -123,8 +128,16 @@ export function ProjectsPage({
     try {
       const path = await pickFolder(startPath);
       if (!path) return;
+      const current = projects.find((project) => project.id === projectId);
       const d = await wsRequest<{ ok: boolean; error?: string | null }>(
-        "relocate_project", { project_id: projectId, path },
+        "relocate_project",
+        {
+          project_id: projectId,
+          path,
+          expected_path: current?.path || startPath,
+          expected_revision: current?.location_revision,
+          replace_identity: true,
+        },
         "project_relocated",
       );
       if (d && !d.ok) setError(d.error || text("Relocation failed.", "移动失败。"));
@@ -183,16 +196,19 @@ export function ProjectsPage({
               >
                 <span className={fx.profileIcon}>{p.icon || <FoldersIcon size={16} />}</span>
                 <span className={fx.profileName}>{p.name}</span>
-                {p.path_missing && (
-                  <AlertTriangle
-                    size={13}
-                    strokeWidth={2}
-                    style={{ color: "var(--accent-orange)", flexShrink: 0 }}
-                    aria-label={text("Folder missing", "目录缺失")}
-                  />
-                )}
                 {p.hidden && <span className={styles.badge}>{text("Hidden", "已隐藏")}</span>}
                 {p.is_default && <span className={styles.badge}>{text("Default", "默认")}</span>}
+                {(p.path_missing || p.path_replaced ||
+                  ["missing", "replaced", "migrating", "pending", "error"].includes(p.location_state ?? "")) ? (
+                  <AlertTriangle
+                    size={14}
+                    strokeWidth={2}
+                    className={styles.statusSlot}
+                    aria-label={text("Folder missing", "目录缺失")}
+                  />
+                ) : (
+                  <span className={styles.statusSlotPad} aria-hidden="true" />
+                )}
               </div>
             ))}
             <div className={fx.profileSep} />
@@ -217,7 +233,7 @@ export function ProjectsPage({
                   {selected.hidden&&<Button variant="outline" onClick={async()=>{try{const result=await wsRequest<{ok:boolean;error?:string}>("restore_project",{project_id:selected.id},"restore_project_result");if(!result?.ok)throw new Error(result?.error||"Could not restore project");await refresh();window.dispatchEvent(new Event("project-changed"));}catch(err){setError(String(err));}}}>{text("Restore to sidebar", "恢复到侧边栏")}</Button>}
                   <Button variant="outline" onClick={()=>setEditing(true)}>{text("Edit project", "编辑项目")}</Button>
                 </div>
-                {selected.path_missing && (
+                {(selected.path_missing || selected.path_replaced || (selected.location_state && selected.location_state !== "available")) && (
                   <div
                     role="alert"
                     style={{
@@ -228,10 +244,36 @@ export function ProjectsPage({
                   >
                     <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />
                     <span>
-                      {text(
-                        "This folder no longer exists on disk.",
-                        "该目录已不在磁盘上。",
-                      )}
+                      {selected.path_replaced || selected.location_state === "replaced"
+                        ? text(
+                            "The folder at this location has changed.",
+                            "该位置上的文件夹已更换。",
+                          )
+                        : selected.location_state === "migrating"
+                          ? text(
+                              "Migrating conversations. Tasks start after completion.",
+                              "正在迁移对话。完成前不能启动任务。",
+                            )
+                            : selected.location_state === "pending" &&
+                                selected.migration_error !== "directory identity unavailable"
+                              ? text(
+                                  "This legacy conversation has not migrated. Reconnect the original drive to finish.",
+                                  "这条旧对话尚未迁移。请接回原来的磁盘后再完成。",
+                                )
+                              : selected.location_state === "pending"
+                                ? text(
+                                    "This folder needs confirmation. Locate the original folder to continue.",
+                                    "该目录需要确认。请定位原来的目录后继续。",
+                                  )
+                            : selected.location_state === "error"
+                              ? text(
+                                  selected.migration_error || "Conversation migration failed.",
+                                  selected.migration_error || "对话迁移失败。",
+                                )
+                              : text(
+                                  "This folder no longer exists on disk.",
+                                  "该目录已不在磁盘上。",
+                                )}
                     </span>
                     <button
                       type="button"

@@ -23,7 +23,7 @@
 #
 # The GUI harness's torch build is whatever pip resolves. If you need an
 # explicit CUDA/CPU variant, run the harness's own installer afterwards:
-#   openprogram/programs/applications/gui_harness/scripts/install.sh --cuda cu124
+#   openprogram/programs/packages/gui_harness/scripts/install.sh --cuda cu124
 #
 # Re-runnable: every step is idempotent.
 #
@@ -245,11 +245,13 @@ install_extras() {
 install_first_party_programs() {
   step "installing GUI, Research, and Wiki Programs"
   "$PY" -m openprogram programs install all
-  local applications="$HOST_ROOT/openprogram/programs/applications"
-  local gui_installer="$applications/gui_harness/scripts/install.sh"
+  local gui_source research_source
+  gui_source="$("$PY" -c 'from openprogram.programs._programs import get_program; print(get_program("gui").clone_dir())')"
+  research_source="$("$PY" -c 'from openprogram.programs._programs import get_program; print(get_program("research").clone_dir())')"
+  local gui_installer="$gui_source/scripts/install.sh"
   [ -f "$gui_installer" ] || die "GUI Program source is missing after install"
   bash "$gui_installer" --no-host --python "$PY"
-  PIP install -e "$applications/research_harness[pdf]"
+  PIP install -e "$research_source[pdf]"
 
   local gpa_model="${GPA_MODEL_PATH:-$HOME/GPA-GUI-Detector/model.pt}"
   [ -s "$gpa_model" ] || die "GPA detector model is missing: $gpa_model"

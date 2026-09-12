@@ -43,9 +43,14 @@ def persist_turn_file_summary(
         from openprogram.store.snapshot.checkpoint import CheckpointStore
 
         store = default_store()
+        from openprogram.store.document_history import DocumentHistory
+        try:
+            DocumentHistory().register_model_turn(session_id, assistant_msg_id, session_store=store)
+        except Exception:
+            _log.warning("model document index repair failed for %s", session_id, exc_info=True)
         mutations = CheckpointStore(
             store._session_dir(session_id),
-        ).list_mutations(assistant_msg_id)
+        ).list_file_history(assistant_msg_id)
         if not mutations:
             return None
         files = []

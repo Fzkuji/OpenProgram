@@ -48,7 +48,14 @@ def env(monkeypatch):
 
 # env_vars_for (display labels / identifiers only)
 
-def test_env_vars_for():
+def test_env_vars_for(monkeypatch):
+    # This unit test checks the static labels. Keep the unknown-provider
+    # fallback offline so a stale models.dev cache cannot start its refresh
+    # thread during the unit runtime-boundary fixture.
+    monkeypatch.setattr(
+        "openprogram.providers.metadata._models_dev_info",
+        lambda _provider_id: {},
+    )
     assert ek.env_vars_for("google") == ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]
     assert ek.env_vars_for("anthropic") == ["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]
     assert ek.env_vars_for("minimax-cn") == ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]

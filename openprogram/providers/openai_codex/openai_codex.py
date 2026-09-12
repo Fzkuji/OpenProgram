@@ -660,8 +660,8 @@ async def _parse_sse_stream(response: Any, signal: Any = None):
     We track ``last_data_at`` independently — only "real" data events
     (i.e. parsed JSON payloads other than [DONE]) refresh it. If
     nothing of substance arrives for SSE_IDLE_TIMEOUT_S, we raise.
-    A separate hard ceiling (SSE_TOTAL_TIMEOUT_S) backstops genuinely
-    stuck requests that never even hit idle (e.g. ping-flooded).
+    An optional deployment ceiling (SSE_TOTAL_TIMEOUT_S) applies only
+    when explicitly configured; the default is unbounded.
     """
     import asyncio
     import time as _time

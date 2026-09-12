@@ -21,8 +21,6 @@ import {
   displayedControlState,
   liveOperationMarker,
   operationHistory,
-  requestExplicitPause,
-  requestResumeAgent,
   resumeErrorFor,
   revealPendingApproval,
   showActionsEnabled,
@@ -681,26 +679,10 @@ export function WebTabPip() {
           >
             <ExternalLink size={14} aria-hidden="true" />
           </button>
-          {takeoverKind && control ? (
-            <button
-              type="button"
-              className={styles.webToolbarBtn}
-              disabled={takeoverDisabled}
-              title={takeoverLabel}
-              aria-label={takeoverLabel}
-              onClick={() => {
-                if (takeoverKind === "reveal") {
-                  revealPendingApproval(control);
-                  return;
-                }
-                void (takeoverKind === "resume" ? requestResumeAgent(control) : requestExplicitPause(control));
-              }}
-            >
-              {takeoverKind === "reveal"
-                ? <CircleHelp size={14} aria-hidden="true" />
-                : takeoverKind === "resume"
-                ? <Play size={14} aria-hidden="true" />
-                : <Pause size={14} aria-hidden="true" />}
+          {takeoverKind === "reveal" && control ? (
+            <button type="button" className={styles.webToolbarBtn} title={text("Review request", "查看请求")}
+              aria-label={text("Review request", "查看请求")} onClick={() => revealPendingApproval(control)}>
+              <CircleHelp size={14} aria-hidden="true" />
             </button>
           ) : null}
           <button

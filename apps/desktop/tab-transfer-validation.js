@@ -92,7 +92,7 @@ function validateTransferPayload(ctx, value) {
     throw new TypeError("Transfer payload requires one to three tabs");
   }
 
-  const validKinds = new Set(["session", "file", "web", "ntp"]);
+  const validKinds = new Set(["session", "file", "web", "ntp", "application"]);
   const tabs = [];
   const ids = [];
   const seen = new Set();
@@ -102,15 +102,19 @@ function validateTransferPayload(ctx, value) {
     }
     boundedString(tab.id, "tab.id", 4 * 1024, true);
     boundedString(tab.title, "tab.title", 4 * 1024);
-    for (const field of ["url", "path", "projectId", "sessionId"]) {
+    for (const field of ["url", "path", "projectId", "sessionId", "applicationId", "applicationInstanceId"]) {
       boundedString(tab[field], `tab.${field}`, 16 * 1024);
+    }
+    if (tab.kind === "application" && (!/^[a-z][a-z0-9._-]{0,95}$/.test(tab.applicationId ?? "")
+      || !/^[a-f0-9]{64}$/.test(tab.applicationInstanceId ?? "") || tab.id !== `app:${tab.applicationInstanceId}`)) {
+      throw new TypeError("Invalid application identity");
     }
     if (seen.has(tab.id)) throw new TypeError("Transfer tab ids must be unique");
     seen.add(tab.id);
     ids.push(tab.id);
     const normalized = { id: tab.id, kind: tab.kind };
     if (tab.title !== undefined && tab.title !== null) normalized.title = tab.title;
-    for (const field of ["url", "path", "projectId", "sessionId"]) {
+    for (const field of ["url", "path", "projectId", "sessionId", "applicationId", "applicationInstanceId"]) {
       if (tab[field] !== undefined && tab[field] !== null) normalized[field] = tab[field];
     }
     for (const field of ["draft", "dirty"]) {

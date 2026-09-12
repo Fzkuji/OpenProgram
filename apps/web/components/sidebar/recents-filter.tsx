@@ -126,7 +126,7 @@ export function RecentsFilter({projects = []}: {projects?: readonly {id:string;n
           className={surface + " min-w-[176px]"}
           onClick={(e) => e.stopPropagation()}
         >
-          <Row<RecentsStatus>
+          {view.groupBy !== "project" && <Row<RecentsStatus>
             label={t("sidebar.status")}
             value={view.status}
             options={[
@@ -136,7 +136,7 @@ export function RecentsFilter({projects = []}: {projects?: readonly {id:string;n
             ]}
             counts={{ archived: archivedCount }}
             onPick={(status) => setRecentsView({ status })}
-          />
+          />}
           <Row<string>
             label={t("sidebar.project")}
             value={view.project}

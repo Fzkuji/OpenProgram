@@ -51,6 +51,8 @@ references/opencode/
 # untracked package directories while preserving flat bundled modules;
 # tracked bundled directories remain tracked. New bundled directories
 # need one explicit `git add -f`.
+openprogram/programs/packages/*
+!openprogram/programs/packages/__init__.py
 openprogram/programs/applications/*
 !openprogram/programs/applications/__init__.py
 
@@ -111,9 +113,14 @@ docs/reference/provider-registry.md
 # Electron desktop shell
 apps/desktop/dist/
 apps/desktop/build/runtime/
+apps/desktop/build/office/
 apps/desktop/build/.runtime-prepare.lock
 apps/desktop/build/.runtime-stage-*/
 
 references/codex-cli/
 openprogram/programs/workflow/llm_knowledge_research/
 openprogram/programs/workflow/weekly_report/
+openprogram/programs/workflow/group_weekly_report/
+
+# Pinned document decoder assets generated from package-lock before Web builds.
+apps/web/public/document-assets/

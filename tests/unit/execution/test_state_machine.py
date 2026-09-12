@@ -17,6 +17,7 @@ from openprogram.execution.state_machine import (
         (ExecutionStatus.QUEUED, ExecutionStatus.RUNNING),
         (ExecutionStatus.QUEUED, ExecutionStatus.PAUSED),
         (ExecutionStatus.RUNNING, ExecutionStatus.PAUSING),
+        (ExecutionStatus.RUNNING, ExecutionStatus.PAUSED),
         (ExecutionStatus.PAUSING, ExecutionStatus.PAUSED),
         (ExecutionStatus.PAUSED, ExecutionStatus.RUNNING),
         (ExecutionStatus.RUNNING, ExecutionStatus.CANCELLING),
@@ -38,7 +39,6 @@ def test_execution_state_machine_accepts_only_declared_edges(
 @pytest.mark.parametrize(
     ("current", "target"),
     [
-        (ExecutionStatus.RUNNING, ExecutionStatus.PAUSED),
         (ExecutionStatus.PAUSED, ExecutionStatus.COMPLETED),
         (ExecutionStatus.CANCELLING, ExecutionStatus.RUNNING),
         (ExecutionStatus.COMPLETED, ExecutionStatus.RUNNING),

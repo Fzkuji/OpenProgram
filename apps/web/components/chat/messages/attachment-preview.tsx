@@ -15,8 +15,9 @@
  * living with belong in the project tree, which already has tabs.
  */
 import { createPortal } from "react-dom";
+import { useState } from "react";
 
-import { FileViewer } from "@/components/files/file-viewer";
+import { DocumentWindow } from "@/components/files/lazy-document-window";
 import { useTranslation } from "@/lib/i18n";
 import { useModalA11y } from "@/lib/use-modal-a11y";
 import { useSessionStore } from "@/lib/session-store";
@@ -33,6 +34,7 @@ export function AttachmentPreview({
 }) {
   const { text } = useTranslation();
   const sessionId = useSessionStore((s) => s.currentSessionId);
+  const [capturedSessionId] = useState(sessionId);
 
   // Replaces the old window-level Escape listener: same Escape, plus
   // the Tab trap and focus-return to the chip that opened the preview.
@@ -56,7 +58,7 @@ export function AttachmentPreview({
           </span>
           <a
             className="attach-preview-download"
-            href={absRawFileUrl(path, sessionId ?? undefined)}
+            href={absRawFileUrl(path, capturedSessionId ?? undefined)}
             download={filename}
             onClick={(e) => e.stopPropagation()}
           >
@@ -72,11 +74,11 @@ export function AttachmentPreview({
           </button>
         </div>
         <div className="attach-preview-body">
-          <FileViewer
+          <DocumentWindow
             projectId=""
             path={path}
-            abs
-            sessionId={sessionId ?? undefined}
+            sessionId={capturedSessionId ?? undefined}
+            readOnly
           />
         </div>
       </div>

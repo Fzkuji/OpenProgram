@@ -1993,6 +1993,34 @@ def test_desktop_runtime_removes_absolute_python_aliases() -> None:
     assert 'unlink "$python_alias"' in staging
 
 
+def test_local_app_refresh_detaches_before_stopping_worker() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    detach_at = refresh.index('start_new_session=True')
+    lock_at = refresh.index('fcntl.flock(lock, fcntl.LOCK_EX)')
+    stop_at = refresh.index('"$local_python" -m openprogram worker stop')
+    assert "OPENPROGRAM_REFRESH_DETACHED" in refresh
+    assert '["bash", sys.argv[1], *sys.argv[2:]]' in refresh
+    assert "OPENPROGRAM_SESSION_ID" in refresh
+    assert detach_at < lock_at < stop_at
+
+
+def test_local_app_refresh_reopens_app_after_quit() -> None:
+    refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
+        encoding="utf-8"
+    )
+    quit_at = refresh.index(
+        'osascript -e \'tell application id "ai.openprogram.desktop" to quit\''
+    )
+    open_at = refresh.index('open -a "$app_path"')
+    wait_at = refresh.index(
+        'pgrep -f "^${app_path}/Contents/MacOS/OpenProgram( |$)"', open_at
+    )
+    fail_at = refresh.index("OpenProgram did not reopen after the refresh")
+    assert quit_at < open_at < wait_at < fail_at
+
+
 def test_local_app_refresh_restarts_worker_after_runtime_install() -> None:
     refresh = (ROOT / "scripts" / "refresh-local-app.sh").read_text(
         encoding="utf-8"
@@ -2305,6 +2333,11 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         (release_scripts / name).write_bytes((ROOT / "scripts/release" / name).read_bytes())
     (desktop / "build").mkdir(exist_ok=True)
     (desktop / "build/icon.icns").write_bytes(b"icns")
+    (desktop / "build/office").mkdir(exist_ok=True)  # Staged artifact; this fixture stops before installation.
+    (release_scripts / "office").mkdir()
+    (release_scripts / "office/stage.py").write_text(
+        "import pathlib, sys; pathlib.Path(sys.argv[sys.argv.index('--output') + 1]).mkdir(parents=True, exist_ok=True)\n"
+    )
     (release_scripts / "install-release.sh").write_text(
         'OPENPROGRAM_VERSION="${OPENPROGRAM_VERSION:-0.6.6}"\n',
         encoding="utf-8",
@@ -2433,12 +2466,18 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         timeout=15,
     )
 
+    detached_log = Path(env["TMPDIR"]) / f"openprogram-refresh-{os.getuid()}.log"
+    refresh_output = result.stdout + result.stderr
+    if detached_log.exists():
+        refresh_output += detached_log.read_text(encoding="utf-8", errors="replace")
+
     assert result.returncode != 0
-    assert "source version 0.6.1 != installed App version 0.6.6" in result.stderr
+    assert "source version 0.6.1 != installed App version 0.6.6" in refresh_output
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
     assert not (app.parent / ".openprogram-app-install.lock").exists()
 
+    detached_log.unlink()
     (repo / "pyproject.toml").write_text(
         '[project]\nname = "openprogram"\nversion = "0.6.6"\n',
         encoding="utf-8",
@@ -2456,11 +2495,15 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         env=env | {"NODE_PROBE_FAIL": "1"},
         capture_output=True, text=True, timeout=15,
     )
+    bad_node_output = bad_node.stdout + bad_node.stderr
+    if detached_log.exists():
+        bad_node_output += detached_log.read_text(encoding="utf-8", errors="replace")
     assert bad_node.returncode != 0
-    assert "bundled Node cannot run after relocation" in bad_node.stderr
+    assert "bundled Node cannot run after relocation" in bad_node_output
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
 
+    detached_log.unlink()
     lock_file = app.parent / ".openprogram-app-install.lock"
     lock_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
     try:
@@ -2475,8 +2518,11 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
     finally:
         lock_file.unlink()
 
+    blocked_output = blocked.stdout + blocked.stderr
+    if detached_log.exists():
+        blocked_output += detached_log.read_text(encoding="utf-8", errors="replace")
     assert blocked.returncode != 0
-    assert "another OpenProgram App installation is running" in blocked.stderr
+    assert "another OpenProgram App installation is running" in blocked_output
     assert not mutation_log.exists()
     assert installed_asar.read_bytes() == b"original-asar"
 
@@ -2490,7 +2536,10 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         encoding="utf-8",
     )
     fake_pgrep.chmod(0o755)
-    signal_env = env | {"SIGNAL_READY": str(signal_ready)}
+    signal_env = env | {
+        "OPENPROGRAM_REFRESH_DETACHED": "1",
+        "SIGNAL_READY": str(signal_ready),
+    }
     interrupted = subprocess.Popen(
         ["bash", str(scripts / "refresh-local-app.sh")],
         env=signal_env,
@@ -2546,7 +2595,10 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         encoding="utf-8",
     )
     fake_rm.chmod(0o755)
-    cleanup_env = env | {"CLEANUP_READY": str(cleanup_ready)}
+    cleanup_env = env | {
+        "OPENPROGRAM_REFRESH_DETACHED": "1",
+        "CLEANUP_READY": str(cleanup_ready),
+    }
     cleanup_interrupted = subprocess.Popen(
         ["bash", str(scripts / "refresh-local-app.sh")],
         env=cleanup_env,
@@ -2639,6 +2691,12 @@ def test_release_asset_staging_invokes_locked_docs_builder(tmp_path) -> None:
         encoding="utf-8",
     )
     script.chmod(0o755)
+
+    # Office preparation has separate public install tests. This test isolates
+    # the docs builder invocation while staging still calls its dependency.
+    office = release_scripts / "office"
+    office.mkdir()
+    (office / "stage.py").write_text("print('fixture Office resources staged')\n")
 
     fake_npm = fake_bin / "npm"
     fake_npm.write_text(
@@ -3028,7 +3086,8 @@ def test_source_development_installer_adds_to_complete_product() -> None:
     assert '"$PY" -m playwright install chromium' in installer
     assert '"$PY" -m openprogram programs install all' in installer
     assert 'bash "$gui_installer" --no-host --python "$PY"' in installer
-    assert 'PIP install -e "$applications/research_harness[pdf]"' in installer
+    assert 'get_program("research").clone_dir()' in installer
+    assert 'PIP install -e "$research_source[pdf]"' in installer
     assert "prompt_programs_menu" not in installer
     assert "--minimal was removed" in installer
     assert "WITH_STEALTH" in installer
@@ -3534,3 +3593,40 @@ def test_packaged_smoke_passes_verifier_arguments_with_system_bash(
     if deferred:
         expected.append("--allow-deferred-browser")
     assert capture.read_text().splitlines() == expected
+
+
+@pytest.mark.parametrize("symlink", [False, True])
+def test_package_cli_preserves_legacy_location_for_upgrade_and_uninstall(tmp_path, monkeypatch, symlink):
+    import openprogram
+    import openprogram.paths as paths
+    from openprogram.programs import _programs
+    from openprogram.cli.commands.programs import _cmd_install, _cmd_uninstall
+
+    package = tmp_path / "openprogram"
+    root = package / "programs"
+    old = root / "applications" / "research_harness"
+    old.parent.mkdir(parents=True)
+    (root / "packages").mkdir()
+    target = tmp_path / "owned-checkout" if symlink else old
+    target.mkdir()
+    (target / ".git").mkdir()
+    agentics = target / "research_harness" / "agentics"
+    agentics.mkdir(parents=True)
+    (agentics.parent / "__init__.py").write_text("")
+    (agentics / "__init__.py").write_text("")
+    if symlink:
+        old.symlink_to(target, target_is_directory=True)
+    monkeypatch.delenv("OPENPROGRAM_IMMUTABLE_RUNTIME", raising=False)
+    monkeypatch.setattr(openprogram, "__file__", str(package / "__init__.py"))
+    monkeypatch.setattr(paths, "get_state_dir", lambda: tmp_path / "state")
+    _programs.record_program_source(old, source="fixture", base=str(old.parent))
+    calls = []
+    monkeypatch.setattr(subprocess, "call", lambda args: calls.append(args) or 0)
+    _cmd_install("research", upgrade=True)
+    assert calls == ([] if symlink else [["git", "-C", str(old), "pull", "--ff-only"]])
+    assert not (root / "packages" / "research_harness").exists()
+    _cmd_uninstall("research")
+    assert not old.exists()
+    assert _programs.owner_controlled_program_sources() == []
+    if symlink:
+        assert (target / ".git").is_dir()

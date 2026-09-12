@@ -151,6 +151,12 @@ BOUNDARY_MANIFEST = (
         kinds=frozenset({"urllib.request.build_opener"}),
     ),
     BoundaryExclusion(
+        path="programs/application_client.py",
+        boundary_owner="owner-control-plane",
+        reason="Application clients use the challenge-verified owner backend without redirects or proxy inheritance",
+        kinds=frozenset({"httpx.Client"}),
+    ),
+    BoundaryExclusion(
         path="mcp/server/service.py",
         boundary_owner="owner-control-plane",
         reason="stdio MCP calls the authenticated loopback OpenProgram worker",

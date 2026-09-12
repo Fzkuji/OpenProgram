@@ -846,3 +846,79 @@ def test_backend_none_rejects_every_web_memory_route(
         }
     }
     assert not (tmp_path / "state" / "memory").exists()
+
+
+def test_editor_rejects_stale_base_and_returns_canonical_content(client, memory):
+    updated = NOTE.replace("A fact worth keeping.", "Updated fact.")
+    response = client.put("/api/memory/topics/note.md", json={
+        "content": updated, "base_content": "outdated",
+    })
+    assert response.status_code == 409
+    assert (memory / "topics/note.md").read_text() == NOTE
+    response = client.put("/api/memory/topics/note.md", json={
+        "content": updated, "base_content": NOTE,
+    })
+    assert response.status_code == 200
+    assert response.json()["content"] == (memory / "topics/note.md").read_text()
+
+
+def test_history_lists_commits_and_parent_diff(client, memory):
+    updated = NOTE.replace("A fact worth keeping.", "Updated fact.")
+    assert client.put("/api/memory/topics/note.md", json={"content": updated}).status_code == 200
+    result = client.get("/api/memory/history", params={"path": "note.md"})
+    assert result.status_code == 200
+    entry = result.json()["entries"][0]
+    assert entry["timestamp"]
+    result = client.get("/api/memory/history", params={"path": "note.md", "revision": entry["revision"]})
+    assert result.status_code == 200
+    assert "+Updated fact." in result.json()["diff"]
+    assert client.get("/api/memory/history", params={"path": "../sources/D1.md"}).status_code == 403
+    assert client.get("/api/memory/history", params={"path": "note.md", "revision": "--all"}).status_code == 400
+
+
+def test_autosave_defers_git_and_restores_old_version(client, memory):
+    import subprocess
+    from openprogram.memory.runtime.state import RuntimeStateStore
+    RuntimeStateStore(memory).git_commit("before")
+    before = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=memory, text=True).strip()
+    updated = NOTE.replace("A fact worth keeping.", "Edited fact.")
+    response = client.put("/api/memory/topics/note.md", json={
+        "content": updated, "base_content": NOTE, "autosave": True,
+    })
+    assert response.status_code == 200
+    assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=memory, text=True).strip() == before
+    response = client.post("/api/memory/restore", json={
+        "path": "note.md", "revision": before, "base_content": response.json()["content"],
+    })
+    assert response.status_code == 200
+    assert "A fact worth keeping." in response.json()["content"]
+    commits = client.get("/api/memory/history", params={"path": "note.md"}).json()["entries"]
+    assert len(commits) >= 3
+
+
+def test_checkpoint_deadline_and_deleted_source_visibility(client, memory, monkeypatch):
+    from openprogram.memory import checkpoints
+    from openprogram.memory.workspace_layout import runtime_dir
+    from openprogram.agent import session_db
+    monkeypatch.setattr(checkpoints.time, "time", lambda: 1000)
+    updated = NOTE.replace("A fact worth keeping.", "Checkpoint fact.")
+    assert client.put("/api/memory/topics/note.md", json={"content": updated, "autosave": True}).status_code == 200
+    pending = runtime_dir(memory) / "manual-checkpoint.json"
+    assert json.loads(pending.read_text())["due"] == 1300
+    assert checkpoints.checkpoint(memory) is None
+    monkeypatch.setattr(checkpoints.time, "time", lambda: 1301)
+    assert checkpoints.checkpoint(memory)
+    assert not pending.exists()
+    target = memory / "sources" / "openprogram" / "_v2" / "local_deleted.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("original-private-text")
+    class DB:
+        def get_session(self, sid):
+            return None
+    monkeypatch.setattr(session_db, "default_db", lambda: DB())
+    for path in ("openprogram/_v2/local_deleted.md", "other/../openprogram/_v2/local_deleted.md"):
+        response = client.get("/api/memory/source", params={"path": path})
+        assert response.status_code == 410
+        assert "original-private-text" not in response.text
+    monkeypatch.setattr(DB, "get_session", lambda self, sid: {"archived": True})
+    assert client.get("/api/memory/source", params={"path": "openprogram/_v2/local_deleted.md"}).json()["content"] == "original-private-text"

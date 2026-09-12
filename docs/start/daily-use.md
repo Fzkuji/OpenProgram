@@ -7,7 +7,7 @@ This page covers the operations you'll use every day once installed: the two ent
 - `openprogram` — terminal chat interface (TUI).
 - `openprogram web` — browser interface, http://localhost:18100.
 
-Session data lives in `~/.openprogram/sessions/`, and the terminal and the web see the same history: a session started in the terminal shows up in the web sidebar, and vice versa.
+Session data lives under `~/.openprogram/sessions/` (bound projects are grouped as `sessions/projects/<project-id>/<session-id>/`). The terminal and the web see the same history: a session started in the terminal shows up in the web sidebar, and vice versa. Working folders hold project files, not conversation repositories.
 
 One-off questions don't need an interface:
 

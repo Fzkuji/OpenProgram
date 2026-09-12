@@ -83,9 +83,13 @@ def test_apply_default_workdir_unknown_session(store):
 
 
 class _FakeProject:
-    def __init__(self, path, is_default=False):
+    def __init__(self, path, is_default=False, directory_identity="test-identity"):
         self.path = path
         self.is_default = is_default
+        if directory_identity == "test-identity":
+            from openprogram.store.project.identity import inode_token
+            directory_identity = inode_token(Path(path))
+        self.directory_identity = directory_identity
 
 
 def _bind_project(monkeypatch, proj):

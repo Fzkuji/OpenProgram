@@ -342,7 +342,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   const visible = (() => {
     let arr = convArr;
     // All sessions are shown — no filtering of empty/placeholder rows.
-    if (view.status === "active") arr = arr.filter((c) => !c.archived);
+    if (projectMode || view.status === "active") arr = arr.filter((c) => !c.archived);
     else if (view.status === "archived") arr = arr.filter((c) => !!c.archived);
     // Last-activity window — updated_at（后端随消息追加维护），老行
     // 无 updated_at 时退回 created_at。"all" = no window.
@@ -392,9 +392,9 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
 
   // Any narrowing filter active → matched-only view: groups auto-expand
   // around their matches. (status "all" widens, so it doesn't count;
-  // "archived" narrows.) Empty projects are hidden only while filtering.
+  // "archived" narrows.) Empty and archived-only projects are always hidden.
   const filtering =
-    view.status === "archived" ||
+    (!projectMode && view.status === "archived") ||
     view.lastActivity !== "all" ||
     (view.project !== "" && view.project !== "all");
 
@@ -406,7 +406,7 @@ export const SessionsList = memo(function SessionsList({ onNewChat }: { onNewCha
   // membership or the session order from `visible`.
   const projectSection = (id: string) => view.pinnedProjects.includes(id) ? "__pinned__" : (view.projectSectionNames.includes(view.projectSections[id]) ? view.projectSections[id] : "");
   const sectionOrder = ["__pinned__", ...view.projectSectionNames, ""];
-  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, activityItems: convArr, includeEmpty: !filtering })
+  const groupedProjects = projectMode ? projectGroups(projects, visible, view.projectOrder, { sort: view.projectSort, pinned: view.pinnedProjects, activityItems: convArr })
     .sort((a,b) => sectionOrder.indexOf(projectSection(a.key)) - sectionOrder.indexOf(projectSection(b.key))) : [];
   function reorderProject(source: string, target: string, side: "before" | "after") {
     // Include hidden/empty projects so filtering cannot discard their position.

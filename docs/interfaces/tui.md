@@ -73,6 +73,12 @@ Type `/` to trigger completion. Common ones:
 | `/channel`, `/attach`, `/detach`, `/connections` | Chat-channel hookup and session routing |
 | `/quit` | Exit |
 
+`/compact` summarizes older complete turns, including their visible tool results,
+while retaining recent turns. It changes the next model context; original
+messages remain available in the session. The before/after token counts are local
+estimates. A short history, a failed summary or a summary that saves no space
+leaves the context unchanged.
+
 Also available: `/search`, `/review`, `/diff`, `/init`, `/browser`, `/welcome`. The `/help` output is the authoritative full list.
 
 Beyond these built-ins, the completion menu also lists every command from the unified command registry — skills, MCP prompts, plugin commands, and your own command files under `~/.openprogram/commands/` or `<project>/.openprogram/commands/` (markdown with optional YAML frontmatter). Running one expands its body and sends it as the message, exactly like the Web composer: the TUI and the Web UI read the same registry, so a command defined once appears in both.

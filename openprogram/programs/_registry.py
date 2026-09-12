@@ -18,7 +18,7 @@ Two mechanisms, in order:
      imported.
 
   4. **Auto-discovered external harnesses** — owner-recorded symlinks and
-     directories under ``openprogram/programs/applications/`` are treated as
+     directories under ``openprogram/programs/packages/`` are treated as
      external harnesses. For each, we find its Python package
      (``<harness>/<pkg>/__init__.py``) and import ``<pkg>.agentics``.
      That sub-package must expose ``AGENTIC_FUNCTIONS = [...]`` — the

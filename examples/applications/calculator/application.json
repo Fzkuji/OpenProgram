@@ -1,0 +1,12 @@
+{
+  "id": "example.calculator",
+  "title": "Calculator",
+  "version": "1.0.0",
+  "ui": {
+    "root": ".",
+    "entry": "index.html"
+  },
+  "scope": "global",
+  "capabilities": [],
+  "operations": {}
+}

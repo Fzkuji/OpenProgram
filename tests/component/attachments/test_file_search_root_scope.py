@@ -7,9 +7,17 @@ now rejects roots outside the allowed set.
 """
 from __future__ import annotations
 
+import json
+import shutil
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from openprogram import attachments
+from openprogram.store.session.git_session import GitSession
+from openprogram.store.session.migration import migrate_session
+from openprogram.store.session.session_store import SessionStore
 
 
 @pytest.fixture
@@ -92,6 +100,22 @@ def test_raw_refuses_a_path_outside_every_root(client, tmp_path):
                       params={"path": str(outside)}).status_code == 403
 
 
+def test_attachment_routes_keep_allowed_missing_file_404(client, project):
+    missing = project / "sub" / "missing.png"
+    assert client.get("/api/file-raw", params={"path": str(missing)}).status_code == 404
+    assert client.get("/api/file-read", params={"path": str(missing)}).status_code == 404
+
+
+def test_existing_legacy_path_falls_back_without_canonical(project, monkeypatch):
+    legacy = project / ".openprogram" / "sessions" / "s1" / "workdir" / "attachments" / "old.txt"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("source", encoding="utf-8")
+    monkeypatch.setattr(attachments, "_session_repo_candidates", lambda _sid: [])
+    assert attachments.resolve_session_attachment(
+        legacy, "s1", [project], allow_missing=False,
+    ) == legacy.resolve()
+
+
 def test_raw_refuses_a_symlink_pointing_out_of_the_root(client, project, tmp_path):
     secret = tmp_path / "id_rsa"
     secret.write_text("PRIVATE KEY")
@@ -120,3 +144,127 @@ def test_read_reports_binary_so_the_viewer_shows_a_download_card(client, project
     blob.write_bytes(b"\x00\x01\x02binary")
     assert client.get("/api/file-read",
                       params={"path": str(blob)}).json()["binary"] is True
+
+
+def test_raw_rebases_legacy_session_attachment_after_real_migration(
+    tmp_path, monkeypatch,
+):
+    """Historical markers remain immutable while the raw boundary follows
+    the copied session attachment into its canonical repo.
+
+    This uses the production migration entry point. The source is removed by
+    migration, so a route that only checks its old absolute path returns 404.
+    """
+    project = tmp_path / "project"
+    state = tmp_path / "state"
+    source = project / ".openprogram" / "sessions" / "s1"
+    old_attachment = source / "workdir" / "attachments" / "report.pdf"
+    old_attachment.parent.mkdir(parents=True)
+    GitSession(source)._ensure_init()
+    (source / "meta.json").write_text('{"id":"s1"}', encoding="utf-8")
+    marker = attachments.format_marker(
+        "report.pdf", old_attachment, len(b"legacy"), mime="application/pdf",
+    )
+    (source / "history" / "0001-u-u1.json").write_text(
+        json.dumps({"id": "u1", "role": "user", "content": marker}),
+        encoding="utf-8",
+    )
+    old_attachment.write_bytes(b"legacy")
+
+    monkeypatch.setenv("OPENPROGRAM_PROJECT_ROOT", str(project))
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: state)
+    monkeypatch.setattr(
+        "openprogram.store.session.migration._live_jobs", lambda _sid: False,
+    )
+    store = SessionStore(state / "sessions")
+    result = migrate_session(store, {
+        "session_id": "s1",
+        "project_id": "p1",
+        "source": str(source),
+        "source_unavailable": False,
+    })
+    assert result == "done"
+    assert not source.exists()
+    dest = state / "sessions" / "projects" / "p1" / "s1"
+    current_attachment = dest / "workdir" / "attachments" / "report.pdf"
+    assert current_attachment.read_bytes() == b"legacy"
+    assert str(old_attachment) in (dest / "history" / "0001-u-u1.json").read_text()
+
+    # A stale source copy may still exist after migration. The public route
+    # must prefer the canonical session attachment rather than serving it.
+    old_attachment.parent.mkdir(parents=True, exist_ok=True)
+    old_attachment.write_bytes(b"stale-source")
+
+    app = FastAPI()
+    from openprogram.webui.routes import file_search
+    file_search.register(app)
+    client = TestClient(app)
+    response = client.get("/api/file-raw", params={
+        "path": str(old_attachment), "session_id": "s1",
+    })
+    assert response.status_code == 200
+    assert response.content == b"legacy"
+
+    import asyncio
+    from openprogram.agent.run_control import (
+        reset_current_session_id, set_current_session_id,
+    )
+    from openprogram.programs.tools.files.read import read
+    from openprogram import sandbox
+    token = set_current_session_id("s1")
+    try:
+        read_result = asyncio.run(read.execute(
+            "migration-read", {"file_path": str(old_attachment)}, None, None,
+        ))
+        read_text = "\n".join(
+            block.text for block in (read_result.content or [])
+            if getattr(block, "text", None) is not None
+        )
+        assert "legacy" in read_text
+        monkeypatch.setattr(sandbox, "validate_read_path", lambda _path: "blocked")
+        denied_result = asyncio.run(read.execute(
+            "migration-read-denied", {"file_path": str(old_attachment)}, None, None,
+        ))
+        denied_text = "\n".join(
+            block.text for block in (denied_result.content or [])
+            if getattr(block, "text", None) is not None
+        )
+        assert denied_text.startswith("Error: sandbox policy: blocked")
+    finally:
+        reset_current_session_id(token)
+
+    wrong_session = client.get("/api/file-raw", params={
+        "path": str(old_attachment), "session_id": "other",
+    })
+    assert wrong_session.status_code == 403
+    wrong_session_traversal = client.get("/api/file-raw", params={
+        "path": str(old_attachment.parent / ".." / "attachments" / "report.pdf"),
+        "session_id": "other",
+    })
+    assert wrong_session_traversal.status_code == 403
+
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"private")
+    link = current_attachment.parent / "link.pdf"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+    escaped = client.get("/api/file-raw", params={
+        "path": str(source / "workdir" / "attachments" / "link.pdf"),
+        "session_id": "s1",
+    })
+    assert escaped.status_code == 403
+
+    root_outside = tmp_path / "outside-attachments"
+    root_outside.mkdir()
+    (root_outside / "report.pdf").write_bytes(b"private-root")
+    shutil.rmtree(current_attachment.parent)
+    try:
+        current_attachment.parent.symlink_to(root_outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks unavailable: {exc}")
+    escaped_root = client.get("/api/file-raw", params={
+        "path": str(old_attachment), "session_id": "s1",
+    })
+    assert escaped_root.status_code == 403

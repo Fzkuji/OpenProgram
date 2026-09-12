@@ -496,7 +496,7 @@ def _admitted_agent_execution(tmp_path, *, execution_id: str = "exec-restart-1")
     return store, attempts, active, running
 
 
-def _real_provider_safe_point(tmp_path, *, tool_calls=True):
+def _real_provider_safe_point(tmp_path, *, tool_calls=True, pause=True):
     """Create a checkpoint only through provider before/after callbacks."""
 
     store, attempts, active, running = _admitted_agent_execution(tmp_path)
@@ -527,16 +527,18 @@ def _real_provider_safe_point(tmp_path, *, tool_calls=True):
     assert hook("provider.before", {"resolved_snapshot": snapshot, "context": {"messages": []}}) is False
     current = store.get_execution(running.execution_id)
     assert current is not None
-    command, _pausing, duplicate = store.accept_command_with_transition(
-        command_id="pause-real-provider",
-        execution_id=running.execution_id,
-        expected_version=current.status_version,
-        kind=CommandKind.PAUSE,
-        target=ExecutionStatus.PAUSING,
-        payload={},
-        actor={"subject": "agent-owner"},
-    )
-    assert duplicate is False
+    command = None
+    if pause:
+        command, _pausing, duplicate = store.accept_command_with_transition(
+            command_id="pause-real-provider",
+            execution_id=running.execution_id,
+            expected_version=current.status_version,
+            kind=CommandKind.PAUSE,
+            target=ExecutionStatus.PAUSING,
+            payload={},
+            actor={"subject": "agent-owner"},
+        )
+        assert duplicate is False
     tool_content = (
         [{"type": "toolCall", "id": "tool-1", "name": "echo", "arguments": {}}]
         if tool_calls else [{"type": "text", "text": "terminal"}]
@@ -557,9 +559,9 @@ def _real_provider_safe_point(tmp_path, *, tool_calls=True):
         },
         "tool_call_ids": tool_call_ids,
         "next_tool_index": 0,
-    }) is True
+    }) is pause
     paused = store.get_execution(running.execution_id)
-    assert paused is not None and paused.status is ExecutionStatus.PAUSED
+    assert paused is not None and paused.status is (ExecutionStatus.PAUSED if pause else ExecutionStatus.RUNNING)
     checkpoint = control.checkpoints.get(paused.checkpoint_head_id)
     assert checkpoint is not None
     return store, control, active, paused, checkpoint, command
@@ -810,8 +812,14 @@ def test_provider_failover_effect_uses_actual_receipt_identity_and_capability(
         SimpleNamespace(user_msg_id="user-anchor"),
         threading.Event(),
     )
+    from openprogram.agent.continuation import runtime_contract_snapshot
+    from openprogram.providers.types import Model
+    snapshot = runtime_contract_snapshot(
+        model=Model(id="p", name="p", api="openai-completions", provider="openai", base_url="https://example.invalid/v1"),
+        system_prompt="system", tools=[], request=SimpleNamespace(_execution_revision_id=execution.revision_id),
+    )
     payload = {
-        "resolved_snapshot": {"model": {"id": "p"}, "system_prompt": "system", "tools": []},
+        "resolved_snapshot": snapshot,
         "context": {"messages": []},
         "supports_idempotency_key": all(
             candidate["supports_idempotency_key"] for candidate in candidates
@@ -1370,7 +1378,12 @@ def test_returned_provider_failure_finishes_without_attention(tmp_path, stop_rea
             yield EventDone(reason=message.stop_reason, message=message)
 
     async def run():
-        stream = agent_loop([], AgentContext(messages=[], tools=[]), AgentLoopConfig(
+        from openprogram.agent.continuation import runtime_contract_snapshot
+        snapshot = runtime_contract_snapshot(
+            model=Model(id="fake", name="fake", api="openai-completions", provider="openai", base_url="https://example.invalid/v1"),
+            system_prompt="", tools=[], request=SimpleNamespace(_execution_revision_id=execution.revision_id),
+        )
+        stream = agent_loop([], AgentContext(messages=[], tools=[], runtime_contract=snapshot), AgentLoopConfig(
             model=Model(id="fake", name="fake", api="openai-completions", provider="openai",
                         base_url="https://example.invalid/v1"),
             convert_to_llm=lambda messages: messages, safe_point_hook=safe_point,
@@ -1398,7 +1411,7 @@ def test_returned_provider_failure_finishes_without_attention(tmp_path, stop_rea
     if stop_reason == "repair":
         assert responses == ["invalid json", "{}"]
     assert control.effects.list_unresolved(execution.execution_id) == []
-    assert finished.execution.checkpoint_head_id is None
+    assert bool(finished.execution.checkpoint_head_id) is (stop_reason == "repair")
 
 
 @pytest.mark.parametrize("kind,orphan", [("provider.before", True), ("tool.before", False)])
@@ -1439,3 +1452,16 @@ def test_snapshot_distinguishes_ended_provider_receipt_from_action_attention(tmp
     assert snapshot.effect_summary.get("provider_response_incomplete", False) is (orphan and attention in {None, "cancel", "cancel_applying"})
     assert snapshot.status == "reconciliation_required"
     assert len(control.effects.list_unresolved(execution.execution_id)) == 1
+
+
+def test_normal_provider_completion_records_continuation_without_pause(tmp_path):
+    store, control, active, running, checkpoint, command = _real_provider_safe_point(tmp_path, pause=False)
+    assert command is None
+    assert store.list_commands(running.execution_id) == []
+    assert running.current_attempt_id == active.attempt_id
+    assert checkpoint.created_by_attempt_id == active.attempt_id
+    assert control.effects.list_unresolved(running.execution_id) == []
+    from openprogram.agent.continuation import AgentCheckpointV1
+    state = AgentCheckpointV1.load(store, checkpoint)
+    assert state.payload["next_tool_index"] == 0
+    assert state.payload["current_decision"]["tool_call_ids"] == ["tool-1"]

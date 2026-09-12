@@ -201,6 +201,13 @@
   </style>
 </head>
 <body>
+<section id="task-execution-control"><h1>Browser actions follow task execution</h1>
+<p>Clicks, scrolling, keyboard input, navigation, and closing a page never pause an Agent. This applies equally to user input and automation, including automation of OpenProgram itself. Only the conversation execution controls pause or cancel the task. Browser resources do not maintain a separate write prohibition.</p>
+<p>The existing page input notification path incorrectly requests execution pauses. A retained page prohibition can outlive the execution that created it. Remove that path and the separate prohibition checks while retaining execution dispatch guards, ownership checks, and current-frame validation.</p>
+<p>When a target disappears, discard its session and return actionable recovery information with its last URL. Recover by observing a newly opened exact URL, never by replaying a mutating action or selecting an unrelated tab. The Agent continues the task using a fresh observation. Missing authentication or unsaved state is reported rather than invented.</p>
+<p>Browser screenshots preserve ToolReturn images and structured errors. Executor shutdown must not leave a live server submitting work into a closed default executor. Recovery must respect task cancellation and unresolved external effects.</p>
+<h2>Acceptance and implementation status</h2><p>Implemented and independently reviewed: page events leave execution running; explicit conversation pause still stops dispatch; old page prohibition cannot block a new execution; closed targets provide usable recovery; screenshots retain images; shutdown errors are handled at their owning lifecycle boundary. Verify affected desktop and Python components, contracts, documentation links, and installed App. Independent specification and quality reviews precede completion.</p></section>
+
 <div class="shell">
   <main>
     <header>

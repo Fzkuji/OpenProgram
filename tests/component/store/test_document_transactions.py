@@ -1,0 +1,128 @@
+"""Shared durable transaction boundary for project document publication."""
+
+import json
+import stat
+from pathlib import Path
+
+import pytest
+
+from openprogram.store.snapshot.checkpoint import CheckpointStore
+
+
+def test_publish_document_writes_and_replays_immutable_receipt(tmp_path: Path) -> None:
+    target = tmp_path / "document.bin"
+    source = tmp_path / "candidate.bin"
+    target.write_bytes(b"before\0")
+    source.write_bytes(b"after\xff")
+    journal = CheckpointStore(recovery_root=tmp_path / "history")
+
+    result = journal.publish_document(
+        "0123456789abcdef0123456789abcdef", target, source,
+        expected_revision="37d9c830e637e2c7878943723f87aa2057db902a960353334ab23a57990e72ee",
+        fingerprint="request-fingerprint",
+    )
+
+    assert result["status"] == "committed"
+    assert target.read_bytes() == b"after\xff"
+    assert result["before"]["blob_ref"]
+    assert result["after"]["blob_ref"]
+    assert (tmp_path / "history" / "operations" / "0123456789abcdef0123456789abcdef" / "intent.json").is_file()
+    replay = journal.publish_document(
+        "0123456789abcdef0123456789abcdef", target, source, fingerprint="request-fingerprint",
+    )
+    assert replay["transaction_id"] == result["transaction_id"]
+
+
+def test_publish_document_distinguishes_absent_from_empty_and_rejects_corrupt_intent(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "new.bin"
+    source = tmp_path / "candidate.bin"
+    source.write_bytes(b"value")
+    journal = CheckpointStore(recovery_root=tmp_path / "history")
+    with pytest.raises(Exception):
+        journal.publish_document("0123456789abcdef0123456789abcdee", target, source, expected_revision="" * 64, fingerprint="f")
+    assert journal.publish_document("0123456789abcdef0123456789abcdee", target, source, expected_revision="absent", fingerprint="f")["status"] == "committed"
+
+    broken = tmp_path / "history" / "operations" / "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    broken.mkdir(parents=True)
+    (broken / "intent.json").write_text("{broken", encoding="utf-8")
+    assert journal.read_document_operation("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")["status"] == "recovery_required"
+
+
+def test_publish_document_rejects_oversized_source_before_target_change(tmp_path: Path) -> None:
+    target = tmp_path / "target.bin"
+    source = tmp_path / "source.bin"
+    target.write_bytes(b"original")
+    with source.open("wb") as handle:
+        handle.truncate(64 * 1024 * 1024 + 1)
+    journal = CheckpointStore(recovery_root=tmp_path / "history")
+    with pytest.raises(Exception):
+        journal.publish_document("fedcba9876543210fedcba9876543210", target, source, fingerprint=json.dumps({"x": 1}))
+    assert target.read_bytes() == b"original"
+
+
+def test_publish_document_uses_seconds_for_mtime_baseline_and_receipt(tmp_path: Path) -> None:
+    target = tmp_path / "target.bin"
+    source = tmp_path / "source.bin"
+    target.write_bytes(b"old")
+    source.write_bytes(b"new")
+    expected_mtime = target.stat().st_mtime
+    journal = CheckpointStore(recovery_root=tmp_path / "history")
+    result = journal.publish_document(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", target, source,
+        expected_revision="cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4",
+        expected_mtime=expected_mtime, fingerprint="mtime-check",
+    )
+    assert result["status"] == "committed"
+    assert isinstance(result["mtime"], float)
+    assert result["mtime"] == target.stat().st_mtime
+
+
+def test_publish_document_preserves_existing_target_mode(tmp_path: Path) -> None:
+    target = tmp_path / "private.bin"
+    source = tmp_path / "source.bin"
+    target.write_bytes(b"old")
+    source.write_bytes(b"new")
+    target.chmod(0o600)
+    result = CheckpointStore(recovery_root=tmp_path / "history").publish_document(
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", target, source,
+        expected_revision="cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4",
+        fingerprint="mode-check",
+    )
+    assert result["status"] == "committed"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert result["after"]["mode"] == "0600"
+
+
+def test_read_document_operation_rejects_malformed_receipts_and_operation_mismatch(
+    tmp_path: Path,
+) -> None:
+    history = tmp_path / "history"
+    operation = "cccccccccccccccccccccccccccccccc"
+    operation_dir = history / "operations" / operation
+    operation_dir.mkdir(parents=True)
+    (operation_dir / "intent.json").write_text(json.dumps({
+        "status": "committed", "operation_id": "different",
+        "transaction_id": "tx", "fingerprint": "fp", "before": {},
+        "after": "not-a-descriptor",
+    }), encoding="utf-8")
+    result = CheckpointStore(recovery_root=history).read_document_operation(operation)
+    assert result["status"] == "recovery_required"
+    assert result["error_code"] == "RECOVERY_REQUIRED"
+
+
+def test_read_document_operation_keeps_prepared_receipt_recovery_visible(tmp_path: Path) -> None:
+    history = tmp_path / "history"
+    operation = "dddddddddddddddddddddddddddddddd"
+    operation_dir = history / "operations" / operation
+    operation_dir.mkdir(parents=True)
+    (operation_dir / "intent.json").write_text(json.dumps({
+        "status": "prepared", "operation_id": operation,
+        "transaction_id": "tx", "fingerprint": "fp", "before": {"kind": "absent"},
+        "after": {"kind": "regular", "blob_ref": "candidate", "sha256": "a" * 64,
+                  "mode": "0644", "size": 1},
+    }), encoding="utf-8")
+    result = CheckpointStore(recovery_root=history).read_document_operation(operation)
+    assert result["status"] == "recovery_required"
+    assert result["before"]["kind"] == "absent"

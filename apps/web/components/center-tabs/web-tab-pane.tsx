@@ -52,10 +52,6 @@ import {
   browserTakeoverKind,
   controlResourceFromSession,
   displayedControlState,
-  isHumanYieldEvent,
-  markScopeYielding,
-  requestExplicitPause,
-  requestResumeAgent,
   revealPendingApproval,
   setControlNotice,
   toggleShowActions,
@@ -122,13 +118,6 @@ function resourceForLiveTab(tabId: string) {
   return row ? controlResourceFromSession(row) : null;
 }
 
-function yieldFromLiveTab(tabId: string, event: { type: string; key?: string }) {
-  if (!isHumanYieldEvent(event)) return;
-  const resource = resourceForLiveTab(tabId);
-  if (!resource) return;
-  if (desktopBridge()) markScopeYielding(resource);
-  else void requestExplicitPause(resource);
-}
 
 function usePipCollapseTarget(tabId: string) {
   const tabs = useCenterTabs((s) => s.tabs);
@@ -296,7 +285,7 @@ function DesktopWebTabPane({
         || (state === "stop_unconfirmed" || state === "unknown" ? status : undefined),
       pauseDisabled: state === "yielding" || state === "unknown" || !connected,
       resumeDisabled: !connected || (state !== "paused" && state !== "waiting"),
-      showTakeover: true,
+      showTakeover: takeoverKind === "reveal",
       expandLabel: text("Show controls", "显示操作按钮"),
       foldLabel: text("Fold", "收起"),
       dismissLabel: text("Dismiss", "关闭"),
@@ -323,8 +312,6 @@ function DesktopWebTabPane({
         setControlNotice(control.resourceId, text("Status changed. Try again", "状态已更新，请重试"));
         return;
       }
-      if (event.type === "pause") void requestExplicitPause(control);
-      if (event.type === "resume") void requestResumeAgent(control);
       if (event.type === "reveal") revealPendingApproval(control);
       if (event.type === "toggle-show") toggleShowActions();
     }) ?? (() => {});
@@ -479,7 +466,6 @@ function DesktopWebTabPane({
       bridge.webTab.navigate(tabId, normalized);
       updateWebTab(tabId, { url: normalized });
     }
-    yieldFromLiveTab(tabId, { type: "navigate" });
   }
 
   function navigateTo(nextUrl: string) {
@@ -489,7 +475,6 @@ function DesktopWebTabPane({
     viewUrlRef.current = normalized;
     bridge.webTab.navigate(tabId, normalized);
     updateWebTab(tabId, { url: normalized });
-    yieldFromLiveTab(tabId, { type: "navigate" });
   }
 
   function openFind() {
@@ -546,7 +531,6 @@ function DesktopWebTabPane({
           className={styles.webToolbarBtn}
           onClick={() => {
             bridge.webTab.goBack(tabId);
-            yieldFromLiveTab(tabId, { type: "navigate" });
           }}
           disabled={!canGoBack}
           style={canGoBack ? undefined : disabledStyle}
@@ -559,7 +543,6 @@ function DesktopWebTabPane({
           className={`${styles.webToolbarBtn} ${styles.webToolbarForward}`}
           onClick={() => {
             bridge.webTab.goForward(tabId);
-            yieldFromLiveTab(tabId, { type: "navigate" });
           }}
           disabled={!canGoForward}
           style={canGoForward ? undefined : disabledStyle}
@@ -574,7 +557,6 @@ function DesktopWebTabPane({
             if (loading) bridge.webTab.stop(tabId);
             else {
               bridge.webTab.reload(tabId);
-              yieldFromLiveTab(tabId, { type: "navigate" });
             }
           }}
           title={loading ? text("Stop", "停止") : text("Reload", "重新加载")}
@@ -612,7 +594,6 @@ function DesktopWebTabPane({
             home: () => useCenterTabs.getState().replaceWebTabWithNewTabPage(tabId),
             forward: () => {
               bridge.webTab.goForward(tabId);
-              yieldFromLiveTab(tabId, { type: "navigate" });
             },
             openExternal: () => bridge.openExternal(viewUrlRef.current),
             find: canFind ? openFind : undefined,
@@ -662,8 +643,6 @@ function DesktopWebTabPane({
       <div
         ref={bodyRef}
         className={styles.webFrame}
-        onPointerDown={() => yieldFromLiveTab(tabId, { type: "pointerdown" })}
-        onWheel={() => yieldFromLiveTab(tabId, { type: "wheel" })}
       />
       </WebPaneStage>
     </div>
@@ -699,7 +678,6 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
     } else {
       updateWebTab(tabId, { url: normalized });
     }
-    yieldFromLiveTab(tabId, { type: "navigate" });
   }
 
   function openExternal() {
@@ -711,7 +689,6 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
     if (!normalized) return;
     setAddress(normalized);
     updateWebTab(tabId, { url: normalized });
-    yieldFromLiveTab(tabId, { type: "navigate" });
   }
 
   return (
@@ -726,7 +703,6 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
           className={styles.webToolbarBtn}
           onClick={() => {
             setFrameEpoch((e) => e + 1);
-            yieldFromLiveTab(tabId, { type: "navigate" });
           }}
           title={text("Reload", "重新加载")}
         >
@@ -812,7 +788,6 @@ function IframeWebTabPane({ tabId, url, menuOwnerId }: { tabId: string; url: str
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             referrerPolicy="no-referrer"
             title={text("Web page", "网页")}
-            onPointerDown={() => yieldFromLiveTab(tabId, { type: "pointerdown" })}
           />
           <IframeAgentLayer tabId={tabId} resource={control} navKey={`${url}:${frameEpoch}`} />
           </WebPaneStage>

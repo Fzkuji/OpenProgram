@@ -12,6 +12,7 @@ TOP_LEVEL_DIRECTORIES = {
     ".github",
     "apps",
     "docs",
+    "examples",
     "openprogram",
     "references",
     "scripts",

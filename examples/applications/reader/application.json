@@ -1,0 +1,38 @@
+{
+  "id": "example.reader",
+  "title": "Paper reader",
+  "version": "1.0.0",
+  "ui": {
+    "root": ".",
+    "entry": "index.html"
+  },
+  "scope": "global",
+  "capabilities": [
+    "storage.app",
+    "model.invoke"
+  ],
+  "operations": {
+    "summarize": {
+      "agent": true,
+      "input": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "type": "string"
+      }
+    }
+  },
+  "backend": {
+    "kind": "python",
+    "entry": "backend:operations"
+  }
+}

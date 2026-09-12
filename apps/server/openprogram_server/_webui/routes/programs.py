@@ -1,6 +1,6 @@
 """``/api/programs/*`` — runtime detection of installed agentic programs.
 
-A harness installed after boot (``git clone`` into ``programs/applications/``
+A harness installed after boot (``git clone`` into ``programs/packages/``
 or ``openprogram programs install``) doesn't appear until its modules are
 imported. This route re-runs discovery on demand so the new program's
 functions go live without restarting the worker:
@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import inspect
+import shlex
 import json as _json
 import os
 from collections import deque
@@ -32,7 +33,7 @@ _IGNORED = {
     ".git", ".pytest_cache", "__pycache__", "node_modules", "build", "dist",
     "output", "runs", ".venv", "venv",
 }
-_ROOT_ORDER = {"tools": 0, "workflow": 1, "applications": 2}
+_ROOT_ORDER = {"tools": 0, "workflow": 1, "packages": 2}
 _MAX_SOURCE_FILES = 200
 _MAX_SOURCE_BYTES = 1_000_000
 _AGENTIC_PRIMITIVES = ("agent", "llm")
@@ -95,8 +96,6 @@ def _program_kind(relative: str) -> str | None:
         return "vanilla_function"
     if len(parts) >= 2 and parts[0] == "workflow":
         return "workflow"
-    if len(parts) == 2 and parts[0] == "applications":
-        return "application"
     return None
 
 
@@ -203,7 +202,7 @@ def _entity_paths() -> dict[str, Path]:
     scan_roots.extend(
         (root, parent)
         for root in _catalog_roots()
-        for parent in (Path("workflow"), Path("applications"))
+        for parent in (Path("workflow"), Path("packages"), Path("applications"))
     )
     for root, parent in scan_roots:
         directory = root / parent
@@ -214,15 +213,15 @@ def _entity_paths() -> dict[str, Path]:
             if name.startswith("_") or name in _WORKFLOW_INTERNAL_NAMES:
                 continue
             if child.is_dir() or child.suffix == ".py":
-                relative = (parent / name).as_posix()
-                if _program_kind(relative):
+                relative = (Path("packages") / name if parent.name in {"packages", "applications"} else parent / name).as_posix()
+                if _program_kind(relative) or relative.startswith("packages/"):
                     entities.setdefault(relative, child)
     return entities
 
 
 def _default_selection() -> str | None:
     entities = _entity_paths()
-    for prefix in ("workflow/", "applications/"):
+    for prefix in ("workflow/", "packages/"):
         matches = sorted(path for path in entities if path.startswith(prefix))
         if matches:
             return matches[0]
@@ -284,7 +283,7 @@ def _callable_name(relative: str) -> str:
     if found:
         return found
     name = Path(relative).stem
-    if relative.startswith("workflow/") or not relative.startswith("applications/"):
+    if relative.startswith("workflow/") or not relative.startswith(("packages/", "applications/")):
         return name
     from openprogram.programs._programs import KNOWN_PROGRAMS
 
@@ -448,12 +447,12 @@ def _list_entries(relative: str) -> dict:
         if relative.startswith("workflow/")
         else {}
     )
-    if relative not in registered_agentic:
+    if relative not in registered_agentic and relative != "packages":
         _safe_directory(relative)
     branches = {
-        "": ("tools", "workflow", "applications"),
+        "": ("tools", "workflow", "packages"),
     }
-    leaf_categories = {"applications"}
+    leaf_categories = {"packages"}
     if relative in branches:
         entries = [
             {
@@ -464,7 +463,7 @@ def _list_entries(relative: str) -> dict:
                 "has_children": True,
             }
             for path in branches[relative]
-            if (PROGRAMS_ROOT / path).is_dir()
+            if path == "packages" or (PROGRAMS_ROOT / path).is_dir()
         ]
     elif relative == "workflow" or relative.startswith("workflow/"):
         entries = _agentic_entries(relative, registered_agentic or None)
@@ -552,6 +551,8 @@ def _list_entries(relative: str) -> dict:
                 "path": path,
                 "kind": "folder" if source.is_dir() else "file",
                 "program_kind": _program_kind(path),
+                "entity_kind": "package",
+                "source_path": str(source),
                 "has_children": False,
                 "callable_name": _callable_name(path),
                 "logic_path": path,
@@ -965,14 +966,25 @@ def _program_logic(relative: str) -> dict:
     entities = _entity_paths()
     if relative not in entities:
         raise FileNotFoundError(relative)
-    if relative.startswith("applications/") and entities[relative].is_dir():
-        from .program_calls import application_calls
+    if relative.startswith("packages/") and entities[relative].is_dir():
+        from .program_calls import package_calls
         from openprogram.programs._programs import iter_programs
 
         entry = next((p.function for p in iter_programs() if Path(relative).name in {
             p.install_dir, p.package, p.repo_dir_name,
         }), None)
-        return application_calls(entities[relative], relative, entry)
+        result = package_calls(entities[relative], relative, entry)
+        from openprogram.programs._programs import owner_controlled_program_sources
+        source = next((row.get("source", "") for row in owner_controlled_program_sources()
+                       if Path(row["path"]).resolve() == entities[relative].resolve()), "")
+        known = next((p for p in iter_programs() if p.function == entry), None)
+        selector = known.extra if known else source
+        commands = ["openprogram programs available"]
+        if known or str(source).startswith(("https://", "http://", "ssh://", "git@")):
+            commands.append(f"openprogram programs install {shlex.quote(selector)} --upgrade")
+        commands.append(f"openprogram programs uninstall {shlex.quote(known.extra if known else Path(relative).name)}")
+        result["nodes"][0]["management_commands"] = commands
+        return result
     symbols = _package_symbol_index(entities)
     focus: dict[str, str | None] = {relative: _analysis_entry_name(relative)}
     depths = {relative: 0}
@@ -1051,11 +1063,18 @@ def _emit(event: str, data: dict) -> None:
         pass
 
 
+def _canonical_catalog_path(path: str) -> str:
+    relative = path.strip("/")
+    if relative == "applications" or relative.startswith("applications/"):
+        return "packages" + relative[len("applications"):]
+    return relative
+
+
 def register(app) -> None:
     @app.get("/api/programs/explorer")
     def programs_explorer(path: str = ""):
         try:
-            return JSONResponse(content=_list_entries(path.strip("/")))
+            return JSONResponse(content=_list_entries(_canonical_catalog_path(path)))
         except ValueError:
             return JSONResponse(
                 content={"error": "invalid programs path"}, status_code=400,
@@ -1068,7 +1087,7 @@ def register(app) -> None:
     @app.get("/api/programs/logic")
     def programs_logic(path: str):
         try:
-            return JSONResponse(content=_program_logic(path.strip("/")))
+            return JSONResponse(content=_program_logic(_canonical_catalog_path(path)))
         except ValueError:
             return JSONResponse(
                 content={"error": "invalid programs path"}, status_code=400,
@@ -1080,7 +1099,7 @@ def register(app) -> None:
 
     @app.post("/api/programs/refresh")
     async def refresh_programs():
-        """Re-scan ``programs/applications/`` for newly-installed programs.
+        """Re-scan ``programs/packages/`` for newly-installed programs.
 
         Returns ``{"added": [...], "total": N}``. Broadcasts
         ``programs:changed`` when ``added`` is non-empty so the function

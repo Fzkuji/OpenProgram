@@ -73,7 +73,6 @@ import { RuntimeBlock } from "./runtime-block";
 import { SpawnedFromCard } from "./spawned-from-card";
 import { UserBubble } from "./user-bubble";
 import { QueuedMessages } from "./queued-messages";
-import { SelfUpdateHistory } from "./self-update-card";
 import { MessageTimestamp } from "./message-actions";
 
 /** goal 循环的内部 spawn 轮 label（openprogram/programs/workflow/goal/
@@ -1191,7 +1190,6 @@ export const MessageList = memo(function MessageList({
         <PendingReplyIndicator timestamp={runningTask?.started_at} />
       ) : null}
       {paintRows ? <SystemAccessWaits key={sessionId} sessionId={sessionId} /> : null}
-      {paintRows ? <SelfUpdateHistory key={sessionId} sessionId={sessionId} /> : null}
       {/* Messages typed during the run — dimmed rows under the live
           turn, drained one at a time when it ends. */}
       {paintRows ? (

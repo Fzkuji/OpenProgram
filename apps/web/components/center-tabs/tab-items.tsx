@@ -10,7 +10,7 @@ import { FileTypeIcon } from "@/components/files/file-type-icon";
  * not independently selectable from the strip.
  */
 import { useEffect, useRef, useState } from "react";
-import { Bookmark, CirclePlus, Download, FileText, History, TerminalSquare, X } from "lucide-react";
+import { AppWindow, Bookmark, CirclePlus, Download, FileText, History, TerminalSquare, X } from "lucide-react";
 
 import {
   ChromeIcon,
@@ -71,6 +71,8 @@ function CompoundMemberIcon({ tab, animate }: { tab: CenterTab; animate: boolean
     <span className={styles.tabIcon} aria-hidden="true">
       {tab.kind === "session" ? (
         <MessageCircleIcon ref={iconRef} size={14} />
+      ) : tab.kind === "application" ? (
+        <AppWindow size={14} />
       ) : tab.kind === "file" ? (
         <FileTypeIcon name={tab.path ?? ""} size={14} />
       ) : tab.kind === "web" ? (
@@ -341,7 +343,9 @@ export function TabItem({
         <span className={styles.tabIcon} aria-hidden="true">
           {tab.kind === "session" ? (
             <MessageCircleIcon ref={iconRef} size={14} />
-          ) : tab.kind === "file" ? (
+          ) : tab.kind === "application" ? (
+        <AppWindow size={14} />
+      ) : tab.kind === "file" ? (
             <FileTypeIcon name={tab.path ?? ""} size={14} />
           ) : tab.kind === "web" ? (
             tab.faviconUrl && tab.faviconUrl !== brokenFavicon ? (

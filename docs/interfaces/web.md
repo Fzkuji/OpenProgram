@@ -30,7 +30,7 @@ Open `http://localhost:18100` in a browser. The page is a static export served b
 
 ### Message streaming
 
-Replies stream in over WebSocket: a placeholder reply appears immediately after sending, and text, thinking, and tool-call blocks render incrementally in arrival order. When several agents write into one session, each assistant message carries the producing agent's avatar and name.
+After a message is written to the connection, its text appears in the conversation and the submitted composer text clears immediately. The message remains pending until the server confirms receipt; confirmation updates the same message. A reply placeholder then appears, and text, thinking, and tool-call blocks stream over WebSocket in arrival order. When several agents write into one session, each assistant message carries the producing agent's avatar and name.
 
 ### Messages during a turn
 
@@ -123,3 +123,7 @@ Files uses a path row, an action row, and an optional search row. Click a path s
 Get Info is available in the toolbar and file context menu. It shows paths, file bytes, timestamps, and read-only permissions. Visible folders are scanned in a bounded queue. Folder rows show approximate complete or cached sizes; `≥` marks a partial result. Details show the scan time, skipped entries, and controls to continue, cancel, or recalculate. Scans sum logical file bytes, include hidden files, and skip symbolic links, restricted directories, and unreadable entries. They are samples taken over time, not atomic snapshots or disk allocation measurements. Cached values may be outdated. Complete recent samples participate in size sorting; refresh to apply newly calculated sizes. Unknown and partial totals stay last in their group.
 
 The path uses larger text, and its right-hand copy button copies the full absolute path. Refresh keeps the selected path, expanded folders, and loaded page range. File rows show readable sizes, including empty files; hover over a size for its exact byte count.
+
+The sidebar shows only projects with non-archived conversations. Empty projects remain available in the project selector and project management.
+
+Conversation history is stored under the OpenProgram state directory, grouped by a stable project id, not inside the working folder. When a folder is renamed or a volume reconnects, OpenProgram updates the location from native directory identity where the platform supports it. Copies and a different folder at the same path do not inherit the original conversations. If the working folder is missing, history stays readable and **Locate folder** remains available; new tasks in that project wait until the folder is valid again.

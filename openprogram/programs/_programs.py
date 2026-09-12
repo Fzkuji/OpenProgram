@@ -1,6 +1,6 @@
 """First-party *programs* — the agentic harnesses that live as their own
 git repositories and get installed **in-tree** under
-``openprogram/programs/applications/``.
+``openprogram/programs/packages/``.
 
 The three flagship welcome-screen functions are big enough to keep their
 own repos (own deps, tests, docs, release cadence):
@@ -9,10 +9,10 @@ own repos (own deps, tests, docs, release cadence):
     research_agent  <- research_harness      (Research-Agent-Harness)
     wiki_agent      <- wiki_agent_harness    (Wiki-Agent-Harness)
 
-Install model: owner-recorded source under ``programs/applications/``
+Install model: owner-recorded source under ``programs/packages/``
 ------------------------------------------------------------------
 The standard installer clones each program into
-``openprogram/programs/applications/<Repo-Name>/`` as a **real directory**
+``openprogram/programs/packages/<Repo-Name>/`` as a **real directory**
 (not a site-packages install). An existing development symlink can be
 recorded explicitly without modifying its target. This keeps the harness
 code right next to the bundled agentic functions:
@@ -37,7 +37,7 @@ see ``docs/installing-harnesses.md``.)
 
 Install / remove with::
 
-    openprogram programs install gui      # git clone into programs/applications/
+    openprogram programs install gui      # git clone into programs/packages/
     openprogram programs install all
     openprogram programs install https://github.com/owner/Some-Harness
     openprogram programs uninstall wiki
@@ -156,7 +156,7 @@ def _source_catalog_roots() -> list[Path]:
         if not os.path.isabs(raw):
             continue
         entry = Path(raw)
-        if entry.is_dir() and entry.parent.name == "applications":
+        if entry.is_dir() and entry.parent.name in {"packages", "applications"}:
             roots.append(entry.parent.parent.resolve())
     return list(dict.fromkeys(roots))
 
@@ -168,7 +168,7 @@ def _portable_source_path(root: str) -> str | None:
         except ValueError:
             continue
         parts = relative.split("/")
-        if len(parts) == 2 and parts[0] in {"workflow", "applications"}:
+        if len(parts) == 2 and parts[0] in {"workflow", "packages", "applications"}:
             return relative
     return None
 
@@ -182,7 +182,7 @@ def _recorded_root(row: dict) -> str | None:
         parts = raw.split("/")
         if (
             scope != "programs" or "\\" in raw or len(parts) != 2
-            or parts[0] not in {"workflow", "applications"}
+            or parts[0] not in {"workflow", "packages", "applications"}
             or parts[1] in {"", ".", ".."}
         ):
             return None
@@ -263,8 +263,12 @@ def record_program_source(
         raise ValueError("program source path must not be empty")
     allowed = base or applications_dir()
     root = os.path.abspath(os.path.expanduser(raw))
+    if base is None and allowed and _is_direct_child(root, str(Path(allowed).with_name("applications"))):
+        allowed = str(Path(allowed).with_name("applications"))
+    if base is None and any(row["path"] == root for row in owner_controlled_program_sources()):
+        allowed = str(Path(root).parent)
     if not allowed or not _is_direct_child(root, allowed) or not os.path.isdir(root):
-        raise ValueError("program source must be a directory directly under applications")
+        raise ValueError("program source must be a directory directly under packages")
 
     def _mutate(rows: list[dict]) -> None:
         kept = [
@@ -277,6 +281,7 @@ def record_program_source(
             "path": relative or root,
             "source": str(source),
             "kind": str(kind),
+            **({"entity_kind": "package"} if Path(root).parent.name in {"packages", "applications"} else {}),
             "recorded_at": time.time(),
         })
         _write_program_sources(kept)
@@ -316,6 +321,10 @@ def migrate_program_source_paths() -> None:
             document["catalog_root"] = str(external_roots[0])
             changed = True
         for row in rows:
+            raw_path = str(row.get("path", ""))
+            if row.get("kind") != "application" and Path(raw_path).parent.name in {"packages", "applications"} and row.get("entity_kind") != "package":
+                row = {**row, "entity_kind": "package"}
+                changed = True
             if row.get("scope") is not None:
                 migrated.append(row)
                 continue
@@ -376,10 +385,20 @@ def owner_controlled_program_sources(base: str | None = None) -> list[dict]:
     """Return valid owner-recorded roots, optionally limited to one directory."""
     out = []
     for row in _read_program_sources():
+        if row.get("kind") == "application":
+            # Application packages execute only through their isolated runner.
+            continue
         root = _recorded_root(row)
         if root is None:
             continue
-        if os.path.isdir(root) and (base is None or _is_direct_child(root, base)):
+        if os.path.isdir(root) and (base is None or _is_direct_child(root, base) or (
+            Path(base).name == "packages" and (
+                _is_direct_child(root, str(Path(base).with_name("applications"))) or (
+                    os.path.abspath(base) == os.path.abspath(applications_dir() or "")
+                    and Path(root).parent.name in {"packages", "applications"}
+                )
+            )
+        )):
             out.append({**row, "path": root})
     return out
 
@@ -392,7 +411,7 @@ def owner_programs_roots() -> list[Path]:
     roots = _source_catalog_roots()
     for row in owner_controlled_program_sources():
         entry = Path(row["path"])
-        if entry.parent.name == "applications":
+        if entry.parent.name in {"packages", "applications"}:
             roots.append(entry.parent.parent.resolve())
     return list(dict.fromkeys(root for root in roots if root != package_root))
 
@@ -408,8 +427,8 @@ def is_owner_controlled_program_path(path) -> bool:
     )
 
 
-def applications_dir() -> Optional[str]:
-    """Absolute path to ``openprogram/programs/applications``.
+def packages_dir() -> Optional[str]:
+    """Absolute path to ``openprogram/programs/packages``.
 
     Computed from the top-level ``openprogram`` package so it works for
     both editable and site-packages installs, and *without* importing
@@ -417,10 +436,15 @@ def applications_dir() -> Optional[str]:
     is imported during that package's load).
     """
     try:
-        from openprogram.protected_paths import applications_root
-        return applications_root()
+        from openprogram.protected_paths import packages_root
+        return packages_root()
     except Exception:
         return None
+
+
+def applications_dir() -> Optional[str]:
+    """Compatibility alias for callers using the former package category."""
+    return packages_dir()
 
 
 @dataclass(frozen=True)
@@ -471,6 +495,16 @@ class Program:
 
     def clone_dir(self, base: Optional[str] = None) -> Optional[str]:
         """Absolute path this program is (or would be) cloned to."""
+        if base is None:
+            aliases = {self.install_dir, self.package, self.repo_dir_name}
+            matches = list(dict.fromkeys(
+                row["path"] for row in owner_controlled_program_sources()
+                if Path(row["path"]).name in aliases
+            ))
+            if len(matches) > 1:
+                raise ValueError("multiple installed locations for Program package")
+            if matches:
+                return matches[0]
         base = base or applications_dir()
         return os.path.join(base, self.install_dir or self.repo_dir_name) if base else None
 
@@ -503,7 +537,7 @@ class Program:
     def is_installed(self) -> bool:
         """True when the program is available to import on this machine.
 
-        In-tree clones under ``programs/applications/`` still need an
+        In-tree clones under ``programs/packages/`` still need an
         owner-recorded source (or a matching git origin that we migrate).
         A pip/uv-installed distribution counts as owner-controlled.
         A bare ``find_spec`` hit — cwd / PYTHONPATH shadow, no dist-info —
@@ -651,7 +685,7 @@ def import_installed_programs() -> list[str]:
 
     For in-tree clones (the standard layout) each clone's own directory
     is put on ``sys.path`` first so ``import <package>`` resolves against
-    ``programs/applications/<Repo-Name>/<package>``. Programs that aren't
+    ``programs/packages/<Repo-Name>/<package>``. Programs that aren't
     present are skipped silently (the common case on a base checkout);
     set ``OPENPROGRAM_DEBUG_REGISTRY=1`` to surface import errors of a
     program that *is* present but fails to load.

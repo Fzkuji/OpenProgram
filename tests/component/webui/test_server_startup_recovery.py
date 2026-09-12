@@ -399,3 +399,48 @@ def test_hydration_projects_cancelled_wait_without_erasing_output(tmp_path, monk
     node = sessions.get_nodes("cancel-wait")[0]
     assert node.metadata["status"] == ("running" if shared_parent else "cancelled")
     assert node.output == "recorded partial output"
+
+
+def test_stop_server_requests_exit_and_waits_for_thread(monkeypatch):
+    from types import SimpleNamespace
+    from openprogram.webui import server
+    events = []
+    fake_server = SimpleNamespace(should_exit=False)
+    class Loop:
+        def is_closed(self): return False
+        def call_soon_threadsafe(self, fn, *args):
+            events.append("exit")
+            fn(*args)
+    class Thread:
+        def join(self, timeout): events.append("join")
+        def is_alive(self): return False
+    monkeypatch.setattr(server, "_uvicorn_server", fake_server)
+    monkeypatch.setattr(server, "_loop", Loop())
+    monkeypatch.setattr(server, "_server_thread", Thread())
+    monkeypatch.setattr(server, "_server_stopping", threading.Event())
+    assert server.stop_server() is True
+    assert fake_server.should_exit
+    assert events == ["exit", "join"]
+
+
+def test_shutdown_rejects_new_websocket_work(monkeypatch):
+    import json
+    from openprogram.webui import server
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(server, "_server_stopping", stop)
+    messages = []
+    class Socket:
+        async def send_text(self, value): messages.append(json.loads(value))
+    asyncio.run(server._handle_ws_command(Socket(), {"action": "chat", "message": "work"}))
+    assert messages[0]["data"]["code"] == "worker_stopping"
+
+
+def test_worker_shutdown_blocks_new_invocations_without_user_cancel(monkeypatch):
+    from openprogram.agent import run_control
+    from openprogram.providers.utils.errors import ExecInterrupt
+    signal = threading.Event()
+    monkeypatch.setattr(run_control, "_worker_stopping", signal)
+    run_control.begin_worker_shutdown()
+    with pytest.raises(ExecInterrupt, match="worker_stopping"):
+        run_control.check_cancelled()

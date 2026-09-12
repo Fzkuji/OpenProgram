@@ -2,11 +2,17 @@
 
 The macOS and Windows Desktop Apps present OpenProgram as a multi-pane workspace. Each pane can hold Files, a chat, the built-in Browser, or a Terminal, and panes can be split or moved between app windows without changing the underlying session or browser tab.
 
+Closing the last tab leaves both the tab bar and center content area empty. No tab or launcher is created automatically. Use the plus button to open a new tab.
+
+The Back and Forward buttons also include the initial New tab page. After opening an application or built-in page from it, use Back to return to the initial page and Forward to restore the destination in the same tab. Choosing another destination after going back replaces the forward history.
+
 On macOS, install the architecture-matched DMG and copy `OpenProgram.app` to `/Applications`; the current macOS channel is unsigned and may require **System Settings → Privacy & Security → Open Anyway**. On Windows, install only the signed `win-x64.exe` or `win-arm64.exe` attached to a published [GitHub Release](https://github.com/Fzkuji/OpenProgram/releases). If a release has no signed Windows EXE, use the CLI/server and browser UI for that version. The complete steps are in [Installation](../install/install.md).
 
 Terminal panes use the login shell on macOS and Windows PowerShell through ConPTY on Windows. Packaged apps on both platforms start the worker from their embedded managed Python and do not depend on a system Python or Node.js.
 
 When running Desktop from source on Linux, terminal panes use an installed absolute `SHELL` path, then fall back to `/bin/bash` or `/bin/sh`. They do not require zsh. If no shell is available, the terminal reports the missing prerequisite before starting a process.
+
+Within one window, reopening a session activates its existing chat tab. If it is not open, navigation reuses the current chat tab or opens a chat tab beside a webpage. Back and Forward also activate an existing tab when their destination is already open. Restoring a window removes duplicate chat tabs for the same session without deleting messages or drafts; sessions with identical titles remain separate.
 
 ## Opening the Browser
 
@@ -66,16 +72,30 @@ The maintained engineering specifications are [Built-in browser design](../refer
 
 Click **Resources** in the right sidebar to open **Session resources**. Use the sidebar toggle to collapse or expand the panel. The panel shows only resources owned by the selected session. There is no search field. Switching sessions updates the listed resources. The panel lists complete software/environment objects: webpages, VM or desktop attachments, and actual container or remote-environment objects registered by integrations. Code executions, commands, scripts, background processes and output belong in Activity. File and terminal views are not listed as software resources. Views without recorded session ownership and new draft chats show no session resources. Opening an owned resource keeps its session context.
 
-Agent-created webpages with recorded session ownership stay out of the top strip unless pinned or in a split. Legacy pages without an owner remain in the top strip. Select a webpage to open its existing view. Webpages can be pinned or closed; collapsing the panel or a group leaves resources running. Selecting a resource keeps the panel open beside its view.
+Agent-created webpages with recorded session ownership stay out of the top strip unless pinned or in a split. Legacy pages without an owner remain in the top strip. Select a webpage to open its existing view. Webpages can be pinned or closed; collapsing the panel or a group leaves resources running. Selecting a resource keeps the panel open beside its view. Closing a webpage removes its active row immediately while the close request is processed. If closure is not confirmed, the row becomes available again.
 
 Docker and SSH commands stay in the execution/Activity flow; running a command does not create a software resource. GUI Harness reports its configured desktop or VM attachment. Other integrations must register the actual software/environment object and its identity, rather than a command, image name or process. Select an environment resource to inspect its target and status.
 
 Integrations can report complete software/environment objects through `openprogram.session_resources.resource_use(kind, title, target)` inside a trusted runtime session. The context records the actual session automatically and releases the usage on exit. OpenProgram does not infer resources from arbitrary shell command text. URL resource identities omit credentials, query parameters, and fragments.
+
+## Running conversations after restart
+
+Running conversations continue automatically in the same conversation after the worker restarts, using the input and execution results recorded during normal operation. No separate save action or additional restart message is needed. Manually paused, cancelled, and completed tasks remain stopped. Confirmed tool results are reused; an operation whose external result is still unknown requires reconciliation before it can continue. Reconnecting the interface keeps the existing transcript.
+
+
+Conversations show normal messages and tool results, including results of an update you requested. They do not contain a separate software-update history, update controls, or update recovery notices. Opening a conversation does not start software-update history polling.
 
 ## Restart and retained browser pages
 
 After the Desktop App or worker process restarts, pages you had not closed come back automatically in the background. The App keeps the same retained tab, session, and branch grouping, and the last confirmed address and title. It creates a new live page behind that retained tab; handles from the previous process are no longer valid. It does not open a second copy of the same retained tab, does not reopen a page you closed, and does not show a preview you had hidden. Compact picture-in-picture chrome, the vertical Files / Activity / Resources sidebar, and grouped resource rows stay as they were. Labels follow the App language setting.
 
 While a page is coming back, its row stays in the original branch and shows **Restoring page…**. If restore fails, the same row shows **Could not restore page**. If the new live page later needs a new connection, the row shows **Reconnect**. Those rows do not move into a generic Unavailable group. Only pages you explicitly closed appear under **Closed pages**. Restoring a page does not start or continue an Agent. Idle pages stay ready to use. A new task still observes the page and checks permission as usual. Restore reloads the last confirmed URL with site storage already in the Desktop `webtabs` partition; unsaved DOM and form fields from the previous process are not restored. An older resource record with no retained tab descriptor is not recreated automatically; that row stays in its original group as **Could not restore page**. This bounded restart behavior is implemented in the default App.
+
+
+## Browser interaction and pause
+
+You may click, scroll, type, navigate, or close built-in pages while an Agent works. These actions do not pause the Agent. Agents may also operate OpenProgram's own web interface. Use the task pause control next to the conversation composer to pause execution.
+
+When a task page disappears, the Agent reacquires the page or reopens its last known address if it has closed, then reads its current state. Previous clicks and submissions are not replayed automatically. Lost authentication or unsaved content is reported when it cannot be restored.
 
 Conversation history loads the latest page first. Use **Load earlier messages** above the transcript to retrieve older pages without losing new streamed output. Pages follow the same conversation branch. Reconnecting reloads the recent page; stored history and model context are unchanged.

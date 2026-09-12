@@ -32,7 +32,6 @@ import {
 } from "@/components/animated-icons";
 import {
   DisclosureChevron,
-  EditorPanel,
   EmptyState,
   LoadingSkeleton,
   Placeholder,
@@ -40,7 +39,6 @@ import {
   TreeGroup,
 } from "./parts";
 import type {
-  EditorState,
   RecentEvent,
   Tab,
   TimelineDay,
@@ -48,7 +46,9 @@ import type {
 } from "./types";
 import styles from "./memory-page.module.css";
 import { SearchInput } from "@/components/ui/search-input";
-import { coreSaveStatus } from "./core-save-state";
+import { sidebarToggleClass } from "@/components/sidebar/nav-classes";
+import { MemorySourcePreview } from "./source-preview";
+import { MemoryDocument } from "./document";
 
 export function MemoryPage({
   embedded,
@@ -65,7 +65,6 @@ export function MemoryPage({
   const [topicPages, setTopicPages] = useState<TopicPage[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(true);
   const [selectedTopic, setSelectedTopic] = useState<TopicPage | null>(null);
-  const [topicEditor, setTopicEditor] = useState<EditorState>({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const searchValue = query !== undefined ? query : search;
@@ -82,7 +81,6 @@ export function MemoryPage({
   const [recentLoading, setRecentLoading] = useState(true);
 
   // Core state
-  const [coreEditor, setCoreEditor] = useState<EditorState>({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
   const [coreView, setCoreView] = useState<"injected" | "records">("injected");
   const [coreInjected, setCoreInjected] = useState("");
   const [coreMeta, setCoreMeta] = useState<{
@@ -135,18 +133,13 @@ export function MemoryPage({
       .catch(() => setRecentLoading(false));
   }, []);
 
-  const fetchCore = useCallback((submittedContent?: string) => {
+  const fetchCore = useCallback(() => {
     return fetch("/api/memory/core")
       .then((r) => {
         if (!r.ok) throw new Error(`Core request failed: ${r.status}`);
         return r.json();
       })
       .then((data) => {
-        setCoreEditor((e) => (
-          submittedContent === undefined || e.content === submittedContent
-            ? { ...e, content: data.content ?? "" }
-            : e
-        ));
         setCoreInjected(data.injected_content ?? "");
         setCoreMeta({
           size: data.size ?? 0,
@@ -167,10 +160,6 @@ export function MemoryPage({
 
   const openTopic = useCallback((page: TopicPage) => {
     setSelectedTopic(page);
-    setTopicEditor({ content: "", saving: false, saveStatus: "", viewMode: "edit" });
-    fetch(`/api/memory/topics/${page.path}`)
-      .then((r) => r.json())
-      .then((data) => setTopicEditor((e) => ({ ...e, content: data.content ?? "" })));
   }, []);
 
   // Resolve a wikilink target to a known page (match by slug or title)
@@ -200,51 +189,6 @@ export function MemoryPage({
       // the PUT path above.
       const detail = await r.json().catch(() => ({}));
       alert(detail.error || text("Delete failed", "删除失败"));
-    }
-  }
-
-  async function saveTopic() {
-    if (!selectedTopic) return;
-    setTopicEditor((e) => ({ ...e, saving: true, saveStatus: "" }));
-    try {
-      const r = await fetch(`/api/memory/topics/${selectedTopic.path}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: topicEditor.content }),
-      });
-      // A rejected edit is put back on disk, so say why rather than
-      // leaving the editor showing text that was not saved.
-      if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        if (detail.error) alert(detail.error);
-      }
-      setTopicEditor((e) => ({ ...e, saving: false, saveStatus: r.ok ? "saved" : "error" }));
-    } catch {
-      setTopicEditor((e) => ({ ...e, saving: false, saveStatus: "error" }));
-    }
-  }
-
-  async function saveCore() {
-    const submittedContent = coreEditor.content;
-    setCoreEditor((e) => ({ ...e, saving: true, saveStatus: "" }));
-    try {
-      const r = await fetch("/api/memory/core", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: submittedContent }),
-      });
-      if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        if (detail.error) alert(detail.error);
-      }
-      if (r.ok) await fetchCore(submittedContent);
-      setCoreEditor((e) => ({
-        ...e,
-        saving: false,
-        saveStatus: coreSaveStatus(e.content, submittedContent, r.ok),
-      }));
-    } catch {
-      setCoreEditor((e) => ({ ...e, saving: false, saveStatus: "error" }));
     }
   }
 
@@ -326,9 +270,10 @@ export function MemoryPage({
                 />
                 )}
                 <button
-                  className={styles.iconBtn}
+                  className={sidebarToggleClass}
                   onClick={fetchTopics}
                   title={t("sidebar.refresh")}
+                  aria-label={t("sidebar.refresh")}
                   onMouseEnter={() => refreshIconRef.current?.startAnimation?.()}
                   onMouseLeave={() => refreshIconRef.current?.stopAnimation?.()}
                 >
@@ -365,7 +310,7 @@ export function MemoryPage({
             </div>
               <div className={styles.rightPane}>
                 {selectedTopic ? (
-                  <EditorPanel
+                  <MemoryDocument
                     title={selectedTopic.title || selectedTopic.path}
                     badge={selectedTopic.type ? <TypeBadge type={selectedTopic.type} /> : null}
                     meta={[
@@ -373,11 +318,10 @@ export function MemoryPage({
                       formatSize(selectedTopic.size),
                       text(`Modified ${formatDate(selectedTopic.mtime, locale)}`, `修改于 ${formatDate(selectedTopic.mtime, locale)}`),
                     ]}
-                    state={topicEditor}
-                    onChange={(c) => setTopicEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
-                    onSave={saveTopic}
+                    key={selectedTopic.path}
+                    path={selectedTopic.path}
+                    url={`/api/memory/topics/${selectedTopic.path.split("/").map(encodeURIComponent).join("/")}`}
                     onDelete={deleteTopic}
-                    onViewMode={(m) => setTopicEditor((e) => ({ ...e, viewMode: m }))}
                     onPreviewClick={handlePreviewClick}
                   />
                 ) : !topicsLoading && topicPages.length === 0 && !searchValue ? (
@@ -584,13 +528,13 @@ export function MemoryPage({
                 {coreLoading ? (
                   <LoadingSkeleton />
                 ) : coreView === "records" ? (
-                  <EditorPanel
+                  <MemoryDocument
                     title={text("Core source records", "Core 源记录")}
                     meta={["topics/core.md"]}
-                    state={coreEditor}
-                    onChange={(c) => setCoreEditor((e) => ({ ...e, content: c, saveStatus: "" }))}
-                    onSave={saveCore}
-                    onViewMode={(m) => setCoreEditor((e) => ({ ...e, viewMode: m }))}
+                    key="core.md"
+                    path="core.md"
+                    url="/api/memory/core"
+                    onSaved={fetchCore}
                   />
                 ) : (
                   <div className={styles.editor}>
@@ -616,10 +560,10 @@ export function MemoryPage({
     </div>
   );
 
-  if (embedded) return view;
+  if (embedded) return <MemorySourcePreview>{view}</MemorySourcePreview>;
   return (
     <div className="main" style={{ minWidth: 0, overflow: "hidden" }}>
-      {view}
+      <MemorySourcePreview>{view}</MemorySourcePreview>
     </div>
   );
 }

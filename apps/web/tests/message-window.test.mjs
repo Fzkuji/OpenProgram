@@ -172,6 +172,11 @@ test("hidden chat host does not map MessageRow", () => {
   assert.match(listSrc, /\{paintRows \? \(\(\) => \{/);
 });
 
+test("conversation parent has no software-update UI dependencies", () => {
+  assert.doesNotMatch(listSrc, /SelfUpdateHistory|\/api\/self-updates|self-update-test-object/);
+  assert.doesNotMatch(shellSrc, /SelfUpdateReopenNotice|SelfUpdateTestObject|self-update-test-object/);
+});
+
 test("peer pane recycles with its own height bucket", () => {
   assert.match(peerSrc, /RecyclableRow/);
   assert.match(peerSrc, /peer:\$\{sessionId\}/);

@@ -7,6 +7,28 @@ if test "${OPENPROGRAM_REFRESH_LOCK_HELD:-}" != "1"; then
   exec python3 - "$0" "$@" <<'PYLOCK'
 import fcntl, os, subprocess, sys, tempfile
 lock_path = os.path.join(tempfile.gettempdir(), f"openprogram-refresh-{os.getuid()}.lock")
+# Leave the calling worker session before taking the lock. Conversational
+# refresh stops that worker, and a child still in its process group is
+# killed with it (`Cancelled: worker_stopping`).
+if os.environ.get("OPENPROGRAM_REFRESH_DETACHED") != "1":
+    env = {**os.environ, "OPENPROGRAM_REFRESH_DETACHED": "1"}
+    log_path = os.path.join(tempfile.gettempdir(), f"openprogram-refresh-{os.getuid()}.log")
+    log = open(log_path, "ab", buffering=0)
+    child = subprocess.Popen(
+        ["bash", sys.argv[1], *sys.argv[2:]],
+        stdin=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        env=env,
+        close_fds=True,
+    )
+    print(f"detached refresh pid {child.pid}; log {log_path}", flush=True)
+    # A chat-path refresh stops this worker. Waiting here would just
+    # get SIGTERM with the session. Return once the child owns the work.
+    if os.environ.get("OPENPROGRAM_SESSION_ID"):
+        raise SystemExit(0)
+    raise SystemExit(child.wait())
 with open(lock_path, "a") as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
     result = subprocess.run(["bash", sys.argv[1], *sys.argv[2:]],
@@ -16,7 +38,11 @@ PYLOCK
 fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$repo_root/openprogram/programs/applications/gui_harness}"
+gui_harness_default="$repo_root/openprogram/programs/packages/gui_harness"
+if [[ ! -d "$gui_harness_default" ]]; then
+  gui_harness_default="$repo_root/openprogram/programs/applications/gui_harness"
+fi
+gui_harness_repo="${OPENPROGRAM_GUI_HARNESS_REPO:-$gui_harness_default}"
 app_path="${OPENPROGRAM_APP_PATH:-/Applications/OpenProgram.app}"
 runtime_root="$app_path/Contents/Resources/runtime"
 manifest="$runtime_root/runtime-manifest.json"
@@ -246,6 +272,12 @@ PY
   cp "$repo_root/scripts/release/build-macos-runtime-app.py" "$runtime_assets_stage/build-macos-runtime-app.py"
   cp "$repo_root/scripts/release/mac-runtime-main.c" "$runtime_assets_stage/mac-runtime-main.c"
   cp "$repo_root/apps/desktop/build/icon.icns" "$runtime_assets_stage/icon.icns"
+  if test -d "$repo_root/apps/desktop/build/office"; then
+    "$local_python" "$repo_root/scripts/release/office/stage.py" --source "$repo_root/apps/desktop/build/office" --output "$runtime_assets_stage/office"
+  else
+    printf 'prepared Office asset pack is required but missing\n' >&2
+    exit 1
+  fi
   cp "$product_runtime_config" "$runtime_assets_stage/product-runtime.json"
   rm -rf "$repo_root/build"
   "$uv_bin" build --wheel --out-dir "$attempt_dir" "$repo_root"
@@ -289,7 +321,8 @@ PY
     }
     cp "$source_file" "$desktop_stage/$desktop_file"
   done <<<"$desktop_files"
-  rm -f "$desktop_stage/browser-extension-manager.js"
+  rm -f "$desktop_stage/browser-extension-manager.js" \
+    "$desktop_stage/self-update-ui-test-object.js"
   for obsolete_extension_module in \
     extract-zip debug ms get-stream pump end-of-stream once wrappy \
     yauzl fd-slicer pend buffer-crc32; do
@@ -388,6 +421,10 @@ else
   cp "$runtime_assets_stage/product-runtime.json" "$installed_product_runtime"
 fi
 mkdir -p "$runtime_root/bin" "$runtime_root/assets/tui"
+if test -d "$runtime_assets_stage/office"; then
+  "$app_python" -I -m openprogram.office_assets install --source "$runtime_assets_stage/office" --target "$runtime_root/assets/office"
+  "$local_python" -m openprogram.office_assets install --source "$runtime_assets_stage/office"
+fi
 install -m 755 "$runtime_assets_stage/node" "$runtime_root/bin/node"
 cp "$runtime_assets_stage/index.cjs" "$runtime_root/assets/tui/index.cjs"
 cp "$runtime_assets_stage/product-uv.lock" "$runtime_root/product-uv.lock"
@@ -496,10 +533,26 @@ if (
     raise SystemExit(f"refreshed worker {pid} does not use the embedded App interpreter")
 print(f"verified embedded App worker PID {pid}")
 PYTHON
+# Quit happens earlier so the asar/runtime can be replaced. Always reopen the
+# App afterwards and wait until Launch Services actually has a process —
+# `open` returning is not enough, and a cancelled refresh previously left the
+# App closed.
 if test "${OPENPROGRAM_REFRESH_BACKGROUND:-0}" = 1; then
   open -g -a "$app_path"
 else
   open -a "$app_path"
+fi
+app_running=0
+for _ in {1..50}; do
+  if pgrep -f "^${app_path}/Contents/MacOS/OpenProgram( |$)" >/dev/null 2>&1; then
+    app_running=1
+    break
+  fi
+  sleep 0.2
+done
+if test "$app_running" != 1; then
+  printf 'OpenProgram did not reopen after the refresh\n' >&2
+  exit 1
 fi
 
 cleanup

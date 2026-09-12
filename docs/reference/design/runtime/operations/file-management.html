@@ -46,6 +46,11 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
 @media(max-width:850px){.top{grid-template-columns:1fr}.meta{justify-content:flex-start}.operation-lab{grid-template-columns:1fr}.op-list{display:flex;overflow:auto;border-right:0;border-bottom:1px solid var(--line)}.op-list-label{display:none}.op{flex:0 0 190px}.schema{grid-template-columns:1fr}.state-flow{grid-template-columns:1fr 1fr}.state:not(:last-child)::after{display:none}.scenario-grid,.status-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:560px){.page{padding:24px 14px 70px}.effect-grid,.scenario-grid,.status-grid{grid-template-columns:1fr}.op-detail{padding:15px 12px}.state-flow{grid-template-columns:1fr}.nav{margin:0 -4px 18px}.top h1{font-size:23px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+.document-demo{display:grid;grid-template-columns:170px minmax(0,1fr);border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:18px 0;background:var(--surface)}
+.document-choices{padding:10px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:4px}.document-demo button{font:inherit;color:inherit;background:transparent;border:0;border-radius:6px;padding:8px 10px;cursor:pointer;text-align:left}.document-demo button:hover,.document-demo button[aria-pressed=true]{background:var(--surface-3)}.document-demo button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}.document-demo button:disabled{opacity:.45;cursor:default}
+.document-toolbar{display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:10px 12px;flex-wrap:wrap}.document-toolbar>div{display:flex;gap:3px}.document-workspace{display:flex;min-height:350px}.document-canvas{flex:1;min-width:0;padding:24px;background:var(--surface-2);overflow:auto}.document-paper{background:#fff;color:#222;min-height:280px;max-width:580px;margin:auto;padding:24px;font-size:13px;box-shadow:0 2px 8px #0001}.document-paper h3{color:#222;font-size:22px}.document-paper p{color:#444;line-height:1.9}.document-slide{aspect-ratio:16/9;min-height:0;background:#203344;color:white}.document-slide h3,.document-slide p{color:white}.document-slide .bars{display:flex;align-items:end;gap:18px;height:100px;margin-top:20px}.document-slide .bars i{width:45px;background:#95c9d2}.document-sheet{border-collapse:collapse;width:100%;font-size:12px}.document-sheet td,.document-sheet th{padding:10px;border:1px solid #ddd;text-align:left}.document-art{aspect-ratio:4/3;background:linear-gradient(145deg,#a7c5b5 0 45%,#52737b 45% 65%,#d8c3a7 65%);display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff}.document-hint{padding:8px 14px;color:var(--muted);font-size:11px;margin:0}.document-workspace aside{width:190px;padding:15px;border-left:1px solid var(--line);font-size:12px}.document-workspace aside p{padding:10px 0;border-bottom:1px solid var(--line)}.document-workspace aside small{color:var(--muted)}.background-detail{margin:10px 0}.background-detail>summary{cursor:pointer;padding:12px;border-bottom:1px solid var(--line)}
+@media(max-width:700px){.document-demo{grid-template-columns:1fr}.document-choices{flex-direction:row;overflow:auto;border-right:0;border-bottom:1px solid var(--line)}.document-choices button{flex-shrink:0}.document-canvas{padding:10px}.document-paper{padding:16px}.document-slide{aspect-ratio:auto;min-height:260px}.document-slide h3{font-size:18px;margin:0 0 12px}.document-slide .bars{height:90px;margin-top:12px}.document-workspace{flex-direction:column}.document-workspace aside{width:auto;border-left:0;border-top:1px solid var(--line)}.document-demo{font-size:12px}}
 </style>
 </head>
 <body>
@@ -55,7 +60,51 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <div class="meta"><span class="pill pending">目标设计 · 文件管理成熟化待实现</span><span class="pill">当前实现 · 历史恢复与基础 Review</span><span class="pill">范围 · App / Web / TUI / runtime</span></div>
   </header>
 
-  <nav class="nav" aria-label="文档目录"><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#file-query">文件查询</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a><a href="#implementation-status">实现状态</a></nav>
+  <nav class="nav" aria-label="文档目录"><a href="#file-window">文件窗口</a><a href="#durable-history">版本生命周期</a><a href="#model">操作模型</a><a href="#current">当前实现</a><a href="#references">参考</a><a href="#architecture">架构</a><a href="#file-query">文件查询</a><a href="#journal">数据合同</a><a href="#rewind">多轮恢复</a><a href="#branches">分支与子代理</a><a href="#failures">失败状态</a><a href="#ui">界面</a><a href="#performance">性能</a><a href="#acceptance">验收</a><a href="#implementation-status">实现状态</a></nav>
+
+<section id="file-window">
+<h2>在同一个窗口查看、编辑和找回文件版本</h2>
+<p class="intro">打开文件先预览，进入编辑后自动写入。History 显示人工与模型修改，恢复前检查当前版本。下方是交互设计演示，格式引擎与保存流程仍在实现验收中。</p>
+<div class="document-demo">
+  <div class="document-choices" aria-label="文件示例">
+    <button type="button" data-document="word" aria-pressed="true">Proposal.docx</button>
+    <button type="button" data-document="slides" aria-pressed="false">组会报告.pptx</button>
+    <button type="button" data-document="sheet" aria-pressed="false">实验结果.xlsx</button>
+    <button type="button" data-document="image" aria-pressed="false">实验图片.png</button>
+    <button type="button" data-document="psd" aria-pressed="false">海报设计.psd</button>
+    <button type="button" data-document="pdf" aria-pressed="false">研究论文.pdf</button>
+    <button type="button" data-document="text" aria-pressed="false">notes.md</button>
+  </div>
+  <div class="document-window">
+    <div class="document-toolbar"><strong id="document-name">Proposal.docx</strong><div><button id="document-preview" type="button" aria-pressed="true">预览</button><button id="document-edit" type="button" aria-pressed="false">编辑</button><button id="document-history-toggle" type="button" aria-expanded="false">History</button></div></div>
+    <div class="document-workspace"><div id="document-canvas" class="document-canvas" aria-live="polite"></div><aside id="document-versions" hidden><b>文件历史</b><p>当前版本</p><p>你 · 修改正文<br><small>编辑过程自动保存，版本按编辑时段归档</small></p><p>模型 · 调整标题<br><small>来自关联会话，可查看原始操作</small></p><p>原始文件<br><small>选择版本先预览，再恢复</small></p></aside></div>
+    <p id="document-hint" class="document-hint"></p>
+  </div>
+</div>
+<div class="scenario-grid">
+ <div class="scenario"><b>修改后切换标签</b><p>最近修改先保存在本地草稿，后台写入文件。回到标签时继续编辑；不需要 Save，也不常驻显示 Saved。</p></div>
+ <div class="scenario"><b>另一个程序也修改了文件</b><p>显示“文件已被其他操作修改”。保留当前草稿，可查看磁盘版本或另存副本；不自动覆盖。</p></div>
+ <div class="scenario"><b>打开旧版本</b><p>使用与当前文件相同的预览器。恢复是一次新的有记录操作，保留恢复前内容，支持重新应用。</p></div>
+</div>
+<details><summary>常见格式的实际目标与复用方案</summary>
+<p>文本、代码、Markdown：预览、源码编辑和自动保存。DOCX、PPTX、XLSX：本地完整引擎预览与编辑，必须通过真实文件的打开、修改、导出和重新打开验证；不能以提取文字替代页面或幻灯片预览。旧 DOC/PPT/XLS 与 ODT/ODS/ODP 纳入兼容测试，若引擎只能转换则明确另存新格式，不覆盖原格式。CSV/TSV 至少可表格预览和文本编辑。PDF：分页、缩放和搜索，批注或编辑按组件实际能力开放。PNG/JPEG/WebP/BMP/GIF/SVG/TIFF：预览；静态位图提供裁剪、旋转与标注，动画或矢量不得在普通保存时静默栅格化。PSD：合成图和图层信息预览，保留原始 PSD；只有通过无损回写验证的操作才能启用原格式编辑。音频与视频复用本地 HTML 播放器。无法解析、加密、超限或尚不支持的文件有明确状态与下载入口。</p>
+<p>候选 Office 方案包括 <a href="https://github.com/ONLYOFFICE/DocumentServer">ONLYOFFICE Docs</a>、<a href="https://github.com/agentbridges-ai/onlyoffice-browser">OnlyOffice browser/WASM</a> 与 <a href="https://github.com/LibreOffice/core/blob/master/static/README.wasm.md">LibreOffice WASM</a>。默认方案必须本地可部署，不要求用户上传文档到第三方网站。完整服务器方案保留为可配置适配器候选，不能作为默认安装缺失时唯一能力。</p>
+<p><a href="https://github.com/mozilla/pdf.js">PDF.js</a> 是 PDF 浏览候选；<a href="https://github.com/nhn/tui.image-editor">TOAST UI Image Editor</a> 是位图编辑候选，关闭 usageStatistics 并自带资源；<a href="https://github.com/Agamnentzar/ag-psd">ag-psd</a> 是 PSD 预览候选，其色彩模式、文字图层与效果限制要求保留原文件。<a href="https://www.photopea.com/api/">Photopea</a> 支持嵌入但属于第三方托管页面，不默认加载或传入本地文件。最终选型以固定版本源码与本地样例验证为准。</p>
+</details>
+<details><summary>统一打开、编辑和版本协议</summary>
+<p>文件引用包含稳定的项目或会话归属及相对路径，显示路径不是权限凭证。能力识别先核实扩展名、类型和文件内容，再选择预览或编辑适配器。适配器只获得该文档的内容与版本，不获得任意磁盘权限；统一导出 bytes/Blob、修改事件、错误事件和销毁方法。Office 与图片大资源只在打开相关文件时加载，不能拖慢聊天首屏。</p>
+<p>人工编辑与模型写入共享版本校验、完整文件发布和 immutable before/after 存储原则。既有 project_file_write 的幂等记录只有操作结果与指纹，不等于可恢复的文件版本；本次补齐实际版本保存。人工修改记录 actor=user，模型修改关联 session/turn，不伪造聊天轮次，也不把人工历史变成侧栏会话。History 按文件汇集来源，模型本轮 Review 继续保留其归属语义。</p>
+<p>版本数据按归属保留：项目中的人工编辑历史归项目，模型记录仍关联实际会话与轮次；汇总索引只引用已有版本，不另复制来源文档。归档会话仍可打开原记录；彻底删除会话后，其入口与归属版本按现有删除规则清理，汇总页不得用缓存重新显示原文。Memory 中残留来源仅标记“原会话已删除”或移除链接，不为此建立来源副本。项目文件及其独立人工历史不因删除一段聊天而一并删除。</p>
+<p>自动保存和版本归档分开：编辑器正常撤回处理即时修改；草稿先持久保存，文件在有修改事件后的短暂合并窗口自动发布；History 默认按连续编辑时段归档，间隔约五分钟形成版本，切换文档、结束编辑或恢复操作也完成归档。文件内容不等待五分钟才保存。每次发布校验读取时的 revision，重复请求幂等，乱序响应不能覆盖新草稿；保存失败保留草稿并显示可重试错误。重启后读取持久记录，不根据当前文件补造过去版本。</p>
+<p>富文档编辑器的生命周期独立于标签视图。切换标签时先隐藏视图，仍在导出的引擎继续保留；最新内容进入持久草稿后才能释放引擎。Office iframe 在同一文档会话中不因 React 重新挂载或 DOM 移动而重建。关闭、重命名和版本恢复均先等待最终导出，失败保留编辑器和草稿。预览与编辑复用同一实例；只读历史实例不能回写当前文件。</p>
+<p>Office 在独立来源加载本地固定版本资源，只开放该资源树的 GET/HEAD，不开放主应用 API、认证和 WebSocket。父子页面同时校验来源、实例和消息请求，宏默认禁用。大型资源随安装部署或从已准备的同版本本地缓存读取，打开文件时不请求第三方 CDN；远程部署没有配置独立资源来源时明确显示不可编辑，不转交第三方网站。PDF、图片与媒体按需加载，保持聊天首屏资源预算。文件窗口只在打开文件时加载；KaTeX 保留完整 WOFF2 字体，不再重复引用面向旧浏览器的 WOFF/TTF 回退。资源检查保留 2 MiB 首屏压缩传输与 350 KiB 单块压缩脚本上限。</p>
+<p>大型二进制通过受限字节上传或本地暂存传输，不编码到普通聊天消息。边读边检查体积，取消时清理临时文件；引擎消息校验来源、实例和请求 ID。文档脚本、宏、HTML/SVG 活动内容不获得主窗口权限；第三方服务仅在用户主动配置并知悉文件将送往该服务时使用。原格式不支持安全写回时，提供明确的导出副本，而不是把 PNG 或 OOXML 内容写进其他扩展名。</p>
+</details>
+<details><summary>完整交付与验收，不以部分格式通过替代整体完成</summary>
+<p>工作顺序：验证复用引擎；完成统一文件版本与二进制发布接口；接入格式预览和编辑；统一预览优先、自动保存和 History；验证历史恢复、窗口切换、重启与错误状态；执行独立规范与质量审查及组合版本全量检查；最后更新默认 App。每个适配器都需要真实有效文件，不用伪造二进制证明格式支持。</p>
+<p>验收逐项覆盖 Word、PPT、表格、图片、PSD、PDF、文本与媒体。可编辑格式须实际修改内容、写回、重新打开并验证版本恢复；只读格式须实际渲染并明确能力。包含并发外部修改、写入中断、损坏文件、超大文件、取消、断网、项目路径变化和旧历史兼容。所有可见支持状态、源代码、测试与安装版本一致后才标记完成。</p>
+</details>
+</section>
 
   <section id="model">
     <h2>一个模型，四种操作</h2>
@@ -73,8 +122,44 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     <div class="decision-line"><b>四种语义不是四个同级按钮。</b>Turn card 只显示当前适用的 Undo 或 Revert；user checkpoint 进入 Restore sheet；assistant message footer 才提供 Branch。成功 Undo 后，严格预检可用时在 UI 显示 Redo；历史 Revert 的反向操作显示 Reapply。两者都执行新的 reapply transaction，不维护独立线性 redo 栈。</div>
   </section>
 
-  <section id="current">
-    <h2>当前实现与必须修复的缺口</h2>
+
+  <section id="durable-history">
+    <h2>文件版本的完整生命周期</h2>
+    <p class="intro">同一个历史入口处理文本、Word、PPT 和后续文档工具。完整文件负责恢复；文本或格式预览只是显示方式，不改变原始版本。以下展示使用状态，内部实现展开后查看。</p>
+    <div class="scenario-grid">
+      <div class="scenario"><b>连续修改同一份文件</b><p>Proposal.docx<br>第一轮：原文 → 修改后<br>同轮继续修改：更新最终版本</p><p class="result">历史仍保留原文；新版本提交成功才替换记录</p></div>
+      <div class="scenario"><b>保存途中中断</b><p>Proposal.docx<br>文件写入结果尚未确认</p><p class="result">重新打开可看到未完成状态，不显示为“没有修改”或允许不确定恢复</p></div>
+      <div class="scenario"><b>历史文件损坏</b><p>无法读取文件修改记录</p><p class="result">保留原记录并报告错误，不重建空历史，不继续覆盖目标文件</p></div>
+    </div>
+    <details><summary>正常保存、失败重试与旧版本保护</summary>
+      <p>每份 before/after 使用独立且完整写入的版本文件。持久化顺序是版本内容、校验、版本目录，再发布 manifest。更新 manifest 失败时，前一份成功记录引用的内容仍完整。失败尝试不覆盖已发布版本。只有尚未成功的尝试被明确取消后，重试才以重新读取的当前文件建立 before；已成功修改始终保留本轮最初 before。</p>
+      <p>准备记录与提交记录分开。未完成的写入保留待确认标记，历史投影显示不可精确恢复，不能推断脚本成功，也不能用当前磁盘内容补造 after。取消且确认没有成功提交的尝试不展示为已修改。损坏或不支持的 manifest 返回明确错误；仅真正缺失的 manifest 表示没有记录。旧版本 manifest 和旧 blob_ref 继续可读，无批量重写迁移。</p>
+    </details>
+    <details><summary>DeepSeek 与 Codex 的源码依据</summary><p>DeepSeek 的 <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/session/session-persistence-jsonl/src/index.ts">JSONL persistence</a> 使用同步临时文件、独占发布与目录同步，并明确区分损坏记录和缺失记录；<a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/core/session/src/repair.ts">session repair</a> 把中断工具标为结果未知，而不自动补造成功。采用这两项原则保护版本内容与中断状态。其 <a href="https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/fs/fs-local/src/index.ts">fs-local</a> 提供目标锁、版本条件检查和文本写入结果，但未提供完整文件 undo/reapply 或 Office 版本管理；因此保留 OpenProgram 现有恢复事务，不把会话日志恢复等同于文件恢复。Codex 的 exact delta 归因继续保留，不把任意 Bash 操作视为精确修改。</p></details>
+    <details><summary>新工具如何接入，哪些能力不属于本次实现</summary>
+      <p>本地生成器统一调用 <code>write(file_path, source_path=...)</code> 发布完整文件。文本工具保留 write/edit/apply_patch 入口，共享 checkpoint 的 prepare/commit/abort 合同。不能只提交模型声称的“修改成功”，也不能执行任意 Bash 后扫描目录并归因。状态存储由 CheckpointStore 管理，Review 和会话摘要只作投影，不另建版本副本。未来 Office 语义差异只读取不可变版本，不承担撤销；远端存储需要条件写入和可验证版本标识，在具备这一能力前不宣称支持精确恢复。</p>
+      <p>本次保留现有单轮聚合、会话分支和恢复事务；不新增全盘扫描、定时轮询、通用插件注册框架、Office 修订视图或远端存储实现。已丢失的历史不能补回。系统崩溃与不遵守文件锁的外部程序仍可能造成待人工处理状态；系统保留证据并拒绝不确定覆盖，不承诺所有外部修改都能自动恢复。</p>
+    </details>
+    <details><summary>实现与验收计划</summary><p>先复现连续写入提交失败、失败后重试和损坏记录覆盖；再修复共享历史存储及未完成记录投影。通过注册工具、重新打开会话、Review 与恢复入口验证，最后进行独立规范审查、质量审查和全量检查。该节对应共享历史存储、会话摘要与 Review 投影已实现；独立规范和质量审查、故障回归及全量测试均通过。</p></details>
+  </section>
+
+  <section id="document-history">
+    <h2>文档修改与版本恢复</h2>
+    <p class="intro">Word、PPT、PDF 与图片使用完整文件版本。打开这一轮的文件记录可确认修改的文档；撤销恢复修改前的文件，重新应用恢复修改后的文件。重启后仍读取同一份持久记录。</p>
+    <div class="scenario-grid">
+      <div class="scenario"><b>修改完成</b><p>Proposal.docx · 文件内容已更新</p><p class="result">查看文件记录 · 撤销本轮修改</p></div>
+      <div class="scenario"><b>重新打开会话</b><p>同一轮仍显示 Proposal.docx，历史版本不依赖脚本输出或内存缓存。</p><p class="result">查看记录 · 重新应用</p></div>
+      <div class="scenario"><b>文件后来又被修改</b><p>撤销前检查当前文件。内容与已保存版本不一致时阻止恢复，保留后续修改。</p><p class="result">文件已变化，未执行恢复</p></div>
+    </div>
+    <details><summary>实现方式与范围</summary>
+      <p>脚本将结果写到独立临时文件，再通过现有 <code>write(file_path, source_path=...)</code> 发布。content 与 source_path 必须且只能指定一个。source_path 是本地普通文件，受读取权限限制；目标继续执行写权限、读取基线与审批文件指纹检查。来源和目标均纳入审批等待时的文件指纹；发布前复核。工具在目标目录生成临时文件，完整写入后替换目标，失败清理临时文件，并保留原目标。工具按原始字节写入，记录 before/after，不将文档转成文本保存。源与目标相同、目录、链接、超限或不可读取的来源在修改目标前失败。来源读取有 64 MiB 上限。已有目标在 advisory lock 下复核打开的文件句柄、内容和路径；这只能串行化遵守该锁的写入，不能阻止外部程序在最终校验与替换之间写入。Windows 在替换前关闭不共享删除权限的句柄并再次校验，因此不承诺操作系统级条件替换。</p>
+      <p>参考 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex TurnDiffTracker</a> 的 exact delta 检查与 <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/shell_snapshot.rs">shell snapshot</a> 的暂存、验证、替换流程；后者保存 shell 环境，不是文档版本。沿用 Codex 的明确修改操作归因：通用 Bash、后台进程与外部编辑器不自动成为本轮精确修改。脚本不能直接覆盖最终目标后再补写历史。保留既有文本 write 参数、失败语义、回退事务、分支归属及持久会话布局。文档格式、图片和排版均由完整字节版本恢复；当前不提供 Word 修订标记或 PPT 视觉差异。</p>
+      <p>读取基线必须先建立：模型先用 read 读取原文件，再生成暂存版本。二进制读取返回文件类型与字节数，不向模型输出乱码。新文件不要求先读。脚本工具说明明确这一流程，无额外保存按钮，无全盘扫描与轮询。</p>
+      <p>验收经注册 write 工具、会话重新打开及公开历史操作完成：创建和覆盖 DOCX/PPTX 后保存版本；撤销及重新应用逐字节一致；外部更改导致冲突；失败不替换目标；旧文本写入仍有效。</p>
+    </details>
+  </section>
+
+  <section id="current"><details class="background-detail"><summary>当前实现与必须修复的缺口</summary>
     <p class="intro">以下均由当前源码确认。它们解释了十几万行误统计、响应慢和多轮恢复可能产生部分成功的原因。</p>
     <div class="table-wrap"><table><thead><tr><th>当前路径</th><th>现状</th><th>风险</th><th>目标</th></tr></thead><tbody>
       <tr><td><code>agent_loop._snapshot_cwd</code></td><td>Bash 前后 cwd 扫描、候选预复制和执行器调用已删除。</td><td>普通 Bash、后台日志和外部写入不再进入 turn mutation。</td><td><span class="tag yes">完成</span> 仅 trusted file mutator 生成 receipt。</td></tr>
@@ -94,10 +179,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <tr><td>Read cache and drafts</td><td>读取缓存和未保存草稿均无容量上限；草稿只在页面内存中保存。</td><td>长期使用会累积内存；刷新页面可能丢失 dirty draft。</td><td><span class="tag unknown">待实现</span> 有界 LRU read cache 与独立、持久化的 dirty draft store。</td></tr>
       <tr><td>Review filters and paging</td><td>Review 先取一页文件，再在客户端按 Code/Tests/Docs/Large 分类。</td><td>分类结果只代表当前页；不同页和 workspace 变化之间不能形成稳定的筛选视图。</td><td><span class="tag unknown">待实现</span> server 先筛选与排序，再对固定 snapshot 分页。</td></tr>
     </tbody></table></div>
-  </section>
+  </details></section>
 
-  <section id="references">
-    <h2>官方参考、采用与边界</h2>
+  <section id="references"><details class="background-detail"><summary>官方参考、采用与边界</summary>
     <div class="table-wrap"><table><thead><tr><th>系统</th><th>确认行为</th><th>采用</th><th>不采用或未知</th></tr></thead><tbody>
       <tr><td>Claude Code checkpoint</td><td>每个 user prompt 建 checkpoint；只跟踪 Write/Edit/NotebookEdit，明确不跟踪 Bash。可分别恢复代码、对话或两者；无 tracked edit 时不显示代码恢复。除前台 <code>context: fork</code> skill 外，其他 subagent 修改不恢复；symlink/hardlink/non-regular path 会跳过并警告，因此可能部分恢复。每 session 最近 100 个文件 checkpoint；checkpoint 随 session 保存并受默认 30 天、可配置 <code>cleanupPeriodDays</code> 清理。</td><td><span class="tag yes">采用</span> prompt checkpoint、分离恢复选项、明确 unavailable。</td><td><span class="tag modify">调整</span> OpenProgram 对任一路径失败执行整体阻止或事务回滚，不接受 skipped 后整体成功。超过 100 后旧 prompt 是否仍支持 conversation-only rewind 未获官方保证。</td></tr>
       <tr><td>Claude Code fork</td><td><code>/branch</code> 与 SDK fork 把 conversation 复制到新 session，原 session 保留；明确不复制或回退 filesystem。VS Code 另行提供 Fork conversation and rewind code。</td><td><span class="tag modify">调整</span> OpenProgram 保留同-task Branch，并新增 source-preserving new-task Fork；with-files 在 Git 项目用隔离 worktree。</td><td><span class="tag no">不采用</span> fork 后默认复用当前 files 却不说明。</td></tr>
@@ -109,10 +193,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     </tbody></table></div>
     <div class="decision-line" style="margin-top:10px"><b>参考系统没有公开保证的部分：</b>Claude 对外部并发修改的覆盖/拒绝/合并规则、多文件原子性、digest preflight 和崩溃一致性均未说明；Codex exact turn delta 的长期持久化与 Desktop per-turn file Undo 未确认。本页的全量预检、workspace lock、durable intent、rollback staging 和 crash recovery 是 OpenProgram 新增合同。</div>
     <div class="source-list" style="margin-top:10px"><a href="https://code.claude.com/docs/en/checkpointing">Claude checkpointing</a><a href="https://code.claude.com/docs/en/agent-sdk/file-checkpointing">Claude SDK file checkpointing</a><a href="https://code.claude.com/docs/en/sessions">Claude sessions / branch</a><a href="https://code.claude.com/docs/en/vs-code">Claude VS Code</a><a href="https://code.claude.com/docs/en/desktop">Claude Desktop diff</a><a href="https://code.claude.com/docs/en/web-quickstart">Claude Web review</a><a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_diff_tracker.rs">Codex turn diff</a><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/app_backtrack.rs">Codex backtrack</a><a href="https://github.com/openai/codex/blob/main/codex-rs/tui/src/get_git_diff.rs">Codex Git diff</a><a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs">Codex fork/revert protocol</a><a href="https://learn.chatgpt.com/docs/code-review">Codex Code review</a></div>
-  </section>
+  </details></section>
 
-  <section id="architecture">
-    <h2>目标架构与信任边界</h2>
+  <section id="architecture"><details class="background-detail"><summary>目标架构与信任边界</summary>
     <p class="intro">对话 DAG、精确 mutation journal 和 Git workspace view 是三个独立事实源。历史操作 planner 可以读取三者，但只有 journal 中的可恢复 receipt 能授权文件恢复。</p>
     <div class="arch"><svg viewBox="0 0 1040 455" role="img" aria-labelledby="arch-title arch-desc"><title id="arch-title">文件修改与历史恢复架构</title><desc id="arch-desc">直接编辑工具产生精确 mutation receipt，普通 Bash 不进入本轮归因；journal 派生 turn 和 session review，Git 派生 workspace review；历史操作 planner 经过预检和持久化 intent 后才更新文件和对话 HEAD。</desc><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
       <rect class="node exact" x="20" y="25" width="205" height="72" rx="8"/><text x="38" y="50">Trusted file mutators</text><text class="sub" x="38" y="68">write · edit · apply_patch</text><text class="sub" x="38" y="83">validated mutation-capable adapter</text>
@@ -130,10 +213,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <path class="edge" d="M917 324V375"/><path class="edge" d="M815 404H775"/>
     </svg></div>
     <div class="decision-line danger" style="margin-top:12px"><b>普通 Bash 与 Workspace Review 的边界：</b>Bash 可以在沙箱或 worktree 中运行，但本地共享工作区里的通用 shell 结果不自动归因给某个 turn。Git 能显示当前 workspace 变化，却不能证明它属于哪一轮，也不能赋予 turn Undo 权限。</div>
-  </section>
+  </details></section>
 
-  <section id="file-query">
-    <h2>文件浏览、搜索与 Review 查询合同</h2>
+  <section id="file-query"><details class="background-detail"><summary>文件浏览、搜索与 Review 查询合同</summary>
     <p class="intro">Project file explorer 与 Review 都使用 project/session 绑定的服务端快照。目录、搜索和 Review 过滤先确定完整的有序候选集，再返回一页；客户端不得以当前页数据推断项目或 scope 的完整结果。</p>
     <div class="table-wrap"><table><thead><tr><th>查询</th><th>事实源与范围</th><th>排序、筛选与分页</th><th>无效化</th></tr></thead><tbody>
       <tr><td>Directory listing</td><td>由 <code>project_id</code> 解析的项目根目录；path 必须是规范化的根内相对目录。排除路径穿越、符号链接逃逸和服务端禁止浏览的目录。</td><td>先按类型（目录、文件）和根内规范化路径稳定排序，再建立 snapshot。每页最多 100 项；cursor 是不透明 token，不是数组下标。</td><td>目录版本、ignore 规则或请求中的 project/path/sort 不匹配时返回 <code>STALE_SNAPSHOT</code>，客户端从第一页重取。</td></tr>
@@ -201,10 +283,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
   }
     }</pre><div class="schema-note"><h3>持久化与恢复不变量</h3><ul><li>使用浏览器原生 IndexedDB，不增加依赖。配额计算使用 <code>TextEncoder</code> 的 UTF-8 byte length，计入 draft、baseline 与所存元数据；<code>project_index</code> 保存每项目的键集合、count 和总 bytes。启动时以 project_index 恢复该项目的 dirty drafts；索引缺失或不一致时扫描 drafts 重建索引，不删除记录。</li><li>新建、更新、rename、discard 与未来显式 project cleanup 都在一个 IndexedDB readwrite transaction 内先计算新旧 bytes，再同时写 draft 与 aggregate index。超出 32 项或 8 MiB 时 transaction 不写入，现有 draft 保持不变。</li><li>编辑器在接受会把持久化 draft 超出配额的输入前先检查预算；满额时阻止创建新 dirty draft，并显示可见的保存、还原、导出或显式丢弃提示。已有 dirty draft 不自动淘汰；更新已有 draft 遇到浏览器 <code>QuotaExceededError</code> 时保留最近成功持久化版本、显示持久化失败状态并暂停进一步会扩大该记录的编辑，直到用户处理空间或显式导出/丢弃。</li><li>删除项目文件时，若对应 dirty draft 存在，服务端删除完成前 UI 必须要求保存、导出保留或明确 discard；成功 discard 才清理该 key。当前没有 project unlink/delete action，因此项目 draft 不因 registry snapshot 缺少该项目而清理；未来显式 command 必须先展示该项目 draft 数量和 bytes，确认后清理所有该项目 keys 与 index；取消或失败不清理。</li><li>draft 内容仅保存在当前浏览器 origin 的 IndexedDB；不进入日志、遥测、模型上下文、WebSocket payload 或跨设备同步。显式 discard、未来确认的 project cleanup、浏览器站点数据清除和应用卸载会删除本地内容；恢复时不得自动上传或重新写回项目文件。</li></ul></div></div>
     <div class="decision-line" style="margin-top:12px"><b>Review 的顺序固定：</b>解析 scope 和 owner → 取得或创建事实源 snapshot → 服务端过滤与排序 → 对过滤结果分页 → 客户端渲染单页。分类按钮和搜索框不是前端对已加载一页的二次筛选。</div>
-  </section>
+  </details></section>
 
-  <section id="journal">
-    <h2>Mutation journal 数据合同</h2>
+  <section id="journal"><details class="background-detail"><summary>Mutation journal 数据合同</summary>
     <div class="schema"><pre>{
   "transaction_id": "mtx_...",
   "session_id": "...",
@@ -272,10 +353,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <tr><td>Current branch</td><td>当前 active lineage 的增量 mutation projection</td><td>所有 turn、显式 revert/rewind/reapply；不包含 sibling branch 和外部写入。</td><td>从具体 turn/checkpoint 发起，不提供无范围的一键 branch Undo。</td></tr>
       <tr><td>Workspace</td><td>Git tracked diff + <code>git ls-files --others --exclude-standard</code></td><td>当前未提交变化；遵循 <code>.gitignore</code>。内部再切换 Unstaged、Staged、Branch 或 Commit。</td><td>无 turn Undo。Git Discard 与 checkpoint Restore 使用不同入口和确认文案；非 Git明确 unavailable。</td></tr>
     </tbody></table></div>
-  </section>
+  </details></section>
 
-  <section id="rewind">
-    <h2>多轮 Rewind：一次规划，一次事务</h2>
+  <section id="rewind"><details class="background-detail"><summary>多轮 Rewind：一次规划，一次事务</summary>
     <p class="intro">每轮同时有 before_turn 与 after_turn checkpoint。User message 的 Restore 入口默认选择“恢复到本次请求之前”；assistant turn card 可选择“恢复到本次回复之后”。目标 suffix 只沿 source branch predecessor chain 计算，不碰 sibling branch。Source branch ref 和 HEAD 始终保留；conversation 模式立即创建新的 target branch ref，并在协调事务提交后切换 active branch。</p>
     <div class="state-flow" aria-label="历史操作状态机"><div class="state"><b>IDLE</b><p>选择 checkpoint 和恢复模式。</p></div><div class="state"><b>PLANNING</b><p>冻结 expected HEAD、workspace version 与 suffix。</p></div><div class="state"><b>READY</b><p>展示 turn/file 影响、不可恢复项和 branch 结果。</p></div><div class="state blocked"><b>BLOCKED</b><p>冲突、缺 blob、运行中任务或不安全路径；零写入。</p></div><div class="state"><b>APPLYING</b><p>写 durable intent，锁 workspace，stage、apply、verify。</p></div><div class="state done"><b>COMMITTED</b><p>追加 transaction；需要时移动 HEAD；刷新 UI。</p></div></div>
     <div class="decision-line" style="margin-top:12px"><b>多文件恢复不是单个文件系统原子操作。</b>目标保证来自 durable intent、rollback staging、逐文件原子替换和重启恢复；若 apply 与 rollback 都失败，状态必须是 Recovery required，不能显示 Reverted 或移动 conversation HEAD。</div>
@@ -295,10 +375,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <tr><td>Conversation only</td><td>保持当前</td><td>立即创建并激活 target branch</td><td>显示 workspace mismatch。用户确认 Keep current files 后追加 <code>adopt_workspace_revision</code> event 和新的 branch checkpoint；之后从该明确基线继续。</td></tr>
       <tr><td>Code only</td><td>恢复到 checkpoint</td><td>保持当前</td><td>追加 rewind transaction；显示“代码已回退、对话仍在最新位置”。</td></tr>
     </tbody></table></div>
-  </section>
+  </details></section>
 
-  <section id="branches">
-    <h2>分支、Checkout 与 sub-agent</h2>
+  <section id="branches"><details class="background-detail"><summary>分支、Checkout 与 sub-agent</summary>
     <div class="table-wrap"><table><thead><tr><th>场景</th><th>目标语义</th><th>文件规则</th></tr></thead><tbody>
       <tr><td>Branch from assistant result</td><td>立即创建稳定 target branch id/ref，HEAD 指向该 assistant，并切换 <code>active_branch_id</code>；source branch HEAD 保持原位置。</td><td>默认不修改文件，按钮副标题明确“Files stay as they are”。纯浏览历史只移动 navigation cursor，不创建/移动 branch。</td></tr>
       <tr><td>Fork into new task</td><td>创建 source-preserving 新 task/thread，原 task 和 HEAD 不变；可选择复制 conversation only 或携带 checkpoint 文件状态。</td><td>Git 项目中“with files”优先创建隔离 worktree 后物化 checkpoint；非 Git 不提供无提示目录复制，改用同 task 的显式 Code + conversation Restore。</td></tr>
@@ -318,10 +397,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <tr><td>Archive branch</td><td>默认删除操作只 archive branch ref，保留 nodes、journal、checkpoint refs 和重新激活能力。</td><td>不能删除共享祖先或把 predecessor 留成意外新 tip。</td></tr>
       <tr><td>Purge branch</td><td>显式高级操作；仅释放没有其他 branch、checkpoint、operation、audit 或 active intent 引用的独有对象，使用引用计数 GC。</td><td>不能按 leaf 向后删一个节点，也不能让 blob GC 绕过引用。</td></tr>
     </tbody></table></div>
-  </section>
+  </details></section>
 
-  <section id="failures">
-    <h2>冲突、不可恢复与并发状态</h2>
+  <section id="failures"><details class="background-detail"><summary>冲突、不可恢复与并发状态</summary>
     <div class="scenario-grid">
       <div class="scenario"><b>后来修改了同一文件</b><p>Revert historical turn 不尝试自动反向合并；Rewind 预检 current digest。任何不匹配都阻止整次文件操作。</p><div class="result">BLOCKED_CONFLICT · 0 writes</div></div>
       <div class="scenario"><b>Checkpoint blob 已 GC</b><p>summary 和 diff metadata 仍可 Review；Code restore 选项 disabled，Conversation only 保持可用。</p><div class="result">UNAVAILABLE_BLOB_EXPIRED</div></div>
@@ -336,7 +414,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <div class="scenario"><b>Reapply 已撤回 change set</b><p>仅当 current digest 等于 revert 后状态、没有后续同 file lineage mutation、after blobs 仍存在时可用；执行后追加新的 transaction。</p><div class="result">READY | BLOCKED_DEPENDENCY</div></div>
       <div class="scenario"><b>外部副作用</b><p>数据库、API、部署、包安装、Git index/commit、运行进程、网络请求和未记录 Bash 不在文件 Restore 范围内；确认页逐项提示可能重复。</p><div class="result">UNSUPPORTED_SIDE_EFFECTS_VISIBLE</div></div>
     </div>
-  </section>
+  </details></section>
 
   <section id="ui">
     <h2>UI 信息架构与操作入口</h2>
@@ -350,8 +428,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
     </tbody></table></div>
   </section>
 
-  <section id="performance">
-    <h2>性能、保留、安全与兼容</h2>
+  <section id="performance"><details class="background-detail"><summary>性能、保留、安全与兼容</summary>
     <div class="status-grid">
       <div class="status-card"><b>Turn finalize</b><p>复杂度只与 committed changed paths 有关；不遍历 workspace。摘要在 finalize 持久化并随 transcript 返回。</p></div>
       <div class="status-card"><b>Review loading</b><p>服务端先筛选和稳定排序，文件列表每页 100；客户端只保留当前页和相邻页。选中文件后每批最多 200 行或 256 KiB，并支持继续加载。</p></div>
@@ -379,10 +456,9 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <tr><td><code>FileTabPane</code></td><td>编辑器 buffer、保存冲突提示和 dirty-draft 生命周期；从项目文件读取 canonical 内容。</td><td>不直接调用旧 turn diff 入口；历史文件比较统一由 Review tab 打开。</td></tr>
     </tbody></table></div>
     <div class="decision-line danger" style="margin-top:12px"><b>最终移除临时兼容入口：</b>删除按 response type 配对的 <code>filesWsRequest</code> 全局队列、缺少 <code>request_id</code> 的文件 action、<code>FileTabPane</code> 直接调用的 <code>turn_file_diff</code> 入口，以及把 <code>list_turn_files</code> 当作新消息摘要回填的路径。旧 session 没有可用的 journal/review snapshot 时返回只读 unavailable；不为旧入口保留会绕过新合同的 fallback。</div>
-  </section>
+  </details></section>
 
-  <section id="acceptance">
-    <h2>实施 brief 与验收矩阵</h2>
+  <section id="acceptance"><details class="background-detail"><summary>实施 brief 与验收矩阵</summary>
     <p class="intro">A–J 已完成并通过独立 specification review 与 quality review。每个新增任务实现后也必须通过相同审查，才能更新本页状态。</p>
     <div class="table-wrap"><table><thead><tr><th>任务</th><th>生产边界</th><th>必须先失败的 public-entry 场景</th><th>排除</th><th>状态与证据</th></tr></thead><tbody>
       <tr><td>A · Exact mutation journal</td><td><code>programs/tools/files/</code>、turn context/finalize、checkpoint manifest/store。</td><td>已有 &gt;5 MiB 文件首轮修改不算全新增；Bash ignored log 不进入 turn；失败 edit 无 receipt。</td><td>不实现 Review UI，不改用户 Git。</td><td><span class="tag yes">review-passed</span> public-entry、受影响测试与静态检查均已验证。</td></tr>
@@ -412,12 +488,19 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:10px 11px
       <div class="scenario"><b>Crash recovery</b><p>在每个 intent phase 强制终止并重启，最终必须是 COMMITTED、ROLLED_BACK 或持久化到具体路径的 RECOVERY_REQUIRED；永不假报 committed，也不覆盖外部新写入。</p><div class="result">PASS: every path explainable</div></div>
       <div class="scenario"><b>Canonical cutover</b><p>从用户可见文件入口检查调用图：没有临时 queue、缺 request_id action 或 direct turn diff fallback；无法按新合同解释的旧 session 显示只读 unavailable。</p><div class="result">REQUIRED: no compatibility bypass</div></div>
     </div>
-  </section>
-  <section id="implementation-status">
-    <h2>实现状态</h2>
+  </details></section>
+  <section id="implementation-status"><details class="background-detail"><summary>实现状态</summary>
+    <p>项目人工编辑的二进制发布与历史接口已完成独立规范审查、质量审查和完整后台测试。现有文本写入也使用共享恢复事务；每次写入立即发布，历史按编辑时段分组，恢复新增版本。项目移位后按当前位置恢复，离线时仍能读取已保存版本；失败与损坏记录明确显示未确认状态。</p>
+    <p>统一预览窗口、文本编辑和后台自动保存控制器已完成源码实现、独立规范与质量审查，以及完整后台、Web、浏览器与文档检查。草稿覆盖未打开的文件，失败不会关闭文件标签；重命名期间禁用相关编辑，成功后按新路径重新打开。人工和模型历史已汇总到同一文件 History，可以预览与恢复。Office 的 DOCX/PPTX/XLSX 已完成真实内容修改、导出与重新打开验证；旧 DOC/PPT/XLS 需要另存 OOXML，ODF 格式已验证原格式导出。保存失败后立即重试，以及关闭前等待保存期间新增内容完成导出，也已在本地引擎中验证。这些源码和引擎验证尚不代表已安装 App 提供相应功能。</p>
+    <p>PDF 分页、缩放与搜索，PSD 合成图与图层列表、TIFF 和普通图片预览，以及本地音视频播放已完成源码实现、独立审查和完整验证。预览使用本地固定版本资源，损坏或超限文件显示错误和下载入口；这些格式的编辑能力与安装验收仍未完成。</p>
+    <p>本地 Office 资源的清单校验、独立静态来源和受认证的可用性接口已完成独立审查与完整验证。仅接受固定来源与版本的本地资源，远端来源不可用；编辑器资源不能访问主应用 API。实际 Word、PPT、表格的编辑、导出、预览切换、原生撤销与重开已在研究引擎中验证，保存失败重试及最终导出也已验证。正式资源构建、版本校验、原子安装、源码缓存与 App 资源同步已完成源码实现，经过独立规范与质量审查及完整检查（实现 <code>b653a3a8</code>）。字体仅采用附有许可证的输入，资源包保留源码、补丁和来源记录。统一窗口的 Office 预览与编辑接入已完成独立规范、质量审查和完整检查（实现 <code>ef64e6ab</code>）：后台 8746 项、Web 单元 672 项、真实 Office 浏览器 16 项和其他预览浏览器 20 项通过，文档 542 页构建通过且无死链。编辑模式等待原生状态确认，原生撤销随标签和历史切换保留，关闭提交尚未完成的输入；旧格式明确转换到新文件。人工/模型历史已完成汇总，已安装 App 尚未更新。</p>
+    <p>静态 PNG/JPEG/WebP 编辑已完成独立规范、质量审查和完整验证（实现 <code>8dc8bf81</code>）。裁剪、旋转、绘图、形状、文字与原生撤销/重做通过实际导出像素验证；编辑器跨预览、历史、标签和页面切换保留，错误后可重试，转换 PNG 创建独立文件且拒绝覆盖。后台 8746 项、Web 单元 678 项、文件浏览器 30 项和真实 Office 浏览器 16 项通过，文档 542 页构建通过且无死链。首次后台全量运行出现一项并发额度测试超时，未改代码的完整重跑通过。动画与 16 位 PNG 保持只读；限制 64 MiB、1600 万像素和单边 16384 像素。导出不承诺保留嵌入元数据，PSD 仍为合成图和图层预览。已安装 App 尚未更新。</p>
+    <p>人工和模型文件历史汇总已完成独立规范、质量审查及完整验证（实现 <code>fcf799bd</code>）：后台 8767 项、Web 单元 678 项、文件浏览器 32 项、真实 Office 浏览器 16 项通过，文档 542 页构建通过且无死链。首次后台运行的一项取消重试测试超时，候选与任务基线单独复现均通过，未改代码的完整重跑通过。模型版本复用所属会话保留的不可变字节；归档保持可读，彻底删除后不再可读。旧历史有界分批补录，无法核实的归属明确显示不可用。恢复仅修改所选文件并创建新记录；项目移动保持稳定归属，离线只读。当前主分支整合与已安装 App 验收尚未完成。</p>
+    <p>文件历史持久性已验证：不可变版本、失败重试、损坏记录拒绝、未完成写入投影与旧版本兼容。新增本地生成器继续复用 source_path 发布入口；Office 语义差异和远端条件存储不属于当前实现。</p>
+    <p>文档 source_path 发布与二进制读取已实现并通过独立审查和测试：完整文件版本随会话持久保存，支持撤回、重新应用及冲突检测；不提供 Office 内容差异视图。</p>
     <div class="decision-line"><b>当前实现状态：</b>目录/搜索 snapshot、文件 request identity、durable mutation、有界 read cache、持久 dirty draft、Review 服务端分页、canonical entry-point cutover 与稳定模块边界均已完成独立审查。</div>
     <p class="intro" style="margin-top:12px">实现证据写入对应测试；本设计页只维护当前合同与总体状态。</p>
-  </section>
+  </details></section>
 </main>
 <script>
 const OP={
@@ -431,6 +514,26 @@ function renderOp(key){const x=OP[key];detail.innerHTML=`<div class="op-detail-h
 document.querySelector(".op-list").addEventListener("click",e=>{const b=e.target.closest("[data-op]");if(b)renderOp(b.dataset.op)});
 document.querySelector(".op-list").addEventListener("keydown",e=>{const a=[...document.querySelectorAll(".op")],i=a.indexOf(document.activeElement);if(i<0)return;let n=null;if(e.key==="ArrowDown"||e.key==="ArrowRight")n=a[(i+1)%a.length];if(e.key==="ArrowUp"||e.key==="ArrowLeft")n=a[(i-1+a.length)%a.length];if(e.key==="Home")n=a[0];if(e.key==="End")n=a[a.length-1];if(!n)return;e.preventDefault();n.focus();n.click()});
 renderOp("undo");
+
+const documentSamples={
+ word:{name:'Proposal.docx',html:'<div class="document-paper"><h3>研究计划</h3><p>可信多模态模型研究</p><p>本节说明研究目标、技术方法与实验安排。进入编辑后，可以直接修改正文和排版。</p><p>研究目标 · 方法设计 · 预期成果</p></div>',hint:'Word：保留文档结构的预览与编辑，自动保存到原文件。'},
+ slides:{name:'组会报告.pptx',html:'<div class="document-paper document-slide"><h3>实验结果与下一步</h3><p>幻灯片 3 / 12</p><div class="bars"><i style="height:45%"></i><i style="height:70%"></i><i style="height:90%"></i></div></div>',hint:'PPT：查看幻灯片、修改文字与对象；保存后仍是 PPTX。'},
+ sheet:{name:'实验结果.xlsx',html:'<div class="document-paper"><table class="document-sheet"><tr><th></th><th>A</th><th>B</th><th>C</th></tr><tr><th>1</th><td>方法</td><td>准确率</td><td>耗时</td></tr><tr><th>2</th><td>Baseline</td><td>72%</td><td>28s</td></tr><tr><th>3</th><td>实验方法</td><td>84%</td><td>19s</td></tr></table></div>',hint:'表格：查看工作表和单元格，编辑时保留公式与表格结构。'},
+ image:{name:'实验图片.png',html:'<div class="document-paper"><div class="document-art">实验图片</div></div>',hint:'图片：缩放预览，编辑时提供裁剪、旋转与标注。'},
+ psd:{name:'海报设计.psd',html:'<div class="document-paper"><div class="document-art">海报设计</div><p>图层：标题 / 主题图形 / 背景</p></div>',hint:'PSD：先提供合成预览与图层信息。未验证安全写回前不允许覆盖原 PSD。',readonly:true},
+ pdf:{name:'研究论文.pdf',html:'<div class="document-paper"><h3>Research paper</h3><p>Abstract</p><p>Document preview with page navigation, search, and zoom.</p><p>Page 1 / 8</p></div>',hint:'PDF：分页、缩放、搜索；批注能力按实际引擎验收开放。',readonly:true},
+ text:{name:'notes.md',html:'<div class="document-paper"><h3>实验记录</h3><p>这轮修改了实验参数与对比结果。</p><p>支持预览、源码编辑和历史恢复。</p></div>',hint:'文本与 Markdown：默认预览，进入编辑后自动保存。'}
+};
+let documentKind='word';
+function showDocument(kind){documentKind=kind;const sample=documentSamples[kind];document.getElementById('document-name').textContent=sample.name;document.getElementById('document-canvas').innerHTML=sample.html;document.getElementById('document-hint').textContent=sample.hint;document.getElementById('document-edit').disabled=!!sample.readonly;document.getElementById('document-edit').setAttribute('aria-pressed','false');document.getElementById('document-preview').setAttribute('aria-pressed','true');document.querySelectorAll('[data-document]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.document===kind)));}
+document.querySelectorAll('[data-document]').forEach(b=>b.addEventListener('click',()=>showDocument(b.dataset.document)));
+document.getElementById('document-preview').onclick=()=>showDocument(documentKind);
+document.getElementById('document-edit').onclick=()=>{document.getElementById('document-edit').setAttribute('aria-pressed','true');document.getElementById('document-preview').setAttribute('aria-pressed','false');document.getElementById('document-hint').textContent='设计演示：编辑工具在文档内显示。实际编辑内容将自动保存，History 保留版本。';};
+document.getElementById('document-history-toggle').onclick=()=>{const panel=document.getElementById('document-versions');panel.hidden=!panel.hidden;document.getElementById('document-history-toggle').setAttribute('aria-expanded',String(!panel.hidden));};
+showDocument('word');
+
+function expandDesignAnchor(){const node=document.getElementById(location.hash.slice(1));if(!node)return;let ancestor=node.parentElement;while(ancestor){if(ancestor.tagName==='DETAILS')ancestor.open=true;ancestor=ancestor.parentElement;}const direct=node.querySelector(':scope > details');if(direct)direct.open=true;}
+window.addEventListener('hashchange',expandDesignAnchor);expandDesignAnchor();
 </script>
 </body>
 </html>

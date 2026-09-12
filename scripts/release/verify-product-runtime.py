@@ -156,6 +156,15 @@ def _probe_macos_window_control() -> None:
         importlib.import_module(module)
 
 
+def _probe_office(root: Path) -> str:
+    from openprogram.office_assets import validate_prepared_office_pack
+
+    pack = validate_prepared_office_pack(root / "assets" / "office")
+    if not pack.available:
+        raise RuntimeError(f"prepared Office asset pack is unavailable: {pack.unavailable_reason}")
+    return "assets/office"
+
+
 def _probe(
     root: Path,
     product: dict,
@@ -209,6 +218,9 @@ def _probe(
 
     _probe_macos_window_control()
 
+    if product.get("office") or (root / "assets" / "office").is_dir():
+        _probe_office(root)
+
     if browser:
         from playwright.sync_api import sync_playwright
 
@@ -241,8 +253,9 @@ def _probe(
         if function not in registered:
             raise RuntimeError(f"first-party Program did not register: {function}")
 
-    return {capability: {"present": True, "verified": browser or capability != "browser.playwright"}
-            for capability in product["capabilities"]}
+    result = {capability: {"present": True, "verified": browser or capability != "browser.playwright"}
+              for capability in product["capabilities"]}
+    return result
 
 
 def _read_json(path: Path) -> dict:
@@ -309,6 +322,8 @@ def main() -> int:
                 "tui": tui_relative,
             },
         }
+        if (root / "assets" / "office").is_dir():
+            manifest["assets"]["office"] = "assets/office"
         worker_relative = "OpenProgram.app/Contents/MacOS/OpenProgram"
         if platform.system() == "Darwin" and (root / worker_relative).is_file():
             manifest["worker_python"] = worker_relative
@@ -341,6 +356,11 @@ def main() -> int:
         lock_digest = hashlib.sha256(lock_path.read_bytes()).hexdigest()
         if manifest.get("product_lock_sha256") != lock_digest:
             raise RuntimeError("product dependency lock hash mismatch")
+        declared_office = (manifest.get("assets") or {}).get("office")
+        if declared_office and not (root / declared_office).is_dir():
+            raise RuntimeError("declared Office asset pack is missing")
+        if declared_office:
+            _probe_office(root)
         expected = set(product["capabilities"])
         actual = manifest.get("capabilities", {})
         complete = {"present": True, "verified": True}

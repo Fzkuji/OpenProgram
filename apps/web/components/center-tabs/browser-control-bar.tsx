@@ -6,8 +6,6 @@ import {
   browserTakeoverKind,
   displayedControlState,
   operationHistory,
-  requestExplicitPause,
-  requestResumeAgent,
   resumeErrorFor,
   revealPendingApproval,
   showActionsEnabled,
@@ -130,7 +128,7 @@ export function BrowserControlBar({
   const resumeError = resumeErrorFor(resource.resourceId);
   const resumeDisabled = !connected || (state !== "paused" && state !== "waiting");
   const pauseDisabled = state === "yielding" || state === "unknown" || !connected;
-  const showTakeover = state !== "idle" && state !== "closed";
+  const showTakeover = takeoverKind === "reveal";
   const nativeHistory = typeof window !== "undefined" && !!window.openprogramDesktop?.contextMenu;
   const noticeText = resumeError
     || (state === "stop_unconfirmed" ? shownStatus : null)
@@ -272,23 +270,15 @@ export function BrowserControlBar({
         <button
           type="button"
           className={styles.webToolbarBtn}
-          disabled={takeoverKind === "resume" || takeoverKind === "reveal" ? resumeDisabled : pauseDisabled}
+          disabled={resumeDisabled}
           title={pauseLabel}
           aria-label={pauseLabel}
           onClick={(event) => {
             event.stopPropagation();
-            if (takeoverKind === "reveal") {
-              revealPendingApproval(live);
-              return;
-            }
-            void (takeoverKind === "resume" ? requestResumeAgent(live) : requestExplicitPause(live));
+            revealPendingApproval(live);
           }}
         >
-          {takeoverKind === "reveal"
-            ? <CircleHelp size={14} aria-hidden="true" />
-            : takeoverKind === "resume"
-            ? <Play size={14} aria-hidden="true" />
-            : <Pause size={14} aria-hidden="true" />}
+          <CircleHelp size={14} aria-hidden="true" />
         </button>
       ) : null}
     </>

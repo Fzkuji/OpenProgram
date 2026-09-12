@@ -57,3 +57,14 @@ def test_cli_entrypoint_processes_are_recognized(argv0, monkeypatch) -> None:
     monkeypatch.setattr(sys, "argv", [argv0])
 
     assert cli._is_cli_process()
+
+
+def test_application_cli_has_top_level_and_legacy_entries():
+    from openprogram.cli import build_parser
+    parser = build_parser()
+    for prefix in [['apps'], ['programs', 'apps']]:
+        args = parser.parse_args([*prefix, 'install', '/tmp/software', '--trust', '--replace'])
+        assert args.apps_verb == 'install'
+        assert args.directory == '/tmp/software'
+        assert args.trust and args.replace
+        assert parser.parse_args([*prefix, 'list']).apps_verb == 'list'

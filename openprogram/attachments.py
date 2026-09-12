@@ -221,6 +221,139 @@ def readable_roots(session_id: str | None = None) -> list[Path]:
     return roots
 
 
+def _session_repo_candidates(session_id: str) -> list[Path]:
+    """Return the unambiguous current repo for a session id.
+
+    This is deliberately filesystem-only. Resolving an attachment for a
+    read-only HTTP request must not instantiate ``SessionStore`` (whose
+    startup maintenance can rewrite its registry). The durable location map
+    is preferred, then the two application-owned layouts are considered.
+    """
+    if not session_id or "/" in session_id or "\\" in session_id:
+        return []
+    state = _state_dir()
+    if state is None:
+        return []
+    root = state / "sessions"
+    if (root / ".deleted" / session_id).is_file():
+        return []
+    candidates: list[Path] = []
+    try:
+        locations = json.loads((root / "locations.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        locations = {}
+    recorded = locations.get(session_id) if isinstance(locations, dict) else None
+    if isinstance(recorded, str):
+        candidates.append(Path(recorded).expanduser())
+    candidates.append(root / session_id)
+    projects = root / "projects"
+    if projects.is_dir():
+        try:
+            candidates.extend(
+                project / session_id
+                for project in projects.iterdir()
+                if project.is_dir()
+            )
+        except OSError:
+            return []
+    valid: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+            root_resolved = root.resolve()
+            if not resolved.is_relative_to(root_resolved):
+                continue
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            if (resolved / ".git").is_dir() and (
+                (resolved / "history").is_dir() or (resolved / "meta.json").is_file()
+            ):
+                valid.append(resolved)
+        except (OSError, ValueError):
+            continue
+    # A stale location and a newly discovered nested repo may coexist. Do not
+    # guess if more than one current repo can claim the same session id.
+    return valid if len(valid) == 1 else []
+
+
+def resolve_session_attachment(
+    path: str | os.PathLike,
+    session_id: str | None,
+    roots: Iterable[Path],
+    *,
+    allow_missing: bool = False,
+) -> Optional[Path]:
+    """Resolve an attachment path, including one legacy session alias.
+
+    Historical markers may contain ``<project>/.openprogram/sessions/<id>/
+    workdir/attachments/<relative>``. Only that exact shape, with the
+    caller's session id, can be rebased. The canonical session repo must be
+    unique, live, application-owned, and contain the same relative suffix.
+
+    A legacy path is rebased before the old path is considered. This matters
+    when migration left both copies reachable: the canonical session copy is
+    the durable attachment, while the old source may be stale or unavailable.
+    """
+    roots = tuple(roots)
+    raw: Path | None = None
+    marker_start: int | None = None
+    legacy_start: int | None = None
+    try:
+        raw = Path(os.path.expanduser(str(path)))
+        parts = raw.parts
+        marker_start = next(
+            (i for i in range(len(parts) - 4)
+             if parts[i:i + 2] == (".openprogram", "sessions")
+             and parts[i + 3:i + 5] == ("workdir", "attachments")),
+            None,
+        )
+        if (marker_start is not None and session_id
+                and parts[marker_start + 2] != session_id):
+            return None
+        if raw.is_absolute() and not any(part in {".", ".."} for part in parts):
+            legacy_start = marker_start
+        if (legacy_start is not None and session_id
+                and parts[legacy_start + 2] != session_id):
+            return None
+    except (OSError, ValueError):
+        raw = None
+    target = resolve_within(path, roots)
+    if legacy_start is None or not session_id:
+        if target is not None and target.is_file():
+            return target
+        return target if allow_missing else None
+    relative = Path(*parts[legacy_start + 5:])
+    if not relative.parts or any(part in {".", ".."} for part in relative.parts):
+        return target if allow_missing else None
+    repos = _session_repo_candidates(session_id)
+    if len(repos) != 1:
+        if target is not None and target.is_file():
+            return target
+        return target if allow_missing else None
+    repo_root = repos[0].resolve()
+    attachment_root = (repo_root / "workdir" / "attachments").resolve()
+    try:
+        if not attachment_root.is_relative_to(repo_root):
+            return None
+    except ValueError:
+        return None
+    candidate = (attachment_root / relative).resolve()
+    try:
+        if not candidate.is_relative_to(attachment_root):
+            return None
+    except ValueError:
+        return None
+    if resolve_within(candidate, roots) != candidate:
+        return None
+    if candidate.is_file():
+        return candidate
+    if target is not None and target.is_file():
+        return target
+    return target if allow_missing else None
+
+
 def sendable_roots(session_id: str | None = None) -> list[Path]:
     """Directories the agent may send a file OUT of.
 

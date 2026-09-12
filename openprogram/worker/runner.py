@@ -183,6 +183,13 @@ def run_foreground() -> int:
     from openprogram.agent.job import get_runner as get_job_runner
     from openprogram.agent.job.runner import shutdown_runner as shutdown_job_runner
 
+    try:
+        from openprogram.store.session.migration import run_startup_migration
+        run_startup_migration()
+        print("[worker] session migration: ready")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] session migration deferred: {exc}")
+
     get_job_runner()
     print("[worker] job dispatcher: running")
 
@@ -367,6 +374,10 @@ def run_foreground() -> int:
                 timeout=max(0.1, _join_deadline - time.time())
             )
     finally:
+        from openprogram.agent.run_control import begin_worker_shutdown
+        begin_worker_shutdown()
+        from openprogram.webui.server import stop_server
+        stop_server()
         shutdown_job_runner()
         lock.release()
         clear_pid_file()

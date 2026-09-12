@@ -217,6 +217,12 @@ def compute_breakdown(
         except Exception:
             latest_system = ""
 
+    try:
+        from openprogram.context.compaction_view import load_compaction_view
+        msgs = load_compaction_view(db, session_id, head_id).messages
+    except (AttributeError, KeyError, TypeError):
+        _log.debug("DAG view unavailable; using legacy message estimate", exc_info=True)
+
     bd = compute_call_breakdown(
         system_prompt=latest_system,
         history=msgs,

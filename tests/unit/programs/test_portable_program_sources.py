@@ -116,3 +116,44 @@ def test_bundled_workflow_copy_does_not_ambiguate_owned_git_source(tmp_path, mon
                                     kind='workflow-publish', base=str(workflow.parent))
     actual = _programs.owner_controlled_program_sources()
     assert [row['path'] for row in actual] == ([] if installed_git else [str(workflow)])
+
+
+def test_package_install_location_preserves_legacy_owner_source(tmp_path, monkeypatch):
+    package = tmp_path / 'openprogram'
+    root = package / 'programs'
+    old = root / 'applications' / 'gui_harness'
+    old.mkdir(parents=True)
+    (root / 'packages').mkdir()
+    monkeypatch.setattr(openprogram, '__file__', str(package / '__init__.py'))
+    monkeypatch.setattr(paths, 'get_state_dir', lambda: tmp_path / 'state')
+    _programs.record_program_source(old, source='fixture', base=str(old.parent))
+    _programs.migrate_program_source_paths()
+    program = _programs.get_program('gui')
+    assert _programs.packages_dir() == str(root / 'packages')
+    assert program.clone_dir() == str(old)
+    assert _programs._read_program_sources()[0]['entity_kind'] == 'package'
+    assert _programs.owner_controlled_program_sources(_programs.packages_dir())[0]['path'] == str(old)
+    _programs.remove_program_source(old)
+    assert program.clone_dir() == str(root / 'packages' / 'gui_harness')
+
+
+def test_package_duplicate_legacy_records_identify_one_installed_location(tmp_path, monkeypatch):
+    package = tmp_path / 'openprogram'
+    old = package / 'programs' / 'applications' / 'gui_harness'
+    (old / 'gui_harness').mkdir(parents=True)
+    (old / 'gui_harness' / '__init__.py').write_text('')
+    monkeypatch.setattr(openprogram, '__file__', str(package / '__init__.py'))
+    monkeypatch.setattr(paths, 'get_state_dir', lambda: tmp_path / 'state')
+    _programs.record_program_source(old, source='fixture', base=str(old.parent))
+    rows = _programs._read_program_sources()
+    _programs._write_program_sources([*rows, {**rows[0], 'recorded_at': 1}])
+    program = _programs.get_program('gui')
+    assert program.clone_dir() == str(old)
+    assert program.is_installed()
+    assert len(_programs._read_program_sources()) == 2
+
+    other = package / 'programs' / 'packages' / 'gui_harness'
+    other.mkdir(parents=True)
+    _programs.record_program_source(other, source='fixture', base=str(other.parent))
+    with pytest.raises(ValueError, match='multiple installed locations'):
+        program.clone_dir()
