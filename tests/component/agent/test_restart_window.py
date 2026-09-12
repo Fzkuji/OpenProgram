@@ -332,3 +332,113 @@ def test_disabled_restart_window_does_not_request_pause(real_agent_chat, monkeyp
         )
     finally:
         h.tools.release["first"].set()
+
+
+def test_second_interruption_before_first_new_effect(real_agent_chat):
+    from openprogram.execution import restart
+    from tests.component.providers.scripted_provider import (
+        ScriptedToolCall,
+        ScriptedText,
+    )
+
+    h = real_agent_chat
+    h.provider.add_response(
+        ScriptedToolCall("first", {}, "first-call"),
+        ScriptedToolCall("second", {}, "second-call"),
+    )
+    h.provider.add_response(ScriptedText("done"))
+    h.tools.blocked.add("first")
+    execution = _chat(h)
+    _wait(lambda: "first" in h.tools.calls)
+    restart.prepare_shutdown(_runner(h))
+    h.tools.release["first"].set()
+    _wait(
+        lambda: h.store.get_execution(execution.execution_id).status.value == "paused"
+    )
+    _wait(lambda: bool(h.outcomes))
+    recovered = []
+
+    async def crash_before_driver(attempt, activation):
+        recovered.append(
+            h.control.recover_owner_loss(
+                attempt.execution_id,
+                attempt_id=attempt.attempt_id,
+                generation=attempt.generation,
+            )
+        )
+        raise RuntimeError("simulated process interruption before driver activation")
+
+    original_activator = h.control.activator
+    h.control.activator = crash_before_driver
+    restart.reconcile(_runner(h))
+    assert recovered
+    assert recovered[0].execution.status.value == "paused"
+    h.control.activator = original_activator
+    restart.reconcile(_runner(h))
+    _wait(
+        lambda: (
+            h.store.get_execution(execution.execution_id).status.value == "completed"
+        )
+    )
+    assert h.tools.calls == ["first", "second"]
+    assert h.provider.call_count == 2
+
+
+def test_shutdown_pause_race_with_completed_action(real_agent_chat, monkeypatch):
+    from openprogram.execution import restart
+    from tests.component.providers.scripted_provider import (
+        ScriptedToolCall,
+        ScriptedText,
+    )
+
+    h = real_agent_chat
+    h.provider.add_response(
+        ScriptedToolCall("first", {}, "first-call"),
+        ScriptedToolCall("second", {}, "second-call"),
+    )
+    h.provider.add_response(ScriptedText("done"))
+    h.tools.blocked.update({"first", "second"})
+    execution = _chat(h)
+    _wait(lambda: "first" in h.tools.calls)
+    original = h.control.request_pause
+    calls = []
+
+    async def pause_after_checkpoint(**kwargs):
+        if not calls:
+            calls.append(1)
+            h.tools.release["first"].set()
+            _wait(lambda: "second" in h.tools.calls)
+        return await original(**kwargs)
+
+    monkeypatch.setattr(h.control, "request_pause", pause_after_checkpoint)
+    try:
+        restart.prepare_shutdown(_runner(h))
+        current = h.store.get_execution(execution.execution_id)
+        assert current.status.value == "pausing", h.store.list_commands(
+            execution.execution_id
+        )
+    finally:
+        h.tools.release["second"].set()
+
+    _wait(
+        lambda: h.store.get_execution(execution.execution_id).status.value == "paused"
+    )
+    _wait(lambda: bool(h.outcomes))
+    requests = [
+        e
+        for e in h.store.list_events(execution.execution_id)
+        if e.kind == restart._REQUEST
+    ]
+    assert len(requests) == 1
+    assert (
+        requests[0].payload["resume_before"] - requests[0].payload["interrupted_at"]
+        == 7200
+    )
+    restart.reconcile(_runner(h))
+    _wait(
+        lambda: (
+            h.store.get_execution(execution.execution_id).status.value == "completed"
+        )
+    )
+    assert h.tools.calls == ["first", "second"]
+    assert h.provider.call_count == 2

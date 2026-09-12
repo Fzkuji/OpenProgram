@@ -1868,7 +1868,8 @@ class RuntimeControlService:
                 (
                     attempt.attempt_id,
                     _json({"owner_id": owner_id, "generation": generation,
-                           "process_owner": current_process_owner()}),
+                           "process_owner": current_process_owner(),
+                           **({"resume_checkpoint_id": checkpoint.checkpoint_id} if checkpoint is not None else {})}),
                     now,
                     execution_id,
                     expected_version,

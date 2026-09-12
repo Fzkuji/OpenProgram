@@ -49,7 +49,14 @@ def crash_checkpoint(service, connection, execution):
     checkpoint = service.checkpoints._get(connection, execution.checkpoint_head_id)
     if (
         checkpoint is None
-        or checkpoint.created_by_attempt_id != execution.current_attempt_id
+        or checkpoint.execution_id != execution.execution_id
+        or checkpoint.revision_id != execution.revision_id
+    ):
+        return None
+    if (
+        checkpoint.created_by_attempt_id != execution.current_attempt_id
+        and execution.owner_lease.get("resume_checkpoint_id")
+        != checkpoint.checkpoint_id
     ):
         return None
     seconds = checkpoint.state_refs.get("restart_window_seconds", 0)
@@ -93,37 +100,49 @@ def prepare_shutdown(runner) -> None:
         ):
             continue
         command_id = f"worker-restart:pause:{execution.current_attempt_id}"
-        try:
-            with store._transaction() as connection:
-                current = store._require_execution(connection, execution.execution_id)
-                if current.status_version != execution.status_version:
-                    continue
-                if not any(
-                    e.kind == _REQUEST
-                    and e.payload.get("pause_command_id") == command_id
-                    for e in store.list_events(execution.execution_id)
-                ):
-                    record_intent(
-                        store,
-                        connection,
-                        current,
-                        interrupted_at=time(),
-                        seconds=seconds,
-                        pause_command_id=command_id,
+        # A normal safe point can advance the version before pause acceptance.
+        # Retrying never transfers shutdown ownership to a replacement attempt.
+        for retry in range(3):
+            try:
+                with store._transaction() as connection:
+                    current = store._require_execution(
+                        connection, execution.execution_id
                     )
-            asyncio.run(
-                _service(runner, execution.execution_id).request_pause(
-                    command_id=command_id,
-                    execution_id=execution.execution_id,
-                    expected_version=execution.status_version,
-                    actor={"surface": "worker-restart"},
+                    if (
+                        current.status is not ExecutionStatus.RUNNING
+                        or current.current_attempt_id != execution.current_attempt_id
+                    ):
+                        break
+                    if not any(
+                        e.kind == _REQUEST
+                        and e.payload.get("pause_command_id") == command_id
+                        for e in store.list_events(execution.execution_id)
+                    ):
+                        record_intent(
+                            store,
+                            connection,
+                            current,
+                            interrupted_at=time(),
+                            seconds=seconds,
+                            pause_command_id=command_id,
+                        )
+                asyncio.run(
+                    _service(runner, execution.execution_id).request_pause(
+                        command_id=command_id,
+                        execution_id=execution.execution_id,
+                        expected_version=current.status_version,
+                        actor={"surface": "worker-restart"},
+                    )
                 )
-            )
-        except Exception:
-            _log.exception(
-                "could not checkpoint execution %s during shutdown",
-                execution.execution_id,
-            )
+                break
+            except Exception as exc:
+                if getattr(exc, "code", None) == "stale_version" and retry < 2:
+                    continue
+                _log.exception(
+                    "could not checkpoint execution %s during shutdown",
+                    execution.execution_id,
+                )
+                break
 
 
 def _settle(store, execution, event, outcome):
