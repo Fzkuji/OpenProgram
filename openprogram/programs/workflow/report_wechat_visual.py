@@ -17,7 +17,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import unicodedata
 import uuid
@@ -175,7 +174,6 @@ def _cancel():
     check_cancelled()
 
 
-
 class WeChatWindow:
     """Exact PID/window identity with fixed, evidence-bound navigation methods."""
 
@@ -212,23 +210,16 @@ class WeChatWindow:
             raise VisualUnavailable(str(exc)) from exc
         self.pid = self.app.processIdentifier()
         self.launch = str(self.app.launchDate())
-        # Ask this already-running application to reopen its main window. The
-        # fixed bundle identifier cannot open another application or document.
-        if len(apps) == 1:
-            subprocess.run(
-                ["/usr/bin/open", "-b", "com.tencent.xinWeChat"],
-                check=True,
-                capture_output=True,
-                timeout=5,
-            )
-            time.sleep(0.5)
         windows = self._windows()
         if len(windows) != 1:
             raise VisualUnavailable("WINDOW_NOT_UNIQUE")
-        self.window_id = windows[0]["kCGWindowNumber"]
+        self.window_id = int(windows[0]["kCGWindowNumber"])
         self.bounds = dict(windows[0]["kCGWindowBounds"])
         self.deadline = time.monotonic() + 120
         self.scratch = tempfile.TemporaryDirectory(prefix="openprogram-wechat-")
+        self.session = None
+        self.native = None
+        self.frame = None
 
     def _windows(self):
         return [
@@ -285,43 +276,34 @@ class WeChatWindow:
     def observe(self):
         self.check()
         path = Path(self.scratch.name) / (uuid.uuid4().hex + ".png")
-        content = self._capture_call(
-            lambda cb: (
-                self.sc.SCShareableContent.getShareableContentExcludingDesktopWindows_onScreenWindowsOnly_completionHandler_(
-                    True, False, cb
-                )
+        try:
+            from gui_harness.adapters.mac_window import (
+                window_session,
+                WindowUnavailable,
             )
-        )
-        matches = [
-            w
-            for w in content.windows()
-            if w.windowID() == self.window_id
-            and w.owningApplication()
-            and w.owningApplication().processID() == self.pid
-        ]
-        if len(matches) != 1:
-            raise VisualUnavailable("WINDOW_CHANGED")
-        config = self.sc.SCStreamConfiguration.alloc().init()
-        config.setWidth_(int(self.bounds["Width"] * 2))
-        config.setHeight_(int(self.bounds["Height"] * 2))
-        config.setShowsCursor_(False)
-        content_filter = (
-            self.sc.SCContentFilter.alloc().initWithDesktopIndependentWindow_(
-                matches[0]
-            )
-        )
-        image = self._capture_call(
-            lambda cb: (
-                self.sc.SCScreenshotManager.captureImageWithFilter_configuration_completionHandler_(
-                    content_filter, config, cb
-                )
-            )
-        )
-        bitmap = self.appkit.NSBitmapImageRep.alloc().initWithCGImage_(image)
-        data = bitmap.representationUsingType_properties_(
-            self.appkit.NSBitmapImageFileTypePNG, {}
-        )
-        path.write_bytes(bytes(data))
+        except ImportError as exc:
+            raise VisualUnavailable("NATIVE_DEPENDENCIES_UNAVAILABLE") from exc
+        try:
+            if self.native is None:
+                session = window_session("com.tencent.xinWeChat", self.window_id)
+                native = session.__enter__()
+                self.session, self.native = session, native
+                if (
+                    native.identity["pid"] != self.pid
+                    or native.identity["launch_time"] != self.launch
+                ):
+                    raise VisualUnavailable("WINDOW_CHANGED")
+            observation = self.native.observe()
+        except WindowUnavailable as exc:
+            raise VisualUnavailable("BACKGROUND_WINDOW_UNAVAILABLE") from exc
+        # The shared adapter owns capture and window locking. Move its temporary
+        # screenshot into this bounded reader's lifetime before OCR.
+        source = Path(observation["img_path"])
+        try:
+            path.write_bytes(source.read_bytes())
+        finally:
+            source.unlink(missing_ok=True)
+            source.parent.rmdir()
         # Reuse GUI Harness's native OCR implementation in a bounded process.
         raw = self._run(
             [
@@ -352,7 +334,7 @@ class WeChatWindow:
         except (ValueError, TypeError, AttributeError) as exc:
             raise VisualUnavailable("OCR_UNAVAILABLE") from exc
         self.check()
-        return {
+        self.frame = {
             "lines": lines,
             "width": width,
             "height": height,
@@ -363,125 +345,114 @@ class WeChatWindow:
             "bounds": self.bounds,
         }
 
-    def _capture_call(self, start):
-        completed, result = threading.Event(), []
+        return self.frame
 
-        def done(value, error):
-            result.extend((value, error))
-            completed.set()
-
-        start(done)
-        end = min(self.deadline, time.monotonic() + 10)
-        while not completed.wait(0.02):
-            self.check()
-            if time.monotonic() >= end:
-                raise VisualUnavailable("CAPTURE_TIMEOUT")
-        if result[1] or result[0] is None:
-            raise VisualUnavailable("CAPTURE_UNAVAILABLE")
-        return result[0]
-
-    def _click_line(self, frame, line):
+    def _controls(self, frame):
         self.check()
-        if (
-            line not in frame["lines"]
-            or line["x"] < 0
-            or line["y"] < 0
-            or line["x"] + line["w"] > frame["width"]
-            or line["y"] + line["h"] > frame["height"]
-        ):
+        if frame is not self.frame or self.native is None:
             raise VisualUnavailable("CONTROL_NOT_VERIFIED")
-        x = (
-            self.bounds["X"]
-            + (line["x"] + line["w"] / 2) * self.bounds["Width"] / frame["width"]
+        from gui_harness.adapters.mac_window import WindowUnavailable
+
+        try:
+            self.native.validate()
+        except WindowUnavailable as exc:
+            raise VisualUnavailable("BACKGROUND_WINDOW_UNAVAILABLE") from exc
+        for token, (element, actions, writable) in self.native.elements.items():
+            bounds = self.native.element_bounds.get(token)
+            if bounds:
+                yield token, element, actions, writable, bounds
+
+    def _inside(self, bounds, left, top, right, bottom):
+        x = (bounds["x"] - self.bounds["X"]) / self.bounds["Width"]
+        y = (bounds["y"] - self.bounds["Y"]) / self.bounds["Height"]
+        return (
+            left <= x
+            and top <= y
+            and x + bounds["width"] / self.bounds["Width"] <= right
+            and y + bounds["height"] / self.bounds["Height"] <= bottom
         )
-        y = (
-            self.bounds["Y"]
-            + (line["y"] + line["h"] / 2) * self.bounds["Height"] / frame["height"]
-        )
-        self.app.activateWithOptions_(
-            self.appkit.NSApplicationActivateIgnoringOtherApps
-        )
+
+    def _dispatch(self, call, target, **args):
+        from gui_harness.adapters.mac_window import WindowUnavailable
+
         self.check()
-        for kind in (self.cg.kCGEventLeftMouseDown, self.cg.kCGEventLeftMouseUp):
-            event = self.cg.CGEventCreateMouseEvent(
-                None, kind, (x, y), self.cg.kCGMouseButtonLeft
-            )
-            self.cg.CGEventPostToPid(self.pid, event)
+        try:
+            self.native.dispatch({"call": call, "args": {"target": target, **args}})
+        except WindowUnavailable as exc:
+            raise VisualUnavailable("BACKGROUND_ACTION_UNAVAILABLE") from exc
+        self.frame = None
 
     def search(self, frame, group):
         targets = [
-            line
-            for line in _lines(frame)
-            if line["label"] in ("搜索", "Search")
-            and line["x"] < frame["width"] * 0.27
-            and line["y"] < frame["height"] * 0.09
+            token
+            for token, element, actions, writable, bounds in self._controls(frame)
+            if writable
+            and self.native.attr(element, "AXSubrole") == "AXSearchField"
+            and self._inside(bounds, 0, 0, 0.32, 0.15)
         ]
         if len(targets) != 1:
-            raise VisualUnavailable("SEARCH_UNAVAILABLE")
-        self._click_line(frame, targets[0])
-        self.check()
-        if not self._search_has_focus():
-            raise VisualUnavailable("SEARCH_FOCUS_UNVERIFIABLE")
-        # Unicode insertion is fixed to a validated single-line group name.
-        # No Return, clipboard paste, hotkey or arbitrary text action exists.
-        event = self.cg.CGEventCreateKeyboardEvent(None, 0, True)
-        self.cg.CGEventKeyboardSetUnicodeString(
-            event, len(group.encode("utf-16-le")) // 2, group
-        )
-        self.cg.CGEventPostToPid(self.pid, event)
-        time.sleep(0.25)
-
-    def _search_has_focus(self):
-        # OCR identifies where to click; it cannot prove keyboard focus. A
-        # custom-rendered app without this native focus contract must wait for
-        # the user to open the exact group, never type into an unknown field.
-        root = self.ax.AXUIElementCreateApplication(self.pid)
-        error, element = self.ax.AXUIElementCopyAttributeValue(
-            root, "AXFocusedUIElement", None
-        )
-        if error or element is None:
-            return False
-        error, subrole = self.ax.AXUIElementCopyAttributeValue(
-            element, "AXSubrole", None
-        )
-        if error or subrole != "AXSearchField":
-            return False
-        error, focused = self.ax.AXUIElementCopyAttributeValue(
-            element, "AXFocused", None
-        )
-        return not error and bool(focused)
+            raise VisualUnavailable("BACKGROUND_SEARCH_UNAVAILABLE")
+        self._dispatch("window_set_text", targets[0], text=group)
 
     def select_group(self, frame, group):
-        targets = [
+        rows = [
             line
             for line in _lines(frame)
             if _normal(line["label"]) == _normal(group)
             and line["y"] > frame["height"] * 0.1
             and line["x"] < frame["width"] * 0.35
         ]
-        if len(targets) != 1:
+        if len(rows) != 1:
             raise VisualUnavailable("GROUP_NOT_UNIQUE")
-        self._click_line(frame, targets[0])
-        time.sleep(0.25)
+        row = rows[0]
+        x = (
+            self.bounds["X"]
+            + (row["x"] + row["w"] / 2) * self.bounds["Width"] / frame["width"]
+        )
+        y = (
+            self.bounds["Y"]
+            + (row["y"] + row["h"] / 2) * self.bounds["Height"] / frame["height"]
+        )
+        targets = [
+            token
+            for token, element, actions, writable, bounds in self._controls(frame)
+            if "AXPress" in actions
+            and self._inside(bounds, 0, 0.09, 0.36, 1)
+            and bounds["x"] <= x <= bounds["x"] + bounds["width"]
+            and bounds["y"] <= y <= bounds["y"] + bounds["height"]
+            and _normal(
+                str(
+                    self.native.attr(element, "AXTitle")
+                    or self.native.attr(element, "AXDescription")
+                    or ""
+                )
+            )
+            == _normal(group)
+        ]
+        if len(targets) != 1:
+            raise VisualUnavailable("BACKGROUND_SELECTION_UNAVAILABLE")
+        self._dispatch("window_press", targets[0])
 
     def older(self, frame, group):
-        headers = group_header(frame, group)
-        if len(headers) != 1:
+        if len(group_header(frame, group)) != 1:
             raise VisualUnavailable("GROUP_NOT_VERIFIED")
-        self.check()
-        # Scroll only the conversation area below its verified title; never
-        # touch the editor or sidebar. Event is delivered to the exact PID.
-        x = self.bounds["X"] + self.bounds["Width"] * 0.7
-        y = self.bounds["Y"] + self.bounds["Height"] * 0.4
-        event = self.cg.CGEventCreateScrollWheelEvent(
-            None, self.cg.kCGScrollEventUnitPixel, 1, int(self.bounds["Height"] * 0.45)
-        )
-        self.cg.CGEventSetLocation(event, (x, y))
-        self.cg.CGEventPostToPid(self.pid, event)
-        time.sleep(0.25)
+        targets = [
+            token
+            for token, element, actions, writable, bounds in self._controls(frame)
+            if "AXScrollUpByPage" in actions
+            and self._inside(bounds, 0.3, 0.09, 1, 0.76)
+        ]
+        if len(targets) != 1:
+            raise VisualUnavailable("BACKGROUND_SCROLL_UNAVAILABLE")
+        self._dispatch("window_scroll", targets[0], direction="up")
 
     def close(self):
-        self.scratch.cleanup()
+        try:
+            if self.session is not None:
+                self.session.__exit__(None, None, None)
+                self.session = None
+        finally:
+            self.scratch.cleanup()
 
 
 def read_visual_group(group, members, output_dir):

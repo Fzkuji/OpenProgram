@@ -4,6 +4,20 @@ import pytest
 from openprogram.programs.workflow import report_wechat_visual as visual
 
 
+@pytest.fixture(autouse=True)
+def native_error_boundary(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    monkeypatch.setitem(
+        sys.modules,
+        "gui_harness.adapters.mac_window",
+        SimpleNamespace(
+            WindowUnavailable=type("WindowUnavailable", (RuntimeError,), {})
+        ),
+    )
+
+
 @pytest.fixture
 def working_dir(monkeypatch, tmp_path):
     from openprogram.worktree.context import set_worktree, reset_worktree
@@ -170,14 +184,6 @@ def test_unknown_group_never_persists_private_snapshot(
     assert list(tmp_path.iterdir()) == [] and window.closed
 
 
-def test_screen_capture_api_error_is_not_replaced_with_another_method():
-    import time
-    window = object.__new__(visual.WeChatWindow)
-    window.deadline = time.monotonic() + 5
-    with pytest.raises(visual.VisualUnavailable, match="CAPTURE_UNAVAILABLE"):
-        window._capture_call(lambda done: done(None, "access denied"))
-
-
 def test_unlisted_sender_content_does_not_enter_prior_members_report():
     frame = _frame(
         [
@@ -209,14 +215,15 @@ def test_low_confidence_sender_invalidates_attribution():
     assert visual.extract_messages(frame, "Target group", ["A", "B"]) == []
 
 
-def test_failed_search_focus_never_sends_keyboard_input():
+def test_search_without_native_search_control_never_dispatches():
+    from types import SimpleNamespace as NS
+
     window = object.__new__(visual.WeChatWindow)
     window.check = lambda: None
-    window._click_line = lambda *args: None
-    window._search_has_focus = lambda: False
-    # No cg object exists: accessing keyboard APIs would fail this test.
-    with pytest.raises(visual.VisualUnavailable, match="SEARCH_FOCUS_UNVERIFIABLE"):
-        window.search(_frame([_row("搜索", 100, 20)]), "Target group")
+    window.frame = _frame([_row("搜索", 100, 20)])
+    window.native = NS(validate=lambda: None, elements={})
+    with pytest.raises(visual.VisualUnavailable, match="BACKGROUND_SEARCH_UNAVAILABLE"):
+        window.search(window.frame, "Target group")
 
 
 def test_public_reader_preserves_roster_names_inside_message(
@@ -254,7 +261,10 @@ def test_public_reader_preserves_roster_names_inside_message(
 
 
 @pytest.mark.parametrize("sharing_state", [0, 1])
-def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch, sharing_state):
+@pytest.mark.parametrize("pids", [(22,), (11, 22)])
+def test_multiple_process_visual_selection_does_not_reopen_bundle(
+    monkeypatch, sharing_state, pids
+):
     import sys
     from types import SimpleNamespace as NS
 
@@ -265,7 +275,7 @@ def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch, s
             launchDate=lambda: "launch",
             isTerminated=lambda: False,
         )
-        for p in (11, 22)
+        for p in pids
     ]
     window = dict(
         kCGWindowOwnerPID=22,
@@ -310,3 +320,106 @@ def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch, s
         bridge.check()
     finally:
         bridge.scratch.cleanup()
+
+
+def test_actions_use_window_controls_and_invalidate_observation(monkeypatch):
+    import sys
+    from types import SimpleNamespace as NS
+
+    events = []
+
+    class Unavailable(RuntimeError):
+        pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "gui_harness.adapters.mac_window",
+        NS(WindowUnavailable=Unavailable),
+    )
+    window = object.__new__(visual.WeChatWindow)
+    window.check = lambda: None
+    window.bounds = dict(X=0, Y=0, Width=1000, Height=700)
+    window.frame = _frame([_row("搜索", 100, 20)])
+    window.native = NS(
+        validate=lambda: None,
+        elements={"search": ("element", [], True)},
+        element_bounds={"search": dict(x=20, y=10, width=200, height=40)},
+        attr=lambda e, a: "AXSearchField",
+        dispatch=events.append,
+    )
+    frame = window.frame
+    window.search(frame, "Target group")
+    assert events == [
+        {
+            "call": "window_set_text",
+            "args": {"target": "search", "text": "Target group"},
+        }
+    ]
+    with pytest.raises(visual.VisualUnavailable, match="CONTROL_NOT_VERIFIED"):
+        window.search(frame, "Another group")
+
+
+def test_message_editor_and_other_window_controls_are_not_search_targets():
+    from types import SimpleNamespace as NS
+
+    window = object.__new__(visual.WeChatWindow)
+    window.check = lambda: None
+    window.bounds = dict(X=0, Y=0, Width=1000, Height=700)
+    window.frame = _frame([])
+    window.native = NS(
+        validate=lambda: None,
+        elements={"editor": ("editor", [], True)},
+        element_bounds={"editor": dict(x=400, y=550, width=500, height=100)},
+        attr=lambda *a: "AXSearchField",
+    )
+    with pytest.raises(visual.VisualUnavailable, match="BACKGROUND_SEARCH_UNAVAILABLE"):
+        window.search(window.frame, "Target group")
+
+
+def test_public_reader_uses_exact_window_session_and_releases_capture(
+    monkeypatch, tmp_path, working_dir
+):
+    import sys
+    import time
+    import tempfile
+    from contextlib import contextmanager
+    from types import SimpleNamespace as NS
+
+    calls = []
+    capture_dir = tmp_path / "adapter-capture"
+    capture_dir.mkdir()
+    capture = capture_dir / "observation.png"
+    capture.write_bytes(b"fixture")
+    native = NS(
+        identity={"pid": 22, "launch_time": "launch"},
+        observe=lambda: {"img_path": str(capture)},
+    )
+
+    @contextmanager
+    def session(app, window_id):
+        calls.append(("enter", app, window_id))
+        try:
+            yield native
+        finally:
+            calls.append(("exit",))
+
+    monkeypatch.setitem(
+        sys.modules,
+        "gui_harness.adapters.mac_window",
+        NS(window_session=session, WindowUnavailable=RuntimeError),
+    )
+    window = object.__new__(visual.WeChatWindow)
+    window.check = lambda: None
+    window.pid, window.window_id, window.launch = 22, 123, "launch"
+    window.session = window.native = window.frame = None
+    window.deadline = time.monotonic() + 10
+    window.scratch = tempfile.TemporaryDirectory(dir=tmp_path)
+    scratch = window.scratch.name
+    window._run = lambda *a: b"[]"
+    monkeypatch.setattr(visual, "WeChatWindow", lambda: window)
+    result = visual.read_visual_group("Target group", ["A"], str(tmp_path))
+    assert result == {"status": "CAPTURE_CONTENT_UNAVAILABLE"}
+    assert calls == [("enter", "com.tencent.xinWeChat", 123), ("exit",)]
+    from pathlib import Path
+
+    assert not capture_dir.exists() and not Path(scratch).exists()
