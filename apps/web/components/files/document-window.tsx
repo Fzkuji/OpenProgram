@@ -171,9 +171,10 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
     </div>}
     {isRaster && editorOpened && mode === "edit" && !selected && <div className={styles.toolbar} role="toolbar" aria-label={text("Image tools", "图片工具")}>
       <button className={styles.button} onClick={() => void rasterEditor.current?.rotate()}>{text("Rotate", "旋转")}</button>
-      <button className={styles.button} onClick={() => void rasterEditor.current?.cropCenter()}>{text("Crop", "裁剪")}</button>
-      <button className={styles.button} onClick={() => void rasterEditor.current?.addText("Text")}>{text("Text", "文字")}</button>
+      <button className={styles.button} onClick={() => { const value = window.prompt(text("Crop as left,top,width,height", "裁剪范围：左,上,宽,高"), "0,0,100,100"); if (!value) return; const numbers = value.split(",").map(Number); if (numbers.length === 4 && numbers.every(Number.isFinite)) void rasterEditor.current?.crop({ left: numbers[0], top: numbers[1], width: numbers[2], height: numbers[3] }); }}>{text("Crop", "裁剪")}</button>
+      <button className={styles.button} onClick={() => { const value = window.prompt(text("Text to add", "要添加的文字"), "Text"); if (value) void rasterEditor.current?.addText(value); }}>{text("Text", "文字")}</button>
       <button className={styles.button} onClick={() => void rasterEditor.current?.addShape("rect")}>{text("Shape", "形状")}</button>
+      <button className={styles.button} onClick={() => void rasterEditor.current?.draw()}>{text("Draw", "绘制")}</button>
       <button className={styles.button} onClick={() => void rasterEditor.current?.undo()}>{text("Undo", "撤销")}</button>
       <button className={styles.button} onClick={() => void rasterEditor.current?.redo()}>{text("Redo", "重做")}</button>
     </div>}
