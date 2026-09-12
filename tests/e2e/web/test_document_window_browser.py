@@ -227,3 +227,26 @@ def test_typing_does_not_redecode_the_entire_text_blob(browser_page):
     assert page.evaluate("window.blobTextReads") == 0
     assert state["writes"][-1] == b"a" * (256 * 1024) + b"12345678"
     assert errors == []
+
+
+def test_rename_temporarily_disables_editor_and_failure_reenables_it(browser_page):
+    from playwright.sync_api import expect
+
+    page, state, errors = browser_page
+    page.goto("https://document.test/")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    editor = page.locator("textarea:visible")
+    expect(editor).to_have_value("old")
+    page.evaluate("""() => {
+      window.pendingRename=documentDraftLifecycle.runServerRenameWithDrafts('p','notes.md','renamed.md',
+        () => new Promise(resolve => {window.finishRename=()=>resolve({status:'error',error:'denied'})}),
+        async()=>({status:'ready'}));
+    }""")
+    expect(editor).to_be_disabled()
+    page.wait_for_function("typeof window.finishRename === 'function'")
+    page.evaluate("() => window.finishRename()")
+    assert page.evaluate("async () => (await window.pendingRename).ok") is False
+    expect(editor).to_be_enabled()
+    expect(editor).to_have_value("old")
+    assert state["writes"] == []
+    assert errors == []

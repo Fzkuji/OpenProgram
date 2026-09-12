@@ -612,6 +612,9 @@ export function runServerRenameWithDrafts(
   reverseRename: (serverResult: ServerRenameResult) => Promise<ServerRenameResult>,
 ): Promise<DraftPersistenceResult> {
   return enqueueDraft(async () => {
+    const { beginDocumentRename } = await import("./document-controller");
+    const finishRename = await beginDocumentRename(projectId, oldPath, newPath);
+    let renamed = false;
     try {
       const preflight = await preflightMoveFileDraftsInternal(projectId, oldPath, newPath);
       if (!preflight.ok) return preflight;
@@ -633,7 +636,7 @@ export function runServerRenameWithDrafts(
         });
       }
       const moved = await moveFileDraftsInternal(projectId, oldPath, newPath);
-      if (moved.ok) return withServerMetadata(moved, serverResult);
+      if (moved.ok) { renamed = true; return withServerMetadata(moved, serverResult); }
       try {
         const compensation = await reverseRename(serverResult);
         if (compensation?.status === "ready") {
@@ -657,7 +660,7 @@ export function runServerRenameWithDrafts(
       const message = "The file rename could not be completed; the local draft was retained.";
       reportDraftPersistenceError(projectId, message);
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
-    }
+    } finally { finishRename(renamed); }
   });
 }
 

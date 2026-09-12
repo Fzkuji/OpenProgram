@@ -104,7 +104,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       <button className={`${styles.button} ${mode === "preview" && !selected ? styles.active : ""}`}
         aria-pressed={mode === "preview" && !selected} onClick={showCurrent}>{text("Preview", "预览")}</button>
       {!readOnly && isText && <button className={`${styles.button} ${mode === "edit" && !selected ? styles.active : ""}`}
-        disabled={!state.snapshot || state.restoring} aria-pressed={mode === "edit" && !selected}
+        disabled={!state.snapshot || state.restoring || state.renaming} aria-pressed={mode === "edit" && !selected}
         onClick={() => { setSelected(null); setEditorOpened(true); setMode("edit"); }}>{text("Edit", "编辑")}</button>}
       {!readOnly && <button className={styles.button} aria-expanded={historyOpen}
         onClick={() => historyOpen ? setHistoryOpen(false) : void openHistory()}>{text("History", "历史")}</button>}
@@ -121,12 +121,12 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
     {selected && <div className={styles.toolbar}>
       <span>{selected.disk ? text("Disk version", "磁盘版本") : text("History version", "历史版本")}</span>
       <button className={styles.button} onClick={showCurrent}>{text("Back to current file", "返回当前文件")}</button>
-      {selected.version && <button className={styles.button} disabled={state.restoring}
+      {selected.version && <button className={styles.button} disabled={state.restoring || state.renaming}
         onClick={() => void restore(selected.version!, selected.side)}>{text("Restore this version", "恢复此版本")}</button>}
     </div>}
     <div className={styles.body}>
       {editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
-        <fieldset disabled={state.restoring} style={{ border: 0, margin: 0, padding: 0, height: "100%" }}>
+        <fieldset disabled={state.restoring || state.renaming} style={{ border: 0, margin: 0, padding: 0, height: "100%" }}>
           <EditorArea value={content} onChange={(value) => {
             setContent(value);
             controller.update(value);
@@ -150,7 +150,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
         {entry.created_at && <time dateTime={new Date(entry.created_at * 1000).toISOString()}>{new Date(entry.created_at * 1000).toLocaleString()}</time>}
         <button className={styles.button} onClick={() => void previewVersion(entry.version_id, "before")}>{text("Before", "之前")}</button>
         <button className={styles.button} onClick={() => void previewVersion(entry.version_id, "after")}>{text("After", "之后")}</button>
-        <button className={styles.button} disabled={state.restoring} onClick={() => void restore(entry.version_id)}>{text("Restore", "恢复")}</button>
+        <button className={styles.button} disabled={state.restoring || state.renaming} onClick={() => void restore(entry.version_id)}>{text("Restore", "恢复")}</button>
       </div>)}
       {historyCursor && <button className={styles.button} onClick={() => void openHistory(historyCursor)}>{text("Load more", "加载更多")}</button>}
     </aside>}

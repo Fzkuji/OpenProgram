@@ -50,7 +50,8 @@ test("lifecycle guards include an in-memory Blob draft", async () => {
   controller.update(new Blob(["unsaved"], { type: "application/octet-stream" }));
 
   assert.equal(await hasDirtyDraftsForPath("p", "notes.bin"), true);
-  await controller.close().catch(() => undefined);
+  await controller.discard();
+  await controller.close();
 });
 
 test("rename is blocked while a controller draft is dirty", async () => {
@@ -84,4 +85,32 @@ test("deletion cleanup discards the controller Blob and its durable record", asy
   assert.equal(records.values.size, 0);
   assert.equal(await hasDirtyDraftsForPath("p", "remove.bin"), false);
   await controller.close();
+});
+
+test("rename disables old-path updates until the renamed document is reopened", async () => {
+  const records = store();
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    return new Response(JSON.stringify({ ok:true, status:"committed", revision:"b".repeat(64) }));
+  };
+  const original = new DocumentController({projectId:"rename",path:"old.txt",draftStore:records,fetchImpl});
+  await original.hydrate({bytes:"disk",revision});
+  let release, started;
+  const held = new Promise(resolve => release=resolve), entered = new Promise(resolve => started=resolve);
+  const renaming = runServerRenameWithDrafts("rename","old.txt","new.txt",async()=>{
+    started(); await held; return {status:"ready"};
+  },async()=>({status:"ready"}));
+  await entered;
+  assert.equal(original.getState().renaming,true);
+  original.update("input while disabled");
+  assert.equal(original.currentDraft(),null);
+  release(); assert.equal((await renaming).ok,true);
+  assert.equal(original.getState().status,"closed");
+  assert.equal(records.values.size,0);
+  const renamed = new DocumentController({projectId:"rename",path:"new.txt",draftStore:records,fetchImpl});
+  await renamed.hydrate({bytes:"disk",revision});
+  renamed.update("edit after rename"); await renamed.flush();
+  assert.equal(calls.length,1); assert.match(calls[0],/path=new.txt/);
+  await renamed.close();
 });

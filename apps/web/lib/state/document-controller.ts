@@ -12,9 +12,15 @@ export interface DocumentControllerState {
   status: DocumentStatus;
   error: string | null;
   restoring: boolean;
+  renaming: boolean;
 }
 export type DocumentListener = (state: DocumentControllerState) => void;
 const controllers = new Map<string, DocumentController>();
+const renames = new Set<{ projectId: string; paths: string[] }>();
+function matchesRename(identity: DocumentIdentity, rename: { projectId: string; paths: string[] }): boolean {
+  return identity.kind === "project" && identity.projectId === rename.projectId &&
+    rename.paths.some((path) => identity.path === path || identity.path.startsWith(`${path}/`));
+}
 const binaryStore = new IndexedDbDocumentDraftStore();
 const blobOf = (value: Blob | Uint8Array | string): Blob => value instanceof Blob
   ? value.slice(0, value.size, value.type)
@@ -67,7 +73,8 @@ export class DocumentController {
     this.debounceMs = options.debounceMs ?? 300;
     this.maxDebounceMs = options.maxDebounceMs ?? 2000;
     this.state = { identity: this.identity, snapshot: null, draft: null, generation: 0,
-      status: "idle", error: null, restoring: false };
+      status: "idle", error: null, restoring: false,
+      renaming: [...renames].some((rename) => matchesRename(this.identity, rename)) };
     controllers.set(documentIdentityKey(this.identity), this);
   }
 
@@ -194,6 +201,7 @@ export class DocumentController {
   load(): Promise<DocumentSnapshot> {
     if (this.initialized && this.state.snapshot) return Promise.resolve(this.state.snapshot);
     if (this.loading) return this.loading;
+    if (this.state.renaming) return Promise.reject(new Error("This document is being renamed."));
     const task = (async () => {
       await this.loadLocal();
       const snapshot = await this.readDisk();
@@ -205,7 +213,7 @@ export class DocumentController {
   }
 
   update(value: Blob | Uint8Array | string): void {
-    if (this.identity.kind !== "project" || this.state.status === "closed" || this.state.restoring) return;
+    if (this.identity.kind !== "project" || this.state.status === "closed" || this.state.restoring || this.state.renaming) return;
     if (!this.initialized) { this.fail(new Error("Wait for the document to finish loading before editing.")); return; }
     const draft = blobOf(value);
     this.setState({ draft, generation: this.state.generation + 1, status: "dirty", error: null });
@@ -293,6 +301,7 @@ export class DocumentController {
   }
 
   async flush(): Promise<void> {
+    if (this.state.renaming) throw new Error("Wait for the document rename to finish.");
     this.clearTimers();
     if (this.loading) {
       try { await this.loading; }
@@ -349,6 +358,7 @@ export class DocumentController {
     return response.blob();
   }
   restore(version: string, side: "before" | "after" = "after"): Promise<void> {
+    if (this.state.renaming) return Promise.reject(new Error("Wait for the document rename to finish."));
     if (this.restoreTask) return this.restoreTask;
     this.setState({ restoring: true });
     const task = Promise.resolve().then(async () => {
@@ -363,6 +373,19 @@ export class DocumentController {
     this.restoreTask = task.finally(() => { this.restoreTask = null; this.setState({ restoring: false }); });
     return this.restoreTask;
   }
+  async prepareRename(): Promise<void> {
+    this.setState({ renaming: true });
+    // Finish reads started before the rename barrier so preflight sees any
+    // recovered draft. New controllers cannot begin reads through the barrier.
+    if (this.loading) await this.loading.catch(() => undefined);
+  }
+  finishRename(succeeded: boolean): void {
+    if (succeeded && !this.state.draft && !this.pending) {
+      this.clearTimers();
+      this.setState({ status: "closed" });
+      this.evict();
+    } else this.setState({ renaming: false });
+  }
   async close(): Promise<void> {
     this.closeRequested = true;
     try { await this.flush(); }
@@ -371,6 +394,19 @@ export class DocumentController {
     this.evict();
     this.listeners.clear();
   }
+}
+/** Freeze affected editors for the entire structured server rename. The
+ * caller releases this barrier in finally, including compensation failures. */
+export async function beginDocumentRename(projectId: string, oldPath: string, newPath: string): Promise<(succeeded: boolean) => void> {
+  const rename = { projectId, paths: [oldPath, newPath] };
+  renames.add(rename);
+  await Promise.all([...controllers.values()].filter((controller) => matchesRename(controller.identity, rename))
+    .map((controller) => controller.prepareRename()));
+  return (succeeded) => {
+    renames.delete(rename);
+    for (const controller of [...controllers.values()])
+      if (matchesRename(controller.identity, rename)) controller.finishRename(succeeded);
+  };
 }
 export function getOrCreateDocumentController(options: DocumentControllerOptions): DocumentController {
   const identity = identityFor(options);
