@@ -27,6 +27,8 @@ def test_document_window_preview_edit_autosave_history(tmp_path):
         thread.start()
         (tmp_path / "index.html").write_text(f'<div id="root"></div><script src="/document-window.js"></script>')
         writes = []
+        requests_seen = []
+        page.on("request", lambda request: requests_seen.append((request.method, request.url)))
         def content(route):
             if route.request.method == "GET":
                 route.fulfill(status=200, headers={"content-type": "application/octet-stream", "x-document-revision": "a" * 64}, body=b"old")
@@ -41,6 +43,7 @@ def test_document_window_preview_edit_autosave_history(tmp_path):
         assert page.get_by_role("button", name="Preview").get_attribute("aria-pressed") == "true"
         assert page.locator("textarea").count() == 0
         assert page.get_by_role("button", name="Save").count() == 0
+        page.wait_for_function("() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('/api/documents/content'))", timeout=10000)
         page.get_by_role("button", name="Edit").click()
         editor = page.locator("textarea")
         editor.fill("new")
