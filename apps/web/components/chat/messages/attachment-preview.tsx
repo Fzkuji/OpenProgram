@@ -16,7 +16,7 @@
  */
 import { createPortal } from "react-dom";
 
-import { FileViewer } from "@/components/files/file-viewer";
+import { DocumentWindow } from "@/components/files/document-window";
 import { useTranslation } from "@/lib/i18n";
 import { useModalA11y } from "@/lib/use-modal-a11y";
 import { useSessionStore } from "@/lib/session-store";
@@ -72,11 +72,11 @@ export function AttachmentPreview({
           </button>
         </div>
         <div className="attach-preview-body">
-          <FileViewer
+          <DocumentWindow
             projectId=""
             path={path}
-            abs
             sessionId={sessionId ?? undefined}
+            readOnly
           />
         </div>
       </div>

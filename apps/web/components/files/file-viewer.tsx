@@ -68,6 +68,7 @@ export function FileViewer({
   draft,
   onDraftChange,
   onLoaded,
+  snapshot,
 }: {
   projectId: string;
   path: string;
@@ -89,6 +90,7 @@ export function FileViewer({
   /** Text files: fires when the read lands (null on failure) so the
    *  tab pane can seed its editor buffer / tell text from binary. */
   onLoaded?: (data: FileReadResult | null) => void;
+  snapshot?: FileReadResult | null;
 }) {
   const ext = extOf(path);
   const rawUrl = abs
@@ -117,6 +119,7 @@ export function FileViewer({
       draft={draft}
       onDraftChange={onDraftChange}
       onLoaded={onLoaded}
+      snapshot={snapshot}
     />
   );
 }
@@ -131,6 +134,7 @@ function TextViewer({
   draft,
   onDraftChange,
   onLoaded,
+  snapshot,
 }: {
   projectId: string;
   path: string;
@@ -141,6 +145,7 @@ function TextViewer({
   draft?: string;
   onDraftChange?: (value: string) => void;
   onLoaded?: (data: FileReadResult | null) => void;
+  snapshot?: FileReadResult | null;
 }) {
   const { text } = useTranslation();
   const [data, setData] = useState<FileReadResult | null>(null);
@@ -213,6 +218,12 @@ function TextViewer({
       controller.abort();
     };
   }, [projectId, path, abs, sessionId]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    setData(snapshot);
+    onLoadedRef.current?.(snapshot);
+  }, [snapshot]);
 
   if (failed) {
     return (

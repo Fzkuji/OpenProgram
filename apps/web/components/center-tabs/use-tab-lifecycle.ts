@@ -29,6 +29,7 @@ import {
 import { pushPath } from "@/lib/shallow-nav";
 import { useTranslation } from "@/lib/i18n";
 import { selectTabsReadyForHumanClose } from "@/lib/state/browser-control";
+import { documentControllers } from "@/lib/state/document-controller";
 
 export function isChatRoute(pathname: string) {
   return pathname === "/chat" || pathname.startsWith("/s/");
@@ -258,22 +259,10 @@ export function useTabLifecycle({
     cancelDrag();
     const fileTabs = tabsToClose.filter((tab) => tab.kind === "file");
     const dirtyFileTabs = await collectDirtyFileTabs(fileTabs);
-    const dirtyTabs = tabsToClose.some((tab) => tab.dirty) || dirtyFileTabs.length > 0;
-    if (dirtyTabs) {
-      if (!window.confirm(text("Discard unsaved changes?", "放弃未保存的修改？")))
-        return;
-      // Discard confirmed — drop the surviving draft buffer too, so
-      // reopening the file starts from disk, not the "discarded" edit.
-      const dirtyFileTabIds = new Set(dirtyFileTabs.map((tab) => tab.id));
-      const discarded = await discardFileDraftsBeforeClose(
-        tabsToClose.filter((tab) => dirtyFileTabIds.has(tab.id)),
-        undefined,
-        async () => true,
-      );
-      if (!discarded) {
-        window.alert(text("Unable to discard the local draft; the tab remains open.", "无法丢弃本地草稿；文件标签仍保持打开。"));
-        return;
-      }
+    for (const tab of fileTabs) {
+      const controller = tab.projectId && tab.path ? documentControllers.get(`project:${tab.projectId}:${tab.path}`) : undefined;
+      if (!controller) continue;
+      try { await controller.flush(); } catch { window.alert(text("Unable to save this document; the tab remains open.", "无法保存此文件；文件标签仍保持打开。")); return; }
     }
     // Pin the survivors' widths for a mouse close (Chrome), so the next
     // tab's × stays under the cursor; every other close path reflows now.
