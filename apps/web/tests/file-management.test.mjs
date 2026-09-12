@@ -445,3 +445,42 @@ test("breadcrumb copy confirms success and context menu copies the clicked ances
     if (clipboard) Object.defineProperty(globalThis, "navigator", clipboard); else delete globalThis.navigator;
   }
 });
+
+test("stale pagination retains rendered rows while replacing its snapshot", async () => {
+  const parsed = parseHTML('<html><body><div id="root"></div></body></html>');
+  const saved = { window: globalThis.window, document: globalThis.document, ResizeObserver: globalThis.ResizeObserver, IntersectionObserver: globalThis.IntersectionObserver };
+  globalThis.window = parsed.window; globalThis.document = parsed.document;
+  const browserGlobals = ["HTMLDivElement", "ShadowRoot", "HTMLElement", "HTMLStyleElement", "Element", "HTMLTemplateElement", "SVGElement", "HTMLInputElement", "Node", "MutationObserver", "customElements"];
+  for (const key of browserGlobals) { saved[key] = globalThis[key]; globalThis[key] = parsed.window[key]; }
+  Object.defineProperties(parsed.window.HTMLElement.prototype, {
+    scrollTop: { configurable: true, writable: true, value: 0 },
+    clientHeight: { configurable: true, get: () => 600 },
+    clientWidth: { configurable: true, get: () => 300 },
+  });
+  parsed.window.HTMLElement.prototype.scrollTo = function(options) { this.scrollTop = options.top ?? this.scrollTop; };
+  saved.requestAnimationFrame = globalThis.requestAnimationFrame;
+  saved.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = callback => setTimeout(callback, 0);
+  globalThis.cancelAnimationFrame = clearTimeout;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+  globalThis.IntersectionObserver = class { observe() {} disconnect() {} };
+  const root = createRoot(document.getElementById("root"));
+
+  const projectId="stale-scroll"; let release; let requests=0;
+  globalThis.__fileManagementQuery=async(action,payload)=>{
+    if(action==="list_projects")return {projects:[{id:projectId,path:"/project"}]};
+    if(action!=="project_file_tree")return null;
+    requests++;
+    if(payload.cursor)return {project_id:projectId,path:"",error_code:"STALE_SNAPSHOT"};
+    if(requests>1)await new Promise(resolve=>{release=resolve});
+    return {project_id:projectId,path:"",snapshot_id:"s"+requests,next_cursor:requests===1?"next":null,entries:[{name:"visible.txt",type:"file",size:1,mtime:1}]};
+  };
+  try {
+    await act(async()=>root.render(h(api.FileTree,{projectId})));
+    await act(async()=>{await new Promise(resolve=>requestAnimationFrame(resolve));});
+    assert.ok(release,"stale cursor refresh has started");
+    assert.ok(document.querySelector("file-tree-container").shadowRoot.querySelector('[data-item-path="visible.txt"]'),"keep rows mounted during stale snapshot recovery instead of collapsing viewport to zero");
+    await act(async()=>release()); release=null;
+  } finally {if(release)await act(async()=>release());await act(async()=>root.unmount());Object.assign(globalThis,saved);delete globalThis.__fileManagementQuery;}
+});

@@ -193,6 +193,8 @@ export interface CenterTabsState {
   splitRatio: number;
   /** Renderer-only file-tree navigation; intentionally separate from tab persistence. */
   fileNavigationHistory: FileNavigationHistory;
+  fileNavigationRestore: FileNavigationSnapshot | null;
+  updateFileNavigationView: (view: Pick<FileNavigationSnapshot, "expanded" | "scroll">) => void;
   setActive: (id: string) => void;
   moveTab: (id: string, beforeId: string | null) => void;
   moveGroup: (groupId: string, beforeId: string | null) => void;
@@ -372,6 +374,7 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
     splitWebTabId: initial.splitWebTabId,
     splitRatio: initial.splitRatio,
     fileNavigationHistory: { entries: [], index: -1 },
+    fileNavigationRestore: null,
 
     setActive: (id) =>
       set((s) => {
@@ -616,25 +619,57 @@ export const useCenterTabs = create<CenterTabsState>((set) => {
       const targetTab = target.selectedType === "file"
         ? s.tabs.find(tab => tab.kind === "file" && tab.projectId === target.projectId && tab.path === target.path)
         : undefined;
+      const opened = target.selectedType === "file" && !targetTab
+        ? focusOrCreate(s, fileTabId(target.projectId, target.path), () => ({
+            id: fileTabId(target.projectId, target.path), kind: "file",
+            title: target.path.split("/").pop() || target.path,
+            projectId: target.projectId, path: target.path,
+          }), [])
+        : {};
+      const filesTab = target.selectedType === "dir"
+        ? s.tabs.find(tab => tab.kind === "builtin" && tab.page === "files")
+        : undefined;
+      const openedFiles = target.selectedType === "dir" && !filesTab
+        ? focusOrCreate(s, builtinTabId("files"), () => ({
+            id: builtinTabId("files"), kind: "builtin", title: "", page: "files",
+          }), [])
+        : {};
+      const activeId = targetTab?.id ?? (target.selectedType === "file"
+        ? fileTabId(target.projectId, target.path)
+        : filesTab?.id ?? builtinTabId("files"));
       return {
+        ...commitCenterTabsState(s, { ...opened, ...openedFiles, activeId }),
         fileNavigationHistory: { ...history, index },
-        activeId: targetTab?.id ?? null,
+        fileNavigationRestore: target,
       };
     }),
 
-    canNavigateFile: (direction) => {
+    canNavigateFile: (direction): boolean => {
       const history = useCenterTabs.getState().fileNavigationHistory;
       return (direction === -1 || direction === 1)
         && history.index + direction >= 0
         && history.index + direction < history.entries.length;
     },
 
+    updateFileNavigationView: (view) => set(s => {
+      const history = s.fileNavigationHistory;
+      if (history.index < 0) return {};
+      const entries = [...history.entries];
+      entries[history.index] = { ...entries[history.index], expanded: [...view.expanded], scroll: view.scroll && { ...view.scroll } };
+      return { fileNavigationHistory: { ...history, entries } };
+    }),
+
     recordFileNavigation: (snapshot) => set((s) => {
-      const history = s.fileNavigationHistory ?? { entries: [], index: -1 };
+      const currentHistory = s.fileNavigationHistory ?? { entries: [], index: -1 };
+      const history = currentHistory.entries.some(entry => entry.projectId !== snapshot.projectId)
+        ? { entries: [], index: -1 }
+        : currentHistory;
       const current = history.entries[history.index];
-      if (current && JSON.stringify(current) === JSON.stringify(snapshot)) return {};
+      if (current && current.path === snapshot.path && current.selectedType === snapshot.selectedType) return {};
+      snapshot = { ...snapshot, expanded: [...snapshot.expanded], scroll: snapshot.scroll && { ...snapshot.scroll } };
       const entries = history.entries.slice(0, history.index + 1);
-      return { fileNavigationHistory: { entries: [...entries, snapshot], index: entries.length } };
+      const bounded = [...entries, snapshot].slice(-100);
+      return { fileNavigationHistory: { entries: bounded, index: bounded.length - 1 }, fileNavigationRestore: null };
     }),
 
     removeSessionFromHistory: (sessionId) => {

@@ -72,7 +72,8 @@ test("file navigation records folder and file steps and branches after back", ()
   assert.equal(state().activeId, aId);
   assert.equal(state().fileNavigationHistory.entries[state().fileNavigationHistory.index].path, "src/a.ts");
   s.navigateFileHistory(-1);
-  assert.equal(state().activeId, null);
+  assert.equal(active().kind, "builtin");
+  assert.equal(active().page, "files");
   assert.equal(state().fileNavigationHistory.entries[state().fileNavigationHistory.index].path, "src");
   s.navigateFileHistory(1);
   assert.equal(state().activeId, aId);

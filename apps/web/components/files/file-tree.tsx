@@ -146,10 +146,10 @@ export function FileTree({
   const { text } = useTranslation();
   const openFileTab = useCenterTabs((s) => s.openFileTab);
   const recordFileNavigation = useCenterTabs((s) => s.recordFileNavigation);
-  const fileNavigationEntry = useCenterTabs((s) => {
-    const history = s.fileNavigationHistory;
-    return history && history.index >= 0 ? history.entries[history.index] : null;
-  });
+  const fileNavigationEntry = useCenterTabs(s => s.fileNavigationRestore);
+  const initialNavigation = useRef(useCenterTabs.getState().fileNavigationHistory);
+  const appliedNavigation = useRef<typeof fileNavigationEntry>(null);
+  const restoreGeneration = useRef(0);
   // Highlight the file whose center tab is active (primitive selector,
   // so recomputing per store change is re-render-safe).
   const activePath = useCenterTabs((s) => {
@@ -160,15 +160,15 @@ export function FileTree({
   });
   const recordNavigation = (path: string, type: "file" | "dir", expandedPaths = expanded) => {
     if (!recordFileNavigation) return;
-    const getScrollState = (pierreRef.current as (PierreTreeHandle & {
-      getScrollState?: () => { path: string; offset: number } | null;
-    }) | null)?.getScrollState;
+    restoreGeneration.current += 1;
+    const scroll = pierreRef.current?.getScrollState() ?? null;
+    useCenterTabs.getState().updateFileNavigationView?.({ expanded: [...expandedPaths].sort(), scroll });
     recordFileNavigation({
       projectId,
       path,
       selectedType: type,
       expanded: [...expandedPaths].sort(),
-      scroll: getScrollState?.() ?? null,
+      scroll,
     });
   };
   const openFile = (path: string) => {
@@ -209,7 +209,7 @@ export function FileTree({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const pierreRef = useRef<PierreTreeHandle>(null);
-  const pendingScrollRestore = useRef<{ path: string; offset: number } | null>(null);
+  const [pendingScrollRestore, setPendingScrollRestore] = useState<{ path: string; offset: number } | null>(null);
   const [detailsInline, setDetailsInline] = useState(false);
   useEffect(() => {
     if (!central) return;
@@ -237,20 +237,13 @@ export function FileTree({
   const revealScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!fileNavigationEntry || fileNavigationEntry.projectId !== projectId) return;
-    setExpanded(new Set(fileNavigationEntry.expanded));
-    setSelected({ path: fileNavigationEntry.path, type: fileNavigationEntry.selectedType });
-    pendingScrollRestore.current = fileNavigationEntry.scroll;
-  }, [fileNavigationEntry, projectId]);
+    const history = useCenterTabs.getState().fileNavigationHistory;
+    const hasProjectHistory = history?.entries.some(entry => entry.projectId === projectId);
+    if (!hasProjectHistory) recordNavigation("", "dir", new Set());
+  // Seed only a new project; remounting Files must preserve the history cursor.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
-  useEffect(() => {
-    const pending = pendingScrollRestore.current;
-    if (!pending) return;
-    const restore = (pierreRef.current as PierreTreeHandle & {
-      restoreScrollState?: (state: { path: string; offset: number }) => boolean;
-    } | null)?.restoreScrollState;
-    if (restore?.(pending)) pendingScrollRestore.current = null;
-  }, [dirs, expanded, fileNavigationEntry]);
 
   function abortSearchQueries(): void {
     for (const controller of searchControllers.current) controller.abort();
@@ -323,7 +316,10 @@ export function FileTree({
       if (generation !== queryGeneration.current) return null;
       if (data?.error_code === "STALE_SNAPSHOT" && cursor && retry) {
         if (refreshedEntries) refreshedEntries.length = 0;
-        else setDirs((d) => ({ ...d, [path]: "loading" }));
+        // Keep the loaded range mounted while a new snapshot replaces it.
+        // Emptying this directory clamps the virtual tree's scroll position.
+        const previous = treeStateRef.current.dirs[path];
+        const retainedCount = Array.isArray(previous) ? previous.length : 0;
         const nextPages = { ...directoryPagesRef.current };
         delete nextPages[path];
         directoryPagesRef.current = nextPages;
@@ -332,7 +328,21 @@ export function FileTree({
           delete next[path];
           return next;
         });
-        return load(path, null, false, refreshedEntries);
+        if (refreshedEntries) return load(path, null, false, refreshedEntries);
+        const replacement: TreeEntry[] = [];
+        let result = await load(path, null, false, replacement);
+        while (generation === queryGeneration.current && result?.next_cursor
+          && !result.error && !result.error_code && replacement.length <= retainedCount) {
+          result = await load(path, result.next_cursor, false, replacement);
+        }
+        if (generation !== queryGeneration.current) return null;
+        if (result?.entries && !result.error && !result.error_code) {
+          setDirs(previous => ({ ...previous, [path]: replacement.filter((entry, index) => replacement.findIndex(other => other.name === entry.name) === index) }));
+          setDirectoryPages(previous => ({ ...previous, [path]: {
+            snapshotId: result.snapshot_id ?? null, nextCursor: result.next_cursor ?? null,
+          } }));
+        }
+        return result;
       }
       if (!data || data.project_id !== projectId || data.error || data.error_code
         || data.path !== path || !data.entries) {
@@ -400,6 +410,31 @@ export function FileTree({
       mutationLifecycleGeneration.current += 1;
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!Array.isArray(dirs[""])) return;
+    const initial = initialNavigation.current;
+    const target = fileNavigationEntry ?? (!appliedNavigation.current ? initial?.entries[initial.index] : undefined);
+    if (!target || target.projectId !== projectId || appliedNavigation.current === target) return;
+    appliedNavigation.current = target;
+    const epoch = ++restoreGeneration.current;
+    setExpanded(new Set(target.expanded));
+    setSelected({ path: target.path, type: target.selectedType });
+    setPendingScrollRestore(null);
+    void (async () => {
+      const current = () => appliedNavigation.current === target && restoreGeneration.current === epoch;
+      for (const path of target.expanded) {
+        if (!current()) return;
+        if (treeStateRef.current.dirs[path] === undefined) await load(path);
+      }
+      if (target.scroll && current()) await locateTreePath(target.scroll.path, undefined, current);
+      if (current()) setPendingScrollRestore(target.scroll);
+    })();
+  }, [dirs, fileNavigationEntry, load, projectId]);
+
+  useEffect(() => {
+    if (pendingScrollRestore && pierreRef.current?.restoreScrollState(pendingScrollRestore)) setPendingScrollRestore(null);
+  }, [dirs, expanded, pendingScrollRestore]);
 
   const previousSort = useRef(sort);
   useEffect(() => {
@@ -626,17 +661,17 @@ export function FileTree({
     for (const d of chain) if (dirs[d] === undefined) load(d);
   }
 
-  async function locateTreePath(path: string, type: "file" | "dir"): Promise<boolean> {
+  async function locateTreePath(path: string, type?: "file" | "dir", isCurrent: () => boolean = () => true): Promise<boolean> {
     const generation = queryGeneration.current;
-    const locateEntry = async (directory: string, name: string, kind: "file" | "dir") => {
-      const matches = (entry: TreeEntry) => entry.name === name && entry.type === kind;
+    const locateEntry = async (directory: string, name: string, kind?: "file" | "dir") => {
+      const matches = (entry: TreeEntry) => entry.name === name && (!kind || entry.type === kind);
       const cached = treeStateRef.current.dirs[directory];
       if (Array.isArray(cached) && cached.some(matches)) return true;
       let loaded = await load(directory);
-      while (generation === queryGeneration.current && loaded?.next_cursor && !loaded.entries?.some(matches)) {
+      while (generation === queryGeneration.current && isCurrent() && loaded?.next_cursor && !loaded.entries?.some(matches)) {
         loaded = await load(directory, loaded.next_cursor);
       }
-      return generation === queryGeneration.current && Boolean(loaded?.entries?.some(matches));
+      return generation === queryGeneration.current && isCurrent() && Boolean(loaded?.entries?.some(matches));
     };
     const parts = path.split("/");
     let directory = "";
@@ -655,6 +690,7 @@ export function FileTree({
     setSearchOpen(false);
     if (!(await locateTreePath(path, type))) return;
     setSelected({ path, type });
+    recordNavigation(path, type);
     revealTarget.current = path;
     if (type === "file") openFile(path);
   }
@@ -704,7 +740,10 @@ export function FileTree({
     setCreating(null);
     const full = joinPath(dir, name);
     const result = await fileOp("create", { path: full, kind }, [dir]);
-    if (result.status === "ready" && kind === "file") openFile(full);
+    if (result.status === "ready" && kind === "file") {
+      recordNavigation(full, "file");
+      openFile(full);
+    }
   }
 
   /** After a rename/move, any open center file tab at the old path —
@@ -1151,13 +1190,14 @@ export function FileTree({
       <div style={{ flex: 1, minHeight: 0 }}>
         <PierreFileTree key={projectId} ref={pierreRef} projectId={projectId} entries={pierreEntries} query={searchMode === "highlight" && !fuzzySearch ? filter : undefined} matches={filter.trim() ? new Set(searchMatches.map(match => match.path)) : undefined} expanded={expanded} selected={(filter.trim() ? currentSearchPath : null) ?? selected?.path ?? activePath ?? null}
           onRowsRendered={paths => {
+            if (pendingScrollRestore && pierreRef.current?.restoreScrollState(pendingScrollRestore)) setPendingScrollRestore(null);
             for (const dir of visibleDirectories) {
               const entries = dirs[dir];
               if (Array.isArray(entries) && entries.length && paths.has(joinPath(dir, entries[entries.length - 1].name))) loadMore(dir);
             }
           }}
-          onExpandedChange={next => { setExpanded(next); for (const path of next) if (dirs[path] === undefined) void load(path); }}
-          onSelect={(path, type) => { setSelected({ path, type }); recordNavigation(path, type); }} onOpen={openFile} onContextMenu={onRowContextMenu} />
+          onExpandedChange={next => { setExpanded(next); useCenterTabs.getState().updateFileNavigationView?.({ expanded: [...next].sort(), scroll: pierreRef.current?.getScrollState() ?? null }); for (const path of next) if (dirs[path] === undefined) void load(path); }}
+          onSelect={(path, type) => { setSelected({ path, type }); if (type === "dir") recordNavigation(path, type); }} onOpen={openFile} onContextMenu={onRowContextMenu} />
       </div>
       {visibleDirectories.map(dir => <div key={dir}>
         {dir && dirs[dir] === "loading" ? <div className={styles.treeHint}>{dir} · {text("Loading…", "加载中…")}</div> : null}
