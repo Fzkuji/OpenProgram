@@ -11,6 +11,31 @@ class AccessibilityUnavailable(RuntimeError):
     pass
 
 
+def select_application(apps):
+    """Select a unique WeChat main-window owner without activating any app."""
+    apps = [a for a in apps if a.bundleIdentifier() == "com.tencent.xinWeChat"]
+    if not apps:
+        raise AccessibilityUnavailable("APP_NOT_RUNNING")
+    if len(apps) == 1:
+        return apps[0]
+    try:
+        cg = importlib.import_module("Quartz")
+    except ImportError as exc:
+        raise AccessibilityUnavailable("NATIVE_DEPENDENCIES_UNAVAILABLE") from exc
+    owners = {
+        w.get("kCGWindowOwnerPID")
+        for w in cg.CGWindowListCopyWindowInfo(cg.kCGWindowListOptionAll, 0)
+        if w.get("kCGWindowLayer") == 0
+        and w.get("kCGWindowName") in ("WeChat", "微信")
+        and w.get("kCGWindowBounds", {}).get("Width", 0) >= 600
+        and w.get("kCGWindowBounds", {}).get("Height", 0) >= 400
+    }
+    candidates = [a for a in apps if a.processIdentifier() in owners]
+    if len(candidates) != 1:
+        raise AccessibilityUnavailable("APP_NOT_UNIQUE")
+    return candidates[0]
+
+
 class MacAccessibility:
     """Reuse the optional native dependencies used by system-access diagnostics."""
 
@@ -24,14 +49,8 @@ class MacAccessibility:
             raise AccessibilityUnavailable("NATIVE_DEPENDENCIES_UNAVAILABLE") from exc
         if not self.ax.AXIsProcessTrusted():
             raise AccessibilityUnavailable("ACCESS_REQUIRED")
-        apps = [
-            a
-            for a in workspace.runningApplications()
-            if a.bundleIdentifier() == "com.tencent.xinWeChat"
-        ]
-        if len(apps) != 1:
-            raise AccessibilityUnavailable("APP_NOT_RUNNING")
-        self.root = self.ax.AXUIElementCreateApplication(apps[0].processIdentifier())
+        app = select_application(workspace.runningApplications())
+        self.root = self.ax.AXUIElementCreateApplication(app.processIdentifier())
         self.ax.AXUIElementSetMessagingTimeout(self.root, 0.2)
 
     def attr(self, node, name):

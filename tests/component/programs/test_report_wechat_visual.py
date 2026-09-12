@@ -248,3 +248,59 @@ def test_public_reader_preserves_roster_names_inside_message(
     assert [(b["author"], b["text"]) for b in result["blocks"]] == [
         ("A", "本周协助以下同学：\nB\n尚未完成验证。")
     ]
+
+
+def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch):
+    import sys
+    from types import SimpleNamespace as NS
+
+    apps = [
+        NS(
+            bundleIdentifier=lambda: "com.tencent.xinWeChat",
+            processIdentifier=lambda p=p: p,
+            launchDate=lambda: "launch",
+        )
+        for p in (11, 22)
+    ]
+    window = dict(
+        kCGWindowOwnerPID=22,
+        kCGWindowLayer=0,
+        kCGWindowName="微信",
+        kCGWindowNumber=123,
+        kCGWindowSharingState=1,
+        kCGWindowBounds=dict(Width=924, Height=625),
+    )
+    monkeypatch.setattr(visual.sys, "platform", "darwin")
+    monkeypatch.setitem(
+        sys.modules,
+        "AppKit",
+        NS(
+            NSApplication=NS(sharedApplication=lambda: None),
+            NSWorkspace=NS(
+                sharedWorkspace=lambda: NS(runningApplications=lambda: apps)
+            ),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "Quartz",
+        NS(
+            CGPreflightScreenCaptureAccess=lambda: True,
+            kCGWindowListOptionAll=0,
+            CGWindowListCopyWindowInfo=lambda *a: [window],
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules, "ApplicationServices", NS(AXIsProcessTrusted=lambda: True)
+    )
+    monkeypatch.setitem(sys.modules, "ScreenCaptureKit", NS())
+
+    def no_open(*a, **kw):
+        pytest.fail("multi-instance selection must not reopen a bundle")
+
+    monkeypatch.setattr(visual.subprocess, "run", no_open)
+    bridge = visual.WeChatWindow()
+    try:
+        assert bridge.pid == 22 and bridge.window_id == 123
+    finally:
+        bridge.scratch.cleanup()

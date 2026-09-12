@@ -24,6 +24,10 @@ import uuid
 from zoneinfo import ZoneInfo
 
 from openprogram.programs.workflow.report_io import encode, preflight, write_file
+from openprogram.programs.workflow.report_wechat import (
+    AccessibilityUnavailable,
+    select_application,
+)
 
 
 class VisualUnavailable(RuntimeError):
@@ -206,20 +210,22 @@ class WeChatWindow:
             for a in AppKit.NSWorkspace.sharedWorkspace().runningApplications()
             if a.bundleIdentifier() == "com.tencent.xinWeChat"
         ]
-        if len(apps) != 1:
-            raise VisualUnavailable("APP_NOT_RUNNING")
-        self.app = apps[0]
+        try:
+            self.app = select_application(apps)
+        except AccessibilityUnavailable as exc:
+            raise VisualUnavailable(str(exc)) from exc
         self.pid = self.app.processIdentifier()
         self.launch = str(self.app.launchDate())
         # Ask this already-running application to reopen its main window. The
         # fixed bundle identifier cannot open another application or document.
-        subprocess.run(
-            ["/usr/bin/open", "-b", "com.tencent.xinWeChat"],
-            check=True,
-            capture_output=True,
-            timeout=5,
-        )
-        time.sleep(0.5)
+        if len(apps) == 1:
+            subprocess.run(
+                ["/usr/bin/open", "-b", "com.tencent.xinWeChat"],
+                check=True,
+                capture_output=True,
+                timeout=5,
+            )
+            time.sleep(0.5)
         windows = self._windows()
         if len(windows) != 1:
             raise VisualUnavailable("WINDOW_NOT_UNIQUE")

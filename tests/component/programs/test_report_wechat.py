@@ -105,3 +105,65 @@ def test_application_root_is_not_a_verified_conversation(monkeypatch):
     monkeypatch.setattr(report_wechat, "MacAccessibility", lambda: bridge)
     result = report_wechat.read_group("Group")
     assert result["status"] == "GROUP_NOT_VERIFIED"
+
+
+def native_processes(monkeypatch, pids, owners):
+    import sys
+    from types import SimpleNamespace as NS
+
+    apps = [
+        NS(
+            bundleIdentifier=lambda: "com.tencent.xinWeChat",
+            processIdentifier=lambda p=p: p,
+        )
+        for p in pids
+    ]
+    selected = []
+    ax = NS(
+        AXIsProcessTrusted=lambda: True,
+        AXUIElementCreateApplication=lambda pid: selected.append(pid) or pid,
+        AXUIElementSetMessagingTimeout=lambda *a: None,
+        AXUIElementCopyAttributeValue=lambda *a: (0, None),
+    )
+    windows = [
+        dict(
+            kCGWindowOwnerPID=pid,
+            kCGWindowLayer=0,
+            kCGWindowName="微信",
+            kCGWindowBounds=dict(Width=924, Height=625),
+        )
+        for pid in owners
+    ]
+    monkeypatch.setitem(sys.modules, "ApplicationServices", ax)
+    monkeypatch.setitem(
+        sys.modules,
+        "AppKit",
+        NS(
+            NSWorkspace=NS(sharedWorkspace=lambda: NS(runningApplications=lambda: apps))
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "Quartz",
+        NS(kCGWindowListOptionAll=0, CGWindowListCopyWindowInfo=lambda *a: windows),
+    )
+    monkeypatch.setattr(report_wechat.sys, "platform", "darwin")
+    return selected
+
+
+def test_public_reader_selects_only_main_window_owner(monkeypatch):
+    selected = native_processes(monkeypatch, [11, 22], [22])
+    assert report_wechat.read_group("Group")["status"] == "SEARCH_UNAVAILABLE"
+    assert selected == [22]
+
+
+def test_public_reader_reports_ambiguous_processes_without_reading(monkeypatch):
+    selected = native_processes(monkeypatch, [11, 22], [11, 22])
+    assert report_wechat.read_group("Group")["status"] == "APP_NOT_UNIQUE"
+    assert selected == []
+
+
+def test_public_reader_reports_absent_process(monkeypatch):
+    selected = native_processes(monkeypatch, [], [])
+    assert report_wechat.read_group("Group")["status"] == "APP_NOT_RUNNING"
+    assert selected == []
