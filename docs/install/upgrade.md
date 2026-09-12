@@ -67,6 +67,27 @@ CLI, or the Desktop release updater. Existing update status and cancellation
 remain available; a worker service alone does not provide the source-update
 controller's build, activation, verification and recovery workflow.
 
+During an approved update, ordinary queued Jobs retain their identities and
+wait for maintenance to end. Running executions that support durable pause
+stop at their next checkpoint. The update waits for active attempts and
+resource claims to finish before replacing the App. After a verified commit or
+rollback, the worker resumes only executions paused by that update. Tasks
+already paused by the user or waiting for input stay paused. A task without a
+safe pause must finish before the update deadline; otherwise activation is
+aborted. Existing checkpoint validation still rejects changed tool contracts
+instead of replaying an old operation against a different implementation. When
+that validation rejects an update-owned continuation, the worker preserves the
+old checkpoint and creates one fresh planning Job from the original task and
+history, retaining its tool selection and permission rules. Unresolved side
+effects or a user cancellation prevent automatic replanning.
+
+Newly prepared updates also save an original-session follow-up with a stable
+Job identity. Once maintenance and any automatic repair sequence finish, it
+uses the original conversation and update evidence to continue checking the
+requested behavior. This is a new background turn and does not grant approval
+for another installation. Older update records do not receive retroactive
+follow-ups. Installation success and task continuation are separate outcomes.
+
 Conversational packaging is offline. Its dependency base must have exactly the
 candidate's `uv.lock` and `scripts/release/product-runtime.json`; the controller
 uses the saved runtime's pinned build tools and private copies of existing

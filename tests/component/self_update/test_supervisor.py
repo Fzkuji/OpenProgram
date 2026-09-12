@@ -245,31 +245,24 @@ def test_quiescence_waits_without_cancelling_sessions_or_jobs(monkeypatch) -> No
     from openprogram.self_update import supervisor
     from openprogram import store as session_store
 
+    from types import SimpleNamespace
     polls = 0
 
     class Sessions:
-        def list_sessions(self, *, status=None, **_kwargs):
-            nonlocal polls
-            if status == "running":
-                polls += 1
-                return [{"id": "session-1"}] if polls == 1 else []
+        def list_sessions(self, **_kwargs):
             return [{"id": "session-1"}]
 
-    job_polls = 0
-
     def list_jobs(*_args, **_kwargs):
-        nonlocal job_polls
-        job_polls += 1
-        return [object()] if job_polls == 1 else []
+        nonlocal polls
+        polls += 1
+        return [SimpleNamespace(id="legacy-job")] if polls == 1 else []
 
-    sessions = Sessions()
-    monkeypatch.setattr(session_store, "default_store", lambda: sessions)
+    monkeypatch.setattr(session_store, "default_store", Sessions)
     monkeypatch.setattr(job_store, "list_jobs", list_jobs)
     monkeypatch.setattr(supervisor.time, "sleep", lambda _seconds: None)
 
     assert supervisor._wait_for_quiescence(supervisor.time.time() + 1) is True
     assert polls == 2
-    assert job_polls == 2
 
 
 def test_build_runs_fixed_entry_in_private_network_denied_sandbox(

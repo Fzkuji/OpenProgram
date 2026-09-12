@@ -1041,6 +1041,13 @@ class ResourceGovernor:
             ).rowcount
             return changed == 1
 
+    def has_live_jobs(self) -> bool:
+        """Include claims acquired before canonical activation in shutdown checks."""
+        with self.ledger.read() as connection:
+            return connection.execute(
+                "SELECT 1 FROM job_admissions WHERE state IN ('live', 'stopping') LIMIT 1"
+            ).fetchone() is not None
+
     def claim_next(
         self,
         *,

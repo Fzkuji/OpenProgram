@@ -42,6 +42,10 @@ class AgentTurnResult:
 def validate_self_update_turn_request(request: Any) -> None:
     """Validate the frozen unattended verifier contract before dispatch."""
     source = getattr(request, "source", None)
+    if source in {"self_update_continue", "self_update_replan"}:
+        from openprogram.self_update.continuation import require_execution
+        require_execution(request)
+        return
     if source not in {
         "self_update_verify",
         "self_update_diagnose",

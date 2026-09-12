@@ -525,6 +525,12 @@ class JobRunner:
             return
         from openprogram.agent.permissions.lifecycle import spawn_permission_snapshot
         permission_snapshot = spawn_permission_snapshot(self._execution_store, parent, job)
+        if job.source == "self_update_continue":
+            from openprogram.self_update.continuation import permission_snapshot as update_permission
+            permission_snapshot = update_permission(job)
+        if job.source == "self_update_replan":
+            from openprogram.self_update.restart import replan_permission_snapshot
+            permission_snapshot = replan_permission_snapshot(self._execution_store, job)
         run_id = parent.run_id if parent is not None else f"job-run-{job.id}"
         input_ref, input_hash, input_payload = self._canonical_input(
             job, run_id=run_id, parent_execution_id=parent.execution_id if parent else None,
@@ -1092,7 +1098,7 @@ class JobRunner:
         archive_when_done: bool = False,
         spawn_caller: Optional[str] = None,
         advance_head: bool = False,
-        tools_override: Optional[list[str]] = None,
+        tools_override: Optional[list[str] | dict[str, Any]] = None,
         model_override: Optional[str] = None,
         thinking_effort: Optional[str] = None,
         render_range: Optional[dict[str, int]] = None,
@@ -2615,7 +2621,8 @@ class JobRunner:
                 if not self._executor_slots.acquire(blocking=False):
                     break
                 try:
-                    claim = self._governor.claim_next(
+                    from openprogram.self_update.maintenance import claim_job
+                    claim = claim_job(self._governor,
                         owner_instance_id=self._instance_id,
                         excluded_sessions=blocked_sessions,
                         only_job_id=self._claim_only_job_id,
@@ -3438,6 +3445,13 @@ class JobRunner:
     def _reconcile_loop(self) -> None:
         while not self._shutdown_event.wait(_RECONCILE_SECS):
             self._reconcile_resources()
+            try:
+                from openprogram.self_update.restart import reconcile
+                reconcile(self)
+                from openprogram.self_update.continuation import reconcile as continue_updates
+                continue_updates(self)
+            except Exception:
+                _log.exception("self-update restart reconciliation failed")
 
     def _budget_loop(self) -> None:
         while not self._shutdown_event.wait(self._budget_poll_seconds):

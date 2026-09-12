@@ -12,6 +12,7 @@ that releases a prepared request only after its origin turn is durable.
 
 - **`bootstrap.py`** — Recover an existing update from its saved runtime, independently of the App
 - **`commit_intent.py`** — Preserve an accepted commit decision across irreversible App finalization
+- **`continuation.py`** — Durable original-session follow-up after a newly prepared update settles
 - **`controller_bundle.py`** — Freeze the installed controller runtime outside the replaceable App
 - **`delivery.py`** — Deterministic original-session notifications from durable update results
 - **`diagnosis.py`** — One bounded, read-only diagnostic Job after a verified rollback
@@ -28,6 +29,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`recovery.py`** — Dispatch one frozen verifier Job after the supervisor releases system gates
 - **`reopen.py`** — Controller-owned Desktop recovery intent; never update/verifier authority
 - **`repair_candidate.py`** — Apply bounded model edits and test a new isolated candidate without installing it
+- **`restart.py`** — Pause ownership and restart recovery through canonical execution commands
 - **`rollback_intent.py`** — Durable rollback intent shared by the controller and worker admission
 - **`source_repair.py`** — Continue a verified rollback with one bounded source-repair Job and candidate
 - **`store.py`** — Crash-safe file store for conversational self-update state

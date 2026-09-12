@@ -56,14 +56,15 @@ class SelfUpdateStore:
     def create(self, request: UpdateRequest, *, verifier_config: Mapping[str, Any] | None = None,
                diagnosis_config: Mapping[str, Any] | None = None,
                source_repair_config: Mapping[str, Any] | None = None,
-               iteration_config: Mapping[str, Any] | None = None) -> UpdateState:
+               iteration_config: Mapping[str, Any] | None = None,
+               continuation_config: Mapping[str, Any] | None = None) -> UpdateState:
         with self._locked():
             return self._create_unlocked(request, verifier_config=verifier_config,
                 diagnosis_config=diagnosis_config, source_repair_config=source_repair_config,
-                iteration_config=iteration_config)
+                iteration_config=iteration_config, continuation_config=continuation_config)
 
     def _create_unlocked(self, request, *, verifier_config=None, diagnosis_config=None,
-                         source_repair_config=None, iteration_config=None):
+                         source_repair_config=None, iteration_config=None, continuation_config=None):
         """Caller holds the process/file lock, including child reservation."""
         maintenance = self.root / "maintenance.json"
         if maintenance.exists() or maintenance.is_symlink():
@@ -101,6 +102,8 @@ class SelfUpdateStore:
         staged.mkdir(mode=0o700)
         try:
             self._write_json(staged / "request.json", request.to_dict())
+            if continuation_config is not None:
+                self._write_json(staged / "continuation-config.json", continuation_config)
             if verifier_config is not None:
                 self._write_json(staged / "verifier-config.json", verifier_config)
             if diagnosis_config is not None:

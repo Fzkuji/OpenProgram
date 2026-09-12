@@ -328,6 +328,8 @@ def _prepare_update(
     try:
         from openprogram.self_update.verifier_config import freeze_verifier_config, config_evidence
         from openprogram.self_update.diagnosis import freeze_config, config_evidence as diagnosis_evidence
+        from openprogram.self_update.continuation import freeze_config as freeze_continuation, config_evidence as continuation_evidence
+        continuation_config = freeze_continuation(request, req)
         verifier_config = freeze_verifier_config(request, req, verification_plan=verification_plan)
         diagnosis_config = freeze_config(request, verifier_config)
         from openprogram.self_update.source_repair import freeze_config as freeze_repair, config_evidence as repair_evidence
@@ -341,9 +343,9 @@ def _prepare_update(
             request = replace(request, timeout_seconds=min(request.timeout_seconds, int(policy.deadline - request.created_at)))
         request = replace(request, pre_update_evidence=(*request.pre_update_evidence, config_evidence(verifier_config),
                                                        diagnosis_evidence(diagnosis_config), repair_evidence(repair_config),
-                                                       iteration_evidence(iteration_config)))
+                                                       iteration_evidence(iteration_config), continuation_evidence(continuation_config)))
         state = store.create(request, verifier_config=verifier_config, diagnosis_config=diagnosis_config,
-                             source_repair_config=repair_config, iteration_config=iteration_config)
+                             source_repair_config=repair_config, iteration_config=iteration_config, continuation_config=continuation_config)
     except ActiveUpdateError as exc:
         raise SelfUpdateToolError(str(exc)) from exc
     except (SelfUpdateError, ValueError) as exc:
@@ -468,7 +470,8 @@ def _turn_context() -> tuple[Any, str]:
         "Prepare an owner-approved OpenProgram self-update from the exact clean HEAD "
         "of this session's active linked worktree. Requires the macOS source-update controller; "
         "published CLI/Desktop upgrades use a separate updater. This persists intent only; it does "
-        "not build, install, stop, or restart the App. Approval also permits isolated "
+        "not build, install, stop, or restart the App. Approval permits safe-point pause and resume of active tasks, "
+        "and a background original-session follow-up after the update. It also permits isolated "
         "source repair and listed tests after verified rollback. Default mode requires approval for each new SHA; "
         "bounded_auto explicitly permits further installations within the original attempt, deadline, path and test limits."
     ),

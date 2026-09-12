@@ -79,7 +79,21 @@ def turn_admission(source: str) -> Iterator[bool]:
     """Keep maintenance entry atomic with persistence of a running turn."""
     store = SelfUpdateStore()
     with store._locked():
-        yield not maintenance_blocks(source)
+        marker = load_maintenance(store)
+        admitted = marker is None or source == _ALLOWED_SOURCE
+        if not admitted:
+            # A claim/foreground admission can precede maintenance while its
+            # producer reaches the dispatcher afterwards. Let that exact
+            # execution reach its cooperative checkpoint instead of failing it.
+            from openprogram.agent.run_control import get_current_execution_id
+            from openprogram.execution.store import default_store
+            execution_id = get_current_execution_id()
+            execution = default_store().get_execution(execution_id) if execution_id else None
+            admitted = (execution is not None
+                        and execution.created_at <= marker["entered_at"]
+                        and execution.current_attempt_id is not None
+                        and execution.status.value in {"running", "pausing"})
+        yield admitted
 
 
 def maintenance_blocks(source: str) -> bool:
@@ -93,3 +107,20 @@ def maintenance_blocks(source: str) -> bool:
 __all__ = [
     "enter_maintenance", "leave_maintenance", "maintenance_blocks", "turn_admission",
 ]
+
+
+def claim_job(governor, *, owner_instance_id, excluded_sessions, only_job_id):
+    """Serialize maintenance entry with a durable resource claim."""
+    store = SelfUpdateStore()
+    with store._locked():
+        marker = load_maintenance(store)
+        if marker is not None:
+            record = store._load_unlocked(marker["update_id"])
+            dispatch = record.state.dispatch
+            if record.state.phase.value != "verifying" or dispatch is None:
+                return None
+            if only_job_id is not None and only_job_id != dispatch.job_id:
+                return None
+            only_job_id = dispatch.job_id
+        return governor.claim_next(owner_instance_id=owner_instance_id,
+            excluded_sessions=excluded_sessions, only_job_id=only_job_id)

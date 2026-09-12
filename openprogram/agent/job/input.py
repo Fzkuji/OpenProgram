@@ -237,7 +237,7 @@ class JobAgentInputV1:
         }
         if permission_snapshot is not None:
             from openprogram.agent.session_config import VALID_PERMISSION
-            if (job.source != "agent_spawn" or set(permission_snapshot) != {"mode", "rules"}
+            if (job.source not in {"agent_spawn", "self_update_replan", "self_update_continue"} or set(permission_snapshot) != {"mode", "rules"}
                     or permission_snapshot["mode"] not in VALID_PERMISSION):
                 raise JobAgentInputError("invalid inherited permission snapshot")
             request["permission_mode"] = permission_snapshot["mode"]

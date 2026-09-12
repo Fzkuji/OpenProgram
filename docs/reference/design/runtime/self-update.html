@@ -555,7 +555,7 @@
       <p class="eyebrow">Runtime architecture · owner initiated · macOS v1</p>
       <h1>对话内自主更新</h1>
       <p class="lede">用户在 OpenProgram 中要求 Agent 修改 OpenProgram。Agent 在隔离 worktree 中完成修改、测试和提交；独立于 worker 的控制进程构建并安装完整 App；新 worker 启动后自动创建一次验收任务，依据原始目标检查结果。系统检查或目标验收失败时恢复旧 App。</p>
-      <div class="principle"><strong>核心约束：</strong>正在被替换的 worker 不能负责完成替换，也不能把重启后的执行描述为原 turn 的继续。重启前先持久化交接，重启后创建带来源标记的新验收任务。</div>
+      <div class="principle"><strong>核心约束：</strong>正在被替换的 worker 不能负责完成替换，重启前持久化交接与其他任务的暂停检查点，重启后创建带来源标记的新验收任务。验证完成后按检查点继续兼容任务，并为发起会话创建后续任务。</div>
 
       <div class="scope-strip" aria-label="设计范围">
         <div class="scope-cell"><div class="k">Platform</div><div class="v">macOS 默认 App</div><div class="detail">/Applications/OpenProgram.app · :18100 · ~/.openprogram</div></div>
@@ -612,7 +612,7 @@
           </article>
           <article class="experience-panel" id="panel-restart" role="tabpanel" aria-labelledby="tab-restart" data-panel="restart">
             <div class="mock-window"><div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span>OpenProgram · 即将重启</div><div class="mock-chat">
-              <div class="update-card"><div class="top"><span>候选已通过重启前检查</span><span class="phase">HANDOFF READY</span></div><div class="steps"><span class="done">✓ 当前回复已持久化</span><span class="done">✓ 其他运行任务已结束</span><span class="done">✓ previous App 保留</span><span>下一步 · 关闭 App 并激活候选</span></div></div>
+              <div class="update-card"><div class="top"><span>候选已通过重启前检查</span><span class="phase">HANDOFF READY</span></div><div class="steps"><span class="done">✓ 当前回复已持久化</span><span class="done">✓ 其他任务已暂停或结束</span><span class="done">✓ previous App 保留</span><span>下一步 · 关闭 App 并激活候选</span></div></div>
               <p class="small">此时 supervisor 已由 launchd 托管，不属于 worker 的进程树。</p>
             </div></div>
           </article>
@@ -682,7 +682,7 @@
           <div><strong>1 · 准备</strong><br>Agent 在隔离 worktree 修改、测试、复核并形成 candidate commit。</div>
           <div><strong>2 · 交接</strong><br>owner 批准；update record 记录 session、turn、candidate 和验收条件；supervisor 由 launchd 托管。</div>
           <div><strong>3 · 构建</strong><br>旧 worker 仍运行时构建完整 App，并完成 packaged smoke 与 cold probe。</div>
-          <div><strong>4 · 激活</strong><br>当前回复已持久化且其他任务结束后，停止 App/worker，保留 previous.app，激活候选。</div>
+          <div><strong>4 · 激活</strong><br>当前回复已持久化且其他任务已暂停或结束后，停止 App/worker，保留 previous.app，激活候选。</div>
           <div><strong>5 · 验收</strong><br>新 worker 校验 revision/doctor，再创建新的 self_update_verify Agent turn 检查原始目标。</div>
           <div><strong>6 · 终态</strong><br>通过后删除 previous.app；失败或超时则恢复旧 App，并把证据写回原会话。</div>
         </div>
@@ -894,6 +894,11 @@
       <p>登录文件名为 <code>ai.openprogram.self-update.recovery.&lt;update_id&gt;.plist</code>，在本用户每次登录时最多执行一次，完成后清除：<code>RunAtLoad=true</code>，不设置 <code>KeepAlive</code>、周期或常驻 daemon。写入 plist 不立即加载另一份控制进程；正常更新仍使用原 one-shot supervisor 和同一 controller lock。当前登录会话中，若 App 与控制进程都已不可用，终端恢复脚本是显式入口；机器重启后需本用户登录才触发自动恢复，不声称能在未登录或磁盘未解锁时执行。</p>
       <p>发布恢复入口、固定参数和 plist 的绑定记录必须发生在原 supervisor 被提交、候选被激活之前。只操作本用户拥有的规范目录和本次更新的确切文件；已有同名但内容不匹配、符号链接、非普通文件或不安全权限均拒绝，不覆盖。重复准备校验原副本，不从已替换 App 重新复制。启动错误留下独立诊断，绝不解除维护或延长授权。</p>
       <p>原更新已终止且不再拥有维护状态后，只清除内容仍与绑定记录一致的本次登录 plist；保存的 runtime、脚本、原更新证据和恢复结果继续保留，便于查询。清理失败保留诊断，不改变已验证的原结果；残留一次性任务再次运行也不得恢复已完成更新。该入口本身损坏、权限变化或原证据不足时仍需人工处理，不提供任意文件修复或强制清除维护的能力。</p>
+<div id="execution-restart"><h3>任务暂停、重启和继续执行</h3>
+<p>更新进入维护后，worker 使用现有 canonical pause 命令让正在执行的任务到达持久化检查点。每个更新保存明确的 execution id、pause command id 和观察版本；只恢复由本次更新暂停的任务。原本暂停、等待用户输入、取消和已经完成的任务不自动继续。排队且尚未执行的 Job 保持原有队列身份，不参与活动执行等待。</p>
+<p>supervisor 只在 canonical 活动 attempt 和旧版运行任务均结束后替换 App。新 worker 在更新提交或验证回退且解除维护后，通过原来的 continue 命令和 Job 资源队列继续任务。命令使用固定 id，重复恢复不创建重复执行。暂停失败或不可暂停任务在期限内没有完成时中止更新，恢复已暂停任务。</p>
+<p>检查点恢复保留运行合同校验；工具实现或权限改变时禁止重放旧操作，保留旧检查点。只有本次更新发起的 continue 因合同变化被拒绝时，才从原任务和历史创建固定身份的新规划 Job，保留原工具选择和权限规则，并在执行前重新校验原执行及更新归属。未解决的副作用、用户取消或其他会话活动阻止自动重新规划。任务恢复失败不更改安装验收结论。发起更新的会话在终态产生一个持久化后续任务，读取原目标、历史和更新结果继续检查；它不替代固定 verifier，也不获得再次激活更新的交互授权。旧记录不追溯创建后续任务。</p>
+<p>验收入口是 supervisor 等待、worker reconciliation 和真实 canonical pause/continue。必须覆盖排队任务、检查点恢复、重复 worker 恢复、用户暂停/取消、维护未解除、更新失败，以及原会话后续任务只创建一次。实现状态：实现与针对性测试已完成，独立评审、完整测试和实际 App 验收待完成。</p></div>
       <h3 id="owner-repair" style="margin-top:24px">显式人工恢复</h3>
       <p><code>openprogram self-update status [update_id] --json</code> 在不执行模型、不创建更新、不修改 App 的情况下读取维护归属、原终态与恢复结果。<code>openprogram self-update repair &lt;update_id&gt;</code> 是本机 owner 的独立控制入口，不依赖普通聊天或 Scheduler；必须在交互式终端确认显示的 update id、目标 revision、恢复动作与计划摘要，不提供跳过确认参数。确认时重新比较原状态、维护归属、安装 journal 和可信 controller；发生变化则拒绝旧确认。</p>
       <div class="failure-table">

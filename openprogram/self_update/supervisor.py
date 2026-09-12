@@ -516,23 +516,47 @@ def _wait_for_quiescence(deadline: float) -> bool:
     from openprogram.agent.job.types import JobStatus
     from openprogram.store import default_store
 
-    active_jobs = {JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING}
+    from openprogram.execution.store import default_store as execution_store
+    from openprogram.agent.resource_governance import ResourceGovernor
+    from openprogram.usage.ledger import default_ledger
+    governor = ResourceGovernor(default_ledger)
+
     while time.time() < deadline:
-        sessions = default_store().list_sessions(
-            status="running", include_archived=True, limit=100_000
-        )
-        jobs = []
-        for session in default_store().list_sessions(
-            include_archived=True, limit=100_000
-        ):
-            jobs.extend(
-                list_jobs(
-                    session["id"], status_filter=active_jobs, limit=1
-                )
-            )
-            if jobs:
+        # Canonical rows are read from SQLite on every poll. SessionStore's
+        # list index is process-local and cannot observe another worker's writes.
+        executions = execution_store()
+        active = executions.list_nonterminal()
+        if governor.has_live_jobs() or any(item.current_attempt_id is not None or item.status.value in {
+            "running", "pausing", "cancelling", "reconciliation_required",
+        } for item in active):
+            time.sleep(0.2)
+            continue
+        sessions = default_store()
+        # Refresh the legacy projection inventory as well. Canonical paused
+        # foreground turns can legitimately retain a running session summary.
+        from openprogram.store import SessionStore
+        if isinstance(sessions, SessionStore):
+            fresh = SessionStore(sessions.root_path)
+            try:
+                inventory = fresh.list_sessions(include_archived=True, limit=100_000)
+            finally:
+                fresh.close()
+        else:
+            inventory = sessions.list_sessions(include_archived=True, limit=100_000)
+        busy = False
+        for session in inventory:
+            history = executions.list_for_session(session["id"])
+            if session.get("status") == "running" and not history:
+                busy = True
                 break
-        if not sessions and not jobs:
+            for job in list_jobs(session["id"], status_filter={JobStatus.RUNNING}, limit=100_000):
+                canonical = executions.get_execution(job.id)
+                if canonical is None or canonical.current_attempt_id is not None:
+                    busy = True
+                    break
+            if busy:
+                break
+        if not busy:
             return True
         time.sleep(0.2)
     return False

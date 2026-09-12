@@ -142,7 +142,7 @@ class Job:
     # them on Job lets the runner remain the only execution boundary.
     spawn_caller: Optional[str] = None
     advance_head: bool = False
-    tools_override: Optional[list[str]] = None
+    tools_override: Optional[list[str] | dict[str, Any]] = None
     model_override: Optional[str] = None
     thinking_effort: Optional[str] = None
     render_range: Optional[dict[str, int]] = None
@@ -220,9 +220,9 @@ class Job:
         for name in ("profile_snapshot", "response_format", "tools_override"):
             value = getattr(self, name)
             if value is not None:
-                expected = list if name == "tools_override" else dict
+                expected = (list, dict) if name == "tools_override" else (dict,)
                 if not isinstance(value, expected):
-                    raise ValueError(f"{name} must be a {expected.__name__}")
+                    raise ValueError(f"{name} must be " + " or ".join(t.__name__ for t in expected))
                 setattr(self, name, json.loads(json.dumps(value, allow_nan=False)))
 
     def to_dict(self) -> dict[str, Any]:
