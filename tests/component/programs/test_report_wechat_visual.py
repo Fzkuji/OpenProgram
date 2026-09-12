@@ -170,9 +170,12 @@ def test_unknown_group_never_persists_private_snapshot(
     assert list(tmp_path.iterdir()) == [] and window.closed
 
 
-def test_nonshared_window_does_not_attempt_another_capture_method():
-    with pytest.raises(visual.VisualUnavailable, match="WINDOW_CAPTURE_UNAVAILABLE"):
-        visual._capture_allowed({"kCGWindowSharingState": 0})
+def test_screen_capture_api_error_is_not_replaced_with_another_method():
+    import time
+    window = object.__new__(visual.WeChatWindow)
+    window.deadline = time.monotonic() + 5
+    with pytest.raises(visual.VisualUnavailable, match="CAPTURE_UNAVAILABLE"):
+        window._capture_call(lambda done: done(None, "access denied"))
 
 
 def test_unlisted_sender_content_does_not_enter_prior_members_report():
@@ -250,7 +253,8 @@ def test_public_reader_preserves_roster_names_inside_message(
     ]
 
 
-def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch):
+@pytest.mark.parametrize("sharing_state", [0, 1])
+def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch, sharing_state):
     import sys
     from types import SimpleNamespace as NS
 
@@ -259,6 +263,7 @@ def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch):
             bundleIdentifier=lambda: "com.tencent.xinWeChat",
             processIdentifier=lambda p=p: p,
             launchDate=lambda: "launch",
+            isTerminated=lambda: False,
         )
         for p in (11, 22)
     ]
@@ -267,7 +272,7 @@ def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch):
         kCGWindowLayer=0,
         kCGWindowName="微信",
         kCGWindowNumber=123,
-        kCGWindowSharingState=1,
+        kCGWindowSharingState=sharing_state,
         kCGWindowBounds=dict(Width=924, Height=625),
     )
     monkeypatch.setattr(visual.sys, "platform", "darwin")
@@ -302,5 +307,6 @@ def test_multiple_process_visual_selection_does_not_reopen_bundle(monkeypatch):
     bridge = visual.WeChatWindow()
     try:
         assert bridge.pid == 22 and bridge.window_id == 123
+        bridge.check()
     finally:
         bridge.scratch.cleanup()

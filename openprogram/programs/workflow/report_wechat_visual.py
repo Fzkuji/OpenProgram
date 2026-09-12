@@ -175,10 +175,6 @@ def _cancel():
     check_cancelled()
 
 
-def _capture_allowed(window):
-    if window.get("kCGWindowSharingState") == 0:
-        raise VisualUnavailable("WINDOW_CAPTURE_UNAVAILABLE")
-
 
 class WeChatWindow:
     """Exact PID/window identity with fixed, evidence-bound navigation methods."""
@@ -229,7 +225,6 @@ class WeChatWindow:
         windows = self._windows()
         if len(windows) != 1:
             raise VisualUnavailable("WINDOW_NOT_UNIQUE")
-        _capture_allowed(windows[0])
         self.window_id = windows[0]["kCGWindowNumber"]
         self.bounds = dict(windows[0]["kCGWindowBounds"])
         self.deadline = time.monotonic() + 120
@@ -261,7 +256,6 @@ class WeChatWindow:
             or dict(windows[0]["kCGWindowBounds"]) != self.bounds
         ):
             raise VisualUnavailable("WINDOW_CHANGED")
-        _capture_allowed(windows[0])
 
     def _run(self, args, timeout):
         """Cancel the entire OCR subprocess group, including its Swift child."""
