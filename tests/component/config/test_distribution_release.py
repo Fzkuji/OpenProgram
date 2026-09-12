@@ -3489,3 +3489,29 @@ def test_release_matrix_requires_explicit_windows_selection():
     }
     workflow = (ROOT / ".github/workflows/release.yml").read_text()
     assert 'throw "Windows Desktop publication requires WINDOWS_CSC_LINK and WINDOWS_CSC_KEY_PASSWORD"' in workflow
+
+
+@POSIX_SHELL_INTEGRATION
+@pytest.mark.parametrize("deferred", [False, True])
+def test_packaged_smoke_passes_verifier_arguments_with_system_bash(
+    tmp_path: Path, deferred: bool,
+) -> None:
+    runtime = tmp_path / "dist" / "OpenProgram.app" / "Contents" / "Resources" / "runtime"
+    (runtime / "bin").mkdir(parents=True)
+    (runtime / "runtime-manifest.json").write_text(json.dumps({"python": "bin/python3"}, indent=2) + "\n")
+    capture = tmp_path / "verifier-arguments"
+    executable = runtime / "bin" / "python3"
+    executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$CAPTURE"\nexit 37\n')
+    executable.chmod(0o755)
+    result = subprocess.run(
+        ["/bin/bash", str(ROOT / "scripts/release/smoke-packaged-runtime.sh"),
+         "mac", str(tmp_path / "dist")],
+        env={**os.environ, "TMPDIR": str(tmp_path), "CAPTURE": str(capture),
+             "OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER": "1" if deferred else ""},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 37, result.stderr
+    expected = ["-I", str(runtime / "bin/verify-product-runtime.py"), str(runtime)]
+    if deferred:
+        expected.append("--allow-deferred-browser")
+    assert capture.read_text().splitlines() == expected
