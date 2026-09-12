@@ -1,20 +1,45 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { inspectRasterBytes, validateRasterInput, validateRasterDecoded, assertEncodedRaster, MAX_RASTER_BYTES } from "../lib/documents/raster-format.ts";
+const fixture = (name) => new Uint8Array(readFileSync(new URL(`../../../tests/e2e/web/fixtures/raster/${name}`, import.meta.url)));
 
-const { inspectRasterBytes, rasterMime, validateRasterInput } = await import("../lib/documents/raster-format.ts");
-
-test("recognizes static raster signatures and rejects animation", () => {
-  assert.equal(rasterMime(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), "image/png");
-  assert.equal(rasterMime(new Uint8Array([0xff, 0xd8, 0xff])), "image/jpeg");
-  const webp = new Uint8Array(24); webp.set([...Buffer.from("RIFF"), 0, 0, 0, 0, ...Buffer.from("WEBP"), ...Buffer.from("VP8X"), 0, 0, 0, 0, 0, 0, 0, 0]);
-  assert.equal(rasterMime(webp), "image/webp");
-  const apng = new Uint8Array(40); apng.set([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a], 0); apng.set([...Buffer.from("acTL")], 20);
-  assert.equal(inspectRasterBytes(apng).animated, true);
-  assert.throws(() => validateRasterInput(apng), /animated/);
+test("real static formats expose bounded dimensions before browser allocation", () => {
+  for (const [ext,format] of [["png","png"],["jpg","jpeg"],["webp","webp"]]) {
+    const value = validateRasterInput(fixture(`quadrants.${ext}`));
+    assert.equal(value.format,format); assert.equal(value.width,320); assert.equal(value.height,240);
+  }
 });
-
-test("accepts only same-format static PNG/JPEG/WebP", () => {
-  assert.equal(validateRasterInput(new Uint8Array([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])).format, "png");
-  assert.throws(() => validateRasterInput(new Uint8Array([1, 2, 3])), /unsupported|invalid/i);
-  assert.throws(() => validateRasterInput(new Uint8Array([0x47, 0x49, 0x46])), /UNSUPPORTED/);
+test("actual APNG and animated WebP cannot overwrite their source as a still image", () => {
+  for (const ext of ["png","webp"]) {
+    assert.equal(inspectRasterBytes(fixture(`animated.${ext}`)).animated,true);
+    assert.throws(()=>validateRasterInput(fixture(`animated.${ext}`)),/animated/);
+  }
+});
+test("normal document API octet-stream bytes decode and release the bitmap", async () => {
+  const previous=globalThis.createImageBitmap;let closes=0;
+  globalThis.createImageBitmap=async()=>({width:320,height:240,close(){closes++;}});
+  try {
+    const result=await validateRasterDecoded(new Blob([fixture("quadrants.png")],{type:"application/octet-stream"}));
+    assert.equal(result.mime,"image/png");assert.equal(closes,1);
+    await assert.rejects(validateRasterDecoded(new Blob([fixture("quadrants.png")],{type:"image/jpeg"})),/MIME/);
+    assert.equal(closes,1);
+  } finally {globalThis.createImageBitmap=previous;}
+});
+test("byte and header pixel limits reject before reading or decoding image data", async () => {
+  class Oversize extends Blob { get size(){return MAX_RASTER_BYTES+1;} async arrayBuffer(){throw Error("unexpected read");} }
+  await assert.rejects(validateRasterDecoded(new Oversize()),/IMAGE_RESOURCE_LIMIT/);
+  const raw=fixture("quadrants.png");const view=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+  view.setUint32(16,65536);view.setUint32(20,65536);
+  const previous=globalThis.createImageBitmap;let decoded=false;
+  globalThis.createImageBitmap=async()=>{decoded=true;throw Error("unexpected decode");};
+  try { await assert.rejects(validateRasterDecoded(new Blob([raw])),/IMAGE_RESOURCE_LIMIT/);assert.equal(decoded,false); }
+  finally {globalThis.createImageBitmap=previous;}
+});
+test("encoding checks read Blob bytes and reject a mismatched output or damaged container", async () => {
+  await assertEncodedRaster(new Blob([fixture("quadrants.png")],{type:"image/png"}),"png");
+  await assert.rejects(assertEncodedRaster(new Blob([fixture("quadrants.jpg")]),"png"),/encoding/);
+  const raw=fixture("quadrants.webp");new DataView(raw.buffer,raw.byteOffset).setUint32(16,0xffffffff,true);
+  assert.throws(()=>validateRasterInput(raw),/invalid|truncated/i);
+  assert.throws(()=>validateRasterInput(fixture("quadrants.png").slice(0,8)),/invalid|truncated/i);
 });
