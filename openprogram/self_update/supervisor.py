@@ -527,7 +527,7 @@ def _wait_for_quiescence(deadline: float) -> bool:
         executions = execution_store()
         active = executions.list_nonterminal()
         if governor.has_live_jobs() or any(item.current_attempt_id is not None or item.status.value in {
-            "running", "pausing", "cancelling", "reconciliation_required",
+            "running", "pausing", "cancelling",
         } for item in active):
             time.sleep(0.2)
             continue

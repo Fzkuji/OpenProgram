@@ -212,3 +212,36 @@ def test_supervisor_refreshes_session_status_written_by_worker(tmp_path, monkeyp
         assert supervisor._wait_for_quiescence(supervisor.time.time() + 1)
     finally:
         stale.close()
+
+
+def test_quiescence_preserves_inactive_effect_reconciliation(tmp_path, monkeypatch):
+    from openprogram.self_update import supervisor
+    from openprogram.execution.model import ExecutionStatus
+    from openprogram.agent.resource_governance import ResourceGovernor
+
+    _, runner, service, attempt = _environment(tmp_path, monkeypatch)
+    executions = runner._execution_store
+    monkeypatch.setattr("openprogram.execution.store.default_store", lambda: executions)
+    monkeypatch.setattr(
+        "openprogram.store.default_store",
+        lambda: SimpleNamespace(list_sessions=lambda **_: []),
+    )
+    # An owned attempt still prevents installation.
+    assert not supervisor._wait_for_quiescence(supervisor.time.time() + 0.01)
+    before = executions.get_execution("active")
+    service.attempts.finish(
+        attempt.attempt_id,
+        generation=attempt.generation,
+        expected_execution_version=before.status_version,
+        target=ExecutionStatus.RECONCILIATION_REQUIRED,
+        outcome="reconciliation_required",
+        reason_code="effect_reconciliation",
+    )
+    pending = executions.get_execution("active")
+    assert pending.current_attempt_id is None
+    assert supervisor._wait_for_quiescence(supervisor.time.time() + 0.01)
+    assert executions.get_execution("active") == pending
+    # Claims are checked independently of the execution projection.
+    monkeypatch.setattr(ResourceGovernor, "has_live_jobs", lambda _: True)
+    assert not supervisor._wait_for_quiescence(supervisor.time.time() + 0.01)
+    assert executions.get_execution("active") == pending
