@@ -217,7 +217,7 @@ def test_typing_does_not_redecode_the_entire_text_blob(browser_page):
       Blob.prototype.text=function(){window.blobTextReads++;return original.call(this)};
     }""")
     with page.expect_response(lambda response: response.request.method == "PUT"):
-        editor.press("ControlOrMeta+End")
+        editor.evaluate("element => { element.focus(); element.setSelectionRange(element.value.length, element.value.length); }")
         editor.press_sequentially("12345678")
     assert page.evaluate("window.blobTextReads") == 0
     assert state["writes"][-1] == b"a" * (256 * 1024) + b"12345678"
