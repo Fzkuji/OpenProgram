@@ -143,3 +143,31 @@ def test_memory_prioritizes_latest_owner_correction_over_generated_notes(tmp_pat
     rows = sources.memory_candidates('2026-W37', '腾讯')
     assert [r['text'] for r in rows] == ['修订计划','早先计划','模型汇总']
     assert rows[0]['trusted_owner'] is True and rows[0]['source_date'] == '2026-09-12'
+
+
+def test_detail_queries_are_bounded_deduplicated_and_keep_week(monkeypatch):
+    import pytest
+    calls = []
+    anchor = {'id':'anchor','text':'本周动作'}
+    def memory(week, query):
+        calls.append((week, query))
+        return [anchor, {'id':query,'text':'具体观察'}]
+    monkeypatch.setattr(sources, 'memory_candidates', memory)
+    found = sources.expand_memory_candidates('2026-W37', [' OPD ', 'OPD', 'Memory'], [anchor])
+    assert calls == [('2026-W37','OPD'), ('2026-W37','Memory')]
+    assert [r['id'] for r in found['candidates']] == ['anchor','OPD','Memory']
+    with pytest.raises(ValueError):
+        sources.expand_memory_candidates('2026-W37', ['a'] * 4, [])
+    assert len(calls) == 2
+
+
+def test_detail_failure_preserves_known_actions_and_context_limit(monkeypatch):
+    def memory(week, query):
+        if query == 'denied':
+            raise OSError('read denied')
+        return [{'id':str(i), 'text':'内容'*500} for i in range(30)]
+    monkeypatch.setattr(sources, 'memory_candidates', memory)
+    found = sources.expand_memory_candidates('2026-W37', ['denied','topic'], [{'id':'known','text':'本周明确动作'}])
+    assert found['candidates'][0]['id'] == 'known'
+    assert sum(len(json.dumps(r, ensure_ascii=False).encode()) for r in found['candidates']) <= 18000
+    assert any('denied' in w for w in found['warnings'])

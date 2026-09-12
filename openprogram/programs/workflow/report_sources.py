@@ -63,6 +63,32 @@ def memory_candidates(week, query):
     return sorted(result, key=lambda item: (item["trusted_owner"], item["source_date"]), reverse=True)
 
 
+def expand_memory_candidates(week, queries, existing):
+    """One bounded, same-week detail search; preserve anchors and source identities."""
+    if (not isinstance(queries, list) or len(queries) > 3
+            or any(not isinstance(q, str) or not q.strip() or len(q) > 160 for q in queries)):
+        raise ValueError("Expected up to three nonempty detail queries, each at most 160 characters")
+    candidates, warnings = list(existing), []
+    for query in dict.fromkeys(q.strip() for q in queries):
+        try:
+            candidates.extend(memory_candidates(week, query))
+        except (OSError, ValueError, RuntimeError) as exc:
+            warnings.append("Detail memory unavailable: " + str(exc))
+    bounded, seen, size = [], set(), 0
+    for item in candidates:
+        identity = item['id']
+        if identity in seen:
+            continue
+        seen.add(identity)
+        cost = len(json.dumps(item, ensure_ascii=False).encode())
+        if len(bounded) >= 30 or size + cost > 18000:
+            warnings.append("Additional detail exceeds this run's context budget")
+            continue
+        bounded.append(item)
+        size += cost
+    return {"materials": [], "candidates": bounded, "warnings": warnings}
+
+
 def collect(week, report_roots=None, query="腾讯工作 周报 本周进展"):
     """Prefer dated original Tencent evidence; otherwise return review candidates.
 
