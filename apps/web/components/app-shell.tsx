@@ -90,6 +90,25 @@ const WebTabPane = dynamic(
   { ssr: false, loading: DeferredPaneLoading },
 );
 
+function PersistentFilePanes({ tabs, activeFileIds }: { tabs: Array<{ id: string; kind: string; projectId?: string; path?: string }>; activeFileIds: Set<string> }) {
+  const [visited, setVisited] = useState<string[]>([]);
+  useEffect(() => {
+    const activeFiles = tabs.filter((tab) => tab.kind === "file" && activeFileIds.has(tab.id) && tab.projectId && tab.path);
+    setVisited((current) => {
+      const next = [...current];
+      for (const tab of activeFiles) if (!next.includes(tab.id)) next.push(tab.id);
+      return next.length === current.length ? current : next;
+    });
+  }, [tabs, activeFileIds]);
+  return <>{visited.map((id) => {
+    const tab = tabs.find((candidate) => candidate.id === id);
+    if (!tab?.projectId || !tab.path) return null;
+    return <div key={id} data-file-pane-id={id} style={{ display: activeFileIds.has(id) ? "flex" : "none", flex: "1 1 0", minWidth: 0, minHeight: 0 }}>
+      <FileTabPane projectId={tab.projectId} path={tab.path} />
+    </div>;
+  })}</>;
+}
+
 // Scripts shared by every page — loaded once on shell mount and kept alive for
 // the whole session. Page-specific scripts live in PageShell. Files sit in
 // apps/web/public/js/shared/ so the static tree groups them together.
@@ -634,6 +653,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {showChat
             ? panes.map((pane, index) => {
                 if (pane.kind === "session") return null;
+                const paneTab = tabs.find((tab) => tab.id === pane.tabId);
+                if (paneTab?.kind === "file") return null;
                 const content = renderTabPane(pane.tabId, pane.kind);
                 if (!content) return null;
                 return (
@@ -647,6 +668,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 );
               })
             : null}
+          <PersistentFilePanes tabs={tabs} activeFileIds={new Set(panes.flatMap((pane) => pane.kind === "session" ? [] : tabs.find((tab) => tab.id === pane.tabId)?.kind === "file" ? [pane.tabId] : []))} />
           {showChat ? <WebTabPip /> : null}
         </div>
       </div>

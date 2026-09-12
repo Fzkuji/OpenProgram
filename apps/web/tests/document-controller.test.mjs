@@ -101,3 +101,26 @@ test("discard waits for an in-flight write before reading the disk version",asyn
   const discarding=value.discardDraft();release();await Promise.all([saving,discarding]);
   assert.equal(await value.getState().snapshot.bytes.text(),"new");await value.close();
 });
+
+test("rich editor dirty notification requests an export and stages durable bytes",async()=>{
+  const records=new Records(); let saves=0;
+  const value=controller(async(_url,init)=>committed(b),records,"office.docx");
+  await value.hydrate({bytes:"old",revision:a});
+  const editor={getState:()=>({dirty:false}),setReadonly(){},flushPendingSaves:async()=>{},destroy:async()=>{},
+    save:async()=>{saves++;await value.stageOfficeExport(new Blob(["office draft"]));return new File(["office draft"],"office.docx");}};
+  value.attachRichEditor(editor); value.markRichEditorDirty(true,editor);
+  await value.flush();
+  assert.equal(saves,1); assert.equal(await value.getState().snapshot.bytes.text(),"office draft");
+  await value.close();
+});
+
+test("rich close freezes input before final export and reopens it on failure",async()=>{
+  const records=new Records(); let frozen=[]; let value;
+  value=controller(async()=>new Response("offline",{status:503}),records,"office.xlsx");
+  await value.hydrate({bytes:"old",revision:a});
+  const editor={setInputEnabled:(enabled)=>frozen.push(enabled),setReadonly(){},flushPendingSaves:async()=>{},destroy:async()=>{},
+    save:async()=>{await value.stageOfficeExport(new Blob(["draft"]));return new File(["draft"],"office.xlsx");}};
+  value.attachRichEditor(editor); value.markRichEditorDirty(true,editor);
+  await assert.rejects(value.close());
+  assert.deepEqual(frozen,[false,true]); assert.equal(await value.currentDraft().text(),"draft");
+});

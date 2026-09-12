@@ -7,6 +7,8 @@ import type { DocumentHistoryEntry } from "@/lib/state/document-types";
 import styles from "./document-window.module.css";
 
 import { fileCapabilities } from "@/lib/documents/file-formats";
+import { officeCapability } from "@/lib/documents/file-formats";
+import { OfficeSurface } from "./office-surface";
 
 interface VersionPreview { blob: Blob; content?: string; version?: string; side?: "before" | "after"; disk?: boolean; }
 
@@ -28,6 +30,8 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const selectionRequest = useRef(0);
   const editedBytes = useRef<Blob | null>(null);
   const isText = fileCapabilities(path).textEditable && !state.snapshot?.binary;
+  const office = officeCapability(path);
+  const isOffice = fileCapabilities(path).preview === "office";
   const currentBytes = state.draft ?? state.snapshot?.bytes;
 
   useEffect(() => controller.subscribe(setState), [controller]);
@@ -62,7 +66,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       if (request === selectionRequest.current) setSelected({ blob, content: value, version, side });
     });
   }
-  function showCurrent() { selectionRequest.current++; setSelected(null); setMode("preview"); }
+  async function showCurrent() { selectionRequest.current++; setSelected(null); if (isOffice && !readOnly) await perform(() => controller.flush()); setMode("preview"); }
   async function restore(version: string, side: "before" | "after" = "after") {
     if (!window.confirm(text("Restore this version?", "恢复此版本？"))) return;
     await perform(async () => { await controller.restore(version, side); showCurrent(); await openHistory(); });
@@ -98,8 +102,8 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
     <div className={styles.toolbar} role="toolbar" aria-label={text("Document", "文档")}>
       <span className={styles.title}>{path.split("/").pop()}</span><span className={styles.spacer} />
       <button className={`${styles.button} ${mode === "preview" && !selected ? styles.active : ""}`}
-        aria-pressed={mode === "preview" && !selected} onClick={showCurrent}>{text("Preview", "预览")}</button>
-      {!readOnly && isText && <button className={`${styles.button} ${mode === "edit" && !selected ? styles.active : ""}`}
+        aria-pressed={mode === "preview" && !selected} onClick={() => void showCurrent()}>{text("Preview", "预览")}</button>
+      {!readOnly && (isText || (isOffice && office?.editable)) && <button className={`${styles.button} ${mode === "edit" && !selected ? styles.active : ""}`}
         disabled={!state.snapshot || state.restoring || state.renaming} aria-pressed={mode === "edit" && !selected}
         onClick={() => { setSelected(null); setEditorOpened(true); setMode("edit"); }}>{text("Edit", "编辑")}</button>}
       {!readOnly && <button className={styles.button} aria-expanded={historyOpen}
@@ -121,6 +125,9 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
         onClick={() => void restore(selected.version!, selected.side)}>{text("Restore this version", "恢复此版本")}</button>}
     </div>}
     <div className={styles.body}>
+      {isOffice && currentBytes ? <><div hidden={Boolean(selected)} style={{ height: "100%" }}><OfficeSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly || !office?.editable} mode={mode} /></div>{selected && <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
+        snapshot={{ project_id: projectId, path, content: selected.content, binary: !isText, size: selected.blob.size, mtime: 0 }} />}</> : selected ? <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
+        snapshot={{ project_id: projectId, path, content: selected.content, binary: !isText, size: selected.blob.size, mtime: 0 }} /> : <>
       {editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
         <fieldset disabled={state.restoring || state.renaming} style={{ border: 0, margin: 0, padding: 0, height: "100%" }}>
           <EditorArea value={content} onChange={(value) => {
@@ -136,8 +143,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
         {snapshot ? <FileViewer projectId={projectId} path={path} abs={readOnly} sessionId={sessionId}
           snapshot={snapshot} sourceBlob={readOnly ? undefined : currentBytes} /> : <span>{text("Loading…", "加载中…")}</span>}
       </div>
-      {selected && <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
-        snapshot={{ project_id: projectId, path, content: selected.content, binary: !isText, size: selected.blob.size, mtime: 0 }} />}
+      </>}
     </div>
     {historyOpen && <aside className={styles.history} aria-label={text("Document history", "文档历史")}>
       {!history.length && <span>{text("No retained versions.", "暂无保留的版本。")}</span>}

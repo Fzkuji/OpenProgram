@@ -1,7 +1,7 @@
 import { IndexedDbDocumentDraftStore, type DocumentDraftPending, type DocumentDraftRecord } from "./file-draft-store";
 import { discardFileDraft, loadFileDraft } from "./file-drafts";
 import { invalidateFileRead } from "./files-shared";
-import type { DocumentControllerOptions, DocumentHistoryEntry, DocumentIdentity, DocumentSnapshot } from "./document-types";
+import type { DocumentControllerOptions, DocumentHistoryEntry, DocumentIdentity, DocumentSnapshot, RichDocumentEditor } from "./document-types";
 
 export type DocumentStatus = "idle" | "dirty" | "saving" | "error" | "conflict" | "closed";
 export interface DocumentControllerState {
@@ -9,6 +9,7 @@ export interface DocumentControllerState {
   snapshot: DocumentSnapshot | null;
   draft: Blob | null;
   generation: number;
+  editorRevision: number;
   status: DocumentStatus;
   error: string | null;
   restoring: boolean;
@@ -63,6 +64,13 @@ export class DocumentController {
   private closeRequested = false;
   private persistenceError: string | null = null;
   private legacyDraft = false;
+  private richEditor: RichDocumentEditor | null = null;
+  private richGeneration = 0;
+  private richDirty = false;
+  private finalization: Promise<void> | null = null;
+  private richExport: Promise<void> | null = null;
+  private richExportTimer: ReturnType<typeof setTimeout> | null = null;
+  private richExportMaxTimer: ReturnType<typeof setTimeout> | null = null;
   private state: DocumentControllerState;
 
   constructor(options: DocumentControllerOptions) {
@@ -72,7 +80,7 @@ export class DocumentController {
     this.editorId = options.editorId ?? crypto.randomUUID();
     this.debounceMs = options.debounceMs ?? 300;
     this.maxDebounceMs = options.maxDebounceMs ?? 2000;
-    this.state = { identity: this.identity, snapshot: null, draft: null, generation: 0,
+    this.state = { identity: this.identity, snapshot: null, draft: null, generation: 0, editorRevision: 0,
       status: "idle", error: null, restoring: false,
       renaming: [...renames].some((rename) => matchesRename(this.identity, rename)) };
     controllers.set(documentIdentityKey(this.identity), this);
@@ -88,7 +96,7 @@ export class DocumentController {
   }
   release(listener?: DocumentListener): void {
     if (listener) this.listeners.delete(listener);
-    if (!this.listeners.size && !this.state.draft && !this.pending && !this.request && !this.restoreTask && this.initialized)
+    if (!this.listeners.size && !this.state.draft && !this.pending && !this.request && !this.restoreTask && !this.richEditor && this.initialized)
       this.evict();
   }
   private evict(): void {
@@ -179,11 +187,14 @@ export class DocumentController {
     const params = identity.kind === "project"
       ? new URLSearchParams({ project_id: identity.projectId, path: identity.path })
       : new URLSearchParams({ session_id: identity.sessionId, path: identity.path });
-    const response = await this.fetcher(`${identity.kind === "project" ? "/api/documents/content" : "/api/file-read"}?${params}`);
+    const response = await this.fetcher(`${identity.kind === "project" ? "/api/documents/content" : "/api/file-raw"}?${params}`);
     if (!response.ok) throw new Error(`Unable to read document (${response.status}).`);
     if (identity.kind === "attachment") {
-      const value = await response.json() as { content?: string; binary?: boolean };
-      return { bytes: new Blob([value.content ?? ""]), revision: "", binary: value.binary };
+      const bytes = await response.blob();
+      let binary = false;
+      try { binary = new TextDecoder("utf-8", { fatal: true }).decode(await bytes.arrayBuffer()).includes("\0"); }
+      catch { binary = true; }
+      return { bytes, revision: "", binary };
     }
     const revision = response.headers.get("x-document-revision");
     if (!revisionValid(revision)) throw new Error("The document revision is missing or invalid.");
@@ -222,6 +233,76 @@ export class DocumentController {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => { this.timer = null; save(); }, this.debounceMs);
     if (!this.maxTimer) this.maxTimer = setTimeout(() => { this.maxTimer = null; save(); }, this.maxDebounceMs);
+  }
+
+  /** Attach the one native engine owned by this document generation. */
+  attachRichEditor(editor: RichDocumentEditor, generation = this.state.generation): () => void {
+    this.richEditor = editor;
+    this.richGeneration = generation;
+    this.richDirty = Boolean(editor.getState?.().dirty);
+    return () => {
+      if (this.richEditor !== editor) return;
+      this.richEditor = null;
+      this.richDirty = false;
+      this.release();
+    };
+  }
+  registerRichEditor(editor: RichDocumentEditor, generation = this.state.generation): () => void {
+    return this.attachRichEditor(editor, generation);
+  }
+  markRichEditorDirty(dirty: boolean, editor?: RichDocumentEditor): void {
+    if (editor && editor !== this.richEditor) return;
+    this.richDirty = dirty;
+    if (dirty && this.state.status !== "closed") this.setState({ status: "dirty", error: null });
+    if (dirty) this.scheduleRichExport();
+  }
+  private scheduleRichExport(): void {
+    if (!this.richEditor || this.richExport) return;
+    if (this.richExportTimer) clearTimeout(this.richExportTimer);
+    this.richExportTimer = setTimeout(() => { this.richExportTimer = null; void this.exportRichEditor(); }, this.debounceMs);
+    if (!this.richExportMaxTimer) this.richExportMaxTimer = setTimeout(() => {
+      this.richExportMaxTimer = null;
+      if (this.richExportTimer) clearTimeout(this.richExportTimer);
+      this.richExportTimer = null;
+      void this.exportRichEditor();
+    }, this.maxDebounceMs);
+  }
+  private async exportRichEditor(): Promise<void> {
+    if (!this.richEditor || !this.richDirty || this.state.status === "closed") return;
+    const editor = this.richEditor;
+    this.richExport = Promise.resolve().then(async () => {
+      if (!editor.save) throw new Error("The Office editor cannot export the dirty document.");
+      await editor.save();
+      await editor.flushPendingSaves();
+    }).catch((error) => { this.fail(error); throw error; }).finally(() => {
+      this.richExport = null;
+      if (this.richDirty) this.scheduleRichExport();
+    });
+    await this.richExport;
+  }
+  async resetRichEditor(): Promise<void> {
+    const editor = this.richEditor;
+    this.richEditor = null;
+    this.richDirty = false;
+    if (this.richExportTimer) clearTimeout(this.richExportTimer);
+    if (this.richExportMaxTimer) clearTimeout(this.richExportMaxTimer);
+    this.richExportTimer = this.richExportMaxTimer = null;
+    if (editor) await editor.destroy();
+    this.setState({ editorRevision: this.state.editorRevision + 1 });
+  }
+  /** Called by the native onSave callback. It acknowledges only after the
+   * bytes have reached the existing durable draft store. */
+  async stageRichExport(bytes: Blob | Uint8Array | string, generation = this.richGeneration): Promise<void> {
+    if (!this.richEditor || generation !== this.richGeneration || this.state.status === "closed")
+      throw new Error("The Office editor generation is no longer active.");
+    const draft = blobOf(bytes);
+    this.setState({ draft, generation: this.state.generation + 1, status: "dirty", error: null });
+    await this.persistCurrent();
+    this.richDirty = false;
+    void this.drain(false).catch(() => undefined);
+  }
+  stageOfficeExport(bytes: Blob | Uint8Array | string, generation?: number): Promise<void> {
+    return this.stageRichExport(bytes, generation);
   }
 
   private drain(retry: boolean): Promise<void> {
@@ -311,6 +392,12 @@ export class DocumentController {
     }
     if (this.restoreTask) await this.restoreTask;
     if (this.identity.kind === "attachment") return;
+    if (this.richExport) await this.richExport.catch(() => undefined);
+    if (this.richEditor && this.richDirty) {
+      if (!this.richEditor.save) throw new Error("The Office editor cannot export the dirty document.");
+      await this.richEditor.save();
+      await this.richEditor.flushPendingSaves();
+    }
     await this.drain(true);
   }
   async discard(): Promise<void> {
@@ -327,6 +414,7 @@ export class DocumentController {
     this.pending = undefined;
     this.persistenceError = null;
     this.legacyDraft = false;
+    this.richDirty = false;
     this.setState({ draft: null, status: "idle", error: null });
   }
   async discardDraft(): Promise<void> { await this.reloadDisk(); }
@@ -338,6 +426,8 @@ export class DocumentController {
       if (this.request) await this.request.catch(() => undefined);
       const disk = await this.readDisk();
       await this.discard();
+      await this.resetRichEditor();
+      this.richGeneration = this.state.generation + 1;
       this.baselineRevision = disk.revision;
       this.setState({ snapshot: disk, draft: null, status: "idle", error: null });
     } finally { this.setState({ restoring: false }); }
@@ -369,6 +459,7 @@ export class DocumentController {
         generation: this.state.generation, version, side };
       await this.persistCurrent();
       await this.drain(true);
+      await this.resetRichEditor();
     }).catch((error) => { this.fail(error, this.state.status === "conflict"); throw error; });
     this.restoreTask = task.finally(() => { this.restoreTask = null; this.setState({ restoring: false }); });
     return this.restoreTask;
@@ -387,12 +478,23 @@ export class DocumentController {
     } else this.setState({ renaming: false });
   }
   async close(): Promise<void> {
-    this.closeRequested = true;
-    try { await this.flush(); }
-    catch (error) { this.closeRequested = false; throw error; }
-    this.setState({ status: "closed" });
-    this.evict();
-    this.listeners.clear();
+    if (this.finalization) return this.finalization;
+    this.finalization = (async () => {
+      this.closeRequested = true;
+      const editor = this.richEditor;
+      editor?.setInputEnabled?.(false);
+      try { await this.flush(); }
+      catch (error) { this.closeRequested = false; editor?.setInputEnabled?.(true); throw error; }
+      if (editor) {
+        await editor.flushPendingSaves();
+        await editor.destroy();
+        if (this.richEditor === editor) this.richEditor = null;
+      }
+      this.setState({ status: "closed" });
+      this.evict();
+      this.listeners.clear();
+    })().finally(() => { this.finalization = null; });
+    return this.finalization;
   }
 }
 /** Freeze affected editors for the entire structured server rename. The
