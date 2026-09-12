@@ -64,13 +64,6 @@ import {
   readHistoryEmitGate,
   shouldEmitHistorySvg,
 } from "./paint-gate";
-import { isXyflowCanvas } from "./xyflow/flag";
-import {
-  buildProjection,
-  publishEmpty,
-  publishProjection,
-  publishSkeleton,
-} from "./xyflow";
 import {
   _contextSet,
   _coverageSet,
@@ -102,7 +95,6 @@ let _lastRenderedSession: string | null | undefined;
 let _lastGeomSignature: string | null = null;
 let _svgEmitPending = false;
 let _skeletonPending = false;
-let _projectionRevision = 0;
 
 function historySvgEmitAllowed(): boolean {
   if (typeof document === "undefined") return false;
@@ -135,10 +127,6 @@ export function showHistorySkeleton(): void {
   _skeletonPending = true;
   if (!body || !historySvgEmitAllowed()) {
     _svgEmitPending = true;
-    return;
-  }
-  if (isXyflowCanvas()) {
-    publishSkeleton(runtimeState.currentSessionId);  // keep React host
     return;
   }
   detachCanvas();
@@ -193,7 +181,6 @@ function tryStatusPatch(
   sig: string,
   geomSig: string,
 ): boolean {
-  if (isXyflowCanvas()) return false;
   if (!_lastGeomSignature || geomSig !== _lastGeomSignature) return false;
   if (!hasAuthoritativeLayout(graphIn)) return false;
   const panel = document.getElementById("historyPanel");
@@ -297,14 +284,6 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   if (!body) return;
 
   if (!graph || !graph.length) {
-    if (isXyflowCanvas()) {
-      publishEmpty(runtimeState.currentSessionId);
-      _resetTooltip();
-      setLeafOfNode(Object.create(null));
-      _lastRenderedSession = runtimeState.currentSessionId;
-      _lastGeomSignature = geomSig;
-      return;
-    }
     const empty = document.createElement("div");
     empty.className = "history-empty";
     empty.textContent = "No messages yet.";
@@ -399,37 +378,10 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
 
   const geom = computeGeometry(tree.byId, threadModel);
 
-  const sess = runtimeState.currentSessionId;
-  _lastGeomSignature = geomSig;
-
-  // Phase 1→2 xyflow projection (skip SVG emit).
-  if (isXyflowCanvas()) {
-    _projectionRevision += 1;
-    publishProjection(buildProjection({
-      sessionId: sess,
-      headId,
-      byId: tree.byId,
-      fullById,
-      geom,
-      headAncestors,
-      stableLeafOfNode,
-      internalSet,
-      internalOwner,
-      contextSet: _contextSet,
-      coverageSet: _coverageSet,
-      coversOf: sfold.coversOf,
-      thread: threadModel,
-      revision: _projectionRevision,
-    }));
-    detachCanvas();
-    _resetTooltip();
-    setVisibleIds(Object.create(null));
-    _lastRenderedSession = sess;
-    _recomputeVisibility();
-    return;
-  }
-
-  // Legacy SVG path when USE_XYFLOW_CANVAS=false.
+  // The SVG fills the pane; everything is drawn inside ``world``, which
+  // carries the user's pan and zoom (``./interaction/canvas.ts``). Nothing here is
+  // sized to the content — an infinite canvas has no content size, and
+  // the graph is reached by moving the camera, not by scrolling a box.
   const svg = _svg("svg", { class: "history-svg" });
   const world = _svg("g", { class: "history-world" }) as SVGGElement;
   svg.appendChild(world);
@@ -439,6 +391,8 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   world.appendChild(edgeG);
   world.appendChild(nodeG);
 
+  // ``pos`` is a thin lookup so the edge / node / badge drawers share
+  // one source of truth.
   function pos(n: GNode): { x: number; y: number } {
     return geom.pos[n.id] || { x: 0, y: 0 };
   }
@@ -452,10 +406,14 @@ export function render(graphIn: GNode[], headIdIn: string | null): void {
   drawBadges(world, tree, pos, stableLeafOfNode, runtimeState.currentSessionId,
     fullById, threadModel);
 
+  // 会话切换后的首次绘制淡入（配合 transcript 的 session-enter），
+  // 同会话的增量重绘原地替换，不闪。
+  const sess = runtimeState.currentSessionId;
   if (_lastRenderedSession !== sess) svg.classList.add("dag-enter");
   _lastRenderedSession = sess;
 
   attachCanvas(body, svg, world, sess);
+  _lastGeomSignature = geomSig;
   _resetTooltip();
   setVisibleIds(Object.create(null));
 

@@ -29,7 +29,6 @@
  * were looking. Only a session switch re-fits.
  */
 
-import { isXyflowCanvas, fitXyflow, zoomXyflow, resetXyflowZoom } from "../xyflow";
 import { COL_W, PAD_X, PAD_Y } from "../types";
 import { closeNodeLayers } from "../render/inspector";
 import { hideTooltip } from "./tooltip";
@@ -136,7 +135,6 @@ export function applyView(): void {
  *  every node sits a fraction of a pixel off its background dot, and the
  *  lattice stops reading as the coordinate system it is. */
 export function fitCanvas(): void {
-  if (isXyflowCanvas()) { fitXyflow(); return; }
   if (!_handle) return;
   dismissOverlays();
   const { world, host } = _handle;
@@ -184,7 +182,6 @@ function zoomAt(px: number, py: number, factor: number): void {
 /** One HUD −/+ press: one wheel notch of zoom. The buttons have no
  *  cursor position to anchor on, so they anchor on the pane's centre. */
 export function zoomStep(dir: 1 | -1): void {
-  if (isXyflowCanvas()) { zoomXyflow(dir); return; }
   if (!_handle) return;
   dismissOverlays();
   const { host } = _handle;
@@ -198,7 +195,6 @@ export function zoomStep(dir: 1 | -1): void {
 /** The HUD's zoom readout doubles as the reset: back to 100%, pane
  *  centre anchored, pan otherwise kept. */
 export function resetZoom(): void {
-  if (isXyflowCanvas()) { resetXyflowZoom(); return; }
   if (!_handle) return;
   dismissOverlays();
   const { host } = _handle;

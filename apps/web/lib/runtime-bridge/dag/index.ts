@@ -20,7 +20,6 @@ import {
   contextRangeUnchanged,
   type CoverageNode,
 } from "./paint-gate";
-import { isXyflowCanvas, patchProjectionCoverage } from "./xyflow";
 import {
   _contextSet,
   _coverageSet,
@@ -96,10 +95,6 @@ export function setHistoryContextRange(
     } else {
       setCoverageSet(null);
     }
-  }
-  if (isXyflowCanvas()) {
-    patchProjectionCoverage(_contextSet, _coverageSet);
-    return;
   }
   if (_lastGraph) {
     // Aged / spilled / membership are none of them part of the render
