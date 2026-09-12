@@ -290,6 +290,21 @@ def _snapshot(fn):
             node.args.kw_defaults = [None] * len(node.args.kwonlyargs)
             closure = inspect.getclosurevars(value)
             bindings = {**closure.globals, **closure.nonlocals}
+            import builtins
+
+            if any(
+                item is dynamic
+                for item in (*bindings.values(), *closure.builtins.values())
+                for dynamic in (
+                    builtins.__import__,
+                    builtins.eval,
+                    builtins.exec,
+                    builtins.compile,
+                )
+            ):
+                raise FunctionCompatibilityError(
+                    "Dynamic imports and generated code cannot retain dependency versions"
+                )
             functions[identity] = {
                 "source": ast.unparse(tree),
                 "name": node.name,
@@ -310,6 +325,10 @@ def _snapshot(fn):
             }
             return {"function": identity}
         if isinstance(value, types.ModuleType):
+            if value.__name__.split(".")[0] in {"importlib", "builtins"}:
+                raise FunctionCompatibilityError(
+                    "Dynamic import modules cannot retain dependency versions"
+                )
             return {
                 "module": value.__name__,
                 "sha256": _module_identity(value),

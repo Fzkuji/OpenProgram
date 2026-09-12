@@ -760,3 +760,40 @@ def test_opaque_package_is_rejected_before_external_work(tmp_path, monkeypatch):
     finally:
         sys.modules.pop("durable_dependency.impl", None)
         sys.modules.pop("durable_dependency", None)
+
+
+def _dynamic_import_action(folder):
+    dependency = __import__("durable_dependency")
+    return _finish(folder, dependency.suffix)
+
+
+def _dynamic_import_function(folder):
+    from openprogram.agentic_programming.continuation import step
+
+    return step("write", _dynamic_import_action, folder)
+
+
+def test_dynamic_import_is_rejected_before_external_work(tmp_path, monkeypatch):
+    import importlib
+
+    function_module = importlib.import_module(
+        "openprogram.agentic_programming.function"
+    )
+    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
+    from openprogram.agentic_programming.continuation import (
+        FunctionCompatibilityError,
+        function_execution,
+    )
+
+    store, active, _service = _active_execution(tmp_path)
+    function = agentic_function(_dynamic_import_function, resumable=True, as_tool=False)
+    with pytest.raises(FunctionCompatibilityError, match="Dynamic"):
+        with function_execution(
+            store,
+            attempt_id=active.attempt_id,
+            generation=active.generation,
+            call_key="dynamic-import",
+        ):
+            function(str(tmp_path))
+    assert not (tmp_path / "effects").exists()
+    assert store.get_execution(active.execution_id).status.value == "paused"

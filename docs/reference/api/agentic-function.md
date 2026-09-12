@@ -103,4 +103,4 @@ This contract restores execution at explicit steps, not arbitrary Python stack f
 
 Do not share mutable Python globals, closures or defaults between steps. Pass persistent state through JSON step inputs and results; process-local mutations are not a recovery protocol.
 
-Import step dependencies at module scope. Imports inside retained helpers are rejected before executing steps. Source-defined Python helpers are retained recursively. Opaque module and class dependencies currently support only the pinned standard library; third-party and user package objects are rejected because an initializer alone does not identify their implementation.
+Import step dependencies at module scope. Imports inside retained helpers, dynamic import APIs and generated code are rejected before executing steps. Source-defined Python helpers are retained recursively. Opaque module and class dependencies currently support only the pinned standard library; third-party and user package objects are rejected because an initializer alone does not identify their implementation.
