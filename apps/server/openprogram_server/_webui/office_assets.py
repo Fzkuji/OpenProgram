@@ -8,11 +8,11 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi.responses import Response, StreamingResponse
 
-from openprogram.backend_endpoint import is_loopback_host
+from openprogram.backend_endpoint import OwnerAuthError, canonicalize_origin, is_loopback_host
 from openprogram.updater.detect import managed_runtime_root
 
 _MANIFEST = "openprogram-office-assets.json"
@@ -231,6 +231,17 @@ def office_host_availability(request, pack: OfficeAssetPack) -> dict:
     client = request.client.host if request.client else ""
     if not is_loopback_host(client):
         return {"available": False, "reason": "local_client_required"}
+    main_hostname = request.url.hostname or ""
+    if not is_loopback_host(main_hostname) or request.url.port != request.app.state.owner_auth.port:
+        return {"available": False, "reason": "local_main_origin_required"}
+    origin = request.headers.get("origin")
+    if origin:
+        try:
+            parsed_origin = urlsplit(canonicalize_origin(origin))
+        except (OwnerAuthError, ValueError):
+            return {"available": False, "reason": "local_main_origin_required"}
+        if not is_loopback_host(parsed_origin.hostname or "") or parsed_origin.port != request.app.state.owner_auth.port:
+            return {"available": False, "reason": "local_main_origin_required"}
     if not pack.available:
         return {"available": False, "reason": pack.unavailable_reason or "unavailable"}
     session = request.query_params.get("session_id", "")

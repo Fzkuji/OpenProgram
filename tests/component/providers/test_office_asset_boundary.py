@@ -169,3 +169,29 @@ def test_manifest_bounds_close_assets_and_availability(boundary_app, kind):
     assert invalid.available is False
     assert availability.json()["available"] is False
     assert asset.status_code == 503
+
+
+def test_availability_rejects_remote_allowed_origin_but_accepts_local_main_origin(boundary_app):
+    app, pack = boundary_app
+    state = OwnerAuthState.from_raw_token(
+        bytes(range(32)),
+        owner_principal_id="owner/install/0123456789abcdef",
+        bind_host="127.0.0.1",
+        port=18100,
+        allowed_origins=("https://remote.example",),
+    )
+    app.auth_state = state
+    app.app.state.owner_auth = state
+    token = "Bearer " + base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
+    with TestClient(app, base_url="https://remote.example", client=("127.0.0.1", 50000)) as remote:
+        remote_response = remote.get(
+            "/api/documents/office-host?session_id=abc",
+            headers={"origin": "https://remote.example", "authorization": token},
+        )
+    with TestClient(app, base_url="http://127.0.0.1:18100", client=("127.0.0.1", 50000)) as local:
+        local_response = local.get(
+            "/api/documents/office-host?session_id=abc",
+            headers={"origin": "http://127.0.0.1:18100", "authorization": token},
+        )
+    assert remote_response.json() == {"available": False, "reason": "local_main_origin_required"}
+    assert local_response.json()["available"] is True
