@@ -126,6 +126,7 @@ def _sandbox_profile(
         f"(deny file-read* (literal {quoted(Path.home() / '.claude.json')}))",
         f"(deny file-read* (literal {quoted(Path.home() / '.netrc')}))",
         f"(deny file-read* (subpath {quoted(Path.home() / 'Library/Keychains')}))",
+        f"(deny file-read* (subpath {quoted(Path.home() / 'Library/Application Support/OpenProgram/local-signing')}))",
         '(allow file-ioctl file-read-data file-write-data (literal "/dev/null"))',
         '(allow file-read-data (literal "/dev/zero"))',
         '(allow file-read-data (literal "/dev/random"))',
@@ -379,6 +380,11 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
     )
     _validate_candidate_snapshot(candidate, record.request.candidate_sha)
 
+    # Only the frozen trusted controller sees the owner's signing identity.
+    # Candidate code builds an ad hoc artifact inside the existing sandbox.
+    from .local_signing import prepare_app, sign_app
+    prepare_app(Path("/Applications/OpenProgram.app"))
+
     sandbox = _sandbox_executable()
     script = candidate / "apps/desktop/scripts/package-and-install-app.sh"
     if not script.is_file() or script.is_symlink():
@@ -466,6 +472,9 @@ def _build_candidate(_record: UpdateRecord, _update_dir: Path) -> Artifact:
         source, candidate, record.request.candidate_sha, worktree.branch_name
     )
     _validate_candidate_snapshot(candidate, record.request.candidate_sha)
+    # Deferred browser verification rewrites resources. Sign after those writes,
+    # and bind the final signature into the artifact digest used by installation.
+    sign_app(artifact)
     digest = _tree_digest(artifact)
     atomic_write_text(
         update_dir / "artifact.json",

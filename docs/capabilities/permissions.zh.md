@@ -49,3 +49,11 @@ Windows 路径规则可使用正斜杠避免转义歧义，例如
 Sandbox 位于输入框 Plus 菜单，与审批模式独立。修改 Sandbox 影响后续 turn。Bypass 保持当前沙箱限制，普通工具审批不能用于沙箱升级。如果拒绝不能创建独立升级等待，需要用户显式修改相关设置后发起新调用。
 
 参见[工具](tools.zh.md)、[Web](../interfaces/web.zh.md)、[终端](../interfaces/tui.zh.md)和[工程合同](../reference/design/runtime/permission-model.zh.md)。
+
+## macOS 在更新后再次询问权限
+
+文件夹访问、照片、屏幕录制和辅助功能属于 macOS 系统权限。Bypass 控制工具审批，不能授予这些权限。macOS 将内置后端的访问归属到外层应用，所以系统弹窗显示 OpenProgram。
+
+本地刷新 App、本地打包安装和对话自更新复用 `~/Library/Application Support/OpenProgram/local-signing` 中的私有签名身份，使后续构建保持同一证书身份，而不是每次构建都改变。清理构建文件时保留此目录，其中包含本地签名钥匙串。签名状态缺失或损坏时构建会停止，不会自动创建替代身份。
+
+首次从旧的临时签名迁移时，macOS 可能需要再次确认权限。更新不会自动重置已有授权或代替用户接受系统弹窗。本地签名仅用于这台电脑上的开发构建；公开分发仍需 Developer ID 签名和公证。

@@ -63,3 +63,11 @@ A tool result identifies whether the refusal came from authority, a permission r
 Sandbox is configured separately in the composer Plus menu. Changing Sandbox affects subsequent turns. Bypass keeps the current sandbox restrictions, and an ordinary tool approval never authorizes a sandbox escalation. When a sandbox denial cannot open a separate escalation wait, change the relevant settings explicitly and submit a new call.
 
 See [tools](tools.md), [Web](../interfaces/web.md), [terminal](../interfaces/tui.md), and the [engineering contract](../reference/design/runtime/permission-model.md).
+
+## macOS asks for access again after an update
+
+File-folder access, Photos, screen recording, and Accessibility are macOS permissions. Bypass controls tool approval and cannot grant these permissions. A system prompt names OpenProgram because macOS attributes the managed backend to the containing application.
+
+Local App refresh, local package installation, and conversational self-update reuse a private signing identity stored under `~/Library/Application Support/OpenProgram/local-signing`. This keeps subsequent local builds under the same certificate identity instead of changing it with every build. Keep this directory when cleaning build artifacts; it contains the local signing keychain. Missing or damaged signing state stops the build rather than silently creating a replacement identity.
+
+The first migration from an older ad hoc build may require consent again in macOS. It does not automatically reset existing grants or accept system dialogs. Local signing is for this computer's development builds; publicly distributed apps still need Developer ID signing and notarization.

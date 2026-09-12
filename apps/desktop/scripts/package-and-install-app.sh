@@ -107,6 +107,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 cd "$repo_root"
+if [[ -z "$output_app" ]]; then
+  python3 "$repo_root/scripts/release/local-macos-signing.py" prepare --app /Applications/OpenProgram.app
+fi
 npm run prepare:runtime --workspace apps/desktop
 npm run icon:check --workspace apps/desktop
 if [[ -n "${OPENPROGRAM_SELF_UPDATE_ELECTRON_DIST:-}" ]]; then
@@ -132,6 +135,9 @@ app_count="$(wc -l <"$app_list" | tr -d ' ')"
   exit 1
 }
 built_app="$(sed -n '1p' "$app_list")"
+if [[ -z "$output_app" ]]; then
+  python3 "$repo_root/scripts/release/local-macos-signing.py" sign --app "$built_app"
+fi
 OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER="${OPENPROGRAM_SELF_UPDATE_DEFER_BROWSER:-}" \
 OPENPROGRAM_SMOKE_PORT="${OPENPROGRAM_SMOKE_PORT:-}" \
   bash "$repo_root/scripts/release/smoke-packaged-runtime.sh" mac "$package_dir"

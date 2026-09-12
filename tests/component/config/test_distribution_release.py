@@ -594,13 +594,24 @@ def test_packager_honors_one_stable_user_lock_across_worktrees(
 
 @pytest.mark.macos
 @MACOS_DESKTOP_INSTALL
+@pytest.mark.parametrize("build_only", [True, False])
 def test_packager_build_only_writes_artifact_without_installing(
-    tmp_path: Path,
+    tmp_path: Path, build_only: bool,
 ) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     source = _fake_desktop_app(tmp_path / "built", "0.6.4")
     installed_marker = tmp_path / "installer-called"
+    signing_trace = tmp_path / "signing-trace"
+    fake_python = fake_bin / "python3"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  */local-macos-signing.py) printf "%s\\n" "$2" >> "$SIGNING_TRACE"; exit 0 ;;\n'
+        "esac\n"
+        f'exec "{sys.executable}" "$@"\n', encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
 
     fake_npm = fake_bin / "npm"
     fake_npm.write_text(
@@ -622,8 +633,8 @@ def test_packager_build_only_writes_artifact_without_installing(
     fake_bash.write_text(
         "#!/bin/sh\n"
         "case \"$1\" in\n"
-        "  */smoke-packaged-runtime.sh) exit 0 ;;\n"
-        "  */install-app.sh) touch \"$INSTALL_CALLED\"; exit 99 ;;\n"
+        '  */smoke-packaged-runtime.sh) printf "smoke\\n" >> "$SIGNING_TRACE"; exit 0 ;;\n'
+        '  */install-app.sh) touch "$INSTALL_CALLED"; printf "install\\n" >> "$SIGNING_TRACE"; exit 0 ;;\n'
         "esac\n"
         "exec /bin/bash \"$@\"\n",
         encoding="utf-8",
@@ -635,14 +646,14 @@ def test_packager_build_only_writes_artifact_without_installing(
         [
             "/bin/bash",
             str(ROOT / "apps" / "desktop" / "scripts" / "package-and-install-app.sh"),
-            "--output",
-            str(output),
+            *(["--output", str(output)] if build_only else []),
         ],
         check=False,
         env={
             "FAKE_BUILT_APP": str(source),
             "HOME": str(tmp_path / "home"),
             "INSTALL_CALLED": str(installed_marker),
+            "SIGNING_TRACE": str(signing_trace),
             "PATH": f"{fake_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
             "TMPDIR": str(tmp_path),
         },
@@ -652,9 +663,14 @@ def test_packager_build_only_writes_artifact_without_installing(
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert output.is_dir()
-    assert not installed_marker.exists()
-    assert f"OpenProgram App artifact written to {output}" in completed.stdout
+    # --output is an isolated self-update artifact; only its trusted controller
+    # may access the owner's persistent identity after deferred resource writes.
+    assert signing_trace.read_text().splitlines() == (
+        ["smoke"] if build_only else ["prepare", "sign", "smoke", "install"])
+    assert output.is_dir() is build_only
+    assert installed_marker.exists() is not build_only
+    if build_only:
+        assert f"OpenProgram App artifact written to {output}" in completed.stdout
 
 
 @pytest.mark.macos
@@ -2267,6 +2283,8 @@ def test_local_app_refresh_rejects_dirty_version_change_after_build(
         (ROOT / "scripts" / "refresh-local-app.sh").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    # This fixture exercises version/lock ordering without native signing.
+    (release_scripts / "local-macos-signing.py").write_text("pass\n", encoding="utf-8")
     (release_scripts / "verify-release-version.py").write_text(
         (ROOT / "scripts" / "release" / "verify-release-version.py").read_text(
             encoding="utf-8"

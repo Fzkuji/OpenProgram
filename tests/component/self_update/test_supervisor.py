@@ -315,8 +315,21 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
         supervisor, "_sandbox_executable", lambda: Path("/usr/bin/sandbox-exec")
     )
     calls: list[dict] = []
+    signing_order = []
+    from openprogram.self_update import local_signing
+    monkeypatch.setattr(local_signing, "prepare_app",
+                        lambda app: signing_order.append(("prepare", app)))
+
+    def sign_artifact(app):
+        assert browser_probes == [app]
+        assert validations == ["registered", "snapshot", "registered", "snapshot"]
+        (app / "signature.txt").write_text("signed by trusted controller")
+        signing_order.append(("sign", app))
+
+    monkeypatch.setattr(local_signing, "sign_app", sign_artifact)
 
     def run(args, **kwargs):
+        assert signing_order == [("prepare", Path("/Applications/OpenProgram.app"))]
         calls.append({"args": args, **kwargs})
         output = Path(args[args.index("--output") + 1])
         output.mkdir(parents=True)
@@ -347,6 +360,10 @@ def test_build_runs_fixed_entry_in_private_network_denied_sandbox(
     )
 
     artifact = supervisor._build_candidate(record, root / "su_supervisor")
+    assert signing_order[-1] == ("sign", artifact.path)
+    assert artifact.sha256 == supervisor._tree_digest(artifact.path)
+    assert 'Library/Application Support/OpenProgram/local-signing' in (
+        root / "su_supervisor/sandbox.sb").read_text()
 
     call = calls[0]
     assert call["args"][:4] == [

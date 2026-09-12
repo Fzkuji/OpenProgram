@@ -18,6 +18,7 @@ that releases a prepared request only after its origin turn is durable.
 - **`handoff.py`** — Durable release of a prepared update after its origin turn commits
 - **`iteration.py`** — Deterministic authorization checks for a proposed self-update iteration
 - **`launcher.py`** — Submit one trusted, one-shot self-update supervisor through launchd
+- **`local_signing.py`** — Keep macOS local builds under one certificate-bound application identity
 - **`maintenance.py`** — Durable admission gate while an approved update waits for quiescence
 - **`native_checks.py`** — Run approved CLI and candidate checks with native isolation and identity receipts
 - **`next_candidate.py`** — Durable, evidence-bound submission of a repaired self-update candidate
