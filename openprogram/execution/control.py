@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
 import sqlite3
 import time
@@ -1317,6 +1318,12 @@ class RuntimeControlService:
             and activator is None and driver is None and self.activator is None
         ):
             raise AgentSafePointConflict("activation_unavailable", "Agent continuation requires a production activation owner")
+        if (
+            current is not None
+            and "pause" not in current.capabilities
+            and current.reason_code != "restart_pending"
+        ):
+            raise AgentSafePointConflict("unsupported", "execution does not declare the pause capability")
         command, execution, attempt, checkpoint, steer_inputs, duplicate = self._resume_transaction(
             command_id=command_id,
             execution_id=execution_id,
@@ -1774,7 +1781,18 @@ class RuntimeControlService:
                     (execution_id,),
                 ).fetchone()[0] == 0
             )
-            if checkpoint is None and not initial_activation:
+            # Startup recovery may intentionally retain the original
+            # admission when the first provider response was interrupted
+            # before a checkpoint could be published.  This is safe only for
+            # the private restart_pending state; ordinary paused executions
+            # still require a checkpoint.
+            restart_initial_activation = (
+                checkpoint is None
+                and kind is CommandKind.CONTINUE
+                and execution.status is ExecutionStatus.PAUSED
+                and execution.reason_code == "restart_pending"
+            )
+            if checkpoint is None and not (initial_activation or restart_initial_activation):
                 raise ExecutionConflict("checkpoint_required", "a published checkpoint is required")
             if (
                 checkpoint is not None
@@ -3229,6 +3247,124 @@ class RuntimeControlService:
             ):
                 return RecoveryCompletion(execution=execution)
 
+            restart_pending = False
+            agent_input = self.executions.get_agent_turn_input(execution_id)
+            if (
+                execution.status is ExecutionStatus.RUNNING
+                and isinstance(agent_input, Mapping)
+                and agent_input.get("kind") == "chat"
+            ):
+                # A provider request is an execution-local uncertainty.  It
+                # has no external tool effect and can be safely classified as
+                # not committed before restarting from the same admission.
+                # Any tool effect remains unresolved and therefore blocks
+                # automatic continuation below.
+                rows = connection.execute(
+                    "SELECT * FROM effects WHERE execution_id = ?",
+                    (execution_id,),
+                ).fetchall()
+                unresolved_rows = [
+                    row for row in rows
+                    if row["status"] in {EffectStatus.DISPATCHED.value, EffectStatus.UNCERTAIN.value}
+                ]
+                kinds = []
+                for row in rows:
+                    try:
+                        metadata = json.loads(row["metadata_json"])
+                        kinds.append(str(metadata.get("kind") or "") if isinstance(metadata, Mapping) else "")
+                    except (TypeError, ValueError):
+                        kinds.append("")
+                committed_tool = any(
+                    not kind.startswith("provider.")
+                    and row["status"] in {
+                        EffectStatus.COMMITTED.value,
+                        EffectStatus.NOT_COMMITTED.value,
+                        EffectStatus.COMPENSATED.value,
+                    }
+                    for row, kind in zip(rows, kinds)
+                )
+                # Earlier releases could finish a tool without advancing
+                # the continuation cursor. Event order, rather than wall
+                # time, proves that the cursor covers every committed tool.
+                cursor_covers_tools = not committed_tool
+                if execution.checkpoint_head_id is not None:
+                    published = connection.execute(
+                        "SELECT MAX(sequence) FROM execution_events "
+                        "WHERE execution_id = ? AND kind = 'checkpoint.published' "
+                        "AND json_extract(payload_json, '$.checkpoint.checkpoint_id') = ?",
+                        (execution_id, execution.checkpoint_head_id),
+                    ).fetchone()[0]
+                    if published is not None:
+                        uncovered = connection.execute(
+                            "SELECT 1 FROM execution_events WHERE execution_id = ? "
+                            "AND sequence > ? AND kind IN ('effect.committed', 'effect.not_committed', 'effect.compensated') "
+                            "AND COALESCE(json_extract(payload_json, '$.effect.metadata.kind'), '') NOT LIKE 'provider.%' LIMIT 1",
+                            (execution_id, published),
+                        ).fetchone()
+                        cursor_covers_tools = uncovered is None
+                provider_only = unresolved_rows and all(
+                    kinds[index] == "provider.before"
+                    for index, row in enumerate(rows)
+                    if row in unresolved_rows
+                ) and cursor_covers_tools
+                if provider_only:
+                    now = time.time()
+                    for row in unresolved_rows:
+                        receipt = {"outcome": "not_committed", "reason": "provider_request_interrupted"}
+                        connection.execute(
+                            "UPDATE effects SET status = ?, receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?",
+                            (EffectStatus.NOT_COMMITTED.value, _json(receipt), now, now, row["effect_id"]),
+                        )
+                        effect = self.effects._require(connection, str(row["effect_id"]))
+                        self.effects._append_event(connection, execution.status_version, effect, now)
+                    unresolved_rows = []
+                # An in-flight tool whose result never returned is the same
+                # class of process-local uncertainty: the next attempt must
+                # not replay it, and it must not block restart from the last
+                # published Agent checkpoint.
+                unresolved_tool_rows = [
+                    row for row in unresolved_rows
+                    if kinds[rows.index(row)].startswith("tool.")
+                ]
+                if (
+                    unresolved_tool_rows
+                    and execution.checkpoint_head_id is not None
+                    and cursor_covers_tools
+                    and all(
+                        kinds[rows.index(row)].startswith(("provider.", "tool."))
+                        for row in unresolved_rows
+                    )
+                ):
+                    now = time.time()
+                    for row in unresolved_tool_rows:
+                        receipt = {
+                            "outcome": "not_committed",
+                            "reason": "tool_request_interrupted",
+                        }
+                        connection.execute(
+                            "UPDATE effects SET status = ?, receipt_json = ?, updated_at = ?, resolved_at = ? WHERE effect_id = ?",
+                            (EffectStatus.NOT_COMMITTED.value, _json(receipt), now, now, row["effect_id"]),
+                        )
+                        effect = self.effects._require(connection, str(row["effect_id"]))
+                        self.effects._append_event(connection, execution.status_version, effect, now)
+                    unresolved_rows = [
+                        row for row in unresolved_rows if row not in unresolved_tool_rows
+                    ]
+                control_pending = connection.execute(
+                    "SELECT 1 FROM commands WHERE execution_id = ? AND kind IN (?, ?) "
+                    "AND status IN (?, ?) LIMIT 1",
+                    (execution_id, CommandKind.PAUSE.value, CommandKind.CANCEL.value,
+                     CommandStatus.ACCEPTED.value, CommandStatus.APPLYING.value),
+                ).fetchone() is not None
+                request = agent_input.get("request") if isinstance(agent_input, Mapping) else {}
+                interaction = request.get("interaction") if isinstance(request, Mapping) else None
+                restart_pending = (
+                    not unresolved_rows
+                    and not control_pending
+                    and interaction not in {"spawn", "merge"}
+                    and cursor_covers_tools
+                )
+
             unresolved = connection.execute(
                 "SELECT 1 FROM effects WHERE execution_id = ? "
                 "AND status IN ('dispatched', 'uncertain') LIMIT 1",
@@ -3248,12 +3384,21 @@ class RuntimeControlService:
             elif execution.status is ExecutionStatus.RUNNING:
                 running_commands = True
                 target = (
+                    ExecutionStatus.PAUSED
+                    if restart_pending
+                    else
                     ExecutionStatus.RECONCILIATION_REQUIRED
                     if unresolved
                     else ExecutionStatus.INTERRUPTED
                 )
-                reason_code = "effect_reconciliation" if unresolved else "owner_lost"
-                outcome = "reconciliation_required" if unresolved else "owner_lost"
+                reason_code = (
+                    "restart_pending" if restart_pending
+                    else "effect_reconciliation" if unresolved else "owner_lost"
+                )
+                outcome = (
+                    "restart_pending" if restart_pending
+                    else "reconciliation_required" if unresolved else "owner_lost"
+                )
             elif execution.status is ExecutionStatus.PAUSING:
                 command_kind = CommandKind.PAUSE
                 if unresolved:
@@ -3444,11 +3589,17 @@ class RuntimeControlService:
                         current = self.executions._require_execution(connection, execution.execution_id)
                         if process_owner_may_be_alive(current.owner_lease):
                             continue
+                        admission = self.executions.get_agent_turn_input(execution.execution_id)
+                        request = admission.get("request", {})
+                        restart = (
+                            admission.get("kind") == "chat"
+                            and request.get("interaction") not in {"spawn", "merge"}
+                        )
                         recovered = self.executions._transition_execution(
                             connection, execution.execution_id,
                             expected_version=execution.status_version,
-                            target=ExecutionStatus.FAILED,
-                            reason_code="owner_lost_before_activation",
+                            target=ExecutionStatus.PAUSED if restart else ExecutionStatus.FAILED,
+                            reason_code="restart_pending" if restart else "owner_lost_before_activation",
                         )
                 except (AttemptConflict, ExecutionConflict):
                     recovered = self.executions.get_execution(execution.execution_id)

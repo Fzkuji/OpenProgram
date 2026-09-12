@@ -437,6 +437,8 @@ class Agent:
                 await ev_stream.cancel_producer()
             raise
         except Exception as err:
+            from openprogram.agent.run_control import raise_if_worker_stopping
+            raise_if_worker_stopping()
             # Structured-output negotiation and validation errors are typed
             # caller contract failures. Preserve them so Runtime can bypass
             # its provider retry policy instead of converting them to a generic

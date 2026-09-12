@@ -20,7 +20,7 @@ test("live tab stays usable and is not replaced by a bound mask", () => {
   assert.doesNotMatch(paneSource, /PipBoundMask/);
   assert.doesNotMatch(paneSource, /Controlled by/);
   assert.doesNotMatch(paneSource, /webBoundMask/);
-  assert.match(paneSource, /isHumanYieldEvent/);
+  assert.doesNotMatch(paneSource, /isHumanYieldEvent/);
   assert.match(paneSource, /onKeyDownCapture=\{handleRendererShortcut\}/);
   assert.doesNotMatch(paneSource, /yieldFromLiveTab\(tabId, \{ type: "keydown"/);
   assert.match(paneSource, /data-state=\{control \? displayedControlState\(control\)/);

@@ -229,6 +229,26 @@ def build_parser() -> argparse.ArgumentParser:
              "harness by its clone-dir name")
     p_p_un.add_argument("name", help="Program or harness dir name to uninstall")
 
+    for application_commands in (sub, programs_sub):
+        p_apps = application_commands.add_parser("apps", help="Install and invoke applications shown on the new tab page")
+        app_sub = p_apps.add_subparsers(dest="apps_verb")
+        app_sub.add_parser("list", help="List installed applications")
+        p_app_install = app_sub.add_parser("install", help="Install an application from a local directory")
+        p_app_install.add_argument("directory")
+        p_app_install.add_argument("--replace", action="store_true")
+        p_app_install.add_argument("--trust", action="store_true", help="Authorize execution of the reviewed Python backend")
+        p_app_remove = app_sub.add_parser("uninstall", help="Unregister an application, retaining its data")
+        p_app_remove.add_argument("id")
+        p_app_run = app_sub.add_parser("run", help="Start an Agent-visible application operation")
+        p_app_run.add_argument("id")
+        p_app_run.add_argument("operation")
+        p_app_run.add_argument("--input", default="{}", help="Operation input as JSON")
+        p_app_run.add_argument("--project", default="", help="Project ID for a project-scoped application")
+        p_app_run.add_argument("--request-key", default=None, help="Stable key for safe submission retries")
+        for verb in ("status", "cancel"):
+            command = app_sub.add_parser(verb, help=f"{verb.title()} an application run")
+            command.add_argument("run_id")
+
     # ---- workflows --------------------------------------------------------
     p_workflows = sub.add_parser(
         "workflows",

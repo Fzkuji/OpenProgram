@@ -54,7 +54,8 @@ def managed_runtime_root() -> Optional[Path]:
     release layout rather than relying on an inherited variable.
 
     Merely finding a file named ``runtime-manifest.json`` is not enough. The
-    manifest must describe this exact interpreter and the product verifier
+    manifest must describe this exact interpreter or its named worker launcher,
+    and the product verifier
     and source manifest must be present beside it.
     """
     executable = Path(sys.executable).resolve()
@@ -86,8 +87,15 @@ def managed_runtime_root() -> Optional[Path]:
             described_python = (candidate / python_relative).resolve()
         except (OSError, ValueError, TypeError):
             continue
-        if described_python == executable and described_python.is_file():
+        if not described_python.is_relative_to(candidate) or not described_python.is_file():
+            continue
+        if described_python == executable:
             return candidate
+        worker_relative = manifest.get("worker_python")
+        if isinstance(worker_relative, str) and worker_relative and not Path(worker_relative).is_absolute():
+            worker = (candidate / worker_relative).resolve()
+            if worker.is_relative_to(candidate) and worker == executable and worker.is_file():
+                return candidate
     return None
 
 

@@ -73,6 +73,10 @@ Windows 推荐使用 Windows Terminal。运行在 MinTTY 中的 Git Bash 可能�
 | `/channel`、`/attach`、`/detach`、`/connections` | 聊天渠道接入与会话路由 |
 | `/quit` | 退出 |
 
+`/compact` 总结较早的完整轮次及其可见工具结果，保留最近轮次。它改变下一次模型请求的上下文，
+原始消息仍保存在会话中。前后 token 数为本地估算；历史过短、摘要失败或没有节省空间时，
+上下文保持不变。
+
 另有 `/search`、`/review`、`/diff`、`/init`、`/browser`、`/welcome`。完整清单以 `/help` 输出为准。
 
 除这些内置命令外，补全菜单还会列出统一命令注册表里的全部命令——skill、MCP prompt、插件命令，以及你放在 `~/.openprogram/commands/` 或 `<项目>/.openprogram/commands/` 下的自定义命令文件（markdown，可带 YAML frontmatter）。执行时命令正文展开后作为消息发送，与 Web composer 完全一致：TUI 和 Web UI 读同一张注册表，命令定义一次两边都有。

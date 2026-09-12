@@ -961,7 +961,8 @@ def test_startup_distinguishes_live_and_exited_owner_process(tmp_path):
         assert not process.is_alive()
         recovered = control.recover_startup()
         assert [item.execution.execution_id for item in recovered] == [execution_id]
-        assert store.get_execution(execution_id).status is ExecutionStatus.INTERRUPTED
+        assert store.get_execution(execution_id).status is ExecutionStatus.PAUSED
+        assert store.get_execution(execution_id).reason_code == "restart_pending"
     finally:
         if process.is_alive():
             process.terminate()
@@ -1790,7 +1791,7 @@ def test_finish_repair_stalls_after_bounded_attempts_until_manual_reconcile(
     assert store.list_finish_repairs() == []
 
 
-def test_startup_terminalizes_admitted_agent_without_attempt(tmp_path):
+def test_startup_resumes_admitted_agent_without_attempt(tmp_path):
     from openprogram.execution.control import RuntimeControlService
     from openprogram.execution.driver import DriverRegistry
 
@@ -1801,12 +1802,12 @@ def test_startup_terminalizes_admitted_agent_without_attempt(tmp_path):
 
     current = store.get_execution(execution.execution_id)
     assert current is not None
-    assert current.status is ExecutionStatus.FAILED
-    assert current.reason_code == "owner_lost_before_activation"
+    assert current.status is ExecutionStatus.PAUSED
+    assert current.reason_code == "restart_pending"
     assert [item.execution.execution_id for item in recoveries] == [execution.execution_id]
 
 
-def test_startup_recovers_active_agent_owner_loss_without_reserved_slot_reconciliation(
+def test_startup_recovers_active_agent_owner_loss_retains_completion_repair_capacity(
     tmp_path,
 ):
     from openprogram.execution.control import RuntimeControlService
@@ -1832,8 +1833,8 @@ def test_startup_recovers_active_agent_owner_loss_without_reserved_slot_reconcil
     current = store.get_execution(execution.execution_id)
     ended = attempts.get(active.attempt_id)
     assert current is not None
-    assert current.status is ExecutionStatus.INTERRUPTED
-    assert current.reason_code == "owner_lost"
+    assert current.status is ExecutionStatus.PAUSED
+    assert current.reason_code == "restart_pending"
     assert current.current_attempt_id is None
     assert ended is not None and ended.status.value == "ended"
     with sqlite3.connect(store.path) as connection:
@@ -1841,7 +1842,7 @@ def test_startup_recovers_active_agent_owner_loss_without_reserved_slot_reconcil
             "SELECT COUNT(*) FROM execution_finish_repair_slots "
             "WHERE execution_id = ?",
             (execution.execution_id,),
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
     assert [item.execution.execution_id for item in recoveries] == [execution.execution_id]
 
 

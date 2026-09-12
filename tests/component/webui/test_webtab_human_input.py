@@ -80,11 +80,11 @@ def test_human_input_uses_originating_socket_and_tab_not_client_owner(monkeypatc
         "window_id": "win", "tab_id": "tab-a", "sequence": 1, "kind": kind,
         "execution_id": "forged", "resource_id": "forged",
     }))
-    assert writes_fenced(page_key) is True
+    assert writes_fenced(page_key) is False
     asyncio.run(webtab.handle_webtab_human_input(owner, {
         "window_id": "win", "tab_id": "tab-a", "sequence": 2, "kind": kind,
     }))
-    assert len(pauses) == 1
+    assert pauses == []
 
 
 def test_webtab_closed_marks_descriptor_closed(monkeypatch, tmp_path):
@@ -101,6 +101,51 @@ def test_webtab_closed_marks_descriptor_closed(monkeypatch, tmp_path):
     assert row is not None
     assert row["live"] == 0
     assert row["control_state"] == "closed"
+
+
+def test_page_close_projection_targets_every_association_without_conversation_scan(
+    monkeypatch, tmp_path,
+):
+    from openprogram.browser_resources import BrowserResourceStore, project_page_resource_rows
+
+    monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
+    store = BrowserResourceStore()
+    store.retain(
+        page_key="page:shared", window_id="win", tab_id="tab-a", title="Plans",
+        target="https://example.test/", connection_generation=1,
+        session_id="parent", conversation_session_id="parent", execution_id="exec-a",
+        live=True,
+    )
+    store.retain(
+        page_key="page:shared", window_id="win", tab_id="tab-a", title="Plans",
+        target="https://example.test/", connection_generation=1,
+        session_id="parent", conversation_session_id="parent", execution_id="exec-b",
+        live=True,
+    )
+    rows = project_page_resource_rows("page:shared")
+    assert len(rows) == 2
+    assert {row["execution_id"] for row in rows} == {"exec-a", "exec-b"}
+
+    owner = _WS()
+    webtab.ensure_connection_revision(owner)
+    webtab._desktop_windows[owner] = "win"
+    webtab.register_binding(owner, "win", "tab-a", "target-1")
+    emitted = []
+    monkeypatch.setattr(
+        "openprogram.browser_resources.emit_browser_resource",
+        lambda row, **kwargs: emitted.append(row),
+    )
+    monkeypatch.setattr(
+        "openprogram.browser_resources.project_conversation_resources",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("conversation scan")),
+    )
+    monkeypatch.setattr(
+        "openprogram.browser_resources.page_keys_for_socket_tab",
+        lambda *_args: ["page:shared"],
+    )
+    asyncio.run(webtab.handle_webtab_closed(owner, {"window_id": "win", "tab_id": "tab-a"}))
+    assert len(emitted) == 2
+    assert {row["status"] for row in emitted} == {"closed"}
 
 
 def test_webtab_closed_rebind_mints_new_page_identity(monkeypatch, tmp_path):
@@ -189,8 +234,8 @@ def test_human_input_fences_retained_page_after_release_binding(
     asyncio.run(webtab.handle_webtab_human_input(owner, {
         "window_id": "win", "tab_id": "tab-a", "sequence": 1, "kind": kind,
     }))
-    assert writes_fenced(page_key) is True
-    assert len(pauses) == 1
+    assert writes_fenced(page_key) is False
+    assert pauses == []
     assert int(store.get_resource(page_key)["live"] or 0) == 1
 
 

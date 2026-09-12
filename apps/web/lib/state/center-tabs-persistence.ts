@@ -1,3 +1,5 @@
+import { normalizeTabPageHistory } from "./tab-page-history";
+import { topLevelTabs } from "./web-page-management";
 import { normalizeSessionHistory } from "./session-tab-history";
 /**
  * Center-tab persistence + payload normalization.
@@ -109,10 +111,14 @@ export function normalizeCenterTabsPayload(
   clearDirty = false,
 ): CenterTabsPersistedPayload {
   const sourceTabs = Array.isArray(input.tabs) ? input.tabs : [];
-  const tabs = sourceTabs
+  let tabs = sourceTabs.map(normalizeTabPageHistory)
     // 0.7.0 removed the unfinished browser-extension surface. Discard its
     // persisted tab without touching the separate legacy extension directory.
     .filter((tab) => tab.kind !== "builtin" || String(tab.page) !== "extensions")
+    .filter((tab) => tab.kind !== "application" || (
+      /^[a-z][a-z0-9._-]{0,95}$/.test(tab.applicationId ?? "") &&
+      /^[a-f0-9]{64}$/.test(tab.applicationInstanceId ?? "") && tab.id === `app:${tab.applicationInstanceId}`
+    ))
     .map((tab) => {
       if (tab.id === DRAFT_SESSION_TAB_ID) return draftTab();
       const next = clearDirty && tab.dirty ? { ...tab, dirty: false } : tab;
@@ -124,13 +130,26 @@ export function normalizeCenterTabsPayload(
       const { urlNativeAt: _drop, ...rest } = next;
       return rest;
     });
+  // A session has one center tab per window. Prefer the persisted active tab
+  // when malformed state contains duplicates; otherwise preserve first order.
+  const activeSessionTab = tabs.find(tab => tab.id === input.activeId && tab.kind === "session");
+  const keptSessionIds = new Set<string>();
+  if (activeSessionTab?.kind === "session" && activeSessionTab.sessionId) {
+    keptSessionIds.add(activeSessionTab.sessionId);
+  }
+  tabs = tabs.filter(tab => {
+    if (tab.kind !== "session" || !tab.sessionId) return true;
+    if (keptSessionIds.has(tab.sessionId)) return tab.id === activeSessionTab?.id;
+    keptSessionIds.add(tab.sessionId);
+    return true;
+  });
   let layout = normalizeCenterTabLayout({
     tabIds: tabs.map((tab) => tab.id),
     groups: Array.isArray(input.groups) ? input.groups : [],
   });
   const activeId = layout.tabIds.includes(input.activeId ?? "")
     ? input.activeId ?? null
-    : layout.tabIds[0] ?? null;
+    : topLevelTabs(tabs, layout.groups)[0]?.id ?? null;
   let splitWebTabId = typeof input.splitWebTabId === "string" &&
       tabs.some((tab) => tab.id === input.splitWebTabId && tab.kind === "web")
     ? input.splitWebTabId

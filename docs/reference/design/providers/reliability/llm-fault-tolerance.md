@@ -26,7 +26,7 @@ Sources studied (all under `references/`, read-only):
 | Jitter | symmetric / positive | ±20% | decorrelated (0.5) | none | symmetric / positive |
 | Retryable status | 408/409/429/5xx | 429/503/504/529 | 429/5xx/524 | 429/5xx | 429/5xx + body patterns |
 | Retry-After | ms+sec+date | ms+sec+date (cap 10s) | none | none | **ms+sec+date** |
-| Body / idle timeout | **30 min, any byte** (undici) | none (HTTP) / 5 min (WS) | 180 s stale, context-scaled | none | **30 min any-byte + 15 min data-stall + 2 h cap** |
+| Body / idle timeout | **30 min, any byte** (undici) | none (HTTP) / 5 min (WS) | 180 s stale, context-scaled | none | **30 min any-byte + 15 min data-stall; no default total cap** |
 | Connect timeout | undici default | none / 15 s (WS) | SDK default | none | 30 s |
 | TTFB guard | 30 s (Azure) | n/a | 120 s (codex) | none | covered by idle/read |
 | HTTP version | **force HTTP/1.1** | default | auto (h2) | — | httpx default (h1.1) |
@@ -112,7 +112,8 @@ the SSE governor is two budgets plus a backstop:
 - `SSE_DATA_STALL_TIMEOUT_S = 900` (15 min) — "no real data", reset only on
   parsed events. This catches ping-flood stalls that a byte-level timeout
   cannot see.
-- `SSE_TOTAL_TIMEOUT_S = 7200` (2 h) — a runaway backstop.
+- `OPENPROGRAM_SSE_TOTAL_TIMEOUT_S = 0` — no default total-duration cap;
+  positive values opt into a deadline. Internally the unbounded deadline is infinity.
 
 All are env-overridable (`OPENPROGRAM_SSE_*`, `OPENPROGRAM_HTTPX_*`).
 
@@ -187,7 +188,7 @@ once any content has streamed.
 |---|---|---|
 | `OPENPROGRAM_SSE_IDLE_TIMEOUT_S` | 1800 | no-bytes-at-all (any line resets) |
 | `OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S` | 900 | no-real-data (data resets) |
-| `OPENPROGRAM_SSE_TOTAL_TIMEOUT_S` | 7200 | single-stream runaway cap |
+| `OPENPROGRAM_SSE_TOTAL_TIMEOUT_S` | 0 | Optional single-stream total deadline; 0 disables it |
 | `OPENPROGRAM_HTTPX_CONNECT_TIMEOUT_S` | 30 | connect (fast-fail dead VPN) |
 | `OPENPROGRAM_HTTPX_READ_TIMEOUT_S` | idle+60 | httpx read backstop |
 | `OPENPROGRAM_PROVIDER_STREAM_RETRIES` | 3 | per-stream retry attempts |

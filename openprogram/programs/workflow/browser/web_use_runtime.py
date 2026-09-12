@@ -102,9 +102,13 @@ def _controller_display(session: WebUseSession, result: Any = None) -> dict[str,
 
 def _publish_bound_page(session: WebUseSession, result: Any = None) -> None:
     identity = _trusted_binding(session)
+    display = _controller_display(session, result)
+    if display.get("target"):
+        session.state["last_url"] = display["target"]
+    if identity:
+        session.state["page_identity"] = identity
     if not identity:
         return
-    display = _controller_display(session, result)
     try:
         from openprogram.browser_resources import publish_bound_page
         publish_bound_page(session.page_key, **identity, **display)
@@ -477,7 +481,8 @@ class WebUseSessionRegistry:
             with self._lock:
                 session = self._sessions.get(web_session_id)
             if session is None:
-                return {"ok": False, "reason_code": "web_session_not_found"}
+                return {"ok": False, "reason_code": "web_session_not_found",
+                        "message": "The browser session ended. List pages and observe the task page again; if closed, open its URL with observe."}
 
         try:
             from openprogram.agent.run_control import get_current_execution_id
@@ -489,15 +494,6 @@ class WebUseSessionRegistry:
         except Exception:
             pass
 
-        if command in {"act", "verify"}:
-            from openprogram.browser_resources import writes_fenced
-            if writes_fenced(session.page_key):
-                return {
-                    "ok": False,
-                    "reason_code": "write_fenced",
-                    **_session_fields(session),
-                }
-
         follow_receipt = None
         cleaned = False
         with session.operation_lock:
@@ -506,15 +502,8 @@ class WebUseSessionRegistry:
                     self._closing_all or session.owner_id in self._closing_owners
                 )
             if session.closing or session.closed or owner_closing:
-                return {"ok": False, "reason_code": "web_session_not_found"}
-            if command in {"act", "verify"}:
-                from openprogram.browser_resources import writes_fenced
-                if writes_fenced(session.page_key):
-                    return {
-                        "ok": False,
-                        "reason_code": "write_fenced",
-                        **_session_fields(session),
-                    }
+                return {"ok": False, "reason_code": "web_session_not_found",
+                        "message": "The browser session ended. List pages and observe the task page again; if closed, open its URL with observe."}
             if session.owner_id and owner_id != session.owner_id:
                 return {"ok": False, "reason_code": "web_session_owner_mismatch"}
             if backend and backend != session.backend:
@@ -579,33 +568,29 @@ class WebUseSessionRegistry:
                     reason_code = str(
                         validation.get("reason_code") or "page_context_stale"
                     )
+                    recovery_url = session.state.get("last_url") or _controller_display(session).get("target", "")
+                    recovery_identity = session.state.get("page_identity") or {}
                     self._cleanup_session(session, suppress_errors=True)
                     return {
                         "ok": False,
                         "reason_code": reason_code,
+                        "message": "The page changed or closed. Observe the page again before acting.",
+                        "recovery_url": recovery_url,
+                        "recovery_tab_id": recovery_identity.get("tab_id", ""),
+                        "recovery_window_id": recovery_identity.get("window_id", ""),
+                        "recovery_command": "observe",
                         **_session_fields(session),
                     }
 
             adapter = self._adapters[session.backend]
-            def combined_guard():
-                if command in {"act", "verify"}:
-                    from openprogram.browser_resources import writes_fenced
-                    if writes_fenced(session.page_key):
-                        raise PermissionError("write_fenced")
-                if before_dispatch is not None:
-                    before_dispatch()
-            use_guard = before_dispatch is not None or command in {"act", "verify"}
+            # Task execution owns pause/cancel; page events never prohibit writes.
+            combined_guard = before_dispatch
+            use_guard = before_dispatch is not None
             guard_args = {}
             if use_guard:
-                if before_dispatch is not None and not getattr(adapter, "supports_operation_guard", False):
+                if not getattr(adapter, "supports_operation_guard", False):
                     return {"ok": False, "reason_code": "guarded_dispatch_unsupported"}
-                if getattr(adapter, "supports_operation_guard", False):
-                    guard_args["before_dispatch"] = combined_guard
-                elif command in {"act", "verify"} and writes_fenced(session.page_key):
-                    return {
-                        "ok": False, "reason_code": "write_fenced",
-                        **_session_fields(session),
-                    }
+                guard_args["before_dispatch"] = before_dispatch
             dispatched_op_id = None
             try:
                 if use_guard:
@@ -670,39 +655,7 @@ class WebUseSessionRegistry:
                     result = {"ok": True, "closed": True}
                 else:
                     return {"ok": False, "reason_code": "invalid_command"}
-            except PermissionError as exc:
-                if "write_fenced" in str(exc):
-                    if command == "act" and dispatched_op_id:
-                        from openprogram.browser_resources import sanitize_operation
-                        from openprogram.agent.run_control import get_current_execution_id
-                        follow_receipt = [(
-                            session.page_key,
-                            sanitize_operation(
-                                action=str(params.get("action") or ""),
-                                arguments=params,
-                                result={"ok": False, "reason_code": "write_fenced"},
-                                frame_id=_session_frame_id(session),
-                                geometry_revision=session.geometry_revision,
-                                phase="failed", operation_id=dispatched_op_id,
-                                viewport=_session_viewport(session),
-                            ),
-                            False,
-                            get_current_execution_id(),
-                        )]
-                    if follow_receipt:
-                        from openprogram.browser_resources import report_browser_operation
-                        for page_key, operation, follow, execution_id in follow_receipt:
-                            try:
-                                report_browser_operation(
-                                    page_key, operation, follow=follow,
-                                    execution_id=execution_id,
-                                )
-                            except Exception:
-                                pass
-                    return {
-                        "ok": False, "reason_code": "write_fenced",
-                        **_session_fields(session),
-                    }
+            except PermissionError:
                 if command == "observe" and not session.closing:
                     self._cleanup_session(session, suppress_errors=True)
                 raise

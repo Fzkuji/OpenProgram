@@ -341,7 +341,6 @@ vm.runInContext(
     ensureView,
     destroyView,
     showActionView,
-    emitHumanInput,
     validateTransferPayload:
       typeof validateTransferPayload === "function" ? validateTransferPayload : undefined,
     reparentRecords:
@@ -491,6 +490,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
   const boundsCalls = [];
   let bounds = { x: 0, y: 0, width: 0, height: 0 };
   let closeCalls = 0;
+  let closeFailure = false;
   let targetCalls = 0;
   let debuggerAttached = false;
   let windowOpenHandler = null;
@@ -640,7 +640,10 @@ function controlledRecord(id, currentUrl = "", loading = false) {
       return Promise.resolve(result);
     },
     isDestroyed() { return webContentsDestroyed; },
-    close() { closeCalls += 1; },
+    close() {
+      closeCalls += 1;
+      if (closeFailure) throw new Error("injected close failure");
+    },
     setWindowOpenHandler(handler) {
       windowOpenHandler = handler;
       this.windowOpen = handler;
@@ -688,6 +691,7 @@ function controlledRecord(id, currentUrl = "", loading = false) {
     visibility,
     boundsCalls,
     closeCallCount: () => closeCalls,
+    setCloseFailure(value) { closeFailure = value; },
     targetCallCount: () => targetCalls,
     debuggerCommands,
     isDebuggerAttached: () => debuggerAttached,
@@ -889,7 +893,7 @@ async function checkPopupCreatesIndependentRendererTab() {
   });
   assert.deepEqual(
     plain(humanInputMessages(win).slice(humanBeforeEdit).map((item) => item.kind)),
-    ["key", "key", "key", "key"],
+    [],
     "Undo/Redo/Cut/Paste emit sanitized human input; Copy and Select All are passive",
   );
 
@@ -1525,6 +1529,29 @@ async function checkVisibleCollectionAndActivation() {
   moved.controls[0].resolve();
   assert.equal(await movingActivation, null);
   assert.equal(moved.targetCallCount(), 0);
+}
+
+async function checkConfirmedDestroyHandler() {
+  hooks.registerWebTabIpc();
+  const ownerWin = fakeWindow(7001);
+  const foreignWin = fakeWindow(7002);
+  const owner = registerContext("confirmed-owner", ownerWin);
+  const foreign = registerContext("confirmed-foreign", foreignWin);
+  const record = controlledRecord("confirmed-page");
+  record.record.ownerId = owner.id;
+  owner.views.set(record.record.id, record.record);
+  const event = { sender: ownerWin.webContents };
+  record.setCloseFailure(true);
+  assert.equal(await ipcHandlers.get("webtab:destroy-confirmed")(event, record.record.id), false);
+  assert.equal(owner.views.has(record.record.id), true, "failed close keeps the record");
+  record.setCloseFailure(false);
+  assert.equal(await ipcHandlers.get("webtab:destroy-confirmed")(event, record.record.id), true);
+  assert.equal(owner.views.has(record.record.id), false, "successful close removes the record");
+  const foreignRecord = controlledRecord("foreign-confirmed-page");
+  foreignRecord.record.ownerId = foreign.id;
+  foreign.views.set(foreignRecord.record.id, foreignRecord.record);
+  assert.equal(await ipcHandlers.get("webtab:destroy-confirmed")(event, foreignRecord.record.id), false);
+  assert.equal(foreign.views.has(foreignRecord.record.id), true, "other owner is rejected");
 }
 
 async function checkSenderOwnership() {
@@ -4948,7 +4975,7 @@ assert.doesNotMatch(source, /\bvisibleViewId\b/);
 assert.match(source, /ipcMain\.on\("webtab:sync-visible"/);
 assert.match(source, /ipcMain\.on\("webtab:set-pip-zoom"/);
 assert.match(source, /ipcMain\.handle\("webtab:show-action"/);
-assert.match(source, /webtab:human-input/);
+assert.doesNotMatch(source, /webtab:human-input/);
 assert.match(source, /const HIDDEN_WEBTAB_BOUNDS = \{ x: 0, y: 0, width: 1920, height: 1080 \}/);
 assert.match(source, /const PIP_VIRTUAL_WIDTH = 1920/);
 assert.match(source, /if \(!record\.pipLayoutZoom\) wc\.setZoomFactor\(factor\)/);
@@ -5459,16 +5486,7 @@ async function checkHumanInputYieldingAndActionCue() {
     button: "left",
   });
   assert.equal(prevented, false, "yielding must not preventDefault native pointer input");
-  assert.deepEqual(plain(humanInputMessages(winA).at(-1)), {
-    id: "live-page",
-    windowId: "human-a",
-    sequence: 1,
-    kind: "pointer",
-  });
-  assert.equal(
-    Object.keys(humanInputMessages(winA).at(-1)).sort().join(","),
-    "id,kind,sequence,windowId",
-  );
+  assert.equal(humanInputMessages(winA).length, 0);
   assert.equal(humanInputMessages(winB).length, 0, "human input follows the exact owner window");
 
   prevented = false;
@@ -5490,9 +5508,9 @@ async function checkHumanInputYieldingAndActionCue() {
   assert.equal(prevented, false, "yielding must not steal page-operating keys");
   assert.deepEqual(
     plain(humanInputMessages(winA).slice(-2).map((item) => item.kind)),
-    ["scroll", "key"],
+    [],
   );
-  assert.equal(humanInputMessages(winA).at(-1).sequence, 3);
+  assert.equal(humanInputMessages(winA).length, 0);
 
   const ignoredBefore = humanInputMessages(winA).length;
   for (const mouse of [
@@ -5558,7 +5576,7 @@ async function checkHumanInputYieldingAndActionCue() {
   );
   assert.deepEqual(
     plain(humanInputMessages(winA).slice(navigateBefore).map((item) => item.kind)),
-    ["navigate", "navigate", "navigate", "navigate"],
+    [],
   );
   const afterUserNav = humanInputMessages(winA).length;
   ipcListeners.get("webtab:ensure")(
@@ -5581,7 +5599,7 @@ async function checkHumanInputYieldingAndActionCue() {
     editFlags: {},
   });
   menuTemplate.find((item) => item.label === "Back").click();
-  assert.equal(humanInputMessages(winA).at(-1).kind, "navigate");
+  assert.equal(humanInputMessages(winA).length, 0);
 
   const hiddenId = "hidden-page";
   hooks.ensureView(ctxA, hiddenId, "https://example.com/hidden");
@@ -5990,6 +6008,7 @@ Promise.all([
     checkPreloadTabTransfer();
     checkContextMenuEndAlignment();
     await checkSenderOwnership();
+    await checkConfirmedDestroyHandler();
     await checkHumanInputYieldingAndActionCue();
     await checkBackgroundPreview();
     await checkActionCueFreshness();

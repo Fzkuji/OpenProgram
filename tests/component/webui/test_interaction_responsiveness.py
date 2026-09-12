@@ -8,8 +8,51 @@ import threading
 import pytest
 
 from openprogram.webui.graph_builder import build_session_graph
+from openprogram.webui.ws_actions.chat import _persist_attachments_async
 from openprogram.webui.ws_actions.session import _session_io
 from openprogram.webui.ws_actions.session import handle_load_session
+
+
+def test_attachment_io_keeps_heartbeat_and_waits_before_cancel(monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def persist(*_args):
+        started.set()
+        assert release.wait(2)
+        finished.set()
+        return "stored"
+
+    monkeypatch.setattr(
+        "openprogram.webui.ws_actions.chat._persist_attachments", persist,
+    )
+
+    async def scenario():
+        beats = 0
+        task = asyncio.create_task(_persist_attachments_async("s", [], "x"))
+        while not started.is_set():
+            await asyncio.sleep(0)
+        for _ in range(5):
+            await asyncio.sleep(0)
+            beats += 1
+        assert beats == 5
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not finished.is_set()
+        assert not task.done()
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not finished.is_set()
+        assert not task.done()
+        release.set()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        assert finished.is_set()
+
+    asyncio.run(scenario())
 
 
 def test_graph_builder_uses_captured_messages_without_second_history_read(

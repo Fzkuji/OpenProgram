@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import traceback
+from pathlib import Path
 from typing import Any, Optional
 
 from openprogram.programs.workflow.ask_user import set_ask_user, ask_user
@@ -870,7 +871,23 @@ def _is_run_active(session_id: str) -> bool:
 
 
 def _try_reserve_run(session_id: str, msg_id: str) -> bool:
+    from openprogram.store.session.session_lock import session_interprocess_lock
+    try:
+        with session_interprocess_lock(session_id, timeout=0.25):
+            return _try_reserve_run_locked(session_id, msg_id)
+    except (TimeoutError, BlockingIOError):
+        return False
+
+
+def _try_reserve_run_locked(session_id: str, msg_id: str) -> bool:
     """Atomically reserve one session for a chat turn before DAG mutation."""
+    try:
+        from openprogram.store.session.migration import session_hold_active
+        from openprogram.paths import get_state_dir
+        if session_hold_active(Path(get_state_dir()) / "sessions", session_id):
+            return False
+    except Exception:
+        return False
     if _is_run_active(session_id):
         return False
     now = time.time()
@@ -1609,7 +1626,6 @@ def _build_ws_action_registry() -> dict:
         settings as _ws_settings,
         user_error as _ws_user_error,
         webtab as _ws_webtab,
-        self_update as _ws_self_update,
     )
     table: dict = {}
     table.update(_ws_branch.ACTIONS)
@@ -1630,7 +1646,6 @@ def _build_ws_action_registry() -> dict:
     table.update(_ws_settings.ACTIONS)
     table.update(_ws_user_error.ACTIONS)
     table.update(_ws_webtab.ACTIONS)
-    table.update(_ws_self_update.ACTIONS)
     return table
 
 
@@ -1677,6 +1692,11 @@ def _validate_file_request(cmd: dict, action: str) -> None:
 
 async def _handle_ws_command(ws, cmd: dict):
     """Handle a WebSocket command from the client."""
+    if _server_stopping.is_set():
+        await ws.send_text(json.dumps({"type": "action_error", "data": {
+            "code": "worker_stopping", "message": "OpenProgram is restarting. Reconnect before continuing.",
+        }}))
+        return
     from openprogram.self_update.ui_checks import permits_ws_command
     if not permits_ws_command(ws, cmd):
         await ws.send_text(json.dumps({
@@ -1902,9 +1922,20 @@ def create_app(*, owner_auth=None, port: int = 18100):
     async def _lifespan(_app):
         for hook in _STARTUP:
             await hook()
-        yield
-        for hook in reversed(_SHUTDOWN):
-            await hook()
+        from openprogram.memory.checkpoints import run_checkpoints
+        checkpoint_stop = asyncio.Event()
+        checkpoint_task = asyncio.create_task(run_checkpoints(checkpoint_stop))
+        from openprogram.store.project.discovery import run_discovery
+        discovery_task = asyncio.create_task(run_discovery(
+            checkpoint_stop, lambda: _broadcast(json.dumps({"type": "projects_changed", "data": {}}))))
+        try:
+            yield
+        finally:
+            checkpoint_stop.set()
+            await checkpoint_task
+            await discovery_task
+            for hook in reversed(_SHUTDOWN):
+                await hook()
 
     app = FastAPI(
         title="Agentic Visualizer",
@@ -1914,6 +1945,7 @@ def create_app(*, owner_auth=None, port: int = 18100):
     )
 
     from openprogram.webui.owner_auth import OwnerAuthMiddleware, OwnerAuthState
+    from openprogram.webui.office_assets import load_installed_office_pack
     if owner_auth is None:
         import secrets
         from openprogram.agent.authority import owner_principal_id
@@ -1927,9 +1959,11 @@ def create_app(*, owner_auth=None, port: int = 18100):
             allowed_origins=_web_cfg["allowed_origins"],
         )
     app.state.owner_auth = owner_auth
+    app.state.office_assets = load_installed_office_pack()
     app.add_middleware(
         OwnerAuthMiddleware,
         auth_state=owner_auth,
+        office_assets=app.state.office_assets,
     )
 
     # Auth v2 REST + SSE routes. Kept in a dedicated module so server.py
@@ -2070,6 +2104,9 @@ def create_app(*, owner_auth=None, port: int = 18100):
     from openprogram.webui.routes import memory as _routes_memory
     _routes_memory.register(app)
 
+    from openprogram.webui.routes import documents as _routes_documents
+    _routes_documents.register(app)
+
     # Scheduler task CRUD — independent from Memory; tasks may hold read-only
     # MemoryRefs but their lifecycle is owned here.
     from openprogram.webui.routes import scheduler as _routes_scheduler
@@ -2106,6 +2143,10 @@ def create_app(*, owner_auth=None, port: int = 18100):
     # /api/plugins/* — Plugins management
     from openprogram.webui.routes import plugins as _routes_plugins
     _routes_plugins.register(app)
+    from openprogram.webui.routes import applications as _routes_applications
+    _routes_applications.register(app)
+    from openprogram.webui.routes import office_assets as _routes_office_assets
+    _routes_office_assets.register(app)
 
     # /api/commands/* — Unified slash-command registry (Phase 1)
     from openprogram.webui.routes import commands as _routes_commands
@@ -2128,6 +2169,8 @@ def create_app(*, owner_auth=None, port: int = 18100):
 # ---------------------------------------------------------------------------
 
 _server_thread: Optional[threading.Thread] = None
+_uvicorn_server = None
+_server_stopping = threading.Event()
 _owner_auth_state = None
 
 
@@ -2143,6 +2186,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
         print(f"Visualizer already running")
         return _server_thread
 
+    _server_stopping.clear()
     from openprogram.providers.initialization import initialize_provider_runtime
 
     initialize_provider_runtime()
@@ -2172,7 +2216,7 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
     ).start()
 
     def _run():
-        global _loop
+        global _loop, _uvicorn_server
         try:
             import uvicorn
         except ImportError:
@@ -2193,8 +2237,12 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
                 # the decoded per-file and per-turn budgets.
                 ws_max_size=128 * 1024 * 1024,
                 proxy_headers=False,
+                timeout_graceful_shutdown=1.0,
             )
             server = uvicorn.Server(config)
+            _uvicorn_server = server
+            if _server_stopping.is_set():
+                server.should_exit = True
             _loop = asyncio.new_event_loop()
             from openprogram._compat import install_asyncio_exception_handler
 
@@ -2202,6 +2250,15 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
             asyncio.set_event_loop(_loop)
             _loop.run_until_complete(server.serve())
         finally:
+            if _loop is not None and not _loop.is_closed():
+                pending = asyncio.all_tasks(_loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    _loop.run_until_complete(asyncio.wait(pending, timeout=0.5))
+                _loop.run_until_complete(_loop.shutdown_asyncgens())
+                _loop.close()
+            _uvicorn_server = None
             if _owner_auth_state is not None:
                 _owner_auth_state.close()
 
@@ -2270,6 +2327,12 @@ def start_server(port: int = 18100, open_browser: bool = False) -> threading.Thr
     return _server_thread
 
 
-def stop_server():
-    """Reserved for future shutdown hooks (no-op for now)."""
-    pass
+def stop_server(timeout: float = 2.0) -> bool:
+    """Stop admitting work and drain the server before the worker exits."""
+    _server_stopping.set()
+    server, loop, thread = _uvicorn_server, _loop, _server_thread
+    if server is not None and loop is not None and not loop.is_closed():
+        loop.call_soon_threadsafe(setattr, server, "should_exit", True)
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(timeout=max(0.0, timeout))
+    return thread is None or not thread.is_alive()

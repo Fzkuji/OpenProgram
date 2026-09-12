@@ -35,6 +35,10 @@ _FUNCTION_BODY_CONTROL_KEYS = {
 
 
 def _resolve_work_dir(session_id: str | None = None) -> str:
+    from openprogram.agent.internals._workdir import bound_project_execution_blocked
+    blocked = bound_project_execution_blocked(session_id or "")
+    if blocked:
+        raise RuntimeError(f"project location unavailable: {blocked}")
     project_dir = project_workdir_for(session_id or "")
     work_dir = project_dir if project_dir is not None else get_default_workdir()
     return os.path.abspath(os.path.expanduser(str(work_dir)))
@@ -339,6 +343,17 @@ def run_agentic_function_call(
             }
         default_db().update_session(session_id, project_id=project_id)
         _projects.bind_session(session_id, project_id)
+    # Reject a missing or replaced bound folder before reserving a run or
+    # appending any function nodes. Independent worktrees/default sessions
+    # continue through the normal resolver.
+    from openprogram.agent.internals._workdir import bound_project_execution_blocked
+    blocked = bound_project_execution_blocked(session_id)
+    if blocked:
+        return {
+            "error": f"project location unavailable: {blocked}",
+            "code": f"project_{blocked}",
+            "status_code": 409,
+        }
     msg_id = uuid.uuid4().hex[:8]
     # Claim the same atomic session occupancy used by chat before mutating
     # the DAG. The reservation covers parent-side node creation; activation

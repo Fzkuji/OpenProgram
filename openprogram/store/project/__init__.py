@@ -26,8 +26,10 @@ from .project_store import (
     get_default_project,
     resolve_project,
     bind_session,
+    relocate_project,
     project_for_session,
     ensure_footprint_ignored,
+    set_location_state,
 )
 from . import project_commit
 
@@ -43,6 +45,7 @@ __all__ = [
     "resolve_project",
     "bind_session",
     "relocate_project",
+    "set_location_state",
     "project_for_session",
     "ensure_footprint_ignored",
     "project_commit",

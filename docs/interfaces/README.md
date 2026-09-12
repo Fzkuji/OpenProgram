@@ -6,7 +6,7 @@ OpenProgram has four user interfaces: the macOS Desktop App, the Web UI in an ex
 
 All four interfaces share the same local background service (called the worker in the code): a resident process hosting the FastAPI + WebSocket backend and the web UI itself, all on a single port (18100 by default), plus optional chat-channel adapters. Desktop embeds the same Web UI and adds native panes for the built-in Browser and Terminal. The Web UI and terminal TUI connect to the worker directly; if no worker is running, Desktop or the TUI starts one automatically.
 
-Sessions all live in `~/.openprogram/sessions/` (each session is a git repository), and all four interfaces read and write the same store. As a result:
+Sessions all live under `~/.openprogram/sessions/` (each session is a git repository; project-bound conversations are grouped by stable project id). All four interfaces read and write the same store. As a result:
 
 - A chat started in the terminal shows up in the Web UI sidebar; click it to continue.
 - A Web session can be resumed in the terminal via `/resume` inside the TUI, or continued non-interactively with `openprogram --resume <session-id> --print "..."`. (The `--resume` flag does not yet select the session when launching the interactive TUI — use `/resume` there.)

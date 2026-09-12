@@ -821,17 +821,20 @@
       <p>标签栏最左侧显示后退、前进；仅当前会话标签存在对应历史时启用。网页仍使用网页自己的导航控件。</p>
       <div class="card"><p aria-label="标签栏布局">←　→　［会话 B ×］　［网页 ×］　＋</p><p>当前标签历史：会话 A → 会话 B。后退恢复 A，前进恢复 B；后退后选择 C 则移除 B 的前进记录。</p></div>
       <table><thead><tr><th>公共入口</th><th>可观察结果</th></tr></thead><tbody>
-      <tr><td>侧栏、历史页、深链接打开会话</td><td>当前会话标签原位导航；目标已在另一标签时仍复用当前标签，其他标签不变。当前是网页则新建会话标签；新标签页原位替换。</td></tr>
-      <tr><td>后退 / 前进</td><td>每个标签独立保存历史和游标；标签 ID、位置、分组引用保持稳定。重复打开当前会话不增加历史。</td></tr>
+      <tr><td>侧栏、历史页、深链接打开会话</td><td>先按 sessionId 查找已有会话标签并激活；不存在时，当前会话标签原位导航，当前是网页则新建会话标签，新标签页原位替换。</td></tr>
+      <tr><td>后退 / 前进</td><td>每个标签独立保存历史和游标；导航目标已在其他标签显示时激活已有标签，不创建重复显示。重复打开当前会话不增加历史。</td></tr>
       <tr><td>草稿与 ACK</td><td>历史保留草稿 ID，输入仍按会话 ID 保存。后台确认更新全部对应历史记录，不激活后台会话。</td></tr>
       <tr><td>重新加载 / 删除会话</td><td>历史随 version-2 标签持久化；旧标签按单条历史兼容。已知删除会话从全部历史移除，不能由后退恢复。</td></tr>
       </tbody></table>
       <p>实现采用现有 Zustand 标签库、布局规范化与路由激活路径。标签 ID 标识标签实例，sessionId 标识当前会话；不再根据会话 ID 推断标签身份。历史只记录 sessionId、title、draft，不复制输入或消息。新建标签遇到已有 ID 时分配唯一后缀。源窗口转移删除在异步确认前后核对准备时的会话历史；导航改变快照则取消旧转移，回滚不覆盖新的导航状态。</p>
       <p>路由同步只响应 pathname 变化；会话确认由 markSessionReady 更新。用户标签导航由当前标签的 sessionId / draft 变化触发，避免旧 currentSessionId 的中间更新覆盖新导航。删除只依据已加载列表中确定移除的 ID，未加载记录不算删除。</p>
-      <p>比较范围：保留本页现有网页、split 与 PiP 参考与边界；会话历史是应用内状态，不采用浏览器全局 History 作为每标签记录，不改变网页前进后退、服务端协议或权限。独立标签可显示同一会话，但输入仍共享同一会话键。</p>
-      <h3>实现状态</h3><p data-session-navigation-status="complete">会话标签历史已实现。独立规格与质量审查通过；Web 测试、桌面检查、契约测试、TypeScript、生产构建和文档链接检查通过。默认安装 App 已验证原位切换、后退与前进、未发送草稿恢复，以及网页标签下新建会话标签。</p>
+      <p>比较范围：保留本页现有网页、split 与 PiP 参考与边界；会话历史是应用内状态，不采用浏览器全局 History 作为每标签记录，不改变网页前进后退、服务端协议或权限。同一窗口内同一 sessionId 只能对应一个当前会话标签；历史可以引用该会话。恢复旧布局时优先保留活动标签，否则保留首个标签；清理重复标签的布局引用，不删除会话、草稿或消息。不同 sessionId 即使标题相同也保留。</p>
+      <h3>实现状态</h3><p data-session-navigation-status="complete">同窗口会话标签唯一性已覆盖打开、导航和持久化恢复。聚焦已有标签保留其视图状态，导航和恢复由公共入口回归测试覆盖。</p>
     </section>
-  </main>
+  <section id="page-navigation"><h2>Initial page navigation</h2><p>Replacing an explicit New tab page records it in that tab's page history. Back returns to that initial page and Forward restores the selected application or built-in page, without adding another visible tab. Selecting another destination after Back discards the old forward entries. Existing conversation history remains navigable before returning to the initial page. History is persisted with the tab.</p></section>
+<section id="tab-controls"><h2>Tab controls</h2><p>Back, Forward, and New tab each use a 28px-wide button with an 8px gap. An empty tab-list container takes no layout space. New tab has no left divider.</p></section>
+<section id="last-tab"><h2>Closing the last tab</h2><p>The final visible tab can close completely. Its window and empty tab strip remain open, and the center content area stays blank. The plus button explicitly opens a new tab. Session-owned hidden pages remain available in Resources and never become the close fallback. Close selects visible neighbors after normalizing split groups. The empty state persists across route changes and reloads; it does not automatically create a draft conversation. Moving tabs between windows retains its existing window lifecycle.</p><p>Acceptance: close the final tab through the close button or keyboard command; no visible tab or center content remains, and explicit open actions create the requested tab.</p></section>
+</main>
 </div>
 
 <script>

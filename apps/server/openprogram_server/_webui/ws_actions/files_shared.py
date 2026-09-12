@@ -135,6 +135,15 @@ def _resolve(project_id: str, path: str) -> tuple[str | None, str | None]:
     proj = _projects.get_project(project_id)
     if proj is None or not proj.path:
         return None, f"unknown project {project_id!r}"
+    if not getattr(proj, "is_default", False):
+        from openprogram.store.project.location import (
+            bound_execution_state, refresh_project_location,
+        )
+        refresh_project_location(project_id)
+        proj = _projects.get_project(project_id) or proj
+        state = bound_execution_state(proj)
+        if state is not None:
+            return None, f"project location unavailable: {state}"
     root = os.path.realpath(os.path.expanduser(proj.path))
     target = os.path.realpath(os.path.join(root, path))
     if target != root and not target.startswith(root + os.sep):
@@ -412,7 +421,8 @@ def _durable_file_action(project_id: str, action: str, key: object,
                          payload: dict, fn):
     """Claim, execute, and persist one retry-safe file mutation."""
     if not isinstance(key, str) or not key:
-        return fn()
+        with _workspace_mutation_lock(project_id):
+            return fn()
     from openprogram.store.file_operations import (
         FileOperationConflict, default_file_operation_store, fingerprint,
     )

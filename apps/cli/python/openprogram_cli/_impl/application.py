@@ -528,9 +528,17 @@ def main():
         return
 
     # -------- Subcommand dispatch --------
+    if args.command == "apps":
+        from .commands.programs import _cmd_applications
+        _cmd_applications(args)
+        return
+
     if args.command == "programs":
         verb = getattr(args, "programs_verb", None)
-        if verb == "list":
+        if verb == "apps":
+            from .commands.programs import _cmd_applications
+            _cmd_applications(args)
+        elif verb == "list":
             _cmd_list()
         elif verb == "run":
             _cmd_run(args.name, args.arg, args.provider, args.model)

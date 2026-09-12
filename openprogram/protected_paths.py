@@ -30,3 +30,13 @@ def applications_root() -> str:
 def program_sources_path() -> str:
     from openprogram import paths
     return str(paths.get_state_dir() / PROGRAM_SOURCES_FILE)
+
+
+def packages_root() -> str:
+    """Canonical directory for newly installed Program packages."""
+    return os.path.join(os.path.dirname(applications_root()), "packages")
+
+
+def application_catalog_path() -> str:
+    from openprogram.paths import get_state_dir
+    return str(get_state_dir() / "applications" / "catalog.json")

@@ -19,11 +19,15 @@ const pendingText: Record<string, string> = Object.create(null);
 const pendingTimestamp: Record<string, number> = Object.create(null);
 const pendingFirstAck: Record<string, true> = Object.create(null);
 const pendingAckCallbacks: Record<string, (() => void) | undefined> = Object.create(null);
+const pendingRejectCallbacks: Record<string, (() => void) | undefined> = Object.create(null);
 const pendingHasAttachments: Record<string, boolean> = Object.create(null);
+const pendingMessageIds: Record<string, string> = Object.create(null);
 
 export interface PendingUserTextOptions {
   onAck?: () => void;
+  onReject?: () => void;
   hasAttachments?: boolean;
+  messageId?: string;
 }
 
 export function getPendingUserText(sessionId: string): string | undefined {
@@ -48,7 +52,9 @@ export function setPendingUserText(
   pendingTimestamp[sessionId] = timestamp;
   if (options) {
     pendingAckCallbacks[sessionId] = options.onAck;
+    pendingRejectCallbacks[sessionId] = options.onReject;
     pendingHasAttachments[sessionId] = options.hasAttachments === true;
+    if (options.messageId) pendingMessageIds[sessionId] = options.messageId;
   }
 }
 
@@ -56,11 +62,21 @@ export function clearPendingUserText(sessionId: string): void {
   delete pendingText[sessionId];
   delete pendingTimestamp[sessionId];
   delete pendingAckCallbacks[sessionId];
+  delete pendingRejectCallbacks[sessionId];
   delete pendingHasAttachments[sessionId];
+  delete pendingMessageIds[sessionId];
+}
+
+export function getPendingUserMessageId(sessionId: string): string | undefined {
+  return pendingMessageIds[sessionId];
 }
 
 export function getPendingUserAck(sessionId: string): (() => void) | undefined {
   return pendingAckCallbacks[sessionId];
+}
+
+export function getPendingUserReject(sessionId: string): (() => void) | undefined {
+  return pendingRejectCallbacks[sessionId];
 }
 
 export function pendingUserHasAttachments(sessionId: string): boolean {
@@ -77,6 +93,20 @@ export function acknowledgePendingUserText(sessionId: string): void {
     callback();
   } catch (error) {
     console.error("[pending-user-text] ACK cleanup failed:", error);
+  }
+}
+
+export function rejectPendingUserText(sessionId: string): void {
+  const callback = pendingRejectCallbacks[sessionId];
+  delete pendingRejectCallbacks[sessionId];
+  delete pendingAckCallbacks[sessionId];
+  delete pendingHasAttachments[sessionId];
+  delete pendingText[sessionId];
+  delete pendingTimestamp[sessionId];
+  delete pendingMessageIds[sessionId];
+  if (!callback) return;
+  try { callback(); } catch (error) {
+    console.error("[pending-user-text] rejection cleanup failed:", error);
   }
 }
 

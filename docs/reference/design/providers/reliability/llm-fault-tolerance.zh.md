@@ -24,7 +24,7 @@ OpenProgram 如何稳健地调用 LLM —— 重试、退避、超时、连接�
 | 抖动 | 对称 / 仅正向 | ±20% | 去相关（0.5） | 无 | 对称 / 仅正向 |
 | 可重试状态码 | 408/409/429/5xx | 429/503/504/529 | 429/5xx/524 | 429/5xx | 429/5xx + 响应体模式 |
 | Retry-After | ms+秒+日期 | ms+秒+日期（上限 10s） | 无 | 无 | **ms+秒+日期** |
-| 响应体 / 空闲超时 | **30 分钟，任意字节** (undici) | 无（HTTP）/ 5 分钟（WS） | 180 s 失活，按上下文缩放 | 无 | **30 分钟任意字节 + 15 分钟数据停滞 + 2 小时上限** |
+| 响应体 / 空闲超时 | **30 分钟，任意字节** (undici) | 无（HTTP）/ 5 分钟（WS） | 180 s 失活，按上下文缩放 | 无 | **30 分钟任意字节 + 15 分钟数据停滞 + 无默认总时长上限** |
 | 连接超时 | undici 默认 | 无 / 15 s（WS） | SDK 默认 | 无 | 30 s |
 | TTFB 守卫 | 30 s（Azure） | 不适用 | 120 s（codex） | 无 | 由空闲/读取超时覆盖 |
 | HTTP 版本 | **强制 HTTP/1.1** | 默认 | 自动（h2） | — | httpx 默认（h1.1） |
@@ -105,7 +105,8 @@ SSE 调控器是两个预算加一个兜底：
   （包括 ping）时重置，相当于 openclaw 的 `bodyTimeout`。
 - `SSE_DATA_STALL_TIMEOUT_S = 900`（15 分钟）—— "没有真正数据"，仅在解析到事件时
   重置。它能捕获字节级超时看不到的 ping 洪泛停滞。
-- `SSE_TOTAL_TIMEOUT_S = 7200`（2 小时）—— 失控兜底。
+- `OPENPROGRAM_SSE_TOTAL_TIMEOUT_S = 0` —— 默认不设总时长上限，正数表示显式期限；
+  内部用正无穷表示未设置总时长期限。
 
 三者都可通过环境变量覆盖（`OPENPROGRAM_SSE_*`、`OPENPROGRAM_HTTPX_*`）。
 
@@ -170,7 +171,7 @@ openai-completions 在产出内容之前，对 `classify_error` 判定可重试�
 |---|---|---|
 | `OPENPROGRAM_SSE_IDLE_TIMEOUT_S` | 1800 | 完全没有字节（任意行即重置） |
 | `OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S` | 900 | 没有真正数据（数据即重置） |
-| `OPENPROGRAM_SSE_TOTAL_TIMEOUT_S` | 7200 | 单条流的失控上限 |
+| `OPENPROGRAM_SSE_TOTAL_TIMEOUT_S` | 0 | 可选单条流总时长期限；0 表示不限制 |
 | `OPENPROGRAM_HTTPX_CONNECT_TIMEOUT_S` | 30 | 连接（快速失败掉线的 VPN） |
 | `OPENPROGRAM_HTTPX_READ_TIMEOUT_S` | idle+60 | httpx 读取兜底 |
 | `OPENPROGRAM_PROVIDER_STREAM_RETRIES` | 3 | 每条流的重试次数 |

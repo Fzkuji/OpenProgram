@@ -136,6 +136,8 @@ def _python_search(target_dir: Path, query: str, max_hits: int) -> list[tuple[st
         paths = list(target_dir.glob("*.json"))
     else:
         paths = list(target_dir.glob("*/history/*.json"))
+        paths.extend(target_dir.glob("projects/*/history/*.json"))
+        paths.extend(target_dir.glob("projects/*/*/history/*.json"))
     for p in paths:
         try:
             content = p.read_text(errors="ignore", encoding="utf-8")

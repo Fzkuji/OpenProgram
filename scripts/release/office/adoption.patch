@@ -1,0 +1,479 @@
+diff --git a/src/lib/office-editor-runtime.ts b/src/lib/office-editor-runtime.ts
+index aefbb5d..37aec6a 100644
+--- a/src/lib/office-editor-runtime.ts
++++ b/src/lib/office-editor-runtime.ts
+@@ -32,6 +32,14 @@ const PRINT_SERVICE_WORKER_READY_TIMEOUT_MS = 3_000;
+ const PRINT_TITLE_RESTORE_MS = 45_000;
+ const ONLYOFFICE_PRINT_DOWNLOAD_TYPE = 'asc_onPrintUrl';
+ const ONLYOFFICE_PRINT_ACTION_TYPE = 7;
++const ONLYOFFICE_MACRO_STORAGE_KEYS = [
++  'de-macros-mode',
++  'sse-macros-mode',
++  'pe-macros-mode',
++  'de-allow-macros-request',
++  'sse-allow-macros-request',
++  'pe-allow-macros-request',
++] as const;
+ const SUPPORTED_EMPTY_TYPES = ['docx', 'xlsx', 'pptx', 'csv'] as const;
+ const SPREADSHEET_PDF_EXPORT_FILE_TYPES = new Set<number>([oAscFileType.PDF, oAscFileType.PDFA]);
+ const ZIP_DOWNLOAD_EXTENSIONS = new Set([
+@@ -75,6 +83,12 @@ const RETURN_PREVIEW_AVATAR_ANCHOR_IDS = [
+   'id-btn-users',
+ ] as const;
+ 
++function enforceDisabledMacroPolicy(): void {
++  for (const key of ONLYOFFICE_MACRO_STORAGE_KEYS) {
++    window.localStorage.removeItem(key);
++  }
++}
++
+ type OfficeEmptyType = (typeof SUPPORTED_EMPTY_TYPES)[number];
+ type OfficeEditorStatus = 'opening' | 'ready' | 'destroyed' | 'error';
+ export type OfficeEditorMode = 'edit' | 'readonly' | 'preview';
+@@ -121,6 +135,7 @@ export interface CreateOfficeEditorOptions {
+   onDownload?: (file: File, instance: OfficeEditorInstance) => OfficeDownloadCallbackResult | Promise<OfficeDownloadCallbackResult>;
+   onDirtyChange?: (dirty: boolean, instance: OfficeEditorInstance) => void | Promise<void>;
+   onStateChange?: (state: OfficeEditorState, instance: OfficeEditorInstance) => void | Promise<void>;
++  onInteractionGeneration?: (generation: number) => void;
+   onError?: (error: Error, instance?: OfficeEditorInstance) => void;
+ }
+ 
+@@ -138,7 +153,8 @@ export interface OfficeEditorState {
+ 
+ export interface OfficeEditorInstance {
+   readonly id: string;
+-  save(targetExt?: string): Promise<File>;
++  save(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<File>;
++  flushPendingSaves(): Promise<void>;
+   confirmSaveToNewFormat(options?: OfficeSaveToNewFormatConfirmationOptions): Promise<boolean>;
+   setInterfaceTheme(theme: OfficeInterfaceTheme): void;
+   setReadonly(readonly: boolean): void;
+@@ -372,12 +388,17 @@ type OnlyOfficeFrameWindow = Window & {
+ 	      CtrlKey?: boolean;
+ 	      KeyCode?: number;
+ 	    };
+-	    baseEditorsApi?: {
++    baseEditorsApi?: {
+       prototype?: {
+         sync_InitEditorFonts?: (guiFonts: unknown[]) => unknown;
+         __onlyOfficeBrowserFontPickerFilter?: boolean;
+       };
+     };
++    CollaborativeEditing?: {
++      Set_GlobalLock?: (isLock: boolean) => unknown;
++      Get_GlobalLock?: () => boolean;
++      m_bGlobalLock?: number;
++    };
+   };
+   Common?: {
+     NotificationCenter?: OnlyOfficeNotificationCenter;
+@@ -1910,6 +1931,11 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+   private downloadAsInterceptorRetryId: number | null = null;
+   private downloadAsInterceptorAttempts = 0;
+   private switchingPreviewMode = false;
++  private nativeViewModeState: boolean | null = null;
++  private nativeViewModeLockOwned = false;
++  private interactionGeneration = 0;
++  private interactionCleanup: (() => void) | null = null;
++  private interactionRetryId: number | null = null;
+   private nativeEditModeBridgeCleanup: (() => void) | null = null;
+   private nativeEditModeBridgeRetryId: number | null = null;
+ 
+@@ -1977,8 +2003,9 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+       persistDefaultEditorModePreviewZoom(this.fileType, this.previewMode);
+       const uiTheme = normalizeOfficeInterfaceTheme(this.options.interfaceTheme);
+       persistOnlyOfficeInterfaceTheme(uiTheme);
+-      const canEditInitially = !this.previewMode && !this.readonlyMode.value;
++      const canEditInitially = !this.previewMode && this.options.readonly !== true;
+       const canRequestEditFromPreview = this.previewMode && this.previewEditAllowed;
++      enforceDisabledMacroPolicy();
+       const editor = new runtimeWindow.DocsAPI.DocEditor(this.placeholder.id, {
+         type: 'desktop',
+         width: '100%',
+@@ -2018,6 +2045,7 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+             spellcheck: this.options.spellcheck ?? false,
+             autosave: false,
+             forcesave: false,
++            macrosMode: 'disable',
+             plugins: Boolean(this.options.plugins?.configUrls.length),
+             features: {
+               featuresTips: false,
+@@ -2043,6 +2071,7 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+           onAppReady: () => {
+             this.applyNestedEditorFrameDefaults();
+             this.installModernThemeFilter();
++            this.installHostSaveControls();
+             installNestedFontPickerFilter();
+             this.installSpreadsheetPdfPrintPanelBridge();
+             this.installNativeEditModeBridge();
+@@ -2052,11 +2081,14 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+             if (this.destroyed) return;
+             this.applyNestedEditorFrameDefaults();
+             this.installModernThemeFilter();
++            this.installHostSaveControls();
+             installNestedFontPickerFilter();
+             this.installSpreadsheetPdfPrintPanelBridge();
+             this.installNativeEditModeBridge();
+             this.scheduleNativeDownloadAsInterceptor();
++            this.installInteractionGenerationCapture();
+             this.status = 'ready';
++            this.applyReadonlyState();
+             this.applyDefaultEditorModePreviewZoom();
+             this.options.onReady?.(this);
+           },
+@@ -2159,6 +2191,16 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+     }
+   }
+ 
++  private installHostSaveControls(): void {
++    const frameDocument = this.getNestedEditorWindow()?.document;
++    if (!frameDocument?.head || frameDocument.getElementById('openprogram-save-controls')) return;
++    const style = frameDocument.createElement('style');
++    style.id = 'openprogram-save-controls';
++    // The host autosaves; keep the native export and undo APIs unchanged.
++    style.textContent = '[data-layout-name="header-save"], [data-layout-name="toolbar-save"] { display: none !important; }';
++    frameDocument.head.appendChild(style);
++  }
++
+   private installModernThemeFilter(): void {
+     const frameWindow = this.getNestedEditorWindow();
+     installModernOnlyOfficeThemeFilter(frameWindow);
+@@ -2181,6 +2223,15 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+     }, 200);
+   }
+ 
++  private installInteractionGenerationCapture(): void {
++    this.interactionRetryId = null; this.interactionCleanup?.(); this.interactionCleanup = null;
++    const frame = document.querySelector<HTMLIFrameElement>('iframe[name="frameEditor"]'); const doc = frame?.contentDocument;
++    if (!doc) { this.interactionRetryId = window.setTimeout(() => this.installInteractionGenerationCapture(), 250); return; }
++    const mark = (event: Event) => { if (!event.isTrusted) return; if (event.type === 'keydown' && ['Shift','Control','Alt','Meta'].includes((event as KeyboardEvent).key)) return; this.interactionGeneration += 1; this.options.onInteractionGeneration?.(this.interactionGeneration); };
++    const types = ['keydown','paste','cut','drop','pointerdown'] as const; types.forEach((type) => doc.addEventListener(type, mark, true));
++    this.interactionCleanup = () => types.forEach((type) => doc.removeEventListener(type, mark, true));
++  }
++
+   private installNativeEditModeBridge(): void {
+     if (!this.previewEditAllowed) {
+       this.clearNativeEditModeBridgeRetry();
+@@ -2895,16 +2946,22 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+ 
+   private applyReadonlyState(): void {
+     if (!this.editor || this.previewMode) return;
+-    const canEdit = !this.readonlyMode.value;
+-    const message = canEdit ? '' : 'Readonly mode';
+-    if (typeof this.editor.processRightsChange === 'function') {
+-      this.editor.processRightsChange(canEdit, message);
+-      return;
++    const api = this.getNativeEditorApi();
++    if (!api || typeof api.asc_setViewMode !== 'function') return;
++    const nextViewMode = this.readonlyMode.value;
++    if (this.nativeViewModeState === nextViewMode) return;
++    if (nextViewMode) {
++      api.asc_setViewMode(true);
++      this.nativeViewModeLockOwned = true;
++    } else if (this.nativeViewModeLockOwned) {
++      api.asc_setViewMode(false);
++      const frameWindow = this.getNestedEditorWindow();
++      if (getDocumentType(this.fileType) === 'word' || getDocumentType(this.fileType) === 'slide') {
++        frameWindow?.AscCommon?.CollaborativeEditing?.Set_GlobalLock?.(false);
++      }
++      this.nativeViewModeLockOwned = false;
+     }
+-    this.sendOnlyOfficeCommand('processRightsChange', {
+-      enabled: canEdit,
+-      message,
+-    });
++    this.nativeViewModeState = nextViewMode;
+   }
+ 
+   private revokeCurrentEditorBinUrl(): void {
+@@ -3357,11 +3414,20 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+     }
+   }
+ 
+-  private getNativeSaveData(): Uint8Array {
++  private getNativeSaveData(commitPendingInput = true): Uint8Array {
+     if (!this.editor || typeof this.editor.asc_nativeGetFile3 !== 'function') {
+       throw new Error('The current editor does not support native binary export');
+     }
+ 
++    // Native binary serialization reads the workbook model, not an active
++    // cell's edit buffer. Commit that buffer before taking the save snapshot.
++    if (commitPendingInput && getDocumentType(this.fileType) === 'cell') {
++      const api = this.getNativeEditorApi() as { asc_closeCellEditor?: (cancel: boolean) => boolean } | null;
++      if (!api?.asc_closeCellEditor || api.asc_closeCellEditor(false) === false) {
++        throw new Error('The current cell edit could not be committed. The document remains open.');
++      }
++    }
++
+     const payload: NativeSaveData | undefined = this.editor.asc_nativeGetFile3();
+     const data = payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
+     if (!data) {
+@@ -3441,9 +3507,9 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+     this.printResourceUrls.add(url);
+   }
+ 
+-  private async saveNativeBinary(targetFormat: string): Promise<void> {
++  private async saveNativeBinary(targetFormat: string, commitPendingInput = true): Promise<void> {
+     try {
+-      const file = await this.convertNativeOutputFile(this.getNativeSaveData(), targetFormat);
++      const file = await this.convertNativeOutputFile(this.getNativeSaveData(commitPendingInput), targetFormat);
+       await this.emitSavedFile(file);
+     } catch (error) {
+       const normalized = toError(error);
+@@ -3452,7 +3518,11 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+     }
+   }
+ 
+-  save(targetExt?: string): Promise<File> {
++  flushPendingSaves(): Promise<void> {
++    return Promise.resolve();
++  }
++
++  save(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<File> {
+     if (this.destroyed || !this.editor) {
+       return Promise.reject(new Error('Editor is not open'));
+     }
+@@ -3480,7 +3550,7 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+         settled: false,
+       };
+ 
+-      void this.saveNativeBinary(normalizedTargetExt);
++      void this.saveNativeBinary(normalizedTargetExt, options?.commitPendingInput !== false);
+     });
+   }
+ 
+@@ -3513,7 +3583,17 @@ class BrowserOfficeEditor implements OfficeEditorInstance {
+   }
+ 
+   destroy(): Promise<void> {
++    this.interactionCleanup?.(); this.interactionCleanup = null; if (this.interactionRetryId !== null) window.clearTimeout(this.interactionRetryId); this.interactionRetryId = null;
+     if (this.destroyPromise) return this.destroyPromise;
++    if (this.nativeViewModeLockOwned) {
++      const api = this.getNativeEditorApi();
++      if (api && typeof api.asc_setViewMode === 'function') api.asc_setViewMode(false);
++      if (getDocumentType(this.fileType) === 'word' || getDocumentType(this.fileType) === 'slide') {
++        this.getNestedEditorWindow()?.AscCommon?.CollaborativeEditing?.Set_GlobalLock?.(false);
++      }
++      this.nativeViewModeLockOwned = false;
++      this.nativeViewModeState = false;
++    }
+     this.destroyed = true;
+     this.status = 'destroyed';
+     this.clearNativeDownloadAsInterceptorRetry();
+diff --git a/src/lib/office-editor.ts b/src/lib/office-editor.ts
+index 18d638d..69528de 100644
+--- a/src/lib/office-editor.ts
++++ b/src/lib/office-editor.ts
+@@ -115,7 +115,8 @@ export interface OfficeEditorState {
+ export interface OfficeEditorInstance {
+   readonly id: string;
+   invokePlugin(pluginGuid: string, payload: unknown): Promise<unknown>;
+-  save(targetExt?: string): Promise<File>;
++  save(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<File>;
++  flushPendingSaves(): Promise<void>;
+   confirmSaveToNewFormat(options?: OfficeSaveToNewFormatConfirmationOptions): Promise<boolean>;
+   setInterfaceTheme(theme: OfficeInterfaceTheme): void;
+   setReadonly(readonly: boolean): void;
+@@ -611,6 +612,11 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
+   private readyReject: ((error: Error) => void) | null = null;
+   private destroyAckResolve: (() => void) | null = null;
+   private connected = false;
++  private interactionGeneration = 0;
++  private pendingSaveGenerations = new Map<string, { generation: number; targetExt?: string; commitPendingInput: boolean }>();
++  private pendingSaveSettled = new Map<string, { promise: Promise<void>; resolve: () => void }>();
++  private pendingSaveRetry = false;
++  private saveQueue: Promise<void> = Promise.resolve();
+   private activationStarted = false;
+   private initSent = false;
+   private mounted = false;
+@@ -818,6 +824,25 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
+         this.readyReject = null;
+         this.maybeNotifyReady();
+         return;
++      case 'SAVE_SETTLED': {
++        const settled = this.pendingSaveSettled.get(message.requestId);
++        this.pendingSaveSettled.delete(message.requestId);
++        settled?.resolve();
++        const pending = this.pendingSaveGenerations.get(message.requestId);
++        this.pendingSaveGenerations.delete(message.requestId);
++        if (pending && pending.generation !== this.interactionGeneration && !this.destroyed) {
++          this.pendingSaveRetry = true;
++          window.queueMicrotask(() => {
++            void this.save(pending.targetExt, { commitPendingInput: pending.commitPendingInput })
++              .catch(() => undefined)
++              .finally(() => {
++                this.pendingSaveRetry = false;
++              });
++          });
++        }
++        return;
++      }
++      case 'INTERACTION_GENERATION': this.interactionGeneration = Math.max(this.interactionGeneration, message.generation); return;
+       case 'STATE':
+         this.applyHostState(message.state);
+         this.maybeNotifyReady();
+@@ -1154,7 +1179,16 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
+     }
+   }
+ 
+-  save(targetExt?: string): Promise<File> {
++  save(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<File> {
++    // Reserve the queue before any await: automatic retries and multiple
++    // callers may become ready on the same SAVE_SETTLED message.
++    const commitPendingInput = options?.commitPendingInput !== false;
++    const task = this.saveQueue.then(() => this.performSave(targetExt, commitPendingInput));
++    this.saveQueue = task.then(() => undefined, () => undefined);
++    return task;
++  }
++
++  private async performSave(targetExt: string | undefined, commitPendingInput: boolean): Promise<File> {
+     if (this.destroyed || !this.port) {
+       return Promise.reject(new Error('Editor is not open'));
+     }
+@@ -1162,17 +1196,45 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
+       return Promise.reject(new Error('Current document is readonly'));
+     }
+ 
++    await Promise.all([...this.pendingSaveSettled.values()].map(({ promise }) => promise));
++    if (this.destroyed || !this.port) {
++      throw new Error('Editor is not open');
++    }
++    if (this.state.readonly) {
++      throw new Error('Current document is readonly');
++    }
++
+     const requestId = nextRequestId(this.id);
+-    return new Promise<File>((resolve, reject) => {
+-      this.pendingRequests.set(requestId, { resolve, reject });
++    let settledResolve!: () => void;
++    const settledPromise = new Promise<void>((resolve) => {
++      settledResolve = resolve;
++    });
++    this.pendingSaveSettled.set(requestId, { promise: settledPromise, resolve: settledResolve });
++    const result = new Promise<File>((resolve, reject) => {
++      this.pendingRequests.set(requestId, { resolve, reject }); this.pendingSaveGenerations.set(requestId, { generation: this.interactionGeneration, targetExt, commitPendingInput });
+       this.postToHost({
+         protocol: OFFICE_HOST_PROTOCOL,
+         type: 'SAVE',
+         sessionId: this.id,
+         requestId,
+         targetExt,
++        commitPendingInput,
+       });
+     });
++    try {
++      return await result;
++    } finally {
++      await settledPromise;
++    }
++  }
++
++  async flushPendingSaves(): Promise<void> {
++    while (!this.destroyed) {
++      const queue = this.saveQueue;
++      await queue;
++      await Promise.resolve();
++      if (queue === this.saveQueue && this.pendingSaveSettled.size === 0 && !this.pendingSaveRetry) return;
++    }
+   }
+ 
+   invokePlugin(pluginGuid: string, payload: unknown): Promise<unknown> {
+@@ -1220,11 +1282,7 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
+   }
+ 
+   setReadonly(readonly: boolean): void {
+-    this.state = {
+-      ...this.state,
+-      readonly,
+-      mode: this.returnsToPreview && readonly ? 'preview' : readonly ? 'readonly' : 'edit',
+-    };
++    // The host confirms the native mode with STATE after applying the change.
+     if (!this.destroyed && this.port) {
+       this.postToHost({
+         protocol: OFFICE_HOST_PROTOCOL,
+@@ -1281,6 +1339,10 @@ class BrowserOfficeEditorProxy implements OfficeEditorInstance {
+       request.reject(new Error('Editor was destroyed before save completed'));
+     }
+     this.pendingRequests.clear();
++    for (const pending of this.pendingSaveSettled.values()) pending.resolve();
++    this.pendingSaveSettled.clear();
++    this.pendingSaveGenerations.clear();
++    this.pendingSaveRetry = false;
+     for (const request of this.pendingConfirmationRequests.values()) {
+       request.reject(new Error('Editor was destroyed before confirmation completed'));
+     }
+diff --git a/src/lib/office-host-protocol.ts b/src/lib/office-host-protocol.ts
+index a865654..54e0b6f 100644
+--- a/src/lib/office-host-protocol.ts
++++ b/src/lib/office-host-protocol.ts
+@@ -90,6 +90,7 @@ export type OfficeHostParentMessage =
+   | (OfficeHostBaseMessage & {
+       type: 'SAVE';
+       targetExt?: string;
++      commitPendingInput?: boolean;
+     })
+   | (OfficeHostBaseMessage & {
+       type: 'SAVE_ACK';
+@@ -140,6 +141,8 @@ export type OfficeHostChildMessage =
+       type: 'STATE';
+       state: OfficeHostState;
+     })
++  | (OfficeHostBaseMessage & { type: 'INTERACTION_GENERATION'; generation: number; })
++  | (OfficeHostBaseMessage & { type: 'SAVE_SETTLED'; requestId: string; })
+   | (OfficeHostBaseMessage & {
+       type: 'SAVE_RESULT';
+       buffer: ArrayBuffer;
+diff --git a/src/office-host.ts b/src/office-host.ts
+index 7724ef7..754c717 100644
+--- a/src/office-host.ts
++++ b/src/office-host.ts
+@@ -616,8 +616,11 @@ async function handleInit(message: Extract<OfficeHostParentMessage, { type: 'INI
+       onStateChange: (state) => {
+         postState('STATE', state);
+       },
++      onInteractionGeneration: (generation) => postPortMessage({ protocol: OFFICE_HOST_PROTOCOL, type: 'INTERACTION_GENERATION', sessionId, generation }),
+       onError: (error) => {
+-        postError('runtime', error);
++        // The parent already reported its recoverable persistence failure.
++        // Do not turn the save acknowledgement into a fatal engine error.
++        if (error.name !== 'OnlyOfficeHostSaveAckError') postError('runtime', error);
+       },
+       onSave: (file) => postSavedFile(file, activeSaveRequestId),
+       onSaveAs: (file) => postSaveAsFile(file),
+@@ -768,13 +771,14 @@ async function handleSave(message: Extract<OfficeHostParentMessage, { type: 'SAV
+       throw new Error('Editor is not open');
+     }
+     activeSaveRequestId = message.requestId;
+-    await editor.save(message.targetExt);
++    await editor.save(message.targetExt, { commitPendingInput: message.commitPendingInput !== false });
+   } catch (error) {
+     if (!(error instanceof Error && error.name === 'OnlyOfficeHostSaveAckError')) {
+       postError('save', error, message.requestId);
+     }
+   } finally {
+     if (activeSaveRequestId === message.requestId) activeSaveRequestId = undefined;
++    if (!destroyed && message.requestId) postPortMessage({ protocol: OFFICE_HOST_PROTOCOL, type: 'SAVE_SETTLED', sessionId, requestId: message.requestId });
+   }
+ }
+ 
+diff --git a/src/types/editor.d.ts b/src/types/editor.d.ts
+index 1e42896..0d692a4 100644
+--- a/src/types/editor.d.ts
++++ b/src/types/editor.d.ts
+@@ -50,6 +50,8 @@ interface DocEditorConfig {
+       autosave?: boolean;
+       /** Whether the native force-save-on-user-save option is enabled. */
+       forcesave?: boolean;
++      /** OnlyOffice macro policy: enable, disable, or warn. */
++      macrosMode?: 'enable' | 'disable' | 'warn';
+       /** Enable/disable plugins. Set to false to disable plugins */
+       plugins?: boolean;
+       features: {
+@@ -162,6 +164,7 @@ interface DocEditor {
+   openDocument?: (data: Uint8Array) => void;
+   downloadAs?: (data?: string) => void;
+   getEditorApi?: () => {
++    asc_setViewMode?: (isViewMode: boolean) => unknown;
+     asc_DownloadAs?: (options?: unknown) => unknown;
+     _downloadAs?: (
+       actionType?: unknown,

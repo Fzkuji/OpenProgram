@@ -157,6 +157,8 @@ def test_session_loaded_precedes_async_context_stats(
     ws = FakeWS()
 
     async def _after_session_loaded(func, /, *args, **kwargs):
+        # Graph construction also runs off the event loop before hydration.
+        # Only the context-stat refresh must follow the session_loaded frame.
         if func is _s.refresh_context_stats:
             assert any(frame.get("type") == "session_loaded" for frame in ws.sent)
         return func(*args, **kwargs)

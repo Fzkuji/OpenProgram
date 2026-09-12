@@ -47,8 +47,10 @@ import {
   clearPendingUserText,
   clearPendingFirstAck,
   getPendingUserTimestamp,
+  getPendingUserMessageId,
   getPendingUserText,
   pendingUserHasAttachments,
+  rejectPendingUserText,
 } from "@/lib/pending-user-text";
 
 interface StreamEvent {
@@ -236,6 +238,7 @@ function handleAck(
   // suffix) and the later result anchor to the same turn.
   const text = getPendingUserText(sid);
   const timestamp = getPendingUserTimestamp(sid);
+  const pendingId = getPendingUserMessageId(sid);
   if (d.msg_id && typeof text === "string" && text) {
     const isRun = /^(run|create|fix)\s/i.test(text);
     // The ack echoes the STORED text, which differs from the draft in
@@ -243,13 +246,33 @@ function handleAck(
     // path the backend wrote once the bytes hit disk. Rendering the
     // draft instead would give the bubble a chip with nothing to open
     // until the next reload.
-    appendLocalUserTurn(
-      sid,
-      d.msg_id,
-      typeof d.text === "string" && d.text ? d.text : text,
-      isRun ? "runtime" : undefined,
-      timestamp,
-    );
+    if (pendingId) {
+      useSessionStore.getState().rekeyMessage(sid, pendingId, d.msg_id);
+      if (useSessionStore.getState().messagesById[d.msg_id]) {
+        useSessionStore.getState().updateMessage(sid, d.msg_id, {
+          content: typeof d.text === "string" && d.text ? d.text : text,
+          status: "done",
+          display: isRun ? "runtime" : undefined,
+          ...(timestamp === undefined ? {} : { timestamp }),
+        });
+      } else {
+        appendLocalUserTurn(
+          sid,
+          d.msg_id,
+          typeof d.text === "string" && d.text ? d.text : text,
+          isRun ? "runtime" : undefined,
+          timestamp,
+        );
+      }
+    } else {
+      appendLocalUserTurn(
+        sid,
+        d.msg_id,
+        typeof d.text === "string" && d.text ? d.text : text,
+        isRun ? "runtime" : undefined,
+        timestamp,
+      );
+    }
     // Create the reply bubble right away (after the user turn, so the
     // order is right) — gives an immediate typing indicator / pending
     // runtime block instead of a gap until the first stream event.
@@ -292,6 +315,7 @@ function handleResponse(d: ChatResponseData | undefined): void {
     d.session_id || sessionByMsgId.get(d.msg_id)
     || useSessionStore.getState().currentSessionId || undefined;
   if (!sid) return;
+  const pendingId = getPendingUserMessageId(sid);
   if (d.type === "result" || d.type === "error" || d.type === "cancelled") {
     sessionByMsgId.delete(d.msg_id);
   }
@@ -306,15 +330,24 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // must return BEFORE finalize() would mint a stray error bubble.
   if (d.type === "error" && d.code === "run_active") {
     const rejected = typeof d.retry_query === "string" ? d.retry_query : "";
+    const hasAttachments = pendingUserHasAttachments(sid);
     // Attachment turns cannot be represented by the text-only retry queue.
     // Leave their original composer draft and files in place for an explicit
     // retry instead of silently converting the turn to plain text.
-    if (rejected && !pendingUserHasAttachments(sid)) {
+    if (rejected && !hasAttachments) {
       void import("@/lib/state/send-queue").then((m) =>
         m.requeueRejected(sid, rejected),
       );
     }
-    clearPendingUserText(sid);
+    if (hasAttachments) {
+      if (pendingId) useSessionStore.getState().updateMessage(sid, pendingId, {
+        status: "error", rawType: "error", errorReason: "run_active",
+      });
+      rejectPendingUserText(sid);
+    } else {
+      clearPendingUserText(sid);
+      if (pendingId) useSessionStore.getState().removeMessage(sid, pendingId);
+    }
     clearPendingFirstAck(sid);
     return;
   }
@@ -323,7 +356,11 @@ function handleResponse(d: ChatResponseData | undefined): void {
   // ACK reservation so the user can submit the unchanged composer draft
   // again; the composer cleanup callback is deliberately discarded.
   if (d.type === "error") {
-    clearPendingUserText(sid);
+    if (pendingId) useSessionStore.getState().updateMessage(sid, pendingId, {
+      status: "error", rawType: "error", errorReason: d.reason,
+      errorRetryable: d.retryable,
+    });
+    rejectPendingUserText(sid);
     clearPendingFirstAck(sid);
   }
 
@@ -671,6 +708,7 @@ export function appendLocalUserTurn(
   text: string,
   display?: "runtime" | "normal",
   timestamp = Date.now(),
+  status: ChatMsg["status"] = "done",
 ): void {
   const store = useSessionStore.getState();
   if (store.messagesById[msgId]) return;
@@ -679,7 +717,7 @@ export function appendLocalUserTurn(
     role: "user",
     content: text,
     display: display === "runtime" ? "runtime" : undefined,
-    status: "done",
+    status,
     timestamp,
   });
 }

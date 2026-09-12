@@ -12,8 +12,8 @@ reference frameworks (see ``docs/design/providers/reliability/llm-fault-toleranc
     over a buffering proxy/VPN. So the body read is effectively governed by
     the SSE idle budget, not a short httpx read.
   * **Keep a separate, generous "no real data" progress guard** (our extra
-    over OpenClaw — catches a stream that only echoes pings) and a runaway
-    total ceiling.
+    over OpenClaw — catches a stream that only echoes pings) without a default
+    total-duration ceiling.
   * **Optionally scale the budgets up with prompt size** (hermes pattern):
     a 200k-token request legitimately spends longer in prefill / thinking.
 
@@ -45,8 +45,11 @@ POOL_TIMEOUT_S: float = _f("OPENPROGRAM_HTTPX_POOL_TIMEOUT_S", 30.0)
 STREAM_IDLE_TIMEOUT_S: float = _f("OPENPROGRAM_SSE_IDLE_TIMEOUT_S", 1800.0)
 # "no real data event" (only parsed payloads reset it) — our extra guard.
 STREAM_DATA_STALL_TIMEOUT_S: float = _f("OPENPROGRAM_SSE_DATA_STALL_TIMEOUT_S", 900.0)
-# Single-stream runaway backstop. OpenClaw has none; we keep a high one.
-STREAM_TOTAL_TIMEOUT_S: float = _f("OPENPROGRAM_SSE_TOTAL_TIMEOUT_S", 7200.0)
+# No default total-duration cap: a healthy stream may keep making progress.
+# Existing HTTP/SSE consumers compare numeric deadlines, so infinity disables
+# only the total clock while leaving connect/read/idle/cancellation intact.
+_total_budget = _f("OPENPROGRAM_SSE_TOTAL_TIMEOUT_S", 0.0)
+STREAM_TOTAL_TIMEOUT_S: float = _total_budget if _total_budget > 0 else float("inf")
 
 
 def httpx_read_timeout_s() -> float:

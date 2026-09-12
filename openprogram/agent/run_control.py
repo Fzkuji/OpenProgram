@@ -28,6 +28,24 @@ from openprogram.agentic_programming.function import (
 )
 
 
+_worker_stopping = threading.Event()
+
+
+def begin_worker_shutdown() -> None:
+    """Stop subsequent invocations without recording a user cancellation."""
+    _worker_stopping.set()
+
+
+def is_worker_stopping() -> bool:
+    return _worker_stopping.is_set()
+
+
+def raise_if_worker_stopping() -> None:
+    if is_worker_stopping():
+        from openprogram.providers.utils.errors import ExecInterrupt
+        raise ExecInterrupt("worker_stopping")
+
+
 # ---------------------------------------------------------------------------
 # Turn cancellation tokens — one per turn, never per session.
 #
@@ -1746,6 +1764,9 @@ def _cancel_hook() -> None:
     Registered with agentic_function's hook list, so every @agentic_function
     entry (and every Runtime.exec call) aborts once the turn is cancelled.
     """
+    if _worker_stopping.is_set():
+        from openprogram.providers.utils.errors import ExecInterrupt
+        raise ExecInterrupt("worker_stopping")
     token = _active_token()
     if token is not None and token.is_cancelled():
         raise CancelledError(f"Execution stopped by user (conv={token.session_id})")

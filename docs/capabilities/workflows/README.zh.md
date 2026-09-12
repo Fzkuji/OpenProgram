@@ -42,3 +42,17 @@ openprogram programs run <name> -a key=value  # 直接运行一个 program
 Harness 契约与单个 Workflow 包不同。包合同、完整测试示例、相对路径以及 `workflows validate/test/publish` 命令见[编写、测试和发布 Workflow](authoring.zh.md)。生成式 `create_workflow` 和 `revise_workflow` 也使用同一强制行为测试要求。
 
 Workflow 表单只询问任务信息，不要求配置执行设置。文本润色在同一次模型请求中根据文本判断风格，不强制用户选择。浏览器 backend 和会话标识保留为内部参数。文档页码和输出位置属于可选的任务要求。显式 Python 调用仍支持受支持的覆盖值。
+
+## 周报
+
+如果 Workflow 目录已安装 `weekly_report`，可以直接提供周报内容或修改要求。例如：“提交本周周报：……”；“只修改本周周报的下周计划，其他字段不变”；“只查看本周提交记录”；“不要提交，把草稿写到 reports/weekly_report.md”。
+
+它先读取配置的飞书表单，核对姓名和年份、周次。没有记录时新建提交一次；已有可编辑记录时，从提交历史打开并保存。部分修改保留未指定的字段。明确要求草稿或只读检查时不会提交。检查结果不明确、登录失败或记录无法唯一确认时停止；达到提交次数上限不等于已有记录不能编辑。
+
+只有观察到新的成功提示并核对保存内容后才报告完成。写入结果不明确时直接说明，不自动重试。浏览器原有授权要求保持不变。流程使用有次数与时间限制的浏览器步骤，不使用 `goal()` 循环，也不编造进展、指标或论文名称。
+
+### 组长周报草稿
+
+`group_weekly_report(task)` 根据你提供的材料生成本地草稿，不读取或发送微信消息。JSON 输入包含 `mode`（`inspect`、`summary` 或 `reminder`）、`week`（`YYYY-Www`）、`group`、按顺序排列的 `members` 和 `materials`。每条材料包含 `id`、`member`、`week` 和 `text`；可用 `kind: "claim"` 区分成员自述与已提供的周报材料。自然语言由模型解析，缺少范围时返回待补充信息。
+
+结构化输入的核对由代码完成，不调用模型。汇总按成员限制模型上下文，核验来源引用并保留不确定项。本地文件保存到 `reports/group-weekly/<week>/<unique-run>/`（或 `output_dir`）。未找到材料不等于未提交。请核对草稿后自行发送。

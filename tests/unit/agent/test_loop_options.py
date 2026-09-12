@@ -131,6 +131,16 @@ def test_default_cap_does_not_kick_in_early():
     assert state["calls"] == 4
 
 
+def test_chat_turns_have_no_hard_cap():
+    from openprogram.agent.agent_loop import MAX_INNER_ITERATIONS, iteration_cap_for
+
+    assert MAX_INNER_ITERATIONS is None
+    assert iteration_cap_for(None) is None
+    assert iteration_cap_for(20) == 20
+    assert iteration_cap_for(500) == 500
+    assert iteration_cap_for(0) == 1
+
+
 def test_tool_choice_and_parallel_reach_stream_opts():
     stream_fn, state = _make_stream_fn([_text_msg()])
     session = _session(
@@ -273,3 +283,12 @@ def test_exec_defaults_publish_only_the_20_round_cap():
     rt = _ProbeRuntime(captured)
     rt.exec([{"type": "text", "text": "hi"}])
     assert captured["opts"] == {"max_iterations": 20}
+
+
+def test_default_chat_completes_after_more_than_two_hundred_tool_rounds():
+    stream_fn, state = _make_stream_fn(
+        [_tool_call_msg(i) for i in range(205)] + [_text_msg()]
+    )
+    session = _session(stream_fn)
+    asyncio.run(session.run('Complete the whole task'))
+    assert state['calls'] == 206

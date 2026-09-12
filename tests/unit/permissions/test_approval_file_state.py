@@ -209,3 +209,70 @@ def test_link_swap_without_nofollow_does_not_write_through_link(tmp_path, monkey
     with pytest.raises(ValueError, match='regular file'):
         file_state.write_checked(str(path), 'agent content')
     assert alias.read_bytes() == b'before'
+
+
+@pytest.mark.parametrize('changed', ['target', 'source'])
+def test_binary_publication_rechecks_files_after_staging(tmp_path, monkeypatch, changed):
+    target, source = tmp_path / 'target.docx', tmp_path / 'source.docx'
+    target.write_bytes(b'before')
+    source.write_bytes(b'after')
+    state = file_state.fingerprint(str(target))
+    source_state = {str(source): file_state.fingerprint(str(source))}
+    monkeypatch.setattr(file_state, 'current_files', lambda: {})
+    real_sync = file_state.os.fsync
+
+    def concurrent_change(fd):
+        real_sync(fd)
+        (target if changed == 'target' else source).write_bytes(b'external change')
+
+    monkeypatch.setattr(file_state.os, 'fsync', concurrent_change)
+    with pytest.raises(ValueError, match='File state changed'):
+        file_state.write_checked_atomic(str(target), b'after', expected_state=state,
+                                        source_state=source_state)
+    assert target.read_bytes() == (b'external change' if changed == 'target' else b'before')
+    assert not list(tmp_path.glob('.openprogram-write-*'))
+
+
+def test_binary_source_is_part_of_approval(tmp_path, monkeypatch):
+    target, source = tmp_path / 'target.docx', tmp_path / 'source.docx'
+    target.write_bytes(b'before')
+    source.write_bytes(b'approved')
+    approved = file_state.capture('write', {'file_path': str(target), 'source_path': str(source)})
+    monkeypatch.setattr(file_state, 'current_files', lambda: approved)
+    source.write_bytes(b'changed after approval')
+    with pytest.raises(ValueError, match='File state changed'):
+        file_state.write_checked_atomic(
+            str(target), source.read_bytes(), expected_state=file_state.fingerprint(str(target)),
+            source_state={str(source): file_state.fingerprint(str(source))},
+        )
+    assert target.read_bytes() == b'before'
+
+
+def test_binary_publish_failure_preserves_original_and_cleans_staging(tmp_path, monkeypatch):
+    target = tmp_path / 'target.docx'
+    target.write_bytes(b'before')
+    monkeypatch.setattr(file_state, 'current_files', lambda: {})
+
+    def deny_replace(*args):
+        raise PermissionError('file in use')
+
+    monkeypatch.setattr(file_state.os, 'replace', deny_replace)
+    with pytest.raises(PermissionError, match='file in use'):
+        file_state.write_checked_atomic(str(target), b'after',
+                                        expected_state=file_state.fingerprint(str(target)),
+                                        source_state={})
+    assert target.read_bytes() == b'before'
+    assert not list(tmp_path.glob('.openprogram-write-*'))
+
+
+@pytest.mark.skipif(file_state.os.name == 'nt', reason='POSIX permission bits')
+def test_binary_publication_preserves_target_permissions(tmp_path, monkeypatch):
+    target = tmp_path / 'target.docx'
+    target.write_bytes(b'before')
+    target.chmod(0o640)
+    monkeypatch.setattr(file_state, 'current_files', lambda: {})
+    file_state.write_checked_atomic(str(target), b'after',
+                                    expected_state=file_state.fingerprint(str(target)),
+                                    source_state={})
+    assert target.read_bytes() == b'after'
+    assert target.stat().st_mode & 0o777 == 0o640

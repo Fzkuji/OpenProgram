@@ -6,14 +6,15 @@ import {
   DRAFT_MAX_BYTES,
   reportDraftPersistenceError,
   notifyDraftErrorListeners,
-} from "./file-state-shared";
+} from "./file-state-shared.ts";
 import {
   IndexedDbDraftStore,
+  IndexedDbDocumentDraftStore,
   DraftStoreQuotaError,
   type DraftStoreAdapter,
   type DraftStoreSnapshot,
   rebuildDraftIndexes,
-} from "./file-draft-store";
+} from "./file-draft-store.ts";
 
 const utf8 = new TextEncoder();
 export interface FileDraft {
@@ -280,6 +281,68 @@ export async function loadFileDraftsForPath(
   });
 }
 
+type DocumentControllerLike = {
+  identity: { kind: string; projectId?: string; path: string };
+  currentDraft(): Blob | null;
+  getState(): { status: string; draft: Blob | null };
+  discard(): Promise<void>;
+};
+
+/** Resolve lazily because document-controller imports this legacy module. */
+async function documentControllersForPath(projectId: string, path: string): Promise<DocumentControllerLike[]> {
+  const module = await import("./document-controller");
+  return [...module.documentControllers.values()].filter((controller: DocumentControllerLike) => {
+    const identity = controller.identity;
+    return identity.kind === "project" && identity.projectId === projectId
+      && (!path || identity.path === path || identity.path.startsWith(`${path}/`));
+  });
+}
+
+export async function hasDocumentDraftsForPath(projectId: string, path: string): Promise<boolean> {
+  const controllers = await documentControllersForPath(projectId, path);
+  if (controllers.some((controller) => {
+    const state = controller.getState();
+    return Boolean(controller.currentDraft()) || ["dirty", "saving", "error", "conflict"].includes(state.status);
+  })) return true;
+  if (typeof indexedDB === "undefined") return false;
+  const records = await new IndexedDbDocumentDraftStore().list(projectId, path);
+  return records.length > 0;
+}
+
+async function discardDocumentControllersForPath(projectId: string, path: string): Promise<DraftPersistenceResult> {
+  try {
+    for (const controller of await documentControllersForPath(projectId, path)) await controller.discard();
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to discard the local document draft.";
+    reportDraftPersistenceError(fileDraftKey(projectId, path), message);
+    return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+  }
+}
+
+/** Flush dirty project documents, including drafts whose editor pane is not
+ * mounted. A failed load/save keeps the caller's tab open. */
+export async function flushFileDocumentsBeforeClose(
+  tabs: readonly { projectId?: string; path?: string }[],
+): Promise<boolean> {
+  try {
+    const module = await import("./document-controller");
+    for (const tab of tabs) {
+      if (!tab.projectId || !tab.path || !(await hasDirtyDraftsForPath(tab.projectId, tab.path))) continue;
+      const identity = { kind: "project" as const, projectId: tab.projectId, path: tab.path };
+      const controller = module.lookupDocumentController(identity)
+        ?? module.getOrCreateDocumentController({ projectId: tab.projectId, path: tab.path });
+      await controller.load();
+      await controller.flush();
+    }
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to save a document before closing its tab.";
+    reportDraftPersistenceError("__close__", message);
+    return false;
+  }
+}
+
 export function persistFileDraft(projectId: string, path: string, value: FileDraft): Promise<DraftPersistenceResult> {
   const key = fileDraftKey(projectId, path);
   return enqueueDraft(async () => {
@@ -482,6 +545,12 @@ async function preflightMoveFileDraftsInternal(
   newPath: string,
 ): Promise<DraftPersistenceResult> {
   await hydrateDraftState();
+  if (await hasDocumentDraftsForPath(projectId, oldPath)
+      || await hasDocumentDraftsForPath(projectId, newPath)) {
+    const message = "A document with unsaved changes is open; save or discard it before renaming.";
+    reportDraftPersistenceError(projectId, message);
+    return { ok: false, code: "DRAFT_CONFLICT", status: "conflict", error_code: "DRAFT_CONFLICT", message };
+  }
   const store = await getDraftStore();
   if (!store) {
     const message = "Unable to validate the local dirty draft because storage is unavailable.";
@@ -543,6 +612,9 @@ export function runServerRenameWithDrafts(
   reverseRename: (serverResult: ServerRenameResult) => Promise<ServerRenameResult>,
 ): Promise<DraftPersistenceResult> {
   return enqueueDraft(async () => {
+    const { beginDocumentRename } = await import("./document-controller");
+    const finishRename = await beginDocumentRename(projectId, oldPath, newPath);
+    let renamed = false;
     try {
       const preflight = await preflightMoveFileDraftsInternal(projectId, oldPath, newPath);
       if (!preflight.ok) return preflight;
@@ -564,7 +636,7 @@ export function runServerRenameWithDrafts(
         });
       }
       const moved = await moveFileDraftsInternal(projectId, oldPath, newPath);
-      if (moved.ok) return withServerMetadata(moved, serverResult);
+      if (moved.ok) { renamed = true; return withServerMetadata(moved, serverResult); }
       try {
         const compensation = await reverseRename(serverResult);
         if (compensation?.status === "ready") {
@@ -588,7 +660,7 @@ export function runServerRenameWithDrafts(
       const message = "The file rename could not be completed; the local draft was retained.";
       reportDraftPersistenceError(projectId, message);
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
-    }
+    } finally { await finishRename(renamed); }
   });
 }
 
@@ -602,6 +674,8 @@ export async function discardFileDraftsBeforeClose(
   for (const tab of tabs) {
     if (!tab.projectId || !tab.path || !(await hasDirty(tab.projectId, tab.path))) continue;
     if (!(await discard(tab.projectId, tab.path)).ok) return false;
+    if (discard === discardFileDraft
+        && !(await discardDocumentControllersForPath(tab.projectId, tab.path)).ok) return false;
   }
   return true;
 }
@@ -634,15 +708,32 @@ export async function hasDirtyDraftsForPath(projectId: string, path: string): Pr
   await hydrateDraftState();
   const prefix = fileDraftKey(projectId, path);
   return [...new Set([...draftBytesByKey.keys(), ...liveDraftBytesByKey.keys()])]
-    .some((key) => key === prefix || key.startsWith(`${prefix}/`));
+    .some((key) => key === prefix || key.startsWith(`${prefix}/`))
+    || await hasDocumentDraftsForPath(projectId, path);
 }
 
 /** Explicitly discard a file or directory's drafts after its server-side
  * deletion has succeeded. The draft records and project index change in one
  * transaction; a failed transaction leaves every record intact. */
 export function clearFileDraftsForPath(projectId: string, path: string): Promise<DraftPersistenceResult> {
-  return enqueueDraft(async () => {
-    await hydrateDraftState();
+  // Controller.discard also clears its legacy compatibility record. Do this
+  // before entering the legacy queue; calling it from inside that queue would
+  // wait on itself through discardFileDraft.
+  return (async () => {
+    const controllerResult = await discardDocumentControllersForPath(projectId, path);
+    if (!controllerResult.ok) return controllerResult;
+    try {
+      if (typeof indexedDB !== "undefined") {
+        const store = new IndexedDbDocumentDraftStore();
+        for (const record of await store.list(projectId, path)) await store.delete(record.key, record.storageVersion);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to discard the local document draft.";
+      reportDraftPersistenceError(fileDraftKey(projectId, path), message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+    }
+    return enqueueDraft(async () => {
+      await hydrateDraftState();
     const prefix = fileDraftKey(projectId, path);
     const store = await getDraftStore();
     if (!store) {
@@ -673,13 +764,33 @@ export function clearFileDraftsForPath(projectId: string, path: string): Promise
       reportDraftPersistenceError(prefix, message);
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", status: "recovery_required", message };
     }
-  });
+    });
+  })();
 }
 
 /** Reserved for a future explicit project unlink/delete command. The current
  * project registry has no such action and never calls this from list refresh. */
 export function clearProjectDrafts(projectId: string): Promise<DraftPersistenceResult> {
-  return enqueueDraft(async () => {
+  return (async () => {
+    const controllers = await documentControllersForPath(projectId, "");
+    try {
+      for (const controller of controllers) await controller.discard();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to clear project dirty drafts.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+    }
+    try {
+      if (typeof indexedDB !== "undefined") {
+        const store = new IndexedDbDocumentDraftStore();
+        for (const record of await store.list(projectId)) await store.delete(record.key, record.storageVersion);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to clear project dirty drafts.";
+      reportDraftPersistenceError(projectId, message);
+      return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
+    }
+    return enqueueDraft(async () => {
     await hydrateDraftState();
     const store = await getDraftStore();
     if (!store) {
@@ -710,7 +821,8 @@ export function clearProjectDrafts(projectId: string): Promise<DraftPersistenceR
       reportDraftPersistenceError(projectId, message);
       return { ok: false, code: "DRAFT_PERSISTENCE_FAILED", message };
     }
-  });
+    });
+  })();
 }
 
 export interface FileDraftSnapshotEntry {

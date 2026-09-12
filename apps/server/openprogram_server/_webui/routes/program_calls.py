@@ -1,4 +1,4 @@
-"""Source-only application function graph. Never import analyzed code."""
+"""Source-only Program package function graph. Never import analyzed code."""
 from __future__ import annotations
 
 import ast
@@ -7,7 +7,7 @@ from collections import deque
 from pathlib import Path
 
 
-def application_calls(root: Path, relative: str, entry_name: str | None = None) -> dict:
+def package_calls(root: Path, relative: str, entry_name: str | None = None) -> dict:
     warnings: set[str] = set()
     functions: dict[str, tuple[Path, ast.AST, dict[str, str]]] = {}
     entries: list[str] = []
@@ -70,7 +70,7 @@ def application_calls(root: Path, relative: str, entry_name: str | None = None) 
     if entry_name:
         entries = [key for key in entries if key.rsplit('.', 1)[-1] == entry_name]
     nodes = [{'id': relative, 'name': root.name, 'path': relative,
-              'program_kind': 'application', 'depth': 0}]
+              'program_kind': None, 'entity_kind': 'package', 'source_path': str(root), 'depth': 0}]
     edges: list[dict] = []
     seen = {relative}
     pending = deque((relative, key, 1, 'entry') for key in entries)

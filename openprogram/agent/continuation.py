@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import marshal
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, TYPE_CHECKING
 
 from openprogram.providers.types import AssistantMessage, ToolResultMessage
@@ -31,6 +31,61 @@ MAX_AGENT_DELTA_BYTES = 64 * 1024
 MAX_AGENT_REPEAT_FAILURES = 16
 _STATE_REF_PREFIX = "execstate://sha256/"
 RUNTIME_CONTRACT_VERSION = 1
+
+
+def provider_context_from_effect(
+    continuation: "AgentContinuation",
+    store: Any,
+) -> list[Any] | None:
+    """Recover the exact pre-provider message context when it was saved.
+
+    A continuation checkpoint identifies the provider action, while the
+    corresponding effect retains the provider payload. Reuse it only when
+    both identities match the checkpoint; older checkpoints fall back to
+    graph rendering in the dispatcher.
+    """
+    action_id = continuation.provider_action_id
+    execution_id = continuation.checkpoint.execution_id
+    if not action_id or not execution_id:
+        return None
+    from openprogram.execution.effects import EffectStore, EffectStatus
+
+    if not callable(getattr(store, "_connect", None)):
+        return None
+    effect = EffectStore(store).get(f"effect_{action_id[:32]}")
+    if (
+        effect is None
+        or effect.execution_id != execution_id
+        or effect.action_id != action_id
+        or effect.metadata.get("kind") != "provider.before"
+        or effect.status is not EffectStatus.COMMITTED
+    ):
+        return None
+    metadata = effect.metadata
+    payload = metadata.get("payload") if isinstance(metadata, Mapping) else None
+    context = payload.get("context") if isinstance(payload, Mapping) else None
+    values = context.get("messages") if isinstance(context, Mapping) else None
+    if not isinstance(values, list):
+        return None
+    from openprogram.providers.types import UserMessage
+
+    result: list[Any] = []
+    for value in values:
+        if not isinstance(value, Mapping):
+            return None
+        role = value.get("role")
+        try:
+            if role == "user":
+                result.append(UserMessage.model_validate(value))
+            elif role == "assistant":
+                result.append(AssistantMessage.model_validate(value))
+            elif role == "toolResult":
+                result.append(ToolResultMessage.model_validate(value))
+            else:
+                return None
+        except Exception:
+            return None
+    return result
 
 
 class AgentCheckpointError(ValueError):
@@ -1070,6 +1125,7 @@ class AgentContinuation:
     tool_results: tuple[ToolResultMessage, ...]
     resolved_snapshot: Mapping[str, Any]
     display: tuple[dict[str, Any], ...] = ()
+    execution_store: Any = field(default=None, repr=False, compare=False)
 
     @classmethod
     def from_checkpoint(
@@ -1121,6 +1177,7 @@ class AgentContinuation:
             tool_results=results,
             resolved_snapshot=dict(snapshot),
             display=tuple(dict(card) for card in display_blocks),
+            execution_store=store,
         )
 
     @property

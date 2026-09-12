@@ -14,6 +14,7 @@ import {
   type AnimatedNavIconProps,
   BotIcon,
   CpuIcon,
+  BlocksIcon,
   CalendarDaysIcon,
   HistoryIcon,
 } from "../animated-icons";
@@ -72,7 +73,7 @@ function SidebarNavLink({
 
 export function SidebarPrimaryNav() {
   const pathname = usePathname();
-  const { t } = useTranslation();
+  const { t, text } = useTranslation();
   const [abilityHref, setAbilityHref] = useState("/programs");
   useEffect(() => {
     try {
@@ -150,6 +151,13 @@ export function SidebarPrimaryNav() {
         || pathname.startsWith("/programs"),
       label: t("nav.ability"),
       icon: CpuIcon,
+    },
+    {
+      href: "/applications",
+      id: "navApplications",
+      active: pathname.startsWith("/applications"),
+      label: text("Applications", "应用"),
+      icon: BlocksIcon,
     },
     {
       href: "/chats",

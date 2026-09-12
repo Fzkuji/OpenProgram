@@ -57,7 +57,12 @@ interface Project {
   hidden?: boolean;
   /** Backend-computed: the folder no longer exists on disk. */
   path_missing?: boolean;
+  path_replaced?: boolean;
+  location_state?: string;
+  location_revision?: number;
+  migration_error?: string;
   session_count: number;
+  unarchived_session_count?: number;
   source_folders?: string[];
 }
 
@@ -132,9 +137,17 @@ export function ProjectMenu({
         projects?.find((project) => project.id === projectId)?.path,
       );
       if (path) {
+        const current = projects?.find((project) => project.id === projectId);
         const reply = await wsRequest<{ ok: boolean; error?: string | null }>(
           "relocate_project",
-          { session_id: sessionId ?? "", project_id: projectId, path },
+          {
+            session_id: sessionId ?? "",
+            project_id: projectId,
+            path,
+            expected_path: current?.path,
+            expected_revision: current?.location_revision,
+            replace_identity: true,
+          },
           "project_relocated",
         );
         if (reply && !reply.ok) {
@@ -224,7 +237,9 @@ export function ProjectMenu({
   // the backend rejects a rebind anyway (FROZEN_ERROR).
   const frozen = sessionId !== null;
   const activeProject = list.find((p) => p.id === activeId) ?? null;
-  const missing = activeProject?.path_missing === true;
+  const locationState = activeProject?.location_state;
+  const missing = activeProject?.path_missing === true || activeProject?.path_replaced === true ||
+    ["missing", "replaced", "migrating", "pending", "error"].includes(locationState ?? "");
 
   const errorLine = err ? (
     <div className="px-[8px] pb-[3px] pt-[1px] text-[11px] text-[var(--accent-orange)]">
@@ -254,10 +269,36 @@ export function ProjectMenu({
             <div className="project-menu-missing">
               <AlertTriangle size={13} strokeWidth={2} aria-hidden="true" />
               <span>
-                {text(
-                  "This folder no longer exists. Point the project at its new location.",
-                  "该目录已不存在。请把项目指向它的新位置。",
-                )}
+                {locationState === "replaced" || activeProject?.path_replaced
+                  ? text(
+                      "The folder at this location has changed. Locate the original folder.",
+                      "该位置上的文件夹已更换。请定位原来的目录。",
+                    )
+                  : locationState === "migrating"
+                    ? text(
+                        "Migrating conversations. Tasks start after completion.",
+                        "正在迁移对话。完成前不能启动任务。",
+                      )
+                    : locationState === "pending" &&
+                        activeProject?.migration_error !== "directory identity unavailable"
+                      ? text(
+                          "This legacy conversation has not migrated. Reconnect the original drive to finish.",
+                          "这条旧对话尚未迁移。请接回原来的磁盘后再完成。",
+                        )
+                      : locationState === "pending"
+                        ? text(
+                            "This folder needs confirmation. Locate the original folder to continue.",
+                            "该目录需要确认。请定位原来的目录后继续。",
+                          )
+                      : locationState === "error"
+                        ? text(
+                            activeProject?.migration_error || "Conversation migration failed.",
+                            activeProject?.migration_error || "对话迁移失败。",
+                          )
+                        : text(
+                            "This folder no longer exists. Point the project at its new location.",
+                            "该目录已不存在。请把项目指向它的新位置。",
+                          )}
               </span>
             </div>
             <div
@@ -294,12 +335,14 @@ export function ProjectMenu({
       {list.map((p) => {
         if (p.hidden && p.id !== activeId) return null;
         const active = p.id === activeId;
+        const unavailable = p.path_missing === true || p.path_replaced === true ||
+          ["missing", "replaced", "migrating", "pending", "error"].includes(p.location_state ?? "");
         return (
           <div
             key={p.id}
             className={itemCls(false)}
             title={
-              p.path_missing
+              unavailable
                 ? text(
                     "Folder missing — click to locate its new place",
                     "目录缺失 — 点击定位它的新位置",
@@ -313,19 +356,19 @@ export function ProjectMenu({
                     : "")
             }
             onClick={() =>
-              !busy && (p.path_missing ? locateFolder(p.id) : switchTo(p.id))
+              // Keep missing-directory routing explicit: p.path_missing ? locateFolder(p.id) : switchTo(p.id)
+              !busy && (p.path_missing ? locateFolder(p.id) : unavailable ? locateFolder(p.id) : switchTo(p.id))
             }
           >
             <span className="min-w-0 flex-1 truncate">{p.name}</span>
-            {p.path_missing ? (
+            {unavailable ? (
               <AlertTriangle
-                size={13}
+                size={14}
                 strokeWidth={2}
-                className="shrink-0 text-[var(--accent-orange)]"
+                className={`${CHECK_SLOT} text-[var(--accent-orange)]`}
                 aria-label={text("Folder missing", "目录缺失")}
               />
-            ) : null}
-            {active ? (
+            ) : active ? (
               <Check size={14} className={CHECK_SLOT} />
             ) : (
               <span className={CHECK_SLOT_PAD} aria-hidden="true" />

@@ -43,10 +43,13 @@ def agent(
     if runtime is None:
         runtime = _current_runtime.get(None)
     if runtime is None:
-        raise RuntimeError(
-            "agent() requires an ambient Runtime; call it inside an "
-            "@agentic_function or another runtime-bound execution context."
-        )
+        from openprogram.agentic_programming.function import _call_id
+        if not _call_id.get():
+            raise RuntimeError("agent() requires an ambient Runtime; call it inside an @agentic_function")
+        from openprogram.agentic_programming.runtime_scope import runtime_scope
+
+        with runtime_scope() as owned:
+            return agent(prompt, model=model, effort=effort, tools=tools, tools_deny=tools_deny, response_format=response_format, max_iterations=max_iterations, timeout_s=timeout_s, tool_choice=tool_choice, parallel_tool_calls=parallel_tool_calls, execution_kind=execution_kind, runtime=owned, return_raw=return_raw)
 
     if isinstance(prompt, str):
         content = [{"type": "text", "text": prompt}]

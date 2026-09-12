@@ -4,6 +4,8 @@ export type ProgramExplorerEntry = {
   name: string;
   path: string;
   kind: "folder" | "file";
+  entity_kind?: "package";
+  source_path?: string;
   program_kind: ProgramKind | null;
   has_children: boolean;
   logic_path?: string | null;

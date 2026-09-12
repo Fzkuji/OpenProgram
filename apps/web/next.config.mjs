@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Static export: `next build` emits plain HTML/JS/CSS into apps/web/out/,
@@ -12,6 +14,19 @@ const nextConfig = {
   // the frontend never came up while `next dev` masked it).
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
+  webpack(config) {
+    // Webpack must invalidate cached CSS when our local PostCSS plugin changes.
+    if (config.cache && typeof config.cache === "object") {
+      const dependencies = config.cache.buildDependencies ?? {};
+      config.cache.buildDependencies = {
+        ...dependencies,
+        config: [...(dependencies.config ?? []),
+          fileURLToPath(new URL("./postcss.config.mjs", import.meta.url)),
+          fileURLToPath(new URL("./scripts/postcss-katex-fonts.cjs", import.meta.url))],
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

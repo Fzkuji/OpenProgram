@@ -49,55 +49,23 @@ def _registry(adapter, page_key="page:owned"):
     )
 
 
-def test_act_is_blocked_after_human_fence_without_waiting_on_operation_lock(tmp_path, monkeypatch):
-    from openprogram.browser_resources import fence_page_writes
+def test_page_input_does_not_block_agent_actions(tmp_path, monkeypatch):
+    import asyncio
+    from openprogram.browser_resources import handle_human_page_input
 
     monkeypatch.setattr("openprogram.paths.get_state_dir", lambda: tmp_path)
     adapter = _GuardedAdapter()
     registry = _registry(adapter)
-    observed = registry.execute(
-        command="observe", owner_id="owner", binding_id="owned",
-        backend="open_claude_chrome",
-    )
-    session_id = observed["web_session_id"]
-    page_key = "page:owned"
-    session = registry._sessions[session_id]
-    started = threading.Event()
-    release = threading.Event()
-
-    def occupy():
-        with session.operation_lock:
-            started.set()
-            assert release.wait(2)
-
-    holder = threading.Thread(target=occupy)
-    holder.start()
-    assert started.wait(1)
-    fenced_at = time.monotonic()
-    assert fence_page_writes(page_key, input_seq=2) is True
-    assert time.monotonic() - fenced_at < 0.2
-    blocked = registry.execute(
-        command="act", owner_id="owner", web_session_id=session_id,
-        backend="open_claude_chrome",
-        arguments={"action": "click", "expected_frame_id": "frame-1", "ref": "e1"},
-    )
-    assert blocked.get("ok") is False
-    assert blocked.get("reason_code") == "write_fenced"
-    assert adapter.acts == []
-    release.set()
-    holder.join(2)
-    still = registry.execute(
-        command="act", owner_id="owner", web_session_id=session_id,
-        backend="open_claude_chrome",
-        arguments={"action": "click", "expected_frame_id": "frame-1", "ref": "e1"},
-    )
-    assert still.get("reason_code") == "write_fenced"
-    seen = registry.execute(
-        command="observe", owner_id="owner", web_session_id=session_id,
-        backend="open_claude_chrome",
-    )
-    assert seen.get("ok") is not False or seen.get("web_session_id")
-    registry.close_all()
+    observed = registry.execute(command="observe", owner_id="owner", binding_id="owned")
+    try:
+        for kind in ("pointer", "scroll", "key", "navigate"):
+            asyncio.run(handle_human_page_input(ws=None, window_id="main", tab_id="page", input_seq=1, kind=kind))
+            result = registry.execute(command="act", owner_id="owner",
+                web_session_id=observed["web_session_id"], arguments={"action":"click", "ref":"e1"})
+            assert result.get("ok") is True
+        assert len(adapter.acts) == 4
+    finally:
+        registry.close_all()
 
 
 def test_unguarded_backend_stays_explicit_and_does_not_acquire_when_fenced(tmp_path, monkeypatch):

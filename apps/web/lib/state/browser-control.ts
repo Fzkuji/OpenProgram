@@ -85,14 +85,7 @@ export function resetBrowserControl(): void {
   });
 }
 
-export function isHumanYieldEvent(event: HumanYieldEvent): boolean {
-  if (event.type === "pointerdown" || event.type === "pointer" || event.type === "wheel" || event.type === "scroll" || event.type === "navigate") {
-    return true;
-  }
-  if (event.type === "keydown" || event.type === "key") {
-    if (!event.key) return true;
-    return !PASSIVE_KEYS.has(event.key);
-  }
+export function isHumanYieldEvent(_event: HumanYieldEvent): boolean {
   return false;
 }
 
@@ -304,10 +297,7 @@ export function signalHumanBrowserInput(
     post?: boolean;
   } = {},
 ): Promise<BrowserControlState> {
-  const row = toControlResource(resource);
-  markScopeYielding(row, deps);
-  if (deps.postControl || deps.post === true) return postPauseOnce(row, deps);
-  return Promise.resolve(displayedControlState(row));
+  return Promise.resolve(displayedControlState(toControlResource(resource)));
 }
 
 export async function requestExplicitPause(
@@ -603,29 +593,7 @@ export function requestCloseBrowserPage(
   tabs: readonly { id: string }[],
 ): "closed" | "pending" | "unavailable" | "error" {
   const tabId = previewTabId(row);
-  if (!tabId || !tabs.some(tab => tab.id === tabId)) return "unavailable";
-  const related = associationsForResource(row.resourceId || row.id);
-  const inspect = related.length > 0 ? related : [row];
-  const blocking = inspect.find(item => {
-    const shown = shownControlState(item);
-    return shown === "unknown" || shown === "stop_unconfirmed";
-  });
-  if (blocking) {
-    const shown = shownControlState(blocking);
-    upsertPendingClose({
-      ...pendingFromRow(row, tabId),
-      error: shown === "stop_unconfirmed" ? "Stop unconfirmed" : "Unknown",
-    });
-    notify();
-    return "error";
-  }
-  const operating = inspect.find(associationIsOperating);
-  if (!operating) return "closed";
-  upsertPendingClose(pendingFromRow(operating, tabId));
-  const control = controlResourceFromSession(operating);
-  if (control) void requestExplicitPause(control);
-  notify();
-  return "pending";
+  return tabId && tabs.some(tab => tab.id === tabId) ? "closed" : "unavailable";
 }
 
 /** Human strip/menu/Cmd+W close: only idle/non-browser tabs proceed now. */
@@ -633,28 +601,7 @@ export function selectTabsReadyForHumanClose<T extends { id: string; kind: strin
   tabsToClose: readonly T[],
   allTabs: readonly { id: string }[] = tabsToClose,
 ): T[] {
-  const immediate: T[] = [];
-  for (const tab of tabsToClose) {
-    if (tab.kind !== "web") {
-      immediate.push(tab);
-      continue;
-    }
-    const rows = listedBrowserResources().filter(item => previewTabId(item) === tab.id);
-    if (rows.length === 0) {
-      immediate.push(tab);
-      continue;
-    }
-    const seen = new Set<string>();
-    let ready = true;
-    for (const row of rows) {
-      const key = row.resourceId || row.id;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (requestCloseBrowserPage(row, allTabs) !== "closed") ready = false;
-    }
-    if (ready) immediate.push(tab);
-  }
-  return immediate;
+  return [...tabsToClose];
 }
 
 export function settlePendingClose(
@@ -717,20 +664,5 @@ if (typeof window !== "undefined") {
     const tabId = (event as CustomEvent<{ tabId?: string; windowId?: string; geometryRevision?: number }>).detail?.tabId;
     if (tabId) clearMarkersForTab(tabId);
   });
-  window.addEventListener("op:browser-human-input", (event: Event) => {
-    const detail = (event as CustomEvent<{
-      tabId?: string; id?: string; kind?: string; key?: string;
-    }>).detail;
-    const tabId = detail?.tabId || detail?.id;
-    if (!tabId) return;
-    const type = detail?.kind === "pointer" ? "pointer"
-      : detail?.kind === "scroll" ? "scroll"
-      : detail?.kind === "key" ? "key"
-      : detail?.kind === "navigate" ? "navigate"
-      : detail?.kind;
-    if (type && !isHumanYieldEvent({ type, key: detail?.key })) return;
-    const row = listedBrowserResources().find(item => previewTabId(item) === tabId);
-    const resource = row ? controlResourceFromSession(row) : null;
-    if (resource) markScopeYielding(resource);
-  });
+
 }

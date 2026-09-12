@@ -635,12 +635,29 @@ def execute_in_context(
         # Apply thinking effort to chat runtime
         _s._apply_thinking_effort(runtime, effective_thinking)
 
-        # Default chat-runtime cwd = the session's git workdir/. The
-        # /api/run path supplies its own work_dir and overrides this via
-        # run.py::run_function's set_workdir call, so the user-supplied
-        # override still wins.
+        from openprogram.agent.internals._workdir import (
+            apply_default_workdir,
+            bound_project_execution_blocked,
+        )
+        blocked = bound_project_execution_blocked(session_id)
+        if blocked:
+            messages = {
+                "missing": "Working folder unavailable. Read history now; reconnect or locate the folder before running tasks.",
+                "replaced": "The folder at this location has changed. Locate the original folder before running tasks.",
+                "migrating": "Migrating conversations. Tasks start after completion.",
+                "pending": "This legacy conversation has not migrated. Reconnect the original drive to finish.",
+                "error": "Conversation migration failed. History is unchanged; retry after the source is available.",
+            }
+            _s._broadcast_chat_response(session_id, msg_id, {
+                "type": "error",
+                "content": messages.get(blocked, "Project location is not ready for new tasks."),
+                "reason": f"project_location_{blocked}",
+                "retryable": blocked in {"migrating", "pending"},
+                "display": "chat",
+            })
+            return
+
         try:
-            from openprogram.agent.internals._workdir import apply_default_workdir
             _applied_wd = apply_default_workdir(runtime, session_id)
             if _applied_wd is not None:
                 _s._log(f"[exec] chat workdir: {_applied_wd}")

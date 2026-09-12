@@ -213,10 +213,10 @@ def _config_section() -> dict:
 
 
 def _with_hard_floor(policy: SandboxPolicy) -> SandboxPolicy:
-    applications = _applications_dir()
-    if applications in policy.deny_write:
-        return policy
-    return replace(policy, deny_write=policy.deny_write + (applications,))
+    from openprogram.protected_paths import packages_root, application_catalog_path
+    required = (_applications_dir(), os.path.join(packages_root(), "**"), application_catalog_path())
+    missing = tuple(value for value in required if value not in policy.deny_write)
+    return replace(policy, deny_write=policy.deny_write + missing) if missing else policy
 
 
 def _config_mode_on(sb: dict) -> bool:
@@ -537,7 +537,8 @@ SANDBOX_DENIAL_GUIDANCE = (
 
 def _hard_floor_read_globs() -> tuple[str, ...]:
     from openprogram.paths import get_state_dir
-    globs = [str(get_state_dir() / "auth") + "/**", _applications_dir()]
+    from openprogram.protected_paths import packages_root, application_catalog_path
+    globs = [str(get_state_dir() / "auth") + "/**", _applications_dir(), os.path.join(packages_root(), "**"), application_catalog_path()]
     documented = os.path.expanduser("~/.openprogram/auth") + "/**"
     if documented not in globs:
         globs.append(documented)
@@ -648,12 +649,10 @@ def persist_allow_read(path: str | None) -> str | None:
 def validate_write_path(path, *, cwd: str | None = None) -> str | None:
     """Return a sandbox-policy violation for a direct file write, if any."""
     target = os.path.realpath(os.path.expanduser(os.fspath(path)))
-    applications = os.path.realpath(_applications_root())
+    from openprogram.protected_paths import packages_root, application_catalog_path
     target_key = target.casefold()
-    applications_key = applications.casefold()
-    if target_key == applications_key or target_key.startswith(
-        applications_key + os.sep
-    ):
+    if any(target_key == os.path.realpath(root).casefold() or target_key.startswith(os.path.realpath(root).casefold() + os.sep)
+           for root in (_applications_root(), packages_root(), application_catalog_path())):
         return "writes to auto-imported application Python are forbidden"
     from openprogram.protected_paths import program_sources_path
     if target_key == os.path.realpath(program_sources_path()).casefold():

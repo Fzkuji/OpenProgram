@@ -234,7 +234,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("Maintenance", "维护", ["install/upgrade.md", "install/profiles.md"]),
     ],
     "capabilities": [
-        ("Overview", "概览", ["capabilities/README.md"]),
+        ("Overview", "概览", ["capabilities/README.md", "capabilities/applications.md"]),
         ("Agentic Programming", "Agentic Programming", [
             "capabilities/agentic-programming/README.md",
             "capabilities/agentic-programming/philosophy.md",
@@ -254,6 +254,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
             "capabilities/workflows/gui-agent.md",
             "capabilities/workflows/research-agent.md",
             "capabilities/workflows/wiki-agent.md"]),
+        ("Memory", "记忆", ["capabilities/memory.md"]),
         ("Session goals", "会话目标", ["capabilities/goal.md"]),
         ("Agentic workflows", "Agentic 工作流", ["capabilities/agentic-workflow.md"]),
         ("Asking about OpenProgram", "询问 OpenProgram 自身",
@@ -364,6 +365,7 @@ TAB_SECTIONS: dict[str, list[tuple[str, str, list[str]]]] = {
         ("UI · Workspace and sidebar", "界面 · 工作区与侧栏", [
             "reference/design/ui/integrated-terminal.html",
             "reference/design/ui/project-order.html",
+            "reference/design/ui/project-location.html",
             "reference/design/ui/file-type-icons.html",
             "reference/design/ui/project-workspace-prototype.html",
             "reference/design/ui/project-workspace.md",
@@ -388,6 +390,7 @@ PAGE_ORDER: dict[str, int] = {
     "install/upgrade.md": 1,
     "install/profiles.md": 2,
     "capabilities/README.md": 0,
+    "capabilities/applications.md": 1,
     "capabilities/agentic-programming": 1,
     "capabilities/workflows": 2,
     "capabilities/installing-harnesses.md": 3,
@@ -399,6 +402,7 @@ PAGE_ORDER: dict[str, int] = {
     "capabilities/tools.md": 9,
     "capabilities/permissions.md": 10,
     "capabilities/lsp.md": 11,
+    "capabilities/memory.md": 12,
     "capabilities/goal.md": 12,
     "capabilities/agentic-workflow.md": 13,
     "capabilities/docs-question.md": 13,
@@ -504,6 +508,7 @@ PAGE_ORDER: dict[str, int] = {
     # the reference frameworks by design axis, then by feature list.
     "reference/design/framework-overview.md": 1020,
     "reference/design/framework-comparison.html": 1021,
+    "reference/design/runtime/application-runtime.html": 1023,
     "reference/design/feature-matrix.html": 1022,
     # Distribution: authoritative conceptual design followed by its separate
     # implementation ledger.

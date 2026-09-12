@@ -64,7 +64,5 @@ export type Tab = "topics" | "timeline" | "recent" | "core";
 
 export interface EditorState {
   content: string;
-  saving: boolean;
-  saveStatus: "" | "saved" | "error";
-  viewMode: "edit" | "preview";
+  viewMode: "edit" | "preview" | "history";
 }
