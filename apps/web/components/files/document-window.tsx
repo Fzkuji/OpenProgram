@@ -6,12 +6,8 @@ import { getOrCreateDocumentController } from "@/lib/state/document-controller";
 import type { DocumentHistoryEntry } from "@/lib/state/document-types";
 import styles from "./document-window.module.css";
 
-const TEXT_EXTENSIONS = new Set(["txt", "md", "mdx", "markdown", "json", "yaml", "yml", "toml", "ini", "cfg", "conf", "csv", "tsv", "js", "jsx", "mjs", "cjs", "ts", "tsx", "py", "rb", "go", "rs", "java", "kt", "swift", "c", "h", "cpp", "hpp", "sh", "bash", "zsh", "fish", "css", "scss", "html", "xml", "sql", "log"]);
-function textPath(path: string): boolean {
-  const name = path.split("/").pop() ?? "";
-  return TEXT_EXTENSIONS.has(name.slice(name.lastIndexOf(".") + 1).toLowerCase()) ||
-    ["Dockerfile", "Makefile", "LICENSE", "README", ".gitignore"].includes(name);
-}
+import { fileCapabilities } from "@/lib/documents/file-formats";
+
 interface VersionPreview { blob: Blob; content?: string; version?: string; side?: "before" | "after"; disk?: boolean; }
 
 export function DocumentWindow({ projectId, path, sessionId, readOnly = false }: {
@@ -31,7 +27,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const [selected, setSelected] = useState<VersionPreview | null>(null);
   const selectionRequest = useRef(0);
   const editedBytes = useRef<Blob | null>(null);
-  const isText = textPath(path) && !state.snapshot?.binary;
+  const isText = fileCapabilities(path).textEditable && !state.snapshot?.binary;
   const currentBytes = state.draft ?? state.snapshot?.bytes;
 
   useEffect(() => controller.subscribe(setState), [controller]);

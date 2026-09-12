@@ -33,6 +33,8 @@ Project files open in Preview. For supported UTF-8 text files, choose Edit to ch
 Manual changes made through the project file editor also retain before/after bytes, independently of conversation history. Each successful write is published immediately. Consecutive changes from the same editor are grouped for at most five minutes; closing a group or detecting an intervening external change starts another version. Restoring a retained version creates a new history entry and checks the current file revision before overwriting it. Project-owned history remains readable while a project's disk is disconnected; writing and restoring require an available project location. It follows the registered project when its location changes. The document API accepts bounded binary content up to 64 MiB; this does not by itself provide an editor for every binary format.
 
 
+PDF preview provides page navigation, zoom and text search; searches cover the first 500 pages and state that limit for longer documents. PSD preview shows the saved composite and layer names for 8-bit RGB files, and TIFF preview shows the first page. These decoders accept at most 64 MiB and bound the rendered image size. Common images remain passive image previews; audio and video use browser playback controls, with codec support depending on the browser. Damaged or unsupported files retain an original-file download. Previewing a retained history version uses its retained bytes. Decoder assets are local and load only when the corresponding format is opened. These preview modes do not edit PDF, PSD, TIFF, audio or video files.
+
 ## Execution
 
 | Tool | What it does | Requires |

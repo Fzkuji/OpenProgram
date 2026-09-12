@@ -120,3 +120,6 @@ references/codex-cli/
 openprogram/programs/workflow/llm_knowledge_research/
 openprogram/programs/workflow/weekly_report/
 openprogram/programs/workflow/group_weekly_report/
+
+# Pinned document decoder assets generated from package-lock before Web builds.
+apps/web/public/document-assets/

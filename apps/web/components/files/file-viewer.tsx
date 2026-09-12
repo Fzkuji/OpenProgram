@@ -1,32 +1,15 @@
 "use client";
 
-/**
- * FileViewer — body of a center file tab. Dispatches on the file's
- * extension:
- *
- *   images   → <img> straight off the backend raw endpoint
- *   pdf      → <iframe> off the raw endpoint (renders in the browser's
- *              built-in PDF viewer)
- *   markdown → Rendered (existing <Markdown>, marked-based, read-only)
- *              or Source, controlled by the `mdRendered` prop (the
- *              toggle lives in the file tab's toolbar — see FileTabPane)
- *   other    → EDITABLE gutter+textarea when the pane supplies a
- *              draft (the default for text files), else a read-only
- *              line-numbered <pre> (truncated reads, load gap)
- *   binary / >1 MB replies → name + size card with a download link
- *
- * Content comes over WS (``project_file_read``) with the shared
- * files-shared readCache, invalidated by the mtime the tree listing
- * last reported (and refreshed by the editor after a save).
- *
- * ``abs`` mode swaps both outlets for the absolute-path routes
- * (``/api/file-raw`` + ``/api/file-read``) so the same dispatch serves
- * chat attachments, which live in the session workdir or a channel's
- * inbound directory rather than under a project id. Everything else —
- * which renderer runs for which extension — is deliberately the one
- * implementation.
+/** Shared project, attachment and retained-version preview dispatch.
+ * FileViewer owns the authorized source URL. Format adapters only consume that
+ * source and never resolve project/session paths themselves. Large decoders
+ * load when their format is opened, independently of chat startup.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense } from "react";
+import { fileCapabilities, fileExtension, IMAGE_EXTENSIONS } from "@/lib/documents/file-formats";
+import { ImagePreview } from "./preview/image-preview";
+import { MediaPreview } from "./preview/media-preview";
 import { Download } from "lucide-react";
 
 import { useTranslation } from "@/lib/i18n";
@@ -43,14 +26,11 @@ import {
   rawFileUrl,
 } from "@/lib/state/files-shared";
 import styles from "./files-panel.module.css";
+import previewStyles from "./preview/preview.module.css";
 
-export const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"]);
-
-function extOf(path: string): string {
-  const base = path.split("/").pop() || "";
-  const dot = base.lastIndexOf(".");
-  return dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
-}
+export const IMAGE_EXTS = IMAGE_EXTENSIONS;
+const PdfPreview = lazy(() => import("./preview/pdf-preview").then((module) => ({ default: module.PdfPreview })));
+const LayeredImagePreview = lazy(() => import("./preview/layered-image-preview").then((module) => ({ default: module.LayeredImagePreview })));
 
 function fmtSize(bytes: number): string {
   if (!Number.isFinite(bytes)) return "";
@@ -94,24 +74,27 @@ export function FileViewer({
   snapshot?: FileReadResult | null;
   sourceBlob?: Blob | null;
 }) {
-  const ext = extOf(path);
-  const blobUrl = useMemo(() => sourceBlob ? URL.createObjectURL(sourceBlob) : null, [sourceBlob]);
+  const ext = fileExtension(path);
+  const capability = fileCapabilities(path);
+  const { text } = useTranslation();
+  // Version endpoints return opaque bytes. SVG image decoding requires its
+  // media type; rendering remains inside img, never inline document markup.
+  const blobUrl = useMemo(() => sourceBlob ? URL.createObjectURL(ext === "svg"
+    ? sourceBlob.slice(0, sourceBlob.size, "image/svg+xml") : sourceBlob) : null, [sourceBlob, ext]);
   useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl); }, [blobUrl]);
   const rawUrl = abs
     ? absRawFileUrl(path, sessionId)
     : rawFileUrl(projectId, path);
-  if (IMAGE_EXTS.has(ext)) {
-    const imageSource = blobUrl ?? rawUrl;
-    return (
-      <div className={styles.viewerScroll}>
-        <img src={imageSource} alt={path} style={{ maxWidth: "100%" }} />
-      </div>
-    );
+  const sourceUrl = blobUrl ?? rawUrl;
+  if (capability.preview === "image") return <div className={previewStyles.preview}><ImagePreview key={sourceUrl} sourceUrl={sourceUrl} path={path} /></div>;
+  if (capability.preview === "pdf" || capability.preview === "layered-image") {
+    return <div className={previewStyles.preview}><Suspense fallback={<div>{text("Loading…", "加载中…")}</div>}>
+      {capability.preview === "pdf" ? <PdfPreview key={sourceUrl} sourceUrl={sourceUrl} path={path} />
+        : <LayeredImagePreview key={sourceUrl} sourceUrl={sourceUrl} path={path} />}
+    </Suspense></div>;
   }
-  if (ext === "pdf") {
-    // The browser's built-in PDF viewer renders this in its own
-    // isolated process, not the page DOM.
-    return <iframe src={blobUrl ?? rawUrl} title={path} className={styles.pdfFrame} />;
+  if (capability.preview === "audio" || capability.preview === "video") {
+    return <div className={previewStyles.preview}><MediaPreview key={sourceUrl + capability.preview} sourceUrl={sourceUrl} path={path} kind={capability.preview} /></div>;
   }
   return (
     <TextViewer
