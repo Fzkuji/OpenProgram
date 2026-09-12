@@ -12,6 +12,7 @@ import { officeCapability } from "@/lib/documents/file-formats";
 import { convertOfficeDocument } from "@/lib/documents/office-editor";
 import { useCenterTabs } from "@/lib/state/center-tabs-store";
 import { OfficeSurface } from "./office-surface";
+import { convertRasterToPng } from "@/lib/documents/raster-format";
 import { RasterSurface } from "./raster-surface";
 import type { RasterEditorInstance } from "@/lib/documents/raster-editor";
 
@@ -27,6 +28,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const [mode, setMode] = useState<"preview" | "edit">("preview");
   const [converting, setConverting] = useState(false);
   const conversion = useRef<{ path: string; key: string; bytes: File } | null>(null);
+  const imageConversion = useRef<{ source: Blob; path: string; key: string; bytes: File } | null>(null);
   const conversionAbort = useRef<AbortController | null>(null);
   useEffect(() => () => conversionAbort.current?.abort(), []);
   const [editorOpened, setEditorOpened] = useState(false);
@@ -39,6 +41,8 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const selectionRequest = useRef(0);
   const editedBytes = useRef<Blob | null>(null);
   const rasterEditor = useRef<RasterEditorInstance | null>(null);
+  const [rasterReady, setRasterReady] = useState(false);
+  const [cropping, setCropping] = useState(false);
   const isText = fileCapabilities(path).textEditable && !state.snapshot?.binary;
   const office = officeCapability(path);
   const isOffice = fileCapabilities(path).preview === "office";
@@ -60,6 +64,9 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   async function perform(action: () => Promise<unknown>) {
     try { await action(); setError(null); }
     catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+  }
+  async function imageCommand(action: (editor: RasterEditorInstance) => Promise<unknown>) {
+    if (rasterEditor.current) await perform(() => action(rasterEditor.current!));
   }
   async function openHistory(cursor?: string) {
     setHistoryOpen(true);
@@ -97,6 +104,30 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
         setError(null);
         useCenterTabs.getState().openFileTab(projectId, target);
       }
+    } catch (failure) {
+      if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
+    } finally { if (!abort.signal.aborted) setConverting(false); }
+  }
+  async function convertImage() {
+    if (converting || !currentBytes || readOnly) return;
+    const target = window.prompt(text("New PNG file path", "新 PNG 文件路径"), path.replace(/\.[^.]+$/, ".png"));
+    if (target === null) return;
+    if (!target.toLowerCase().endsWith(".png") || target === path) {
+      setError(text("Choose a different .png file path.", "请选择另一个 .png 文件路径。")); return;
+    }
+    setConverting(true);
+    const abort = new AbortController(); conversionAbort.current = abort;
+    try {
+      await controller.flush();
+      const bytes = controller.getState().draft ?? controller.getState().snapshot?.bytes;
+      if (!bytes) throw new Error("Image content is unavailable.");
+      if (!imageConversion.current || imageConversion.current.path !== target || imageConversion.current.source !== bytes) {
+        const output = await convertRasterToPng(bytes, target.split("/").pop()!, abort.signal);
+        imageConversion.current = { source: bytes, path: target, key: crypto.randomUUID(), bytes: output };
+      }
+      abort.signal.throwIfAborted();
+      await controller.publishNewDocument(target, imageConversion.current.bytes, imageConversion.current.key);
+      if (!abort.signal.aborted) { setError(null); useCenterTabs.getState().openFileTab(projectId, target); }
     } catch (failure) {
       if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
     } finally { if (!abort.signal.aborted) setConverting(false); }
@@ -149,7 +180,10 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       {!readOnly && office?.conversionRequired && !selected && <button className={styles.button}
         disabled={!currentBytes || converting} onClick={() => void convert()}>
         {text(`Convert to ${office.format.toUpperCase()}`, `转换为 ${office.format.toUpperCase()}`)}</button>}
-      {isOffice && <a className={styles.button} href={readOnly ? absRawFileUrl(path, sessionId) : rawFileUrl(projectId, path)}
+      {!readOnly && isRaster && !selected && <button className={styles.button}
+        disabled={!currentBytes || converting || state.restoring || state.renaming} onClick={() => void convertImage()}>
+        {text("Convert to PNG", "转换为 PNG")}</button>}
+      {(isOffice || isRaster) && <a className={styles.button} href={readOnly ? absRawFileUrl(path, sessionId) : rawFileUrl(projectId, path)}
         download={path.split("/").pop()}>{text("Download disk file", "下载磁盘文件")}</a>}
       {!readOnly && <button className={styles.button} aria-expanded={historyOpen}
         onClick={() => historyOpen ? setHistoryOpen(false) : void openHistory()}>{text("History", "历史")}</button>}
@@ -169,21 +203,27 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       {selected.version && <button className={styles.button} disabled={state.restoring || state.renaming}
         onClick={() => void restore(selected.version!, selected.side)}>{text("Restore this version", "恢复此版本")}</button>}
     </div>}
-    {isRaster && editorOpened && mode === "edit" && !selected && <div className={styles.toolbar} role="toolbar" aria-label={text("Image tools", "图片工具")}>
-      <button className={styles.button} onClick={() => void rasterEditor.current?.rotate()}>{text("Rotate", "旋转")}</button>
-      <button className={styles.button} onClick={() => { const value = window.prompt(text("Crop as left,top,width,height", "裁剪范围：左,上,宽,高"), "0,0,100,100"); if (!value) return; const numbers = value.split(",").map(Number); if (numbers.length === 4 && numbers.every(Number.isFinite)) void rasterEditor.current?.crop({ left: numbers[0], top: numbers[1], width: numbers[2], height: numbers[3] }); }}>{text("Crop", "裁剪")}</button>
-      <button className={styles.button} onClick={() => { const value = window.prompt(text("Text to add", "要添加的文字"), "Text"); if (value) void rasterEditor.current?.addText(value); }}>{text("Text", "文字")}</button>
-      <button className={styles.button} onClick={() => void rasterEditor.current?.addShape("rect")}>{text("Shape", "形状")}</button>
-      <button className={styles.button} onClick={() => void rasterEditor.current?.draw()}>{text("Draw", "绘制")}</button>
-      <button className={styles.button} onClick={() => void rasterEditor.current?.undo()}>{text("Undo", "撤销")}</button>
-      <button className={styles.button} onClick={() => void rasterEditor.current?.redo()}>{text("Redo", "重做")}</button>
-    </div>}
+    {isRaster && editorOpened && mode === "edit" && !selected && <fieldset className={styles.toolbar} role="toolbar" aria-label={text("Image tools", "图片工具")} disabled={!rasterReady || state.restoring || state.renaming} style={{border:0,margin:0}}>
+      {cropping ? <>
+        <button className={styles.button} onClick={() => void imageCommand(async editor => {await editor.applyCrop();setCropping(false);})}>{text("Apply crop", "应用裁剪")}</button>
+        <button className={styles.button} onClick={() => void imageCommand(async editor => {await editor.cancelTool();setCropping(false);})}>{text("Cancel crop", "取消裁剪")}</button>
+      </> : <>
+        <button className={styles.button} onClick={() => void imageCommand(editor => editor.rotate())}>{text("Rotate", "旋转")}</button>
+        <button className={styles.button} onClick={() => void imageCommand(async editor => {await editor.startCrop();setCropping(true);})}>{text("Crop", "裁剪")}</button>
+        <button className={styles.button} onClick={() => {const value=window.prompt(text("Text to add", "要添加的文字"));if(value)void imageCommand(editor=>editor.addText(value));}}>{text("Text", "文字")}</button>
+        <button className={styles.button} onClick={() => void imageCommand(editor => editor.addShape("rect"))}>{text("Shape", "形状")}</button>
+        <button className={styles.button} onClick={() => void imageCommand(editor => editor.draw())}>{text("Draw", "绘制")}</button>
+        <button className={styles.button} onClick={() => void imageCommand(editor => editor.undo())}>{text("Undo", "撤销")}</button>
+        <button className={styles.button} onClick={() => void imageCommand(editor => editor.redo())}>{text("Redo", "重做")}</button>
+      </>}
+    </fieldset>}
     <div className={styles.body}>
+      {isRaster && currentBytes && editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
+        <RasterSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly} mode={mode} onReady={(value) => { rasterEditor.current = value; setRasterReady(Boolean(value)); }} />
+      </div>}
+
       {isOffice && currentBytes ? <><div hidden={Boolean(selected)} style={{ height: "100%" }}><OfficeSurface key={state.editorRevision} controller={controller} bytes={currentBytes} path={path} readOnly={readOnly || !office?.editable} mode={mode} /></div>{selected && <OfficeSurface key={`${selected.version ?? "disk"}:${selected.side ?? "after"}`} controller={controller} bytes={selected.blob} path={path} readOnly={true} mode="preview" />}</> : selected ? <FileViewer projectId={projectId} path={path} sourceBlob={selected.blob}
         snapshot={{ project_id: projectId, path, content: selected.content, binary: !isText, size: selected.blob.size, mtime: 0 }} /> : <>
-      {isRaster && currentBytes && editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
-        <RasterSurface controller={controller} bytes={currentBytes} path={path} readOnly={readOnly} mode={mode} onReady={(value) => { rasterEditor.current = value; }} />
-      </div>}
       {!isRaster && editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
         <fieldset disabled={state.restoring || state.renaming} style={{ border: 0, margin: 0, padding: 0, height: "100%" }}>
           <EditorArea value={content} onChange={(value) => {

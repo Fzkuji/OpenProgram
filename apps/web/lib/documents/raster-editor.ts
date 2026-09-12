@@ -1,80 +1,104 @@
 "use client";
 import type { DocumentController } from "@/lib/state/document-controller";
-import { assertEncodedRaster, validateRasterDecoded, type RasterFormat } from "./raster-format";
+import { assertEncodedRaster, validateRasterDecoded } from "./raster-format";
 
+type Crop = { left: number; top: number; width: number; height: number };
 type TuiEditor = {
-  rotate(degree: number): Promise<unknown>; crop(options: { left: number; top: number; width: number; height: number }): Promise<unknown>;
-  addText(text: string, options?: Record<string, unknown>): Promise<unknown>; addShape(type: string, options?: Record<string, unknown>): Promise<unknown>;
-  addIcon(type: string, options?: Record<string, unknown>): Promise<unknown>; addObject?(_object: unknown): Promise<unknown>;
-  undo(): Promise<unknown>; redo(): Promise<unknown>; toDataURL(options?: { format?: string; quality?: number }): string; destroy(): void;
-  loadImageFromURL(url: string, name: string): Promise<unknown>; getCanvasSize?: () => { width: number; height: number };
-  startDrawingMode?(mode: string, options?: Record<string, unknown>): unknown;
-  on(event: string, handler: () => void): void; off?(event: string, handler: () => void): void;
+  rotate(degree: number): Promise<unknown>; crop(options: Crop): Promise<unknown>;
+  addText(text: string, options?: Record<string, unknown>): Promise<unknown>;
+  addShape(type: string, options?: Record<string, unknown>): Promise<unknown>;
+  undo(): Promise<unknown>; redo(): Promise<unknown>;
+  toDataURL(options?: { format?: string; quality?: number }): string; destroy(): void;
+  loadImageFromURL(url: string, name: string): Promise<unknown>; getCanvasSize(): { width: number; height: number };
+  clearUndoStack(): void; clearRedoStack(): void; getCropzoneRect(): Crop;
+  startDrawingMode(mode: string, options?: Record<string, unknown>): unknown; stopDrawingMode(): void;
+  on(event: string, handler: () => void): void; off(event: string, handler: () => void): void;
 };
 export interface RasterEditorInstance {
-  save(targetExt?: string, options?: { commitPendingInput?: boolean }): Promise<File>;
-  flushPendingSaves(): Promise<void>; setReadonly(readonly: boolean): void; setInputEnabled(enabled: boolean): void;
-  destroy(): Promise<void>; getState(): { dirty: boolean; readonly: boolean; destroyed: boolean; status?: string };
-  rotate(): Promise<void>; crop(options: { left: number; top: number; width: number; height: number }): Promise<void>; cropCenter(): Promise<void>;
-  addText(text: string): Promise<unknown>; addShape(type: string): Promise<unknown>; draw(): Promise<void>; undo(): Promise<void>; redo(): Promise<void>;
+  save(): Promise<File>; flushPendingSaves(): Promise<void>;
+  setReadonly(readonly: boolean): void; setInputEnabled(enabled: boolean): void;
+  destroy(): Promise<void>; getState(): { dirty: boolean; readonly: boolean; destroyed: boolean; status: string };
+  rotate(): Promise<void>; crop(options: Crop): Promise<void>;
+  addText(text: string): Promise<void>; addShape(type: string): Promise<void>;
+  draw(): Promise<void>; startCrop(): Promise<void>; applyCrop(): Promise<void>; cancelTool(): Promise<void>; undo(): Promise<void>; redo(): Promise<void>;
 }
-interface TuiModule { default?: new (element: HTMLElement, options: Record<string, unknown>) => TuiEditor; ImageEditor?: new (element: HTMLElement, options: Record<string, unknown>) => TuiEditor; }
+type TuiModule = { default: new (element: HTMLElement, options: Record<string, unknown>) => TuiEditor };
 let modulePromise: Promise<TuiModule> | null = null;
 async function loadTui(): Promise<TuiModule> {
-  modulePromise ??= import("tui-image-editor") as unknown as Promise<TuiModule>;
+  modulePromise ??= (import("tui-image-editor") as unknown as Promise<TuiModule>).catch(error=>{modulePromise=null;throw error;});
   return modulePromise;
 }
-function nextFrame(): Promise<void> { return new Promise((resolve) => requestAnimationFrame(() => resolve())); }
-
+const nextFrame = () => new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
 export async function createBoundRasterEditor(options: {
   container: HTMLElement; controller: DocumentController; bytes: Blob; fileName: string; readonly?: boolean;
-  onError?: (error: Error) => void; generation?: number;
+  generation?: number; signal?: AbortSignal;
 }): Promise<RasterEditorInstance> {
-  const checked = await validateRasterDecoded(options.bytes);
-  if (!checked.width || !checked.height) throw new Error("UNSUPPORTED_IMAGE: browser image decoding is unavailable.");
-  const extension = options.fileName.toLowerCase().split(".").pop() ?? "";
-  const expectedFormat = extension === "jpg" || extension === "jpeg" ? "jpeg" : extension;
-  if (expectedFormat !== checked.format) throw new Error("UNSUPPORTED_IMAGE: file extension and raster encoding differ.");
-  const module = await loadTui();
-  const Editor = module.default ?? module.ImageEditor;
-  if (!Editor) throw new Error("Raster editor resources are unavailable.");
-  const generation = options.generation ?? options.controller.getState().editorRevision;
-  const editor = new Editor(options.container, { includeUI: false, usageStatistics: false,
-    cssMaxWidth: 1600, cssMaxHeight: 1200, selectionStyle: { cornerSize: 12 },
-    theme: { common: { bi: { image: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" } } },
-  });
-  const sourceUrl = URL.createObjectURL(options.bytes);
-  try { await editor.loadImageFromURL(sourceUrl, options.fileName); }
-  catch (error) { editor.destroy(); throw new Error("UNSUPPORTED_IMAGE: raster image could not be loaded."); }
-  finally { URL.revokeObjectURL(sourceUrl); }
-  let dirty = false; let readonly = Boolean(options.readonly); let destroyed = false; let queued: Promise<unknown> = Promise.resolve(); let raf = 0;
-  const markDirty = () => { dirty = true; options.controller.markRichEditorDirty(true, instance); if (raf) cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { raf = 0; }); };
-  const onUndo = () => markDirty();
-  editor.on("undoStackChanged", onUndo); editor.on("redoStackChanged", onUndo);
-  const run = async <T>(operation: () => Promise<T>): Promise<T> => {
-    if (readonly || destroyed) throw new Error("Raster editor is read-only.");
-    const task = queued.catch(() => undefined).then(operation);
-    queued = task.catch(() => undefined);
-    return task;
+  const generation=options.generation ?? options.controller.getState().editorRevision;
+  options.signal?.throwIfAborted();
+  const checked=await validateRasterDecoded(options.bytes);
+  const extension=options.fileName.toLowerCase().split(".").pop();
+  if ((extension === "jpg" ? "jpeg" : extension) !== checked.format)
+    throw new Error("UNSUPPORTED_IMAGE: file extension and raster encoding differ.");
+  const { default: Editor }=await loadTui();
+  options.signal?.throwIfAborted();
+  const editor=new Editor(options.container,{includeUI:false,usageStatistics:false,cssMaxWidth:1600,cssMaxHeight:1200,selectionStyle:{cornerSize:12}});
+  const sourceUrl=URL.createObjectURL(options.bytes);
+  try { await editor.loadImageFromURL(sourceUrl,options.fileName);options.signal?.throwIfAborted();editor.clearUndoStack();editor.clearRedoStack(); }
+  catch(error) {editor.destroy();throw error;}
+  finally {URL.revokeObjectURL(sourceUrl);}
+
+  let readonly=Boolean(options.readonly), enabled=true, destroyed=false, dirty=false, revision=0;
+  let commands: Promise<unknown>=Promise.resolve(), saves: Promise<unknown>=Promise.resolve();
+  let detach: (()=>void) | undefined;
+  const syncInput=()=>{options.container.toggleAttribute("inert",!enabled || readonly || destroyed);};
+  const markDirty=()=>{if(destroyed)return;revision++;dirty=true;options.controller.markRichEditorDirty(true,instance);};
+  const run=(operation:()=>Promise<unknown>, stopDrawing=true):Promise<void>=>{
+    if(readonly || !enabled || destroyed)return Promise.reject(new Error("Raster editor is read-only."));
+    const task=commands.then(async()=>{if(destroyed)throw new Error("The image editor was closed.");if(stopDrawing)editor.stopDrawingMode();await operation();});
+    commands=task.catch(()=>undefined);return task;
   };
-  const exportFile = async (): Promise<File> => {
-    await queued; if (raf) await nextFrame(); await nextFrame();
-    const url = editor.toDataURL({ format: checked.format === "jpeg" ? "jpeg" : checked.format });
-    const blob = await (await fetch(url)).blob();
-    await assertEncodedRaster(blob, checked.format);
-    return new File([blob], options.fileName, { type: checked.mime });
+  const exportFile=async()=>{
+    await commands;await nextFrame();await nextFrame();
+    if(destroyed)throw new Error("The image editor was closed.");
+    const captured=revision;
+    const url=editor.toDataURL({format:checked.format,quality:0.95});
+    const blob=await (await fetch(url)).blob();
+    await assertEncodedRaster(blob,checked.format);
+    const file=new File([blob],options.fileName,{type:checked.mime});
+    if(destroyed)throw new Error("The image editor was closed.");
+    if(!options.readonly)await options.controller.stageRichExport(file,generation);
+    dirty=revision !== captured;
+    return file;
   };
-  const instance: RasterEditorInstance = {
-    async save() { const file = await exportFile(); if (!options.readonly) await options.controller.stageRichExport(file, generation); dirty = false; return file; },
-    async flushPendingSaves() { await queued; }, setReadonly(value) { readonly = value; },
-    setInputEnabled(enabled) { options.container.toggleAttribute("inert", !enabled); options.container.setAttribute("aria-disabled", String(!enabled)); },
-    async destroy() { if (destroyed) return; destroyed = true; if (raf) cancelAnimationFrame(raf); editor.off?.("undoStackChanged", onUndo); editor.off?.("redoStackChanged", onUndo); editor.destroy(); detach?.(); detach = undefined; },
-    getState() { return { dirty, readonly, destroyed, status: destroyed ? "destroyed" : "ready" }; },
-    rotate: () => run(async () => { await editor.rotate(90); }), crop: (value) => run(async () => { await editor.crop(value); }), cropCenter: () => run(async () => { const size = editor.getCanvasSize?.() ?? { width: checked.width, height: checked.height }; await editor.crop({ left: size.width * .1, top: size.height * .1, width: size.width * .8, height: size.height * .8 }); }),
-    addText: (value) => run(() => editor.addText(value)), addShape: (value) => run(() => editor.addShape(value)), draw: () => run(async () => { editor.startDrawingMode?.("FREE_DRAWING", { width: 4, color: "#e04f5f" }); }),
-    undo: () => run(async () => { await editor.undo(); }), redo: () => run(async () => { await editor.redo(); }),
+  const instance: RasterEditorInstance={
+    save(){const task=saves.then(exportFile);saves=task.catch(()=>undefined);return task;},
+    async flushPendingSaves(){let last;do{last=saves;await last;await commands;}while(last !== saves);},
+    setReadonly(value){readonly=value;syncInput();},
+    setInputEnabled(value){enabled=value;syncInput();},
+    async destroy(){
+      if(destroyed)return;destroyed=true;syncInput();
+      editor.off("undoStackChanged",markDirty);editor.off("redoStackChanged",markDirty);
+      await commands;await saves;
+      editor.destroy();detach?.();detach=undefined;
+    },
+    getState(){return {dirty,readonly,destroyed,status:destroyed ? "destroyed" : "ready"};},
+    rotate:()=>run(()=>editor.rotate(90)),
+    crop:(value)=>run(async()=>{
+      const size=editor.getCanvasSize();
+      if(![value.left,value.top,value.width,value.height].every(Number.isFinite) || value.left<0 || value.top<0 || value.width<1 || value.height<1 || value.left+value.width>size.width || value.top+value.height>size.height)
+        throw new Error("The crop must be inside the current image.");
+      editor.stopDrawingMode();
+      await editor.crop(value);
+    },false),
+    addText:(text)=>run(()=>editor.addText(text,{styles:{fontSize:24,fill:"#111111"}})),
+    addShape:(type)=>run(()=>editor.addShape(type,{width:60,height:40,fill:"#ff00ff",stroke:"#ff00ff",strokeWidth:2})),
+    draw:()=>run(async()=>{editor.startDrawingMode("FREE_DRAWING",{width:4,color:"#ff00ff"});}),
+    startCrop:()=>run(async()=>{editor.startDrawingMode("CROPPER");}),
+    applyCrop:()=>{const rect=editor.getCropzoneRect();return instance.crop({...rect});},
+    cancelTool:()=>run(async()=>{}),
+    undo:()=>run(()=>editor.undo()),redo:()=>run(()=>editor.redo()),
   };
-  let detach: (() => void) | undefined;
-  try { if (!options.readonly) detach = options.controller.attachRichEditor(instance, generation); return instance; }
-  catch (error) { editor.destroy(); options.onError?.(error instanceof Error ? error : new Error(String(error))); throw error; }
+  editor.on("undoStackChanged",markDirty);editor.on("redoStackChanged",markDirty);
+  try {if(!options.readonly)detach=options.controller.attachRichEditor(instance,generation);syncInput();return instance;}
+  catch(error){await instance.destroy();throw error;}
 }

@@ -46,7 +46,14 @@ def browser_page(bundles):
                 if request.request.method == "GET":
                     request.fulfill(body=state["body"], headers={"x-document-revision": state["revision"]})
                 else:
+                    if state.get("put_status"):
+                        request.fulfill(status=state["put_status"], json={"error":"injected publication failure"})
+                        return
                     raw = request.request.post_data_buffer
+                    if request.request.headers.get("x-baseline-revision") == "absent":
+                        state.setdefault("copies", []).append(raw)
+                        request.fulfill(json={"ok":True,"status":"committed","revision":hashlib.sha256(raw).hexdigest()})
+                        return
                     state["writes"].append(raw)
                     state["body"] = raw
                     state["revision"] = hashlib.sha256(raw).hexdigest()
@@ -54,7 +61,7 @@ def browser_page(bundles):
             elif path == "/api/documents/history":
                 request.fulfill(json={"entries": [{"version_id": "version1", "actor": "user"}], "next_cursor": None})
             elif path == "/api/documents/history/content":
-                request.fulfill(body=b"history")
+                request.fulfill(body=state.get("history_body", b"history"))
             else:
                 request.fulfill(status=404)
 
@@ -266,3 +273,182 @@ def test_real_raster_edit_loads_rotates_and_persists_pixels(browser_page):
     assert pixels["width"] == 240 and pixels["height"] == 320
     assert pixels["tl"][2] > pixels["tl"][0]
     assert errors == []
+
+
+def test_raster_history_keeps_native_undo_after_autosave_and_visibility(browser_page):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    original = (Path(__file__).parent / "fixtures/raster/quadrants.png").read_bytes()
+    state["body"] = state["history_body"] = original
+    page.goto("https://document.test/?file=quadrants.png")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    host = page.locator('[data-raster-editor]')
+    expect(host).to_be_visible(timeout=15000)
+    canvas = host.locator("canvas").first.element_handle()
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Rotate", exact=True).click()
+    page.get_by_role("button", name="Other tab", exact=True).click()
+    page.get_by_role("button", name="Return to file", exact=True).click()
+    page.get_by_role("button", name="Open settings route", exact=True).click()
+    page.get_by_role("button", name="Back to file route", exact=True).click()
+    page.get_by_role("button", name="History", exact=True).click()
+    page.get_by_role("button", name="After", exact=True).click()
+    expect(host.locator("canvas")).to_have_count(2)
+    page.get_by_role("button", name="Back to current file", exact=True).click()
+    page.get_by_role("button", name="Edit", exact=True).click()
+    expect(host).to_be_visible()
+    assert host.locator("canvas").first.evaluate("(current,previous)=>current===previous",canvas)
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Undo", exact=True).click()
+    result = page.evaluate("""async bytes=>{const b=await createImageBitmap(new Blob([new Uint8Array(bytes)]));const c=document.createElement('canvas');c.width=b.width;c.height=b.height;const x=c.getContext('2d');x.drawImage(b,0,0);const p=Array.from(x.getImageData(0,0,1,1).data);b.close();return {w:c.width,h:c.height,p};}""",list(state["writes"][-1]))
+    assert result == {"w":320,"h":240,"p":[255,0,0,255]}
+    assert errors == []
+
+
+@pytest.mark.parametrize("extension", ["jpg", "webp"])
+def test_raster_same_format_export_and_reopen(browser_page, extension):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    state["body"] = (Path(__file__).parent / f"fixtures/raster/quadrants.{extension}").read_bytes()
+    page.goto(f"https://document.test/?file=quadrants.{extension}")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-raster-editor]')).to_be_visible(timeout=15000)
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Rotate", exact=True).click()
+    raw = state["writes"][-1]
+    assert raw.startswith(b"\xff\xd8\xff") if extension == "jpg" else raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
+    dimensions = page.evaluate("""async bytes=>{const b=await createImageBitmap(new Blob([new Uint8Array(bytes)]));const result=[b.width,b.height];b.close();return result;}""",list(raw))
+    assert dimensions == [240,320]
+    page.reload()
+    page.get_by_role("button", name="Edit", exact=True).click()
+    expect(page.locator('[data-raster-editor]')).to_be_visible(timeout=15000)
+    assert errors == []
+
+
+def test_raster_crop_annotations_and_close_persist_real_pixels(browser_page):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    state["body"] = (Path(__file__).parent / "fixtures/raster/quadrants.png").read_bytes()
+    page.goto("https://document.test/?file=quadrants.png")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    host=page.locator('[data-raster-editor]')
+    expect(host).to_be_visible(timeout=15000)
+    page.get_by_role("button", name="Crop", exact=True).click()
+    # A missing crop selection is a recoverable operation error, not an empty file.
+    page.get_by_role("button", name="Apply crop", exact=True).click()
+    expect(page.get_by_role("alert")).to_contain_text("crop")
+    box=host.locator("canvas").last.bounding_box()
+    page.mouse.move(box["x"]+20,box["y"]+20)
+    page.mouse.down()
+    page.mouse.move(box["x"]+140,box["y"]+100,steps=5)
+    page.mouse.up()
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Apply crop", exact=True).click()
+    cropped=state["writes"][-1]
+    size=page.evaluate("""async bytes=>{const b=await createImageBitmap(new Blob([new Uint8Array(bytes)]));const r=[b.width,b.height];b.close();return r;}""",list(cropped))
+    assert size == [120,80]
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Shape", exact=True).click()
+    shaped=state["writes"][-1]
+    def colors(data):
+        return page.evaluate("""async bytes => {
+            const b=await createImageBitmap(new Blob([new Uint8Array(bytes)]));
+            const c=document.createElement('canvas');c.width=b.width;c.height=b.height;
+            const ctx=c.getContext('2d');ctx.drawImage(b,0,0);b.close();
+            const p=ctx.getImageData(0,0,c.width,c.height).data;
+            let magenta=0,black=0;
+            for(let i=0;i<p.length;i+=4){
+                if(p[i]>200 && p[i+1]<60 && p[i+2]>200)magenta++;
+                if(p[i]<60 && p[i+1]<60 && p[i+2]<60)black++;
+            }
+            return {magenta,black};
+        }""",list(data))
+    assert colors(shaped)["magenta"] > colors(cropped)["magenta"]
+    page.once("dialog",lambda dialog:dialog.accept("Hello"))
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Text", exact=True).click()
+    annotated=state["writes"][-1]
+    assert colors(annotated)["black"] > colors(shaped)["black"]
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Undo", exact=True).click()
+    assert colors(state["writes"][-1])["black"] == colors(shaped)["black"]
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Redo", exact=True).click()
+    assert colors(state["writes"][-1])["black"] == colors(annotated)["black"]
+    page.get_by_role("button", name="Draw", exact=True).click()
+    box=host.locator("canvas").last.bounding_box()
+    before_draw=colors(state["writes"][-1])["magenta"]
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.mouse.move(box["x"]+5,box["y"]+5)
+        page.mouse.down()
+        page.mouse.move(box["x"]+110,box["y"]+5,steps=8)
+        page.mouse.up()
+    assert colors(state["writes"][-1])["magenta"] > before_draw
+    page.get_by_role("button", name="Close file", exact=True).click()
+    expect(page.get_by_text("File closed",exact=True)).to_be_visible()
+    assert errors == []
+
+
+@pytest.mark.parametrize("status", [409,503])
+def test_raster_failed_publication_keeps_editor_and_retryable_draft(browser_page,status):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    state["body"] = (Path(__file__).parent / "fixtures/raster/quadrants.png").read_bytes()
+    page.goto("https://document.test/?file=quadrants.png")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    host=page.locator('[data-raster-editor]')
+    expect(host).to_be_visible(timeout=15000)
+    state["put_status"]=status
+    page.get_by_role("button", name="Rotate", exact=True).click()
+    expect(page.get_by_role("button",name="Retry",exact=True)).to_be_visible()
+    with page.expect_response(lambda response: response.request.method == "PUT" and response.status == status):
+        page.get_by_role("button", name="Close file", exact=True).click()
+    expect(page.get_by_role("button",name="Retry",exact=True)).to_be_visible()
+    expect(host).to_be_visible()
+    expect(page.get_by_text("File closed",exact=True)).to_have_count(0)
+    assert state["writes"] == []
+    state.pop("put_status")
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        page.get_by_role("button", name="Retry", exact=True).click()
+    page.get_by_role("button", name="Close file", exact=True).click()
+    expect(page.get_by_text("File closed",exact=True)).to_be_visible()
+    assert errors == []
+
+
+@pytest.mark.parametrize("extension", ["png","webp"])
+def test_raster_animation_is_readonly_and_original_download_remains(browser_page,extension):
+    from playwright.sync_api import expect
+    page, state, errors = browser_page
+    original=(Path(__file__).parent / f"fixtures/raster/animated.{extension}").read_bytes()
+    state["body"]=original
+    page.goto(f"https://document.test/?file=animated.{extension}")
+    page.get_by_role("button",name="Edit",exact=True).click()
+    expect(page.get_by_role("alert")).to_contain_text("animated")
+    expect(page.get_by_role("link",name="Download disk file",exact=True)).to_be_visible()
+    expect(page.locator('[data-raster-editor] canvas')).to_have_count(0)
+    assert state["writes"] == [] and state["body"] == original
+    assert errors == []
+
+
+def test_raster_explicit_png_copy_preserves_source_and_conflict(browser_page):
+    from playwright.sync_api import expect
+    page,state,errors=browser_page
+    original=(Path(__file__).parent / "fixtures/raster/quadrants.webp").read_bytes()
+    state["body"]=original
+    page.goto("https://document.test/?file=quadrants.webp")
+    button=page.get_by_role("button",name="Convert to PNG",exact=True)
+    expect(button).to_be_enabled()
+    state["put_status"]=409
+    page.once("dialog",lambda dialog:dialog.accept("copy.png"))
+    with page.expect_response(lambda r:r.request.method=="PUT" and r.status==409):
+        button.click()
+    expect(page.get_by_role("alert")).to_be_visible()
+    assert state["body"]==original and not state.get("copies")
+    state.pop("put_status")
+    page.once("dialog",lambda dialog:dialog.accept("copy.png"))
+    with page.expect_response(lambda r:r.request.method=="PUT" and r.status==200) as response:
+        button.click()
+    assert response.value.request.headers["x-baseline-revision"]=="absent"
+    assert state["copies"][0].startswith(bytes([137,80,78,71,13,10,26,10]))
+    assert state["body"]==original and state["writes"]==[]
+    assert errors==[]

@@ -43,3 +43,12 @@ test("encoding checks read Blob bytes and reject a mismatched output or damaged 
   assert.throws(()=>validateRasterInput(raw),/invalid|truncated/i);
   assert.throws(()=>validateRasterInput(fixture("quadrants.png").slice(0,8)),/invalid|truncated/i);
 });
+
+test("narrow oversized canvas dimensions reject before native allocation", async () => {
+  const raw=fixture("quadrants.png");const view=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+  view.setUint32(16,65536);view.setUint32(20,1);
+  const previous=globalThis.createImageBitmap;
+  globalThis.createImageBitmap=async()=>{throw Error("unexpected decode");};
+  try {await assert.rejects(validateRasterDecoded(new Blob([raw])),/IMAGE_RESOURCE_LIMIT/);}
+  finally {globalThis.createImageBitmap=previous;}
+});

@@ -1,5 +1,6 @@
 export const MAX_RASTER_BYTES = 64 * 1024 * 1024;
 export const MAX_RASTER_PIXELS = 16_000_000;
+export const MAX_RASTER_DIMENSION = 16_384;
 export type RasterFormat = "png" | "jpeg" | "webp";
 const MIME: Record<RasterFormat, string> = { png: "image/png", jpeg: "image/jpeg", webp: "image/webp" };
 type Dimensions = { width: number; height: number };
@@ -17,8 +18,8 @@ export function rasterMime(bytes: Uint8Array): string | null {
   return null;
 }
 function dimensions(width: number, height: number): Dimensions {
-  if (!width || !height || width * height > MAX_RASTER_PIXELS)
-    throw new Error("IMAGE_RESOURCE_LIMIT: raster dimensions exceed 16 million pixels.");
+  if (!width || !height || width > MAX_RASTER_DIMENSION || height > MAX_RASTER_DIMENSION || width * height > MAX_RASTER_PIXELS)
+    throw new Error("IMAGE_RESOURCE_LIMIT: raster dimensions exceed 16384 per side or 16 million pixels.");
   return { width, height };
 }
 /** Walk container headers; never scan compressed pixels for apparent chunk names. */
@@ -120,4 +121,23 @@ export async function validateRasterDecoded(value: Blob): Promise<RasterInfo> {
 export async function assertEncodedRaster(value: Blob, format: RasterFormat): Promise<void> {
   const info=await read(value);
   if (info.format !== format) throw new Error("UNSUPPORTED_IMAGE: editor returned an invalid same-format encoding.");
+}
+
+/** Explicit static-image conversion; never replaces the source or flattens animation. */
+export async function convertRasterToPng(value: Blob, fileName: string, signal: AbortSignal): Promise<File> {
+  await validateRasterDecoded(value);
+  signal.throwIfAborted();
+  const bitmap = await createImageBitmap(value);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image conversion is unavailable.");
+    context.drawImage(bitmap, 0, 0);
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      result => result ? resolve(result) : reject(new Error("PNG encoding failed.")), "image/png"));
+    signal.throwIfAborted();
+    await assertEncodedRaster(blob, "png");
+    return new File([blob], fileName, { type: "image/png" });
+  } finally { bitmap.close(); }
 }
