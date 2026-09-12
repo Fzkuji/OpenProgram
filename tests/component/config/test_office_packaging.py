@@ -174,3 +174,18 @@ def test_malformed_install_pointer_returns_unavailable(tmp_path: Path):
     pack = OfficeAssetPack.from_root(target)
     assert not pack.available
     assert pack.unavailable_reason
+
+
+def test_symlink_pack_root_is_unavailable(tmp_path: Path):
+    import pytest
+    from openprogram.office_assets import OfficeAssetPack, install_office_pack
+    source = make_office_pack(tmp_path / 'source')
+    alias = tmp_path / 'alias'
+    try:
+        alias.symlink_to(source, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"Symlink creation unavailable: {error}")
+    assert not OfficeAssetPack.from_root(alias).available
+    with pytest.raises(ValueError):
+        install_office_pack(alias, tmp_path / 'target')
+    assert not (tmp_path / 'target/current.json').exists()

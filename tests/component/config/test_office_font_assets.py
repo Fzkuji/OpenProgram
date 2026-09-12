@@ -37,7 +37,7 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
     for i in range(10):
         (pack / "sdkjs/common/Images" / f"fonts_thumbnail{i}.png").write_bytes(b"png")
     source_map = {"fontSet": "fixture", "fonts": [
-        {"index": i, "file": f"fonts/{i:03d}.ttf", "source": f"input/{name}"}
+        {"index": i, "file": f"fonts/{i:03d}.ttf", "source": f"input/family/{name}"}
         for i, name in enumerate(names)
     ]}
     (pack / "onlyoffice-browser-font-source-map.json").write_text(json.dumps(source_map), encoding="utf-8")
@@ -84,4 +84,15 @@ def test_source_map_and_declared_manifest_digest_tampering_is_rejected(tmp_path:
     manifest["manifestDigest"] = "0" * 64
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(ValueError, match="digest mismatch"):
+        font_assets.validate_font_assets(pack, input_root)
+
+
+@pytest.mark.parametrize('source', ['/Users/alice/private/font-0.ttf', '/home/alice/font-0.ttf', r'C:\Users\alice\font-0.ttf', 'input/../font-0.ttf'])
+def test_personal_absolute_source_paths_are_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str):
+    pack, input_root = _fixture(tmp_path, monkeypatch)
+    path = pack / 'onlyoffice-browser-font-source-map.json'
+    value = json.loads(path.read_text())
+    value['fonts'][0]['source'] = source
+    path.write_text(json.dumps(value))
+    with pytest.raises(ValueError, match='source'):
         font_assets.validate_font_assets(pack, input_root)

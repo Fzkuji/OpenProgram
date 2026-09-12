@@ -43,6 +43,8 @@ class OfficeAssetPack:
     def from_root(cls, root: Path) -> "OfficeAssetPack":
         root = Path(root).absolute()
         try:
+            if root.is_symlink():
+                raise ValueError("Office pack root must not be a symlink")
             version = None
             pointer = root / "current.json"
             if pointer.is_file():

@@ -93,8 +93,8 @@ def validate_font_assets(pack: Path, input: Path) -> dict[str, Any]:
     """Validate a generated pack against its supplied font input directory.
 
     The returned provenance contains only paths relative to ``input``.  Source
-    map paths are treated as labels; identity is established by basename and
-    SHA-256, so staging-directory paths cannot escape into the published pack.
+    map paths are input-relative labels; identity uses the exact relative path
+    and SHA-256, so staging paths cannot escape into the published pack.
     """
     pack = Path(pack).resolve()
     input_root = Path(input).resolve()
@@ -133,7 +133,7 @@ def validate_font_assets(pack: Path, input: Path) -> dict[str, Any]:
     entries = source_map.get("fonts")
     if not isinstance(entries, list) or len(entries) != EXPECTED_FONT_FILES:
         raise ValueError("source map must contain one entry per packed font")
-    by_name_hash = {(_p.name.casefold(), _sha256(_p)): _p for _p in _input_fonts(input_root)}
+    by_name_hash = {(_p.relative_to(input_root).as_posix(), _sha256(_p)): _p for _p in _input_fonts(input_root)}
     provenance = []
     seen = set()
     for entry in entries:
@@ -143,10 +143,12 @@ def validate_font_assets(pack: Path, input: Path) -> dict[str, Any]:
         source = entry["source"]
         if packed in seen or packed not in paths or not packed.startswith("fonts/"):
             raise ValueError(f"source map references an unexpected font: {packed}")
-        if re.match(r"^(?:[a-z][a-z\d+.-]*:)?//|^(?:data|blob|file):", source, re.I) or re.search(r"(?:^|[/\\])(usr|System|Library|tmp)(?:[/\\]|$)", source, re.I):
-            raise ValueError(f"source map contains a system or external source: {source}")
+        parts = source.split("/")
+        if (not source.startswith("input/") or "\\" in source or ":" in source
+                or any(part in {"", ".", ".."} for part in parts)):
+            raise ValueError(f"source map contains a non-portable source: {source}")
         packed_path = paths[packed]
-        match = by_name_hash.get((Path(source.replace("\\", "/")).name.casefold(), _sha256(packed_path)))
+        match = by_name_hash.get(("/".join(parts[1:]), _sha256(packed_path)))
         if match is None:
             raise ValueError(f"source map font does not match an input SHA-256: {source} -> {packed}")
         seen.add(packed)
