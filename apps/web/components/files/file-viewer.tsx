@@ -163,6 +163,11 @@ function TextViewer({
     let cancelled = false;
     const controller = new AbortController();
     setFailed(false);
+    if (snapshot) {
+      setData(snapshot);
+      onLoadedRef.current?.(snapshot);
+      return;
+    }
     if (abs) {
       // No readCache / mtime here: an attachment is immutable in
       // practice and has no tree listing reporting an mtime, so a cache
@@ -222,13 +227,7 @@ function TextViewer({
       cancelled = true;
       controller.abort();
     };
-  }, [projectId, path, abs, sessionId]);
-
-  useEffect(() => {
-    if (!snapshot) return;
-    setData(snapshot);
-    onLoadedRef.current?.(snapshot);
-  }, [snapshot]);
+  }, [projectId, path, abs, sessionId, snapshot]);
 
   if (failed) {
     return (
@@ -306,7 +305,7 @@ function TextViewer({
  * ponytail: no syntax highlight, whole-buffer re-render per keystroke;
  * swap for CodeMirror when highlighting or huge files measurably hurt.
  */
-function EditorArea({
+export function EditorArea({
   value,
   onChange,
 }: {
