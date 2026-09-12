@@ -30,6 +30,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<VersionPreview | null>(null);
   const selectionRequest = useRef(0);
+  const editedBytes = useRef<Blob | null>(null);
   const isText = textPath(path) && !state.snapshot?.binary;
   const currentBytes = state.draft ?? state.snapshot?.bytes;
 
@@ -41,7 +42,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   }, [controller]);
   useEffect(() => {
     let active = true;
-    if (currentBytes && isText) void currentBytes.text().then((value) => { if (active) setContent(value); });
+    if (currentBytes && currentBytes !== editedBytes.current && isText) void currentBytes.text().then((value) => { if (active) setContent(value); });
     return () => { active = false; };
   }, [currentBytes, isText]);
 
@@ -126,7 +127,13 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
     <div className={styles.body}>
       {editorOpened && <div hidden={mode !== "edit" || Boolean(selected)} style={{ height: "100%" }}>
         <fieldset disabled={state.restoring} style={{ border: 0, margin: 0, padding: 0, height: "100%" }}>
-          <EditorArea value={content} onChange={(value) => { setContent(value); controller.update(value); }} />
+          <EditorArea value={content} onChange={(value) => {
+            setContent(value);
+            controller.update(value);
+            // The editor already owns this generation's text. Only bytes
+            // loaded from disk, history, or another editor need decoding.
+            editedBytes.current = controller.currentDraft();
+          }} />
         </fieldset>
       </div>}
       <div hidden={mode === "edit" || Boolean(selected)} style={{ height: "100%" }}>

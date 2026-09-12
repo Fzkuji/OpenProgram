@@ -202,3 +202,23 @@ def test_unmounted_blob_draft_blocks_rename_and_flushes_before_close(browser_pag
     assert result == {"dirty": True, "calls": 0, "renamed": False, "closed": True, "remaining": []}
     assert state["writes"] == [bytes([0, 255, 128, 1])]
     assert errors == []
+
+
+def test_typing_does_not_redecode_the_entire_text_blob(browser_page):
+    page, state, errors = browser_page
+    state["body"] = b"a" * (256 * 1024)
+    page.goto("https://document.test/")
+    page.get_by_role("button", name="Edit", exact=True).click()
+    editor = page.locator("textarea:visible")
+    expect(editor).to_have_value(state["body"].decode())
+    page.evaluate("""() => {
+      window.blobTextReads=0;
+      const original=Blob.prototype.text;
+      Blob.prototype.text=function(){window.blobTextReads++;return original.call(this)};
+    }""")
+    with page.expect_response(lambda response: response.request.method == "PUT"):
+        editor.press("ControlOrMeta+End")
+        editor.press_sequentially("12345678")
+    assert page.evaluate("window.blobTextReads") == 0
+    assert state["writes"][-1] == b"a" * (256 * 1024) + b"12345678"
+    assert errors == []
