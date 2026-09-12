@@ -21,11 +21,13 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const [selectedContent, setSelectedContent] = useState<string | null>(null);
   const [content, setContent] = useState<string | undefined>(undefined);
   const [draftText, setDraftText] = useState<string | undefined>(undefined);
+  const [editorValue, setEditorValue] = useState("");
   const isText = TEXT_EXTENSIONS.has(extension(path));
   useEffect(() => { const unsubscribe = controller.subscribe(setState); return () => { unsubscribe(); }; }, [controller]);
   useEffect(() => { void controller.load().catch((error) => setHistoryError(error instanceof Error ? error.message : text("Unable to read document.", "无法读取文件。"))); return () => undefined; }, [controller, text]);
   useEffect(() => { if (state.snapshot && isText) void state.snapshot.bytes.text().then(setContent); }, [state.snapshot]);
   useEffect(() => { if (state.draft && isText) void state.draft.text().then(setDraftText); else setDraftText(undefined); }, [state.draft, isText]);
+  useEffect(() => { if (draftText !== undefined) setEditorValue(draftText); else if (content !== undefined) setEditorValue(content); }, [draftText, content]);
   const snapshot = state.snapshot ? { project_id: projectId, path, content, size: state.snapshot.bytes.size, mtime: state.snapshot.mtime ?? 0, revision: state.snapshot.revision } : null;
   const onLoaded = (data: { content?: string; revision?: string; mtime?: number; size: number; project_id: string; path: string } | null) => {
     if (data?.content !== undefined && !state.snapshot) controller.hydrate({ bytes: data.content, revision: data.revision ?? "", mtime: data.mtime });
@@ -43,7 +45,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
     </div>
     {historyError || state.error ? <div className={styles.error} role="alert">{historyError || state.error}</div> : null}
     <div className={styles.body}>
-      {selected ? <FileViewer projectId={projectId} path={path} snapshot={{ project_id: projectId, path, content: selectedContent ?? "", size: selected.size, mtime: 0 }} /> : mode === "edit" && isText ? <textarea aria-label={text("Document editor", "文档编辑器")} value={draftText ?? content ?? ""} onChange={(event) => controller.update(event.target.value)} style={{ width: "100%", height: "100%", resize: "none" }} /> : <FileViewer projectId={projectId} path={path} abs={readOnly} sessionId={sessionId} snapshot={snapshot} onLoaded={onLoaded} />}
+      {selected ? <FileViewer projectId={projectId} path={path} sourceBlob={selected} snapshot={{ project_id: projectId, path, content: selectedContent ?? "", size: selected.size, mtime: 0 }} /> : <><div style={{ display: mode === "edit" && isText ? "block" : "none", height: "100%" }}><textarea aria-label={text("Document editor", "文档编辑器")} value={editorValue} onChange={(event) => { setEditorValue(event.target.value); controller.update(event.target.value); }} style={{ width: "100%", height: "100%", resize: "none" }} /></div><div style={{ display: mode === "edit" && isText ? "none" : "block", height: "100%" }}><FileViewer projectId={projectId} path={path} abs={readOnly} sessionId={sessionId} snapshot={snapshot} onLoaded={onLoaded} /></div></>}
     </div>
     {historyOpen ? <aside className={styles.history} aria-label={text("Document history", "文档历史")}><div className={styles.historyTitle}>{text("Manual versions", "手动版本")}</div>{history.map((entry) => <div className={styles.entry} key={entry.version_id}><span>{entry.actor === "user" ? text("You", "你") : entry.actor || text("Version", "版本")}</span><button className={styles.button} onClick={() => void previewVersion(entry, "before")}>{text("Before", "之前")}</button><button className={styles.button} onClick={() => void previewVersion(entry, "after")}>{text("After", "之后")}</button><button className={styles.button} onClick={() => void restoreVersion(entry)}>{text("Restore", "恢复")}</button></div>)}{historyCursor ? <button className={styles.button} onClick={() => void openHistory(historyCursor)}>{text("Load more", "加载更多")}</button> : null}</aside> : null}
   </div>;

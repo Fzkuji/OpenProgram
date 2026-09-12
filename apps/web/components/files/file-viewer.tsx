@@ -69,6 +69,7 @@ export function FileViewer({
   onDraftChange,
   onLoaded,
   snapshot,
+  sourceBlob,
 }: {
   projectId: string;
   path: string;
@@ -91,22 +92,26 @@ export function FileViewer({
    *  tab pane can seed its editor buffer / tell text from binary. */
   onLoaded?: (data: FileReadResult | null) => void;
   snapshot?: FileReadResult | null;
+  sourceBlob?: Blob | null;
 }) {
   const ext = extOf(path);
+  const blobUrl = useMemo(() => sourceBlob ? URL.createObjectURL(sourceBlob) : null, [sourceBlob]);
+  useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl); }, [blobUrl]);
   const rawUrl = abs
     ? absRawFileUrl(path, sessionId)
     : rawFileUrl(projectId, path);
   if (IMAGE_EXTS.has(ext)) {
+    const imageSource = blobUrl ?? rawUrl;
     return (
       <div className={styles.viewerScroll}>
-        <img src={rawUrl} alt={path} style={{ maxWidth: "100%" }} />
+        <img src={imageSource} alt={path} style={{ maxWidth: "100%" }} />
       </div>
     );
   }
   if (ext === "pdf") {
     // The browser's built-in PDF viewer renders this in its own
     // isolated process, not the page DOM.
-    return <iframe src={rawUrl} title={path} className={styles.pdfFrame} />;
+    return <iframe src={blobUrl ?? rawUrl} title={path} className={styles.pdfFrame} />;
   }
   return (
     <TextViewer
