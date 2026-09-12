@@ -65,7 +65,22 @@ def _digest(value):
 
 
 def _module_identity(module):
+    # A package initializer does not identify its transitive implementation.
+    # User helpers are retained as source; opaque modules need a pinned runtime.
+    import sysconfig
+
     filename = getattr(module, "__file__", None)
+    standard_library = Path(sysconfig.get_path("stdlib")).resolve()
+    if module.__name__.split(".")[0] not in sys.stdlib_module_names or (
+        filename
+        and (
+            not Path(filename).resolve().is_relative_to(standard_library)
+            or "site-packages" in Path(filename).parts
+        )
+    ):
+        raise FunctionCompatibilityError(
+            "Opaque non-standard-library dependencies cannot be retained; use source-defined Python helpers"
+        )
     return hashlib.sha256(Path(filename).read_bytes()).hexdigest() if filename else None
 
 
@@ -249,6 +264,19 @@ def _snapshot(fn):
                 raise FunctionCompatibilityError(
                     "Mutable helper state must be explicit JSON step input and output"
                 )
+            for item in ast.walk(node):
+                if isinstance(item, (ast.Import, ast.ImportFrom)) and not (
+                    isinstance(item, ast.ImportFrom)
+                    and item.module == "openprogram.agentic_programming.continuation"
+                    and all(
+                        alias.name in {"step", "workflow", "parallel"}
+                        and alias.asname is None
+                        for alias in item.names
+                    )
+                ):
+                    raise FunctionCompatibilityError(
+                        "Import step dependencies at module scope so their versions can be retained"
+                    )
             node.decorator_list = []
             node.returns = None
             for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):

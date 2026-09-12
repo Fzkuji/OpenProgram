@@ -102,3 +102,5 @@ Manual calls resume the same execution and function record. Chat calls return th
 This contract restores execution at explicit steps, not arbitrary Python stack frames. Calls and external mutations outside steps, asynchronous orchestration, generators, live handles, and non-JSON results are not supported. If a process dies after an external action starts but before its result is committed, recovery requires reconciliation; it cannot assume that action failed. The function run dialog distinguishes functions that declare this contract from ordinary functions that require a new run after interruption.
 
 Do not share mutable Python globals, closures or defaults between steps. Pass persistent state through JSON step inputs and results; process-local mutations are not a recovery protocol.
+
+Import step dependencies at module scope. Imports inside retained helpers are rejected before executing steps. Source-defined Python helpers are retained recursively. Opaque module and class dependencies currently support only the pinned standard library; third-party and user package objects are rejected because an initializer alone does not identify their implementation.

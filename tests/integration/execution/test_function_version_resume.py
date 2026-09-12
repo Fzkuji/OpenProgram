@@ -670,3 +670,93 @@ def test_hidden_mutable_state_is_rejected_before_external_work(tmp_path, monkeyp
     assert not (tmp_path / "effects").exists()
     assert store.get_execution(active.execution_id).status.value == "paused"
     assert _hidden_counter == 0
+
+
+def _local_import_action(folder):
+    from pathlib import Path
+
+    Path(folder, "effects").write_text("unexpected")
+    return "written"
+
+
+def _local_import_function(folder):
+    from openprogram.agentic_programming.continuation import step
+
+    return step("write", _local_import_action, folder)
+
+
+def test_untracked_step_import_is_rejected_before_external_work(tmp_path, monkeypatch):
+    import importlib
+
+    function_module = importlib.import_module(
+        "openprogram.agentic_programming.function"
+    )
+    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
+    from openprogram.agentic_programming.continuation import (
+        FunctionCompatibilityError,
+        function_execution,
+    )
+
+    store, active, _service = _active_execution(tmp_path)
+    function = agentic_function(_local_import_function, resumable=True, as_tool=False)
+    with pytest.raises(FunctionCompatibilityError, match="module scope"):
+        with function_execution(
+            store,
+            attempt_id=active.attempt_id,
+            generation=active.generation,
+            call_key="local-import",
+        ):
+            function(str(tmp_path))
+    assert not (tmp_path / "effects").exists()
+    assert store.get_execution(active.execution_id).status.value == "paused"
+
+
+def _package_action(folder):
+    return _finish(folder, _package_dependency.suffix)
+
+
+def _package_function(folder):
+    from openprogram.agentic_programming.continuation import step
+
+    return step("write", _package_action, folder)
+
+
+def test_opaque_package_is_rejected_before_external_work(tmp_path, monkeypatch):
+    import importlib
+    import sys
+
+    function_module = importlib.import_module(
+        "openprogram.agentic_programming.function"
+    )
+    monkeypatch.setattr(function_module, "_registry", dict(function_module._registry))
+    from openprogram.agentic_programming.continuation import (
+        FunctionCompatibilityError,
+        function_execution,
+    )
+
+    package = tmp_path / "durable_dependency"
+    package.mkdir()
+    (package / "__init__.py").write_text("from .impl import suffix\n")
+    (package / "impl.py").write_text("suffix = 'A'\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        monkeypatch.setitem(
+            globals(),
+            "_package_dependency",
+            importlib.import_module("durable_dependency"),
+        )
+        store, active, _service = _active_execution(tmp_path)
+        function = agentic_function(_package_function, resumable=True, as_tool=False)
+        with pytest.raises(FunctionCompatibilityError, match="Opaque"):
+            with function_execution(
+                store,
+                attempt_id=active.attempt_id,
+                generation=active.generation,
+                call_key="package",
+            ):
+                function(str(tmp_path))
+        assert not (tmp_path / "effects").exists()
+        assert store.get_execution(active.execution_id).status.value == "paused"
+    finally:
+        sys.modules.pop("durable_dependency.impl", None)
+        sys.modules.pop("durable_dependency", None)
