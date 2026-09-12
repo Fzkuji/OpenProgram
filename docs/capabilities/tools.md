@@ -35,7 +35,7 @@ Manual changes made through the project file editor also retain before/after byt
 
 PDF preview provides page navigation, zoom and text search; searches cover the first 500 pages and state that limit for longer documents. PSD preview shows the saved composite and layer names for 8-bit RGB files, and TIFF preview shows the first page. These decoders accept at most 64 MiB and bound the rendered image size. Common images remain passive image previews; audio and video use browser playback controls, with codec support depending on the browser. Damaged or unsupported files retain an original-file download. Previewing a retained history version uses its retained bytes. Decoder assets are local and load only when the corresponding format is opened. These preview modes do not edit PDF, PSD, TIFF, audio or video files.
 
-Office editing requires the locally installed, verified editor resource pack. If the pack is missing or invalid, the editor remains unavailable; opening a file does not download it. The local Office host is not available through remote application access. Resource installation and Office window integration are not yet complete.
+Office editing requires the locally installed, verified editor resource pack. If the pack is missing or invalid, the editor remains unavailable; opening a file does not download it. The local Office host is not available through remote application access. Release preparation now builds and verifies the pinned local resource pack, including fonts, licenses and source materials. Installation selects a complete version atomically and preserves the previous version on failure. Source workers and the App use the same prepared resource identity. Office window integration is not yet complete.
 
 ## Execution
 
