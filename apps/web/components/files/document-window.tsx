@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { EditorArea, FileViewer } from "./file-viewer";
 import { getOrCreateDocumentController } from "@/lib/state/document-controller";
-import type { DocumentHistoryEntry } from "@/lib/state/document-types";
+import type { DocumentHistoryEntry, DocumentHistoryPage } from "@/lib/state/document-types";
 import styles from "./document-window.module.css";
 
 import { fileCapabilities } from "@/lib/documents/file-formats";
@@ -36,6 +36,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<DocumentHistoryEntry[]>([]);
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
+  const [historyIndex, setHistoryIndex] = useState<DocumentHistoryPage["model_index"]>();
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<VersionPreview | null>(null);
   const selectionRequest = useRef(0);
@@ -74,6 +75,7 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       const page = await controller.listHistory(25, cursor);
       setHistory((previous) => cursor ? [...previous, ...page.entries] : page.entries);
       setHistoryCursor(page.next_cursor ?? null);
+      setHistoryIndex(page.model_index);
     });
   }
   async function previewVersion(version: string, side: "before" | "after") {
@@ -242,13 +244,20 @@ export function DocumentWindow({ projectId, path, sessionId, readOnly = false }:
       </>}
     </div>
     {historyOpen && <aside className={styles.history} aria-label={text("Document history", "文档历史")}>
-      {!history.length && <span>{text("No retained versions.", "暂无保留的版本。")}</span>}
+      {!history.length && !historyCursor && (!historyIndex || historyIndex.state === "complete") && <span>{text("No retained versions.", "暂无保留的版本。")}</span>}
+      {historyIndex?.state === "partial" && <button className={styles.button} onClick={() => void openHistory()}>
+        {text("Continue loading history", "继续加载历史")}</button>}
+      {historyIndex?.state === "unavailable" && <span>{text("Some older model versions are unavailable.", "部分旧模型修改版本不可用。")}</span>}
       {history.map((entry) => <div className={styles.entry} key={entry.version_id}>
-        <span>{entry.actor === "user" ? text("You", "你") : entry.actor || text("Version", "版本")}</span>
+        <span>{entry.actor === "user" ? text("You", "你") : entry.actor === "model" ? text("Model", "模型") : entry.actor || text("Version", "版本")}</span>
         {entry.created_at && <time dateTime={new Date(entry.created_at * 1000).toISOString()}>{new Date(entry.created_at * 1000).toLocaleString()}</time>}
-        <button className={styles.button} onClick={() => void previewVersion(entry.version_id, "before")}>{text("Before", "之前")}</button>
-        <button className={styles.button} onClick={() => void previewVersion(entry.version_id, "after")}>{text("After", "之后")}</button>
-        <button className={styles.button} disabled={state.restoring || state.renaming} onClick={() => void restore(entry.version_id)}>{text("Restore", "恢复")}</button>
+        {entry.actor === "model" && entry.status !== "committed" && <span>{text("After version unavailable", "修改后版本不可用")}</span>}
+        <button className={styles.button} disabled={entry.actor === "model" && (!entry.before_revision || entry.before_revision === "absent")}
+          onClick={() => void previewVersion(entry.version_id, "before")}>{text("Before", "之前")}</button>
+        <button className={styles.button} disabled={entry.actor === "model" && (!entry.after_revision || entry.after_revision === "absent")}
+          onClick={() => void previewVersion(entry.version_id, "after")}>{text("After", "之后")}</button>
+        <button className={styles.button} disabled={state.restoring || state.renaming || (entry.actor === "model" && (!entry.after_revision || entry.after_revision === "absent"))}
+          onClick={() => void restore(entry.version_id)}>{text("Restore", "恢复")}</button>
       </div>)}
       {historyCursor && <button className={styles.button} onClick={() => void openHistory(historyCursor)}>{text("Load more", "加载更多")}</button>}
     </aside>}

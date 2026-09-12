@@ -59,7 +59,7 @@ def browser_page(bundles):
                     state["revision"] = hashlib.sha256(raw).hexdigest()
                     request.fulfill(json={"ok": True, "status": "committed", "revision": state["revision"]})
             elif path == "/api/documents/history":
-                request.fulfill(json={"entries": [{"version_id": "version1", "actor": "user"}], "next_cursor": None})
+                request.fulfill(json={"entries": state.get("history_entries", [{"version_id": "version1", "actor": "user"}]), "next_cursor": None, "model_index": state.get("model_index", {"state":"complete"})})
             elif path == "/api/documents/history/content":
                 request.fulfill(body=state.get("history_body", b"history"))
             else:
@@ -452,3 +452,32 @@ def test_raster_explicit_png_copy_preserves_source_and_conflict(browser_page):
     assert state["copies"][0].startswith(bytes([137,80,78,71,13,10,26,10]))
     assert state["body"]==original and state["writes"]==[]
     assert errors==[]
+
+
+def test_partial_model_history_is_not_reported_as_no_versions(browser_page):
+    from playwright.sync_api import expect
+    page,state,errors=browser_page
+    state["history_entries"]=[]
+    state["model_index"]={"state":"partial"}
+    page.goto("https://document.test/")
+    page.get_by_role("button",name="History",exact=True).click()
+    expect(page.get_by_text("No retained versions.",exact=True)).to_have_count(0)
+    button=page.get_by_role("button",name="Continue loading history",exact=True)
+    expect(button).to_be_visible()
+    state["model_index"]={"state":"unavailable","unavailable_count":2}
+    button.click()
+    expect(page.get_by_text("Some older model versions are unavailable.",exact=True)).to_be_visible()
+    assert errors==[]
+
+
+def test_incomplete_model_history_cannot_restore_unconfirmed_after_version(browser_page):
+    from playwright.sync_api import expect
+    page,state,errors=browser_page
+    state["history_entries"]=[{"version_id":"m-version","actor":"model","status":"recovery_required","before_revision":"a"*64,"after_revision":None}]
+    page.goto("https://document.test/")
+    page.get_by_role("button",name="History",exact=True).click()
+    expect(page.get_by_text("After version unavailable",exact=True)).to_be_visible()
+    expect(page.get_by_role("button",name="After",exact=True)).to_be_disabled()
+    expect(page.get_by_role("button",name="Restore",exact=True)).to_be_disabled()
+    expect(page.get_by_role("button",name="Before",exact=True)).to_be_enabled()
+    assert state["writes"]==[] and errors==[]

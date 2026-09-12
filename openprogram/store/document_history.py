@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import os
 import re
@@ -10,6 +11,7 @@ import stat
 import tempfile
 import time
 import uuid
+import math
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -103,6 +105,9 @@ class DocumentHistory:
             db.row_factory = sqlite3.Row
             try:
                 db.execute("PRAGMA synchronous=FULL")
+                schema = db.execute("PRAGMA user_version").fetchone()[0]
+                if schema not in {0, 1}:
+                    raise DocumentHistoryError("unsupported document history schema", "HISTORY_CORRUPT")
                 db.executescript("""
                     CREATE TABLE IF NOT EXISTS operations (
                         operation_id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
@@ -115,7 +120,19 @@ class DocumentHistory:
                         started REAL NOT NULL, updated REAL NOT NULL, closed INTEGER NOT NULL,
                         first_op TEXT NOT NULL, last_op TEXT NOT NULL);
                     CREATE INDEX IF NOT EXISTS group_path ON groups(project_id,path,sequence DESC);
+                    CREATE TABLE IF NOT EXISTS model_versions (
+                        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                        version_id TEXT UNIQUE NOT NULL, project_id TEXT NOT NULL,
+                        path TEXT NOT NULL, session_id TEXT NOT NULL, turn_id TEXT NOT NULL,
+                        original_path TEXT NOT NULL, started REAL NOT NULL, entry_json TEXT NOT NULL);
+                    CREATE INDEX IF NOT EXISTS model_version_path ON model_versions(project_id,path,started);
+                    CREATE TABLE IF NOT EXISTS model_backfills (
+                        project_id TEXT PRIMARY KEY, queue_json TEXT NOT NULL,
+                        status TEXT NOT NULL, issues INTEGER NOT NULL DEFAULT 0);
                 """)
+                if schema == 0:
+                    db.execute("PRAGMA user_version=1")
+                    db.commit()
                 os.chmod(self.root / "history.sqlite3", 0o600)
                 yield db
             except sqlite3.Error as exc:
@@ -257,19 +274,255 @@ class DocumentHistory:
             db.commit()
         return result
 
-    def list(self, project_id: str, relative: str, *, limit: int = 50, cursor: int = 0) -> dict:
+    @staticmethod
+    def _session_store():
+        from openprogram.store import default_store
+        return default_store()
+
+    @staticmethod
+    def _model_session(session_id, store):
+        from openprogram.store.session.placement import is_deleted
+        if (not isinstance(session_id, str) or not session_id or
+                session_id in {".", ".."} or "/" in session_id or "\\" in session_id):
+            return None
+        if is_deleted(store.root_path, session_id):
+            return None
+        return store.get_session(session_id)
+
+    def register_model_turn(self, session_id: str, turn_id: str, *, session_store=None, legacy_project_id=None) -> None:
+        """Index locators only; immutable checkpoint manifests retain byte authority.
+
+        The trusted helper can call this while holding its session lock. Never
+        acquire a session lock while holding the history database lock.
+        """
+        store = session_store or self._session_store()
+        session = self._model_session(session_id, store)
+        if not session:
+            return
+        if not isinstance(turn_id, str) or not turn_id or "\\" in turn_id or Path(turn_id).name != turn_id or turn_id in {".", ".."}:
+            raise DocumentHistoryError("invalid model turn", "INVALID_REQUEST")
+        rows = CheckpointStore(store._session_dir(session_id)).list_file_history(turn_id)
+        values = []
+        for entry in rows:
+            locator = entry.get("project_locator")
+            if not isinstance(locator, dict) and legacy_project_id:
+                try:
+                    project = _owner(legacy_project_id)
+                    recorded_root = session.get("project_path")
+                    if session.get("project_id") != project.id or recorded_root != project.path:
+                        continue
+                    relative = Path(entry["path"]).relative_to(Path(recorded_root)).as_posix()
+                    target, relative = resolve_document(project.id, relative)
+                    if str(target) != entry["path"]:
+                        continue
+                    locator = {"project_id": project.id, "path": relative, "recorded_root": recorded_root,
+                               "directory_identity": getattr(project, "directory_identity", ""),
+                               "location_revision": getattr(project, "location_revision", 0)}
+                    entry = {**entry, "project_locator": locator, "legacy_locator_verified": True}
+                except (DocumentHistoryError, TypeError, ValueError):
+                    continue
+            if not isinstance(locator, dict):
+                continue
+            project_id = locator.get("project_id")
+            try:
+                _owner(project_id)
+                relative = _relative(locator.get("path"))
+                started = float(entry.get("prepared_at") or entry.get("committed_at") or 0)
+                if not math.isfinite(started):
+                    continue
+            except (DocumentHistoryError, TypeError, ValueError):
+                continue
+            version = "m-" + uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(
+                [project_id, relative, session_id, turn_id, entry["path"]])).hex
+            values.append((version, project_id, relative, session_id, turn_id,
+                           entry["path"], started, json.dumps(entry)))
+        if values:
+            with self._database() as db:
+                db.executemany("""INSERT INTO model_versions
+                    (version_id,project_id,path,session_id,turn_id,original_path,started,entry_json)
+                    VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(version_id) DO UPDATE SET entry_json=excluded.entry_json""", values)
+                db.commit()
+
+    def backfill_project(self, project_id: str, *, limit: int = 20) -> dict:
+        """Resume a bounded manifest batch over a captured project registry list."""
+        _owner(project_id)
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with registry_file_lock(self.root, "model-backfill-" + hashlib.sha256(project_id.encode()).hexdigest()):
+            return self._backfill_project_locked(project_id, limit=limit)
+
+    def _backfill_project_locked(self, project_id: str, *, limit: int) -> dict:
+        project = _owner(project_id)
+        store = self._session_store()
+        with self._database() as db:
+            saved = db.execute("SELECT * FROM model_backfills WHERE project_id=?", (project_id,)).fetchone()
+        if saved and saved["status"] in {"complete", "unavailable"}:
+            return {"state": saved["status"], "unavailable_count": saved["issues"]}
+        if saved:
+            try:
+                queue = json.loads(saved["queue_json"])
+                if not isinstance(queue, list) or len(queue) > 100_000 or any(
+                    not isinstance(item, list) or len(item) != 2 or not isinstance(item[0], str)
+                    or (item[1] is not None and (not isinstance(item[1], list)
+                        or any(not isinstance(turn, str) or Path(turn).name != turn or "\\" in turn
+                               or turn in {".", ".."} for turn in item[1]))) for item in queue
+                ):
+                    raise ValueError
+            except (ValueError, TypeError) as exc:
+                raise DocumentHistoryError("model history migration state is corrupt", "HISTORY_CORRUPT") from exc
+            issues = saved["issues"]
+        else:
+            # Only registry metadata is enumerated here, once. Session contents
+            # and turn manifests are opened within the bounded batch below.
+            sessions = sorted(set(getattr(project, "session_ids", []) or []))
+            queue = [[sid, None] for sid in sessions[:100_000]]
+            issues = int(len(sessions) > 100_000)
+            with self._database() as db:
+                db.execute("INSERT OR IGNORE INTO model_backfills VALUES(?,?,?,?)",
+                           (project_id, json.dumps(queue), "partial", issues))
+                db.commit()
+        remaining = max(1, min(int(limit), 100))
+        from openprogram.store.snapshot.checkpoint.paths import session_backup_root, turn_manifest_path
+        from openprogram.store.snapshot.checkpoint import manifest
+        while queue and remaining:
+            sid, turns = queue[0]
+            if not self._model_session(sid, store):
+                from openprogram.store.session.placement import is_deleted
+                if not is_deleted(store.root_path, sid):
+                    issues += 1
+                queue.pop(0)
+                remaining -= 1
+                continue
+            session_dir = store._session_dir(sid)
+            if turns is None:
+                roots = (session_backup_root(session_dir), Path(session_dir) / "file_backups")
+                turns = sorted({path.name for root in roots if root.is_dir()
+                                for path in root.iterdir() if path.is_dir() and (path / "manifest.json").is_file()})
+                queue[0][1] = turns
+            if not turns:
+                queue.pop(0)
+                remaining -= 1
+                continue
+            turn = turns.pop(0)
+            remaining -= 1
+            try:
+                entries = manifest.load(turn_manifest_path(session_dir, turn)).get("files", {})
+                # A legacy absolute path alone cannot establish ownership after
+                # relocation. Leave it in session Review and report the gap.
+                self.register_model_turn(sid, turn, session_store=store, legacy_project_id=project_id)
+                with self._database() as db:
+                    mapped = {row[0] for row in db.execute("SELECT original_path FROM model_versions WHERE project_id=? AND session_id=? AND turn_id=?",
+                                                         (project_id, sid, turn))}
+                issues += sum(entry["path"] not in mapped for entry in entries.values())
+            except (OSError, ValueError, DocumentHistoryError):
+                issues += 1
+        status = "partial" if queue else ("unavailable" if issues else "complete")
+        with self._database() as db:
+            db.execute("UPDATE model_backfills SET queue_json=?, status=?, issues=? WHERE project_id=?",
+                       (json.dumps(queue), status, issues, project.id))
+            db.commit()
+        return {"state": status, "unavailable_count": issues}
+
+    def _model_entry(self, row) -> dict | None:
+        store = self._session_store()
+        if not self._model_session(row["session_id"], store):
+            return None
+        session_dir = store._session_dir(row["session_id"])
+        try:
+            receipts = CheckpointStore(session_dir).list_file_history(row["turn_id"])
+            entry = next((value for value in receipts if value["path"] == row["original_path"]), {})
+        except (OSError, ValueError):
+            entry = {}
+        from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+        def retained_revision(side):
+            state = entry.get(side)
+            if not isinstance(state, dict):
+                return None
+            if state.get("kind") == "absent":
+                return "absent"
+            ref = state.get("blob_ref")
+            if not isinstance(ref, str) or not ref or Path(ref).name != ref:
+                return None
+            blob = turn_backup_dir(session_dir, row["turn_id"]) / ref
+            return _revision(state) if blob.is_file() and not blob.is_symlink() else None
+        confirmed = entry.get("status") == "committed" and not entry.get("pending")
+        after = retained_revision("after") if confirmed else None
+        return {"version_id": row["version_id"], "project_id": row["project_id"], "path": row["path"],
+                "session_id": row["session_id"], "turn_id": row["turn_id"], "actor": "model",
+                "created_at": entry.get("committed_at") or row["started"], "group_started_at": row["started"],
+                "status": "committed" if confirmed and after else "recovery_required",
+                "before_revision": retained_revision("before"), "after_revision": after}
+
+    def list(self, project_id: str, relative: str, *, limit: int = 50, cursor: str | int = 0) -> dict:
         _owner(project_id)
         relative = _relative(relative)
-        limit, cursor = max(1, min(int(limit), 100)), max(0, int(cursor))
+        limit = max(1, min(int(limit), 100))
+        index_state = self.backfill_project(project_id)
+        offset = 0
+        page = None
+        if cursor and str(cursor).isdigit():
+            offset = max(0, int(cursor))  # Compatibility with earlier manual pages.
+        elif cursor:
+            try:
+                if len(str(cursor)) > 1024:
+                    raise ValueError
+                page = json.loads(base64.urlsafe_b64decode(str(cursor)).decode())
+                if (page["project"] != project_id or page["path"] != relative
+                        or not math.isfinite(page["time"]) or not isinstance(page["id"], str)
+                        or not all(isinstance(page[key], int) and page[key] >= 0 for key in ("manual", "model"))):
+                    raise ValueError
+            except (ValueError, TypeError, KeyError):
+                raise DocumentHistoryError("invalid history cursor", "INVALID_REQUEST") from None
         with self._database() as db:
-            rows = db.execute("SELECT * FROM groups WHERE project_id=? AND path=? ORDER BY sequence DESC LIMIT ? OFFSET ?",
-                              (project_id, relative, limit + 1, cursor)).fetchall()
-            return {"entries": [self._entry(row) for row in rows[:limit]],
-                    "next_cursor": str(cursor + limit) if len(rows) > limit else None}
+            caps = page or {"manual": db.execute("SELECT COALESCE(MAX(sequence),0) FROM groups").fetchone()[0],
+                            "model": db.execute("SELECT COALESCE(MAX(sequence),0) FROM model_versions").fetchone()[0]}
+        # Validate source rows outside the SQLite lock. Deleted records cannot
+        # hide an older visible row; work remains bounded even after mass deletion.
+        visible, last, exhausted = [], page, False
+        scanned = 0
+        while len(visible) <= limit and scanned < (limit + 1) * 4:
+            time_key = last["time"] if last else float("inf")
+            id_key = last["id"] if last else "~"
+            with self._database() as db:
+                rows = db.execute("""SELECT version_id,started,kind FROM (
+                    SELECT version_id,started,'manual' kind FROM groups WHERE project_id=? AND path=? AND sequence<=?
+                    UNION ALL SELECT version_id,started,'model' kind FROM model_versions WHERE project_id=? AND path=? AND sequence<=?
+                    ) WHERE started < ? OR (started=? AND version_id<?)
+                    ORDER BY started DESC,version_id DESC LIMIT ? OFFSET ?""",
+                    (project_id, relative, caps["manual"], project_id, relative, caps["model"],
+                     time_key, time_key, id_key, limit + 1, offset)).fetchall()
+                details = []
+                for row in rows:
+                    table = "groups" if row["kind"] == "manual" else "model_versions"
+                    detail = dict(db.execute(f"SELECT * FROM {table} WHERE version_id=?", (row["version_id"],)).fetchone())
+                    details.append((row["kind"], detail))
+            offset = 0
+            if not rows:
+                exhausted = True
+                break
+            for kind, row in details:
+                scanned += 1
+                last = {"time": row["started"], "id": row["version_id"]}
+                value = self._entry(row) if kind == "manual" else self._model_entry(row)
+                if value:
+                    visible.append((value, dict(last)))
+                    if len(visible) > limit:
+                        break
+            if len(rows) < limit + 1 and len(visible) <= limit:
+                exhausted = True
+                break
+        next_cursor = None
+        if not exhausted and last:
+            boundary = visible[limit - 1][1] if len(visible) > limit else last
+            payload = {**caps, "project": project_id, "path": relative, **boundary}
+            next_cursor = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+        return {"entries": [value for value, _ in visible[:limit]],
+                "next_cursor": next_cursor, "model_index": index_state}
 
     def content(self, project_id: str, relative: str, version_id: str, side: str = "after") -> bytes:
         _owner(project_id)
         relative = _relative(relative)
+        if isinstance(version_id, str) and version_id.startswith("m-"):
+            return self._model_content(project_id, relative, version_id, side)
         if side not in {"before", "after"} or not isinstance(version_id, str) or not re.fullmatch(r"[a-f0-9]{32}", version_id):
             raise DocumentHistoryError("invalid history version or side", "INVALID_REQUEST")
         with self._database() as db:
@@ -290,6 +543,52 @@ class DocumentHistory:
             raw, _ = self._read_bounded(self._dir(project_id, relative) / "operations" / operation / ref)
             if _digest(raw) != _revision(state):
                 raise DocumentHistoryError("version content is corrupt", "HISTORY_CORRUPT")
+            return raw
+
+    def _model_content(self, project_id: str, relative: str, version_id: str, side: str) -> bytes:
+        if side not in {"before", "after"} or not re.fullmatch(r"m-[a-f0-9]{32}", version_id):
+            raise DocumentHistoryError("invalid history version or side", "INVALID_REQUEST")
+        with self._database() as db:
+            row = db.execute("SELECT * FROM model_versions WHERE project_id=? AND path=? AND version_id=?",
+                             (project_id, relative, version_id)).fetchone()
+        if row is None:
+            raise DocumentHistoryError("model version not found", "NOT_FOUND")
+        store = self._session_store()
+        from openprogram.store.session.session_lock import session_interprocess_lock
+        from openprogram.store.snapshot.checkpoint.paths import turn_backup_dir
+        with session_interprocess_lock(row["session_id"], root=store.root_path if store._explicit_root else None):
+            if not self._model_session(row["session_id"], store):
+                raise DocumentHistoryError("original conversation was deleted", "NOT_FOUND")
+            session_dir = store._session_dir(row["session_id"])
+            try:
+                entries = CheckpointStore(session_dir).list_file_history(row["turn_id"])
+            except (OSError, ValueError) as exc:
+                raise DocumentHistoryError("model history is corrupt", "HISTORY_CORRUPT") from exc
+            entry = next((value for value in entries if value["path"] == row["original_path"]), None)
+            if entry is None:
+                raise DocumentHistoryError("model version is no longer retained", "NOT_FOUND")
+            locator = entry.get("project_locator")
+            if not locator:
+                try:
+                    indexed = json.loads(row["entry_json"])
+                    locator = indexed.get("project_locator") if indexed.get("legacy_locator_verified") else {}
+                except (ValueError, TypeError, AttributeError) as exc:
+                    raise DocumentHistoryError("model history index is corrupt", "HISTORY_CORRUPT") from exc
+            if locator.get("project_id") != project_id or locator.get("path") != relative:
+                raise DocumentHistoryError("model version ownership mismatch", "HISTORY_CORRUPT")
+            state = entry.get(side)
+            if (not isinstance(state, dict) or (side == "after" and
+                    (entry.get("status") != "committed" or entry.get("pending")))):
+                raise DocumentHistoryError("model version is not confirmed", "RECOVERY_REQUIRED")
+            if state.get("kind") == "absent":
+                raise DocumentHistoryError("file did not exist in this version", "NOT_FOUND")
+            ref = state.get("blob_ref")
+            if (state.get("kind") != "regular" or not isinstance(ref, str) or not ref
+                    or Path(ref).name != ref or ref in {".", ".."}):
+                raise DocumentHistoryError("model version is unavailable", "RECOVERY_REQUIRED")
+            raw, _ = self._read_bounded(turn_backup_dir(session_dir, row["turn_id"]) / ref)
+            if _digest(raw) != _revision(state):
+                raise DocumentHistoryError("model version content is corrupt", "HISTORY_CORRUPT")
             return raw
 
     def restore(self, project_id: str, relative: str, version_id: str, *, side: str,

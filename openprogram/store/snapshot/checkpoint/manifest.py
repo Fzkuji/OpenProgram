@@ -16,6 +16,30 @@ class ManifestCorruptionError(ValueError):
     """Existing history cannot be interpreted without discarding evidence."""
 
 
+_LOCATOR_KEYS = {
+    "project_id", "path", "recorded_root", "directory_identity",
+    "location_revision",
+}
+
+
+def _valid_locator(locator: object) -> bool:
+    if not isinstance(locator, dict) or set(locator) != _LOCATOR_KEYS:
+        return False
+    return (
+        isinstance(locator["project_id"], str) and bool(locator["project_id"])
+        and isinstance(locator["path"], str) and bool(locator["path"])
+        and not Path(locator["path"]).is_absolute()
+        and all(part not in {"", ".", ".."} for part in Path(locator["path"]).parts)
+        and isinstance(locator["recorded_root"], str)
+        and bool(locator["recorded_root"])
+        and Path(locator["recorded_root"]).is_absolute()
+        and isinstance(locator["directory_identity"], str)
+        and isinstance(locator["location_revision"], int)
+        and not isinstance(locator["location_revision"], bool)
+        and locator["location_revision"] >= 0
+    )
+
+
 def _valid_entry(entry: object, version: int) -> bool:
     if (not isinstance(entry, dict) or not isinstance(entry.get("path"), str)
             or not entry["path"] or not isinstance(entry.get("pre_existing"), bool)):
@@ -25,6 +49,8 @@ def _valid_entry(entry: object, version: int) -> bool:
     if entry.get("status") not in {"prepared", "committed", "aborted"}:
         return False
     if "pending" in entry and not isinstance(entry["pending"], bool):
+        return False
+    if "project_locator" in entry and not _valid_locator(entry["project_locator"]):
         return False
     before, after = entry.get("before"), entry.get("after")
     if not _valid_state(before):
@@ -96,6 +122,7 @@ def record_prepared(
     before: dict,
     recoverability: str = "exact",
     unavailable_reason: str | None = None,
+    project_locator: dict | None = None,
 ) -> None:
     """Persist the first pre-turn image before a trusted mutator writes."""
     value = load(manifest_path)
@@ -103,7 +130,7 @@ def record_prepared(
     existing = files.get(backup_basename)
     if existing and existing.get("status") != "aborted":
         return
-    files[backup_basename] = {
+    entry = {
         "path": original_path,
         "pre_existing": bool(pre_existing),
         "status": "prepared",
@@ -117,6 +144,11 @@ def record_prepared(
         "prepared_at": time.time(),
         "committed_at": None,
     }
+    if project_locator is not None:
+        if not _valid_locator(project_locator):
+            raise ValueError("invalid project locator")
+        entry["project_locator"] = dict(project_locator)
+    files[backup_basename] = entry
     value["version"] = 2
     if not value.get("backed_at"):
         value["backed_at"] = time.time()

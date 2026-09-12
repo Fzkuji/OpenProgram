@@ -1,7 +1,7 @@
 import { IndexedDbDocumentDraftStore, type DocumentDraftPending, type DocumentDraftRecord } from "./file-draft-store";
 import { discardFileDraft, loadFileDraft } from "./file-drafts";
 import { invalidateFileRead } from "./files-shared";
-import type { DocumentControllerOptions, DocumentHistoryEntry, DocumentIdentity, DocumentSnapshot, RichDocumentEditor } from "./document-types";
+import type { DocumentControllerOptions, DocumentHistoryPage, DocumentIdentity, DocumentSnapshot, RichDocumentEditor } from "./document-types";
 
 export type DocumentStatus = "idle" | "dirty" | "saving" | "error" | "conflict" | "closed";
 export interface DocumentControllerState {
@@ -456,7 +456,7 @@ export class DocumentController {
       this.setState({ snapshot: disk, draft: null, status: "idle", error: null });
     } finally { this.setState({ restoring: false }); }
   }
-  async listHistory(limit = 25, cursor?: string): Promise<{ entries: DocumentHistoryEntry[]; next_cursor?: string | null }> {
+  async listHistory(limit = 25, cursor?: string): Promise<DocumentHistoryPage> {
     if (this.identity.kind !== "project") return { entries: [] };
     const params = new URLSearchParams({ project_id: this.identity.projectId, path: this.identity.path, limit: String(limit) });
     if (cursor) params.set("cursor", cursor);

@@ -5,6 +5,7 @@ export type DocumentIdentity =
 
 export interface DocumentSnapshot { bytes: Blob; revision: string; mtime?: number; binary?: boolean; }
 export interface DocumentHistoryEntry { version_id: string; project_id: string; path: string; editor_id?: string; actor?: string; created_at?: number; status?: string; before_revision?: string; after_revision?: string; }
+export interface DocumentHistoryPage { entries: DocumentHistoryEntry[]; next_cursor?: string | null; model_index?: { state: "partial" | "complete" | "unavailable"; unavailable_count?: number }; }
 export interface DocumentControllerOptions { projectId?: string; path: string; sessionId?: string; readOnly?: boolean; editorId?: string; fetchImpl?: typeof fetch; draftStore?: IndexedDbDocumentDraftStore; debounceMs?: number; maxDebounceMs?: number; }
 
 /** The small surface the document owner needs from a rich editor.  The

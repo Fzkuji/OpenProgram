@@ -354,3 +354,34 @@ def test_empty_history_blob_reference_reports_corruption(documents):
         assert response.status_code == 503, response.text
         assert response.json()["error"] in ("HISTORY_CORRUPT", "RECOVERY_REQUIRED")
     assert history(client, "a.txt")[0]["status"] == "recovery_required"
+
+
+def test_authenticated_model_history_content_and_opaque_cursor(documents, monkeypatch):
+    from openprogram.store.document_history import DocumentHistory
+    from openprogram.store.session.session_store import SessionStore
+    from openprogram.store.snapshot.checkpoint import CheckpointStore
+    client, root, state, project = documents
+    sessions = SessionStore(root_path=state / "sessions")
+    try:
+        sessions.create_session("model-http", agent_id="main")
+        monkeypatch.setattr("openprogram.store.default_store", lambda: sessions)
+        target = root / "model.docx"
+        target.write_bytes(b"before\0")
+        journal = CheckpointStore(sessions._session_dir("model-http"))
+        journal.backup_before_edit("turn", str(target), project_locator={
+            "project_id":"p1", "path":"model.docx", "recorded_root":str(root),
+            "directory_identity":project.directory_identity, "location_revision":0})
+        target.write_bytes(b"model\xff")
+        journal.commit_after_edit("turn",str(target))
+        DocumentHistory().register_model_turn("model-http","turn",session_store=sessions)
+        assert put(client,"model.docx",b"model\xff",b"manual",close=True).status_code==200
+        page=client.get("/api/documents/history",params={"project_id":"p1","path":"model.docx","limit":1}).json()
+        more=client.get("/api/documents/history",params={"project_id":"p1","path":"model.docx","limit":1,"cursor":page["next_cursor"]})
+        assert more.status_code==200,more.text
+        entry=more.json()["entries"][0]
+        assert entry["actor"]=="model"
+        params={"project_id":"p1","path":"model.docx","version":entry["version_id"]}
+        assert client.get("/api/documents/history/content",params=params).content==b"model\xff"
+        assert client.get("/api/documents/history/content",params=params,headers={"Authorization":"Bearer bad"}).status_code in (401,403)
+    finally:
+        sessions.close()

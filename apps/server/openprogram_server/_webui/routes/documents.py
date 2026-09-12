@@ -91,7 +91,7 @@ def register(app):
             return _error(DocumentHistoryError("document publication could not be confirmed", "RECOVERY_REQUIRED"))
 
     @router.get("/api/documents/history")
-    async def get_history(project_id: str, path: str, limit: int = 50, cursor: int = 0):
+    async def get_history(project_id: str, path: str, limit: int = 50, cursor: str = "0"):
         try:
             return JSONResponse(await asyncio.to_thread(DocumentHistory().list, project_id, path, limit=limit, cursor=cursor))
         except DocumentHistoryError as exc:

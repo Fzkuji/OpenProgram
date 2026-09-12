@@ -157,6 +157,7 @@ class CheckpointStore:
         abs_path: str,
         *,
         content_src: str | Path | None = None,
+        project_locator: dict | None = None,
     ) -> None:
         if not turn_id or not abs_path:
             return
@@ -212,6 +213,7 @@ class CheckpointStore:
             before=before,
             recoverability=recoverability,
             unavailable_reason=unavailable_reason,
+            project_locator=project_locator,
         )
 
     def commit_after_edit(
